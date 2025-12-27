@@ -1,15 +1,19 @@
-// Firebase 初始化
-import { db } from './firebase-config.js';
-import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+// Firebase 初始化 (暫時註解)
+// import { db } from './firebase-config.js';
+// import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
 // 區塊切換函式
 function showSection(section) {
     document.getElementById('restockSection').style.display = section === 'restock' ? 'block' : 'none';
     document.getElementById('opsSection').style.display = section === 'ops' ? 'block' : 'none';
     document.getElementById('forecastSection').style.display = section === 'forecast' ? 'block' : 'none';
+    document.getElementById('shipmentSection').style.display = section === 'shipment' ? 'block' : 'none';
     
     if (section === 'forecast') {
         renderForecastChart();
+    }
+    if (section === 'shipment') {
+        renderWeeklyShippingPlans();
     }
 }
 
@@ -124,29 +128,18 @@ function renderForecastChart() {
     });
 }
 
-// 渲染紀錄列表 - 從 Firebase 讀取
-async function renderRecords() {
+// 渲染紀錄列表 - 使用本地資料
+function renderRecords() {
     const recordsList = document.getElementById('recordsList');
-    try {
-        const querySnapshot = await getDocs(collection(db, 'records'));
-        const records = [];
-        querySnapshot.forEach((doc) => {
-            records.push(doc.data());
-        });
-        // 按時間排序，最新在前
-        records.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        
-        recordsList.innerHTML = records.map(record => 
-            `<li>SKU: ${record.sku}, 目標天數: ${record.targetDays}, 建議補貨量: ${record.recommendQty}, 時間: ${record.created_at}</li>`
-        ).join('');
-    } catch (error) {
-        console.error('讀取紀錄失敗:', error);
-        recordsList.innerHTML = '<li>讀取紀錄失敗</li>';
-    }
+    const records = window.DataRepo.getRecords();
+    
+    recordsList.innerHTML = records.map(record => 
+        `<li>SKU: ${record.sku}, 目標天數: ${record.targetDays}, 建議補貨量: ${record.recommendQty}, 時間: ${record.created_at}</li>`
+    ).join('');
 }
 
-// 計算補貨量函式 - 推送到 Firebase
-async function calculateRestock() {
+// 計算補貨量函式 - 使用本地資料
+function calculateRestock() {
     const targetDays = parseFloat(document.getElementById('targetDays').value);
     const sku = document.getElementById('sku').value;
     const item = window.DataRepo.getItemBySku(sku);
@@ -165,7 +158,7 @@ async function calculateRestock() {
         <p>recommendQty: ${recommendQty}</p>
     `;
     
-    // 建立紀錄並推送到 Firebase
+    // 建立紀錄並儲存到本地
     const record = {
         sku: sku,
         targetDays: targetDays,
@@ -173,18 +166,223 @@ async function calculateRestock() {
         created_at: new Date().toISOString()
     };
     
-    try {
-        await addDoc(collection(db, 'records'), record);
-        console.log('紀錄已推送到 Firebase');
-        
-        // 重新渲染列表
-        await renderRecords();
-    } catch (error) {
-        console.error('推送紀錄失敗:', error);
-        // 降級到本地儲存
-        window.DataRepo.saveRecord(record);
-        renderRecords();
+    window.DataRepo.saveRecord(record);
+    renderRecords();
+}
+
+// 渲染 Dashboard 1
+function renderDashboard1() {
+    const selectedFactory = document.getElementById('factorySelect').value;
+    const tableBody = document.getElementById('dashboard1Body');
+    
+    if (!selectedFactory) {
+        tableBody.innerHTML = '';
+        updateSummary();
+        return;
     }
+    
+    const factoryData = window.DataRepo.getFactoryInventory(selectedFactory);
+    tableBody.innerHTML = factoryData.map(item => `
+        <tr>
+            <td>${item.sku}</td>
+            <td>${item.stock}</td>
+            <td><input type="number" id="qty_${item.sku}" placeholder="輸入數量" oninput="updateSummary()"></td>
+            <td id="boxes_${item.sku}">0</td>
+        </tr>
+    `).join('');
+    
+    updateSummary();
+}
+
+// 更新 Summary
+function updateSummary() {
+    let totalQty = 0;
+    let totalBoxes = 0;
+    
+    const selectedFactory = document.getElementById('factorySelect').value;
+    if (!selectedFactory) {
+        document.getElementById('totalQty').textContent = '0';
+        document.getElementById('totalBoxes').textContent = '0';
+        return;
+    }
+    
+    const factoryData = window.DataRepo.getFactoryInventory(selectedFactory);
+    factoryData.forEach(item => {
+        const qtyInput = document.getElementById(`qty_${item.sku}`);
+        if (qtyInput) {
+            const qty = parseInt(qtyInput.value) || 0;
+            const boxes = Math.ceil(qty / 40);
+            
+            document.getElementById(`boxes_${item.sku}`).textContent = boxes;
+            totalQty += qty;
+            totalBoxes += boxes;
+        }
+    });
+    
+    document.getElementById('totalQty').textContent = totalQty;
+    document.getElementById('totalBoxes').textContent = totalBoxes;
+}
+
+// 提交 Dashboard 1
+function submitDashboard1() {
+    const selectedFactory = document.getElementById('factorySelect').value;
+    if (!selectedFactory) return;
+    
+    const factoryData = window.DataRepo.getFactoryInventory(selectedFactory);
+    const submittedItems = [];
+    
+    factoryData.forEach(item => {
+        const qtyInput = document.getElementById(`qty_${item.sku}`);
+        const qty = parseInt(qtyInput.value) || 0;
+        
+        if (qty > 0) {
+            submittedItems.push({
+                sku: item.sku,
+                factoryStock: item.stock,
+                qty: qty,
+                boxes: Math.ceil(qty / 40)
+            });
+        }
+    });
+    
+    if (submittedItems.length === 0) return;
+    
+    renderDashboard2(submittedItems);
+    document.getElementById('dashboard2Section').style.display = 'block';
+}
+
+// 渲染 Dashboard 2
+function renderDashboard2(items) {
+    const tableBody = document.getElementById('dashboard2Body');
+    const shippingMethods = window.DataRepo.getShippingMethods();
+    
+    tableBody.innerHTML = items.map(item => `
+        <tr>
+            <td>${item.sku}</td>
+            <td>${item.factoryStock}</td>
+            <td>${item.qty}</td>
+            <td>${item.boxes}</td>
+            <td>
+                <select id="shipping_${item.sku}">
+                    <option value="">選擇出貨方式</option>
+                    ${shippingMethods.map(method => `<option value="${method}">${method}</option>`).join('')}
+                </select>
+            </td>
+            <td><input type="text" id="note_${item.sku}" placeholder="輸入備註"></td>
+        </tr>
+    `).join('');
+    
+    window.currentDashboard2Items = items;
+}
+
+// 提交 Dashboard 2
+function submitDashboard2() {
+    if (!window.currentDashboard2Items) return;
+    
+    const shippingPlans = window.currentDashboard2Items.map(item => {
+        const shippingMethod = document.getElementById(`shipping_${item.sku}`).value;
+        const note = document.getElementById(`note_${item.sku}`).value;
+        
+        return {
+            id: Date.now() + Math.random(),
+            sku: item.sku,
+            factoryStock: item.factoryStock,
+            qty: item.qty,
+            shippingMethod: shippingMethod,
+            note: note,
+            status: 'planning',
+            createdAt: new Date().toISOString()
+        };
+    });
+    
+    shippingPlans.forEach(plan => {
+        window.DataRepo.saveWeeklyShippingPlan(plan);
+    });
+    
+    // 清空表單
+    document.getElementById('factorySelect').value = '';
+    renderDashboard1();
+    document.getElementById('dashboard2Section').style.display = 'none';
+    
+    // 更新 Weekly Shipping Plans 顯示
+    renderWeeklyShippingPlans();
+}
+
+// 渲染 Weekly Shipping Plans
+function renderWeeklyShippingPlans() {
+    const planningPlans = window.DataRepo.getWeeklyShippingPlans('planning');
+    const ongoingPlans = window.DataRepo.getWeeklyShippingPlans('ongoing');
+    const donePlans = window.DataRepo.getWeeklyShippingPlans('done');
+    
+    // Planning 表格
+    document.getElementById('planningTableBody').innerHTML = planningPlans.map(plan => `
+        <tr>
+            <td>${plan.sku}</td>
+            <td>${plan.factoryStock}</td>
+            <td>${plan.qty}</td>
+            <td>${plan.shippingMethod}</td>
+            <td>${plan.note || ''}</td>
+            <td>
+                <button onclick="moveToOngoing('${plan.id}')">已提交</button>
+                <button onclick="undoFromPlanning('${plan.id}')">Undo</button>
+            </td>
+        </tr>
+    `).join('');
+    
+    // Ongoing 表格
+    document.getElementById('ongoingTableBody').innerHTML = ongoingPlans.map(plan => `
+        <tr>
+            <td>${plan.sku}</td>
+            <td>${plan.factoryStock}</td>
+            <td>${plan.qty}</td>
+            <td>${plan.shippingMethod}</td>
+            <td>${plan.note || ''}</td>
+            <td>
+                <button onclick="moveToDone('${plan.id}')">已出貨</button>
+                <button onclick="undoFromOngoing('${plan.id}')">Undo</button>
+            </td>
+        </tr>
+    `).join('');
+    
+    // Done 表格
+    document.getElementById('doneTableBody').innerHTML = donePlans.map(plan => `
+        <tr>
+            <td>${plan.sku}</td>
+            <td>${plan.factoryStock}</td>
+            <td>${plan.qty}</td>
+            <td>${plan.shippingMethod}</td>
+            <td>${plan.note || ''}</td>
+            <td>-</td>
+        </tr>
+    `).join('');
+}
+
+// 移動到 Ongoing
+function moveToOngoing(planId) {
+    console.log('moveToOngoing called with planId:', planId);
+    window.DataRepo.updateShippingPlanStatus(planId, 'ongoing');
+    renderWeeklyShippingPlans();
+}
+
+// 移動到 Done
+function moveToDone(planId) {
+    console.log('moveToDone called with planId:', planId);
+    window.DataRepo.updateShippingPlanStatus(planId, 'done');
+    renderWeeklyShippingPlans();
+}
+
+// Undo 從 Ongoing 回到 Planning
+function undoFromOngoing(planId) {
+    console.log('undoFromOngoing called with planId:', planId);
+    window.DataRepo.updateShippingPlanStatus(planId, 'planning');
+    renderWeeklyShippingPlans();
+}
+
+// Undo 從 Planning 刪除出貨記錄
+function undoFromPlanning(planId) {
+    console.log('undoFromPlanning called with planId:', planId);
+    window.DataRepo.removeShippingPlan(planId);
+    renderWeeklyShippingPlans();
 }
 
 // 暴露函式到全域供 HTML 使用
@@ -195,6 +393,15 @@ window.showForecast = showForecast;
 window.renderForecastChart = renderForecastChart;
 window.calculateRestock = calculateRestock;
 window.renderRecords = renderRecords;
+window.renderDashboard1 = renderDashboard1;
+window.updateSummary = updateSummary;
+window.submitDashboard1 = submitDashboard1;
+window.submitDashboard2 = submitDashboard2;
+window.moveToOngoing = moveToOngoing;
+window.moveToDone = moveToDone;
+window.undoFromOngoing = undoFromOngoing;
+window.undoFromPlanning = undoFromPlanning;
+window.renderWeeklyShippingPlans = renderWeeklyShippingPlans;
 window.DataRepo = DataRepo;
 
 // 初始化時載入紀錄

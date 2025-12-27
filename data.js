@@ -23,6 +23,25 @@ const items = [
 // 試算紀錄陣列
 const records = [];
 
+// 工廠資料
+const factories = ["工廠A", "工廠B"];
+
+// 工廠庫存資料
+const factoryInventory = [
+    { sku: "A001", factory: "工廠A", stock: 500 },
+    { sku: "B002", factory: "工廠A", stock: 300 },
+    { sku: "C003", factory: "工廠A", stock: 800 },
+    { sku: "A001", factory: "工廠B", stock: 400 },
+    { sku: "D004", factory: "工廠B", stock: 250 },
+    { sku: "E005", factory: "工廠B", stock: 600 }
+];
+
+// 出貨方式資料
+const shippingMethods = ["海運", "空運", "陸運"];
+
+// Weekly Shipping Plans 資料 - 從 localStorage 載入
+let weeklyShippingPlans = JSON.parse(localStorage.getItem('weeklyShippingPlans')) || [];
+
 // 站點 SKU 資料
 const siteSkus = [
     { site: "amazon", sku: "A001", stock: 150, weeklyAvgSales: 5 },
@@ -121,6 +140,49 @@ const DataRepo = {
     
     getForecastMonthly() {
         return forecastMonthly;
+    },
+    
+    getFactoryInventory(factory) {
+        return factoryInventory.filter(item => item.factory === factory);
+    },
+    
+    getShippingMethods() {
+        return shippingMethods;
+    },
+    
+    saveWeeklyShippingPlan(plan) {
+        weeklyShippingPlans.unshift(plan);
+        localStorage.setItem('weeklyShippingPlans', JSON.stringify(weeklyShippingPlans));
+    },
+    
+    getWeeklyShippingPlans(status) {
+        return weeklyShippingPlans.filter(plan => plan.status === status);
+    },
+    
+    updateShippingPlanStatus(planId, newStatus) {
+        console.log('Looking for planId:', planId, 'type:', typeof planId);
+        console.log('Available plans:', weeklyShippingPlans.map(p => ({id: p.id, type: typeof p.id})));
+        
+        const plan = weeklyShippingPlans.find(p => p.id == planId);
+        if (plan) {
+            console.log('Found plan, updating status to:', newStatus);
+            plan.status = newStatus;
+            localStorage.setItem('weeklyShippingPlans', JSON.stringify(weeklyShippingPlans));
+        } else {
+            console.log('Plan not found!');
+        }
+    },
+    
+    removeShippingPlan(planId) {
+        console.log('Removing planId:', planId);
+        const index = weeklyShippingPlans.findIndex(p => p.id == planId);
+        if (index !== -1) {
+            weeklyShippingPlans.splice(index, 1);
+            localStorage.setItem('weeklyShippingPlans', JSON.stringify(weeklyShippingPlans));
+            console.log('Plan removed successfully');
+        } else {
+            console.log('Plan not found for removal!');
+        }
     }
 };
 

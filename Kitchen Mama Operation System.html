@@ -17,6 +17,7 @@
         <button onclick="showSection('restock')">補貨試算器</button>
         <button onclick="showSection('ops')">貨物庫存表</button>
         <button onclick="showSection('forecast')">Forecast 管理</button>
+        <button onclick="showSection('shipment')">Weekly Shipping Plans</button>
     </nav>
     
     <div id="restockSection">
@@ -71,6 +72,56 @@
             </thead>
             <tbody id="opsTableBody"></tbody>
         </table>
+        
+        <h3>Dashboard 1</h3>
+        <div>
+            <label>選擇工廠:</label>
+            <select id="factorySelect" onchange="renderDashboard1()">
+                <option value="">請選擇工廠</option>
+                <option value="工廠A">工廠A</option>
+                <option value="工廠B">工廠B</option>
+            </select>
+        </div>
+        
+        <table id="dashboard1Table">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>工廠庫存</th>
+                    <th>數量</th>
+                    <th>箱數</th>
+                </tr>
+            </thead>
+            <tbody id="dashboard1Body"></tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="2">Summary</td>
+                    <td id="totalQty">0</td>
+                    <td id="totalBoxes">0</td>
+                </tr>
+            </tfoot>
+        </table>
+        
+        <button onclick="submitDashboard1()">提交</button>
+        
+        <div id="dashboard2Section" style="display: none;">
+            <h3>Dashboard 2</h3>
+            <table id="dashboard2Table">
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>工廠庫存</th>
+                        <th>數量</th>
+                        <th>箱數</th>
+                        <th>出貨方式</th>
+                        <th>備註</th>
+                    </tr>
+                </thead>
+                <tbody id="dashboard2Body"></tbody>
+            </table>
+            
+            <button onclick="submitDashboard2()">Submit</button>
+        </div>
     </div>
     
     <div id="forecastSection" style="display: none;">
@@ -114,7 +165,56 @@
         <canvas id="forecastChart" width="400" height="200"></canvas>
     </div>
     
+    <div id="shipmentSection" style="display: none;">
+        <h2>Weekly Shipping Plans</h2>
+        
+        <h3>Planning</h3>
+        <table id="planningTable">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>工廠庫存</th>
+                    <th>數量</th>
+                    <th>出貨方式</th>
+                    <th>備註</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="planningTableBody"></tbody>
+        </table>
+        
+        <h3>Ongoing</h3>
+        <table id="ongoingTable">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>工廠庫存</th>
+                    <th>數量</th>
+                    <th>出貨方式</th>
+                    <th>備註</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="ongoingTableBody"></tbody>
+        </table>
+        
+        <h3>Done</h3>
+        <table id="doneTable">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>工廠庫存</th>
+                    <th>數量</th>
+                    <th>出貨方式</th>
+                    <th>備註</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="doneTableBody"></tbody>
+        </table>
+    </div>
+    
     <script src="data.js"></script>
-    <script type="module" src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
