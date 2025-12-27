@@ -30,7 +30,8 @@ Vibe Coding概念
         2. Schema_version (版本紀錄)
 
 W1 Spec範圍
-    只需要 Schema/Flow/Scope 這三個的定義
+    萬物的起頭都是>>>>只需要 Schema/Flow/Scope 這三個的定義
+    核心>>>由簡慢慢地入奢
 
     Step 1 用一句話講述你的產品
     我要為營運部門設計一個計算補貨數量和下單的工具
@@ -67,3 +68,4 @@ W1 Spec範圍
 
    Scope是甚麼
      不做甚麼事情?
+     明確現階段不能做甚麼事情

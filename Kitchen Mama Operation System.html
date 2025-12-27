@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>補貨數量試算器</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Kitchen Mama</h1>
+    <div>
+        <h1>供應鏈管理系統</h1>
+    </div>
+    
+    
+    <nav>
+        <button onclick="showSection('restock')">補貨試算器</button>
+        <button onclick="showSection('ops')">貨物庫存表</button>
+        <button onclick="showSection('forecast')">Forecast 管理</button>
+    </nav>
+    
+    <div id="restockSection">
+        <h2>補貨數量試算器</h2>
+        
+        <div>
+            <label>目標天數 (targetDays):</label>
+            <input type="number" id="targetDays" placeholder="輸入天數">
+        </div>
+        
+        <div>
+            <label>SKU:</label>
+            <input type="text" id="sku" placeholder="輸入SKU">
+        </div>
+        
+        <button onclick="calculateRestock()">計算補貨量</button>
+        
+        <div id="result"></div>
+        
+        <h3>試算紀錄</h3>
+        <ul id="recordsList"></ul>
+    </div>
+    
+    <div id="opsSection" style="display: none;">
+        <h2>貨物庫存表</h2>
+        
+        <div>
+            <label>選擇站點:</label>
+            <select id="siteSelect" onchange="renderOpsView()">
+                <option value="">請選擇站點</option>
+                <option value="amazon">Amazon</option>
+                <option value="shopify">Shopify</option>
+                <option value="target">Target</option>
+            </select>
+        </div>
+    
+        
+        <div>
+            <label>目標天數:</label>
+            <input type="number" id="opsTargetDays" placeholder="輸入天數" oninput="renderOpsView()">
+        </div>
+        
+        <table id="opsTable">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>庫存</th>
+                    <th>週平均銷量</th>
+                    <th>可供給天數</th>
+                    <th>補貨數量</th>
+                </tr>
+            </thead>
+            <tbody id="opsTableBody"></tbody>
+        </table>
+    </div>
+    
+    <div id="forecastSection" style="display: none;">
+        <h2>Forecast 管理</h2>
+        
+        <div>
+            <label>月份篩選:</label>
+            <select id="forecastPeriodSelect">
+                <option value="2024-11">上個月 (2024-11)</option>
+                <option value="2024-10">上上個月 (2024-10)</option>
+                <option value="2024-12">本月 (2024-12)</option>
+            </select>
+        </div>
+        
+    
+        <div>
+            <label>選擇站點:</label>
+            <select id="forecastSiteSelect">
+                <option value="">請選擇站點</option>
+                <option value="amazon">Amazon</option>
+                <option value="shopify">Shopify</option>
+                <option value="target">Target</option>
+            </select>
+        </div>
+        
+        <div>
+            <label>產品類別:</label>
+            <select id="productTypeSelect">
+                <option value="">請選擇產品類別</option>
+                <option value="Can Opener">Can Opener</option>
+                <option value="Manual Opener">Manual Opener</option>
+                <option value="Kitchen Tools">Kitchen Tools</option>
+            </select>
+        </div>
+        
+        <button onclick="showForecast()">Submit</button>
+        
+        <div id="forecastResult"></div>
+        
+        <h3>過去 12 個月趨勢</h3>
+        <canvas id="forecastChart" width="400" height="200"></canvas>
+    </div>
+    
+    <script src="data.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
