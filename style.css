@@ -1,118 +1,158 @@
+/* Kitchen Mama 品牌配色與基礎樣式 */
+:root {
+    --cream-white: #FFF8F0;
+    --warm-orange: #FF8C42;
+    --soft-green: #7FB069;
+    --text-dark: #2D3748;
+    --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
 body {
-    font-family: Arial, sans-serif;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--cream-white);
+    color: var(--text-dark);
     line-height: 1.6;
 }
 
-h1 {
-    color: #333;
+/* Header 區塊 */
+.header {
     text-align: center;
-    margin-bottom: 30px;
+    padding: 2rem 1rem;
+    background: linear-gradient(135deg, var(--cream-white) 0%, #FFF5E6 100%);
 }
 
-h2 {
-    color: #555;
-    margin-top: 40px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #eee;
-    padding-bottom: 10px;
+.header img {
+    margin-bottom: 1rem;
+    filter: drop-shadow(var(--shadow-soft));
 }
 
-div {
-    margin-bottom: 15px;
+.header h1 {
+    color: var(--text-dark);
+    font-size: 2rem;
+    font-weight: 600;
+    margin: 0;
 }
 
-label {
-    display: inline-block;
-    width: 180px;
-    font-weight: bold;
-    color: #666;
+/* Hero 區塊 */
+.hero {
+    padding: 3rem 1rem;
+    text-align: center;
 }
 
-input {
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    width: 200px;
+.nav-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    max-width: 1000px;
+    margin: 0 auto;
 }
 
-button {
-    background-color: #007cba;
+/* 按鈕樣式 */
+.btn-primary {
+    background: var(--warm-orange);
     color: white;
-    padding: 10px 20px;
     border: none;
-    border-radius: 4px;
-    font-size: 16px;
+    padding: 1.2rem 2rem;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    font-weight: 500;
     cursor: pointer;
-    margin-top: 10px;
+    box-shadow: var(--shadow-soft);
+    transition: all 0.2s ease;
+    min-width: 200px;
 }
 
-#result {
-    background-color: #f9f9f9;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    padding: 15px;
-    margin-top: 20px;
-    min-height: 20px;
+.btn-primary:hover {
+    background: #E67A35;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
-#result p {
-    margin: 5px 0;
-    font-weight: bold;
+.btn-secondary {
+    background: var(--soft-green);
+    color: white;
+    border: none;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    box-shadow: var(--shadow-soft);
+    transition: all 0.2s ease;
 }
 
-#recordsList {
-    background-color: #fafafa;
-    border: 1px solid #eee;
-    border-radius: 4px;
-    padding: 15px;
-    max-height: 300px;
-    overflow-y: auto;
+.btn-secondary:hover {
+    background: #6FA055;
+    transform: translateY(-1px);
 }
 
-#recordsList li {
-    padding: 8px 0;
-    border-bottom: 1px solid #eee;
-    font-size: 14px;
+/* 通用按鈕樣式 */
+button {
+    min-width: 60px;
+    padding: 8px 16px;
+    margin: 4px;
+    border-radius: 6px;
+    border: none;
+    background: var(--soft-green);
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-#recordsList li:last-child {
-    border-bottom: none;
+button:hover {
+    background: #6FA055;
+    transform: translateY(-1px);
 }
 
-nav {
-    text-align: center;
-    margin-bottom: 30px;
-}
-
-nav button {
-    margin: 0 10px;
-}
-
-select {
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    width: 200px;
-}
-
+/* 表格樣式 */
 table {
-    width: 100%;
     border-collapse: collapse;
-    margin-top: 20px;
+    width: 100%;
+    margin: 20px 0;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow-soft);
 }
 
-th, td {
-    border: 1px solid #ddd;
-    padding: 10px;
+table th, table td {
+    border: 1px solid #E2E8F0;
+    padding: 12px;
     text-align: left;
 }
 
-th {
-    background-color: #f5f5f5;
-    font-weight: bold;
+table th {
+    background: var(--soft-green);
+    color: white;
+    font-weight: 500;
+}
+
+/* 表格內按鈕 */
+table td button {
+    min-width: 50px;
+    font-size: 12px;
+    padding: 6px 12px;
+    margin: 2px;
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .nav-cards {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .btn-primary {
+        padding: 1rem 1.5rem;
+        min-width: 180px;
+    }
 }
