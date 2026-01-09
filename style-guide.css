@@ -1,0 +1,123 @@
+/* ========================================
+   Kitchen Mama Internal UI Style Guide v0.1
+   ======================================== */
+
+/* Design Tokens */
+:root {
+    /* Base Colors */
+    --bg: #FFFFFF;
+    --surface: #F8FAFC;
+    --border: #E2E8F0;
+    --text: #334155;
+    --muted: #64748B;
+    --brand: #FF8C42;
+    
+    /* Semantic Background Tokens */
+    --time-bg: #F1F5F9;
+    --info-bg: #EFF6FF;
+    --goal-bg: #FEF2F2;
+    --urgent-bg: #FDF2F8;
+    --note-bg: #F0FDF4;
+    --event-item-bg: #FFFBEB;
+    
+    /* Spacing & Layout */
+    --space-xs: 0.5rem;
+    --space-sm: 0.75rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+    
+    /* Typography */
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    
+    /* Border Radius */
+    --radius: 6px;
+    --radius-lg: 8px;
+}
+
+/* Base Components */
+.card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-md);
+}
+
+.title {
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    color: var(--text);
+    margin: 0;
+}
+
+.meta {
+    font-size: var(--text-sm);
+    color: var(--muted);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn--ghost {
+    background: transparent;
+    color: var(--muted);
+}
+
+.btn--ghost:hover {
+    color: var(--brand);
+    border-color: var(--brand);
+}
+
+.btn--primary {
+    background: var(--brand);
+    color: white;
+    border-color: var(--brand);
+}
+
+.btn--primary:hover {
+    background: #E67A35;
+}
+
+.tag {
+    display: inline-block;
+    padding: 2px var(--space-xs);
+    background: var(--surface);
+    color: var(--muted);
+    font-size: var(--text-sm);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+/* Semantic Background Classes */
+.bg-time { background: var(--time-bg); }
+.bg-info { background: var(--info-bg); }
+.bg-goal { background: var(--goal-bg); }
+.bg-urgent { background: var(--urgent-bg); }
+.bg-note { background: var(--note-bg); }
+.bg-event { background: var(--event-item-bg); }
+
+/* ========================================
+   Existing Styles (保持原有樣式)
+   ======================================== */
