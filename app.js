@@ -137,7 +137,7 @@ function showSection(section) {
         renderWeeklyShippingPlans();
     }
     if (section === 'skuDetails') {
-        renderSkuDetails();
+        renderSkuDetailsTable();
     }
 }
 
@@ -568,6 +568,44 @@ function initWorldTimes() {
     setInterval(updateWorldTimes, 60000); // 每 60 秒更新
 }
 
+// SKU Details 渲染函數 - 三個區塊統一滾動
+function renderSkuDetailsTable() {
+    renderSkuLifecycleTable('upcomingSkuTableBody', upcomingSkuData);
+    renderSkuLifecycleTable('runningSkuTableBody', runningSkuData);
+    renderSkuLifecycleTable('phasingOutSkuTableBody', phasingOutSkuData);
+}
+
+function renderSkuLifecycleTable(tbodyId, data) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    
+    tbody.innerHTML = data.map(item => `
+        <tr>
+            <td>${item.sku}</td>
+            <td><div class="image-placeholder">IMG</div></td>
+            <td>Active</td>
+            <td>${item.productName}</td>
+            <td>${item.category}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+        </tr>
+    `).join('');
+}
+
 // SKU Details 功能 - Stage 1 最小實作
 function renderSkuDetails() {
     // 渲染 Categories
@@ -654,3 +692,18 @@ window.addEventListener('DOMContentLoaded', () => {
     initWorldTimes(); // 初始化世界時間
     renderHomepage(); // 初始化 Homepage
 });
+// SKU Details 收合功能
+function toggleSection(sectionId) {
+    const section = document.querySelector(`[data-section="${sectionId}"]`);
+    const arrow = section.querySelector('.arrow');
+    
+    section.classList.toggle('is-collapsed');
+    
+    if (section.classList.contains('is-collapsed')) {
+        arrow.textContent = '▶';
+    } else {
+        arrow.textContent = '▼';
+    }
+}
+
+window.toggleSection = toggleSection;

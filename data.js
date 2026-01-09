@@ -219,6 +219,36 @@ const DataRepo = {
     }
 };
 
+// SKU Details 假資料 - 三個生命週期階段
+const upcomingSkuData = [
+    {
+        sku: "KM-UP-001",
+        productName: "Kitchen Mama Smart Opener",
+        category: "Kitchen Tools"
+    }
+];
+
+const runningSkuData = [
+    {
+        sku: "KM-001",
+        productName: "Kitchen Mama Can Opener",
+        category: "Kitchen Tools"
+    },
+    {
+        sku: "KM-002", 
+        productName: "Kitchen Mama Food Processor",
+        category: "Appliances"
+    }
+];
+
+const phasingOutSkuData = [
+    {
+        sku: "KM-OLD-003",
+        productName: "Kitchen Mama Classic Board",
+        category: "Kitchen Tools"
+    }
+];
+
 // Stage 1 SKU Details 資料 - 僅允許 sku, productName, category, createdAt
 const skus = [
     { sku: "A001", productName: "Can Opener Pro", category: "Can Opener", createdAt: "2024-01-01" },

@@ -141,7 +141,7 @@
                     <div class="left-section">
                         <!-- 公告區塊 -->
                         <div class="announcement-container">
-                            <div class="section-header">
+                            <div class="home-section-header">
                                 <h3>公告</h3>
                                 <span class="see-more">See More</span>
                             </div>
@@ -150,14 +150,18 @@
                         
                         <!-- Urgent Issue 區塊 -->
                         <div class="urgent-container">
-                            <h3>Urgent Issue</h3>
+                            <div class="home-section-header">
+                                <h3>Urgent Issue</h3>
+                            </div>
                             <div id="urgentIssuesList"></div>
                         </div>
                     </div>
                     
                     <!-- 右側 30%：個人提醒代辦 -->
                     <div class="todo-container">
-                        <h3>Personal Notes / To-do</h3>
+                        <div class="home-section-header">
+                            <h3>Personal Notes / To-do</h3>
+                        </div>
                         <div id="todoList" class="todo-list"></div>
                         <div class="todo-input">
                             <input type="text" id="todoInput" placeholder="輸入提醒事項..." onkeypress="handleTodoEnter(event)">
@@ -378,44 +382,115 @@
     <div id="skuDetailsSection">
         <h2>SKU Details</h2>
         
-        <div class="sku-details-layout">
-            <!-- 左側 Category 清單 -->
-            <div class="category-sidebar">
-                <h3>Categories</h3>
-                <ul id="categoryList">
-                    <!-- Stage 1: 本地 categories 陣列渲染 -->
-                </ul>
-            </div>
-            
-            <!-- 主區域 -->
-            <div class="sku-main-area">
-                <!-- 控制列 -->
-                <div class="sku-controls">
-                    <input type="text" id="skuSearchBox" placeholder="搜索 SKU..." oninput="filterSkus()">
-                    <div class="filter-dropdown">
-                        <button onclick="toggleFilterDropdown()">篩選 ▼</button>
-                        <div id="filterDropdown" class="dropdown-content">
-                            <label><input type="checkbox" value="Can Opener"> Can Opener</label>
-                            <label><input type="checkbox" value="Manual Opener"> Manual Opener</label>
-                        </div>
-                    </div>
-                    <button class="btn-secondary" onclick="showAddSkuModal()">新增 SKU</button>
-                </div>
-                
-                <!-- SKU 表格 -->
-                <table id="skuDetailsTable">
+        <!-- 統一滾動容器 -->
+        <div class="unified-table-wrap">
+            <!-- Upcoming SKU -->
+            <div class="sku-lifecycle-section" data-section="upcoming">
+                <h3 class="sku-section-header" onclick="toggleSection('upcoming')">
+                    <span class="arrow">▼</span> Upcoming SKU
+                </h3>
+                <table class="sku-details-table">
                     <thead>
                         <tr>
                             <th>SKU</th>
+                            <th>Image</th>
+                            <th>Status</th>
                             <th>Product Name</th>
                             <th>Category</th>
-                            <th>Stock</th>
-                            <th>Price</th>
-                            <th>Status</th>
+                            <th>GS1 Code</th>
+                            <th>GS1 Type</th>
+                            <th>AMZ ASIN</th>
+                            <th>Item Dimensions (LxWxH)</th>
+                            <th>Item Weight</th>
+                            <th>Package</th>
+                            <th>Package Weight</th>
+                            <th>Carton Dimensions</th>
+                            <th>Carton Weight</th>
+                            <th>單箱數量</th>
+                            <th>HScode</th>
+                            <th>申報價值</th>
+                            <th>Minimum Price</th>
+                            <th>MSRP</th>
+                            <th>Selling Price</th>
+                            <th>負責PM</th>
                         </tr>
                     </thead>
-                    <tbody id="skuDetailsBody">
-                        <!-- Stage 1: 僅顯示 sku/productName/category，其餘顯示 "—" -->
+                    <tbody id="upcomingSkuTableBody">
+                        <!-- 資料由 JS 渲染 -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Running in the Market -->
+            <div class="sku-lifecycle-section" data-section="running">
+                <h3 class="sku-section-header" onclick="toggleSection('running')">
+                    <span class="arrow">▼</span> Running in the Market
+                </h3>
+                <table class="sku-details-table">
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>Status</th>
+                            <th>Product Name</th>
+                            <th>SKU</th>
+                            <th>Category</th>
+                            <th>GS1 Code</th>
+                            <th>GS1 Type</th>
+                            <th>AMZ ASIN</th>
+                            <th>Item Dimensions (LxWxH)</th>
+                            <th>Item Weight</th>
+                            <th>Package</th>
+                            <th>Package Weight</th>
+                            <th>Carton Dimensions</th>
+                            <th>Carton Weight</th>
+                            <th>單箱數量</th>
+                            <th>HScode</th>
+                            <th>申報價值</th>
+                            <th>Minimum Price</th>
+                            <th>MSRP</th>
+                            <th>Selling Price</th>
+                            <th>負責PM</th>
+                        </tr>
+                    </thead>
+                    <tbody id="runningSkuTableBody">
+                        <!-- 資料由 JS 渲染 -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Phasing Out -->
+            <div class="sku-lifecycle-section" data-section="phasing">
+                <h3 class="sku-section-header" onclick="toggleSection('phasing')">
+                    <span class="arrow">▼</span> Phasing Out
+                </h3>
+                <table class="sku-details-table">
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>Status</th>
+                            <th>Product Name</th>
+                            <th>SKU</th>
+                            <th>Category</th>
+                            <th>GS1 Code</th>
+                            <th>GS1 Type</th>
+                            <th>AMZ ASIN</th>
+                            <th>Item Dimensions (LxWxH)</th>
+                            <th>Item Weight</th>
+                            <th>Package</th>
+                            <th>Package Weight</th>
+                            <th>Carton Dimensions</th>
+                            <th>Carton Weight</th>
+                            <th>單箱數量</th>
+                            <th>HScode</th>
+                            <th>申報價值</th>
+                            <th>Minimum Price</th>
+                            <th>MSRP</th>
+                            <th>Selling Price</th>
+                            <th>負責PM</th>
+                        </tr>
+                    </thead>
+                    <tbody id="phasingOutSkuTableBody">
+                        <!-- 資料由 JS 渲染 -->
                     </tbody>
                 </table>
             </div>

@@ -150,10 +150,15 @@
 }
 
 .section-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s ease;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+}
+
+.section-header:hover {
+    background: var(--bg-surface);
 }
 
 .section-header h3 {
@@ -260,10 +265,12 @@
     flex: 1;
     margin-left: 250px;
     background: white;
+    overflow-x: hidden;
 }
 
 .content-area {
     padding: 2rem;
+    overflow-x: hidden;
 }
 
 /* 世界時間列 - 移到內容區域內 */
@@ -288,6 +295,8 @@
     border-bottom: 1px solid #E2E8F0;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     position: relative;
+    width: 100vw;
+    min-width: 100vw;
 }
 
 .header-left {
@@ -604,33 +613,179 @@ table td button {
     flex: 1;
 }
 
-.sku-controls {
+/* 統一滾動容器 - 保持三個區塊 */
+.unified-table-wrap {
+    overflow-x: auto;
+    overflow-y: auto;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    background: var(--bg-primary);
+    max-height: 70vh;
+}
+
+.sku-lifecycle-section {
+    margin-bottom: var(--space-xl);
+    border-bottom: 2px solid var(--border-light);
+}
+
+.sku-lifecycle-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.sku-lifecycle-section h3 {
+    margin: 0;
+    padding: var(--space-md);
+    font-size: 1.2rem;
+    color: var(--text-primary);
+}
+
+.sku-section-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s ease;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 1rem;
+    width: 100%;
+    min-width: 2000px;
+    background: var(--cream-white);
+    border-bottom: 1px solid var(--border-light);
+    padding: var(--space-md);
+}
+
+.sku-section-header:hover {
+    background: var(--bg-surface);
+}
+
+.arrow {
+    margin-right: var(--space-xs);
+    transition: transform 0.2s ease;
+}
+
+.sku-lifecycle-section.is-collapsed .arrow {
+    transform: rotate(-90deg);
+}
+
+.sku-lifecycle-section.is-collapsed table {
+    display: none;
+}
+
+.unified-table-wrap .sku-details-table {
+    width: 100%;
+    min-width: 2000px;
+    border-collapse: collapse;
+    margin-bottom: 0;
+    table-layout: fixed;
+}
+
+.unified-table-wrap .sku-details-table th {
+    background: var(--soft-green);
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.unified-table-wrap .sku-details-table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: var(--space-sm);
+}
+
+.unified-table-wrap .sku-details-table th:nth-child(1) { width: 80px; }
+.unified-table-wrap .sku-details-table th:nth-child(2) { width: 80px; }
+.unified-table-wrap .sku-details-table th:nth-child(3) { width: 150px; }
+.unified-table-wrap .sku-details-table th:nth-child(4) { width: 120px; }
+.unified-table-wrap .sku-details-table th:nth-child(5) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(6) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(7) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(8) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(9) { width: 180px; }
+.unified-table-wrap .sku-details-table th:nth-child(10) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(11) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(12) { width: 120px; }
+.unified-table-wrap .sku-details-table th:nth-child(13) { width: 150px; }
+.unified-table-wrap .sku-details-table th:nth-child(14) { width: 120px; }
+.unified-table-wrap .sku-details-table th:nth-child(15) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(16) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(17) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(18) { width: 120px; }
+.unified-table-wrap .sku-details-table th:nth-child(19) { width: 100px; }
+.unified-table-wrap .sku-details-table th:nth-child(20) { width: 120px; }
+.unified-table-wrap .sku-details-table th:nth-child(21) { width: 100px; }
+
+.unified-table-wrap .sku-details-table th:first-child,
+.unified-table-wrap .sku-details-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--bg-primary);
+    z-index: 3;
+    border-right: 2px solid var(--border-light);
+}
+
+.unified-table-wrap .sku-details-table th:first-child {
+    background: var(--soft-green);
+    color: white;
+}
+
+/* SKU Details 表格樣式 */
+.sku-details-table {
+    width: 100%;
+    min-width: 2000px;
+    table-layout: auto;
+    border-collapse: collapse;
     background: white;
-    border-radius: 8px;
-    box-shadow: var(--shadow-soft);
-    margin-bottom: 1rem;
 }
 
-.sku-search {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
+.sku-details-table th {
+    background: var(--soft-green);
+    color: white;
+    padding: var(--space-md);
+    text-align: left;
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    min-width: 120px;
 }
 
-.sku-search input {
-    padding: 0.5rem;
-    border: 1px solid #E2E8F0;
-    border-radius: 4px;
-    min-width: 200px;
+/* 凍結 SKU 欄位（第4欄） */
+.sku-details-table th:nth-child(4),
+.sku-details-table td:nth-child(4) {
+    position: sticky;
+    left: 0;
+    background: white;
+    z-index: 10;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
 }
 
-.sku-actions {
-    display: flex;
-    gap: 0.5rem;
+.sku-details-table th:nth-child(4) {
+    background: var(--soft-green);
+    z-index: 11;
+}
+
+.sku-details-table td {
+    padding: var(--space-md);
+    border-bottom: 1px solid var(--border-light);
+    white-space: nowrap;
+}
+
+.sku-details-table tr:hover {
+    background: var(--bg-surface);
+}
+
+.sku-details-table tr:hover td:nth-child(4) {
+    background: var(--bg-surface);
+}
+
+.table-wrap {
+    overflow-x: auto;
+    margin-top: var(--space-lg);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    max-width: 100%;
 }
 
 
@@ -760,4 +915,26 @@ table td button {
 .row-gap {
     gap: var(--space-lg);
     margin: var(--space-xl) 0;
+}
+.image-placeholder {
+    width: 40px;
+    height: 40px;
+    background: #E2E8F0;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+.home-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.home-section-header h3 {
+    margin: 0;
+    color: var(--text-dark);
 }
