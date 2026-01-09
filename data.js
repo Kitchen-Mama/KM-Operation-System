@@ -191,6 +191,14 @@ const DataRepo = {
     
     getCategories() {
         return categories;
+    },
+    
+    getEvents() {
+        return events;
+    },
+    
+    getGoalData() {
+        return goalData;
     }
 };
 
@@ -203,6 +211,19 @@ const skus = [
 
 // Categories 陣列
 const categories = ["Can Opener", "Manual Opener", "Kitchen Tools"];
+
+// Homepage 資料 - Stage 1
+const events = [
+    { name: "Black Friday Sale", startDate: "2024-11-29", endDate: "2024-12-02", content: "All products 30% off" },
+    { name: "Holiday Campaign", startDate: "2024-12-15", endDate: "2024-12-31", content: "Gift bundle promotion" },
+    { name: "New Year Launch", startDate: "2025-01-01", endDate: "2025-01-15", content: "New product series" }
+];
+
+const goalData = {
+    year: 2026,
+    goalAmount: 5000000,
+    salesAmount: 4200000
+};
 
 // 保留舊函式以維持相容性
 function findItemBySku(sku) {

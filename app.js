@@ -2,6 +2,45 @@
 // import { db } from './firebase-config.js';
 // import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
+// Homepage 渲染函式 - Stage 1
+function renderHomepage() {
+    renderEvents();
+    renderGoal();
+}
+
+function renderEvents() {
+    const events = window.DataRepo.getEvents();
+    const eventsList = document.getElementById('eventsList');
+    
+    eventsList.innerHTML = events.map(event => `
+        <div class="event-card">
+            <div class="event-row">
+                <span class="event-label">活動名稱</span>
+                <span>${event.name}</span>
+            </div>
+            <div class="event-row">
+                <span class="event-label">活動期間</span>
+                <span>${event.startDate}~${event.endDate}</span>
+            </div>
+            <div class="event-row">
+                <span class="event-label">Content</span>
+                <span>${event.content}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderGoal() {
+    const goal = window.DataRepo.getGoalData();
+    const achievementRate = Math.round((goal.salesAmount / goal.goalAmount) * 100);
+    
+    document.getElementById('goalYear').textContent = `${goal.year} Goal`;
+    document.getElementById('achievementRate').textContent = `${achievementRate}%`;
+    document.getElementById('goalAmount').textContent = `Goal: $${goal.goalAmount.toLocaleString()}`;
+    document.getElementById('salesAmount').textContent = `Sales: $${goal.salesAmount.toLocaleString()}`;
+    document.getElementById('progressFill').style.width = `${achievementRate}%`;
+}
+
 // 回首頁函式
 function showHome() {
     document.getElementById('home-section').style.display = 'block';
@@ -542,4 +581,5 @@ window.DataRepo = DataRepo;
 window.addEventListener('DOMContentLoaded', () => {
     renderRecords();
     initWorldTimes(); // 初始化世界時間
+    renderHomepage(); // 初始化 Homepage
 });
