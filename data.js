@@ -183,8 +183,26 @@ const DataRepo = {
         } else {
             console.log('Plan not found for removal!');
         }
+    },
+    
+    getSkus() {
+        return skus;
+    },
+    
+    getCategories() {
+        return categories;
     }
 };
+
+// Stage 1 SKU Details 資料 - 僅允許 sku, productName, category, createdAt
+const skus = [
+    { sku: "A001", productName: "Can Opener Pro", category: "Can Opener", createdAt: "2024-01-01" },
+    { sku: "B002", productName: "Manual Opener Basic", category: "Manual Opener", createdAt: "2024-01-02" },
+    { sku: "C003", productName: "Kitchen Tool Set", category: "Kitchen Tools", createdAt: "2024-01-03" }
+];
+
+// Categories 陣列
+const categories = ["Can Opener", "Manual Opener", "Kitchen Tools"];
 
 // 保留舊函式以維持相容性
 function findItemBySku(sku) {

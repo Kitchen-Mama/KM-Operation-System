@@ -8,18 +8,51 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <header class="header">
-        <img src="KM_Red_LOGO (5).png" alt="Kitchen Mama" style="max-width: 180px;">
-        <h1>供應鏈管理系統</h1>
+    <!-- 新 Header 列 - Stage 1 結構宣告 -->
+    <header class="top-header">
+        <div class="header-left">
+            <div class="logo-text"><img src="KM_Red_LOGO (5).png" alt="Kitchen Mama" style="max-width: 100px;"></div>
+        </div>
+        <div class="header-right">
+            <span class="notification-bell">🔔</span>
+            <span class="user-info">admin@kitchenmama.com | Admin</span>
+        </div>
     </header>
-    <section class="hero">
-        <nav class="nav-cards">
-            <button class="btn-primary" onclick="showSection('restock')">補貨試算器</button>
-            <button class="btn-primary" onclick="showSection('ops')">貨物庫存表</button>
-            <button class="btn-primary" onclick="showSection('forecast')">Forecast 管理</button>
-            <button class="btn-primary" onclick="showSection('shipment')">Weekly Shipping Plans</button>
+    
+    <!-- 世界時間列 - Stage 1 最小可運作 -->
+    <div class="world-time-bar">
+        <div class="time-zone" id="time-world">世界時間</div>
+        <div class="time-zone" id="time-AU">AU: --:--</div>
+        <div class="time-zone" id="time-JP">JP: --:--</div>
+        <div class="time-zone" id="time-DE">DE: --:--</div>
+        <div class="time-zone" id="time-UK">UK: --:--</div>
+        <div class="time-zone" id="time-US-East">US-E: --:--</div>
+        <div class="time-zone" id="time-US-Middle">US-M: --:--</div>
+        <div class="time-zone" id="time-US-West">US-W: --:--</div>
+    </div>
+    
+    <div class="main-layout">
+        <!-- 左側選單 -->
+        <nav class="sidebar">
+            <div class="menu-item" onclick="showSection('restock')">
+                <span>📊</span> 補貨試算器
+            </div>
+            <div class="menu-item" onclick="showSection('ops')">
+                <span>📦</span> 貨物庫存表
+            </div>
+            <div class="menu-item" onclick="showSection('forecast')">
+                <span>📈</span> Forecast 管理
+            </div>
+            <div class="menu-item" onclick="showSection('shipment')">
+                <span>🚚</span> Weekly Shipping Plans
+            </div>
+            <div class="menu-item" onclick="showSection('skuDetails')">
+                <span>📝</span> SKU Details
+            </div>
         </nav>
-    </section>
+        
+        <!-- 主內容區域 -->
+        <main class="content-area">
     
     <div id="restockSection">
         <h2>補貨數量試算器</h2>
@@ -213,6 +246,78 @@
             </thead>
             <tbody id="doneTableBody"></tbody>
         </table>
+    </div>
+    
+    <!-- SKU Details 區塊 - Stage 1 結構宣告 -->
+    <div id="skuDetailsSection" style="display: none;">
+        <h2>SKU Details</h2>
+        
+        <div class="sku-details-layout">
+            <!-- 左側 Category 清單 -->
+            <div class="category-sidebar">
+                <h3>Categories</h3>
+                <ul id="categoryList">
+                    <!-- Stage 1: 本地 categories 陣列渲染 -->
+                </ul>
+            </div>
+            
+            <!-- 主區域 -->
+            <div class="sku-main-area">
+                <!-- 控制列 -->
+                <div class="sku-controls">
+                    <input type="text" id="skuSearchBox" placeholder="搜索 SKU..." oninput="filterSkus()">
+                    <div class="filter-dropdown">
+                        <button onclick="toggleFilterDropdown()">篩選 ▼</button>
+                        </div>
+                    </div>
+                    <button class="btn-secondary" onclick="showAddSkuModal()">新增 SKU</button>
+                </div>
+                
+                <!-- SKU 表格 -->
+                <table id="skuDetailsTable">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Product Name</th>
+                            <th>Category</th>
+                            <th>Stock</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="skuDetailsBody">
+                        <!-- Stage 1: 僅顯示 sku/productName/category，其餘顯示 "—" -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+        </main>
+    </div>"Can Opener"> Can Opener</label>
+                            <label><input type="checkbox" value="Manual Opener"> Manual Opener</label>
+                        </div>
+                    </div>
+                    <button class="btn-secondary" onclick="showAddSkuModal()">新增 SKU</button>
+                </div>
+                
+                <!-- SKU 表格 -->
+                <table id="skuDetailsTable">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Product Name</th>
+                            <th>Category</th>
+                            <th>Stock</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="skuDetailsBody">
+                        <!-- Stage 1: 僅顯示 sku/productName/category，其餘顯示 "—" -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
     
     <script src="data.js"></script>

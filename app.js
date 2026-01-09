@@ -4,16 +4,25 @@
 
 // 區塊切換函式
 function showSection(section) {
+    // 隱藏所有區塊
     document.getElementById('restockSection').style.display = section === 'restock' ? 'block' : 'none';
     document.getElementById('opsSection').style.display = section === 'ops' ? 'block' : 'none';
     document.getElementById('forecastSection').style.display = section === 'forecast' ? 'block' : 'none';
     document.getElementById('shipmentSection').style.display = section === 'shipment' ? 'block' : 'none';
+    document.getElementById('skuDetailsSection').style.display = section === 'skuDetails' ? 'block' : 'none';
+    
+    // 更新選單狀態
+    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+    event.target.closest('.menu-item').classList.add('active');
     
     if (section === 'forecast') {
         renderForecastChart();
     }
     if (section === 'shipment') {
         renderWeeklyShippingPlans();
+    }
+    if (section === 'skuDetails') {
+        renderSkuDetails();
     }
 }
 
@@ -385,6 +394,94 @@ function undoFromPlanning(planId) {
     renderWeeklyShippingPlans();
 }
 
+// 世界時間功能 - Stage 1 最小實作
+const timeZones = {
+    'AU': 'Australia/Sydney',
+    'JP': 'Asia/Tokyo', 
+    'DE': 'Europe/Berlin',
+    'UK': 'Europe/London',
+    'US-East': 'America/New_York',
+    'US-Middle': 'America/Chicago',
+    'US-West': 'America/Los_Angeles'
+};
+
+function updateWorldTimes() {
+    Object.keys(timeZones).forEach(zone => {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('en-GB', {
+            timeZone: timeZones[zone],
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        document.getElementById(`time-${zone}`).textContent = `${zone}: ${timeString}`;
+    });
+}
+
+// 初始化時間顯示並設定定時器
+function initWorldTimes() {
+    updateWorldTimes();
+    setInterval(updateWorldTimes, 60000); // 每 60 秒更新
+}
+
+// SKU Details 功能 - Stage 1 最小實作
+function renderSkuDetails() {
+    // 渲染 Categories
+    const categoryList = document.getElementById('categoryList');
+    const categories = window.DataRepo.getCategories();
+    categoryList.innerHTML = categories.map(cat => 
+        `<li onclick="filterByCategory('${cat}')">${cat}</li>`
+    ).join('');
+    
+    // 渲染 SKU 表格
+    renderSkuTable();
+}
+
+function renderSkuTable() {
+    const skus = window.DataRepo.getSkus();
+    const tbody = document.getElementById('skuDetailsBody');
+    
+    tbody.innerHTML = skus.map(sku => `
+        <tr>
+            <td>${sku.sku}</td>
+            <td>${sku.productName}</td>
+            <td>${sku.category}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+        </tr>
+    `).join('');
+}
+
+function filterSkus() {
+    // Stage 1: 前端即時 filter
+    const searchTerm = document.getElementById('skuSearchBox').value.toLowerCase();
+    const rows = document.querySelectorAll('#skuDetailsBody tr');
+    
+    rows.forEach(row => {
+        const sku = row.cells[0].textContent.toLowerCase();
+        row.style.display = sku.includes(searchTerm) ? '' : 'none';
+    });
+}
+
+function toggleFilterDropdown() {
+    const dropdown = document.getElementById('filterDropdown');
+    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+}
+
+function filterByCategory(category) {
+    const rows = document.querySelectorAll('#skuDetailsBody tr');
+    rows.forEach(row => {
+        const rowCategory = row.cells[2].textContent;
+        row.style.display = rowCategory === category ? '' : 'none';
+    });
+}
+
+function showAddSkuModal() {
+    // Stage 1: placeholder modal
+    alert('新增 SKU 功能 - Stage 1 placeholder');
+}
+
 // 暴露函式到全域供 HTML 使用
 window.showSection = showSection;
 window.clearOpsTable = clearOpsTable;
@@ -404,7 +501,8 @@ window.undoFromPlanning = undoFromPlanning;
 window.renderWeeklyShippingPlans = renderWeeklyShippingPlans;
 window.DataRepo = DataRepo;
 
-// 初始化時載入紀錄
+// 初始化時載入紀錄和世界時間
 window.addEventListener('DOMContentLoaded', () => {
     renderRecords();
+    initWorldTimes(); // 初始化世界時間
 });
