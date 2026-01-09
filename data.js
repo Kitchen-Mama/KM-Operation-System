@@ -199,6 +199,23 @@ const DataRepo = {
     
     getGoalData() {
         return goalData;
+    },
+    
+    getAnnouncements() {
+        return announcements;
+    },
+    
+    getUrgentIssues() {
+        return urgentIssues;
+    },
+    
+    getPersonalTodos() {
+        return personalTodos;
+    },
+    
+    addPersonalTodo(todo) {
+        personalTodos.push({ id: Date.now(), text: todo, createdAt: new Date().toISOString() });
+        localStorage.setItem('personalTodos', JSON.stringify(personalTodos));
     }
 };
 
@@ -224,6 +241,22 @@ const goalData = {
     goalAmount: 5000000,
     salesAmount: 4200000
 };
+
+// Homepage Row 2 資料 - Stage 1
+const announcements = [
+    { title: "Q4 銷售目標更新", time: "2024-12-20 14:30" },
+    { title: "新產品上市時程", time: "2024-12-19 09:15" },
+    { title: "年終庫存盤點通知", time: "2024-12-18 16:45" }
+];
+
+const urgentIssues = [
+    { title: "Amazon 庫存不足警告", severity: "high" },
+    { title: "Shopify 系統異常", severity: "medium" },
+    { title: "運輸延遲通知", severity: "low" }
+];
+
+// 個人提醒代辦 - 使用 localStorage
+let personalTodos = JSON.parse(localStorage.getItem('personalTodos')) || [];
 
 // 保留舊函式以維持相容性
 function findItemBySku(sku) {

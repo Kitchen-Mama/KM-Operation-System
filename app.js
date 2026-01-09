@@ -6,6 +6,62 @@
 function renderHomepage() {
     renderEvents();
     renderGoal();
+    renderRow2();
+}
+
+function renderRow2() {
+    renderAnnouncements();
+    renderUrgentIssues();
+    renderPersonalTodos();
+}
+
+function renderAnnouncements() {
+    const announcements = window.DataRepo.getAnnouncements();
+    const announcementsList = document.getElementById('announcementsList');
+    
+    announcementsList.innerHTML = announcements.map(item => `
+        <div class="announcement-item">
+            <div class="item-title">${item.title}</div>
+            <div class="item-time">${item.time}</div>
+        </div>
+    `).join('');
+}
+
+function renderUrgentIssues() {
+    const urgentIssues = window.DataRepo.getUrgentIssues();
+    const urgentIssuesList = document.getElementById('urgentIssuesList');
+    
+    urgentIssuesList.innerHTML = urgentIssues.map(item => `
+        <div class="urgent-item">
+            <div class="item-title">${item.title}</div>
+        </div>
+    `).join('');
+}
+
+function renderPersonalTodos() {
+    const todos = window.DataRepo.getPersonalTodos();
+    const todoList = document.getElementById('todoList');
+    
+    todoList.innerHTML = todos.map(todo => `
+        <div class="todo-item">${todo.text}</div>
+    `).join('');
+}
+
+function addTodo() {
+    const input = document.getElementById('todoInput');
+    const todoText = input.value.trim();
+    
+    if (todoText) {
+        window.DataRepo.addPersonalTodo(todoText);
+        input.value = '';
+        renderPersonalTodos();
+    }
+}
+
+function handleTodoEnter(event) {
+    if (event.key === 'Enter') {
+        addTodo();
+    }
 }
 
 function renderEvents() {
@@ -39,6 +95,7 @@ function renderGoal() {
     document.getElementById('goalAmount').textContent = `Goal: $${goal.goalAmount.toLocaleString()}`;
     document.getElementById('salesAmount').textContent = `Sales: $${goal.salesAmount.toLocaleString()}`;
     document.getElementById('progressFill').style.width = `${achievementRate}%`;
+    document.getElementById('progressText').textContent = `${achievementRate}%`;
 }
 
 // 回首頁函式
@@ -452,7 +509,7 @@ function undoFromPlanning(planId) {
     renderWeeklyShippingPlans();
 }
 
-// 世界時間功能 - Stage 1 國家時間卡片
+// 世界時間功能 - Stage 1 四格布局
 const timeZones = {
     'AU': { timezone: 'Australia/Sydney', name: 'Australia' },
     'JP': { timezone: 'Asia/Tokyo', name: 'Japan' },
@@ -476,6 +533,8 @@ function getTimezoneOffset(timezone) {
 function updateWorldTimes() {
     Object.keys(timeZones).forEach(zone => {
         const now = new Date();
+        
+        // 獲取當地時間
         const timeString = now.toLocaleTimeString('en-GB', {
             timeZone: timeZones[zone].timezone,
             hour12: false,
@@ -483,12 +542,22 @@ function updateWorldTimes() {
             minute: '2-digit'
         });
         
+        // 獲取當地日期
+        const dateString = now.toLocaleDateString('en-CA', {
+            timeZone: timeZones[zone].timezone,
+            year: '2-digit',
+            month: '2-digit',
+            day: '2-digit'
+        }).replace(/-/g, '/');
+        
+        // 獲取 TP 時區偏移
         const offsetString = getTimezoneOffset(timeZones[zone].timezone);
         
         const card = document.getElementById(`card-${zone}`);
         if (card) {
             card.querySelector('.timezone-offset').textContent = offsetString;
             card.querySelector('.local-time').textContent = timeString;
+            card.querySelector('.local-date').textContent = dateString;
         }
     });
 }
@@ -560,6 +629,8 @@ function showAddSkuModal() {
 // 暴露函式到全域供 HTML 使用
 window.showHome = showHome;
 window.showSection = showSection;
+window.addTodo = addTodo;
+window.handleTodoEnter = handleTodoEnter;
 window.clearOpsTable = clearOpsTable;
 window.renderOpsView = renderOpsView;
 window.showForecast = showForecast;

@@ -19,61 +19,7 @@
         </div>
     </header>
     
-    <!-- 世界時間列 - Stage 1 國家時間卡片 -->
-    <div class="world-time-bar">
-        <div class="world-heading">世界時間</div>
-        <div class="time-card" id="card-AU">
-            <div class="country-name">AU</div>
-            <div class="time-info">
-                <div class="timezone-offset">TP+0</div>
-                <div class="local-time">--:--</div>
-            </div>
-        </div>
-        <div class="time-card" id="card-JP">
-            <div class="country-name">JP</div>
-            <div class="time-info">
-                <div class="timezone-offset">TP+0</div>
-                <div class="local-time">--:--</div>
-            </div>
-        </div>
-        <div class="time-card" id="card-DE">
-            <div class="country-name">DE</div>
-            <div class="time-info">
-                <div class="timezone-offset">TP+0</div>
-                <div class="local-time">--:--</div>
-            </div>
-        </div>
-        <div class="time-card" id="card-UK">
-            <div class="country-name">UK</div>
-            <div class="time-info">
-                <div class="timezone-offset">TP+0</div>
-                <div class="local-time">--:--</div>
-            </div>
-        </div>
-        <div class="time-card" id="card-US-East">
-            <div class="country-name">US East</div>
-            <div class="time-info">
-                <div class="timezone-offset">TP+0</div>
-                <div class="local-time">--:--</div>
-            </div>
-        </div>
-        <div class="time-card" id="card-US-Middle">
-            <div class="country-name">US Central</div>
-            <div class="time-info">
-                <div class="timezone-offset">TP+0</div>
-                <div class="local-time">--:--</div>
-            </div>
-        </div>
-        <div class="time-card" id="card-US-West">
-            <div class="country-name">US West</div>
-            <div class="time-info">
-                <div class="timezone-offset">TP+0</div>
-                <div class="local-time">--:--</div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="main-layout">
+    <div class="app-layout">
         <!-- 左側選單 -->
         <nav class="sidebar">
             <div class="menu-item" onclick="showSection('restock')">
@@ -93,8 +39,71 @@
             </div>
         </nav>
         
-        <!-- 主內容區域 -->
-        <main class="content-area">
+        <!-- 右側內容區域 -->
+        <div class="main-content">
+            <!-- 世界時間列 - 四格布局 -->
+            <div class="world-time-bar">
+                <div class="world-heading">世界時間</div>
+                <div class="time-card" id="card-AU">
+                    <div class="time-grid">
+                        <div class="country-code">AU</div>
+                        <div class="local-date">--/--/--</div>
+                        <div class="timezone-offset">TP+0</div>
+                        <div class="local-time">--:--</div>
+                    </div>
+                </div>
+                <div class="time-card" id="card-JP">
+                    <div class="time-grid">
+                        <div class="country-code">JP</div>
+                        <div class="local-date">--/--/--</div>
+                        <div class="timezone-offset">TP+0</div>
+                        <div class="local-time">--:--</div>
+                    </div>
+                </div>
+                <div class="time-card" id="card-DE">
+                    <div class="time-grid">
+                        <div class="country-code">DE</div>
+                        <div class="local-date">--/--/--</div>
+                        <div class="timezone-offset">TP+0</div>
+                        <div class="local-time">--:--</div>
+                    </div>
+                </div>
+                <div class="time-card" id="card-UK">
+                    <div class="time-grid">
+                        <div class="country-code">UK</div>
+                        <div class="local-date">--/--/--</div>
+                        <div class="timezone-offset">TP+0</div>
+                        <div class="local-time">--:--</div>
+                    </div>
+                </div>
+                <div class="time-card" id="card-US-East">
+                    <div class="time-grid">
+                        <div class="country-code">US-E</div>
+                        <div class="local-date">--/--/--</div>
+                        <div class="timezone-offset">TP+0</div>
+                        <div class="local-time">--:--</div>
+                    </div>
+                </div>
+                <div class="time-card" id="card-US-Middle">
+                    <div class="time-grid">
+                        <div class="country-code">US-M</div>
+                        <div class="local-date">--/--/--</div>
+                        <div class="timezone-offset">TP+0</div>
+                        <div class="local-time">--:--</div>
+                    </div>
+                </div>
+                <div class="time-card" id="card-US-West">
+                    <div class="time-grid">
+                        <div class="country-code">US-W</div>
+                        <div class="local-date">--/--/--</div>
+                        <div class="timezone-offset">TP+0</div>
+                        <div class="local-time">--:--</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 主內容區域 -->
+            <main class="content-area">
             <!-- Homepage Section -->
             <section id="home-section">
                 <h1>歡迎使用 Kitchen Mama 供應鏈管理系統</h1>
@@ -121,6 +130,38 @@
                         </div>
                         <div class="progress-bar">
                             <div class="progress-fill" id="progressFill"></div>
+                            <div class="progress-text" id="progressText">0%</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Row 2: 公告/警訊/個人提醒 -->
+                <div class="home-row-2">
+                    <!-- 左側 70%：公告 + Urgent Issue -->
+                    <div class="left-section">
+                        <!-- 公告區塊 -->
+                        <div class="announcement-container">
+                            <div class="section-header">
+                                <h3>公告</h3>
+                                <span class="see-more">See More</span>
+                            </div>
+                            <div id="announcementsList"></div>
+                        </div>
+                        
+                        <!-- Urgent Issue 區塊 -->
+                        <div class="urgent-container">
+                            <h3>Urgent Issue</h3>
+                            <div id="urgentIssuesList"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- 右側 30%：個人提醒代辦 -->
+                    <div class="todo-container">
+                        <h3>Personal Notes / To-do</h3>
+                        <div id="todoList" class="todo-list"></div>
+                        <div class="todo-input">
+                            <input type="text" id="todoInput" placeholder="輸入提醒事項..." onkeypress="handleTodoEnter(event)">
+                            <button onclick="addTodo()">Add</button>
                         </div>
                     </div>
                 </div>
@@ -353,6 +394,9 @@
                     <input type="text" id="skuSearchBox" placeholder="搜索 SKU..." oninput="filterSkus()">
                     <div class="filter-dropdown">
                         <button onclick="toggleFilterDropdown()">篩選 ▼</button>
+                        <div id="filterDropdown" class="dropdown-content">
+                            <label><input type="checkbox" value="Can Opener"> Can Opener</label>
+                            <label><input type="checkbox" value="Manual Opener"> Manual Opener</label>
                         </div>
                     </div>
                     <button class="btn-secondary" onclick="showAddSkuModal()">新增 SKU</button>
@@ -378,31 +422,7 @@
         </div>
     </div>
             </section>
-        </main>
-    </div>"Can Opener"> Can Opener</label>
-                            <label><input type="checkbox" value="Manual Opener"> Manual Opener</label>
-                        </div>
-                    </div>
-                    <button class="btn-secondary" onclick="showAddSkuModal()">新增 SKU</button>
-                </div>
-                
-                <!-- SKU 表格 -->
-                <table id="skuDetailsTable">
-                    <thead>
-                        <tr>
-                            <th>SKU</th>
-                            <th>Product Name</th>
-                            <th>Category</th>
-                            <th>Stock</th>
-                            <th>Price</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="skuDetailsBody">
-                        <!-- Stage 1: 僅顯示 sku/productName/category，其餘顯示 "—" -->
-                    </tbody>
-                </table>
-            </div>
+            </main>
         </div>
     </div>
     
