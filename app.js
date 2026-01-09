@@ -2,18 +2,37 @@
 // import { db } from './firebase-config.js';
 // import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
+// 回首頁函式
+function showHome() {
+    document.getElementById('home-section').style.display = 'block';
+    document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
+    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+}
+
 // 區塊切換函式
 function showSection(section) {
     // 隱藏所有區塊
-    document.getElementById('restockSection').style.display = section === 'restock' ? 'block' : 'none';
-    document.getElementById('opsSection').style.display = section === 'ops' ? 'block' : 'none';
-    document.getElementById('forecastSection').style.display = section === 'forecast' ? 'block' : 'none';
-    document.getElementById('shipmentSection').style.display = section === 'shipment' ? 'block' : 'none';
-    document.getElementById('skuDetailsSection').style.display = section === 'skuDetails' ? 'block' : 'none';
+    document.getElementById('home-section').style.display = 'none';
+    document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
+    
+    // 顯示選擇的區塊
+    const sectionMap = {
+        'restock': 'replenishment-section',
+        'ops': 'ops-section', 
+        'forecast': 'forecast-section',
+        'shipment': 'shipment-section',
+        'skuDetails': 'sku-section'
+    };
+    
+    if (sectionMap[section]) {
+        document.getElementById(sectionMap[section]).classList.add('active');
+    }
     
     // 更新選單狀態
     document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
-    event.target.closest('.menu-item').classList.add('active');
+    if (event && event.target) {
+        event.target.closest('.menu-item').classList.add('active');
+    }
     
     if (section === 'forecast') {
         renderForecastChart();
@@ -394,27 +413,44 @@ function undoFromPlanning(planId) {
     renderWeeklyShippingPlans();
 }
 
-// 世界時間功能 - Stage 1 最小實作
+// 世界時間功能 - Stage 1 國家時間卡片
 const timeZones = {
-    'AU': 'Australia/Sydney',
-    'JP': 'Asia/Tokyo', 
-    'DE': 'Europe/Berlin',
-    'UK': 'Europe/London',
-    'US-East': 'America/New_York',
-    'US-Middle': 'America/Chicago',
-    'US-West': 'America/Los_Angeles'
+    'AU': { timezone: 'Australia/Sydney', name: 'Australia' },
+    'JP': { timezone: 'Asia/Tokyo', name: 'Japan' },
+    'DE': { timezone: 'Europe/Berlin', name: 'Germany' },
+    'UK': { timezone: 'Europe/London', name: 'UK' },
+    'US-East': { timezone: 'America/New_York', name: 'US East' },
+    'US-Middle': { timezone: 'America/Chicago', name: 'US Central' },
+    'US-West': { timezone: 'America/Los_Angeles', name: 'US West' }
 };
+
+const TP_TIMEZONE = 'Asia/Taipei';
+
+function getTimezoneOffset(timezone) {
+    const now = new Date();
+    const tpTime = new Date(now.toLocaleString('en-US', { timeZone: TP_TIMEZONE }));
+    const targetTime = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+    const offsetHours = Math.round((targetTime - tpTime) / (1000 * 60 * 60));
+    return offsetHours >= 0 ? `TP+${offsetHours}` : `TP${offsetHours}`;
+}
 
 function updateWorldTimes() {
     Object.keys(timeZones).forEach(zone => {
         const now = new Date();
         const timeString = now.toLocaleTimeString('en-GB', {
-            timeZone: timeZones[zone],
+            timeZone: timeZones[zone].timezone,
             hour12: false,
             hour: '2-digit',
             minute: '2-digit'
         });
-        document.getElementById(`time-${zone}`).textContent = `${zone}: ${timeString}`;
+        
+        const offsetString = getTimezoneOffset(timeZones[zone].timezone);
+        
+        const card = document.getElementById(`card-${zone}`);
+        if (card) {
+            card.querySelector('.timezone-offset').textContent = offsetString;
+            card.querySelector('.local-time').textContent = timeString;
+        }
     });
 }
 
@@ -483,6 +519,7 @@ function showAddSkuModal() {
 }
 
 // 暴露函式到全域供 HTML 使用
+window.showHome = showHome;
 window.showSection = showSection;
 window.clearOpsTable = clearOpsTable;
 window.renderOpsView = renderOpsView;

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>補貨數量試算器</title>
+    <title>Kitchen Mama Operation System</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
@@ -11,7 +11,7 @@
     <!-- 新 Header 列 - Stage 1 結構宣告 -->
     <header class="top-header">
         <div class="header-left">
-            <div class="logo-text"><img src="KM_Red_LOGO (5).png" alt="Kitchen Mama" style="max-width: 100px;"></div>
+            <div class="logo-text" onclick="showHome()" style="cursor: pointer;"><img src="KM_Red_LOGO (5).png" alt="Kitchen Mama" style="max-width: 150px;"></div>
         </div>
         <div class="header-right">
             <span class="notification-bell">🔔</span>
@@ -19,16 +19,58 @@
         </div>
     </header>
     
-    <!-- 世界時間列 - Stage 1 最小可運作 -->
+    <!-- 世界時間列 - Stage 1 國家時間卡片 -->
     <div class="world-time-bar">
-        <div class="time-zone" id="time-world">世界時間</div>
-        <div class="time-zone" id="time-AU">AU: --:--</div>
-        <div class="time-zone" id="time-JP">JP: --:--</div>
-        <div class="time-zone" id="time-DE">DE: --:--</div>
-        <div class="time-zone" id="time-UK">UK: --:--</div>
-        <div class="time-zone" id="time-US-East">US-E: --:--</div>
-        <div class="time-zone" id="time-US-Middle">US-M: --:--</div>
-        <div class="time-zone" id="time-US-West">US-W: --:--</div>
+        <div class="world-heading">世界時間</div>
+        <div class="time-card" id="card-AU">
+            <div class="country-name">AU</div>
+            <div class="time-info">
+                <div class="timezone-offset">TP+0</div>
+                <div class="local-time">--:--</div>
+            </div>
+        </div>
+        <div class="time-card" id="card-JP">
+            <div class="country-name">JP</div>
+            <div class="time-info">
+                <div class="timezone-offset">TP+0</div>
+                <div class="local-time">--:--</div>
+            </div>
+        </div>
+        <div class="time-card" id="card-DE">
+            <div class="country-name">DE</div>
+            <div class="time-info">
+                <div class="timezone-offset">TP+0</div>
+                <div class="local-time">--:--</div>
+            </div>
+        </div>
+        <div class="time-card" id="card-UK">
+            <div class="country-name">UK</div>
+            <div class="time-info">
+                <div class="timezone-offset">TP+0</div>
+                <div class="local-time">--:--</div>
+            </div>
+        </div>
+        <div class="time-card" id="card-US-East">
+            <div class="country-name">US East</div>
+            <div class="time-info">
+                <div class="timezone-offset">TP+0</div>
+                <div class="local-time">--:--</div>
+            </div>
+        </div>
+        <div class="time-card" id="card-US-Middle">
+            <div class="country-name">US Central</div>
+            <div class="time-info">
+                <div class="timezone-offset">TP+0</div>
+                <div class="local-time">--:--</div>
+            </div>
+        </div>
+        <div class="time-card" id="card-US-West">
+            <div class="country-name">US West</div>
+            <div class="time-info">
+                <div class="timezone-offset">TP+0</div>
+                <div class="local-time">--:--</div>
+            </div>
+        </div>
     </div>
     
     <div class="main-layout">
@@ -53,7 +95,14 @@
         
         <!-- 主內容區域 -->
         <main class="content-area">
-    
+            <!-- Homepage Section -->
+            <section id="home-section">
+                <h1>歡迎使用 Kitchen Mama 供應鏈管理系統</h1>
+                <p>請從左側選單選擇功能模組</p>
+            </section>
+            
+            <!-- 補貨試算器 Section -->
+            <section id="replenishment-section" class="module-section">
     <div id="restockSection">
         <h2>補貨數量試算器</h2>
         
@@ -74,8 +123,11 @@
         <h3>試算紀錄</h3>
         <ul id="recordsList"></ul>
     </div>
+            </section>
     
-    <div id="opsSection" style="display: none;">
+            <!-- 貨物庫存表 Section -->
+            <section id="ops-section" class="module-section">
+    <div id="opsSection">
         <h2>貨物庫存表</h2>
         
         <div>
@@ -157,8 +209,11 @@
             <button onclick="submitDashboard2()">Submit</button>
         </div>
     </div>
+            </section>
     
-    <div id="forecastSection" style="display: none;">
+            <!-- Forecast 管理 Section -->
+            <section id="forecast-section" class="module-section">
+    <div id="forecastSection">
         <h2>Forecast 管理</h2>
         
         <div>
@@ -198,8 +253,11 @@
         <h3>過去 12 個月趨勢</h3>
         <canvas id="forecastChart" width="400" height="200"></canvas>
     </div>
+            </section>
     
-    <div id="shipmentSection" style="display: none;">
+            <!-- Weekly Shipping Plans Section -->
+            <section id="shipment-section" class="module-section">
+    <div id="shipmentSection">
         <h2>Weekly Shipping Plans</h2>
         
         <h3>Planning</h3>
@@ -247,9 +305,11 @@
             <tbody id="doneTableBody"></tbody>
         </table>
     </div>
+            </section>
     
-    <!-- SKU Details 區塊 - Stage 1 結構宣告 -->
-    <div id="skuDetailsSection" style="display: none;">
+            <!-- SKU Details Section -->
+            <section id="sku-section" class="module-section">
+    <div id="skuDetailsSection">
         <h2>SKU Details</h2>
         
         <div class="sku-details-layout">
@@ -292,6 +352,7 @@
             </div>
         </div>
     </div>
+            </section>
         </main>
     </div>"Can Opener"> Can Opener</label>
                             <label><input type="checkbox" value="Manual Opener"> Manual Opener</label>
