@@ -616,11 +616,11 @@ table td button {
 /* 統一滾動容器 - 保持三個區塊 */
 .unified-table-wrap {
     overflow-x: auto;
-    overflow-y: auto;
+    overflow-y: visible;
     border: 1px solid var(--border-light);
     border-radius: var(--radius-lg);
     background: var(--bg-primary);
-    max-height: 70vh;
+    padding: var(--space-xl);
 }
 
 .sku-lifecycle-section {
@@ -646,11 +646,11 @@ table td button {
     transition: background-color 0.2s ease;
     display: flex;
     align-items: center;
-    width: 100%;
-    min-width: 2000px;
+    width: 2700px;
     background: var(--cream-white);
     border-bottom: 1px solid var(--border-light);
-    padding: var(--space-md);
+    padding: var(--space-md) var(--space-xl) var(--space-md) var(--space-md);
+    margin: 0;
 }
 
 .sku-section-header:hover {
@@ -682,54 +682,37 @@ table td button {
     background: var(--soft-green);
     color: white;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: var(--space-md);
     position: sticky;
     top: 0;
     z-index: 5;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .unified-table-wrap .sku-details-table td {
     white-space: nowrap;
+    padding: var(--space-md);
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: var(--space-sm);
 }
 
-.unified-table-wrap .sku-details-table th:nth-child(1) { width: 80px; }
-.unified-table-wrap .sku-details-table th:nth-child(2) { width: 80px; }
-.unified-table-wrap .sku-details-table th:nth-child(3) { width: 150px; }
-.unified-table-wrap .sku-details-table th:nth-child(4) { width: 120px; }
-.unified-table-wrap .sku-details-table th:nth-child(5) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(6) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(7) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(8) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(9) { width: 180px; }
-.unified-table-wrap .sku-details-table th:nth-child(10) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(11) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(12) { width: 120px; }
-.unified-table-wrap .sku-details-table th:nth-child(13) { width: 150px; }
-.unified-table-wrap .sku-details-table th:nth-child(14) { width: 120px; }
-.unified-table-wrap .sku-details-table th:nth-child(15) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(16) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(17) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(18) { width: 120px; }
-.unified-table-wrap .sku-details-table th:nth-child(19) { width: 100px; }
-.unified-table-wrap .sku-details-table th:nth-child(20) { width: 120px; }
-.unified-table-wrap .sku-details-table th:nth-child(21) { width: 100px; }
+
 
 .unified-table-wrap .sku-details-table th:first-child,
 .unified-table-wrap .sku-details-table td:first-child {
-    position: sticky;
-    left: 0;
-    background: var(--bg-primary);
-    z-index: 3;
-    border-right: 2px solid var(--border-light);
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 100 !important;
+    background: white !important;
+    border-right: 2px solid var(--border-light) !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1) !important;
 }
 
 .unified-table-wrap .sku-details-table th:first-child {
-    background: var(--soft-green);
-    color: white;
+    background: var(--soft-green) !important;
+    color: white !important;
+    z-index: 101 !important;
 }
 
 /* SKU Details 表格樣式 */
@@ -751,21 +734,6 @@ table td button {
     min-width: 120px;
 }
 
-/* 凍結 SKU 欄位（第4欄） */
-.sku-details-table th:nth-child(4),
-.sku-details-table td:nth-child(4) {
-    position: sticky;
-    left: 0;
-    background: white;
-    z-index: 10;
-    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
-}
-
-.sku-details-table th:nth-child(4) {
-    background: var(--soft-green);
-    z-index: 11;
-}
-
 .sku-details-table td {
     padding: var(--space-md);
     border-bottom: 1px solid var(--border-light);
@@ -776,9 +744,59 @@ table td button {
     background: var(--bg-surface);
 }
 
-.sku-details-table tr:hover td:nth-child(4) {
-    background: var(--bg-surface);
+.unified-table-wrap .sku-details-table tr:hover td:first-child {
+    background: var(--bg-surface) !important;
 }
+
+/* SKU Details 表格欄寬設定 */
+.unified-table-wrap .sku-details-table th:nth-child(1),
+.unified-table-wrap .sku-details-table td:nth-child(1) { width: 200px; } /* SKU */
+.unified-table-wrap .sku-details-table th:nth-child(2),
+.unified-table-wrap .sku-details-table td:nth-child(2) { width: 80px; } /* Image */
+.unified-table-wrap .sku-details-table th:nth-child(3),
+.unified-table-wrap .sku-details-table td:nth-child(3) { width: 100px; } /* Status */
+.unified-table-wrap .sku-details-table th:nth-child(4),
+.unified-table-wrap .sku-details-table td:nth-child(4) { width: 200px; } /* Product Name */
+.unified-table-wrap .sku-details-table th:nth-child(5),
+.unified-table-wrap .sku-details-table td:nth-child(5) { width: 120px; } /* Category */
+.unified-table-wrap .sku-details-table th:nth-child(6),
+.unified-table-wrap .sku-details-table td:nth-child(6) { width: 120px; } /* GS1 Code */
+.unified-table-wrap .sku-details-table th:nth-child(7),
+.unified-table-wrap .sku-details-table td:nth-child(7) { width: 100px; } /* GS1 Type */
+.unified-table-wrap .sku-details-table th:nth-child(8),
+.unified-table-wrap .sku-details-table td:nth-child(8) { width: 120px; } /* AMZ ASIN */
+.unified-table-wrap .sku-details-table th:nth-child(9),
+.unified-table-wrap .sku-details-table td:nth-child(9) { width: 180px; } /* Item Dimensions */
+.unified-table-wrap .sku-details-table th:nth-child(10),
+.unified-table-wrap .sku-details-table td:nth-child(10) { width: 100px; } /* Item Weight */
+.unified-table-wrap .sku-details-table th:nth-child(11),
+.unified-table-wrap .sku-details-table td:nth-child(11) { width: 100px; } /* Package */
+.unified-table-wrap .sku-details-table th:nth-child(12),
+.unified-table-wrap .sku-details-table td:nth-child(12) { width: 120px; } /* Package Weight */
+.unified-table-wrap .sku-details-table th:nth-child(13),
+.unified-table-wrap .sku-details-table td:nth-child(13) { width: 150px; } /* Carton Dimensions */
+.unified-table-wrap .sku-details-table th:nth-child(14),
+.unified-table-wrap .sku-details-table td:nth-child(14) { width: 120px; } /* Carton Weight */
+.unified-table-wrap .sku-details-table th:nth-child(15),
+.unified-table-wrap .sku-details-table td:nth-child(15) { width: 100px; } /* 單箱數量 */
+.unified-table-wrap .sku-details-table th:nth-child(16),
+.unified-table-wrap .sku-details-table td:nth-child(16) { width: 100px; } /* HScode */
+.unified-table-wrap .sku-details-table th:nth-child(17),
+.unified-table-wrap .sku-details-table td:nth-child(17) { width: 100px; } /* 申報價值 */
+.unified-table-wrap .sku-details-table th:nth-child(18),
+.unified-table-wrap .sku-details-table td:nth-child(18) { width: 120px; } /* Minimum Price */
+.unified-table-wrap .sku-details-table th:nth-child(19),
+.unified-table-wrap .sku-details-table td:nth-child(19) { width: 100px; } /* MSRP */
+.unified-table-wrap .sku-details-table th:nth-child(20),
+.unified-table-wrap .sku-details-table td:nth-child(20) { width: 120px; } /* Selling Price */
+.unified-table-wrap .sku-details-table th:nth-child(21),
+.unified-table-wrap .sku-details-table td:nth-child(21) { width: 100px; } /* 負責PM */
+
+
+
+
+
+
 
 .table-wrap {
     overflow-x: auto;
