@@ -47,3 +47,58 @@
 - 若需求超出 Stage 1（Foundation） → 明確指出「超出範圍」
 - 若 Spec 不足 → 要求補充，不自行設計
 - 僅依 Spec 回答，不做產品發想或架構設計
+
+## CSS/JS Namespace 規章（Stage 1）
+
+### 全站共用樣式（允許放在 style.css 根層級）
+**Design Tokens**
+- CSS Variables: `--cream-white`, `--warm-orange`, `--soft-green`, `--text-dark`, `--space-*`, `--radius-*`
+- 品牌色、間距、圓角、陰影等 tokens
+
+**基礎元件（無頁面特化）**
+- 按鈕: `.btn-primary`, `.btn-secondary`, `.btn-ghost`
+- 卡片: `.card`, `.card-blue`, `.card-pink` 等
+- 輸入框: `input`, `select`, `textarea` 基礎樣式
+- 通用 hover/focus 狀態
+
+**全站布局**
+- `.top-header`, `.sidebar`, `.main-content`, `.content-area`
+- `.app-layout`, `.world-time-bar`
+
+### 頁面特化樣式（必須限定在頁面容器下）
+**Home 頁面**
+- 容器: `#home-section`
+- 樣式: `.home-row-1`, `.home-row-2`, `.event-container`, `.goal-container`
+
+**SKU Details 頁面**
+- 容器: `#sku-section`
+- 樣式: `.sku-toolbar`, `.sku-xscroll`, `.sku-details-table`, `.col-sku`
+- 特殊: `.sku-section-header`, `.sku-lifecycle-section`
+
+**其他頁面**
+- Forecast: `#forecast-section`
+- Shipment: `#shipment-section`
+- Ops: `#ops-section`
+- Restock: `#replenishment-section`
+
+### 禁止的全域污染
+❌ **不可在根層級使用**
+- `table`, `th`, `td` (必須加 class: `.sku-details-table th`)
+- `body { overflow-x: hidden }` (除非有明確註解)
+- `* { ... }` 過度通用的選擇器
+- `.section`, `.card`, `.header` 等過於通用的 class
+
+### JS 事件綁定規則
+- 只在對應頁面容器下 querySelector
+- 例: `document.querySelector('#sku-section .sku-search')`
+- 避免全域 ID 衝突（如多個頁面都有 `#searchInput`）
+
+### Overflow 規則
+- ❌ 禁止在 `body`, `html`, `.main-content` 設 `overflow-x: hidden`
+- ✅ 只在需要滾動的特定容器設 `overflow-x: auto`（如 `.sku-xscroll`）
+- 原因: `overflow: hidden` 會阻止內部 `position: sticky` 生效
+
+### Sticky 定位規則
+- 必須使用 `border-collapse: separate` (不可用 `collapse`)
+- 祖先層不可有 `overflow: hidden`, `transform`, `filter`, `perspective`
+- 滾動容器必須是 sticky 元素的直接或間接父層

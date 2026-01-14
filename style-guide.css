@@ -1,6 +1,27 @@
 /* ========================================
    Kitchen Mama Internal UI Style Guide v0.1
+   Stage 1 Foundation - CSS Namespace Rules
    ======================================== */
+
+/* 
+   CSS NAMESPACE RULES (Stage 1)
+   
+   ✅ ALLOWED IN THIS FILE (Global Scope):
+   - Design Tokens (CSS Variables)
+   - Base Components (.btn, .card, .tag)
+   - Typography & Layout Tokens
+   - Semantic Background Classes
+   
+   ❌ NOT ALLOWED (Must be page-scoped):
+   - Page-specific styles (use #home-section, #sku-section, etc.)
+   - Generic selectors (table, th, td - must use .sku-details-table th)
+   - Overflow on body/html (blocks sticky positioning)
+   
+   STICKY POSITIONING RULES:
+   - Use border-collapse: separate (not collapse)
+   - No overflow: hidden on ancestors
+   - No transform/filter/perspective on ancestors
+*/
 
 /* Design Tokens */
 :root {
@@ -117,6 +138,19 @@
 .bg-urgent { background: var(--urgent-bg); }
 .bg-note { background: var(--note-bg); }
 .bg-event { background: var(--event-item-bg); }
+
+/* ========================================
+   PAGE-SPECIFIC STYLES
+   Must be scoped under page containers:
+   - #home-section (Home page)
+   - #sku-section (SKU Details)
+   - #forecast-section (Forecast)
+   - #shipment-section (Shipment)
+   - #ops-section (Ops)
+   - #replenishment-section (Restock)
+   
+   See style.css for implementation
+   ======================================== */
 
 /* ========================================
    Existing Styles (保持原有樣式)

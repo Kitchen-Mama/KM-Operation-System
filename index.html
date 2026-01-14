@@ -41,8 +41,11 @@
         
         <!-- 右側內容區域 -->
         <div class="main-content">
+            
+            <!-- 主內容區域 -->
+            <main class="content-area">
             <!-- 世界時間列 - 四格布局 -->
-            <div class="world-time-bar">
+            <div class="world-time-bar" id="world-time-bar">
                 <div class="world-heading">世界時間</div>
                 <div class="time-card" id="card-AU">
                     <div class="time-grid">
@@ -102,8 +105,6 @@
                 </div>
             </div>
             
-            <!-- 主內容區域 -->
-            <main class="content-area">
             <!-- Homepage Section -->
             <section id="home-section">
                 <h1>歡迎使用 Kitchen Mama 供應鏈管理系統</h1>
@@ -382,117 +383,151 @@
     <div id="skuDetailsSection">
         <h2>SKU Details</h2>
         
-        <!-- 統一滾動容器 -->
-        <div class="unified-table-wrap">
-            <!-- Upcoming SKU -->
-            <div class="sku-lifecycle-section" data-section="upcoming">
-                <h3 class="sku-section-header" onclick="toggleSection('upcoming')">
-                    <span class="arrow">▼</span> Upcoming SKU
-                </h3>
-                <table class="sku-details-table">
-                    <thead>
-                        <tr>
-                            <th class="col-sku">SKU</th>
-                            <th>Image</th>
-                            <th>Status</th>
-                            <th>Product Name</th>
-                            <th>Category</th>
-                            <th>GS1 Code</th>
-                            <th>GS1 Type</th>
-                            <th>AMZ ASIN</th>
-                            <th>Item Dimensions (LxWxH)</th>
-                            <th>Item Weight</th>
-                            <th>Package</th>
-                            <th>Package Weight</th>
-                            <th>Carton Dimensions</th>
-                            <th>Carton Weight</th>
-                            <th>單箱數量</th>
-                            <th>HScode</th>
-                            <th>申報價值</th>
-                            <th>Minimum Price</th>
-                            <th>MSRP</th>
-                            <th>Selling Price</th>
-                            <th>負責PM</th>
-                        </tr>
-                    </thead>
-                    <tbody id="upcomingSkuTableBody">
-                        <!-- 資料由 JS 渲染 -->
-                    </tbody>
-                </table>
+        <!-- Toolbar -->
+        <div class="sku-toolbar">
+            <button class="btn-add-sku" onclick="handleAddSku()">+ Add SKU</button>
+            <input type="text" id="skuSearchInput" class="sku-search" placeholder="Search SKU..." oninput="handleSkuSearch()">
+            <div class="display-dropdown">
+                <button class="btn-display" onclick="toggleDisplayPanel()">Display ▼</button>
+                <div class="display-panel" id="displayPanel">
+                    <label class="all-option"><input type="checkbox" id="checkAll" checked onchange="toggleAllColumns()"> <strong>All</strong></label>
+                    <hr style="margin: var(--space-xs) 0; border: none; border-top: 1px solid var(--border-light);">
+                    <label><input type="checkbox" class="col-checkbox" data-col="0" checked onchange="toggleColumn(0)"> SKU</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="1" checked onchange="toggleColumn(1)"> Image</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="2" checked onchange="toggleColumn(2)"> Status</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="3" checked onchange="toggleColumn(3)"> Product Name</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="4" checked onchange="toggleColumn(4)"> Category</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="5" checked onchange="toggleColumn(5)"> GS1 Code</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="6" checked onchange="toggleColumn(6)"> GS1 Type</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="7" checked onchange="toggleColumn(7)"> AMZ ASIN</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="8" checked onchange="toggleColumn(8)"> Item Dimensions</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="9" checked onchange="toggleColumn(9)"> Item Weight</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="10" checked onchange="toggleColumn(10)"> Package</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="11" checked onchange="toggleColumn(11)"> Package Weight</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="12" checked onchange="toggleColumn(12)"> Carton Dimensions</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="13" checked onchange="toggleColumn(13)"> Carton Weight</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="14" checked onchange="toggleColumn(14)"> 單箱數量</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="15" checked onchange="toggleColumn(15)"> HScode</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="16" checked onchange="toggleColumn(16)"> 申報價值</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="17" checked onchange="toggleColumn(17)"> Minimum Price</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="18" checked onchange="toggleColumn(18)"> MSRP</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="19" checked onchange="toggleColumn(19)"> Selling Price</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="20" checked onchange="toggleColumn(20)"> 負責PM</label>
+                </div>
             </div>
-            
-            <!-- Running in the Market -->
-            <div class="sku-lifecycle-section" data-section="running">
-                <h3 class="sku-section-header" onclick="toggleSection('running')">
-                    <span class="arrow">▼</span> Running in the Market
-                </h3>
-                <table class="sku-details-table">
-                    <thead>
-                        <tr>
-                            <th class="col-sku">SKU</th>
-                            <th>Image</th>
-                            <th>Status</th>
-                            <th>Product Name</th>
-                            <th>Category</th>
-                            <th>GS1 Code</th>
-                            <th>GS1 Type</th>
-                            <th>AMZ ASIN</th>
-                            <th>Item Dimensions (LxWxH)</th>
-                            <th>Item Weight</th>
-                            <th>Package</th>
-                            <th>Package Weight</th>
-                            <th>Carton Dimensions</th>
-                            <th>Carton Weight</th>
-                            <th>單箱數量</th>
-                            <th>HScode</th>
-                            <th>申報價值</th>
-                            <th>Minimum Price</th>
-                            <th>MSRP</th>
-                            <th>Selling Price</th>
-                            <th>負責PM</th>
-                        </tr>
-                    </thead>
-                    <tbody id="runningSkuTableBody">
-                        <!-- 資料由 JS 渲染 -->
-                    </tbody>
-                </table>
+        </div>
+        
+        <!-- Upcoming SKU -->
+        <div class="sku-lifecycle-section" data-section="upcoming">
+            <h3 class="sku-section-header" onclick="toggleSection('upcoming')">
+                <span class="arrow">▼</span> Upcoming SKU
+            </h3>
+            <div class="dual-layer-table">
+                <div class="fixed-col">
+                    <div class="fixed-header">SKU</div>
+                    <div class="fixed-body" id="upcomingFixedBody"></div>
+                </div>
+                <div class="scroll-col">
+                    <div class="scroll-header">
+                        <div class="scroll-cell">Image</div>
+                        <div class="scroll-cell">Status</div>
+                        <div class="scroll-cell">Product Name</div>
+                        <div class="scroll-cell">Category</div>
+                        <div class="scroll-cell">GS1 Code</div>
+                        <div class="scroll-cell">GS1 Type</div>
+                        <div class="scroll-cell">AMZ ASIN</div>
+                        <div class="scroll-cell">Item Dimensions</div>
+                        <div class="scroll-cell">Item Weight</div>
+                        <div class="scroll-cell">Package</div>
+                        <div class="scroll-cell">Package Weight</div>
+                        <div class="scroll-cell">Carton Dimensions</div>
+                        <div class="scroll-cell">Carton Weight</div>
+                        <div class="scroll-cell">單箱數量</div>
+                        <div class="scroll-cell">HScode</div>
+                        <div class="scroll-cell">申報價值</div>
+                        <div class="scroll-cell">Minimum Price</div>
+                        <div class="scroll-cell">MSRP</div>
+                        <div class="scroll-cell">Selling Price</div>
+                        <div class="scroll-cell">負責PM</div>
+                    </div>
+                    <div class="scroll-body" id="upcomingScrollBody"></div>
+                </div>
             </div>
-            
-            <!-- Phasing Out -->
-            <div class="sku-lifecycle-section" data-section="phasing">
-                <h3 class="sku-section-header" onclick="toggleSection('phasing')">
-                    <span class="arrow">▼</span> Phasing Out
-                </h3>
-                <table class="sku-details-table">
-                    <thead>
-                        <tr>
-                            <th class="col-sku">SKU</th>
-                            <th>Image</th>
-                            <th>Status</th>
-                            <th>Product Name</th>
-                            <th>Category</th>
-                            <th>GS1 Code</th>
-                            <th>GS1 Type</th>
-                            <th>AMZ ASIN</th>
-                            <th>Item Dimensions (LxWxH)</th>
-                            <th>Item Weight</th>
-                            <th>Package</th>
-                            <th>Package Weight</th>
-                            <th>Carton Dimensions</th>
-                            <th>Carton Weight</th>
-                            <th>單箱數量</th>
-                            <th>HScode</th>
-                            <th>申報價值</th>
-                            <th>Minimum Price</th>
-                            <th>MSRP</th>
-                            <th>Selling Price</th>
-                            <th>負責PM</th>
-                        </tr>
-                    </thead>
-                    <tbody id="phasingOutSkuTableBody">
-                        <!-- 資料由 JS 渲染 -->
-                    </tbody>
-                </table>
+        </div>
+        
+        <!-- Running in the Market -->
+        <div class="sku-lifecycle-section" data-section="running">
+            <h3 class="sku-section-header" onclick="toggleSection('running')">
+                <span class="arrow">▼</span> Running in the Market
+            </h3>
+            <div class="dual-layer-table">
+                <div class="fixed-col">
+                    <div class="fixed-header">SKU</div>
+                    <div class="fixed-body" id="runningFixedBody"></div>
+                </div>
+                <div class="scroll-col">
+                    <div class="scroll-header">
+                        <div class="scroll-cell">Image</div>
+                        <div class="scroll-cell">Status</div>
+                        <div class="scroll-cell">Product Name</div>
+                        <div class="scroll-cell">Category</div>
+                        <div class="scroll-cell">GS1 Code</div>
+                        <div class="scroll-cell">GS1 Type</div>
+                        <div class="scroll-cell">AMZ ASIN</div>
+                        <div class="scroll-cell">Item Dimensions</div>
+                        <div class="scroll-cell">Item Weight</div>
+                        <div class="scroll-cell">Package</div>
+                        <div class="scroll-cell">Package Weight</div>
+                        <div class="scroll-cell">Carton Dimensions</div>
+                        <div class="scroll-cell">Carton Weight</div>
+                        <div class="scroll-cell">單箱數量</div>
+                        <div class="scroll-cell">HScode</div>
+                        <div class="scroll-cell">申報價值</div>
+                        <div class="scroll-cell">Minimum Price</div>
+                        <div class="scroll-cell">MSRP</div>
+                        <div class="scroll-cell">Selling Price</div>
+                        <div class="scroll-cell">負責PM</div>
+                    </div>
+                    <div class="scroll-body" id="runningScrollBody"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Phasing Out -->
+        <div class="sku-lifecycle-section" data-section="phasing">
+            <h3 class="sku-section-header" onclick="toggleSection('phasing')">
+                <span class="arrow">▼</span> Phasing Out
+            </h3>
+            <div class="dual-layer-table">
+                <div class="fixed-col">
+                    <div class="fixed-header">SKU</div>
+                    <div class="fixed-body" id="phasingFixedBody"></div>
+                </div>
+                <div class="scroll-col">
+                    <div class="scroll-header">
+                        <div class="scroll-cell">Image</div>
+                        <div class="scroll-cell">Status</div>
+                        <div class="scroll-cell">Product Name</div>
+                        <div class="scroll-cell">Category</div>
+                        <div class="scroll-cell">GS1 Code</div>
+                        <div class="scroll-cell">GS1 Type</div>
+                        <div class="scroll-cell">AMZ ASIN</div>
+                        <div class="scroll-cell">Item Dimensions</div>
+                        <div class="scroll-cell">Item Weight</div>
+                        <div class="scroll-cell">Package</div>
+                        <div class="scroll-cell">Package Weight</div>
+                        <div class="scroll-cell">Carton Dimensions</div>
+                        <div class="scroll-cell">Carton Weight</div>
+                        <div class="scroll-cell">單箱數量</div>
+                        <div class="scroll-cell">HScode</div>
+                        <div class="scroll-cell">申報價值</div>
+                        <div class="scroll-cell">Minimum Price</div>
+                        <div class="scroll-cell">MSRP</div>
+                        <div class="scroll-cell">Selling Price</div>
+                        <div class="scroll-cell">負責PM</div>
+                    </div>
+                    <div class="scroll-body" id="phasingScrollBody"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -502,6 +537,7 @@
     </div>
     
     <script src="data.js"></script>
+    <script src="sku-scroll.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

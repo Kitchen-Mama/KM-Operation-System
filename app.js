@@ -101,6 +101,7 @@ function renderGoal() {
 // 回首頁函式
 function showHome() {
     document.getElementById('home-section').style.display = 'block';
+    document.getElementById('world-time-bar').style.display = 'flex';
     document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
     document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
 }
@@ -109,6 +110,7 @@ function showHome() {
 function showSection(section) {
     // 隱藏所有區塊
     document.getElementById('home-section').style.display = 'none';
+    document.getElementById('world-time-bar').style.display = 'none';
     document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
     
     // 顯示選擇的區塊
@@ -138,6 +140,11 @@ function showSection(section) {
     }
     if (section === 'skuDetails') {
         renderSkuDetailsTable();
+        setTimeout(() => {
+            if (window.updateSkuScrollWidth) {
+                window.updateSkuScrollWidth();
+            }
+        }, 100);
     }
 }
 
@@ -568,41 +575,48 @@ function initWorldTimes() {
     setInterval(updateWorldTimes, 60000); // 每 60 秒更新
 }
 
-// SKU Details 渲染函數 - 三個區塊統一滾動
+// SKU Details 渲染函數 - 雙層結構
 function renderSkuDetailsTable() {
-    renderSkuLifecycleTable('upcomingSkuTableBody', upcomingSkuData);
-    renderSkuLifecycleTable('runningSkuTableBody', runningSkuData);
-    renderSkuLifecycleTable('phasingOutSkuTableBody', phasingOutSkuData);
+    renderSkuLifecycleTable('upcoming', upcomingSkuData);
+    renderSkuLifecycleTable('running', runningSkuData);
+    renderSkuLifecycleTable('phasing', phasingOutSkuData);
 }
 
-function renderSkuLifecycleTable(tbodyId, data) {
-    const tbody = document.getElementById(tbodyId);
-    if (!tbody) return;
+function renderSkuLifecycleTable(section, data) {
+    const fixedBody = document.getElementById(`${section}FixedBody`);
+    const scrollBody = document.getElementById(`${section}ScrollBody`);
     
-    tbody.innerHTML = data.map(item => `
-        <tr>
-            <td>${item.sku}</td>
-            <td><div class="image-placeholder">IMG</div></td>
-            <td>Active</td>
-            <td>${item.productName}</td>
-            <td>${item.category}</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-        </tr>
+    if (!fixedBody || !scrollBody) return;
+    
+    // 渲染左側固定欄 (SKU)
+    fixedBody.innerHTML = data.map(item => `
+        <div class="fixed-row">${item.sku}</div>
+    `).join('');
+    
+    // 渲染右側滾動欄 (其他欄位)
+    scrollBody.innerHTML = data.map(item => `
+        <div class="scroll-row">
+            <div class="scroll-cell"><div class="image-placeholder">IMG</div></div>
+            <div class="scroll-cell">${item.status}</div>
+            <div class="scroll-cell">${item.productName}</div>
+            <div class="scroll-cell">${item.category}</div>
+            <div class="scroll-cell">${item.gs1Code}</div>
+            <div class="scroll-cell">${item.gs1Type}</div>
+            <div class="scroll-cell">${item.amzAsin}</div>
+            <div class="scroll-cell">${item.itemDimensions}</div>
+            <div class="scroll-cell">${item.itemWeight}</div>
+            <div class="scroll-cell">${item.package}</div>
+            <div class="scroll-cell">${item.packageWeight}</div>
+            <div class="scroll-cell">${item.cartonDimensions}</div>
+            <div class="scroll-cell">${item.cartonWeight}</div>
+            <div class="scroll-cell">${item.unitsPerCarton}</div>
+            <div class="scroll-cell">${item.hscode}</div>
+            <div class="scroll-cell">${item.declaredValue}</div>
+            <div class="scroll-cell">${item.minimumPrice}</div>
+            <div class="scroll-cell">${item.msrp}</div>
+            <div class="scroll-cell">${item.sellingPrice}</div>
+            <div class="scroll-cell">${item.pm}</div>
+        </div>
     `).join('');
 }
 
@@ -689,9 +703,25 @@ window.DataRepo = DataRepo;
 // 初始化時載入紀錄和世界時間
 window.addEventListener('DOMContentLoaded', () => {
     renderRecords();
-    initWorldTimes(); // 初始化世界時間
-    renderHomepage(); // 初始化 Homepage
+    initWorldTimes();
+    renderHomepage();
+    initSkuUnifiedScroll();
 });
+
+// SKU Details 統一滾動控制
+function initSkuUnifiedScroll() {
+    const xscroll = document.querySelector('#sku-section .sku-xscroll');
+    const scrollCols = document.querySelectorAll('#sku-section .scroll-col');
+    
+    if (!xscroll || scrollCols.length === 0) return;
+    
+    xscroll.addEventListener('scroll', function() {
+        const scrollLeft = this.scrollLeft;
+        scrollCols.forEach(col => {
+            col.scrollLeft = scrollLeft;
+        });
+    });
+}
 // SKU Details 收合功能
 function toggleSection(sectionId) {
     const section = document.querySelector(`[data-section="${sectionId}"]`);
@@ -707,3 +737,120 @@ function toggleSection(sectionId) {
 }
 
 window.toggleSection = toggleSection;
+
+
+// SKU Toolbar 功能
+function handleAddSku() {
+    console.log('Add SKU clicked');
+    alert('Add SKU 功能 - Stage 1 placeholder');
+}
+
+function handleSkuSearch() {
+    const searchTerm = document.getElementById('skuSearchInput').value.toLowerCase();
+    const fixedBodies = document.querySelectorAll('#sku-section .fixed-body');
+    const scrollBodies = document.querySelectorAll('#sku-section .scroll-body');
+    
+    fixedBodies.forEach((fixedBody, index) => {
+        const fixedRows = fixedBody.querySelectorAll('.fixed-row');
+        const scrollBody = scrollBodies[index];
+        const scrollRows = scrollBody ? scrollBody.querySelectorAll('.scroll-row') : [];
+        
+        fixedRows.forEach((fixedRow, rowIndex) => {
+            const skuText = fixedRow.textContent.toLowerCase();
+            const shouldShow = skuText.includes(searchTerm);
+            
+            fixedRow.style.display = shouldShow ? '' : 'none';
+            if (scrollRows[rowIndex]) {
+                scrollRows[rowIndex].style.display = shouldShow ? '' : 'none';
+            }
+        });
+    });
+}
+
+function toggleDisplayPanel() {
+    const panel = document.getElementById('displayPanel');
+    panel.classList.toggle('show');
+}
+
+function toggleColumn(colIndex) {
+    const sections = document.querySelectorAll('#sku-section .sku-lifecycle-section');
+    
+    sections.forEach(section => {
+        if (colIndex === 0) {
+            // SKU 欄位（fixed-col）
+            const fixedCol = section.querySelector('.fixed-col');
+            if (fixedCol) {
+                const isVisible = fixedCol.style.display !== 'none';
+                fixedCol.style.display = isVisible ? 'none' : '';
+            }
+        } else {
+            // 其他欄位（scroll-col 內的 scroll-cell）
+            const scrollCells = section.querySelectorAll('.scroll-col .scroll-cell:nth-child(' + colIndex + ')');
+            scrollCells.forEach(cell => {
+                const isVisible = cell.style.display !== 'none';
+                cell.style.display = isVisible ? 'none' : '';
+            });
+        }
+    });
+    
+    updateAllCheckbox();
+    
+    // 更新滾動條寬度
+    if (window.updateSkuScrollWidth) {
+        setTimeout(() => window.updateSkuScrollWidth(), 50);
+    }
+}
+
+function toggleAllColumns() {
+    const checkAll = document.getElementById('checkAll');
+    const colCheckboxes = document.querySelectorAll('.col-checkbox');
+    const sections = document.querySelectorAll('#sku-section .sku-lifecycle-section');
+    
+    colCheckboxes.forEach(checkbox => {
+        checkbox.checked = checkAll.checked;
+        const colIndex = parseInt(checkbox.dataset.col);
+        
+        sections.forEach(section => {
+            if (colIndex === 0) {
+                const fixedCol = section.querySelector('.fixed-col');
+                if (fixedCol) {
+                    fixedCol.style.display = checkAll.checked ? '' : 'none';
+                }
+            } else {
+                const scrollCells = section.querySelectorAll('.scroll-col .scroll-cell:nth-child(' + colIndex + ')');
+                scrollCells.forEach(cell => {
+                    cell.style.display = checkAll.checked ? '' : 'none';
+                });
+            }
+        });
+    });
+    
+    // 更新滾動條寬度
+    if (window.updateSkuScrollWidth) {
+        setTimeout(() => window.updateSkuScrollWidth(), 50);
+    }
+}
+
+function updateAllCheckbox() {
+    const checkAll = document.getElementById('checkAll');
+    const colCheckboxes = document.querySelectorAll('.col-checkbox');
+    const allChecked = Array.from(colCheckboxes).every(cb => cb.checked);
+    
+    checkAll.checked = allChecked;
+}
+
+// 點擊外部關閉 Display panel
+document.addEventListener('click', function(event) {
+    const displayDropdown = document.querySelector('.display-dropdown');
+    const panel = document.getElementById('displayPanel');
+    
+    if (displayDropdown && panel && !displayDropdown.contains(event.target)) {
+        panel.classList.remove('show');
+    }
+});
+
+window.handleAddSku = handleAddSku;
+window.handleSkuSearch = handleSkuSearch;
+window.toggleDisplayPanel = toggleDisplayPanel;
+window.toggleColumn = toggleColumn;
+window.toggleAllColumns = toggleAllColumns;
