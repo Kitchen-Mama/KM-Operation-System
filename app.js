@@ -146,6 +146,9 @@ function showSection(section) {
             }
         }, 100);
     }
+    if (section === 'ops') {
+        renderReplenishment();
+    }
 }
 
 // 清空運營管理表格
@@ -854,3 +857,192 @@ window.handleSkuSearch = handleSkuSearch;
 window.toggleDisplayPanel = toggleDisplayPanel;
 window.toggleColumn = toggleColumn;
 window.toggleAllColumns = toggleAllColumns;
+
+
+// ========================================
+// Inventory Replenishment (Stage 1)
+// ========================================
+
+const replenishmentMockData = [
+    { sku: "A001", lifecycle: "Mature", productName: "Can Opener Pro", forecast90d: 450, onTheWay: 20 },
+    { sku: "B002", lifecycle: "New", productName: "Manual Opener Basic", forecast90d: 320, onTheWay: 15 },
+    { sku: "C003", lifecycle: "Mature", productName: "Kitchen Tool Set", forecast90d: 1100, onTheWay: 50 },
+    { sku: "D004", lifecycle: "Mature", productName: "Electric Peeler", forecast90d: 380, onTheWay: 10 },
+    { sku: "E005", lifecycle: "New", productName: "Smart Opener", forecast90d: 600, onTheWay: 30 },
+    { sku: "F006", lifecycle: "Phasing Out", productName: "Classic Knife", forecast90d: 280, onTheWay: 5 },
+    { sku: "G007", lifecycle: "Mature", productName: "Food Processor", forecast90d: 750, onTheWay: 40 }
+];
+
+let currentExpandedRow = null;
+let replenishmentPlans = {};
+
+function getReplenishmentData() {
+    const marketplace = document.getElementById('replenMarketplace').value;
+    const siteData = window.DataRepo.getSiteSkus(marketplace);
+    
+    return siteData.map(item => {
+        const mockData = replenishmentMockData.find(m => m.sku === item.sku) || {
+            lifecycle: "Mature",
+            productName: item.sku + " Product",
+            forecast90d: Math.floor(Math.random() * 500) + 200,
+            onTheWay: Math.floor(Math.random() * 30)
+        };
+        
+        const avgDailySales = item.weeklyAvgSales / 7;
+        const currentInventory = item.stock;
+        const onTheWay = mockData.onTheWay;
+        const daysOfSupply = ((currentInventory + onTheWay) / avgDailySales).toFixed(1);
+        
+        const targetDays = parseInt(document.getElementById('replenTargetDays').value) || 90;
+        const targetInventory = avgDailySales * targetDays;
+        const suggestedQty = Math.max(0, Math.ceil(targetInventory - currentInventory - onTheWay));
+        
+        return {
+            sku: item.sku,
+            lifecycle: mockData.lifecycle,
+            productName: mockData.productName,
+            currentInventory: currentInventory,
+            avgDailySales: avgDailySales.toFixed(2),
+            forecast90d: mockData.forecast90d,
+            daysOfSupply: daysOfSupply,
+            onTheWay: onTheWay,
+            suggestedQty: suggestedQty,
+            plannedQty: replenishmentPlans[item.sku] || 0,
+            status: suggestedQty > 0 ? "Need Restock" : "Sufficient"
+        };
+    });
+}
+
+function renderReplenishment() {
+    const data = getReplenishmentData();
+    const fixedBody = document.getElementById('replenFixedBody');
+    const scrollBody = document.getElementById('replenScrollBody');
+    
+    if (!fixedBody || !scrollBody) return;
+    
+    currentExpandedRow = null;
+    
+    fixedBody.innerHTML = data.map(item => `
+        <div class="replen-fixed-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
+            ${item.sku}
+        </div>
+    `).join('');
+    
+    scrollBody.innerHTML = data.map(item => `
+        <div class="replen-scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
+            <div class="replen-cell">${item.lifecycle}</div>
+            <div class="replen-cell">${item.productName}</div>
+            <div class="replen-cell">${item.currentInventory}</div>
+            <div class="replen-cell">${item.avgDailySales}</div>
+            <div class="replen-cell">${item.forecast90d}</div>
+            <div class="replen-cell">${item.daysOfSupply}</div>
+            <div class="replen-cell">${item.onTheWay}</div>
+            <div class="replen-cell">${item.suggestedQty}</div>
+            <div class="replen-cell">
+                <input type="number" value="${item.plannedQty}" 
+                       onchange="updatePlannedQty('${item.sku}', this.value)"
+                       onclick="event.stopPropagation()">
+            </div>
+            <div class="replen-cell">${item.status}</div>
+        </div>
+    `).join('');
+}
+
+function toggleReplenRow(sku) {
+    const fixedRows = document.querySelectorAll('#ops-section .replen-fixed-row');
+    const scrollRows = document.querySelectorAll('#ops-section .replen-scroll-row');
+    const fixedBody = document.getElementById('replenFixedBody');
+    const scrollBody = document.getElementById('replenScrollBody');
+    
+    const existingPanels = document.querySelectorAll('#ops-section .replen-expand-panel');
+    existingPanels.forEach(panel => panel.remove());
+    
+    fixedRows.forEach(row => row.classList.remove('expanded'));
+    scrollRows.forEach(row => row.classList.remove('expanded'));
+    
+    if (currentExpandedRow === sku) {
+        currentExpandedRow = null;
+        return;
+    }
+    
+    currentExpandedRow = sku;
+    const fixedRow = Array.from(fixedRows).find(row => row.dataset.sku === sku);
+    const scrollRow = Array.from(scrollRows).find(row => row.dataset.sku === sku);
+    
+    if (fixedRow) fixedRow.classList.add('expanded');
+    if (scrollRow) scrollRow.classList.add('expanded');
+    
+    const expandHTML = `
+        <div class="replen-expand-fixed">
+            <strong>${sku}</strong>
+            <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                Click row to close
+            </div>
+        </div>
+        <div class="replen-expand-scroll">
+            <div class="replen-expand-section">
+                <h4>Sales Trend</h4>
+                <p>Last 90 days sales chart</p>
+                <p style="color: #666; font-size: 14px;">(Chart placeholder)</p>
+            </div>
+            <div class="replen-expand-section">
+                <h4>Forecast Breakdown</h4>
+                <p>Base Forecast: ${Math.floor(Math.random() * 300) + 100} units</p>
+                <p>Promo Impact: +${Math.floor(Math.random() * 100)} units</p>
+                <p><strong>Total: ${Math.floor(Math.random() * 400) + 200} units</strong></p>
+            </div>
+            <div class="replen-expand-section">
+                <h4>Existing Plans</h4>
+                <p>No plans created yet</p>
+                <button onclick="createPlan('${sku}')" style="margin-top: 8px;">+ Create Plan</button>
+            </div>
+        </div>
+    `;
+    
+    const expandPanelFixed = document.createElement('div');
+    expandPanelFixed.className = 'replen-expand-panel';
+    expandPanelFixed.innerHTML = expandHTML;
+    
+    const expandPanelScroll = document.createElement('div');
+    expandPanelScroll.className = 'replen-expand-panel';
+    expandPanelScroll.innerHTML = expandHTML;
+    
+    const rowIndex = Array.from(fixedRows).indexOf(fixedRow);
+    if (rowIndex < fixedRows.length - 1) {
+        fixedRows[rowIndex + 1].before(expandPanelFixed);
+        scrollRows[rowIndex + 1].before(expandPanelScroll);
+    } else {
+        fixedBody.appendChild(expandPanelFixed);
+        scrollBody.appendChild(expandPanelScroll);
+    }
+}
+
+function updatePlannedQty(sku, qty) {
+    replenishmentPlans[sku] = parseInt(qty) || 0;
+}
+
+function createPlan(sku) {
+    console.log('Create plan for SKU:', sku);
+    alert(`Create plan for ${sku} - Stage 1 placeholder`);
+}
+
+function submitReplenishmentPlans() {
+    const plans = Object.entries(replenishmentPlans)
+        .filter(([sku, qty]) => qty > 0)
+        .map(([sku, qty]) => ({ sku, qty }));
+    
+    console.log('=== Replenishment Plans Submitted ===');
+    console.log('Country:', document.getElementById('replenCountry').value);
+    console.log('Marketplace:', document.getElementById('replenMarketplace').value);
+    console.log('Target Days:', document.getElementById('replenTargetDays').value);
+    console.log('Plans:', plans);
+    console.log('=====================================');
+    
+    alert(`Submitted ${plans.length} replenishment plans. Check console for details.`);
+}
+
+window.renderReplenishment = renderReplenishment;
+window.toggleReplenRow = toggleReplenRow;
+window.updatePlannedQty = updatePlannedQty;
+window.createPlan = createPlan;
+window.submitReplenishmentPlans = submitReplenishmentPlans;

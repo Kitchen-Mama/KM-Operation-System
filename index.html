@@ -196,90 +196,54 @@
     </div>
             </section>
     
-            <!-- 貨物庫存表 Section -->
+            <!-- 貨物庫存表 Section (Inventory Replenishment Stage 1) -->
             <section id="ops-section" class="module-section">
-    <div id="opsSection">
-        <h2>貨物庫存表</h2>
-        
-        <div>
-            <label>選擇站點:</label>
-            <select id="siteSelect" onchange="renderOpsView()">
-                <option value="">請選擇站點</option>
-                <option value="amazon">Amazon</option>
-                <option value="shopify">Shopify</option>
-                <option value="target">Target</option>
-            </select>
-        </div>
-    
-        
-        <div>
-            <label>目標天數:</label>
-            <input type="number" id="opsTargetDays" placeholder="輸入天數" oninput="renderOpsView()">
-        </div>
-        
-        <table id="opsTable">
-            <thead>
-                <tr>
-                    <th>SKU</th>
-                    <th>庫存</th>
-                    <th>週平均銷量</th>
-                    <th>可供給天數</th>
-                    <th>補貨數量</th>
-                </tr>
-            </thead>
-            <tbody id="opsTableBody"></tbody>
-        </table>
-        
-        <h3>Dashboard 1</h3>
-        <div>
-            <label>選擇工廠:</label>
-            <select id="factorySelect" onchange="renderDashboard1()">
-                <option value="">請選擇工廠</option>
-                <option value="工廠A">工廠A</option>
-                <option value="工廠B">工廠B</option>
-            </select>
-        </div>
-        
-        <table id="dashboard1Table">
-            <thead>
-                <tr>
-                    <th>SKU</th>
-                    <th>工廠庫存</th>
-                    <th>數量</th>
-                    <th>箱數</th>
-                </tr>
-            </thead>
-            <tbody id="dashboard1Body"></tbody>
-            <tfoot>
-                <tr>
-                    <td colspan="2">Summary</td>
-                    <td id="totalQty">0</td>
-                    <td id="totalBoxes">0</td>
-                </tr>
-            </tfoot>
-        </table>
-        
-        <button onclick="submitDashboard1()">提交</button>
-        
-        <div id="dashboard2Section" style="display: none;">
-            <h3>Dashboard 2</h3>
-            <table id="dashboard2Table">
-                <thead>
-                    <tr>
-                        <th>SKU</th>
-                        <th>工廠庫存</th>
-                        <th>數量</th>
-                        <th>箱數</th>
-                        <th>出貨方式</th>
-                        <th>備註</th>
-                    </tr>
-                </thead>
-                <tbody id="dashboard2Body"></tbody>
-            </table>
-            
-            <button onclick="submitDashboard2()">Submit</button>
-        </div>
-    </div>
+                <div id="opsSection" class="page-inventory">
+                    <h2>Inventory Replenishment</h2>
+                    
+                    <!-- Control Panel (Sticky) -->
+                    <div class="replen-control-panel">
+                        <select id="replenCountry" onchange="renderReplenishment()">
+                            <option value="US">US</option>
+                            <option value="UK">UK</option>
+                            <option value="DE">DE</option>
+                        </select>
+                        <select id="replenMarketplace" onchange="renderReplenishment()">
+                            <option value="amazon">Amazon</option>
+                            <option value="shopify">Shopify</option>
+                            <option value="target">Target</option>
+                        </select>
+                        <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="Target Days">
+                        <button onclick="submitReplenishmentPlans()">Submit Plans</button>
+                        <button class="btn-add-sku">+ Add SKU</button>
+                    </div>
+                    
+                    <!-- Replenishment Table -->
+                    <div class="replen-table-wrapper">
+                        <!-- Fixed Column -->
+                        <div class="replen-fixed-col">
+                            <div class="replen-fixed-header">SKU</div>
+                            <div class="replen-fixed-body" id="replenFixedBody"></div>
+                        </div>
+                        
+                        <!-- Scrollable Columns -->
+                        <div class="replen-scroll-area">
+                            <div class="replen-scroll-header">
+                                <div class="replen-cell">Lifecycle</div>
+                                <div class="replen-cell">Product Name</div>
+                                <div class="replen-cell">Current Inv</div>
+                                <div class="replen-cell">Avg Daily Sales</div>
+                                <div class="replen-cell">Forecast (90d)</div>
+                                <div class="replen-cell">Days of Supply</div>
+                                <div class="replen-cell">On the Way</div>
+                                <div class="replen-cell">Suggested Qty</div>
+                                <div class="replen-cell">Planned Qty</div>
+                                <div class="replen-cell">Status</div>
+                            </div>
+                            <div class="replen-scroll-body" id="replenScrollBody"></div>
+                        </div>
+                    </div>
+                </div>
             </section>
     
             <!-- Forecast 管理 Section -->

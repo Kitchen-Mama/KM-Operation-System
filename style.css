@@ -465,7 +465,7 @@ body {
 
 
 
-/* SKU Details 虛擬滾動條 */
+/* SKU Details ?�擬滾�?�?*/
 #sku-section .sku-scroll-proxy {
     overflow-x: auto;
     overflow-y: hidden;
@@ -479,7 +479,7 @@ body {
     height: 1px;
 }
 
-/* 隱藏各區塊的滾動條但保留滾動功能 */
+/* ?��??��?塊�?滾�?條�?保�?滾�??�能 */
 #sku-section .scroll-col {
     overflow-x: scroll;
     overflow-y: hidden;
@@ -491,7 +491,7 @@ body {
     display: none; /* Chrome/Safari/Opera */
 }
 
-/* SKU Details 雙層結構 */
+/* SKU Details ?�層結�? */
 #sku-section .sku-lifecycle-section {
     margin-bottom: var(--space-xl);
     border: 1px solid var(--border-light);
@@ -532,14 +532,14 @@ body {
     display: none;
 }
 
-/* 雙層表格容器 */
+/* ?�層表格容器 */
 .dual-layer-table {
     display: flex;
     position: relative;
     max-width: 100%;
 }
 
-/* 左側固定欄 */
+/* 左側?��?�?*/
 .fixed-col {
     width: 200px;
     flex-shrink: 0;
@@ -558,6 +558,7 @@ body {
     height: 48px;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -573,6 +574,7 @@ body {
     height: 48px;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -582,7 +584,7 @@ body {
     background: #F8F9FA;
 }
 
-/* 右側滾動欄 */
+/* ?�側滾�?�?*/
 #sku-section .scroll-col {
     flex: 1;
     overflow-x: auto;
@@ -598,7 +600,7 @@ body {
 }
 
 .scroll-cell {
-    padding: var(--space-md);
+    padding: 0 var(--space-md);
     font-weight: 500;
     color: white;
     white-space: nowrap;
@@ -608,6 +610,7 @@ body {
     height: 48px;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     flex-shrink: 0;
 }
 
@@ -632,9 +635,14 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 48px;
 }
 
-/* 欄位寬度設定 */
+/* 欄�?寬度設�? */
 .scroll-cell:nth-child(1) { width: 80px; min-width: 80px; }   /* Image */
 .scroll-cell:nth-child(2) { width: 100px; min-width: 100px; }  /* Status */
 .scroll-cell:nth-child(3) { width: 200px; min-width: 200px; }  /* Product Name */
@@ -648,9 +656,9 @@ body {
 .scroll-cell:nth-child(11) { width: 120px; min-width: 120px; } /* Package Weight */
 .scroll-cell:nth-child(12) { width: 150px; min-width: 150px; } /* Carton Dimensions */
 .scroll-cell:nth-child(13) { width: 120px; min-width: 120px; } /* Carton Weight */
-.scroll-cell:nth-child(14) { width: 100px; min-width: 100px; } /* 單箱數量 */
+.scroll-cell:nth-child(14) { width: 100px; min-width: 100px; } /* ?�箱?��? */
 .scroll-cell:nth-child(15) { width: 100px; min-width: 100px; } /* HScode */
-.scroll-cell:nth-child(16) { width: 100px; min-width: 100px; } /* 申報價值 */
+.scroll-cell:nth-child(16) { width: 100px; min-width: 100px; } /* ?�報?��?*/
 .scroll-cell:nth-child(17) { width: 120px; min-width: 120px; } /* Minimum Price */
 .scroll-cell:nth-child(18) { width: 100px; min-width: 100px; } /* MSRP */
 .scroll-cell:nth-child(19) { width: 120px; min-width: 120px; } /* Selling Price */
@@ -861,4 +869,226 @@ table td button {
     border-bottom: 1px solid var(--border-light);
     padding-bottom: var(--space-xs);
     margin-bottom: var(--space-xs);
+}
+
+
+/* ========================================
+   Inventory Replenishment (Stage 1)
+   Scoped to #ops-section only
+======================================== */
+#ops-section .page-inventory {
+    width: 100%;
+}
+
+#ops-section .replen-control-panel {
+    position: sticky;
+    top: 80px;
+    background: var(--bg-surface);
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-xl);
+    display: flex;
+    gap: var(--space-lg);
+    align-items: center;
+    z-index: 50;
+}
+
+#ops-section .replen-control-panel select,
+#ops-section .replen-control-panel input {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+}
+
+#ops-section .replen-table-wrapper {
+    display: flex;
+    position: relative;`n    gap: 2px;
+}
+
+#ops-section .replen-fixed-col {
+    width: 120px;
+    flex-shrink: 0;
+    background: white;
+    z-index: 40;
+    border-right: 2px solid var(--border-medium);
+}
+
+#ops-section .replen-fixed-header {
+    background: var(--soft-green);
+    color: white;
+    padding: var(--space-sm) var(--space-md);
+    font-weight: 500;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    }
+
+#ops-section .replen-fixed-body {
+    background: white;
+}
+
+#ops-section .replen-fixed-row {
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--border-light);
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#ops-section .replen-fixed-row:hover {
+    background: #F8F9FA;
+}
+
+#ops-section .replen-fixed-row.expanded {
+    background: #E3F2FD;
+}
+
+#ops-section .replen-scroll-area {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+#ops-section .replen-scroll-header {
+    display: flex;
+    background: var(--soft-green);
+    min-width: max-content;
+    }
+
+#ops-section .replen-cell {
+    padding: var(--space-sm) var(--space-md);
+    font-weight: 500;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-right: 1px solid rgba(255,255,255,0.2);
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-shrink: 0;
+}
+
+#ops-section .replen-scroll-header .replen-cell:nth-child(1) { width: 100px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(2) { width: 200px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(3) { width: 120px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(4) { width: 140px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(5) { width: 130px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(6) { width: 130px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(7) { width: 120px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(8) { width: 130px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(9) { width: 120px; }
+#ops-section .replen-scroll-header .replen-cell:nth-child(10) { width: 100px; }
+
+#ops-section .replen-scroll-body {
+    background: white;
+}
+
+#ops-section .replen-scroll-row {
+    display: flex;
+    border-bottom: 1px solid var(--border-light);
+    min-width: max-content;
+    cursor: pointer;
+}
+
+#ops-section .replen-scroll-row:hover {
+    background: #F8F9FA;
+}
+
+#ops-section .replen-scroll-row.expanded {
+    background: #E3F2FD;
+}
+
+#ops-section .replen-scroll-row .replen-cell {
+    background: transparent;
+    color: var(--text-primary);
+    font-weight: normal;
+    border-right: 1px solid var(--border-light);
+}
+
+#ops-section .replen-scroll-row .replen-cell:nth-child(1) { width: 100px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(2) { width: 200px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(3) { width: 120px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(4) { width: 140px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(5) { width: 130px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(6) { width: 130px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(7) { width: 120px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(8) { width: 130px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(9) { width: 120px; }
+#ops-section .replen-scroll-row .replen-cell:nth-child(10) { width: 100px; }
+
+#ops-section .replen-scroll-row .replen-cell input {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+}
+
+#ops-section .replen-expand-panel {
+    display: flex;
+    border-bottom: 2px solid var(--border-medium);
+    background: #F8F9FA;
+}
+
+#ops-section .replen-expand-fixed {
+    width: 120px;
+    flex-shrink: 0;
+    padding: var(--space-md);
+    border-right: 2px solid var(--border-medium);
+    background: white;
+}
+
+#ops-section .replen-expand-scroll {
+    flex: 1;
+    padding: var(--space-md);
+    display: flex;
+    gap: var(--space-lg);
+    min-width: max-content;
+}
+
+#ops-section .replen-expand-section {
+    min-width: 300px;
+    background: white;
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+}
+
+#ops-section .replen-expand-section h4 {
+    margin: 0 0 var(--space-sm) 0;
+    color: var(--text-primary);
+    font-size: var(--text-heading);
+}
+
+
+
+
+
+
+
+
+
+
+/* ========================================
+   Global Module Section Spacing
+======================================== */
+.module-section h2 {
+    margin-bottom: var(--space-lg);
+}
+
+.module-section > div > * + * {
+    margin-top: var(--space-lg);
+}
+
+
+
+#ops-section .replen-control-panel .btn-add-sku {
+    margin-left: auto;
 }
