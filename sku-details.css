@@ -1,0 +1,282 @@
+/* ========================================
+   SKU Details - Table Behavior Contract
+   Scoped to #sku-section
+======================================== */
+
+:root {
+    --scrollbar-h: 12px;
+}
+
+/* SKU Lifecycle Section */
+#sku-section .sku-lifecycle-section {
+    margin-bottom: 2rem;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: white;
+}
+
+#sku-section .sku-section-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    background: #FFF8F0;
+    padding: var(--space-md);
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-light);
+}
+
+#sku-section .sku-section-header:hover {
+    background: var(--bg-surface);
+}
+
+#sku-section .arrow {
+    margin-right: var(--space-xs);
+    transition: transform 0.2s ease;
+}
+
+#sku-section .sku-lifecycle-section.is-collapsed .arrow {
+    transform: rotate(-90deg);
+}
+
+#sku-section .sku-lifecycle-section.is-collapsed .dual-layer-table {
+    display: none;
+}
+
+/* Dual Layer Table */
+#sku-section .dual-layer-table {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    position: relative;
+}
+
+/* Table Header Bar - Sticky Container */
+#sku-section .table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: #7FB069;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Fixed Header (SKU) */
+#sku-section .fixed-header {
+    width: 150px;
+    flex-shrink: 0;
+    background: #7FB069;
+    border-right: 2px solid #CBD5E1;
+}
+
+#sku-section .fixed-header .header-cell {
+    height: 48px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    color: white;
+    font-weight: 500;
+    box-sizing: border-box;
+}
+
+/* Scroll Header Viewport */
+#sku-section .scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    z-index: 90;
+}
+
+#sku-section .scroll-header {
+    display: flex;
+    background: #7FB069;
+    min-width: max-content;
+}
+
+#sku-section .scroll-header .header-cell {
+    height: 48px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    color: white;
+    font-weight: 500;
+    border-right: 1px solid rgba(255,255,255,0.2);
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+/* Column Widths - Using data-col attribute for stability */
+#sku-section .scroll-header .header-cell[data-col="1"] { width: 80px; }   /* Image */
+#sku-section .scroll-header .header-cell[data-col="2"] { width: 100px; }  /* Status */
+#sku-section .scroll-header .header-cell[data-col="3"] { width: 200px; }  /* Product Name */
+#sku-section .scroll-header .header-cell[data-col="4"] { width: 120px; }  /* Category */
+#sku-section .scroll-header .header-cell[data-col="5"] { width: 140px; }  /* GS1 Code */
+#sku-section .scroll-header .header-cell[data-col="6"] { width: 100px; }  /* GS1 Type */
+#sku-section .scroll-header .header-cell[data-col="7"] { width: 120px; }  /* AMZ ASIN */
+#sku-section .scroll-header .header-cell[data-col="8"] { width: 150px; }  /* Item Dimensions */
+#sku-section .scroll-header .header-cell[data-col="9"] { width: 120px; }  /* Item Weight */
+#sku-section .scroll-header .header-cell[data-col="10"] { width: 100px; } /* Package */
+#sku-section .scroll-header .header-cell[data-col="11"] { width: 120px; } /* Package Weight */
+#sku-section .scroll-header .header-cell[data-col="12"] { width: 150px; } /* Carton Dimensions */
+#sku-section .scroll-header .header-cell[data-col="13"] { width: 120px; } /* Carton Weight */
+#sku-section .scroll-header .header-cell[data-col="14"] { width: 100px; } /* 單箱數量 */
+#sku-section .scroll-header .header-cell[data-col="15"] { width: 100px; } /* HScode */
+#sku-section .scroll-header .header-cell[data-col="16"] { width: 100px; } /* 申報價值 */
+#sku-section .scroll-header .header-cell[data-col="17"] { width: 120px; } /* Minimum Price */
+#sku-section .scroll-header .header-cell[data-col="18"] { width: 100px; } /* MSRP */
+#sku-section .scroll-header .header-cell[data-col="19"] { width: 120px; } /* Selling Price */
+#sku-section .scroll-header .header-cell[data-col="20"] { width: 100px; } /* 負責PM */
+
+/* Table Body Bar */
+#sku-section .table-body-bar {
+    display: flex;
+}
+
+/* Fixed Column (SKU) - Sticky Left */
+#sku-section .fixed-col {
+    width: 150px;
+    flex-shrink: 0;
+    position: sticky;
+    left: 0;
+    z-index: 110;
+    background: white;
+    border-right: 2px solid #CBD5E1;
+}
+
+#sku-section .fixed-body {
+    background: white;
+    padding-bottom: var(--scrollbar-h);
+}
+
+#sku-section .fixed-row {
+    height: 48px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #E2E8F0;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+#sku-section .fixed-row:hover {
+    background: #F8F9FA;
+}
+
+/* Scrollable Columns */
+#sku-section .scroll-col {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+#sku-section .scroll-body {
+    background: white;
+    padding-bottom: var(--scrollbar-h);
+}
+
+#sku-section .scroll-row {
+    height: 48px;
+    display: flex;
+    min-width: max-content;
+    border-bottom: 1px solid #E2E8F0;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+#sku-section .scroll-row:hover {
+    background: #F8F9FA;
+}
+
+#sku-section .scroll-cell {
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    border-right: 1px solid #E2E8F0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+/* Match column widths - Using data-col attribute */
+#sku-section .scroll-cell[data-col="1"] { width: 80px; }
+#sku-section .scroll-cell[data-col="2"] { width: 100px; }
+#sku-section .scroll-cell[data-col="3"] { width: 200px; }
+#sku-section .scroll-cell[data-col="4"] { width: 120px; }
+#sku-section .scroll-cell[data-col="5"] { width: 140px; }
+#sku-section .scroll-cell[data-col="6"] { width: 100px; }
+#sku-section .scroll-cell[data-col="7"] { width: 120px; }
+#sku-section .scroll-cell[data-col="8"] { width: 150px; }
+#sku-section .scroll-cell[data-col="9"] { width: 120px; }
+#sku-section .scroll-cell[data-col="10"] { width: 100px; }
+#sku-section .scroll-cell[data-col="11"] { width: 120px; }
+#sku-section .scroll-cell[data-col="12"] { width: 150px; }
+#sku-section .scroll-cell[data-col="13"] { width: 120px; }
+#sku-section .scroll-cell[data-col="14"] { width: 100px; }
+#sku-section .scroll-cell[data-col="15"] { width: 100px; }
+#sku-section .scroll-cell[data-col="16"] { width: 100px; }
+#sku-section .scroll-cell[data-col="17"] { width: 120px; }
+#sku-section .scroll-cell[data-col="18"] { width: 100px; }
+#sku-section .scroll-cell[data-col="19"] { width: 120px; }
+#sku-section .scroll-cell[data-col="20"] { width: 100px; }
+
+/* Image Placeholder */
+#sku-section .image-placeholder {
+    width: 40px;
+    height: 40px;
+    background: #FFF8F0;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #94A3B8;
+}
+
+/* Scrollbar Styling */
+#sku-section .scroll-col::-webkit-scrollbar {
+    height: 12px;
+}
+
+#sku-section .scroll-col::-webkit-scrollbar-track {
+    background: #F1F5F9;
+}
+
+#sku-section .scroll-col::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 6px;
+}
+
+#sku-section .scroll-col::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+}
+
+/* SKU Toolbar */
+#sku-section .sku-toolbar {
+    display: flex;
+    gap: var(--space-md);
+    align-items: center;
+    margin-bottom: var(--space-lg);
+    padding: var(--space-md);
+    background: var(--bg-surface);
+    border-radius: var(--radius-md);
+}
+
+#sku-section .sku-search {
+    flex: 1;
+    max-width: 300px;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-body);
+}

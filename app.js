@@ -578,11 +578,16 @@ function initWorldTimes() {
     setInterval(updateWorldTimes, 60000); // 每 60 秒更新
 }
 
-// SKU Details 渲染函數 - 雙層結構
+// SKU Details 渲染函數 - SKU Test-2 架構
 function renderSkuDetailsTable() {
     renderSkuLifecycleTable('upcoming', upcomingSkuData);
     renderSkuLifecycleTable('running', runningSkuData);
     renderSkuLifecycleTable('phasing', phasingOutSkuData);
+    
+    // 初始化 header 同步
+    setTimeout(() => {
+        syncSkuHeaderScroll();
+    }, 100);
 }
 
 function renderSkuLifecycleTable(section, data) {
@@ -599,28 +604,44 @@ function renderSkuLifecycleTable(section, data) {
     // 渲染右側滾動欄 (其他欄位)
     scrollBody.innerHTML = data.map(item => `
         <div class="scroll-row">
-            <div class="scroll-cell"><div class="image-placeholder">IMG</div></div>
-            <div class="scroll-cell">${item.status}</div>
-            <div class="scroll-cell">${item.productName}</div>
-            <div class="scroll-cell">${item.category}</div>
-            <div class="scroll-cell">${item.gs1Code}</div>
-            <div class="scroll-cell">${item.gs1Type}</div>
-            <div class="scroll-cell">${item.amzAsin}</div>
-            <div class="scroll-cell">${item.itemDimensions}</div>
-            <div class="scroll-cell">${item.itemWeight}</div>
-            <div class="scroll-cell">${item.package}</div>
-            <div class="scroll-cell">${item.packageWeight}</div>
-            <div class="scroll-cell">${item.cartonDimensions}</div>
-            <div class="scroll-cell">${item.cartonWeight}</div>
-            <div class="scroll-cell">${item.unitsPerCarton}</div>
-            <div class="scroll-cell">${item.hscode}</div>
-            <div class="scroll-cell">${item.declaredValue}</div>
-            <div class="scroll-cell">${item.minimumPrice}</div>
-            <div class="scroll-cell">${item.msrp}</div>
-            <div class="scroll-cell">${item.sellingPrice}</div>
-            <div class="scroll-cell">${item.pm}</div>
+            <div class="scroll-cell" data-col="1"><div class="image-placeholder">IMG</div></div>
+            <div class="scroll-cell" data-col="2">${item.status}</div>
+            <div class="scroll-cell" data-col="3">${item.productName}</div>
+            <div class="scroll-cell" data-col="4">${item.category}</div>
+            <div class="scroll-cell" data-col="5">${item.gs1Code}</div>
+            <div class="scroll-cell" data-col="6">${item.gs1Type}</div>
+            <div class="scroll-cell" data-col="7">${item.amzAsin}</div>
+            <div class="scroll-cell" data-col="8">${item.itemDimensions}</div>
+            <div class="scroll-cell" data-col="9">${item.itemWeight}</div>
+            <div class="scroll-cell" data-col="10">${item.package}</div>
+            <div class="scroll-cell" data-col="11">${item.packageWeight}</div>
+            <div class="scroll-cell" data-col="12">${item.cartonDimensions}</div>
+            <div class="scroll-cell" data-col="13">${item.cartonWeight}</div>
+            <div class="scroll-cell" data-col="14">${item.unitsPerCarton}</div>
+            <div class="scroll-cell" data-col="15">${item.hscode}</div>
+            <div class="scroll-cell" data-col="16">${item.declaredValue}</div>
+            <div class="scroll-cell" data-col="17">${item.minimumPrice}</div>
+            <div class="scroll-cell" data-col="18">${item.msrp}</div>
+            <div class="scroll-cell" data-col="19">${item.sellingPrice}</div>
+            <div class="scroll-cell" data-col="20">${item.pm}</div>
         </div>
     `).join('');
+}
+
+// SKU Header 水平滾動同步
+function syncSkuHeaderScroll() {
+    const sections = ['upcoming', 'running', 'phasing'];
+    
+    sections.forEach(section => {
+        const scrollCol = document.querySelector(`#sku-section [data-section="${section}"] .scroll-col`);
+        const scrollHeader = document.querySelector(`#sku-section [data-section="${section}"] .scroll-header`);
+        
+        if (!scrollCol || !scrollHeader) return;
+        
+        scrollCol.addEventListener('scroll', () => {
+            scrollHeader.style.transform = `translateX(-${scrollCol.scrollLeft}px)`;
+        });
+    });
 }
 
 // SKU Details 功能 - Stage 1 最小實作
@@ -780,15 +801,20 @@ function toggleColumn(colIndex) {
     
     sections.forEach(section => {
         if (colIndex === 0) {
-            // SKU 欄位（fixed-col）
             const fixedCol = section.querySelector('.fixed-col');
             if (fixedCol) {
                 const isVisible = fixedCol.style.display !== 'none';
                 fixedCol.style.display = isVisible ? 'none' : '';
             }
         } else {
-            // 其他欄位（scroll-col 內的 scroll-cell）
-            const scrollCells = section.querySelectorAll('.scroll-col .scroll-cell:nth-child(' + colIndex + ')');
+            const headerCells = section.querySelectorAll('.scroll-header .header-cell[data-col="' + colIndex + '"]');
+            const scrollCells = section.querySelectorAll('.scroll-col .scroll-cell[data-col="' + colIndex + '"]');
+            
+            headerCells.forEach(cell => {
+                const isVisible = cell.style.display !== 'none';
+                cell.style.display = isVisible ? 'none' : '';
+            });
+            
             scrollCells.forEach(cell => {
                 const isVisible = cell.style.display !== 'none';
                 cell.style.display = isVisible ? 'none' : '';
@@ -798,7 +824,6 @@ function toggleColumn(colIndex) {
     
     updateAllCheckbox();
     
-    // 更新滾動條寬度
     if (window.updateSkuScrollWidth) {
         setTimeout(() => window.updateSkuScrollWidth(), 50);
     }
@@ -820,7 +845,13 @@ function toggleAllColumns() {
                     fixedCol.style.display = checkAll.checked ? '' : 'none';
                 }
             } else {
-                const scrollCells = section.querySelectorAll('.scroll-col .scroll-cell:nth-child(' + colIndex + ')');
+                const headerCells = section.querySelectorAll('.scroll-header .header-cell[data-col="' + colIndex + '"]');
+                const scrollCells = section.querySelectorAll('.scroll-col .scroll-cell[data-col="' + colIndex + '"]');
+                
+                headerCells.forEach(cell => {
+                    cell.style.display = checkAll.checked ? '' : 'none';
+                });
+                
                 scrollCells.forEach(cell => {
                     cell.style.display = checkAll.checked ? '' : 'none';
                 });
@@ -828,7 +859,6 @@ function toggleAllColumns() {
         });
     });
     
-    // 更新滾動條寬度
     if (window.updateSkuScrollWidth) {
         setTimeout(() => window.updateSkuScrollWidth(), 50);
     }

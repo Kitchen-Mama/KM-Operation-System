@@ -151,7 +151,9 @@ body {
     flex: 1;
     margin-left: 250px;
     background: white;
+    overflow-y: auto;
     overflow-x: hidden;
+    padding: 0;
 }
 
 .content-area {

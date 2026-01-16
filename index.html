@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="sku-details.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -387,34 +388,44 @@
                 <span class="arrow">▼</span> Upcoming SKU
             </h3>
             <div class="dual-layer-table">
-                <div class="fixed-col">
-                    <div class="fixed-header">SKU</div>
-                    <div class="fixed-body" id="upcomingFixedBody"></div>
-                </div>
-                <div class="scroll-col">
-                    <div class="scroll-header">
-                        <div class="scroll-cell">Image</div>
-                        <div class="scroll-cell">Status</div>
-                        <div class="scroll-cell">Product Name</div>
-                        <div class="scroll-cell">Category</div>
-                        <div class="scroll-cell">GS1 Code</div>
-                        <div class="scroll-cell">GS1 Type</div>
-                        <div class="scroll-cell">AMZ ASIN</div>
-                        <div class="scroll-cell">Item Dimensions</div>
-                        <div class="scroll-cell">Item Weight</div>
-                        <div class="scroll-cell">Package</div>
-                        <div class="scroll-cell">Package Weight</div>
-                        <div class="scroll-cell">Carton Dimensions</div>
-                        <div class="scroll-cell">Carton Weight</div>
-                        <div class="scroll-cell">單箱數量</div>
-                        <div class="scroll-cell">HScode</div>
-                        <div class="scroll-cell">申報價值</div>
-                        <div class="scroll-cell">Minimum Price</div>
-                        <div class="scroll-cell">MSRP</div>
-                        <div class="scroll-cell">Selling Price</div>
-                        <div class="scroll-cell">負責PM</div>
+                <!-- Sticky Header Bar -->
+                <div class="table-header-bar">
+                    <div class="fixed-header">
+                        <div class="header-cell">SKU</div>
                     </div>
-                    <div class="scroll-body" id="upcomingScrollBody"></div>
+                    <div class="scroll-header-viewport">
+                        <div class="scroll-header">
+                            <div class="header-cell" data-col="1">Image</div>
+                            <div class="header-cell" data-col="2">Status</div>
+                            <div class="header-cell" data-col="3">Product Name</div>
+                            <div class="header-cell" data-col="4">Category</div>
+                            <div class="header-cell" data-col="5">GS1 Code</div>
+                            <div class="header-cell" data-col="6">GS1 Type</div>
+                            <div class="header-cell" data-col="7">AMZ ASIN</div>
+                            <div class="header-cell" data-col="8">Item Dimensions</div>
+                            <div class="header-cell" data-col="9">Item Weight</div>
+                            <div class="header-cell" data-col="10">Package</div>
+                            <div class="header-cell" data-col="11">Package Weight</div>
+                            <div class="header-cell" data-col="12">Carton Dimensions</div>
+                            <div class="header-cell" data-col="13">Carton Weight</div>
+                            <div class="header-cell" data-col="14">單箱數量</div>
+                            <div class="header-cell" data-col="15">HScode</div>
+                            <div class="header-cell" data-col="16">申報價值</div>
+                            <div class="header-cell" data-col="17">Minimum Price</div>
+                            <div class="header-cell" data-col="18">MSRP</div>
+                            <div class="header-cell" data-col="19">Selling Price</div>
+                            <div class="header-cell" data-col="20">負責PM</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Body -->
+                <div class="table-body-bar">
+                    <div class="fixed-col">
+                        <div class="fixed-body" id="upcomingFixedBody"></div>
+                    </div>
+                    <div class="scroll-col">
+                        <div class="scroll-body" id="upcomingScrollBody"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -425,34 +436,44 @@
                 <span class="arrow">▼</span> Running in the Market
             </h3>
             <div class="dual-layer-table">
-                <div class="fixed-col">
-                    <div class="fixed-header">SKU</div>
-                    <div class="fixed-body" id="runningFixedBody"></div>
-                </div>
-                <div class="scroll-col">
-                    <div class="scroll-header">
-                        <div class="scroll-cell">Image</div>
-                        <div class="scroll-cell">Status</div>
-                        <div class="scroll-cell">Product Name</div>
-                        <div class="scroll-cell">Category</div>
-                        <div class="scroll-cell">GS1 Code</div>
-                        <div class="scroll-cell">GS1 Type</div>
-                        <div class="scroll-cell">AMZ ASIN</div>
-                        <div class="scroll-cell">Item Dimensions</div>
-                        <div class="scroll-cell">Item Weight</div>
-                        <div class="scroll-cell">Package</div>
-                        <div class="scroll-cell">Package Weight</div>
-                        <div class="scroll-cell">Carton Dimensions</div>
-                        <div class="scroll-cell">Carton Weight</div>
-                        <div class="scroll-cell">單箱數量</div>
-                        <div class="scroll-cell">HScode</div>
-                        <div class="scroll-cell">申報價值</div>
-                        <div class="scroll-cell">Minimum Price</div>
-                        <div class="scroll-cell">MSRP</div>
-                        <div class="scroll-cell">Selling Price</div>
-                        <div class="scroll-cell">負責PM</div>
+                <!-- Sticky Header Bar -->
+                <div class="table-header-bar">
+                    <div class="fixed-header">
+                        <div class="header-cell">SKU</div>
                     </div>
-                    <div class="scroll-body" id="runningScrollBody"></div>
+                    <div class="scroll-header-viewport">
+                        <div class="scroll-header">
+                            <div class="header-cell" data-col="1">Image</div>
+                            <div class="header-cell" data-col="2">Status</div>
+                            <div class="header-cell" data-col="3">Product Name</div>
+                            <div class="header-cell" data-col="4">Category</div>
+                            <div class="header-cell" data-col="5">GS1 Code</div>
+                            <div class="header-cell" data-col="6">GS1 Type</div>
+                            <div class="header-cell" data-col="7">AMZ ASIN</div>
+                            <div class="header-cell" data-col="8">Item Dimensions</div>
+                            <div class="header-cell" data-col="9">Item Weight</div>
+                            <div class="header-cell" data-col="10">Package</div>
+                            <div class="header-cell" data-col="11">Package Weight</div>
+                            <div class="header-cell" data-col="12">Carton Dimensions</div>
+                            <div class="header-cell" data-col="13">Carton Weight</div>
+                            <div class="header-cell" data-col="14">單箱數量</div>
+                            <div class="header-cell" data-col="15">HScode</div>
+                            <div class="header-cell" data-col="16">申報價值</div>
+                            <div class="header-cell" data-col="17">Minimum Price</div>
+                            <div class="header-cell" data-col="18">MSRP</div>
+                            <div class="header-cell" data-col="19">Selling Price</div>
+                            <div class="header-cell" data-col="20">負責PM</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Body -->
+                <div class="table-body-bar">
+                    <div class="fixed-col">
+                        <div class="fixed-body" id="runningFixedBody"></div>
+                    </div>
+                    <div class="scroll-col">
+                        <div class="scroll-body" id="runningScrollBody"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -463,34 +484,44 @@
                 <span class="arrow">▼</span> Phasing Out
             </h3>
             <div class="dual-layer-table">
-                <div class="fixed-col">
-                    <div class="fixed-header">SKU</div>
-                    <div class="fixed-body" id="phasingFixedBody"></div>
-                </div>
-                <div class="scroll-col">
-                    <div class="scroll-header">
-                        <div class="scroll-cell">Image</div>
-                        <div class="scroll-cell">Status</div>
-                        <div class="scroll-cell">Product Name</div>
-                        <div class="scroll-cell">Category</div>
-                        <div class="scroll-cell">GS1 Code</div>
-                        <div class="scroll-cell">GS1 Type</div>
-                        <div class="scroll-cell">AMZ ASIN</div>
-                        <div class="scroll-cell">Item Dimensions</div>
-                        <div class="scroll-cell">Item Weight</div>
-                        <div class="scroll-cell">Package</div>
-                        <div class="scroll-cell">Package Weight</div>
-                        <div class="scroll-cell">Carton Dimensions</div>
-                        <div class="scroll-cell">Carton Weight</div>
-                        <div class="scroll-cell">單箱數量</div>
-                        <div class="scroll-cell">HScode</div>
-                        <div class="scroll-cell">申報價值</div>
-                        <div class="scroll-cell">Minimum Price</div>
-                        <div class="scroll-cell">MSRP</div>
-                        <div class="scroll-cell">Selling Price</div>
-                        <div class="scroll-cell">負責PM</div>
+                <!-- Sticky Header Bar -->
+                <div class="table-header-bar">
+                    <div class="fixed-header">
+                        <div class="header-cell">SKU</div>
                     </div>
-                    <div class="scroll-body" id="phasingScrollBody"></div>
+                    <div class="scroll-header-viewport">
+                        <div class="scroll-header">
+                            <div class="header-cell" data-col="1">Image</div>
+                            <div class="header-cell" data-col="2">Status</div>
+                            <div class="header-cell" data-col="3">Product Name</div>
+                            <div class="header-cell" data-col="4">Category</div>
+                            <div class="header-cell" data-col="5">GS1 Code</div>
+                            <div class="header-cell" data-col="6">GS1 Type</div>
+                            <div class="header-cell" data-col="7">AMZ ASIN</div>
+                            <div class="header-cell" data-col="8">Item Dimensions</div>
+                            <div class="header-cell" data-col="9">Item Weight</div>
+                            <div class="header-cell" data-col="10">Package</div>
+                            <div class="header-cell" data-col="11">Package Weight</div>
+                            <div class="header-cell" data-col="12">Carton Dimensions</div>
+                            <div class="header-cell" data-col="13">Carton Weight</div>
+                            <div class="header-cell" data-col="14">單箱數量</div>
+                            <div class="header-cell" data-col="15">HScode</div>
+                            <div class="header-cell" data-col="16">申報價值</div>
+                            <div class="header-cell" data-col="17">Minimum Price</div>
+                            <div class="header-cell" data-col="18">MSRP</div>
+                            <div class="header-cell" data-col="19">Selling Price</div>
+                            <div class="header-cell" data-col="20">負責PM</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Body -->
+                <div class="table-body-bar">
+                    <div class="fixed-col">
+                        <div class="fixed-body" id="phasingFixedBody"></div>
+                    </div>
+                    <div class="scroll-col">
+                        <div class="scroll-body" id="phasingScrollBody"></div>
+                    </div>
                 </div>
             </div>
         </div>

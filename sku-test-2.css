@@ -1,0 +1,246 @@
+:root {
+    --scrollbar-h: 12px;
+}
+
+/* Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f5f5f5;
+    overflow: hidden;
+}
+
+/* Page Layout */
+.page-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.test-header {
+    background: #2D3748;
+    color: white;
+    padding: 1rem 2rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.test-header h1 {
+    font-size: 1.5rem;
+    font-weight: 500;
+}
+
+/* Main Content - Single Vertical Scroll Source */
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0;
+    position: relative;
+}
+
+/* Content Padding Wrapper */
+.content-pad {
+    padding: 2rem;
+}
+
+/* Dual Layer Table */
+.dual-layer-table {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    position: relative;
+}
+
+/* Table Header Bar - Sticky Container */
+.table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: #7FB069;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Fixed Header (SKU) */
+.fixed-header {
+    width: 150px;
+    flex-shrink: 0;
+    background: #7FB069;
+    border-right: 2px solid #CBD5E1;
+}
+
+.fixed-header .header-cell {
+    height: 48px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    color: white;
+    font-weight: 500;
+    box-sizing: border-box;
+}
+
+/* Scroll Header Viewport - Clipping Container */
+.scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    z-index: 90;
+}
+
+.scroll-header {
+    display: flex;
+    background: #7FB069;
+    min-width: max-content;
+}
+
+.scroll-header .header-cell {
+    height: 48px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    color: white;
+    font-weight: 500;
+    border-right: 1px solid rgba(255,255,255,0.2);
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+/* Column Widths */
+.scroll-header .header-cell:nth-child(1) { width: 80px; }   /* Image */
+.scroll-header .header-cell:nth-child(2) { width: 100px; }  /* Status */
+.scroll-header .header-cell:nth-child(3) { width: 200px; }  /* Product Name */
+.scroll-header .header-cell:nth-child(4) { width: 120px; }  /* Category */
+.scroll-header .header-cell:nth-child(5) { width: 140px; }  /* GS1 Code */
+.scroll-header .header-cell:nth-child(6) { width: 100px; }  /* GS1 Type */
+.scroll-header .header-cell:nth-child(7) { width: 120px; }  /* AMZ ASIN */
+.scroll-header .header-cell:nth-child(8) { width: 150px; }  /* Item Dimensions */
+.scroll-header .header-cell:nth-child(9) { width: 120px; }  /* Item Weight */
+.scroll-header .header-cell:nth-child(10) { width: 100px; } /* Package */
+
+/* Table Body Bar */
+.table-body-bar {
+    display: flex;
+}
+
+/* Fixed Column (SKU) - Sticky Left */
+.fixed-col {
+    width: 150px;
+    flex-shrink: 0;
+    position: sticky;
+    left: 0;
+    z-index: 110;
+    background: white;
+    border-right: 2px solid #CBD5E1;
+}
+
+.fixed-body {
+    background: white;
+    padding-bottom: var(--scrollbar-h);
+}
+
+.fixed-row {
+    height: 48px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #E2E8F0;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+.fixed-row:hover {
+    background: #F8F9FA;
+}
+
+/* Scrollable Columns - Single Horizontal Scroll Source */
+.scroll-col {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.scroll-body {
+    background: white;
+    padding-bottom: var(--scrollbar-h);
+}
+
+.scroll-row {
+    height: 48px;
+    display: flex;
+    min-width: max-content;
+    border-bottom: 1px solid #E2E8F0;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.scroll-row:hover {
+    background: #F8F9FA;
+}
+
+.scroll-cell {
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    border-right: 1px solid #E2E8F0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+/* Match column widths */
+.scroll-cell:nth-child(1) { width: 80px; }
+.scroll-cell:nth-child(2) { width: 100px; }
+.scroll-cell:nth-child(3) { width: 200px; }
+.scroll-cell:nth-child(4) { width: 120px; }
+.scroll-cell:nth-child(5) { width: 140px; }
+.scroll-cell:nth-child(6) { width: 100px; }
+.scroll-cell:nth-child(7) { width: 120px; }
+.scroll-cell:nth-child(8) { width: 150px; }
+.scroll-cell:nth-child(9) { width: 120px; }
+.scroll-cell:nth-child(10) { width: 100px; }
+
+/* Image Placeholder */
+.image-placeholder {
+    width: 40px;
+    height: 40px;
+    background: #FFF8F0;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #94A3B8;
+}
+
+/* Scrollbar Styling */
+.scroll-col::-webkit-scrollbar {
+    height: 12px;
+}
+
+.scroll-col::-webkit-scrollbar-track {
+    background: #F1F5F9;
+}
+
+.scroll-col::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 6px;
+}
+
+.scroll-col::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+}
