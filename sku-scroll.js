@@ -1,27 +1,43 @@
 // SKU Details 統一滾動控制
 (function() {
     let scrollProxy = null;
+    let verticalScrollProxy = null;
     let scrollCols = [];
+    let isInitialized = false;
     
     function initSkuScroll() {
         const skuSection = document.getElementById('sku-section');
-        if (!skuSection) return;
+        if (!skuSection || isInitialized) return;
+        
+        const skuDetailsSection = skuSection.querySelector('#skuDetailsSection');
+        if (!skuDetailsSection) return;
         
         scrollCols = Array.from(skuSection.querySelectorAll('.scroll-col'));
         if (scrollCols.length === 0) return;
         
-        // 創建虛擬滾動條
+        // 創建水平虛擬滾動條
         if (!scrollProxy) {
             scrollProxy = document.createElement('div');
             scrollProxy.className = 'sku-scroll-proxy';
             scrollProxy.innerHTML = '<div class="sku-scroll-content"></div>';
-            skuSection.querySelector('#skuDetailsSection').appendChild(scrollProxy);
+            skuDetailsSection.appendChild(scrollProxy);
         }
         
-        // 計算最大寬度
-        updateScrollWidth();
+        // 創建垂直虛擬滾動條
+        if (!verticalScrollProxy) {
+            verticalScrollProxy = document.createElement('div');
+            verticalScrollProxy.className = 'sku-vertical-scroll-proxy';
+            verticalScrollProxy.innerHTML = '<div class="sku-vertical-scroll-content"></div>';
+            document.body.appendChild(verticalScrollProxy);
+        }
         
-        // 監聽虛擬滾動條
+        isInitialized = true;
+        
+        // 計算最大寬度和高度
+        updateScrollWidth();
+        updateScrollHeight();
+        
+        // 監聽水平虛擬滾動條
         scrollProxy.addEventListener('scroll', function() {
             const scrollLeft = this.scrollLeft;
             scrollCols.forEach(col => {
@@ -29,7 +45,25 @@
             });
         });
         
-        // 監聽各區塊滾動（同步回虛擬滾動條）
+        // 監聽垂直虛擬滾動條
+        verticalScrollProxy.addEventListener('scroll', function() {
+            const mainContent = document.querySelector('.main-content');
+            if (mainContent) {
+                mainContent.scrollTop = this.scrollTop;
+            }
+        });
+        
+        // 監聽 main-content 垂直滾動（同步回虛擬滾動條）
+        const mainContent = document.querySelector('.main-content');
+        if (mainContent) {
+            mainContent.addEventListener('scroll', function() {
+                if (verticalScrollProxy && verticalScrollProxy.scrollTop !== this.scrollTop) {
+                    verticalScrollProxy.scrollTop = this.scrollTop;
+                }
+            });
+        }
+        
+        // 監聽各區塊水平滾動（同步回虛擬滾動條）
         scrollCols.forEach(col => {
             col.addEventListener('scroll', function() {
                 if (scrollProxy.scrollLeft !== this.scrollLeft) {
@@ -42,7 +76,6 @@
     function updateScrollWidth() {
         if (!scrollProxy || scrollCols.length === 0) return;
         
-        // 取得最寬的 scroll-col 內容寬度和可見寬度
         let maxScrollWidth = 0;
         let maxClientWidth = 0;
         
@@ -57,25 +90,57 @@
             }
         });
         
-        // 計算實際需要滾動的距離
         const scrollDistance = maxScrollWidth - maxClientWidth;
-        
-        // 設置虛擬滾動條內容寬度 = 可見寬度 + 滾動距離
         const content = scrollProxy.querySelector('.sku-scroll-content');
         content.style.width = (scrollProxy.clientWidth + scrollDistance) + 'px';
     }
     
-    // 當 SKU Details 頁面顯示時初始化
+    function updateScrollHeight() {
+        if (!verticalScrollProxy) return;
+        
+        const mainContent = document.querySelector('.main-content');
+        if (!mainContent) return;
+        
+        const scrollHeight = mainContent.scrollHeight;
+        const clientHeight = mainContent.clientHeight;
+        const scrollDistance = Math.max(0, scrollHeight - clientHeight);
+        
+        const content = verticalScrollProxy.querySelector('.sku-vertical-scroll-content');
+        if (content) {
+            content.style.height = (verticalScrollProxy.clientHeight + scrollDistance) + 'px';
+        }
+    }
+    
     window.addEventListener('DOMContentLoaded', function() {
-        // 延遲初始化，確保資料已渲染
         setTimeout(initSkuScroll, 100);
     });
     
-    // 監聽視窗大小變化
     window.addEventListener('resize', function() {
         updateScrollWidth();
+        updateScrollHeight();
     });
     
-    // 暴露更新函數供外部調用
+    // 監聽 SKU Details 頁面切換
+    const observer = new MutationObserver(function() {
+        const skuSection = document.getElementById('sku-section');
+        if (skuSection && skuSection.classList.contains('active')) {
+            if (!isInitialized) {
+                setTimeout(initSkuScroll, 100);
+            }
+            setTimeout(function() {
+                updateScrollHeight();
+            }, 200);
+        }
+    });
+    
+    setTimeout(function() {
+        const skuSection = document.getElementById('sku-section');
+        if (skuSection) {
+            observer.observe(skuSection, { attributes: true, attributeFilter: ['class'] });
+        }
+    }, 500);
+    
     window.updateSkuScrollWidth = updateScrollWidth;
+    window.updateSkuScrollHeight = updateScrollHeight;
+    window.initSkuScroll = initSkuScroll;
 })();

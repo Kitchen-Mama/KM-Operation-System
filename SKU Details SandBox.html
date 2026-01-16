@@ -14,7 +14,12 @@
         
         <main class="main-content">
             <div class="content-pad">
-                <div class="dual-layer-table">
+                <!-- Lifecycle Section Wrapper -->
+                <div class="sku-lifecycle-section">
+                    <h3 class="sku-section-header" onclick="this.parentElement.classList.toggle('is-collapsed')">
+                        <span class="arrow">▼</span> Test SKU Data
+                    </h3>
+                    <div class="dual-layer-table">
                     <!-- Table Header Bar (Sticky Container) -->
                     <div class="table-header-bar">
                         <div class="fixed-header">
@@ -44,6 +49,7 @@
                         <div class="scroll-col">
                             <div class="scroll-body" id="scrollBody"></div>
                         </div>
+                    </div>
                     </div>
                 </div>
             </div>

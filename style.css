@@ -1094,3 +1094,21 @@ table td button {
 #ops-section .replen-control-panel .btn-add-sku {
     margin-left: auto;
 }
+
+
+/* SKU Details 垂直虛擬滾動條 */
+#sku-section .sku-vertical-scroll-proxy {
+    position: fixed;
+    right: 0;
+    top: 80px;
+    bottom: 0;
+    width: 20px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    z-index: 9999;
+    background: rgba(0,0,0,0.05);
+}
+
+#sku-section .sku-vertical-scroll-content {
+    width: 1px;
+}

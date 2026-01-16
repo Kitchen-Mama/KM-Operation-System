@@ -141,8 +141,14 @@ function showSection(section) {
     if (section === 'skuDetails') {
         renderSkuDetailsTable();
         setTimeout(() => {
+            if (window.initSkuScroll) {
+                window.initSkuScroll();
+            }
             if (window.updateSkuScrollWidth) {
                 window.updateSkuScrollWidth();
+            }
+            if (window.updateSkuScrollHeight) {
+                window.updateSkuScrollHeight();
             }
         }, 100);
     }

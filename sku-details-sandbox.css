@@ -244,3 +244,42 @@ body {
 .scroll-col::-webkit-scrollbar-thumb:hover {
     background: #94A3B8;
 }
+
+/* SKU Lifecycle Section */
+.sku-lifecycle-section {
+    margin-bottom: 2rem;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    background: white;
+}
+
+.sku-section-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    background: #FFF8F0;
+    padding: 1rem;
+    margin: 0;
+    font-size: 1.2rem;
+    color: #2D3748;
+    border-bottom: 1px solid #E2E8F0;
+    border-radius: 8px 8px 0 0;
+}
+
+.sku-section-header:hover {
+    background: #F8F9FA;
+}
+
+.arrow {
+    margin-right: 0.5rem;
+    transition: transform 0.2s ease;
+}
+
+.sku-lifecycle-section.is-collapsed .arrow {
+    transform: rotate(-90deg);
+}
+
+.sku-lifecycle-section.is-collapsed .dual-layer-table {
+    display: none;
+}
