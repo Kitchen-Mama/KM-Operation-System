@@ -63,7 +63,7 @@ body {
     background-color: var(--cream-white);
     color: var(--text-dark);
     line-height: 1.6;
-    overflow-x: hidden;
+    overflow: hidden;
 }
 
 /* ========================================
@@ -154,11 +154,11 @@ body {
     overflow-y: auto;
     overflow-x: hidden;
     padding: 0;
+    height: calc(100vh - 80px);
 }
 
 .content-area {
     padding: 2rem;
-    overflow-x: hidden;
 }
 
 .module-section {
@@ -499,7 +499,7 @@ body {
     border: 1px solid var(--border-light);
     border-radius: var(--radius-lg);
     background: white;
-    overflow: hidden;
+    /* overflow: hidden; */ /* 移除以支援 sticky */
 }
 
 .sku-section-header {
@@ -537,8 +537,43 @@ body {
 /* ?�層表格容器 */
 .dual-layer-table {
     display: flex;
+    flex-direction: column;
     position: relative;
     max-width: 100%;
+}
+
+/* Table Header Bar - Sticky Container */
+.table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: var(--soft-green);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Table Body Bar */
+.table-body-bar {
+    display: flex;
+}
+
+/* Scroll Header Viewport */
+.scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Header Cell */
+.header-cell {
+    height: 48px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    color: white;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* 左側?��?�?*/
@@ -546,9 +581,11 @@ body {
     width: 200px;
     flex-shrink: 0;
     background: white;
-    z-index: 10;
+    z-index: 110;
     border-right: 2px solid var(--border-medium);
     box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    position: sticky;
+    left: 0;
 }
 
 .fixed-header {
@@ -884,7 +921,7 @@ table td button {
 
 #ops-section .replen-control-panel {
     position: sticky;
-    top: 80px;
+    top: 0;
     background: var(--bg-surface);
     padding: var(--space-md);
     border-radius: var(--radius-md);
@@ -902,137 +939,180 @@ table td button {
     border-radius: var(--radius-sm);
 }
 
-#ops-section .replen-table-wrapper {
-    display: flex;
-    position: relative;`n    gap: 2px;
+#ops-section .replen-control-panel .btn-add-sku {
+    margin-left: auto;
 }
 
-#ops-section .replen-fixed-col {
+/* Replenishment Table - TableTemplate_ScrollXY Compliant */
+#ops-section .dual-layer-table {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-soft);
+    position: relative;
+}
+
+#ops-section .table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: var(--soft-green);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#ops-section .fixed-header {
     width: 120px;
     flex-shrink: 0;
-    background: white;
-    z-index: 40;
+    background: var(--soft-green);
     border-right: 2px solid var(--border-medium);
 }
 
-#ops-section .replen-fixed-header {
-    background: var(--soft-green);
-    color: white;
-    padding: var(--space-sm) var(--space-md);
-    font-weight: 500;
+#ops-section .fixed-header .header-cell {
     height: 48px;
+    padding: 0 var(--space-md);
     display: flex;
     align-items: center;
-    justify-content: flex-start;
-    }
+    color: white;
+    font-weight: 500;
+    box-sizing: border-box;
+}
 
-#ops-section .replen-fixed-body {
+#ops-section .scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+#ops-section .scroll-header {
+    display: flex;
+    background: var(--soft-green);
+    min-width: max-content;
+}
+
+#ops-section .scroll-header .header-cell {
+    height: 48px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    color: white;
+    font-weight: 500;
+    border-right: 1px solid rgba(255,255,255,0.2);
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+#ops-section .scroll-header .header-cell:nth-child(1) { width: 100px; min-width: 100px; }  /* Lifecycle */
+#ops-section .scroll-header .header-cell:nth-child(2) { width: 200px; min-width: 200px; }  /* Product Name */
+#ops-section .scroll-header .header-cell:nth-child(3) { width: 120px; min-width: 120px; }  /* Current Inv */
+#ops-section .scroll-header .header-cell:nth-child(4) { width: 140px; min-width: 140px; }  /* Avg Daily Sales */
+#ops-section .scroll-header .header-cell:nth-child(5) { width: 130px; min-width: 130px; }  /* Forecast (90d) */
+#ops-section .scroll-header .header-cell:nth-child(6) { width: 130px; min-width: 130px; }  /* Days of Supply */
+#ops-section .scroll-header .header-cell:nth-child(7) { width: 120px; min-width: 120px; }  /* On the Way */
+#ops-section .scroll-header .header-cell:nth-child(8) { width: 130px; min-width: 130px; }  /* Suggested Qty */
+#ops-section .scroll-header .header-cell:nth-child(9) { width: 120px; min-width: 120px; }  /* Planned Qty */
+#ops-section .scroll-header .header-cell:nth-child(10) { width: 100px; min-width: 100px; } /* Status */
+
+#ops-section .table-body-bar {
+    display: flex;
+}
+
+#ops-section .fixed-col {
+    width: 120px;
+    flex-shrink: 0;
+    position: sticky;
+    left: 0;
+    z-index: 110;
+    background: white;
+    border-right: 2px solid var(--border-medium);
+}
+
+#ops-section .fixed-body {
     background: white;
 }
 
-#ops-section .replen-fixed-row {
-    padding: var(--space-sm) var(--space-md);
-    border-bottom: 1px solid var(--border-light);
+#ops-section .fixed-row {
     height: 48px;
+    padding: 0 var(--space-md);
     display: flex;
     align-items: center;
-    justify-content: flex-start;
+    border-bottom: 1px solid var(--border-light);
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    box-sizing: border-box;
 }
 
-#ops-section .replen-fixed-row:hover {
+#ops-section .fixed-row:hover {
     background: #F8F9FA;
 }
 
-#ops-section .replen-fixed-row.expanded {
+#ops-section .fixed-row.expanded {
     background: #E3F2FD;
 }
 
-#ops-section .replen-scroll-area {
+#ops-section .scroll-col {
     flex: 1;
     overflow-x: auto;
     overflow-y: hidden;
 }
 
-#ops-section .replen-scroll-header {
-    display: flex;
-    background: var(--soft-green);
-    min-width: max-content;
-    }
-
-#ops-section .replen-cell {
-    padding: var(--space-sm) var(--space-md);
-    font-weight: 500;
-    color: white;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    border-right: 1px solid rgba(255,255,255,0.2);
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    flex-shrink: 0;
-}
-
-#ops-section .replen-scroll-header .replen-cell:nth-child(1) { width: 100px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(2) { width: 200px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(3) { width: 120px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(4) { width: 140px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(5) { width: 130px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(6) { width: 130px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(7) { width: 120px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(8) { width: 130px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(9) { width: 120px; }
-#ops-section .replen-scroll-header .replen-cell:nth-child(10) { width: 100px; }
-
-#ops-section .replen-scroll-body {
+#ops-section .scroll-body {
     background: white;
 }
 
-#ops-section .replen-scroll-row {
+#ops-section .scroll-row {
+    height: 48px;
     display: flex;
-    border-bottom: 1px solid var(--border-light);
     min-width: max-content;
+    border-bottom: 1px solid var(--border-light);
     cursor: pointer;
+    box-sizing: border-box;
 }
 
-#ops-section .replen-scroll-row:hover {
+#ops-section .scroll-row:hover {
     background: #F8F9FA;
 }
 
-#ops-section .replen-scroll-row.expanded {
+#ops-section .scroll-row.expanded {
     background: #E3F2FD;
 }
 
-#ops-section .replen-scroll-row .replen-cell {
-    background: transparent;
-    color: var(--text-primary);
-    font-weight: normal;
+#ops-section .scroll-row .scroll-cell {
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
     border-right: 1px solid var(--border-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
 }
 
-#ops-section .replen-scroll-row .replen-cell:nth-child(1) { width: 100px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(2) { width: 200px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(3) { width: 120px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(4) { width: 140px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(5) { width: 130px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(6) { width: 130px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(7) { width: 120px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(8) { width: 130px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(9) { width: 120px; }
-#ops-section .replen-scroll-row .replen-cell:nth-child(10) { width: 100px; }
+#ops-section .scroll-row .scroll-cell:nth-child(1) { width: 100px; min-width: 100px; }  /* Lifecycle */
+#ops-section .scroll-row .scroll-cell:nth-child(2) { width: 200px; min-width: 200px; }  /* Product Name */
+#ops-section .scroll-row .scroll-cell:nth-child(3) { width: 120px; min-width: 120px; }  /* Current Inv */
+#ops-section .scroll-row .scroll-cell:nth-child(4) { width: 140px; min-width: 140px; }  /* Avg Daily Sales */
+#ops-section .scroll-row .scroll-cell:nth-child(5) { width: 130px; min-width: 130px; }  /* Forecast (90d) */
+#ops-section .scroll-row .scroll-cell:nth-child(6) { width: 130px; min-width: 130px; }  /* Days of Supply */
+#ops-section .scroll-row .scroll-cell:nth-child(7) { width: 120px; min-width: 120px; }  /* On the Way */
+#ops-section .scroll-row .scroll-cell:nth-child(8) { width: 130px; min-width: 130px; }  /* Suggested Qty */
+#ops-section .scroll-row .scroll-cell:nth-child(9) { width: 120px; min-width: 120px; }  /* Planned Qty */
+#ops-section .scroll-row .scroll-cell:nth-child(10) { width: 100px; min-width: 100px; } /* Status */
 
-#ops-section .replen-scroll-row .replen-cell input {
+#ops-section .scroll-row .scroll-cell input {
     width: 100%;
     padding: 4px 8px;
     border: 1px solid var(--border-light);
     border-radius: 4px;
 }
 
+/* Expand Panel (for row expansion feature) */
 #ops-section .replen-expand-panel {
     display: flex;
     border-bottom: 2px solid var(--border-medium);

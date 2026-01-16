@@ -220,28 +220,35 @@
                     </div>
                     
                     <!-- Replenishment Table -->
-                    <div class="replen-table-wrapper">
-                        <!-- Fixed Column -->
-                        <div class="replen-fixed-col">
-                            <div class="replen-fixed-header">SKU</div>
-                            <div class="replen-fixed-body" id="replenFixedBody"></div>
-                        </div>
-                        
-                        <!-- Scrollable Columns -->
-                        <div class="replen-scroll-area">
-                            <div class="replen-scroll-header">
-                                <div class="replen-cell">Lifecycle</div>
-                                <div class="replen-cell">Product Name</div>
-                                <div class="replen-cell">Current Inv</div>
-                                <div class="replen-cell">Avg Daily Sales</div>
-                                <div class="replen-cell">Forecast (90d)</div>
-                                <div class="replen-cell">Days of Supply</div>
-                                <div class="replen-cell">On the Way</div>
-                                <div class="replen-cell">Suggested Qty</div>
-                                <div class="replen-cell">Planned Qty</div>
-                                <div class="replen-cell">Status</div>
+                    <div class="dual-layer-table">
+                        <!-- Table Header Bar (Sticky) -->
+                        <div class="table-header-bar">
+                            <div class="fixed-header">
+                                <div class="header-cell">SKU</div>
                             </div>
-                            <div class="replen-scroll-body" id="replenScrollBody"></div>
+                            <div class="scroll-header-viewport">
+                                <div class="scroll-header">
+                                    <div class="header-cell">Lifecycle</div>
+                                    <div class="header-cell">Product Name</div>
+                                    <div class="header-cell">Current Inv</div>
+                                    <div class="header-cell">Avg Daily Sales</div>
+                                    <div class="header-cell">Forecast (90d)</div>
+                                    <div class="header-cell">Days of Supply</div>
+                                    <div class="header-cell">On the Way</div>
+                                    <div class="header-cell">Suggested Qty</div>
+                                    <div class="header-cell">Planned Qty</div>
+                                    <div class="header-cell">Status</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Table Body Bar -->
+                        <div class="table-body-bar">
+                            <div class="fixed-col">
+                                <div class="fixed-body" id="replenFixedBody"></div>
+                            </div>
+                            <div class="scroll-col">
+                                <div class="scroll-body" id="replenScrollBody"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

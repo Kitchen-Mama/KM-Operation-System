@@ -958,35 +958,37 @@ function renderReplenishment() {
     
     currentExpandedRow = null;
     
+    // Render fixed column (SKU)
     fixedBody.innerHTML = data.map(item => `
-        <div class="replen-fixed-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
+        <div class="fixed-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
             ${item.sku}
         </div>
     `).join('');
     
+    // Render scrollable columns
     scrollBody.innerHTML = data.map(item => `
-        <div class="replen-scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
-            <div class="replen-cell">${item.lifecycle}</div>
-            <div class="replen-cell">${item.productName}</div>
-            <div class="replen-cell">${item.currentInventory}</div>
-            <div class="replen-cell">${item.avgDailySales}</div>
-            <div class="replen-cell">${item.forecast90d}</div>
-            <div class="replen-cell">${item.daysOfSupply}</div>
-            <div class="replen-cell">${item.onTheWay}</div>
-            <div class="replen-cell">${item.suggestedQty}</div>
-            <div class="replen-cell">
+        <div class="scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
+            <div class="scroll-cell">${item.lifecycle}</div>
+            <div class="scroll-cell">${item.productName}</div>
+            <div class="scroll-cell">${item.currentInventory}</div>
+            <div class="scroll-cell">${item.avgDailySales}</div>
+            <div class="scroll-cell">${item.forecast90d}</div>
+            <div class="scroll-cell">${item.daysOfSupply}</div>
+            <div class="scroll-cell">${item.onTheWay}</div>
+            <div class="scroll-cell">${item.suggestedQty}</div>
+            <div class="scroll-cell">
                 <input type="number" value="${item.plannedQty}" 
                        onchange="updatePlannedQty('${item.sku}', this.value)"
                        onclick="event.stopPropagation()">
             </div>
-            <div class="replen-cell">${item.status}</div>
+            <div class="scroll-cell">${item.status}</div>
         </div>
     `).join('');
 }
 
 function toggleReplenRow(sku) {
-    const fixedRows = document.querySelectorAll('#ops-section .replen-fixed-row');
-    const scrollRows = document.querySelectorAll('#ops-section .replen-scroll-row');
+    const fixedRows = document.querySelectorAll('#ops-section .fixed-row');
+    const scrollRows = document.querySelectorAll('#ops-section .scroll-row');
     const fixedBody = document.getElementById('replenFixedBody');
     const scrollBody = document.getElementById('replenScrollBody');
     
