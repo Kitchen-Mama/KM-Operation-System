@@ -925,11 +925,12 @@ table td button {
     background: var(--bg-surface);
     padding: var(--space-md);
     border-radius: var(--radius-md);
-    margin-bottom: var(--space-xl);
+    margin-bottom: 0;
     display: flex;
     gap: var(--space-lg);
     align-items: center;
-    z-index: 50;
+    z-index: 130;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 #ops-section .replen-control-panel select,
@@ -952,11 +953,12 @@ table td button {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-soft);
     position: relative;
+    margin-top: var(--space-xl);
 }
 
 #ops-section .table-header-bar {
     position: sticky;
-    top: 0;
+    top: 72px;
     z-index: 120;
     display: flex;
     background: var(--soft-green);

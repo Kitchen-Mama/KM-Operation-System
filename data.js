@@ -44,9 +44,21 @@ let weeklyShippingPlans = JSON.parse(localStorage.getItem('weeklyShippingPlans')
 
 // 站點 SKU 資料
 const siteSkus = [
-    { site: "amazon", sku: "A001", stock: 150, weeklyAvgSales: 5 },
+    { site: "amazon", sku: "A001", stock: 150, weeklyAvgSales: 35 },
     { site: "amazon", sku: "B002", stock: 80, weeklyAvgSales: 21 },
     { site: "amazon", sku: "C003", stock: 200, weeklyAvgSales: 70 },
+    { site: "amazon", sku: "D004", stock: 120, weeklyAvgSales: 28 },
+    { site: "amazon", sku: "E005", stock: 95, weeklyAvgSales: 42 },
+    { site: "amazon", sku: "F006", stock: 60, weeklyAvgSales: 14 },
+    { site: "amazon", sku: "G007", stock: 180, weeklyAvgSales: 56 },
+    { site: "amazon", sku: "H008", stock: 110, weeklyAvgSales: 35 },
+    { site: "amazon", sku: "I009", stock: 140, weeklyAvgSales: 49 },
+    { site: "amazon", sku: "J010", stock: 85, weeklyAvgSales: 28 },
+    { site: "amazon", sku: "K011", stock: 70, weeklyAvgSales: 21 },
+    { site: "amazon", sku: "L012", stock: 45, weeklyAvgSales: 14 },
+    { site: "amazon", sku: "M013", stock: 130, weeklyAvgSales: 42 },
+    { site: "amazon", sku: "N014", stock: 90, weeklyAvgSales: 28 },
+    { site: "amazon", sku: "O015", stock: 160, weeklyAvgSales: 56 },
     { site: "shopify", sku: "A001", stock: 120, weeklyAvgSales: 28 },
     { site: "shopify", sku: "D004", stock: 60, weeklyAvgSales: 14 },
     { site: "shopify", sku: "E005", stock: 90, weeklyAvgSales: 42 },

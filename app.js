@@ -984,6 +984,26 @@ function renderReplenishment() {
             <div class="scroll-cell">${item.status}</div>
         </div>
     `).join('');
+    
+    // Initialize header scroll sync
+    initReplenHeaderSync();
+}
+
+function initReplenHeaderSync() {
+    const scrollCol = document.querySelector('#ops-section .scroll-col');
+    const scrollHeader = document.querySelector('#ops-section .scroll-header');
+    
+    if (!scrollCol || !scrollHeader) return;
+    
+    // Remove existing listener to avoid duplicates
+    scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
+    
+    // Create and store handler
+    scrollCol._syncHandler = () => {
+        scrollHeader.style.transform = `translateX(-${scrollCol.scrollLeft}px)`;
+    };
+    
+    scrollCol.addEventListener('scroll', scrollCol._syncHandler);
 }
 
 function toggleReplenRow(sku) {
