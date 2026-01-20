@@ -119,7 +119,8 @@ function showSection(section) {
         'ops': 'ops-section', 
         'forecast': 'forecast-section',
         'shipment': 'shipment-section',
-        'skuDetails': 'sku-section'
+        'skuDetails': 'sku-section',
+        'supplychain': 'supplychain-section'
     };
     
     if (sectionMap[section]) {
@@ -154,6 +155,13 @@ function showSection(section) {
     }
     if (section === 'ops') {
         renderReplenishment();
+    }
+    if (section === 'supplychain') {
+        setTimeout(() => {
+            if (window.CanvasController) {
+                window.CanvasController.init();
+            }
+        }, 100);
     }
 }
 
@@ -969,7 +977,6 @@ function renderReplenishment() {
     scrollBody.innerHTML = data.map(item => `
         <div class="scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
             <div class="scroll-cell">${item.lifecycle}</div>
-            <div class="scroll-cell">${item.productName}</div>
             <div class="scroll-cell">${item.currentInventory}</div>
             <div class="scroll-cell">${item.avgDailySales}</div>
             <div class="scroll-cell">${item.forecast90d}</div>
@@ -1030,13 +1037,22 @@ function toggleReplenRow(sku) {
     if (fixedRow) fixedRow.classList.add('expanded');
     if (scrollRow) scrollRow.classList.add('expanded');
     
-    const expandHTML = `
+    const data = getReplenishmentData();
+    const skuData = data.find(item => item.sku === sku);
+    
+    const expandFixedHTML = `
         <div class="replen-expand-fixed">
             <strong>${sku}</strong>
+            <div style="margin-top: 8px; font-size: 14px; color: #333;">
+                ${skuData?.productName || 'Product Name'}
+            </div>
             <div style="margin-top: 8px; font-size: 12px; color: #666;">
                 Click row to close
             </div>
         </div>
+    `;
+    
+    const expandScrollHTML = `
         <div class="replen-expand-scroll">
             <div class="replen-expand-section">
                 <h4>Sales Trend</h4>
@@ -1059,11 +1075,11 @@ function toggleReplenRow(sku) {
     
     const expandPanelFixed = document.createElement('div');
     expandPanelFixed.className = 'replen-expand-panel';
-    expandPanelFixed.innerHTML = expandHTML;
+    expandPanelFixed.innerHTML = expandFixedHTML;
     
     const expandPanelScroll = document.createElement('div');
     expandPanelScroll.className = 'replen-expand-panel';
-    expandPanelScroll.innerHTML = expandHTML;
+    expandPanelScroll.innerHTML = expandScrollHTML;
     
     const rowIndex = Array.from(fixedRows).indexOf(fixedRow);
     if (rowIndex < fixedRows.length - 1) {

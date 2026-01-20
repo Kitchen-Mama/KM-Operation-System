@@ -1,0 +1,173 @@
+/* ========================================
+   Supply Chain Canvas - Full Layout
+======================================== */
+
+#supplychain-section {
+    display: none;
+}
+
+#supplychain-section.active {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 60px;
+    left: 250px;
+    right: 0;
+    bottom: 0;
+    padding: 0;
+    margin: 0;
+    background: white;
+    z-index: 1;
+}
+
+/* Page header */
+#supplychain-section .sc-page-header {
+    flex-shrink: 0;
+    padding: var(--space-lg) var(--space-xl);
+    border-bottom: 1px solid var(--border-light);
+    background: white;
+}
+
+#supplychain-section .sc-page-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: var(--text-dark);
+}
+
+/* Canvas shell - fills remaining height */
+#supplychain-section .sc-canvas-shell {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #FAFAFA;
+    min-height: 0;
+}
+
+/* Floating toolbar */
+#supplychain-section .sc-toolbar {
+    align-items: center;
+    position: absolute;
+    left: 20px;
+    top: 20px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: white;
+    padding: 6px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+#supplychain-section .sc-tool {
+    padding: 0 !important;
+    width: 40px;
+    height: 40px;
+    min-width: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#supplychain-section .sc-tool svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+#supplychain-section .sc-tool:hover {
+    background: var(--cream-white);
+    border-color: var(--warm-orange);
+}
+
+#supplychain-section .sc-tool.is-active {
+    background: var(--warm-orange);
+    border-color: var(--warm-orange);
+}
+
+#supplychain-section .sc-tool.is-active svg {
+    stroke: white;
+}
+
+/* Canvas viewport */
+#supplychain-section .sc-canvas-viewport {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+#supplychain-section .sc-canvas-content {
+    width: 100%;
+    height: 100%;
+    transform-origin: center center;
+    cursor: grab;
+    transition: transform 0.05s ease-out;
+}
+
+#supplychain-section .sc-canvas-content:active {
+    cursor: grabbing;
+}
+
+/* Zoom control - bottom right */
+#supplychain-section .sc-zoom-control {
+    margin-bottom:20px;
+    position: absolute;
+    right: 20px;
+    bottom: 20px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+#supplychain-section .sc-zoom-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: white;
+    cursor: pointer;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--text-dark);
+    transition: all 0.2s ease;
+}
+
+#supplychain-section .sc-zoom-btn:hover {
+    background: var(--cream-white);
+    border-color: var(--warm-orange);
+    color: var(--warm-orange);
+}
+
+#supplychain-section .sc-zoom-label {
+    min-width: 50px;
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+}
+
+#supplychain-section .sc-zoom-label:hover {
+    color: var(--warm-orange);
+}

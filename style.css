@@ -155,6 +155,7 @@ body {
     overflow-x: hidden;
     padding: 0;
     height: calc(100vh - 80px);
+    position: relative;
 }
 
 .content-area {
@@ -980,6 +981,10 @@ table td button {
     color: white;
     font-weight: 500;
     box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
 }
 
 #ops-section .scroll-header-viewport {
@@ -1003,20 +1008,21 @@ table td button {
     font-weight: 500;
     border-right: 1px solid rgba(255,255,255,0.2);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     flex-shrink: 0;
     box-sizing: border-box;
 }
 
-#ops-section .scroll-header .header-cell:nth-child(1) { width: 100px; min-width: 100px; }  /* Lifecycle */
-#ops-section .scroll-header .header-cell:nth-child(2) { width: 200px; min-width: 200px; }  /* Product Name */
-#ops-section .scroll-header .header-cell:nth-child(3) { width: 120px; min-width: 120px; }  /* Current Inv */
-#ops-section .scroll-header .header-cell:nth-child(4) { width: 140px; min-width: 140px; }  /* Avg Daily Sales */
-#ops-section .scroll-header .header-cell:nth-child(5) { width: 130px; min-width: 130px; }  /* Forecast (90d) */
-#ops-section .scroll-header .header-cell:nth-child(6) { width: 130px; min-width: 130px; }  /* Days of Supply */
-#ops-section .scroll-header .header-cell:nth-child(7) { width: 120px; min-width: 120px; }  /* On the Way */
-#ops-section .scroll-header .header-cell:nth-child(8) { width: 130px; min-width: 130px; }  /* Suggested Qty */
-#ops-section .scroll-header .header-cell:nth-child(9) { width: 120px; min-width: 120px; }  /* Planned Qty */
-#ops-section .scroll-header .header-cell:nth-child(10) { width: 100px; min-width: 100px; } /* Status */
+#ops-section .scroll-header .header-cell:nth-child(1) { width: 100px; min-width: 100px; max-width: 100px; }  /* Lifecycle */
+#ops-section .scroll-header .header-cell:nth-child(2) { width: 120px; min-width: 120px; max-width: 120px; }  /* Current Inv */
+#ops-section .scroll-header .header-cell:nth-child(3) { width: 140px; min-width: 140px; max-width: 140px; }  /* Avg Daily Sales */
+#ops-section .scroll-header .header-cell:nth-child(4) { width: 130px; min-width: 130px; max-width: 130px; }  /* Forecast (90d) */
+#ops-section .scroll-header .header-cell:nth-child(5) { width: 130px; min-width: 130px; max-width: 130px; }  /* Days of Supply */
+#ops-section .scroll-header .header-cell:nth-child(6) { width: 120px; min-width: 120px; max-width: 120px; }  /* On the Way */
+#ops-section .scroll-header .header-cell:nth-child(7) { width: 130px; min-width: 130px; max-width: 130px; }  /* Suggested Qty */
+#ops-section .scroll-header .header-cell:nth-child(8) { width: 120px; min-width: 120px; max-width: 120px; }  /* Planned Qty */
+#ops-section .scroll-header .header-cell:nth-child(9) { width: 100px; min-width: 100px; max-width: 100px; } /* Status */
 
 #ops-section .table-body-bar {
     display: flex;
@@ -1047,6 +1053,7 @@ table td button {
     overflow: hidden;
     text-overflow: ellipsis;
     box-sizing: border-box;
+    max-width: 120px;
 }
 
 #ops-section .fixed-row:hover {
@@ -1096,16 +1103,15 @@ table td button {
     box-sizing: border-box;
 }
 
-#ops-section .scroll-row .scroll-cell:nth-child(1) { width: 100px; min-width: 100px; }  /* Lifecycle */
-#ops-section .scroll-row .scroll-cell:nth-child(2) { width: 200px; min-width: 200px; }  /* Product Name */
-#ops-section .scroll-row .scroll-cell:nth-child(3) { width: 120px; min-width: 120px; }  /* Current Inv */
-#ops-section .scroll-row .scroll-cell:nth-child(4) { width: 140px; min-width: 140px; }  /* Avg Daily Sales */
-#ops-section .scroll-row .scroll-cell:nth-child(5) { width: 130px; min-width: 130px; }  /* Forecast (90d) */
-#ops-section .scroll-row .scroll-cell:nth-child(6) { width: 130px; min-width: 130px; }  /* Days of Supply */
-#ops-section .scroll-row .scroll-cell:nth-child(7) { width: 120px; min-width: 120px; }  /* On the Way */
-#ops-section .scroll-row .scroll-cell:nth-child(8) { width: 130px; min-width: 130px; }  /* Suggested Qty */
-#ops-section .scroll-row .scroll-cell:nth-child(9) { width: 120px; min-width: 120px; }  /* Planned Qty */
-#ops-section .scroll-row .scroll-cell:nth-child(10) { width: 100px; min-width: 100px; } /* Status */
+#ops-section .scroll-row .scroll-cell:nth-child(1) { width: 100px; min-width: 100px; max-width: 100px; }  /* Lifecycle */
+#ops-section .scroll-row .scroll-cell:nth-child(2) { width: 120px; min-width: 120px; max-width: 120px; }  /* Current Inv */
+#ops-section .scroll-row .scroll-cell:nth-child(3) { width: 140px; min-width: 140px; max-width: 140px; }  /* Avg Daily Sales */
+#ops-section .scroll-row .scroll-cell:nth-child(4) { width: 130px; min-width: 130px; max-width: 130px; }  /* Forecast (90d) */
+#ops-section .scroll-row .scroll-cell:nth-child(5) { width: 130px; min-width: 130px; max-width: 130px; }  /* Days of Supply */
+#ops-section .scroll-row .scroll-cell:nth-child(6) { width: 120px; min-width: 120px; max-width: 120px; }  /* On the Way */
+#ops-section .scroll-row .scroll-cell:nth-child(7) { width: 130px; min-width: 130px; max-width: 130px; }  /* Suggested Qty */
+#ops-section .scroll-row .scroll-cell:nth-child(8) { width: 120px; min-width: 120px; max-width: 120px; }  /* Planned Qty */
+#ops-section .scroll-row .scroll-cell:nth-child(9) { width: 100px; min-width: 100px; max-width: 100px; } /* Status */
 
 #ops-section .scroll-row .scroll-cell input {
     width: 100%;
@@ -1117,6 +1123,7 @@ table td button {
 /* Expand Panel (for row expansion feature) */
 #ops-section .replen-expand-panel {
     display: flex;
+    min-height: 200px; /* 確保最小高度一致 */
     border-bottom: 2px solid var(--border-medium);
     background: #F8F9FA;
 }
@@ -1139,7 +1146,7 @@ table td button {
 
 #ops-section .replen-expand-section {
     min-width: 300px;
-    background: white;
+    background: #FFFFFF; /* 移除背景線條/字：使用純白色 */
     padding: var(--space-md);
     border-radius: var(--radius-md);
     border: 1px solid var(--border-light);
@@ -1194,3 +1201,5 @@ table td button {
 #sku-section .sku-vertical-scroll-content {
     width: 1px;
 }
+
+
