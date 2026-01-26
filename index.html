@@ -594,6 +594,44 @@
                             <button class="sc-zoom-btn sc-zoom-in" title="放大">+</button>
                         </div>
                     </div>
+                    
+                    <!-- Shape Selector Modal -->
+                    <div class="sc-modal-overlay" id="scShapeOverlay" onclick="closeShapeModal()"></div>
+                    <div class="sc-shape-modal" id="scShapeModal">
+                        <h3 class="sc-shape-modal-title">選擇形狀</h3>
+                        <div class="sc-shape-options">
+                            <div class="sc-shape-option" onclick="selectShape('rectangle')">
+                                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#1e3a8a" stroke-width="2">
+                                    <rect x="5" y="10" width="30" height="20" rx="2"/>
+                                </svg>
+                                <span class="sc-shape-option-label">矩形</span>
+                            </div>
+                            <div class="sc-shape-option" onclick="selectShape('triangle')">
+                                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#1e3a8a" stroke-width="2">
+                                    <path d="M20 8 L35 32 L5 32 Z"/>
+                                </svg>
+                                <span class="sc-shape-option-label">三角形</span>
+                            </div>
+                            <div class="sc-shape-option" onclick="selectShape('diamond')">
+                                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#1e3a8a" stroke-width="2">
+                                    <path d="M20 5 L35 20 L20 35 L5 20 Z"/>
+                                </svg>
+                                <span class="sc-shape-option-label">菱形</span>
+                            </div>
+                            <div class="sc-shape-option" onclick="selectShape('square')">
+                                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#1e3a8a" stroke-width="2">
+                                    <rect x="8" y="8" width="24" height="24" rx="2"/>
+                                </svg>
+                                <span class="sc-shape-option-label">正方形</span>
+                            </div>
+                            <div class="sc-shape-option" onclick="selectShape('rounded-rect')">
+                                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#1e3a8a" stroke-width="2">
+                                    <rect x="5" y="10" width="30" height="20" rx="8"/>
+                                </svg>
+                                <span class="sc-shape-option-label">倒圓角矩形</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
             </main>
