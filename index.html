@@ -577,6 +577,33 @@
                                 <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
                             </svg>
                         </button>
+                        <button class="sc-tool sc-tool--arrow-style" title="Arrow Style" id="arrowStyleBtn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a8a" stroke-width="2">
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                                <polyline points="15 8 19 12 15 16"/>
+                            </svg>
+                        </button>
+                        <!-- Arrow Style Panel -->
+                        <div class="sc-arrow-style-panel" id="arrowStylePanel">
+                            <div class="sc-stroke-options">
+                                <button class="sc-stroke-btn" data-width="1" title="細">
+                                    <div style="width:30px;height:1px;background:#000;"></div>
+                                </button>
+                                <button class="sc-stroke-btn" data-width="2" title="中">
+                                    <div style="width:30px;height:2px;background:#000;"></div>
+                                </button>
+                                <button class="sc-stroke-btn" data-width="3" title="粗">
+                                    <div style="width:30px;height:3px;background:#000;"></div>
+                                </button>
+                                <button class="sc-stroke-btn" data-width="4" title="特粗">
+                                    <div style="width:30px;height:4px;background:#000;"></div>
+                                </button>
+                            </div>
+                            <div class="sc-line-type-options">
+                                <button class="sc-line-type-btn" data-type="solid">實線</button>
+                                <button class="sc-line-type-btn" data-type="dashed">虛線</button>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="sc-canvas-viewport">
