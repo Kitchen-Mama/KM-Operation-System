@@ -232,15 +232,25 @@
                             </div>
                             <div class="scroll-header-viewport">
                                 <div class="scroll-header">
-                                    <div class="header-cell">Status</div>
-                                    <div class="header-cell">Current Inv</div>
-                                    <div class="header-cell">Avg. Daily Sales</div>
-                                    <div class="header-cell">Forecast (90d)</div>
-                                    <div class="header-cell">Days of Supply</div>
-                                    <div class="header-cell">On the Way</div>
-                                    <div class="header-cell">Suggested Qty</div>
-                                    <div class="header-cell">Planned Qty</div>
-                                    <div class="header-cell">Action Item</div>
+                                    <!-- First Layer: Group Headers -->
+                                    <div class="km-table__header-row km-table__header-row--level1">
+                                        <div class="km-table__header-cell km-table__header-cell--status">Status</div>
+                                        <div class="km-table__header-cell km-table__header-cell--inventory">Inventory</div>
+                                        <div class="km-table__header-cell km-table__header-cell--sales">Sales</div>
+                                        <div class="km-table__header-cell km-table__header-cell--replen">Replenishment</div>
+                                    </div>
+                                    <!-- Second Layer: Sub Headers -->
+                                    <div class="km-table__header-row km-table__header-row--level2">
+                                        <div class="km-table__header-cell">Current Stock</div>
+                                        <div class="km-table__header-cell">On the Way</div>
+                                        <div class="km-table__header-cell">3rd Party Stock</div>
+                                        <div class="km-table__header-cell">Avg. Sales</div>
+                                        <div class="km-table__header-cell">60 days FC</div>
+                                        <div class="km-table__header-cell">Upcoming Event</div>
+                                        <div class="km-table__header-cell">Days of Supply</div>
+                                        <div class="km-table__header-cell">Suggested Qty</div>
+                                        <div class="km-table__header-cell">Planned Qty</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

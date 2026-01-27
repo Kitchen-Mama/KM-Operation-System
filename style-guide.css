@@ -1,157 +1,146 @@
 /* ========================================
-   Kitchen Mama Internal UI Style Guide v0.1
-   Stage 1 Foundation - CSS Namespace Rules
-   ======================================== */
+   Kitchen Mama Typography Style Guide
+   統一文字規範管理
+======================================== */
 
-/* 
-   CSS NAMESPACE RULES (Stage 1)
-   
-   ✅ ALLOWED IN THIS FILE (Global Scope):
-   - Design Tokens (CSS Variables)
-   - Base Components (.btn, .card, .tag)
-   - Typography & Layout Tokens
-   - Semantic Background Classes
-   
-   ❌ NOT ALLOWED (Must be page-scoped):
-   - Page-specific styles (use #home-section, #sku-section, etc.)
-   - Generic selectors (table, th, td - must use .sku-details-table th)
-   - Overflow on body/html (blocks sticky positioning)
-   
-   STICKY POSITIONING RULES:
-   - Use border-collapse: separate (not collapse)
-   - No overflow: hidden on ancestors
-   - No transform/filter/perspective on ancestors
-*/
-
-/* Design Tokens */
 :root {
-    /* Base Colors */
-    --bg: #FFFFFF;
-    --surface: #F8FAFC;
-    --border: #E2E8F0;
-    --text: #334155;
-    --muted: #64748B;
-    --brand: #FF8C42;
+    /* Font Family */
+    --font-primary: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     
-    /* Semantic Background Tokens */
-    --time-bg: #F1F5F9;
-    --info-bg: #EFF6FF;
-    --goal-bg: #FEF2F2;
-    --urgent-bg: #FDF2F8;
-    --note-bg: #F0FDF4;
-    --event-item-bg: #FFFBEB;
+    /* Font Sizes */
+    --font-size-h1: 2rem;        /* 32px - 主標題 */
+    --font-size-h2: 1.5rem;      /* 24px - 次標題 */
+    --font-size-h3: 1.25rem;     /* 20px - 三級標題 */
+    --font-size-h4: 1.125rem;    /* 18px - 四級標題 */
+    --font-size-body: 0.875rem;  /* 14px - 正文 */
+    --font-size-small: 0.75rem;  /* 12px - 小字 */
+    --font-size-tiny: 0.625rem;  /* 10px - 極小字 */
     
-    /* Spacing & Layout */
-    --space-xs: 0.5rem;
-    --space-sm: 0.75rem;
-    --space-md: 1rem;
-    --space-lg: 1.5rem;
-    --space-xl: 2rem;
+    /* Font Weights */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
     
-    /* Typography */
-    --text-sm: 0.875rem;
-    --text-base: 1rem;
-    --text-lg: 1.125rem;
-    --weight-medium: 500;
-    --weight-semibold: 600;
+    /* Line Heights */
+    --line-height-tight: 1.2;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.6;
     
-    /* Border Radius */
-    --radius: 6px;
-    --radius-lg: 8px;
+    /* Text Colors */
+    --text-primary: #2D3748;     /* 主要文字 */
+    --text-secondary: #64748B;   /* 次要文字 */
+    --text-muted: #94A3B8;       /* 弱化文字 */
+    --text-inverse: #FFFFFF;     /* 反色文字（深色背景用） */
+    --text-link: #3B82F6;        /* 連結文字 */
+    --text-error: #EF4444;       /* 錯誤文字 */
+    --text-success: #10B981;     /* 成功文字 */
+    --text-warning: #F59E0B;     /* 警告文字 */
 }
-
-/* Base Components */
-.card {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.card__header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--space-md);
-}
-
-.title {
-    font-size: var(--text-lg);
-    font-weight: var(--weight-semibold);
-    color: var(--text);
-    margin: 0;
-}
-
-.meta {
-    font-size: var(--text-sm);
-    color: var(--muted);
-}
-
-.btn {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--space-xs) var(--space-md);
-    border-radius: var(--radius);
-    font-size: var(--text-sm);
-    font-weight: var(--weight-medium);
-    text-decoration: none;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.btn--ghost {
-    background: transparent;
-    color: var(--muted);
-}
-
-.btn--ghost:hover {
-    color: var(--brand);
-    border-color: var(--brand);
-}
-
-.btn--primary {
-    background: var(--brand);
-    color: white;
-    border-color: var(--brand);
-}
-
-.btn--primary:hover {
-    background: #E67A35;
-}
-
-.tag {
-    display: inline-block;
-    padding: 2px var(--space-xs);
-    background: var(--surface);
-    color: var(--muted);
-    font-size: var(--text-sm);
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-}
-
-/* Semantic Background Classes */
-.bg-time { background: var(--time-bg); }
-.bg-info { background: var(--info-bg); }
-.bg-goal { background: var(--goal-bg); }
-.bg-urgent { background: var(--urgent-bg); }
-.bg-note { background: var(--note-bg); }
-.bg-event { background: var(--event-item-bg); }
 
 /* ========================================
-   PAGE-SPECIFIC STYLES
-   Must be scoped under page containers:
-   - #home-section (Home page)
-   - #sku-section (SKU Details)
-   - #forecast-section (Forecast)
-   - #shipment-section (Shipment)
-   - #ops-section (Ops)
-   - #replenishment-section (Restock)
-   
-   See style.css for implementation
-   ======================================== */
+   Typography Classes
+======================================== */
+
+/* Headings */
+.text-h1 {
+    font-size: var(--font-size-h1);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+    color: var(--text-primary);
+}
+
+.text-h2 {
+    font-size: var(--font-size-h2);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    color: var(--text-primary);
+}
+
+.text-h3 {
+    font-size: var(--font-size-h3);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-normal);
+    color: var(--text-primary);
+}
+
+.text-h4 {
+    font-size: var(--font-size-h4);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-normal);
+    color: var(--text-primary);
+}
+
+/* Body Text */
+.text-body {
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-relaxed);
+    color: var(--text-primary);
+}
+
+.text-small {
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-normal);
+    color: var(--text-secondary);
+}
+
+.text-tiny {
+    font-size: var(--font-size-tiny);
+    font-weight: var(--font-weight-normal);
+    line-height: var(--line-height-normal);
+    color: var(--text-muted);
+}
+
+/* Text Colors */
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-muted { color: var(--text-muted); }
+.text-inverse { color: var(--text-inverse); }
+.text-link { color: var(--text-link); }
+.text-error { color: var(--text-error); }
+.text-success { color: var(--text-success); }
+.text-warning { color: var(--text-warning); }
+
+/* Font Weights */
+.font-normal { font-weight: var(--font-weight-normal); }
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
 
 /* ========================================
-   Existing Styles (保持原有樣式)
-   ======================================== */
+   Usage Examples & Guidelines
+======================================== */
+
+/*
+使用範例：
+
+1. 頁面標題：
+   <h1 class="text-h1">Kitchen Mama 供應鏈管理系統</h1>
+
+2. 區塊標題：
+   <h2 class="text-h2">Inventory Replenishment</h2>
+
+3. 卡片標題：
+   <h3 class="text-h3">Upcoming Event</h3>
+
+4. 正文內容：
+   <p class="text-body">這是正文內容...</p>
+
+5. 次要說明：
+   <span class="text-small text-secondary">更新時間：2024-01-16</span>
+
+6. 表格標題：
+   <th class="text-small font-semibold">SKU</th>
+
+7. 按鈕文字：
+   <button class="text-body font-medium">Submit</button>
+
+統一規範：
+- 所有標題使用 .text-h1 ~ .text-h4
+- 正文使用 .text-body
+- 小字使用 .text-small
+- 顏色使用 .text-primary / .text-secondary / .text-muted
+- 字重使用 .font-medium / .font-semibold / .font-bold
+*/

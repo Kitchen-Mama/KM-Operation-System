@@ -978,17 +978,18 @@ function renderReplenishment() {
         <div class="scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
             <div class="scroll-cell">${item.lifecycle}</div>
             <div class="scroll-cell">${item.currentInventory}</div>
+            <div class="scroll-cell">${item.onTheWay}</div>
+            <div class="scroll-cell">0</div>
             <div class="scroll-cell">${item.avgDailySales}</div>
             <div class="scroll-cell">${item.forecast90d}</div>
+            <div class="scroll-cell">-</div>
             <div class="scroll-cell">${item.daysOfSupply}</div>
-            <div class="scroll-cell">${item.onTheWay}</div>
             <div class="scroll-cell">${item.suggestedQty}</div>
             <div class="scroll-cell">
                 <input type="number" value="${item.plannedQty}" 
                        onchange="updatePlannedQty('${item.sku}', this.value)"
                        onclick="event.stopPropagation()">
             </div>
-            <div class="scroll-cell">${item.status}</div>
         </div>
     `).join('');
     
