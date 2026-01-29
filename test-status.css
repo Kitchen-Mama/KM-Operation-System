@@ -1,0 +1,5 @@
+/* 測試用 - 確認 Status header cell selector 是否正確 */
+#ops-section .km-table__header-cell--status {
+    background: hotpink !important;
+    border: 5px solid lime !important;
+}

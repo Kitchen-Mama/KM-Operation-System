@@ -147,6 +147,26 @@ body {
     border-left: 4px solid var(--warm-orange);
 }
 
+.menu-item--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.stage-badge {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    background: #F59E0B;
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    pointer-events: none;
+}
+
 .main-content {
     flex: 1;
     margin-left: 250px;
@@ -941,6 +961,25 @@ table td button {
     border-radius: var(--radius-sm);
 }
 
+#ops-section .replen-control-panel input::placeholder {
+    color: #cbd5e1;
+    font-weight: 300;
+}
+
+#ops-section .replen-control-panel button {
+    padding: var(--space-sm) var(--space-md);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-weight: var(--weight-medium);
+    background: #F97316;
+    color: white;
+}
+
+#ops-section .replen-control-panel button:hover {
+    background: #EA580C;
+}
+
 #ops-section .replen-control-panel .btn-add-sku {
     margin-left: auto;
 }
@@ -1010,12 +1049,14 @@ table td button {
     height: 48px;
     box-sizing: border-box;
     padding-left: 100px;
+    padding-right: 440px;
 }
 
 #ops-section .km-table__header-row--level2 {
     height: 48px;
     box-sizing: border-box;
     padding-left: 100px;
+    padding-right: 440px;
 }
 
 #ops-section .km-table__header-row--level1 .km-table__header-cell {
@@ -1037,7 +1078,7 @@ table td button {
     min-width: 100px;
     height: 96px;
     font-size: 12px;
-    border-right: 1px solid var(--border-light);
+    border-right: 2px solid var(--border-medium);
     box-sizing: border-box;
     position: absolute;
     left: 0;
@@ -1045,6 +1086,7 @@ table td button {
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 #ops-section .km-table__header-cell--inventory {
@@ -1061,8 +1103,32 @@ table td button {
 
 #ops-section .km-table__header-cell--replen {
     background: #FFD966;
-    width: 360px;
-    min-width: 360px;
+    width: 420px;
+    min-width: 420px;
+}
+
+#ops-section .km-table__header-cell--factory {
+    background: #F4B084;
+    width: 240px;
+    min-width: 240px;
+}
+
+#ops-section .km-table__header-cell--note-span {
+    background: #f5f5f5;
+    color: #000000;
+    width: 200px;
+    min-width: 200px;
+    height: 96px;
+    font-size: 12px;
+    border-right: 2px solid var(--border-medium);
+    box-sizing: border-box;
+    position: absolute;
+    left: 1480px;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 #ops-section .km-table__header-row--level2 .km-table__header-cell {
@@ -1078,6 +1144,11 @@ table td button {
     border-right: 1px solid var(--border-light);
     flex-shrink: 0;
     box-sizing: border-box;
+}
+
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(9) {
+    width: 180px;
+    min-width: 180px;
 }
 
 #ops-section .table-body-bar {
@@ -1170,8 +1241,50 @@ table td button {
 #ops-section .scroll-row .scroll-cell:nth-child(7) { width: 120px; min-width: 120px; max-width: 120px; }
 
 #ops-section .scroll-row .scroll-cell:nth-child(8),
-#ops-section .scroll-row .scroll-cell:nth-child(9),
-#ops-section .scroll-row .scroll-cell:nth-child(10) { width: 120px; min-width: 120px; max-width: 120px; }
+#ops-section .scroll-row .scroll-cell:nth-child(9) { width: 120px; min-width: 120px; max-width: 120px; }
+
+#ops-section .scroll-row .scroll-cell:nth-child(10) { width: 180px; min-width: 180px; max-width: 180px; }
+
+#ops-section .scroll-row .scroll-cell:nth-child(11),
+#ops-section .scroll-row .scroll-cell:nth-child(12) { width: 120px; min-width: 120px; max-width: 120px; }
+
+#ops-section .scroll-row .scroll-cell:nth-child(13) { width: 200px; min-width: 200px; max-width: 200px; }
+
+.planned-qty-config-btn {
+    background: var(--soft-green);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.planned-qty-config-btn:hover {
+    background: #6FA055;
+}
+
+.ai-action-cell {
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.ai-action-cell:hover {
+    background: #F0F9FF !important;
+}
+
+.ai-action-cell__text {
+    color: #64748B;
+    font-size: 12px;
+}
+
+.replen-card__input {
+    width: 80px;
+    padding: 2px 6px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    font-size: 12px;
+    text-align: right;
+}
 
 #ops-section .scroll-row .scroll-cell input {
     width: 100%;
@@ -1180,42 +1293,138 @@ table td button {
     border-radius: 4px;
 }
 
+#ops-section .scroll-row .scroll-cell.alert-red {
+    background: #FEE2E2;
+    color: #991B1B;
+    font-weight: 600;
+}
+
+#ops-section .scroll-row .scroll-cell textarea {
+    width: 100%;
+    min-height: 32px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    resize: vertical;
+    font-size: 12px;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
 /* Expand Panel (for row expansion feature) */
 #ops-section .replen-expand-panel {
-    display: flex;
-    min-height: 200px; /* 確保最小高度一致 */
     border-bottom: 2px solid var(--border-medium);
     background: #F8F9FA;
+    display: flex;
+    flex-direction: column;
+}
+
+#ops-section .replen-expand-panel--fixed {
+    background: white;
+}
+
+#ops-section .replen-expand-panel--scroll {
+    background: #F8F9FA;
+    width: 100%;
 }
 
 #ops-section .replen-expand-fixed {
     width: 100px;
-    flex-shrink: 0;
     padding: var(--space-md);
-    border-right: 2px solid var(--border-medium);
-    background: white;
+    box-sizing: border-box;
 }
 
 #ops-section .replen-expand-scroll {
-    flex: 1;
     padding: var(--space-md);
     display: flex;
-    gap: var(--space-lg);
-    min-width: max-content;
+    gap: var(--space-md);
+    min-width: 100%;
+    box-sizing: border-box;
+    background: #F8F9FA;
 }
 
-#ops-section .replen-expand-section {
-    min-width: 300px;
-    background: #FFFFFF; /* 移除背景線條/字：使用純白色 */
-    padding: var(--space-md);
-    border-radius: var(--radius-md);
+/* Inventory Section */
+#ops-section .replen-expand-section--inventory {
+    width: 360px;
+    flex-shrink: 0;
+}
+
+#ops-section .replen-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    height: 100%;
+}
+
+/* Sales Section */
+#ops-section .replen-expand-section--sales {
+    flex: 1;
+    display: flex;
+    gap: 12px;
+}
+
+/* Card Styles */
+#ops-section .replen-card {
+    background: #ffffff;
     border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
-#ops-section .replen-expand-section h4 {
-    margin: 0 0 var(--space-sm) 0;
+#ops-section .replen-card--suggestion-allocation {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+}
+
+#ops-section .replen-card--suggestion-allocation .replen-card {
+    background: #ffffff;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+#ops-section .replen-card__title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
     color: var(--text-primary);
-    font-size: var(--text-heading);
+}
+
+#ops-section .replen-card__row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+#ops-section .replen-card__label {
+    color: var(--text-secondary);
+}
+
+#ops-section .replen-card__value {
+    color: var(--text-primary);
+    font-weight: 500;
+    text-align: right;
+    min-width: 32px;
+}
+
+/* Sales Section */
+#ops-section .replen-expand-section--sales {
+    flex: 1;
+    display: flex;
+    gap: 12px;
+}
+
+#ops-section .replen-expand-section--sales .replen-card {
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 
@@ -1263,3 +1472,96 @@ table td button {
 }
 
 
+
+
+/* IR Panel - Equal Height Layout */
+#ops-section .replen-expand-scroll {
+    align-items: stretch;
+}
+
+.ir-panel {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.ir-panel--inventory-group {
+    flex-shrink: 0;
+    width: 360px;
+}
+
+#ops-section .replen-expand-section--inventory {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#ops-section .replen-card {
+    height: 100%;
+}
+
+#ops-section .replen-card--suggestion-allocation {
+    height: 100%;
+}
+
+
+#ops-section .replen-card-grid .replen-card {
+    height: 100%;
+}
+
+.ir-panel > .replen-card {
+    height: 100%;
+}
+
+.ir-panel > .replen-card--suggestion-allocation {
+    height: 100%;
+}
+
+
+.replen-card__select {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    font-size: 12px;
+    background: white;
+    cursor: pointer;
+}
+
+.shipping-methods-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.replen-card__remove-btn {
+    background: #EF4444;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.replen-card__remove-btn:hover {
+    background: #DC2626;
+}
+
+.replen-card__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    line-height: 1.4;
+    gap: 8px;
+}

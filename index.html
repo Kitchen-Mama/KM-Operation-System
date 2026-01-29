@@ -39,6 +39,10 @@
             <div class="menu-item" onclick="showSection('skuDetails')">
                 <span>📝</span> SKU Details
             </div>
+            <div class="menu-item menu-item--disabled" style="position: relative;">
+                <span>🚢</span> Shipping Management
+                <span class="stage-badge">Stage 2</span>
+            </div>
             <div class="menu-item" onclick="showSection('supplychain')">
                 <span>🗺️</span> Supply Chain Canvas
             </div>
@@ -218,8 +222,13 @@
                             <option value="shopify">Shopify</option>
                             <option value="target">Target</option>
                         </select>
-                        <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="Target Days">
-                        <button onclick="submitReplenishmentPlans()">Submit Plans</button>
+                        <select id="replenLTSFilter" onchange="renderReplenishment()">
+                            <option value="">All SKU</option>
+                            <option value="over90">Over 90+</option>
+                            <option value="over180">Over 180+</option>
+                        </select>
+                        <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="期望庫存水平天數">
+                        <button onclick="submitReplenishmentPlans()">Submit Plan</button>
                         <button class="btn-add-sku">+ Add SKU</button>
                     </div>
                     
@@ -238,18 +247,22 @@
                                         <div class="km-table__header-cell km-table__header-cell--inventory">Inventory</div>
                                         <div class="km-table__header-cell km-table__header-cell--sales">Sales</div>
                                         <div class="km-table__header-cell km-table__header-cell--replen">Replenishment</div>
+                                        <div class="km-table__header-cell km-table__header-cell--factory">工廠Stock</div>
+                                        <div class="km-table__header-cell km-table__header-cell--note-span">AI Action</div>
                                     </div>
                                     <!-- Second Layer: Sub Headers -->
                                     <div class="km-table__header-row km-table__header-row--level2">
                                         <div class="km-table__header-cell">Current Stock</div>
                                         <div class="km-table__header-cell">On the Way</div>
                                         <div class="km-table__header-cell">3rd Party Stock</div>
-                                        <div class="km-table__header-cell">Avg. Sales</div>
+                                        <div class="km-table__header-cell">Avg. Sales/day</div>
                                         <div class="km-table__header-cell">60 days FC</div>
                                         <div class="km-table__header-cell">Upcoming Event</div>
                                         <div class="km-table__header-cell">Days of Supply</div>
                                         <div class="km-table__header-cell">Suggested Qty</div>
                                         <div class="km-table__header-cell">Planned Qty</div>
+                                        <div class="km-table__header-cell">CN</div>
+                                        <div class="km-table__header-cell">TW</div>
                                     </div>
                                 </div>
                             </div>
