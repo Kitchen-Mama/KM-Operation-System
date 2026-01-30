@@ -1,7 +1,3 @@
-// Firebase 初始化 (暫時註解)
-// import { db } from './firebase-config.js';
-// import { collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
-
 // Homepage 渲染函式 - Stage 1
 function renderHomepage() {
     renderEvents();
@@ -318,144 +314,6 @@ function calculateRestock() {
     renderRecords();
 }
 
-// 渲染 Dashboard 1
-function renderDashboard1() {
-    const selectedFactory = document.getElementById('factorySelect').value;
-    const tableBody = document.getElementById('dashboard1Body');
-    
-    if (!selectedFactory) {
-        tableBody.innerHTML = '';
-        updateSummary();
-        return;
-    }
-    
-    const factoryData = window.DataRepo.getFactoryInventory(selectedFactory);
-    tableBody.innerHTML = factoryData.map(item => `
-        <tr>
-            <td>${item.sku}</td>
-            <td>${item.stock}</td>
-            <td><input type="number" id="qty_${item.sku}" placeholder="輸入數量" oninput="updateSummary()"></td>
-            <td id="boxes_${item.sku}">0</td>
-        </tr>
-    `).join('');
-    
-    updateSummary();
-}
-
-// 更新 Summary
-function updateSummary() {
-    let totalQty = 0;
-    let totalBoxes = 0;
-    
-    const selectedFactory = document.getElementById('factorySelect').value;
-    if (!selectedFactory) {
-        document.getElementById('totalQty').textContent = '0';
-        document.getElementById('totalBoxes').textContent = '0';
-        return;
-    }
-    
-    const factoryData = window.DataRepo.getFactoryInventory(selectedFactory);
-    factoryData.forEach(item => {
-        const qtyInput = document.getElementById(`qty_${item.sku}`);
-        if (qtyInput) {
-            const qty = parseInt(qtyInput.value) || 0;
-            const boxes = Math.ceil(qty / 40);
-            
-            document.getElementById(`boxes_${item.sku}`).textContent = boxes;
-            totalQty += qty;
-            totalBoxes += boxes;
-        }
-    });
-    
-    document.getElementById('totalQty').textContent = totalQty;
-    document.getElementById('totalBoxes').textContent = totalBoxes;
-}
-
-// 提交 Dashboard 1
-function submitDashboard1() {
-    const selectedFactory = document.getElementById('factorySelect').value;
-    if (!selectedFactory) return;
-    
-    const factoryData = window.DataRepo.getFactoryInventory(selectedFactory);
-    const submittedItems = [];
-    
-    factoryData.forEach(item => {
-        const qtyInput = document.getElementById(`qty_${item.sku}`);
-        const qty = parseInt(qtyInput.value) || 0;
-        
-        if (qty > 0) {
-            submittedItems.push({
-                sku: item.sku,
-                factoryStock: item.stock,
-                qty: qty,
-                boxes: Math.ceil(qty / 40)
-            });
-        }
-    });
-    
-    if (submittedItems.length === 0) return;
-    
-    renderDashboard2(submittedItems);
-    document.getElementById('dashboard2Section').style.display = 'block';
-}
-
-// 渲染 Dashboard 2
-function renderDashboard2(items) {
-    const tableBody = document.getElementById('dashboard2Body');
-    const shippingMethods = window.DataRepo.getShippingMethods();
-    
-    tableBody.innerHTML = items.map(item => `
-        <tr>
-            <td>${item.sku}</td>
-            <td>${item.factoryStock}</td>
-            <td>${item.qty}</td>
-            <td>${item.boxes}</td>
-            <td>
-                <select id="shipping_${item.sku}">
-                    <option value="">選擇出貨方式</option>
-                    ${shippingMethods.map(method => `<option value="${method}">${method}</option>`).join('')}
-                </select>
-            </td>
-            <td><input type="text" id="note_${item.sku}" placeholder="輸入備註"></td>
-        </tr>
-    `).join('');
-    
-    window.currentDashboard2Items = items;
-}
-
-// 提交 Dashboard 2
-function submitDashboard2() {
-    if (!window.currentDashboard2Items) return;
-    
-    const shippingPlans = window.currentDashboard2Items.map(item => {
-        const shippingMethod = document.getElementById(`shipping_${item.sku}`).value;
-        const note = document.getElementById(`note_${item.sku}`).value;
-        
-        return {
-            id: Date.now() + Math.random(),
-            sku: item.sku,
-            factoryStock: item.factoryStock,
-            qty: item.qty,
-            shippingMethod: shippingMethod,
-            note: note,
-            status: 'planning',
-            createdAt: new Date().toISOString()
-        };
-    });
-    
-    shippingPlans.forEach(plan => {
-        window.DataRepo.saveWeeklyShippingPlan(plan);
-    });
-    
-    // 清空表單
-    document.getElementById('factorySelect').value = '';
-    renderDashboard1();
-    document.getElementById('dashboard2Section').style.display = 'none';
-    
-    // 更新 Weekly Shipping Plans 顯示
-    renderWeeklyShippingPlans();
-}
-
 // 渲染 Weekly Shipping Plans
 function renderWeeklyShippingPlans() {
     const planningPlans = window.DataRepo.getWeeklyShippingPlans('planning');
@@ -658,64 +516,6 @@ function syncSkuHeaderScroll() {
     });
 }
 
-// SKU Details 功能 - Stage 1 最小實作
-function renderSkuDetails() {
-    // 渲染 Categories
-    const categoryList = document.getElementById('categoryList');
-    const categories = window.DataRepo.getCategories();
-    categoryList.innerHTML = categories.map(cat => 
-        `<li onclick="filterByCategory('${cat}')">${cat}</li>`
-    ).join('');
-    
-    // 渲染 SKU 表格
-    renderSkuTable();
-}
-
-function renderSkuTable() {
-    const skus = window.DataRepo.getSkus();
-    const tbody = document.getElementById('skuDetailsBody');
-    
-    tbody.innerHTML = skus.map(sku => `
-        <tr>
-            <td>${sku.sku}</td>
-            <td>${sku.productName}</td>
-            <td>${sku.category}</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-        </tr>
-    `).join('');
-}
-
-function filterSkus() {
-    // Stage 1: 前端即時 filter
-    const searchTerm = document.getElementById('skuSearchBox').value.toLowerCase();
-    const rows = document.querySelectorAll('#skuDetailsBody tr');
-    
-    rows.forEach(row => {
-        const sku = row.cells[0].textContent.toLowerCase();
-        row.style.display = sku.includes(searchTerm) ? '' : 'none';
-    });
-}
-
-function toggleFilterDropdown() {
-    const dropdown = document.getElementById('filterDropdown');
-    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
-}
-
-function filterByCategory(category) {
-    const rows = document.querySelectorAll('#skuDetailsBody tr');
-    rows.forEach(row => {
-        const rowCategory = row.cells[2].textContent;
-        row.style.display = rowCategory === category ? '' : 'none';
-    });
-}
-
-function showAddSkuModal() {
-    // Stage 1: placeholder modal
-    alert('新增 SKU 功能 - Stage 1 placeholder');
-}
-
 // 暴露函式到全域供 HTML 使用
 window.showHome = showHome;
 window.showSection = showSection;
@@ -727,10 +527,6 @@ window.showForecast = showForecast;
 window.renderForecastChart = renderForecastChart;
 window.calculateRestock = calculateRestock;
 window.renderRecords = renderRecords;
-window.renderDashboard1 = renderDashboard1;
-window.updateSummary = updateSummary;
-window.submitDashboard1 = submitDashboard1;
-window.submitDashboard2 = submitDashboard2;
 window.moveToOngoing = moveToOngoing;
 window.moveToDone = moveToDone;
 window.undoFromOngoing = undoFromOngoing;
@@ -1709,11 +1505,16 @@ function addPredefinedMethod(sku, method, quantity) {
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
     if (!methodsList) return;
     
+    // 進位到整箱數量
+    const mockData = replenishmentMockData.find(m => m.sku === sku);
+    const unitsPerCarton = mockData?.unitsPerCarton || 40;
+    const roundedQty = quantity > 0 ? Math.ceil(quantity / unitsPerCarton) * unitsPerCarton : 0;
+    
     const methodRow = document.createElement('div');
     methodRow.className = 'replen-card__row';
     methodRow.innerHTML = `
         <span class="replen-card__label">${method}</span>
-        <input class="replen-card__input" type="number" value="${quantity}" 
+        <input class="replen-card__input" type="number" value="${roundedQty}" 
                oninput="updateShippingAllocationTotal('${sku}')" 
                onclick="event.stopPropagation()" 
                data-method="${method}">

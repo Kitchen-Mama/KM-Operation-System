@@ -1309,6 +1309,10 @@ table td button {
     text-align: right;
 }
 
+#ops-section .replen-card--shipping-allocation .replen-card__input {
+    text-align: right;
+}
+
 #ops-section .scroll-row .scroll-cell input {
     width: 100%;
     padding: 4px 8px;
@@ -1363,7 +1367,7 @@ table td button {
     padding: var(--space-md);
     display: flex;
     gap: var(--space-md);
-    min-width: 100%;
+    min-width: max-content;
     box-sizing: border-box;
     background: #F8F9FA;
 }
@@ -1372,6 +1376,7 @@ table td button {
 #ops-section .replen-expand-section--inventory {
     width: 360px;
     flex-shrink: 0;
+    min-width: 360px;
 }
 
 #ops-section .replen-card-grid {
@@ -1445,11 +1450,13 @@ table td button {
     flex: 1;
     display: flex;
     gap: 12px;
+    min-width: max-content;
 }
 
 #ops-section .replen-expand-section--sales .replen-card {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 200px;
+    width: 200px;
 }
 
 
@@ -1594,4 +1601,135 @@ table td button {
 
 .shipping-methods-list .replen-card__row {
     justify-content: flex-end;
+}
+
+
+/* Responsive Fix for Expand Panel */
+.ir-panel {
+    overflow: hidden;
+}
+
+#ops-section .replen-card__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+
+.ir-panel {
+    flex: 0 0 auto;
+    min-width: 200px;
+    width: 200px;
+}
+
+.ir-panel--inventory-group {
+    width: 360px;
+    min-width: 360px;
+}
+
+
+/* Shipping Allocation Fixes */
+.shipping-methods-list .replen-card__row {
+    padding: 4px 8px;
+}
+
+.replen-card__remove-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.replen-card__input {
+    padding: 2px 4px;
+}
+
+
+.replen-card--shipping-allocation {
+    padding-right: 12px !important;
+}
+
+.shipping-methods-list {
+    padding-right: 4px;
+}
+
+
+#ops-section .replen-card--shipping-allocation .shipping-methods-list {
+    padding-right: 8px;
+}
+
+#ops-section .replen-card--shipping-allocation .replen-card__row {
+    padding-right: 8px;
+}
+
+
+/* ========================================
+   Shipping Allocation X Button Fix
+   Problem: Remove button被父層裁切/遮擋
+======================================== */
+
+/* 1. 確保卡片不裁切內容 - 解決 overflow hidden 造成的裁切 */
+#ops-section .replen-card--shipping-allocation {
+    overflow: visible !important;
+}
+
+/* 2. 確保列表容器不裁切按鈕 - 解決父層 overflow 問題 */
+#ops-section .replen-card--shipping-allocation .shipping-methods-list {
+    overflow: visible;
+}
+
+/* 3. 確保每一列有足夠右側空間 - 解決按鈕貼邊問題 */
+#ops-section .replen-card--shipping-allocation .shipping-methods-list .replen-card__row {
+    padding-right: 12px;
+    position: relative;
+}
+
+/* 4. 確保 X 按鈕在最上層且靠右 - 解決 z-index 和對齊問題 */
+#ops-section .replen-card--shipping-allocation .replen-card__remove-btn {
+    position: relative;
+    z-index: 10;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+
+/* ========================================
+   Shipping Allocation X Button Fix - FINAL
+   根本原因: .ir-panel 固定寬度 200px 裁切了內容
+======================================== */
+
+/* 讓包含 Shipping Allocation 的 panel 有足夠寬度 */
+#ops-section .ir-panel > .replen-card--suggestion-allocation {
+    width: 220px !important;
+    min-width: 220px !important;
+}
+
+/* 確保 Shipping Allocation 卡片不裁切內容 */
+#ops-section .replen-card--shipping-allocation {
+    overflow: visible !important;
+    padding-right: 16px !important;
+}
+
+/* 確保每一列右側有空間 */
+#ops-section .replen-card--shipping-allocation .shipping-methods-list .replen-card__row {
+    padding-right: 4px !important;
+}
+
+/* 確保 X 按鈕正確定位 */
+#ops-section .replen-card--shipping-allocation .replen-card__remove-btn {
+    margin-left: 8px !important;
+    flex-shrink: 0 !important;
+}
+
+
+/* Fix: 移除 .ir-panel 固定寬度限制 */
+.ir-panel {
+    width: auto !important;
+    overflow: visible !important;
+}
+
+
+/* 統一所有 panel 的左右 padding */
+.ir-panel > .replen-card,
+.ir-panel > .replen-card--suggestion-allocation > .replen-card {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
 }

@@ -1062,10 +1062,5 @@ const urgentIssues = [
 // 個人提醒代辦 - 使用 localStorage
 let personalTodos = JSON.parse(localStorage.getItem('personalTodos')) || [];
 
-// 保留舊函式以維持相容性
-function findItemBySku(sku) {
-    return DataRepo.getItemBySku(sku);
-}
-
 // 暴露 DataRepo 到全域
 window.DataRepo = DataRepo;
