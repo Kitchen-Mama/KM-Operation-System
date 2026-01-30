@@ -1066,11 +1066,15 @@ function getReplenishmentData() {
                 over180 = Math.floor(Math.random() * 8) + 2;
             }
             
+            // Factory stock - 快取以避免每次計算時變動
+            const cnStock = Math.floor(Math.random() * 5000) + 1000;
+            const twStock = Math.floor(Math.random() * 3000) + 500;
+            
             cachedExpandData[item.sku] = {
                 available, fcTransfer, fcProcessing, winitStock, onusStock,
                 within18days, within30days, within45days, lastWeek, fcNextMonth, fcNext2Month,
                 fcLastMonth, fcLast2Month, achievementLastMonth, achievementLast2Month,
-                salesDay2, salesDay3, salesDay4, over90, over180
+                salesDay2, salesDay3, salesDay4, over90, over180, cnStock, twStock
             };
         }
         
@@ -1206,8 +1210,8 @@ function getReplenishmentData() {
             note: replenishmentNotes[item.sku] || '',
             status: suggestedQty > 0 ? "Need Restock" : "Sufficient",
             upcomingEventQty: upcomingEventQty,
-            cnStock: Math.floor(Math.random() * 5000) + 1000,
-            twStock: Math.floor(Math.random() * 3000) + 500,
+            cnStock: expandData.cnStock,
+            twStock: expandData.twStock,
             // Expand panel data
             available: expandData.available,
             fcTransfer: expandData.fcTransfer,
@@ -1277,11 +1281,8 @@ function renderReplenishment() {
             <div class="scroll-cell">${item.upcomingEventQty !== null ? item.upcomingEventQty : '-'}</div>
             <div class="scroll-cell${item.needsAlert ? ' alert-red' : ''}">${item.daysOfSupply}</div>
             <div class="scroll-cell">${item.suggestedQty}</div>
-            <div class="scroll-cell" style="display: flex; gap: 4px; align-items: center;">
-                <input type="number" value="${item.plannedQty}" 
-                       onchange="updatePlannedQty('${item.sku}', this.value)"
-                       onclick="event.stopPropagation()"
-                       style="flex: 1; min-width: 0;">
+            <div class="scroll-cell" style="display: flex; gap: 4px; align-items: center; justify-content: center;">
+                <span style="color: #64748B; font-size: 12px; cursor: pointer;" onclick="openShippingAllocation(event, '${item.sku}')">See Details</span>
                 <button class="planned-qty-config-btn" 
                         onclick="openShippingAllocation(event, '${item.sku}')"
                         title="Configure shipping allocation"
@@ -1441,7 +1442,7 @@ function toggleReplenRow(sku) {
                             <span class="replen-card__summary-label">Total</span>
                             <span class="replen-card__summary-value" id="allocation-total-${sku}">0</span>
                         </div>
-                        <div class="replen-card__hint" id="allocation-hint-${sku}" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Total should match Planned Qty</div>
+                        <div class="replen-card__hint" id="allocation-hint-${sku}" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Factory Stock Available</div>
                     </div>
                 </article>
                 <article class="ir-panel replen-card replen-card--shipping-plan">
@@ -1473,11 +1474,13 @@ function toggleReplenRow(sku) {
     
     // Sync heights after DOM insertion
     setTimeout(() => {
-        const fixedHeight = fixedElement.offsetHeight;
-        const scrollHeight = scrollElement.offsetHeight;
-        const maxHeight = Math.max(fixedHeight, scrollHeight);
-        fixedElement.style.height = maxHeight + 'px';
-        scrollElement.style.height = maxHeight + 'px';
+        syncExpandPanelHeight(sku);
+        
+        // Auto-populate Shipping Allocation based on AI Suggestion
+        initializeShippingAllocation(sku, skuData);
+        
+        // Re-sync after initialization
+        setTimeout(() => syncExpandPanelHeight(sku), 50);
     }, 0);
 }
 
@@ -1504,18 +1507,55 @@ function createPlan(sku) {
 }
 
 function submitReplenishmentPlans() {
-    const plans = Object.entries(replenishmentPlans)
-        .filter(([sku, qty]) => qty > 0)
-        .map(([sku, qty]) => ({ sku, qty }));
+    const data = getReplenishmentData();
+    const shippingPlans = {};
+    
+    // 收集所有 SKU 的 Shipping Allocation
+    data.forEach(item => {
+        const methodsList = document.getElementById(`shipping-methods-${item.sku}`);
+        if (!methodsList) return;
+        
+        const inputs = methodsList.querySelectorAll('input[type="number"]');
+        inputs.forEach(input => {
+            const method = input.dataset.method;
+            const qty = parseInt(input.value) || 0;
+            
+            if (qty > 0 && method) {
+                if (!shippingPlans[method]) {
+                    shippingPlans[method] = [];
+                }
+                shippingPlans[method].push({
+                    sku: item.sku,
+                    qty: qty
+                });
+            }
+        });
+    });
     
     console.log('=== Replenishment Plans Submitted ===');
     console.log('Country:', document.getElementById('replenCountry').value);
     console.log('Marketplace:', document.getElementById('replenMarketplace').value);
     console.log('Target Days:', document.getElementById('replenTargetDays').value);
-    console.log('Plans:', plans);
+    console.log('\nShipping Plans (Grouped by Method):');
+    
+    Object.keys(shippingPlans).forEach(method => {
+        console.log(`\n${method}:`);
+        shippingPlans[method].forEach(item => {
+            console.log(`  - ${item.sku}: ${item.qty} units`);
+        });
+        const totalQty = shippingPlans[method].reduce((sum, item) => sum + item.qty, 0);
+        console.log(`  Total: ${totalQty} units`);
+    });
+    
     console.log('=====================================');
     
-    alert(`Submitted ${plans.length} replenishment plans. Check console for details.`);
+    const planCount = Object.keys(shippingPlans).length;
+    const skuCount = data.filter(item => {
+        const methodsList = document.getElementById(`shipping-methods-${item.sku}`);
+        return methodsList && methodsList.querySelectorAll('input[type="number"]').length > 0;
+    }).length;
+    
+    alert(`Submitted ${planCount} shipping plan(s) covering ${skuCount} SKU(s).\n\nCheck console for details.`);
 }
 
 window.renderReplenishment = renderReplenishment;
@@ -1568,17 +1608,21 @@ function updateShippingAllocationTotal(sku) {
     
     const totalSpan = document.getElementById(`allocation-total-${sku}`);
     const hintDiv = document.getElementById(`allocation-hint-${sku}`);
-    const plannedQty = replenishmentPlans[sku] || 0;
     
     if (totalSpan) totalSpan.textContent = total;
     
     if (hintDiv) {
-        if (total !== plannedQty && total > 0) {
+        // 獲取工廠庫存 (CN + TW)
+        const data = getReplenishmentData();
+        const skuData = data.find(item => item.sku === sku);
+        const factoryStock = (skuData?.cnStock || 0) + (skuData?.twStock || 0);
+        
+        if (total > factoryStock) {
             hintDiv.style.color = '#991B1B';
-            hintDiv.textContent = `Total does not match Planned Qty (${plannedQty})`;
+            hintDiv.textContent = `Insufficient Stock (Factory: ${factoryStock}, Need: ${total})`;
         } else {
             hintDiv.style.color = 'var(--text-muted)';
-            hintDiv.textContent = 'Total should match Planned Qty';
+            hintDiv.textContent = `Factory Stock Available: ${factoryStock} units`;
         }
     }
 }
@@ -1607,6 +1651,7 @@ function addShippingMethod(event, sku) {
     methodsList.appendChild(methodRow);
     select.value = '';
     updateShippingAllocationTotal(sku);
+    syncExpandPanelHeight(sku);
 }
 
 function removeShippingMethod(event, sku) {
@@ -1615,11 +1660,72 @@ function removeShippingMethod(event, sku) {
     if (row) {
         row.remove();
         updateShippingAllocationTotal(sku);
+        syncExpandPanelHeight(sku);
     }
+}
+
+function syncExpandPanelHeight(sku) {
+    setTimeout(() => {
+        const fixedPanel = document.querySelector(`#ops-section .fixed-body .replen-expand-panel`);
+        const scrollPanel = document.querySelector(`#ops-section .scroll-body .replen-expand-panel`);
+        
+        if (fixedPanel && scrollPanel) {
+            const fixedHeight = fixedPanel.scrollHeight;
+            const scrollHeight = scrollPanel.scrollHeight;
+            const maxHeight = Math.max(fixedHeight, scrollHeight);
+            fixedPanel.style.height = maxHeight + 'px';
+            scrollPanel.style.height = maxHeight + 'px';
+        }
+    }, 0);
 }
 
 window.addShippingMethod = addShippingMethod;
 window.removeShippingMethod = removeShippingMethod;
+
+function initializeShippingAllocation(sku, skuData) {
+    const marketplace = document.getElementById('replenMarketplace').value;
+    const country = document.getElementById('replenCountry').value;
+    const methodsList = document.getElementById(`shipping-methods-${sku}`);
+    
+    if (!methodsList || !skuData) return;
+    
+    // US-Amazon 預設規則
+    if (country === 'US' && marketplace === 'amazon') {
+        if (skuData.need18 > 0) {
+            addPredefinedMethod(sku, 'Air Freight', skuData.need18);
+        }
+        if (skuData.need30 > 0) {
+            addPredefinedMethod(sku, 'Private Ship', skuData.need30);
+        }
+        if (skuData.need45Plus > 0) {
+            addPredefinedMethod(sku, 'AGL Ship', skuData.need45Plus);
+        }
+    }
+    
+    updateShippingAllocationTotal(sku);
+}
+
+function addPredefinedMethod(sku, method, quantity) {
+    const methodsList = document.getElementById(`shipping-methods-${sku}`);
+    if (!methodsList) return;
+    
+    const methodRow = document.createElement('div');
+    methodRow.className = 'replen-card__row';
+    methodRow.innerHTML = `
+        <span class="replen-card__label">${method}</span>
+        <input class="replen-card__input" type="number" value="${quantity}" 
+               oninput="updateShippingAllocationTotal('${sku}')" 
+               onclick="event.stopPropagation()" 
+               data-method="${method}">
+        <button class="replen-card__remove-btn" 
+                onclick="removeShippingMethod(event, '${sku}')" 
+                title="Remove">×</button>
+    `;
+    
+    methodsList.appendChild(methodRow);
+}
+
+window.initializeShippingAllocation = initializeShippingAllocation;
 
 window.openShippingAllocation = openShippingAllocation;
 window.openAISuggestion = openAISuggestion;
