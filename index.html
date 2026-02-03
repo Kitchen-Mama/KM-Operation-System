@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="sku-details.css">
     <link rel="stylesheet" href="supplychain.css">
+    <link rel="stylesheet" href="shipping-plan.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -38,6 +39,9 @@
             </div>
             <div class="menu-item" onclick="showSection('skuDetails')">
                 <span>📝</span> SKU Details
+            </div>
+            <div class="menu-item" onclick="showSection('shippingplan')">
+                <span>📋</span> Shipping Plan
             </div>
             <div class="menu-item menu-item--disabled" style="position: relative;">
                 <span>🚢</span> Shipping Management
@@ -559,6 +563,22 @@
             </div>
         </div>
     </div>
+            </section>
+            
+            <!-- Shipping Plan Section -->
+            <section id="shippingplan-section" class="module-section">
+                <div id="shippingPlanSection">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="margin: 0;">Shipping Plan</h2>
+                        <select id="spCountryFilter" onchange="renderShippingPlan()" style="padding: 8px 12px; border: 1px solid #E2E8F0; border-radius: 4px;">
+                            <option value="">All Countries</option>
+                            <option value="US">US</option>
+                            <option value="UK">UK</option>
+                            <option value="DE">DE</option>
+                        </select>
+                    </div>
+                    <div id="shippingPlanCards"></div>
+                </div>
             </section>
             
             <!-- Supply Chain Canvas Section -->

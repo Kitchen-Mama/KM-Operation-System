@@ -1,0 +1,180 @@
+/* Shipping Plan Page Styles */
+
+.sp-header-info {
+    margin-bottom: 20px;
+    font-size: 14px;
+    color: #64748B;
+}
+
+#shippingPlanCards {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sp-card {
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.sp-card-header {
+    padding: 16px;
+    border-bottom: 1px solid #E2E8F0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.sp-card-summary {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    font-size: 13px;
+}
+
+.sp-summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sp-summary-label {
+    color: #64748B;
+    font-size: 11px;
+}
+
+.sp-summary-value {
+    color: #1E293B;
+    font-weight: 500;
+}
+
+.sp-card-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.sp-btn {
+    padding: 6px 12px;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.sp-btn:hover {
+    background: #F8FAFC;
+}
+
+.sp-btn-expand {
+    color: #3B82F6;
+}
+
+.sp-btn-submit {
+    background: #3B82F6;
+    color: #fff;
+    border-color: #3B82F6;
+}
+
+.sp-btn-submit:hover {
+    background: #2563EB;
+}
+
+.sp-btn-cancel {
+    color: #EF4444;
+}
+
+.sp-card-details {
+    display: none;
+    padding: 16px;
+    background: #F8FAFC;
+}
+
+.sp-card.is-expanded .sp-card-details {
+    display: block;
+}
+
+.sp-details-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 16px;
+}
+
+.sp-section {
+    background: #fff;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.sp-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #1E293B;
+}
+
+.sp-sku-table {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+}
+
+.sp-sku-table th {
+    text-align: left;
+    padding: 6px 8px;
+    background: #F1F5F9;
+    font-weight: 500;
+    color: #64748B;
+    border-bottom: 1px solid #E2E8F0;
+}
+
+.sp-sku-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #F1F5F9;
+}
+
+.sp-sku-table input,
+.sp-sku-table select {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid #E2E8F0;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.sp-rationale-text {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #475569;
+}
+
+.sp-rationale-item {
+    margin-bottom: 8px;
+}
+
+.sp-cost-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #F1F5F9;
+}
+
+.sp-cost-row:last-child {
+    border-bottom: none;
+    font-weight: 600;
+    padding-top: 12px;
+    border-top: 2px solid #E2E8F0;
+}
+
+.sp-cost-label {
+    color: #64748B;
+}
+
+.sp-cost-value {
+    color: #1E293B;
+}

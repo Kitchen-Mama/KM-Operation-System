@@ -116,17 +116,27 @@ function showSection(section) {
         'forecast': 'forecast-section',
         'shipment': 'shipment-section',
         'skuDetails': 'sku-section',
-        'supplychain': 'supplychain-section'
+        'supplychain': 'supplychain-section',
+        'shippingplan': 'shippingplan-section'
     };
     
-    if (sectionMap[section]) {
-        document.getElementById(sectionMap[section]).classList.add('active');
+    const targetSectionId = sectionMap[section];
+    if (targetSectionId) {
+        const targetSection = document.getElementById(targetSectionId);
+        if (targetSection) {
+            targetSection.classList.add('active');
+        } else {
+            console.error('Section not found:', targetSectionId);
+        }
     }
     
     // 更新選單狀態
     document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
-    if (event && event.target) {
-        event.target.closest('.menu-item').classList.add('active');
+    if (typeof event !== 'undefined' && event && event.target) {
+        const menuItem = event.target.closest('.menu-item');
+        if (menuItem) {
+            menuItem.classList.add('active');
+        }
     }
     
     if (section === 'forecast') {
@@ -1304,54 +1314,119 @@ function createPlan(sku) {
 
 function submitReplenishmentPlans() {
     const data = getReplenishmentData();
+    const country = document.getElementById('replenCountry').value;
+    const marketplace = document.getElementById('replenMarketplace').value;
+    const targetDays = document.getElementById('replenTargetDays').value;
     const shippingPlans = {};
     
-    // 收集所有 SKU 的 Shipping Allocation
+    console.log('=== Submit Plan Debug ===');
+    console.log('Total SKUs:', data.length);
+    
+    // 檢查所有 SKU 的 Shipping Allocation
     data.forEach(item => {
         const methodsList = document.getElementById(`shipping-methods-${item.sku}`);
-        if (!methodsList) return;
         
-        const inputs = methodsList.querySelectorAll('input[type="number"]');
-        inputs.forEach(input => {
-            const method = input.dataset.method;
-            const qty = parseInt(input.value) || 0;
-            
-            if (qty > 0 && method) {
-                if (!shippingPlans[method]) {
-                    shippingPlans[method] = [];
+        if (methodsList) {
+            // SKU 已展開，收集實際填寫的數值
+            const inputs = methodsList.querySelectorAll('input[type="number"]');
+            inputs.forEach(input => {
+                const method = input.dataset.method;
+                const qty = parseInt(input.value) || 0;
+                
+                if (qty > 0 && method) {
+                    if (!shippingPlans[method]) {
+                        shippingPlans[method] = [];
+                    }
+                    shippingPlans[method].push({
+                        sku: item.sku,
+                        qty: qty,
+                        skuData: item
+                    });
                 }
-                shippingPlans[method].push({
-                    sku: item.sku,
-                    qty: qty
-                });
+            });
+        } else {
+            // SKU 未展開，使用 AI Suggestion 預設分配（僅 US-Amazon）
+            if (country === 'US' && marketplace === 'amazon') {
+                const mockData = replenishmentMockData.find(m => m.sku === item.sku);
+                const unitsPerCarton = mockData?.unitsPerCarton || 40;
+                
+                if (item.need18 > 0) {
+                    const roundedQty = Math.ceil(item.need18 / unitsPerCarton) * unitsPerCarton;
+                    if (!shippingPlans['Air Freight']) shippingPlans['Air Freight'] = [];
+                    shippingPlans['Air Freight'].push({ 
+                        sku: item.sku, 
+                        qty: roundedQty,
+                        skuData: item
+                    });
+                }
+                if (item.need30 > 0) {
+                    const roundedQty = Math.ceil(item.need30 / unitsPerCarton) * unitsPerCarton;
+                    if (!shippingPlans['Private Ship']) shippingPlans['Private Ship'] = [];
+                    shippingPlans['Private Ship'].push({ 
+                        sku: item.sku, 
+                        qty: roundedQty,
+                        skuData: item
+                    });
+                }
+                if (item.need45Plus > 0) {
+                    const roundedQty = Math.ceil(item.need45Plus / unitsPerCarton) * unitsPerCarton;
+                    if (!shippingPlans['AGL Ship']) shippingPlans['AGL Ship'] = [];
+                    shippingPlans['AGL Ship'].push({ 
+                        sku: item.sku, 
+                        qty: roundedQty,
+                        skuData: item
+                    });
+                }
             }
-        });
+        }
     });
     
-    console.log('=== Replenishment Plans Submitted ===');
-    console.log('Country:', document.getElementById('replenCountry').value);
-    console.log('Marketplace:', document.getElementById('replenMarketplace').value);
-    console.log('Target Days:', document.getElementById('replenTargetDays').value);
-    console.log('\nShipping Plans (Grouped by Method):');
+    console.log('Shipping Plans:', shippingPlans);
+    console.log('Total Methods:', Object.keys(shippingPlans).length);
     
+    // 檢查是否有任何數值
+    let totalSkus = 0;
     Object.keys(shippingPlans).forEach(method => {
-        console.log(`\n${method}:`);
-        shippingPlans[method].forEach(item => {
-            console.log(`  - ${item.sku}: ${item.qty} units`);
-        });
-        const totalQty = shippingPlans[method].reduce((sum, item) => sum + item.qty, 0);
-        console.log(`  Total: ${totalQty} units`);
+        totalSkus += shippingPlans[method].length;
     });
     
-    console.log('=====================================');
+    if (totalSkus === 0) {
+        alert('No SKUs Submitted');
+        return;
+    }
     
-    const planCount = Object.keys(shippingPlans).length;
-    const skuCount = data.filter(item => {
-        const methodsList = document.getElementById(`shipping-methods-${item.sku}`);
-        return methodsList && methodsList.querySelectorAll('input[type="number"]').length > 0;
-    }).length;
+    // 讀取現有資料
+    let allPlans = [];
+    const existingData = sessionStorage.getItem('allShippingPlans');
+    if (existingData) {
+        allPlans = JSON.parse(existingData);
+    }
     
-    alert(`Submitted ${planCount} shipping plan(s) covering ${skuCount} SKU(s).\n\nCheck console for details.`);
+    // 新增本次提交的資料
+    const newPlan = {
+        id: Date.now(),
+        date: new Date().toISOString().split('T')[0],
+        country: country,
+        marketplace: marketplace,
+        targetDays: targetDays,
+        plans: shippingPlans
+    };
+    allPlans.push(newPlan);
+    
+    // 儲存累積的資料
+    sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
+    console.log('Saved to sessionStorage:', allPlans);
+    
+    // 顯示推送結果
+    alert(`推送成功！\n總 SKU 數: ${totalSkus}\n總運輸方式: ${Object.keys(shippingPlans).length}`);
+    
+    // 導向 Shipping Plan 頁面
+    showSection('shippingplan');
+    
+    // 延遲渲染確保 DOM 已顯示
+    setTimeout(() => {
+        renderShippingPlan();
+    }, 100);
 }
 
 window.renderReplenishment = renderReplenishment;
@@ -1531,3 +1606,326 @@ window.initializeShippingAllocation = initializeShippingAllocation;
 window.openShippingAllocation = openShippingAllocation;
 window.openAISuggestion = openAISuggestion;
 window.updateShippingAllocationTotal = updateShippingAllocationTotal;
+
+// ========================================
+// Shipping Plan Page
+// ========================================
+
+function renderShippingPlan() {
+    console.log('=== Render Shipping Plan ===');
+    const allPlansStr = sessionStorage.getItem('allShippingPlans');
+    console.log('sessionStorage data:', allPlansStr);
+    
+    if (!allPlansStr) {
+        console.log('No data in sessionStorage');
+        document.getElementById('shippingPlanCards').innerHTML = '<p>No shipping plans available.</p>';
+        return;
+    }
+    
+    const allPlans = JSON.parse(allPlansStr);
+    console.log('Parsed allPlans:', allPlans);
+    
+    // 篩選國家
+    const countryFilter = document.getElementById('spCountryFilter').value;
+    const filteredPlans = countryFilter ? allPlans.filter(p => p.country === countryFilter) : allPlans;
+    
+    const cardsContainer = document.getElementById('shippingPlanCards');
+    cardsContainer.innerHTML = '';
+    
+    if (filteredPlans.length === 0) {
+        console.log('No plans after filter');
+        cardsContainer.innerHTML = '<p>No shipping plans match the filter.</p>';
+        return;
+    }
+    
+    console.log('Rendering cards for plans:', filteredPlans);
+    
+    let cardIndex = 0;
+    filteredPlans.forEach(planData => {
+        Object.keys(planData.plans).forEach(method => {
+            const skus = planData.plans[method];
+            console.log(`Method ${method}:`, skus);
+            
+            const totalPcs = skus.reduce((sum, item) => sum + item.qty, 0);
+            const mockData = replenishmentMockData.find(m => m.sku === skus[0].sku);
+            const unitsPerCarton = mockData?.unitsPerCarton || 40;
+            const totalCartons = Math.ceil(totalPcs / unitsPerCarton);
+            const totalCost = totalPcs * 2.5;
+            const unitCost = 2.5;
+            
+            const card = document.createElement('div');
+            card.className = 'sp-card';
+            card.innerHTML = `
+                <div class="sp-card-header">
+                    <div class="sp-card-summary">
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Submitted Date</span>
+                            <span class="sp-summary-value">${planData.date}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Country</span>
+                            <span class="sp-summary-value">${planData.country}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Marketplace</span>
+                            <span class="sp-summary-value">${planData.marketplace}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Shipping Method</span>
+                            <span class="sp-summary-value">${method}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Total SKU</span>
+                            <span class="sp-summary-value">${skus.length}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Total Pcs</span>
+                            <span class="sp-summary-value">${totalPcs}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Total Cartons</span>
+                            <span class="sp-summary-value">${totalCartons}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Total Cost</span>
+                            <span class="sp-summary-value">$${totalCost.toFixed(2)}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Unit Cost</span>
+                            <span class="sp-summary-value">$${unitCost.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div class="sp-card-actions">
+                        <button class="sp-btn sp-btn-expand" onclick="toggleShippingPlanCard(${cardIndex})">Expand</button>
+                        <button class="sp-btn sp-btn-submit" onclick="submitShippingPlanCard(${cardIndex})">Submit</button>
+                        <button class="sp-btn sp-btn-cancel" onclick="cancelShippingPlanCard(${cardIndex})">Cancel</button>
+                    </div>
+                </div>
+                <div class="sp-card-details">
+                    <div class="sp-details-grid">
+                        <div class="sp-section">
+                            <h4 class="sp-section-title">SKU Shipping Details</h4>
+                            <table class="sp-sku-table">
+                                <thead>
+                                    <tr>
+                                        <th>SKU</th>
+                                        <th>Current Stock</th>
+                                        <th>Avg. Sales</th>
+                                        <th>Days of Supply</th>
+                                        <th>Shipping Qty</th>
+                                        <th>Cartons</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${skus.map(item => {
+                                        const itemMockData = replenishmentMockData.find(m => m.sku === item.sku);
+                                        const itemUnitsPerCarton = itemMockData?.unitsPerCarton || 40;
+                                        return `
+                                        <tr>
+                                            <td>${item.sku}</td>
+                                            <td>${item.skuData.currentInventory}</td>
+                                            <td>${item.skuData.avgDailySales}</td>
+                                            <td>${item.skuData.daysOfSupply}</td>
+                                            <td>
+                                                <input type="number" value="${item.qty}" max="${item.qty}" 
+                                                       oninput="validateShippingQty(this, ${item.qty})" 
+                                                       style="text-align: right;">
+                                                <div class="qty-error" style="display: none; color: #EF4444; font-size: 11px; margin-top: 2px;">不可大於 ${item.qty}</div>
+                                            </td>
+                                            <td>${Math.ceil(item.qty / itemUnitsPerCarton)}</td>
+                                        </tr>
+                                    `}).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="sp-section">
+                            <h4 class="sp-section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>Plan Rationale</span>
+                                <button class="sp-btn sp-btn-submit" onclick="showNoteInput(${cardIndex})" style="font-size: 12px; padding: 4px 12px;">+ Add Note</button>
+                            </h4>
+                            <div class="sp-rationale-text">
+                                <div class="sp-rationale-item"><strong>Target Days:</strong> ${planData.targetDays}</div>
+                                <div class="sp-rationale-item"><strong>Method:</strong> ${method}</div>
+                                <div id="note-input-${cardIndex}" style="display: none; margin-top: 8px;">
+                                    <textarea id="note-text-${cardIndex}" style="width: 100%; min-height: 60px; padding: 8px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px; resize: vertical;"></textarea>
+                                    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+                                        <button onclick="cancelNote(${cardIndex})" style="background: #EF4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">✕</button>
+                                        <button onclick="saveNote(${cardIndex})" style="background: #10B981; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">✓</button>
+                                    </div>
+                                </div>
+                                <div id="note-display-${cardIndex}" style="margin-top: 8px;"></div>
+                            </div>
+                        </div>
+                        <div class="sp-section">
+                            <h4 class="sp-section-title">Cost Breakdown</h4>
+                            <div class="sp-cost-row">
+                                <span class="sp-cost-label">Carrier Name</span>
+                                <select onchange="updateCarrierCost(${cardIndex}, this.value, ${totalPcs})" style="padding: 4px 8px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px;">
+                                    <option value="DHL">DHL</option>
+                                    <option value="FedEx">FedEx</option>
+                                    <option value="UPS">UPS</option>
+                                    <option value="Maersk">Maersk</option>
+                                </select>
+                            </div>
+                            <div class="sp-cost-row">
+                                <span class="sp-cost-label">Carrier Fee</span>
+                                <span class="sp-cost-value" id="carrier-fee-${cardIndex}">$${(totalCost * 0.7).toFixed(2)}</span>
+                            </div>
+                            <div class="sp-cost-row">
+                                <span class="sp-cost-label">Duty / Custom</span>
+                                <span class="sp-cost-value" id="duty-${cardIndex}">$${(totalCost * 0.3).toFixed(2)}</span>
+                            </div>
+                            <div class="sp-cost-row">
+                                <span class="sp-cost-label">Total Cost</span>
+                                <span class="sp-cost-value" id="total-cost-${cardIndex}">$${totalCost.toFixed(2)}</span>
+                            </div>
+                            <div class="sp-cost-row">
+                                <span class="sp-cost-label">Unit Cost</span>
+                                <span class="sp-cost-value" id="unit-cost-${cardIndex}">$${unitCost.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            cardsContainer.appendChild(card);
+            cardIndex++;
+        });
+    });
+    
+    console.log('Render complete');
+}
+
+function toggleShippingPlanCard(index) {
+    const cards = document.querySelectorAll('.sp-card');
+    const card = cards[index];
+    const btn = card.querySelector('.sp-btn-expand');
+    
+    card.classList.toggle('is-expanded');
+    btn.textContent = card.classList.contains('is-expanded') ? 'Collapse' : 'Expand';
+}
+
+function submitShippingPlanCard(index) {
+    alert('Shipping Plan submitted successfully!');
+}
+
+function cancelShippingPlanCard(index) {
+    if (!confirm('Cancel this shipping plan?')) return;
+    
+    // 從 sessionStorage 刪除資料
+    const allPlansStr = sessionStorage.getItem('allShippingPlans');
+    if (allPlansStr) {
+        const allPlans = JSON.parse(allPlansStr);
+        
+        // 計算實際的 plan index（因為一個 plan 可能有多個 method）
+        let currentIndex = 0;
+        let planToRemove = -1;
+        let methodToRemove = null;
+        
+        for (let i = 0; i < allPlans.length; i++) {
+            const methods = Object.keys(allPlans[i].plans);
+            for (let j = 0; j < methods.length; j++) {
+                if (currentIndex === index) {
+                    planToRemove = i;
+                    methodToRemove = methods[j];
+                    break;
+                }
+                currentIndex++;
+            }
+            if (planToRemove >= 0) break;
+        }
+        
+        if (planToRemove >= 0 && methodToRemove) {
+            // 刪除該 method
+            delete allPlans[planToRemove].plans[methodToRemove];
+            
+            // 如果該 plan 沒有任何 method 了，刪除整個 plan
+            if (Object.keys(allPlans[planToRemove].plans).length === 0) {
+                allPlans.splice(planToRemove, 1);
+            }
+            
+            // 更新 sessionStorage
+            sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
+        }
+    }
+    
+    // 重新渲染
+    renderShippingPlan();
+}
+
+window.renderShippingPlan = renderShippingPlan;
+window.toggleShippingPlanCard = toggleShippingPlanCard;
+window.submitShippingPlanCard = submitShippingPlanCard;
+window.cancelShippingPlanCard = cancelShippingPlanCard;
+
+function validateShippingQty(input, maxQty) {
+    const value = parseInt(input.value) || 0;
+    const errorDiv = input.nextElementSibling;
+    
+    if (value > maxQty) {
+        input.style.border = '2px solid #EF4444';
+        input.style.background = '#FEE2E2';
+        if (errorDiv) errorDiv.style.display = 'block';
+    } else {
+        input.style.border = '1px solid #E2E8F0';
+        input.style.background = 'white';
+        if (errorDiv) errorDiv.style.display = 'none';
+    }
+}
+
+window.validateShippingQty = validateShippingQty;
+
+function showNoteInput(cardIndex) {
+    const inputDiv = document.getElementById(`note-input-${cardIndex}`);
+    if (inputDiv) {
+        inputDiv.style.display = 'block';
+    }
+}
+
+function cancelNote(cardIndex) {
+    const inputDiv = document.getElementById(`note-input-${cardIndex}`);
+    const textarea = document.getElementById(`note-text-${cardIndex}`);
+    if (inputDiv) inputDiv.style.display = 'none';
+    if (textarea) textarea.value = '';
+}
+
+function saveNote(cardIndex) {
+    const textarea = document.getElementById(`note-text-${cardIndex}`);
+    const displayDiv = document.getElementById(`note-display-${cardIndex}`);
+    const inputDiv = document.getElementById(`note-input-${cardIndex}`);
+    
+    if (textarea && displayDiv) {
+        const noteText = textarea.value.trim();
+        if (noteText) {
+            displayDiv.innerHTML = `<div class="sp-rationale-item" style="background: #F0F9FF; padding: 8px; border-radius: 4px; border-left: 3px solid #3B82F6;"><strong>Note:</strong> ${noteText}</div>`;
+            textarea.value = '';
+            if (inputDiv) inputDiv.style.display = 'none';
+        }
+    }
+}
+
+window.showNoteInput = showNoteInput;
+window.cancelNote = cancelNote;
+window.saveNote = saveNote;
+
+function updateCarrierCost(cardIndex, carrier, totalPcs) {
+    // 不同 Carrier 的單位成本
+    const carrierRates = {
+        'DHL': 3.5,
+        'FedEx': 3.2,
+        'UPS': 3.0,
+        'Maersk': 2.0
+    };
+    
+    const unitCost = carrierRates[carrier] || 2.5;
+    const totalCost = totalPcs * unitCost;
+    const carrierFee = totalCost * 0.7;
+    const duty = totalCost * 0.3;
+    
+    // 更新顯示
+    document.getElementById(`carrier-fee-${cardIndex}`).textContent = `$${carrierFee.toFixed(2)}`;
+    document.getElementById(`duty-${cardIndex}`).textContent = `$${duty.toFixed(2)}`;
+    document.getElementById(`total-cost-${cardIndex}`).textContent = `$${totalCost.toFixed(2)}`;
+    document.getElementById(`unit-cost-${cardIndex}`).textContent = `$${unitCost.toFixed(2)}`;
+}
+
+window.updateCarrierCost = updateCarrierCost;
