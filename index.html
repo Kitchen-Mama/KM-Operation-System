@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="sku-details.css">
     <link rel="stylesheet" href="supplychain.css">
     <link rel="stylesheet" href="shipping-plan.css">
+    <link rel="stylesheet" href="shipping-history.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -34,14 +35,14 @@
             <div class="menu-item" onclick="showSection('forecast')">
                 <span>📈</span> Forecast 管理
             </div>
-            <div class="menu-item" onclick="showSection('shipment')">
-                <span>🚚</span> Weekly Shipping Plans
-            </div>
             <div class="menu-item" onclick="showSection('skuDetails')">
                 <span>📝</span> SKU Details
             </div>
             <div class="menu-item" onclick="showSection('shippingplan')">
                 <span>📋</span> Shipping Plan
+            </div>
+            <div class="menu-item" onclick="showSection('shippinghistory')">
+                <span>📜</span> Shipping History
             </div>
             <div class="menu-item menu-item--disabled" style="position: relative;">
                 <span>🚢</span> Shipping Management
@@ -328,58 +329,6 @@
     </div>
             </section>
     
-            <!-- Weekly Shipping Plans Section -->
-            <section id="shipment-section" class="module-section">
-    <div id="shipmentSection">
-        <h2>Weekly Shipping Plans</h2>
-        
-        <h3>Planning</h3>
-        <table id="planningTable">
-            <thead>
-                <tr>
-                    <th>SKU</th>
-                    <th>工廠庫存</th>
-                    <th>數量</th>
-                    <th>出貨方式</th>
-                    <th>備註</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody id="planningTableBody"></tbody>
-        </table>
-        
-        <h3>Ongoing</h3>
-        <table id="ongoingTable">
-            <thead>
-                <tr>
-                    <th>SKU</th>
-                    <th>工廠庫存</th>
-                    <th>數量</th>
-                    <th>出貨方式</th>
-                    <th>備註</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody id="ongoingTableBody"></tbody>
-        </table>
-        
-        <h3>Done</h3>
-        <table id="doneTable">
-            <thead>
-                <tr>
-                    <th>SKU</th>
-                    <th>工廠庫存</th>
-                    <th>數量</th>
-                    <th>出貨方式</th>
-                    <th>備註</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody id="doneTableBody"></tbody>
-        </table>
-    </div>
-            </section>
-    
             <!-- SKU Details Section -->
             <section id="sku-section" class="module-section">
     <div id="skuDetailsSection">
@@ -568,16 +517,100 @@
             <!-- Shipping Plan Section -->
             <section id="shippingplan-section" class="module-section">
                 <div id="shippingPlanSection">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2 style="margin: 0;">Shipping Plan</h2>
-                        <select id="spCountryFilter" onchange="renderShippingPlan()" style="padding: 8px 12px; border: 1px solid #E2E8F0; border-radius: 4px;">
-                            <option value="">All Countries</option>
-                            <option value="US">US</option>
-                            <option value="UK">UK</option>
-                            <option value="DE">DE</option>
-                        </select>
+                    <div class="shipping-plan__header-row">
+                        <h2 class="page-title">Weekly Shipping Plan</h2>
+                        <div class="shipping-plan__filters">
+                            <select id="spCountryFilter" class="shipping-plan__filter shipping-plan__filter--country" onchange="renderShippingPlan()">
+                                <option value="">All Countries</option>
+                                <option value="US">US</option>
+                                <option value="UK">UK</option>
+                                <option value="DE">DE</option>
+                            </select>
+                            <select id="spStatusFilter" class="shipping-plan__filter shipping-plan__filter--status" onchange="filterByStatus()">
+                                <option value="all">All Status</option>
+                                <option value="draft">Draft</option>
+                                <option value="pendingApproval">Pending Approval</option>
+                                <option value="approved">Approved</option>
+                            </select>
+                        </div>
                     </div>
+                    <h2 id="draftSectionTitle" style="margin-top: 40px; margin-bottom: 20px;">Draft</h2>
                     <div id="shippingPlanCards"></div>
+                    
+                    <h2 id="pendingSectionTitle" style="margin-top: 40px; margin-bottom: 20px;">Pending Approval</h2>
+                    <div id="pendingApprovalCards"></div>
+                    
+                    <h2 id="approvedSectionTitle" style="margin-top: 40px; margin-bottom: 20px;">Approved</h2>
+                    <div id="approvedCards"></div>
+                </div>
+            </section>
+            
+            <!-- Shipping History Section -->
+            <section id="shippinghistory-section" class="module-section">
+                <div class="page-shipping-history">
+                    <div class="page-header">
+                        <h2 class="page-title">Shipping History</h2>
+                    </div>
+                    
+                    <!-- Filter Bar -->
+                    <div class="history-filters">
+                        <!-- Date Range -->
+                        <div class="history-filter history-filter--date">
+                            <label>Date</label>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <input type="date" class="history-date-start" />
+                                <span class="history-date-separator">~</span>
+                                <input type="date" class="history-date-end" />
+                            </div>
+                        </div>
+                        
+                        <!-- Country -->
+                        <div class="history-filter">
+                            <label>Country</label>
+                            <select class="history-filter-country">
+                                <option value="">All</option>
+                                <option value="US">US</option>
+                                <option value="UK">UK</option>
+                                <option value="DE">DE</option>
+                                <option value="CA">CA</option>
+                            </select>
+                        </div>
+                        
+                        <!-- SKU -->
+                        <div class="history-filter">
+                            <label>SKU</label>
+                            <input type="text" class="history-filter-sku" placeholder="Enter SKU..." />
+                        </div>
+                        
+                        <!-- Shipping Method -->
+                        <div class="history-filter">
+                            <label>Shipping Method</label>
+                            <select class="history-filter-method">
+                                <option value="">All</option>
+                                <option value="Air Freight">Air Freight</option>
+                                <option value="Sea Freight">Sea Freight</option>
+                                <option value="AGL Ship">AGL Ship</option>
+                                <option value="Private Ship">Private Ship</option>
+                                <option value="Express">Express</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Search Button -->
+                        <div class="history-filter history-filter--actions">
+                            <button class="btn btn-primary history-search-btn">Search</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Results Area -->
+                    <div class="history-results">
+                        <!-- Empty State -->
+                        <div class="history-empty-state">
+                            <p>Use the filters above and click <strong>Search</strong> to view shipping history.</p>
+                        </div>
+                        
+                        <!-- Results List -->
+                        <div class="history-list" hidden></div>
+                    </div>
                 </div>
             </section>
             
@@ -712,5 +745,6 @@
     <script src="sku-scroll.js"></script>
     <script src="canvas.js"></script>
     <script src="app.js"></script>
+    <script src="shipping-history.js"></script>
 </body>
 </html>

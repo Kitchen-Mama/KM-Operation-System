@@ -178,3 +178,64 @@
 .sp-cost-value {
     color: #1E293B;
 }
+
+/* Header Row with Filters */
+.shipping-plan__header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+}
+
+.page-title {
+    margin: 0;
+}
+
+.shipping-plan__filters {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.shipping-plan__filter {
+    min-width: 120px;
+    padding: 8px 12px;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* Status Badge */
+.plan-card__meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.plan-status-badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1.4;
+    font-weight: 500;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.plan-status-badge--draft {
+    background-color: #edf2f7;
+    color: #4a5568;
+    border-color: #cbd5e0;
+}
+
+.plan-status-badge--pendingApproval {
+    background-color: #fffaf0;
+    color: #b7791f;
+    border-color: #f6ad55;
+}
+
+.plan-status-badge--approved {
+    background-color: #f0fff4;
+    color: #2f855a;
+    border-color: #9ae6b4;
+}

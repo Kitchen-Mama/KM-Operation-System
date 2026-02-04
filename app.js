@@ -114,10 +114,10 @@ function showSection(section) {
         'restock': 'replenishment-section',
         'ops': 'ops-section', 
         'forecast': 'forecast-section',
-        'shipment': 'shipment-section',
         'skuDetails': 'sku-section',
         'supplychain': 'supplychain-section',
-        'shippingplan': 'shippingplan-section'
+        'shippingplan': 'shippingplan-section',
+        'shippinghistory': 'shippinghistory-section'
     };
     
     const targetSectionId = sectionMap[section];
@@ -142,9 +142,6 @@ function showSection(section) {
     if (section === 'forecast') {
         renderForecastChart();
     }
-    if (section === 'shipment') {
-        renderWeeklyShippingPlans();
-    }
     if (section === 'skuDetails') {
         renderSkuDetailsTable();
         setTimeout(() => {
@@ -166,6 +163,13 @@ function showSection(section) {
         setTimeout(() => {
             if (window.CanvasController) {
                 window.CanvasController.init();
+            }
+        }, 100);
+    }
+    if (section === 'shippinghistory') {
+        setTimeout(() => {
+            if (window.initShippingHistoryPage) {
+                window.initShippingHistoryPage();
             }
         }, 100);
     }
@@ -324,142 +328,6 @@ function calculateRestock() {
     renderRecords();
 }
 
-// 渲染 Weekly Shipping Plans
-function renderWeeklyShippingPlans() {
-    const planningPlans = window.DataRepo.getWeeklyShippingPlans('planning');
-    const ongoingPlans = window.DataRepo.getWeeklyShippingPlans('ongoing');
-    const donePlans = window.DataRepo.getWeeklyShippingPlans('done');
-    
-    // Planning 表格
-    document.getElementById('planningTableBody').innerHTML = planningPlans.map(plan => `
-        <tr>
-            <td>${plan.sku}</td>
-            <td>${plan.factoryStock}</td>
-            <td>${plan.qty}</td>
-            <td>${plan.shippingMethod}</td>
-            <td>${plan.note || ''}</td>
-            <td>
-                <button onclick="moveToOngoing('${plan.id}')">已提交</button>
-                <button onclick="undoFromPlanning('${plan.id}')">Undo</button>
-            </td>
-        </tr>
-    `).join('');
-    
-    // Ongoing 表格
-    document.getElementById('ongoingTableBody').innerHTML = ongoingPlans.map(plan => `
-        <tr>
-            <td>${plan.sku}</td>
-            <td>${plan.factoryStock}</td>
-            <td>${plan.qty}</td>
-            <td>${plan.shippingMethod}</td>
-            <td>${plan.note || ''}</td>
-            <td>
-                <button onclick="moveToDone('${plan.id}')">已出貨</button>
-                <button onclick="undoFromOngoing('${plan.id}')">Undo</button>
-            </td>
-        </tr>
-    `).join('');
-    
-    // Done 表格
-    document.getElementById('doneTableBody').innerHTML = donePlans.map(plan => `
-        <tr>
-            <td>${plan.sku}</td>
-            <td>${plan.factoryStock}</td>
-            <td>${plan.qty}</td>
-            <td>${plan.shippingMethod}</td>
-            <td>${plan.note || ''}</td>
-            <td>-</td>
-        </tr>
-    `).join('');
-}
-
-// 移動到 Ongoing
-function moveToOngoing(planId) {
-    console.log('moveToOngoing called with planId:', planId);
-    window.DataRepo.updateShippingPlanStatus(planId, 'ongoing');
-    renderWeeklyShippingPlans();
-}
-
-// 移動到 Done
-function moveToDone(planId) {
-    console.log('moveToDone called with planId:', planId);
-    window.DataRepo.updateShippingPlanStatus(planId, 'done');
-    renderWeeklyShippingPlans();
-}
-
-// Undo 從 Ongoing 回到 Planning
-function undoFromOngoing(planId) {
-    console.log('undoFromOngoing called with planId:', planId);
-    window.DataRepo.updateShippingPlanStatus(planId, 'planning');
-    renderWeeklyShippingPlans();
-}
-
-// Undo 從 Planning 刪除出貨記錄
-function undoFromPlanning(planId) {
-    console.log('undoFromPlanning called with planId:', planId);
-    window.DataRepo.removeShippingPlan(planId);
-    renderWeeklyShippingPlans();
-}
-
-// 世界時間功能 - Stage 1 四格布局
-const timeZones = {
-    'AU': { timezone: 'Australia/Sydney', name: 'Australia' },
-    'JP': { timezone: 'Asia/Tokyo', name: 'Japan' },
-    'DE': { timezone: 'Europe/Berlin', name: 'Germany' },
-    'UK': { timezone: 'Europe/London', name: 'UK' },
-    'US-East': { timezone: 'America/New_York', name: 'US East' },
-    'US-Middle': { timezone: 'America/Chicago', name: 'US Central' },
-    'US-West': { timezone: 'America/Los_Angeles', name: 'US West' }
-};
-
-const TP_TIMEZONE = 'Asia/Taipei';
-
-function getTimezoneOffset(timezone) {
-    const now = new Date();
-    const tpTime = new Date(now.toLocaleString('en-US', { timeZone: TP_TIMEZONE }));
-    const targetTime = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
-    const offsetHours = Math.round((targetTime - tpTime) / (1000 * 60 * 60));
-    return offsetHours >= 0 ? `TP+${offsetHours}` : `TP${offsetHours}`;
-}
-
-function updateWorldTimes() {
-    Object.keys(timeZones).forEach(zone => {
-        const now = new Date();
-        
-        // 獲取當地時間
-        const timeString = now.toLocaleTimeString('en-GB', {
-            timeZone: timeZones[zone].timezone,
-            hour12: false,
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-        
-        // 獲取當地日期
-        const dateString = now.toLocaleDateString('en-CA', {
-            timeZone: timeZones[zone].timezone,
-            year: '2-digit',
-            month: '2-digit',
-            day: '2-digit'
-        }).replace(/-/g, '/');
-        
-        // 獲取 TP 時區偏移
-        const offsetString = getTimezoneOffset(timeZones[zone].timezone);
-        
-        const card = document.getElementById(`card-${zone}`);
-        if (card) {
-            card.querySelector('.timezone-offset').textContent = offsetString;
-            card.querySelector('.local-time').textContent = timeString;
-            card.querySelector('.local-date').textContent = dateString;
-        }
-    });
-}
-
-// 初始化時間顯示並設定定時器
-function initWorldTimes() {
-    updateWorldTimes();
-    setInterval(updateWorldTimes, 60000); // 每 60 秒更新
-}
-
 // SKU Details 渲染函數 - SKU Test-2 架構
 function renderSkuDetailsTable() {
     renderSkuLifecycleTable('upcoming', upcomingSkuData);
@@ -537,11 +405,6 @@ window.showForecast = showForecast;
 window.renderForecastChart = renderForecastChart;
 window.calculateRestock = calculateRestock;
 window.renderRecords = renderRecords;
-window.moveToOngoing = moveToOngoing;
-window.moveToDone = moveToDone;
-window.undoFromOngoing = undoFromOngoing;
-window.undoFromPlanning = undoFromPlanning;
-window.renderWeeklyShippingPlans = renderWeeklyShippingPlans;
 window.DataRepo = DataRepo;
 
 // 初始化時載入紀錄和世界時間
@@ -1402,15 +1265,23 @@ function submitReplenishmentPlans() {
         allPlans = JSON.parse(existingData);
     }
     
-    // 新增本次提交的資料
+    // 新增本次提交的資料（每個 method 獨立 status 和 note）
     const newPlan = {
         id: Date.now(),
         date: new Date().toISOString().split('T')[0],
         country: country,
         marketplace: marketplace,
         targetDays: targetDays,
-        plans: shippingPlans
+        plans: shippingPlans,
+        status: {},
+        notes: {}
     };
+    
+    // 為每個 method 初始化 status 和 notes（notes 改為陣列）
+    Object.keys(shippingPlans).forEach(method => {
+        newPlan.status[method] = 'draft';
+        newPlan.notes[method] = [];
+    });
     allPlans.push(newPlan);
     
     // 儲存累積的資料
@@ -1619,33 +1490,112 @@ function renderShippingPlan() {
     if (!allPlansStr) {
         console.log('No data in sessionStorage');
         document.getElementById('shippingPlanCards').innerHTML = '<p>No shipping plans available.</p>';
+        document.getElementById('pendingApprovalCards').innerHTML = '<p>No pending approvals.</p>';
+        document.getElementById('approvedCards').innerHTML = '<p>No approved plans.</p>';
         return;
     }
     
-    const allPlans = JSON.parse(allPlansStr);
+    let allPlans = JSON.parse(allPlansStr);
+    
+    // 確保所有 plan 都有 status 和 notes 物件
+    allPlans = allPlans.map(plan => {
+        if (!plan.status || typeof plan.status === 'string') {
+            const newStatus = {};
+            Object.keys(plan.plans).forEach(method => {
+                newStatus[method] = plan.status || 'draft';
+            });
+            plan.status = newStatus;
+        }
+        if (!plan.notes) {
+            plan.notes = {};
+        }
+        return plan;
+    });
+    
     console.log('Parsed allPlans:', allPlans);
     
     // 篩選國家
     const countryFilter = document.getElementById('spCountryFilter').value;
     const filteredPlans = countryFilter ? allPlans.filter(p => p.country === countryFilter) : allPlans;
     
-    const cardsContainer = document.getElementById('shippingPlanCards');
-    cardsContainer.innerHTML = '';
+    // 分離 draft、pendingApproval 和 approved（檢查每個 method 的 status）
+    const draftPlans = filteredPlans.filter(p => {
+        return Object.keys(p.plans).some(method => p.status[method] === 'draft');
+    });
+    const pendingPlans = filteredPlans.filter(p => {
+        return Object.keys(p.plans).some(method => p.status[method] === 'pendingApproval');
+    });
+    const approvedPlans = filteredPlans.filter(p => {
+        return Object.keys(p.plans).some(method => p.status[method] === 'approved');
+    });
     
-    if (filteredPlans.length === 0) {
-        console.log('No plans after filter');
-        cardsContainer.innerHTML = '<p>No shipping plans match the filter.</p>';
+    // 如果沒有任何資料，確保顯示 No... 訊息
+    if (allPlans.length === 0) {
+        document.getElementById('shippingPlanCards').innerHTML = '<p>No shipping plans available.</p>';
+        document.getElementById('pendingApprovalCards').innerHTML = '<p>No pending approvals.</p>';
+        document.getElementById('approvedCards').innerHTML = '<p>No approved plans.</p>';
         return;
     }
     
-    console.log('Rendering cards for plans:', filteredPlans);
+    const draftCardCount = renderPlanCards('shippingPlanCards', draftPlans, 'draft', 0);
+    const pendingCardCount = renderPlanCards('pendingApprovalCards', pendingPlans, 'pendingApproval', draftCardCount);
+    renderPlanCards('approvedCards', approvedPlans, 'approved', pendingCardCount);
     
-    let cardIndex = 0;
-    filteredPlans.forEach(planData => {
+    console.log('Render complete');
+}
+
+function renderPlanCards(containerId, plans, statusType, startIndex) {
+    const cardsContainer = document.getElementById(containerId);
+    cardsContainer.innerHTML = '';
+    
+    // 檢查是否有符合該 statusType 的 method
+    let hasMatchingPlans = false;
+    plans.forEach(planData => {
+        if (!planData.status || typeof planData.status === 'string') {
+            planData.status = {};
+            Object.keys(planData.plans).forEach(m => planData.status[m] = 'draft');
+        }
+        if (!planData.notes) {
+            planData.notes = {};
+        }
         Object.keys(planData.plans).forEach(method => {
+            if (planData.status[method] === statusType) {
+                hasMatchingPlans = true;
+            }
+        });
+    });
+    
+    if (!hasMatchingPlans) {
+        const messages = {
+            'draft': 'No shipping plans available.',
+            'pendingApproval': 'No pending approvals.',
+            'approved': 'No approved plans.'
+        };
+        cardsContainer.innerHTML = `<p>${messages[statusType]}</p>`;
+        return startIndex;
+    }
+    
+    let cardIndex = startIndex;
+    plans.forEach(planData => {
+        // 確保 status 和 notes 物件存在
+        if (!planData.status || typeof planData.status === 'string') {
+            planData.status = {};
+            Object.keys(planData.plans).forEach(m => planData.status[m] = 'draft');
+        }
+        if (!planData.notes) {
+            planData.notes = {};
+        }
+        // 確保 notes 是陣列
+        Object.keys(planData.plans).forEach(m => {
+            if (!Array.isArray(planData.notes[m])) {
+                planData.notes[m] = planData.notes[m] ? [planData.notes[m]] : [];
+            }
+        });
+        
+        Object.keys(planData.plans).forEach(method => {
+            // 只渲染符合當前 statusType 的 method
+            if (planData.status[method] !== statusType) return;
             const skus = planData.plans[method];
-            console.log(`Method ${method}:`, skus);
-            
             const totalPcs = skus.reduce((sum, item) => sum + item.qty, 0);
             const mockData = replenishmentMockData.find(m => m.sku === skus[0].sku);
             const unitsPerCarton = mockData?.unitsPerCarton || 40;
@@ -1653,11 +1603,39 @@ function renderShippingPlan() {
             const totalCost = totalPcs * 2.5;
             const unitCost = 2.5;
             
+            // 根據 statusType 決定按鈕
+            let actionButtons;
+            if (statusType === 'draft') {
+                actionButtons = `
+                    <button class="sp-btn sp-btn-expand" onclick="toggleShippingPlanCard(${cardIndex})">Expand</button>
+                    <button class="sp-btn sp-btn-submit" onclick="submitToPending(${planData.id}, '${method}')">Submit</button>
+                    <button class="sp-btn sp-btn-cancel" onclick="cancelShippingPlanCard(${planData.id}, '${method}')">Cancel</button>
+                `;
+            } else if (statusType === 'pendingApproval') {
+                actionButtons = `
+                    <button class="sp-btn sp-btn-expand" onclick="toggleShippingPlanCard(${cardIndex})">Expand</button>
+                    <button class="sp-btn sp-btn-submit" onclick="approvePlan(${planData.id}, '${method}')">Approve</button>
+                    <button class="sp-btn sp-btn-cancel" onclick="sendBackToDraft(${planData.id}, '${method}')">Send Back</button>
+                `;
+            } else {
+                actionButtons = `
+                    <button class="sp-btn sp-btn-expand" onclick="toggleShippingPlanCard(${cardIndex})">Expand</button>
+                    <button class="sp-btn sp-btn-submit" onclick="markAsDone(${planData.id}, '${method}')">Done</button>
+                `;
+            }
+            
             const card = document.createElement('div');
             card.className = 'sp-card';
+            card.setAttribute('data-plan-id', planData.id);
+            card.setAttribute('data-method', method);
+            card.setAttribute('data-status', statusType);
             card.innerHTML = `
                 <div class="sp-card-header">
                     <div class="sp-card-summary">
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Status</span>
+                            <span class="plan-status-badge plan-status-badge--${statusType}">${statusType === 'draft' ? 'Draft' : statusType === 'pendingApproval' ? 'Pending Approval' : 'Approved'}</span>
+                        </div>
                         <div class="sp-summary-item">
                             <span class="sp-summary-label">Submitted Date</span>
                             <span class="sp-summary-value">${planData.date}</span>
@@ -1696,9 +1674,7 @@ function renderShippingPlan() {
                         </div>
                     </div>
                     <div class="sp-card-actions">
-                        <button class="sp-btn sp-btn-expand" onclick="toggleShippingPlanCard(${cardIndex})">Expand</button>
-                        <button class="sp-btn sp-btn-submit" onclick="submitShippingPlanCard(${cardIndex})">Submit</button>
-                        <button class="sp-btn sp-btn-cancel" onclick="cancelShippingPlanCard(${cardIndex})">Cancel</button>
+                        ${actionButtons}
                     </div>
                 </div>
                 <div class="sp-card-details">
@@ -1753,7 +1729,7 @@ function renderShippingPlan() {
                                         <button onclick="saveNote(${cardIndex})" style="background: #10B981; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">✓</button>
                                     </div>
                                 </div>
-                                <div id="note-display-${cardIndex}" style="margin-top: 8px;"></div>
+                                <div id="note-display-${cardIndex}" style="margin-top: 8px;">${planData.notes[method] && planData.notes[method].length > 0 ? planData.notes[method].map(note => `<div class="sp-rationale-item" style="background: #F0F9FF; padding: 8px; border-radius: 4px; border-left: 3px solid #3B82F6; margin-bottom: 4px;"><strong>Note:</strong> ${note}</div>`).join('') : ''}</div>
                             </div>
                         </div>
                         <div class="sp-section">
@@ -1792,7 +1768,7 @@ function renderShippingPlan() {
         });
     });
     
-    console.log('Render complete');
+    return cardIndex;
 }
 
 function toggleShippingPlanCard(index) {
@@ -1808,39 +1784,25 @@ function submitShippingPlanCard(index) {
     alert('Shipping Plan submitted successfully!');
 }
 
-function cancelShippingPlanCard(index) {
+function cancelShippingPlanCard(planId, method) {
     if (!confirm('Cancel this shipping plan?')) return;
     
     // 從 sessionStorage 刪除資料
     const allPlansStr = sessionStorage.getItem('allShippingPlans');
     if (allPlansStr) {
         const allPlans = JSON.parse(allPlansStr);
+        const plan = allPlans.find(p => p.id === planId);
         
-        // 計算實際的 plan index（因為一個 plan 可能有多個 method）
-        let currentIndex = 0;
-        let planToRemove = -1;
-        let methodToRemove = null;
-        
-        for (let i = 0; i < allPlans.length; i++) {
-            const methods = Object.keys(allPlans[i].plans);
-            for (let j = 0; j < methods.length; j++) {
-                if (currentIndex === index) {
-                    planToRemove = i;
-                    methodToRemove = methods[j];
-                    break;
-                }
-                currentIndex++;
-            }
-            if (planToRemove >= 0) break;
-        }
-        
-        if (planToRemove >= 0 && methodToRemove) {
+        if (plan && plan.plans[method]) {
             // 刪除該 method
-            delete allPlans[planToRemove].plans[methodToRemove];
+            delete plan.plans[method];
             
             // 如果該 plan 沒有任何 method 了，刪除整個 plan
-            if (Object.keys(allPlans[planToRemove].plans).length === 0) {
-                allPlans.splice(planToRemove, 1);
+            if (Object.keys(plan.plans).length === 0) {
+                const planIndex = allPlans.findIndex(p => p.id === planId);
+                if (planIndex >= 0) {
+                    allPlans.splice(planIndex, 1);
+                }
             }
             
             // 更新 sessionStorage
@@ -1892,11 +1854,31 @@ function saveNote(cardIndex) {
     const textarea = document.getElementById(`note-text-${cardIndex}`);
     const displayDiv = document.getElementById(`note-display-${cardIndex}`);
     const inputDiv = document.getElementById(`note-input-${cardIndex}`);
+    const cards = document.querySelectorAll('.sp-card');
+    const card = cards[cardIndex];
     
-    if (textarea && displayDiv) {
+    if (textarea && displayDiv && card) {
         const noteText = textarea.value.trim();
         if (noteText) {
-            displayDiv.innerHTML = `<div class="sp-rationale-item" style="background: #F0F9FF; padding: 8px; border-radius: 4px; border-left: 3px solid #3B82F6;"><strong>Note:</strong> ${noteText}</div>`;
+            const planId = parseInt(card.getAttribute('data-plan-id'));
+            const method = card.getAttribute('data-method');
+            
+            // 儲存到 sessionStorage
+            const allPlansStr = sessionStorage.getItem('allShippingPlans');
+            if (allPlansStr) {
+                const allPlans = JSON.parse(allPlansStr);
+                const plan = allPlans.find(p => p.id === planId);
+                if (plan) {
+                    if (!plan.notes) plan.notes = {};
+                    if (!Array.isArray(plan.notes[method])) plan.notes[method] = [];
+                    plan.notes[method].push(noteText);
+                    sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
+                }
+            }
+            
+            // 更新顯示（累加）
+            const newNoteHtml = `<div class="sp-rationale-item" style="background: #F0F9FF; padding: 8px; border-radius: 4px; border-left: 3px solid #3B82F6; margin-bottom: 4px;"><strong>Note:</strong> ${noteText}</div>`;
+            displayDiv.innerHTML += newNoteHtml;
             textarea.value = '';
             if (inputDiv) inputDiv.style.display = 'none';
         }
@@ -1929,3 +1911,213 @@ function updateCarrierCost(cardIndex, carrier, totalPcs) {
 }
 
 window.updateCarrierCost = updateCarrierCost;
+
+function submitToPending(planId, method) {
+    const allPlansStr = sessionStorage.getItem('allShippingPlans');
+    if (!allPlansStr) return;
+    
+    const allPlans = JSON.parse(allPlansStr);
+    const plan = allPlans.find(p => p.id === planId);
+    
+    if (plan) {
+        if (!plan.status || typeof plan.status === 'string') {
+            plan.status = {};
+        }
+        plan.status[method] = 'pendingApproval';
+        sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
+        renderShippingPlan();
+    }
+}
+
+function approvePlan(planId, method) {
+    const allPlansStr = sessionStorage.getItem('allShippingPlans');
+    if (!allPlansStr) return;
+    
+    const allPlans = JSON.parse(allPlansStr);
+    const plan = allPlans.find(p => p.id === planId);
+    
+    if (plan) {
+        if (!plan.status || typeof plan.status === 'string') {
+            plan.status = {};
+        }
+        plan.status[method] = 'approved';
+        sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
+        renderShippingPlan();
+    }
+}
+
+function sendBackToDraft(planId, method) {
+    const allPlansStr = sessionStorage.getItem('allShippingPlans');
+    if (!allPlansStr) return;
+    
+    const allPlans = JSON.parse(allPlansStr);
+    const plan = allPlans.find(p => p.id === planId);
+    
+    if (plan) {
+        if (!plan.status || typeof plan.status === 'string') {
+            plan.status = {};
+        }
+        plan.status[method] = 'draft';
+        sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
+        renderShippingPlan();
+    }
+}
+
+window.submitToPending = submitToPending;
+window.approvePlan = approvePlan;
+window.sendBackToDraft = sendBackToDraft;
+
+function markAsDone(planId, method) {
+    const allPlansStr = sessionStorage.getItem('allShippingPlans');
+    if (!allPlansStr) return;
+    
+    const allPlans = JSON.parse(allPlansStr);
+    const plan = allPlans.find(p => p.id === planId);
+    
+    if (plan && plan.plans[method]) {
+        // 準備傳送到 Shipping History 的資料
+        const skus = plan.plans[method];
+        const totalPcs = skus.reduce((sum, item) => sum + item.qty, 0);
+        const mockData = replenishmentMockData.find(m => m.sku === skus[0].sku);
+        const unitsPerCarton = mockData?.unitsPerCarton || 40;
+        const totalCartons = Math.ceil(totalPcs / unitsPerCarton);
+        const unitCost = 2.5;
+        const totalCost = totalPcs * unitCost;
+        
+        const historyRecord = {
+            id: `SP-${plan.date.replace(/-/g, '')}-${plan.id}`,
+            date: new Date().toISOString().split('T')[0],
+            country: plan.country,
+            marketplace: plan.marketplace,
+            method: method,
+            totalPcs: totalPcs,
+            totalCartons: totalCartons,
+            totalCost: totalCost,
+            unitCost: unitCost,
+            skus: skus.map(item => ({ sku: item.sku, qty: item.qty }))
+        };
+        
+        // 儲存到 Shipping History
+        let historyData = [];
+        const existingHistory = sessionStorage.getItem('shippingHistory');
+        if (existingHistory) {
+            historyData = JSON.parse(existingHistory);
+        }
+        historyData.push(historyRecord);
+        sessionStorage.setItem('shippingHistory', JSON.stringify(historyData));
+        
+        // 從 Shipping Plan 中刪除
+        delete plan.plans[method];
+        if (plan.status) delete plan.status[method];
+        if (plan.notes) delete plan.notes[method];
+        
+        // 如果沒有其他 method 了，刪除整個 plan
+        if (Object.keys(plan.plans).length === 0) {
+            const planIndex = allPlans.findIndex(p => p.id === planId);
+            if (planIndex >= 0) {
+                allPlans.splice(planIndex, 1);
+            }
+        }
+        
+        sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
+        
+        alert('Plan marked as Done and sent to Shipping History.');
+        renderShippingPlan();
+    }
+}
+
+window.markAsDone = markAsDone;
+
+function filterByStatus() {
+    const statusFilter = document.getElementById('spStatusFilter').value;
+    const allCards = document.querySelectorAll('.sp-card');
+    
+    // 控制標題顯示
+    const draftTitle = document.getElementById('draftSectionTitle');
+    const pendingTitle = document.getElementById('pendingSectionTitle');
+    const approvedTitle = document.getElementById('approvedSectionTitle');
+    const draftCards = document.getElementById('shippingPlanCards');
+    const pendingCards = document.getElementById('pendingApprovalCards');
+    const approvedCards = document.getElementById('approvedCards');
+    
+    if (statusFilter === 'all') {
+        // 顯示所有
+        draftTitle.style.display = '';
+        pendingTitle.style.display = '';
+        approvedTitle.style.display = '';
+        draftCards.style.display = '';
+        pendingCards.style.display = '';
+        approvedCards.style.display = '';
+        allCards.forEach(card => card.style.display = '');
+    } else {
+        // 隱藏所有標題和容器
+        draftTitle.style.display = 'none';
+        pendingTitle.style.display = 'none';
+        approvedTitle.style.display = 'none';
+        draftCards.style.display = 'none';
+        pendingCards.style.display = 'none';
+        approvedCards.style.display = 'none';
+        
+        // 只顯示選中的狀態
+        if (statusFilter === 'draft') {
+            draftTitle.style.display = '';
+            draftCards.style.display = '';
+        } else if (statusFilter === 'pendingApproval') {
+            pendingTitle.style.display = '';
+            pendingCards.style.display = '';
+        } else if (statusFilter === 'approved') {
+            approvedTitle.style.display = '';
+            approvedCards.style.display = '';
+        }
+        
+        // 顯示對應狀態的卡片
+        allCards.forEach(card => {
+            const cardStatus = card.getAttribute('data-status');
+            card.style.display = cardStatus === statusFilter ? '' : 'none';
+        });
+    }
+}
+
+window.filterByStatus = filterByStatus;
+
+// ========================================
+// 世界時間功能
+// ========================================
+
+function initWorldTimes() {
+    updateWorldTimes();
+    setInterval(updateWorldTimes, 1000);
+}
+
+function updateWorldTimes() {
+    const timezones = [
+        { id: 'AU', offset: 11, name: 'Australia' },
+        { id: 'JP', offset: 9, name: 'Japan' },
+        { id: 'DE', offset: 1, name: 'Germany' },
+        { id: 'UK', offset: 0, name: 'UK' },
+        { id: 'US-East', offset: -5, name: 'US East' },
+        { id: 'US-Middle', offset: -6, name: 'US Central' },
+        { id: 'US-West', offset: -8, name: 'US West' }
+    ];
+    
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    
+    timezones.forEach(tz => {
+        const localTime = new Date(utc + (3600000 * tz.offset));
+        const card = document.getElementById(`card-${tz.id}`);
+        
+        if (card) {
+            const dateStr = `${localTime.getMonth() + 1}/${localTime.getDate()}/${localTime.getFullYear().toString().slice(-2)}`;
+            const timeStr = localTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            const offsetStr = `TP${tz.offset >= 0 ? '+' : ''}${tz.offset}`;
+            
+            card.querySelector('.local-date').textContent = dateStr;
+            card.querySelector('.local-time').textContent = timeStr;
+            card.querySelector('.timezone-offset').textContent = offsetStr;
+        }
+    });
+}
+
+window.initWorldTimes = initWorldTimes;
+window.updateWorldTimes = updateWorldTimes;
