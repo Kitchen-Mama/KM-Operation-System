@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="supplychain.css">
     <link rel="stylesheet" href="shipping-plan.css">
     <link rel="stylesheet" href="shipping-history.css">
+    <link rel="stylesheet" href="forecast.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -285,48 +286,181 @@
                 </div>
             </section>
     
-            <!-- Forecast 管理 Section -->
-            <section id="forecast-section" class="module-section">
-    <div id="forecastSection">
-        <h2>Forecast 管理</h2>
-        
-        <div>
-            <label>月份篩選:</label>
-            <select id="forecastPeriodSelect">
-                <option value="2024-11">上個月 (2024-11)</option>
-                <option value="2024-10">上上個月 (2024-10)</option>
-                <option value="2024-12">本月 (2024-12)</option>
-            </select>
-        </div>
-        
-    
-        <div>
-            <label>選擇站點:</label>
-            <select id="forecastSiteSelect">
-                <option value="">請選擇站點</option>
-                <option value="amazon">Amazon</option>
-                <option value="shopify">Shopify</option>
-                <option value="target">Target</option>
-            </select>
-        </div>
-        
-        <div>
-            <label>產品類別:</label>
-            <select id="productTypeSelect">
-                <option value="">請選擇產品類別</option>
-                <option value="Can Opener">Can Opener</option>
-                <option value="Manual Opener">Manual Opener</option>
-                <option value="Kitchen Tools">Kitchen Tools</option>
-            </select>
-        </div>
-        
-        <button onclick="showForecast()">Submit</button>
-        
-        <div id="forecastResult"></div>
-        
-        <h3>過去 12 個月趨勢</h3>
-        <canvas id="forecastChart" width="400" height="200"></canvas>
-    </div>
+            <!-- Forecast Review Section -->
+            <section id="forecast-section" class="module-section page-forecast-review">
+                <div class="page-header">
+                    <h2 class="page-title">Forecast Review</h2>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="forecast-filters">
+                    <!-- Date Trigger Button -->
+                    <div class="forecast-filter forecast-filter--date">
+                        <label>Date</label>
+                        <button type="button" class="forecast-date-trigger" id="forecastDateTrigger">
+                            <span class="forecast-date-trigger-text">Last 30 days</span>
+                            <span class="forecast-date-trigger-icon">▼</span>
+                        </button>
+                    </div>
+
+                    <!-- Country -->
+                    <div class="forecast-filter">
+                        <label>Country</label>
+                        <select class="forecast-filter-country">
+                            <option value="">All</option>
+                            <option value="US">US</option>
+                            <option value="UK">UK</option>
+                            <option value="DE">DE</option>
+                            <option value="CA">CA</option>
+                            <option value="JP">JP</option>
+                            <option value="AU">AU</option>
+                        </select>
+                    </div>
+
+                    <!-- Marketplace -->
+                    <div class="forecast-filter">
+                        <label>Marketplace</label>
+                        <select class="forecast-filter-marketplace">
+                            <option value="">All</option>
+                            <option value="amazon">Amazon</option>
+                            <option value="shopify">Shopify</option>
+                            <option value="target">Target</option>
+                        </select>
+                    </div>
+
+                    <!-- Category -->
+                    <div class="forecast-filter">
+                        <label>Category</label>
+                        <select class="forecast-filter-category">
+                            <option value="">All</option>
+                            <option value="Can Opener">Can Opener</option>
+                            <option value="Manual Opener">Manual Opener</option>
+                            <option value="Kitchen Tools">Kitchen Tools</option>
+                            <option value="Appliances">Appliances</option>
+                        </select>
+                    </div>
+
+                    <!-- SKU -->
+                    <div class="forecast-filter">
+                        <label>SKU</label>
+                        <input type="text" class="forecast-filter-sku" placeholder="Enter SKU..." />
+                    </div>
+                </div>
+
+                <!-- Date Picker Modal -->
+                <div class="forecast-date-modal" id="forecastDateModal">
+                    <div class="forecast-date-modal-content">
+                        <div class="forecast-date-modal-body">
+                            <!-- Left: Presets -->
+                            <div class="forecast-date-presets-panel">
+                                <div class="forecast-preset-item" data-preset="today">Today</div>
+                                <div class="forecast-preset-item" data-preset="yesterday">Yesterday</div>
+                                <div class="forecast-preset-divider"></div>
+                                <div class="forecast-preset-item" data-preset="last-7-days">Last 7 days</div>
+                                <div class="forecast-preset-item" data-preset="last-30-days">Last 30 days</div>
+                                <div class="forecast-preset-item" data-preset="last-60-days">Last 60 days</div>
+                                <div class="forecast-preset-item" data-preset="last-90-days">Last 90 days</div>
+                                <div class="forecast-preset-divider"></div>
+                                <div class="forecast-preset-item" data-preset="last-month">Last month</div>
+                                <div class="forecast-preset-item" data-preset="last-2-months">Last 2 months</div>
+                                <div class="forecast-preset-item" data-preset="last-3-months">Last 3 months</div>
+                                <div class="forecast-preset-item" data-preset="last-year">Last year</div>
+                            </div>
+                            
+                            <!-- Right: Calendars -->
+                            <div class="forecast-date-calendars-panel">
+                                <div class="forecast-date-inputs">
+                                    <div class="forecast-date-input-group">
+                                        <label>Start</label>
+                                        <input type="text" class="forecast-date-input" id="forecastStartDisplay" readonly />
+                                    </div>
+                                    <div class="forecast-date-input-group">
+                                        <label>End</label>
+                                        <input type="text" class="forecast-date-input" id="forecastEndDisplay" readonly />
+                                    </div>
+                                </div>
+                                
+                                <div class="forecast-calendars">
+                                    <div class="forecast-calendar" id="forecastCalendarStart">
+                                        <div class="forecast-calendar-header">
+                                            <button class="forecast-calendar-nav" data-nav="prev-start">‹</button>
+                                            <span class="forecast-calendar-title" id="forecastCalendarStartTitle"></span>
+                                            <button class="forecast-calendar-nav" data-nav="next-start">›</button>
+                                        </div>
+                                        <div class="forecast-calendar-body" id="forecastCalendarStartBody"></div>
+                                    </div>
+                                    
+                                    <div class="forecast-calendar" id="forecastCalendarEnd">
+                                        <div class="forecast-calendar-header">
+                                            <button class="forecast-calendar-nav" data-nav="prev-end">‹</button>
+                                            <span class="forecast-calendar-title" id="forecastCalendarEndTitle"></span>
+                                            <button class="forecast-calendar-nav" data-nav="next-end">›</button>
+                                        </div>
+                                        <div class="forecast-calendar-body" id="forecastCalendarEndBody"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="forecast-date-modal-footer">
+                            <button class="forecast-date-btn forecast-date-btn--cancel" id="forecastDateCancel">Cancel</button>
+                            <button class="forecast-date-btn forecast-date-btn--apply" id="forecastDateApply">Apply</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart Area -->
+                <div class="forecast-chart-area">
+                    <!-- Summary Stats Row -->
+                    <div class="forecast-summary-stats">
+                        <div class="forecast-stat-card">
+                            <div class="forecast-stat-label">Total Sales</div>
+                            <div class="forecast-stat-value" id="forecastTotalSales">$0</div>
+                        </div>
+                        <div class="forecast-stat-card">
+                            <div class="forecast-stat-label">Total Units</div>
+                            <div class="forecast-stat-value" id="forecastTotalUnits">0</div>
+                        </div>
+                        <div class="forecast-stat-card">
+                            <div class="forecast-stat-label">Sessions</div>
+                            <div class="forecast-stat-value" id="forecastTotalSessions">0</div>
+                        </div>
+                        <div class="forecast-stat-card forecast-stat-card--chart">
+                            <div class="forecast-stat-label">Sales Share by Country</div>
+                            <canvas id="shareChart" style="max-height: 120px;"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="forecast-chart-header">
+                        <h3 id="forecastChartTitle">Actual vs Forecast Sales</h3>
+                        <div class="forecast-chart-controls">
+                            <button class="btn btn-secondary forecast-unit-switch-btn" id="forecastUnitSwitchBtn">
+                                <span class="forecast-unit-text">By Sales</span>
+                            </button>
+                            <button class="btn btn-secondary forecast-comparison-btn" id="forecastComparisonBtn">Comparison</button>
+                            <div class="forecast-chart-view-toggle">
+                                <button data-view="daily" class="is-active">Daily</button>
+                                <button data-view="weekly">Weekly</button>
+                                <button data-view="monthly">Monthly</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="forecast-chart-card">
+                        <canvas id="forecastChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Session Chart Area -->
+                <div class="forecast-chart-area" style="margin-top: 2rem;">
+                    <div class="forecast-chart-header">
+                        <h3>Sessions</h3>
+                    </div>
+
+                    <div class="forecast-chart-card">
+                        <canvas id="sessionChart"></canvas>
+                    </div>
+                </div>
             </section>
     
             <!-- SKU Details Section -->
@@ -744,6 +878,7 @@
     <script src="data.js"></script>
     <script src="sku-scroll.js"></script>
     <script src="canvas.js"></script>
+    <script src="forecast.js"></script>
     <script src="app.js"></script>
     <script src="shipping-history.js"></script>
 </body>

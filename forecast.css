@@ -1,0 +1,498 @@
+/* Forecast Review Page Styles */
+
+.page-forecast-review .page-header {
+  margin-bottom: 1.5rem;
+}
+
+.forecast-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  position: relative;
+}
+
+.forecast-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 160px;
+}
+
+.forecast-filter label {
+  font-size: 12px;
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.forecast-filter--date {
+  min-width: 200px;
+}
+
+/* Date Trigger Button */
+.forecast-date-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 200px;
+}
+
+.forecast-date-trigger:hover {
+  border-color: #cbd5e0;
+  background: #f7fafc;
+}
+
+.forecast-date-trigger-text {
+  color: #2d3748;
+}
+
+.forecast-date-trigger-icon {
+  font-size: 10px;
+  color: #a0aec0;
+  margin-left: 8px;
+}
+
+/* Date Picker Modal */
+.forecast-date-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+
+.forecast-date-modal.is-open {
+  display: flex;
+}
+
+.forecast-date-modal-content {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.forecast-date-modal-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Left Panel: Presets */
+.forecast-date-presets-panel {
+  width: 180px;
+  border-right: 1px solid #e2e8f0;
+  padding: 12px 0;
+  overflow-y: auto;
+  max-height: 500px;
+}
+
+.forecast-preset-item {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #4a5568;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.forecast-preset-item:hover {
+  background: #f7fafc;
+}
+
+.forecast-preset-item.is-active {
+  background: #ebf8ff;
+  color: #3182ce;
+  font-weight: 500;
+}
+
+.forecast-preset-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 8px 0;
+}
+
+/* Right Panel: Calendars */
+.forecast-date-calendars-panel {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.forecast-date-inputs {
+  display: flex;
+  gap: 12px;
+}
+
+.forecast-date-input-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.forecast-date-input-group label {
+  font-size: 11px;
+  color: #718096;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.forecast-date-input {
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #f7fafc;
+  color: #2d3748;
+}
+
+/* Calendars */
+.forecast-calendars {
+  display: flex;
+  gap: 16px;
+}
+
+.forecast-calendar {
+  flex: 1;
+}
+
+.forecast-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.forecast-calendar-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.forecast-calendar-nav {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #4a5568;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.forecast-calendar-nav:hover {
+  background: #f7fafc;
+}
+
+.forecast-calendar-body {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.forecast-calendar-weekday {
+  text-align: center;
+  font-size: 11px;
+  color: #a0aec0;
+  font-weight: 500;
+  padding: 6px 0;
+}
+
+.forecast-calendar-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #2d3748;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.forecast-calendar-day:hover {
+  background: #f7fafc;
+}
+
+.forecast-calendar-day.is-disabled {
+  color: #cbd5e0;
+  cursor: not-allowed;
+}
+
+.forecast-calendar-day.is-disabled:hover {
+  background: transparent;
+}
+
+.forecast-calendar-day.is-start,
+.forecast-calendar-day.is-end {
+  background: #3182ce;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.forecast-calendar-day.is-in-range {
+  background: #ebf8ff;
+  color: #2c5aa0;
+}
+
+.forecast-calendar-day.is-today {
+  border: 1px solid #3182ce;
+}
+
+/* Modal Footer */
+.forecast-date-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.forecast-date-btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.forecast-date-btn--cancel {
+  background: #ffffff;
+  color: #4a5568;
+  border: 1px solid #e2e8f0;
+}
+
+.forecast-date-btn--cancel:hover {
+  background: #f7fafc;
+}
+
+.forecast-date-btn--apply {
+  background: #3182ce;
+  color: #ffffff;
+}
+
+.forecast-date-btn--apply:hover {
+  background: #2c5aa0;
+}
+
+.forecast-filter select,
+.forecast-filter input[type="text"] {
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+.forecast-filter--actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.forecast-comparison-btn {
+  padding: 8px 20px;
+  background: #ffffff;
+  color: #4a5568;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.forecast-comparison-btn:hover {
+  background: #f7fafc;
+  border-color: #cbd5e0;
+}
+
+.forecast-comparison-btn.is-active {
+  background: #3182ce;
+  color: #ffffff;
+  border-color: #3182ce;
+}
+
+.forecast-comparison-btn.is-active:hover {
+  background: #2c5aa0;
+}
+
+.forecast-unit-switch-btn {
+  padding: 8px 20px;
+  background: #ffffff;
+  color: #4a5568;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.forecast-unit-switch-btn:hover {
+  background: #f7fafc;
+  border-color: #cbd5e0;
+}
+
+.forecast-search-btn {
+  padding: 8px 20px;
+  background: #3182ce;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.forecast-search-btn:hover {
+  background: #2c5aa0;
+}
+
+/* Chart Area */
+.forecast-chart-area {
+  margin-top: 1.5rem;
+}
+
+/* Summary Stats Row */
+.forecast-summary-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 2fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.forecast-stat-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.forecast-stat-card--chart {
+  display: flex;
+  flex-direction: column;
+}
+
+.forecast-stat-card--chart canvas {
+  flex: 1;
+  margin-top: 0.5rem;
+}
+
+.forecast-stat-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.forecast-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.forecast-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.forecast-chart-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.forecast-chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.forecast-chart-view-toggle {
+  display: inline-flex;
+  border-radius: 999px;
+  background: #edf2f7;
+  padding: 2px;
+}
+
+.forecast-chart-view-toggle button {
+  border: none;
+  background: transparent;
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: #4a5568;
+  transition: all 0.2s;
+}
+
+.forecast-chart-view-toggle button:hover {
+  color: #2d3748;
+}
+
+.forecast-chart-view-toggle button.is-active {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  color: #2d3748;
+  font-weight: 500;
+}
+
+.forecast-chart-card {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  min-height: 400px;
+}
+
+#forecastChart {
+  max-height: 400px;
+}
+
+/* Empty State */
+.forecast-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.forecast-empty-state p {
+  margin-top: 0.5rem;
+  font-size: 14px;
+}

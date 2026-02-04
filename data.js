@@ -228,6 +228,90 @@ const DataRepo = {
     addPersonalTodo(todo) {
         personalTodos.push({ id: Date.now(), text: todo, createdAt: new Date().toISOString() });
         localStorage.setItem('personalTodos', JSON.stringify(personalTodos));
+    },
+    
+    getSkuCategory(sku) {
+        const allSkus = [...upcomingSkuData, ...runningSkuData, ...phasingOutSkuData];
+        const skuInfo = allSkus.find(item => item.sku === sku);
+        return skuInfo ? skuInfo.category : null;
+    },
+    
+    getForecastReviewData(filters = {}) {
+        let data = forecastReviewData.map(item => ({
+            ...item,
+            category: this.getSkuCategory(item.sku)
+        }));
+        
+        // Filter by date range
+        if (filters.startDate && filters.endDate) {
+            data = data.filter(item => {
+                const itemDate = parseDate(item.date);
+                const start = new Date(filters.startDate);
+                const end = new Date(filters.endDate);
+                return itemDate >= start && itemDate <= end;
+            });
+        }
+        
+        // Filter by channel
+        if (filters.channel) {
+            data = data.filter(item => item.channel.toLowerCase() === filters.channel.toLowerCase());
+        }
+        
+        // Filter by marketplace
+        if (filters.marketplace) {
+            data = data.filter(item => item.marketplace === filters.marketplace);
+        }
+        
+        // Filter by category
+        if (filters.category) {
+            data = data.filter(item => item.category === filters.category);
+        }
+        
+        // Filter by SKU
+        if (filters.sku) {
+            data = data.filter(item => item.sku.toLowerCase().includes(filters.sku.toLowerCase()));
+        }
+        
+        return data;
+    },
+    
+    getForecastReviewDataLastYear(filters = {}) {
+        let data = forecastReviewDataLastYear.map(item => ({
+            ...item,
+            category: this.getSkuCategory(item.sku)
+        }));
+        
+        // Apply same filters as current year
+        if (filters.channel) {
+            data = data.filter(item => item.channel.toLowerCase() === filters.channel.toLowerCase());
+        }
+        
+        if (filters.marketplace) {
+            data = data.filter(item => item.marketplace === filters.marketplace);
+        }
+        
+        if (filters.category) {
+            data = data.filter(item => item.category === filters.category);
+        }
+        
+        if (filters.sku) {
+            data = data.filter(item => item.sku.toLowerCase().includes(filters.sku.toLowerCase()));
+        }
+        
+        return data;
+    },
+    
+    getForecastReviewSummary(filters = {}) {
+        const data = this.getForecastReviewData(filters);
+        
+        return {
+            totalSalesUnits: data.reduce((sum, item) => sum + item.salesUnits, 0),
+            totalSalesAmount: data.reduce((sum, item) => sum + item.salesAmount, 0),
+            avgUnitSessionPercentage: data.length > 0 ? data.reduce((sum, item) => sum + item.unitSessionPercentage, 0) / data.length : 0,
+            avgBuyBoxPercentage: data.length > 0 ? data.reduce((sum, item) => sum + item.buyBoxPercentage, 0) / data.length : 0,
+            totalSessions: data.reduce((sum, item) => sum + item.session, 0),
+            totalPageViews: data.reduce((sum, item) => sum + item.pageView, 0)
+        };
     }
 };
 
@@ -1061,6 +1145,150 @@ const urgentIssues = [
 
 // 個人提醒代辦 - 使用 localStorage
 let personalTodos = JSON.parse(localStorage.getItem('personalTodos')) || [];
+
+// 日期解析工具函數
+function parseDate(dateStr) {
+    const parts = dateStr.split('/');
+    return new Date(parts[2], parts[0] - 1, parts[1]);
+}
+
+// 假匯率（轉換為 USD）
+const exchangeRates = {
+    'USD': 1,
+    'JPY': 0.0067,
+    'GBP': 1.27,
+    'EUR': 1.09,
+    'CAD': 0.74
+};
+
+// Forecast Review 假資料（2026年）
+const forecastReviewData = [
+    // Amazon US - KM-001
+    { date: "2/2/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 45, forecastUnits: 48, salesAmount: 899.55, forecastAmount: 959.52, currency: "USD", session: 1250, pageView: 2100, unitSessionPercentage: 3.6, buyBoxPercentage: 95 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 52, forecastUnits: 50, salesAmount: 1039.48, forecastAmount: 999.50, currency: "USD", session: 1380, pageView: 2280, unitSessionPercentage: 3.8, buyBoxPercentage: 96 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 38, forecastUnits: 42, salesAmount: 759.62, forecastAmount: 839.58, currency: "USD", session: 1120, pageView: 1890, unitSessionPercentage: 3.4, buyBoxPercentage: 94 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 61, forecastUnits: 55, salesAmount: 1219.39, forecastAmount: 1099.45, currency: "USD", session: 1520, pageView: 2450, unitSessionPercentage: 4.0, buyBoxPercentage: 97 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 48, forecastUnits: 47, salesAmount: 959.52, forecastAmount: 939.53, currency: "USD", session: 1290, pageView: 2150, unitSessionPercentage: 3.7, buyBoxPercentage: 95 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 52, salesAmount: 1039.48, currency: "USD", session: 1380, pageView: 2280, unitSessionPercentage: 3.8, buyBoxPercentage: 96 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 38, salesAmount: 759.62, currency: "USD", session: 1120, pageView: 1890, unitSessionPercentage: 3.4, buyBoxPercentage: 94 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 61, salesAmount: 1219.39, currency: "USD", session: 1520, pageView: 2450, unitSessionPercentage: 4.0, buyBoxPercentage: 97 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 48, salesAmount: 959.52, currency: "USD", session: 1290, pageView: 2150, unitSessionPercentage: 3.7, buyBoxPercentage: 95 },
+    
+    // Amazon JP - KM-001
+    { date: "2/2/2026", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 28, salesAmount: 3360, currency: "JPY", session: 850, pageView: 1420, unitSessionPercentage: 3.3, buyBoxPercentage: 92 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 32, salesAmount: 3840, currency: "JPY", session: 920, pageView: 1580, unitSessionPercentage: 3.5, buyBoxPercentage: 93 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 25, salesAmount: 3000, currency: "JPY", session: 780, pageView: 1320, unitSessionPercentage: 3.2, buyBoxPercentage: 91 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 35, salesAmount: 4200, currency: "JPY", session: 1050, pageView: 1750, unitSessionPercentage: 3.3, buyBoxPercentage: 94 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 30, salesAmount: 3600, currency: "JPY", session: 890, pageView: 1480, unitSessionPercentage: 3.4, buyBoxPercentage: 92 },
+    
+    // Amazon UK - KM-002
+    { date: "2/2/2026", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 18, salesAmount: 1349.82, currency: "GBP", session: 620, pageView: 1050, unitSessionPercentage: 2.9, buyBoxPercentage: 89 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 22, salesAmount: 1649.78, currency: "GBP", session: 710, pageView: 1180, unitSessionPercentage: 3.1, buyBoxPercentage: 90 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 15, salesAmount: 1124.85, currency: "GBP", session: 580, pageView: 980, unitSessionPercentage: 2.6, buyBoxPercentage: 88 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 25, salesAmount: 1874.75, currency: "GBP", session: 780, pageView: 1290, unitSessionPercentage: 3.2, buyBoxPercentage: 91 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 20, salesAmount: 1499.80, currency: "GBP", session: 680, pageView: 1120, unitSessionPercentage: 2.9, buyBoxPercentage: 89 },
+    
+    // Amazon DE - KM-003
+    { date: "2/2/2026", channel: "Amazon", marketplace: "DE", sku: "KM-003", salesUnits: 33, salesAmount: 1220.67, currency: "EUR", session: 980, pageView: 1640, unitSessionPercentage: 3.4, buyBoxPercentage: 93 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "DE", sku: "KM-003", salesUnits: 38, salesAmount: 1405.62, currency: "EUR", session: 1080, pageView: 1820, unitSessionPercentage: 3.5, buyBoxPercentage: 94 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "DE", sku: "KM-003", salesUnits: 29, salesAmount: 1072.71, currency: "EUR", session: 890, pageView: 1490, unitSessionPercentage: 3.3, buyBoxPercentage: 92 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "DE", sku: "KM-003", salesUnits: 42, salesAmount: 1553.58, currency: "EUR", session: 1180, pageView: 1980, unitSessionPercentage: 3.6, buyBoxPercentage: 95 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "DE", sku: "KM-003", salesUnits: 36, salesAmount: 1331.64, currency: "EUR", session: 1020, pageView: 1710, unitSessionPercentage: 3.5, buyBoxPercentage: 93 },
+    
+    // Amazon CA - KM-004
+    { date: "2/2/2026", channel: "Amazon", marketplace: "CA", sku: "KM-004", salesUnits: 24, salesAmount: 431.76, currency: "CAD", session: 720, pageView: 1200, unitSessionPercentage: 3.3, buyBoxPercentage: 90 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "CA", sku: "KM-004", salesUnits: 28, salesAmount: 503.72, currency: "CAD", session: 810, pageView: 1350, unitSessionPercentage: 3.5, buyBoxPercentage: 91 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "CA", sku: "KM-004", salesUnits: 21, salesAmount: 377.79, currency: "CAD", session: 670, pageView: 1120, unitSessionPercentage: 3.1, buyBoxPercentage: 89 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "CA", sku: "KM-004", salesUnits: 31, salesAmount: 557.69, currency: "CAD", session: 890, pageView: 1480, unitSessionPercentage: 3.5, buyBoxPercentage: 92 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "CA", sku: "KM-004", salesUnits: 26, salesAmount: 467.74, currency: "CAD", session: 760, pageView: 1270, unitSessionPercentage: 3.4, buyBoxPercentage: 90 },
+    
+    // Shopify - KM-005
+    { date: "2/2/2026", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 12, salesAmount: 143.88, currency: "USD", session: 450, pageView: 780, unitSessionPercentage: 2.7, buyBoxPercentage: 100 },
+    { date: "2/3/2026", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 15, salesAmount: 179.85, currency: "USD", session: 520, pageView: 890, unitSessionPercentage: 2.9, buyBoxPercentage: 100 },
+    { date: "2/4/2026", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 10, salesAmount: 119.90, currency: "USD", session: 410, pageView: 710, unitSessionPercentage: 2.4, buyBoxPercentage: 100 },
+    { date: "2/5/2026", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 18, salesAmount: 215.82, currency: "USD", session: 580, pageView: 960, unitSessionPercentage: 3.1, buyBoxPercentage: 100 },
+    { date: "2/6/2026", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 14, salesAmount: 167.86, currency: "USD", session: 490, pageView: 820, unitSessionPercentage: 2.9, buyBoxPercentage: 100 },
+    
+    // Target - KM-006
+    { date: "2/2/2026", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 35, salesAmount: 664.65, currency: "USD", session: 920, pageView: 1540, unitSessionPercentage: 3.8, buyBoxPercentage: 87 },
+    { date: "2/3/2026", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 41, salesAmount: 778.59, currency: "USD", session: 1050, pageView: 1750, unitSessionPercentage: 3.9, buyBoxPercentage: 88 },
+    { date: "2/4/2026", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 28, salesAmount: 531.72, currency: "USD", session: 820, pageView: 1380, unitSessionPercentage: 3.4, buyBoxPercentage: 86 },
+    { date: "2/5/2026", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 46, salesAmount: 873.54, currency: "USD", session: 1150, pageView: 1920, unitSessionPercentage: 4.0, buyBoxPercentage: 89 },
+    { date: "2/6/2026", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 38, salesAmount: 721.62, currency: "USD", session: 980, pageView: 1640, unitSessionPercentage: 3.9, buyBoxPercentage: 87 },
+    
+    // Amazon US - KM-007
+    { date: "2/2/2026", channel: "Amazon", marketplace: "US", sku: "KM-007", salesUnits: 56, salesAmount: 614.44, currency: "USD", session: 1420, pageView: 2380, unitSessionPercentage: 3.9, buyBoxPercentage: 96 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "US", sku: "KM-007", salesUnits: 63, salesAmount: 691.37, currency: "USD", session: 1580, pageView: 2640, unitSessionPercentage: 4.0, buyBoxPercentage: 97 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "US", sku: "KM-007", salesUnits: 49, salesAmount: 537.51, currency: "USD", session: 1280, pageView: 2140, unitSessionPercentage: 3.8, buyBoxPercentage: 95 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "US", sku: "KM-007", salesUnits: 71, salesAmount: 779.29, currency: "USD", session: 1720, pageView: 2880, unitSessionPercentage: 4.1, buyBoxPercentage: 98 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "US", sku: "KM-007", salesUnits: 58, salesAmount: 636.42, currency: "USD", session: 1480, pageView: 2480, unitSessionPercentage: 3.9, buyBoxPercentage: 96 },
+    
+    // Amazon FR - KM-UP-001
+    { date: "2/2/2026", channel: "Amazon", marketplace: "FR", sku: "KM-UP-001", salesUnits: 22, salesAmount: 549.78, currency: "EUR", session: 680, pageView: 1140, unitSessionPercentage: 3.2, buyBoxPercentage: 91 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "FR", sku: "KM-UP-001", salesUnits: 26, salesAmount: 649.74, currency: "EUR", session: 760, pageView: 1280, unitSessionPercentage: 3.4, buyBoxPercentage: 92 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "FR", sku: "KM-UP-001", salesUnits: 19, salesAmount: 474.81, currency: "EUR", session: 620, pageView: 1040, unitSessionPercentage: 3.1, buyBoxPercentage: 90 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "FR", sku: "KM-UP-001", salesUnits: 29, salesAmount: 724.71, currency: "EUR", session: 840, pageView: 1410, unitSessionPercentage: 3.5, buyBoxPercentage: 93 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "FR", sku: "KM-UP-001", salesUnits: 24, salesAmount: 599.76, currency: "EUR", session: 710, pageView: 1190, unitSessionPercentage: 3.4, buyBoxPercentage: 91 },
+    
+    // Amazon IT - KM-UP-002
+    { date: "2/2/2026", channel: "Amazon", marketplace: "IT", sku: "KM-UP-002", salesUnits: 16, salesAmount: 479.84, currency: "EUR", session: 520, pageView: 870, unitSessionPercentage: 3.1, buyBoxPercentage: 88 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "IT", sku: "KM-UP-002", salesUnits: 19, salesAmount: 569.81, currency: "EUR", session: 590, pageView: 990, unitSessionPercentage: 3.2, buyBoxPercentage: 89 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "IT", sku: "KM-UP-002", salesUnits: 14, salesAmount: 419.86, currency: "EUR", session: 480, pageView: 810, unitSessionPercentage: 2.9, buyBoxPercentage: 87 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "IT", sku: "KM-UP-002", salesUnits: 21, salesAmount: 629.79, currency: "EUR", session: 650, pageView: 1090, unitSessionPercentage: 3.2, buyBoxPercentage: 90 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "IT", sku: "KM-UP-002", salesUnits: 17, salesAmount: 509.83, currency: "EUR", session: 550, pageView: 920, unitSessionPercentage: 3.1, buyBoxPercentage: 88 },
+    
+    // Amazon ES - KM-UP-003
+    { date: "2/2/2026", channel: "Amazon", marketplace: "ES", sku: "KM-UP-003", salesUnits: 27, salesAmount: 1079.73, currency: "EUR", session: 780, pageView: 1310, unitSessionPercentage: 3.5, buyBoxPercentage: 92 },
+    { date: "2/3/2026", channel: "Amazon", marketplace: "ES", sku: "KM-UP-003", salesUnits: 31, salesAmount: 1239.69, currency: "EUR", session: 870, pageView: 1460, unitSessionPercentage: 3.6, buyBoxPercentage: 93 },
+    { date: "2/4/2026", channel: "Amazon", marketplace: "ES", sku: "KM-UP-003", salesUnits: 23, salesAmount: 919.77, currency: "EUR", session: 710, pageView: 1190, unitSessionPercentage: 3.2, buyBoxPercentage: 91 },
+    { date: "2/5/2026", channel: "Amazon", marketplace: "ES", sku: "KM-UP-003", salesUnits: 34, salesAmount: 1359.66, currency: "EUR", session: 950, pageView: 1590, unitSessionPercentage: 3.6, buyBoxPercentage: 94 },
+    { date: "2/6/2026", channel: "Amazon", marketplace: "ES", sku: "KM-UP-003", salesUnits: 29, salesAmount: 1159.71, currency: "EUR", session: 820, pageView: 1380, unitSessionPercentage: 3.5, buyBoxPercentage: 92 },
+    
+    // Walmart - KM-OLD-001
+    { date: "2/2/2026", channel: "Walmart", marketplace: "US", sku: "KM-OLD-001", salesUnits: 8, salesAmount: 119.92, currency: "USD", session: 320, pageView: 540, unitSessionPercentage: 2.5, buyBoxPercentage: 82 },
+    { date: "2/3/2026", channel: "Walmart", marketplace: "US", sku: "KM-OLD-001", salesUnits: 10, salesAmount: 149.90, currency: "USD", session: 380, pageView: 640, unitSessionPercentage: 2.6, buyBoxPercentage: 83 },
+    { date: "2/4/2026", channel: "Walmart", marketplace: "US", sku: "KM-OLD-001", salesUnits: 6, salesAmount: 89.94, currency: "USD", session: 290, pageView: 490, unitSessionPercentage: 2.1, buyBoxPercentage: 81 },
+    { date: "2/5/2026", channel: "Walmart", marketplace: "US", sku: "KM-OLD-001", salesUnits: 11, salesAmount: 164.89, currency: "USD", session: 410, pageView: 690, unitSessionPercentage: 2.7, buyBoxPercentage: 84 },
+    { date: "2/6/2026", channel: "Walmart", marketplace: "US", sku: "KM-OLD-001", salesUnits: 9, salesAmount: 134.91, currency: "USD", session: 350, pageView: 590, unitSessionPercentage: 2.6, buyBoxPercentage: 82 }
+];
+
+// 去年同期資料（2025年）
+const forecastReviewDataLastYear = [
+    // Amazon US - KM-001
+    { date: "2/2/2025", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 38, salesAmount: 759.62, currency: "USD", session: 1050, pageView: 1780, unitSessionPercentage: 3.6, buyBoxPercentage: 93 },
+    { date: "2/3/2025", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 44, salesAmount: 879.56, currency: "USD", session: 1180, pageView: 1950, unitSessionPercentage: 3.7, buyBoxPercentage: 94 },
+    { date: "2/4/2025", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 32, salesAmount: 639.68, currency: "USD", session: 950, pageView: 1620, unitSessionPercentage: 3.4, buyBoxPercentage: 92 },
+    { date: "2/5/2025", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 51, salesAmount: 1019.49, currency: "USD", session: 1320, pageView: 2150, unitSessionPercentage: 3.9, buyBoxPercentage: 95 },
+    { date: "2/6/2025", channel: "Amazon", marketplace: "US", sku: "KM-001", salesUnits: 41, salesAmount: 819.59, currency: "USD", session: 1120, pageView: 1880, unitSessionPercentage: 3.7, buyBoxPercentage: 93 },
+    
+    // Amazon JP - KM-001
+    { date: "2/2/2025", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 24, salesAmount: 2880, currency: "JPY", session: 720, pageView: 1210, unitSessionPercentage: 3.3, buyBoxPercentage: 90 },
+    { date: "2/3/2025", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 27, salesAmount: 3240, currency: "JPY", session: 790, pageView: 1350, unitSessionPercentage: 3.4, buyBoxPercentage: 91 },
+    { date: "2/4/2025", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 21, salesAmount: 2520, currency: "JPY", session: 660, pageView: 1120, unitSessionPercentage: 3.2, buyBoxPercentage: 89 },
+    { date: "2/5/2025", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 30, salesAmount: 3600, currency: "JPY", session: 910, pageView: 1520, unitSessionPercentage: 3.3, buyBoxPercentage: 92 },
+    { date: "2/6/2025", channel: "Amazon", marketplace: "JP", sku: "KM-001", salesUnits: 26, salesAmount: 3120, currency: "JPY", session: 770, pageView: 1290, unitSessionPercentage: 3.4, buyBoxPercentage: 90 },
+    
+    // Amazon UK - KM-002
+    { date: "2/2/2025", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 15, salesAmount: 1124.85, currency: "GBP", session: 530, pageView: 890, unitSessionPercentage: 2.8, buyBoxPercentage: 87 },
+    { date: "2/3/2025", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 19, salesAmount: 1424.81, currency: "GBP", session: 620, pageView: 1030, unitSessionPercentage: 3.1, buyBoxPercentage: 88 },
+    { date: "2/4/2025", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 13, salesAmount: 974.87, currency: "GBP", session: 490, pageView: 830, unitSessionPercentage: 2.7, buyBoxPercentage: 86 },
+    { date: "2/5/2025", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 21, salesAmount: 1574.79, currency: "GBP", session: 680, pageView: 1130, unitSessionPercentage: 3.1, buyBoxPercentage: 89 },
+    { date: "2/6/2025", channel: "Amazon", marketplace: "UK", sku: "KM-002", salesUnits: 17, salesAmount: 1274.83, currency: "GBP", session: 590, pageView: 980, unitSessionPercentage: 2.9, buyBoxPercentage: 87 },
+    
+    // Shopify - KM-005
+    { date: "2/2/2025", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 10, salesAmount: 119.90, currency: "USD", session: 380, pageView: 660, unitSessionPercentage: 2.6, buyBoxPercentage: 100 },
+    { date: "2/3/2025", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 13, salesAmount: 155.87, currency: "USD", session: 450, pageView: 770, unitSessionPercentage: 2.9, buyBoxPercentage: 100 },
+    { date: "2/4/2025", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 8, salesAmount: 95.92, currency: "USD", session: 350, pageView: 610, unitSessionPercentage: 2.3, buyBoxPercentage: 100 },
+    { date: "2/5/2025", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 15, salesAmount: 179.85, currency: "USD", session: 500, pageView: 830, unitSessionPercentage: 3.0, buyBoxPercentage: 100 },
+    { date: "2/6/2025", channel: "Shopify", marketplace: "US", sku: "KM-005", salesUnits: 12, salesAmount: 143.88, currency: "USD", session: 420, pageView: 710, unitSessionPercentage: 2.9, buyBoxPercentage: 100 },
+    
+    // Target - KM-006
+    { date: "2/2/2025", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 30, salesAmount: 569.70, currency: "USD", session: 790, pageView: 1320, unitSessionPercentage: 3.8, buyBoxPercentage: 85 },
+    { date: "2/3/2025", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 35, salesAmount: 664.65, currency: "USD", session: 910, pageView: 1520, unitSessionPercentage: 3.8, buyBoxPercentage: 86 },
+    { date: "2/4/2025", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 24, salesAmount: 455.76, currency: "USD", session: 710, pageView: 1190, unitSessionPercentage: 3.4, buyBoxPercentage: 84 },
+    { date: "2/5/2025", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 39, salesAmount: 740.61, currency: "USD", session: 1000, pageView: 1670, unitSessionPercentage: 3.9, buyBoxPercentage: 87 },
+    { date: "2/6/2025", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 32, salesAmount: 607.68, currency: "USD", session: 850, pageView: 1420, unitSessionPercentage: 3.8, buyBoxPercentage: 85 }
+];
 
 // 暴露 DataRepo 到全域
 window.DataRepo = DataRepo;

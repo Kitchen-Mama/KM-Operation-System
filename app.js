@@ -140,7 +140,11 @@ function showSection(section) {
     }
     
     if (section === 'forecast') {
-        renderForecastChart();
+        setTimeout(() => {
+            if (window.initForecastReviewPage) {
+                window.initForecastReviewPage();
+            }
+        }, 100);
     }
     if (section === 'skuDetails') {
         renderSkuDetailsTable();
@@ -763,23 +767,34 @@ function getReplenishmentData() {
         const currentMonth = today.getMonth();
         const nextMonthIndex = (currentMonth + 1) % 12;
         const next2MonthIndex = (currentMonth + 2) % 12;
+        const next3MonthIndex = (currentMonth + 3) % 12;
         const lastMonthIndex = (currentMonth - 1 + 12) % 12;
         const last2MonthIndex = (currentMonth - 2 + 12) % 12;
         
-        // 60 days FC = The Following 月份的 FC 總和
+        // Generate FC for next 3 months
+        const fcNext3Month = Math.floor(Math.random() * 5000) + 7000;
+        
+        // 60 days FC = The Following 前兩個月份的 FC 總和
         const forecast60d = expandData.fcNextMonth + expandData.fcNext2Month;
         
-        // Get upcoming events for this SKU (只顯示下兩個月的事件)
+        // Get upcoming events for this SKU (檢查接下來三個月內的事件)
         const skuEvents = skuEventData.find(e => e.sku === item.sku)?.events || [];
-        const twoMonthsLater = (today.getMonth() + 3) % 12 || 12;
-        const upcomingEvent = skuEvents.find(e => {
-            const event = specialEvents.find(se => se.name === e.name);
-            return event && event.month === twoMonthsLater;
-        });
-        const upcomingEventQty = upcomingEvent ? upcomingEvent.qty : null;
+        const next3Months = [
+            (currentMonth + 1) % 12 || 12,
+            (currentMonth + 2) % 12 || 12,
+            (currentMonth + 3) % 12 || 12
+        ];
         
-        const upcomingEventsText = skuEvents.length > 0 
-            ? skuEvents.map(e => {
+        // 篩選出接下來三個月內的事件
+        const filteredEvents = skuEvents.filter(e => {
+            const event = specialEvents.find(se => se.name === e.name);
+            return event && next3Months.includes(event.month);
+        });
+        
+        const upcomingEventQty = filteredEvents.length > 0 ? filteredEvents[0].qty : null;
+        
+        const upcomingEventsText = filteredEvents.length > 0
+            ? filteredEvents.map(e => {
                 const event = specialEvents.find(se => se.name === e.name);
                 return `<div class="replen-card__row"><span class="replen-card__label">${e.name} (${event?.startDate}~${event?.endDate})</span><span class="replen-card__value">${e.qty}</span></div>`;
               }).join('')
@@ -901,10 +916,12 @@ function getReplenishmentData() {
             // Forecast months
             nextMonth: monthNames[nextMonthIndex],
             next2Month: monthNames[next2MonthIndex],
+            next3Month: monthNames[next3MonthIndex],
             lastMonth: monthNames[lastMonthIndex],
             last2Month: monthNames[last2MonthIndex],
             fcNextMonth: expandData.fcNextMonth,
             fcNext2Month: expandData.fcNext2Month,
+            fcNext3Month: fcNext3Month,
             fcLastMonth: expandData.fcLastMonth,
             fcLast2Month: expandData.fcLast2Month,
             achievementLastMonth: expandData.achievementLastMonth,
@@ -1066,27 +1083,30 @@ function toggleReplenRow(sku) {
                         </div>
                     </section>
                 </div>
-                <article class="ir-panel replen-card replen-card--sales-trend">
-                    <h4 class="replen-card__title">Sales Trend</h4>
-                    <div class="replen-card__row"><span class="replen-card__label">${skuData?.day2ago || '-'}</span><span class="replen-card__value">${skuData?.salesDay2 || 0}</span></div>
-                    <div class="replen-card__row"><span class="replen-card__label">${skuData?.day3ago || '-'}</span><span class="replen-card__value">${skuData?.salesDay3 || 0}</span></div>
-                    <div class="replen-card__row"><span class="replen-card__label">${skuData?.day4ago || '-'}</span><span class="replen-card__value">${skuData?.salesDay4 || 0}</span></div>
-                    <div class="replen-card__row"><span class="replen-card__label">Last Week</span><span class="replen-card__value">${skuData?.lastWeek || 0}</span></div>
-                </article>
-                <article class="ir-panel replen-card replen-card--forecast">
-                    <h4 class="replen-card__title">Forecast Breakdown</h4>
-                    <div class="replen-card__row" style="font-weight: 600; margin-top: 4px;"><span class="replen-card__label">The Following</span><span class="replen-card__value"></span></div>
-                    <div class="replen-card__row"><span class="replen-card__label">${skuData?.nextMonth || '-'}</span><span class="replen-card__value">${skuData?.fcNextMonth || 0}</span></div>
-                    <div class="replen-card__row"><span class="replen-card__label">${skuData?.next2Month || '-'}</span><span class="replen-card__value">${skuData?.fcNext2Month || 0}</span></div>
-                    <div class="replen-card__row" style="font-weight: 600;"><span class="replen-card__label">Total</span><span class="replen-card__value">${skuData?.forecast60d || 0}</span></div>
-                    <div class="replen-card__row" style="font-weight: 600; margin-top: 8px;"><span class="replen-card__label">Past</span><span class="replen-card__value"></span></div>
-                    <div class="replen-card__row"><span class="replen-card__label">${skuData?.lastMonth || '-'}</span><span class="replen-card__value"><span style="display:inline-block;width:36px;text-align:right;">${skuData?.achievementLastMonth || 0}%</span> | ${skuData?.fcLastMonth || 0}</span></div>
-                    <div class="replen-card__row"><span class="replen-card__label">${skuData?.last2Month || '-'}</span><span class="replen-card__value"><span style="display:inline-block;width:36px;text-align:right;">${skuData?.achievementLast2Month || 0}%</span> | ${skuData?.fcLast2Month || 0}</span></div>
-                </article>
-                <article class="ir-panel replen-card replen-card--upcoming">
-                    <h4 class="replen-card__title">Upcoming Event</h4>
-                    ${skuData?.upcomingEventsText || '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>'}
-                </article>
+                <div class="ir-panel-column">
+                    <article class="ir-panel replen-card replen-card--sales-trend">
+                        <h4 class="replen-card__title">Sales Trend (Past Week)</h4>
+                        <canvas id="sales-trend-chart-${sku}" style="max-height: 100px;"></canvas>
+                    </article>
+                    <article class="ir-panel replen-card replen-card--achievement">
+                        <h4 class="replen-card__title">Achievement Rate (Past 3 Months)</h4>
+                        <canvas id="achievement-chart-${sku}" style="max-height: 100px;"></canvas>
+                    </article>
+                </div>
+                <div class="ir-panel-column">
+                    <article class="ir-panel replen-card replen-card--forecast">
+                        <h4 class="replen-card__title">Forecast Breakdown</h4>
+                        <div class="replen-card__row" style="font-weight: 600; margin-top: 4px;"><span class="replen-card__label">The Following</span><span class="replen-card__value"></span></div>
+                        <div class="replen-card__row"><span class="replen-card__label">${skuData?.nextMonth || '-'}</span><span class="replen-card__value">${skuData?.fcNextMonth || 0}</span></div>
+                        <div class="replen-card__row"><span class="replen-card__label">${skuData?.next2Month || '-'}</span><span class="replen-card__value">${skuData?.fcNext2Month || 0}</span></div>
+                        <div class="replen-card__row"><span class="replen-card__label">${skuData?.next3Month || '-'}</span><span class="replen-card__value">${skuData?.fcNext3Month || 0}</span></div>
+                        <div class="replen-card__row" style="font-weight: 600;"><span class="replen-card__label">Total</span><span class="replen-card__value">${(skuData?.fcNextMonth || 0) + (skuData?.fcNext2Month || 0) + (skuData?.fcNext3Month || 0)}</span></div>
+                    </article>
+                    <article class="ir-panel replen-card replen-card--upcoming">
+                        <h4 class="replen-card__title">Upcoming Event</h4>
+                        ${skuData?.upcomingEventsText || '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>'}
+                    </article>
+                </div>
                 <article class="ir-panel replen-card--suggestion-allocation">
                     <div class="replen-card replen-card--ai-suggestion">
                         <h4 class="replen-card__title">AI Suggestion (Stage 1 Basic)</h4>
@@ -1147,6 +1167,10 @@ function toggleReplenRow(sku) {
         
         // Auto-populate Shipping Allocation based on AI Suggestion
         initializeShippingAllocation(sku, skuData);
+        
+        // Initialize charts
+        initSalesTrendChart(sku, skuData);
+        initAchievementChart(sku, skuData);
         
         // Re-sync after initialization
         setTimeout(() => syncExpandPanelHeight(sku), 50);
@@ -2121,3 +2145,164 @@ function updateWorldTimes() {
 
 window.initWorldTimes = initWorldTimes;
 window.updateWorldTimes = updateWorldTimes;
+
+// ========================================
+// Replenishment Charts
+// ========================================
+
+function initSalesTrendChart(sku, skuData) {
+    const canvas = document.getElementById(`sales-trend-chart-${sku}`);
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const today = new Date();
+    const labels = [];
+    const data = [];
+    
+    // Generate past 7 days data
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        labels.push(`${date.getMonth() + 1}/${date.getDate()}`);
+        
+        // Generate random sales data based on SKU
+        const baseValue = skuData.lastWeek / 7;
+        const variance = baseValue * 0.3;
+        data.push(Math.round(baseValue + (Math.random() - 0.5) * variance));
+    }
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Sales Units',
+                data: data,
+                borderColor: '#3B82F6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                borderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        font: {
+                            size: 10
+                        }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        font: {
+                            size: 10
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function initAchievementChart(sku, skuData) {
+    const canvas = document.getElementById(`achievement-chart-${sku}`);
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const today = new Date();
+    const labels = [];
+    const data = [];
+    
+    // Generate past 3 months data
+    for (let i = 2; i >= 0; i--) {
+        const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        labels.push(monthNames[date.getMonth()]);
+        
+        // Generate achievement rate (80-110%)
+        data.push(Math.round(80 + Math.random() * 30));
+    }
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Achievement Rate (%)',
+                data: data,
+                borderColor: '#10B981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            return context.parsed.y + '%';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        font: {
+                            size: 10
+                        }
+                    }
+                },
+                y: {
+                    beginAtZero: false,
+                    min: 70,
+                    max: 120,
+                    ticks: {
+                        font: {
+                            size: 10
+                        },
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+window.initSalesTrendChart = initSalesTrendChart;
+window.initAchievementChart = initAchievementChart;
