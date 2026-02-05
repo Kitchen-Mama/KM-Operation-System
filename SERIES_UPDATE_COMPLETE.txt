@@ -1,0 +1,23 @@
+Series 欄位新增完成
+
+已完成的修改：
+1. ✅ data.js - 為所有 upcomingSkuData (20個SKU) 加入 series 欄位
+2. ✅ data.js - 為所有 runningSkuData (7個SKU) 加入 series 欄位  
+3. ✅ data.js - 為所有 phasingOutSkuData (7個SKU) 加入 series 欄位
+4. ✅ app.js - 修改 renderSkuLifecycleTable 函數，在渲染時加入 Series 欄位
+5. ✅ index.html - 修改 Display panel，加入 Series 選項並調整所有欄位編號
+
+需要手動完成的修改（HTML header 部分）：
+由於 HTML 中有三個重複的 header 區塊（Upcoming SKU, Running in the Market, Phasing Out），
+需要在每個區塊的 scroll-header 中加入：
+<div class="header-cell" data-col="4">Series</div>
+
+位置：在 Product Name (data-col="3") 和 Category 之間
+並將 Category 及後續所有欄位的 data-col 編號 +1
+
+Series 假資料範例：
+- CO1100 (Can Opener 系列)
+- EP2200 (Electric Peeler 系列)
+- BL3300 (Blender 系列)
+- GR4400 (Grater 系列)
+等等...

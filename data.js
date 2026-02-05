@@ -120,6 +120,17 @@ const forecastMonthly = [
 ];
 
 // 資料存取物件
+// SKU to Series mapping
+function getSkuSeriesMap() {
+    const map = {};
+    [...upcomingSkuData, ...runningSkuData, ...phasingOutSkuData].forEach(item => {
+        if (item.sku && item.series) {
+            map[item.sku] = item.series;
+        }
+    });
+    return map;
+}
+
 const DataRepo = {
     getItemBySku(sku) {
         const item = items.find(item => item.sku === sku);
@@ -252,19 +263,28 @@ const DataRepo = {
             });
         }
         
-        // Filter by channel
-        if (filters.channel) {
-            data = data.filter(item => item.channel.toLowerCase() === filters.channel.toLowerCase());
+        // Filter by countries (array)
+        if (filters.countries && filters.countries.length > 0) {
+            data = data.filter(item => filters.countries.includes(item.marketplace));
         }
         
-        // Filter by marketplace
-        if (filters.marketplace) {
-            data = data.filter(item => item.marketplace === filters.marketplace);
+        // Filter by marketplaces (array)
+        if (filters.marketplaces && filters.marketplaces.length > 0) {
+            data = data.filter(item => filters.marketplaces.some(mp => item.channel.toLowerCase() === mp.toLowerCase()));
         }
         
-        // Filter by category
-        if (filters.category) {
-            data = data.filter(item => item.category === filters.category);
+        // Filter by categories (array)
+        if (filters.categories && filters.categories.length > 0) {
+            data = data.filter(item => filters.categories.includes(item.category));
+        }
+        
+        // Filter by series (array) - use SKU Details mapping
+        if (filters.series && filters.series.length > 0) {
+            const skuSeriesMap = getSkuSeriesMap();
+            data = data.filter(item => {
+                const itemSeries = skuSeriesMap[item.sku];
+                return itemSeries && filters.series.includes(itemSeries);
+            });
         }
         
         // Filter by SKU
@@ -281,19 +301,31 @@ const DataRepo = {
             category: this.getSkuCategory(item.sku)
         }));
         
-        // Apply same filters as current year
-        if (filters.channel) {
-            data = data.filter(item => item.channel.toLowerCase() === filters.channel.toLowerCase());
+        // Filter by countries (array)
+        if (filters.countries && filters.countries.length > 0) {
+            data = data.filter(item => filters.countries.includes(item.marketplace));
         }
         
-        if (filters.marketplace) {
-            data = data.filter(item => item.marketplace === filters.marketplace);
+        // Filter by marketplaces (array)
+        if (filters.marketplaces && filters.marketplaces.length > 0) {
+            data = data.filter(item => filters.marketplaces.some(mp => item.channel.toLowerCase() === mp.toLowerCase()));
         }
         
-        if (filters.category) {
-            data = data.filter(item => item.category === filters.category);
+        // Filter by categories (array)
+        if (filters.categories && filters.categories.length > 0) {
+            data = data.filter(item => filters.categories.includes(item.category));
         }
         
+        // Filter by series (array) - use SKU Details mapping
+        if (filters.series && filters.series.length > 0) {
+            const skuSeriesMap = getSkuSeriesMap();
+            data = data.filter(item => {
+                const itemSeries = skuSeriesMap[item.sku];
+                return itemSeries && filters.series.includes(itemSeries);
+            });
+        }
+        
+        // Filter by SKU
         if (filters.sku) {
             data = data.filter(item => item.sku.toLowerCase().includes(filters.sku.toLowerCase()));
         }
@@ -303,14 +335,26 @@ const DataRepo = {
     
     getForecastReviewSummary(filters = {}) {
         const data = this.getForecastReviewData(filters);
+        const lastYearData = this.getForecastReviewDataLastYear(filters);
+        
+        const totalSalesUnits = data.reduce((sum, item) => sum + item.salesUnits, 0);
+        const totalSalesAmount = data.reduce((sum, item) => sum + item.salesAmount, 0);
+        const totalSessions = data.reduce((sum, item) => sum + item.session, 0);
+        
+        const lastYearSalesUnits = lastYearData.reduce((sum, item) => sum + item.salesUnits, 0);
+        const lastYearSalesAmount = lastYearData.reduce((sum, item) => sum + item.salesAmount, 0);
+        const lastYearSessions = lastYearData.reduce((sum, item) => sum + item.session, 0);
         
         return {
-            totalSalesUnits: data.reduce((sum, item) => sum + item.salesUnits, 0),
-            totalSalesAmount: data.reduce((sum, item) => sum + item.salesAmount, 0),
+            totalSalesUnits,
+            totalSalesAmount,
+            totalSessions,
             avgUnitSessionPercentage: data.length > 0 ? data.reduce((sum, item) => sum + item.unitSessionPercentage, 0) / data.length : 0,
             avgBuyBoxPercentage: data.length > 0 ? data.reduce((sum, item) => sum + item.buyBoxPercentage, 0) / data.length : 0,
-            totalSessions: data.reduce((sum, item) => sum + item.session, 0),
-            totalPageViews: data.reduce((sum, item) => sum + item.pageView, 0)
+            totalPageViews: data.reduce((sum, item) => sum + item.pageView, 0),
+            lastYearSalesUnits,
+            lastYearSalesAmount,
+            lastYearSessions
         };
     }
 };
@@ -322,6 +366,7 @@ const upcomingSkuData = [
         image: "img1.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Smart Opener Pro",
+        series: "CO1100",
         category: "Can Opener",
         gs1Code: "0012345678901",
         gs1Type: "UPC",
@@ -345,6 +390,7 @@ const upcomingSkuData = [
         image: "img2.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Electric Peeler",
+        series: "EP2200",
         category: "Kitchen Tools",
         gs1Code: "0012345678902",
         gs1Type: "UPC",
@@ -368,6 +414,7 @@ const upcomingSkuData = [
         image: "img3.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Blender Max",
+        series: "BL3300",
         category: "Appliances",
         gs1Code: "0012345678903",
         gs1Type: "UPC",
@@ -391,6 +438,7 @@ const upcomingSkuData = [
         image: "img4.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Grater Pro",
+        series: "GR4400",
         category: "Kitchen Tools",
         gs1Code: "0012345678904",
         gs1Type: "UPC",
@@ -414,6 +462,7 @@ const upcomingSkuData = [
         image: "img5.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Measuring Set",
+        series: "MS5500",
         category: "Kitchen Tools",
         gs1Code: "0012345678905",
         gs1Type: "UPC",
@@ -437,6 +486,7 @@ const upcomingSkuData = [
         image: "img6.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Spatula Set",
+        series: "SP6600",
         category: "Kitchen Tools",
         gs1Code: "0012345678906",
         gs1Type: "UPC",
@@ -460,6 +510,7 @@ const upcomingSkuData = [
         image: "img7.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Mixing Bowl Set",
+        series: "MB7700",
         category: "Kitchen Tools",
         gs1Code: "0012345678907",
         gs1Type: "UPC",
@@ -483,6 +534,7 @@ const upcomingSkuData = [
         image: "img8.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Air Fryer",
+        series: "AF8800",
         category: "Appliances",
         gs1Code: "0012345678908",
         gs1Type: "UPC",
@@ -506,6 +558,7 @@ const upcomingSkuData = [
         image: "img9.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Spice Rack",
+        series: "SR9900",
         category: "Kitchen Tools",
         gs1Code: "0012345678909",
         gs1Type: "UPC",
@@ -529,6 +582,7 @@ const upcomingSkuData = [
         image: "img10.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Pressure Cooker",
+        series: "PC1000",
         category: "Appliances",
         gs1Code: "0012345678910",
         gs1Type: "UPC",
@@ -552,6 +606,7 @@ const upcomingSkuData = [
         image: "img11.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Silicone Baking Mat",
+        series: "BM1100",
         category: "Kitchen Tools",
         gs1Code: "0012345678911",
         gs1Type: "UPC",
@@ -575,6 +630,7 @@ const upcomingSkuData = [
         image: "img12.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Coffee Maker",
+        series: "CM1200",
         category: "Appliances",
         gs1Code: "0012345678912",
         gs1Type: "UPC",
@@ -598,6 +654,7 @@ const upcomingSkuData = [
         image: "img13.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Garlic Press",
+        series: "GP1300",
         category: "Kitchen Tools",
         gs1Code: "0012345678913",
         gs1Type: "UPC",
@@ -621,6 +678,7 @@ const upcomingSkuData = [
         image: "img14.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Toaster",
+        series: "TO1400",
         category: "Appliances",
         gs1Code: "0012345678914",
         gs1Type: "UPC",
@@ -644,6 +702,7 @@ const upcomingSkuData = [
         image: "img15.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Vegetable Chopper",
+        series: "VC1500",
         category: "Kitchen Tools",
         gs1Code: "0012345678915",
         gs1Type: "UPC",
@@ -667,6 +726,7 @@ const upcomingSkuData = [
         image: "img16.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Kettle Electric",
+        series: "KE1600",
         category: "Appliances",
         gs1Code: "0012345678916",
         gs1Type: "UPC",
@@ -690,6 +750,7 @@ const upcomingSkuData = [
         image: "img17.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Salad Spinner",
+        series: "SS1700",
         category: "Kitchen Tools",
         gs1Code: "0012345678917",
         gs1Type: "UPC",
@@ -713,6 +774,7 @@ const upcomingSkuData = [
         image: "img18.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Microwave",
+        series: "MW1800",
         category: "Appliances",
         gs1Code: "0012345678918",
         gs1Type: "UPC",
@@ -736,6 +798,7 @@ const upcomingSkuData = [
         image: "img19.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Dish Rack",
+        series: "DR1900",
         category: "Kitchen Tools",
         gs1Code: "0012345678919",
         gs1Type: "UPC",
@@ -759,6 +822,7 @@ const upcomingSkuData = [
         image: "img20.jpg",
         status: "Upcoming",
         productName: "Kitchen Mama Slow Cooker",
+        series: "SC2000",
         category: "Appliances",
         gs1Code: "0012345678920",
         gs1Type: "UPC",
@@ -785,6 +849,7 @@ const runningSkuData = [
         image: "img3.jpg",
         status: "Active",
         productName: "Kitchen Mama Can Opener Classic",
+        series: "CO1100",
         category: "Can Opener",
         gs1Code: "0012345678903",
         gs1Type: "UPC",
@@ -808,6 +873,7 @@ const runningSkuData = [
         image: "img4.jpg",
         status: "Active",
         productName: "Kitchen Mama Food Processor Deluxe",
+        series: "FP2200",
         category: "Appliances",
         gs1Code: "0012345678904",
         gs1Type: "UPC",
@@ -831,6 +897,7 @@ const runningSkuData = [
         image: "img5.jpg",
         status: "Active",
         productName: "Kitchen Mama Knife Set Premium",
+        series: "KS3300",
         category: "Kitchen Tools",
         gs1Code: "0012345678905",
         gs1Type: "UPC",
@@ -854,6 +921,7 @@ const runningSkuData = [
         image: "img8.jpg",
         status: "Active",
         productName: "Kitchen Mama Whisk Set",
+        series: "WS4400",
         category: "Kitchen Tools",
         gs1Code: "0012345678908",
         gs1Type: "UPC",
@@ -877,6 +945,7 @@ const runningSkuData = [
         image: "img9.jpg",
         status: "Active",
         productName: "Kitchen Mama Cutting Mat",
+        series: "CM5500",
         category: "Kitchen Tools",
         gs1Code: "0012345678909",
         gs1Type: "UPC",
@@ -900,6 +969,7 @@ const runningSkuData = [
         image: "img10.jpg",
         status: "Active",
         productName: "Kitchen Mama Colander",
+        series: "CL6600",
         category: "Kitchen Tools",
         gs1Code: "0012345678910",
         gs1Type: "UPC",
@@ -923,6 +993,7 @@ const runningSkuData = [
         image: "img11.jpg",
         status: "Active",
         productName: "Kitchen Mama Timer Digital",
+        series: "TD7700",
         category: "Appliances",
         gs1Code: "0012345678911",
         gs1Type: "UPC",
@@ -949,6 +1020,7 @@ const phasingOutSkuData = [
         image: "img12.jpg",
         status: "Phasing Out",
         productName: "Kitchen Mama Classic Cutting Board",
+        series: "CB0100",
         category: "Kitchen Tools",
         gs1Code: "0012345678912",
         gs1Type: "UPC",
@@ -972,6 +1044,7 @@ const phasingOutSkuData = [
         image: "img13.jpg",
         status: "Phasing Out",
         productName: "Kitchen Mama Basic Peeler",
+        series: "BP0200",
         category: "Kitchen Tools",
         gs1Code: "0012345678913",
         gs1Type: "UPC",
@@ -995,6 +1068,7 @@ const phasingOutSkuData = [
         image: "img14.jpg",
         status: "Phasing Out",
         productName: "Kitchen Mama Old Opener",
+        series: "CO1100",
         category: "Can Opener",
         gs1Code: "0012345678914",
         gs1Type: "UPC",
@@ -1018,6 +1092,7 @@ const phasingOutSkuData = [
         image: "img15.jpg",
         status: "Phasing Out",
         productName: "Kitchen Mama Simple Grater",
+        series: "SG0400",
         category: "Kitchen Tools",
         gs1Code: "0012345678915",
         gs1Type: "UPC",
@@ -1041,6 +1116,7 @@ const phasingOutSkuData = [
         image: "img16.jpg",
         status: "Phasing Out",
         productName: "Kitchen Mama Basic Tongs",
+        series: "BT0500",
         category: "Kitchen Tools",
         gs1Code: "0012345678916",
         gs1Type: "UPC",
@@ -1064,6 +1140,7 @@ const phasingOutSkuData = [
         image: "img17.jpg",
         status: "Phasing Out",
         productName: "Kitchen Mama Old Ladle",
+        series: "OL0600",
         category: "Kitchen Tools",
         gs1Code: "0012345678917",
         gs1Type: "UPC",
@@ -1087,6 +1164,7 @@ const phasingOutSkuData = [
         image: "img18.jpg",
         status: "Phasing Out",
         productName: "Kitchen Mama Classic Strainer",
+        series: "CS0700",
         category: "Kitchen Tools",
         gs1Code: "0012345678918",
         gs1Type: "UPC",

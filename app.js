@@ -361,23 +361,24 @@ function renderSkuLifecycleTable(section, data) {
             <div class="scroll-cell" data-col="1"><div class="image-placeholder">IMG</div></div>
             <div class="scroll-cell" data-col="2">${item.status}</div>
             <div class="scroll-cell" data-col="3">${item.productName}</div>
-            <div class="scroll-cell" data-col="4">${item.category}</div>
-            <div class="scroll-cell" data-col="5">${item.gs1Code}</div>
-            <div class="scroll-cell" data-col="6">${item.gs1Type}</div>
-            <div class="scroll-cell" data-col="7">${item.amzAsin}</div>
-            <div class="scroll-cell" data-col="8">${item.itemDimensions}</div>
-            <div class="scroll-cell" data-col="9">${item.itemWeight}</div>
-            <div class="scroll-cell" data-col="10">${item.package}</div>
-            <div class="scroll-cell" data-col="11">${item.packageWeight}</div>
-            <div class="scroll-cell" data-col="12">${item.cartonDimensions}</div>
-            <div class="scroll-cell" data-col="13">${item.cartonWeight}</div>
-            <div class="scroll-cell" data-col="14">${item.unitsPerCarton}</div>
-            <div class="scroll-cell" data-col="15">${item.hscode}</div>
-            <div class="scroll-cell" data-col="16">${item.declaredValue}</div>
-            <div class="scroll-cell" data-col="17">${item.minimumPrice}</div>
-            <div class="scroll-cell" data-col="18">${item.msrp}</div>
-            <div class="scroll-cell" data-col="19">${item.sellingPrice}</div>
-            <div class="scroll-cell" data-col="20">${item.pm}</div>
+            <div class="scroll-cell" data-col="4">${item.series}</div>
+            <div class="scroll-cell" data-col="5">${item.category}</div>
+            <div class="scroll-cell" data-col="6">${item.gs1Code}</div>
+            <div class="scroll-cell" data-col="7">${item.gs1Type}</div>
+            <div class="scroll-cell" data-col="8">${item.amzAsin}</div>
+            <div class="scroll-cell" data-col="9">${item.itemDimensions}</div>
+            <div class="scroll-cell" data-col="10">${item.itemWeight}</div>
+            <div class="scroll-cell" data-col="11">${item.package}</div>
+            <div class="scroll-cell" data-col="12">${item.packageWeight}</div>
+            <div class="scroll-cell" data-col="13">${item.cartonDimensions}</div>
+            <div class="scroll-cell" data-col="14">${item.cartonWeight}</div>
+            <div class="scroll-cell" data-col="15">${item.unitsPerCarton}</div>
+            <div class="scroll-cell" data-col="16">${item.hscode}</div>
+            <div class="scroll-cell" data-col="17">${item.declaredValue}</div>
+            <div class="scroll-cell" data-col="18">${item.minimumPrice}</div>
+            <div class="scroll-cell" data-col="19">${item.msrp}</div>
+            <div class="scroll-cell" data-col="20">${item.sellingPrice}</div>
+            <div class="scroll-cell" data-col="21">${item.pm}</div>
         </div>
     `).join('');
 }

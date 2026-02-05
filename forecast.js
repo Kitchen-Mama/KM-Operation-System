@@ -38,15 +38,11 @@ function initForecastReviewPage() {
   const unitSwitchBtn = document.getElementById('forecastUnitSwitchBtn');
   const viewToggleButtons = root.querySelectorAll('.forecast-chart-view-toggle button');
 
-  // Filter change listeners
-  const countryFilter = root.querySelector('.forecast-filter-country');
-  const marketplaceFilter = root.querySelector('.forecast-filter-marketplace');
-  const categoryFilter = root.querySelector('.forecast-filter-category');
-  const skuFilter = root.querySelector('.forecast-filter-sku');
+  // Initialize dropdown filters
+  initForecastDropdowns(root);
 
-  if (countryFilter) countryFilter.addEventListener('change', () => handleForecastSearch(root));
-  if (marketplaceFilter) marketplaceFilter.addEventListener('change', () => handleForecastSearch(root));
-  if (categoryFilter) categoryFilter.addEventListener('change', () => handleForecastSearch(root));
+  // SKU filter
+  const skuFilter = root.querySelector('.forecast-filter-sku');
   if (skuFilter) skuFilter.addEventListener('input', () => handleForecastSearch(root));
 
   // Date trigger
@@ -125,6 +121,82 @@ function initForecastReviewPage() {
   setupForecastChart();
   setupSessionChart();
   setupShareChart();
+}
+
+function initForecastDropdowns(root) {
+  const triggers = root.querySelectorAll('.forecast-dropdown-trigger');
+  
+  triggers.forEach(trigger => {
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const filterType = trigger.dataset.filter;
+      const panel = root.querySelector(`.forecast-dropdown-panel[data-filter="${filterType}"]`);
+      
+      // Close other panels
+      root.querySelectorAll('.forecast-dropdown-panel').forEach(p => {
+        if (p !== panel) p.classList.remove('is-open');
+      });
+      
+      // Toggle current panel
+      if (panel) {
+        panel.classList.toggle('is-open');
+      }
+    });
+  });
+  
+  // Prevent panel from closing when clicking inside
+  root.querySelectorAll('.forecast-dropdown-panel').forEach(panel => {
+    panel.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  });
+  
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', () => {
+    root.querySelectorAll('.forecast-dropdown-panel').forEach(p => {
+      p.classList.remove('is-open');
+    });
+  });
+}
+
+function toggleForecastAll(checkbox, filterType) {
+  const root = document.querySelector('.page-forecast-review');
+  const panel = root.querySelector(`.forecast-dropdown-panel[data-filter="${filterType}"]`);
+  const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+  
+  checkboxes.forEach(cb => {
+    cb.checked = checkbox.checked;
+  });
+  
+  updateForecastFilter(filterType);
+}
+
+function updateForecastFilter(filterType) {
+  const root = document.querySelector('.page-forecast-review');
+  const panel = root.querySelector(`.forecast-dropdown-panel[data-filter="${filterType}"]`);
+  const trigger = root.querySelector(`.forecast-dropdown-trigger[data-filter="${filterType}"]`);
+  const allCheckbox = panel.querySelector('input[type="checkbox"][value=""]');
+  const checkboxes = Array.from(panel.querySelectorAll('input[type="checkbox"]:not([value=""])'));
+  
+  const checkedCount = checkboxes.filter(cb => cb.checked).length;
+  const totalCount = checkboxes.length;
+  
+  // Update "All" checkbox
+  if (allCheckbox) {
+    allCheckbox.checked = checkedCount === totalCount;
+  }
+  
+  // Update trigger text
+  const triggerText = trigger.querySelector('.forecast-dropdown-text');
+  if (checkedCount === 0) {
+    triggerText.textContent = 'None';
+  } else if (checkedCount === totalCount) {
+    triggerText.textContent = 'All';
+  } else {
+    triggerText.textContent = `${checkedCount} selected`;
+  }
+  
+  handleForecastSearch(root);
 }
 
 function initDefaultDateRange() {
@@ -459,15 +531,24 @@ function handleForecastSearch(root) {
 }
 
 function collectForecastFilterParams(root) {
-  const country = root.querySelector('.forecast-filter-country')?.value || '';
-  const marketplace = root.querySelector('.forecast-filter-marketplace')?.value || '';
+  const countryPanel = root.querySelector('.forecast-dropdown-panel[data-filter="country"]');
+  const marketplacePanel = root.querySelector('.forecast-dropdown-panel[data-filter="marketplace"]');
+  const categoryPanel = root.querySelector('.forecast-dropdown-panel[data-filter="category"]');
+  const seriesPanel = root.querySelector('.forecast-dropdown-panel[data-filter="series"]');
+  
+  const getSelectedValues = (panel) => {
+    if (!panel) return [];
+    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+  };
   
   return {
     startDate: formatDateForDisplay(forecastReviewState.dateRange.start),
     endDate: formatDateForDisplay(forecastReviewState.dateRange.end),
-    marketplace: country || marketplace,
-    channel: marketplace ? marketplace.charAt(0).toUpperCase() + marketplace.slice(1) : '',
-    category: root.querySelector('.forecast-filter-category')?.value || '',
+    countries: getSelectedValues(countryPanel),
+    marketplaces: getSelectedValues(marketplacePanel),
+    categories: getSelectedValues(categoryPanel),
+    series: getSelectedValues(seriesPanel),
     sku: root.querySelector('.forecast-filter-sku')?.value.trim() || '',
   };
 }
@@ -560,10 +641,11 @@ function aggregateForecastData(data, lastYearData, view) {
   const forecastAmount = labels.map(k => Math.round(grouped[k].forecastAmountUSD));
   const sessions = labels.map(k => grouped[k].session);
   const pageViews = labels.map(k => grouped[k].pageView);
+  const usp = labels.map(k => grouped[k].session > 0 ? (grouped[k].salesUnits / grouped[k].session * 100) : 0);
   const lastYearSalesUnits = labels.map(k => groupedLastYear[k]?.salesUnits || 0);
   const lastYearSalesAmount = labels.map(k => Math.round(groupedLastYear[k]?.salesAmountUSD || 0));
   
-  return { labels, salesUnits, salesAmount, forecastUnits, forecastAmount, sessions, pageViews, lastYearSalesUnits, lastYearSalesAmount, marketplaceBreakdown };
+  return { labels, salesUnits, salesAmount, forecastUnits, forecastAmount, sessions, pageViews, usp, lastYearSalesUnits, lastYearSalesAmount, marketplaceBreakdown };
 }
 
 function setupForecastChart() {
@@ -659,12 +741,29 @@ function setupSessionChart() {
           backgroundColor: 'rgba(16, 185, 129, 0.6)',
           borderColor: '#10b981',
           borderWidth: 1,
+          yAxisID: 'y',
+        },
+        {
+          label: 'USP (%)',
+          data: [],
+          type: 'line',
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245, 158, 11, 0.1)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          yAxisID: 'y1',
+          tension: 0.3,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
       scales: {
         x: {
           title: {
@@ -676,10 +775,26 @@ function setupSessionChart() {
           },
         },
         y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
           beginAtZero: true,
           title: {
             display: true,
             text: 'Sessions',
+          },
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'USP (%)',
+          },
+          grid: {
+            drawOnChartArea: false,
           },
         },
       },
@@ -694,6 +809,22 @@ function setupSessionChart() {
         tooltip: {
           mode: 'index',
           intersect: false,
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              if (label) {
+                label += ': ';
+              }
+              if (context.parsed.y !== null) {
+                if (context.datasetIndex === 1) {
+                  label += context.parsed.y.toFixed(2) + '%';
+                } else {
+                  label += context.parsed.y.toLocaleString();
+                }
+              }
+              return label;
+            }
+          },
         },
       },
     },
@@ -783,31 +914,116 @@ function updateForecastChart(series) {
   if (sessionChart && series) {
     sessionChart.data.labels = series.labels || [];
     sessionChart.data.datasets[0].data = series.sessions || [];
+    sessionChart.data.datasets[1].data = series.usp || [];
     sessionChart.update();
   }
 }
 
 function updateSummaryStats(actualData, forecastData, lastYearData, marketplaceBreakdown) {
   const params = collectForecastFilterParams(document.querySelector('.page-forecast-review'));
+  
+  // Get filtered summary data
   const summary = DataRepo.getForecastReviewSummary(params);
+  
+  console.log('Filter params:', params);
+  console.log('Summary data:', summary);
+  
+  // Calculate YoY changes
+  const salesChange = summary.lastYearSalesAmount > 0 
+    ? ((summary.totalSalesAmount - summary.lastYearSalesAmount) / summary.lastYearSalesAmount * 100).toFixed(1)
+    : 0;
+  const unitsChange = summary.lastYearSalesUnits > 0
+    ? ((summary.totalSalesUnits - summary.lastYearSalesUnits) / summary.lastYearSalesUnits * 100).toFixed(1)
+    : 0;
+  const sessionsChange = summary.lastYearSessions > 0
+    ? ((summary.totalSessions - summary.lastYearSessions) / summary.lastYearSessions * 100).toFixed(1)
+    : 0;
+  
+  // Calculate USP (Unit Session Percentage)
+  const usp = summary.totalSessions > 0 
+    ? ((summary.totalSalesUnits / summary.totalSessions) * 100).toFixed(2)
+    : 0;
+  const lastYearUSP = summary.lastYearSessions > 0
+    ? ((summary.lastYearSalesUnits / summary.lastYearSessions) * 100).toFixed(2)
+    : 0;
+  const uspChange = lastYearUSP > 0
+    ? ((usp - lastYearUSP) / lastYearUSP * 100).toFixed(1)
+    : 0;
+  
+  // Helper function to get change class
+  const getChangeClass = (value) => {
+    if (value > 0) return 'forecast-stat-change--up';
+    if (value < 0) return 'forecast-stat-change--down';
+    return 'forecast-stat-change--neutral';
+  };
+  
+  const getChangeSymbol = (value) => {
+    if (value > 0) return '↑';
+    if (value < 0) return '↓';
+    return '=';
+  };
   
   // Update Total Sales
   const totalSalesEl = document.getElementById('forecastTotalSales');
   if (totalSalesEl) {
-    totalSalesEl.textContent = '$' + Math.round(summary.totalSalesAmount).toLocaleString();
+    totalSalesEl.innerHTML = `
+      <div>$${Math.round(summary.totalSalesAmount).toLocaleString()}</div>
+      <div class="forecast-stat-change ${getChangeClass(salesChange)}">${getChangeSymbol(salesChange)} ${Math.abs(salesChange)}%</div>
+    `;
   }
   
   // Update Total Units
   const totalUnitsEl = document.getElementById('forecastTotalUnits');
   if (totalUnitsEl) {
-    totalUnitsEl.textContent = summary.totalSalesUnits.toLocaleString();
+    totalUnitsEl.innerHTML = `
+      <div>${summary.totalSalesUnits.toLocaleString()}</div>
+      <div class="forecast-stat-change ${getChangeClass(unitsChange)}">${getChangeSymbol(unitsChange)} ${Math.abs(unitsChange)}%</div>
+    `;
   }
   
   // Update Sessions
   const totalSessionsEl = document.getElementById('forecastTotalSessions');
   if (totalSessionsEl) {
-    totalSessionsEl.textContent = summary.totalSessions.toLocaleString();
+    totalSessionsEl.innerHTML = `
+      <div>${summary.totalSessions.toLocaleString()}</div>
+      <div class="forecast-stat-change ${getChangeClass(sessionsChange)}">${getChangeSymbol(sessionsChange)} ${Math.abs(sessionsChange)}%</div>
+    `;
   }
+  
+  // Update USP
+  const uspEl = document.getElementById('forecastUSP');
+  if (uspEl) {
+    uspEl.innerHTML = `
+      <div>${usp}%</div>
+      <div class="forecast-stat-change ${getChangeClass(uspChange)}">${getChangeSymbol(uspChange)} ${Math.abs(uspChange)}%</div>
+    `;
+  }
+  
+  // Update Forecast Accuracy (mock data for now)
+  const today = new Date();
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  const month1 = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const month2 = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+  const month3 = new Date(today.getFullYear(), today.getMonth() - 3, 1);
+  
+  document.getElementById('fcMonth1').textContent = `${monthNames[month1.getMonth()]} ${month1.getFullYear()}`;
+  document.getElementById('fcMonth2').textContent = `${monthNames[month2.getMonth()]} ${month2.getFullYear()}`;
+  document.getElementById('fcMonth3').textContent = `${monthNames[month3.getMonth()]} ${month3.getFullYear()}`;
+  
+  document.getElementById('fcRate1').textContent = '95%';
+  document.getElementById('fcRate2').textContent = '92%';
+  document.getElementById('fcRate3').textContent = '88%';
+  
+  // Update Cumulative Goal
+  const goalTarget = 5000000;
+  const goalCurrent = summary.totalSalesAmount;
+  const goalPercentage = ((goalCurrent / goalTarget) * 100).toFixed(1);
+  
+  document.getElementById('forecastGoalTarget').textContent = `$${goalTarget.toLocaleString()}`;
+  document.getElementById('forecastGoalCurrent').textContent = `$${Math.round(goalCurrent).toLocaleString()}`;
+  document.getElementById('forecastGoalFill').style.width = `${Math.min(goalPercentage, 100)}%`;
+  document.getElementById('forecastGoalPercentage').textContent = `${goalPercentage}%`;
   
   // Update Share Chart with marketplace breakdown
   const shareChart = forecastReviewState.shareChart;
@@ -845,3 +1061,10 @@ function handleChartViewToggle(btn, root) {
 }
 
 window.initForecastReviewPage = initForecastReviewPage;
+
+function toggleFCDetails(index) {
+  const details = document.getElementById(`fcDetails${index}`);
+  if (details) {
+    details.classList.toggle('is-open');
+  }
+}

@@ -120,23 +120,24 @@
 #sku-section .scroll-header .header-cell[data-col="1"] { width: 80px; min-width: 80px; max-width: 80px; }   /* Image */
 #sku-section .scroll-header .header-cell[data-col="2"] { width: 100px; min-width: 100px; max-width: 100px; }  /* Status */
 #sku-section .scroll-header .header-cell[data-col="3"] { width: 200px; min-width: 200px; max-width: 200px; }  /* Product Name */
-#sku-section .scroll-header .header-cell[data-col="4"] { width: 120px; min-width: 120px; max-width: 120px; }  /* Category */
-#sku-section .scroll-header .header-cell[data-col="5"] { width: 140px; min-width: 140px; max-width: 140px; }  /* GS1 Code */
-#sku-section .scroll-header .header-cell[data-col="6"] { width: 100px; min-width: 100px; max-width: 100px; }  /* GS1 Type */
-#sku-section .scroll-header .header-cell[data-col="7"] { width: 120px; min-width: 120px; max-width: 120px; }  /* AMZ ASIN */
-#sku-section .scroll-header .header-cell[data-col="8"] { width: 150px; min-width: 150px; max-width: 150px; }  /* Item Dimensions */
-#sku-section .scroll-header .header-cell[data-col="9"] { width: 120px; min-width: 120px; max-width: 120px; }  /* Item Weight */
-#sku-section .scroll-header .header-cell[data-col="10"] { width: 100px; min-width: 100px; max-width: 100px; } /* Package */
-#sku-section .scroll-header .header-cell[data-col="11"] { width: 120px; min-width: 120px; max-width: 120px; } /* Package Weight */
-#sku-section .scroll-header .header-cell[data-col="12"] { width: 150px; min-width: 150px; max-width: 150px; } /* Carton Dimensions */
-#sku-section .scroll-header .header-cell[data-col="13"] { width: 120px; min-width: 120px; max-width: 120px; } /* Carton Weight */
-#sku-section .scroll-header .header-cell[data-col="14"] { width: 100px; min-width: 100px; max-width: 100px; } /* 單箱數量 */
-#sku-section .scroll-header .header-cell[data-col="15"] { width: 100px; min-width: 100px; max-width: 100px; } /* HScode */
-#sku-section .scroll-header .header-cell[data-col="16"] { width: 100px; min-width: 100px; max-width: 100px; } /* 申報價值 */
-#sku-section .scroll-header .header-cell[data-col="17"] { width: 120px; min-width: 120px; max-width: 120px; } /* Minimum Price */
-#sku-section .scroll-header .header-cell[data-col="18"] { width: 100px; min-width: 100px; max-width: 100px; } /* MSRP */
-#sku-section .scroll-header .header-cell[data-col="19"] { width: 120px; min-width: 120px; max-width: 120px; } /* Selling Price */
-#sku-section .scroll-header .header-cell[data-col="20"] { width: 100px; min-width: 100px; max-width: 100px; } /* 負責PM */
+#sku-section .scroll-header .header-cell[data-col="4"] { width: 120px; min-width: 120px; max-width: 120px; }  /* Series */
+#sku-section .scroll-header .header-cell[data-col="5"] { width: 120px; min-width: 120px; max-width: 120px; }  /* Category */
+#sku-section .scroll-header .header-cell[data-col="6"] { width: 140px; min-width: 140px; max-width: 140px; }  /* GS1 Code */
+#sku-section .scroll-header .header-cell[data-col="7"] { width: 100px; min-width: 100px; max-width: 100px; }  /* GS1 Type */
+#sku-section .scroll-header .header-cell[data-col="8"] { width: 120px; min-width: 120px; max-width: 120px; }  /* AMZ ASIN */
+#sku-section .scroll-header .header-cell[data-col="9"] { width: 150px; min-width: 150px; max-width: 150px; }  /* Item Dimensions */
+#sku-section .scroll-header .header-cell[data-col="10"] { width: 120px; min-width: 120px; max-width: 120px; } /* Item Weight */
+#sku-section .scroll-header .header-cell[data-col="11"] { width: 100px; min-width: 100px; max-width: 100px; } /* Package */
+#sku-section .scroll-header .header-cell[data-col="12"] { width: 120px; min-width: 120px; max-width: 120px; } /* Package Weight */
+#sku-section .scroll-header .header-cell[data-col="13"] { width: 150px; min-width: 150px; max-width: 150px; } /* Carton Dimensions */
+#sku-section .scroll-header .header-cell[data-col="14"] { width: 120px; min-width: 120px; max-width: 120px; } /* Carton Weight */
+#sku-section .scroll-header .header-cell[data-col="15"] { width: 100px; min-width: 100px; max-width: 100px; } /* 單箱數量 */
+#sku-section .scroll-header .header-cell[data-col="16"] { width: 100px; min-width: 100px; max-width: 100px; } /* HScode */
+#sku-section .scroll-header .header-cell[data-col="17"] { width: 100px; min-width: 100px; max-width: 100px; } /* 申報價值 */
+#sku-section .scroll-header .header-cell[data-col="18"] { width: 120px; min-width: 120px; max-width: 120px; } /* Minimum Price */
+#sku-section .scroll-header .header-cell[data-col="19"] { width: 100px; min-width: 100px; max-width: 100px; } /* MSRP */
+#sku-section .scroll-header .header-cell[data-col="20"] { width: 120px; min-width: 120px; max-width: 120px; } /* Selling Price */
+#sku-section .scroll-header .header-cell[data-col="21"] { width: 100px; min-width: 100px; max-width: 100px; } /* 負責PM */
 
 /* Table Body Bar */
 #sku-section .table-body-bar {
@@ -220,22 +221,23 @@
 #sku-section .scroll-cell[data-col="2"] { width: 100px; min-width: 100px; max-width: 100px; }
 #sku-section .scroll-cell[data-col="3"] { width: 200px; min-width: 200px; max-width: 200px; }
 #sku-section .scroll-cell[data-col="4"] { width: 120px; min-width: 120px; max-width: 120px; }
-#sku-section .scroll-cell[data-col="5"] { width: 140px; min-width: 140px; max-width: 140px; }
-#sku-section .scroll-cell[data-col="6"] { width: 100px; min-width: 100px; max-width: 100px; }
-#sku-section .scroll-cell[data-col="7"] { width: 120px; min-width: 120px; max-width: 120px; }
-#sku-section .scroll-cell[data-col="8"] { width: 150px; min-width: 150px; max-width: 150px; }
-#sku-section .scroll-cell[data-col="9"] { width: 120px; min-width: 120px; max-width: 120px; }
-#sku-section .scroll-cell[data-col="10"] { width: 100px; min-width: 100px; max-width: 100px; }
-#sku-section .scroll-cell[data-col="11"] { width: 120px; min-width: 120px; max-width: 120px; }
-#sku-section .scroll-cell[data-col="12"] { width: 150px; min-width: 150px; max-width: 150px; }
-#sku-section .scroll-cell[data-col="13"] { width: 120px; min-width: 120px; max-width: 120px; }
-#sku-section .scroll-cell[data-col="14"] { width: 100px; min-width: 100px; max-width: 100px; }
+#sku-section .scroll-cell[data-col="5"] { width: 120px; min-width: 120px; max-width: 120px; }
+#sku-section .scroll-cell[data-col="6"] { width: 140px; min-width: 140px; max-width: 140px; }
+#sku-section .scroll-cell[data-col="7"] { width: 100px; min-width: 100px; max-width: 100px; }
+#sku-section .scroll-cell[data-col="8"] { width: 120px; min-width: 120px; max-width: 120px; }
+#sku-section .scroll-cell[data-col="9"] { width: 150px; min-width: 150px; max-width: 150px; }
+#sku-section .scroll-cell[data-col="10"] { width: 120px; min-width: 120px; max-width: 120px; }
+#sku-section .scroll-cell[data-col="11"] { width: 100px; min-width: 100px; max-width: 100px; }
+#sku-section .scroll-cell[data-col="12"] { width: 120px; min-width: 120px; max-width: 120px; }
+#sku-section .scroll-cell[data-col="13"] { width: 150px; min-width: 150px; max-width: 150px; }
+#sku-section .scroll-cell[data-col="14"] { width: 120px; min-width: 120px; max-width: 120px; }
 #sku-section .scroll-cell[data-col="15"] { width: 100px; min-width: 100px; max-width: 100px; }
 #sku-section .scroll-cell[data-col="16"] { width: 100px; min-width: 100px; max-width: 100px; }
-#sku-section .scroll-cell[data-col="17"] { width: 120px; min-width: 120px; max-width: 120px; }
-#sku-section .scroll-cell[data-col="18"] { width: 100px; min-width: 100px; max-width: 100px; }
-#sku-section .scroll-cell[data-col="19"] { width: 120px; min-width: 120px; max-width: 120px; }
-#sku-section .scroll-cell[data-col="20"] { width: 100px; min-width: 100px; max-width: 100px; }
+#sku-section .scroll-cell[data-col="17"] { width: 100px; min-width: 100px; max-width: 100px; }
+#sku-section .scroll-cell[data-col="18"] { width: 120px; min-width: 120px; max-width: 120px; }
+#sku-section .scroll-cell[data-col="19"] { width: 100px; min-width: 100px; max-width: 100px; }
+#sku-section .scroll-cell[data-col="20"] { width: 120px; min-width: 120px; max-width: 120px; }
+#sku-section .scroll-cell[data-col="21"] { width: 100px; min-width: 100px; max-width: 100px; }
 
 /* Image Placeholder */
 #sku-section .image-placeholder {
