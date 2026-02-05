@@ -124,10 +124,20 @@ function initForecastReviewPage() {
 }
 
 function initForecastDropdowns(root) {
+  if (!root) return;
+  
+  // Remove existing listeners to prevent duplicates
+  const existingTriggers = root.querySelectorAll('.forecast-dropdown-trigger');
+  existingTriggers.forEach(trigger => {
+    const clone = trigger.cloneNode(true);
+    trigger.parentNode.replaceChild(clone, trigger);
+  });
+  
   const triggers = root.querySelectorAll('.forecast-dropdown-trigger');
   
   triggers.forEach(trigger => {
     trigger.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       const filterType = trigger.dataset.filter;
       const panel = root.querySelector(`.forecast-dropdown-panel[data-filter="${filterType}"]`);
@@ -152,11 +162,26 @@ function initForecastDropdowns(root) {
   });
   
   // Close dropdowns when clicking outside
-  document.addEventListener('click', () => {
-    root.querySelectorAll('.forecast-dropdown-panel').forEach(p => {
-      p.classList.remove('is-open');
-    });
-  });
+  const handleOutsideClick = (e) => {
+    const isInsideRoot = root.contains(e.target);
+    if (!isInsideRoot) return;
+    
+    const isClickOnTrigger = e.target.closest('.forecast-dropdown-trigger');
+    const isClickInPanel = e.target.closest('.forecast-dropdown-panel');
+    
+    if (!isClickOnTrigger && !isClickInPanel) {
+      root.querySelectorAll('.forecast-dropdown-panel').forEach(p => {
+        p.classList.remove('is-open');
+      });
+    }
+  };
+  
+  // Store handler reference for cleanup
+  if (root._forecastDropdownHandler) {
+    document.removeEventListener('click', root._forecastDropdownHandler, true);
+  }
+  root._forecastDropdownHandler = handleOutsideClick;
+  document.addEventListener('click', handleOutsideClick, true);
 }
 
 function toggleForecastAll(checkbox, filterType) {

@@ -22,11 +22,13 @@
   flex-direction: column;
   gap: 0.5rem;
   min-width: 160px;
+  flex: 0 0 160px;
 }
 
 .forecast-filter--dropdown {
   position: relative;
   min-width: 160px;
+  flex: 0 0 160px;
 }
 
 .forecast-dropdown-trigger {
@@ -42,6 +44,9 @@
   transition: all 0.2s;
   width: 100%;
   text-align: left;
+  margin: 0;
+  height: 37px;
+  line-height: 1;
 }
 
 .forecast-dropdown-trigger:hover {
@@ -124,6 +129,9 @@
   cursor: pointer;
   transition: all 0.2s;
   min-width: 200px;
+  height: 37px;
+  line-height: 1;
+  margin: 0;
 }
 
 .forecast-date-trigger:hover {
@@ -385,6 +393,9 @@
   border-radius: 4px;
   font-size: 13px;
   background: #ffffff;
+  margin: 0;
+  height: 37px;
+  line-height: 1;
 }
 
 .forecast-filter--actions {

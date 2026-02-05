@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="shipping-plan.css">
     <link rel="stylesheet" href="shipping-history.css">
     <link rel="stylesheet" href="forecast.css">
+    <link rel="stylesheet" href="fc-summary.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -35,6 +36,9 @@
             </div>
             <div class="menu-item" onclick="showSection('forecast')">
                 <span>📈</span> Forecast 管理
+            </div>
+            <div class="menu-item" onclick="showSection('fc-summary')">
+                <span>📊</span> FC Summary
             </div>
             <div class="menu-item" onclick="showSection('skuDetails')">
                 <span>📝</span> SKU Details
@@ -579,6 +583,212 @@
                 </div>
             </section>
     
+            <!-- FC Summary Section -->
+            <section id="fc-summary-section" class="module-section page-fc-summary">
+                <div class="module-header">
+                    <div>
+                        <h2 class="module-title">FC Summary</h2>
+                        <p class="module-subtitle">Forecast Overview</p>
+                    </div>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="fc-filter-bar">
+                    <div class="filter-group">
+                        <label>Year</label>
+                        <select id="fc-year-select">
+                            <option value="" selected>----</option>
+                            <option value="2025">2025</option>
+                            <option value="2026">2026</option>
+                        </select>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Company</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="company">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="company">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'company')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="ResTW" checked onchange="updateFcFilter('company')"> ResTW</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="ResUS" checked onchange="updateFcFilter('company')"> ResUS</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="ResEU" checked onchange="updateFcFilter('company')"> ResEU</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Marketplace</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="marketplace">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="marketplace">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'marketplace')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateFcFilter('marketplace')"> Amazon</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Walmart" checked onchange="updateFcFilter('marketplace')"> Walmart</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Country</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="country">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="country">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'country')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="US" checked onchange="updateFcFilter('country')"> US</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CA" checked onchange="updateFcFilter('country')"> CA</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="JP" checked onchange="updateFcFilter('country')"> JP</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Category</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="category">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="category">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'category')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Openers" checked onchange="updateFcFilter('category')"> Openers</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Kitchen Tools" checked onchange="updateFcFilter('category')"> Kitchen Tools</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Accessories" checked onchange="updateFcFilter('category')"> Accessories</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Series</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="series">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="series">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'series')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Classic" checked onchange="updateFcFilter('series')"> Classic</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Deluxe" checked onchange="updateFcFilter('series')"> Deluxe</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Event Type</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="event">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="event">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'event')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Spring Deal" checked onchange="updateFcFilter('event')"> Spring Deal</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Prime Day" checked onchange="updateFcFilter('event')"> Prime Day</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="BFCM" checked onchange="updateFcFilter('event')"> BFCM</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--sku">
+                        <label>SKU</label>
+                        <input id="fc-sku-input" type="text" placeholder="Search SKU..." />
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="fc-tabs">
+                    <button class="fc-tab fc-tab--active" data-tab="regular">Regular Forecast</button>
+                    <button class="fc-tab" data-tab="event">Special Event</button>
+                </div>
+
+                <!-- Tab Panels -->
+                <div class="fc-tab-panels">
+                    <!-- Regular Forecast Panel -->
+                    <div id="fc-panel-regular" class="fc-panel fc-panel--active">
+                        <div class="dual-layer-table">
+                            <!-- Table Header Bar (Sticky) -->
+                            <div class="table-header-bar">
+                                <div class="fixed-header">
+                                    <div class="header-cell">SKU</div>
+                                </div>
+                                <div class="scroll-header-viewport">
+                                    <div class="scroll-header" id="fc-regular-scroll-header">
+                                        <div class="header-cell">Year</div>
+                                        <div class="header-cell">Company</div>
+                                        <div class="header-cell">Marketplace</div>
+                                        <div class="header-cell">Country</div>
+                                        <div class="header-cell">Category</div>
+                                        <div class="header-cell">Series</div>
+                                        <div class="header-cell">Jan</div>
+                                        <div class="header-cell">Feb</div>
+                                        <div class="header-cell">Mar</div>
+                                        <div class="header-cell">Apr</div>
+                                        <div class="header-cell">May</div>
+                                        <div class="header-cell">Jun</div>
+                                        <div class="header-cell">Jul</div>
+                                        <div class="header-cell">Aug</div>
+                                        <div class="header-cell">Sep</div>
+                                        <div class="header-cell">Oct</div>
+                                        <div class="header-cell">Nov</div>
+                                        <div class="header-cell">Dec</div>
+                                        <div class="header-cell">Total FC</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Table Body Bar -->
+                            <div class="table-body-bar">
+                                <div class="fixed-col">
+                                    <div class="fixed-body" id="fc-regular-fixed-body"></div>
+                                </div>
+                                <div class="scroll-col" id="fc-regular-scroll-col">
+                                    <div class="scroll-body" id="fc-regular-scroll-body"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Special Event Panel -->
+                    <div id="fc-panel-event" class="fc-panel">
+                        <div class="dual-layer-table">
+                            <!-- Table Header Bar (Sticky) -->
+                            <div class="table-header-bar">
+                                <div class="fixed-header">
+                                    <div class="header-cell">SKU</div>
+                                </div>
+                                <div class="scroll-header-viewport">
+                                    <div class="scroll-header" id="fc-event-scroll-header">
+                                        <div class="header-cell">Year</div>
+                                        <div class="header-cell">Company</div>
+                                        <div class="header-cell">Marketplace</div>
+                                        <div class="header-cell">Country</div>
+                                        <div class="header-cell">Event</div>
+                                        <div class="header-cell">Event Period</div>
+                                        <div class="header-cell">FC Qty</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Table Body Bar -->
+                            <div class="table-body-bar">
+                                <div class="fixed-col">
+                                    <div class="fixed-body" id="fc-event-fixed-body"></div>
+                                </div>
+                                <div class="scroll-col" id="fc-event-scroll-col">
+                                    <div class="scroll-body" id="fc-event-scroll-body"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pagination Controls -->
+                <div class="fc-pagination">
+                    <div class="fc-pagination-left">
+                        <span class="fc-pagination-info" id="fc-pagination-info">Showing 0 of 0</span>
+                    </div>
+                    <div class="fc-pagination-right">
+                        <select id="fc-page-size" class="fc-page-size-select">
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                        <div class="fc-page-controls">
+                            <button class="fc-page-btn" id="fc-prev-page" disabled>‹</button>
+                            <span class="fc-page-number" id="fc-page-number">1</span>
+                            <button class="fc-page-btn" id="fc-next-page" disabled>›</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+    
             <!-- SKU Details Section -->
             <section id="sku-section" class="module-section">
     <div id="skuDetailsSection">
@@ -999,6 +1209,7 @@
     <script src="sku-scroll.js"></script>
     <script src="canvas.js"></script>
     <script src="forecast.js"></script>
+    <script src="fc-summary.js"></script>
     <script src="app.js"></script>
     <script src="shipping-history.js"></script>
 </body>

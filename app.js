@@ -114,6 +114,7 @@ function showSection(section) {
         'restock': 'replenishment-section',
         'ops': 'ops-section', 
         'forecast': 'forecast-section',
+        'fc-summary': 'fc-summary-section',
         'skuDetails': 'sku-section',
         'supplychain': 'supplychain-section',
         'shippingplan': 'shippingplan-section',

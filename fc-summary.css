@@ -1,0 +1,485 @@
+/* FC Summary Page Styles */
+
+.page-fc-summary {
+    padding: 2rem;
+    max-width: 100%;
+}
+
+.module-header {
+    margin-bottom: 1.5rem;
+}
+
+.module-title {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0 0 0.25rem 0;
+}
+
+.module-subtitle {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin: 0;
+}
+
+/* Filter Bar */
+.fc-filter-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    position: relative;
+    min-width: 160px;
+    flex: 0 0 160px;
+}
+
+.filter-group label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+}
+
+.filter-group select,
+.filter-group input {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 13px;
+    background: white;
+    min-width: 120px;
+    height: 37px;
+    box-sizing: border-box;
+    width: 100%;
+    transition: all 0.2s;
+    margin: 0;
+    line-height: 1;
+}
+
+.filter-group select:hover,
+.filter-group input:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+.filter-group select:focus,
+.filter-group input:focus {
+    outline: none;
+    border-color: #cbd5e0;
+}
+
+.filter-group--sku input {
+    min-width: 180px;
+}
+
+/* Dropdown Filter */
+.fc-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+    margin: 0;
+    height: 37px;
+    line-height: 1;
+}
+
+.fc-dropdown-trigger:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+.fc-dropdown-text {
+    color: #2d3748;
+    flex: 1;
+}
+
+.fc-dropdown-icon {
+    font-size: 10px;
+    color: #a0aec0;
+    margin-left: 8px;
+}
+
+.fc-dropdown-trigger:hover {
+    border-color: #3b82f6;
+}
+
+.fc-dropdown-icon {
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+
+.fc-dropdown-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.fc-dropdown-panel.is-open {
+    display: block;
+}
+
+.fc-checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: #2d3748;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+.fc-checkbox-item:hover {
+    background: #f7fafc;
+}
+
+.fc-checkbox-item input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+    width: auto;
+    height: auto;
+    min-width: auto;
+}
+
+.filter-actions {
+    display: flex;
+    align-items: flex-end;
+}
+
+.btn {
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2563eb;
+}
+
+/* Pagination */
+.fc-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: transparent;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.fc-pagination-left {
+    display: flex;
+    align-items: center;
+}
+
+.fc-pagination-info {
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.fc-pagination-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.fc-page-size-select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: white;
+    cursor: pointer;
+}
+
+.fc-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fc-page-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.fc-page-btn:hover:not(:disabled) {
+    background: #f3f4f6;
+    border-color: #3b82f6;
+}
+
+.fc-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.fc-page-number {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #1f2937;
+    min-width: 40px;
+    text-align: center;
+}
+
+/* Tabs */
+.fc-tabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 1.5rem;
+    align-items: flex-end;
+}
+
+.fc-tab {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: -2px;
+    width: 180px;
+    white-space: nowrap;
+    text-align: center;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 44px;
+}
+
+.fc-tab:hover {
+    color: #3b82f6;
+}
+
+.fc-tab--active {
+    color: #3b82f6;
+    border-bottom-color: #3b82f6;
+}
+
+/* Tab Panels */
+.fc-tab-panels {
+    position: relative;
+}
+
+.fc-panel {
+    display: none;
+}
+
+.fc-panel--active {
+    display: block;
+}
+
+/* Dual Layer Table - STRICT TableTemplate_ScrollXY Compliance */
+.fc-panel .dual-layer-table {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: white;
+}
+
+/* Table Header Bar (Sticky) */
+.fc-panel .table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: var(--soft-green);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.fc-panel .fixed-header {
+    width: 150px;
+    flex-shrink: 0;
+    background: var(--soft-green);
+}
+
+.fc-panel .scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.fc-panel .scroll-header {
+    display: flex;
+}
+
+.fc-panel .header-cell {
+    height: 48px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fc-panel .fixed-header .header-cell {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+}
+
+.fc-panel .scroll-header .header-cell {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+}
+
+/* Table Body Bar */
+.fc-panel .table-body-bar {
+    display: flex;
+}
+
+.fc-panel .fixed-col {
+    position: sticky;
+    left: 0;
+    z-index: 110;
+    width: 150px;
+    flex-shrink: 0;
+    background: white;
+}
+
+.fc-panel .scroll-col {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.fc-panel .fixed-body,
+.fc-panel .scroll-body {
+    padding-bottom: 12px;
+}
+
+/* Rows - MUST have identical height */
+.fc-panel .fixed-row,
+.fc-panel .scroll-row {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #f3f4f6;
+    box-sizing: border-box;
+}
+
+.fc-panel .fixed-row:hover,
+.fc-panel .scroll-row:hover {
+    background: #f9fafb;
+}
+
+/* Cells - MUST have identical width */
+.fc-panel .fixed-cell {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+    color: #1f2937;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fc-panel .scroll-cell {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+    color: #1f2937;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Month columns - right align */
+.fc-panel .scroll-cell.cell-month {
+    justify-content: flex-end;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Total FC column */
+.fc-panel .scroll-cell.cell-total {
+    justify-content: flex-end;
+    font-weight: 600;
+    background: #fef3c7;
+    font-variant-numeric: tabular-nums;
+}
+
+/* FC Qty column */
+.fc-panel .scroll-cell.cell-qty {
+    justify-content: flex-end;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Empty State */
+.fc-panel .empty-row {
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-style: italic;
+    font-size: 0.875rem;
+}
