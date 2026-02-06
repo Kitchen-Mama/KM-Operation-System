@@ -1368,5 +1368,95 @@ const forecastReviewDataLastYear = [
     { date: "2/6/2025", channel: "Target", marketplace: "US", sku: "KM-006", salesUnits: 32, salesAmount: 607.68, currency: "USD", session: 850, pageView: 1420, unitSessionPercentage: 3.8, buyBoxPercentage: 85 }
 ];
 
-// 暴露 DataRepo 到全域
+// FC Summary Mock Data - Regular Forecast (40 records)
+const fcRegularData = [
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Classic', sku: 'KM-OP-001', months: [300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-002', months: [150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260] },
+  { year: 2026, company: 'ResUS', marketplace: 'Walmart', country: 'US', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-001', months: [200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'CA', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-001', months: [100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-003', months: [180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-002', months: [250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350, 360] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Openers', series: 'Classic', sku: 'KM-OP-004', months: [120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-002', months: [90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-003', months: [160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-005', months: [280, 290, 300, 310, 320, 330, 340, 350, 360, 370, 380, 390] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-004', months: [140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-003', months: [110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-006', months: [200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-005', months: [220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Accessories', series: 'Classic', sku: 'KM-AC-004', months: [80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-007', months: [170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-006', months: [190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-005', months: [130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Openers', series: 'Classic', sku: 'KM-OP-008', months: [150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-007', months: [240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Accessories', series: 'Classic', sku: 'KM-AC-006', months: [70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-009', months: [260, 270, 280, 290, 300, 310, 320, 330, 340, 350, 360, 370] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-008', months: [180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230, 235] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-007', months: [95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-010', months: [210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-009', months: [270, 280, 290, 300, 310, 320, 330, 340, 350, 360, 370, 380] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Accessories', series: 'Classic', sku: 'KM-AC-008', months: [85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-011', months: [190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-010', months: [170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-009', months: [120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Openers', series: 'Classic', sku: 'KM-OP-012', months: [160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-011', months: [230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Accessories', series: 'Classic', sku: 'KM-AC-010', months: [75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-013', months: [290, 300, 310, 320, 330, 340, 350, 360, 370, 380, 390, 400] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-012', months: [175, 180, 185, 190, 195, 200, 205, 210, 215, 220, 225, 230] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-011', months: [105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160] },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-014', months: [220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330] },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-013', months: [260, 270, 280, 290, 300, 310, 320, 330, 340, 350, 360, 370] },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Accessories', series: 'Classic', sku: 'KM-AC-012', months: [90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145] },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-015', months: [200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310] }
+];
+
+// FC Summary Mock Data - Special Event Forecast (40 records)
+const fcEventData = [
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Classic', sku: 'KM-OP-001', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 13400 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Classic', sku: 'KM-OP-001', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 15200 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-002', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 41099 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-001', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 8500 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-003', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 9800 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-002', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 28500 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Openers', series: 'Classic', sku: 'KM-OP-004', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 7200 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-002', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 5600 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-003', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 18900 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-005', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 16800 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-004', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 6400 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-003', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 12300 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-006', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 11500 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-005', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 10200 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Accessories', series: 'Classic', sku: 'KM-AC-004', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 8700 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-007', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 13900 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-006', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 9100 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-005', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 14600 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Openers', series: 'Classic', sku: 'KM-OP-008', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 8900 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-007', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 11800 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Accessories', series: 'Classic', sku: 'KM-AC-006', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 7400 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-009', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 15700 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-008', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 7800 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-007', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 10500 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-010', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 12400 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-009', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 12900 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Accessories', series: 'Classic', sku: 'KM-AC-008', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 9200 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-011', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 14300 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-010', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 8600 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-009', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 13200 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Openers', series: 'Classic', sku: 'KM-OP-012', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 9500 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-011', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 11300 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Accessories', series: 'Classic', sku: 'KM-AC-010', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 7900 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-013', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 17200 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Kitchen Tools', series: 'Classic', sku: 'KM-KT-012', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 8100 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Accessories', series: 'Deluxe', sku: 'KM-AC-011', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 11700 },
+  { year: 2026, company: 'ResEU', marketplace: 'Amazon', country: 'JP', category: 'Openers', series: 'Classic', sku: 'KM-OP-014', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 13100 },
+  { year: 2026, company: 'ResTW', marketplace: 'Amazon', country: 'US', category: 'Kitchen Tools', series: 'Deluxe', sku: 'KM-KT-013', event: 'Spring Deal', eventPeriod: '2026-03-20 ~ 2026-03-27', fcQty: 12400 },
+  { year: 2026, company: 'ResUS', marketplace: 'Amazon', country: 'CA', category: 'Accessories', series: 'Classic', sku: 'KM-AC-012', event: 'BFCM', eventPeriod: '2026-11-25 ~ 2026-11-30', fcQty: 9600 },
+  { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-015', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 14800 }
+];
+
+// 暴露資料到全域
+window.fcRegularData = fcRegularData;
+window.fcEventData = fcEventData;
 window.DataRepo = DataRepo;

@@ -7,113 +7,9 @@ const fcPaginationState = {
   totalItems: 0
 };
 
-// Mock Data - Regular Forecast
-const fcRegularMock = [
-  {
-    year: 2026,
-    company: 'ResTW',
-    marketplace: 'Amazon',
-    country: 'US',
-    category: 'Openers',
-    series: 'Classic',
-    sku: 'KM-OP-001',
-    months: [300, 320, 340, 360, 380, 400, 420, 440, 460, 480, 500, 520]
-  },
-  {
-    year: 2026,
-    company: 'ResTW',
-    marketplace: 'Amazon',
-    country: 'US',
-    category: 'Openers',
-    series: 'Deluxe',
-    sku: 'KM-OP-002',
-    months: [150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260]
-  },
-  {
-    year: 2026,
-    company: 'ResUS',
-    marketplace: 'Walmart',
-    country: 'US',
-    category: 'Kitchen Tools',
-    series: 'Classic',
-    sku: 'KM-KT-001',
-    months: [200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310]
-  },
-  {
-    year: 2026,
-    company: 'ResTW',
-    marketplace: 'Amazon',
-    country: 'CA',
-    category: 'Accessories',
-    series: 'Deluxe',
-    sku: 'KM-AC-001',
-    months: [100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210]
-  },
-  {
-    year: 2025,
-    company: 'ResTW',
-    marketplace: 'Amazon',
-    country: 'US',
-    category: 'Openers',
-    series: 'Classic',
-    sku: 'KM-OP-001',
-    months: [280, 290, 300, 310, 320, 330, 340, 350, 360, 370, 380, 390]
-  }
-];
-
-// Mock Data - Special Event Forecast
-const fcEventMock = [
-  {
-    year: 2026,
-    company: 'ResTW',
-    marketplace: 'Amazon',
-    country: 'US',
-    sku: 'KM-OP-001',
-    event: 'Spring Deal',
-    eventPeriod: '2026-03-20 ~ 2026-03-27',
-    fcQty: 13400
-  },
-  {
-    year: 2026,
-    company: 'ResTW',
-    marketplace: 'Amazon',
-    country: 'US',
-    sku: 'KM-OP-001',
-    event: 'Prime Day',
-    eventPeriod: '2026-07-10 ~ 2026-07-12',
-    fcQty: 13400
-  },
-  {
-    year: 2026,
-    company: 'ResTW',
-    marketplace: 'Walmart',
-    country: 'US',
-    sku: 'KM-OP-002',
-    event: 'BFCM',
-    eventPeriod: '2026-11-25 ~ 2026-11-30',
-    fcQty: 41099
-  },
-  {
-    year: 2026,
-    company: 'ResUS',
-    marketplace: 'Amazon',
-    country: 'CA',
-    sku: 'KM-KT-001',
-    event: 'Prime Day',
-    eventPeriod: '2026-07-10 ~ 2026-07-12',
-    fcQty: 8500
-  },
-  {
-    year: 2025,
-    company: 'ResTW',
-    marketplace: 'Amazon',
-    country: 'US',
-    sku: 'KM-OP-001',
-    event: 'BFCM',
-    eventPeriod: '2025-11-28 ~ 2025-12-02',
-    fcQty: 38000
-  }
-];
+// Get data from data.js
+const fcRegularMock = window.fcRegularData || [];
+const fcEventMock = window.fcEventData || [];
 
 // Get filter values from DOM
 function getFcFilters() {
@@ -263,6 +159,8 @@ function renderFcEventTable() {
       <div class="scroll-cell">${item.company}</div>
       <div class="scroll-cell">${item.marketplace}</div>
       <div class="scroll-cell">${item.country}</div>
+      <div class="scroll-cell">${item.category}</div>
+      <div class="scroll-cell">${item.series}</div>
       <div class="scroll-cell">${item.event}</div>
       <div class="scroll-cell">${item.eventPeriod}</div>
       <div class="scroll-cell cell-qty">${item.fcQty.toLocaleString()}</div>

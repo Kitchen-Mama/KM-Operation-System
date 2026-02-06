@@ -1,27 +1,5 @@
 /* FC Summary Page Styles */
 
-.page-fc-summary {
-    padding: 2rem;
-    max-width: 100%;
-}
-
-.module-header {
-    margin-bottom: 1.5rem;
-}
-
-.module-title {
-    font-size: 1.75rem;
-    font-weight: 600;
-    color: #1f2937;
-    margin: 0 0 0.25rem 0;
-}
-
-.module-subtitle {
-    font-size: 0.875rem;
-    color: #6b7280;
-    margin: 0;
-}
-
 /* Filter Bar */
 .fc-filter-bar {
     display: flex;
@@ -361,6 +339,7 @@
     padding: 0.75rem 1rem;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     font-weight: 600;
     color: white;
     white-space: nowrap;
@@ -430,6 +409,7 @@
     padding: 0.75rem 1rem;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     font-size: 0.875rem;
     color: #1f2937;
     box-sizing: border-box;
@@ -445,6 +425,7 @@
     padding: 0.75rem 1rem;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     font-size: 0.875rem;
     color: #1f2937;
     box-sizing: border-box;
@@ -453,9 +434,9 @@
     text-overflow: ellipsis;
 }
 
-/* Month columns - right align */
+/* Month columns - left align */
 .fc-panel .scroll-cell.cell-month {
-    justify-content: flex-end;
+    justify-content: flex-start;
     font-variant-numeric: tabular-nums;
 }
 
