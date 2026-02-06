@@ -239,8 +239,54 @@
                         </select>
                         <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="期望庫存水平天數">
                         <button onclick="submitReplenishmentPlans()">Submit Plan</button>
-                        <button class="btn-add-sku">+ Add SKU</button>
+                        <button class="btn-add-sku" onclick="openReplenAddSkuModal()">+ Add SKU</button>
                     </div>
+                    
+                    <!-- Add SKU Modal for Inventory Replenishment -->
+                    <div class="fc-modal" id="replen-add-sku-modal">
+                        <div class="fc-modal-content">
+                            <h3>Add SKU to Inventory</h3>
+                            <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>SKU *</label>
+                                        <input type="text" id="replen-add-sku" placeholder="Enter SKU...">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Country *</label>
+                                        <select id="replen-add-country">
+                                            <option value="US">US</option>
+                                            <option value="UK">UK</option>
+                                            <option value="DE">DE</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Marketplace *</label>
+                                        <select id="replen-add-marketplace">
+                                            <option value="amazon">Amazon</option>
+                                            <option value="shopify">Shopify</option>
+                                            <option value="target">Target</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Status</label>
+                                        <select id="replen-add-status">
+                                            <option value="Active">Active</option>
+                                            <option value="Low Stock">Low Stock</option>
+                                            <option value="Out of Stock">Out of Stock</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeReplenModal()">Cancel</button>
+                                <button class="fc-btn fc-btn--primary" onclick="saveReplenSku()">Add SKU</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="fc-modal-overlay" id="replen-modal-overlay"></div>
                     
                     <!-- Replenishment Table -->
                     <div class="dual-layer-table">
@@ -679,10 +725,27 @@
                     </div>
                 </div>
 
-                <!-- Tabs -->
-                <div class="fc-tabs">
-                    <button class="fc-tab fc-tab--active" data-tab="regular">Regular Forecast</button>
-                    <button class="fc-tab" data-tab="event">Special Event</button>
+                <!-- Tabs with Action Buttons -->
+                <div class="fc-tabs-container">
+                    <div class="fc-tabs">
+                        <button class="fc-tab fc-tab--active" data-tab="regular">Regular Forecast</button>
+                        <button class="fc-tab" data-tab="event">Special Event</button>
+                        <button class="fc-tab" data-tab="target">Target % Rules</button>
+                    </div>
+                    <div class="fc-action-buttons" id="fc-action-buttons">
+                        <!-- Regular Forecast Buttons -->
+                        <button class="fc-btn fc-btn--add fc-btn-event" onclick="openAddEventModal()">+ New FC Update</button>
+                        <button class="fc-btn fc-btn--edit fc-btn-regular" id="fc-edit-btn" onclick="enterFcEditMode()">Edit Base FC</button>
+                        <button class="fc-btn fc-btn--add fc-btn-regular" id="fc-add-btn" onclick="openAddSkuModal()">+ Add SKU</button>
+                        <button class="fc-btn fc-btn--save fc-btn-regular" id="fc-save-btn" onclick="saveFcChanges()" style="display:none;">Save Changes</button>
+                        <button class="fc-btn fc-btn--cancel fc-btn-regular" id="fc-cancel-btn" onclick="cancelFcEdit()" style="display:none;">Cancel</button>
+                        <!-- Event Buttons -->
+                        <button class="fc-btn fc-btn--edit fc-btn-event" id="fc-event-edit-btn" onclick="enterEventEditMode()" style="display:none;">Edit Event FC</button>
+                        <button class="fc-btn fc-btn--save fc-btn-event" id="fc-event-save-btn" onclick="saveEventChanges()" style="display:none;">Save Changes</button>
+                        <button class="fc-btn fc-btn--cancel fc-btn-event" id="fc-event-cancel-btn" onclick="cancelEventEdit()" style="display:none;">Cancel</button>
+                        <!-- Target Rules Buttons -->
+                        <button class="fc-btn fc-btn--add fc-btn-target" onclick="openAddTargetRuleModal()" style="display:none;">+ Add Target Rule</button>
+                    </div>
                 </div>
 
                 <!-- Tab Panels -->
@@ -762,6 +825,437 @@
                                     <div class="scroll-body" id="fc-event-scroll-body"></div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Target % Rules Panel -->
+                    <div id="fc-panel-target" class="fc-panel">
+                        <div class="dual-layer-table">
+                            <div class="table-header-bar">
+                                <div class="fixed-header">
+                                    <div class="header-cell">Scope</div>
+                                </div>
+                                <div class="scroll-header-viewport">
+                                    <div class="scroll-header" id="fc-target-scroll-header">
+                                        <div class="header-cell">Year</div>
+                                        <div class="header-cell">Marketplace</div>
+                                        <div class="header-cell">Category</div>
+                                        <div class="header-cell">Series</div>
+                                        <div class="header-cell">SKU</div>
+                                        <div class="header-cell">Jan %</div>
+                                        <div class="header-cell">Feb %</div>
+                                        <div class="header-cell">Mar %</div>
+                                        <div class="header-cell">Apr %</div>
+                                        <div class="header-cell">May %</div>
+                                        <div class="header-cell">Jun %</div>
+                                        <div class="header-cell">Jul %</div>
+                                        <div class="header-cell">Aug %</div>
+                                        <div class="header-cell">Sep %</div>
+                                        <div class="header-cell">Oct %</div>
+                                        <div class="header-cell">Nov %</div>
+                                        <div class="header-cell">Dec %</div>
+                                        <div class="header-cell">Actions</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-body-bar">
+                                <div class="fixed-col">
+                                    <div class="fixed-body" id="fc-target-fixed-body"></div>
+                                </div>
+                                <div class="scroll-col" id="fc-target-scroll-col">
+                                    <div class="scroll-body" id="fc-target-scroll-body"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modals -->
+                <div class="fc-modal-overlay" id="fc-modal-overlay"></div>
+                
+                <!-- Mode Selection Modal -->
+                <div class="fc-modal" id="fc-mode-select-modal">
+                    <div class="fc-modal-content">
+                        <h3>New FC Update</h3>
+                        <div class="fc-modal-body">
+                            <div class="fc-mode-options">
+                                <label class="fc-mode-option">
+                                    <input type="radio" name="fc-mode" value="regular" checked>
+                                    <div class="fc-mode-card">
+                                        <div class="fc-mode-title">Regular Forecast</div>
+                                        <div class="fc-mode-desc">Create or update base forecast (Regular FC) for the selected year.</div>
+                                    </div>
+                                </label>
+                                <label class="fc-mode-option">
+                                    <input type="radio" name="fc-mode" value="event">
+                                    <div class="fc-mode-card">
+                                        <div class="fc-mode-title">Special Event</div>
+                                        <div class="fc-mode-desc">Create or update special event forecast (Event FC).</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="fc-modal-actions">
+                            <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
+                            <button class="fc-btn fc-btn--primary" onclick="proceedToFcMode()">Next</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Edit Confirmation Modal -->
+                <div class="fc-modal" id="fc-edit-confirm-modal">
+                    <div class="fc-modal-content">
+                        <h3>確認編輯 Base FC</h3>
+                        <p>你即將編輯 Base FC（原始預測數），任何修改會影響後續補貨與報表計算。</p>
+                        <p>請確認你有權限，並確保此變更已經過內部審核。</p>
+                        <div class="fc-modal-actions">
+                            <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
+                            <button class="fc-btn fc-btn--primary" onclick="confirmFcEdit()">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add SKU Modal -->
+                <div class="fc-modal" id="fc-add-sku-modal">
+                    <div class="fc-modal-content fc-modal-content--large">
+                        <h3>Add SKU</h3>
+                        <div class="fc-modal-body">
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>SKU *</label>
+                                    <input type="text" id="add-sku-input" placeholder="Search SKU...">
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Year *</label>
+                                    <input type="number" id="add-year-input" readonly>
+                                </div>
+                            </div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Company</label>
+                                    <select id="add-company-input">
+                                        <option value="ResTW">ResTW</option>
+                                        <option value="ResUS">ResUS</option>
+                                        <option value="ResEU">ResEU</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Marketplace</label>
+                                    <select id="add-marketplace-input">
+                                        <option value="Amazon">Amazon</option>
+                                        <option value="Walmart">Walmart</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Country</label>
+                                    <select id="add-country-input">
+                                        <option value="US">US</option>
+                                        <option value="CA">CA</option>
+                                        <option value="JP">JP</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Category</label>
+                                    <select id="add-category-input">
+                                        <option value="Openers">Openers</option>
+                                        <option value="Kitchen Tools">Kitchen Tools</option>
+                                        <option value="Accessories">Accessories</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Series</label>
+                                    <select id="add-series-input">
+                                        <option value="Classic">Classic</option>
+                                        <option value="Deluxe">Deluxe</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Base FC for all months</label>
+                                    <input type="number" id="add-base-fc-input" placeholder="Enter value..." onchange="fillAllMonths(this.value)">
+                                </div>
+                            </div>
+                            <div class="fc-months-grid">
+                                <div class="fc-form-group"><label>Jan</label><input type="number" id="add-jan" value="0"></div>
+                                <div class="fc-form-group"><label>Feb</label><input type="number" id="add-feb" value="0"></div>
+                                <div class="fc-form-group"><label>Mar</label><input type="number" id="add-mar" value="0"></div>
+                                <div class="fc-form-group"><label>Apr</label><input type="number" id="add-apr" value="0"></div>
+                                <div class="fc-form-group"><label>May</label><input type="number" id="add-may" value="0"></div>
+                                <div class="fc-form-group"><label>Jun</label><input type="number" id="add-jun" value="0"></div>
+                                <div class="fc-form-group"><label>Jul</label><input type="number" id="add-jul" value="0"></div>
+                                <div class="fc-form-group"><label>Aug</label><input type="number" id="add-aug" value="0"></div>
+                                <div class="fc-form-group"><label>Sep</label><input type="number" id="add-sep" value="0"></div>
+                                <div class="fc-form-group"><label>Oct</label><input type="number" id="add-oct" value="0"></div>
+                                <div class="fc-form-group"><label>Nov</label><input type="number" id="add-nov" value="0"></div>
+                                <div class="fc-form-group"><label>Dec</label><input type="number" id="add-dec" value="0"></div>
+                            </div>
+                        </div>
+                        <div class="fc-modal-actions">
+                            <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
+                            <button class="fc-btn fc-btn--primary" onclick="saveNewSku()">Save</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Regular FC Update Modal -->
+                <div class="fc-modal" id="fc-regular-update-modal">
+                    <div class="fc-modal-content fc-modal-content--large">
+                        <h3>Regular FC Update</h3>
+                        <div class="fc-modal-body">
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Target Year *</label>
+                                    <input type="number" id="regular-target-year" readonly>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Base Year *</label>
+                                    <input type="number" id="regular-base-year" readonly>
+                                </div>
+                            </div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Update Method *</label>
+                                    <select id="regular-update-method" onchange="toggleRegularMethodFields()">
+                                        <option value="actual">Apply Growth Rate (Based on Actual Units)</option>
+                                        <option value="forecast">Copy from Previous Year (Based on Forecast Units)</option>
+                                        <option value="manual">Manual Input (Select Target Month)</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Growth Rate (%)</label>
+                                    <input type="number" id="regular-growth-rate" placeholder="e.g. 10" value="10">
+                                </div>
+                            </div>
+                            <div class="fc-form-row" id="target-month-row" style="display:none;">
+                                <div class="fc-form-group">
+                                    <label>Target Month *</label>
+                                    <select id="regular-target-month">
+                                        <option value="0">January</option>
+                                        <option value="1">February</option>
+                                        <option value="2">March</option>
+                                        <option value="3">April</option>
+                                        <option value="4">May</option>
+                                        <option value="5">June</option>
+                                        <option value="6">July</option>
+                                        <option value="7">August</option>
+                                        <option value="8">September</option>
+                                        <option value="9">October</option>
+                                        <option value="10">November</option>
+                                        <option value="11">December</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="fc-form-note">
+                                <p id="method-description"><strong>Apply Growth Rate:</strong> Uses Base Year's Actual Units × (1 + Growth Rate%) to generate Target Year forecast.</p>
+                                <p><strong>Note:</strong> Existing data for the same SKU/Month/Year will be skipped to avoid duplicates.</p>
+                            </div>
+                        </div>
+                        <div class="fc-modal-actions">
+                            <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
+                            <button class="fc-btn fc-btn--primary" onclick="saveRegularUpdate()">Update</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add Event Modal -->
+                <div class="fc-modal" id="fc-add-event-modal">
+                    <div class="fc-modal-content fc-modal-content--large">
+                        <h3>Update New Event</h3>
+                        <div class="fc-modal-body">
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Target Year *</label>
+                                    <input type="number" id="event-target-year" readonly>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Base Year *</label>
+                                    <input type="number" id="event-base-year" readonly>
+                                </div>
+                            </div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Update Method *</label>
+                                    <select id="event-update-method" onchange="toggleEventMethodFields()">
+                                        <option value="actual">Apply Growth Rate (Based on Actual Event)</option>
+                                        <option value="forecast">Copy from Previous Year (Based on Forecast Event)</option>
+                                        <option value="manual">Manual Input</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Growth Rate (%)</label>
+                                    <input type="number" id="event-growth-rate" placeholder="e.g. 10" value="10">
+                                </div>
+                            </div>
+                            <div class="fc-form-row" id="event-select-row" style="display:none;">
+                                <div class="fc-form-group">
+                                    <label>Event *</label>
+                                    <select id="event-event-select">
+                                        <option value="Spring Deal">Spring Deal</option>
+                                        <option value="Prime Day">Prime Day</option>
+                                        <option value="BFCM">BFCM</option>
+                                    </select>
+                                    <small style="color: #7FB069; cursor: pointer; margin-top: 4px; display: block;" onclick="openAddNewEventName()">+ Add Event</small>
+                                </div>
+                            </div>
+                            <div id="event-manual-fields" style="display:none;">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>SKU *</label>
+                                        <input type="text" id="event-sku-input" placeholder="Search SKU...">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Company</label>
+                                        <select id="event-company-input">
+                                            <option value="ResTW">ResTW</option>
+                                            <option value="ResUS">ResUS</option>
+                                            <option value="ResEU">ResEU</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Marketplace</label>
+                                        <select id="event-marketplace-input">
+                                            <option value="Amazon">Amazon</option>
+                                            <option value="Walmart">Walmart</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Country</label>
+                                        <select id="event-country-input">
+                                            <option value="US">US</option>
+                                            <option value="CA">CA</option>
+                                            <option value="JP">JP</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Category</label>
+                                        <select id="event-category-input">
+                                            <option value="Openers">Openers</option>
+                                            <option value="Kitchen Tools">Kitchen Tools</option>
+                                            <option value="Accessories">Accessories</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Series</label>
+                                        <select id="event-series-input">
+                                            <option value="Classic">Classic</option>
+                                            <option value="Deluxe">Deluxe</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Event *</label>
+                                        <select id="event-event-input">
+                                            <option value="Spring Deal">Spring Deal</option>
+                                            <option value="Prime Day">Prime Day</option>
+                                            <option value="BFCM">BFCM</option>
+                                        </select>
+                                        <small style="color: #7FB069; cursor: pointer; margin-top: 4px; display: block;" onclick="openAddNewEventName()">+ Add Event</small>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Event Period *</label>
+                                        <input type="text" id="event-period-input" placeholder="e.g. 2026/03/15-2026/03/20">
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>FC Qty *</label>
+                                        <input type="number" id="event-qty-input" placeholder="Enter quantity..." value="0">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fc-form-note">
+                                <p id="event-method-description"><strong>Apply Growth Rate:</strong> Uses Base Year's Actual Event Units × (1 + Growth Rate%) to generate Target Year event forecast.</p>
+                                <p><strong>Note:</strong> Existing data for the same SKU/Event/Year will be skipped to avoid duplicates.</p>
+                            </div>
+                        </div>
+                        <div class="fc-modal-actions">
+                            <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
+                            <button class="fc-btn fc-btn--primary" onclick="saveEventUpdate()">Update</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add Target Rule Modal -->
+                <div class="fc-modal" id="fc-add-target-modal">
+                    <div class="fc-modal-content fc-modal-content--large">
+                        <h3>Add Target % Rule</h3>
+                        <div class="fc-modal-body">
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Scope *</label>
+                                    <select id="target-scope-input" onchange="updateTargetScopeFields()">
+                                        <option value="Category">Category</option>
+                                        <option value="Series">Series</option>
+                                        <option value="SKU">SKU</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Year *</label>
+                                    <input type="number" id="target-year-input" readonly>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Marketplace</label>
+                                    <select id="target-marketplace-input">
+                                        <option value="All">All</option>
+                                        <option value="Amazon">Amazon</option>
+                                        <option value="Walmart">Walmart</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group" id="target-category-group">
+                                    <label>Category *</label>
+                                    <select id="target-category-input">
+                                        <option value="All">All</option>
+                                        <option value="Openers">Openers</option>
+                                        <option value="Kitchen Tools">Kitchen Tools</option>
+                                        <option value="Accessories">Accessories</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group" id="target-series-group" style="display:none;">
+                                    <label>Series *</label>
+                                    <select id="target-series-input">
+                                        <option value="Classic">Classic</option>
+                                        <option value="Deluxe">Deluxe</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group" id="target-sku-group" style="display:none;">
+                                    <label>SKU *</label>
+                                    <input type="text" id="target-sku-input" placeholder="Search SKU...">
+                                </div>
+                            </div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Apply to all months (%)</label>
+                                    <input type="number" id="target-base-pct-input" placeholder="100" onchange="fillAllTargetMonths(this.value)">
+                                </div>
+                            </div>
+                            <div class="fc-months-grid">
+                                <div class="fc-form-group"><label>Jan %</label><input type="number" id="target-jan" value="100"></div>
+                                <div class="fc-form-group"><label>Feb %</label><input type="number" id="target-feb" value="100"></div>
+                                <div class="fc-form-group"><label>Mar %</label><input type="number" id="target-mar" value="100"></div>
+                                <div class="fc-form-group"><label>Apr %</label><input type="number" id="target-apr" value="100"></div>
+                                <div class="fc-form-group"><label>May %</label><input type="number" id="target-may" value="100"></div>
+                                <div class="fc-form-group"><label>Jun %</label><input type="number" id="target-jun" value="100"></div>
+                                <div class="fc-form-group"><label>Jul %</label><input type="number" id="target-jul" value="100"></div>
+                                <div class="fc-form-group"><label>Aug %</label><input type="number" id="target-aug" value="100"></div>
+                                <div class="fc-form-group"><label>Sep %</label><input type="number" id="target-sep" value="100"></div>
+                                <div class="fc-form-group"><label>Oct %</label><input type="number" id="target-oct" value="100"></div>
+                                <div class="fc-form-group"><label>Nov %</label><input type="number" id="target-nov" value="100"></div>
+                                <div class="fc-form-group"><label>Dec %</label><input type="number" id="target-dec" value="100"></div>
+                            </div>
+                        </div>
+                        <div class="fc-modal-actions">
+                            <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
+                            <button class="fc-btn fc-btn--primary" onclick="saveNewTargetRule()">Save</button>
                         </div>
                     </div>
                 </div>
