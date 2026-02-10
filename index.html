@@ -240,6 +240,7 @@
                         <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="期望庫存水平天數">
                         <button onclick="submitReplenishmentPlans()">Submit Plan</button>
                         <button class="btn-add-sku" onclick="openReplenAddSkuModal()">+ Add SKU</button>
+                        <button class="btn-add-marketplace" onclick="openAddMarketplaceModal()">+ Add Marketplace</button>
                     </div>
                     
                     <!-- Add SKU Modal for Inventory Replenishment -->
@@ -288,6 +289,54 @@
                     </div>
                     <div class="fc-modal-overlay" id="replen-modal-overlay"></div>
                     
+                    <!-- Add Marketplace Modal -->
+                    <div class="fc-modal" id="add-marketplace-modal">
+                        <div class="fc-modal-content">
+                            <h3>Add Marketplace</h3>
+                            <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Country *</label>
+                                        <select id="add-mp-country">
+                                            <option value="US">US</option>
+                                            <option value="UK">UK</option>
+                                            <option value="DE">DE</option>
+                                            <option value="CA">CA</option>
+                                            <option value="JP">JP</option>
+                                            <option value="AU">AU</option>
+                                        </select>
+                                        <small style="color: #7FB069; cursor: pointer; margin-top: 4px; display: block; font-size: 12px;" onclick="showAddCountryInput()">+ Add Country</small>
+                                        <div id="add-country-input-container" style="display: none; margin-top: 8px;">
+                                            <input type="text" id="new-country-code" placeholder="Enter country code (e.g. FR)" style="width: 100%; padding: 6px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px;">
+                                            <div style="display: flex; gap: 4px; margin-top: 4px;">
+                                                <button onclick="addNewCountry()" style="flex: 1; background: #7FB069; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Add</button>
+                                                <button onclick="cancelAddCountry()" style="flex: 1; background: #94A3B8; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Cancel</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Company *</label>
+                                        <select id="add-mp-company">
+                                            <option value="Kitchen Mama">Kitchen Mama</option>
+                                            <option value="Res US">Res US</option>
+                                            <option value="Res TW">Res TW</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Marketplace *</label>
+                                        <input type="text" id="add-mp-marketplace" placeholder="Enter marketplace name...">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeAddMarketplaceModal()">Cancel</button>
+                                <button class="fc-btn fc-btn--primary" onclick="saveMarketplace()">Add Marketplace</button>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <!-- Replenishment Table -->
                     <div class="dual-layer-table">
                         <!-- Table Header Bar (Sticky) -->
@@ -300,6 +349,8 @@
                                     <!-- First Layer: Group Headers -->
                                     <div class="km-table__header-row km-table__header-row--level1">
                                         <div class="km-table__header-cell km-table__header-cell--status">Status</div>
+                                        <div class="km-table__header-cell km-table__header-cell--company">Company</div>
+                                        <div class="km-table__header-cell km-table__header-cell--marketplace">Marketplace</div>
                                         <div class="km-table__header-cell km-table__header-cell--inventory">Inventory</div>
                                         <div class="km-table__header-cell km-table__header-cell--sales">Sales</div>
                                         <div class="km-table__header-cell km-table__header-cell--replen">Replenishment</div>
@@ -625,6 +676,27 @@
 
                     <div class="forecast-chart-card">
                         <canvas id="sessionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Achievement Summary Row -->
+                <div class="forecast-achievement-row">
+                    <!-- Category Achievement -->
+                    <div class="forecast-achievement-card">
+                        <h4 class="forecast-achievement-title">Category Achievement</h4>
+                        <div id="categoryAchievementList" class="forecast-achievement-list"></div>
+                    </div>
+                    
+                    <!-- Top 5 Growth SKUs -->
+                    <div class="forecast-achievement-card">
+                        <h4 class="forecast-achievement-title">Top 5 Growth SKUs</h4>
+                        <div id="top5GrowthList" class="forecast-achievement-list"></div>
+                    </div>
+                    
+                    <!-- Top 5 Worst SKUs -->
+                    <div class="forecast-achievement-card">
+                        <h4 class="forecast-achievement-title">Top 5 Worst SKUs</h4>
+                        <div id="top5WorstList" class="forecast-achievement-list"></div>
                     </div>
                 </div>
             </section>

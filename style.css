@@ -1105,14 +1105,14 @@ table td button {
     height: 48px;
     box-sizing: border-box;
     padding-left: 100px;
-    padding-right: 440px;
+    padding-right: 240px;
 }
 
 #ops-section .km-table__header-row--level2 {
     height: 48px;
     box-sizing: border-box;
     padding-left: 100px;
-    padding-right: 440px;
+    padding-right: 240px;
 }
 
 #ops-section .km-table__header-row--level1 .km-table__header-cell {
@@ -1143,6 +1143,15 @@ table td button {
     align-items: center;
     justify-content: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    z-index: 121;
+}
+
+#ops-section .km-table__header-cell--company {
+    display: none !important;
+}
+
+#ops-section .km-table__header-cell--marketplace {
+    display: none !important;
 }
 
 #ops-section .km-table__header-cell--inventory {
@@ -1159,8 +1168,8 @@ table td button {
 
 #ops-section .km-table__header-cell--replen {
     background: #FFD966;
-    width: 420px;
-    min-width: 420px;
+    width: 360px;
+    min-width: 360px;
 }
 
 #ops-section .km-table__header-cell--factory {
@@ -1179,7 +1188,7 @@ table td button {
     border-right: 2px solid var(--border-medium);
     box-sizing: border-box;
     position: absolute;
-    left: 1480px;
+    left: 1420px;
     top: 0;
     display: flex;
     align-items: center;
@@ -1223,11 +1232,6 @@ table td button {
 #ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(10),
 #ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(11) {
     background: #F9D9C2;
-}
-
-#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(9) {
-    width: 180px;
-    min-width: 180px;
 }
 
 #ops-section .table-body-bar {
@@ -1309,25 +1313,24 @@ table td button {
     box-sizing: border-box;
 }
 
+#ops-section .scroll-row .scroll-cell:nth-child(2),
+#ops-section .scroll-row .scroll-cell:nth-child(3) { display: none; }
+
 #ops-section .scroll-row .scroll-cell:nth-child(1) { width: 100px; min-width: 100px; max-width: 100px; }
 
-#ops-section .scroll-row .scroll-cell:nth-child(2),
-#ops-section .scroll-row .scroll-cell:nth-child(3),
-#ops-section .scroll-row .scroll-cell:nth-child(4) { width: 120px; min-width: 120px; max-width: 120px; }
-
+#ops-section .scroll-row .scroll-cell:nth-child(4),
 #ops-section .scroll-row .scroll-cell:nth-child(5),
 #ops-section .scroll-row .scroll-cell:nth-child(6),
-#ops-section .scroll-row .scroll-cell:nth-child(7) { width: 120px; min-width: 120px; max-width: 120px; }
-
+#ops-section .scroll-row .scroll-cell:nth-child(7),
 #ops-section .scroll-row .scroll-cell:nth-child(8),
-#ops-section .scroll-row .scroll-cell:nth-child(9) { width: 120px; min-width: 120px; max-width: 120px; }
-
-#ops-section .scroll-row .scroll-cell:nth-child(10) { width: 180px; min-width: 180px; max-width: 180px; }
-
+#ops-section .scroll-row .scroll-cell:nth-child(9),
+#ops-section .scroll-row .scroll-cell:nth-child(10),
 #ops-section .scroll-row .scroll-cell:nth-child(11),
-#ops-section .scroll-row .scroll-cell:nth-child(12) { width: 120px; min-width: 120px; max-width: 120px; }
+#ops-section .scroll-row .scroll-cell:nth-child(12),
+#ops-section .scroll-row .scroll-cell:nth-child(13),
+#ops-section .scroll-row .scroll-cell:nth-child(14) { width: 120px; min-width: 120px; max-width: 120px; }
 
-#ops-section .scroll-row .scroll-cell:nth-child(13) { width: 200px; min-width: 200px; max-width: 200px; }
+#ops-section .scroll-row .scroll-cell:nth-child(15) { width: 200px; min-width: 200px; max-width: 200px; }
 
 .planned-qty-config-btn {
     background: var(--soft-green);
@@ -1337,8 +1340,6 @@ table td button {
     cursor: pointer;
     transition: all 0.2s ease;
 }
-
-.planned-qty-config-btn:hover {
     background: #6FA055;
 }
 
@@ -1814,4 +1815,58 @@ table td button {
 .ir-panel-column .replen-card canvas {
     flex: 1;
     min-height: 0;
+}
+
+
+#ops-section .km-table__header-cell--company {
+    background: #f5f5f5;
+    color: #000000;
+    width: 100px;
+    min-width: 100px;
+    height: 96px;
+    font-size: 12px;
+    border-right: 2px solid var(--border-medium);
+    box-sizing: border-box;
+    position: absolute;
+    left: 100px;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#ops-section .km-table__header-cell--marketplace {
+    background: #f5f5f5;
+    color: #000000;
+    width: 100px;
+    min-width: 100px;
+    height: 96px;
+    font-size: 12px;
+    border-right: 2px solid var(--border-medium);
+    box-sizing: border-box;
+    position: absolute;
+    left: 200px;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+
+.btn-add-marketplace {
+    padding: 8px 16px;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.btn-add-marketplace:hover {
+    background: #059669;
 }

@@ -742,3 +742,153 @@
   margin-top: 0.5rem;
   font-size: 14px;
 }
+
+
+/* Achievement Summary Row */
+.forecast-achievement-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 2rem;
+  align-items: start;
+}
+
+.forecast-achievement-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  height: 320px;
+  display: flex;
+  flex-direction: column;
+  margin-top: 0 !important;
+}
+
+.forecast-achievement-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 1rem 0;
+}
+
+.forecast-achievement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.forecast-achievement-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.forecast-achievement-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 0.25rem;
+}
+
+.forecast-achievement-item-name {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.forecast-achievement-item-value {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.forecast-achievement-progress {
+  position: relative;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.forecast-achievement-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.forecast-achievement-progress-fill--normal {
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+}
+
+.forecast-achievement-progress-fill--over {
+  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+}
+
+.forecast-achievement-progress-fill--warning {
+  background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+}
+
+.forecast-achievement-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.forecast-achievement-details {
+  display: none;
+  padding: 0.75rem 0.5rem 0.25rem 0.5rem;
+  background: #f8fafc;
+  border-left: 2px solid #3182ce;
+  margin-top: 0.5rem;
+  border-radius: 4px;
+}
+
+.forecast-achievement-details.is-open {
+  display: block;
+}
+
+.forecast-achievement-detail-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0.5rem;
+  font-size: 11px;
+  color: #64748b;
+  padding: 0.25rem 0;
+  align-items: center;
+}
+
+.forecast-achievement-detail-header {
+  font-weight: 600;
+  color: #475569;
+  border-bottom: 1px solid #cbd5e0;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.forecast-detail-col-series {
+  text-align: left;
+}
+
+.forecast-detail-col-fc,
+.forecast-detail-col-actual {
+  text-align: right;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.forecast-detail-col-rate {
+  text-align: right;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.forecast-achievement-detail-header .forecast-detail-col-fc,
+.forecast-achievement-detail-header .forecast-detail-col-actual,
+.forecast-achievement-detail-header .forecast-detail-col-rate {
+  color: #475569;
+  font-weight: 600;
+}

@@ -662,6 +662,17 @@ function getReplenishmentData() {
             unitsPerCarton: 40
         };
         
+        // Add marketplace and company from siteData
+        mockData.marketplace = item.site;
+        // Assign company based on SKU
+        if (item.sku === 'A001' || item.sku === 'C003' || item.sku === 'E005' || item.sku === 'G007') {
+            mockData.company = 'Res US';
+        } else if (item.sku === 'B002' || item.sku === 'D004' || item.sku === 'F006') {
+            mockData.company = 'Res TW';
+        } else {
+            mockData.company = 'Kitchen Mama';
+        }
+        
         // Mock expand panel data - 根據 SKU 設定不同規模
         // 使用快取避免每次展開時數據變動
         if (!cachedExpandData[item.sku]) {
@@ -881,6 +892,8 @@ function getReplenishmentData() {
             sku: item.sku,
             lifecycle: mockData.lifecycle,
             productName: mockData.productName,
+            marketplace: mockData.marketplace,
+            company: mockData.company,
             currentInventory: currentInventory,
             avgDailySales: avgDailySales.toFixed(2),
             forecast60d: forecast60d,
@@ -961,6 +974,8 @@ function renderReplenishment() {
     scrollBody.innerHTML = data.map(item => `
         <div class="scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
             <div class="scroll-cell">${item.lifecycle}</div>
+            <div class="scroll-cell">${item.company}</div>
+            <div class="scroll-cell">${item.marketplace}</div>
             <div class="scroll-cell">${item.currentInventory}</div>
             <div class="scroll-cell">${item.onTheWay}</div>
             <div class="scroll-cell">${item.thirdPartyStock}</div>
@@ -2308,3 +2323,102 @@ function initAchievementChart(sku, skuData) {
 
 window.initSalesTrendChart = initSalesTrendChart;
 window.initAchievementChart = initAchievementChart;
+
+
+// Add Marketplace Modal Functions
+function openAddMarketplaceModal() {
+    const modal = document.getElementById('add-marketplace-modal');
+    const overlay = document.getElementById('replen-modal-overlay');
+    if (modal && overlay) {
+        modal.classList.add('is-open');
+        overlay.classList.add('is-open');
+    }
+}
+
+function closeAddMarketplaceModal() {
+    const modal = document.getElementById('add-marketplace-modal');
+    const overlay = document.getElementById('replen-modal-overlay');
+    if (modal && overlay) {
+        modal.classList.remove('is-open');
+        overlay.classList.remove('is-open');
+    }
+    // Clear inputs
+    document.getElementById('add-mp-country').value = 'US';
+    document.getElementById('add-mp-company').value = 'Kitchen Mama';
+    document.getElementById('add-mp-marketplace').value = '';
+}
+
+function saveMarketplace() {
+    const country = document.getElementById('add-mp-country').value;
+    const company = document.getElementById('add-mp-company').value;
+    const marketplace = document.getElementById('add-mp-marketplace').value.trim();
+    
+    if (!marketplace) {
+        alert('Please enter marketplace name');
+        return;
+    }
+    
+    // TODO: Stage 2 - Save to database and update filters
+    console.log('Add Marketplace:', { country, company, marketplace });
+    alert(`Marketplace added:\nCountry: ${country}\nCompany: ${company}\nMarketplace: ${marketplace}`);
+    
+    closeAddMarketplaceModal();
+}
+
+window.openAddMarketplaceModal = openAddMarketplaceModal;
+window.closeAddMarketplaceModal = closeAddMarketplaceModal;
+window.saveMarketplace = saveMarketplace;
+
+// Add Country Functions
+function showAddCountryInput() {
+    const container = document.getElementById('add-country-input-container');
+    if (container) {
+        container.style.display = 'block';
+    }
+}
+
+function cancelAddCountry() {
+    const container = document.getElementById('add-country-input-container');
+    const input = document.getElementById('new-country-code');
+    if (container) container.style.display = 'none';
+    if (input) input.value = '';
+}
+
+function addNewCountry() {
+    const input = document.getElementById('new-country-code');
+    const select = document.getElementById('add-mp-country');
+    
+    if (!input || !select) return;
+    
+    const countryCode = input.value.trim().toUpperCase();
+    
+    if (!countryCode) {
+        alert('Please enter a country code');
+        return;
+    }
+    
+    // Check if country already exists
+    const existingOptions = Array.from(select.options);
+    if (existingOptions.some(opt => opt.value === countryCode)) {
+        alert('Country code already exists');
+        return;
+    }
+    
+    // Add new option
+    const newOption = document.createElement('option');
+    newOption.value = countryCode;
+    newOption.textContent = countryCode;
+    select.appendChild(newOption);
+    
+    // Select the new option
+    select.value = countryCode;
+    
+    // Clear and hide input
+    input.value = '';
+    const container = document.getElementById('add-country-input-container');
+    if (container) container.style.display = 'none';
+}
+
+window.showAddCountryInput = showAddCountryInput;
+window.cancelAddCountry = cancelAddCountry;
+window.addNewCountry = addNewCountry;

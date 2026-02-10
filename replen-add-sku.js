@@ -9,8 +9,36 @@ function openReplenAddSkuModal() {
   const currentCountry = document.getElementById('replenCountry')?.value;
   const currentMarketplace = document.getElementById('replenMarketplace')?.value;
   
-  if (currentCountry) document.getElementById('replen-add-country').value = currentCountry;
-  if (currentMarketplace) document.getElementById('replen-add-marketplace').value = currentMarketplace;
+  const countrySelect = document.getElementById('replen-add-country');
+  const marketplaceSelect = document.getElementById('replen-add-marketplace');
+  
+  if (countrySelect) {
+    countrySelect.innerHTML = '';
+    const countryFilter = document.getElementById('replenCountry');
+    if (countryFilter) {
+      Array.from(countryFilter.options).forEach(option => {
+        const newOption = document.createElement('option');
+        newOption.value = option.value;
+        newOption.textContent = option.textContent;
+        countrySelect.appendChild(newOption);
+      });
+    }
+    if (currentCountry) countrySelect.value = currentCountry;
+  }
+  
+  if (marketplaceSelect) {
+    marketplaceSelect.innerHTML = '';
+    const marketplaceFilter = document.getElementById('replenMarketplace');
+    if (marketplaceFilter) {
+      Array.from(marketplaceFilter.options).forEach(option => {
+        const newOption = document.createElement('option');
+        newOption.value = option.value;
+        newOption.textContent = option.textContent;
+        marketplaceSelect.appendChild(newOption);
+      });
+    }
+    if (currentMarketplace) marketplaceSelect.value = currentMarketplace;
+  }
   
   modal.classList.add('is-open');
   overlay.classList.add('is-open');

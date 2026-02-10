@@ -552,6 +552,7 @@ function handleForecastSearch(root) {
   
   fetchForecastSeries(params, forecastReviewState.view).then((series) => {
     updateForecastChart(series);
+    updateAchievementSummary();
   });
 }
 
@@ -649,13 +650,14 @@ function aggregateForecastData(data, lastYearData, view) {
     }
     
     if (!groupedLastYear[key]) {
-      groupedLastYear[key] = { salesUnits: 0, salesAmount: 0, salesAmountUSD: 0, count: 0 };
+      groupedLastYear[key] = { salesUnits: 0, salesAmount: 0, salesAmountUSD: 0, session: 0, count: 0 };
     }
     
     const rate = exchangeRates[item.currency] || 1;
     groupedLastYear[key].salesUnits += item.salesUnits;
     groupedLastYear[key].salesAmount += item.salesAmount;
     groupedLastYear[key].salesAmountUSD += item.salesAmount * rate;
+    groupedLastYear[key].session += item.session;
     groupedLastYear[key].count++;
   });
   
@@ -669,8 +671,14 @@ function aggregateForecastData(data, lastYearData, view) {
   const usp = labels.map(k => grouped[k].session > 0 ? (grouped[k].salesUnits / grouped[k].session * 100) : 0);
   const lastYearSalesUnits = labels.map(k => groupedLastYear[k]?.salesUnits || 0);
   const lastYearSalesAmount = labels.map(k => Math.round(groupedLastYear[k]?.salesAmountUSD || 0));
+  const lastYearSessions = labels.map(k => groupedLastYear[k]?.session || 0);
+  const lastYearUSP = labels.map(k => {
+    const lySession = groupedLastYear[k]?.session || 0;
+    const lyUnits = groupedLastYear[k]?.salesUnits || 0;
+    return lySession > 0 ? (lyUnits / lySession * 100) : 0;
+  });
   
-  return { labels, salesUnits, salesAmount, forecastUnits, forecastAmount, sessions, pageViews, usp, lastYearSalesUnits, lastYearSalesAmount, marketplaceBreakdown };
+  return { labels, salesUnits, salesAmount, forecastUnits, forecastAmount, sessions, pageViews, usp, lastYearSalesUnits, lastYearSalesAmount, lastYearSessions, lastYearUSP, marketplaceBreakdown };
 }
 
 function setupForecastChart() {
@@ -761,7 +769,7 @@ function setupSessionChart() {
       labels: [],
       datasets: [
         {
-          label: 'Sessions',
+          label: 'Sessions (2026)',
           data: [],
           backgroundColor: 'rgba(16, 185, 129, 0.6)',
           borderColor: '#10b981',
@@ -769,7 +777,7 @@ function setupSessionChart() {
           yAxisID: 'y',
         },
         {
-          label: 'USP (%)',
+          label: 'USP (2026) (%)',
           data: [],
           type: 'line',
           borderColor: '#f59e0b',
@@ -779,6 +787,29 @@ function setupSessionChart() {
           pointHoverRadius: 6,
           yAxisID: 'y1',
           tension: 0.3,
+        },
+        {
+          label: 'Last Year Sessions (2025)',
+          data: [],
+          backgroundColor: 'rgba(139, 92, 246, 0.4)',
+          borderColor: '#8b5cf6',
+          borderWidth: 1,
+          yAxisID: 'y',
+          hidden: true,
+        },
+        {
+          label: 'Last Year USP (2025) (%)',
+          data: [],
+          type: 'line',
+          borderColor: '#ec4899',
+          backgroundColor: 'rgba(236, 72, 153, 0.1)',
+          borderWidth: 2,
+          borderDash: [5, 3],
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          yAxisID: 'y1',
+          tension: 0.3,
+          hidden: true,
         },
       ],
     },
@@ -841,7 +872,7 @@ function setupSessionChart() {
                 label += ': ';
               }
               if (context.parsed.y !== null) {
-                if (context.datasetIndex === 1) {
+                if (context.datasetIndex === 1 || context.datasetIndex === 3) {
                   label += context.parsed.y.toFixed(2) + '%';
                 } else {
                   label += context.parsed.y.toLocaleString();
@@ -940,6 +971,10 @@ function updateForecastChart(series) {
     sessionChart.data.labels = series.labels || [];
     sessionChart.data.datasets[0].data = series.sessions || [];
     sessionChart.data.datasets[1].data = series.usp || [];
+    sessionChart.data.datasets[2].data = series.lastYearSessions || [];
+    sessionChart.data.datasets[3].data = series.lastYearUSP || [];
+    sessionChart.data.datasets[2].hidden = !forecastReviewState.showComparison;
+    sessionChart.data.datasets[3].hidden = !forecastReviewState.showComparison;
     sessionChart.update();
   }
 }
@@ -1092,4 +1127,236 @@ function toggleFCDetails(index) {
   if (details) {
     details.classList.toggle('is-open');
   }
+}
+
+
+// Achievement Summary Functions
+function updateAchievementSummary() {
+  const params = collectForecastFilterParams(document.querySelector('.page-forecast-review'));
+  const data = DataRepo.getForecastReviewData(params);
+  
+  // Calculate Category Achievement
+  const categoryData = calculateCategoryAchievement(data);
+  renderCategoryAchievement(categoryData);
+  
+  // Calculate Top 5 Growth SKUs
+  const growthData = calculateTop5Growth(data);
+  renderTop5Growth(growthData);
+  
+  // Calculate Top 5 Worst SKUs
+  const worstData = calculateTop5Worst(data);
+  renderTop5Worst(worstData);
+}
+
+function calculateCategoryAchievement(data) {
+  const categories = {};
+  
+  data.forEach(item => {
+    if (!categories[item.category]) {
+      categories[item.category] = { actual: 0, forecast: 0, series: {} };
+    }
+    
+    if (!categories[item.category].series[item.series]) {
+      categories[item.category].series[item.series] = { actual: 0, forecast: 0, units: 0, forecastUnits: 0 };
+    }
+    
+    const rate = exchangeRates[item.currency] || 1;
+    const variance = 0.8 + Math.random() * 0.4;
+    
+    categories[item.category].actual += item.salesAmount * rate;
+    categories[item.category].forecast += (item.forecastAmount || Math.round(item.salesAmount * variance)) * rate;
+    categories[item.category].series[item.series].actual += item.salesAmount * rate;
+    categories[item.category].series[item.series].forecast += (item.forecastAmount || Math.round(item.salesAmount * variance)) * rate;
+    categories[item.category].series[item.series].units += item.salesUnits;
+    categories[item.category].series[item.series].forecastUnits += item.forecastUnits || Math.round(item.salesUnits * variance);
+  });
+  
+  return Object.keys(categories).map(category => ({
+    name: category,
+    actual: categories[category].actual,
+    forecast: categories[category].forecast,
+    achievement: categories[category].forecast > 0 
+      ? (categories[category].actual / categories[category].forecast * 100) 
+      : 0,
+    series: Object.keys(categories[category].series).map(seriesName => ({
+      name: seriesName,
+      actual: categories[category].series[seriesName].actual,
+      forecast: categories[category].series[seriesName].forecast,
+      units: categories[category].series[seriesName].units,
+      forecastUnits: categories[category].series[seriesName].forecastUnits,
+      achievement: categories[category].series[seriesName].forecast > 0
+        ? (categories[category].series[seriesName].actual / categories[category].series[seriesName].forecast * 100)
+        : 0
+    }))
+  })).sort((a, b) => a.achievement - b.achievement);
+}
+
+function calculateTop5Growth(data) {
+  const skus = {};
+  
+  data.forEach(item => {
+    if (!skus[item.sku]) {
+      skus[item.sku] = { actual: 0, forecast: 0 };
+    }
+    
+    const rate = exchangeRates[item.currency] || 1;
+    const variance = 0.8 + Math.random() * 0.4;
+    
+    skus[item.sku].actual += item.salesAmount * rate;
+    skus[item.sku].forecast += (item.forecastAmount || Math.round(item.salesAmount * variance)) * rate;
+  });
+  
+  return Object.keys(skus)
+    .map(sku => ({
+      name: sku,
+      actual: skus[sku].actual,
+      forecast: skus[sku].forecast,
+      achievement: skus[sku].forecast > 0 
+        ? (skus[sku].actual / skus[sku].forecast * 100) 
+        : 0
+    }))
+    .filter(item => item.forecast > 0)
+    .sort((a, b) => b.achievement - a.achievement)
+    .slice(0, 5);
+}
+
+function calculateTop5Worst(data) {
+  const skus = {};
+  
+  data.forEach(item => {
+    if (!skus[item.sku]) {
+      skus[item.sku] = { actual: 0, forecast: 0 };
+    }
+    
+    const rate = exchangeRates[item.currency] || 1;
+    const variance = 0.8 + Math.random() * 0.4;
+    
+    skus[item.sku].actual += item.salesAmount * rate;
+    skus[item.sku].forecast += (item.forecastAmount || Math.round(item.salesAmount * variance)) * rate;
+  });
+  
+  return Object.keys(skus)
+    .map(sku => ({
+      name: sku,
+      actual: skus[sku].actual,
+      forecast: skus[sku].forecast,
+      achievement: skus[sku].forecast > 0 
+        ? (skus[sku].actual / skus[sku].forecast * 100) 
+        : 0
+    }))
+    .filter(item => item.forecast > 0)
+    .sort((a, b) => a.achievement - b.achievement)
+    .slice(0, 5);
+}
+
+function renderCategoryAchievement(data) {
+  const container = document.getElementById('categoryAchievementList');
+  if (!container) return;
+  
+  if (data.length === 0) {
+    container.innerHTML = '<div class="forecast-achievement-empty">No data available</div>';
+    return;
+  }
+  
+  container.innerHTML = data.map((item, index) => {
+    const achievement = item.achievement.toFixed(1);
+    const fillWidth = Math.min(achievement, 100);
+    const fillClass = achievement >= 100 ? 'forecast-achievement-progress-fill--over' : 'forecast-achievement-progress-fill--normal';
+    
+    const seriesDetails = item.series.map(series => {
+      const seriesAchievement = series.achievement.toFixed(1);
+      return `
+        <div class="forecast-achievement-detail-row">
+          <span class="forecast-detail-col-series">${series.name}</span>
+          <span class="forecast-detail-col-fc">${series.forecastUnits.toLocaleString()}</span>
+          <span class="forecast-detail-col-actual">${series.units.toLocaleString()}</span>
+          <span class="forecast-detail-col-rate">${seriesAchievement}%</span>
+        </div>
+      `;
+    }).join('');
+    
+    return `
+      <div class="forecast-achievement-item">
+        <div class="forecast-achievement-item-header" onclick="toggleCategoryDetails(${index})" style="cursor: pointer;">
+          <span class="forecast-achievement-item-name">${item.name}</span>
+          <span class="forecast-achievement-item-value">${achievement}%</span>
+        </div>
+        <div class="forecast-achievement-progress">
+          <div class="forecast-achievement-progress-fill ${fillClass}" style="width: ${fillWidth}%"></div>
+        </div>
+        <div class="forecast-achievement-details" id="categoryDetails${index}">
+          <div class="forecast-achievement-detail-row forecast-achievement-detail-header">
+            <span class="forecast-detail-col-series">Series</span>
+            <span class="forecast-detail-col-fc">FC Units</span>
+            <span class="forecast-detail-col-actual">Actual Units</span>
+            <span class="forecast-detail-col-rate">達成率</span>
+          </div>
+          ${seriesDetails}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleCategoryDetails(index) {
+  const details = document.getElementById(`categoryDetails${index}`);
+  if (details) {
+    details.classList.toggle('is-open');
+  }
+}
+
+function renderTop5Growth(data) {
+  const container = document.getElementById('top5GrowthList');
+  if (!container) return;
+  
+  if (data.length === 0) {
+    container.innerHTML = '<div class="forecast-achievement-empty">No data available</div>';
+    return;
+  }
+  
+  container.innerHTML = data.map(item => {
+    const achievement = item.achievement.toFixed(1);
+    const fillWidth = Math.min(achievement, 100);
+    const fillClass = achievement >= 100 ? 'forecast-achievement-progress-fill--over' : 'forecast-achievement-progress-fill--normal';
+    
+    return `
+      <div class="forecast-achievement-item">
+        <div class="forecast-achievement-item-header">
+          <span class="forecast-achievement-item-name">${item.name}</span>
+          <span class="forecast-achievement-item-value">${achievement}%</span>
+        </div>
+        <div class="forecast-achievement-progress">
+          <div class="forecast-achievement-progress-fill ${fillClass}" style="width: ${fillWidth}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTop5Worst(data) {
+  const container = document.getElementById('top5WorstList');
+  if (!container) return;
+  
+  if (data.length === 0) {
+    container.innerHTML = '<div class="forecast-achievement-empty">No data available</div>';
+    return;
+  }
+  
+  container.innerHTML = data.map(item => {
+    const achievement = item.achievement.toFixed(1);
+    const fillWidth = Math.min(achievement, 100);
+    const fillClass = achievement < 80 ? 'forecast-achievement-progress-fill--warning' : 'forecast-achievement-progress-fill--normal';
+    
+    return `
+      <div class="forecast-achievement-item">
+        <div class="forecast-achievement-item-header">
+          <span class="forecast-achievement-item-name">${item.name}</span>
+          <span class="forecast-achievement-item-value">${achievement}%</span>
+        </div>
+        <div class="forecast-achievement-progress">
+          <div class="forecast-achievement-progress-fill ${fillClass}" style="width: ${fillWidth}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
