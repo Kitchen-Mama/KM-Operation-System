@@ -1,0 +1,138 @@
+/* ========================================
+   Factory Stock Table - TableTemplate_ScrollXY
+======================================== */
+
+#factory-stock-section .dual-layer-table {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    max-width: 100%;
+}
+
+#factory-stock-section .table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: var(--soft-green);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    height: 48px;
+}
+
+#factory-stock-section .fixed-header {
+    width: 120px;
+    height: 48px;
+    flex-shrink: 0;
+    background: var(--soft-green);
+    border-right: 2px solid var(--border-medium);
+    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0 var(--space-md);
+    box-sizing: border-box;
+}
+
+#factory-stock-section .scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+#factory-stock-section .scroll-header {
+    display: flex;
+    background: var(--soft-green);
+    height: 48px;
+    min-width: max-content;
+}
+
+#factory-stock-section .header-cell {
+    width: 120px;
+    min-width: 120px;
+    height: 48px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    color: white;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+#factory-stock-section .table-body-bar {
+    display: flex;
+    margin-top: 0;
+}
+
+#factory-stock-section .fixed-col {
+    width: 120px;
+    flex-shrink: 0;
+    background: white;
+    z-index: 110;
+    border-right: 2px solid var(--border-medium);
+    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    position: sticky;
+    left: 0;
+}
+
+#factory-stock-section .fixed-body {
+    background: white;
+}
+
+#factory-stock-section .fixed-row {
+    width: 120px;
+    height: 48px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    border-bottom: 1px solid var(--border-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+#factory-stock-section .fixed-row:hover {
+    background: #F8F9FA;
+}
+
+#factory-stock-section .scroll-col {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+#factory-stock-section .scroll-body {
+    background: white;
+}
+
+#factory-stock-section .scroll-row {
+    display: flex;
+    height: 48px;
+    border-bottom: 1px solid var(--border-light);
+    min-width: max-content;
+    box-sizing: border-box;
+}
+
+#factory-stock-section .scroll-row:hover {
+    background: #F8F9FA;
+}
+
+#factory-stock-section .scroll-cell {
+    width: 120px;
+    min-width: 120px;
+    height: 48px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    border-right: 1px solid var(--border-light);
+}

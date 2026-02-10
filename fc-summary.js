@@ -14,7 +14,7 @@ const fcEventMock = window.fcEventData || [];
 // Get filter values from DOM
 function getFcFilters() {
   const getSelectedFromDropdown = (filterType) => {
-    const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
+    const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
     if (!panel) return [];
     const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
     return Array.from(checkboxes).map(cb => cb.value);
@@ -298,16 +298,23 @@ function updateActionButtons(tab) {
 
 // Initialize Dropdown
 function initFcDropdown() {
-  const triggers = document.querySelectorAll('.fc-dropdown-trigger');
+  // FC Summary 篩選器
+  const fcTriggers = document.querySelectorAll('#fc-summary-section .fc-dropdown-trigger');
   
-  triggers.forEach(trigger => {
-    trigger.addEventListener('click', (e) => {
+  fcTriggers.forEach(trigger => {
+    // 移除舊的事件監聽器
+    const newTrigger = trigger.cloneNode(true);
+    trigger.parentNode.replaceChild(newTrigger, trigger);
+    
+    newTrigger.addEventListener('click', (e) => {
       e.stopPropagation();
-      const filterType = trigger.dataset.filter;
-      const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
+      const filterType = newTrigger.dataset.filter;
+      const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+      
+      if (!panel) return;
       
       // Close other panels
-      document.querySelectorAll('.fc-dropdown-panel').forEach(p => {
+      document.querySelectorAll('#fc-summary-section .fc-dropdown-panel').forEach(p => {
         if (p !== panel) p.classList.remove('is-open');
       });
       
@@ -316,17 +323,77 @@ function initFcDropdown() {
     });
   });
   
-  // Close dropdown when clicking outside
-  document.addEventListener('click', () => {
-    document.querySelectorAll('.fc-dropdown-panel').forEach(p => {
-      p.classList.remove('is-open');
+  // Prevent panel clicks from closing
+  document.querySelectorAll('#fc-summary-section .fc-dropdown-panel').forEach(panel => {
+    const newPanel = panel.cloneNode(true);
+    panel.parentNode.replaceChild(newPanel, panel);
+    
+    newPanel.addEventListener('click', (e) => {
+      e.stopPropagation();
     });
   });
 }
 
+// Initialize Factory Stock Dropdown
+function initFactoryDropdown() {
+  const factoryTriggers = document.querySelectorAll('#factory-stock-section .fc-dropdown-trigger');
+  
+  factoryTriggers.forEach(trigger => {
+    const newTrigger = trigger.cloneNode(true);
+    trigger.parentNode.replaceChild(newTrigger, trigger);
+    
+    newTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const filterType = newTrigger.dataset.filter;
+      const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+      
+      if (!panel) return;
+      
+      document.querySelectorAll('#factory-stock-section .fc-dropdown-panel').forEach(p => {
+        if (p !== panel) p.classList.remove('is-open');
+      });
+      
+      panel.classList.toggle('is-open');
+    });
+  });
+  
+  // 重新綁定 checkbox 事件
+  document.querySelectorAll('#factory-stock-section .fc-dropdown-panel').forEach(panel => {
+    const filterType = panel.dataset.filter;
+    
+    // 綁定 "All" checkbox
+    const allCheckbox = panel.querySelector('input[value=""]');
+    if (allCheckbox) {
+      allCheckbox.addEventListener('change', function() {
+        toggleFactoryAll(this, filterType);
+      });
+    }
+    
+    // 綁定個別 checkboxes
+    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    checkboxes.forEach(cb => {
+      cb.addEventListener('change', function() {
+        updateFactoryFilter(filterType);
+      });
+    });
+    
+    // 防止點擊 panel 關閉
+    panel.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  });
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', () => {
+  document.querySelectorAll('.fc-dropdown-panel').forEach(p => {
+    p.classList.remove('is-open');
+  });
+});
+
 // Toggle All checkboxes
 function toggleFcAll(checkbox, filterType) {
-  const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
+  const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
   const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
   
   checkboxes.forEach(cb => {
@@ -341,7 +408,7 @@ function toggleFcAll(checkbox, filterType) {
 
 // Update individual filter
 function updateFcFilter(filterType) {
-  const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
+  const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
   const allCheckbox = panel.querySelector('input[value=""]');
   const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
   const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
@@ -357,8 +424,8 @@ function updateFcFilter(filterType) {
 
 // Update filter button text
 function updateFcFilterText(filterType) {
-  const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
-  const trigger = document.querySelector(`.fc-dropdown-trigger[data-filter="${filterType}"]`);
+  const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+  const trigger = document.querySelector(`#fc-summary-section .fc-dropdown-trigger[data-filter="${filterType}"]`);
   const textSpan = trigger.querySelector('.fc-dropdown-text');
   const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
   
@@ -396,11 +463,17 @@ function initFcSearch() {
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   initFcTabs();
-  initFcDropdown();
   initFcSearch();
   initFcPagination();
   updatePaginationInfo(0);
 });
+
+// Re-initialize dropdown when FC Summary section is shown
+window.initFcSummaryPage = function() {
+  setTimeout(() => {
+    initFcDropdown();
+  }, 50);
+};
 
 // ========================================
 // BASE FC EDITING FUNCTIONALITY
@@ -1520,3 +1593,175 @@ function saveNewEvent() {
   closeFcModal();
   alert('Event added successfully');
 }
+
+
+// Export initFactoryDropdown to global
+window.initFactoryDropdown = initFactoryDropdown;
+
+// ========================================
+// FACTORY STOCK FUNCTIONALITY
+// ========================================
+
+// Get Factory Stock filters
+function getFactoryFilters() {
+  const getSelectedFromDropdown = (filterType) => {
+    const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+    if (!panel) {
+      console.warn(`Panel not found for filter: ${filterType}`);
+      return [];
+    }
+    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
+    const values = Array.from(checkboxes).map(cb => cb.value);
+    console.log(`Filter ${filterType}:`, values);
+    return values;
+  };
+
+  const filters = {
+    factories: getSelectedFromDropdown('factory'),
+    companies: getSelectedFromDropdown('company'),
+    marketplaces: getSelectedFromDropdown('marketplace'),
+    categories: getSelectedFromDropdown('category'),
+    series: getSelectedFromDropdown('series'),
+    sku: document.getElementById('factory-sku-input')?.value.trim().toLowerCase() || ''
+  };
+  
+  console.log('Factory Filters:', filters);
+  console.log('Factory Stock Data:', window.factoryStockData);
+  
+  return filters;
+}
+
+// Filter Factory Stock data
+function filterFactoryStock(data, filters) {
+  return data.filter(item => {
+    // 如果該篩選器有選項且資料不符合，則過濾掉
+    if (filters.factories.length > 0 && !filters.factories.includes(item.factory)) return false;
+    if (filters.companies.length > 0 && !filters.companies.includes(item.company)) return false;
+    if (filters.marketplaces.length > 0 && !filters.marketplaces.includes(item.marketplace)) return false;
+    if (filters.categories.length > 0 && !filters.categories.includes(item.category)) return false;
+    if (filters.series.length > 0 && !filters.series.includes(item.series)) return false;
+    if (filters.sku && !item.sku.toLowerCase().includes(filters.sku)) return false;
+    return true;
+  });
+}
+
+// Render Factory Stock Table
+function renderFactoryStockTable() {
+  const tbody = document.getElementById('factory-stock-scroll-body');
+  const fixedBody = document.getElementById('factory-stock-fixed-body');
+  if (!tbody || !fixedBody) return;
+  
+  // 更新月份標題
+  const today = new Date();
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const currentMonth = today.getMonth();
+  const month0 = monthNames[currentMonth];
+  const month1 = monthNames[(currentMonth + 1) % 12];
+  const month2 = monthNames[(currentMonth + 2) % 12];
+  
+  const month0Header = document.getElementById('factory-month-0');
+  const month1Header = document.getElementById('factory-month-1');
+  const month2Header = document.getElementById('factory-month-2');
+  
+  if (month0Header) month0Header.textContent = `${month0} Orders`;
+  if (month1Header) month1Header.textContent = `${month1} Orders`;
+  if (month2Header) month2Header.textContent = `${month2} Orders`;
+  
+  const filters = getFactoryFilters();
+  const filteredData = filterFactoryStock(window.factoryStockData || [], filters);
+  
+  if (filteredData.length === 0) {
+    fixedBody.innerHTML = '';
+    tbody.innerHTML = '<div style="padding: 20px; text-align: center; color: #94A3B8;">No data found</div>';
+    return;
+  }
+  
+  // Render fixed column (SKU)
+  fixedBody.innerHTML = filteredData.map(item => `
+    <div class="fixed-row">${item.sku}</div>
+  `).join('');
+  
+  // Render scrollable columns
+  tbody.innerHTML = filteredData.map(item => `
+    <div class="scroll-row">
+      <div class="scroll-cell">${item.company}</div>
+      <div class="scroll-cell">${item.marketplace}</div>
+      <div class="scroll-cell">${item.category}</div>
+      <div class="scroll-cell">${item.series}</div>
+      <div class="scroll-cell">${item.factory}</div>
+      <div class="scroll-cell">${item.stock.toLocaleString()}</div>
+      <div class="scroll-cell">${item.completedOrderMonth0.toLocaleString()}</div>
+      <div class="scroll-cell">${item.completedOrderMonth1.toLocaleString()}</div>
+      <div class="scroll-cell">${item.completedOrderMonth2.toLocaleString()}</div>
+    </div>
+  `).join('');
+}
+
+// Toggle Factory All checkboxes
+function toggleFactoryAll(checkbox, filterType) {
+  const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+  const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+  
+  checkboxes.forEach(cb => {
+    cb.checked = checkbox.checked;
+  });
+  
+  updateFactoryFilterText(filterType);
+  if (window.renderFactoryStockTable) {
+    window.renderFactoryStockTable();
+  }
+}
+
+// Update individual Factory filter
+function updateFactoryFilter(filterType) {
+  const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+  if (panel) {
+    const allCheckbox = panel.querySelector('input[value=""]');
+    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    
+    // Update "All" checkbox
+    if (allCheckbox) {
+      allCheckbox.checked = checkedCount === checkboxes.length;
+    }
+    
+    updateFactoryFilterText(filterType);
+  }
+  
+  renderFactoryStockTable();
+}
+
+// Update Factory filter button text
+function updateFactoryFilterText(filterType) {
+  const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+  const trigger = document.querySelector(`#factory-stock-section .fc-dropdown-trigger[data-filter="${filterType}"]`);
+  const textSpan = trigger.querySelector('.fc-dropdown-text');
+  const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
+  
+  if (checkboxes.length === 0) {
+    textSpan.textContent = 'None';
+  } else if (checkboxes.length === panel.querySelectorAll('input[type="checkbox"]:not([value=""])').length) {
+    textSpan.textContent = 'All';
+  } else {
+    textSpan.textContent = `${checkboxes.length} selected`;
+  }
+}
+
+// Initialize Factory Stock Search
+function initFactorySearch() {
+  const skuInput = document.getElementById('factory-sku-input');
+  if (!skuInput) return;
+  
+  skuInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      renderFactoryStockTable();
+    }
+  });
+}
+
+// Export Factory Stock data to global
+window.factoryStockData = window.factoryStockData || [];
+window.renderFactoryStockTable = renderFactoryStockTable;
+window.toggleFactoryAll = toggleFactoryAll;
+window.updateFactoryFilter = updateFactoryFilter;
+window.initFactorySearch = initFactorySearch;

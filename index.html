@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="factory-stock.css">
     <link rel="stylesheet" href="sku-details.css">
     <link rel="stylesheet" href="supplychain.css">
     <link rel="stylesheet" href="shipping-plan.css">
@@ -33,6 +34,9 @@
             </div>
             <div class="menu-item" onclick="showSection('ops')">
                 <span>📦</span> 貨物庫存表
+            </div>
+            <div class="menu-item" onclick="showSection('factory-stock')">
+                <span>🏭</span> Factory Stock
             </div>
             <div class="menu-item" onclick="showSection('forecast')">
                 <span>📈</span> Forecast 管理
@@ -387,6 +391,121 @@
                 </div>
             </section>
     
+            <!-- Factory Stock Section -->
+            <section id="factory-stock-section" class="module-section">
+                <h2 class="module-title">Factory Stock</h2>
+                
+                <!-- Filter Bar -->
+                <div class="fc-filter-bar">
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Factory</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="factory">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="factory">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFactoryAll(this, 'factory')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CN" checked onchange="updateFactoryFilter('factory')"> CN</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="TW" checked onchange="updateFactoryFilter('factory')"> TW</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Company</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="company">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="company">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFactoryAll(this, 'company')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Kitchen Mama" checked onchange="updateFactoryFilter('company')"> Kitchen Mama</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Res US" checked onchange="updateFactoryFilter('company')"> Res US</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Res TW" checked onchange="updateFactoryFilter('company')"> Res TW</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Marketplace</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="marketplace">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="marketplace">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFactoryAll(this, 'marketplace')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateFactoryFilter('marketplace')"> Amazon</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Shopify" checked onchange="updateFactoryFilter('marketplace')"> Shopify</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateFactoryFilter('marketplace')"> Target</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Category</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="category">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="category">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFactoryAll(this, 'category')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Can Opener" checked onchange="updateFactoryFilter('category')"> Can Opener</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Kitchen Tools" checked onchange="updateFactoryFilter('category')"> Kitchen Tools</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Appliances" checked onchange="updateFactoryFilter('category')"> Appliances</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Series</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="series">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="series">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFactoryAll(this, 'series')"> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CO1100" checked onchange="updateFactoryFilter('series')"> CO1100</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="FP2200" checked onchange="updateFactoryFilter('series')"> FP2200</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="KS3300" checked onchange="updateFactoryFilter('series')"> KS3300</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="WS4400" checked onchange="updateFactoryFilter('series')"> WS4400</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CM5500" checked onchange="updateFactoryFilter('series')"> CM5500</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CL6600" checked onchange="updateFactoryFilter('series')"> CL6600</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="TD7700" checked onchange="updateFactoryFilter('series')"> TD7700</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="EP2200" checked onchange="updateFactoryFilter('series')"> EP2200</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CB0100" checked onchange="updateFactoryFilter('series')"> CB0100</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--sku">
+                        <label>SKU</label>
+                        <input id="factory-sku-input" type="text" placeholder="Search SKU..." oninput="updateFactoryFilter('sku')" />
+                    </div>
+                </div>
+                
+                <!-- Factory Stock Table -->
+                <div class="dual-layer-table">
+                    <!-- Table Header Bar (Sticky) -->
+                    <div class="table-header-bar">
+                        <div class="fixed-header">
+                            <div class="header-cell">SKU</div>
+                        </div>
+                        <div class="scroll-header-viewport">
+                            <div class="scroll-header" id="factory-stock-scroll-header">
+                                <div class="header-cell">Company</div>
+                                <div class="header-cell">Marketplace</div>
+                                <div class="header-cell">Category</div>
+                                <div class="header-cell">Series</div>
+                                <div class="header-cell">Factory</div>
+                                <div class="header-cell">Stock</div>
+                                <div class="header-cell" id="factory-month-0">Jan</div>
+                                <div class="header-cell" id="factory-month-1">Feb</div>
+                                <div class="header-cell" id="factory-month-2">Mar</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Table Body Bar -->
+                    <div class="table-body-bar">
+                        <div class="fixed-col">
+                            <div class="fixed-body" id="factory-stock-fixed-body"></div>
+                        </div>
+                        <div class="scroll-col" id="factory-stock-scroll-col">
+                            <div class="scroll-body" id="factory-stock-scroll-body"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
             <!-- Forecast Review Section -->
             <section id="forecast-section" class="module-section page-forecast-review">
                 <div class="page-header">
@@ -1774,6 +1893,7 @@
     <script src="canvas.js"></script>
     <script src="forecast.js"></script>
     <script src="fc-summary.js"></script>
+    <script src="factory-stock-filter.js"></script>
     <script src="app.js"></script>
     <script src="shipping-history.js"></script>
 </body>

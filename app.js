@@ -113,6 +113,7 @@ function showSection(section) {
     const sectionMap = {
         'restock': 'replenishment-section',
         'ops': 'ops-section', 
+        'factory-stock': 'factory-stock-section',
         'forecast': 'forecast-section',
         'fc-summary': 'fc-summary-section',
         'skuDetails': 'sku-section',
@@ -145,6 +146,20 @@ function showSection(section) {
             if (window.initForecastReviewPage) {
                 window.initForecastReviewPage();
             }
+        }, 100);
+    }
+    if (section === 'fc-summary') {
+        setTimeout(() => {
+            if (window.initFcSummaryPage) {
+                window.initFcSummaryPage();
+            }
+        }, 100);
+    }
+    if (section === 'factory-stock') {
+        setTimeout(() => {
+            renderFactoryStockTable();
+            initFactoryStockHeaderSync();
+            initFactoryDropdown();
         }, 100);
     }
     if (section === 'skuDetails') {
@@ -2422,3 +2437,82 @@ function addNewCountry() {
 window.showAddCountryInput = showAddCountryInput;
 window.cancelAddCountry = cancelAddCountry;
 window.addNewCountry = addNewCountry;
+
+// ========================================
+// Factory Stock
+// ========================================
+
+function renderFactoryStock() {
+    const fixedBody = document.getElementById('factory-stock-fixed-body');
+    const scrollBody = document.getElementById('factory-stock-scroll-body');
+    
+    if (!fixedBody || !scrollBody) return;
+    
+    // 計算動態月份標題
+    const today = new Date();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const currentMonth = today.getMonth();
+    const month0 = monthNames[currentMonth];
+    const month1 = monthNames[(currentMonth + 1) % 12];
+    const month2 = monthNames[(currentMonth + 2) % 12];
+    
+    // 更新 header 月份標題
+    document.getElementById('factory-month-0').textContent = `${month0} Orders`;
+    document.getElementById('factory-month-1').textContent = `${month1} Orders`;
+    document.getElementById('factory-month-2').textContent = `${month2} Orders`;
+    
+    // 渲染左側固定欄 (SKU)
+    fixedBody.innerHTML = factoryStockData.map(item => `
+        <div class="fixed-row">${item.sku}</div>
+    `).join('');
+    
+    // 渲染右側滾動欄 (其他欄位)
+    scrollBody.innerHTML = factoryStockData.map(item => `
+        <div class="scroll-row">
+            <div class="scroll-cell">${item.company}</div>
+            <div class="scroll-cell">${item.marketplace}</div>
+            <div class="scroll-cell">${item.category}</div>
+            <div class="scroll-cell">${item.series}</div>
+            <div class="scroll-cell">${item.factory}</div>
+            <div class="scroll-cell">${item.stock}</div>
+            <div class="scroll-cell">${item.completedOrderMonth0}</div>
+            <div class="scroll-cell">${item.completedOrderMonth1}</div>
+            <div class="scroll-cell">${item.completedOrderMonth2}</div>
+        </div>
+    `).join('');
+}
+
+function initFactoryStockHeaderSync() {
+    const scrollCol = document.querySelector('#factory-stock-section .scroll-col');
+    const scrollHeader = document.querySelector('#factory-stock-section .scroll-header');
+    
+    if (!scrollCol || !scrollHeader) return;
+    
+    // Remove existing listener to avoid duplicates
+    scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
+    
+    // Create and store handler
+    scrollCol._syncHandler = () => {
+        scrollHeader.style.transform = `translateX(-${scrollCol.scrollLeft}px)`;
+    };
+    
+    scrollCol.addEventListener('scroll', scrollCol._syncHandler);
+}
+
+window.renderFactoryStock = renderFactoryStock;
+window.initFactoryStockHeaderSync = initFactoryStockHeaderSync;
+
+// Factory Stock Filter Functions
+function toggleFactoryFilter(checkbox, filterType) {
+    const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
+    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateFactoryFilter(filterType);
+}
+
+function updateFactoryFilter(filterType) {
+    renderFactoryStock();
+}
+
+window.toggleFactoryFilter = toggleFactoryFilter;
+window.updateFactoryFilter = updateFactoryFilter;

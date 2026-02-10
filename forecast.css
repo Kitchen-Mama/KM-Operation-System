@@ -472,9 +472,10 @@
 /* Summary Stats Row */
 .forecast-summary-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1.5fr 1.5fr;
+  grid-template-columns: repeat(5, minmax(220px, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
+  overflow-x: auto;
 }
 
 .forecast-stat-card {

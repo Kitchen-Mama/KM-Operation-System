@@ -1456,7 +1456,132 @@ const fcEventData = [
   { year: 2026, company: 'ResTW', marketplace: 'Walmart', country: 'US', category: 'Openers', series: 'Deluxe', sku: 'KM-OP-015', event: 'Prime Day', eventPeriod: '2026-07-10 ~ 2026-07-12', fcQty: 14800 }
 ];
 
+// Factory Stock 假資料
+const factoryStockData = [
+    {
+        sku: "KM-001",
+        company: "Res US",
+        marketplace: "Amazon",
+        category: "Can Opener",
+        series: "CO1100",
+        factory: "CN",
+        stock: 1200,
+        completedOrderMonth0: 300,
+        completedOrderMonth1: 500,
+        completedOrderMonth2: 800
+    },
+    {
+        sku: "KM-002",
+        company: "Res TW",
+        marketplace: "Target",
+        category: "Appliances",
+        series: "FP2200",
+        factory: "TW",
+        stock: 450,
+        completedOrderMonth0: 120,
+        completedOrderMonth1: 260,
+        completedOrderMonth2: 400
+    },
+    {
+        sku: "KM-003",
+        company: "Kitchen Mama",
+        marketplace: "Shopify",
+        category: "Kitchen Tools",
+        series: "KS3300",
+        factory: "CN",
+        stock: 2800,
+        completedOrderMonth0: 650,
+        completedOrderMonth1: 890,
+        completedOrderMonth2: 1200
+    },
+    {
+        sku: "KM-004",
+        company: "Res US",
+        marketplace: "Amazon",
+        category: "Kitchen Tools",
+        series: "WS4400",
+        factory: "TW",
+        stock: 980,
+        completedOrderMonth0: 220,
+        completedOrderMonth1: 380,
+        completedOrderMonth2: 520
+    },
+    {
+        sku: "KM-005",
+        company: "Res TW",
+        marketplace: "Shopify",
+        category: "Kitchen Tools",
+        series: "CM5500",
+        factory: "CN",
+        stock: 560,
+        completedOrderMonth0: 140,
+        completedOrderMonth1: 210,
+        completedOrderMonth2: 350
+    },
+    {
+        sku: "KM-006",
+        company: "Kitchen Mama",
+        marketplace: "Target",
+        category: "Kitchen Tools",
+        series: "CL6600",
+        factory: "TW",
+        stock: 1650,
+        completedOrderMonth0: 420,
+        completedOrderMonth1: 580,
+        completedOrderMonth2: 750
+    },
+    {
+        sku: "KM-007",
+        company: "Res US",
+        marketplace: "Amazon",
+        category: "Appliances",
+        series: "TD7700",
+        factory: "CN",
+        stock: 3200,
+        completedOrderMonth0: 780,
+        completedOrderMonth1: 1050,
+        completedOrderMonth2: 1400
+    },
+    {
+        sku: "KM-UP-001",
+        company: "Res TW",
+        marketplace: "Target",
+        category: "Can Opener",
+        series: "CO1100",
+        factory: "TW",
+        stock: 890,
+        completedOrderMonth0: 180,
+        completedOrderMonth1: 320,
+        completedOrderMonth2: 480
+    },
+    {
+        sku: "KM-UP-002",
+        company: "Kitchen Mama",
+        marketplace: "Shopify",
+        category: "Kitchen Tools",
+        series: "EP2200",
+        factory: "CN",
+        stock: 720,
+        completedOrderMonth0: 160,
+        completedOrderMonth1: 290,
+        completedOrderMonth2: 410
+    },
+    {
+        sku: "KM-OLD-001",
+        company: "Res US",
+        marketplace: "Amazon",
+        category: "Kitchen Tools",
+        series: "CB0100",
+        factory: "TW",
+        stock: 340,
+        completedOrderMonth0: 80,
+        completedOrderMonth1: 120,
+        completedOrderMonth2: 180
+    }
+];
+
 // 暴露資料到全域
 window.fcRegularData = fcRegularData;
 window.fcEventData = fcEventData;
+window.factoryStockData = factoryStockData;
 window.DataRepo = DataRepo;

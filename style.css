@@ -1870,3 +1870,58 @@ table td button {
 .btn-add-marketplace:hover {
     background: #059669;
 }
+
+
+/* ========================================
+   Factory Stock Table - Column Width Fix
+======================================== */
+#factory-stock-section .fixed-col {
+    width: 120px;
+}
+
+#factory-stock-section .fixed-header {
+    width: 120px;
+}
+
+#factory-stock-section .fixed-row {
+    width: 120px;
+    padding: 0 var(--space-md);
+}
+
+#factory-stock-section .header-cell {
+    width: 120px;
+    min-width: 120px;
+    flex-shrink: 0;
+}
+
+#factory-stock-section .scroll-cell {
+    width: 120px;
+    min-width: 120px;
+    flex-shrink: 0;
+    padding: 0 var(--space-md);
+}
+
+
+#factory-stock-section .table-header-bar {
+    height: 48px;
+}
+
+#factory-stock-section .scroll-header {
+    height: 48px;
+}
+
+#factory-stock-section .fixed-header {
+    height: 48px;
+}
+
+#factory-stock-section .fixed-row {
+    height: 48px;
+}
+
+#factory-stock-section .header-cell {
+    height: 48px;
+}
+
+#factory-stock-section .scroll-cell {
+    height: 48px;
+}
