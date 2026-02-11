@@ -1,0 +1,613 @@
+/* ========================================
+   Inventory Replenishment Page
+   #ops-section 專屬樣式
+======================================== */
+
+/* Page Title */
+#ops-section h2 {
+    position: relative;
+    z-index: 140;
+    margin-bottom: var(--space-lg);
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    font-weight: 600;
+    background: white;
+}
+
+/* Control Panel - 固定在頂部不滑動 */
+#ops-section .replen-control-panel {
+    position: sticky;
+    top: 0;
+    background: var(--bg-surface);
+    padding: var(--space-md);
+    margin-bottom: var(--space-lg);
+    border-radius: var(--radius-md);
+    display: flex;
+    gap: var(--space-lg);
+    align-items: center;
+    z-index: 131;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#ops-section .replen-control-panel select,
+#ops-section .replen-control-panel input {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+}
+
+#ops-section .replen-control-panel button {
+    padding: var(--space-sm) var(--space-md);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-weight: var(--weight-medium);
+    background: #F97316;
+    color: white;
+}
+
+#ops-section .replen-control-panel .btn-add-sku {
+    margin-left: auto;
+}
+
+/* 問題1: Modal 隱藏 */
+#ops-section .fc-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2001;
+    background: white;
+    border-radius: 8px;
+    padding: 2rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+#ops-section .fc-modal.is-open {
+    display: block;
+}
+
+#ops-section .fc-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+}
+
+#ops-section .fc-modal-overlay.is-open {
+    display: block;
+}
+
+#ops-section .fc-modal-content {
+    min-width: 500px;
+}
+
+#ops-section .fc-modal-content h3 {
+    margin: 0 0 1.5rem 0;
+    font-size: 1.25rem;
+}
+
+#ops-section .fc-modal-body {
+    margin-bottom: 1.5rem;
+}
+
+#ops-section .fc-form-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+#ops-section .fc-form-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+#ops-section .fc-form-group label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+#ops-section .fc-form-group input,
+#ops-section .fc-form-group select {
+    padding: 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+
+#ops-section .fc-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+#ops-section .fc-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#ops-section .fc-btn--cancel {
+    background: #6b7280;
+    color: white;
+}
+
+#ops-section .fc-btn--primary {
+    background: #3b82f6;
+    color: white;
+}
+
+/* 問題1: Table Header Sticky 效果 */
+#ops-section .dual-layer-table {
+    margin-top: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    max-width: 100%;
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-soft);
+}
+
+#ops-section .table-header-bar {
+    height: 96px;
+    position: sticky;
+    top: 72px;
+    z-index: 120;
+    display: flex;
+    background: var(--table-header-bg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 -100vh 0 100vh white;
+}
+
+#ops-section .fixed-header {
+    width: 100px;
+    height: 96px;
+    background: #f5f5f5;
+    border-right: 2px solid var(--border-medium);
+    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    font-weight: 600;
+    font-size: 14px;
+    color: #000000;
+}
+
+#ops-section .fixed-header .header-cell {
+    color: #000000;
+}
+
+#ops-section .scroll-header {
+    display: flex;
+    flex-direction: column;
+    min-width: max-content;
+    height: 96px;
+    background: transparent;
+    padding-right: 40px;
+}
+
+#ops-section .km-table__header-row {
+    display: flex;
+}
+
+#ops-section .km-table__header-row--level1 {
+    height: 48px;
+}
+
+#ops-section .km-table__header-row--level2 {
+    height: 48px;
+}
+
+#ops-section .km-table__header-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    color: #000000;
+    border-right: 1px solid rgba(255,255,255,0.3);
+    flex-shrink: 0;
+}
+
+/* Level 1 Headers */
+#ops-section .km-table__header-cell--status {
+    background: #f5f5f5;
+    width: 100px;
+    min-width: 100px;
+    height: 96px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 121;
+    border-right: 2px solid var(--border-medium);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    color: #000000;
+}
+
+#ops-section .km-table__header-cell--company,
+#ops-section .km-table__header-cell--marketplace {
+    display: none !important;
+}
+
+/* 問題1: 修正 Level1 標題左側間距，避免被 Status 覆蓋 */
+#ops-section .km-table__header-row--level1 {
+    padding-left: 100px;
+}
+
+#ops-section .km-table__header-cell--inventory {
+    background: #A8D08D;
+    width: 360px;
+    min-width: 360px;
+}
+
+#ops-section .km-table__header-cell--sales {
+    background: #9BC2E6;
+    width: 360px;
+    min-width: 360px;
+}
+
+#ops-section .km-table__header-cell--replen {
+    background: #FFD966;
+    width: 360px;
+    min-width: 360px;
+}
+
+#ops-section .km-table__header-cell--factory {
+    background: #F4B084;
+    width: 240px;
+    min-width: 240px;
+}
+
+#ops-section .km-table__header-cell--note-span {
+    background: #f5f5f5;
+    width: 175px;
+    min-width: 175px;
+    height: 96px;
+}
+
+/* Level 2 Headers - 同樣需要左側間距 */
+#ops-section .km-table__header-row--level2 {
+    padding-left: 100px;
+}
+
+#ops-section .km-table__header-row--level2 .km-table__header-cell {
+    background: #f5f5f5;
+    width: 120px;
+    min-width: 120px;
+    font-size: 12px;
+}
+
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(1),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(2),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(3) {
+    background: #D4E7C5;
+}
+
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(4),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(5),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(6) {
+    background: #CDE1F2;
+}
+
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(7),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(8),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(9) {
+    background: #FFECB3;
+}
+
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(10),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(11) {
+    background: #F9D9C2;
+}
+
+/* 語意化欄位寬度控制 */
+.km-col--planned-qty {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    flex-shrink: 0;
+}
+
+.km-col--ai-action {
+    width: 175px;
+    min-width: 175px;
+    max-width: 175px;
+    flex-shrink: 0;
+}
+
+.ai-action-cell__text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 問題4: Table Body - sticky 和 hover */
+#ops-section .table-body-bar {
+    display: flex;
+}
+
+#ops-section .fixed-col {
+    width: 100px;
+    flex-shrink: 0;
+    background: white;
+    z-index: 110;
+    border-right: 2px solid var(--border-medium);
+    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    position: sticky;
+    left: 0;
+}
+
+#ops-section .fixed-body {
+    background: white;
+}
+
+#ops-section .fixed-row {
+    height: 48px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-light);
+    cursor: pointer;
+}
+
+#ops-section .fixed-row:hover {
+    background: #F8F9FA;
+}
+
+#ops-section .scroll-row {
+    height: 48px;
+    display: flex;
+    min-width: max-content;
+    border-bottom: 1px solid var(--border-light);
+    cursor: pointer;
+    padding-right: 40px;
+}
+
+#ops-section .scroll-row:hover {
+    background: #F8F9FA;
+}
+
+#ops-section .scroll-cell {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--border-light);
+    flex-shrink: 0;
+    box-sizing: border-box;
+}
+
+#ops-section .scroll-cell:nth-child(1) { width: 100px; min-width: 100px; max-width: 100px; }
+#ops-section .scroll-cell:nth-child(2),
+#ops-section .scroll-cell:nth-child(3) { display: none; }
+
+/* 展開面板等高布局 */
+#ops-section .replen-expand-panel {
+    border-bottom: 2px solid var(--border-medium);
+    background: #F8F9FA;
+    display: flex;
+    overflow: visible;
+    min-height: auto;
+}
+
+#ops-section .replen-expand-scroll {
+    flex: 1;
+    padding: var(--space-md);
+    display: flex;
+    gap: 16px;
+    background: #F8F9FA;
+    overflow-x: visible;
+    align-items: stretch;
+    min-height: auto;
+}
+
+.ir-panel-column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1 1 0;
+    min-width: 200px;
+}
+
+.replen-card--sales-trend,
+.replen-card--achievement {
+    flex: 1.15 1 0;
+}
+
+#ops-section .replen-expand-fixed {
+    width: 100px;
+    padding: var(--space-md);
+    background: white;
+    min-height: auto;
+}
+
+#ops-section .replen-expand-scroll {
+    flex: 1;
+    padding: var(--space-md);
+    display: flex;
+    gap: var(--space-md);
+    background: #F8F9FA;
+    overflow-x: auto;
+    min-height: auto;
+}
+
+/* Inventory Group - 4個卡片 */
+#ops-section .replen-expand-section--inventory {
+    width: 360px;
+    min-width: 360px;
+    display: flex;
+    flex-direction: column;
+}
+
+#ops-section .replen-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+/* Sales Group - 2個卡片垂直排列 */
+#ops-section .replen-expand-section--sales {
+    width: 200px;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#ops-section .replen-expand-section--sales .replen-card {
+    flex: 1;
+    min-height: 0;
+}
+
+/* Forecast Group - 2個卡片垂直排列 */
+#ops-section .replen-expand-section--forecast {
+    width: 200px;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#ops-section .replen-expand-section--forecast .replen-card {
+    flex: 1;
+    min-height: 0;
+}
+
+/* Suggestion Group - 2個卡片垂直排列 */
+#ops-section .replen-expand-section--suggestion {
+    width: 220px;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#ops-section .replen-expand-section--suggestion .replen-card {
+    flex: 1;
+    min-height: 0;
+}
+
+/* Shipping Plan Group - 單一卡片 */
+#ops-section .replen-expand-section--shipping-plan {
+    width: 200px;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+}
+
+#ops-section .replen-expand-section--shipping-plan .replen-card {
+    flex: 1;
+    min-height: 0;
+}
+
+#ops-section .replen-card {
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+}
+
+#ops-section .replen-card__title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+#ops-section .replen-card__row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+#ops-section .replen-card__label {
+    color: var(--text-secondary);
+}
+
+#ops-section .replen-card__value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* 問題2: Shipping Allocation 輸入框樣式 */
+#ops-section .replen-card__input {
+    width: 60px;
+    padding: 2px 4px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    font-size: 11px;
+    text-align: right;
+    box-sizing: border-box;
+}
+
+#ops-section .replen-card__select {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    font-size: 11px;
+    background: white;
+    box-sizing: border-box;
+}
+
+#ops-section .replen-card__remove-btn {
+    background: #EF4444;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    margin: 0;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+#ops-section .shipping-methods-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#ops-section .replen-card--shipping-allocation {
+    overflow: visible;
+    min-height: auto;
+    flex: 1 1 auto;
+}
+
+.ir-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    min-height: auto;
+}
+
+.ir-panel--inventory-group {
+    width: 360px;
+    min-width: 360px;
+    flex: 0 0 360px;
+}

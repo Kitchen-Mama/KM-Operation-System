@@ -4,14 +4,20 @@
     <title>Kitchen Mama Operation System</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="factory-stock.css">
-    <link rel="stylesheet" href="sku-details.css">
-    <link rel="stylesheet" href="supplychain.css">
-    <link rel="stylesheet" href="shipping-plan.css">
-    <link rel="stylesheet" href="shipping-history.css">
-    <link rel="stylesheet" href="forecast.css">
-    <link rel="stylesheet" href="fc-summary.css">
+    <!-- CSS 模組化架構 -->
+    <link rel="stylesheet" href="assets/css/variables.css">
+    <link rel="stylesheet" href="assets/css/base.css">
+    <link rel="stylesheet" href="assets/css/components.css">
+    <link rel="stylesheet" href="assets/css/layout.css">
+    <link rel="stylesheet" href="assets/css/pages/home.css">
+    <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css">
+    <link rel="stylesheet" href="assets/css/pages/factory-stock.css">
+    <link rel="stylesheet" href="assets/css/pages/fc-overview.css">
+    <link rel="stylesheet" href="assets/css/pages/fc-raw-data.css">
+    <link rel="stylesheet" href="assets/css/pages/sku-details.css">
+    <link rel="stylesheet" href="assets/css/pages/shipping-plan.css">
+    <link rel="stylesheet" href="assets/css/pages/shipping-history.css">
+    <link rel="stylesheet" href="assets/css/pages/supply-chain-canvas.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -225,7 +231,7 @@
                     <h2>Inventory Replenishment</h2>
                     
                     <!-- Control Panel (Sticky) -->
-                    <div class="replen-control-panel">
+                    <div class="replen-control-panel" style="position: sticky; top: 0; z-index: 131;">
                         <select id="replenCountry" onchange="renderReplenishment()">
                             <option value="US">US</option>
                             <option value="UK">UK</option>
@@ -601,64 +607,63 @@
                 </div>
 
                 <!-- Date Picker Modal -->
-                <div class="forecast-date-modal" id="forecastDateModal">
-                    <div class="forecast-date-modal-content">
-                        <div class="forecast-date-modal-body">
-                            <!-- Left: Presets -->
-                            <div class="forecast-date-presets-panel">
-                                <div class="forecast-preset-item" data-preset="today">Today</div>
-                                <div class="forecast-preset-item" data-preset="yesterday">Yesterday</div>
-                                <div class="forecast-preset-divider"></div>
-                                <div class="forecast-preset-item" data-preset="last-7-days">Last 7 days</div>
-                                <div class="forecast-preset-item" data-preset="last-30-days">Last 30 days</div>
-                                <div class="forecast-preset-item" data-preset="last-60-days">Last 60 days</div>
-                                <div class="forecast-preset-item" data-preset="last-90-days">Last 90 days</div>
-                                <div class="forecast-preset-divider"></div>
-                                <div class="forecast-preset-item" data-preset="last-month">Last month</div>
-                                <div class="forecast-preset-item" data-preset="last-2-months">Last 2 months</div>
-                                <div class="forecast-preset-item" data-preset="last-3-months">Last 3 months</div>
-                                <div class="forecast-preset-item" data-preset="last-year">Last year</div>
-                            </div>
-                            
-                            <!-- Right: Calendars -->
-                            <div class="forecast-date-calendars-panel">
-                                <div class="forecast-date-inputs">
-                                    <div class="forecast-date-input-group">
-                                        <label>Start</label>
-                                        <input type="text" class="forecast-date-input" id="forecastStartDisplay" readonly />
-                                    </div>
-                                    <div class="forecast-date-input-group">
-                                        <label>End</label>
-                                        <input type="text" class="forecast-date-input" id="forecastEndDisplay" readonly />
-                                    </div>
-                                </div>
-                                
-                                <div class="forecast-calendars">
-                                    <div class="forecast-calendar" id="forecastCalendarStart">
-                                        <div class="forecast-calendar-header">
-                                            <button class="forecast-calendar-nav" data-nav="prev-start">‹</button>
-                                            <span class="forecast-calendar-title" id="forecastCalendarStartTitle"></span>
-                                            <button class="forecast-calendar-nav" data-nav="next-start">›</button>
-                                        </div>
-                                        <div class="forecast-calendar-body" id="forecastCalendarStartBody"></div>
-                                    </div>
-                                    
-                                    <div class="forecast-calendar" id="forecastCalendarEnd">
-                                        <div class="forecast-calendar-header">
-                                            <button class="forecast-calendar-nav" data-nav="prev-end">‹</button>
-                                            <span class="forecast-calendar-title" id="forecastCalendarEndTitle"></span>
-                                            <button class="forecast-calendar-nav" data-nav="next-end">›</button>
-                                        </div>
-                                        <div class="forecast-calendar-body" id="forecastCalendarEndBody"></div>
-                                    </div>
-                                </div>
-                            </div>
+                <div class="fr-date-backdrop" id="frDateBackdrop"></div>
+                <div class="fr-date-modal" id="frDateModal">
+                    <div class="fr-date-modal-body">
+                        <!-- Left: Presets -->
+                        <div class="fr-date-sidebar">
+                            <div class="fr-preset-item" data-preset="today">Today</div>
+                            <div class="fr-preset-item" data-preset="yesterday">Yesterday</div>
+                            <div class="fr-preset-divider"></div>
+                            <div class="fr-preset-item" data-preset="last-7-days">Last 7 days</div>
+                            <div class="fr-preset-item" data-preset="last-30-days">Last 30 days</div>
+                            <div class="fr-preset-item" data-preset="last-60-days">Last 60 days</div>
+                            <div class="fr-preset-item" data-preset="last-90-days">Last 90 days</div>
+                            <div class="fr-preset-divider"></div>
+                            <div class="fr-preset-item" data-preset="last-month">Last month</div>
+                            <div class="fr-preset-item" data-preset="last-2-months">Last 2 months</div>
+                            <div class="fr-preset-item" data-preset="last-3-months">Last 3 months</div>
+                            <div class="fr-preset-item" data-preset="last-year">Last year</div>
                         </div>
                         
-                        <div class="forecast-date-modal-footer">
-                            <button class="forecast-date-btn forecast-date-btn--cancel" id="forecastDateCancel">Cancel</button>
-                            <button class="forecast-date-btn forecast-date-btn--apply" id="forecastDateApply">Apply</button>
+                        <!-- Right: Calendars -->
+                        <div class="fr-date-content">
+                            <div class="fr-date-inputs">
+                                <div class="fr-date-input-group">
+                                    <label>Start</label>
+                                    <input type="text" class="fr-date-input" id="frStartDisplay" readonly />
+                                </div>
+                                <div class="fr-date-input-group">
+                                    <label>End</label>
+                                    <input type="text" class="fr-date-input" id="frEndDisplay" readonly />
+                                </div>
+                            </div>
+                            
+                            <div class="fr-calendars">
+                                <div class="fr-calendar" id="frCalendarStart">
+                                    <div class="fr-calendar-header">
+                                        <button class="fr-calendar-nav" data-nav="prev-start">‹</button>
+                                        <span class="fr-calendar-title" id="frCalendarStartTitle"></span>
+                                        <button class="fr-calendar-nav" data-nav="next-start">›</button>
+                                    </div>
+                                    <div class="fr-calendar-body" id="frCalendarStartBody"></div>
+                                </div>
+                                
+                                <div class="fr-calendar" id="frCalendarEnd">
+                                    <div class="fr-calendar-header">
+                                        <button class="fr-calendar-nav" data-nav="prev-end">‹</button>
+                                        <span class="fr-calendar-title" id="frCalendarEndTitle"></span>
+                                        <button class="fr-calendar-nav" data-nav="next-end">›</button>
+                                    </div>
+                                    <div class="fr-calendar-body" id="frCalendarEndBody"></div>
+                                </div>
+                            </div>
                         </div>
+                    </div>
+                    
+                    <div class="fr-date-modal-footer">
+                        <button class="fr-date-btn fr-date-btn--cancel" id="frDateCancel">Cancel</button>
+                        <button class="fr-date-btn fr-date-btn--apply" id="frDateApply">Apply</button>
                     </div>
                 </div>
 
@@ -1887,14 +1892,21 @@
         </div>
     </div>
     
-    <script src="data.js"></script>
-    <script src="replen-add-sku.js"></script>
-    <script src="sku-scroll.js"></script>
-    <script src="canvas.js"></script>
-    <script src="forecast.js"></script>
-    <script src="fc-summary.js"></script>
-    <script src="factory-stock-filter.js"></script>
-    <script src="app.js"></script>
-    <script src="shipping-history.js"></script>
+    <!-- JS 模組化架構 -->
+    <!-- Utils -->
+    <script src="assets/js/utils/data.js"></script>
+    <script src="assets/js/utils/scroll-sync.js"></script>
+    
+    <!-- Pages -->
+    <script src="assets/js/pages/inventory-replenishment.js"></script>
+    <script src="assets/js/pages/factory-stock.js"></script>
+    <script src="assets/js/pages/fc-summary.js"></script>
+    <script src="assets/js/pages/forecast.js"></script>
+    <script src="assets/js/pages/sku-details.js"></script>
+    <script src="assets/js/pages/shipping-history.js"></script>
+    <script src="assets/js/pages/supplychain.js"></script>
+    
+    <!-- App (Global) -->
+    <script src="assets/js/app.js"></script>
 </body>
 </html>
