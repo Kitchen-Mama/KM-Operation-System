@@ -3,7 +3,7 @@
 // ========================================
 
 function toggleFactoryAll(checkbox, filterType) {
-    const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
+    const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
     if (!panel) return;
     
     const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
@@ -21,7 +21,6 @@ function renderFactoryStockTable() {
     
     if (!fixedBody || !scrollBody) return;
     
-    // 獲取所有篩選器的選中值
     const factoryFilters = getSelectedFilters('factory');
     const companyFilters = getSelectedFilters('company');
     const marketplaceFilters = getSelectedFilters('marketplace');
@@ -29,63 +28,31 @@ function renderFactoryStockTable() {
     const seriesFilters = getSelectedFilters('series');
     const skuFilter = document.getElementById('factory-sku-input')?.value.toLowerCase() || '';
     
-    // 篩選資料
-    let filteredData = factoryStockData.filter(item => {
-        // Factory 篩選
-        if (factoryFilters.length > 0 && !factoryFilters.includes(item.factory)) {
-            return false;
-        }
-        
-        // Company 篩選
-        if (companyFilters.length > 0 && !companyFilters.includes(item.company)) {
-            return false;
-        }
-        
-        // Marketplace 篩選
-        if (marketplaceFilters.length > 0 && !marketplaceFilters.includes(item.marketplace)) {
-            return false;
-        }
-        
-        // Category 篩選
-        if (categoryFilters.length > 0 && !categoryFilters.includes(item.category)) {
-            return false;
-        }
-        
-        // Series 篩選
-        if (seriesFilters.length > 0 && !seriesFilters.includes(item.series)) {
-            return false;
-        }
-        
-        // SKU 搜尋
-        if (skuFilter && !item.sku.toLowerCase().includes(skuFilter)) {
-            return false;
-        }
-        
+    let filteredData = (window.factoryStockData || []).filter(item => {
+        if (factoryFilters.length > 0 && !factoryFilters.includes(item.factory)) return false;
+        if (companyFilters.length > 0 && !companyFilters.includes(item.company)) return false;
+        if (marketplaceFilters.length > 0 && !marketplaceFilters.includes(item.marketplace)) return false;
+        if (categoryFilters.length > 0 && !categoryFilters.includes(item.category)) return false;
+        if (seriesFilters.length > 0 && !seriesFilters.includes(item.series)) return false;
+        if (skuFilter && !item.sku.toLowerCase().includes(skuFilter)) return false;
         return true;
     });
     
-    // 計算動態月份標題
     const today = new Date();
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const currentMonth = today.getMonth();
-    const month0 = monthNames[currentMonth];
-    const month1 = monthNames[(currentMonth + 1) % 12];
-    const month2 = monthNames[(currentMonth + 2) % 12];
     
-    // 更新 header 月份標題
     const header0 = document.getElementById('factory-month-0');
     const header1 = document.getElementById('factory-month-1');
     const header2 = document.getElementById('factory-month-2');
-    if (header0) header0.textContent = `${month0} Orders`;
-    if (header1) header1.textContent = `${month1} Orders`;
-    if (header2) header2.textContent = `${month2} Orders`;
+    if (header0) header0.textContent = `${monthNames[currentMonth]} Orders`;
+    if (header1) header1.textContent = `${monthNames[(currentMonth + 1) % 12]} Orders`;
+    if (header2) header2.textContent = `${monthNames[(currentMonth + 2) % 12]} Orders`;
     
-    // 渲染左側固定欄 (SKU)
     fixedBody.innerHTML = filteredData.map(item => `
         <div class="fixed-row">${item.sku}</div>
     `).join('');
     
-    // 渲染右側滾動欄 (其他欄位) - 加上千分位符號
     scrollBody.innerHTML = filteredData.map(item => `
         <div class="scroll-row">
             <div class="scroll-cell">${item.company}</div>
@@ -102,7 +69,7 @@ function renderFactoryStockTable() {
 }
 
 function getSelectedFilters(filterType) {
-    const panel = document.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
+    const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
     if (!panel) return [];
     
     const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
@@ -110,44 +77,51 @@ function getSelectedFilters(filterType) {
 }
 
 function initFactoryDropdown() {
-    const triggers = document.querySelectorAll('#factory-stock-section .fc-dropdown-trigger');
+    const section = document.getElementById('factory-stock-section');
+    if (!section) return;
+    
+    const triggers = section.querySelectorAll('.fc-dropdown-trigger');
     
     triggers.forEach(trigger => {
-        trigger.addEventListener('click', function(e) {
+        const newTrigger = trigger.cloneNode(true);
+        trigger.parentNode.replaceChild(newTrigger, trigger);
+        
+        newTrigger.addEventListener('click', function(e) {
             e.stopPropagation();
             const filterType = this.dataset.filter;
-            const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
+            const panel = section.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
             
-            // 關閉其他 panel
-            document.querySelectorAll('#factory-stock-section .fc-dropdown-panel').forEach(p => {
+            section.querySelectorAll('.fc-dropdown-panel').forEach(p => {
                 if (p !== panel) p.classList.remove('is-open');
             });
             
-            // 切換當前 panel
             if (panel) {
                 panel.classList.toggle('is-open');
             }
         });
     });
     
-    // 防止 panel 內部點擊關閉
-    document.querySelectorAll('#factory-stock-section .fc-dropdown-panel').forEach(panel => {
-        panel.addEventListener('click', function(e) {
+    section.querySelectorAll('.fc-dropdown-panel').forEach(panel => {
+        const newPanel = panel.cloneNode(true);
+        panel.parentNode.replaceChild(newPanel, panel);
+        
+        newPanel.addEventListener('click', function(e) {
             e.stopPropagation();
         });
     });
     
-    // 點擊外部關閉
-    document.addEventListener('click', function(e) {
-        if (!e.target.closest('#factory-stock-section .filter-group--dropdown')) {
-            document.querySelectorAll('#factory-stock-section .fc-dropdown-panel').forEach(p => {
-                p.classList.remove('is-open');
-            });
-        }
-    });
+    if (!section._factoryClickHandler) {
+        section._factoryClickHandler = function(e) {
+            if (!section.contains(e.target) || !e.target.closest('.filter-group--dropdown')) {
+                section.querySelectorAll('.fc-dropdown-panel').forEach(p => {
+                    p.classList.remove('is-open');
+                });
+            }
+        };
+        document.addEventListener('click', section._factoryClickHandler);
+    }
 }
 
-// 暴露函數到全域
 window.toggleFactoryAll = toggleFactoryAll;
 window.updateFactoryFilter = updateFactoryFilter;
 window.renderFactoryStockTable = renderFactoryStockTable;
