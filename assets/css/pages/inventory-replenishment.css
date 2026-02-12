@@ -465,8 +465,8 @@
 
 /* Sales Group - 2個卡片垂直排列 */
 #ops-section .replen-expand-section--sales {
-    width: 200px;
-    min-width: 200px;
+    width: 260px;
+    min-width: 260px;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -568,6 +568,7 @@
     font-size: 11px;
     background: white;
     box-sizing: border-box;
+    margin-bottom: 8px;
 }
 
 #ops-section .replen-card__remove-btn {
@@ -596,6 +597,10 @@
     overflow: visible;
     min-height: auto;
     flex: 1 1 auto;
+}
+
+#ops-section .replen-card--shipping-allocation button {
+    margin-bottom: 8px;
 }
 
 .ir-panel {

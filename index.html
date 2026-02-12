@@ -44,12 +44,27 @@
             <div class="menu-item" onclick="showSection('factory-stock')">
                 <span>🏭</span> Factory Stock
             </div>
-            <div class="menu-item" onclick="showSection('forecast')">
-                <span>📈</span> Forecast 管理
+            
+            <!-- Forecast 父子選單 POC -->
+            <div class="menu-parent"
+                 data-menu-id="forecast"
+                 onclick="toggleMenu('forecast')">
+                <span>📈</span> Forecast Overview
             </div>
-            <div class="menu-item" onclick="showSection('fc-summary')">
-                <span>📊</span> FC Summary
+            
+            <div class="menu-children"
+                 data-parent="forecast">
+                <div class="menu-item"
+                     onclick="showSection('forecast')">
+                    Forecast 管理
+                </div>
+                
+                <div class="menu-item"
+                     onclick="showSection('fc-summary')">
+                    FC Summary
+                </div>
             </div>
+            
             <div class="menu-item" onclick="showSection('skuDetails')">
                 <span>📝</span> SKU Details
             </div>
@@ -1490,7 +1505,6 @@
                 <div class="display-panel" id="displayPanel">
                     <label class="all-option"><input type="checkbox" id="checkAll" checked onchange="toggleAllColumns()"> <strong>All</strong></label>
                     <hr style="margin: var(--space-xs) 0; border: none; border-top: 1px solid var(--border-light);">
-                    <label><input type="checkbox" class="col-checkbox" data-col="0" checked onchange="toggleColumn(0)"> SKU</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="1" checked onchange="toggleColumn(1)"> Image</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="2" checked onchange="toggleColumn(2)"> Status</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="3" checked onchange="toggleColumn(3)"> Product Name</label>

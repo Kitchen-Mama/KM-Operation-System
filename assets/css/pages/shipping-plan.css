@@ -21,3 +21,196 @@
     border-radius: var(--radius-sm);
     font-size: var(--font-size-body);
 }
+
+/* Shipping Plan Card */
+#shippingplan-section .sp-card {
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-lg);
+    box-shadow: var(--shadow-soft);
+}
+
+#shippingplan-section .sp-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: var(--space-lg);
+    border-bottom: 1px solid var(--border-light);
+}
+
+#shippingplan-section .sp-card-summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--space-md);
+    flex: 1;
+}
+
+#shippingplan-section .sp-summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#shippingplan-section .sp-summary-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+#shippingplan-section .sp-summary-value {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+#shippingplan-section .plan-status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#shippingplan-section .plan-status-badge--draft {
+    background: #FEF3C7;
+    color: #92400E;
+}
+
+#shippingplan-section .plan-status-badge--pendingApproval {
+    background: #DBEAFE;
+    color: #1E40AF;
+}
+
+#shippingplan-section .plan-status-badge--approved {
+    background: #D1FAE5;
+    color: #065F46;
+}
+
+#shippingplan-section .sp-card-actions {
+    display: flex;
+    gap: var(--space-sm);
+    margin-left: var(--space-lg);
+}
+
+#shippingplan-section .sp-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#shippingplan-section .sp-btn-expand {
+    background: var(--soft-green);
+    color: white;
+}
+
+#shippingplan-section .sp-btn-expand:hover {
+    background: #6FA055;
+}
+
+#shippingplan-section .sp-btn-submit {
+    background: #3B82F6;
+    color: white;
+}
+
+#shippingplan-section .sp-btn-submit:hover {
+    background: #2563EB;
+}
+
+#shippingplan-section .sp-btn-cancel {
+    background: #EF4444;
+    color: white;
+}
+
+#shippingplan-section .sp-btn-cancel:hover {
+    background: #DC2626;
+}
+
+#shippingplan-section .sp-card-details {
+    display: none;
+    padding: var(--space-lg);
+}
+
+#shippingplan-section .sp-card.is-expanded .sp-card-details {
+    display: block;
+}
+
+#shippingplan-section .sp-details-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: var(--space-lg);
+}
+
+#shippingplan-section .sp-section {
+    background: var(--bg-surface);
+    padding: var(--space-md);
+    border-radius: var(--radius-sm);
+}
+
+#shippingplan-section .sp-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: var(--space-md);
+    color: var(--text-primary);
+}
+
+#shippingplan-section .sp-sku-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+#shippingplan-section .sp-sku-table th {
+    background: var(--table-header-bg);
+    padding: 8px;
+    text-align: left;
+    font-weight: 500;
+    border-bottom: 1px solid var(--border-light);
+}
+
+#shippingplan-section .sp-sku-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+#shippingplan-section .sp-sku-table input[type="number"] {
+    width: 80px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+}
+
+#shippingplan-section .sp-rationale-text {
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+#shippingplan-section .sp-rationale-item {
+    margin-bottom: 8px;
+}
+
+#shippingplan-section .sp-cost-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 13px;
+}
+
+#shippingplan-section .sp-cost-row:last-child {
+    border-bottom: none;
+    font-weight: 600;
+}
+
+#shippingplan-section .sp-cost-label {
+    color: var(--text-muted);
+}
+
+#shippingplan-section .sp-cost-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}

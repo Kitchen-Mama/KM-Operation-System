@@ -526,3 +526,26 @@
     color: #6b7280;
     line-height: 1.5;
 }
+
+/* FC Summary Table Alignment */
+#fc-summary-section .fixed-header {
+    width: 120px;
+    min-width: 120px;
+}
+
+#fc-summary-section .fixed-col {
+    width: 120px;
+    min-width: 120px;
+}
+
+#fc-summary-section .scroll-cell {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+}
+
+#fc-summary-section .header-cell {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+}

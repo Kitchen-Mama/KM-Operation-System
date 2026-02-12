@@ -149,6 +149,30 @@
     width: 200px;
 }
 
+/* Header Cells - 與 Scroll Cells 寬度一致 */
+#sku-section .header-cell[data-col="1"] { width: 80px; min-width: 80px; }
+#sku-section .header-cell[data-col="2"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="3"] { width: 200px; min-width: 200px; }
+#sku-section .header-cell[data-col="4"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="5"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="6"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="7"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="8"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="9"] { width: 180px; min-width: 180px; }
+#sku-section .header-cell[data-col="10"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="11"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="12"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="13"] { width: 150px; min-width: 150px; }
+#sku-section .header-cell[data-col="14"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="15"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="16"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="17"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="18"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="19"] { width: 100px; min-width: 100px; }
+#sku-section .header-cell[data-col="20"] { width: 120px; min-width: 120px; }
+#sku-section .header-cell[data-col="21"] { width: 100px; min-width: 100px; }
+
+/* Scroll Cells */
 #sku-section .scroll-cell:nth-child(1) { width: 80px; min-width: 80px; }
 #sku-section .scroll-cell:nth-child(2) { width: 100px; min-width: 100px; }
 #sku-section .scroll-cell:nth-child(3) { width: 200px; min-width: 200px; }
@@ -182,4 +206,27 @@
     justify-content: center;
     font-size: 10px;
     color: var(--text-muted);
+}
+
+/* 隱藏各 table 的獨立滾動條 */
+#sku-section .scroll-col {
+    overflow-x: hidden;
+}
+
+/* 統一滾動條容器 */
+#sku-section .sku-unified-scroll {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background: white;
+    border-top: 1px solid var(--border-light);
+    z-index: 130;
+}
+
+#sku-section .sku-unified-scroll-content {
+    height: 1px;
 }

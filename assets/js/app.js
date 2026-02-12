@@ -1,4 +1,37 @@
+// ========================================
+// Menu Configuration
+// ========================================
+const menuConfig = [
+    {
+        id: "forecast",
+        label: "Forecast Overview",
+        icon: "📈",
+        type: "parent",
+        children: [
+            { id: "forecast-review", label: "Forecast 管理", section: "forecast" },
+            { id: "fc-summary", label: "FC Summary", section: "fc-summary" }
+        ]
+    }
+];
+
+// ========================================
+// Menu Toggle Function
+// ========================================
+function toggleMenu(menuId) {
+    const parent = document.querySelector(`[data-menu-id="${menuId}"]`);
+    const children = document.querySelector(`.menu-children[data-parent="${menuId}"]`);
+
+    if (!parent || !children) return;
+
+    parent.classList.toggle("is-open");
+    children.classList.toggle("is-open");
+}
+
+window.toggleMenu = toggleMenu;
+
+// ========================================
 // Homepage 渲染函式 - Stage 1
+// ========================================
 function renderHomepage() {
     renderEvents();
     renderGoal();

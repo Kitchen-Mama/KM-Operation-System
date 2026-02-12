@@ -110,6 +110,47 @@
     pointer-events: none;
 }
 
+/* Parent-Child Menu */
+.menu-parent {
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    border-bottom: 1px solid #F7FAFC;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-weight: 600;
+}
+
+.menu-parent::after {
+    content: "▸";
+    font-size: 12px;
+    transition: transform 0.2s ease;
+}
+
+.menu-parent.is-open::after {
+    transform: rotate(90deg);
+}
+
+.menu-parent:hover {
+    background: var(--warm-orange);
+    color: white;
+}
+
+.menu-children {
+    display: none;
+    padding-left: 20px;
+}
+
+.menu-children.is-open {
+    display: block;
+}
+
+.menu-children .menu-item {
+    font-weight: 400;
+}
+
 /* ========================================
    Main Content
 ======================================== */

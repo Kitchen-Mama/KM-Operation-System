@@ -3,26 +3,142 @@
    #supplychain-section 專屬樣式
 ======================================== */
 
-#supplychain-section .sc-canvas-shell {
-    display: flex;
+/* 確保頁面在激活時正確顯示 - 覆蓋 layout.css 的 module-section */
+#supplychain-section.active {
+    display: flex !important;
     flex-direction: column;
-    height: calc(100vh - 200px);
-    background: white;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-lg);
+    padding: 0;
+    height: calc(100vh - 80px);
+    overflow: hidden;
 }
 
-#supplychain-section .sc-toolbar {
-    display: flex;
-    gap: var(--space-sm);
-    padding: var(--space-md);
+/* Page header */
+#supplychain-section .sc-page-header {
+    flex-shrink: 0;
+    padding: var(--space-lg) var(--space-xl);
     border-bottom: 1px solid var(--border-light);
-    background: var(--bg-surface);
+    background: white;
+}
+
+#supplychain-section .sc-page-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: var(--text-dark);
+}
+
+/* Canvas shell - fills remaining height */
+#supplychain-section .sc-canvas-shell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    background: #FAFAFA;
+    min-height: 0;
+}
+
+/* Floating toolbar */
+#supplychain-section .sc-toolbar {
+    align-items: center;
+    position: absolute;
+    left: 20px;
+    top: 20px;
+    z-index: 100;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    background: white;
+    padding: 6px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
 #supplychain-section .sc-tool {
+    padding: 0 !important;
     width: 40px;
     height: 40px;
+    min-width: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#supplychain-section .sc-tool svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+#supplychain-section .sc-tool:hover {
+    background: var(--cream-white);
+    border-color: var(--warm-orange);
+}
+
+#supplychain-section .sc-tool.is-active {
+    background: var(--warm-orange);
+    border-color: var(--warm-orange);
+}
+
+#supplychain-section .sc-tool.is-active svg {
+    stroke: white;
+}
+
+/* Canvas viewport */
+#supplychain-section .sc-canvas-viewport {
+    flex: 1;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+#supplychain-section .sc-canvas-content {
+    width: 5000px;
+    height: 5000px;
+    position: absolute;
+    top: -2000px;
+    left: -2000px;
+    cursor: grab;
+    background: #FAFAFA;
+    background-image: 
+        linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+#supplychain-section .sc-canvas-content:active {
+    cursor: grabbing;
+}
+
+/* Zoom control - bottom right */
+#supplychain-section .sc-zoom-control {
+    margin-bottom:20px;
+    position: absolute;
+    right: 20px;
+    bottom: 20px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+#supplychain-section .sc-zoom-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-width: 0 !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -30,63 +146,586 @@
     border-radius: var(--radius-sm);
     background: white;
     cursor: pointer;
-    transition: all 0.2s;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--text-dark);
+    transition: all 0.2s ease;
 }
 
-#supplychain-section .sc-tool:hover {
-    background: var(--bg-surface);
-    border-color: var(--soft-green);
-}
-
-#supplychain-section .sc-tool.is-active {
-    background: var(--soft-green);
-    border-color: var(--soft-green);
-}
-
-#supplychain-section .sc-canvas-viewport {
-    flex: 1;
-    position: relative;
-    overflow: hidden;
-}
-
-#supplychain-section .sc-canvas-content {
-    width: 100%;
-    height: 100%;
-    background: #fafafa;
-}
-
-#supplychain-section .sc-zoom-control {
-    position: absolute;
-    bottom: 20px;
-    right: 20px;
-    display: flex;
-    gap: var(--space-xs);
-    background: white;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-md);
-    padding: var(--space-xs);
-    box-shadow: var(--shadow-soft);
-}
-
-#supplychain-section .sc-zoom-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 18px;
-    color: var(--text-primary);
+#supplychain-section .sc-zoom-btn:hover {
+    background: var(--cream-white);
+    border-color: var(--warm-orange);
+    color: var(--warm-orange);
 }
 
 #supplychain-section .sc-zoom-label {
     min-width: 50px;
     text-align: center;
-    font-size: var(--font-size-body);
-    color: var(--text-primary);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+}
+
+#supplychain-section .sc-zoom-label:hover {
+    color: var(--warm-orange);
+}
+
+/* Shape Selector Modal */
+#supplychain-section .sc-shape-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 200;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    padding: var(--space-lg);
+    min-width: 300px;
+}
+
+#supplychain-section .sc-shape-modal.is-visible {
+    display: block;
+}
+
+#supplychain-section .sc-shape-modal-title {
+    margin: 0 0 var(--space-md) 0;
+    font-size: 1.1rem;
+    color: var(--text-dark);
+    font-weight: 600;
+}
+
+#supplychain-section .sc-shape-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-sm);
+}
+
+#supplychain-section .sc-shape-option {
+    padding: var(--space-md);
+    border: 2px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+#supplychain-section .sc-shape-option:hover {
+    border-color: var(--warm-orange);
+    background: var(--cream-white);
+}
+
+#supplychain-section .sc-shape-option svg {
+    width: 40px;
+    height: 40px;
+}
+
+#supplychain-section .sc-shape-option-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+#supplychain-section .sc-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 199;
+}
+
+#supplychain-section .sc-modal-overlay.is-visible {
+    display: block;
+}
+
+/* Canvas Items */
+#supplychain-section .sc-item {
+    position: absolute;
+    cursor: move;
+    user-select: none;
+    box-sizing: border-box;
+}
+
+#supplychain-section .sc-item.is-selected {
+    outline: 1.5px solid var(--warm-orange);
+    outline-offset: 2px;
+}
+
+/* Shape Items */
+#supplychain-section .sc-shape {
+    border: 2px solid #1e3a8a;
+    background: white;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 8px;
+    min-width: 80px;
+    min-height: 60px;
+}
+
+#supplychain-section .sc-shape.shape-triangle {
+    clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+
+#supplychain-section .sc-shape.shape-diamond {
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+#supplychain-section .sc-shape.shape-rounded-rect {
+    border-radius: 20px;
+}
+
+#supplychain-section .sc-shape-text {
+    width: 100%;
+    text-align: center;
+    font-size: 14px;
+    color: var(--text-dark);
+    outline: none;
+    border: none;
+    background: transparent;
+    cursor: text;
+}
+
+/* Text Items */
+#supplychain-section .sc-text {
+    border: 2px solid #1e3a8a;
+    padding: 8px;
+    min-width: 100px;
+    font-size: 14px;
+    color: var(--text-dark);
+    background: white;
+}
+
+#supplychain-section .sc-text.is-selected {
+    outline: 2px solid var(--warm-orange);
+    outline-offset: 2px;
+}
+
+/* Note Items */
+#supplychain-section .sc-note {
+    background: #FFF8DC;
+    border: 1px solid #F0E68C;
+    padding: 12px;
+    min-width: 150px;
+    min-height: 100px;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
+    font-size: 13px;
+    color: var(--text-dark);
+}
+
+/* Highlight Items */
+#supplychain-section .sc-highlight {
+    background: rgba(255, 255, 0, 0.3);
+    border: 1px solid rgba(255, 255, 0, 0.5);
+    pointer-events: auto;
+}
+
+/* Resize Handles */
+#supplychain-section .sc-resize-handle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: white;
+    border: 2px solid var(--warm-orange);
+    border-radius: 50%;
+    display: none;
+}
+
+#supplychain-section .sc-item.is-selected .sc-resize-handle {
+    display: block;
+}
+
+#supplychain-section .sc-resize-handle.nw { top: -4px; left: -4px; cursor: nw-resize; }
+#supplychain-section .sc-resize-handle.ne { top: -4px; right: -4px; cursor: ne-resize; }
+#supplychain-section .sc-resize-handle.se { bottom: -4px; right: -4px; cursor: se-resize; }
+#supplychain-section .sc-resize-handle.sw { bottom: -4px; left: -4px; cursor: sw-resize; }
+
+/* Item Toolbar */
+#supplychain-section .sc-item-toolbar {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 30px;
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 6px;
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    z-index: 200;
+    white-space: nowrap;
+}
+
+#supplychain-section .sc-item.is-selected .sc-item-toolbar {
+    display: flex;
+}
+
+#supplychain-section .sc-toolbar-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #000;
+    transition: all 0.2s ease;
+}
+
+#supplychain-section .sc-toolbar-btn:hover {
+    background: var(--cream-white);
+    border-color: var(--warm-orange);
+}
+
+#supplychain-section .sc-toolbar-btn.active {
+    background: var(--warm-orange);
+    color: white;
+}
+
+#supplychain-section .sc-toolbar-separator {
+    width: 1px;
+    height: 24px;
+    background: var(--border-light);
+    margin: 0 2px;
+}
+
+/* Text Options Panel */
+#supplychain-section .sc-text-options {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 8px;
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    z-index: 201;
+    white-space: nowrap;
+}
+
+#supplychain-section .sc-text-options.is-visible {
+    display: flex;
+}
+
+#supplychain-section .sc-text-options select,
+#supplychain-section .sc-text-options input {
+    height: 28px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    padding: 0 6px;
+    font-size: 12px;
+    color: #000;
+}
+
+/* Arrow Anchors */
+#supplychain-section .sc-arrow-anchor {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #FF6B35;
+    border: 2px solid white;
+    border-radius: 50%;
+    cursor: crosshair;
+    opacity: 0.7;
+    z-index: 150;
+    font-size: 12px;
+    color: white;
+    line-height: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+#supplychain-section .sc-item.is-selected .sc-arrow-anchor {
+    display: flex;
+}
+
+#supplychain-section .sc-arrow-anchor:hover {
+    opacity: 1;
+}
+
+#supplychain-section .sc-arrow-anchor.top { 
+    top: -25px; 
+    left: 50%; 
+    transform: translateX(-50%);
+}
+
+#supplychain-section .sc-arrow-anchor.bottom { 
+    bottom: -25px; 
+    left: 50%; 
+    transform: translateX(-50%);
+}
+
+#supplychain-section .sc-arrow-anchor.left { 
+    top: 50%; 
+    left: -25px; 
+    transform: translateY(-50%);
+}
+
+#supplychain-section .sc-arrow-anchor.right { 
+    top: 50%; 
+    right: -25px; 
+    transform: translateY(-50%);
+}
+
+/* Arrow Lines */
+#supplychain-section .sc-arrow-line {
+    position: absolute;
+    pointer-events: stroke;
+    z-index: 50;
+}
+
+#supplychain-section .sc-arrow-line.is-selected {
+    filter: drop-shadow(0 0 3px var(--warm-orange));
+}
+
+/* Arrow Style Panel */
+#supplychain-section .sc-arrow-style-panel {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    z-index: 202;
+    min-width: 320px;
+}
+
+#supplychain-section .sc-arrow-style-panel.is-visible {
+    display: flex;
+}
+
+/* Arrow Width Control */
+#supplychain-section .sc-arrow-width-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#supplychain-section .sc-arrow-width-label {
+    font-size: 12px;
+    color: #000;
+    font-weight: 500;
+    min-width: 50px;
+}
+
+#supplychain-section .sc-arrow-width-value {
+    font-size: 12px;
+    color: #666;
+    min-width: 40px;
+}
+
+#supplychain-section .sc-arrow-width-slider {
+    flex: 1;
+    height: 20px;
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+    background: linear-gradient(to right, #e0e0e0, #333);
+}
+
+#supplychain-section .sc-arrow-width-handle {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    background: white;
+    border: 2px solid #333;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+/* Arrow Color Swatches */
+#supplychain-section .sc-arrow-color-swatches {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+}
+
+/* Line Path Type Options */
+#supplychain-section .sc-line-path-options {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+#supplychain-section .sc-line-path-btn {
+    padding: 0 12px;
+    height: 28px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 11px;
+    color: #000;
+}
+
+#supplychain-section .sc-line-path-btn:hover {
+    background: var(--cream-white);
+}
+
+#supplychain-section .sc-line-path-btn.active {
+    background: var(--warm-orange);
+    color: white;
+    border-color: var(--warm-orange);
+}
+
+#supplychain-section .sc-line-type-options {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+#supplychain-section .sc-line-type-btn {
+    padding: 0 12px;
+    height: 28px;
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 11px;
+    color: #000;
+}
+
+#supplychain-section .sc-line-type-btn:hover {
+    background: var(--cream-white);
+}
+
+#supplychain-section .sc-line-type-btn.active {
+    background: var(--warm-orange);
+    color: white;
+    border-color: var(--warm-orange);
+}
+
+/* Color Picker Panel */
+#supplychain-section .sc-color-picker-panel {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    z-index: 202;
+    min-width: 320px;
+}
+
+#supplychain-section .sc-color-picker-panel.is-visible {
+    display: flex;
+}
+
+#supplychain-section .sc-opacity-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#supplychain-section .sc-opacity-label {
+    font-size: 12px;
+    color: #000;
+    font-weight: 500;
+    min-width: 50px;
+}
+
+#supplychain-section .sc-opacity-value {
+    font-size: 12px;
+    color: #666;
+    min-width: 40px;
+}
+
+#supplychain-section .sc-opacity-slider {
+    flex: 1;
+    height: 20px;
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+    background: linear-gradient(to right, rgba(0,0,0,0), rgba(0,0,0,1));
+}
+
+#supplychain-section .sc-opacity-handle {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    background: white;
+    border: 2px solid #333;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+#supplychain-section .sc-color-swatches {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 8px;
+}
+
+#supplychain-section .sc-color-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 2px solid var(--border-light);
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+#supplychain-section .sc-color-swatch:hover {
+    border-color: var(--warm-orange);
+    transform: scale(1.1);
+}
+
+#supplychain-section .sc-color-swatch.transparent {
+    background: linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc),
+                linear-gradient(45deg, #ccc 25%, white 25%, white 75%, #ccc 75%, #ccc);
+    background-size: 10px 10px;
+    background-position: 0 0, 5px 5px;
+}
+
+#supplychain-section .sc-color-swatch.add-color {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #666;
+    background: #f5f5f5;
+    font-weight: bold;
+}
+
+#supplychain-section .sc-color-swatch.add-color:hover {
+    background: #e0e0e0;
 }

@@ -277,12 +277,29 @@ const CanvasController = {
     
     addShape(shapeType, x, y) {
         console.log('Adding shape:', shapeType, 'at', x, y);
+        
+        // If no position provided, place in center of viewport
+        if (x === undefined || y === undefined) {
+            const canvas = document.getElementById('scCanvas');
+            const viewport = canvas?.parentElement;
+            if (viewport) {
+                const rect = viewport.getBoundingClientRect();
+                // Calculate center of viewport in canvas coordinates
+                x = (rect.width / 2 - this.panX) / this.zoom + 2000;
+                y = (rect.height / 2 - this.panY) / this.zoom + 2000;
+            } else {
+                // Fallback to canvas center
+                x = 2500;
+                y = 2500;
+            }
+        }
+        
         const item = {
             id: this.nextId++,
             type: 'shape',
             shapeType: shapeType,
-            x: x || 300,
-            y: y || 200,
+            x: x,
+            y: y,
             width: 120,
             height: 80,
             text: '',
