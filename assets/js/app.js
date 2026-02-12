@@ -189,11 +189,9 @@ function showSection(section) {
         }, 100);
     }
     if (section === 'factory-stock') {
-        setTimeout(() => {
-            renderFactoryStockTable();
-            initFactoryStockHeaderSync();
-            initFactoryDropdown();
-        }, 100);
+        if (window.initFactoryStockPage) {
+            window.initFactoryStockPage();
+        }
     }
     if (section === 'skuDetails') {
         renderSkuDetailsTable();

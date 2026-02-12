@@ -44,6 +44,50 @@ const shippingHistoryMockData = [
             { sku: "D004", qty: 15000 },
             { sku: "E005", qty: 10000 }
         ]
+    },
+    {
+        id: "SP-20250115-004",
+        date: "2025-01-15",
+        country: "DE",
+        marketplace: "amazon",
+        method: "Sea Freight",
+        totalPcs: 50000,
+        totalCartons: 1250,
+        totalCost: 125000,
+        unitCost: 2.5,
+        skus: [
+            { sku: "A001", qty: 30000 },
+            { sku: "F006", qty: 20000 }
+        ]
+    },
+    {
+        id: "SP-20250120-005",
+        date: "2025-01-20",
+        country: "CA",
+        marketplace: "amazon",
+        method: "Express",
+        totalPcs: 5000,
+        totalCartons: 125,
+        totalCost: 25000,
+        unitCost: 5.0,
+        skus: [
+            { sku: "B002", qty: 5000 }
+        ]
+    },
+    {
+        id: "SP-20241215-006",
+        date: "2024-12-15",
+        country: "US",
+        marketplace: "amazon",
+        method: "AGL Ship",
+        totalPcs: 80000,
+        totalCartons: 2000,
+        totalCost: 200000,
+        unitCost: 2.5,
+        skus: [
+            { sku: "A001", qty: 50000 },
+            { sku: "D004", qty: 30000 }
+        ]
     }
 ];
 
@@ -421,14 +465,12 @@ function onHistorySearch() {
 }
 
 function collectFilterParams() {
-    const countrySelect = document.querySelector("#shippinghistory-section .filter-group select");
+    const selects = document.querySelectorAll("#shippinghistory-section .filter-group select");
     const skuInput = document.querySelector("#shippinghistory-section .filter-group--sku input");
-    const methodSelects = document.querySelectorAll("#shippinghistory-section .filter-group select");
-    const methodSelect = methodSelects[1]; // Second select is shipping method
     
-    const country = countrySelect?.value || "";
+    const country = selects[0]?.value || "";
+    const method = selects[1]?.value || "";
     const sku = skuInput?.value.trim() || "";
-    const method = methodSelect?.value || "";
     
     return { 
         start: formatHistoryDate(historyState.dateRange.start), 

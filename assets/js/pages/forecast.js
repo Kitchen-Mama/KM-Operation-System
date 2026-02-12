@@ -26,6 +26,10 @@ const forecastReviewState = {
 function initForecastReviewPage() {
   const root = document.querySelector('.page-forecast-review');
   if (!root) return;
+  
+  // Prevent duplicate initialization
+  if (root._forecastInitialized) return;
+  root._forecastInitialized = true;
 
   // Initialize default date range (Last 30 days)
   initDefaultDateRange();
