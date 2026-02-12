@@ -620,67 +620,6 @@
                     </div>
                 </div>
 
-                <!-- Date Picker Modal -->
-                <div class="fr-date-backdrop" id="frDateBackdrop"></div>
-                <div class="fr-date-modal" id="frDateModal">
-                    <div class="fr-date-modal-body">
-                        <!-- Left: Presets -->
-                        <div class="fr-date-sidebar">
-                            <div class="fr-preset-item" data-preset="today">Today</div>
-                            <div class="fr-preset-item" data-preset="yesterday">Yesterday</div>
-                            <div class="fr-preset-divider"></div>
-                            <div class="fr-preset-item" data-preset="last-7-days">Last 7 days</div>
-                            <div class="fr-preset-item" data-preset="last-30-days">Last 30 days</div>
-                            <div class="fr-preset-item" data-preset="last-60-days">Last 60 days</div>
-                            <div class="fr-preset-item" data-preset="last-90-days">Last 90 days</div>
-                            <div class="fr-preset-divider"></div>
-                            <div class="fr-preset-item" data-preset="last-month">Last month</div>
-                            <div class="fr-preset-item" data-preset="last-2-months">Last 2 months</div>
-                            <div class="fr-preset-item" data-preset="last-3-months">Last 3 months</div>
-                            <div class="fr-preset-item" data-preset="last-year">Last year</div>
-                        </div>
-                        
-                        <!-- Right: Calendars -->
-                        <div class="fr-date-content">
-                            <div class="fr-date-inputs">
-                                <div class="fr-date-input-group">
-                                    <label>Start</label>
-                                    <input type="text" class="fr-date-input" id="frStartDisplay" readonly />
-                                </div>
-                                <div class="fr-date-input-group">
-                                    <label>End</label>
-                                    <input type="text" class="fr-date-input" id="frEndDisplay" readonly />
-                                </div>
-                            </div>
-                            
-                            <div class="fr-calendars">
-                                <div class="fr-calendar" id="frCalendarStart">
-                                    <div class="fr-calendar-header">
-                                        <button class="fr-calendar-nav" data-nav="prev-start">‹</button>
-                                        <span class="fr-calendar-title" id="frCalendarStartTitle"></span>
-                                        <button class="fr-calendar-nav" data-nav="next-start">›</button>
-                                    </div>
-                                    <div class="fr-calendar-body" id="frCalendarStartBody"></div>
-                                </div>
-                                
-                                <div class="fr-calendar" id="frCalendarEnd">
-                                    <div class="fr-calendar-header">
-                                        <button class="fr-calendar-nav" data-nav="prev-end">‹</button>
-                                        <span class="fr-calendar-title" id="frCalendarEndTitle"></span>
-                                        <button class="fr-calendar-nav" data-nav="next-end">›</button>
-                                    </div>
-                                    <div class="fr-calendar-body" id="frCalendarEndBody"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="fr-date-modal-footer">
-                        <button class="fr-date-btn fr-date-btn--cancel" id="frDateCancel">Cancel</button>
-                        <button class="fr-date-btn fr-date-btn--apply" id="frDateApply">Apply</button>
-                    </div>
-                </div>
-
                 <!-- Chart Area -->
                 <div class="forecast-chart-area">
                     <!-- Summary Stats Row -->
@@ -1717,21 +1656,20 @@
                     </div>
                     
                     <!-- Filter Bar -->
-                    <div class="history-filters">
+                    <div class="fc-filter-bar">
                         <!-- Date Range -->
-                        <div class="history-filter history-filter--date">
+                        <div class="filter-group">
                             <label>Date</label>
-                            <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                <input type="date" class="history-date-start" />
-                                <span class="history-date-separator">~</span>
-                                <input type="date" class="history-date-end" />
-                            </div>
+                            <button type="button" class="history-date-trigger" id="historyDateTrigger">
+                                <span class="history-date-trigger-text">Last 30 days</span>
+                                <span class="history-date-trigger-icon">▼</span>
+                            </button>
                         </div>
                         
                         <!-- Country -->
-                        <div class="history-filter">
+                        <div class="filter-group">
                             <label>Country</label>
-                            <select class="history-filter-country">
+                            <select>
                                 <option value="">All</option>
                                 <option value="US">US</option>
                                 <option value="UK">UK</option>
@@ -1741,15 +1679,15 @@
                         </div>
                         
                         <!-- SKU -->
-                        <div class="history-filter">
+                        <div class="filter-group filter-group--sku">
                             <label>SKU</label>
-                            <input type="text" class="history-filter-sku" placeholder="Enter SKU..." />
+                            <input type="text" placeholder="Search SKU..." />
                         </div>
                         
                         <!-- Shipping Method -->
-                        <div class="history-filter">
+                        <div class="filter-group">
                             <label>Shipping Method</label>
-                            <select class="history-filter-method">
+                            <select>
                                 <option value="">All</option>
                                 <option value="Air Freight">Air Freight</option>
                                 <option value="Sea Freight">Sea Freight</option>
@@ -1760,8 +1698,9 @@
                         </div>
                         
                         <!-- Search Button -->
-                        <div class="history-filter history-filter--actions">
-                            <button class="btn btn-primary history-search-btn">Search</button>
+                        <div class="filter-group">
+                            <label>&nbsp;</label>
+                            <button class="btn btn-primary">Search</button>
                         </div>
                     </div>
                     
@@ -1921,5 +1860,66 @@
     
     <!-- App (Global) -->
     <script src="assets/js/app.js"></script>
+    
+    <!-- Shared Date Picker Modal -->
+    <div class="fr-date-backdrop" id="frDateBackdrop"></div>
+    <div class="fr-date-modal" id="frDateModal">
+        <div class="fr-date-modal-body">
+            <!-- Left: Presets -->
+            <div class="fr-date-sidebar">
+                <div class="fr-preset-item" data-preset="today">Today</div>
+                <div class="fr-preset-item" data-preset="yesterday">Yesterday</div>
+                <div class="fr-preset-divider"></div>
+                <div class="fr-preset-item" data-preset="last-7-days">Last 7 days</div>
+                <div class="fr-preset-item" data-preset="last-30-days">Last 30 days</div>
+                <div class="fr-preset-item" data-preset="last-60-days">Last 60 days</div>
+                <div class="fr-preset-item" data-preset="last-90-days">Last 90 days</div>
+                <div class="fr-preset-divider"></div>
+                <div class="fr-preset-item" data-preset="last-month">Last month</div>
+                <div class="fr-preset-item" data-preset="last-2-months">Last 2 months</div>
+                <div class="fr-preset-item" data-preset="last-3-months">Last 3 months</div>
+                <div class="fr-preset-item" data-preset="last-year">Last year</div>
+            </div>
+            
+            <!-- Right: Calendars -->
+            <div class="fr-date-content">
+                <div class="fr-date-inputs">
+                    <div class="fr-date-input-group">
+                        <label>Start</label>
+                        <input type="text" class="fr-date-input" id="frStartDisplay" readonly />
+                    </div>
+                    <div class="fr-date-input-group">
+                        <label>End</label>
+                        <input type="text" class="fr-date-input" id="frEndDisplay" readonly />
+                    </div>
+                </div>
+                
+                <div class="fr-calendars">
+                    <div class="fr-calendar" id="frCalendarStart">
+                        <div class="fr-calendar-header">
+                            <button class="fr-calendar-nav" data-nav="prev-start">‹</button>
+                            <span class="fr-calendar-title" id="frCalendarStartTitle"></span>
+                            <button class="fr-calendar-nav" data-nav="next-start">›</button>
+                        </div>
+                        <div class="fr-calendar-body" id="frCalendarStartBody"></div>
+                    </div>
+                    
+                    <div class="fr-calendar" id="frCalendarEnd">
+                        <div class="fr-calendar-header">
+                            <button class="fr-calendar-nav" data-nav="prev-end">‹</button>
+                            <span class="fr-calendar-title" id="frCalendarEndTitle"></span>
+                            <button class="fr-calendar-nav" data-nav="next-end">›</button>
+                        </div>
+                        <div class="fr-calendar-body" id="frCalendarEndBody"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="fr-date-modal-footer">
+            <button class="fr-date-btn fr-date-btn--cancel" id="frDateCancel">Cancel</button>
+            <button class="fr-date-btn fr-date-btn--apply" id="frDateApply">Apply</button>
+        </div>
+    </div>
 </body>
 </html>

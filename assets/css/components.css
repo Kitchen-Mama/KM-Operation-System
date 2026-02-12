@@ -92,7 +92,7 @@ button:hover {
     box-sizing: border-box;
     width: 100%;
     transition: all 0.2s;
-    margin: 0;
+    margin: 4px 0;
     line-height: 1;
 }
 
@@ -138,7 +138,7 @@ button:hover {
     width: 100%;
     text-align: left;
     box-sizing: border-box;
-    margin: 0;
+    margin: 4px 0;
     height: var(--filter-height);
     line-height: 1;
 }
@@ -146,6 +146,54 @@ button:hover {
 .filter-dropdown-trigger:hover {
     border-color: #cbd5e0;
     background: #f7fafc;
+}
+
+/* Date Trigger (統一 Date 篩選器樣式) */
+.filter-date-trigger,
+.forecast-date-trigger,
+.history-date-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    background: #ffffff;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+    height: var(--filter-height);
+    line-height: 1;
+    margin: 4px 0;
+}
+
+.filter-date-trigger:hover,
+.forecast-date-trigger:hover,
+.history-date-trigger:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+.filter-date-trigger-text,
+.forecast-date-trigger-text,
+.history-date-trigger-text {
+    color: #2d3748;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.filter-date-trigger-icon,
+.forecast-date-trigger-icon,
+.history-date-trigger-icon {
+    font-size: 10px;
+    color: #a0aec0;
+    margin-left: 8px;
+    flex-shrink: 0;
 }
 
 .filter-dropdown-text {
@@ -440,7 +488,7 @@ table td button {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 1999;
+    z-index: 9998;
     display: none;
 }
 
@@ -453,14 +501,14 @@ table td button {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 70%;
+    width: 70vw;
     max-width: 900px;
-    height: 60%;
+    height: 60vh;
     max-height: 600px;
     background: white;
     border-radius: 12px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
-    z-index: 2000;
+    z-index: 9999;
     display: none;
     flex-direction: column;
 }
@@ -673,8 +721,8 @@ table td button {
 
 @media (max-width: 768px) {
     .fr-date-modal {
-        width: 95%;
-        height: 80%;
+        width: 95vw;
+        height: 80vh;
     }
     
     .fr-date-modal-body {

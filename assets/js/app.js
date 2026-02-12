@@ -224,7 +224,7 @@ function showSection(section) {
             if (window.initShippingHistoryPage) {
                 window.initShippingHistoryPage();
             }
-        }, 100);
+        }, 200);
     }
 }
 

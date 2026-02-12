@@ -48,7 +48,9 @@ function initForecastReviewPage() {
 
   // Date trigger
   if (dateTrigger) {
-    dateTrigger.addEventListener('click', () => {
+    dateTrigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       openDateModal();
     });
   }

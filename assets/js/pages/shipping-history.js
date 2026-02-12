@@ -49,31 +49,367 @@ const shippingHistoryMockData = [
 
 const historyState = {
     data: [],
-    hasSearched: false
+    hasSearched: false,
+    dateRange: {
+        start: new Date(new Date().setDate(new Date().getDate() - 30)),
+        end: new Date(),
+        preset: 'last-30-days'
+    },
+    tempDateRange: {
+        start: null,
+        end: null,
+        preset: null
+    },
+    calendarMonths: {
+        start: new Date(),
+        end: new Date()
+    }
 };
 
 function loadHistoryData() {
-    // 從 sessionStorage 讀取實際資料
     const storedHistory = sessionStorage.getItem('shippingHistory');
     if (storedHistory) {
         historyState.data = JSON.parse(storedHistory);
     } else {
-        // 如果沒有資料，使用 mock data
         historyState.data = shippingHistoryMockData;
     }
 }
 
 function initShippingHistoryPage() {
-    const searchBtn = document.querySelector(".history-search-btn");
-    if (!searchBtn) return;
+    console.log('Initializing Shipping History Page');
     
-    // 讀取最新資料
+    const searchBtn = document.querySelector("#shippinghistory-section .btn-primary");
+    const dateTrigger = document.getElementById('historyDateTrigger');
+    
+    if (!searchBtn || !dateTrigger) {
+        console.error('Shipping History elements not found:', { searchBtn, dateTrigger });
+        return;
+    }
+    
+    console.log('Elements found, setting up events');
+    
     loadHistoryData();
+    updateHistoryDateTriggerText();
     
-    searchBtn.addEventListener("click", onHistorySearch);
+    // 直接綁定事件，不使用 clone
+    searchBtn.onclick = onHistorySearch;
+    dateTrigger.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Date trigger clicked');
+        openHistoryDateModal();
+    };
     
-    // 初始狀態：只顯示空狀態
     renderHistoryResults([]);
+    console.log('Shipping History initialized');
+}
+
+function openHistoryDateModal() {
+    console.log('openHistoryDateModal called');
+    
+    const backdrop = document.getElementById('frDateBackdrop');
+    const modal = document.getElementById('frDateModal');
+    
+    if (!modal || !backdrop) {
+        console.error('Modal elements not found:', { modal, backdrop });
+        return;
+    }
+    
+    historyState.tempDateRange = {
+        start: historyState.dateRange.start,
+        end: historyState.dateRange.end,
+        preset: historyState.dateRange.preset
+    };
+    
+    historyState.calendarMonths.start = new Date(historyState.dateRange.start);
+    historyState.calendarMonths.end = new Date(historyState.dateRange.end);
+    
+    backdrop.classList.add('is-open');
+    modal.classList.add('is-open');
+    
+    console.log('Modal opened, classes added');
+    
+    // 綁定事件
+    setupHistoryModalEvents();
+    
+    updateHistoryDateInputs();
+    updateHistoryPresetHighlight();
+    renderHistoryCalendars();
+}
+
+function setupHistoryModalEvents() {
+    // Backdrop click
+    const backdrop = document.getElementById('frDateBackdrop');
+    if (backdrop) {
+        backdrop.onclick = closeHistoryDateModal;
+    }
+    
+    // Cancel button
+    const cancelBtn = document.getElementById('frDateCancel');
+    if (cancelBtn) {
+        cancelBtn.onclick = closeHistoryDateModal;
+    }
+    
+    // Apply button
+    const applyBtn = document.getElementById('frDateApply');
+    if (applyBtn) {
+        applyBtn.onclick = applyHistoryDateRange;
+    }
+    
+    // Preset items
+    const presetItems = document.querySelectorAll('.fr-preset-item');
+    presetItems.forEach(item => {
+        item.onclick = () => handleHistoryPresetClick(item.dataset.preset);
+    });
+    
+    // Calendar navigation
+    const navBtns = document.querySelectorAll('.fr-calendar-nav');
+    navBtns.forEach(btn => {
+        btn.onclick = () => handleHistoryCalendarNav(btn.dataset.nav);
+    });
+}
+
+function closeHistoryDateModal() {
+    const backdrop = document.getElementById('frDateBackdrop');
+    const modal = document.getElementById('frDateModal');
+    if (!modal || !backdrop) return;
+    
+    console.log('Closing Shipping History date modal');
+    
+    backdrop.classList.remove('is-open');
+    modal.classList.remove('is-open');
+    delete modal.dataset.currentUser;
+}
+
+function applyHistoryDateRange() {
+    historyState.dateRange = {
+        start: historyState.tempDateRange.start,
+        end: historyState.tempDateRange.end,
+        preset: historyState.tempDateRange.preset
+    };
+    updateHistoryDateTriggerText();
+    closeHistoryDateModal();
+}
+
+function updateHistoryDateTriggerText() {
+    const trigger = document.getElementById('historyDateTrigger');
+    if (!trigger) return;
+    
+    const textSpan = trigger.querySelector('.history-date-trigger-text');
+    if (!textSpan) return;
+    
+    const preset = historyState.dateRange.preset;
+    
+    if (preset) {
+        const presetLabels = {
+            'today': 'Today',
+            'yesterday': 'Yesterday',
+            'last-7-days': 'Last 7 days',
+            'last-30-days': 'Last 30 days',
+            'last-60-days': 'Last 60 days',
+            'last-90-days': 'Last 90 days',
+            'last-month': 'Last month',
+            'last-2-months': 'Last 2 months',
+            'last-3-months': 'Last 3 months',
+            'last-year': 'Last year'
+        };
+        textSpan.textContent = presetLabels[preset] || 'Custom range';
+    } else {
+        if (historyState.dateRange.start && historyState.dateRange.end) {
+            const start = formatHistoryDate(historyState.dateRange.start);
+            const end = formatHistoryDate(historyState.dateRange.end);
+            textSpan.textContent = `${start} ~ ${end}`;
+        } else {
+            textSpan.textContent = 'Select date range';
+        }
+    }
+}
+
+function handleHistoryPresetClick(preset) {
+    const today = new Date();
+    let start = new Date();
+    let end = new Date(today);
+    
+    switch (preset) {
+        case 'today':
+            start = new Date(today);
+            break;
+        case 'yesterday':
+            start.setDate(today.getDate() - 1);
+            end.setDate(today.getDate() - 1);
+            break;
+        case 'last-7-days':
+            start.setDate(today.getDate() - 7);
+            break;
+        case 'last-30-days':
+            start.setDate(today.getDate() - 30);
+            break;
+        case 'last-60-days':
+            start.setDate(today.getDate() - 60);
+            break;
+        case 'last-90-days':
+            start.setDate(today.getDate() - 90);
+            break;
+        case 'last-month':
+            start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            end = new Date(today.getFullYear(), today.getMonth(), 0);
+            break;
+        case 'last-2-months':
+            start = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+            end = new Date(today.getFullYear(), today.getMonth(), 0);
+            break;
+        case 'last-3-months':
+            start = new Date(today.getFullYear(), today.getMonth() - 3, 1);
+            end = new Date(today.getFullYear(), today.getMonth(), 0);
+            break;
+        case 'last-year':
+            start = new Date(today.getFullYear() - 1, 0, 1);
+            end = new Date(today.getFullYear() - 1, 11, 31);
+            break;
+    }
+    
+    historyState.tempDateRange.start = start;
+    historyState.tempDateRange.end = end;
+    historyState.tempDateRange.preset = preset;
+    
+    historyState.calendarMonths.start = new Date(start);
+    historyState.calendarMonths.end = new Date(end);
+    
+    updateHistoryDateInputs();
+    updateHistoryPresetHighlight();
+    renderHistoryCalendars();
+}
+
+function updateHistoryPresetHighlight() {
+    const items = document.querySelectorAll('.fr-preset-item');
+    items.forEach(item => {
+        if (item.dataset.preset === historyState.tempDateRange.preset) {
+            item.classList.add('is-active');
+        } else {
+            item.classList.remove('is-active');
+        }
+    });
+}
+
+function updateHistoryDateInputs() {
+    const startInput = document.getElementById('frStartDisplay');
+    const endInput = document.getElementById('frEndDisplay');
+    
+    if (startInput) startInput.value = formatHistoryDate(historyState.tempDateRange.start);
+    if (endInput) endInput.value = formatHistoryDate(historyState.tempDateRange.end);
+}
+
+function handleHistoryCalendarNav(nav) {
+    switch (nav) {
+        case 'prev-start':
+            historyState.calendarMonths.start.setMonth(historyState.calendarMonths.start.getMonth() - 1);
+            break;
+        case 'next-start':
+            historyState.calendarMonths.start.setMonth(historyState.calendarMonths.start.getMonth() + 1);
+            break;
+        case 'prev-end':
+            historyState.calendarMonths.end.setMonth(historyState.calendarMonths.end.getMonth() - 1);
+            break;
+        case 'next-end':
+            historyState.calendarMonths.end.setMonth(historyState.calendarMonths.end.getMonth() + 1);
+            break;
+    }
+    renderHistoryCalendars();
+}
+
+function renderHistoryCalendars() {
+    renderHistoryCalendar('start');
+    renderHistoryCalendar('end');
+}
+
+function renderHistoryCalendar(type) {
+    const month = historyState.calendarMonths[type];
+    const titleEl = document.getElementById(`frCalendar${type.charAt(0).toUpperCase() + type.slice(1)}Title`);
+    const bodyEl = document.getElementById(`frCalendar${type.charAt(0).toUpperCase() + type.slice(1)}Body`);
+    
+    if (!titleEl || !bodyEl) return;
+    
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    titleEl.textContent = `${monthNames[month.getMonth()]} ${month.getFullYear()}`;
+    
+    const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+    const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+    const startDayOfWeek = firstDay.getDay();
+    
+    let html = '';
+    
+    const weekdays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    weekdays.forEach(day => {
+        html += `<div class="fr-calendar-weekday">${day}</div>`;
+    });
+    
+    for (let i = 0; i < startDayOfWeek; i++) {
+        html += '<div class="fr-calendar-day is-disabled"></div>';
+    }
+    
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+        const date = new Date(month.getFullYear(), month.getMonth(), day);
+        const classes = ['fr-calendar-day'];
+        
+        const start = historyState.tempDateRange.start;
+        const end = historyState.tempDateRange.end;
+        
+        if (start && isSameDay(date, start)) classes.push('is-start');
+        if (end && isSameDay(date, end)) classes.push('is-end');
+        if (start && end && date > start && date < end) classes.push('is-in-range');
+        if (isSameDay(date, new Date())) classes.push('is-today');
+        
+        html += `<div class="${classes.join(' ')}" data-date="${date.toISOString()}" data-type="${type}">${day}</div>`;
+    }
+    
+    bodyEl.innerHTML = html;
+    
+    bodyEl.querySelectorAll('.fr-calendar-day:not(.is-disabled)').forEach(dayEl => {
+        dayEl.addEventListener('click', () => {
+            handleHistoryDayClick(new Date(dayEl.dataset.date), dayEl.dataset.type);
+        });
+    });
+}
+
+function handleHistoryDayClick(date, calendarType) {
+    const start = historyState.tempDateRange.start;
+    const end = historyState.tempDateRange.end;
+    
+    if (calendarType === 'start') {
+        if (end && date > end) {
+            historyState.tempDateRange.start = end;
+            historyState.tempDateRange.end = date;
+        } else {
+            historyState.tempDateRange.start = date;
+        }
+    } else {
+        if (start && date < start) {
+            historyState.tempDateRange.end = start;
+            historyState.tempDateRange.start = date;
+        } else {
+            historyState.tempDateRange.end = date;
+        }
+    }
+    
+    historyState.tempDateRange.preset = null;
+    
+    updateHistoryDateInputs();
+    updateHistoryPresetHighlight();
+    renderHistoryCalendars();
+}
+
+function isSameDay(date1, date2) {
+    return date1.getFullYear() === date2.getFullYear() &&
+           date1.getMonth() === date2.getMonth() &&
+           date1.getDate() === date2.getDate();
+}
+
+function formatHistoryDate(date) {
+    if (!date) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
 function onHistorySearch() {
@@ -85,35 +421,36 @@ function onHistorySearch() {
 }
 
 function collectFilterParams() {
-    const start = document.querySelector(".history-date-start")?.value || "";
-    const end = document.querySelector(".history-date-end")?.value || "";
-    const country = document.querySelector(".history-filter-country")?.value || "";
-    const sku = document.querySelector(".history-filter-sku")?.value.trim() || "";
-    const method = document.querySelector(".history-filter-method")?.value || "";
+    const countrySelect = document.querySelector("#shippinghistory-section .filter-group select");
+    const skuInput = document.querySelector("#shippinghistory-section .filter-group--sku input");
+    const methodSelects = document.querySelectorAll("#shippinghistory-section .filter-group select");
+    const methodSelect = methodSelects[1]; // Second select is shipping method
     
-    return { start, end, country, sku, method };
+    const country = countrySelect?.value || "";
+    const sku = skuInput?.value.trim() || "";
+    const method = methodSelect?.value || "";
+    
+    return { 
+        start: formatHistoryDate(historyState.dateRange.start), 
+        end: formatHistoryDate(historyState.dateRange.end), 
+        country, 
+        sku, 
+        method 
+    };
 }
 
 function filterHistoryData(data, params) {
     return data.filter(item => {
-        // Date filter
         if (params.start && item.date < params.start) return false;
         if (params.end && item.date > params.end) return false;
-        
-        // Country filter
         if (params.country && item.country !== params.country) return false;
-        
-        // SKU filter
         if (params.sku) {
             const hasSku = item.skus.some(s => 
                 s.sku.toLowerCase().includes(params.sku.toLowerCase())
             );
             if (!hasSku) return false;
         }
-        
-        // Method filter
         if (params.method && item.method !== params.method) return false;
-        
         return true;
     });
 }
@@ -125,7 +462,6 @@ function renderHistoryResults(list) {
     if (!emptyStateEl || !listEl) return;
     
     if (!historyState.hasSearched) {
-        // 第一次進來尚未按 Search
         emptyStateEl.innerHTML = 'Use the filters above and click <strong>Search</strong> to view shipping history.';
         emptyStateEl.hidden = false;
         listEl.hidden = true;
@@ -141,7 +477,6 @@ function renderHistoryResults(list) {
         return;
     }
     
-    // 有資料：隱藏空狀態，顯示列表
     emptyStateEl.hidden = true;
     listEl.hidden = false;
     
@@ -225,16 +560,8 @@ function toggleHistoryCard(shipmentId) {
 }
 
 window.toggleHistoryCard = toggleHistoryCard;
-
-// 當頁面切換到 Shipping History 時初始化
 window.initShippingHistoryPage = initShippingHistoryPage;
 
 window.addEventListener('DOMContentLoaded', () => {
-    // 延遲初始化，確保 DOM 已載入
-    setTimeout(() => {
-        const historySection = document.getElementById('shippinghistory-section');
-        if (historySection) {
-            initShippingHistoryPage();
-        }
-    }, 100);
+    // 移除自動初始化，改由 showSection 控制
 });

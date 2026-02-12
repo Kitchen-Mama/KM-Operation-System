@@ -79,6 +79,7 @@
     box-sizing: border-box;
     height: var(--filter-height);
     line-height: 1;
+    margin: 4px 0;
 }
 
 .forecast-date-trigger:hover {
@@ -118,6 +119,7 @@
     box-sizing: border-box;
     height: var(--filter-height);
     line-height: 1;
+    margin: 4px 0;
 }
 
 .forecast-dropdown-trigger:hover {
@@ -192,6 +194,7 @@
     box-sizing: border-box;
     width: 100%;
     line-height: 1;
+    margin: 4px 0;
 }
 
 /* Summary Stats - KPI Cards */
