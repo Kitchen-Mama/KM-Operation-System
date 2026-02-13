@@ -443,19 +443,6 @@
                         </div>
                     </div>
                     <div class="filter-group filter-group--dropdown">
-                        <label>Marketplace</label>
-                        <button type="button" class="fc-dropdown-trigger" data-filter="marketplace">
-                            <span class="fc-dropdown-text">All</span>
-                            <span class="fc-dropdown-icon">▼</span>
-                        </button>
-                        <div class="fc-dropdown-panel" data-filter="marketplace">
-                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Amazon" checked> Amazon</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Shopify" checked> Shopify</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Target" checked> Target</label>
-                        </div>
-                    </div>
-                    <div class="filter-group filter-group--dropdown">
                         <label>Category</label>
                         <button type="button" class="fc-dropdown-trigger" data-filter="category">
                             <span class="fc-dropdown-text">All</span>
@@ -503,7 +490,6 @@
                         <div class="scroll-header-viewport">
                             <div class="scroll-header" id="factory-stock-scroll-header">
                                 <div class="header-cell">Company</div>
-                                <div class="header-cell">Marketplace</div>
                                 <div class="header-cell">Category</div>
                                 <div class="header-cell">Series</div>
                                 <div class="header-cell">Factory</div>
@@ -814,6 +800,8 @@
                         <div class="fc-dropdown-panel" data-filter="marketplace">
                             <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'marketplace')"> <strong>All</strong></label>
                             <label class="fc-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateFcFilter('marketplace')"> Amazon</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Shopify" checked onchange="updateFcFilter('marketplace')"> Shopify</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateFcFilter('marketplace')"> Target</label>
                             <label class="fc-checkbox-item"><input type="checkbox" value="Walmart" checked onchange="updateFcFilter('marketplace')"> Walmart</label>
                         </div>
                     </div>
@@ -928,6 +916,7 @@
                                         <div class="header-cell">Nov</div>
                                         <div class="header-cell">Dec</div>
                                         <div class="header-cell">Total FC</div>
+                                        <div class="header-cell">FC占比</div>
                                     </div>
                                 </div>
                             </div>
@@ -962,6 +951,7 @@
                                         <div class="header-cell">Event</div>
                                         <div class="header-cell">Event Period</div>
                                         <div class="header-cell">FC Qty</div>
+                                        <div class="header-cell">FC占比</div>
                                     </div>
                                 </div>
                             </div>

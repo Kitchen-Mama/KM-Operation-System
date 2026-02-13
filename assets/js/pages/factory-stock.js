@@ -84,7 +84,7 @@ function initFactoryStockPage() {
     document.addEventListener('click', handleOutsideClick);
     
     // 初始化所有篩選器的顯示文字
-    ['factory', 'company', 'marketplace', 'category', 'series'].forEach(type => {
+    ['factory', 'company', 'category', 'series'].forEach(type => {
         updateFilterText(type, root);
     });
     
@@ -170,7 +170,6 @@ function renderFactoryStockTable(root) {
     const filters = {
         factory: getFilters('factory'),
         company: getFilters('company'),
-        marketplace: getFilters('marketplace'),
         category: getFilters('category'),
         series: getFilters('series'),
         sku: root.querySelector('#factory-sku-input')?.value.toLowerCase() || ''
@@ -179,7 +178,6 @@ function renderFactoryStockTable(root) {
     let data = window.factoryStockData.filter(item => {
         if (filters.factory.length > 0 && !filters.factory.includes(item.factory)) return false;
         if (filters.company.length > 0 && !filters.company.includes(item.company)) return false;
-        if (filters.marketplace.length > 0 && !filters.marketplace.includes(item.marketplace)) return false;
         if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
         if (filters.series.length > 0 && !filters.series.includes(item.series)) return false;
         if (filters.sku && !item.sku.toLowerCase().includes(filters.sku)) return false;
@@ -207,7 +205,6 @@ function renderFactoryStockTable(root) {
     scrollBody.innerHTML = data.map(item => `
         <div class="scroll-row">
             <div class="scroll-cell">${item.company}</div>
-            <div class="scroll-cell">${item.marketplace}</div>
             <div class="scroll-cell">${item.category}</div>
             <div class="scroll-cell">${item.series}</div>
             <div class="scroll-cell">${item.factory}</div>

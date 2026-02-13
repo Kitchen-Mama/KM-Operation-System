@@ -88,6 +88,9 @@ function renderFcRegularTable() {
     return;
   }
 
+  // Calculate FC占比 for each item
+  const fcPercentages = calculateFcPercentages(filteredData);
+
   // Render fixed column (SKU)
   fixedBody.innerHTML = paginatedData.map(item => `
     <div class="fixed-row">
@@ -98,6 +101,8 @@ function renderFcRegularTable() {
   // Render scrollable columns
   scrollBody.innerHTML = paginatedData.map(item => {
     const total = item.months.reduce((sum, val) => sum + val, 0);
+    const key = `${item.company}-${item.sku}-${item.marketplace}`;
+    const percentage = fcPercentages[key] || 0;
     return `
       <div class="scroll-row">
         <div class="scroll-cell">${item.year}</div>
@@ -108,12 +113,59 @@ function renderFcRegularTable() {
         <div class="scroll-cell">${item.series}</div>
         ${item.months.map(m => `<div class="scroll-cell cell-month">${m.toLocaleString()}</div>`).join('')}
         <div class="scroll-cell cell-total">${total.toLocaleString()}</div>
+        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
       </div>
     `;
   }).join('');
 
   updatePaginationInfo(filteredData.length);
   syncFcScroll('regular');
+}
+
+// Calculate FC占比 by Company + SKU
+function calculateFcPercentages(data) {
+  const percentages = {};
+  
+  // Group by Company + SKU
+  const groups = {};
+  data.forEach(item => {
+    const groupKey = `${item.company}-${item.sku}`;
+    if (!groups[groupKey]) {
+      groups[groupKey] = [];
+    }
+    groups[groupKey].push(item);
+  });
+  
+  // Calculate percentage for each marketplace within the group
+  Object.keys(groups).forEach(groupKey => {
+    const items = groups[groupKey];
+    const totals = items.map(item => {
+      const total = item.months.reduce((sum, val) => sum + (val || 0), 0);
+      return { item, total };
+    });
+    
+    const grandTotal = totals.reduce((sum, t) => sum + t.total, 0);
+    
+    totals.forEach(({ item, total }) => {
+      const key = `${item.company}-${item.sku}-${item.marketplace}`;
+      percentages[key] = grandTotal > 0 ? (total / grandTotal) * 100 : 0;
+    });
+  });
+  
+  // Validate: Check if sum equals 100% for each group
+  Object.keys(groups).forEach(groupKey => {
+    const items = groups[groupKey];
+    const sum = items.reduce((acc, item) => {
+      const key = `${item.company}-${item.sku}-${item.marketplace}`;
+      return acc + (percentages[key] || 0);
+    }, 0);
+    
+    if (Math.abs(sum - 100) > 0.1 && sum > 0) {
+      console.warn(`FC占比總和不等於100%: ${groupKey}, sum=${sum.toFixed(2)}%`);
+    }
+  });
+  
+  return percentages;
 }
 
 // Render Event Forecast Table
@@ -145,6 +197,9 @@ function renderFcEventTable() {
     return;
   }
 
+  // Calculate FC占比 for Event
+  const eventFcPercentages = calculateEventFcPercentages(filteredData);
+
   // Render fixed column (SKU)
   fixedBody.innerHTML = paginatedData.map(item => `
     <div class="fixed-row">
@@ -153,22 +208,73 @@ function renderFcEventTable() {
   `).join('');
 
   // Render scrollable columns
-  scrollBody.innerHTML = paginatedData.map(item => `
-    <div class="scroll-row">
-      <div class="scroll-cell">${item.year}</div>
-      <div class="scroll-cell">${item.company}</div>
-      <div class="scroll-cell">${item.marketplace}</div>
-      <div class="scroll-cell">${item.country}</div>
-      <div class="scroll-cell">${item.category}</div>
-      <div class="scroll-cell">${item.series}</div>
-      <div class="scroll-cell">${item.event}</div>
-      <div class="scroll-cell">${item.eventPeriod}</div>
-      <div class="scroll-cell cell-qty">${item.fcQty.toLocaleString()}</div>
-    </div>
-  `).join('');
+  scrollBody.innerHTML = paginatedData.map(item => {
+    const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
+    const percentage = eventFcPercentages[key] || 0;
+    return `
+      <div class="scroll-row">
+        <div class="scroll-cell">${item.year}</div>
+        <div class="scroll-cell">${item.company}</div>
+        <div class="scroll-cell">${item.marketplace}</div>
+        <div class="scroll-cell">${item.country}</div>
+        <div class="scroll-cell">${item.category}</div>
+        <div class="scroll-cell">${item.series}</div>
+        <div class="scroll-cell">${item.event}</div>
+        <div class="scroll-cell">${item.eventPeriod}</div>
+        <div class="scroll-cell cell-qty">${item.fcQty.toLocaleString()}</div>
+        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
+      </div>
+    `;
+  }).join('');
 
   updatePaginationInfo(filteredData.length);
   syncFcScroll('event');
+}
+
+// Calculate Event FC占比 by Company + SKU + Event
+function calculateEventFcPercentages(data) {
+  const percentages = {};
+  
+  // Group by Company + SKU + Event
+  const groups = {};
+  data.forEach(item => {
+    const groupKey = `${item.company}-${item.sku}-${item.event}`;
+    if (!groups[groupKey]) {
+      groups[groupKey] = [];
+    }
+    groups[groupKey].push(item);
+  });
+  
+  // Calculate percentage for each marketplace within the group
+  Object.keys(groups).forEach(groupKey => {
+    const items = groups[groupKey];
+    const totals = items.map(item => ({
+      item,
+      total: item.fcQty || 0
+    }));
+    
+    const grandTotal = totals.reduce((sum, t) => sum + t.total, 0);
+    
+    totals.forEach(({ item, total }) => {
+      const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
+      percentages[key] = grandTotal > 0 ? (total / grandTotal) * 100 : 0;
+    });
+  });
+  
+  // Validate: Check if sum equals 100% for each group
+  Object.keys(groups).forEach(groupKey => {
+    const items = groups[groupKey];
+    const sum = items.reduce((acc, item) => {
+      const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
+      return acc + (percentages[key] || 0);
+    }, 0);
+    
+    if (Math.abs(sum - 100) > 0.1 && sum > 0) {
+      console.warn(`Event FC占比總和不等於100%: ${groupKey}, sum=${sum.toFixed(2)}%`);
+    }
+  });
+  
+  return percentages;
 }
 
 // Update pagination info and controls
@@ -529,6 +635,9 @@ function renderFcRegularTableEditable() {
   const endIdx = startIdx + fcPaginationState.pageSize;
   const paginatedData = filteredData.slice(startIdx, endIdx);
 
+  // Calculate FC占比
+  const fcPercentages = calculateFcPercentages(filteredData);
+
   // Render fixed column (SKU - readonly)
   fixedBody.innerHTML = paginatedData.map(item => `
     <div class="fixed-row">
@@ -539,6 +648,8 @@ function renderFcRegularTableEditable() {
   // Render scrollable columns with editable months only
   scrollBody.innerHTML = paginatedData.map((item, idx) => {
     const total = item.months.reduce((sum, val) => sum + val, 0);
+    const key = `${item.company}-${item.sku}-${item.marketplace}`;
+    const percentage = fcPercentages[key] || 0;
     return `
       <div class="scroll-row" data-row-idx="${idx}">
         <div class="scroll-cell fc-cell-readonly">${item.year}</div>
@@ -553,6 +664,7 @@ function renderFcRegularTableEditable() {
           </div>
         `).join('')}
         <div class="scroll-cell cell-total">${total.toLocaleString()}</div>
+        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
       </div>
     `;
   }).join('');
@@ -680,6 +792,9 @@ function renderFcEventTableEditable() {
   const endIdx = startIdx + fcPaginationState.pageSize;
   const paginatedData = filteredData.slice(startIdx, endIdx);
 
+  // Calculate FC占比
+  const eventFcPercentages = calculateEventFcPercentages(filteredData);
+
   // Render fixed column (SKU - readonly)
   fixedBody.innerHTML = paginatedData.map(item => `
     <div class="fixed-row">
@@ -688,21 +803,26 @@ function renderFcEventTableEditable() {
   `).join('');
 
   // Render scrollable columns with editable FC Qty only
-  scrollBody.innerHTML = paginatedData.map((item, idx) => `
-    <div class="scroll-row" data-row-idx="${idx}">
-      <div class="scroll-cell fc-cell-readonly">${item.year}</div>
-      <div class="scroll-cell fc-cell-readonly">${item.company}</div>
-      <div class="scroll-cell fc-cell-readonly">${item.marketplace}</div>
-      <div class="scroll-cell fc-cell-readonly">${item.country}</div>
-      <div class="scroll-cell fc-cell-readonly">${item.category}</div>
-      <div class="scroll-cell fc-cell-readonly">${item.series}</div>
-      <div class="scroll-cell fc-cell-readonly">${item.event}</div>
-      <div class="scroll-cell fc-cell-readonly">${item.eventPeriod}</div>
-      <div class="scroll-cell cell-qty fc-cell-editable">
-        <input type="number" value="${item.fcQty}" onchange="updateEventFcQty(${idx}, this.value)">
+  scrollBody.innerHTML = paginatedData.map((item, idx) => {
+    const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
+    const percentage = eventFcPercentages[key] || 0;
+    return `
+      <div class="scroll-row" data-row-idx="${idx}">
+        <div class="scroll-cell fc-cell-readonly">${item.year}</div>
+        <div class="scroll-cell fc-cell-readonly">${item.company}</div>
+        <div class="scroll-cell fc-cell-readonly">${item.marketplace}</div>
+        <div class="scroll-cell fc-cell-readonly">${item.country}</div>
+        <div class="scroll-cell fc-cell-readonly">${item.category}</div>
+        <div class="scroll-cell fc-cell-readonly">${item.series}</div>
+        <div class="scroll-cell fc-cell-readonly">${item.event}</div>
+        <div class="scroll-cell fc-cell-readonly">${item.eventPeriod}</div>
+        <div class="scroll-cell cell-qty fc-cell-editable">
+          <input type="number" value="${item.fcQty}" onchange="updateEventFcQty(${idx}, this.value)">
+        </div>
+        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   syncFcScroll('event');
 }
