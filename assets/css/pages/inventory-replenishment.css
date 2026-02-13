@@ -3,14 +3,10 @@
    #ops-section 專屬樣式
 ======================================== */
 
-/* Page Title */
+/* Page Title - 使用 base.css 統一樣式 */
 #ops-section h2 {
     position: relative;
     z-index: 140;
-    margin-bottom: var(--space-lg);
-    color: var(--text-primary);
-    font-size: 1.5rem;
-    font-weight: 600;
     background: white;
 }
 

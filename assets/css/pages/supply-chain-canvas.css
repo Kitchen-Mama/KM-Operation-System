@@ -20,11 +20,7 @@
     background: white;
 }
 
-#supplychain-section .sc-page-header h2 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--text-dark);
-}
+/* h2 使用 base.css 統一樣式 */
 
 /* Canvas shell - fills remaining height */
 #supplychain-section .sc-canvas-shell {

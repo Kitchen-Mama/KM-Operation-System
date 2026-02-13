@@ -8,11 +8,7 @@
     margin-bottom: 24px;
 }
 
-.page-forecast-review .page-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
-}
+/* page-title 使用 base.css 統一樣式 */
 
 /* Filter Bar */
 .forecast-filters {
