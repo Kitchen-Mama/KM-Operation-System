@@ -148,6 +148,7 @@ function showSection(section) {
         'ops': 'ops-section', 
         'factory-stock': 'factory-stock-section',
         'forecast': 'forecast-section',
+        'request-order': 'request-order-section',
         'fc-summary': 'fc-summary-section',
         'skuDetails': 'sku-section',
         'supplychain': 'supplychain-section',
@@ -178,6 +179,13 @@ function showSection(section) {
         setTimeout(() => {
             if (window.initForecastReviewPage) {
                 window.initForecastReviewPage();
+            }
+        }, 100);
+    }
+    if (section === 'request-order') {
+        setTimeout(() => {
+            if (window.initRequestOrderSection) {
+                window.initRequestOrderSection();
             }
         }, 100);
     }
@@ -2556,3 +2564,8 @@ function updateFactoryFilter(filterType) {
 
 window.toggleFactoryFilter = toggleFactoryFilter;
 window.updateFactoryFilter = updateFactoryFilter;
+
+// Initialize SKU FC Decision Section
+if (typeof initFcSkuDecisionSection === 'function') {
+    initFcSkuDecisionSection();
+}

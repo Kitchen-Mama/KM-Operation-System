@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css">
     <link rel="stylesheet" href="assets/css/pages/factory-stock.css">
     <link rel="stylesheet" href="assets/css/pages/fc-overview.css">
+    <link rel="stylesheet" href="assets/css/pages/request-order.css">
     <link rel="stylesheet" href="assets/css/pages/fc-raw-data.css">
     <link rel="stylesheet" href="assets/css/pages/sku-details.css">
     <link rel="stylesheet" href="assets/css/pages/shipping-plan.css">
@@ -56,6 +57,11 @@
                 <div class="menu-item"
                      onclick="showSection('forecast')">
                     Forecast 管理
+                </div>
+                
+                <div class="menu-item"
+                     onclick="showSection('request-order')">
+                    下單系統
                 </div>
                 
                 <div class="menu-item"
@@ -760,6 +766,145 @@
                     <div class="forecast-achievement-card">
                         <h4 class="forecast-achievement-title">Top 5 Worst SKUs</h4>
                         <div id="top5WorstList" class="forecast-achievement-list"></div>
+                    </div>
+                </div>
+
+            </section>
+    
+            <!-- Request Order Section (下單系統) -->
+            <section id="request-order-section" class="module-section page-request-order">
+                <div class="page-header">
+                    <h2 class="page-title">下單系統</h2>
+                </div>
+                
+                <!-- Filter Bar -->
+                <div class="ro-filters">
+                    <div class="ro-filter ro-filter--date">
+                        <label>Date</label>
+                        <button type="button" class="ro-date-trigger" id="roDateTrigger">
+                            <span class="ro-date-trigger-text">Last 3 months</span>
+                            <span class="ro-date-trigger-icon">▼</span>
+                        </button>
+                    </div>
+                    
+                    <div class="ro-filter ro-filter--dropdown">
+                        <label>Country</label>
+                        <button type="button" class="ro-dropdown-trigger" data-filter="country">
+                            <span class="ro-dropdown-text">All</span>
+                            <span class="ro-dropdown-icon">▼</span>
+                        </button>
+                        <div class="ro-dropdown-panel" data-filter="country">
+                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'country')"> <strong>All</strong></label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="US" checked onchange="updateRequestOrderFilter('country')"> US</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="UK" checked onchange="updateRequestOrderFilter('country')"> UK</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="DE" checked onchange="updateRequestOrderFilter('country')"> DE</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="CA" checked onchange="updateRequestOrderFilter('country')"> CA</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="JP" checked onchange="updateRequestOrderFilter('country')"> JP</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="AU" checked onchange="updateRequestOrderFilter('country')"> AU</label>
+                        </div>
+                    </div>
+                    
+                    <div class="ro-filter ro-filter--dropdown">
+                        <label>Marketplace</label>
+                        <button type="button" class="ro-dropdown-trigger" data-filter="marketplace">
+                            <span class="ro-dropdown-text">All</span>
+                            <span class="ro-dropdown-icon">▼</span>
+                        </button>
+                        <div class="ro-dropdown-panel" data-filter="marketplace">
+                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'marketplace')"> <strong>All</strong></label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="amazon" checked onchange="updateRequestOrderFilter('marketplace')"> Amazon</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="shopify" checked onchange="updateRequestOrderFilter('marketplace')"> Shopify</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="target" checked onchange="updateRequestOrderFilter('marketplace')"> Target</label>
+                        </div>
+                    </div>
+                    
+                    <div class="ro-filter ro-filter--dropdown">
+                        <label>Category</label>
+                        <button type="button" class="ro-dropdown-trigger" data-filter="category">
+                            <span class="ro-dropdown-text">All</span>
+                            <span class="ro-dropdown-icon">▼</span>
+                        </button>
+                        <div class="ro-dropdown-panel" data-filter="category">
+                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'category')"> <strong>All</strong></label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Can Opener" checked onchange="updateRequestOrderFilter('category')"> Can Opener</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Kitchen Tools" checked onchange="updateRequestOrderFilter('category')"> Kitchen Tools</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Appliances" checked onchange="updateRequestOrderFilter('category')"> Appliances</label>
+                        </div>
+                    </div>
+                    
+                    <div class="ro-filter">
+                        <label>SKU</label>
+                        <input type="text" class="ro-filter-sku" placeholder="Enter SKU..." onchange="updateRequestOrderFilter('sku')" />
+                    </div>
+                </div>
+                
+                <div class="ro-panel ro-header">
+                    <div class="ro-tabs ro-tabs--series">
+                        <button class="ro-tab ro-tab--active" data-series="All" onclick="setRequestOrderSeries('All')">All</button>
+                        <button class="ro-tab" data-series="Classic" onclick="setRequestOrderSeries('Classic')">Classic</button>
+                        <button class="ro-tab" data-series="Deluxe" onclick="setRequestOrderSeries('Deluxe')">Deluxe</button>
+                    </div>
+                    
+                    <div class="ro-controls">
+                        <div class="ro-show-filter">
+                            <label>Show:</label>
+                            <select id="ro-show-mode" onchange="setRequestOrderShowMode(this.value)">
+                                <option value="all">All</option>
+                                <option value="needOnly">Need Order</option>
+                            </select>
+                        </div>
+                        
+                        <div class="ro-send">
+                            <select id="ro-request-type">
+                                <option value="all">All Request</option>
+                                <option value="t1">T1 Request</option>
+                                <option value="t2">T2 Request</option>
+                                <option value="t3">T3 Request</option>
+                            </select>
+                            <button class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="ro-panel ro-table-wrapper">
+                    <div class="dual-layer-table dual-layer-table--multi-header ro-table">
+                        <div class="table-header-bar">
+                            <div class="fixed-header">
+                                <div class="header-cell">SKU</div>
+                            </div>
+                            <div class="scroll-header-viewport">
+                                <div class="scroll-header" id="ro-scroll-header">
+                                    <div class="km-table__header-row km-table__header-row--level1">
+                                        <div class="km-table__header-cell" style="width:700px;">Last 3 Month Overview</div>
+                                        <div class="km-table__header-cell" style="width:280px;">Upcoming FC</div>
+                                        <div class="km-table__header-cell" style="width:420px;">Inventory</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Action Item</div>
+                                    </div>
+                                    <div class="km-table__header-row km-table__header-row--level2">
+                                        <div class="km-table__header-cell" style="width:140px;">達成率</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Forecast</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Actual</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Sessions</div>
+                                        <div class="km-table__header-cell" style="width:140px;">USP</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Forecast Units</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Special Campaign</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Amazon</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Factory</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Ongoing Order</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Request Order</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-body-bar">
+                            <div class="fixed-col">
+                                <div class="fixed-body" id="ro-fixed-body"></div>
+                            </div>
+                            <div class="scroll-col" id="ro-scroll-col">
+                                <div class="scroll-body" id="ro-scroll-body"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -1844,6 +1989,7 @@
     <script src="assets/js/pages/factory-stock.js"></script>
     <script src="assets/js/pages/fc-summary.js"></script>
     <script src="assets/js/pages/forecast.js"></script>
+    <script src="assets/js/pages/request-order.js"></script>
     <script src="assets/js/pages/sku-details.js"></script>
     <script src="assets/js/pages/shipping-history.js"></script>
     <script src="assets/js/pages/supplychain.js"></script>

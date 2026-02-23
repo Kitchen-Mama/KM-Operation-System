@@ -1,0 +1,488 @@
+/* Request Order Page (下單系統) */
+
+.page-request-order .page-header {
+    margin-bottom: 24px;
+}
+
+/* Filter Bar */
+.ro-filters {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    margin-bottom: 16px;
+    padding: 16px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ro-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    position: relative;
+    min-width: 160px;
+    flex: 0 0 160px;
+}
+
+.ro-filter label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+}
+
+.ro-filter--dropdown {
+    position: relative;
+}
+
+.ro-filter--date {
+    min-width: 200px;
+    flex: 0 0 200px;
+}
+
+.ro-date-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+    height: 36px;
+    line-height: 1;
+}
+
+.ro-date-trigger:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+.ro-date-trigger-text {
+    color: #2d3748;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ro-date-trigger-icon {
+    font-size: 10px;
+    color: #a0aec0;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+/* Date Modal */
+.ro-date-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9998;
+}
+
+.ro-date-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border-radius: 8px;
+    padding: 24px;
+    z-index: 9999;
+    min-width: 400px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+}
+
+.ro-date-modal-content h3 {
+    margin: 0 0 16px 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.ro-date-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.ro-date-presets button {
+    padding: 8px 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+    color: #000000;
+}
+
+.ro-date-presets button:hover {
+    background: #f9fafb;
+    border-color: #7fb069;
+}
+
+.ro-date-custom {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.ro-date-field {
+    flex: 1;
+}
+
+.ro-date-field label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 4px;
+    color: #374151;
+}
+
+.ro-date-field input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+}
+
+.ro-date-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.ro-date-actions button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+}
+
+.ro-date-actions button:first-child {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+.ro-date-actions button:first-child:hover {
+    background: #e5e7eb;
+}
+
+.ro-date-actions button:last-child {
+    background: #7fb069;
+    color: white;
+}
+
+.ro-date-actions button:last-child:hover {
+    background: #6a9556;
+}
+
+.ro-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+    height: 36px;
+    line-height: 1;
+}
+
+.ro-dropdown-trigger:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+.ro-dropdown-text {
+    color: #2d3748;
+    flex: 1;
+}
+
+.ro-dropdown-icon {
+    font-size: 10px;
+    color: #a0aec0;
+    margin-left: 8px;
+}
+
+.ro-dropdown-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.ro-dropdown-panel.is-open {
+    display: block;
+}
+
+.ro-checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    color: #2d3748;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+.ro-checkbox-item:hover {
+    background: #f7fafc;
+}
+
+.ro-checkbox-item input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+    width: auto;
+    height: auto;
+    min-width: auto;
+}
+
+.ro-filter-sku {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: white;
+    height: 36px;
+    box-sizing: border-box;
+    width: 100%;
+    line-height: 1;
+}
+
+/* Control Panel */
+.ro-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin-bottom: 16px;
+}
+
+.ro-tabs--series {
+    display: flex;
+    gap: 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.ro-tab {
+    padding: 0.5rem 1.5rem;
+    border: none;
+    background: white;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.ro-tab:hover {
+    background: #f9fafb;
+}
+
+.ro-tab--active {
+    background: #7fb069;
+    color: white;
+}
+
+.ro-controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.ro-show-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ro-show-filter label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+}
+
+.ro-show-filter select {
+    padding: 0.5rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: white;
+    cursor: pointer;
+}
+
+.ro-send {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.ro-send select {
+    padding: 0.5rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: white;
+    cursor: pointer;
+}
+
+.ro-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ro-btn--primary {
+    background: #7fb069;
+    color: white;
+}
+
+.ro-btn--primary:hover {
+    background: #6a9556;
+}
+
+/* Table Wrapper */
+.ro-table-wrapper {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.ro-table .table-header-bar {
+    height: 96px;
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: #f5f5f5;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ro-table .fixed-header {
+    width: 100px;
+    height: 96px;
+    background: #f5f5f5;
+    border-right: 2px solid var(--border-medium);
+    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    font-weight: 600;
+    font-size: 14px;
+    color: #000000;
+}
+
+.ro-table .fixed-header .header-cell {
+    color: #000000;
+}
+
+.ro-table .km-table__header-cell {
+    text-align: center;
+    font-weight: 600;
+    color: #374151;
+}
+
+.ro-table .scroll-cell {
+    width: 140px;
+    min-width: 140px;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ro-table .scroll-row {
+    display: flex;
+    height: 48px;
+    border-bottom: 1px solid #e5e7eb;
+    cursor: pointer;
+}
+
+.ro-table .scroll-row:hover {
+    background: #F8F9FA;
+}
+
+.ro-table .fixed-col {
+    width: 100px;
+    flex-shrink: 0;
+    background: white;
+    z-index: 110;
+    border-right: 2px solid var(--border-medium);
+    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    position: sticky;
+    left: 0;
+    overflow-y: hidden;
+}
+
+.ro-table .fixed-body {
+    background: white;
+}
+
+.ro-table .fixed-row {
+    height: 48px;
+    padding: 0 var(--space-md);
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-light);
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.ro-table .fixed-row:hover {
+    background: #F8F9FA;
+}
+
+.ro-table .scroll-col {
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.ro-table .scroll-body {
+    min-width: fit-content;
+}
+
+.ro-table .table-body-bar {
+    display: flex;
+}
+
+.ro-panel {
+    background: white;
+}

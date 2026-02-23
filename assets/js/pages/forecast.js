@@ -1369,3 +1369,370 @@ function renderTop5Worst(data) {
     `;
   }).join('');
 }
+
+
+// ========================================
+// SKU FC Decision / Request Section
+// ========================================
+
+const fcSkuDecisionState = {
+  series: 'All',
+  showMode: 'all',
+  data: [],
+  expandedSku: null
+};
+
+// Mock data generator
+function generateMockFcSkuDecisionData() {
+  const skus = [
+    { sku: 'KM-OP-001', name: 'Can Opener Classic', series: 'Classic', category: 'Openers' },
+    { sku: 'KM-OP-002', name: 'Can Opener Deluxe', series: 'Deluxe', category: 'Openers' },
+    { sku: 'KM-KT-001', name: 'Kitchen Tool Set', series: 'Classic', category: 'Kitchen Tools' },
+    { sku: 'KM-KT-002', name: 'Kitchen Tool Pro', series: 'Deluxe', category: 'Kitchen Tools' },
+    { sku: 'KM-AC-001', name: 'Accessory Pack', series: 'Classic', category: 'Accessories' },
+  ];
+  
+  return skus.map(sku => ({
+    ...sku,
+    // Last 3 Month Overview
+    achievementRate: 80 + Math.random() * 30,
+    forecast3Month: Math.round(20000 + Math.random() * 30000),
+    actual3Month: Math.round(18000 + Math.random() * 25000),
+    sessions3Month: Math.round(8000 + Math.random() * 12000),
+    usp3Month: 2.5 + Math.random() * 2,
+    // Upcoming FC
+    forecastUnits: Math.round(8000 + Math.random() * 12000),
+    specialCampaign: Math.random() > 0.5 ? Math.round(2000 + Math.random() * 5000) : 0,
+    // Inventory
+    amazonStock: Math.round(500 + Math.random() * 2000),
+    factoryStock: Math.round(3000 + Math.random() * 7000),
+    ongoingOrder: Math.round(1000 + Math.random() * 3000),
+    // Action Item
+    mockAiRecommendedUnits: Math.round(500 + Math.random() * 2000),
+    // Detail data
+    lastMonthDetail: {
+      achievementRate: 85 + Math.random() * 20,
+      forecastUnits: Math.round(6000 + Math.random() * 4000),
+      actualUnits: Math.round(5500 + Math.random() * 3500),
+      sessions: Math.round(2500 + Math.random() * 2000),
+      usp: 2.8 + Math.random() * 1.5
+    },
+    last2MonthDetail: {
+      achievementRate: 80 + Math.random() * 25,
+      forecastUnits: Math.round(5500 + Math.random() * 4000),
+      actualUnits: Math.round(5000 + Math.random() * 3500),
+      sessions: Math.round(2300 + Math.random() * 2000),
+      usp: 2.6 + Math.random() * 1.5
+    },
+    last3MonthDetail: {
+      achievementRate: 75 + Math.random() * 30,
+      forecastUnits: Math.round(5000 + Math.random() * 4000),
+      actualUnits: Math.round(4500 + Math.random() * 3500),
+      sessions: Math.round(2000 + Math.random() * 2000),
+      usp: 2.4 + Math.random() * 1.5
+    },
+    upcomingFcDetail: {
+      nextMonth: {
+        baseFc: Math.round(2500 + Math.random() * 2000),
+        campaignFc: Math.random() > 0.6 ? Math.round(500 + Math.random() * 1500) : 0
+      },
+      next2Month: {
+        baseFc: Math.round(2800 + Math.random() * 2000),
+        campaignFc: Math.random() > 0.7 ? Math.round(800 + Math.random() * 2000) : 0
+      },
+      next3Month: {
+        baseFc: Math.round(3000 + Math.random() * 2000),
+        campaignFc: Math.random() > 0.8 ? Math.round(1000 + Math.random() * 2500) : 0
+      }
+    },
+    inventoryDetail: {
+      amazonStock: Math.round(500 + Math.random() * 2000),
+      thirdPartyStock: Math.round(200 + Math.random() * 800),
+      factoryStock: Math.round(3000 + Math.random() * 7000)
+    },
+    ongoingOrderDetail: {
+      thisMonth: Math.round(500 + Math.random() * 1500),
+      nextMonth: Math.round(800 + Math.random() * 2000)
+    },
+    aiShortage: {
+      nextMonth: Math.round(-500 + Math.random() * 1500),
+      next2Month: Math.round(-300 + Math.random() * 1200),
+      next3Month: Math.round(-200 + Math.random() * 1000)
+    }
+  }));
+}
+
+function initFcSkuDecisionSection() {
+  fcSkuDecisionState.data = generateMockFcSkuDecisionData();
+  renderFcSkuDecisionTable();
+}
+
+function setFcSkuDecisionSeries(series) {
+  fcSkuDecisionState.series = series;
+  
+  // Update tab active state
+  document.querySelectorAll('.fc-tabs--series .fc-tab').forEach(tab => {
+    if (tab.dataset.series === series) {
+      tab.classList.add('fc-tab--active');
+    } else {
+      tab.classList.remove('fc-tab--active');
+    }
+  });
+  
+  renderFcSkuDecisionTable();
+}
+
+function setFcSkuDecisionShowMode(mode) {
+  fcSkuDecisionState.showMode = mode;
+  renderFcSkuDecisionTable();
+}
+
+function renderFcSkuDecisionTable() {
+  const fixedBody = document.getElementById('fc-sku-decision-fixed-body');
+  const scrollBody = document.getElementById('fc-sku-decision-scroll-body');
+  
+  if (!fixedBody || !scrollBody) return;
+  
+  // Filter data
+  let filteredData = fcSkuDecisionState.data;
+  
+  // Filter by series
+  if (fcSkuDecisionState.series !== 'All') {
+    filteredData = filteredData.filter(item => item.series === fcSkuDecisionState.series);
+  }
+  
+  // Filter by show mode
+  if (fcSkuDecisionState.showMode === 'needOnly') {
+    filteredData = filteredData.filter(item => 
+      item.mockAiRecommendedUnits > 0 || 
+      (item.aiShortage.nextMonth > 0 || item.aiShortage.next2Month > 0 || item.aiShortage.next3Month > 0)
+    );
+  }
+  
+  if (filteredData.length === 0) {
+    fixedBody.innerHTML = '';
+    scrollBody.innerHTML = '<div class="empty-row">No data found</div>';
+    return;
+  }
+  
+  // Render fixed column (SKU)
+  fixedBody.innerHTML = filteredData.map(item => `
+    <div class="fixed-row">
+      <div class="fixed-cell fc-sku-decision-cell--sku">
+        <button class="fc-sku-decision-expand-btn ${fcSkuDecisionState.expandedSku === item.sku ? 'is-expanded' : ''}" 
+                onclick="toggleFcSkuRowExpand('${item.sku}')">▸</button>
+        <div class="fc-sku-decision-sku-info">
+          <span class="fc-sku-decision-sku-code">${item.sku}</span>
+          <span class="fc-sku-decision-sku-name">${item.name}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  
+  // Render scrollable columns
+  scrollBody.innerHTML = filteredData.map(item => {
+    const rateClass = item.achievementRate >= 90 ? 'is-good' : item.achievementRate >= 70 ? '' : 'is-bad';
+    
+    return `
+      <div class="scroll-row fc-sku-decision-row">
+        <div class="fc-sku-decision-cell fc-sku-decision-cell--rate ${rateClass}">${item.achievementRate.toFixed(1)}%</div>
+        <div class="fc-sku-decision-cell">${item.forecast3Month.toLocaleString()}</div>
+        <div class="fc-sku-decision-cell">${item.actual3Month.toLocaleString()}</div>
+        <div class="fc-sku-decision-cell">${item.sessions3Month.toLocaleString()}</div>
+        <div class="fc-sku-decision-cell">${item.usp3Month.toFixed(2)}%</div>
+        <div class="fc-sku-decision-cell">${item.forecastUnits.toLocaleString()}</div>
+        <div class="fc-sku-decision-cell">${item.specialCampaign > 0 ? item.specialCampaign.toLocaleString() : '-'}</div>
+        <div class="fc-sku-decision-cell">${item.amazonStock.toLocaleString()}</div>
+        <div class="fc-sku-decision-cell">${item.factoryStock.toLocaleString()}</div>
+        <div class="fc-sku-decision-cell">${item.ongoingOrder.toLocaleString()}</div>
+        <div class="fc-sku-decision-cell fc-sku-decision-cell--input">
+          <input type="number" value="${item.mockAiRecommendedUnits}" min="0" />
+        </div>
+      </div>
+      ${fcSkuDecisionState.expandedSku === item.sku ? renderFcSkuDetailPanel(item) : ''}
+    `;
+  }).join('');
+  
+  syncFcSkuDecisionScroll();
+}
+
+function renderFcSkuDetailPanel(item) {
+  return `
+    <div class="fc-sku-decision-detail">
+      <div class="fc-sku-decision-detail-grid">
+        <!-- Section 1: Last 3 Months Detail -->
+        <div class="fc-sku-decision-detail-section">
+          <div class="fc-sku-decision-detail-title">Last 3 Months</div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Last Month</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">達成率</span>
+            <span class="fc-sku-decision-detail-value">${item.lastMonthDetail.achievementRate.toFixed(1)}%</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Forecast</span>
+            <span class="fc-sku-decision-detail-value">${item.lastMonthDetail.forecastUnits.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Actual</span>
+            <span class="fc-sku-decision-detail-value">${item.lastMonthDetail.actualUnits.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Sessions</span>
+            <span class="fc-sku-decision-detail-value">${item.lastMonthDetail.sessions.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">USP</span>
+            <span class="fc-sku-decision-detail-value">${item.lastMonthDetail.usp.toFixed(2)}%</span>
+          </div>
+        </div>
+        
+        <!-- Section 2: Upcoming FC Detail -->
+        <div class="fc-sku-decision-detail-section">
+          <div class="fc-sku-decision-detail-title">Upcoming FC</div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Next Month</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Base FC</span>
+            <span class="fc-sku-decision-detail-value">${item.upcomingFcDetail.nextMonth.baseFc.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Campaign FC</span>
+            <span class="fc-sku-decision-detail-value">${item.upcomingFcDetail.nextMonth.campaignFc > 0 ? item.upcomingFcDetail.nextMonth.campaignFc.toLocaleString() : '-'}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Next 2 Month</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Base FC</span>
+            <span class="fc-sku-decision-detail-value">${item.upcomingFcDetail.next2Month.baseFc.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Campaign FC</span>
+            <span class="fc-sku-decision-detail-value">${item.upcomingFcDetail.next2Month.campaignFc > 0 ? item.upcomingFcDetail.next2Month.campaignFc.toLocaleString() : '-'}</span>
+          </div>
+        </div>
+        
+        <!-- Section 3: Inventory Detail -->
+        <div class="fc-sku-decision-detail-section">
+          <div class="fc-sku-decision-detail-title">Inventory</div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Channel Stock</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Amazon</span>
+            <span class="fc-sku-decision-detail-value">${item.inventoryDetail.amazonStock.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">3rd Party</span>
+            <span class="fc-sku-decision-detail-value">${item.inventoryDetail.thirdPartyStock.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Factory Stock</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Total</span>
+            <span class="fc-sku-decision-detail-value">${item.inventoryDetail.factoryStock.toLocaleString()}</span>
+          </div>
+        </div>
+        
+        <!-- Section 4: Ongoing Orders -->
+        <div class="fc-sku-decision-detail-section">
+          <div class="fc-sku-decision-detail-title">Ongoing Orders</div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">This Month</span>
+            <span class="fc-sku-decision-detail-value">${item.ongoingOrderDetail.thisMonth.toLocaleString()}</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Next Month</span>
+            <span class="fc-sku-decision-detail-value">${item.ongoingOrderDetail.nextMonth.toLocaleString()}</span>
+          </div>
+        </div>
+        
+        <!-- Section 5: AI Recommendation -->
+        <div class="fc-sku-decision-detail-section">
+          <div class="fc-sku-decision-detail-title">AI Recommendation</div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Next Month 缺貨</span>
+            <span class="fc-sku-decision-detail-value">${item.aiShortage.nextMonth.toLocaleString()} units</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Next 2 Month 缺貨</span>
+            <span class="fc-sku-decision-detail-value">${item.aiShortage.next2Month.toLocaleString()} units</span>
+          </div>
+          <div class="fc-sku-decision-detail-row">
+            <span class="fc-sku-decision-detail-label">Next 3 Month 缺貨</span>
+            <span class="fc-sku-decision-detail-value">${item.aiShortage.next3Month.toLocaleString()} units</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Action Buttons -->
+      <div class="fc-sku-decision-detail-actions">
+        <button onclick="handleEditTargetFc('${item.sku}')">Edit Target FC</button>
+        <button onclick="handleFcUpdate('${item.sku}')">FC Update</button>
+      </div>
+    </div>
+  `;
+}
+
+function toggleFcSkuRowExpand(sku) {
+  if (fcSkuDecisionState.expandedSku === sku) {
+    fcSkuDecisionState.expandedSku = null;
+  } else {
+    fcSkuDecisionState.expandedSku = sku;
+  }
+  renderFcSkuDecisionTable();
+}
+
+function syncFcSkuDecisionScroll() {
+  const scrollCol = document.getElementById('fc-sku-decision-scroll-col');
+  const scrollHeader = document.getElementById('fc-sku-decision-scroll-header');
+  
+  if (!scrollCol || !scrollHeader) return;
+  
+  scrollCol.addEventListener('scroll', function() {
+    scrollHeader.style.transform = `translateX(-${this.scrollLeft}px)`;
+  });
+}
+
+function handleSendFcRequest() {
+  const requestType = document.getElementById('fc-sku-request-type').value;
+  
+  // Filter data
+  let filteredData = fcSkuDecisionState.data;
+  if (fcSkuDecisionState.series !== 'All') {
+    filteredData = filteredData.filter(item => item.series === fcSkuDecisionState.series);
+  }
+  if (fcSkuDecisionState.showMode === 'needOnly') {
+    filteredData = filteredData.filter(item => item.mockAiRecommendedUnits > 0);
+  }
+  
+  const typeLabel = {
+    'all': 'All Request',
+    't1': 'T1 Request',
+    't2': 'T2 Request',
+    't3': 'T3 Request'
+  }[requestType];
+  
+  alert(`Send Request (${typeLabel}) for ${filteredData.length} SKUs (mock only, no real submit yet).`);
+}
+
+function handleEditTargetFc(sku) {
+  alert(`Edit Target FC (${sku}) – not implemented yet`);
+}
+
+function handleFcUpdate(sku) {
+  alert(`FC Update (${sku}) – not implemented yet`);
+}
+
+// Expose functions to window for HTML onclick handlers
+window.setFcSkuDecisionSeries = setFcSkuDecisionSeries;
+window.setFcSkuDecisionShowMode = setFcSkuDecisionShowMode;
+window.toggleFcSkuRowExpand = toggleFcSkuRowExpand;
+window.handleSendFcRequest = handleSendFcRequest;
+window.handleEditTargetFc = handleEditTargetFc;
+window.handleFcUpdate = handleFcUpdate;
+window.initFcSkuDecisionSection = initFcSkuDecisionSection;
