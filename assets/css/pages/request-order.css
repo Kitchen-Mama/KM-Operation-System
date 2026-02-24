@@ -395,7 +395,7 @@
 }
 
 .ro-table .fixed-header {
-    width: 100px;
+    width: 143px;
     height: 96px;
     background: #f5f5f5;
     border-right: 2px solid var(--border-medium);
@@ -420,6 +420,18 @@
     color: #374151;
 }
 
+.ro-table .km-table__header-cell--rowspan {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 96px;
+    border-right: 1px solid #e5e7eb;
+}
+
+.ro-table .km-table__header-row--level2 .km-table__header-cell:first-child {
+    margin-left: 220px;
+}
+
 .ro-table .scroll-cell {
     width: 140px;
     min-width: 140px;
@@ -429,6 +441,43 @@
     justify-content: center;
 }
 
+.ro-table .scroll-cell--country {
+    width: 100px;
+    min-width: 100px;
+}
+
+.ro-table .scroll-cell--marketplace {
+    width: 120px;
+    min-width: 120px;
+}
+
+.ro-request-order-cell {
+    gap: 6px;
+}
+
+.ro-request-order-value {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.ro-request-order-icon {
+    font-size: 14px;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+}
+
+.ro-request-order-icon:hover {
+    color: #7fb069;
+    background: #f0f7ed;
+}
+
 .ro-table .scroll-row {
     display: flex;
     height: 48px;
@@ -436,12 +485,17 @@
     cursor: pointer;
 }
 
+.ro-row-wrapper {
+    display: flex;
+    flex-direction: column;
+}
+
 .ro-table .scroll-row:hover {
     background: #F8F9FA;
 }
 
 .ro-table .fixed-col {
-    width: 100px;
+    width: 143px;
     flex-shrink: 0;
     background: white;
     z-index: 110;
@@ -466,6 +520,37 @@
     font-weight: 500;
 }
 
+.ro-fixed-wrapper {
+    display: flex;
+    flex-direction: column;
+}
+
+.ro-fixed-expand-spacer {
+    background: #f9fafb;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 12px;
+    box-sizing: border-box;
+    min-height: 100px;
+}
+
+.ro-fixed-expand-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.ro-fixed-expand-actions .ro-btn-edit-target,
+.ro-fixed-expand-actions .ro-btn-update-fc {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 12px;
+    text-align: center;
+}
+
 .ro-table .fixed-row:hover {
     background: #F8F9FA;
 }
@@ -485,4 +570,329 @@
 
 .ro-panel {
     background: white;
+}
+
+
+/* Expand Toggle Button */
+.ro-sku-expand-toggle {
+    cursor: pointer;
+    font-size: 12px;
+    color: #6b7280;
+    padding: 0 6px;
+    display: inline-block;
+    margin-right: 7px;
+    transition: color 0.2s;
+    user-select: none;
+}
+
+.ro-sku-expand-toggle:hover {
+    color: #374151;
+}
+
+.ro-sku-expand-toggle.is-expanded {
+    color: #7fb069;
+}
+
+/* Expand Panel Container */
+#request-order-section .ro-sku-expand-panel {
+    display: none;
+    background: #ffffff;
+    border-radius: 8px;
+    margin: 0;
+    padding: 16px 20px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    border: 1px solid #e5e7eb;
+    border-top: none;
+    width: 100%;
+}
+
+#request-order-section .ro-sku-expand-panel.is-open {
+    display: block;
+}
+
+/* Grid Layout - Single row, 4 columns with adjusted widths */
+.ro-sku-expand-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 2fr;
+    grid-template-rows: 1fr;
+    gap: 16px;
+    width: 100%;
+}
+
+/* Specific card width adjustments */
+.ro-sku-expand-card--history {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.ro-sku-expand-card--upcoming {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.ro-sku-expand-card--inventory {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+.ro-sku-expand-card--ai {
+    grid-column: 4;
+    grid-row: 1;
+}
+
+/* Card Styles */
+.ro-sku-expand-card {
+    background: #f9fafb;
+    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.ro-expand-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.ro-expand-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 12px;
+}
+
+.ro-expand-row--editable {
+    gap: 8px;
+}
+
+.ro-expand-tier-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #7fb069;
+    background: #f0f7ed;
+    padding: 2px 6px;
+    border-radius: 3px;
+    min-width: 24px;
+    text-align: center;
+}
+
+.ro-expand-label {
+    font-weight: 500;
+    color: #374151;
+}
+
+.ro-expand-sublabel {
+    color: #6b7280;
+    padding-left: 8px;
+}
+
+.ro-expand-value {
+    font-weight: 500;
+    color: #1f2937;
+}
+
+/* Table for Last 3 Month Overview */
+.ro-expand-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 8px;
+}
+
+.ro-expand-table-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    margin-top: 16px;
+    margin-bottom: 4px;
+    padding: 6px 8px;
+    background: #e5e7eb;
+    border-radius: 4px;
+}
+
+.ro-expand-table th {
+    background: #e5e7eb;
+    padding: 6px 8px;
+    text-align: left;
+    font-weight: 600;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.ro-expand-table td {
+    padding: 6px 8px;
+    border: 1px solid #e5e7eb;
+    color: #1f2937;
+}
+
+.ro-expand-table tbody tr:hover {
+    background: #f3f4f6;
+}
+
+/* Section divider within card */
+.ro-expand-section {
+    margin-top: 12px;
+}
+
+.ro-expand-section:first-child {
+    margin-top: 0;
+}
+
+.ro-expand-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #d1d5db;
+}
+
+.ro-expand-section-subtitle {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ro-expand-section--system .ro-expand-value {
+    font-weight: 600;
+}
+
+.ro-expand-value.ro-shortage {
+    color: #dc2626;
+}
+
+.ro-expand-value.ro-sufficient {
+    color: #16a34a;
+}
+
+/* AI Input */
+.ro-ai-input {
+    width: 80px;
+    padding: 6px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2937;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.ro-ai-input:focus {
+    outline: none;
+    border-color: #7fb069;
+    box-shadow: 0 0 0 2px rgba(127, 176, 105, 0.1);
+}
+
+.ro-expand-divider {
+    height: 1px;
+    background: #d1d5db;
+    margin: 12px 0;
+}
+
+/* Action Buttons - span all 4 columns */
+.ro-sku-expand-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.ro-btn-edit-target,
+.ro-btn-update-fc {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+}
+
+.ro-btn-edit-target {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.ro-btn-edit-target:hover {
+    background: #e5e7eb;
+}
+
+.ro-btn-update-fc {
+    background: #7fb069;
+    color: white;
+}
+
+.ro-btn-update-fc:hover {
+    background: #6a9556;
+}
+
+/* Responsive adjustments - maintain single row */
+@media (max-width: 1400px) {
+    .ro-sku-expand-grid {
+        grid-template-columns: 1.5fr 1fr 1fr 1.5fr;
+    }
+}
+
+@media (max-width: 1200px) {
+    .ro-sku-expand-grid {
+        grid-template-columns: 1fr 0.8fr 0.8fr 1fr;
+        gap: 12px;
+    }
+    
+    .ro-sku-expand-card {
+        padding: 10px 12px;
+    }
+    
+    .ro-expand-card-title {
+        font-size: 12px;
+    }
+    
+    .ro-expand-row {
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 768px) {
+    .ro-sku-expand-grid {
+        grid-template-columns: 1fr 0.7fr 0.7fr 1fr;
+        gap: 8px;
+    }
+    
+    .ro-sku-expand-card {
+        padding: 8px 10px;
+    }
+    
+    .ro-expand-card-title {
+        font-size: 11px;
+        margin-bottom: 6px;
+    }
+    
+    .ro-expand-row {
+        font-size: 10px;
+        padding: 3px 0;
+    }
+    
+    .ro-expand-table {
+        font-size: 10px;
+    }
+    
+    .ro-ai-input {
+        width: 60px;
+        padding: 4px 6px;
+        font-size: 11px;
+    }
 }

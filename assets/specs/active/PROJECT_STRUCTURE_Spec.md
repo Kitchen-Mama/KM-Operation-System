@@ -358,6 +358,10 @@ SKU Details: #sku-section .dual-layer-table
       supplychain.css
 
   /js
+    core/                    # ✅ Phase 1-3 已完成
+      namespace.js           # 全域命名空間
+      lifecycle.js           # 頁面生命週期管理
+      state.js               # 集中式狀態管理
     app.js (只保留全域控制)
     pages/
       factory-stock.js

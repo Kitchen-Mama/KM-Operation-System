@@ -875,9 +875,11 @@
                             <div class="scroll-header-viewport">
                                 <div class="scroll-header" id="ro-scroll-header">
                                     <div class="km-table__header-row km-table__header-row--level1">
-                                        <div class="km-table__header-cell" style="width:700px;">Last 3 Month Overview</div>
+                                        <div class="km-table__header-cell km-table__header-cell--rowspan" style="width:100px;">Country</div>
+                                        <div class="km-table__header-cell km-table__header-cell--rowspan" style="width:120px;">Marketplace</div>
+                                        <div class="km-table__header-cell" style="width:980px;">Last 3 Month Overview</div>
                                         <div class="km-table__header-cell" style="width:280px;">Upcoming FC</div>
-                                        <div class="km-table__header-cell" style="width:420px;">Inventory</div>
+                                        <div class="km-table__header-cell" style="width:700px;">Inventory & Ongoing Orders</div>
                                         <div class="km-table__header-cell" style="width:140px;">Action Item</div>
                                     </div>
                                     <div class="km-table__header-row km-table__header-row--level2">
@@ -889,7 +891,9 @@
                                         <div class="km-table__header-cell" style="width:140px;">Forecast Units</div>
                                         <div class="km-table__header-cell" style="width:140px;">Special Campaign</div>
                                         <div class="km-table__header-cell" style="width:140px;">Amazon</div>
-                                        <div class="km-table__header-cell" style="width:140px;">Factory</div>
+                                        <div class="km-table__header-cell" style="width:140px;">3rd Party Stock</div>
+                                        <div class="km-table__header-cell" style="width:140px;">CN</div>
+                                        <div class="km-table__header-cell" style="width:140px;">TW</div>
                                         <div class="km-table__header-cell" style="width:140px;">Ongoing Order</div>
                                         <div class="km-table__header-cell" style="width:140px;">Request Order</div>
                                     </div>
@@ -1980,7 +1984,13 @@
     </div>
     
     <!-- JS 模組化架構 -->
+    <!-- Core: Namespace (必須最先載入) -->
+    <script src="assets/js/core/namespace.js"></script>
+    <script src="assets/js/core/lifecycle.js"></script>
+    <script src="assets/js/core/state.js"></script>
+    
     <!-- Utils -->
+    <script src="assets/js/utils/forecast-engine.js"></script>
     <script src="assets/js/utils/data.js"></script>
     <script src="assets/js/utils/scroll-sync.js"></script>
     

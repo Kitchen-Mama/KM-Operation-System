@@ -142,6 +142,26 @@ function showSection(section) {
     document.getElementById('world-time-bar').style.display = 'none';
     document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
     
+    // 呼叫生命週期切換（如果已註冊）
+    if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {
+        const sectionMap = {
+            'restock': 'replenishment-section',
+            'ops': 'ops-section',
+            'factory-stock': 'factory-stock-section',
+            'forecast': 'forecast-section',
+            'request-order': 'request-order-section',
+            'fc-summary': 'fc-summary-section',
+            'skuDetails': 'sku-section',
+            'supplychain': 'supplychain-section',
+            'shippingplan': 'shippingplan-section',
+            'shippinghistory': 'shippinghistory-section'
+        };
+        const targetSectionId = sectionMap[section];
+        if (targetSectionId) {
+            KM.lifecycle.switchTo(targetSectionId);
+        }
+    }
+    
     // 顯示選擇的區塊
     const sectionMap = {
         'restock': 'replenishment-section',
@@ -473,6 +493,11 @@ window.addEventListener('DOMContentLoaded', () => {
     initWorldTimes();
     renderHomepage();
     initSkuUnifiedScroll();
+    
+    // 設定初始頁面生命週期（首頁）
+    if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {
+        KM.lifecycle.switchTo('home-section');
+    }
 });
 
 // SKU Details 統一滾動控制
