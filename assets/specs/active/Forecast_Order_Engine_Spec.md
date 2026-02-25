@@ -282,11 +282,34 @@ remainingDays = totalSiteStock / avgSalesPerDay
 
 ### 3️⃣ 本月剩餘需求
 
+#### 本月日均 FC
+
+```
+fcThisMonthDaily = fcThisMonth / daysInThisMonth
+```
+
+**說明**: 計算本月每日平均預測需求。
+
+**參數**:
+- `fcThisMonth`: 本月總 FC（從 FC Summary 取得）
+- `daysInThisMonth`: 本月總天數（28/29/30/31）
+
+**時區說明**:
+- 系統目前使用瀏覽器本地時間
+- 建議統一使用 UTC 時間或台灣時間（UTC+8）作為基準
+- 計算 `remainingDaysThisMonth` 時需考慮時區一致性
+
+#### 本月剩餘需求
+
 ```
 fcThisMonth = remainingDaysThisMonth × fcThisMonthDaily
 ```
 
 **說明**: 計算本月剩餘天數的預測需求。
+
+**參數**:
+- `remainingDaysThisMonth`: 本月剩餘天數（當月總天數 - 今天日期）
+- `fcThisMonthDaily`: 本月日均 FC
 
 ### 4️⃣ 三期需求計算
 
@@ -337,6 +360,16 @@ fcAllocationRatio = totalFc / totalFcAllSites × 100%
 ```
 supplyBase = totalSiteStock + (factoryStockTotal × fcAllocationRatio)
 ```
+
+**說明**:
+- `factoryStockTotal`: 該 SKU 在該子公司所有工廠的總庫存（從 Factory Stock 頁面取得）
+- `fcAllocationRatio`: 該站點的 FC 配比（0-1 之間的小數）
+- 工廠庫存需乘以 FC 配比，因為同一子公司內多個站點共享工廠庫存
+
+**下單系統 UI 顯示**:
+- 表格欄位「Factory Stock」顯示值 = `factoryStockTotal × fcAllocationRatio`
+- 此值已經是該站點可分配到的工廠庫存量
+- 不同子公司的工廠庫存完全獨立，互不影響
 
 #### T1 期缺貨
 

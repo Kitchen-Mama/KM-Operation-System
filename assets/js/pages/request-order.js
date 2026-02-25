@@ -83,7 +83,12 @@ function initRequestOrderDropdowns() {
   
   const roDateTrigger = document.getElementById('roDateTrigger');
   if (roDateTrigger) {
-    roDateTrigger.addEventListener('click', function() {
+    // Remove existing listener
+    const clone = roDateTrigger.cloneNode(true);
+    roDateTrigger.parentNode.replaceChild(clone, roDateTrigger);
+    
+    // Add new listener
+    document.getElementById('roDateTrigger').addEventListener('click', function() {
       openRequestOrderDateModal();
     });
   }
@@ -132,29 +137,78 @@ function closeRequestOrderDateModal() {
 
 function selectRequestOrderPreset(preset) {
   const today = new Date();
-  let startMonth, endMonth;
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth(); // 0-11
+  
+  let startYear, startMonth, endYear, endMonth;
   
   switch(preset) {
     case 'last-month':
-      startMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      endMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      // 上個月
+      if (currentMonth === 0) {
+        // 如果當前是1月，上個月是去年12月
+        startYear = endYear = currentYear - 1;
+        startMonth = endMonth = 11;
+      } else {
+        startYear = endYear = currentYear;
+        startMonth = endMonth = currentMonth - 1;
+      }
       break;
     case 'last-2-months':
-      startMonth = new Date(today.getFullYear(), today.getMonth() - 2, 1);
-      endMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      // 最近兩個月
+      if (currentMonth === 0) {
+        startYear = currentYear - 1;
+        startMonth = 10; // 去年11月
+        endYear = currentYear - 1;
+        endMonth = 11; // 去年12月
+      } else if (currentMonth === 1) {
+        startYear = currentYear - 1;
+        startMonth = 11; // 去年12月
+        endYear = currentYear;
+        endMonth = 0; // 今年1月
+      } else {
+        startYear = endYear = currentYear;
+        startMonth = currentMonth - 2;
+        endMonth = currentMonth - 1;
+      }
       break;
     case 'last-3-months':
-      startMonth = new Date(today.getFullYear(), today.getMonth() - 3, 1);
-      endMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      // 最近三個月
+      if (currentMonth === 0) {
+        startYear = currentYear - 1;
+        startMonth = 9; // 去年10月
+        endYear = currentYear - 1;
+        endMonth = 11; // 去年12月
+      } else if (currentMonth === 1) {
+        startYear = currentYear - 1;
+        startMonth = 10; // 去年11月
+        endYear = currentYear;
+        endMonth = 0; // 今年1月
+      } else if (currentMonth === 2) {
+        startYear = currentYear - 1;
+        startMonth = 11; // 去年12月
+        endYear = currentYear;
+        endMonth = 1; // 今年2月
+      } else {
+        startYear = endYear = currentYear;
+        startMonth = currentMonth - 3;
+        endMonth = currentMonth - 1;
+      }
       break;
     case 'last-year':
-      startMonth = new Date(today.getFullYear() - 1, 0, 1);
-      endMonth = new Date(today.getFullYear() - 1, 11, 31);
+      startYear = endYear = currentYear - 1;
+      startMonth = 0;
+      endMonth = 11;
       break;
   }
   
-  document.getElementById('ro-start-month').value = startMonth.toISOString().slice(0, 7);
-  document.getElementById('ro-end-month').value = endMonth.toISOString().slice(0, 7);
+  // 格式化為 YYYY-MM
+  const formatMonth = (year, month) => {
+    return `${year}-${String(month + 1).padStart(2, '0')}`;
+  };
+  
+  document.getElementById('ro-start-month').value = formatMonth(startYear, startMonth);
+  document.getElementById('ro-end-month').value = formatMonth(endYear, endMonth);
 }
 
 function applyRequestOrderDate() {
@@ -164,7 +218,13 @@ function applyRequestOrderDate() {
   if (startMonth && endMonth) {
     const trigger = document.getElementById('roDateTrigger');
     const text = trigger.querySelector('.ro-date-trigger-text');
-    text.textContent = `${startMonth} ~ ${endMonth}`;
+    
+    // 如果開始月份和結束月份相同，只顯示一個月份
+    if (startMonth === endMonth) {
+      text.textContent = startMonth;
+    } else {
+      text.textContent = `${startMonth} ~ ${endMonth}`;
+    }
     
     requestOrderState.filters.dateRange = { startMonth, endMonth };
     
@@ -200,10 +260,16 @@ function updateRequestOrderFilter(filterType) {
     requestOrderState.filters.sku = document.querySelector('.ro-filter-sku').value;
   } else {
     const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
-    requestOrderState.filters[filterType] = Array.from(checkboxes).map(cb => cb.value);
-    
     const allCheckbox = panel.querySelector('input[value=""]');
     const totalCheckboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    
+    // 如果全選或沒有任何選擇，設為空陣列（表示不篩選）
+    if (checkboxes.length === totalCheckboxes.length || checkboxes.length === 0) {
+      requestOrderState.filters[filterType] = [];
+    } else {
+      requestOrderState.filters[filterType] = Array.from(checkboxes).map(cb => cb.value);
+    }
+    
     allCheckbox.checked = checkboxes.length === totalCheckboxes.length;
     
     const text = trigger.querySelector('.ro-dropdown-text');
@@ -277,26 +343,47 @@ function generateMockRequestOrderData() {
     // 靜態庫存數據（前10個SKU的Amazon庫存設為10，前5個SKU的CN和TW也設為10，方便驗證計算）
     const siteStock = index < 10 ? 10 : rand(1000, 3000, 1);
     const siteOnTheWay = rand(0, 500, 2);
-    const overseasStock = rand(200, 800, 3);
+    const overseasStock = index === 0 ? 100 : rand(200, 800, 3); // KM-OP-001 固定為 100
     const overseasOnTheWay = 0;
-    const factoryCN = index < 5 ? 10 : rand(1000, 3000, 4);
-    const factoryTW = index < 5 ? 10 : rand(500, 2000, 5);
-    const thisMonthOngoingOrder = rand(200, 800, 6);
-    const nextMonthOngoingOrder = rand(300, 1000, 7);
+    const thisMonthOngoingOrder = index === 0 ? 200 : rand(200, 800, 6); // KM-OP-001 固定為 200
+    const nextMonthOngoingOrder = index === 0 ? 300 : rand(300, 1000, 7); // KM-OP-001 固定為 300
     const fcAllocationRatio = 0.3; // TODO: Stage 3 需實作真實計算
+    
+    // 從 Factory Stock 頁面獲取該 SKU 該子公司的工廠總庫存
+    const factoryStockRecords = window.factoryStockData || [];
+    const skuFactoryRecords = factoryStockRecords.filter(f => f.sku === fcItem.sku && f.company === fcItem.company);
+    const factoryStockTotal = skuFactoryRecords.reduce((sum, f) => sum + f.stock, 0);
+    
+    // 計算 Factory Stock 顯示值 = factoryStockTotal × fcAllocationRatio
+    const displayFactoryStock = Math.round(factoryStockTotal * fcAllocationRatio);
+    
+    // 計算顯示用的數值
+    const displaySiteStock = siteStock + siteOnTheWay; // Site Stock = siteStock + siteOnTheWay
+    const displayThirdPartyStock = overseasStock + overseasOnTheWay; // 3rd Party Stock = overseasStock + overseasOnTheWay
     
     // 從 FC Summary Regular Forecast 抓取 FC 數據
     const currentMonth = new Date().getMonth();
+    const currentDate = new Date().getDate();
+    const daysInCurrentMonth = new Date(new Date().getFullYear(), currentMonth + 1, 0).getDate();
+    const remainingDaysThisMonth = daysInCurrentMonth - currentDate;
+    
+    const fcThisMonth = fcItem.months[currentMonth] || rand(400, 1400, 7);
     const fcNextMonth = fcItem.months[(currentMonth + 1) % 12] || rand(500, 1500, 8);
     const fcMonth2 = fcItem.months[(currentMonth + 2) % 12] || rand(600, 1600, 9);
     const fcMonth3 = fcItem.months[(currentMonth + 3) % 12] || rand(700, 1700, 10);
+    
+    // 計算本月日均 FC
+    const fcThisMonthDaily = fcThisMonth / daysInCurrentMonth;
     
     // Campaign FC（未來可從 Event FC 抓取）
     const campaignNextMonth = seededRandom(seed + 11) > 0.6 ? rand(100, 300, 11) : 0;
     const campaignMonth2 = seededRandom(seed + 12) > 0.7 ? rand(150, 400, 12) : 0;
     const campaignMonth3 = seededRandom(seed + 13) > 0.8 ? rand(200, 500, 13) : 0;
     
-    const boxSize = [12, 24, 36, 48][index % 4];
+    // 從 SKU Details 獲取單箱數量
+    const allSkuDetails = [...window.upcomingSkuData || [], ...window.runningSkuData || [], ...window.phasingOutSkuData || []];
+    const skuDetail = allSkuDetails.find(s => s.sku === fcItem.sku);
+    const boxSize = skuDetail?.unitsPerCarton || 12; // 如果找不到就使用預設值 12
     
     // 使用計算引擎計算缺口
     const shortageResult = window.KM && window.KM.utils && window.KM.utils.forecastEngine 
@@ -305,17 +392,20 @@ function generateMockRequestOrderData() {
           siteOnTheWay,
           overseasStock,
           overseasOnTheWay,
-          factoryStockCN: factoryCN,
-          factoryStockTW: factoryTW,
+          factoryStockCN: factoryStockTotal * 0.6,
+          factoryStockTW: factoryStockTotal * 0.4,
           thisMonthOngoingOrder,
           nextMonthOngoingOrder,
           fcAllocationRatio,
+          fcThisMonthDaily,
+          remainingDaysThisMonth,
           fcNextMonth,
           fcMonth2,
           fcMonth3,
           campaignNextMonth,
           campaignMonth2,
           campaignMonth3,
+          tfThisMonth: 1.0,
           tfNextMonth: 1.0,
           tfMonth2: 1.0,
           tfMonth3: 1.0,
@@ -336,13 +426,12 @@ function generateMockRequestOrderData() {
       actual: rand(2500, 7500, 16),
       sessions: rand(5000, 15000, 17),
       usp: (seededRandom(seed + 18) * 5 + 10).toFixed(2) + '%',
-      forecastUnits: rand(1000, 3000, 19),
-      specialCampaign: seededRandom(seed + 20) > 0.5 ? rand(200, 700, 20) : 0,
-      amazon: siteStock,
-      ongoingOrder: thisMonthOngoingOrder,
-      thirdPartyStock: overseasStock,
-      factoryCN: factoryCN,
-      factoryTW: factoryTW,
+      basicFcT3: fcNextMonth + fcMonth2 + fcMonth3,
+      specialEventsFc: campaignNextMonth + campaignMonth2 + campaignMonth3,
+      siteStock: displaySiteStock,
+      thirdPartyStock: displayThirdPartyStock,
+      factoryStock: displayFactoryStock,
+      totalOngoingOrders: thisMonthOngoingOrder + nextMonthOngoingOrder,
       mockAiRecommendedUnits: rand(0, 800, 21),
       boxSize: boxSize,
       lastMonth: {
@@ -402,9 +491,6 @@ function generateMockRequestOrderData() {
         baseFc: fcMonth3,
         campaignFc: campaignMonth3
       },
-      amazonStock: siteStock,
-      thirdPartyStock: overseasStock,
-      factoryStock: factoryCN + factoryTW,
       factoryOngoingThisMonth: thisMonthOngoingOrder,
       factoryOngoingNextMonth: nextMonthOngoingOrder,
       shortageM1: shortageResult.shortageMonth1,
@@ -531,13 +617,12 @@ function renderRequestOrderTable() {
           <div class="scroll-cell">${item.actual.toLocaleString()}</div>
           <div class="scroll-cell">${item.sessions.toLocaleString()}</div>
           <div class="scroll-cell">${item.usp}</div>
-          <div class="scroll-cell">${item.forecastUnits.toLocaleString()}</div>
-          <div class="scroll-cell">${item.specialCampaign > 0 ? item.specialCampaign.toLocaleString() : '-'}</div>
-          <div class="scroll-cell">${item.amazon.toLocaleString()}</div>
+          <div class="scroll-cell">${item.basicFcT3.toLocaleString()}</div>
+          <div class="scroll-cell">${item.specialEventsFc > 0 ? item.specialEventsFc.toLocaleString() : '-'}</div>
+          <div class="scroll-cell">${item.siteStock.toLocaleString()}</div>
           <div class="scroll-cell">${item.thirdPartyStock.toLocaleString()}</div>
-          <div class="scroll-cell">${item.factoryCN.toLocaleString()}</div>
-          <div class="scroll-cell">${item.factoryTW.toLocaleString()}</div>
-          <div class="scroll-cell">${item.ongoingOrder.toLocaleString()}</div>
+          <div class="scroll-cell">${item.factoryStock.toLocaleString()}</div>
+          <div class="scroll-cell">${item.totalOngoingOrders.toLocaleString()}</div>
           <div class="scroll-cell ro-request-order-cell">
             <span class="ro-request-order-value">${totalSuggestedOrder > 0 ? totalSuggestedOrder.toLocaleString() : '0'}</span>
             <span class="ro-request-order-icon" onclick="toggleRequestOrderSkuExpand('${item.sku}')" title="Edit details">⚙</span>
@@ -559,6 +644,11 @@ function renderExpandPanel(item) {
   const next3Month = new Date(today.getFullYear(), today.getMonth() + 3);
   
   const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+  
+  // 計算建議下單量（向上取整到整箱）
+  const t1OrderUnits = item.shortageM1 < 0 ? Math.ceil(Math.abs(item.shortageM1) / item.boxSize) * item.boxSize : 0;
+  const t2OrderUnits = item.shortageM2 < 0 ? Math.ceil(Math.abs(item.shortageM2) / item.boxSize) * item.boxSize : 0;
+  const t3OrderUnits = item.shortageM3 < 0 ? Math.ceil(Math.abs(item.shortageM3) / item.boxSize) * item.boxSize : 0;
   
   return `
     <div class="ro-sku-expand-panel is-open" data-sku="${item.sku}">
@@ -685,10 +775,10 @@ function renderExpandPanel(item) {
         <div class="ro-sku-expand-card ro-sku-expand-card--inventory">
           <div class="ro-expand-card-title">Inventory & Ongoing Orders</div>
           <div class="ro-expand-section">
-            <div class="ro-expand-section-title">Marketplace</div>
+            <div class="ro-expand-section-title" style="text-align: center;">Marketplace</div>
             <div class="ro-expand-row">
-              <span class="ro-expand-sublabel">Amazon Stock</span>
-              <span class="ro-expand-value">${item.amazonStock.toLocaleString()}</span>
+              <span class="ro-expand-sublabel">Site Stock</span>
+              <span class="ro-expand-value">${item.siteStock.toLocaleString()}</span>
             </div>
             <div class="ro-expand-row">
               <span class="ro-expand-sublabel">3rd Party WH</span>
@@ -696,18 +786,14 @@ function renderExpandPanel(item) {
             </div>
           </div>
           <div class="ro-expand-section">
-            <div class="ro-expand-section-title">Factory Stock</div>
+            <div class="ro-expand-section-title" style="text-align: center;">Factory Stock</div>
             <div class="ro-expand-row">
-              <span class="ro-expand-sublabel">CN</span>
-              <span class="ro-expand-value">${item.factoryCN.toLocaleString()}</span>
-            </div>
-            <div class="ro-expand-row">
-              <span class="ro-expand-sublabel">TW</span>
-              <span class="ro-expand-value">${item.factoryTW.toLocaleString()}</span>
+              <span class="ro-expand-sublabel">Total</span>
+              <span class="ro-expand-value">${item.factoryStock.toLocaleString()}</span>
             </div>
           </div>
           <div class="ro-expand-section">
-            <div class="ro-expand-section-title">Ongoing Orders</div>
+            <div class="ro-expand-section-title" style="text-align: center;">Ongoing Orders</div>
             <div class="ro-expand-row">
               <span class="ro-expand-sublabel">This Month</span>
               <span class="ro-expand-value">${item.factoryOngoingThisMonth.toLocaleString()}</span>
@@ -727,19 +813,19 @@ function renderExpandPanel(item) {
             <div class="ro-expand-row">
               <span class="ro-expand-sublabel">${monthNames[nextMonth.getMonth()]} 缺口</span>
               <span class="ro-expand-value ${item.shortageM1 < 0 ? 'ro-shortage' : 'ro-sufficient'}">
-                ${item.shortageM1 < 0 ? `缺 ${Math.abs(item.shortageM1).toLocaleString()} units` : '充足 0 units'}
+                ${item.shortageM1 < 0 ? `缺 ${Math.abs(item.shortageM1).toFixed(1)} units` : '充足 0 units'}
               </span>
             </div>
             <div class="ro-expand-row">
               <span class="ro-expand-sublabel">${monthNames[next2Month.getMonth()]} 缺口</span>
               <span class="ro-expand-value ${item.shortageM2 < 0 ? 'ro-shortage' : 'ro-sufficient'}">
-                ${item.shortageM2 < 0 ? `缺 ${Math.abs(item.shortageM2).toLocaleString()} units` : '充足 0 units'}
+                ${item.shortageM2 < 0 ? `缺 ${Math.abs(item.shortageM2).toFixed(1)} units` : '充足 0 units'}
               </span>
             </div>
             <div class="ro-expand-row">
               <span class="ro-expand-sublabel">${monthNames[next3Month.getMonth()]} 缺口</span>
               <span class="ro-expand-value ${item.shortageM3 < 0 ? 'ro-shortage' : 'ro-sufficient'}">
-                ${item.shortageM3 < 0 ? `缺 ${Math.abs(item.shortageM3).toLocaleString()} units` : '充足 0 units'}
+                ${item.shortageM3 < 0 ? `缺 ${Math.abs(item.shortageM3).toFixed(1)} units` : '充足 0 units'}
               </span>
             </div>
           </div>
@@ -747,21 +833,21 @@ function renderExpandPanel(item) {
           <div class="ro-expand-divider"></div>
           
           <div class="ro-expand-section ro-expand-section--editable">
-            <div class="ro-expand-section-subtitle">建議下單量 (每箱${item.boxSize}個)</div>
+            <div class="ro-expand-section-subtitle">建議下單量 (每箱 ${item.boxSize} 個)</div>
             <div class="ro-expand-row ro-expand-row--editable">
               <span class="ro-expand-tier-label">T1</span>
               <span class="ro-expand-sublabel">${monthNames[nextMonth.getMonth()]}</span>
-              <input type="number" class="ro-ai-input" value="${item.shortageM1 < 0 ? Math.ceil(Math.abs(item.shortageM1) / item.boxSize) * item.boxSize : 0}" min="0" step="${item.boxSize}" />
+              <input type="number" class="ro-ai-input" value="${t1OrderUnits}" min="0" step="${item.boxSize}" />
             </div>
             <div class="ro-expand-row ro-expand-row--editable">
               <span class="ro-expand-tier-label">T2</span>
               <span class="ro-expand-sublabel">${monthNames[next2Month.getMonth()]}</span>
-              <input type="number" class="ro-ai-input" value="${item.shortageM2 < 0 ? Math.ceil(Math.abs(item.shortageM2) / item.boxSize) * item.boxSize : 0}" min="0" step="${item.boxSize}" />
+              <input type="number" class="ro-ai-input" value="${t2OrderUnits}" min="0" step="${item.boxSize}" />
             </div>
             <div class="ro-expand-row ro-expand-row--editable">
               <span class="ro-expand-tier-label">T3</span>
               <span class="ro-expand-sublabel">${monthNames[next3Month.getMonth()]}</span>
-              <input type="number" class="ro-ai-input" value="${item.shortageM3 < 0 ? Math.ceil(Math.abs(item.shortageM3) / item.boxSize) * item.boxSize : 0}" min="0" step="${item.boxSize}" />
+              <input type="number" class="ro-ai-input" value="${t3OrderUnits}" min="0" step="${item.boxSize}" />
             </div>
           </div>
         </div>
@@ -826,22 +912,123 @@ function syncRequestOrderScroll() {
 function handleSendRequest() {
   const requestType = document.getElementById('ro-request-type').value;
   
+  // 收集當前篩選後的數據
   let filteredData = requestOrderState.data;
+  
+  // 套用 Series 篩選
   if (requestOrderState.series !== 'All') {
     filteredData = filteredData.filter(item => item.series === requestOrderState.series);
   }
-  if (requestOrderState.showMode === 'needOnly') {
-    filteredData = filteredData.filter(item => item.mockAiRecommendedUnits > 0);
+  
+  // 套用 Country 篩選
+  if (requestOrderState.filters.country.length > 0) {
+    filteredData = filteredData.filter(item => requestOrderState.filters.country.includes(item.country));
+  }
+  
+  // 套用 Marketplace 篩選
+  if (requestOrderState.filters.marketplace.length > 0) {
+    filteredData = filteredData.filter(item => requestOrderState.filters.marketplace.includes(item.marketplace));
+  }
+  
+  // 套用 Category 篩選
+  if (requestOrderState.filters.category.length > 0) {
+    filteredData = filteredData.filter(item => requestOrderState.filters.category.includes(item.category));
+  }
+  
+  // 套用 SKU 篩選
+  if (requestOrderState.filters.sku) {
+    filteredData = filteredData.filter(item => item.sku.toLowerCase().includes(requestOrderState.filters.sku.toLowerCase()));
+  }
+  
+  // 收集推送清單
+  const requestList = [];
+  
+  filteredData.forEach(item => {
+    // 計算建議下單量
+    const t1Order = item.shortageM1 < 0 ? Math.ceil(Math.abs(item.shortageM1) / item.boxSize) * item.boxSize : 0;
+    const t2Order = item.shortageM2 < 0 ? Math.ceil(Math.abs(item.shortageM2) / item.boxSize) * item.boxSize : 0;
+    const t3Order = item.shortageM3 < 0 ? Math.ceil(Math.abs(item.shortageM3) / item.boxSize) * item.boxSize : 0;
+    
+    // 根據 Request Type 決定要推送哪些
+    let orderQty = 0;
+    let periods = [];
+    
+    switch(requestType) {
+      case 'all':
+        orderQty = t1Order + t2Order + t3Order;
+        if (t1Order > 0) periods.push('T1');
+        if (t2Order > 0) periods.push('T2');
+        if (t3Order > 0) periods.push('T3');
+        break;
+      case 't1':
+        orderQty = t1Order;
+        if (t1Order > 0) periods.push('T1');
+        break;
+      case 't2':
+        orderQty = t2Order;
+        if (t2Order > 0) periods.push('T2');
+        break;
+      case 't3':
+        orderQty = t3Order;
+        if (t3Order > 0) periods.push('T3');
+        break;
+    }
+    
+    // 只推送有建議下單量的 SKU
+    if (orderQty > 0) {
+      requestList.push({
+        sku: item.sku,
+        country: item.country,
+        marketplace: item.marketplace,
+        category: item.category,
+        series: item.series,
+        orderQty: orderQty,
+        periods: periods,
+        t1Order: t1Order,
+        t2Order: t2Order,
+        t3Order: t3Order
+      });
+    }
+  });
+  
+  // 顯示確認對話框
+  if (requestList.length === 0) {
+    alert('沒有需要推送的 SKU（建議下單量為 0）');
+    return;
   }
   
   const typeLabel = {
-    'all': 'All Request',
+    'all': 'All Request (T1+T2+T3)',
     't1': 'T1 Request',
     't2': 'T2 Request',
     't3': 'T3 Request'
   }[requestType];
   
-  alert(`Send Request (${typeLabel}) for ${filteredData.length} SKUs`);
+  // 生成確認訊息
+  let confirmMessage = `即將推送 ${typeLabel}\n\n`;
+  confirmMessage += `共 ${requestList.length} 個 SKU\n`;
+  confirmMessage += `總數量: ${requestList.reduce((sum, item) => sum + item.orderQty, 0).toLocaleString()} units\n\n`;
+  confirmMessage += `前 5 個 SKU:\n`;
+  requestList.slice(0, 5).forEach(item => {
+    confirmMessage += `- ${item.sku} (${item.country}/${item.marketplace}): ${item.orderQty.toLocaleString()} units [${item.periods.join('+')}]\n`;
+  });
+  if (requestList.length > 5) {
+    confirmMessage += `... 還有 ${requestList.length - 5} 個 SKU\n`;
+  }
+  confirmMessage += `\n確認推送？`;
+  
+  if (confirm(confirmMessage)) {
+    // Stage 1: 模擬推送，記錄到 Console
+    console.log('=== Send Request (Stage 1 - Simulation) ===');
+    console.log('Request Type:', typeLabel);
+    console.log('Total SKUs:', requestList.length);
+    console.log('Total Quantity:', requestList.reduce((sum, item) => sum + item.orderQty, 0));
+    console.log('Request List:', requestList);
+    console.log('==========================================');
+    
+    // 顯示成功訊息
+    alert(`✅ Send Request 成功！\n\n推送類型: ${typeLabel}\nSKU 數量: ${requestList.length}\n總數量: ${requestList.reduce((sum, item) => sum + item.orderQty, 0).toLocaleString()} units\n\n詳細內容已記錄到 Console（按 F12 查看）`);
+  }
 }
 
 window.setRequestOrderSeries = setRequestOrderSeries;

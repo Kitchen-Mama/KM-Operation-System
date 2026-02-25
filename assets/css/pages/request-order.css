@@ -9,11 +9,11 @@
     display: flex;
     gap: 12px;
     align-items: flex-end;
-    margin-bottom: 16px;
-    padding: 16px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin-bottom: var(--space-lg);
+    padding: var(--space-md);
+    background: var(--bg-surface);
+    border-radius: var(--radius-md);
+    flex-wrap: nowrap;
 }
 
 .ro-filter {
@@ -26,7 +26,7 @@
 }
 
 .ro-filter label {
-    font-size: 0.875rem;
+    font-size: var(--filter-font-size);
     font-weight: 500;
     color: #374151;
 }
@@ -36,26 +36,27 @@
 }
 
 .ro-filter--date {
-    min-width: 200px;
-    flex: 0 0 200px;
+    min-width: 250px;
+    flex: 0 0 250px;
 }
 
 .ro-date-trigger {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 0.75rem;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
     background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    font-size: 0.875rem;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
     cursor: pointer;
     transition: all 0.2s;
     width: 100%;
     text-align: left;
     box-sizing: border-box;
-    height: 36px;
+    height: var(--filter-height);
     line-height: 1;
+    margin: 4px 0;
 }
 
 .ro-date-trigger:hover {
@@ -191,18 +192,19 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 0.75rem;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
     background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    font-size: 0.875rem;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
     cursor: pointer;
     transition: all 0.2s;
     width: 100%;
     text-align: left;
     box-sizing: border-box;
-    height: 36px;
+    height: var(--filter-height);
     line-height: 1;
+    margin: 4px 0;
 }
 
 .ro-dropdown-trigger:hover {
@@ -229,8 +231,8 @@
     right: 0;
     margin-top: 4px;
     background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     z-index: 1000;
     max-height: 300px;
@@ -246,7 +248,7 @@
     display: flex;
     align-items: center;
     padding: 6px 12px;
-    font-size: 0.875rem;
+    font-size: var(--filter-font-size);
     color: #2d3748;
     cursor: pointer;
     transition: background 0.15s;
@@ -266,15 +268,16 @@
 }
 
 .ro-filter-sku {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    font-size: 0.875rem;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
     background: white;
-    height: 36px;
+    height: var(--filter-height);
     box-sizing: border-box;
     width: 100%;
     line-height: 1;
+    margin: 4px 0;
 }
 
 /* Control Panel */
@@ -421,15 +424,21 @@
 }
 
 .ro-table .km-table__header-cell--rowspan {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 96px;
-    border-right: 1px solid #e5e7eb;
+    display: none;
+}
+
+.ro-table .scroll-cell--country,
+.ro-table .scroll-cell--marketplace {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
 }
 
 .ro-table .km-table__header-row--level2 .km-table__header-cell:first-child {
-    margin-left: 220px;
+    margin-left: 0;
 }
 
 .ro-table .scroll-cell {
@@ -439,6 +448,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 13px;
 }
 
 .ro-table .scroll-cell--country {

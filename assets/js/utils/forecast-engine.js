@@ -30,6 +30,10 @@
       nextMonthOngoingOrder: input.nextMonthOngoingOrder || 0,
       fcAllocationRatio: input.fcAllocationRatio || 0,
       
+      // Demand - This Month
+      fcThisMonthDaily: input.fcThisMonthDaily || 0,
+      remainingDaysThisMonth: input.remainingDaysThisMonth || 0,
+      
       // Demand - FC
       fcNextMonth: input.fcNextMonth || 0,
       fcMonth2: input.fcMonth2 || 0,
@@ -41,6 +45,7 @@
       campaignMonth3: input.campaignMonth3 || 0,
       
       // Target Factor (預設 100%)
+      tfThisMonth: input.tfThisMonth !== undefined ? input.tfThisMonth : 1.0,
       tfNextMonth: input.tfNextMonth !== undefined ? input.tfNextMonth : 1.0,
       tfMonth2: input.tfMonth2 !== undefined ? input.tfMonth2 : 1.0,
       tfMonth3: input.tfMonth3 !== undefined ? input.tfMonth3 : 1.0,
@@ -55,15 +60,18 @@
     // 2. 計算工廠總庫存
     const factoryStockTotal = data.factoryStockCN + data.factoryStockTW;
     
-    // 3. 計算三期需求
-    const t1Fc = (data.fcNextMonth * data.tfNextMonth) + (data.campaignNextMonth * data.campaignTfNextMonth);
+    // 3. 計算本月剩餘需求
+    const fcThisMonth = data.remainingDaysThisMonth * data.fcThisMonthDaily;
+    
+    // 4. 計算三期需求
+    const t1Fc = (fcThisMonth * data.tfThisMonth) + (data.fcNextMonth * data.tfNextMonth) + (data.campaignNextMonth * data.campaignTfNextMonth);
     const t2Fc = (data.fcMonth2 * data.tfMonth2) + (data.campaignMonth2 * data.campaignTfMonth2);
     const t3Fc = (data.fcMonth3 * data.tfMonth3) + (data.campaignMonth3 * data.campaignTfMonth3);
     
-    // 4. 計算供給基礎
+    // 5. 計算供給基礎
     const supplyBase = totalSiteStock + (factoryStockTotal * data.fcAllocationRatio);
     
-    // 5. 計算三期缺貨（遞推）
+    // 6. 計算三期缺貨（遞推）
     const shortageMonth1 = supplyBase - t1Fc;
     const shortageMonth2 = shortageMonth1 + (data.thisMonthOngoingOrder * data.fcAllocationRatio) - t2Fc;
     const shortageMonth3 = shortageMonth2 + (data.nextMonthOngoingOrder * data.fcAllocationRatio) - t3Fc;
@@ -72,6 +80,7 @@
       // 中間計算值
       totalSiteStock,
       factoryStockTotal,
+      fcThisMonth,
       t1Fc,
       t2Fc,
       t3Fc,

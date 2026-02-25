@@ -845,6 +845,30 @@ const upcomingSkuData = [
 
 const runningSkuData = [
     {
+        sku: "KM-OP-001",
+        image: "img_op001.jpg",
+        status: "Active",
+        productName: "Kitchen Mama Can Opener Classic",
+        series: "Classic",
+        category: "Openers",
+        gs1Code: "0012345670001",
+        gs1Type: "UPC",
+        amzAsin: "B07OP001",
+        itemDimensions: "7x3x2 in",
+        itemWeight: "0.4 lbs",
+        package: "Box",
+        packageWeight: "0.7 lbs",
+        cartonDimensions: "20x15x12 in",
+        cartonWeight: "25 lbs",
+        unitsPerCarton: 50,
+        hscode: "8210.00",
+        declaredValue: "$10.00",
+        minimumPrice: "$16.99",
+        msrp: "$24.99",
+        sellingPrice: "$19.99",
+        pm: "Alice"
+    },
+    {
         sku: "KM-001",
         image: "img3.jpg",
         status: "Active",
@@ -1589,4 +1613,7 @@ const factoryStockData = [
 window.fcRegularData = fcRegularData;
 window.fcEventData = fcEventData;
 window.factoryStockData = factoryStockData;
+window.upcomingSkuData = upcomingSkuData;
+window.runningSkuData = runningSkuData;
+window.phasingOutSkuData = phasingOutSkuData;
 window.DataRepo = DataRepo;
