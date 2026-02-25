@@ -340,6 +340,19 @@ function generateMockRequestOrderData() {
       return Math.floor(r * (max - min + 1)) + min;
     };
     
+    // 生成 Risk 等級（基於 SKU 種子）
+    const riskSeed = seededRandom(seed + 100);
+    let riskLevel;
+    if (riskSeed < 0.2) {
+      riskLevel = 'High';
+    } else if (riskSeed < 0.5) {
+      riskLevel = 'Medium';
+    } else if (riskSeed < 0.8) {
+      riskLevel = 'Low';
+    } else {
+      riskLevel = 'N/A';
+    }
+    
     // 靜態庫存數據（前10個SKU的Amazon庫存設為10，前5個SKU的CN和TW也設為10，方便驗證計算）
     const siteStock = index < 10 ? 10 : rand(1000, 3000, 1);
     const siteOnTheWay = rand(0, 500, 2);
@@ -421,6 +434,7 @@ function generateMockRequestOrderData() {
       country: fcItem.country,
       marketplace: fcItem.marketplace,
       category: fcItem.category,
+      risk: riskLevel, // 新增 Risk 欄位
       achievementRate: rand(80, 120, 14),
       forecast: rand(3000, 8000, 15),
       actual: rand(2500, 7500, 16),
@@ -610,19 +624,28 @@ function renderRequestOrderTable() {
     return `
       <div class="ro-row-wrapper" data-sku="${item.sku}">
         <div class="scroll-row">
+          <!-- Risk 欄位 -->
+          <div class="scroll-cell scroll-cell--risk" data-risk="${item.risk}">${item.risk}</div>
+          <!-- Country 欄位 -->
           <div class="scroll-cell scroll-cell--country">${item.country}</div>
+          <!-- Marketplace 欄位 -->
           <div class="scroll-cell scroll-cell--marketplace">${item.marketplace}</div>
-          <div class="scroll-cell fc-sku-decision-cell--rate ${rateClass}">${item.achievementRate}%</div>
-          <div class="scroll-cell">${item.forecast.toLocaleString()}</div>
-          <div class="scroll-cell">${item.actual.toLocaleString()}</div>
-          <div class="scroll-cell">${item.sessions.toLocaleString()}</div>
-          <div class="scroll-cell">${item.usp}</div>
+          <!-- Upcoming FC 欄位 (2個) -->
           <div class="scroll-cell">${item.basicFcT3.toLocaleString()}</div>
           <div class="scroll-cell">${item.specialEventsFc > 0 ? item.specialEventsFc.toLocaleString() : '-'}</div>
+          <!-- Inventory & Ongoing 欄位 (4個) -->
           <div class="scroll-cell">${item.siteStock.toLocaleString()}</div>
           <div class="scroll-cell">${item.thirdPartyStock.toLocaleString()}</div>
           <div class="scroll-cell">${item.factoryStock.toLocaleString()}</div>
           <div class="scroll-cell">${item.totalOngoingOrders.toLocaleString()}</div>
+          <!-- Coverage & Time 欄位 (2個) -->
+          <div class="scroll-cell">-</div>
+          <div class="scroll-cell">-</div>
+          <!-- Shortage 欄位 (3個) - 隱藏但保有篩選功能 -->
+          <div class="scroll-cell" style="display:none;">${item.shortageM1 < 0 ? Math.abs(item.shortageM1).toFixed(0) : '0'}</div>
+          <div class="scroll-cell" style="display:none;">${item.shortageM2 < 0 ? Math.abs(item.shortageM2).toFixed(0) : '0'}</div>
+          <div class="scroll-cell" style="display:none;">${item.shortageM3 < 0 ? Math.abs(item.shortageM3).toFixed(0) : '0'}</div>
+          <!-- Decision 欄位 (1個) -->
           <div class="scroll-cell ro-request-order-cell">
             <span class="ro-request-order-value">${totalSuggestedOrder > 0 ? totalSuggestedOrder.toLocaleString() : '0'}</span>
             <span class="ro-request-order-icon" onclick="toggleRequestOrderSkuExpand('${item.sku}')" title="Edit details">⚙</span>
@@ -653,6 +676,33 @@ function renderExpandPanel(item) {
   return `
     <div class="ro-sku-expand-panel is-open" data-sku="${item.sku}">
       <div class="ro-sku-expand-grid">
+        <div class="ro-sku-expand-card ro-sku-expand-card--period">
+          <div class="ro-expand-card-title">${requestOrderState.filters.dateRange ? requestOrderState.filters.dateRange.startMonth + (requestOrderState.filters.dateRange.startMonth === requestOrderState.filters.dateRange.endMonth ? '' : ' ~ ' + requestOrderState.filters.dateRange.endMonth) : 'Selected Period'}</div>
+          
+          <table class="ro-expand-table ro-expand-table--avg">
+            <thead>
+              <tr>
+                <th>月份</th>
+                <th>達成率</th>
+                <th>Forecast</th>
+                <th>Actual</th>
+                <th>Sessions</th>
+                <th>USP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="background: #f0f7ed;">
+                <td style="font-weight: 600;">平均</td>
+                <td>${Math.round((item.lastMonth.achievementRate + item.last2Month.achievementRate + item.last3Month.achievementRate) / 3)}%</td>
+                <td>${Math.round((item.lastMonth.forecastUnits + item.last2Month.forecastUnits + item.last3Month.forecastUnits) / 3).toLocaleString()}</td>
+                <td>${Math.round((item.lastMonth.actualUnits + item.last2Month.actualUnits + item.last3Month.actualUnits) / 3).toLocaleString()}</td>
+                <td>${Math.round((item.lastMonth.sessions + item.last2Month.sessions + item.last3Month.sessions) / 3).toLocaleString()}</td>
+                <td>${((parseFloat(item.lastMonth.usp) + parseFloat(item.last2Month.usp) + parseFloat(item.last3Month.usp)) / 3).toFixed(2)}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
         <div class="ro-sku-expand-card ro-sku-expand-card--history">
           <div class="ro-expand-card-title">Last 3 Month Overview</div>
           

@@ -879,27 +879,43 @@
                             </div>
                             <div class="scroll-header-viewport">
                                 <div class="scroll-header" id="ro-scroll-header">
+                                    <!-- Risk/Country/Marketplace rowspan headers -->
+                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 0; width: 60px;">Risk</div>
+                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 60px; width: 100px;">Country</div>
+                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 160px; width: 120px;">Marketplace</div>
+                                    
+                                    <!-- 第一層表頭：群組標題 -->
                                     <div class="km-table__header-row km-table__header-row--level1">
-                                        <div class="km-table__header-cell km-table__header-cell--rowspan" style="width:100px;">Country</div>
-                                        <div class="km-table__header-cell km-table__header-cell--rowspan" style="width:120px;">Marketplace</div>
-                                        <div class="km-table__header-cell" style="width:700px;">Last 3 Month Overview</div>
+                                        <!-- Upcoming FC (2個子欄位) -->
                                         <div class="km-table__header-cell" style="width:280px;">Upcoming FC</div>
-                                        <div class="km-table__header-cell" style="width:560px;">Inventory &amp; Ongoing Orders</div>
-                                        <div class="km-table__header-cell" style="width:140px;">Action Items</div>
+                                        <!-- Inventory & Ongoing (4個子欄位) -->
+                                        <div class="km-table__header-cell" style="width:560px;">Inventory &amp; Ongoing</div>
+                                        <!-- Coverage & Time (2個子欄位) -->
+                                        <div class="km-table__header-cell" style="width:200px;">Coverage &amp; Time</div>
+                                        <!-- Shortage (3個子欄位) - 隱藏但保有篩選功能 -->
+                                        <div class="km-table__header-cell" style="width:300px; display:none;">Shortage</div>
+                                        <!-- Decision (1個子欄位) -->
+                                        <div class="km-table__header-cell" style="width:200px;">Decision</div>
                                     </div>
+                                    <!-- 第二層表頭：詳細欄位 -->
                                     <div class="km-table__header-row km-table__header-row--level2">
-                                        <div class="km-table__header-cell" style="width:140px;">達成率</div>
-                                        <div class="km-table__header-cell" style="width:140px;">Forecast</div>
-                                        <div class="km-table__header-cell" style="width:140px;">Actual</div>
-                                        <div class="km-table__header-cell" style="width:140px;">Sessions</div>
-                                        <div class="km-table__header-cell" style="width:140px;">USP</div>
-                                        <div class="km-table__header-cell" style="width:140px;">Basic (T3)</div>
+                                        <!-- Upcoming FC 子欄位 (2個) -->
+                                        <div class="km-table__header-cell" style="width:140px;">Basic(T3)</div>
                                         <div class="km-table__header-cell" style="width:140px;">Special Events</div>
+                                        <!-- Inventory & Ongoing 子欄位 (4個) -->
                                         <div class="km-table__header-cell" style="width:140px;">Site Stock</div>
                                         <div class="km-table__header-cell" style="width:140px;">3rd Party</div>
                                         <div class="km-table__header-cell" style="width:140px;">Factory Stock</div>
                                         <div class="km-table__header-cell" style="width:140px;">Ongoing Orders</div>
-                                        <div class="km-table__header-cell" style="width:140px;">Request Order</div>
+                                        <!-- Coverage & Time 子欄位 (2個) -->
+                                        <div class="km-table__header-cell" style="width:100px;">Remaining</div>
+                                        <div class="km-table__header-cell" style="width:100px;">Lead Time</div>
+                                        <!-- Shortage 子欄位 (3個) - 隱藏但保有篩選功能 -->
+                                        <div class="km-table__header-cell" style="width:100px; display:none;">M1</div>
+                                        <div class="km-table__header-cell" style="width:100px; display:none;">M2</div>
+                                        <div class="km-table__header-cell" style="width:100px; display:none;">M3</div>
+                                        <!-- Decision 子欄位 (1個) -->
+                                        <div class="km-table__header-cell" style="width:200px;">Suggest Order</div>
                                     </div>
                                 </div>
                             </div>
