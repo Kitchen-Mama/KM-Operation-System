@@ -1227,3 +1227,312 @@
 .ro-table .scroll-row .scroll-cell:nth-child(13) { width: 100px; min-width: 100px; }
 .ro-table .scroll-row .scroll-cell:nth-child(14) { width: 100px; min-width: 100px; }
 .ro-table .scroll-row .scroll-cell:nth-child(15) { width: 200px; min-width: 200px; }
+
+
+/* ========================================
+   REQUEST ORDER TABLE VISUAL OPTIMIZATION
+   ======================================== */
+
+/* Base Table Structure */
+.request-order-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 12px;
+}
+
+.request-order-table th,
+.request-order-table td {
+    padding: 8px 10px;
+    white-space: nowrap;
+}
+
+/* ========================================
+   HEADER LAYER DIFFERENTIATION
+   ======================================== */
+
+/* Level 1: Group Headers (Deep Green) */
+.ro-table .km-table__header-row--level1 .km-table__header-cell {
+    background-color: #6cae4f;
+    color: #fff;
+    font-weight: 600;
+    text-align: center;
+    border-bottom: 1px solid #5a9542;
+    border-right: 1px solid rgba(255,255,255,0.2);
+}
+
+/* Level 2: Sub Headers (Light Green) */
+.ro-table .km-table__header-row--level2 .km-table__header-cell {
+    background-color: #f5fbf2;
+    color: #4b5563;
+    font-weight: 500;
+    text-align: center;
+    border-bottom: 1px solid #dfe7da;
+    border-right: 1px solid #e5e7eb;
+}
+
+/* Rowspan Headers (Basic Info: SKU/Risk/Country/Marketplace) */
+.ro-table .km-table__header-cell--rowspan {
+    background-color: #f8fafc;
+    color: #111827;
+    font-weight: 600;
+    border-right: 1px solid #cbd5e1;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+/* ========================================
+   BLOCK SEPARATION (Vertical Dividers)
+   ======================================== */
+
+/* Upcoming FC Block Start */
+.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(1),
+.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(1),
+.ro-table .scroll-row .scroll-cell:nth-child(4) {
+    border-left: 2px solid #cbd5e1;
+}
+
+/* Inventory & Ongoing Block Start */
+.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(2),
+.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(3),
+.ro-table .scroll-row .scroll-cell:nth-child(6) {
+    border-left: 2px solid #cbd5e1;
+}
+
+/* Coverage & Time Block Start */
+.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(3),
+.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(7),
+.ro-table .scroll-row .scroll-cell:nth-child(10) {
+    border-left: 2px solid #cbd5e1;
+}
+
+/* Decision Block Start */
+.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(5),
+.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(10),
+.ro-table .scroll-row .scroll-cell:nth-child(15) {
+    border-left: 2px solid #cbd5e1;
+}
+
+/* ========================================
+   RISK COLUMN - STATUS LIGHT EFFECT
+   ======================================== */
+
+.ro-table .scroll-cell--risk {
+    text-align: center;
+    padding: 4px;
+}
+
+.ro-table .scroll-cell--risk span {
+    display: inline-block;
+    min-width: 50px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* High Risk - Red Badge */
+.ro-table .scroll-cell--risk[data-risk="High"] span {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+    box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.1);
+}
+
+/* Medium Risk - Orange Badge */
+.ro-table .scroll-cell--risk[data-risk="Medium"] span {
+    background-color: #fef3c7;
+    color: #b45309;
+    border: 1px solid #fcd34d;
+    box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.1);
+}
+
+/* Low Risk - Green Badge */
+.ro-table .scroll-cell--risk[data-risk="Low"] span {
+    background-color: #dcfce7;
+    color: #166534;
+    border: 1px solid #6ee7b7;
+    box-shadow: 0 0 0 3px rgba(22, 101, 52, 0.1);
+}
+
+/* N/A - Gray Badge */
+.ro-table .scroll-cell--risk[data-risk="N/A"] span {
+    background-color: #e5e7eb;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+    font-weight: 500;
+}
+
+/* ========================================
+   REMAINING COLUMN - URGENCY INDICATOR
+   ======================================== */
+
+.ro-table .col-remaining {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    padding: 6px 10px;
+}
+
+.ro-table .col-remaining span {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* Negative Days (Out of Stock) - Critical Red */
+.ro-table .col-remaining[data-days*="-"] span {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+}
+
+/* 0-30 Days - High Risk Red */
+.ro-table .col-remaining[data-days]:not([data-days*="-"]):not([data-days=""]) span {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
+/* 31-60 Days - Warning Orange */
+.ro-table .col-remaining[data-days="31"] span,
+.ro-table .col-remaining[data-days="32"] span,
+.ro-table .col-remaining[data-days="33"] span,
+.ro-table .col-remaining[data-days="34"] span,
+.ro-table .col-remaining[data-days="35"] span,
+.ro-table .col-remaining[data-days="36"] span,
+.ro-table .col-remaining[data-days="37"] span,
+.ro-table .col-remaining[data-days="38"] span,
+.ro-table .col-remaining[data-days="39"] span,
+.ro-table .col-remaining[data-days="40"] span,
+.ro-table .col-remaining[data-days="41"] span,
+.ro-table .col-remaining[data-days="42"] span,
+.ro-table .col-remaining[data-days="43"] span,
+.ro-table .col-remaining[data-days="44"] span,
+.ro-table .col-remaining[data-days="45"] span,
+.ro-table .col-remaining[data-days="46"] span,
+.ro-table .col-remaining[data-days="47"] span,
+.ro-table .col-remaining[data-days="48"] span,
+.ro-table .col-remaining[data-days="49"] span,
+.ro-table .col-remaining[data-days="50"] span,
+.ro-table .col-remaining[data-days="51"] span,
+.ro-table .col-remaining[data-days="52"] span,
+.ro-table .col-remaining[data-days="53"] span,
+.ro-table .col-remaining[data-days="54"] span,
+.ro-table .col-remaining[data-days="55"] span,
+.ro-table .col-remaining[data-days="56"] span,
+.ro-table .col-remaining[data-days="57"] span,
+.ro-table .col-remaining[data-days="58"] span,
+.ro-table .col-remaining[data-days="59"] span,
+.ro-table .col-remaining[data-days="60"] span {
+    background-color: #fef3c7;
+    color: #b45309;
+}
+
+/* 61+ Days - Safe Green */
+.ro-table .col-remaining[data-days]:is(
+    [data-days="61"], [data-days="62"], [data-days="63"], [data-days="64"], [data-days="65"],
+    [data-days="66"], [data-days="67"], [data-days="68"], [data-days="69"], [data-days="70"],
+    [data-days="71"], [data-days="72"], [data-days="73"], [data-days="74"], [data-days="75"],
+    [data-days="76"], [data-days="77"], [data-days="78"], [data-days="79"], [data-days="80"],
+    [data-days="81"], [data-days="82"], [data-days="83"], [data-days="84"], [data-days="85"],
+    [data-days="86"], [data-days="87"], [data-days="88"], [data-days="89"], [data-days="90"],
+    [data-days="91"], [data-days="92"], [data-days="93"], [data-days="94"], [data-days="95"],
+    [data-days="96"], [data-days="97"], [data-days="98"], [data-days="99"], [data-days="100"],
+    [data-days="101"], [data-days="102"], [data-days="103"], [data-days="104"], [data-days="105"],
+    [data-days="106"], [data-days="107"], [data-days="108"], [data-days="109"], [data-days="110"],
+    [data-days="111"], [data-days="112"], [data-days="113"], [data-days="114"], [data-days="115"],
+    [data-days="116"], [data-days="117"], [data-days="118"], [data-days="119"], [data-days="120"]
+) span {
+    background-color: #ecfdf3;
+    color: #166534;
+}
+
+/* ========================================
+   SUGGEST ORDER COLUMN - ACTION FOCUS
+   ======================================== */
+
+.ro-table .col-suggest-order {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding: 6px 10px;
+}
+
+.ro-table .col-suggest-order span,
+.ro-table .col-suggest-order .value {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* Has Suggested Quantity (>0) - Action Required Green */
+.ro-table .col-suggest-order[data-value]:not([data-value="0"]):not([data-value=""]) span,
+.ro-table .col-suggest-order[data-value]:not([data-value="0"]):not([data-value=""]) .value {
+    background-color: #ecfdf3;
+    color: #166534;
+    border: 1px solid #6ee7b7;
+    box-shadow: 0 0 0 3px rgba(22, 101, 52, 0.08);
+}
+
+/* No Action Needed (0) - Neutral Gray */
+.ro-table .col-suggest-order[data-value="0"] span,
+.ro-table .col-suggest-order[data-value="0"] .value,
+.ro-table .col-suggest-order[data-value=""] span,
+.ro-table .col-suggest-order[data-value=""] .value {
+    background-color: #f3f4f6;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+/* Editable Input in Suggest Order */
+.ro-table .col-suggest-order input[type="number"],
+.ro-table .col-suggest-order input[type="text"] {
+    width: 90px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid #d1d5db;
+    text-align: right;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.ro-table .col-suggest-order input:focus {
+    outline: none;
+    border-color: #7fb069;
+    box-shadow: 0 0 0 3px rgba(127, 176, 105, 0.1);
+}
+
+/* ========================================
+   ROW HOVER EFFECT
+   ======================================== */
+
+.ro-table .scroll-row:hover {
+    background-color: #f9fafb;
+}
+
+.ro-table .fixed-row:hover {
+    background-color: #f9fafb;
+}
+
+/* ========================================
+   ENHANCED VISUAL HIERARCHY
+   ======================================== */
+
+/* Make key decision columns stand out more */
+.ro-table .scroll-cell--risk,
+.ro-table .col-remaining,
+.ro-table .col-suggest-order {
+    position: relative;
+}
+
+/* Subtle shadow on key columns for depth */
+.ro-table .scroll-row:hover .scroll-cell--risk,
+.ro-table .scroll-row:hover .col-remaining,
+.ro-table .scroll-row:hover .col-suggest-order {
+    background-color: #ffffff;
+    box-shadow: inset 0 0 0 1px rgba(127, 176, 105, 0.2);
+}

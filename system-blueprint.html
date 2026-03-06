@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Mama Operation System - Blueprint</title>
+    <link rel="stylesheet" href="blueprint.css">
+</head>
+<body>
+    <div class="blueprint-container">
+        <!-- Slide 1: Cover -->
+        <section class="slide slide-cover active" data-slide="1">
+            <div class="slide-content">
+                <img src="assets/img/KM_Red_LOGO (5).png" alt="Kitchen Mama" class="cover-logo">
+                <h1 class="cover-title">Operation System</h1>
+                <p class="cover-subtitle">Supply Chain Management Platform</p>
+                <div class="cover-meta">
+                    <span>Stage 1 Complete | Stage 2 Ready</span>
+                    <span>2026 Q1</span>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn" onclick="nextSlide()">開始 →</button>
+            </div>
+        </section>
+
+        <!-- Slide 2: System Overview -->
+        <section class="slide" data-slide="2">
+            <div class="slide-header">
+                <h2>系統架構總覽</h2>
+                <span class="slide-number">1/7</span>
+            </div>
+            <div class="slide-content">
+                <div class="architecture-grid">
+                    <div class="arch-layer arch-layer--home">
+                        <div class="layer-title">首頁 Dashboard</div>
+                        <div class="layer-items">
+                            <span>目標達成率</span>
+                            <span>緊急提醒</span>
+                            <span>行銷日曆</span>
+                            <span>個人代辦</span>
+                        </div>
+                    </div>
+                    <div class="arch-layer arch-layer--daily">
+                        <div class="layer-title">Daily 日常作業</div>
+                        <div class="layer-items">
+                            <span>貨物庫存表</span>
+                            <span>Shipping Plans</span>
+                            <span>歷年出貨資料</span>
+                        </div>
+                    </div>
+                    <div class="arch-layer arch-layer--monthly">
+                        <div class="layer-title">Monthly 月度管理</div>
+                        <div class="layer-items">
+                            <span>Sales Report</span>
+                            <span>下單系統</span>
+                            <span>新品追蹤</span>
+                        </div>
+                    </div>
+                    <div class="arch-layer arch-layer--supply">
+                        <div class="layer-title">Supply 供應鏈</div>
+                        <div class="layer-items">
+                            <span>Factory Stock</span>
+                            <span>FC Raw Data</span>
+                            <span>Marketing Calendar</span>
+                        </div>
+                    </div>
+                    <div class="arch-layer arch-layer--knowledge">
+                        <div class="layer-title">知識庫</div>
+                        <div class="layer-items">
+                            <span>Supply Chain Canvas</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn nav-btn--prev" onclick="prevSlide()">← 上一頁</button>
+                <button class="nav-btn" onclick="nextSlide()">下一頁 →</button>
+            </div>
+        </section>
+
+        <!-- Slide 3: Daily Operations -->
+        <section class="slide" data-slide="3">
+            <div class="slide-header">
+                <h2>Daily 日常作業流程</h2>
+                <span class="slide-number">2/7</span>
+            </div>
+            <div class="slide-content">
+                <div class="feature-showcase">
+                    <div class="feature-card feature-card--primary">
+                        <div class="feature-icon">📦</div>
+                        <h3>貨物庫存表</h3>
+                        <ul class="feature-list">
+                            <li>即時庫存監控 (Available + FC Transfer + Processing)</li>
+                            <li>AI 補貨建議 (基於 Lifecycle + FC + Avg Sales)</li>
+                            <li>多時段運輸分配 (18天/30天/45天+)</li>
+                            <li>工廠庫存整合 (CN + TW)</li>
+                        </ul>
+                        <div class="feature-status">✅ 已完成</div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🚢</div>
+                        <h3>Shipping Plans</h3>
+                        <ul class="feature-list">
+                            <li>Draft → Pending → Approved 三階段審核</li>
+                            <li>多運輸方式成本計算</li>
+                            <li>SKU 明細與 Carton 計算</li>
+                            <li>自動推送至 Shipping History</li>
+                        </ul>
+                        <div class="feature-status">✅ 已完成</div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📊</div>
+                        <h3>歷年出貨資料</h3>
+                        <ul class="feature-list">
+                            <li>出貨歷史查詢與篩選</li>
+                            <li>運輸方式統計分析</li>
+                            <li>成本追蹤與報表</li>
+                        </ul>
+                        <div class="feature-status">✅ 已完成</div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn nav-btn--prev" onclick="prevSlide()">← 上一頁</button>
+                <button class="nav-btn" onclick="nextSlide()">下一頁 →</button>
+            </div>
+        </section>
+
+        <!-- Slide 4: Monthly Management -->
+        <section class="slide" data-slide="4">
+            <div class="slide-header">
+                <h2>Monthly 月度管理核心</h2>
+                <span class="slide-number">3/7</span>
+            </div>
+            <div class="slide-content">
+                <div class="feature-showcase">
+                    <div class="feature-card feature-card--primary">
+                        <div class="feature-icon">📈</div>
+                        <h3>Sales Report (Forecast Review)</h3>
+                        <ul class="feature-list">
+                            <li>Actual vs Forecast 視覺化圖表</li>
+                            <li>多維度篩選 (Country/Marketplace/Category/Series)</li>
+                            <li>FC Accuracy 達成率追蹤</li>
+                            <li>Top 5 Growth / Worst SKU 分析</li>
+                        </ul>
+                        <div class="feature-status">✅ 已完成</div>
+                    </div>
+                    <div class="feature-card feature-card--primary">
+                        <div class="feature-icon">🛒</div>
+                        <h3>下單系統 (Request Order)</h3>
+                        <ul class="feature-list">
+                            <li>Risk Badge 風險指示器 (Critical/Warning/Safe)</li>
+                            <li>Coverage & Time 庫存天數視覺化</li>
+                            <li>Shortage M1/M2/M3 缺貨預測</li>
+                            <li>Decision Summary 建議下單量</li>
+                            <li>Expand Panel 詳細數據展開</li>
+                        </ul>
+                        <div class="feature-status">✅ 已完成 + 視覺優化</div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn nav-btn--prev" onclick="prevSlide()">← 上一頁</button>
+                <button class="nav-btn" onclick="nextSlide()">下一頁 →</button>
+            </div>
+        </section>
+
+        <!-- Slide 5: Supply Chain -->
+        <section class="slide" data-slide="5">
+            <div class="slide-header">
+                <h2>Supply 供應鏈管理</h2>
+                <span class="slide-number">4/7</span>
+            </div>
+            <div class="slide-content">
+                <div class="feature-showcase">
+                    <div class="feature-card">
+                        <div class="feature-icon">🏭</div>
+                        <h3>Factory Stock</h3>
+                        <ul class="feature-list">
+                            <li>CN / TW 工廠庫存即時查詢</li>
+                            <li>未來 3 個月訂單預測</li>
+                            <li>多維度篩選 (Factory/Company/Category/Series)</li>
+                        </ul>
+                        <div class="feature-status">✅ 已完成</div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📋</div>
+                        <h3>FC Raw Data (FC Summary)</h3>
+                        <ul class="feature-list">
+                            <li>Regular Forecast 基礎預測管理</li>
+                            <li>Special Event 活動預測</li>
+                            <li>Target % Rules 目標比例規則</li>
+                            <li>批次更新與版本控制</li>
+                        </ul>
+                        <div class="feature-status">✅ 已完成</div>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📅</div>
+                        <h3>Marketing Calendar</h3>
+                        <ul class="feature-list">
+                            <li>全年度活動規劃視圖</li>
+                            <li>Prime Day / BFCM 等重點活動</li>
+                            <li>活動 FC 整合</li>
+                        </ul>
+                        <div class="feature-status feature-status--pending">⏳ Stage 2</div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn nav-btn--prev" onclick="prevSlide()">← 上一頁</button>
+                <button class="nav-btn" onclick="nextSlide()">下一頁 →</button>
+            </div>
+        </section>
+
+        <!-- Slide 6: Data Architecture -->
+        <section class="slide" data-slide="6">
+            <div class="slide-header">
+                <h2>數據架構與效能優化</h2>
+                <span class="slide-number">5/7</span>
+            </div>
+            <div class="slide-content">
+                <div class="data-arch-container">
+                    <div class="data-layer">
+                        <div class="layer-label">Raw Layer</div>
+                        <div class="layer-box">
+                            <div class="data-table">raw.daily_sales</div>
+                            <div class="data-note">每日銷售原始數據 (極大量)</div>
+                        </div>
+                    </div>
+                    <div class="data-arrow">↓ ETL 每日 03:00 UTC</div>
+                    <div class="data-layer">
+                        <div class="layer-label">Aggregation Layer</div>
+                        <div class="layer-box">
+                            <div class="data-table">fc_review_daily_agg</div>
+                            <div class="data-table">fc_review_weekly_agg</div>
+                            <div class="data-table">fc_review_monthly_agg</div>
+                            <div class="data-table">fc_achievement_monthly</div>
+                            <div class="data-note">預聚合表 - 查詢 &lt;0.5秒</div>
+                        </div>
+                    </div>
+                    <div class="data-arrow">↓ Intelligent Query Routing</div>
+                    <div class="data-layer">
+                        <div class="layer-label">API Layer</div>
+                        <div class="layer-box">
+                            <div class="data-api">≤30天 → daily_agg</div>
+                            <div class="data-api">≤90天 → weekly_agg</div>
+                            <div class="data-api">&gt;90天 → monthly_agg</div>
+                            <div class="data-note">自動選擇最佳粒度</div>
+                        </div>
+                    </div>
+                    <div class="data-benefits">
+                        <div class="benefit-item">
+                            <span class="benefit-label">效能提升</span>
+                            <span class="benefit-value">10-20x</span>
+                        </div>
+                        <div class="benefit-item">
+                            <span class="benefit-label">成本降低</span>
+                            <span class="benefit-value">99%</span>
+                        </div>
+                        <div class="benefit-item">
+                            <span class="benefit-label">查詢時間</span>
+                            <span class="benefit-value">&lt;2秒</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn nav-btn--prev" onclick="prevSlide()">← 上一頁</button>
+                <button class="nav-btn" onclick="nextSlide()">下一頁 →</button>
+            </div>
+        </section>
+
+        <!-- Slide 7: Stage Progress -->
+        <section class="slide" data-slide="7">
+            <div class="slide-header">
+                <h2>開發進度與 Roadmap</h2>
+                <span class="slide-number">6/7</span>
+            </div>
+            <div class="slide-content">
+                <div class="progress-container">
+                    <div class="stage-card stage-card--complete">
+                        <div class="stage-header">
+                            <h3>Stage 1</h3>
+                            <div class="stage-status">✅ 已完成</div>
+                        </div>
+                        <div class="stage-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 82%;"></div>
+                            </div>
+                            <span class="progress-text">82% Complete</span>
+                        </div>
+                        <ul class="stage-items">
+                            <li>✅ 首頁 Dashboard (95%)</li>
+                            <li>✅ Daily 日常作業 (75%)</li>
+                            <li>✅ Monthly 月度管理 (75%)</li>
+                            <li>✅ Supply 供應鏈 (67%)</li>
+                            <li>✅ 知識庫 Canvas (100%)</li>
+                            <li>✅ Request Order 視覺優化</li>
+                            <li>✅ BigQuery 數據架構設計</li>
+                        </ul>
+                    </div>
+                    <div class="stage-card stage-card--next">
+                        <div class="stage-header">
+                            <h3>Stage 2</h3>
+                            <div class="stage-status stage-status--pending">⏳ 規劃中</div>
+                        </div>
+                        <ul class="stage-items">
+                            <li>🎯 Marketing Calendar 獨立頁面</li>
+                            <li>🎯 新品追蹤中心</li>
+                            <li>🎯 物流模板生成</li>
+                            <li>🎯 下單模板生成</li>
+                            <li>🎯 AI 補貨優化 (季節性/促銷)</li>
+                            <li>🎯 多方案運輸計算</li>
+                            <li>🎯 Shipping Management 完整流程</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn nav-btn--prev" onclick="prevSlide()">← 上一頁</button>
+                <button class="nav-btn" onclick="nextSlide()">下一頁 →</button>
+            </div>
+        </section>
+
+        <!-- Slide 8: Summary -->
+        <section class="slide" data-slide="8">
+            <div class="slide-header">
+                <h2>核心價值與成果</h2>
+                <span class="slide-number">7/7</span>
+            </div>
+            <div class="slide-content">
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-icon">⚡</div>
+                        <h3>效能提升</h3>
+                        <p>查詢時間從 5秒+ 降至 &lt;0.5秒<br>支援 500+ 併發用戶</p>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon">💰</div>
+                        <h3>成本優化</h3>
+                        <p>BigQuery 成本降低 99%<br>從 $150/月 → $1.5/月</p>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon">🎯</div>
+                        <h3>決策支援</h3>
+                        <p>AI 補貨建議<br>風險預警系統<br>FC 達成率追蹤</p>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon">🔄</div>
+                        <h3>流程整合</h3>
+                        <p>庫存 → 補貨 → 下單 → 出貨<br>全流程數位化管理</p>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon">📊</div>
+                        <h3>數據驅動</h3>
+                        <p>即時數據視覺化<br>多維度分析報表<br>歷史趨勢追蹤</p>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon">🚀</div>
+                        <h3>可擴展性</h3>
+                        <p>模組化架構設計<br>支援多國家/多平台<br>易於新增功能</p>
+                    </div>
+                </div>
+                <div class="summary-footer">
+                    <p class="summary-tagline">Kitchen Mama Operation System</p>
+                    <p class="summary-subtitle">讓供應鏈管理更智能、更高效</p>
+                </div>
+            </div>
+            <div class="slide-nav">
+                <button class="nav-btn nav-btn--prev" onclick="prevSlide()">← 上一頁</button>
+                <button class="nav-btn nav-btn--home" onclick="goToSlide(1)">回到首頁</button>
+            </div>
+        </section>
+    </div>
+
+    <!-- Slide Indicator -->
+    <div class="slide-indicator">
+        <span class="indicator-dot active" onclick="goToSlide(1)"></span>
+        <span class="indicator-dot" onclick="goToSlide(2)"></span>
+        <span class="indicator-dot" onclick="goToSlide(3)"></span>
+        <span class="indicator-dot" onclick="goToSlide(4)"></span>
+        <span class="indicator-dot" onclick="goToSlide(5)"></span>
+        <span class="indicator-dot" onclick="goToSlide(6)"></span>
+        <span class="indicator-dot" onclick="goToSlide(7)"></span>
+        <span class="indicator-dot" onclick="goToSlide(8)"></span>
+    </div>
+
+    <script src="blueprint.js"></script>
+</body>
+</html>
