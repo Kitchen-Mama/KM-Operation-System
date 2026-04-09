@@ -607,3 +607,21 @@ window.initShippingHistoryPage = initShippingHistoryPage;
 window.addEventListener('DOMContentLoaded', () => {
     // 移除自動初始化，改由 showSection 控制
 });
+
+
+// ========================================
+// Lifecycle 註冊
+// ========================================
+if (window.KM && window.KM.lifecycle) {
+    KM.lifecycle.register('shippinghistory-section', {
+        mount() {
+            console.log('[ShippingHistory] mount');
+            if (window.initShippingHistoryPage) {
+                window.initShippingHistoryPage();
+            }
+        },
+        unmount() {
+            console.log('[ShippingHistory] unmount');
+        }
+    });
+}

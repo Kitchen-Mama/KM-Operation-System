@@ -1552,3 +1552,21 @@ CanvasController.toggleItalic = CanvasController.toggleItalic.bind(CanvasControl
 CanvasController.toggleUnderline = CanvasController.toggleUnderline.bind(CanvasController);
 CanvasController.toggleStrikethrough = CanvasController.toggleStrikethrough.bind(CanvasController);
 CanvasController.updateOpacitySliderGradient = CanvasController.updateOpacitySliderGradient.bind(CanvasController);
+
+
+// ========================================
+// Lifecycle 註冊
+// ========================================
+if (window.KM && window.KM.lifecycle) {
+    KM.lifecycle.register('supplychain-section', {
+        mount() {
+            console.log('[SupplyChain] mount');
+            if (window.CanvasController) {
+                window.CanvasController.init();
+            }
+        },
+        unmount() {
+            console.log('[SupplyChain] unmount');
+        }
+    });
+}

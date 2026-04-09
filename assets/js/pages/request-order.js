@@ -1088,3 +1088,21 @@ window.initRequestOrderSection = initRequestOrderSection;
 window.toggleRequestOrderSkuExpand = toggleRequestOrderSkuExpand;
 window.handleEditTargetFc = handleEditTargetFc;
 window.handleFcUpdate = handleFcUpdate;
+
+
+// ========================================
+// Lifecycle 註冊
+// ========================================
+if (window.KM && window.KM.lifecycle) {
+    KM.lifecycle.register('request-order-section', {
+        mount() {
+            console.log('[RequestOrder] mount');
+            if (window.initRequestOrderSection) {
+                window.initRequestOrderSection();
+            }
+        },
+        unmount() {
+            console.log('[RequestOrder] unmount');
+        }
+    });
+}

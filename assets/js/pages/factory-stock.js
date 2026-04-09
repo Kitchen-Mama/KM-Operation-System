@@ -219,3 +219,32 @@ function renderFactoryStockTable(root) {
 window.initFactoryStockPage = initFactoryStockPage;
 window.initFactoryDropdown = initFactoryDropdown;
 window.renderFactoryStockTable = renderFactoryStockTable;
+
+
+// ========================================
+// Lifecycle 註冊
+// ========================================
+if (window.KM && window.KM.lifecycle) {
+    KM.lifecycle.register('factory-stock-section', {
+        mount() {
+            console.log('[FactoryStock] mount');
+            if (window.initFactoryStockPage) {
+                window.initFactoryStockPage();
+            }
+        },
+        unmount() {
+            console.log('[FactoryStock] unmount');
+            var root = document.querySelector('#factory-stock-section');
+            if (root) {
+                var scrollCol = root.querySelector('.scroll-col');
+                if (scrollCol && scrollCol._syncHandler) {
+                    scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
+                }
+                if (root._clickHandler) {
+                    document.removeEventListener('click', root._clickHandler);
+                }
+                root._factoryStockInitialized = false;
+            }
+        }
+    });
+}

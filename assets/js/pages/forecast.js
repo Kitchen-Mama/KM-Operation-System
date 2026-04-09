@@ -1736,3 +1736,35 @@ window.handleSendFcRequest = handleSendFcRequest;
 window.handleEditTargetFc = handleEditTargetFc;
 window.handleFcUpdate = handleFcUpdate;
 window.initFcSkuDecisionSection = initFcSkuDecisionSection;
+
+
+// ========================================
+// Lifecycle 註冊
+// ========================================
+if (window.KM && window.KM.lifecycle) {
+    KM.lifecycle.register('forecast-section', {
+        mount() {
+            console.log('[Forecast] mount');
+            if (window.initForecastReviewPage) {
+                window.initForecastReviewPage();
+            }
+        },
+        unmount() {
+            console.log('[Forecast] unmount');
+            if (forecastReviewState) {
+                if (forecastReviewState.chart) {
+                    forecastReviewState.chart.destroy();
+                    forecastReviewState.chart = null;
+                }
+                if (forecastReviewState.sessionChart) {
+                    forecastReviewState.sessionChart.destroy();
+                    forecastReviewState.sessionChart = null;
+                }
+                if (forecastReviewState.shareChart) {
+                    forecastReviewState.shareChart.destroy();
+                    forecastReviewState.shareChart = null;
+                }
+            }
+        }
+    });
+}

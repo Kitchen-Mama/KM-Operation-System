@@ -1716,3 +1716,21 @@ function saveNewEvent() {
 
 
 
+
+
+// ========================================
+// Lifecycle 註冊
+// ========================================
+if (window.KM && window.KM.lifecycle) {
+    KM.lifecycle.register('fc-summary-section', {
+        mount() {
+            console.log('[FCSummary] mount');
+            if (window.initFcSummaryPage) {
+                window.initFcSummaryPage();
+            }
+        },
+        unmount() {
+            console.log('[FCSummary] unmount');
+        }
+    });
+}
