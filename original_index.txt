@@ -367,59 +367,6 @@
                         </div>
                     </div>
                     
-                    <!-- Inventory Overview -->
-                    <div class="ir-overview">
-                        <h3 class="ir-overview__title">Inventory Overview</h3>
-                        <div class="ir-overview__tabs" id="irOverviewTabs">
-                            <button class="ir-overview__tab is-active" data-series="All" onclick="setIrOverviewTab('All')">All</button>
-                            <button class="ir-overview__tab" data-series="CO1100" onclick="setIrOverviewTab('CO1100')">CO1100</button>
-                            <button class="ir-overview__tab" data-series="CO1150" onclick="setIrOverviewTab('CO1150')">CO1150</button>
-                            <button class="ir-overview__tab" data-series="CO1200" onclick="setIrOverviewTab('CO1200')">CO1200</button>
-                        </div>
-                        <div class="dual-layer-table ir-overview-table">
-                            <div class="table-header-bar">
-                                <div class="fixed-header" style="width:120px;"><div class="header-cell">SKU</div></div>
-                                <div class="scroll-header-viewport">
-                                    <div class="scroll-header" id="ir-overview-scroll-header">
-                                        <!-- Warning & Recommend: rowspan headers -->
-                                        <div class="iro-rowspan-cell" style="left:0; width:90px;">Warning</div>
-                                        <div class="iro-rowspan-cell" style="right:0; width:110px;">Recommend</div>
-                                        <!-- Level 1: Group headers -->
-                                        <div class="km-table__header-row km-table__header-row--level1">
-                                            <div class="km-table__header-cell iro-sales" style="flex:0 0 calc(90px * 4);">Sales</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">Amazon</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">3rd WH</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">Overseas On The Way</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">Factory</div>
-                                        </div>
-                                        <!-- Level 2: Sub headers -->
-                                        <div class="km-table__header-row km-table__header-row--level2">
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">1d</div>
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">7d</div>
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">30d</div>
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">90d</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">FBA</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">David</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">Winit</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&le;18 Days</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&le;45 Days</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&#20369;&#37995;</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&#21213;&#19968;</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="table-body-bar">
-                                <div class="fixed-col" style="width:120px;">
-                                    <div class="fixed-body" id="ir-overview-fixed-body"></div>
-                                </div>
-                                <div class="scroll-col" id="ir-overview-scroll-col">
-                                    <div class="scroll-body" id="ir-overview-scroll-body"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <!-- Replenishment Table -->
                     <div class="dual-layer-table">
                         <!-- Table Header Bar (Sticky) -->

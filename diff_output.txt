@@ -1,0 +1,141 @@
+diff --git a/index.html b/index.html
+index 98c375f..40bafea 100644
+--- a/index.html
++++ b/index.html
+@@ -13,6 +13,7 @@
+     <link rel="stylesheet" href="assets/css/pages/factory-stock.css">
+     <link rel="stylesheet" href="assets/css/pages/fc-overview.css">
+     <link rel="stylesheet" href="assets/css/pages/request-order.css">
++    <link rel="stylesheet" href="assets/css/pages/request-order-table.css">
+     <link rel="stylesheet" href="assets/css/pages/fc-raw-data.css">
+     <link rel="stylesheet" href="assets/css/pages/sku-details.css">
+     <link rel="stylesheet" href="assets/css/pages/shipping-plan.css">
+@@ -367,6 +368,59 @@
+                         </div>
+                     </div>
+                     
++                    <!-- Inventory Overview -->
++                    <div class="ir-overview">
++                        <h3 class="ir-overview__title">Inventory Overview</h3>
++                        <div class="ir-overview__tabs" id="irOverviewTabs">
++                            <button class="ir-overview__tab is-active" data-series="All" onclick="setIrOverviewTab('All')">All</button>
++                            <button class="ir-overview__tab" data-series="CO1100" onclick="setIrOverviewTab('CO1100')">CO1100</button>
++                            <button class="ir-overview__tab" data-series="CO1150" onclick="setIrOverviewTab('CO1150')">CO1150</button>
++                            <button class="ir-overview__tab" data-series="CO1200" onclick="setIrOverviewTab('CO1200')">CO1200</button>
++                        </div>
++                        <div class="dual-layer-table ir-overview-table">
++                            <div class="table-header-bar">
++                                <div class="fixed-header" style="width:120px;"><div class="header-cell">SKU</div></div>
++                                <div class="scroll-header-viewport">
++                                    <div class="scroll-header" id="ir-overview-scroll-header">
++                                        <!-- Warning & Recommend: rowspan headers -->
++                                        <div class="iro-rowspan-cell" style="left:0; width:90px;">Warning</div>
++                                        <div class="iro-rowspan-cell" style="right:0; width:110px;">Recommend</div>
++                                        <!-- Level 1: Group headers -->
++                                        <div class="km-table__header-row km-table__header-row--level1">
++                                            <div class="km-table__header-cell iro-sales" style="width:320px;">Sales</div>
++                                            <div class="km-table__header-cell" style="width:90px;">Amazon</div>
++                                            <div class="km-table__header-cell" style="width:180px;">3rd WH</div>
++                                            <div class="km-table__header-cell" style="width:180px;">Overseas On The Way</div>
++                                            <div class="km-table__header-cell" style="width:180px;">Factory</div>
++                                        </div>
++                                        <!-- Level 2: Sub headers -->
++                                        <div class="km-table__header-row km-table__header-row--level2">
++                                            <div class="km-table__header-cell iro-sales-sub" style="width:80px;">1d</div>
++                                            <div class="km-table__header-cell iro-sales-sub" style="width:80px;">7d</div>
++                                            <div class="km-table__header-cell iro-sales-sub" style="width:80px;">30d</div>
++                                            <div class="km-table__header-cell iro-sales-sub" style="width:80px;">90d</div>
++                                            <div class="km-table__header-cell" style="width:90px;">FBA</div>
++                                            <div class="km-table__header-cell" style="width:90px;">David</div>
++                                            <div class="km-table__header-cell" style="width:90px;">Winit</div>
++                                            <div class="km-table__header-cell" style="width:90px;">&le;18 Days</div>
++                                            <div class="km-table__header-cell" style="width:90px;">&le;45 Days</div>
++                                            <div class="km-table__header-cell" style="width:90px;">&#20369;&#37995;</div>
++                                            <div class="km-table__header-cell" style="width:90px;">&#21213;&#19968;</div>
++                                        </div>
++                                    </div>
++                                </div>
++                            </div>
++                            <div class="table-body-bar">
++                                <div class="fixed-col" style="width:120px;">
++                                    <div class="fixed-body" id="ir-overview-fixed-body"></div>
++                                </div>
++                                <div class="scroll-col" id="ir-overview-scroll-col">
++                                    <div class="scroll-body" id="ir-overview-scroll-body"></div>
++                                </div>
++                            </div>
++                        </div>
++                    </div>
++                    
+                     <!-- Replenishment Table -->
+                     <div class="dual-layer-table">
+                         <!-- Table Header Bar (Sticky) -->
+@@ -879,44 +933,30 @@
+                             </div>
+                             <div class="scroll-header-viewport">
+                                 <div class="scroll-header" id="ro-scroll-header">
+-                                    <!-- Risk/Country/Marketplace rowspan headers -->
+-                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 0; width: 60px;">Risk</div>
+-                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 60px; width: 100px;">Country</div>
+-                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 160px; width: 120px;">Marketplace</div>
+-                                    
+-                                    <!-- 第一層表頭：群組標題 -->
+-                                    <div class="km-table__header-row km-table__header-row--level1">
+-                                        <!-- Upcoming FC (2個子欄位) -->
+-                                        <div class="km-table__header-cell" style="width:280px;">Upcoming FC</div>
+-                                        <!-- Inventory & Ongoing (4個子欄位) -->
+-                                        <div class="km-table__header-cell" style="width:560px;">Inventory &amp; Ongoing</div>
+-                                        <!-- Coverage & Time (2個子欄位) -->
+-                                        <div class="km-table__header-cell" style="width:200px;">Coverage &amp; Time</div>
+-                                        <!-- Shortage (3個子欄位) - 隱藏但保有篩選功能 -->
+-                                        <div class="km-table__header-cell" style="width:300px; display:none;">Shortage</div>
+-                                        <!-- Decision (1個子欄位) -->
+-                                        <div class="km-table__header-cell" style="width:200px;">Decision</div>
+-                                    </div>
+-                                    <!-- 第二層表頭：詳細欄位 -->
+-                                    <div class="km-table__header-row km-table__header-row--level2">
+-                                        <!-- Upcoming FC 子欄位 (2個) -->
+-                                        <div class="km-table__header-cell" style="width:140px;">Basic(T3)</div>
+-                                        <div class="km-table__header-cell" style="width:140px;">Special Events</div>
+-                                        <!-- Inventory & Ongoing 子欄位 (4個) -->
+-                                        <div class="km-table__header-cell" style="width:140px;">Site Stock</div>
+-                                        <div class="km-table__header-cell" style="width:140px;">3rd Party</div>
+-                                        <div class="km-table__header-cell" style="width:140px;">Factory Stock</div>
+-                                        <div class="km-table__header-cell" style="width:140px;">Ongoing Orders</div>
+-                                        <!-- Coverage & Time 子欄位 (2個) -->
+-                                        <div class="km-table__header-cell" style="width:100px;">Remaining</div>
+-                                        <div class="km-table__header-cell" style="width:100px;">Lead Time</div>
+-                                        <!-- Shortage 子欄位 (3個) - 隱藏但保有篩選功能 -->
+-                                        <div class="km-table__header-cell" style="width:100px; display:none;">M1</div>
+-                                        <div class="km-table__header-cell" style="width:100px; display:none;">M2</div>
+-                                        <div class="km-table__header-cell" style="width:100px; display:none;">M3</div>
+-                                        <!-- Decision 子欄位 (1個) -->
+-                                        <div class="km-table__header-cell" style="width:200px;">Suggest Order</div>
+-                                    </div>
++                                    <table class="request-order-table">
++                                        <thead>
++                                            <tr class="header-group-row">
++                                                <th class="th-risk th-group-basic" rowspan="2">Risk</th>
++                                                <th class="th-country th-group-basic" rowspan="2">Country</th>
++                                                <th class="th-marketplace th-group-basic" rowspan="2">Marketplace</th>
++                                                <th class="th-group th-group-upcoming" colspan="2">Upcoming FC</th>
++                                                <th class="th-group th-group-inventory" colspan="4">Inventory &amp; Ongoing</th>
++                                                <th class="th-group th-group-coverage" colspan="2">Coverage &amp; Time</th>
++                                                <th class="th-group th-group-decision" colspan="1">Decision</th>
++                                            </tr>
++                                            <tr class="header-sub-row">
++                                                <th class="th-sub th-sub-upcoming-basic">Basic(T3)</th>
++                                                <th class="th-sub th-sub-upcoming-special">Special Events</th>
++                                                <th class="th-sub th-sub-inventory-site">Site Stock</th>
++                                                <th class="th-sub th-sub-inventory-3p">3rd Party</th>
++                                                <th class="th-sub th-sub-inventory-factory">Factory Stock</th>
++                                                <th class="th-sub th-sub-inventory-ongoing">Ongoing Orders</th>
++                                                <th class="th-sub th-sub-coverage-remaining">Remaining</th>
++                                                <th class="th-sub th-sub-coverage-leadtime">Lead Time</th>
++                                                <th class="th-sub th-sub-decision-suggest">Suggest Order</th>
++                                            </tr>
++                                        </thead>
++                                    </table>
+                                 </div>
+                             </div>
+                         </div>
