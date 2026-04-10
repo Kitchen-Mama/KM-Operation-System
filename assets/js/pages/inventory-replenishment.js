@@ -175,19 +175,19 @@ function renderIrOverview() {
 
     scrollBody.innerHTML = data.map((d, i) => `
         <div class="scroll-row">
-            <div class="scroll-cell" style="width:90px;"><span class="ir-overview__badge ir-overview__badge--${d.warning}">${warningLabel[d.warning]}</span></div>
-            <div class="scroll-cell" style="width:90px;">${d.d1}</div>
-            <div class="scroll-cell" style="width:90px;">${d.d7.toLocaleString()}</div>
-            <div class="scroll-cell" style="width:90px;">${d.d30.toLocaleString()}</div>
-            <div class="scroll-cell" style="width:90px;">${d.d90.toLocaleString()}</div>
-            <div class="scroll-cell" style="width:90px;">${d.fba.toLocaleString()}</div>
-            <div class="scroll-cell" style="width:90px;">${d.david.toLocaleString()}</div>
-            <div class="scroll-cell" style="width:90px;">${d.winit.toLocaleString()}</div>
-            <div class="scroll-cell ir-overview__shipment-cell" style="width:90px;" onclick="showIrShipmentPopover(event, ${i}, '18')">${d.eta18 > 0 ? d.eta18.toLocaleString() : '-'}</div>
-            <div class="scroll-cell ir-overview__shipment-cell" style="width:90px;" onclick="showIrShipmentPopover(event, ${i}, '45')">${d.eta45 > 0 ? d.eta45.toLocaleString() : '-'}</div>
-            <div class="scroll-cell" style="width:90px;">${d.factoryYX.toLocaleString()}</div>
-            <div class="scroll-cell" style="width:90px;">${d.factorySY.toLocaleString()}</div>
-            <div class="scroll-cell" style="width:110px;"><span class="ir-overview__recommend ir-overview__recommend--${d.recommend}">${recLabel[d.recommend]}</span></div>
+            <div class="scroll-cell"><span class="ir-overview__badge ir-overview__badge--${d.warning}">${warningLabel[d.warning]}</span></div>
+            <div class="scroll-cell">${d.d1}</div>
+            <div class="scroll-cell">${d.d7.toLocaleString()}</div>
+            <div class="scroll-cell">${d.d30.toLocaleString()}</div>
+            <div class="scroll-cell">${d.d90.toLocaleString()}</div>
+            <div class="scroll-cell">${d.fba.toLocaleString()}</div>
+            <div class="scroll-cell">${d.david.toLocaleString()}</div>
+            <div class="scroll-cell">${d.winit.toLocaleString()}</div>
+            <div class="scroll-cell ir-overview__shipment-cell" onclick="showIrShipmentPopover(event, ${i}, '18')">${d.eta18 > 0 ? d.eta18.toLocaleString() : '-'}</div>
+            <div class="scroll-cell ir-overview__shipment-cell" onclick="showIrShipmentPopover(event, ${i}, '45')">${d.eta45 > 0 ? d.eta45.toLocaleString() : '-'}</div>
+            <div class="scroll-cell">${d.factoryYX.toLocaleString()}</div>
+            <div class="scroll-cell">${d.factorySY.toLocaleString()}</div>
+            <div class="scroll-cell"><span class="ir-overview__recommend ir-overview__recommend--${d.recommend}">${recLabel[d.recommend]}</span></div>
         </div>
     `).join('');
 }

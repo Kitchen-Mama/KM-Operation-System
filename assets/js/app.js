@@ -114,11 +114,7 @@ function showSection(section) {
             }
         }, 100);
     }
-    if (section === 'factory-stock') {
-        if (window.initFactoryStockPage) {
-            window.initFactoryStockPage();
-        }
-    }
+    // factory-stock: 已由 lifecycle mount 接管，手動 init 已移除
     if (section === 'skuDetails') {
         renderSkuDetailsTable();
         setTimeout(() => {
@@ -133,9 +129,7 @@ function showSection(section) {
             }
         }, 100);
     }
-    if (section === 'ops') {
-        renderReplenishment();
-    }
+    // ops: 已由 lifecycle mount 接管，手動 init 已移除
     if (section === 'supplychain') {
         setTimeout(() => {
             if (window.CanvasController) {

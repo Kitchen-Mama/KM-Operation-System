@@ -398,7 +398,6 @@
 /* Overview table: undo the display:none for child 2,3 */
 #ops-section .ir-overview .scroll-cell:nth-child(2),
 #ops-section .ir-overview .scroll-cell:nth-child(3) { display: flex; }
-#ops-section .ir-overview .scroll-cell:nth-child(1) { width: auto; min-width: auto; max-width: none; }
 
 /* 展開面板等高布局 */
 #ops-section .replen-expand-panel {
@@ -672,8 +671,8 @@
 #ops-section .ir-overview-table .fixed-header { height: 96px; width: 120px; background: #f5f5f5; }
 #ops-section .ir-overview-table .scroll-header { height: 96px; flex-direction: column; padding-right: 0; position: relative; }
 #ops-section .ir-overview-table .km-table__header-row { display: flex; }
-#ops-section .ir-overview-table .km-table__header-row--level1 { height: 48px; padding-left: 90px; padding-right: 110px; }
-#ops-section .ir-overview-table .km-table__header-row--level2 { height: 48px; padding-left: 90px; padding-right: 110px; }
+#ops-section .ir-overview-table .km-table__header-row--level1 { height: 48px; padding-left: 90px; padding-right: 0; }
+#ops-section .ir-overview-table .km-table__header-row--level2 { height: 48px; padding-left: 90px; padding-right: 0; }
 #ops-section .ir-overview-table .km-table__header-cell {
     display: flex; align-items: center; justify-content: center;
     font-weight: 600; font-size: 12px; color: #374151;
@@ -682,10 +681,12 @@
 /* Level 1 group header default */
 #ops-section .ir-overview-table .km-table__header-row--level1 .km-table__header-cell {
     background: #7fb069; color: white; font-weight: 700; border-bottom: 1px solid #6a9556;
+    flex: none;
 }
 /* Level 2 sub header default */
 #ops-section .ir-overview-table .km-table__header-row--level2 .km-table__header-cell {
     background: #f0f7ed; color: #2d5016; border-right: 1px solid #e5e7eb;
+    width: 90px; min-width: 90px; flex: 0 0 90px;
 }
 /* Sales group: blue like Detailed Table */
 #ops-section .ir-overview-table .iro-sales { background: #9BC2E6 !important; color: white !important; }
@@ -699,24 +700,20 @@
 }
 /* Body rows */
 #ops-section .ir-overview-table .fixed-row { height: 40px; font-weight: 500; }
-#ops-section .ir-overview-table .scroll-row { height: 40px; padding-right: 0; }
+#ops-section .ir-overview-table .scroll-row { height: 40px; padding-right: 0; min-width: max-content; }
 #ops-section .ir-overview-table .fixed-col { width: 120px; }
 #ops-section .ir-overview-table .scroll-cell {
     display: flex; align-items: center; justify-content: center;
     font-size: 13px; box-sizing: border-box; flex-shrink: 0;
+    width: 90px !important; min-width: 90px !important; max-width: 90px !important;
     border-right: 1px solid var(--border-light, #e5e7eb);
+    padding: 0 4px;
 }
-/* Undo Detailed Table's display:none and width overrides */
-#ops-section .ir-overview-table .scroll-cell:nth-child(1) { width: 90px; min-width: 90px; max-width: 90px; }
+/* Undo Detailed Table's display:none for overview */
 #ops-section .ir-overview-table .scroll-cell:nth-child(2),
-#ops-section .ir-overview-table .scroll-cell:nth-child(3) { display: flex; width: 90px; min-width: 90px; max-width: 90px; }
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    box-sizing: border-box;
-    flex-shrink: 0;
-}
+#ops-section .ir-overview-table .scroll-cell:nth-child(3) { display: flex !important; }
+/* Recommend cell (last) */
+#ops-section .ir-overview-table .scroll-cell:last-child { width: 110px !important; min-width: 110px !important; max-width: 110px !important; }
 
 /* Warning badge */
 .ir-overview__badge {
