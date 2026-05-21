@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="assets/css/pages/shipping-plan.css">
     <link rel="stylesheet" href="assets/css/pages/shipping-history.css">
     <link rel="stylesheet" href="assets/css/pages/supply-chain-canvas.css">
+    <link rel="stylesheet" href="assets/css/pages/campaign-risk.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -89,6 +90,20 @@
             </div>
             <div class="menu-item" onclick="showSection('supplychain')" title="Supply Chain Canvas">
                 <span class="menu-icon">🗺️</span><span class="menu-label">Supply Chain Canvas</span>
+            </div>
+            
+            <!-- Campaign Performance 父子選單 -->
+            <div class="menu-parent"
+                 data-menu-id="campaign"
+                 onclick="toggleMenu('campaign')" title="Campaign Performance">
+                <span class="menu-icon">🎯</span><span class="menu-label">Campaign Performance</span>
+            </div>
+            <div class="menu-children"
+                 data-parent="campaign">
+                <div class="menu-item"
+                     onclick="showSection('campaign-risk')" title="Promotion Risk Tracker">
+                    <span class="menu-label">Promotion Risk Tracker</span>
+                </div>
             </div>
         </nav>
         
@@ -1933,8 +1948,64 @@
                 </div>
             </section>
             
+            <!-- Campaign Risk Tracker Section -->
+            <section id="campaign-risk-section" class="module-section">
+                <div class="cr-page-header">
+                    <div class="cr-page-title">
+                        <h2>Promotion Risk Tracker</h2>
+                        <p>Rolling 90-day promotion analysis by SKU</p>
+                    </div>
+                    <div class="cr-page-actions">
+                        <button class="cr-btn cr-btn--filter" id="cr-country-filter-btn" onclick="openCrCountryMarketplaceModal()">US • 1 marketplace</button>
+                        <button class="cr-btn cr-btn--danger" onclick="crDeletePromotions()">Delete Promotions</button>
+                        <button class="cr-btn cr-btn--primary" onclick="crAddPromotion()">+ Add Promotion</button>
+                    </div>
+                </div>
+                
+                <div class="cr-kpi-cards" id="cr-kpi-cards"></div>
+                
+                <div class="cr-filter-panel">
+                    <div class="cr-filter-group">
+                        <div class="cr-filter-group-label">Product Category</div>
+                        <div class="cr-chips" id="cr-category-chips"></div>
+                    </div>
+                    <div class="cr-filter-group">
+                        <div class="cr-filter-group-label">Product Series</div>
+                        <div class="cr-chips" id="cr-series-chips"></div>
+                    </div>
+                </div>
+                
+                <div class="dual-layer-table cr-table">
+                    <div class="table-header-bar">
+                        <div class="fixed-header" style="width:160px;"><div class="header-cell">SKU</div></div>
+                        <div class="scroll-header-viewport">
+                            <div class="scroll-header">
+                                <div class="header-cell" style="width:180px;">Product Name</div>
+                                <div class="header-cell">90-Day Promo</div>
+                                <div class="header-cell">Future Promo</div>
+                                <div class="header-cell">Annual Events</div>
+                                <div class="header-cell">LPS</div>
+                                <div class="header-cell">Risk Level</div>
+                                <div class="header-cell">Total Promos</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-body-bar">
+                        <div class="fixed-col" style="width:160px;">
+                            <div class="fixed-body" id="cr-table-fixed-body"></div>
+                        </div>
+                        <div class="scroll-col">
+                            <div class="scroll-body" id="cr-table-scroll-body"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="cr-pagination" id="cr-pagination"></div>
+            </section>
+
             <!-- Supply Chain Canvas Section -->
             <section id="supplychain-section" class="module-section is-hidden">
+
                 <div class="sc-page-header">
                     <h2>Supply Chain Canvas</h2>
                 </div>
@@ -2082,6 +2153,7 @@
     <script src="assets/js/pages/shipping-plan.js"></script>
     <script src="assets/js/pages/shipping-history.js"></script>
     <script src="assets/js/pages/supplychain.js"></script>
+    <script src="assets/js/pages/campaign-risk.js"></script>
     
     <!-- App (Global) -->
     <script src="assets/js/app.js"></script>

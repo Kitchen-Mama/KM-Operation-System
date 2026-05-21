@@ -60,8 +60,8 @@
 ======================================== */
 .sidebar {
     width: 240px;
-    background: var(--cream-white);
-    border-right: 1px solid #E2E8F0;
+    background: #18181b;
+    border-right: 1px solid #27272a;
     padding: 0.5rem 0;
     position: fixed;
     height: calc(100vh - 80px);
@@ -82,19 +82,19 @@
     justify-content: space-between;
     padding: 0.75rem 1rem;
     cursor: pointer;
-    border-bottom: 1px solid #E2E8F0;
+    border-bottom: 1px solid #27272a;
     margin-bottom: 0.5rem;
 }
 
 .sidebar-toggle-label {
     font-weight: 600;
     font-size: 14px;
-    color: #334155;
+    color: #a1a1aa;
 }
 
 .sidebar-toggle-icon {
     font-size: 14px;
-    color: #64748b;
+    color: #a1a1aa;
     transition: transform 200ms ease;
 }
 
@@ -134,13 +134,14 @@
 .menu-item {
     padding: 0.85rem 1.25rem;
     cursor: pointer;
-    border-bottom: 1px solid #F7FAFC;
+    border-bottom: 1px solid #27272a;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
     gap: 0.6rem;
     white-space: nowrap;
     overflow: hidden;
+    color: #d4d4d8;
 }
 
 .sidebar.is-collapsed .menu-item {
@@ -191,7 +192,7 @@
 .menu-parent {
     padding: 0.85rem 1.25rem;
     cursor: pointer;
-    border-bottom: 1px solid #F7FAFC;
+    border-bottom: 1px solid #27272a;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
@@ -199,6 +200,7 @@
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
+    color: #d4d4d8;
 }
 
 .sidebar.is-collapsed .menu-parent {

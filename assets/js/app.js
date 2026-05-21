@@ -62,7 +62,8 @@ function showSection(section) {
             'skuDetails': 'sku-section',
             'supplychain': 'supplychain-section',
             'shippingplan': 'shippingplan-section',
-            'shippinghistory': 'shippinghistory-section'
+            'shippinghistory': 'shippinghistory-section',
+            'campaign-risk': 'campaign-risk-section'
         };
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
@@ -81,7 +82,8 @@ function showSection(section) {
         'skuDetails': 'sku-section',
         'supplychain': 'supplychain-section',
         'shippingplan': 'shippingplan-section',
-        'shippinghistory': 'shippinghistory-section'
+        'shippinghistory': 'shippinghistory-section',
+        'campaign-risk': 'campaign-risk-section'
     };
     
     const targetSectionId = sectionMap[section];
@@ -153,6 +155,13 @@ function showSection(section) {
                 window.initShippingHistoryPage();
             }
         }, 200);
+    }
+    if (section === 'campaign-risk') {
+        setTimeout(() => {
+            if (window.renderCampaignRiskTracker) {
+                window.renderCampaignRiskTracker();
+            }
+        }, 100);
     }
 }
 
