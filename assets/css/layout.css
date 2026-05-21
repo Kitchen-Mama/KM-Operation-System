@@ -59,24 +59,93 @@
    Sidebar
 ======================================== */
 .sidebar {
-    width: 250px;
+    width: 240px;
     background: var(--cream-white);
     border-right: 1px solid #E2E8F0;
-    padding: 1rem 0;
+    padding: 0.5rem 0;
     position: fixed;
     height: calc(100vh - 80px);
     overflow-y: auto;
+    overflow-x: hidden;
     z-index: 1000;
+    transition: width 200ms ease;
+}
+
+.sidebar.is-collapsed {
+    width: 64px;
+}
+
+/* Sidebar Toggle Button */
+.sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid #E2E8F0;
+    margin-bottom: 0.5rem;
+}
+
+.sidebar-toggle-label {
+    font-weight: 600;
+    font-size: 14px;
+    color: #334155;
+}
+
+.sidebar-toggle-icon {
+    font-size: 14px;
+    color: #64748b;
+    transition: transform 200ms ease;
+}
+
+.sidebar.is-collapsed .sidebar-toggle {
+    justify-content: center;
+}
+
+.sidebar.is-collapsed .sidebar-toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* Menu Icon & Label */
+.menu-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+}
+
+.menu-label {
+    white-space: nowrap;
+    overflow: hidden;
+    opacity: 1;
+    transition: opacity 150ms ease;
+}
+
+.sidebar.is-collapsed .menu-label {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+}
+
+.sidebar.is-collapsed .stage-badge {
+    display: none;
 }
 
 .menu-item {
-    padding: 1rem 1.5rem;
+    padding: 0.85rem 1.25rem;
     cursor: pointer;
     border-bottom: 1px solid #F7FAFC;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.sidebar.is-collapsed .menu-item {
+    padding: 0.85rem 0;
+    justify-content: center;
 }
 
 .menu-item:hover {
@@ -88,6 +157,14 @@
     background: var(--soft-green);
     color: white;
     border-left: 4px solid var(--warm-orange);
+}
+
+.sidebar.is-collapsed .menu-item.active {
+    border-left: none;
+    background: var(--soft-green);
+    border-radius: 8px;
+    margin: 2px 8px;
+    padding: 0.7rem 0;
 }
 
 .menu-item--disabled {
@@ -112,21 +189,32 @@
 
 /* Parent-Child Menu */
 .menu-parent {
-    padding: 1rem 1.5rem;
+    padding: 0.85rem 1.25rem;
     cursor: pointer;
     border-bottom: 1px solid #F7FAFC;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.6rem;
     font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.sidebar.is-collapsed .menu-parent {
+    padding: 0.85rem 0;
+    justify-content: center;
 }
 
 .menu-parent::after {
     content: "▸";
     font-size: 12px;
     transition: transform 0.2s ease;
+    margin-left: auto;
+}
+
+.sidebar.is-collapsed .menu-parent::after {
+    display: none;
 }
 
 .menu-parent.is-open::after {
@@ -147,6 +235,10 @@
     display: block;
 }
 
+.sidebar.is-collapsed .menu-children {
+    display: none !important;
+}
+
 .menu-children .menu-item {
     font-weight: 400;
 }
@@ -156,13 +248,18 @@
 ======================================== */
 .main-content {
     flex: 1;
-    margin-left: 250px;
+    margin-left: 240px;
     background: white;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 0;
     height: calc(100vh - 80px);
     position: relative;
+    transition: margin-left 200ms ease;
+}
+
+.sidebar.is-collapsed ~ .main-content {
+    margin-left: 64px;
 }
 
 .content-area {

@@ -34,57 +34,61 @@
     
     <div class="app-layout">
         <!-- 左側選單 -->
-        <nav class="sidebar">
-            <div class="menu-item" onclick="showSection('restock')">
-                <span>📊</span> 補貨試算器
+        <nav class="sidebar" id="appSidebar">
+            <div class="sidebar-toggle" onclick="toggleSidebar()">
+                <span class="menu-label sidebar-toggle-label">Menu</span>
+                <span class="sidebar-toggle-icon">&#9664;</span>
             </div>
-            <div class="menu-item" onclick="showSection('ops')">
-                <span>📦</span> 貨物庫存表
+            <div class="menu-item" onclick="showSection('restock')" title="補貨試算器">
+                <span class="menu-icon">📊</span><span class="menu-label">補貨試算器</span>
             </div>
-            <div class="menu-item" onclick="showSection('factory-stock')">
-                <span>🏭</span> Factory Stock
+            <div class="menu-item" onclick="showSection('ops')" title="貨物庫存表">
+                <span class="menu-icon">📦</span><span class="menu-label">貨物庫存表</span>
+            </div>
+            <div class="menu-item" onclick="showSection('factory-stock')" title="Factory Stock">
+                <span class="menu-icon">🏭</span><span class="menu-label">Factory Stock</span>
             </div>
             
             <!-- Forecast 父子選單 POC -->
             <div class="menu-parent"
                  data-menu-id="forecast"
-                 onclick="toggleMenu('forecast')">
-                <span>📈</span> Forecast Overview
+                 onclick="toggleMenu('forecast')" title="Forecast Overview">
+                <span class="menu-icon">📈</span><span class="menu-label">Forecast Overview</span>
             </div>
             
             <div class="menu-children"
                  data-parent="forecast">
                 <div class="menu-item"
-                     onclick="showSection('forecast')">
-                    Forecast 管理
+                     onclick="showSection('forecast')" title="Forecast 管理">
+                    <span class="menu-label">Forecast 管理</span>
                 </div>
                 
                 <div class="menu-item"
-                     onclick="showSection('request-order')">
-                    下單系統
+                     onclick="showSection('request-order')" title="下單系統">
+                    <span class="menu-label">下單系統</span>
                 </div>
                 
                 <div class="menu-item"
-                     onclick="showSection('fc-summary')">
-                    FC Summary
+                     onclick="showSection('fc-summary')" title="FC Summary">
+                    <span class="menu-label">FC Summary</span>
                 </div>
             </div>
             
-            <div class="menu-item" onclick="showSection('skuDetails')">
-                <span>📝</span> SKU Details
+            <div class="menu-item" onclick="showSection('skuDetails')" title="SKU Details">
+                <span class="menu-icon">📝</span><span class="menu-label">SKU Details</span>
             </div>
-            <div class="menu-item" onclick="showSection('shippingplan')">
-                <span>📋</span> Shipping Plan
+            <div class="menu-item" onclick="showSection('shippingplan')" title="Shipping Plan">
+                <span class="menu-icon">📋</span><span class="menu-label">Shipping Plan</span>
             </div>
-            <div class="menu-item" onclick="showSection('shippinghistory')">
-                <span>📜</span> Shipment Overview
+            <div class="menu-item" onclick="showSection('shippinghistory')" title="Shipment Overview">
+                <span class="menu-icon">📜</span><span class="menu-label">Shipment Overview</span>
             </div>
-            <div class="menu-item menu-item--disabled" style="position: relative;">
-                <span>🚢</span> Shipping Management
+            <div class="menu-item menu-item--disabled" style="position: relative;" title="Shipping Management">
+                <span class="menu-icon">🚢</span><span class="menu-label">Shipping Management</span>
                 <span class="stage-badge">Stage 2</span>
             </div>
-            <div class="menu-item" onclick="showSection('supplychain')">
-                <span>🗺️</span> Supply Chain Canvas
+            <div class="menu-item" onclick="showSection('supplychain')" title="Supply Chain Canvas">
+                <span class="menu-icon">🗺️</span><span class="menu-label">Supply Chain Canvas</span>
             </div>
         </nav>
         

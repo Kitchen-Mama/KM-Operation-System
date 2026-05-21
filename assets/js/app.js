@@ -30,6 +30,16 @@ function toggleMenu(menuId) {
 window.toggleMenu = toggleMenu;
 
 // ========================================
+// Sidebar Collapse/Expand
+// ========================================
+function toggleSidebar() {
+    const sidebar = document.getElementById('appSidebar');
+    if (!sidebar) return;
+    sidebar.classList.toggle('is-collapsed');
+}
+window.toggleSidebar = toggleSidebar;
+
+// ========================================
 // ========================================
 // Homepage - 已搬移至 pages/home.js
 // ========================================
