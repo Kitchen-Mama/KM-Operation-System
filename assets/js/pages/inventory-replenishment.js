@@ -273,13 +273,13 @@ function syncIrOverviewScroll() {
 // ========================================
 
 const replenishmentMockData = [
-    { sku: "A001", lifecycle: "Mature", productName: "Can Opener Pro", forecast90d: 450, onTheWay: 20, unitsPerCarton: 40 },
-    { sku: "B002", lifecycle: "New", productName: "Manual Opener Basic", forecast90d: 320, onTheWay: 15, unitsPerCarton: 50 },
-    { sku: "C003", lifecycle: "Mature", productName: "Kitchen Tool Set", forecast90d: 1100, onTheWay: 50, unitsPerCarton: 30 },
-    { sku: "D004", lifecycle: "Mature", productName: "Electric Peeler", forecast90d: 380, onTheWay: 10, unitsPerCarton: 40 },
-    { sku: "E005", lifecycle: "New", productName: "Smart Opener", forecast90d: 600, onTheWay: 30, unitsPerCarton: 50 },
-    { sku: "F006", lifecycle: "Phasing Out", productName: "Classic Knife", forecast90d: 280, onTheWay: 5, unitsPerCarton: 30 },
-    { sku: "G007", lifecycle: "Mature", productName: "Food Processor", forecast90d: 750, onTheWay: 40, unitsPerCarton: 40 }
+    { sku: "CO1100-R", lifecycle: "Mature", productName: "Can Opener Pro", forecast90d: 450, onTheWay: 20, unitsPerCarton: 40 },
+    { sku: "CO1100-S", lifecycle: "New", productName: "Manual Opener Basic", forecast90d: 320, onTheWay: 15, unitsPerCarton: 50 },
+    { sku: "CO1150-R", lifecycle: "Mature", productName: "Kitchen Tool Set", forecast90d: 1100, onTheWay: 50, unitsPerCarton: 30 },
+    { sku: "CO1150-AG", lifecycle: "Mature", productName: "Electric Peeler", forecast90d: 380, onTheWay: 10, unitsPerCarton: 40 },
+    { sku: "SP3120-R", lifecycle: "New", productName: "Smart Opener", forecast90d: 600, onTheWay: 30, unitsPerCarton: 50 },
+    { sku: "SP3410-R", lifecycle: "Phasing Out", productName: "Classic Knife", forecast90d: 280, onTheWay: 5, unitsPerCarton: 30 },
+    { sku: "MO5600-R", lifecycle: "Mature", productName: "Food Processor", forecast90d: 750, onTheWay: 40, unitsPerCarton: 40 }
 ];
 
 const specialEvents = [
@@ -290,13 +290,13 @@ const specialEvents = [
 ];
 
 const skuEventData = [
-    { sku: "A001", events: [{ name: "Spring Deal", qty: 500 }, { name: "Prime Day", qty: 800 }] },
-    { sku: "B002", events: [{ name: "BFCM", qty: 1200 }] },
-    { sku: "C003", events: [{ name: "Prime Day", qty: 1500 }, { name: "Fall Prime", qty: 900 }] },
-    { sku: "D004", events: [{ name: "Spring Deal", qty: 400 }] },
-    { sku: "E005", events: [{ name: "BFCM", qty: 2000 }] },
-    { sku: "F006", events: [] },
-    { sku: "G007", events: [{ name: "Prime Day", qty: 1000 }, { name: "BFCM", qty: 1800 }] }
+    { sku: "CO1100-R", events: [{ name: "Spring Deal", qty: 500 }, { name: "Prime Day", qty: 800 }] },
+    { sku: "CO1100-S", events: [{ name: "BFCM", qty: 1200 }] },
+    { sku: "CO1150-R", events: [{ name: "Prime Day", qty: 1500 }, { name: "Fall Prime", qty: 900 }] },
+    { sku: "CO1150-AG", events: [{ name: "Spring Deal", qty: 400 }] },
+    { sku: "SP3120-R", events: [{ name: "BFCM", qty: 2000 }] },
+    { sku: "SP3410-R", events: [] },
+    { sku: "MO5600-R", events: [{ name: "Prime Day", qty: 1000 }, { name: "BFCM", qty: 1800 }] }
 ];
 
 // 運輸方式資料結構 (Stage 1 靜態資料)
@@ -355,9 +355,9 @@ function getReplenishmentData() {
         // Add marketplace and company from siteData
         mockData.marketplace = item.site;
         // Assign company based on SKU
-        if (item.sku === 'A001' || item.sku === 'C003' || item.sku === 'E005' || item.sku === 'G007') {
+        if (item.sku === 'CO1100-R' || item.sku === 'CO1150-R' || item.sku === 'SP3120-R' || item.sku === 'MO5600-R') {
             mockData.company = 'Res US';
-        } else if (item.sku === 'B002' || item.sku === 'D004' || item.sku === 'F006') {
+        } else if (item.sku === 'CO1100-S' || item.sku === 'CO1150-AG' || item.sku === 'SP3410-R') {
             mockData.company = 'Res TW';
         } else {
             mockData.company = 'Kitchen Mama';
@@ -370,7 +370,7 @@ function getReplenishmentData() {
             let fcNextMonth, fcNext2Month, fcLastMonth, fcLast2Month, achievementLastMonth, achievementLast2Month;
             let salesDay2, salesDay3, salesDay4;
             
-            if (item.sku === 'A001' || item.sku === 'B002') {
+            if (item.sku === 'CO1100-R' || item.sku === 'CO1100-S') {
             // 大規模數量
             available = Math.floor(Math.random() * 2000) + 3000;
             fcTransfer = Math.floor(Math.random() * 500) + 800;
@@ -388,7 +388,7 @@ function getReplenishmentData() {
             salesDay2 = Math.floor(Math.random() * 100) + 200;
             salesDay3 = Math.floor(Math.random() * 100) + 180;
             salesDay4 = Math.floor(Math.random() * 100) + 170;
-        } else if (item.sku === 'C003' || item.sku === 'D004') {
+        } else if (item.sku === 'CO1150-R' || item.sku === 'CO1150-AG') {
             // 小規模數量
             available = Math.floor(Math.random() * 100) + 50;
             fcTransfer = Math.floor(Math.random() * 30) + 20;
@@ -431,10 +431,10 @@ function getReplenishmentData() {
             
             // LTS data - 部分 SKU 設為 0 以測試篩選
             let over90, over180;
-            if (item.sku === 'B002' || item.sku === 'D004') {
+            if (item.sku === 'CO1100-S' || item.sku === 'CO1150-AG') {
                 over90 = 0;
                 over180 = 0;
-            } else if (item.sku === 'F006') {
+            } else if (item.sku === 'SP3410-R') {
                 over90 = Math.floor(Math.random() * 15) + 5;
                 over180 = 0;
             } else {

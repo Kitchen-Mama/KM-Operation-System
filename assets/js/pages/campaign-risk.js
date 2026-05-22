@@ -29,74 +29,108 @@ const countryMarketplaceMap = {
 
 // --- Inventory SKU Availability Mock ---
 const inventorySkuAvailabilityMock = [
-    // US Amazon
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-OP-001' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-OP-002' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-OP-003' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-OP-004' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-OP-005' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-OP-006' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-OP-007' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-UP-001' },
-    { country: 'US', marketplace: 'Amazon', sku: 'KM-UP-002' },
-    // US Target
-    { country: 'US', marketplace: 'Target', sku: 'KM-OP-001' },
-    { country: 'US', marketplace: 'Target', sku: 'KM-OP-002' },
-    { country: 'US', marketplace: 'Target', sku: 'KM-OP-004' },
-    // US Shopify
-    { country: 'US', marketplace: 'Shopify', sku: 'KM-OP-001' },
-    { country: 'US', marketplace: 'Shopify', sku: 'KM-OP-003' },
-    { country: 'US', marketplace: 'Shopify', sku: 'KM-UP-001' },
-    // US Walmart
-    { country: 'US', marketplace: 'KM Walmart', sku: 'KM-OP-001' },
-    { country: 'US', marketplace: 'KM Walmart', sku: 'KM-OP-005' },
-    // CA Amazon
-    { country: 'CA', marketplace: 'Amazon', sku: 'KM-OP-001' },
-    { country: 'CA', marketplace: 'Amazon', sku: 'KM-OP-002' },
-    { country: 'CA', marketplace: 'Amazon', sku: 'KM-OP-006' },
-    // UK Amazon
-    { country: 'UK', marketplace: 'Amazon', sku: 'KM-OP-001' },
-    { country: 'UK', marketplace: 'Amazon', sku: 'KM-OP-003' },
-    { country: 'UK', marketplace: 'Amazon', sku: 'KM-OP-004' },
-    // DE Amazon
-    { country: 'DE', marketplace: 'Amazon', sku: 'KM-OP-001' },
-    { country: 'DE', marketplace: 'Amazon', sku: 'KM-OP-002' },
-    // AU Amazon
-    { country: 'AU', marketplace: 'Amazon', sku: 'KM-OP-001' },
-    { country: 'AU', marketplace: 'Amazon', sku: 'KM-UP-001' },
-    // JP Amazon
-    { country: 'JP', marketplace: 'Amazon', sku: 'KM-OP-003' },
-    { country: 'JP', marketplace: 'Amazon', sku: 'KM-OP-005' },
+    { country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' },
+    { country: 'US', marketplace: 'Amazon', sku: 'CO1100-S' },
+    { country: 'US', marketplace: 'Amazon', sku: 'CO1150-R' },
+    { country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG' },
+    { country: 'US', marketplace: 'Amazon', sku: 'SP3120-R' },
+    { country: 'US', marketplace: 'Target', sku: 'CO1100-R' },
+    { country: 'US', marketplace: 'Target', sku: 'CO1150-R' },
+    { country: 'US', marketplace: 'Target', sku: 'MO5600-R' },
+    { country: 'US', marketplace: 'Shopify', sku: 'CO1100-W' },
+    { country: 'US', marketplace: 'Shopify', sku: 'SP3410-R' },
+    { country: 'US', marketplace: 'Shopify', sku: 'MO5600-W' },
+    { country: 'US', marketplace: 'KM Walmart', sku: 'CO1100-R' },
+    { country: 'US', marketplace: 'KM Walmart', sku: 'CO1150-R' },
+    { country: 'US', marketplace: 'KM Walmart', sku: 'SP3120-M' },
+    { country: 'US', marketplace: 'KM Walmart', sku: 'MO5600-R' },
+    { country: 'CA', marketplace: 'Amazon', sku: 'CO1100-R' },
+    { country: 'CA', marketplace: 'Amazon', sku: 'CO1150-N' },
+    { country: 'CA', marketplace: 'Amazon', sku: 'SP3120-T' },
+    { country: 'CA', marketplace: 'Amazon', sku: 'MO5600-M' },
+    { country: 'UK', marketplace: 'Amazon', sku: 'CO1100-T' },
+    { country: 'UK', marketplace: 'Amazon', sku: 'CO1150-MB' },
+    { country: 'UK', marketplace: 'Amazon', sku: 'SP3410-B' },
+    { country: 'UK', marketplace: 'Amazon', sku: 'MO5600-T' },
+    { country: 'DE', marketplace: 'Amazon', sku: 'CO1100-R' },
+    { country: 'DE', marketplace: 'Amazon', sku: 'CO1150-R' },
+    { country: 'DE', marketplace: 'Amazon', sku: 'SP3120-B' },
+    { country: 'FR', marketplace: 'Amazon', sku: 'CO1100-S' },
+    { country: 'FR', marketplace: 'Amazon', sku: 'CO1150-AG' },
+    { country: 'FR', marketplace: 'Amazon', sku: 'MO5600-R' },
+    { country: 'AU', marketplace: 'Amazon', sku: 'CO1100-R' },
+    { country: 'AU', marketplace: 'Amazon', sku: 'SP3120-Y' },
+    { country: 'AU', marketplace: 'Amazon', sku: 'MO5600-B' },
+    { country: 'JP', marketplace: 'Amazon', sku: 'CO1100-T' },
+    { country: 'JP', marketplace: 'Amazon', sku: 'SP3120-R' },
+    { country: 'JP', marketplace: 'Amazon', sku: 'SP3410-T' },
+    { country: 'ES', marketplace: 'Amazon', sku: 'CO1100-R' },
+    { country: 'ES', marketplace: 'Amazon', sku: 'CO1150-R' },
+    { country: 'ES', marketplace: 'Amazon', sku: 'MO5600-R' },
+    { country: 'NL', marketplace: 'Amazon', sku: 'CO1100-S' },
+    { country: 'NL', marketplace: 'Amazon', sku: 'SP3120-M' },
+    { country: 'NL', marketplace: 'Amazon', sku: 'MO5600-M' },
+    { country: 'SG', marketplace: 'Amazon', sku: 'CO1100-R' },
+    { country: 'SG', marketplace: 'Amazon', sku: 'CO1150-R' },
+    { country: 'SG', marketplace: 'Amazon', sku: 'SP3410-R' },
+    { country: 'CA', marketplace: 'Shopify', sku: 'CO1100-R' },
+    { country: 'CA', marketplace: 'Shopify', sku: 'SP3120-R' },
+    { country: 'CA', marketplace: 'Shopify', sku: 'MO5600-R' },
+    { country: 'UK', marketplace: 'Shopify', sku: 'CO1100-R' },
+    { country: 'UK', marketplace: 'Shopify', sku: 'SP3410-T' },
+    { country: 'UK', marketplace: 'Shopify', sku: 'MO5600-W' },
+    { country: 'DE', marketplace: 'Shopify', sku: 'CO1150-MB' },
+    { country: 'DE', marketplace: 'Shopify', sku: 'SP3120-T' },
+    { country: 'DE', marketplace: 'Shopify', sku: 'MO5600-T' },
 ];
 
 // --- Promotion Mock Data ---
-const promotionMockData = [
-    { promotionId: 'promo_001', campaignName: 'CO1100-R-NPPD-2603-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-001', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-02-10', endDate: '2026-02-20', promoPrice: 19.99, regularPrice: 29.99 },
-    { promotionId: 'promo_002', campaignName: 'CO1100-R-NPPD-2603-02', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-001', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-14', promoPrice: 21.99, regularPrice: 29.99 },
-    { promotionId: 'promo_003', campaignName: 'CO1100-R-NPPD-2604-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-001', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-20', endDate: '2026-04-05', promoPrice: 22.99, regularPrice: 29.99 },
-    { promotionId: 'promo_004', campaignName: 'CO1100-R-Future-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-001', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-04-15', endDate: '2026-04-25', promoPrice: 20.99, regularPrice: 29.99 },
-    { promotionId: 'promo_005', campaignName: 'CO1100-B-NPPD-2603-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-002', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-15', endDate: '2026-02-25', promoPrice: 24.99, regularPrice: 34.99 },
-    { promotionId: 'promo_006', campaignName: 'CO1100-B-Future-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-002', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-04-20', endDate: '2026-05-10', promoPrice: 26.99, regularPrice: 34.99 },
-    { promotionId: 'promo_007', campaignName: 'EP2200-PrimeDay', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-003', promotionType: 'Lightning Deal', eventFlag: 'Prime Day', startDate: '2026-07-15', endDate: '2026-07-16', promoPrice: 18.99, regularPrice: 29.99 },
-    { promotionId: 'promo_008', campaignName: 'EP2200-NPPD-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-003', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-05', endDate: '2026-03-12', promoPrice: 22.99, regularPrice: 29.99 },
-    { promotionId: 'promo_009', campaignName: 'CO1150-BFCM', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-004', promotionType: 'Deal of the Day', eventFlag: 'BFCM', startDate: '2026-11-27', endDate: '2026-12-02', promoPrice: 15.99, regularPrice: 29.99 },
-    { promotionId: 'promo_010', campaignName: 'CO1150-NPPD-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-004', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-01-20', endDate: '2026-02-15', promoPrice: 23.99, regularPrice: 29.99 },
-    { promotionId: 'promo_011', campaignName: 'CO1150-NPPD-02', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-004', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-02-20', endDate: '2026-03-10', promoPrice: 21.99, regularPrice: 29.99 },
-    { promotionId: 'promo_012', campaignName: 'CO1150-NPPD-03', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-004', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-15', endDate: '2026-04-01', promoPrice: 22.99, regularPrice: 29.99 },
-    { promotionId: 'promo_013', campaignName: 'CO1150-Future-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-004', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-04-10', endDate: '2026-04-30', promoPrice: 24.99, regularPrice: 29.99 },
-    { promotionId: 'promo_014', campaignName: 'CO1200-NPPD-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-005', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-07', promoPrice: 26.99, regularPrice: 34.99 },
-    { promotionId: 'promo_015', campaignName: 'CO1200-FallPrime', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-005', promotionType: 'Lightning Deal', eventFlag: 'Fall Prime', startDate: '2026-10-08', endDate: '2026-10-09', promoPrice: 19.99, regularPrice: 34.99 },
-    { promotionId: 'promo_016', campaignName: 'KT-NPPD-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-006', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-01', endDate: '2026-02-07', promoPrice: 14.99, regularPrice: 19.99 },
-    { promotionId: 'promo_017', campaignName: 'KT-NPPD-02', country: 'CA', marketplace: 'Amazon', sku: 'KM-OP-006', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-10', endDate: '2026-03-20', promoPrice: 15.99, regularPrice: 19.99 },
-    { promotionId: 'promo_018', campaignName: 'CO1100-UK-01', country: 'UK', marketplace: 'Amazon', sku: 'KM-OP-001', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-10', promoPrice: 17.99, regularPrice: 24.99 },
-    { promotionId: 'promo_019', campaignName: 'CO1100-DE-01', country: 'DE', marketplace: 'Amazon', sku: 'KM-OP-001', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-20', endDate: '2026-03-05', promoPrice: 18.99, regularPrice: 26.99 },
-    { promotionId: 'promo_020', campaignName: 'EP2200-PrimeDay-2', country: 'US', marketplace: 'Amazon', sku: 'KM-UP-002', promotionType: 'Lightning Deal', eventFlag: 'Prime Day', startDate: '2026-07-15', endDate: '2026-07-16', promoPrice: 22.99, regularPrice: 34.99 },
-    { promotionId: 'promo_021', campaignName: 'CO1100-Heavy-01', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-007', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-01-15', endDate: '2026-02-10', promoPrice: 19.99, regularPrice: 29.99 },
-    { promotionId: 'promo_022', campaignName: 'CO1100-Heavy-02', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-007', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-15', endDate: '2026-03-10', promoPrice: 21.99, regularPrice: 29.99 },
-    { promotionId: 'promo_023', campaignName: 'CO1100-Heavy-03', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-007', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-15', endDate: '2026-04-05', promoPrice: 20.99, regularPrice: 29.99 },
-    { promotionId: 'promo_024', campaignName: 'CO1100-Heavy-Future', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-007', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-04-10', endDate: '2026-04-30', promoPrice: 22.99, regularPrice: 29.99 },
-    { promotionId: 'promo_025', campaignName: 'CO1100-Heavy-BFCM', country: 'US', marketplace: 'Amazon', sku: 'KM-OP-007', promotionType: 'Deal of the Day', eventFlag: 'BFCM', startDate: '2026-11-27', endDate: '2026-12-02', promoPrice: 14.99, regularPrice: 29.99 },
+const LOCALSTORAGE_KEY = 'km_campaign_promotion_records_v2';
+
+const defaultPromotionMockData = [
+    { promotionId: 'promo_001', campaignName: 'CO1100-R-PD-20260210', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-02-10', endDate: '2026-02-20', promoPrice: 19.99, regularPrice: 29.99 },
+    { promotionId: 'promo_002', campaignName: 'CO1100-R-CP-20260301', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-14', promoPrice: 21.99, regularPrice: 29.99 },
+    { promotionId: 'promo_003', campaignName: 'CO1100-R-PD-20260320', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-20', endDate: '2026-04-05', promoPrice: 22.99, regularPrice: 29.99 },
+    { promotionId: 'promo_004', campaignName: 'CO1100-R-PD-20260415', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-04-15', endDate: '2026-04-25', promoPrice: 20.99, regularPrice: 29.99 },
+    { promotionId: 'promo_005', campaignName: 'CO1100-S-CP-20260215', country: 'US', marketplace: 'Amazon', sku: 'CO1100-S', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-15', endDate: '2026-02-25', promoPrice: 21.99, regularPrice: 29.99 },
+    { promotionId: 'promo_006', campaignName: 'CO1100-S-PD-20260420', country: 'US', marketplace: 'Amazon', sku: 'CO1100-S', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-04-20', endDate: '2026-05-10', promoPrice: 22.99, regularPrice: 29.99 },
+    { promotionId: 'promo_007', campaignName: 'CO1150-R-LD-PrimeDay', country: 'US', marketplace: 'Amazon', sku: 'CO1150-R', promotionType: 'Lightning Deal', eventFlag: 'Prime Day', startDate: '2026-07-15', endDate: '2026-07-16', promoPrice: 22.99, regularPrice: 34.99 },
+    { promotionId: 'promo_008', campaignName: 'CO1150-R-PD-20260305', country: 'US', marketplace: 'Amazon', sku: 'CO1150-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-05', endDate: '2026-03-12', promoPrice: 26.99, regularPrice: 34.99 },
+    { promotionId: 'promo_009', campaignName: 'CO1150-AG-BD-BFCM', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Best Deal', eventFlag: 'BFCM', startDate: '2026-11-27', endDate: '2026-12-02', promoPrice: 19.99, regularPrice: 34.99 },
+    { promotionId: 'promo_010', campaignName: 'CO1150-AG-CP-20260120', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-01-20', endDate: '2026-02-15', promoPrice: 27.99, regularPrice: 34.99 },
+    { promotionId: 'promo_011', campaignName: 'CO1150-AG-PD-20260220', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-02-20', endDate: '2026-03-10', promoPrice: 26.99, regularPrice: 34.99 },
+    { promotionId: 'promo_012', campaignName: 'CO1150-AG-PD-20260315', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-15', endDate: '2026-04-01', promoPrice: 27.99, regularPrice: 34.99 },
+    { promotionId: 'promo_013', campaignName: 'CO1150-AG-CP-20260410', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-04-10', endDate: '2026-04-30', promoPrice: 28.99, regularPrice: 34.99 },
+    { promotionId: 'promo_014', campaignName: 'SP3120-R-PD-20260301', country: 'US', marketplace: 'Amazon', sku: 'SP3120-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-07', promoPrice: 9.99, regularPrice: 14.99 },
+    { promotionId: 'promo_015', campaignName: 'SP3120-R-LD-FallPrime', country: 'US', marketplace: 'Amazon', sku: 'SP3120-R', promotionType: 'Lightning Deal', eventFlag: 'Fall Prime', startDate: '2026-10-08', endDate: '2026-10-09', promoPrice: 8.99, regularPrice: 14.99 },
+    { promotionId: 'promo_016', campaignName: 'MO5600-R-CP-20260201', country: 'US', marketplace: 'Target', sku: 'MO5600-R', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-01', endDate: '2026-02-07', promoPrice: 13.99, regularPrice: 19.99 },
+    { promotionId: 'promo_017', campaignName: 'CO1100-R-PD-CA', country: 'CA', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-10', endDate: '2026-03-20', promoPrice: 19.99, regularPrice: 29.99 },
+    { promotionId: 'promo_018', campaignName: 'CO1100-T-PD-UK', country: 'UK', marketplace: 'Amazon', sku: 'CO1100-T', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-10', promoPrice: 17.99, regularPrice: 24.99 },
+    { promotionId: 'promo_019', campaignName: 'CO1100-R-CP-DE', country: 'DE', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-20', endDate: '2026-03-05', promoPrice: 18.99, regularPrice: 26.99 },
+    { promotionId: 'promo_020', campaignName: 'CO1150-R-LD-PrimeDay2', country: 'US', marketplace: 'Amazon', sku: 'CO1150-R', promotionType: 'Lightning Deal', eventFlag: 'Prime Day', startDate: '2026-07-15', endDate: '2026-07-16', promoPrice: 24.99, regularPrice: 34.99 },
+    { promotionId: 'promo_021', campaignName: 'CO1100-R-PD-Heavy01', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-01-15', endDate: '2026-02-05', promoPrice: 19.99, regularPrice: 29.99 },
 ];
+
+// --- localStorage Persistence ---
+function normalizePromotionRecord(rec) {
+    const duration = rec.duration || (rec.startDate && rec.endDate ? calculatePromotionDuration(rec.startDate, rec.endDate) : 0);
+    const discountPercent = rec.discountPercent || (rec.regularPrice > 0 ? Math.round((1 - rec.promoPrice / rec.regularPrice) * 1000) / 10 : 0);
+    return { ...rec, duration, discountPercent, lps: rec.lps || false, specialCondition: rec.specialCondition || '', createdAt: rec.createdAt || new Date().toISOString(), updatedAt: rec.updatedAt || '' };
+}
+
+function loadPromotionRecords() {
+    try {
+        const stored = localStorage.getItem(LOCALSTORAGE_KEY);
+        if (stored) return JSON.parse(stored).map(normalizePromotionRecord);
+    } catch(e) { console.warn('Failed to load localStorage promotion records:', e); }
+    return defaultPromotionMockData.map(normalizePromotionRecord);
+}
+
+function savePromotionRecords() {
+    try { localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(promotionMockData)); } catch(e) { console.warn('Failed to save:', e); }
+}
+
+let promotionMockData = loadPromotionRecords();
 
 // --- SKU Master Mapping ---
 function getAllSkuDetails() {
@@ -456,7 +490,9 @@ function crDeletePromotions() {
 
 // --- Data Access ---
 function getPromotionRecords() { return promotionMockData; }
-function setPromotionRecords(records) { promotionMockData.length = 0; promotionMockData.push(...records); }
+function setPromotionRecords(records) { promotionMockData = records.map(normalizePromotionRecord); savePromotionRecords(); }
+function addPromotionRecords(recordsToAdd) { recordsToAdd.forEach(r => promotionMockData.push(normalizePromotionRecord(r))); savePromotionRecords(); }
+function deletePromotionRecordsByIds(ids) { const idSet = new Set(ids); promotionMockData = promotionMockData.filter(p => !idSet.has(p.promotionId)); savePromotionRecords(); }
 function findSkuByCode(sku) { return getSkuMasterData().find(s => s.sku === sku); }
 function getCategoryOptionsFromSkuMaster() { return getCategories(); }
 function getSeriesOptionsByCategory(cat) { return getSeriesForCategory(cat); }
@@ -739,9 +775,11 @@ function submitAddPromotion() {
     if(hasHigh){ if(!confirm('Some SKUs will become High Risk / Stop and will be marked as LPS. Continue?')) return; }
     else if(hasWatch){ if(!confirm('Some SKUs will move to Watch / Warning. Continue?')) return; }
 
-    let added = 0;
+    const newRecords = [];
     records.forEach((r,i)=>{
-        const rec = {
+        const preview = previewRows.find(p=>p.sku===r.sku);
+        const lps = preview?.lps || false;
+        const rec = normalizePromotionRecord({
             promotionId: generatePromotionId()+'_'+i,
             campaignName: name || generatePromotionName(r.sku, type),
             country, marketplace, sku: r.sku,
@@ -749,13 +787,15 @@ function submitAddPromotion() {
             eventFlag, startDate, endDate,
             promoPrice: r.promoPrice, regularPrice: r.regularPrice,
             duration,
-            lps: previewRows.find(p=>p.sku===r.sku)?.lps || false,
-            specialCondition: (previewRows.find(p=>p.sku===r.sku)?.lps) ? 'LowPriceStrategy' : '',
-            createdAt: new Date().toISOString()
-        };
-        if(!detectDuplicatePromotion(rec)){ promotionMockData.push(rec); added++; }
+            lps,
+            specialCondition: lps ? 'LowPriceStrategy' : '',
+            createdAt: new Date().toISOString(),
+            updatedAt: ''
+        });
+        if(!detectDuplicatePromotion(rec)){ newRecords.push(rec); }
     });
-    if(added===0){document.getElementById('cr-add-error').textContent='No records added (all duplicates).';return;}
+    if(newRecords.length===0){document.getElementById('cr-add-error').textContent='No records added (all duplicates).';return;}
+    addPromotionRecords(newRecords);
     closeAddPromotionModal();
     refreshCampaignRiskTracker();
 }
@@ -840,6 +880,7 @@ function crSearchDeleteRecords() {
                     <span class="cr-del-cell">${p.endDate}</span>
                     <span class="cr-del-cell">$${p.promoPrice}</span>
                     <span class="cr-del-cell">$${p.regularPrice}</span>
+                    <span class="cr-del-cell">${p.lps ? 'Yes' : '-'}</span>
                 </div>
             `).join('')}
         </div>
@@ -856,13 +897,12 @@ function crDeleteSelected() {
     const checked = document.querySelectorAll('.cr-del-check:checked');
     if (checked.length === 0) { errEl.textContent = 'Please select at least one promotion to delete.'; return; }
     if (!confirm(`Are you sure you want to delete ${checked.length} promotion records?`)) return;
-    const idsToDelete = new Set();
+    const idsToDelete = [];
     checked.forEach(cb => {
         const idx = parseInt(cb.dataset.idx);
-        if (crDeleteResults[idx]) idsToDelete.add(crDeleteResults[idx].promotionId);
+        if (crDeleteResults[idx]) idsToDelete.push(crDeleteResults[idx].promotionId);
     });
-    const newRecords = promotionMockData.filter(p => !idsToDelete.has(p.promotionId));
-    setPromotionRecords(newRecords);
+    deletePromotionRecordsByIds(idsToDelete);
     closeDeletePromotionModal();
     refreshCampaignRiskTracker();
 }
@@ -915,3 +955,72 @@ window.updateCrFilterButton = updateCrFilterButton;
 
 window.crBuildGroups = crBuildGroups;
 window.crPreviewAdd = crPreviewAdd;
+
+// --- Debug / Test Helpers ---
+function debugPromotionRecords() {
+    console.log('=== Promotion Records ===');
+    console.log('Count:', promotionMockData.length);
+    console.table(promotionMockData.map(r => ({ id: r.promotionId, sku: r.sku, country: r.country, mp: r.marketplace, type: r.promotionType, event: r.eventFlag, start: r.startDate, end: r.endDate, promo: r.promoPrice, reg: r.regularPrice, lps: r.lps })));
+}
+
+function resetCampaignPromotionMockData() {
+    localStorage.removeItem(LOCALSTORAGE_KEY);
+    promotionMockData = defaultPromotionMockData.map(normalizePromotionRecord);
+    refreshCampaignRiskTracker();
+    console.log('Mock data reset to defaults. Records:', promotionMockData.length);
+}
+
+function addTestHighRiskPromotion() {
+    const today = new Date();
+    const records = [];
+    for (let i = 0; i < 3; i++) {
+        const start = new Date(today); start.setDate(start.getDate() + (i * 12));
+        const end = new Date(start); end.setDate(end.getDate() + 10);
+        records.push(normalizePromotionRecord({
+            promotionId: 'test_high_' + Date.now() + '_' + i,
+            campaignName: 'TEST-HighRisk-' + i,
+            country: CampaignRiskState.country,
+            marketplace: CampaignRiskState.marketplaces[0] || 'Amazon',
+            sku: 'CO1100-R',
+            promotionType: 'Price Discount',
+            eventFlag: 'Normal',
+            startDate: start.toISOString().slice(0, 10),
+            endDate: end.toISOString().slice(0, 10),
+            promoPrice: 19.99,
+            regularPrice: 29.99,
+            createdAt: new Date().toISOString(),
+            updatedAt: ''
+        }));
+    }
+    addPromotionRecords(records);
+    refreshCampaignRiskTracker();
+    console.log('Added 3 test promotions to push CO1100-R toward High Risk.');
+}
+
+function addTestAnnualEventPromotion() {
+    const rec = normalizePromotionRecord({
+        promotionId: 'test_annual_' + Date.now(),
+        campaignName: 'TEST-PrimeDay',
+        country: CampaignRiskState.country,
+        marketplace: CampaignRiskState.marketplaces[0] || 'Amazon',
+        sku: 'CO1100-R',
+        promotionType: 'Lightning Deal',
+        eventFlag: 'Prime Day',
+        startDate: '2026-07-15',
+        endDate: '2026-07-16',
+        promoPrice: 14.99,
+        regularPrice: 29.99,
+        createdAt: new Date().toISOString(),
+        updatedAt: ''
+    });
+    addPromotionRecords([rec]);
+    refreshCampaignRiskTracker();
+    console.log('Added Prime Day test record. Should appear in Annual Events, NOT Future Promo Days.');
+}
+
+window.debugPromotionRecords = debugPromotionRecords;
+window.resetCampaignPromotionMockData = resetCampaignPromotionMockData;
+window.addTestHighRiskPromotion = addTestHighRiskPromotion;
+window.addTestAnnualEventPromotion = addTestAnnualEventPromotion;
+window.addPromotionRecords = addPromotionRecords;
+window.deletePromotionRecordsByIds = deletePromotionRecordsByIds;

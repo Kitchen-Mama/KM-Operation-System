@@ -273,13 +273,23 @@
                     <div class="replen-control-panel" style="position: sticky; top: 0; z-index: 131;">
                         <select id="replenCountry" onchange="renderReplenishment()">
                             <option value="US">US</option>
+                            <option value="CA">CA</option>
                             <option value="UK">UK</option>
                             <option value="DE">DE</option>
+                            <option value="FR">FR</option>
+                            <option value="AU">AU</option>
+                            <option value="JP">JP</option>
+                            <option value="SG">SG</option>
+                            <option value="ES">ES</option>
+                            <option value="NL">NL</option>
                         </select>
                         <select id="replenMarketplace" onchange="renderReplenishment()">
-                            <option value="amazon">Amazon</option>
-                            <option value="shopify">Shopify</option>
-                            <option value="target">Target</option>
+                            <option value="Amazon">Amazon</option>
+                            <option value="KM Walmart">KM Walmart</option>
+                            <option value="Target">Target</option>
+                            <option value="Shopify">Shopify</option>
+                            <option value="Wayfair">Wayfair</option>
+                            <option value="Newegg">Newegg</option>
                         </select>
                         <select id="replenLTSFilter" onchange="renderReplenishment()">
                             <option value="">All SKU</option>
@@ -315,9 +325,10 @@
                                     <div class="fc-form-group">
                                         <label>Marketplace *</label>
                                         <select id="replen-add-marketplace">
-                                            <option value="amazon">Amazon</option>
-                                            <option value="shopify">Shopify</option>
-                                            <option value="target">Target</option>
+                                            <option value="Amazon">Amazon</option>
+                                            <option value="Shopify">Shopify</option>
+                                            <option value="Target">Target</option>
+                                            <option value="KM Walmart">KM Walmart</option>
                                         </select>
                                     </div>
                                     <div class="fc-form-group">
@@ -529,9 +540,9 @@
                         </button>
                         <div class="fc-dropdown-panel" data-filter="category">
                             <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Can Opener" checked> Can Opener</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Kitchen Tools" checked> Kitchen Tools</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Appliances" checked> Appliances</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked> Electric Can Opener</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Silicone Product" checked> Silicone Product</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Manual Opener" checked> Manual Opener</label>
                         </div>
                     </div>
                     <div class="filter-group filter-group--dropdown">
@@ -543,14 +554,10 @@
                         <div class="fc-dropdown-panel" data-filter="series">
                             <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
                             <label class="fc-checkbox-item"><input type="checkbox" value="CO1100" checked> CO1100</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="FP2200" checked> FP2200</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="KS3300" checked> KS3300</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="WS4400" checked> WS4400</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="CM5500" checked> CM5500</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="CL6600" checked> CL6600</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="TD7700" checked> TD7700</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="EP2200" checked> EP2200</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="CB0100" checked> CB0100</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CO1150" checked> CO1150</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="SP3120" checked> SP3120</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="SP3410" checked> SP3410</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="MO5600" checked> MO5600</label>
                         </div>
                     </div>
                     <div class="filter-group filter-group--sku">
@@ -644,9 +651,9 @@
                         </button>
                         <div class="forecast-dropdown-panel" data-filter="marketplace">
                             <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'marketplace')"> <strong>All</strong></label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="amazon" checked onchange="updateForecastFilter('marketplace')"> Amazon</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="shopify" checked onchange="updateForecastFilter('marketplace')"> Shopify</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="target" checked onchange="updateForecastFilter('marketplace')"> Target</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateForecastFilter('marketplace')"> Amazon</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Shopify" checked onchange="updateForecastFilter('marketplace')"> Shopify</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateForecastFilter('marketplace')"> Target</label>
                         </div>
                     </div>
 
@@ -659,10 +666,9 @@
                         </button>
                         <div class="forecast-dropdown-panel" data-filter="category">
                             <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'category')"> <strong>All</strong></label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Can Opener" checked onchange="updateForecastFilter('category')"> Can Opener</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked onchange="updateForecastFilter('category')"> Electric Can Opener</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Silicone Product" checked onchange="updateForecastFilter('category')"> Silicone Product</label>
                             <label class="forecast-checkbox-item"><input type="checkbox" value="Manual Opener" checked onchange="updateForecastFilter('category')"> Manual Opener</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Kitchen Tools" checked onchange="updateForecastFilter('category')"> Kitchen Tools</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Appliances" checked onchange="updateForecastFilter('category')"> Appliances</label>
                         </div>
                     </div>
 
@@ -676,9 +682,10 @@
                         <div class="forecast-dropdown-panel" data-filter="series">
                             <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'series')"> <strong>All</strong></label>
                             <label class="forecast-checkbox-item"><input type="checkbox" value="CO1100" checked onchange="updateForecastFilter('series')"> CO1100</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="EP2200" checked onchange="updateForecastFilter('series')"> EP2200</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="BL3300" checked onchange="updateForecastFilter('series')"> BL3300</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="GR4400" checked onchange="updateForecastFilter('series')"> GR4400</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="CO1150" checked onchange="updateForecastFilter('series')"> CO1150</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="SP3120" checked onchange="updateForecastFilter('series')"> SP3120</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="SP3410" checked onchange="updateForecastFilter('series')"> SP3410</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="MO5600" checked onchange="updateForecastFilter('series')"> MO5600</label>
                         </div>
                     </div>
 
@@ -889,9 +896,9 @@
                         </button>
                         <div class="ro-dropdown-panel" data-filter="marketplace">
                             <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'marketplace')"> <strong>All</strong></label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="amazon" checked onchange="updateRequestOrderFilter('marketplace')"> Amazon</label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="shopify" checked onchange="updateRequestOrderFilter('marketplace')"> Shopify</label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="target" checked onchange="updateRequestOrderFilter('marketplace')"> Target</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateRequestOrderFilter('marketplace')"> Amazon</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Shopify" checked onchange="updateRequestOrderFilter('marketplace')"> Shopify</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateRequestOrderFilter('marketplace')"> Target</label>
                         </div>
                     </div>
                     
@@ -903,9 +910,9 @@
                         </button>
                         <div class="ro-dropdown-panel" data-filter="category">
                             <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'category')"> <strong>All</strong></label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="Can Opener" checked onchange="updateRequestOrderFilter('category')"> Can Opener</label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="Kitchen Tools" checked onchange="updateRequestOrderFilter('category')"> Kitchen Tools</label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="Appliances" checked onchange="updateRequestOrderFilter('category')"> Appliances</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked onchange="updateRequestOrderFilter('category')"> Electric Can Opener</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Silicone Product" checked onchange="updateRequestOrderFilter('category')"> Silicone Product</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Manual Opener" checked onchange="updateRequestOrderFilter('category')"> Manual Opener</label>
                         </div>
                     </div>
                     
@@ -1067,9 +1074,9 @@
                         </button>
                         <div class="fc-dropdown-panel" data-filter="category">
                             <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'category')"> <strong>All</strong></label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Openers" checked onchange="updateFcFilter('category')"> Openers</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Kitchen Tools" checked onchange="updateFcFilter('category')"> Kitchen Tools</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Accessories" checked onchange="updateFcFilter('category')"> Accessories</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked onchange="updateFcFilter('category')"> Electric Can Opener</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Silicone Product" checked onchange="updateFcFilter('category')"> Silicone Product</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Manual Opener" checked onchange="updateFcFilter('category')"> Manual Opener</label>
                         </div>
                     </div>
                     <div class="filter-group filter-group--dropdown">
@@ -1080,8 +1087,11 @@
                         </button>
                         <div class="fc-dropdown-panel" data-filter="series">
                             <label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, 'series')"> <strong>All</strong></label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Classic" checked onchange="updateFcFilter('series')"> Classic</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Deluxe" checked onchange="updateFcFilter('series')"> Deluxe</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CO1100" checked onchange="updateFcFilter('series')"> CO1100</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CO1150" checked onchange="updateFcFilter('series')"> CO1150</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="SP3120" checked onchange="updateFcFilter('series')"> SP3120</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="SP3410" checked onchange="updateFcFilter('series')"> SP3410</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="MO5600" checked onchange="updateFcFilter('series')"> MO5600</label>
                         </div>
                     </div>
                     <div class="filter-group filter-group--dropdown">
@@ -1339,9 +1349,9 @@
                                 <div class="fc-form-group">
                                     <label>Category</label>
                                     <select id="add-category-input">
-                                        <option value="Openers">Openers</option>
-                                        <option value="Kitchen Tools">Kitchen Tools</option>
-                                        <option value="Accessories">Accessories</option>
+                                        <option value="Electric Can Opener">Electric Can Opener</option>
+                                        <option value="Silicone Product">Silicone Product</option>
+                                        <option value="Manual Opener">Manual Opener</option>
                                     </select>
                                 </div>
                             </div>
@@ -1349,8 +1359,11 @@
                                 <div class="fc-form-group">
                                     <label>Series</label>
                                     <select id="add-series-input">
-                                        <option value="Classic">Classic</option>
-                                        <option value="Deluxe">Deluxe</option>
+                                        <option value="CO1100">CO1100</option>
+                                        <option value="CO1150">CO1150</option>
+                                        <option value="SP3120">SP3120</option>
+                                        <option value="SP3410">SP3410</option>
+                                        <option value="MO5600">MO5600</option>
                                     </select>
                                 </div>
                                 <div class="fc-form-group">
@@ -1516,16 +1529,19 @@
                                     <div class="fc-form-group">
                                         <label>Category</label>
                                         <select id="event-category-input">
-                                            <option value="Openers">Openers</option>
-                                            <option value="Kitchen Tools">Kitchen Tools</option>
-                                            <option value="Accessories">Accessories</option>
+                                            <option value="Electric Can Opener">Electric Can Opener</option>
+                                            <option value="Silicone Product">Silicone Product</option>
+                                            <option value="Manual Opener">Manual Opener</option>
                                         </select>
                                     </div>
                                     <div class="fc-form-group">
                                         <label>Series</label>
                                         <select id="event-series-input">
-                                            <option value="Classic">Classic</option>
-                                            <option value="Deluxe">Deluxe</option>
+                                            <option value="CO1100">CO1100</option>
+                                            <option value="CO1150">CO1150</option>
+                                            <option value="SP3120">SP3120</option>
+                                            <option value="SP3410">SP3410</option>
+                                            <option value="MO5600">MO5600</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1595,16 +1611,19 @@
                                     <label>Category *</label>
                                     <select id="target-category-input">
                                         <option value="All">All</option>
-                                        <option value="Openers">Openers</option>
-                                        <option value="Kitchen Tools">Kitchen Tools</option>
-                                        <option value="Accessories">Accessories</option>
+                                        <option value="Electric Can Opener">Electric Can Opener</option>
+                                        <option value="Silicone Product">Silicone Product</option>
+                                        <option value="Manual Opener">Manual Opener</option>
                                     </select>
                                 </div>
                                 <div class="fc-form-group" id="target-series-group" style="display:none;">
                                     <label>Series *</label>
                                     <select id="target-series-input">
-                                        <option value="Classic">Classic</option>
-                                        <option value="Deluxe">Deluxe</option>
+                                        <option value="CO1100">CO1100</option>
+                                        <option value="CO1150">CO1150</option>
+                                        <option value="SP3120">SP3120</option>
+                                        <option value="SP3410">SP3410</option>
+                                        <option value="MO5600">MO5600</option>
                                     </select>
                                 </div>
                                 <div class="fc-form-group" id="target-sku-group" style="display:none;">

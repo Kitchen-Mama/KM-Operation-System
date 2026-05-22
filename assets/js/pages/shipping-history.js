@@ -12,8 +12,8 @@ const shippingHistoryMockData = [
         totalCost: 192175,
         unitCost: 2.5,
         skus: [
-            { sku: "A001", qty: 40000 },
-            { sku: "B002", qty: 36870 }
+            { sku: "CO1100-R", qty: 40000 },
+            { sku: "CO1100-S", qty: 36870 }
         ]
     },
     {
@@ -27,7 +27,7 @@ const shippingHistoryMockData = [
         totalCost: 42000,
         unitCost: 3.5,
         skus: [
-            { sku: "C003", qty: 12000 }
+            { sku: "CO1150-R", qty: 12000 }
         ]
     },
     {
@@ -41,8 +41,8 @@ const shippingHistoryMockData = [
         totalCost: 80000,
         unitCost: 3.2,
         skus: [
-            { sku: "D004", qty: 15000 },
-            { sku: "E005", qty: 10000 }
+            { sku: "CO1150-AG", qty: 15000 },
+            { sku: "SP3120-R", qty: 10000 }
         ]
     },
     {
@@ -56,8 +56,8 @@ const shippingHistoryMockData = [
         totalCost: 125000,
         unitCost: 2.5,
         skus: [
-            { sku: "A001", qty: 30000 },
-            { sku: "F006", qty: 20000 }
+            { sku: "CO1100-R", qty: 30000 },
+            { sku: "SP3410-R", qty: 20000 }
         ]
     },
     {
@@ -71,7 +71,7 @@ const shippingHistoryMockData = [
         totalCost: 25000,
         unitCost: 5.0,
         skus: [
-            { sku: "B002", qty: 5000 }
+            { sku: "CO1100-S", qty: 5000 }
         ]
     },
     {
@@ -85,8 +85,8 @@ const shippingHistoryMockData = [
         totalCost: 200000,
         unitCost: 2.5,
         skus: [
-            { sku: "A001", qty: 50000 },
-            { sku: "D004", qty: 30000 }
+            { sku: "CO1100-R", qty: 50000 },
+            { sku: "CO1150-AG", qty: 30000 }
         ]
     }
 ];

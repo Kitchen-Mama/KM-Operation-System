@@ -310,10 +310,10 @@ function generateMockRequestOrderData() {
   
   // 如果沒有 FC 數據，使用預設 SKU
   if (uniqueSkus.size === 0) {
-    const series = ['Classic', 'Deluxe'];
+    const series = ['CO1100', 'CO1150'];
     const countries = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
     const marketplaces = ['amazon', 'shopify', 'target'];
-    const categories = ['Can Opener', 'Kitchen Tools', 'Appliances'];
+    const categories = ['Can Opener', 'Silicone Product', 'Appliances'];
     
     for (let i = 1; i <= 10; i++) {
       uniqueSkus.set(`SKU-${String(i).padStart(3, '0')}`, {
@@ -356,10 +356,10 @@ function generateMockRequestOrderData() {
     // 靜態庫存數據（前10個SKU的Amazon庫存設為10，前5個SKU的CN和TW也設為10，方便驗證計算）
     const siteStock = index < 10 ? 10 : rand(1000, 3000, 1);
     const siteOnTheWay = rand(0, 500, 2);
-    const overseasStock = index === 0 ? 100 : rand(200, 800, 3); // KM-OP-001 固定為 100
+    const overseasStock = index === 0 ? 100 : rand(200, 800, 3); // CO1100-R 固定為 100
     const overseasOnTheWay = 0;
-    const thisMonthOngoingOrder = index === 0 ? 200 : rand(200, 800, 6); // KM-OP-001 固定為 200
-    const nextMonthOngoingOrder = index === 0 ? 300 : rand(300, 1000, 7); // KM-OP-001 固定為 300
+    const thisMonthOngoingOrder = index === 0 ? 200 : rand(200, 800, 6); // CO1100-R 固定為 200
+    const nextMonthOngoingOrder = index === 0 ? 300 : rand(300, 1000, 7); // CO1100-R 固定為 300
     const fcAllocationRatio = 0.3; // TODO: Stage 3 需實作真實計算
     
     // 從 Factory Stock 頁面獲取該 SKU 該子公司的工廠總庫存

@@ -1385,11 +1385,11 @@ const fcSkuDecisionState = {
 // Mock data generator
 function generateMockFcSkuDecisionData() {
   const skus = [
-    { sku: 'KM-OP-001', name: 'Can Opener Classic', series: 'Classic', category: 'Openers' },
-    { sku: 'KM-OP-002', name: 'Can Opener Deluxe', series: 'Deluxe', category: 'Openers' },
-    { sku: 'KM-KT-001', name: 'Kitchen Tool Set', series: 'Classic', category: 'Kitchen Tools' },
-    { sku: 'KM-KT-002', name: 'Kitchen Tool Pro', series: 'Deluxe', category: 'Kitchen Tools' },
-    { sku: 'KM-AC-001', name: 'Accessory Pack', series: 'Classic', category: 'Accessories' },
+    { sku: 'CO1100-R', name: 'Can Opener Classic', series: 'CO1100', category: 'Electric Can Opener' },
+    { sku: 'CO1100-S', name: 'Can Opener Deluxe', series: 'CO1150', category: 'Electric Can Opener' },
+    { sku: 'SP3120-M', name: 'Kitchen Tool Set', series: 'CO1100', category: 'Silicone Product' },
+    { sku: 'SP3120-B', name: 'Kitchen Tool Pro', series: 'CO1150', category: 'Silicone Product' },
+    { sku: 'CO1150-N', name: 'Accessory Pack', series: 'CO1100', category: 'Manual Opener' },
   ];
   
   return skus.map(sku => ({
