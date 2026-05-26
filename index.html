@@ -18,6 +18,7 @@
     <link rel="stylesheet" href="assets/css/pages/shipping-plan.css">
     <link rel="stylesheet" href="assets/css/pages/shipping-history.css">
     <link rel="stylesheet" href="assets/css/pages/supply-chain-canvas.css">
+    <link rel="stylesheet" href="assets/css/pages/sku-handbook.css">
     <link rel="stylesheet" href="assets/css/pages/campaign-risk.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -88,10 +89,6 @@
                 <span class="menu-icon">🚢</span><span class="menu-label">Shipping Management</span>
                 <span class="stage-badge">Stage 2</span>
             </div>
-            <div class="menu-item" onclick="showSection('supplychain')" title="Supply Chain Canvas">
-                <span class="menu-icon">🗺️</span><span class="menu-label">Supply Chain Canvas</span>
-            </div>
-            
             <!-- Campaign Performance 父子選單 -->
             <div class="menu-parent"
                  data-menu-id="campaign"
@@ -103,6 +100,24 @@
                 <div class="menu-item"
                      onclick="showSection('campaign-risk')" title="Promotion Risk Tracker">
                     <span class="menu-label">Promotion Risk Tracker</span>
+                </div>
+            </div>
+            
+            <!-- Training Center 父子選單 -->
+            <div class="menu-parent"
+                 data-menu-id="training"
+                 onclick="toggleMenu('training')" title="Training Center">
+                <span class="menu-icon">🎓</span><span class="menu-label">Training Center</span>
+            </div>
+            <div class="menu-children"
+                 data-parent="training">
+                <div class="menu-item"
+                     onclick="showSection('sku-handbook')" title="SKU Handbook">
+                    <span class="menu-label">SKU Handbook</span>
+                </div>
+                <div class="menu-item"
+                     onclick="showSection('supplychain')" title="Supply Chain Canvas">
+                    <span class="menu-label">Supply Chain Canvas</span>
                 </div>
             </div>
         </nav>
@@ -1688,6 +1703,8 @@
         <div class="sku-toolbar">
             <button class="btn-add-sku" onclick="handleAddSku()">+ Add SKU</button>
             <input type="text" id="skuSearchInput" class="sku-search" placeholder="Search SKU..." oninput="handleSkuSearch()">
+            <button class="btn-add-sku" onclick="handleExportStatusTemplate()" style="background:#3b82f6;">Export Template</button>
+            <button class="btn-add-sku" onclick="handleImportStatusTemplate()" style="background:#8b5cf6;">Import Template</button>
             <div class="display-dropdown">
                 <button class="btn-display" onclick="toggleDisplayPanel()">Display ▼</button>
                 <div class="display-panel" id="displayPanel">
@@ -1864,7 +1881,48 @@
                 </div>
             </div>
         </div>
-    </div>
+        </div>
+        
+        <!-- Closure -->
+        <div class="sku-lifecycle-section" data-section="closure">
+            <h3 class="sku-section-header" onclick="toggleSection('closure')">
+                <span class="arrow">▼</span> Closure
+            </h3>
+            <div class="dual-layer-table">
+                <div class="table-header-bar">
+                    <div class="fixed-header"><div class="header-cell">SKU</div></div>
+                    <div class="scroll-header-viewport">
+                        <div class="scroll-header">
+                            <div class="header-cell" data-col="1">Image</div>
+                            <div class="header-cell" data-col="2">Status</div>
+                            <div class="header-cell" data-col="3">Product Name</div>
+                            <div class="header-cell" data-col="4">Series</div>
+                            <div class="header-cell" data-col="5">Category</div>
+                            <div class="header-cell" data-col="6">GS1 Code</div>
+                            <div class="header-cell" data-col="7">GS1 Type</div>
+                            <div class="header-cell" data-col="8">AMZ ASIN</div>
+                            <div class="header-cell" data-col="9">Item Dimensions</div>
+                            <div class="header-cell" data-col="10">Item Weight</div>
+                            <div class="header-cell" data-col="11">Package</div>
+                            <div class="header-cell" data-col="12">Package Weight</div>
+                            <div class="header-cell" data-col="13">Carton Dimensions</div>
+                            <div class="header-cell" data-col="14">Carton Weight</div>
+                            <div class="header-cell" data-col="15">單箱數量</div>
+                            <div class="header-cell" data-col="16">HScode</div>
+                            <div class="header-cell" data-col="17">申報價值</div>
+                            <div class="header-cell" data-col="18">Minimum Price</div>
+                            <div class="header-cell" data-col="19">MSRP</div>
+                            <div class="header-cell" data-col="20">Selling Price</div>
+                            <div class="header-cell" data-col="21">負責 PM</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-body-bar">
+                    <div class="fixed-col"><div class="fixed-body" id="closureFixedBody"></div></div>
+                    <div class="scroll-col"><div class="scroll-body" id="closureScrollBody"></div></div>
+                </div>
+            </div>
+        </div>
             </section>
             
             <!-- Shipping Plan Section -->
@@ -2022,6 +2080,49 @@
                 <div class="cr-pagination" id="cr-pagination"></div>
             </section>
 
+            <!-- SKU Handbook Section -->
+            <section id="sku-handbook-section" class="module-section">
+                <div class="skuh-header">
+                    <h2>SKU Handbook</h2>
+                    <p>Learn product lines, SKU codes, lifecycle status, and key product knowledge.</p>
+                    <div class="skuh-stats" id="skuh-stats"></div>
+                </div>
+                <div class="skuh-info-card">
+                    <strong>How to use this handbook</strong>
+                    Browse products by lifecycle, product line, and series. Click a SKU card to review product images, specs, and key selling points. Use search when you already know the SKU or product name.
+                </div>
+                <div class="skuh-filters">
+                    <div class="skuh-filter">
+                        <label>Search</label>
+                        <input type="text" id="skuh-filter-search" placeholder="Search product name or SKU...">
+                    </div>
+                    <div class="skuh-filter">
+                        <label>Product Line</label>
+                        <select id="skuh-filter-productline"><option value="all">All Product Lines</option></select>
+                    </div>
+                    <div class="skuh-filter">
+                        <label>Brand</label>
+                        <select id="skuh-filter-brand"><option value="all">All Brands</option></select>
+                    </div>
+                    <div class="skuh-filter">
+                        <label>Lifecycle</label>
+                        <select id="skuh-filter-lifecycle">
+                            <option value="all">All Lifecycle</option>
+                            <option value="Upcoming SKU">Upcoming SKU</option>
+                            <option value="Running in the market">Running in the market</option>
+                            <option value="Phasing Out">Phasing Out</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="skuh-content"></div>
+                <div class="skuh-modal-overlay" id="skuh-modal-overlay" onclick="closeSkuDetailModal()">
+                    <div class="skuh-modal" onclick="event.stopPropagation()">
+                        <button class="skuh-modal-close" onclick="closeSkuDetailModal()">&times;</button>
+                        <div id="skuh-modal-body"></div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Supply Chain Canvas Section -->
             <section id="supplychain-section" class="module-section is-hidden">
 
@@ -2158,6 +2259,7 @@
     
     <!-- Utils -->
     <script src="assets/js/utils/forecast-engine.js"></script>
+    <script src="assets/js/utils/sku-overrides.js"></script>
     <script src="assets/js/utils/data.js"></script>
     <script src="assets/js/utils/scroll-sync.js"></script>
     
@@ -2172,6 +2274,7 @@
     <script src="assets/js/pages/shipping-plan.js"></script>
     <script src="assets/js/pages/shipping-history.js"></script>
     <script src="assets/js/pages/supplychain.js"></script>
+    <script src="assets/js/pages/sku-handbook.js"></script>
     <script src="assets/js/pages/campaign-risk.js"></script>
     
     <!-- App (Global) -->

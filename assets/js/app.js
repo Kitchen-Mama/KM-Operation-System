@@ -61,6 +61,7 @@ function showSection(section) {
             'fc-summary': 'fc-summary-section',
             'skuDetails': 'sku-section',
             'supplychain': 'supplychain-section',
+            'sku-handbook': 'sku-handbook-section',
             'shippingplan': 'shippingplan-section',
             'shippinghistory': 'shippinghistory-section',
             'campaign-risk': 'campaign-risk-section'
@@ -81,6 +82,7 @@ function showSection(section) {
         'fc-summary': 'fc-summary-section',
         'skuDetails': 'sku-section',
         'supplychain': 'supplychain-section',
+        'sku-handbook': 'sku-handbook-section',
         'shippingplan': 'shippingplan-section',
         'shippinghistory': 'shippinghistory-section',
         'campaign-risk': 'campaign-risk-section'
@@ -146,6 +148,13 @@ function showSection(section) {
         setTimeout(() => {
             if (window.CanvasController) {
                 window.CanvasController.init();
+            }
+        }, 100);
+    }
+    if (section === 'sku-handbook') {
+        setTimeout(() => {
+            if (window.initSkuHandbook) {
+                window.initSkuHandbook();
             }
         }, 100);
     }

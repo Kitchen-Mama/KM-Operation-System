@@ -230,3 +230,19 @@
 #sku-section .sku-unified-scroll-content {
     height: 1px;
 }
+
+
+/* SKU Status Dropdown */
+#sku-section .sku-status-dropdown {
+    padding: 2px 4px;
+    border: 1px solid var(--border-light, #e2e8f0);
+    border-radius: 4px;
+    font-size: 11px;
+    background: white;
+    cursor: pointer;
+    max-width: 100%;
+}
+#sku-section .sku-status-dropdown:focus {
+    outline: 2px solid var(--warm-orange, #FF8C42);
+    outline-offset: -1px;
+}

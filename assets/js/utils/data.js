@@ -135,6 +135,29 @@ function getSkuSeriesMap() {
     return map;
 }
 
+// Homepage data (events, goal, announcements, etc.)
+const events = [
+    { name: 'Prime Day', startDate: '2026-07-15', endDate: '2026-07-16', type: 'major' },
+    { name: 'Fall Prime', startDate: '2026-10-08', endDate: '2026-10-09', type: 'major' },
+    { name: 'BFCM', startDate: '2026-11-27', endDate: '2026-12-02', type: 'major' },
+    { name: 'Spring Sale', startDate: '2026-03-20', endDate: '2026-03-27', type: 'seasonal' }
+];
+
+const goalData = { year: 2026, goalAmount: 5000000, salesAmount: 1250000 };
+
+const announcements = [
+    { id: 1, title: 'Q2 Forecast Review Meeting', date: '2026-04-15', priority: 'high' },
+    { id: 2, title: 'New SKU Launch: CO1150-ZW', date: '2026-04-20', priority: 'medium' },
+    { id: 3, title: 'Shipping Rate Update', date: '2026-04-10', priority: 'low' }
+];
+
+const urgentIssues = [
+    { id: 1, title: 'CO1100-R US Amazon stock below 7 days', severity: 'critical' },
+    { id: 2, title: 'SP3120-R shipment delayed', severity: 'warning' }
+];
+
+const personalTodos = [];
+
 const DataRepo = {
     getItemBySku(sku) {
         const item = items.find(item => item.sku === sku);
