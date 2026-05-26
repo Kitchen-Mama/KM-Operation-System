@@ -410,3 +410,29 @@
         padding: 16px;
     }
 }
+
+/* Product Knowledge Lists */
+#sku-handbook-section .skuh-modal-list {
+    margin: 6px 0 0 0;
+    padding-left: 20px;
+    font-size: 0.8125rem;
+    color: #374151;
+    line-height: 1.6;
+}
+#sku-handbook-section .skuh-modal-list li {
+    margin-bottom: 3px;
+}
+#sku-handbook-section .skuh-modal-subsection {
+    margin-bottom: 12px;
+    font-size: 0.8125rem;
+}
+#sku-handbook-section .skuh-modal-subsection strong {
+    color: #1f2937;
+    font-size: 0.8125rem;
+}
+#sku-handbook-section .skuh-modal-desc {
+    font-size: 0.875rem;
+    color: #4b5563;
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+}

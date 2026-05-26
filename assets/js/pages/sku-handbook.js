@@ -46,16 +46,80 @@ function normalizeSkuHandbookItem(item, lifecycleGroup) {
 
 function getSkuHandbookData() {
     const all = [];
-    (window.upcomingSkuData || []).forEach(item => {
-        all.push(normalizeSkuHandbookItem(item, 'Upcoming SKU'));
-    });
-    (window.runningSkuData || []).forEach(item => {
-        all.push(normalizeSkuHandbookItem(item, 'Running in the market'));
-    });
-    (window.phasingOutSkuData || []).forEach(item => {
-        all.push(normalizeSkuHandbookItem(item, 'Phasing Out'));
-    });
+    // Use override system to include imported SKUs
+    if (window.getAllSkuDataWithOverrides) {
+        const groups = getAllSkuDataWithOverrides();
+        Object.entries(groups).forEach(([lifecycle, items]) => {
+            items.forEach(item => {
+                const normalized = normalizeSkuHandbookItem(item, lifecycle);
+                // Enrich with product knowledge
+                const knowledge = getProductKnowledge(item.sku, item.series, item.category);
+                Object.assign(normalized, knowledge);
+                all.push(normalized);
+            });
+        });
+    } else {
+        (window.upcomingSkuData || []).forEach(item => {
+            all.push(normalizeSkuHandbookItem(item, 'Upcoming SKU'));
+        });
+        (window.runningSkuData || []).forEach(item => {
+            all.push(normalizeSkuHandbookItem(item, 'Running in the market'));
+        });
+        (window.phasingOutSkuData || []).forEach(item => {
+            all.push(normalizeSkuHandbookItem(item, 'Phasing Out'));
+        });
+    }
     return all;
+}
+
+// Product knowledge database - based on Kitchen Mama brand
+const PRODUCT_KNOWLEDGE = {
+    'CO1100': {
+        shortDescription: 'One-touch automatic electric can opener. Smooth edge cutting, no sharp edges. Ergonomic design for easy grip.',
+        keyFeatures: 'One-touch operation|Smooth edge cutting (no sharp edges)|Ergonomic soft-grip handle|Battery powered (4x AA)|Works on most standard cans|Auto-stop when complete|Compact & portable',
+        sellingPoints: 'Safest can opener for families with kids|No hand strain - perfect for seniors & arthritis|Opens cans in seconds with one button|No sharp edges on lid or can|#1 Best Seller on Amazon',
+        useCases: 'Daily kitchen use|Elderly & arthritis-friendly|Camping & outdoor|Gift for parents/grandparents|RV & boat kitchens',
+        material: 'ABS Plastic + Stainless Steel Blade'
+    },
+    'CO1150': {
+        shortDescription: 'Auto 2.0 - upgraded electric can opener with improved motor, faster cutting speed, and modern colorways.',
+        keyFeatures: 'Upgraded 2.0 motor (30% faster)|One-touch smooth edge cutting|New trendy color options|Improved battery life|Universal fit for standard cans|Auto-stop mechanism|Magnetic lid holder',
+        sellingPoints: 'Next-gen upgrade from best-selling CO1100|Faster opening speed|Premium color options for modern kitchens|Same safety features families love|Great for gifting',
+        useCases: 'Daily kitchen use|Modern kitchen aesthetic|Upgrade from CO1100|Holiday gift sets|Housewarming gifts',
+        material: 'ABS Plastic + Stainless Steel Blade'
+    },
+    'SP3120': {
+        shortDescription: 'Waltzgrip silicone basting brushes with ergonomic handle. Heat-resistant, BPA-free, dishwasher safe.',
+        keyFeatures: 'Heat resistant up to 480°F/250°C|BPA-free food-grade silicone|Ergonomic Waltzgrip handle|Dishwasher safe|No bristle shedding|Even sauce distribution|Hanging hole for storage',
+        sellingPoints: 'Won\'t shed bristles like traditional brushes|Safe for non-stick cookware|Easy to clean - dishwasher safe|Comfortable grip reduces hand fatigue|Vibrant colors to match any kitchen',
+        useCases: 'BBQ & grilling|Baking (egg wash, butter)|Marinading meats|Oiling pans|Sauce application',
+        material: 'Food-grade Silicone + PP Handle'
+    },
+    'SP3410': {
+        shortDescription: 'Waltzgrip silicone pancake turner/spatula. Flexible, heat-resistant, perfect for flipping delicate foods.',
+        keyFeatures: 'Thin flexible edge for easy sliding|Heat resistant up to 480°F/250°C|BPA-free food-grade silicone|Safe for non-stick cookware|Ergonomic Waltzgrip handle|Wide surface area|Dishwasher safe',
+        sellingPoints: 'Perfect flip every time - thin flexible edge|Won\'t scratch non-stick pans|Comfortable grip for extended cooking|Easy to clean|Great for pancakes, eggs, fish, burgers',
+        useCases: 'Pancakes & crepes|Eggs (fried, omelettes)|Fish fillets|Burgers & patties|Cookies & baking',
+        material: 'Food-grade Silicone + PP Handle'
+    },
+    'MO5600': {
+        shortDescription: 'Manual can opener with smooth edge cutting technology. No electricity needed, portable and reliable.',
+        keyFeatures: 'Smooth edge cut (no sharp edges)|Manual operation - no batteries needed|Heavy-duty stainless steel blade|Ergonomic soft-grip handles|Built-in bottle opener|Compact & lightweight|Rust-resistant',
+        sellingPoints: 'Safe smooth edge - no cuts|Always works - no batteries or charging|Durable stainless steel construction|Comfortable even for extended use|Multi-function with bottle opener',
+        useCases: 'Emergency preparedness|Camping & hiking|RV & boat|Power outage backup|Everyday kitchen use',
+        material: 'Stainless Steel + TPR Soft Grip Handle'
+    }
+};
+
+function getProductKnowledge(sku, series, category) {
+    const knowledge = PRODUCT_KNOWLEDGE[series] || {};
+    return {
+        shortDescription: knowledge.shortDescription || '',
+        keyFeatures: knowledge.keyFeatures || '',
+        sellingPoints: knowledge.sellingPoints || '',
+        useCases: knowledge.useCases || '',
+        material: knowledge.material || ''
+    };
 }
 
 function applySkuHandbookFilters(items) {
@@ -264,11 +328,11 @@ function renderSkuDetailModal(item) {
         </div>
         <div class="skuh-modal-section">
             <h4>Product Knowledge</h4>
-            <div class="skuh-modal-row"><span>Description</span><span>${item.shortDescription || 'Not provided yet'}</span></div>
-            <div class="skuh-modal-row"><span>Key Features</span><span>${item.keyFeatures || 'Not provided yet'}</span></div>
-            <div class="skuh-modal-row"><span>Selling Points</span><span>${item.sellingPoints || 'Not provided yet'}</span></div>
-            <div class="skuh-modal-row"><span>Use Cases</span><span>${item.useCases || 'Not provided yet'}</span></div>
-            <div class="skuh-modal-row"><span>Notes</span><span>${item.notes || 'Not provided yet'}</span></div>
+            ${item.shortDescription ? '<div class="skuh-modal-row"><span>Description</span><span>' + item.shortDescription + '</span></div>' : ''}
+            ${item.keyFeatures ? '<div class="skuh-modal-subsection"><strong>Key Features</strong><ul class="skuh-modal-list">' + item.keyFeatures.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
+            ${item.sellingPoints ? '<div class="skuh-modal-subsection"><strong>Selling Points</strong><ul class="skuh-modal-list">' + item.sellingPoints.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
+            ${item.useCases ? '<div class="skuh-modal-subsection"><strong>Use Cases</strong><ul class="skuh-modal-list">' + item.useCases.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
+            ${item.notes ? '<div class="skuh-modal-row"><span>Notes</span><span>' + item.notes + '</span></div>' : ''}
         </div>
     `;
 }
