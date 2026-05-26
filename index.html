@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
     <title>Kitchen Mama Operation System</title>
@@ -1705,6 +1705,7 @@
             <input type="text" id="skuSearchInput" class="sku-search" placeholder="Search SKU..." oninput="handleSkuSearch()">
             <button class="btn-add-sku" onclick="handleExportStatusTemplate()" style="background:#3b82f6;">Export Template</button>
             <button class="btn-add-sku" onclick="handleImportStatusTemplate()" style="background:#8b5cf6;">Import Template</button>
+            <button class="btn-add-sku sku-unit-toggle" onclick="toggleSkuUnits()" style="background:#0891b2;">CM/KG ↔ IN/LB</button>
             <div class="display-dropdown">
                 <button class="btn-display" onclick="toggleDisplayPanel()">Display ▼</button>
                 <div class="display-panel" id="displayPanel">
@@ -1718,12 +1719,12 @@
                     <label><input type="checkbox" class="col-checkbox" data-col="6" checked onchange="toggleColumn(6)"> GS1 Code</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="7" checked onchange="toggleColumn(7)"> GS1 Type</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="8" checked onchange="toggleColumn(8)"> AMZ ASIN</label>
-                    <label><input type="checkbox" class="col-checkbox" data-col="9" checked onchange="toggleColumn(9)"> Item Dimensions</label>
-                    <label><input type="checkbox" class="col-checkbox" data-col="10" checked onchange="toggleColumn(10)"> Item Weight</label>
-                    <label><input type="checkbox" class="col-checkbox" data-col="11" checked onchange="toggleColumn(11)"> Package</label>
-                    <label><input type="checkbox" class="col-checkbox" data-col="12" checked onchange="toggleColumn(12)"> Package Weight</label>
-                    <label><input type="checkbox" class="col-checkbox" data-col="13" checked onchange="toggleColumn(13)"> Carton Dimensions</label>
-                    <label><input type="checkbox" class="col-checkbox" data-col="14" checked onchange="toggleColumn(14)"> Carton Weight</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="9" checked onchange="toggleColumn(9)"> Item DM</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="10" checked onchange="toggleColumn(10)"> Item WT</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="11" checked onchange="toggleColumn(11)"> Package DM</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="12" checked onchange="toggleColumn(12)"> Package WT</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="13" checked onchange="toggleColumn(13)"> Carton DM</label>
+                    <label><input type="checkbox" class="col-checkbox" data-col="14" checked onchange="toggleColumn(14)"> Carton WT</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="15" checked onchange="toggleColumn(15)"> 單箱數量</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="16" checked onchange="toggleColumn(16)"> HScode</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="17" checked onchange="toggleColumn(17)"> 申報價值</label>
@@ -1756,12 +1757,12 @@
                             <div class="header-cell" data-col="6">GS1 Code</div>
                             <div class="header-cell" data-col="7">GS1 Type</div>
                             <div class="header-cell" data-col="8">AMZ ASIN</div>
-                            <div class="header-cell" data-col="9">Item Dimensions</div>
-                            <div class="header-cell" data-col="10">Item Weight</div>
-                            <div class="header-cell" data-col="11">Package</div>
-                            <div class="header-cell" data-col="12">Package Weight</div>
-                            <div class="header-cell" data-col="13">Carton Dimensions</div>
-                            <div class="header-cell" data-col="14">Carton Weight</div>
+                            <div class="header-cell" data-col="9">Item DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="10">Item WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="11">Package DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="12">Package WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="13">Carton DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="14">Carton WT <span class="unit-label">(KG)</span></div>
                             <div class="header-cell" data-col="15">單箱數量</div>
                             <div class="header-cell" data-col="16">HScode</div>
                             <div class="header-cell" data-col="17">申報價值</div>
@@ -1805,12 +1806,12 @@
                             <div class="header-cell" data-col="6">GS1 Code</div>
                             <div class="header-cell" data-col="7">GS1 Type</div>
                             <div class="header-cell" data-col="8">AMZ ASIN</div>
-                            <div class="header-cell" data-col="9">Item Dimensions</div>
-                            <div class="header-cell" data-col="10">Item Weight</div>
-                            <div class="header-cell" data-col="11">Package</div>
-                            <div class="header-cell" data-col="12">Package Weight</div>
-                            <div class="header-cell" data-col="13">Carton Dimensions</div>
-                            <div class="header-cell" data-col="14">Carton Weight</div>
+                            <div class="header-cell" data-col="9">Item DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="10">Item WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="11">Package DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="12">Package WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="13">Carton DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="14">Carton WT <span class="unit-label">(KG)</span></div>
                             <div class="header-cell" data-col="15">單箱數量</div>
                             <div class="header-cell" data-col="16">HScode</div>
                             <div class="header-cell" data-col="17">申報價值</div>
@@ -1854,12 +1855,12 @@
                             <div class="header-cell" data-col="6">GS1 Code</div>
                             <div class="header-cell" data-col="7">GS1 Type</div>
                             <div class="header-cell" data-col="8">AMZ ASIN</div>
-                            <div class="header-cell" data-col="9">Item Dimensions</div>
-                            <div class="header-cell" data-col="10">Item Weight</div>
-                            <div class="header-cell" data-col="11">Package</div>
-                            <div class="header-cell" data-col="12">Package Weight</div>
-                            <div class="header-cell" data-col="13">Carton Dimensions</div>
-                            <div class="header-cell" data-col="14">Carton Weight</div>
+                            <div class="header-cell" data-col="9">Item DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="10">Item WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="11">Package DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="12">Package WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="13">Carton DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="14">Carton WT <span class="unit-label">(KG)</span></div>
                             <div class="header-cell" data-col="15">單箱數量</div>
                             <div class="header-cell" data-col="16">HScode</div>
                             <div class="header-cell" data-col="17">申報價值</div>
@@ -1901,12 +1902,12 @@
                             <div class="header-cell" data-col="6">GS1 Code</div>
                             <div class="header-cell" data-col="7">GS1 Type</div>
                             <div class="header-cell" data-col="8">AMZ ASIN</div>
-                            <div class="header-cell" data-col="9">Item Dimensions</div>
-                            <div class="header-cell" data-col="10">Item Weight</div>
-                            <div class="header-cell" data-col="11">Package</div>
-                            <div class="header-cell" data-col="12">Package Weight</div>
-                            <div class="header-cell" data-col="13">Carton Dimensions</div>
-                            <div class="header-cell" data-col="14">Carton Weight</div>
+                            <div class="header-cell" data-col="9">Item DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="10">Item WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="11">Package DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="12">Package WT <span class="unit-label">(KG)</span></div>
+                            <div class="header-cell" data-col="13">Carton DM <span class="unit-label">(CM)</span></div>
+                            <div class="header-cell" data-col="14">Carton WT <span class="unit-label">(KG)</span></div>
                             <div class="header-cell" data-col="15">單箱數量</div>
                             <div class="header-cell" data-col="16">HScode</div>
                             <div class="header-cell" data-col="17">申報價值</div>
@@ -2083,8 +2084,16 @@
             <!-- SKU Handbook Section -->
             <section id="sku-handbook-section" class="module-section">
                 <div class="skuh-header">
-                    <h2>SKU Handbook</h2>
-                    <p>Learn product lines, SKU codes, lifecycle status, and key product knowledge.</p>
+                    <div class="skuh-header-top">
+                        <div>
+                            <h2 id="skuh-title">SKU Handbook</h2>
+                            <p id="skuh-subtitle">Learn product lines, SKU codes, lifecycle status, and key product knowledge.</p>
+                        </div>
+                        <div class="skuh-lang-toggle">
+                            <button class="skuh-lang-btn" data-lang="en" onclick="setSkuhLang('en')">EN</button>
+                            <button class="skuh-lang-btn" data-lang="zh" onclick="setSkuhLang('zh')">中文</button>
+                        </div>
+                    </div>
                     <div class="skuh-stats" id="skuh-stats"></div>
                 </div>
                 <div class="skuh-info-card">
@@ -2259,6 +2268,7 @@
     
     <!-- Utils -->
     <script src="assets/js/utils/forecast-engine.js"></script>
+    <script src="assets/js/utils/i18n.js"></script>
     <script src="assets/js/utils/sku-overrides.js"></script>
     <script src="assets/js/utils/data.js"></script>
     <script src="assets/js/utils/scroll-sync.js"></script>
@@ -2275,6 +2285,7 @@
     <script src="assets/js/pages/shipping-history.js"></script>
     <script src="assets/js/pages/supplychain.js"></script>
     <script src="assets/js/pages/sku-handbook.js"></script>
+    <script src="assets/js/i18n/sku-handbook.js"></script>
     <script src="assets/js/pages/campaign-risk.js"></script>
     
     <!-- App (Global) -->

@@ -50,7 +50,7 @@ function setSkuImageOverride(sku, imageUrl) {
 // Map original status to normalized lifecycle
 function mapStatusToLifecycle(status) {
     if (!status) return 'Running in the Market';
-    const s = status.toLowerCase();
+    var s = status.toLowerCase();
     if (s === 'upcoming' || s === 'upcoming sku') return 'Upcoming SKU';
     if (s === 'active' || s === 'running' || s === 'running in the market') return 'Running in the Market';
     if (s === 'phasing out' || s === 'phasing') return 'Phasing Out';
@@ -114,7 +114,7 @@ function getAllSkuDataWithOverrides() {
 // CSV Export - Full SKU template
 function exportSkuStatusTemplate() {
     const groups = getAllSkuDataWithOverrides();
-    const headers = ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_dimensions','item_weight','package','package_weight','carton_dimensions','carton_weight','units_per_carton','hscode','declared_value','minimum_price','msrp','selling_price','pm'];
+    const headers = ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_dimensions','item_weight','package_dimensions','package_weight','carton_dimensions','carton_weight','units_per_carton','hscode','declared_value','minimum_price','msrp','selling_price','pm'];
     const rows = [headers];
 
     Object.entries(groups).forEach(([lifecycle, items]) => {
@@ -132,7 +132,7 @@ function exportSkuStatusTemplate() {
                 item.amzAsin || '',
                 item.itemDimensions || '',
                 item.itemWeight || '',
-                item.package || '',
+                item.package || item.packageDimensions || '',
                 item.packageWeight || '',
                 item.cartonDimensions || '',
                 item.cartonWeight || '',
@@ -193,7 +193,8 @@ function importSkuStatusTemplate(file) {
                 'amz_asin': 'amzAsin',
                 'item_dimensions': 'itemDimensions',
                 'item_weight': 'itemWeight',
-                'package': 'package',
+                'package_dimensions': 'packageDimensions',
+                'package': 'packageDimensions',
                 'package_weight': 'packageWeight',
                 'carton_dimensions': 'cartonDimensions',
                 'carton_weight': 'cartonWeight',
@@ -267,7 +268,7 @@ function importSkuStatusTemplate(file) {
                         amzAsin: record.amzAsin || '',
                         itemDimensions: record.itemDimensions || '',
                         itemWeight: record.itemWeight || '',
-                        package: record.package || '',
+                        packageDimensions: record.packageDimensions || '',
                         packageWeight: record.packageWeight || '',
                         cartonDimensions: record.cartonDimensions || '',
                         cartonWeight: record.cartonWeight || '',

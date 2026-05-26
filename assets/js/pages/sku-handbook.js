@@ -74,45 +74,219 @@ function getSkuHandbookData() {
 
 // Product knowledge database - based on Kitchen Mama brand
 const PRODUCT_KNOWLEDGE = {
+    // === Electric Can Openers ===
     'CO1100': {
-        shortDescription: 'One-touch automatic electric can opener. Smooth edge cutting, no sharp edges. Ergonomic design for easy grip.',
-        keyFeatures: 'One-touch operation|Smooth edge cutting (no sharp edges)|Ergonomic soft-grip handle|Battery powered (4x AA)|Works on most standard cans|Auto-stop when complete|Compact & portable',
-        sellingPoints: 'Safest can opener for families with kids|No hand strain - perfect for seniors & arthritis|Opens cans in seconds with one button|No sharp edges on lid or can|#1 Best Seller on Amazon',
+        shortDescription: 'One-touch automatic electric can opener. Smooth edge cutting, no sharp edges. The original Kitchen Mama best-seller.',
+        keyFeatures: 'One-touch operation|Smooth edge cutting (no sharp edges)|Ergonomic soft-grip handle|Battery powered (4x AA)|Works on most standard cans|Auto-stop when complete|Compact & portable|Lid lifts off with magnet',
+        sellingPoints: 'Safest can opener for families with kids|No hand strain - perfect for seniors & arthritis|Opens cans in seconds with one button|No sharp edges on lid or can|#1 Best Seller on Amazon|Over 100,000+ 5-star reviews',
         useCases: 'Daily kitchen use|Elderly & arthritis-friendly|Camping & outdoor|Gift for parents/grandparents|RV & boat kitchens',
-        material: 'ABS Plastic + Stainless Steel Blade'
+        material: 'ABS Plastic + Stainless Steel Cutting Blade'
     },
     'CO1150': {
-        shortDescription: 'Auto 2.0 - upgraded electric can opener with improved motor, faster cutting speed, and modern colorways.',
-        keyFeatures: 'Upgraded 2.0 motor (30% faster)|One-touch smooth edge cutting|New trendy color options|Improved battery life|Universal fit for standard cans|Auto-stop mechanism|Magnetic lid holder',
-        sellingPoints: 'Next-gen upgrade from best-selling CO1100|Faster opening speed|Premium color options for modern kitchens|Same safety features families love|Great for gifting',
-        useCases: 'Daily kitchen use|Modern kitchen aesthetic|Upgrade from CO1100|Holiday gift sets|Housewarming gifts',
+        shortDescription: 'Auto 2.0 - upgraded electric can opener with improved motor, faster cutting speed, and modern trendy colorways.',
+        keyFeatures: 'Upgraded 2.0 motor (30% faster)|One-touch smooth edge cutting|New trendy color options (Alpine Green, Morandi Blue, Marble)|Improved battery life|Universal fit for standard cans|Auto-stop mechanism|Magnetic lid holder|Sleek modern design',
+        sellingPoints: 'Next-gen upgrade from best-selling CO1100|Faster opening speed|Premium color options for modern kitchens|Same safety features families love|Great for gifting|Aesthetic kitchen countertop display',
+        useCases: 'Daily kitchen use|Modern kitchen aesthetic|Upgrade from CO1100|Holiday gift sets|Housewarming gifts|Wedding registry',
+        material: 'ABS Plastic + Stainless Steel Cutting Blade'
+    },
+    'CO1200': {
+        shortDescription: 'Mini electric can opener. Ultra-compact design for small kitchens and on-the-go use.',
+        keyFeatures: 'Ultra-compact mini size|One-touch smooth edge cutting|Lightweight & portable|Battery powered (2x AA)|Fits in drawers easily|Auto-stop|Travel-friendly',
+        sellingPoints: 'Smallest electric can opener on the market|Perfect for tiny kitchens & dorms|Easy to pack for travel|Same smooth-edge safety|Great stocking stuffer gift',
+        useCases: 'Small apartments & dorms|Travel & camping|Office kitchen|Emergency kit|Gift for college students',
         material: 'ABS Plastic + Stainless Steel Blade'
+    },
+    'CO2102': {
+        shortDescription: 'Electric can opener with built-in knife sharpener. Two kitchen tools in one compact device.',
+        keyFeatures: 'Electric can opener + knife sharpener combo|One-touch smooth edge cutting|2-stage knife sharpening system|Battery powered|Compact 2-in-1 design|Auto-stop|Space-saving',
+        sellingPoints: 'Two tools in one - saves counter space|Keep knives sharp without separate sharpener|Same safe smooth-edge cutting|Great value combo product|Unique gift idea',
+        useCases: 'Small kitchens needing multi-function tools|Knife maintenance + can opening|Gift for home cooks|RV & boat (space-saving)',
+        material: 'ABS Plastic + Stainless Steel + Ceramic Sharpener'
+    },
+    'CO2300': {
+        shortDescription: 'Electric can opener with built-in bottle opener. Versatile kitchen companion for cans and bottles.',
+        keyFeatures: 'Electric can opener + bottle opener combo|One-touch smooth edge cutting|Built-in bottle cap opener|Battery powered (4x AA)|Ergonomic design|Auto-stop|Multi-function',
+        sellingPoints: 'Opens both cans and bottles|No need for separate bottle opener|Same safe smooth-edge technology|Convenient all-in-one tool|Great for parties & entertaining',
+        useCases: 'Kitchen multi-tasking|Party & entertaining|BBQ & outdoor cooking|Gift for beer/soda lovers|Everyday convenience',
+        material: 'ABS Plastic + Stainless Steel Blade'
+    },
+    'CO2600': {
+        shortDescription: 'Electric can opener with food-safe container lid. Opens can and provides a reusable storage lid.',
+        keyFeatures: 'Electric can opener + snap-on storage lid|One-touch smooth edge cutting|Includes reusable silicone lid|Keeps opened cans fresh in fridge|Battery powered|Auto-stop|BPA-free lid',
+        sellingPoints: 'No more plastic wrap on opened cans|Reusable lid saves money & reduces waste|Same safe smooth-edge cutting|Eco-friendly kitchen solution|Unique problem-solving product',
+        useCases: 'Storing half-used cans|Reducing food waste|Pet food cans (store leftovers)|Eco-conscious kitchens|Meal prep',
+        material: 'ABS Plastic + Stainless Steel Blade + Silicone Lid'
+    },
+    'CO5600': {
+        shortDescription: 'Premium electric can opener with rechargeable USB-C battery. No disposable batteries needed.',
+        keyFeatures: 'USB-C rechargeable battery|One-touch smooth edge cutting|No disposable batteries needed|LED charging indicator|Long battery life (100+ cans per charge)|Premium build quality|Auto-stop|Magnetic lid holder',
+        sellingPoints: 'Never buy batteries again|Eco-friendly rechargeable design|Premium feel & build quality|USB-C universal charging|Best for daily heavy use|Modern sustainable kitchen',
+        useCases: 'Daily heavy use households|Eco-conscious consumers|Premium kitchen upgrade|Gift for sustainability-minded people|Commercial/restaurant light use',
+        material: 'ABS Plastic + Stainless Steel Blade + Li-ion Battery'
+    },
+    'CO0560': {
+        shortDescription: 'Classic electric can opener. Reliable everyday kitchen essential with proven performance.',
+        keyFeatures: 'One-touch operation|Smooth edge cutting|Battery powered|Reliable classic design|Universal can fit|Auto-stop|Easy to clean',
+        sellingPoints: 'Proven reliable performance|Simple & straightforward|Affordable entry point|Same safety features|Great everyday workhorse',
+        useCases: 'Daily kitchen use|Budget-friendly option|Replacement for old can openers|Basic kitchen setup',
+        material: 'ABS Plastic + Stainless Steel Blade'
+    },
+    // === Manual Openers ===
+    'MO5600': {
+        shortDescription: 'Manual can opener with smooth edge cutting technology. No electricity needed, portable and reliable.',
+        keyFeatures: 'Smooth edge cut (no sharp edges)|Manual operation - no batteries needed|Heavy-duty stainless steel blade|Ergonomic soft-grip handles|Built-in bottle opener|Compact & lightweight|Rust-resistant|Oversized turning knob',
+        sellingPoints: 'Safe smooth edge - no cuts ever|Always works - no batteries or charging|Durable stainless steel construction|Comfortable even for extended use|Multi-function with bottle opener|Perfect backup tool',
+        useCases: 'Emergency preparedness|Camping & hiking|RV & boat|Power outage backup|Everyday kitchen use|Outdoor adventures',
+        material: 'Stainless Steel + TPR Soft Grip Handle'
+    },
+    // === Silicone Products - Waltzgrip Series ===
+    'SP3020': {
+        shortDescription: 'Waltzgrip silicone tongs. Heat-resistant, non-slip grip, perfect for cooking, grilling, and serving.',
+        keyFeatures: 'Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone tips|Ergonomic Waltzgrip handle|Locking mechanism for storage|Non-slip grip|Safe for non-stick cookware|Dishwasher safe|Pull-to-lock design',
+        sellingPoints: "Won't scratch non-stick pans|Comfortable grip for long cooking sessions|Easy lock for compact storage|Heat-safe silicone tips|Stylish colors match any kitchen",
+        useCases: 'Grilling & BBQ|Stir-frying|Serving salads|Pasta handling|Flipping meats',
+        material: 'Food-grade Silicone Tips + Stainless Steel + PP Handle'
     },
     'SP3120': {
         shortDescription: 'Waltzgrip silicone basting brushes with ergonomic handle. Heat-resistant, BPA-free, dishwasher safe.',
-        keyFeatures: 'Heat resistant up to 480°F/250°C|BPA-free food-grade silicone|Ergonomic Waltzgrip handle|Dishwasher safe|No bristle shedding|Even sauce distribution|Hanging hole for storage',
-        sellingPoints: 'Won\'t shed bristles like traditional brushes|Safe for non-stick cookware|Easy to clean - dishwasher safe|Comfortable grip reduces hand fatigue|Vibrant colors to match any kitchen',
-        useCases: 'BBQ & grilling|Baking (egg wash, butter)|Marinading meats|Oiling pans|Sauce application',
+        keyFeatures: 'Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone|Ergonomic Waltzgrip handle|Dishwasher safe|No bristle shedding|Even sauce distribution|Hanging hole for storage|Angled brush head',
+        sellingPoints: "Won't shed bristles like traditional brushes|Safe for non-stick cookware|Easy to clean - dishwasher safe|Comfortable grip reduces hand fatigue|Vibrant colors to match any kitchen|Hygienic - no bacteria buildup",
+        useCases: 'BBQ & grilling (sauce/marinade)|Baking (egg wash, butter)|Marinading meats|Oiling pans & griddles|Sauce application on pastries',
+        material: 'Food-grade Silicone + PP Handle'
+    },
+    'SP3210': {
+        shortDescription: 'Waltzgrip silicone slotted turner/spatula. Ideal for draining grease while flipping foods.',
+        keyFeatures: 'Slotted design for grease drainage|Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone|Safe for non-stick cookware|Ergonomic Waltzgrip handle|Flexible yet sturdy|Dishwasher safe',
+        sellingPoints: "Drains grease while flipping - healthier cooking|Won't scratch non-stick pans|Flexible edge slides under food easily|Comfortable grip|Easy to clean",
+        useCases: 'Frying bacon & sausages|Flipping burgers (drain grease)|Fish fillets|Hash browns|Fried eggs',
+        material: 'Food-grade Silicone + PP Handle'
+    },
+    'SP3320': {
+        shortDescription: 'Waltzgrip silicone solid spoon. Perfect for stirring, mixing, and serving soups and sauces.',
+        keyFeatures: 'Deep spoon bowl for scooping|Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone|Safe for non-stick cookware|Ergonomic Waltzgrip handle|Non-stick surface|Dishwasher safe',
+        sellingPoints: "Deep bowl holds more liquid|Won't scratch pots & pans|Comfortable for stirring large pots|Easy to clean|Vibrant kitchen colors",
+        useCases: 'Stirring soups & stews|Serving sauces|Mixing batters|Scooping grains & rice|Everyday cooking',
         material: 'Food-grade Silicone + PP Handle'
     },
     'SP3410': {
-        shortDescription: 'Waltzgrip silicone pancake turner/spatula. Flexible, heat-resistant, perfect for flipping delicate foods.',
-        keyFeatures: 'Thin flexible edge for easy sliding|Heat resistant up to 480°F/250°C|BPA-free food-grade silicone|Safe for non-stick cookware|Ergonomic Waltzgrip handle|Wide surface area|Dishwasher safe',
-        sellingPoints: 'Perfect flip every time - thin flexible edge|Won\'t scratch non-stick pans|Comfortable grip for extended cooking|Easy to clean|Great for pancakes, eggs, fish, burgers',
-        useCases: 'Pancakes & crepes|Eggs (fried, omelettes)|Fish fillets|Burgers & patties|Cookies & baking',
+        shortDescription: 'Waltzgrip silicone pancake turner/spatula. Flexible thin edge, heat-resistant, perfect for flipping delicate foods.',
+        keyFeatures: 'Thin flexible edge for easy sliding|Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone|Safe for non-stick cookware|Ergonomic Waltzgrip handle|Wide surface area|Dishwasher safe|Beveled edge',
+        sellingPoints: "Perfect flip every time - thin flexible edge|Won't scratch non-stick pans|Comfortable grip for extended cooking|Easy to clean|Great for pancakes, eggs, fish, burgers",
+        useCases: 'Pancakes & crepes|Eggs (fried, omelettes)|Fish fillets|Burgers & patties|Cookies & baking sheets',
         material: 'Food-grade Silicone + PP Handle'
     },
-    'MO5600': {
-        shortDescription: 'Manual can opener with smooth edge cutting technology. No electricity needed, portable and reliable.',
-        keyFeatures: 'Smooth edge cut (no sharp edges)|Manual operation - no batteries needed|Heavy-duty stainless steel blade|Ergonomic soft-grip handles|Built-in bottle opener|Compact & lightweight|Rust-resistant',
-        sellingPoints: 'Safe smooth edge - no cuts|Always works - no batteries or charging|Durable stainless steel construction|Comfortable even for extended use|Multi-function with bottle opener',
-        useCases: 'Emergency preparedness|Camping & hiking|RV & boat|Power outage backup|Everyday kitchen use',
-        material: 'Stainless Steel + TPR Soft Grip Handle'
+    'SP5020': {
+        shortDescription: 'Waltzgrip silicone ladle. Deep bowl for serving soups, stews, and sauces with precision.',
+        keyFeatures: 'Deep ladle bowl (4oz capacity)|Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone|Pour spout for drip-free serving|Ergonomic Waltzgrip handle|Safe for non-stick cookware|Dishwasher safe',
+        sellingPoints: "Drip-free pouring spout|Deep bowl serves generous portions|Won't scratch pots|Comfortable long handle|Easy to clean",
+        useCases: 'Serving soups & stews|Ladling sauces & gravies|Punch bowls|Portioning batters|Hot pot cooking',
+        material: 'Food-grade Silicone + PP Handle'
+    },
+    'SP5120': {
+        shortDescription: 'Waltzgrip silicone skimmer/strainer spoon. Perfect for removing food from hot liquids.',
+        keyFeatures: 'Fine mesh-style holes for straining|Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone|Large surface area|Ergonomic Waltzgrip handle|Safe for non-stick cookware|Dishwasher safe',
+        sellingPoints: "Strains liquid while scooping food|Large head covers more area|Won't scratch pots|Comfortable grip|Versatile kitchen tool",
+        useCases: 'Skimming foam from broths|Removing dumplings from water|Frying (removing food from oil)|Blanching vegetables|Hot pot cooking',
+        material: 'Food-grade Silicone + PP Handle'
+    },
+    'SP5023': {
+        shortDescription: 'Waltzgrip silicone whisk. Flexible silicone-coated wires safe for non-stick cookware.',
+        keyFeatures: 'Silicone-coated wires|Heat resistant up to 480\u00b0F/250\u00b0C|Safe for non-stick cookware|Ergonomic Waltzgrip handle|Flexible yet effective whisking|Dishwasher safe|No scratching',
+        sellingPoints: "Won't scratch non-stick pans|Silicone coating is heat-safe|Comfortable grip|Quiet whisking (no metal clanging)|Easy to clean",
+        useCases: 'Whisking eggs|Making sauces & gravies|Mixing batters|Salad dressings|Hot beverages',
+        material: 'Silicone-coated Steel Wires + PP Handle'
+    },
+    'SP5051': {
+        shortDescription: 'Kitchen Mama silicone utensil set. Complete cooking set with holder stand.',
+        keyFeatures: 'Complete utensil set with holder|Heat resistant up to 480\u00b0F/250\u00b0C|BPA-free food-grade silicone|Safe for non-stick cookware|Ergonomic handles|Dishwasher safe|Matching color set',
+        sellingPoints: 'Complete set - everything you need|Matching colors look great on counter|Safe for all cookware|Easy to clean|Great gift set',
+        useCases: 'Complete kitchen setup|Housewarming gift|Wedding registry|Replacing old utensils|Kitchen makeover',
+        material: 'Food-grade Silicone + PP Handles + Holder'
+    },
+    // === Gadgets & Accessories ===
+    'GA0150': {
+        shortDescription: 'Kitchen Mama bag sealer. Portable heat sealer for keeping snacks and food bags fresh.',
+        keyFeatures: 'Portable handheld design|Heat-seal technology|Works on most plastic bags|Battery powered (2x AA)|Compact & lightweight|Magnetic for fridge mounting|One-hand operation',
+        sellingPoints: 'Keep snacks fresh longer|No more bag clips needed|Portable - take anywhere|Easy one-hand operation|Great for chip bags, frozen food bags',
+        useCases: 'Sealing chip & snack bags|Frozen food storage|Camping & travel|Office snack storage|Pet food bags',
+        material: 'ABS Plastic + Ceramic Heating Element'
+    },
+    'GA0450': {
+        shortDescription: 'Kitchen Mama electric salt & pepper grinder. One-touch grinding with adjustable coarseness.',
+        keyFeatures: 'One-touch electric grinding|Adjustable coarseness (fine to coarse)|Ceramic grinding mechanism|Battery powered|LED light illuminates food|Clear window shows fill level|Ergonomic one-hand design',
+        sellingPoints: 'Grind with one hand while cooking|LED light helps see seasoning on food|Adjustable from fine to coarse|Ceramic grinder never rusts|Stylish countertop display',
+        useCases: 'Cooking & seasoning|Table-side grinding|BBQ & grilling|Meal prep|Gift for home chefs',
+        material: 'ABS Plastic + Ceramic Grinder + Acrylic Window'
+    },
+    'GA3120': {
+        shortDescription: 'Kitchen Mama electric milk frother. Create cafe-quality foam for lattes, cappuccinos, and more.',
+        keyFeatures: 'Powerful motor for thick foam|Dual-speed (froth & mix)|Stainless steel whisk head|Battery powered (2x AA)|Lightweight & portable|Easy to clean|Works with all milk types',
+        sellingPoints: 'Cafe-quality foam at home|Works with dairy & plant milks|Dual speed for different drinks|Portable - great for travel|Saves money vs coffee shops',
+        useCases: 'Lattes & cappuccinos|Matcha latte|Hot chocolate|Protein shake mixing|Bulletproof coffee',
+        material: 'ABS Plastic + Stainless Steel Whisk'
+    },
+    // === Specialty ===
+    'SP0650': {
+        shortDescription: 'Silicone oven mitts with quilted cotton lining. Heat-resistant, non-slip grip, waterproof.',
+        keyFeatures: 'Heat resistant up to 480\u00b0F/250\u00b0C|Waterproof silicone exterior|Quilted cotton lining for comfort|Non-slip textured grip|Extra long cuff protects forearms|BPA-free|Machine washable',
+        sellingPoints: 'Waterproof - no more wet potholder burns|Non-slip grip on hot dishes|Extra long protects arms|Comfortable cotton lining|Easy to clean',
+        useCases: 'Oven & baking|Grilling|Handling hot pots & pans|Microwave use|Dutch oven cooking',
+        material: 'Silicone + Quilted Cotton Lining'
+    },
+    'SP0750': {
+        shortDescription: 'Silicone trivets/pot holders. Heat-resistant mats to protect countertops and tables.',
+        keyFeatures: 'Heat resistant up to 480\u00b0F/250\u00b0C|Non-slip surface|BPA-free food-grade silicone|Flexible & stackable|Dishwasher safe|Multi-use (trivet, jar opener, spoon rest)|Honeycomb design',
+        sellingPoints: 'Protects countertops from heat damage|Non-slip - pots won\'t slide|Multi-function (trivet + jar opener + spoon rest)|Easy to store - stackable|Vibrant colors',
+        useCases: 'Hot pot/pan placement|Jar opening grip|Spoon rest|Table protection|Baking mat',
+        material: 'Food-grade Silicone'
+    },
+    'MF1000': {
+        shortDescription: 'Kitchen Mama electric food chopper. One-touch chopping for vegetables, fruits, nuts, and more.',
+        keyFeatures: 'Powerful motor for quick chopping|One-touch pulse operation|Stainless steel blades|BPA-free bowl (2-cup capacity)|Non-slip base|Dishwasher-safe parts|Compact storage',
+        sellingPoints: 'Chop vegetables in seconds|No more tears from onions|Consistent uniform cuts|Easy to clean|Saves prep time',
+        useCases: 'Chopping onions & garlic|Making salsa & guacamole|Baby food prep|Nut chopping|Herb mincing',
+        material: 'ABS Plastic + Stainless Steel Blades + BPA-free Bowl'
+    },
+    'MG0110': {
+        shortDescription: 'Kitchen Mama electric egg cooker. Perfectly cooked eggs every time - soft, medium, or hard boiled.',
+        keyFeatures: 'Cooks up to 6 eggs|Soft/medium/hard boil settings|Auto shut-off|Measuring cup included|Egg piercer built-in|Compact design|BPA-free|Audible alert when done',
+        sellingPoints: 'Perfect eggs every single time|Set it and forget it|No more guessing cook times|Easy to use - just add water|Compact countertop footprint',
+        useCases: 'Breakfast prep|Meal prep (batch cooking)|Hard boiled eggs for salads|Deviled eggs|Protein-rich snacks',
+        material: 'BPA-free Plastic + Stainless Steel Heating Plate'
+    },
+    'SM1251': {
+        shortDescription: 'Kitchen Mama sandwich maker. Makes perfectly sealed crustless sandwiches in minutes.',
+        keyFeatures: 'Seals & cuts sandwiches|Removes crusts automatically|Non-stick cooking plates|Indicator lights (power & ready)|Compact upright storage|Cool-touch handle|Makes sandwiches in 3-5 minutes',
+        sellingPoints: 'Kids love crustless sealed sandwiches|Quick & easy lunch prep|Non-stick - easy cleanup|Compact storage|Fun shapes kids enjoy',
+        useCases: "Kids' school lunches|Quick breakfast|After-school snacks|Camping meals|Dorm room cooking",
+        material: 'BPA-free Plastic + Non-stick Coated Plates'
+    },
+    'MF0023': {
+        shortDescription: 'Kitchen Mama electric hand mixer. Lightweight, powerful mixing for baking and cooking.',
+        keyFeatures: 'Multiple speed settings|Lightweight ergonomic design|Stainless steel beaters|Eject button for easy removal|Compact storage|Powerful motor|Low noise operation',
+        sellingPoints: 'Lightweight - no arm fatigue|Powerful enough for thick batters|Easy beater ejection|Compact storage|Affordable baking essential',
+        useCases: 'Baking (cakes, cookies)|Whipping cream|Mixing batters|Mashed potatoes|Meringues',
+        material: 'ABS Plastic + Stainless Steel Beaters'
     }
 };
 
 function getProductKnowledge(sku, series, category) {
     const knowledge = PRODUCT_KNOWLEDGE[series] || {};
+    const lang = window.i18n ? i18n.getLang() : 'en';
+    if (lang === 'zh') {
+        // Try Chinese translation first, fallback to English
+        const zhDesc = tProduct(series, 'shortDescription');
+        const zhFeatures = tProduct(series, 'keyFeatures');
+        const zhSelling = tProduct(series, 'sellingPoints');
+        const zhUses = tProduct(series, 'useCases');
+        return {
+            shortDescription: zhDesc || knowledge.shortDescription || '',
+            keyFeatures: zhFeatures || knowledge.keyFeatures || '',
+            sellingPoints: zhSelling || knowledge.sellingPoints || '',
+            useCases: zhUses || knowledge.useCases || '',
+            material: knowledge.material || ''
+        };
+    }
     return {
         shortDescription: knowledge.shortDescription || '',
         keyFeatures: knowledge.keyFeatures || '',
@@ -184,14 +358,14 @@ function renderSkuHandbookStats(data) {
     const statsEl = document.getElementById('skuh-stats');
     if (!statsEl) return;
     const total = data.length;
-    const running = data.filter(i => i.lifecycle === 'Running in the market').length;
+    const running = data.filter(i => i.lifecycle === 'Running in the Market' || i.lifecycle === 'Running in the market').length;
     const upcoming = data.filter(i => i.lifecycle === 'Upcoming SKU').length;
     const phasing = data.filter(i => i.lifecycle === 'Phasing Out').length;
     statsEl.innerHTML = `
-        <div class="skuh-stat"><strong>${total}</strong> Total</div>
-        <div class="skuh-stat"><strong>${running}</strong> Running</div>
-        <div class="skuh-stat"><strong>${upcoming}</strong> Upcoming</div>
-        <div class="skuh-stat"><strong>${phasing}</strong> Phasing Out</div>
+        <div class="skuh-stat"><strong>${total}</strong> ${t('total')}</div>
+        <div class="skuh-stat"><strong>${running}</strong> ${t('runningShort')}</div>
+        <div class="skuh-stat"><strong>${upcoming}</strong> ${t('upcoming')}</div>
+        <div class="skuh-stat"><strong>${phasing}</strong> ${t('phasingOut')}</div>
     `;
 }
 
@@ -300,8 +474,8 @@ function renderSkuDetailModal(item) {
     if (!modal) return;
 
     const imgHtml = item.image
-        ? `<img src="${item.image}" alt="${item.productName}" onerror="this.parentElement.innerHTML='<div class=\\'skuh-placeholder\\' style=\\'font-size:3rem;color:#cbd5e1\\'>📦</div>'">`
-        : '<div class="skuh-placeholder" style="font-size:3rem;color:#cbd5e1">📦</div>';
+        ? `<img src="${item.image}" alt="${item.productName}" onerror="this.parentElement.innerHTML='<div class=\\'skuh-placeholder\\' style=\\'font-size:3rem;color:#cbd5e1\\'>IMG</div>'">`
+        : '<div class="skuh-placeholder" style="font-size:3rem;color:#cbd5e1">IMG</div>';
 
     let badgeClass = 'skuh-badge--lifecycle';
     if (item.lifecycle === 'Upcoming SKU') badgeClass = 'skuh-badge--upcoming';
@@ -316,26 +490,24 @@ function renderSkuDetailModal(item) {
             <span class="skuh-badge skuh-badge--category">${item.productLine}</span>
             <span class="skuh-badge skuh-badge--series">${item.series}</span>
         </div>
+        ${item.shortDescription ? '<p class="skuh-modal-desc">' + item.shortDescription + '</p>' : ''}
         <div class="skuh-modal-section">
-            <h4>Basic Info</h4>
-            <div class="skuh-modal-row"><span>Dimensions</span><span>${item.dimensions || '—'}</span></div>
-            <div class="skuh-modal-row"><span>Weight</span><span>${item.weight || '—'}</span></div>
-            <div class="skuh-modal-row"><span>Material</span><span>${item.material || '—'}</span></div>
-            <div class="skuh-modal-row"><span>MSRP</span><span>${item.msrp || '—'}</span></div>
-            <div class="skuh-modal-row"><span>Selling Price</span><span>${item.sellingPrice || '—'}</span></div>
-            <div class="skuh-modal-row"><span>HS Code</span><span>${item.hscode || '—'}</span></div>
-            <div class="skuh-modal-row"><span>PM</span><span>${item.pm || '—'}</span></div>
+            <h4>${t('basicInfo')}</h4>
+            <div class="skuh-modal-row"><span>${t('dimensions')}</span><span>${item.dimensions || '-'}</span></div>
+            <div class="skuh-modal-row"><span>${t('weight')}</span><span>${item.weight || '-'}</span></div>
+            <div class="skuh-modal-row"><span>${t('material')}</span><span>${item.material || '-'}</span></div>
+            <div class="skuh-modal-row"><span>${t('msrp')}</span><span>${item.msrp || '-'}</span></div>
+            <div class="skuh-modal-row"><span>${t('sellingPrice')}</span><span>${item.sellingPrice || '-'}</span></div>
+            <div class="skuh-modal-row"><span>${t('hsCode')}</span><span>${item.hscode || '-'}</span></div>
+            <div class="skuh-modal-row"><span>${t('pm')}</span><span>${item.pm || '-'}</span></div>
         </div>
-        <div class="skuh-modal-section">
-            <h4>Product Knowledge</h4>
-            ${item.shortDescription ? '<div class="skuh-modal-row"><span>Description</span><span>' + item.shortDescription + '</span></div>' : ''}
-            ${item.keyFeatures ? '<div class="skuh-modal-subsection"><strong>Key Features</strong><ul class="skuh-modal-list">' + item.keyFeatures.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
-            ${item.sellingPoints ? '<div class="skuh-modal-subsection"><strong>Selling Points</strong><ul class="skuh-modal-list">' + item.sellingPoints.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
-            ${item.useCases ? '<div class="skuh-modal-subsection"><strong>Use Cases</strong><ul class="skuh-modal-list">' + item.useCases.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
-            ${item.notes ? '<div class="skuh-modal-row"><span>Notes</span><span>' + item.notes + '</span></div>' : ''}
-        </div>
+        ${item.keyFeatures ? '<div class="skuh-modal-section"><h4>' + t('keyFeatures') + '</h4><ul class="skuh-modal-list">' + item.keyFeatures.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
+        ${item.sellingPoints ? '<div class="skuh-modal-section"><h4>' + t('sellingPoints') + '</h4><ul class="skuh-modal-list">' + item.sellingPoints.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
+        ${item.useCases ? '<div class="skuh-modal-section"><h4>' + t('useCases') + '</h4><ul class="skuh-modal-list">' + item.useCases.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
+        ${item.notes ? '<div class="skuh-modal-section"><h4>' + t('notes') + '</h4><p>' + item.notes + '</p></div>' : ''}
     `;
 }
+
 
 function toggleSkuhGroup(el) {
     el.parentElement.classList.toggle('is-collapsed');
@@ -352,6 +524,7 @@ function clearSkuHandbookFilters() {
 }
 
 function initSkuHandbook() {
+    updateSkuhLangButtons();
     renderSkuHandbook();
 
     // Bind filter events
@@ -390,10 +563,44 @@ function initSkuHandbook() {
     }
 }
 
+
+// --- i18n Integration ---
+function t(key) {
+    return window.i18n ? i18n.t('sku-handbook', key) : key;
+}
+
+function tProduct(series, field) {
+    if (!window.i18n) return '';
+    const lang = i18n.getLang();
+    if (lang === 'en') return ''; // English uses PRODUCT_KNOWLEDGE directly
+    const val = i18n.t('product-knowledge', series + '.' + field);
+    return (val !== series + '.' + field) ? val : '';
+}
+
+function setSkuhLang(lang) {
+    if (window.i18n) i18n.setLang(lang);
+    updateSkuhLangButtons();
+    renderSkuHandbook();
+}
+
+function updateSkuhLangButtons() {
+    const lang = window.i18n ? i18n.getLang() : 'en';
+    document.querySelectorAll('.skuh-lang-btn').forEach(btn => {
+        btn.classList.toggle('is-active', btn.dataset.lang === lang);
+    });
+    // Update static text
+    const title = document.getElementById('skuh-title');
+    const subtitle = document.getElementById('skuh-subtitle');
+    if (title) title.textContent = t('pageTitle');
+    if (subtitle) subtitle.textContent = t('pageSubtitle');
+}
+
 // Expose globals
 window.initSkuHandbook = initSkuHandbook;
 window.renderSkuHandbook = renderSkuHandbook;
 window.openSkuDetailModal = openSkuDetailModal;
+window.setSkuhLang = setSkuhLang;
+window.updateSkuhLangButtons = updateSkuhLangButtons;
 window.closeSkuDetailModal = closeSkuDetailModal;
 window.toggleSkuhGroup = toggleSkuhGroup;
 window.clearSkuHandbookFilters = clearSkuHandbookFilters;

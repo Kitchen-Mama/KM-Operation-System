@@ -436,3 +436,44 @@
     margin: 0 0 16px 0;
     line-height: 1.5;
 }
+
+/* Language Toggle */
+#sku-handbook-section .skuh-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+#sku-handbook-section .skuh-lang-toggle {
+    display: flex;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+#sku-handbook-section .skuh-lang-btn {
+    padding: 6px 14px;
+    border: none;
+    background: white;
+    font-size: 12px;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-right: 1px solid #d1d5db;
+}
+
+#sku-handbook-section .skuh-lang-btn:last-child {
+    border-right: none;
+}
+
+#sku-handbook-section .skuh-lang-btn:hover {
+    background: #f3f4f6;
+}
+
+#sku-handbook-section .skuh-lang-btn.is-active {
+    background: #7fb069;
+    color: white;
+}

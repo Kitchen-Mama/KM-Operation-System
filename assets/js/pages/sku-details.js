@@ -316,3 +316,35 @@ if (window.KM && window.KM.lifecycle) {
         unmount() {}
     });
 }
+
+
+// ========================================
+// Unit Toggle (Metric ↔ Imperial)
+// ========================================
+var skuUnitSystem = 'metric'; // 'metric' = CM/KG, 'imperial' = IN/LB
+
+function toggleSkuUnits() {
+    skuUnitSystem = skuUnitSystem === 'metric' ? 'imperial' : 'metric';
+    updateSkuUnitLabels();
+}
+
+function updateSkuUnitLabels() {
+    var dimUnit = skuUnitSystem === 'metric' ? '(CM)' : '(IN)';
+    var wtUnit = skuUnitSystem === 'metric' ? '(KG)' : '(LB)';
+    var labels = document.querySelectorAll('#sku-section .unit-label');
+    labels.forEach(function(label) {
+        var parent = label.parentElement;
+        if (!parent) return;
+        var text = parent.textContent;
+        if (text.includes('DM')) {
+            label.textContent = dimUnit;
+        } else if (text.includes('WT')) {
+            label.textContent = wtUnit;
+        }
+    });
+    // Update toggle button text
+    var btn = document.querySelector('.sku-unit-toggle');
+    if (btn) btn.textContent = skuUnitSystem === 'metric' ? 'CM/KG \u2194 IN/LB' : 'IN/LB \u2194 CM/KG';
+}
+
+window.toggleSkuUnits = toggleSkuUnits;
