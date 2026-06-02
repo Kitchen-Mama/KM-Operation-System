@@ -402,6 +402,12 @@ if (typeof initFcSkuDecisionSection === 'function') {
 
 // 初始化時載入紀錄和世界時間
 window.addEventListener('DOMContentLoaded', () => {
+    // Load Operation DB (Google Sheet or mock fallback)
+    if (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) {
+        window.KM.DB.loadOperationDb({ force: true }).then(function() {
+            console.log('[App] Operation DB loaded. Mode:', window.KM.DB.getDataSourceMode());
+        });
+    }
     renderRecords();
     initWorldTimes();
     renderHomepage();

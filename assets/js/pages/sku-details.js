@@ -1,4 +1,4 @@
-// SKU Details 統一滾動控制
+﻿// SKU Details 統一滾動控制
 (function() {
     let unifiedScroll = null;
     let scrollCols = [];
@@ -105,8 +105,8 @@ function renderSkuLifecycleTable(section, data) {
     scrollBody.innerHTML = data.map(function(item) {
         var img = window.getNormalizedSkuImage ? getNormalizedSkuImage(item) : (item.image || '');
         var imgHtml = img
-            ? '<img src="' + img + '" style="max-width:36px;max-height:36px;object-fit:contain;" onerror="this.outerHTML=\'<span>IMG</span>\'">'
-            : '<span>IMG</span>';
+            ? '<img src="' + img + '" style="max-width:36px;max-height:36px;object-fit:contain;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline\'"><span style="display:none;color:#94a3b8">IMG</span>'
+            : '<span style="color:#94a3b8">IMG</span>';
         var currentLc = window.getNormalizedSkuStatus ? getNormalizedSkuStatus(item) : (item.status || '');
         var validLc = window.VALID_LIFECYCLES || ['Upcoming SKU','Running in the Market','Phasing Out','Closure'];
         var lcOptions = validLc.map(function(lc) {
@@ -119,31 +119,48 @@ function renderSkuLifecycleTable(section, data) {
             '<div class="scroll-cell" data-col="3">' + item.productName + '</div>' +
             '<div class="scroll-cell" data-col="4">' + item.series + '</div>' +
             '<div class="scroll-cell" data-col="5">' + item.category + '</div>' +
-            '<div class="scroll-cell" data-col="6">' + item.gs1Code + '</div>' +
-            '<div class="scroll-cell" data-col="7">' + item.gs1Type + '</div>' +
-            '<div class="scroll-cell" data-col="8">' + item.amzAsin + '</div>' +
-            '<div class="scroll-cell" data-col="9">' + item.itemDimensions + '</div>' +
-            '<div class="scroll-cell" data-col="10">' + item.itemWeight + '</div>' +
-            '<div class="scroll-cell" data-col="11">' + item.package + '</div>' +
-            '<div class="scroll-cell" data-col="12">' + item.packageWeight + '</div>' +
-            '<div class="scroll-cell" data-col="13">' + item.cartonDimensions + '</div>' +
-            '<div class="scroll-cell" data-col="14">' + item.cartonWeight + '</div>' +
-            '<div class="scroll-cell" data-col="15">' + item.unitsPerCarton + '</div>' +
-            '<div class="scroll-cell" data-col="16">' + item.hscode + '</div>' +
-            '<div class="scroll-cell" data-col="17">' + item.declaredValue + '</div>' +
-            '<div class="scroll-cell" data-col="18">' + item.minimumPrice + '</div>' +
-            '<div class="scroll-cell" data-col="19">' + item.msrp + '</div>' +
-            '<div class="scroll-cell" data-col="20">' + item.sellingPrice + '</div>' +
+            '<div class="scroll-cell" data-col="6">' + (item.gs1Code || item.gs1_code || '') + '</div>' +
+            '<div class="scroll-cell" data-col="7">' + (item.gs1Type || item.gs1_type || '') + '</div>' +
+            '<div class="scroll-cell" data-col="8">' + (item.amzAsin || item.amz_asin || '') + '</div>' +
+            '<div class="scroll-cell" data-col="9" data-unit="dim">' + (item.itemDimensions || item.item_dimensions || '') + '</div>' +
+            '<div class="scroll-cell" data-col="10" data-unit="wt">' + (item.itemWeight || item.item_weight || '') + '</div>' +
+            '<div class="scroll-cell" data-col="11" data-unit="dim">' + (item.packageDimensions || item.package || item.package_dimensions || '') + '</div>' +
+            '<div class="scroll-cell" data-col="12" data-unit="wt">' + (item.packageWeight || item.package_weight || '') + '</div>' +
+            '<div class="scroll-cell" data-col="13" data-unit="dim">' + (item.cartonDimensions || item.carton_dimensions || '') + '</div>' +
+            '<div class="scroll-cell" data-col="14" data-unit="wt">' + (item.cartonWeight || item.carton_weight || '') + '</div>' +
+            '<div class="scroll-cell" data-col="15">' + (item.unitsPerCarton || item.units_per_carton || '') + '</div>' +
+            '<div class="scroll-cell" data-col="16">' + (item.hsCode || item.hscode || '') + '</div>' +
+            '<div class="scroll-cell" data-col="17">' + (item.declaredValue || item.declared_value || '') + '</div>' +
+            '<div class="scroll-cell" data-col="18">' + (item.minimumPrice || item.minimum_price || '') + '</div>' +
+            '<div class="scroll-cell" data-col="19">' + (item.msrp || '') + '</div>' +
+            '<div class="scroll-cell" data-col="20">' + (item.sellingPrice || item.selling_price || '') + '</div>' +
             '<div class="scroll-cell" data-col="21">' + item.pm + '</div>' +
         '</div>';
     }).join('');
 }
 
 function handleSkuStatusChange(sku, newLifecycle) {
-    if (window.setSkuLifecycleOverride) setSkuLifecycleOverride(sku, newLifecycle);
-    renderSkuDetailsTable();
-    if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
-    showSkuStatusToast('SKU status updated.');
+    var dropdown = event ? event.target : null;
+    if (dropdown) dropdown.disabled = true;
+    showSkuStatusToast('Saving...');
+
+    if (window.KM && window.KM.DB && window.KM.DB.updateSkuLifecycle) {
+        window.KM.DB.updateSkuLifecycle(sku, newLifecycle).then(function() {
+            renderSkuDetailsTable();
+            if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
+            showSkuStatusToast('Lifecycle updated.');
+        }).catch(function(err) {
+            showSkuStatusToast('Error: ' + (err.message || err));
+            // Revert dropdown
+            renderSkuDetailsTable();
+        });
+    } else {
+        // Fallback: localStorage only
+        if (window.setSkuLifecycleOverride) setSkuLifecycleOverride(sku, newLifecycle);
+        renderSkuDetailsTable();
+        if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
+        showSkuStatusToast('Lifecycle updated (local).');
+    }
 }
 
 function showSkuStatusToast(msg) {
@@ -169,13 +186,21 @@ function handleImportStatusTemplate() {
     input.accept = '.csv';
     input.onchange = function() {
         if (!this.files[0]) return;
-        importSkuStatusTemplate(this.files[0]).then(function(result) {
-            alert('Import complete:\n' + result.updated + ' SKUs updated.\n' + (result.added || 0) + ' SKUs added.\n' + result.skipped + ' rows skipped.');
-            renderSkuDetailsTable();
-            if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
-        });
+        showSkuStatusToast('Validating...');
+        importSkuStatusTemplate(this.files[0]).then(function(result) { showImportPreview(result); });
     };
     input.click();
+}
+
+function showImportPreview(result) {
+    var msg = 'Import Validation:\\nTotal: ' + result.total + ' | Valid: ' + result.valid + ' | Errors: ' + result.errors.length + '\\nNew: ' + result.newCount + ' | Update: ' + result.updateCount;
+    if (result.errors.length > 0) { msg += '\\n\\nErrors (first 10):\\n'; result.errors.slice(0,10).forEach(function(e){msg+='Row '+e.row+' ['+e.field+']: '+e.message+'\\n';}); }
+    msg += '\\n\\nCloud write-back for bulk import: next phase.';
+    alert(msg);
+    console.log('[Import Preview]', result);
+    if (result.preview.length > 0) { console.log('Preview (20):'); console.table(result.preview.slice(0,20)); }
+    if (result.errors.length > 0) { console.log('Errors:'); console.table(result.errors); }
+    showSkuStatusToast('Validation complete.');
 }
 
 function syncSkuHeaderScroll() {
@@ -319,32 +344,87 @@ if (window.KM && window.KM.lifecycle) {
 
 
 // ========================================
-// Unit Toggle (Metric ↔ Imperial)
+// Unit Toggle (Metric / Imperial) with value conversion
 // ========================================
-var skuUnitSystem = 'metric'; // 'metric' = CM/KG, 'imperial' = IN/LB
+var skuUnitSystem = 'metric';
+var CM_TO_IN = 0.393701;
+var KG_TO_LB = 2.20462;
 
 function toggleSkuUnits() {
+    var oldSystem = skuUnitSystem;
     skuUnitSystem = skuUnitSystem === 'metric' ? 'imperial' : 'metric';
     updateSkuUnitLabels();
+    convertSkuUnitValues();
 }
 
 function updateSkuUnitLabels() {
     var dimUnit = skuUnitSystem === 'metric' ? '(CM)' : '(IN)';
     var wtUnit = skuUnitSystem === 'metric' ? '(KG)' : '(LB)';
-    var labels = document.querySelectorAll('#sku-section .unit-label');
-    labels.forEach(function(label) {
+    document.querySelectorAll('#sku-section .unit-label').forEach(function(label) {
         var parent = label.parentElement;
         if (!parent) return;
         var text = parent.textContent;
-        if (text.includes('DM')) {
-            label.textContent = dimUnit;
-        } else if (text.includes('WT')) {
-            label.textContent = wtUnit;
-        }
+        if (text.includes('DM')) label.textContent = dimUnit;
+        else if (text.includes('WT')) label.textContent = wtUnit;
     });
-    // Update toggle button text
     var btn = document.querySelector('.sku-unit-toggle');
     if (btn) btn.textContent = skuUnitSystem === 'metric' ? 'CM/KG \u2194 IN/LB' : 'IN/LB \u2194 CM/KG';
 }
 
+function convertSkuUnitValues() {
+    document.querySelectorAll('#sku-section .scroll-cell[data-unit=dim]').forEach(function(cell) {
+        var raw = cell.getAttribute('data-raw');
+        if (!raw) { raw = cell.textContent.trim(); cell.setAttribute('data-raw', raw); }
+        cell.textContent = skuUnitSystem === 'imperial' ? convertDimStr(raw, CM_TO_IN) : raw;
+    });
+    document.querySelectorAll('#sku-section .scroll-cell[data-unit=wt]').forEach(function(cell) {
+        var raw = cell.getAttribute('data-raw');
+        if (!raw) { raw = cell.textContent.trim(); cell.setAttribute('data-raw', raw); }
+        cell.textContent = skuUnitSystem === 'imperial' ? convertWtStr(raw, KG_TO_LB) : raw;
+    });
+}
+
+function convertDimStr(str, factor) {
+    if (!str || str === '-' || str === '') return str;
+    var parts = str.split(/\s*[xX\u00d7]\s*/);
+    if (parts.length >= 2) return parts.map(function(p) { var n = parseFloat(p); return isNaN(n) ? p : (n * factor).toFixed(1); }).join(' x ');
+    var n = parseFloat(str); return isNaN(n) ? str : (n * factor).toFixed(1);
+}
+
+function convertWtStr(str, factor) {
+    if (!str || str === '-' || str === '') return str;
+    var n = parseFloat(str); return isNaN(n) ? str : (n * factor).toFixed(3);
+}
+
 window.toggleSkuUnits = toggleSkuUnits;
+
+
+// Refresh DB button handler
+function handleRefreshDb() {
+    showSkuStatusToast('Loading...');
+    if (window.reloadOperationDb) {
+        window.reloadOperationDb({ force: true }).then(function() {
+            showSkuStatusToast('Reload successful.');
+        }).catch(function(err) {
+            showSkuStatusToast('Reload failed: ' + (err.message || err));
+        });
+    }
+}
+window.handleRefreshDb = handleRefreshDb;
+
+
+// Debug helper for template tools
+window.debugSkuTemplateTools = function() {
+    var mode = (window.KM && window.KM.DB && window.KM.DB.getDataSourceMode) ? window.KM.DB.getDataSourceMode() : 'unknown';
+    var dbItems = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    console.log('=== SKU Template Tools Debug ===');
+    console.log('Data Source Mode:', mode);
+    console.log('Export source:', dbItems.length > 0 ? 'KM.DB (' + dbItems.length + ' SKUs)' : 'mock fallback');
+    console.log('Export schema headers:', ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_dimensions','item_weight','package_dimensions','package_weight','carton_dimensions','carton_weight','units_per_carton','hscode','declared_value','minimum_price','msrp','selling_price','pm','created_at','updated_at']);
+    console.log('Import expected schema:', ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_dimensions','item_weight','package_dimensions','package_weight','carton_dimensions','carton_weight','units_per_carton','hscode','declared_value','minimum_price','msrp','selling_price','pm']);
+    console.log('Import required fields:', ['sku','product_name','category','series','lifecycle']);
+    console.log('Has bulk import cloud write action:', false, '(next phase)');
+    console.log('Current SKU count:', dbItems.length);
+    console.log('=== End ===');
+};
+window.showImportPreview = showImportPreview;

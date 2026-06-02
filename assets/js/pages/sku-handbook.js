@@ -46,13 +46,48 @@ function normalizeSkuHandbookItem(item, lifecycleGroup) {
 
 function getSkuHandbookData() {
     const all = [];
-    // Use override system to include imported SKUs
+
+    // Try KM.DB.getSkuKnowledgeItems first (merged with product_features & summaries)
+    if (window.KM && window.KM.DB && window.KM.DB.getSkuKnowledgeItems) {
+        var knowledgeItems = window.KM.DB.getSkuKnowledgeItems();
+        if (knowledgeItems && knowledgeItems.length > 0) {
+            knowledgeItems.forEach(function(item) {
+                var lc = window.getNormalizedSkuStatus ? getNormalizedSkuStatus(item) : (item.lifecycle || 'Running in the Market');
+                var img = window.getNormalizedSkuImage ? getNormalizedSkuImage(item) : (item.image || '');
+                all.push({
+                    sku: item.sku || '',
+                    productName: item.productName || '',
+                    productLine: item.productLine || item.category || '',
+                    series: item.series || '',
+                    brand: 'Kitchen Mama',
+                    lifecycle: lc,
+                    image: img,
+                    shortDescription: item.displaySummary || '',
+                    dimensions: item.itemDimensions || '',
+                    weight: item.itemWeight || '',
+                    material: item.material || '',
+                    keyFeatures: (item.displayKeyPoints || []).join('|'),
+                    sellingPoints: '',
+                    useCases: '',
+                    notes: '',
+                    msrp: item.msrp || '',
+                    sellingPrice: item.sellingPrice || '',
+                    hscode: item.hsCode || item.hscode || '',
+                    pm: item.pm || '',
+                    isSellingMaterial: item.isSellingMaterial || false,
+                    rawReferenceContent: item.rawReferenceContent || null
+                });
+            });
+            return all;
+        }
+    }
+
+    // Fallback: use override system
     if (window.getAllSkuDataWithOverrides) {
         const groups = getAllSkuDataWithOverrides();
         Object.entries(groups).forEach(([lifecycle, items]) => {
             items.forEach(item => {
                 const normalized = normalizeSkuHandbookItem(item, lifecycle);
-                // Enrich with product knowledge
                 const knowledge = getProductKnowledge(item.sku, item.series, item.category);
                 Object.assign(normalized, knowledge);
                 all.push(normalized);
@@ -302,12 +337,24 @@ function applySkuHandbookFilters(items) {
 
     if (s.search) {
         const q = s.search.toLowerCase();
-        filtered = filtered.filter(i =>
-            i.sku.toLowerCase().includes(q) ||
-            i.productName.toLowerCase().includes(q) ||
-            i.series.toLowerCase().includes(q) ||
-            i.productLine.toLowerCase().includes(q)
-        );
+        filtered = filtered.filter(i => {
+            var base = (i.sku || '').toLowerCase().includes(q) ||
+                (i.productName || '').toLowerCase().includes(q) ||
+                (i.series || '').toLowerCase().includes(q) ||
+                (i.productLine || '').toLowerCase().includes(q);
+            if (base) return true;
+            // Search in displaySummary / keyFeatures / rawReferenceContent
+            if ((i.shortDescription || i.displaySummary || '').toLowerCase().includes(q)) return true;
+            if ((i.keyFeatures || '').toLowerCase().includes(q)) return true;
+            var raw = i.rawReferenceContent;
+            if (raw) {
+                if ((raw.productTitle || '').toLowerCase().includes(q)) return true;
+                if ((raw.productDescription || '').toLowerCase().includes(q)) return true;
+                if ((raw.genericKeyword || '').toLowerCase().includes(q)) return true;
+                if (raw.bulletPoints && raw.bulletPoints.some(function(b) { return b.toLowerCase().includes(q); })) return true;
+            }
+            return false;
+        });
     }
     if (s.productLine !== 'all') {
         filtered = filtered.filter(i => i.productLine === s.productLine);
@@ -361,11 +408,14 @@ function renderSkuHandbookStats(data) {
     const running = data.filter(i => i.lifecycle === 'Running in the Market' || i.lifecycle === 'Running in the market').length;
     const upcoming = data.filter(i => i.lifecycle === 'Upcoming SKU').length;
     const phasing = data.filter(i => i.lifecycle === 'Phasing Out').length;
+    var mode = (window.KM && window.KM.DB && window.KM.DB.getDataSourceMode) ? window.KM.DB.getDataSourceMode() : 'mock';
+    var modeBadge = mode === 'google-sheet' ? '<span class="skuh-stat skuh-stat--mode">Data: Google Sheet</span>' : '<span class="skuh-stat skuh-stat--mode">Data: Mock</span>';
     statsEl.innerHTML = `
-        <div class="skuh-stat"><strong>${total}</strong> ${t('total')}</div>
-        <div class="skuh-stat"><strong>${running}</strong> ${t('runningShort')}</div>
-        <div class="skuh-stat"><strong>${upcoming}</strong> ${t('upcoming')}</div>
-        <div class="skuh-stat"><strong>${phasing}</strong> ${t('phasingOut')}</div>
+        <div class="skuh-stat"><strong>${total}</strong> Total</div>
+        <div class="skuh-stat"><strong>${running}</strong> Running</div>
+        <div class="skuh-stat"><strong>${upcoming}</strong> Upcoming</div>
+        <div class="skuh-stat"><strong>${phasing}</strong> Phasing Out</div>
+        ${modeBadge}
     `;
 }
 
@@ -377,6 +427,8 @@ function renderSkuCard(item) {
     let badgeClass = 'skuh-badge--lifecycle';
     if (item.lifecycle === 'Upcoming SKU') badgeClass = 'skuh-badge--upcoming';
     if (item.lifecycle === 'Phasing Out') badgeClass = 'skuh-badge--phasing';
+    if (item.lifecycle === 'Closure') badgeClass = 'skuh-badge--phasing';
+    var sellingBadge = item.isSellingMaterial ? '<span class="skuh-badge skuh-badge--selling">Selling Material</span>' : '';
 
     return `
         <div class="skuh-card" onclick="openSkuDetailModal('${item.sku}')">
@@ -387,6 +439,7 @@ function renderSkuCard(item) {
                 <div class="skuh-badges">
                     <span class="skuh-badge ${badgeClass}">${item.lifecycle}</span>
                     <span class="skuh-badge skuh-badge--category">${item.productLine}</span>
+                    ${sellingBadge}
                 </div>
             </div>
         </div>
@@ -479,7 +532,49 @@ function renderSkuDetailModal(item) {
 
     let badgeClass = 'skuh-badge--lifecycle';
     if (item.lifecycle === 'Upcoming SKU') badgeClass = 'skuh-badge--upcoming';
-    if (item.lifecycle === 'Phasing Out') badgeClass = 'skuh-badge--phasing';
+    if (item.lifecycle === 'Phasing Out' || item.lifecycle === 'Closure') badgeClass = 'skuh-badge--phasing';
+    var sellingBadge = item.isSellingMaterial ? '<span class="skuh-badge skuh-badge--selling">Internal / Selling Material</span>' : '';
+
+    // Summary source label
+    var summarySourceLabel = '';
+    if (item.summarySource === 'product_features_fallback') summarySourceLabel = 'Source: Product Features';
+    else if (item.summarySource && item.summarySource.startsWith('handbook_summary')) summarySourceLabel = 'Source: Handbook Summary';
+    else summarySourceLabel = 'Source: Not provided';
+
+    // Key points
+    var keyPoints = item.displayKeyPoints || (item.keyFeatures ? item.keyFeatures.split('|').filter(function(f){return f.trim();}) : []);
+    var keyPointsHtml = '';
+    if (keyPoints.length > 0) {
+        keyPointsHtml = '<ul class="skuh-modal-list">' + keyPoints.slice(0, 5).map(function(f) { return '<li>' + f.trim() + '</li>'; }).join('') + '</ul>';
+    } else {
+        keyPointsHtml = '<p style="color:#94a3b8;font-style:italic;">No key features provided yet.</p>';
+    }
+    var kpSourceLabel = (item.keyPointsSource === 'product_features_bullets') ? 'Source: Product Features bullets' : 'Source: Not provided';
+
+    // Selling material warning
+    var sellingWarning = item.isSellingMaterial ? '<div class="skuh-modal-selling-warning">This SKU is used for internal selling material, packaging, spare parts, or operational reference. It may not be a consumer-facing product.</div>' : '';
+
+    // Summary text
+    var summaryText = item.displaySummary || item.shortDescription || 'Not provided yet.';
+
+    // Raw reference content
+    var rawRef = item.rawReferenceContent;
+    var rawHtml = '';
+    if (rawRef) {
+        var rawBullets = (rawRef.bulletPoints || []).map(function(b, i) { return '<li><strong>Bullet ' + (i+1) + ':</strong> ' + b + '</li>'; }).join('');
+        rawHtml = `
+            <div class="skuh-modal-section skuh-raw-section">
+                <h4 class="skuh-raw-toggle" onclick="this.parentElement.classList.toggle('is-open')">Raw Reference Content <span class="skuh-raw-arrow">▶</span></h4>
+                <div class="skuh-raw-content">
+                    <div class="skuh-modal-row"><span>Product Title</span><span>${rawRef.productTitle || '—'}</span></div>
+                    <div class="skuh-modal-row"><span>Product Description</span></div>
+                    <p style="font-size:0.8rem;color:#475569;margin:4px 0 8px;">${rawRef.productDescription || '—'}</p>
+                    ${rawBullets ? '<ul class="skuh-modal-list" style="font-size:0.8rem;">' + rawBullets + '</ul>' : ''}
+                    <div class="skuh-modal-row"><span>Generic Keyword</span></div>
+                    <p style="font-size:0.75rem;color:#64748b;margin:4px 0;word-break:break-all;">${rawRef.genericKeyword || '—'}</p>
+                </div>
+            </div>`;
+    }
 
     modal.innerHTML = `
         <div class="skuh-modal-img">${imgHtml}</div>
@@ -487,24 +582,46 @@ function renderSkuDetailModal(item) {
         <p class="skuh-modal-sku">${item.sku}</p>
         <div class="skuh-badges" style="margin-bottom:16px;">
             <span class="skuh-badge ${badgeClass}">${item.lifecycle}</span>
-            <span class="skuh-badge skuh-badge--category">${item.productLine}</span>
+            <span class="skuh-badge skuh-badge--category">${item.productLine || item.category || ''}</span>
             <span class="skuh-badge skuh-badge--series">${item.series}</span>
+            ${sellingBadge}
         </div>
-        ${item.shortDescription ? '<p class="skuh-modal-desc">' + item.shortDescription + '</p>' : ''}
+        ${sellingWarning}
         <div class="skuh-modal-section">
-            <h4>${t('basicInfo')}</h4>
-            <div class="skuh-modal-row"><span>${t('dimensions')}</span><span>${item.dimensions || '-'}</span></div>
-            <div class="skuh-modal-row"><span>${t('weight')}</span><span>${item.weight || '-'}</span></div>
-            <div class="skuh-modal-row"><span>${t('material')}</span><span>${item.material || '-'}</span></div>
-            <div class="skuh-modal-row"><span>${t('msrp')}</span><span>${item.msrp || '-'}</span></div>
-            <div class="skuh-modal-row"><span>${t('sellingPrice')}</span><span>${item.sellingPrice || '-'}</span></div>
-            <div class="skuh-modal-row"><span>${t('hsCode')}</span><span>${item.hscode || '-'}</span></div>
-            <div class="skuh-modal-row"><span>${t('pm')}</span><span>${item.pm || '-'}</span></div>
+            <h4>Employee-Friendly Summary</h4>
+            <p style="font-size:0.85rem;line-height:1.6;color:#334155;">${summaryText}</p>
+            <p class="skuh-source-label">${summarySourceLabel}</p>
         </div>
-        ${item.keyFeatures ? '<div class="skuh-modal-section"><h4>' + t('keyFeatures') + '</h4><ul class="skuh-modal-list">' + item.keyFeatures.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
-        ${item.sellingPoints ? '<div class="skuh-modal-section"><h4>' + t('sellingPoints') + '</h4><ul class="skuh-modal-list">' + item.sellingPoints.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
-        ${item.useCases ? '<div class="skuh-modal-section"><h4>' + t('useCases') + '</h4><ul class="skuh-modal-list">' + item.useCases.split('|').map(f => '<li>' + f.trim() + '</li>').join('') + '</ul></div>' : ''}
-        ${item.notes ? '<div class="skuh-modal-section"><h4>' + t('notes') + '</h4><p>' + item.notes + '</p></div>' : ''}
+        <div class="skuh-modal-section">
+            <h4>Key Features</h4>
+            ${keyPointsHtml}
+            <p class="skuh-source-label">${kpSourceLabel}</p>
+        </div>
+        <div class="skuh-modal-section">
+            <h4>Basic Product Info</h4>
+            <div class="skuh-modal-row"><span>SKU</span><span>${item.sku}</span></div>
+            <div class="skuh-modal-row"><span>Product Name</span><span>${item.productName}</span></div>
+            <div class="skuh-modal-row"><span>Category</span><span>${item.productLine || item.category || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Series</span><span>${item.series || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Lifecycle</span><span>${item.lifecycle || '—'}</span></div>
+            <div class="skuh-modal-row"><span>AMZ ASIN</span><span>${item.amzAsin || item.amz_asin || '—'}</span></div>
+            <div class="skuh-modal-row"><span>GS1 Code</span><span>${item.gs1Code || item.gs1_code || '—'}</span></div>
+            <div class="skuh-modal-row"><span>GS1 Type</span><span>${item.gs1Type || item.gs1_type || '—'}</span></div>
+            <div class="skuh-modal-row"><span>PM</span><span>${item.pm || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Item Dimensions</span><span>${item.itemDimensions || item.dimensions || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Item Weight</span><span>${item.itemWeight || item.weight || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Package Dimensions</span><span>${item.packageDimensions || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Package Weight</span><span>${item.packageWeight || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Carton Dimensions</span><span>${item.cartonDimensions || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Carton Weight</span><span>${item.cartonWeight || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Units per Carton</span><span>${item.unitsPerCarton || '—'}</span></div>
+            <div class="skuh-modal-row"><span>HS Code</span><span>${item.hsCode || item.hscode || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Declared Value</span><span>${item.declaredValue || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Minimum Price</span><span>${item.minimumPrice || '—'}</span></div>
+            <div class="skuh-modal-row"><span>MSRP</span><span>${item.msrp || '—'}</span></div>
+            <div class="skuh-modal-row"><span>Selling Price</span><span>${item.sellingPrice || '—'}</span></div>
+        </div>
+        ${rawHtml}
     `;
 }
 

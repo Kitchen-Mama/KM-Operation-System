@@ -1705,6 +1705,7 @@
             <input type="text" id="skuSearchInput" class="sku-search" placeholder="Search SKU..." oninput="handleSkuSearch()">
             <button class="btn-add-sku" onclick="handleExportStatusTemplate()" style="background:#3b82f6;">Export Template</button>
             <button class="btn-add-sku" onclick="handleImportStatusTemplate()" style="background:#8b5cf6;">Import Template</button>
+            <button class="btn-add-sku" onclick="handleRefreshDb()" style="background:#0891b2;">Refresh DB</button>
             <button class="btn-add-sku sku-unit-toggle" onclick="toggleSkuUnits()" style="background:#0891b2;">CM/KG ↔ IN/LB</button>
             <div class="display-dropdown">
                 <button class="btn-display" onclick="toggleDisplayPanel()">Display ▼</button>
@@ -2272,6 +2273,9 @@
     <script src="assets/js/utils/sku-overrides.js"></script>
     <script src="assets/js/utils/data.js"></script>
     <script src="assets/js/utils/scroll-sync.js"></script>
+    
+    <!-- API Adapter -->
+    <script src="assets/js/api/operation-system-db-api.js"></script>
     
     <!-- Pages -->
     <script src="assets/js/pages/home.js"></script>
