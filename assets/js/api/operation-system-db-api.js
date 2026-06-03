@@ -789,3 +789,44 @@ window.auditSkuHandbookData = function() {
     console.log('');
     console.log('=== End Audit ===');
 };
+
+
+// ========================================
+// Legacy SKU Override Debug Helper
+// ========================================
+
+window.debugLegacySkuOverrides = function() {
+    console.log('=== Legacy SKU Overrides Debug ===');
+    var lcOverrides = {};
+    var imgOverrides = {};
+    var dataOverrides = {};
+    try { lcOverrides = JSON.parse(localStorage.getItem('km_sku_lifecycle_overrides_v1')) || {}; } catch(e) {}
+    try { imgOverrides = JSON.parse(localStorage.getItem('km_sku_image_overrides_v1')) || {}; } catch(e) {}
+    try { dataOverrides = JSON.parse(localStorage.getItem('km_sku_data_overrides_v1')) || {}; } catch(e) {}
+
+    var lcCount = Object.keys(lcOverrides).length;
+    var imgCount = Object.keys(imgOverrides).length;
+    var dataCount = Object.keys(dataOverrides).length;
+
+    console.log('Lifecycle overrides:', lcCount);
+    console.log('Image overrides:', imgCount);
+    console.log('Imported SKU data overrides:', dataCount);
+
+    if (lcCount > 0) {
+        console.log('--- Lifecycle overrides (first 10) ---');
+        console.table(Object.entries(lcOverrides).slice(0, 10).map(function(e) { return { sku: e[0], lifecycle: e[1].lifecycle, updatedAt: e[1].updatedAt }; }));
+    }
+    if (imgCount > 0) {
+        console.log('--- Image overrides (first 10) ---');
+        console.table(Object.entries(imgOverrides).slice(0, 10).map(function(e) { return { sku: e[0], image: e[1].image, updatedAt: e[1].updatedAt }; }));
+    }
+    if (dataCount > 0) {
+        console.warn('[Warning] Legacy imported SKU records detected in localStorage. These may create phantom SKUs. Run resetSkuHandbookOverrides() to clear after confirming migration.');
+        console.log('--- Imported SKU data overrides (first 10) ---');
+        console.table(Object.entries(dataOverrides).slice(0, 10).map(function(e) { return { sku: e[0], productName: e[1].productName || '', lifecycle: e[1].status || e[1].lifecycle || '', updatedAt: e[1].updatedAt || '' }; }));
+    }
+    if (lcCount === 0 && imgCount === 0 && dataCount === 0) {
+        console.log('No legacy overrides found. Clean state.');
+    }
+    console.log('=== End ===');
+};

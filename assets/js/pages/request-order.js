@@ -1,4 +1,4 @@
-// Request Order Page (下單系統)
+﻿// Request Order Page (下單系統)
 
 const requestOrderState = {
   series: 'All',
@@ -15,8 +15,13 @@ const requestOrderState = {
 };
 
 function initRequestOrderSection() {
-  // 不自動生成數據，等待用戶選擇日期
-  requestOrderState.data = [];
+  // === Demo Data Layer: Phase 3B ===
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    requestOrderState.data = _getDemoRequestOrderData();
+  } else {
+    requestOrderState.data = [];
+  }
+  // === End Demo Data Layer ===
   renderRequestOrderTable();
   syncRequestOrderScroll();
   initRequestOrderDropdowns();
@@ -230,7 +235,11 @@ function applyRequestOrderDate() {
     
     // 第一次選擇日期時生成數據
     if (requestOrderState.data.length === 0) {
-      requestOrderState.data = generateMockRequestOrderData();
+      if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        requestOrderState.data = _getDemoRequestOrderData();
+      } else {
+        requestOrderState.data = []; // Demo OFF: no data source
+      }
     }
     
     renderRequestOrderTable();
@@ -1089,6 +1098,91 @@ window.toggleRequestOrderSkuExpand = toggleRequestOrderSkuExpand;
 window.handleEditTargetFc = handleEditTargetFc;
 window.handleFcUpdate = handleFcUpdate;
 
+
+
+// ========================================
+// Demo Data Layer: Phase 3B - Request Order Mapping
+// ========================================
+function _getDemoRequestOrderData() {
+    var rows = window.KM.DemoData.getRequestOrderRows({});
+    return rows.map(function(r) {
+        var shortageQty = r.shortage_qty || 0;
+        var suggestOrder = r.suggest_order_qty || 0;
+        return {
+            sku: r.sku,
+            series: r.series || '',
+            country: r.country || 'US',
+            marketplace: r.marketplace || 'Amazon',
+            category: r.category || '',
+            company: 'Kitchen Mama',
+            risk: r.decision_status === 'order_needed' ? 'High' : 'Low',
+            basicFcT3: r.forecast_qty || 0,
+            specialEventsFc: 0,
+            siteStock: r.current_stock || 0,
+            thirdPartyStock: 0,
+            factoryStock: 0,
+            totalOngoingOrders: r.incoming_qty || 0,
+            shortageM1: shortageQty > 0 ? -shortageQty : 0,
+            shortageM2: 0,
+            shortageM3: 0,
+            achievementRate: 90,
+            boxSize: 40,
+            year: 2026,
+            months: [r.forecast_qty || 0, r.forecast_qty || 0, r.forecast_qty || 0,
+                     r.forecast_qty || 0, r.forecast_qty || 0, r.forecast_qty || 0,
+                     r.forecast_qty || 0, r.forecast_qty || 0, r.forecast_qty || 0,
+                     r.forecast_qty || 0, r.forecast_qty || 0, r.forecast_qty || 0],
+            totalSuggestOrder: suggestOrder,
+            decisionStatus: r.decision_status || 'sufficient',
+            reason: r.reason || ''
+        };
+    });
+}
+
+function _showRequestOrderDemoBadge() {
+    var header = document.querySelector('#request-order-section .page-header');
+    if (!header) return;
+    if (header.querySelector('.demo-badge')) return;
+    var badge = document.createElement('span');
+    badge.className = 'demo-badge';
+    badge.style.cssText = 'background:#8b5cf6;color:white;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:12px;vertical-align:middle;';
+    badge.textContent = 'Demo Data Mode';
+    var title = header.querySelector('.page-title');
+    if (title) title.appendChild(badge);
+}
+
+function _removeRequestOrderDemoBadge() {
+    var badge = document.querySelector('#request-order-section .demo-badge');
+    if (badge) badge.remove();
+}
+
+// Patch initRequestOrderSection to show/hide badge
+var _origInitRequestOrderSection = initRequestOrderSection;
+initRequestOrderSection = function() {
+    _origInitRequestOrderSection();
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        _showRequestOrderDemoBadge();
+    } else {
+        _removeRequestOrderDemoBadge();
+    }
+};
+window.initRequestOrderSection = initRequestOrderSection;
+
+// Debug helper
+window.debugRequestOrderDemoData = function() {
+    var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+    console.log('=== Request Order Demo Data Debug ===');
+    console.log('Demo enabled:', enabled);
+    if (!enabled) { console.log('Demo mode is OFF. Use setDemoDataMode(true) to enable.'); return; }
+    var rows = window.KM.DemoData.getRequestOrderRows({});
+    console.log('DemoData requestOrders rows:', rows.length);
+    var mapped = _getDemoRequestOrderData();
+    console.log('Mapped Request Order rows:', mapped.length);
+    console.log('--- First 5 raw rows ---');
+    console.table(rows.slice(0, 5));
+    console.log('--- First 10 mapped rows ---');
+    console.table(mapped.slice(0, 10));
+};
 
 // ========================================
 // Lifecycle 註冊

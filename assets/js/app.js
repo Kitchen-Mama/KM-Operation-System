@@ -406,6 +406,13 @@ window.addEventListener('DOMContentLoaded', () => {
     if (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) {
         window.KM.DB.loadOperationDb({ force: true }).then(function() {
             console.log('[App] Operation DB loaded. Mode:', window.KM.DB.getDataSourceMode());
+            // Warn about legacy localStorage overrides
+            try {
+                var legacyData = JSON.parse(localStorage.getItem('km_sku_data_overrides_v1')) || {};
+                if (Object.keys(legacyData).length > 0) {
+                    console.warn('[App] Legacy imported SKU records detected in localStorage (' + Object.keys(legacyData).length + ' records). Run debugLegacySkuOverrides() for details.');
+                }
+            } catch(e) {}
         });
     }
     renderRecords();

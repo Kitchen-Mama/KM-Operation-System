@@ -1,4 +1,4 @@
-// Factory Stock篩選器功能
+﻿// Factory Stock篩選器功能
 
 function initFactoryStockPage() {
     console.log('✅ Factory Stock: initFactoryStockPage called');
@@ -142,10 +142,14 @@ function renderFactoryStockTable(root) {
     }
     
     // 檢查資料是否存在
-    if (!window.factoryStockData || window.factoryStockData.length === 0) {
-        console.error('❌ Factory Stock: No data available');
+    var _factoryData = null; // Default: no data
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        _factoryData = _getDemoFactoryStockData();
+    }
+    // === End Demo Data Layer ===
+    if (!_factoryData || _factoryData.length === 0) {
         fixedBody.innerHTML = '';
-        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#EF4444">No data available</div>';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">\u5c1a\u672a\u9023\u63a5\u8cc7\u6599\u4f86\u6e90</div>';
         return;
     }
     
@@ -175,7 +179,7 @@ function renderFactoryStockTable(root) {
         sku: root.querySelector('#factory-sku-input')?.value.toLowerCase() || ''
     };
     
-    let data = window.factoryStockData.filter(item => {
+    let data = _factoryData.filter(item => {
         if (filters.factory.length > 0 && !filters.factory.includes(item.factory)) return false;
         if (filters.company.length > 0 && !filters.company.includes(item.company)) return false;
         if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
@@ -220,6 +224,72 @@ window.initFactoryStockPage = initFactoryStockPage;
 window.initFactoryDropdown = initFactoryDropdown;
 window.renderFactoryStockTable = renderFactoryStockTable;
 
+
+
+// ========================================
+// Demo Data Layer: Phase 2B - Factory Stock Mapping
+// ========================================
+function _getDemoFactoryStockData() {
+    var rows = window.KM.DemoData.getFactoryStockRows({});
+    return rows.map(function(r) {
+        return {
+            sku: r.sku,
+            company: 'Kitchen Mama',
+            marketplace: 'US',
+            category: r.category,
+            series: r.series,
+            factory: r.factory_name,
+            stock: r.factory_stock,
+            completedOrderMonth0: r.reserved_qty,
+            completedOrderMonth1: Math.round(r.factory_stock * 0.3),
+            completedOrderMonth2: Math.round(r.factory_stock * 0.2)
+        };
+    });
+}
+
+function _showFactoryDemoBadge() {
+    var filterBar = document.querySelector('#factory-stock-section .fc-filter-bar');
+    if (!filterBar) return;
+    if (filterBar.querySelector('.demo-badge')) return;
+    var badge = document.createElement('span');
+    badge.className = 'demo-badge';
+    badge.style.cssText = 'background:#8b5cf6;color:white;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:12px;vertical-align:middle;';
+    badge.textContent = 'Demo Data Mode';
+    filterBar.appendChild(badge);
+}
+
+function _removeFactoryDemoBadge() {
+    var badge = document.querySelector('#factory-stock-section .demo-badge');
+    if (badge) badge.remove();
+}
+
+// Patch renderFactoryStockTable to show/hide badge
+var _origRenderFactoryStockTable = renderFactoryStockTable;
+renderFactoryStockTable = function(root) {
+    _origRenderFactoryStockTable(root);
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        _showFactoryDemoBadge();
+    } else {
+        _removeFactoryDemoBadge();
+    }
+};
+window.renderFactoryStockTable = renderFactoryStockTable;
+
+// Debug helper
+window.debugFactoryDemoData = function() {
+    var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+    console.log('=== Factory Stock Demo Data Debug ===');
+    console.log('Demo enabled:', enabled);
+    if (!enabled) { console.log('Demo mode is OFF. Use setDemoDataMode(true) to enable.'); return; }
+    var rows = window.KM.DemoData.getFactoryStockRows({});
+    console.log('DemoData factoryStock rows:', rows.length);
+    var mapped = _getDemoFactoryStockData();
+    console.log('Mapped Factory Stock rows:', mapped.length);
+    console.log('--- First 5 raw rows ---');
+    console.table(rows.slice(0, 5));
+    console.log('--- First 10 mapped rows ---');
+    console.table(mapped.slice(0, 10));
+};
 
 // ========================================
 // Lifecycle 註冊

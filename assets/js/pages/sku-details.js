@@ -238,7 +238,7 @@ function toggleSection(sectionId) {
 }
 
 function handleAddSku() {
-    alert('Add SKU \u529f\u80fd - Stage 1 placeholder');
+    alert('Add SKU cloud write-back is not enabled yet. This will be implemented in the next phase.');
 }
 
 function handleSkuSearch() {

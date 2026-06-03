@@ -1,4 +1,4 @@
-// FC Summary - Mock Data and Logic
+﻿// FC Summary - Mock Data and Logic
 
 // Pagination state
 const fcPaginationState = {
@@ -73,8 +73,13 @@ function renderFcRegularTable() {
     return;
   }
   
-  const filteredData = filterFcRegular(fcRegularMock, filters);
-  fcPaginationState.totalItems = filteredData.length;
+  // === Demo Data Layer: Phase 3C ===
+  var _fcRegularSource = []; // Default: no data
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    _fcRegularSource = _getDemoFcRegularData();
+  }
+  // === End Demo Data Layer ===
+  const filteredData = filterFcRegular(_fcRegularSource, filters);
   
   // Paginate data
   const startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
@@ -182,8 +187,13 @@ function renderFcEventTable() {
     return;
   }
   
-  const filteredData = filterFcEvent(fcEventMock, filters);
-  fcPaginationState.totalItems = filteredData.length;
+  // === Demo Data Layer: Phase 3C (Event) ===
+  var _fcEventSource = []; // Default: no data
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    _fcEventSource = _getDemoFcEventData();
+  }
+  // === End Demo Data Layer ===
+  const filteredData = filterFcEvent(_fcEventSource, filters);
   
   // Paginate data
   const startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
@@ -1717,6 +1727,93 @@ function saveNewEvent() {
 
 
 
+
+
+// ========================================
+// Demo Data Layer: Phase 3C - FC Summary Mapping
+// ========================================
+function _getDemoFcRegularData() {
+    var rows = window.KM.DemoData.getFcSummaryRows({});
+    return rows.map(function(r) {
+        var monthVal = r.regular_forecast || 0;
+        return {
+            sku: r.sku,
+            year: 2026,
+            company: 'ResTW',
+            marketplace: r.marketplace || 'Amazon',
+            country: r.country || 'US',
+            category: r.category || '',
+            series: r.series || '',
+            months: [monthVal, monthVal, monthVal, monthVal, monthVal, monthVal,
+                     monthVal, monthVal, monthVal, monthVal, monthVal, monthVal]
+        };
+    });
+}
+
+function _getDemoFcEventData() {
+    var rows = window.KM.DemoData.getFcSummaryRows({});
+    return rows.filter(function(r) { return r.event_forecast > 0; }).map(function(r) {
+        return {
+            sku: r.sku,
+            year: 2026,
+            company: 'ResTW',
+            marketplace: r.marketplace || 'Amazon',
+            country: r.country || 'US',
+            category: r.category || '',
+            series: r.series || '',
+            event: 'Prime Day',
+            eventPeriod: '2026/07/15-2026/07/16',
+            fcQty: r.event_forecast || 0
+        };
+    });
+}
+
+function _showFcSummaryDemoBadge() {
+    var section = document.getElementById('fc-summary-section');
+    if (!section) return;
+    if (section.querySelector('.demo-badge')) return;
+    var h2 = section.querySelector('h2');
+    if (!h2) return;
+    var badge = document.createElement('span');
+    badge.className = 'demo-badge';
+    badge.style.cssText = 'background:#8b5cf6;color:white;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:12px;vertical-align:middle;';
+    badge.textContent = 'Demo Data Mode';
+    h2.appendChild(badge);
+}
+
+function _removeFcSummaryDemoBadge() {
+    var badge = document.querySelector('#fc-summary-section .demo-badge');
+    if (badge) badge.remove();
+}
+
+// Patch initFcSummaryPage to show/hide badge
+var _origInitFcSummaryPage = window.initFcSummaryPage;
+window.initFcSummaryPage = function() {
+    _origInitFcSummaryPage();
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        _showFcSummaryDemoBadge();
+    } else {
+        _removeFcSummaryDemoBadge();
+    }
+};
+
+// Debug helper
+window.debugFcSummaryDemoData = function() {
+    var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+    console.log('=== FC Summary Demo Data Debug ===');
+    console.log('Demo enabled:', enabled);
+    if (!enabled) { console.log('Demo mode is OFF. Use setDemoDataMode(true) to enable.'); return; }
+    var rows = window.KM.DemoData.getFcSummaryRows({});
+    console.log('DemoData fcSummary rows:', rows.length);
+    var mapped = _getDemoFcRegularData();
+    console.log('Mapped FC Regular rows:', mapped.length);
+    var events = _getDemoFcEventData();
+    console.log('Mapped FC Event rows:', events.length);
+    console.log('--- First 5 raw rows ---');
+    console.table(rows.slice(0, 5));
+    console.log('--- First 10 mapped regular rows ---');
+    console.table(mapped.slice(0, 10));
+};
 
 // ========================================
 // Lifecycle 註冊

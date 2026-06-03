@@ -1,4 +1,4 @@
-// ========================================
+﻿// ========================================
 // Home Page Logic
 // 從 app.js 搬移，不改行為
 // ========================================
@@ -105,6 +105,97 @@ window.showHome = showHome;
 window.addTodo = addTodo;
 window.handleTodoEnter = handleTodoEnter;
 
+
+
+// ========================================
+// Demo Data Layer: Home Page
+// ========================================
+
+function _renderEmptyHomepage() {
+    var msg = '<div style="padding:20px;text-align:center;color:#94A3B8;font-size:13px;">\u5c1a\u672a\u9023\u63a5\u8cc7\u6599\u4f86\u6e90</div>';
+    var el = document.getElementById('eventsList'); if (el) el.innerHTML = msg;
+    var el2 = document.getElementById('announcementsList'); if (el2) el2.innerHTML = msg;
+    var el3 = document.getElementById('urgentIssuesList'); if (el3) el3.innerHTML = msg;
+    var el4 = document.getElementById('todoList'); if (el4) el4.innerHTML = msg;
+    var el5 = document.getElementById('goalYear'); if (el5) el5.textContent = '-- Goal';
+    var el6 = document.getElementById('achievementRate'); if (el6) el6.textContent = '--%';
+    var el7 = document.getElementById('goalAmount'); if (el7) el7.textContent = 'Goal: --';
+    var el8 = document.getElementById('salesAmount'); if (el8) el8.textContent = 'Sales: --';
+    var el9 = document.getElementById('progressFill'); if (el9) el9.style.width = '0%';
+    var el10 = document.getElementById('progressText'); if (el10) el10.textContent = '0%';
+}
+
+function _isDemoEnabled() {
+    return window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+}
+
+function _renderDemoHomepage() {
+    var d = window.KM.DemoData;
+    // Events
+    var eventsList = document.getElementById('eventsList');
+    if (eventsList) {
+        eventsList.innerHTML = d.getHomeEvents().map(function(event) {
+            return '<div class="event-card"><div class="event-row"><span class="event-label">\u6d3b\u52d5\u540d\u7a31</span><span>' + event.name + '</span></div><div class="event-row"><span class="event-label">\u6d3b\u52d5\u671f\u9593</span><span>' + event.startDate + '~' + event.endDate + '</span></div><div class="event-row"><span class="event-label">Content</span><span>' + event.content + '</span></div></div>';
+        }).join('');
+    }
+    // Goal
+    var goal = d.getHomeGoal();
+    var achievementRate = Math.round((goal.salesAmount / goal.goalAmount) * 100);
+    var el = document.getElementById('goalYear'); if (el) el.textContent = goal.year + ' Goal';
+    el = document.getElementById('achievementRate'); if (el) el.textContent = achievementRate + '%';
+    el = document.getElementById('goalAmount'); if (el) el.textContent = 'Goal: $' + goal.goalAmount.toLocaleString();
+    el = document.getElementById('salesAmount'); if (el) el.textContent = 'Sales: $' + goal.salesAmount.toLocaleString();
+    el = document.getElementById('progressFill'); if (el) el.style.width = achievementRate + '%';
+    el = document.getElementById('progressText'); if (el) el.textContent = achievementRate + '%';
+    // Announcements
+    var announcementsList = document.getElementById('announcementsList');
+    if (announcementsList) {
+        announcementsList.innerHTML = d.getHomeAnnouncements().map(function(item) {
+            return '<div class="announcement-item"><div class="item-title">' + item.title + '</div><div class="item-time">' + item.time + '</div></div>';
+        }).join('');
+    }
+    // Urgent Issues
+    var urgentList = document.getElementById('urgentIssuesList');
+    if (urgentList) {
+        urgentList.innerHTML = d.getHomeUrgentIssues().map(function(item) {
+            return '<div class="urgent-item"><div class="item-title">' + item.title + '</div></div>';
+        }).join('');
+    }
+    // Todos
+    var todoList = document.getElementById('todoList');
+    if (todoList) {
+        todoList.innerHTML = d.getHomeTodos().map(function(todo) {
+            return '<div class="todo-item">' + todo.text + '</div>';
+        }).join('');
+    }
+}
+
+// Patch renderHomepage
+var _origRenderHomepage = renderHomepage;
+renderHomepage = function() {
+    if (_isDemoEnabled()) {
+        _renderDemoHomepage();
+    } else {
+        _renderEmptyHomepage();
+    }
+    // Show/hide demo badge
+    var section = document.getElementById('home-section');
+    if (!section) return;
+    var badge = section.querySelector('.demo-badge');
+    if (_isDemoEnabled()) {
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'demo-badge';
+            badge.style.cssText = 'background:#8b5cf6;color:white;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:12px;vertical-align:middle;';
+            badge.textContent = 'Demo Data Mode';
+            var h1 = section.querySelector('h1');
+            if (h1) h1.appendChild(badge);
+        }
+    } else {
+        if (badge) badge.remove();
+    }
+};
+window.renderHomepage = renderHomepage;
 
 // ========================================
 // Lifecycle 註冊

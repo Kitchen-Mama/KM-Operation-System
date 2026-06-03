@@ -1,4 +1,4 @@
-// Forecast Review Page Logic
+﻿// Forecast Review Page Logic
 
 const forecastReviewState = {
   view: 'daily',
@@ -588,13 +588,15 @@ function collectForecastFilterParams(root) {
   };
 }
 
+
 function fetchForecastSeries(params, view) {
-  return new Promise((resolve) => {
-    const data = DataRepo.getForecastReviewData(params);
-    const lastYearData = forecastReviewState.showComparison ? DataRepo.getForecastReviewDataLastYear(params) : [];
-    const chartData = aggregateForecastData(data, lastYearData, view);
-    setTimeout(() => resolve(chartData), 100);
-  });
+  // === Demo Data Layer: Phase 3A ===
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    return new Promise(function(resolve) { resolve(_buildDemoForecastChartData()); });
+  }
+  // === End Demo Data Layer ===
+  // Demo OFF: return empty chart data
+  return new Promise(function(resolve) { resolve({ labels: [], salesUnits: [], salesAmount: [], forecastUnits: [], forecastAmount: [], sessions: [], pageViews: [], usp: [], lastYearSalesUnits: [], lastYearSalesAmount: [], lastYearSessions: [], lastYearUSP: [], marketplaceBreakdown: {} }); });
 }
 
 function aggregateForecastData(data, lastYearData, view) {
@@ -989,6 +991,32 @@ function updateForecastChart(series) {
 }
 
 function updateSummaryStats(actualData, forecastData, lastYearData, marketplaceBreakdown) {
+  // Demo mode: use chart series data directly
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    var _demoTotalSales = (actualData || []).reduce(function(s,v){return s+v;}, 0);
+    var _demoTotalUnits = _demoTotalSales;
+    var _demoTotalSessions = (actualData || []).reduce(function(s,v){return s + Math.round(v*8);}, 0);
+    var _demoUsp = _demoTotalSessions > 0 ? ((_demoTotalUnits / _demoTotalSessions) * 100).toFixed(2) : 0;
+    var _el;
+    _el = document.getElementById('forecastTotalSales'); if(_el) _el.textContent = '$' + _demoTotalSales.toLocaleString();
+    _el = document.getElementById('forecastTotalUnits'); if(_el) _el.textContent = _demoTotalUnits.toLocaleString();
+    _el = document.getElementById('forecastTotalSessions'); if(_el) _el.textContent = _demoTotalSessions.toLocaleString();
+    _el = document.getElementById('forecastUSP'); if(_el) _el.textContent = _demoUsp + '%';
+    if (marketplaceBreakdown) {
+      try {
+        var _demoShareChart = forecastReviewState.shareChart;
+        if (_demoShareChart) {
+          var _demoMps = Object.keys(marketplaceBreakdown);
+          var _demoMpTotal = _demoMps.reduce(function(s,mp){return s + (marketplaceBreakdown[mp].salesAmountUSD || 0);}, 0);
+          _demoShareChart.data.labels = _demoMps;
+          _demoShareChart.data.datasets[0].data = _demoMps.map(function(mp){ return _demoMpTotal > 0 ? ((marketplaceBreakdown[mp].salesAmountUSD / _demoMpTotal) * 100).toFixed(1) : 0; });
+          _demoShareChart.update();
+        }
+      } catch(e){}
+    }
+    return;
+  }
+
   const params = collectForecastFilterParams(document.querySelector('.page-forecast-review'));
   
   // Get filtered summary data
@@ -1738,6 +1766,107 @@ window.handleFcUpdate = handleFcUpdate;
 window.initFcSkuDecisionSection = initFcSkuDecisionSection;
 
 
+
+// ========================================
+// Demo Data Layer: Phase 3A - Forecast Mapping
+// ========================================
+function _buildDemoForecastChartData() {
+    var rows = window.KM.DemoData.getForecastRows({});
+    var months = ['M-2', 'M-1', 'Current'];
+    var salesUnits = [0, 0, 0];
+    var salesAmount = [0, 0, 0];
+    var forecastUnits = [0, 0, 0];
+    var forecastAmount = [0, 0, 0];
+    var sessions = [0, 0, 0];
+    var marketplaceBreakdown = {};
+    rows.forEach(function(r) {
+        if (r.sku === 'BOX-CO1100') return;
+        salesUnits[0] += r.actual_sales_m3;
+        salesUnits[1] += r.actual_sales_m2;
+        salesUnits[2] += r.actual_sales_m1;
+        salesAmount[0] += r.actual_sales_m3 * 25;
+        salesAmount[1] += r.actual_sales_m2 * 25;
+        salesAmount[2] += r.actual_sales_m1 * 25;
+        forecastUnits[0] += r.forecast_m3 || 0;
+        forecastUnits[1] += r.forecast_m2 || 0;
+        forecastUnits[2] += r.forecast_m1 || 0;
+        forecastAmount[0] += (r.forecast_m3 || 0) * 25;
+        forecastAmount[1] += (r.forecast_m2 || 0) * 25;
+        forecastAmount[2] += (r.forecast_m1 || 0) * 25;
+        sessions[0] += Math.round(r.actual_sales_m3 * 8);
+        sessions[1] += Math.round(r.actual_sales_m2 * 8);
+        sessions[2] += Math.round(r.actual_sales_m1 * 8);
+        var mp = r.marketplace || 'Amazon';
+        if (!marketplaceBreakdown[mp]) marketplaceBreakdown[mp] = { salesUnits: 0, salesAmountUSD: 0 };
+        marketplaceBreakdown[mp].salesUnits += r.actual_sales_m1;
+        marketplaceBreakdown[mp].salesAmountUSD += r.actual_sales_m1 * 25;
+    });
+    var pageViews = sessions.map(function(s) { return Math.round(s * 1.5); });
+    var usp = sessions.map(function(s, i) { return s > 0 ? (salesUnits[i] / s * 100) : 0; });
+    return {
+        labels: months,
+        salesUnits: salesUnits,
+        salesAmount: salesAmount,
+        forecastUnits: forecastUnits,
+        forecastAmount: forecastAmount,
+        sessions: sessions,
+        pageViews: pageViews,
+        usp: usp,
+        lastYearSalesUnits: salesUnits.map(function(v) { return Math.round(v * 0.85); }),
+        lastYearSalesAmount: salesAmount.map(function(v) { return Math.round(v * 0.85); }),
+        lastYearSessions: sessions.map(function(v) { return Math.round(v * 0.9); }),
+        lastYearUSP: usp.map(function(v) { return v * 0.95; }),
+        marketplaceBreakdown: marketplaceBreakdown
+    };
+}
+
+function _showForecastDemoBadge() {
+    var header = document.querySelector('#forecast-section .page-header');
+    if (!header) return;
+    if (header.querySelector('.demo-badge')) return;
+    var badge = document.createElement('span');
+    badge.className = 'demo-badge';
+    badge.style.cssText = 'background:#8b5cf6;color:white;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:12px;vertical-align:middle;';
+    badge.textContent = 'Demo Data Mode';
+    var title = header.querySelector('.page-title');
+    if (title) title.appendChild(badge);
+}
+
+function _removeForecastDemoBadge() {
+    var badge = document.querySelector('#forecast-section .demo-badge');
+    if (badge) badge.remove();
+}
+
+// Patch initForecastReviewPage to show/hide badge
+var _origInitForecastReviewPage = initForecastReviewPage;
+initForecastReviewPage = function() {
+    _origInitForecastReviewPage();
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        _showForecastDemoBadge();
+    } else {
+        _removeForecastDemoBadge();
+    }
+};
+window.initForecastReviewPage = initForecastReviewPage;
+
+// Debug helper
+window.debugForecastDemoData = function() {
+    var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+    console.log('=== Forecast Demo Data Debug ===');
+    console.log('Demo enabled:', enabled);
+    if (!enabled) { console.log('Demo mode is OFF. Use setDemoDataMode(true) to enable.'); return; }
+    var rows = window.KM.DemoData.getForecastRows({});
+    console.log('DemoData forecast rows:', rows.length);
+    console.log('--- First 5 raw rows ---');
+    console.table(rows.slice(0, 5));
+    var chartData = _buildDemoForecastChartData();
+    console.log('--- Chart data ---');
+    console.log('Labels:', chartData.labels);
+    console.log('Sales Units:', chartData.salesUnits);
+    console.log('Forecast Units:', chartData.forecastUnits);
+    console.log('Marketplace breakdown:', chartData.marketplaceBreakdown);
+};
+
 // ========================================
 // Lifecycle 註冊
 // ========================================
@@ -1751,6 +1880,9 @@ if (window.KM && window.KM.lifecycle) {
         },
         unmount() {
             console.log('[Forecast] unmount');
+            // Clear init flag so charts can be recreated on next mount
+            var root = document.querySelector('.page-forecast-review');
+            if (root) root._forecastInitialized = false;
             if (forecastReviewState) {
                 if (forecastReviewState.chart) {
                     forecastReviewState.chart.destroy();

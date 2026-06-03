@@ -338,6 +338,12 @@ function calculateShippingSuggestions(skuData, marketplace) {
 }
 
 function getReplenishmentData() {
+    // === Demo Data Layer: Phase 2A ===
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        return _getDemoReplenishmentData();
+    }
+    // === End Demo Data Layer ===
+    return []; // Demo OFF: no data source connected
     const marketplace = document.getElementById('replenMarketplace').value;
     const siteData = window.DataRepo.getSiteSkus(marketplace);
     const targetDays = parseInt(document.getElementById('replenTargetDays').value) || 90;
@@ -1486,6 +1492,100 @@ window.showAddCountryInput = showAddCountryInput;
 window.cancelAddCountry = cancelAddCountry;
 window.addNewCountry = addNewCountry;
 
+
+// ========================================
+// Demo Data Layer: Phase 2A - Inventory Mapping
+// ========================================
+function _getDemoReplenishmentData() {
+    var rows = window.KM.DemoData.getInventoryRows({});
+    return rows.map(function(r) {
+        var avgDaily = r.sales_30d > 0 ? (r.sales_30d / 30) : 0;
+        var currentInv = r.fba_stock + r.third_wh_david + r.third_wh_winit;
+        var onTheWay = r.overseas_on_way_18d + r.overseas_on_way_45d;
+        var thirdParty = r.third_wh_david + r.third_wh_winit;
+        var daysOfSupply = avgDaily > 0 ? (currentInv / avgDaily).toFixed(1) : '999';
+        var forecast60d = Math.round(avgDaily * 60);
+        var suggestedQty = Math.max(0, Math.round(avgDaily * 90 - currentInv - onTheWay));
+        var needsAlert = parseFloat(daysOfSupply) < 18;
+        return {
+            sku: r.sku,
+            lifecycle: r.warning_status === 'upcoming' ? 'New' : 'Mature',
+            company: 'Kitchen Mama',
+            marketplace: r.marketplace,
+            currentInventory: currentInv,
+            onTheWay: onTheWay,
+            thirdPartyStock: thirdParty,
+            avgDailySales: avgDaily.toFixed(2),
+            forecast60d: forecast60d,
+            upcomingEventQty: null,
+            daysOfSupply: daysOfSupply,
+            needsAlert: needsAlert,
+            suggestedQty: suggestedQty,
+            cnStock: r.factory_youxin,
+            twStock: r.factory_shengyi,
+            need18: 0,
+            need30: 0,
+            need45Plus: suggestedQty,
+            plannedQty: 0,
+            note: r.recommendation || '',
+            status: suggestedQty > 0 ? 'Need Restock' : 'Sufficient',
+            productName: r.product_name,
+            available: r.fba_stock,
+            fcTransfer: 0,
+            fcProcessing: 0,
+            winitStock: r.third_wh_winit,
+            onusStock: r.third_wh_david,
+            within18days: r.overseas_on_way_18d,
+            within30days: 0,
+            within45days: r.overseas_on_way_45d,
+            lastWeek: Math.round(avgDaily * 7)
+        };
+    });
+}
+
+function _showDemoBadge() {
+    var panel = document.querySelector('#ops-section .replen-control-panel');
+    if (!panel) return;
+    if (panel.querySelector('.demo-badge')) return;
+    var badge = document.createElement('span');
+    badge.className = 'demo-badge';
+    badge.style.cssText = 'background:#8b5cf6;color:white;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:12px;vertical-align:middle;';
+    badge.textContent = 'Demo Data Mode';
+    panel.appendChild(badge);
+}
+
+function _removeDemoBadge() {
+    var badge = document.querySelector('#ops-section .demo-badge');
+    if (badge) badge.remove();
+}
+
+// Patch renderReplenishment to show/hide badge
+var _originalRenderReplenishment = renderReplenishment;
+renderReplenishment = function() {
+    _originalRenderReplenishment();
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        _showDemoBadge();
+    } else {
+        _removeDemoBadge();
+    }
+};
+window.renderReplenishment = renderReplenishment;
+
+// Debug helper
+window.debugInventoryDemoData = function() {
+    var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+    console.log('=== Inventory Demo Data Debug ===');
+    console.log('Demo enabled:', enabled);
+    if (!enabled) { console.log('Demo mode is OFF. Use setDemoDataMode(true) to enable.'); return; }
+    var rows = window.KM.DemoData.getInventoryRows({});
+    console.log('DemoData inventory rows:', rows.length);
+    var mapped = _getDemoReplenishmentData();
+    console.log('Mapped replenishment rows:', mapped.length);
+    console.log('--- First 5 demo rows ---');
+    console.table(rows.slice(0, 5));
+    console.log('--- First 10 mapped rows ---');
+    console.table(mapped.slice(0, 10));
+};
 
 // ========================================
 // Lifecycle 註冊

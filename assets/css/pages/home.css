@@ -3,54 +3,118 @@
    #home-section 專屬樣式
 ======================================== */
 
+/* Page Title */
+#home-section h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin: 0 0 4px 0;
+    letter-spacing: -0.3px;
+}
+
+#home-section > p {
+    margin: 0 0 var(--space-lg) 0;
+    color: var(--text-secondary, #64748b);
+    font-size: 0.9rem;
+}
+
 /* Homepage Row 1 - Event & Goal */
 #home-section .home-row-1 {
     display: flex;
     gap: var(--space-lg);
-    margin: var(--space-xl) 0;
+    margin: 0 0 var(--space-xl) 0;
 }
 
 #home-section .event-container {
     flex: 3;
-    background: #E3F2FD;
+    background: white;
     padding: var(--space-lg);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
-    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    border: 1px solid #e2e8f0;
 }
 
 #home-section .event-container h3 {
-    margin-bottom: 1rem;
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    font-weight: 600;
     color: var(--text-dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#home-section .event-container h3::before {
+    content: '';
+    width: 4px;
+    height: 18px;
+    background: #3b82f6;
+    border-radius: 2px;
 }
 
 #home-section .event-card {
-    background: #fff8e1;
-    padding: 1rem;
-    margin-bottom: 0.5rem;
-    border-radius: 6px;
+    background: #f8fafc;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    border-left: 3px solid #f59e0b;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+#home-section .event-card:hover {
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+#home-section .event-card:last-child {
+    margin-bottom: 0;
 }
 
 #home-section .event-row {
     display: flex;
-    margin-bottom: 0.3rem;
+    margin-bottom: 4px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+#home-section .event-row:last-child {
+    margin-bottom: 0;
 }
 
 #home-section .event-label {
-    font-weight: 500;
-    min-width: 80px;
+    font-weight: 600;
+    min-width: 90px;
+    color: #475569;
+    font-size: 0.8rem;
 }
 
+/* Goal Card */
 #home-section .goal-container {
     flex: 1;
-    background: #ffebee;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
     padding: 1.5rem;
-    border-radius: 8px;
+    border-radius: 12px;
+    border: 1px solid #fed7aa;
+    position: relative;
+    overflow: hidden;
+}
+
+#home-section .goal-container::after {
+    content: '';
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 80px;
+    height: 80px;
+    background: rgba(251, 146, 60, 0.1);
+    border-radius: 50%;
 }
 
 #home-section .goal-container h3 {
-    margin-bottom: 1rem;
-    color: var(--text-dark);
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #9a3412;
 }
 
 #home-section .goal-content {
@@ -61,26 +125,33 @@
 }
 
 #home-section .achievement-rate {
-    font-size: 2rem;
-    font-weight: bold;
+    font-size: 2.2rem;
+    font-weight: 800;
     color: var(--warm-orange);
+    line-height: 1;
 }
 
 #home-section .achievement-spacer {
     width: 80px;
 }
 
-#home-section .goal-amount,
+#home-section .goal-amount {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #475569;
+}
+
 #home-section .sales-amount {
-    font-size: 1.1rem;
-    font-weight: 500;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--soft-green);
 }
 
 #home-section .progress-bar {
     width: 100%;
-    height: 20px;
-    background: #f5f5f5;
-    border-radius: 10px;
+    height: 10px;
+    background: rgba(255,255,255,0.8);
+    border-radius: 5px;
     overflow: hidden;
     margin-top: 1rem;
     position: relative;
@@ -91,26 +162,26 @@
 
 #home-section .progress-fill {
     height: 100%;
-    background: var(--soft-green);
-    transition: width 0.3s ease;
+    background: linear-gradient(90deg, #7FB069, #5fa04e);
+    transition: width 0.5s ease;
     position: absolute;
     left: 0;
     top: 0;
+    border-radius: 5px;
 }
 
 #home-section .progress-text {
     position: relative;
     z-index: 1;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--text-dark);
+    font-size: 0;
+    visibility: hidden;
 }
 
-/* Homepage Row 2 - Announcements & Todo */
+/* Homepage Row 2 - Announcements, Urgent, Todo */
 #home-section .home-row-2 {
     display: flex;
     gap: var(--space-lg);
-    margin: var(--space-xl) 0;
+    margin: 0 0 var(--space-xl) 0;
 }
 
 #home-section .left-section {
@@ -121,29 +192,31 @@
 
 #home-section .announcement-container {
     flex: 1;
-    background: #F3E5F5;
+    background: white;
     padding: var(--space-lg);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
-    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    border: 1px solid #e2e8f0;
 }
 
 #home-section .urgent-container {
     flex: 1;
-    background: #FFEBEE;
+    background: white;
     padding: var(--space-lg);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
-    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    border: 1px solid #e2e8f0;
+    border-top: 3px solid #ef4444;
 }
 
 #home-section .todo-container {
     flex: 1;
-    background: #E8F5E8;
+    background: white;
     padding: var(--space-lg);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-card);
-    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    border: 1px solid #e2e8f0;
+    border-top: 3px solid var(--soft-green);
 }
 
 #home-section .home-section-header {
@@ -151,33 +224,39 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
 }
 
 #home-section .home-section-header h3 {
     margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
     color: var(--text-dark);
 }
 
 #home-section .see-more {
-    font-size: var(--font-size-body);
+    font-size: 0.75rem;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: var(--space-xs) var(--space-md);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-light);
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
     background: transparent;
     transition: all 0.2s ease;
+    text-decoration: none;
 }
 
 #home-section .see-more:hover {
-    color: var(--warm-orange);
-    border-color: var(--warm-orange);
+    color: #3b82f6;
+    border-color: #3b82f6;
+    background: #eff6ff;
 }
 
 #home-section .announcement-item,
 #home-section .urgent-item {
-    padding: 0.75rem 0;
-    border-bottom: 1px solid #eee;
+    padding: 10px 0;
+    border-bottom: 1px solid #f8fafc;
 }
 
 #home-section .announcement-item:last-child,
@@ -187,14 +266,35 @@
 
 #home-section .item-title {
     font-weight: 500;
-    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+    margin-bottom: 3px;
+    color: #334155;
 }
 
 #home-section .item-time {
-    font-size: 0.8rem;
-    color: #666;
+    font-size: 0.75rem;
+    color: #94a3b8;
 }
 
+/* Urgent items with subtle red indicator */
+#home-section .urgent-item .item-title {
+    padding-left: 12px;
+    position: relative;
+}
+
+#home-section .urgent-item .item-title::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    background: #ef4444;
+    border-radius: 50%;
+}
+
+/* Todo Section */
 #home-section .todo-list {
     margin-bottom: 1rem;
     max-height: 200px;
@@ -202,30 +302,69 @@
 }
 
 #home-section .todo-item {
-    background: white;
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    background: #f8fafc;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #334155;
+    border-left: 3px solid var(--soft-green);
+    transition: background 0.15s;
+}
+
+#home-section .todo-item:hover {
+    background: #f0fdf4;
 }
 
 #home-section .todo-input {
     display: flex;
-    gap: 0.5rem;
+    gap: 8px;
 }
 
 #home-section .todo-input input {
     flex: 1;
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    transition: border-color 0.2s;
+}
+
+#home-section .todo-input input:focus {
+    outline: none;
+    border-color: var(--soft-green);
+    box-shadow: 0 0 0 3px rgba(127, 176, 105, 0.1);
 }
 
 #home-section .todo-input button {
-    padding: 0.5rem 1rem;
+    padding: 8px 16px;
     background: var(--soft-green);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: background 0.2s, transform 0.1s;
+}
+
+#home-section .todo-input button:hover {
+    background: #6a9b56;
+}
+
+#home-section .todo-input button:active {
+    transform: scale(0.97);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    #home-section .home-row-1 {
+        flex-direction: column;
+    }
+    #home-section .home-row-2 {
+        flex-direction: column;
+    }
+    #home-section .left-section {
+        flex-direction: column;
+    }
 }

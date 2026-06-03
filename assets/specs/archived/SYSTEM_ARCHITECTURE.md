@@ -1,3 +1,13 @@
+> ⚠️ **DEPRECATION NOTICE** (2025-01-21)
+>
+> This document may contain legacy architecture notes from earlier development stages.
+> For the latest current system state, refer to **project-current-state.md** (root directory).
+>
+> Google Sheet DB / Apps Script / SKU Handbook / Training Center 最新狀態以 project-current-state.md 為準。
+> 本文件僅作 legacy architecture reference。
+
+---
+
 # Kitchen Mama Operation System - 系統架構文檔
 
 **文檔版本**: 3.0  

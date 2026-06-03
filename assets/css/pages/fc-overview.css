@@ -851,3 +851,457 @@
 .fc-sku-decision-detail-actions button:hover {
     background: #f9fafb;
 }
+
+
+/* ========================================
+   FC Summary - Tabs & Panels (Base)
+   #fc-summary-section
+======================================== */
+.fc-tabs-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.fc-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #E2E8F0;
+}
+
+.fc-tab {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #64748B;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.fc-tab:hover {
+    color: #1E293B;
+}
+
+.fc-tab--active,
+.fc-tab.fc-tab--active {
+    color: #1E293B;
+    font-weight: 600;
+    border-bottom-color: #FF8C42;
+}
+
+.fc-action-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.fc-tab-panels {
+    position: relative;
+}
+
+.fc-panel {
+    display: none;
+}
+
+.fc-panel--active,
+.fc-panel.fc-panel--active {
+    display: block;
+}
+
+
+/* ========================================
+   FC Summary - Core Components
+   #fc-summary-section
+======================================== */
+#fc-summary-section .fc-filter-bar {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+    padding: 12px 0;
+}
+
+#fc-summary-section .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#fc-summary-section .filter-group label {
+    font-size: 12px;
+    color: #64748B;
+    font-weight: 500;
+}
+
+#fc-summary-section .filter-group select,
+#fc-summary-section .filter-group input {
+    padding: 6px 10px;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    font-size: 13px;
+    min-width: 120px;
+}
+
+/* FC Buttons */
+.fc-btn {
+    padding: 6px 14px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: opacity 0.2s;
+}
+
+.fc-btn:hover {
+    opacity: 0.85;
+}
+
+.fc-btn--primary {
+    background: #FF8C42;
+    color: white;
+}
+
+.fc-btn--add {
+    background: #7FB069;
+    color: white;
+}
+
+.fc-btn--edit {
+    background: #3B82F6;
+    color: white;
+}
+
+.fc-btn--save {
+    background: #10B981;
+    color: white;
+}
+
+.fc-btn--cancel {
+    background: #EF4444;
+    color: white;
+}
+
+/* FC Dropdown (in FC Summary context) */
+#fc-summary-section .fc-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+    font-size: 13px;
+    min-width: 120px;
+    gap: 8px;
+}
+
+#fc-summary-section .fc-dropdown-panel {
+    display: none;
+    position: absolute;
+    background: white;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    padding: 8px;
+    z-index: 100;
+    min-width: 150px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+#fc-summary-section .fc-dropdown-panel.is-open {
+    display: block;
+}
+
+#fc-summary-section .fc-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+#fc-summary-section .fc-checkbox-item:hover {
+    background: #F8FAFC;
+}
+
+#fc-summary-section .filter-group--dropdown {
+    position: relative;
+}
+
+#fc-summary-section .filter-group--sku input {
+    min-width: 140px;
+}
+
+/* FC Pagination */
+.fc-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    margin-top: 1rem;
+    border-top: 1px solid #E2E8F0;
+}
+
+.fc-pagination-left {
+    font-size: 13px;
+    color: #64748B;
+}
+
+.fc-pagination-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.fc-page-size-select {
+    padding: 4px 8px;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.fc-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fc-page-btn {
+    padding: 4px 10px;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.fc-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.fc-page-number {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* FC Modal */
+.fc-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 999;
+}
+
+.fc-modal-overlay.is-open {
+    display: block;
+}
+
+.fc-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    z-index: 1000;
+    width: 90%;
+    max-width: 500px;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.fc-modal.is-open {
+    display: block;
+}
+
+.fc-modal-content {
+    padding: 24px;
+}
+
+.fc-modal-content--large {
+    max-width: 700px;
+}
+
+.fc-modal-content h3 {
+    margin: 0 0 16px;
+    font-size: 18px;
+}
+
+.fc-modal-body {
+    margin-bottom: 20px;
+}
+
+.fc-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.fc-form-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.fc-form-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.fc-form-group label {
+    font-size: 12px;
+    color: #64748B;
+    font-weight: 500;
+}
+
+.fc-form-group input,
+.fc-form-group select {
+    padding: 8px 10px;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.fc-form-note {
+    background: #F8FAFC;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #64748B;
+}
+
+.fc-months-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.fc-months-grid input {
+    width: 100%;
+    padding: 6px;
+    text-align: center;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* Empty row placeholder */
+.empty-row {
+    padding: 40px;
+    text-align: center;
+    color: #94A3B8;
+    font-size: 14px;
+}
+
+/* Cell styles for FC table */
+.cell-month {
+    text-align: right;
+}
+
+.cell-total {
+    text-align: right;
+    font-weight: 600;
+}
+
+.cell-percentage {
+    text-align: right;
+    color: #3B82F6;
+}
+
+
+/* ========================================
+   FC Summary - Table Column Width Alignment
+   確保 header-cell 和 scroll-cell 寬度一致
+======================================== */
+#fc-summary-section .scroll-header .header-cell,
+#fc-summary-section .scroll-row .scroll-cell {
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
+}
+
+/* 較寬的欄位：Company, Marketplace, Category */
+#fc-summary-section .scroll-header .header-cell:nth-child(2),
+#fc-summary-section .scroll-row .scroll-cell:nth-child(2),
+#fc-summary-section .scroll-header .header-cell:nth-child(3),
+#fc-summary-section .scroll-row .scroll-cell:nth-child(3),
+#fc-summary-section .scroll-header .header-cell:nth-child(5),
+#fc-summary-section .scroll-row .scroll-cell:nth-child(5) {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+}
+
+/* 較窄的月份欄位：Jan-Dec */
+#fc-summary-section .scroll-header .header-cell:nth-child(n+7):nth-child(-n+18),
+#fc-summary-section .scroll-row .scroll-cell:nth-child(n+7):nth-child(-n+18) {
+    width: 75px;
+    min-width: 75px;
+    max-width: 75px;
+    justify-content: flex-end;
+}
+
+/* Total FC 和 FC占比 */
+#fc-summary-section .scroll-header .header-cell:nth-child(19),
+#fc-summary-section .scroll-row .scroll-cell:nth-child(19) {
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
+    justify-content: flex-end;
+    font-weight: 600;
+}
+
+#fc-summary-section .scroll-header .header-cell:nth-child(20),
+#fc-summary-section .scroll-row .scroll-cell:nth-child(20) {
+    width: 80px;
+    min-width: 80px;
+    max-width: 80px;
+    justify-content: flex-end;
+}
+
+/* Fixed column (SKU) 寬度 */
+#fc-summary-section .fixed-header,
+#fc-summary-section .fixed-col {
+    width: 120px;
+    min-width: 120px;
+}
+
+/* header row 高度對齊 */
+#fc-summary-section .scroll-header {
+    display: flex;
+    align-items: center;
+    height: var(--table-header-height, 40px);
+}
+
+#fc-summary-section .scroll-row {
+    display: flex;
+    align-items: center;
+    height: var(--table-row-height, 40px);
+    border-bottom: 1px solid #F1F5F9;
+}
+
+#fc-summary-section .scroll-row:hover {
+    background: #F8FAFC;
+}
