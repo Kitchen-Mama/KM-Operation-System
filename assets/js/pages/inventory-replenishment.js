@@ -116,7 +116,10 @@ function saveReplenSku() {
 document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('replen-modal-overlay');
   if (overlay) {
-    overlay.addEventListener('click', closeReplenModal);
+    overlay.addEventListener('click', function() {
+      closeReplenModal();
+      closeAddMarketplaceModal();
+    });
   }
 });
 
@@ -161,6 +164,13 @@ function renderIrOverview() {
     const fixedBody = document.getElementById('ir-overview-fixed-body');
     const scrollBody = document.getElementById('ir-overview-scroll-body');
     if (!fixedBody || !scrollBody) return;
+
+    // Only show data when Demo mode is ON
+    if (!(window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled())) {
+        fixedBody.innerHTML = '';
+        scrollBody.innerHTML = '';
+        return;
+    }
 
     const data = irOverviewState.series === 'All'
         ? irOverviewMockData
@@ -700,17 +710,23 @@ function renderReplenishment() {
 }
 
 function initReplenHeaderSync() {
-    const scrollCol = document.querySelector('#ops-section .scroll-col');
-    const scrollHeader = document.querySelector('#ops-section .scroll-header');
+    // Select the detail table scroll-col (not the ir-overview one)
+    var tables = document.querySelectorAll('#ops-section .dual-layer-table:not(.ir-overview-table)');
+    var detailTable = tables[tables.length - 1]; // last dual-layer-table is the detail table
+    if (!detailTable) return;
+    var scrollCol = detailTable.querySelector('.scroll-col');
+    var scrollHeader = detailTable.querySelector('.scroll-header');
     
     if (!scrollCol || !scrollHeader) return;
     
     // Remove existing listener to avoid duplicates
-    scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
+    if (scrollCol._syncHandler) {
+        scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
+    }
     
     // Create and store handler
-    scrollCol._syncHandler = () => {
-        scrollHeader.style.transform = `translateX(-${scrollCol.scrollLeft}px)`;
+    scrollCol._syncHandler = function() {
+        scrollHeader.style.transform = 'translateX(-' + scrollCol.scrollLeft + 'px)';
     };
     
     scrollCol.addEventListener('scroll', scrollCol._syncHandler);

@@ -6,8 +6,8 @@
 const CampaignRiskState = {
     country: 'US',
     marketplaces: ['Amazon'],
-    selectedCategory: 'all',
-    selectedSeries: 'all',
+    selectedCategories: [],  // empty = all
+    selectedSeries: [],      // empty = all
     selectedRisk: 'all',
     page: 1,
     pageSize: 25
@@ -160,6 +160,10 @@ function enrichEligibleSkusWithSkuDetails(eligibleSkuCodes) {
 }
 
 function getSkuMasterData() {
+    // Only show data when Demo mode is ON
+    if (!(window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled())) {
+        return [];
+    }
     const eligibleCodes = getEligibleSkusByCountryMarketplace(CampaignRiskState.country, CampaignRiskState.marketplaces);
     return enrichEligibleSkusWithSkuDetails(eligibleCodes);
 }
@@ -239,7 +243,6 @@ function getSeriesForCategory(category) {
 // --- Render Functions ---
 function renderCampaignRiskTracker() {
     renderRiskKPIs();
-    renderRiskFilters();
     renderRiskTable();
 }
 
@@ -271,31 +274,121 @@ function renderRiskKPIs() {
 }
 
 function renderRiskFilters() {
-    const categories = getCategories();
-    const series = getSeriesForCategory(CampaignRiskState.selectedCategory);
+    var categories = getCategories();
+    var allSeries = getSeriesForCategory('all');
 
-    const catContainer = document.getElementById('cr-category-chips');
-    const serContainer = document.getElementById('cr-series-chips');
-    if (!catContainer || !serContainer) return;
+    var catPanel = document.getElementById('cr-category-panel');
+    var serPanel = document.getElementById('cr-series-panel');
+    if (!catPanel || !serPanel) return;
 
-    catContainer.innerHTML = `
-        <button class="cr-chip ${CampaignRiskState.selectedCategory === 'all' ? 'is-active' : ''}" onclick="setCrCategory('all')">All</button>
-        ${categories.map(c => `<button class="cr-chip ${CampaignRiskState.selectedCategory === c ? 'is-active' : ''}" onclick="setCrCategory('${c}')">${c}</button>`).join('')}
-    `;
+    catPanel.innerHTML = '<label class="cr-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
+        categories.map(function(c) { return '<label class="cr-checkbox-item"><input type="checkbox" value="' + c + '" checked> ' + c + '</label>'; }).join('');
 
-    serContainer.innerHTML = `
-        <button class="cr-chip ${CampaignRiskState.selectedSeries === 'all' ? 'is-active' : ''}" onclick="setCrSeries('all')">All</button>
-        ${series.map(s => `<button class="cr-chip ${CampaignRiskState.selectedSeries === s ? 'is-active' : ''}" onclick="setCrSeries('${s}')">${s}</button>`).join('')}
-    `;
+    serPanel.innerHTML = '<label class="cr-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
+        allSeries.map(function(s) { return '<label class="cr-checkbox-item"><input type="checkbox" value="' + s + '" checked> ' + s + '</label>'; }).join('');
+
+    _initCrDropdowns();
+}
+
+function _initCrDropdowns() {
+    var root = document.getElementById('campaign-risk-section');
+    if (!root) return;
+
+    root.querySelectorAll('.cr-dropdown-trigger').forEach(function(trigger) {
+        trigger.onclick = function(e) {
+            e.stopPropagation();
+            var filterType = this.dataset.filter;
+            var panel = root.querySelector('.cr-dropdown-panel[data-filter="' + filterType + '"]');
+            root.querySelectorAll('.cr-dropdown-panel').forEach(function(p) {
+                if (p !== panel) p.classList.remove('is-open');
+            });
+            root.querySelectorAll('.cr-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
+            if (panel) {
+                panel.classList.toggle('is-open');
+                this.setAttribute('aria-expanded', panel.classList.contains('is-open') ? 'true' : 'false');
+            }
+        };
+    });
+
+    root.querySelectorAll('.cr-dropdown-panel').forEach(function(panel) {
+        panel.onclick = function(e) { e.stopPropagation(); };
+        var filterType = panel.dataset.filter;
+        var allCb = panel.querySelector('input[value=""]');
+        var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+
+        if (allCb) {
+            allCb.onchange = function() {
+                otherCbs.forEach(function(cb) { cb.checked = allCb.checked; });
+                _syncCrFilterState(filterType, panel);
+            };
+        }
+        otherCbs.forEach(function(cb) {
+            cb.onchange = function() {
+                var checkedCount = Array.from(otherCbs).filter(function(c) { return c.checked; }).length;
+                if (allCb) allCb.checked = (checkedCount === otherCbs.length);
+                _syncCrFilterState(filterType, panel);
+            };
+        });
+    });
+
+    document.addEventListener('click', function(e) {
+        if (!root.contains(e.target)) {
+            root.querySelectorAll('.cr-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
+        }
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            root.querySelectorAll('.cr-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
+        }
+    });
+}
+
+function _syncCrFilterState(filterType, panel) {
+    var allCb = panel.querySelector('input[value=""]');
+    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    var selected = Array.from(otherCbs).filter(function(c) { return c.checked; }).map(function(c) { return c.value; });
+    if (allCb && allCb.checked) selected = [];
+    if (selected.length === otherCbs.length) selected = [];
+
+    if (filterType === 'category') CampaignRiskState.selectedCategories = selected;
+    else if (filterType === 'series') CampaignRiskState.selectedSeries = selected;
+
+    _updateCrDropdownText(filterType);
+    CampaignRiskState.page = 1;
+    renderCampaignRiskTracker();
+}
+
+function _updateCrDropdownText(filterType) {
+    var root = document.getElementById('campaign-risk-section');
+    if (!root) return;
+    var trigger = root.querySelector('.cr-dropdown-trigger[data-filter="' + filterType + '"]');
+    var panel = root.querySelector('.cr-dropdown-panel[data-filter="' + filterType + '"]');
+    if (!trigger || !panel) return;
+    var textSpan = trigger.querySelector('.cr-dropdown-text');
+    var allCb = panel.querySelector('input[value=""]');
+    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    var checked = Array.from(otherCbs).filter(function(c) { return c.checked; });
+
+    var labels = { category: 'Categories', series: 'Series' };
+    var label = labels[filterType] || filterType;
+
+    if ((allCb && allCb.checked) || checked.length === 0 || checked.length === otherCbs.length) {
+        textSpan.textContent = 'All ' + label;
+    } else if (checked.length === 1) {
+        textSpan.textContent = checked[0].value;
+    } else {
+        textSpan.textContent = checked.length + ' ' + label;
+    }
 }
 
 function getFilteredRiskResults() {
     let skus = getSkuMasterData();
-    if (CampaignRiskState.selectedCategory !== 'all') {
-        skus = skus.filter(s => s.category === CampaignRiskState.selectedCategory);
+    if (CampaignRiskState.selectedCategories.length > 0) {
+        skus = skus.filter(s => CampaignRiskState.selectedCategories.includes(s.category));
     }
-    if (CampaignRiskState.selectedSeries !== 'all') {
-        skus = skus.filter(s => s.series === CampaignRiskState.selectedSeries);
+    if (CampaignRiskState.selectedSeries.length > 0) {
+        skus = skus.filter(s => CampaignRiskState.selectedSeries.includes(s.series));
     }
     return skus.map(s => ({ ...s, ...calculateSkuRisk(s.sku, CampaignRiskState.country, CampaignRiskState.marketplaces) }));
 }
@@ -325,16 +418,14 @@ function renderRiskTable() {
     }
 
     fixedBody.innerHTML = pageData.map(r => `
-        <div class="fixed-row">
-            <div class="cr-fixed-cell cr-fixed-cell--img"><div class="cr-img-placeholder">IMG</div></div>
-            <div class="cr-fixed-cell cr-fixed-cell--sku">${r.sku}</div>
-        </div>
+        <div class="fixed-row">${r.sku}</div>
     `).join('');
 
     scrollBody.innerHTML = pageData.map(r => {
         const riskClass = r.riskLevel === 'Safe' ? 'cr-risk--safe' : r.riskLevel === 'Watch' ? 'cr-risk--watch' : 'cr-risk--high';
         return `
         <div class="scroll-row">
+            <div class="scroll-cell cr-cell--img"><div class="cr-img-placeholder">IMG</div></div>
             <div class="scroll-cell cr-cell--name">${r.productName}</div>
             <div class="scroll-cell">${r.ninetyDayDays}</div>
             <div class="scroll-cell">${r.futureDays}</div>
@@ -362,8 +453,8 @@ function renderRiskTable() {
 function setCrCountry(country) {
     CampaignRiskState.country = country;
     CampaignRiskState.marketplaces = [countryMarketplaceMap[country]?.[0] || 'Amazon'];
-    CampaignRiskState.selectedCategory = 'all';
-    CampaignRiskState.selectedSeries = 'all';
+    CampaignRiskState.selectedCategories = [];
+    CampaignRiskState.selectedSeries = [];
     CampaignRiskState.selectedRisk = 'all';
     CampaignRiskState.page = 1;
     updateCrFilterButton();
@@ -441,8 +532,8 @@ function crCmToggleMarketplace(mp) {
 function applyCrCmFilter() {
     CampaignRiskState.country = window._crCmTempCountry;
     CampaignRiskState.marketplaces = [...window._crCmTempMPs];
-    CampaignRiskState.selectedCategory = 'all';
-    CampaignRiskState.selectedSeries = 'all';
+    CampaignRiskState.selectedCategories = [];
+    CampaignRiskState.selectedSeries = [];
     CampaignRiskState.selectedRisk = 'all';
     CampaignRiskState.page = 1;
     closeCrCmModal();
@@ -450,18 +541,15 @@ function applyCrCmFilter() {
     renderCampaignRiskTracker();
 }
 
+// Legacy compat — no longer used for dropdown but kept for add-promotion modal
 function setCrCategory(cat) {
-    CampaignRiskState.selectedCategory = cat;
-    const validSeries = getSeriesForCategory(cat);
-    if (CampaignRiskState.selectedSeries !== 'all' && !validSeries.includes(CampaignRiskState.selectedSeries)) {
-        CampaignRiskState.selectedSeries = 'all';
-    }
+    CampaignRiskState.selectedCategories = cat === 'all' ? [] : [cat];
     CampaignRiskState.page = 1;
     renderCampaignRiskTracker();
 }
 
 function setCrSeries(series) {
-    CampaignRiskState.selectedSeries = series;
+    CampaignRiskState.selectedSeries = series === 'all' ? [] : [series];
     CampaignRiskState.page = 1;
     renderCampaignRiskTracker();
 }
@@ -921,6 +1009,7 @@ function initCrScrollSync() {
 document.addEventListener('DOMContentLoaded', () => {
     initCrScrollSync();
     updateCrFilterButton();
+    renderRiskFilters();
 });
 
 // --- Exports ---
@@ -1024,3 +1113,30 @@ window.addTestHighRiskPromotion = addTestHighRiskPromotion;
 window.addTestAnnualEventPromotion = addTestAnnualEventPromotion;
 window.addPromotionRecords = addPromotionRecords;
 window.deletePromotionRecordsByIds = deletePromotionRecordsByIds;
+
+
+// Debug helper
+window.debugPromotionRiskFilters = function() {
+    var categories = getCategories();
+    var allSeries = getSeriesForCategory('all');
+    console.log('=== Promotion Risk Filter Debug ===');
+    console.log('Available categories:', categories);
+    console.log('Selected categories:', CampaignRiskState.selectedCategories);
+    console.log('Available series:', allSeries);
+    console.log('Selected series:', CampaignRiskState.selectedSeries);
+    console.log('Selected risk:', CampaignRiskState.selectedRisk);
+
+    var catPanel = document.getElementById('cr-category-panel');
+    var serPanel = document.getElementById('cr-series-panel');
+    if (catPanel) {
+        var catCbs = catPanel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+        console.log('Category checkboxes:', Array.from(catCbs).map(function(cb) { return { value: cb.value, checked: cb.checked }; }));
+    }
+    if (serPanel) {
+        var serCbs = serPanel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+        console.log('Series checkboxes:', Array.from(serCbs).map(function(cb) { return { value: cb.value, checked: cb.checked }; }));
+    }
+
+    var results = getFilteredRiskResults();
+    console.log('Filtered result count:', results.length);
+};

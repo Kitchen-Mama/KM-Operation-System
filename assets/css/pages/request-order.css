@@ -265,6 +265,7 @@
     width: auto;
     height: auto;
     min-width: auto;
+    accent-color: var(--km-brand-teal, #3abfb6);
 }
 
 .ro-filter-sku {

@@ -118,6 +118,45 @@
     --table-row-hover-bg: #f9fafb;
     --table-cell-padding: 12px;
     --table-header-height: 48px;
+
+    /* ========================================
+       Brand Color Tokens (Kitchen Mama 2024)
+    ======================================== */
+    --km-brand-red: #f04f5e;
+    --km-brand-black: #3a3a3a;
+    --km-brand-white: #ffffff;
+    --km-brand-teal: #3abfb6;
+    --km-brand-blue: #0080bb;
+    --km-brand-yellow: #e6a620;
+    --km-brand-purple: #8e76a8;
+
+    /* ========================================
+       UI Semantic Color Tokens
+    ======================================== */
+    --km-ui-success: #7FB069;
+    --km-ui-danger: #f04f5e;
+    --km-ui-warning: #e6a620;
+    --km-ui-info: #0080bb;
+    --km-ui-utility: #8e76a8;
+    --km-ui-neutral: #3a3a3a;
+
+    /* ========================================
+       Filter UI Tokens
+    ======================================== */
+    --km-filter-bg: #ffffff;
+    --km-filter-surface: #f8f9fa;
+    --km-filter-border: #dbe3ea;
+    --km-filter-text: #1f2937;
+    --km-filter-muted: #6b7280;
+    --km-filter-radius: 6px;
+    --km-filter-height: 36px;
+
+    /* ========================================
+       Button UI Tokens
+    ======================================== */
+    --km-button-radius: 6px;
+    --km-button-height: 36px;
+    --km-button-padding-x: 14px;
 }
 
 /* ========================================

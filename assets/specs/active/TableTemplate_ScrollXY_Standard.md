@@ -1,4 +1,4 @@
-# TableTemplate_ScrollXY: Scroll XY Freeze Panes Specification
+﻿# TableTemplate_ScrollXY: Scroll XY Freeze Panes Specification
 
 **Version:** 2.0  
 **Status:** Normative Standard (Single Source of Truth)  
@@ -93,7 +93,7 @@ If sticky behavior fails, verify:
     position: sticky;
     top: 0;
     z-index: 120;
-    background: #7FB069;  /* MUST be opaque */
+    background: #f5f5f5;  /* MUST be opaque, use neutral color — group colors go on header cells only */
 }
 ```
 
@@ -496,7 +496,7 @@ body {
     top: 0;  /* REQUIRED */
     z-index: 120;  /* REQUIRED */
     display: flex;
-    background: #7FB069;  /* MUST be opaque */
+    background: #f5f5f5;  /* MUST be opaque, use neutral color — group colors go on header cells only */
 }
 
 .table-body-bar {
@@ -719,3 +719,204 @@ Non-conforming implementations MUST NOT claim compatibility with this specificat
 **Version:** 2.0  
 **Authority:** Kitchen Mama Engineering Team  
 **Enforcement:** Code Review + Automated Testing
+
+
+---
+
+## Data-heavy Table Layout Rule (Added 2026-06)
+
+Based on the Inventory Replenishment table layout polish experience, the following rules are now the **official standard** for all Operation System data-heavy tables:
+
+1. Data-heavy tables must NOT force all columns to stretch evenly across the container.
+2. Numeric / status / SKU / date columns should use fixed or predictable widths.
+3. Product Name / Recommendation / AI Action / Note columns may serve as flexible content columns.
+4. The table outer wrapper must support horizontal scroll (`overflow-x: auto`).
+5. When new columns are added, the table should naturally grow wider — handled by horizontal scroll.
+6. Do NOT pre-reserve large blank areas for future columns.
+7. Do NOT use fake spacer columns to fill the right side of the screen.
+8. Group headers must only cover their actual child columns.
+9. Header row and body row column count must be identical.
+10. Colored group background must ONLY appear on actual header cells — not on the entire header bar or flex filler region.
+11. Unused container space must use a neutral background (e.g. `#f5f5f5`), not a group color.
+12. Header scroll and body scroll must be synchronized.
+
+### Lesson from Inventory Replenishment Fix
+
+The original issue was **NOT** caused by wrong `<th>` / `<td>` or incorrect `colspan`.
+
+**Root cause:** `.table-header-bar` used `background: var(--table-header-bg)` which was green (`#7FB069`). Since `scroll-header-viewport` had `flex: 1` inside the header bar flex container, the green background extended to fill the entire bar width — even beyond the actual header content.
+
+**Fix:** Changed `.table-header-bar` to use a neutral background (`#f5f5f5`). Only actual header cells (`.km-table__header-cell--inventory`, `--sales`, `--replen`, `--factory`, `--note-span`) retain their respective group colors.
+
+**This is now the official table layout standard for Operation System.**
+
+---
+
+## Table Layout Anti-patterns
+
+The following must NOT be done in any data-heavy table:
+
+1. ❌ Do NOT use a full-width colored header bar that fills remaining space with group color.
+2. ❌ Do NOT add empty `<th>` or `<td>` as spacer columns.
+3. ❌ Do NOT set `colspan` larger than the actual number of child columns.
+4. ❌ Do NOT stretch all columns evenly to fill the container width.
+5. ❌ Do NOT let numeric columns become excessively wide.
+6. ❌ Do NOT let header and body scroll independently without sync.
+7. ❌ Do NOT pre-reserve blank space as a "future column placeholder" strategy.
+8. ❌ Do NOT reinvent different scroll table patterns on different pages — reuse the established dual-layer-table pattern.
+
+---
+
+## Recommended Pattern
+
+1. Sticky left columns are allowed for key identifiers (e.g. SKU).
+2. Scrollable right columns should live in a shared scroll container (`.scroll-col`).
+3. Header scroll should follow body scroll via JS sync (`translateX` or shared scroll event).
+4. Table group header coloring should be **cell-based**, not **bar-based**.
+5. Group colors should be applied to individual header cells only.
+6. Neutral background (`#f5f5f5` or white) should be used for unused container area.
+7. Horizontal scroll is preferred over squeezing all columns into visible viewport.
+8. Flexible width should be assigned only to meaningful text columns (AI Action, Recommendation, Note).
+9. CSS should be scoped to the page or table component (`#ops-section .scroll-header`) to avoid global side effects.
+10. When implementing a new data table page, reference the Inventory Replenishment implementation as the validated example.
+
+---
+
+
+---
+
+## Table Category Strategy (Added 2026-06)
+
+Operation System tables are divided into two categories:
+
+### A. Raw Data Tables
+
+**Purpose:**
+- 用於資料檢視、搜尋、篩選、比對、查詢。
+- 重點是資料清楚、欄位一致、可讀性、可掃描性。
+- 不以複雜互動為主。
+
+**Current / planned examples:**
+- Factory Stock
+- FC Summary
+- SKU Details
+- Shipping History inner SKU Details table
+- Promotion Risk Tracker
+- Future raw report views
+
+**Raw Data Table visual standard:**
+1. Header style should be consistent across pages.
+2. SKU column width should be standardized (see Shared SKU Column Standard).
+3. Numeric columns should be compact and predictable.
+4. Product Name / Description columns may be wider but should use ellipsis.
+5. Horizontal scroll should be used when columns exceed viewport.
+6. Do not use fake spacer columns.
+7. Do not use full-width colored header bar to fill empty space.
+8. Row height should be consistent.
+9. Hover state should be subtle and consistent.
+10. Filter area should follow the same spacing and control sizing where possible.
+
+### B. User Operation Tables
+
+**Purpose:**
+- 用於使用者決策、編輯、送出、審核、建立計畫或執行流程。
+- UI 可依流程需求客製化。
+- 不需要所有欄位完全和 Raw Data Table 一樣。
+
+**Current / planned examples:**
+- Inventory Replenishment
+- Request Order / 下單系統
+- Shipping Plan approval tables
+- Future shipment update tables
+
+**User Operation Table minimum standard:**
+1. SKU column must use the shared SKU column standard.
+2. SKU column width should be consistent across operation tables.
+3. SKU column should remain readable and stable during horizontal scroll.
+4. If horizontal scrolling is used, SKU column should be sticky left when feasible.
+5. Action columns may vary by page.
+6. Expand panels / approval controls may be page-specific.
+7. Header/body scroll sync remains required.
+8. No fake spacer column or fake colored header area.
+9. Numeric columns remain compact.
+10. Flexible width should be assigned only to meaningful content columns such as AI Action, Recommendation, Note, or Approval Action.
+
+---
+
+## Shared SKU Column Standard
+
+**Applies to:** Both Raw Data Tables and User Operation Tables.
+
+1. Default SKU column width: **120px**.
+2. Minimum SKU column width: **110px**.
+3. SKU column should use consistent padding and font weight.
+4. SKU text should not wrap.
+5. Long SKU should use ellipsis.
+6. For scroll-heavy tables, SKU column should be sticky left.
+7. If an expand icon is needed, use either:
+   - A separate 32px expand column, or
+   - A consistent icon area inside SKU column.
+8. Do not mix different SKU column widths across similar pages without reason.
+9. Do not combine SKU with product image unless the page is explicitly card-like or visual-oriented.
+10. Product image should be a separate column in Raw Data Tables if needed.
+
+---
+
+## Raw Data Table Visual Baseline
+
+1. Header background: system table header green or approved neutral/group color (on cells only).
+2. Body background: white.
+3. Border: light neutral border.
+4. Row height: compact and consistent.
+5. Font size: consistent with existing table text.
+6. SKU column: 120px standard.
+7. Status badge: compact pill.
+8. Image column, if needed, should be separated from SKU.
+9. Numeric columns: right-align or center-align consistently.
+10. Text columns: left-align, ellipsis.
+11. No large blank right-side colored area.
+12. Unused container area uses neutral background.
+
+---
+
+## User Operation Table Visual Baseline
+
+1. Operation tables may use grouped headers, colored sections, action columns, expand panels.
+2. SKU column standard still applies.
+3. Header and body horizontal scroll must stay synchronized.
+4. Expand panel must not break row alignment.
+5. Action columns may be flexible width.
+6. Decision / Recommendation / AI Action columns can be visually emphasized.
+7. Operation-specific UI is allowed, but must not create inconsistent SKU alignment.
+8. Avoid duplicating custom table mechanics unless necessary.
+9. Reuse the Inventory Replenishment table layout pattern where possible.
+
+---
+
+
+---
+
+## Raw Data Table Cell Padding Standard
+
+1. Header cells should use compact consistent padding.
+2. Recommended header padding: `8px 12px`.
+3. Body cells should use compact consistent padding.
+4. Recommended body padding: `8px 12px`.
+5. Compact numeric columns (e.g. month columns, weight, percentage) may use `6px 10px` when necessary, but must be applied consistently across header and body.
+6. Header text must use `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis`.
+7. Body text must use `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis` unless intentionally multi-line.
+8. Padding must not cause header/body column misalignment.
+9. Padding must not be used to fake column width.
+10. Column width should be controlled by `width` / `min-width` rules, not random padding.
+
+---
+
+## Image Column Standard for Raw Data Tables
+
+1. Product image should be a separate column from SKU.
+2. Image column should usually be 64px to 72px wide.
+3. SKU column remains 120px by default.
+4. Image header should align with image body cells (same width, same position).
+5. Image placeholder should not increase row height unexpectedly (use fixed dimensions like 36×36).
+6. Do not combine SKU and image into one column unless the table is card-like or explicitly visual-oriented.
+7. Image column is part of the scroll area, not the fixed/sticky area.

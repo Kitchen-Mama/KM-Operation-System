@@ -8,18 +8,17 @@ function initFactoryStockPage() {
         return;
     }
     
-    // Prevent duplicate initialization
-    if (root._factoryStockInitialized) {
-        console.log('⚠️ Factory Stock: Already initialized, skipping');
-        return;
+    // Always re-bind events (clean previous first)
+    // Remove old outside-click handler
+    if (root._clickHandler) {
+        document.removeEventListener('click', root._clickHandler);
     }
-    root._factoryStockInitialized = true;
     
     console.log('✅ Factory Stock: Data available:', !!window.factoryStockData, 'rows:', window.factoryStockData?.length);
     
-    // 綁定dropdown trigger點擊事件
+    // 綁定dropdown trigger點擊事件 (use onclick to avoid duplicate listeners)
     root.querySelectorAll('.fc-dropdown-trigger').forEach(trigger => {
-        trigger.addEventListener('click', function(e) {
+        trigger.onclick = function(e) {
             e.stopPropagation();
             const filterType = this.dataset.filter;
             const panel = root.querySelector(`.fc-dropdown-panel[data-filter="${filterType}"]`);
@@ -29,39 +28,37 @@ function initFactoryStockPage() {
             });
             
             if (panel) panel.classList.toggle('is-open');
-        });
+        };
     });
     
     // 綁定checkbox change事件
     root.querySelectorAll('.fc-dropdown-panel').forEach(panel => {
-        panel.addEventListener('click', e => e.stopPropagation());
+        panel.onclick = e => e.stopPropagation();
         
         const filterType = panel.dataset.filter;
         const allCheckbox = panel.querySelector('input[value=""]');
         const otherCheckboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
         
-        // All checkbox事件
+        // All checkbox事件 (use onchange to avoid duplicates)
         if (allCheckbox) {
-            allCheckbox.addEventListener('change', function() {
+            allCheckbox.onchange = function() {
                 const isChecked = this.checked;
                 otherCheckboxes.forEach(cb => cb.checked = isChecked);
                 updateFilterText(filterType, root);
                 renderFactoryStockTable(root);
-                console.log(`✅ all = ${isChecked}, selectedCount = ${isChecked ? otherCheckboxes.length : 0}`);
-            });
+            };
         }
         
         // 個別checkbox事件
         otherCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', function() {
+            checkbox.onchange = function() {
                 const checkedCount = Array.from(otherCheckboxes).filter(cb => cb.checked).length;
                 if (allCheckbox) {
                     allCheckbox.checked = checkedCount === otherCheckboxes.length;
                 }
                 updateFilterText(filterType, root);
                 renderFactoryStockTable(root);
-                console.log(`✅ filter changed: {dimension: ${filterType}, selected: [${Array.from(otherCheckboxes).filter(cb => cb.checked).map(cb => cb.value).join(', ')}]}, selectedCount = ${checkedCount}`);
-            });
+            };
         });
     });
     
@@ -313,7 +310,6 @@ if (window.KM && window.KM.lifecycle) {
                 if (root._clickHandler) {
                     document.removeEventListener('click', root._clickHandler);
                 }
-                root._factoryStockInitialized = false;
             }
         }
     });

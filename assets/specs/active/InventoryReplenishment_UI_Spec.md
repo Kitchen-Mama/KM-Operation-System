@@ -502,3 +502,27 @@ Table Header (z-index: 90, sticky top within Main Content)
 ---
 
 **End of UI Structure Specification v1.1**
+
+
+---
+
+## Relationship to Table Category Strategy (Added 2026-06)
+
+- Inventory Replenishment is classified as a **User Operation Table**.
+- It is NOT required to match Raw Data Tables exactly.
+- It is the **first validated example** of the User Operation Table layout.
+- SKU column should follow the **Shared SKU Column Standard** (120px, sticky left, no wrap).
+- Future operation tables (Request Order, Shipping Plan approval) should reference this pattern where applicable.
+- This spec does not define Raw Data Table styling — refer to `TableTemplate_ScrollXY_Standard.md` for Raw Data Table Visual Baseline.
+
+
+---
+
+## Implementation Note — Header Scroll Sync
+
+- This spec originally targeted a single shared horizontal scroll container with no manual synchronization.
+- The current implemented Inventory Replenishment table uses body horizontal scroll plus header transform sync.
+- This implementation is accepted because it follows `TableTemplate_ScrollXY_Standard.md`.
+- Header and body horizontal scroll must remain synchronized.
+- Do not remove the existing header sync logic unless the whole table is refactored into a true single shared horizontal scroll container.
+- Inventory Replenishment remains the first validated User Operation Table layout.

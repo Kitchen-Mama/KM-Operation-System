@@ -177,6 +177,7 @@
     width: auto;
     height: auto;
     min-width: auto;
+    accent-color: var(--km-brand-teal, #3abfb6);
 }
 
 /* SKU Filter */
@@ -926,6 +927,8 @@
     align-items: flex-end;
     margin-bottom: 1rem;
     padding: 12px 0;
+    position: relative;
+    z-index: 130;
 }
 
 #fc-summary-section .filter-group {
@@ -941,12 +944,26 @@
 }
 
 #fc-summary-section .filter-group select,
-#fc-summary-section .filter-group input {
+#fc-summary-section .filter-group > input {
     padding: 6px 10px;
     border: 1px solid #E2E8F0;
     border-radius: 6px;
     font-size: 13px;
     min-width: 120px;
+}
+
+/* Ensure checkbox inputs inside dropdown panels are NOT affected by filter-group input rules */
+#fc-summary-section .fc-dropdown-panel input[type="checkbox"] {
+    width: auto;
+    min-width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0 8px 0 0;
+    border: none;
+    border-radius: 0;
+    flex: 0 0 auto;
+    cursor: pointer;
+    accent-color: var(--km-brand-teal, #3abfb6);
 }
 
 /* FC Buttons */
@@ -1007,14 +1024,19 @@
 #fc-summary-section .fc-dropdown-panel {
     display: none;
     position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
     background: white;
-    border: 1px solid #E2E8F0;
-    border-radius: 8px;
+    border: 1px solid var(--km-filter-border, #E2E8F0);
+    border-radius: var(--km-filter-radius, 6px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    padding: 8px;
-    z-index: 100;
+    padding: 8px 0;
+    z-index: 1000;
     min-width: 150px;
     max-height: 200px;
+    overflow-x: hidden;
     overflow-y: auto;
 }
 
@@ -1025,15 +1047,28 @@
 #fc-summary-section .fc-checkbox-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 6px;
+    padding: 6px 12px;
     font-size: 13px;
+    color: #2d3748;
     cursor: pointer;
     border-radius: 4px;
+    transition: background 0.15s;
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 #fc-summary-section .fc-checkbox-item:hover {
-    background: #F8FAFC;
+    background: #f7fafc;
+}
+
+#fc-summary-section .fc-checkbox-item input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+    width: auto;
+    height: auto;
+    min-width: auto;
+    accent-color: var(--km-brand-teal, #3abfb6);
 }
 
 #fc-summary-section .filter-group--dropdown {
@@ -1235,6 +1270,163 @@
    FC Summary - Table Column Width Alignment
    確保 header-cell 和 scroll-cell 寬度一致
 ======================================== */
+
+/* --- Raw Data Table Visual Baseline for FC Summary --- */
+#fc-summary-section .dual-layer-table {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    max-width: 100%;
+}
+
+#fc-summary-section .table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dbe3ea;
+    height: 40px;
+    box-shadow: none;
+}
+
+#fc-summary-section .fixed-header {
+    width: 120px;
+    min-width: 110px;
+    height: 40px;
+    flex-shrink: 0;
+    background: #f8f9fa;
+    border-right: 1px solid #dbe3ea;
+    box-shadow: 2px 0 4px rgba(15, 23, 42, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 8px 12px;
+    box-sizing: border-box;
+    font-weight: 600;
+    font-size: 12px;
+    color: #1f2937;
+    white-space: nowrap;
+}
+
+#fc-summary-section .fixed-header .header-cell {
+    color: #1f2937;
+    font-weight: 600;
+}
+
+#fc-summary-section .scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+#fc-summary-section .scroll-header {
+    display: flex;
+    align-items: center;
+    background: #f8f9fa;
+    height: 40px;
+    min-width: max-content;
+}
+
+#fc-summary-section .scroll-header .header-cell {
+    height: 40px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    color: #374151;
+    font-weight: 600;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    border-right: 1px solid #e5e7eb;
+}
+
+#fc-summary-section .table-body-bar {
+    display: flex;
+}
+
+#fc-summary-section .fixed-col {
+    width: 120px;
+    min-width: 110px;
+    flex-shrink: 0;
+    background: white;
+    z-index: 110;
+    border-right: 1px solid #dbe3ea;
+    box-shadow: 2px 0 4px rgba(15, 23, 42, 0.06);
+    position: sticky;
+    left: 0;
+}
+
+#fc-summary-section .fixed-body {
+    background: white;
+}
+
+#fc-summary-section .fixed-row {
+    height: 36px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+    box-sizing: border-box;
+}
+
+#fc-summary-section .fixed-row .fixed-cell {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    font-size: 13px;
+    color: #1f2937;
+    max-width: 100%;
+}
+
+#fc-summary-section .fixed-row:hover {
+    background: #f1f5f9;
+}
+
+#fc-summary-section .scroll-col {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+#fc-summary-section .scroll-body {
+    background: white;
+}
+
+#fc-summary-section .scroll-row {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    border-bottom: 1px solid #f1f5f9;
+    min-width: max-content;
+}
+
+#fc-summary-section .scroll-row:hover {
+    background: #f1f5f9;
+}
+
+#fc-summary-section .scroll-row .scroll-cell {
+    height: 36px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    border-right: 1px solid #f1f5f9;
+    font-size: 13px;
+    color: #374151;
+}
+
+/* --- Column width rules (Regular Forecast: 20 scroll columns) --- */
 #fc-summary-section .scroll-header .header-cell,
 #fc-summary-section .scroll-row .scroll-cell {
     width: 100px;
@@ -1254,12 +1446,12 @@
     max-width: 120px;
 }
 
-/* 較窄的月份欄位：Jan-Dec */
 #fc-summary-section .scroll-header .header-cell:nth-child(n+7):nth-child(-n+18),
 #fc-summary-section .scroll-row .scroll-cell:nth-child(n+7):nth-child(-n+18) {
-    width: 75px;
-    min-width: 75px;
-    max-width: 75px;
+    width: 70px;
+    min-width: 70px;
+    max-width: 70px;
+    padding: 6px 10px;
     justify-content: flex-end;
 }
 
@@ -1281,27 +1473,24 @@
     justify-content: flex-end;
 }
 
-/* Fixed column (SKU) 寬度 */
+/* Fixed column (SKU) 寬度 — Shared SKU Column Standard */
 #fc-summary-section .fixed-header,
 #fc-summary-section .fixed-col {
     width: 120px;
-    min-width: 120px;
+    min-width: 110px;
 }
 
-/* header row 高度對齊 */
-#fc-summary-section .scroll-header {
-    display: flex;
-    align-items: center;
-    height: var(--table-header-height, 40px);
+/* --- Editable cell styles --- */
+#fc-summary-section .fc-cell-editable input {
+    width: 100%;
+    padding: 2px 4px;
+    border: 1px solid #dbeafe;
+    border-radius: 3px;
+    font-size: 12px;
+    text-align: right;
+    box-sizing: border-box;
 }
 
-#fc-summary-section .scroll-row {
-    display: flex;
-    align-items: center;
-    height: var(--table-row-height, 40px);
-    border-bottom: 1px solid #F1F5F9;
-}
-
-#fc-summary-section .scroll-row:hover {
-    background: #F8FAFC;
+#fc-summary-section .fc-cell-readonly {
+    color: #6b7280;
 }

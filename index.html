@@ -40,9 +40,6 @@
                 <span class="menu-label sidebar-toggle-label">Menu</span>
                 <span class="sidebar-toggle-icon">&#9664;</span>
             </div>
-            <div class="menu-item" onclick="showSection('restock')" title="補貨試算器">
-                <span class="menu-icon">📊</span><span class="menu-label">補貨試算器</span>
-            </div>
             <div class="menu-item" onclick="showSection('ops')" title="貨物庫存表">
                 <span class="menu-icon">📦</span><span class="menu-label">貨物庫存表</span>
             </div>
@@ -254,66 +251,58 @@
                 </div>
             </section>
             
-            <!-- 補貨試算器 Section -->
-            <section id="replenishment-section" class="module-section">
-    <div id="restockSection">
-        <h2>補貨數量試算器</h2>
-        
-        <div>
-            <label>目標天數 (targetDays):</label>
-            <input type="number" id="targetDays" placeholder="輸入天數">
-        </div>
-        
-        <div>
-            <label>SKU:</label>
-            <input type="text" id="sku" placeholder="輸入SKU">
-        </div>
-        
-        <button onclick="calculateRestock()">計算補貨量</button>
-        
-        <div id="result"></div>
-        
-        <h3>試算紀錄</h3>
-        <ul id="recordsList"></ul>
-    </div>
-            </section>
-    
             <!-- 貨物庫存表 Section (Inventory Replenishment Stage 1) -->
             <section id="ops-section" class="module-section">
                 <div id="opsSection" class="page-inventory">
                     <h2>Inventory Replenishment</h2>
                     
                     <!-- Control Panel (Sticky) -->
-                    <div class="replen-control-panel" style="position: sticky; top: 0; z-index: 131;">
-                        <select id="replenCountry" onchange="renderReplenishment()">
-                            <option value="US">US</option>
-                            <option value="CA">CA</option>
-                            <option value="UK">UK</option>
-                            <option value="DE">DE</option>
-                            <option value="FR">FR</option>
-                            <option value="AU">AU</option>
-                            <option value="JP">JP</option>
-                            <option value="SG">SG</option>
-                            <option value="ES">ES</option>
-                            <option value="NL">NL</option>
-                        </select>
-                        <select id="replenMarketplace" onchange="renderReplenishment()">
-                            <option value="Amazon">Amazon</option>
-                            <option value="KM Walmart">KM Walmart</option>
-                            <option value="Target">Target</option>
-                            <option value="Shopify">Shopify</option>
-                            <option value="Wayfair">Wayfair</option>
-                            <option value="Newegg">Newegg</option>
-                        </select>
-                        <select id="replenLTSFilter" onchange="renderReplenishment()">
-                            <option value="">All SKU</option>
-                            <option value="over90">Over 90+</option>
-                            <option value="over180">Over 180+</option>
-                        </select>
-                        <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="期望庫存水平天數">
-                        <button onclick="submitReplenishmentPlans()">Submit Plan</button>
-                        <button class="btn-add-sku" onclick="openReplenAddSkuModal()">+ Add SKU</button>
-                        <button class="btn-add-marketplace" onclick="openAddMarketplaceModal()">+ Add Marketplace</button>
+                    <div class="replen-control-panel">
+                        <div class="replen-filters">
+                            <div class="replen-filter-group">
+                                <label>Country</label>
+                                <select id="replenCountry" onchange="renderReplenishment()">
+                                    <option value="US">US</option>
+                                    <option value="CA">CA</option>
+                                    <option value="UK">UK</option>
+                                    <option value="DE">DE</option>
+                                    <option value="FR">FR</option>
+                                    <option value="AU">AU</option>
+                                    <option value="JP">JP</option>
+                                    <option value="SG">SG</option>
+                                    <option value="ES">ES</option>
+                                    <option value="NL">NL</option>
+                                </select>
+                            </div>
+                            <div class="replen-filter-group">
+                                <label>Marketplace</label>
+                                <select id="replenMarketplace" onchange="renderReplenishment()">
+                                    <option value="Amazon">Amazon</option>
+                                    <option value="KM Walmart">KM Walmart</option>
+                                    <option value="Target">Target</option>
+                                    <option value="Shopify">Shopify</option>
+                                    <option value="Wayfair">Wayfair</option>
+                                    <option value="Newegg">Newegg</option>
+                                </select>
+                            </div>
+                            <div class="replen-filter-group">
+                                <label>LTS Filter</label>
+                                <select id="replenLTSFilter" onchange="renderReplenishment()">
+                                    <option value="">All SKU</option>
+                                    <option value="over90">Over 90+</option>
+                                    <option value="over180">Over 180+</option>
+                                </select>
+                            </div>
+                            <div class="replen-filter-group">
+                                <label>Target Days</label>
+                                <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="Days">
+                            </div>
+                        </div>
+                        <div class="replen-actions">
+                            <button class="replen-btn replen-btn--primary" onclick="submitReplenishmentPlans()">Submit Plan</button>
+                            <button class="replen-btn replen-btn--add" onclick="openReplenAddSkuModal()">+ Add SKU</button>
+                            <button class="replen-btn replen-btn--add" onclick="openAddMarketplaceModal()">+ Add Marketplace</button>
+                        </div>
                     </div>
                     
                     <!-- Add SKU Modal for Inventory Replenishment -->
@@ -1976,15 +1965,19 @@
                         </div>
                         
                         <!-- Country -->
-                        <div class="filter-group">
+                        <div class="filter-group filter-group--dropdown">
                             <label>Country</label>
-                            <select>
-                                <option value="">All</option>
-                                <option value="US">US</option>
-                                <option value="UK">UK</option>
-                                <option value="DE">DE</option>
-                                <option value="CA">CA</option>
-                            </select>
+                            <button type="button" class="sh-dropdown-trigger" data-filter="country">
+                                <span class="sh-dropdown-text">All</span>
+                                <span class="sh-dropdown-icon">▼</span>
+                            </button>
+                            <div class="sh-dropdown-panel" data-filter="country">
+                                <label class="sh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="US" checked> US</label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="UK" checked> UK</label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="DE" checked> DE</label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="CA" checked> CA</label>
+                            </div>
                         </div>
                         
                         <!-- SKU -->
@@ -1994,16 +1987,20 @@
                         </div>
                         
                         <!-- Shipping Method -->
-                        <div class="filter-group">
+                        <div class="filter-group filter-group--dropdown">
                             <label>Shipping Method</label>
-                            <select>
-                                <option value="">All</option>
-                                <option value="Air Freight">Air Freight</option>
-                                <option value="Sea Freight">Sea Freight</option>
-                                <option value="AGL Ship">AGL Ship</option>
-                                <option value="Private Ship">Private Ship</option>
-                                <option value="Express">Express</option>
-                            </select>
+                            <button type="button" class="sh-dropdown-trigger" data-filter="method">
+                                <span class="sh-dropdown-text">All</span>
+                                <span class="sh-dropdown-icon">▼</span>
+                            </button>
+                            <div class="sh-dropdown-panel" data-filter="method">
+                                <label class="sh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="Air Freight" checked> Air Freight</label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="Sea Freight" checked> Sea Freight</label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="AGL Ship" checked> AGL Ship</label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="Private Ship" checked> Private Ship</label>
+                                <label class="sh-checkbox-item"><input type="checkbox" value="Express" checked> Express</label>
+                            </div>
                         </div>
                         
                         <!-- Search Button -->
@@ -2043,22 +2040,31 @@
                 <div class="cr-kpi-cards" id="cr-kpi-cards"></div>
                 
                 <div class="cr-filter-panel">
-                    <div class="cr-filter-group">
+                    <div class="cr-filter-group cr-filter-group--dropdown">
                         <div class="cr-filter-group-label">Product Category</div>
-                        <div class="cr-chips" id="cr-category-chips"></div>
+                        <button type="button" class="cr-dropdown-trigger" data-filter="category" aria-expanded="false">
+                            <span class="cr-dropdown-text">All Categories</span>
+                            <span class="cr-dropdown-icon">▼</span>
+                        </button>
+                        <div class="cr-dropdown-panel" data-filter="category" id="cr-category-panel"></div>
                     </div>
-                    <div class="cr-filter-group">
+                    <div class="cr-filter-group cr-filter-group--dropdown">
                         <div class="cr-filter-group-label">Product Series</div>
-                        <div class="cr-chips" id="cr-series-chips"></div>
+                        <button type="button" class="cr-dropdown-trigger" data-filter="series" aria-expanded="false">
+                            <span class="cr-dropdown-text">All Series</span>
+                            <span class="cr-dropdown-icon">▼</span>
+                        </button>
+                        <div class="cr-dropdown-panel" data-filter="series" id="cr-series-panel"></div>
                     </div>
                 </div>
                 
                 <div class="dual-layer-table cr-table">
                     <div class="table-header-bar">
-                        <div class="fixed-header" style="width:160px;"><div class="header-cell">SKU</div></div>
+                        <div class="fixed-header"><div class="header-cell">SKU</div></div>
                         <div class="scroll-header-viewport">
                             <div class="scroll-header">
-                                <div class="header-cell" style="width:180px;">Product Name</div>
+                                <div class="header-cell cr-hcell--img">Image</div>
+                                <div class="header-cell cr-hcell--name">Product Name</div>
                                 <div class="header-cell">90-Day Promo</div>
                                 <div class="header-cell">Future Promo</div>
                                 <div class="header-cell">Annual Events</div>
@@ -2069,7 +2075,7 @@
                         </div>
                     </div>
                     <div class="table-body-bar">
-                        <div class="fixed-col" style="width:160px;">
+                        <div class="fixed-col">
                             <div class="fixed-body" id="cr-table-fixed-body"></div>
                         </div>
                         <div class="scroll-col">
@@ -2105,22 +2111,35 @@
                         <label>Search</label>
                         <input type="text" id="skuh-filter-search" placeholder="Search product name or SKU...">
                     </div>
-                    <div class="skuh-filter">
+                    <div class="skuh-filter skuh-filter--dropdown">
                         <label>Product Line</label>
-                        <select id="skuh-filter-productline"><option value="all">All Product Lines</option></select>
+                        <button type="button" class="skuh-dropdown-trigger" data-filter="productline" aria-expanded="false">
+                            <span class="skuh-dropdown-text">All Product Lines</span>
+                            <span class="skuh-dropdown-icon">▼</span>
+                        </button>
+                        <div class="skuh-dropdown-panel" data-filter="productline" id="skuh-panel-productline"></div>
                     </div>
-                    <div class="skuh-filter">
+                    <div class="skuh-filter skuh-filter--dropdown">
                         <label>Brand</label>
-                        <select id="skuh-filter-brand"><option value="all">All Brands</option></select>
+                        <button type="button" class="skuh-dropdown-trigger" data-filter="brand" aria-expanded="false">
+                            <span class="skuh-dropdown-text">All Brands</span>
+                            <span class="skuh-dropdown-icon">▼</span>
+                        </button>
+                        <div class="skuh-dropdown-panel" data-filter="brand" id="skuh-panel-brand"></div>
                     </div>
-                    <div class="skuh-filter">
+                    <div class="skuh-filter skuh-filter--dropdown">
                         <label>Lifecycle</label>
-                        <select id="skuh-filter-lifecycle">
-                            <option value="all">All Lifecycle</option>
-                            <option value="Upcoming SKU">Upcoming SKU</option>
-                            <option value="Running in the market">Running in the market</option>
-                            <option value="Phasing Out">Phasing Out</option>
-                        </select>
+                        <button type="button" class="skuh-dropdown-trigger" data-filter="lifecycle" aria-expanded="false">
+                            <span class="skuh-dropdown-text">All Lifecycle</span>
+                            <span class="skuh-dropdown-icon">▼</span>
+                        </button>
+                        <div class="skuh-dropdown-panel" data-filter="lifecycle" id="skuh-panel-lifecycle">
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Upcoming SKU" checked> Upcoming SKU</label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Running in the Market" checked> Running in the Market</label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Phasing Out" checked> Phasing Out</label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Closure" checked> Closure</label>
+                        </div>
                     </div>
                 </div>
                 <div id="skuh-content"></div>

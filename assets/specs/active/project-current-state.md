@@ -410,3 +410,214 @@ const OP_DB_API_BASE_URL = 'https://script.google.com/macros/s/AKfycb.../exec';
 ---
 
 **End of Document**
+
+
+---
+
+## Inventory Replenishment — Table Layout Polish (2026-06)
+
+**Status:** Completed
+
+**What was fixed:**
+- Right-side fake green header region removed.
+- Root cause: `.table-header-bar` used `background: var(--table-header-bg)` (green) which filled the entire flex container width. Changed to neutral `#f5f5f5`.
+- Header / data horizontal scroll sync fixed (selector was targeting wrong scroll-col).
+- `padding-right: 40px` removed from scroll-header and scroll-row.
+
+**What was NOT changed:**
+- No data logic changes.
+- DemoData mode unaffected.
+- Submit Plan / Shipping Plan push unaffected.
+- No other pages modified.
+
+**Note:**
+This page now serves as the **first validated example** of the Operation System User Operation Table layout standard (defined in `TableTemplate_ScrollXY_Standard.md`).
+
+
+---
+
+## Shipment / Inventory / PO / Carrier DB Schema v1
+
+- **Reference file:** `assets/specs/active/SHIPMENT_DATABASE_SCHEMA.md`
+- **Status:** v1 schema ready for first Google Sheet DB integration phase
+- **Includes:** shipping_plans, shipping_plan_lines, shipments, shipment_lines, carriers, carrier_rate_cards, carrier_lead_times, document_templates, generated_documents, factory_stock, factory_stock_movements, purchase_orders, purchase_order_lines, production_schedule, marketplace_skus
+- **Future tables:** shipment_events, shipment_routes
+- **Raw report tables:** amazon_daily_sales_raw, amazon_inventory_raw, amazon_inventory_health_raw (normalized layer is future work)
+- **Note:** Full field details in SHIPMENT_DATABASE_SCHEMA.md. Do not duplicate schema here.
+
+
+---
+
+## Table UI Standardization Current State (2026-06)
+
+- Inventory Replenishment is the first validated **User Operation Table** layout.
+- **Raw Data Table** standard is now defined but not yet applied system-wide.
+- **User Operation Table** standard is now defined but not yet applied system-wide.
+- **Shared SKU Column Standard** is defined and should be applied in future table cleanup.
+- **Table Category Strategy** (Raw Data vs User Operation) is documented in `TableTemplate_ScrollXY_Standard.md`.
+- No system-wide table refactor has been completed yet.
+
+
+---
+
+## Raw Data Table Baseline Alignment (2026-06)
+
+- Raw Data Table baseline now includes standardized header/body padding (`8px 12px`) and image-column guidance (64px separate column).
+- Factory Stock, FC Summary, and SKU Details are the first pages aligned to this baseline.
+- Compact numeric columns (month/weight/percentage) use `6px 10px` padding.
+- Header text uses `nowrap` + `ellipsis` to prevent visual overflow.
+- All three pages use neutral `#f8f9fa` header background (no colored header bar extending right).
+
+
+---
+
+## Promotion Risk Tracker — Raw Data Table Alignment (2026-06)
+
+- Promotion Risk Tracker now follows Raw Data Table rule: sticky SKU column only (120px), Image column belongs to scrollable data area (64px).
+- Image was previously inside the fixed SKU column alongside the SKU text; now separated into its own scroll-cell.
+- Header/body columns aligned: Image, Product Name, 90-Day Promo, Future Promo, Annual Events, LPS, Risk Level, Total Promos.
+- Neutral `#f8f9fa` header background applied.
+- Risk cards, filters, Add/Delete Promotion, and pagination are unaffected.
+
+
+---
+
+## Shipping History Inner SKU Details Table (2026-06)
+
+- Shipping History inner SKU Details table now follows Raw Data child table baseline.
+- SKU column: 120px / min-width 110px, font-weight 600, nowrap + ellipsis.
+- Numeric columns (Quantity, Cartons): right-aligned, compact 100px.
+- Header: neutral `#f8f9fa` background, `8px 12px` padding, 12px font-size.
+- Body: white background, `8px 12px` padding, 13px font-size.
+- Outer Shipping History search UI, expand/collapse, and summary footer remain unchanged.
+
+
+---
+
+## Filter & Button UI Standard (2026-06)
+
+- `FILTER_BUTTON_DESIGN_STANDARD.md` created as source of truth for filter/button design.
+- Brand color tokens added to `base.css` (`:root` block): `--km-brand-red`, `--km-brand-teal`, `--km-brand-blue`, `--km-brand-yellow`, `--km-brand-purple`, `--km-brand-black`.
+- UI semantic tokens added: `--km-ui-success`, `--km-ui-danger`, `--km-ui-warning`, `--km-ui-info`, `--km-ui-utility`.
+- Filter tokens added: `--km-filter-bg`, `--km-filter-surface`, `--km-filter-border`, `--km-filter-text`, `--km-filter-muted`, `--km-filter-radius`, `--km-filter-height`.
+- Button tokens added: `--km-button-radius`, `--km-button-height`, `--km-button-padding-x`.
+- Filter template and button semantic color rules defined.
+- Cascading filter guidance documented (recommend Strategy B for future).
+- **Not yet applied system-wide.**
+- Pages pending alignment: Inventory Replenishment, Shipping History, Promotion Risk Tracker, SKU Handbook, SKU Details toolbar.
+
+
+---
+
+## Inventory Replenishment Filter & Button Alignment (2026-06)
+
+- Filter area restructured from compact toolbar to Primary Filter Template (label-on-top + filter-group).
+- Country / Marketplace / LTS Filter / Target Days now each have visible label above control.
+- Action buttons (Submit Plan, Add SKU, Add Marketplace) separated to right-side action area.
+- All controls use `--km-filter-*` tokens; buttons use `--km-button-*` tokens.
+- Demo badge uses `--km-ui-utility` (purple).
+- HTML structure changed: added `.replen-filters`, `.replen-filter-group`, `.replen-actions`, `.replen-btn` classes.
+- No behavior or data logic changes.
+
+
+---
+
+## Shipping History Filter & Button Alignment (2026-06)
+
+- Filter bar styled with Primary Filter Template using `--km-*` tokens.
+- Date / Country / SKU / Shipping Method have label-on-top (already in HTML).
+- Search button uses `--km-brand-blue` (Info/Utility action).
+- All controls use consistent height (`--km-filter-height`), border, radius.
+- No behavior or data logic changes.
+- Outer search UI updated; inner SKU Details table and Collapse/Expand unaffected.
+
+---
+
+## Factory Stock & FC Summary Filter Fixes (2026-06)
+
+- Factory Stock: removed `_factoryStockInitialized` guard; switched to `onclick`/`onchange` property binding to prevent stale/duplicate handlers. Now re-binds reliably on every mount.
+- FC Summary: fixed dropdown panel missing `top: 100%; left: 0; right: 0; margin-top: 4px` — panels were rendering at unpredictable positions ("跑版").
+
+
+---
+
+## Filter Dropdown Option Standard (2026-06)
+
+- `FILTER_BUTTON_DESIGN_STANDARD.md` updated with Filter Dropdown Option Standard section.
+- Factory Stock is the reference implementation for checkbox dropdown option style.
+- FC Summary dropdown options aligned to Factory Stock baseline (padding, spacing, checkbox style).
+- Shipping History Country/Method remain as native select (single-select, few options — acceptable per standard).
+- Shipping History filter layout overlap fixed: SKU input given controlled flex-basis, proper min-widths applied.
+
+
+---
+
+## Filter Dropdown Checked State Alignment (2026-06)
+
+- All checkbox dropdowns now use `accent-color: var(--km-brand-teal)` (#3abfb6) for consistent checked state.
+- Factory Stock, FC Summary, Shipping History all share identical checked visual.
+- Shipping History Country/Method converted from native `<select>` to custom checkbox dropdown (single-select behavior preserved).
+- `FILTER_BUTTON_DESIGN_STANDARD.md` updated with Checked State Standard and revised Native Select Exception.
+
+
+---
+
+## Promotion Risk Tracker + SKU Handbook Filter & Button Alignment (2026-06)
+
+- Promotion Risk Tracker: pill chips use `--km-ui-success`, buttons use `--km-button-*` tokens, filter panel uses `--km-filter-*` tokens. Add Promotion = success green, Delete = danger style.
+- SKU Handbook: filters wrapped in `--km-filter-surface` container with proper height/border/radius tokens. Language toggle uses `--km-ui-success` for active state. Data badge uses `--km-ui-info`.
+- Pill Filter Variant documented in `FILTER_BUTTON_DESIGN_STANDARD.md`.
+- Checkbox accent-color (`--km-brand-teal`) added to Request Order and Forecast Review for system-wide consistency.
+- No behavior or data logic changes.
+
+
+---
+
+## Primary Checkbox Dropdown Conversion (2026-06)
+
+- Promotion Risk Tracker: Product Category / Product Series converted from pill chips to checkbox dropdown multi-select.
+- SKU Handbook: Product Line / Brand / Lifecycle converted from native `<select>` to checkbox dropdown multi-select.
+- Both pages now use array-based filter state (empty array = all, non-empty = OR within group, AND between groups).
+- Dropdown styling matches Factory Stock reference implementation (accent-color teal, consistent padding/spacing).
+- Native selects removed from SKU Handbook filter UI.
+- Old pill chip code removed from Promotion Risk Tracker.
+- No data logic, Google Sheet fetch, or calculation changes.
+
+
+---
+
+## SKU Handbook Lifecycle + Promotion Risk Checkbox Fix (2026-06)
+
+- SKU Handbook: Lifecycle filter value fixed from `'Running in the market'` to `'Running in the Market'` (capital M) to match `mapStatusToLifecycle()` output.
+- SKU Handbook: `Closure` lifecycle option added to filter.
+- SKU Handbook: Lifecycle dropdown trigger min-width increased to 180px.
+- SKU Handbook: `LIFECYCLE_MAP` expanded with identity/alias entries for robustness.
+- Promotion Risk Tracker: `renderRiskFilters()` removed from `renderCampaignRiskTracker()` render cycle — filters now only built once on init, not rebuilt on every filter change (which was resetting all checkboxes).
+- Debug helpers added: `debugSkuHandbookLifecycleFilters()`, `debugPromotionRiskFilters()`.
+
+
+---
+
+## Demo Mode Off Cleanup + Modal Fix + Audit (2026-06)
+
+- Forecast Review: Cumulative Goal now guarded by demo mode. Shows '—' when demo off.
+- Promotion Risk Tracker: `getSkuMasterData()` now guarded by demo mode. Returns empty array when demo off (no fake SKU rows).
+- Inventory Replenishment: Add SKU / Add Marketplace modal fixed — `width: min(560px, calc(100vw - 48px))`, `overflow-x: hidden`, form rows wrap on narrow screens.
+- Legacy calculator ("補貨數量試算器"): removed sidebar menu item, section HTML, `calculateRestock()` function from app.js, and `'restock'` route from showSection mapping.
+- `FILTER_OPTION_SOURCE_AUDIT.md` created: documents filter option sources for Factory Stock, Forecast Review, Request Order, FC Summary, Shipping History.
+- Audit conclusion: Country/Marketplace/Company/Factory/Method are safe static enums. Category/Series/Year/Event should migrate to dynamic DB source in future.
+
+
+---
+
+## Inventory / Marketplace SKU Flow Audit (2026-06)
+
+- `INVENTORY_MARKETPLACE_SKU_FLOW_AUDIT.md` created.
+- Add SKU currently writes to in-memory only — lost on reload. Should write to `marketplace_skus`.
+- Add Marketplace is non-functional (TODO placeholder) — only logs to console.
+- `marketplace_skus` tab does not yet exist in Google Sheet.
+- No `getMarketplaceSkus()` API support exists yet.
+- Recommended: marketplace_skus as single source for site SKU relationships.
+- Recommended: Phase 1 = read foundation, Phase 3 = write support, Phase 4 = cross-page sync.
+- FC Summary Add SKU button: keep as admin fallback, primary entry should be Inventory Replenishment.
+- No code changes made — audit and plan only.

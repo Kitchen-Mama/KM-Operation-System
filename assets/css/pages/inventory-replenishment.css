@@ -14,36 +14,121 @@
 #ops-section .replen-control-panel {
     position: sticky;
     top: 0;
-    background: var(--bg-surface);
-    padding: var(--space-md);
+    background: var(--km-filter-surface);
+    padding: 16px 20px;
     margin-bottom: var(--space-lg);
-    border-radius: var(--radius-md);
+    border-radius: var(--km-filter-radius);
     display: flex;
-    gap: var(--space-lg);
-    align-items: center;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
     z-index: 131;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border: 1px solid var(--km-filter-border);
 }
 
-#ops-section .replen-control-panel select,
-#ops-section .replen-control-panel input {
-    padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
+#ops-section .replen-filters {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    flex: 1;
 }
 
-#ops-section .replen-control-panel button {
-    padding: var(--space-sm) var(--space-md);
+#ops-section .replen-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
+}
+
+#ops-section .replen-filter-group label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--km-filter-muted);
+}
+
+#ops-section .replen-filter-group select,
+#ops-section .replen-filter-group input {
+    height: var(--km-filter-height);
+    padding: 0 12px;
+    border: 1px solid var(--km-filter-border);
+    border-radius: var(--km-filter-radius);
+    background: var(--km-filter-bg);
+    color: var(--km-filter-text);
+    font-size: 13px;
+    box-sizing: border-box;
+    line-height: 1;
+    width: 100%;
+}
+
+#ops-section .replen-filter-group select:hover,
+#ops-section .replen-filter-group input:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+#ops-section .replen-filter-group select:focus,
+#ops-section .replen-filter-group input:focus {
+    outline: none;
+    border-color: var(--km-brand-blue);
+    box-shadow: 0 0 0 2px rgba(0, 128, 187, 0.1);
+}
+
+#ops-section .replen-actions {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+#ops-section .replen-btn {
+    height: var(--km-button-height);
+    padding: 0 var(--km-button-padding-x);
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--km-button-radius);
     cursor: pointer;
-    font-weight: var(--weight-medium);
-    background: #F97316;
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+}
+
+#ops-section .replen-btn:hover {
+    opacity: 0.88;
+}
+
+#ops-section .replen-btn--primary {
+    background: var(--warm-orange);
     color: white;
 }
 
-#ops-section .replen-control-panel .btn-add-sku {
-    margin-left: auto;
+#ops-section .replen-btn--add {
+    background: var(--warm-orange);
+    color: white;
+}
+
+/* Demo badge uses purple utility */
+#ops-section .replen-control-panel .demo-badge {
+    background: var(--km-ui-utility) !important;
+}
+
+/* Legacy compat: old button classes that may still exist */
+#ops-section .replen-control-panel button {
+    height: var(--km-button-height);
+    padding: 0 var(--km-button-padding-x);
+    border: none;
+    border-radius: var(--km-button-radius);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+    background: var(--warm-orange);
+    color: white;
+    transition: opacity 0.15s;
+}
+
+#ops-section .replen-control-panel button:hover {
+    opacity: 0.88;
 }
 
 /* 問題1: Modal 隱藏 */
@@ -60,6 +145,9 @@
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
     max-height: 90vh;
     overflow-y: auto;
+    overflow-x: hidden;
+    width: min(560px, calc(100vw - 48px));
+    box-sizing: border-box;
 }
 
 #ops-section .fc-modal.is-open {
@@ -82,7 +170,7 @@
 }
 
 #ops-section .fc-modal-content {
-    min-width: 500px;
+    width: 100%;
 }
 
 #ops-section .fc-modal-content h3 {
@@ -98,10 +186,12 @@
     display: flex;
     gap: 1rem;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
 }
 
 #ops-section .fc-form-group {
-    flex: 1;
+    flex: 1 1 180px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
 }
@@ -117,6 +207,8 @@
     padding: 0.5rem;
     border: 1px solid #d1d5db;
     border-radius: 6px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 #ops-section .fc-modal-actions {
@@ -161,16 +253,17 @@
     top: 72px;
     z-index: 120;
     display: flex;
-    background: var(--table-header-bg);
+    background: #f5f5f5;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 -100vh 0 100vh white;
 }
 
 #ops-section .fixed-header {
-    width: 100px;
+    width: 120px;
+    min-width: 110px;
     height: 96px;
     background: #f5f5f5;
-    border-right: 2px solid var(--border-medium);
-    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    border-right: 1px solid #dbe3ea;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.06);
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -179,6 +272,7 @@
     font-weight: 600;
     font-size: 14px;
     color: #000000;
+    white-space: nowrap;
 }
 
 #ops-section .fixed-header .header-cell {
@@ -191,7 +285,7 @@
     min-width: max-content;
     height: 96px;
     background: transparent;
-    padding-right: 40px;
+    padding-right: 0;
 }
 
 #ops-section .km-table__header-row {
@@ -227,7 +321,7 @@
     left: 0;
     top: 0;
     z-index: 121;
-    border-right: 2px solid var(--border-medium);
+    border-right: 1px solid #dbe3ea;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -339,12 +433,13 @@
 }
 
 #ops-section .fixed-col {
-    width: 100px;
+    width: 120px;
+    min-width: 110px;
     flex-shrink: 0;
     background: white;
     z-index: 110;
-    border-right: 2px solid var(--border-medium);
-    box-shadow: 4px 0 8px rgba(0,0,0,0.06);
+    border-right: 1px solid #dbe3ea;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.06);
     position: sticky;
     left: 0;
 }
@@ -360,6 +455,11 @@
     align-items: center;
     border-bottom: 1px solid var(--border-light);
     cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    font-size: 13px;
 }
 
 #ops-section .fixed-row:hover {
@@ -372,7 +472,7 @@
     min-width: max-content;
     border-bottom: 1px solid var(--border-light);
     cursor: pointer;
-    padding-right: 40px;
+    padding-right: 0;
 }
 
 #ops-section .scroll-row:hover {
@@ -433,7 +533,8 @@
 }
 
 #ops-section .replen-expand-fixed {
-    width: 100px;
+    width: 120px;
+    min-width: 110px;
     padding: var(--space-md);
     background: white;
     min-height: auto;
@@ -668,7 +769,7 @@
 .ir-overview .dual-layer-table { margin-top: 0; }
 #ops-section .ir-overview-table.dual-layer-table { position: relative; z-index: 1; }
 #ops-section .ir-overview-table .table-header-bar { height: 96px; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 1; position: relative; }
-#ops-section .ir-overview-table .fixed-header { height: 96px; width: 120px; background: #f5f5f5; }
+#ops-section .ir-overview-table .fixed-header { height: 96px; width: 120px; min-width: 110px; background: #f5f5f5; border-right: 1px solid #dbe3ea; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
 #ops-section .ir-overview-table .scroll-header { height: 96px; flex-direction: column; padding-right: 0; position: relative; }
 #ops-section .ir-overview-table .km-table__header-row { display: flex; }
 #ops-section .ir-overview-table .km-table__header-row--level1 { height: 48px; padding-left: 90px; padding-right: 0; }
@@ -699,9 +800,9 @@
     border-right: 1px solid #e5e7eb; box-sizing: border-box;
 }
 /* Body rows */
-#ops-section .ir-overview-table .fixed-row { height: 40px; font-weight: 500; }
+#ops-section .ir-overview-table .fixed-row { height: 40px; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ops-section .ir-overview-table .scroll-row { height: 40px; padding-right: 0; min-width: max-content; }
-#ops-section .ir-overview-table .fixed-col { width: 120px; }
+#ops-section .ir-overview-table .fixed-col { width: 120px; min-width: 110px; border-right: 1px solid #dbe3ea; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
 #ops-section .ir-overview-table .scroll-cell {
     display: flex; align-items: center; justify-content: center;
     font-size: 13px; box-sizing: border-box; flex-shrink: 0;

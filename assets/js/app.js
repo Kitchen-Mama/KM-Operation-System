@@ -53,7 +53,6 @@ function showSection(section) {
     // 呼叫生命週期切換（如果已註冊）
     if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {
         const sectionMap = {
-            'restock': 'replenishment-section',
             'ops': 'ops-section',
             'factory-stock': 'factory-stock-section',
             'forecast': 'forecast-section',
@@ -74,7 +73,6 @@ function showSection(section) {
     
     // 顯示選擇的區塊
     const sectionMap = {
-        'restock': 'replenishment-section',
         'ops': 'ops-section', 
         'factory-stock': 'factory-stock-section',
         'forecast': 'forecast-section',
@@ -296,36 +294,7 @@ function renderRecords() {
 }
 
 // 計算補貨量函式 - 使用本地資料
-function calculateRestock() {
-    const targetDays = parseFloat(document.getElementById('targetDays').value);
-    const sku = document.getElementById('sku').value;
-    const item = window.DataRepo.getItemBySku(sku);
-    
-    if (!item) {
-        document.getElementById('result').innerHTML = '<p style="color: red;">找不到該SKU的商品</p>';
-        return;
-    }
-    
-    const recommendQty = Math.max(0, Math.ceil(item.avgDailySales * targetDays - item.stock));
-    
-    document.getElementById('result').innerHTML = `
-        <p>stock: ${item.stock}</p>
-        <p>avgDailySales: ${item.avgDailySales}</p>
-        <p>targetDays: ${targetDays}</p>
-        <p>recommendQty: ${recommendQty}</p>
-    `;
-    
-    // 建立紀錄並儲存到本地
-    const record = {
-        sku: sku,
-        targetDays: targetDays,
-        recommendQty: recommendQty,
-        created_at: new Date().toISOString()
-    };
-    
-    window.DataRepo.saveRecord(record);
-    renderRecords();
-}
+
 
 // ========================================
 // SKU Details - 已搬移至 pages/sku-details.js

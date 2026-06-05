@@ -451,58 +451,19 @@ function initFcDropdown() {
 }
 
 // Initialize Factory Stock Dropdown
+// NOTE: Factory Stock has its own initFactoryStockPage() in factory-stock.js.
+// This function is kept as a no-op to prevent legacy calls from breaking.
+// Do NOT use cloneNode or rebind events here — factory-stock.js handles its own lifecycle.
 function initFactoryDropdown() {
-  const factoryTriggers = document.querySelectorAll('#factory-stock-section .fc-dropdown-trigger');
-  
-  factoryTriggers.forEach(trigger => {
-    const newTrigger = trigger.cloneNode(true);
-    trigger.parentNode.replaceChild(newTrigger, trigger);
-    
-    newTrigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const filterType = newTrigger.dataset.filter;
-      const panel = document.querySelector(`#factory-stock-section .fc-dropdown-panel[data-filter="${filterType}"]`);
-      
-      if (!panel) return;
-      
-      document.querySelectorAll('#factory-stock-section .fc-dropdown-panel').forEach(p => {
-        if (p !== panel) p.classList.remove('is-open');
-      });
-      
-      panel.classList.toggle('is-open');
-    });
-  });
-  
-  // 重新綁定 checkbox 事件
-  document.querySelectorAll('#factory-stock-section .fc-dropdown-panel').forEach(panel => {
-    const filterType = panel.dataset.filter;
-    
-    // 綁定 "All" checkbox
-    const allCheckbox = panel.querySelector('input[value=""]');
-    if (allCheckbox) {
-      allCheckbox.addEventListener('change', function() {
-        toggleFactoryAll(this, filterType);
-      });
-    }
-    
-    // 綁定個別 checkboxes
-    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-    checkboxes.forEach(cb => {
-      cb.addEventListener('change', function() {
-        updateFactoryFilter(filterType);
-      });
-    });
-    
-    // 防止點擊 panel 關閉
-    panel.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-  });
+  if (window.initFactoryStockPage) {
+    // Defer to factory-stock.js's own initialization
+    return;
+  }
 }
 
-// Close dropdown when clicking outside
+// Close dropdown when clicking outside (scoped to FC Summary only)
 document.addEventListener('click', () => {
-  document.querySelectorAll('.fc-dropdown-panel').forEach(p => {
+  document.querySelectorAll('#fc-summary-section .fc-dropdown-panel').forEach(p => {
     p.classList.remove('is-open');
   });
 });

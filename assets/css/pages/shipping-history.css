@@ -3,24 +3,189 @@
    #shippinghistory-section 專屬樣式
 ======================================== */
 
-/* Date Trigger Button - 確保樣式正確應用 */
+/* Filter Bar — Primary Filter Template */
+#shippinghistory-section .fc-filter-bar {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    padding: 16px 20px;
+    background: var(--km-filter-surface);
+    border: 1px solid var(--km-filter-border);
+    border-radius: var(--km-filter-radius);
+    margin-bottom: 20px;
+    position: relative;
+    z-index: 130;
+}
+
+#shippinghistory-section .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+    flex: 0 1 auto;
+}
+
+#shippinghistory-section .filter-group.filter-group--sku {
+    min-width: 180px;
+    flex: 0 1 220px;
+}
+
+/* Shipping History custom checkbox dropdown */
+#shippinghistory-section .sh-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--km-filter-height);
+    padding: 0 12px;
+    border: 1px solid var(--km-filter-border);
+    border-radius: var(--km-filter-radius);
+    background: var(--km-filter-bg);
+    color: var(--km-filter-text);
+    font-size: 13px;
+    cursor: pointer;
+    width: 100%;
+    box-sizing: border-box;
+    transition: all 0.2s;
+}
+
+#shippinghistory-section .sh-dropdown-trigger:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+#shippinghistory-section .sh-dropdown-text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+#shippinghistory-section .sh-dropdown-icon {
+    font-size: 10px;
+    color: var(--km-filter-muted);
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+#shippinghistory-section .sh-dropdown-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #ffffff;
+    border: 1px solid var(--km-filter-border);
+    border-radius: var(--km-filter-radius);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0;
+}
+
+#shippinghistory-section .sh-dropdown-panel.is-open {
+    display: block;
+}
+
+#shippinghistory-section .sh-checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: #2d3748;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+    white-space: nowrap;
+}
+
+#shippinghistory-section .sh-checkbox-item:hover {
+    background: #f7fafc;
+}
+
+#shippinghistory-section .sh-checkbox-item input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+    width: auto;
+    height: auto;
+    min-width: auto;
+    accent-color: var(--km-brand-teal, #3abfb6);
+}
+
+#shippinghistory-section .filter-group label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--km-filter-muted);
+}
+
+#shippinghistory-section .filter-group select,
+#shippinghistory-section .filter-group input {
+    height: var(--km-filter-height);
+    padding: 0 12px;
+    border: 1px solid var(--km-filter-border);
+    border-radius: var(--km-filter-radius);
+    background: var(--km-filter-bg);
+    color: var(--km-filter-text);
+    font-size: 13px;
+    box-sizing: border-box;
+    width: 100%;
+    line-height: 1;
+}
+
+#shippinghistory-section .filter-group select:hover,
+#shippinghistory-section .filter-group input:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+#shippinghistory-section .filter-group select:focus,
+#shippinghistory-section .filter-group input:focus {
+    outline: none;
+    border-color: var(--km-brand-blue);
+    box-shadow: 0 0 0 2px rgba(0, 128, 187, 0.1);
+}
+
+/* Search button */
+#shippinghistory-section .btn-primary {
+    height: var(--km-button-height);
+    padding: 0 var(--km-button-padding-x);
+    border: none;
+    border-radius: var(--km-button-radius);
+    background: var(--km-brand-blue);
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.15s;
+}
+
+#shippinghistory-section .btn-primary:hover {
+    opacity: 0.88;
+}
+
+/* Date Trigger Button */
 #shippinghistory-section .history-date-trigger {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--filter-padding-block) var(--filter-padding-inline);
-    background: #ffffff;
-    border: 1px solid var(--filter-border-color);
-    border-radius: var(--filter-border-radius);
-    font-size: var(--filter-font-size);
+    padding: 0 12px;
+    background: var(--km-filter-bg);
+    border: 1px solid var(--km-filter-border);
+    border-radius: var(--km-filter-radius);
+    font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
     width: 100%;
     text-align: left;
     box-sizing: border-box;
-    height: var(--filter-height);
+    height: var(--km-filter-height);
     line-height: 1;
-    margin: 4px 0;
+    color: var(--km-filter-text);
 }
 
 #shippinghistory-section .history-date-trigger:hover {
@@ -29,7 +194,7 @@
 }
 
 #shippinghistory-section .history-date-trigger-text {
-    color: #2d3748;
+    color: var(--km-filter-text);
     flex: 1;
     white-space: nowrap;
     overflow: hidden;
@@ -38,7 +203,7 @@
 
 #shippinghistory-section .history-date-trigger-icon {
     font-size: 10px;
-    color: #a0aec0;
+    color: var(--km-filter-muted);
     margin-left: 8px;
     flex-shrink: 0;
 }
@@ -48,4 +213,74 @@
     text-align: center;
     padding: 3rem;
     color: var(--text-muted);
+}
+
+
+/* ========================================
+   SKU Details Sub-Table — Raw Data Child Table Baseline
+======================================== */
+#shippinghistory-section .sh-sku-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+#shippinghistory-section .sh-sku-table__th {
+    padding: 8px 12px;
+    height: 40px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dbe3ea;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+    text-align: left;
+}
+
+#shippinghistory-section .sh-sku-table__th--sku {
+    width: 120px;
+    min-width: 110px;
+}
+
+#shippinghistory-section .sh-sku-table__th--num {
+    text-align: right;
+    width: 100px;
+}
+
+#shippinghistory-section .sh-sku-table__td {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #374151;
+    border-bottom: 1px solid #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+#shippinghistory-section .sh-sku-table__td--sku {
+    width: 120px;
+    min-width: 110px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+#shippinghistory-section .sh-sku-table__td--num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+#shippinghistory-section .sh-sku-table__row:hover {
+    background: #f1f5f9;
+}
+
+#shippinghistory-section .sh-sku-table__row:last-child .sh-sku-table__td {
+    border-bottom: none;
 }

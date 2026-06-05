@@ -66,6 +66,10 @@
     flex-wrap: wrap;
     margin-bottom: var(--space-lg);
     align-items: flex-end;
+    padding: 16px 20px;
+    background: var(--km-filter-surface, #f8f9fa);
+    border: 1px solid var(--km-filter-border, #e5e7eb);
+    border-radius: var(--km-filter-radius, 6px);
 }
 
 #sku-handbook-section .skuh-filter {
@@ -75,22 +79,117 @@
 }
 
 #sku-handbook-section .skuh-filter label {
-    font-size: 0.75rem;
+    font-size: 12px;
     font-weight: 500;
-    color: var(--text-secondary, #64748b);
+    color: var(--km-filter-muted, #64748b);
 }
 
 #sku-handbook-section .skuh-filter input,
 #sku-handbook-section .skuh-filter select {
-    padding: 6px 10px;
-    border: 1px solid var(--border-light, #e2e8f0);
-    border-radius: 6px;
-    font-size: 0.825rem;
-    min-width: 160px;
+    height: var(--km-filter-height, 36px);
+    padding: 0 12px;
+    border: 1px solid var(--km-filter-border, #e2e8f0);
+    border-radius: var(--km-filter-radius, 6px);
+    background: var(--km-filter-bg, white);
+    color: var(--km-filter-text, #1f2937);
+    font-size: 13px;
+    box-sizing: border-box;
+    min-width: 140px;
 }
 
 #sku-handbook-section .skuh-filter input {
     min-width: 220px;
+}
+
+/* Checkbox Dropdown */
+#sku-handbook-section .skuh-filter--dropdown {
+    position: relative;
+}
+
+#sku-handbook-section .skuh-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--km-filter-height, 36px);
+    padding: 0 12px;
+    border: 1px solid var(--km-filter-border, #e2e8f0);
+    border-radius: var(--km-filter-radius, 6px);
+    background: var(--km-filter-bg, white);
+    color: var(--km-filter-text, #1f2937);
+    font-size: 13px;
+    cursor: pointer;
+    width: 100%;
+    min-width: 180px;
+    box-sizing: border-box;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+#sku-handbook-section .skuh-dropdown-trigger:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+#sku-handbook-section .skuh-dropdown-text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+#sku-handbook-section .skuh-dropdown-icon {
+    font-size: 10px;
+    color: var(--km-filter-muted, #6b7280);
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+#sku-handbook-section .skuh-dropdown-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #ffffff;
+    border: 1px solid var(--km-filter-border, #e2e8f0);
+    border-radius: var(--km-filter-radius, 6px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 250px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0;
+}
+
+#sku-handbook-section .skuh-dropdown-panel.is-open {
+    display: block;
+}
+
+#sku-handbook-section .skuh-checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: #2d3748;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+    white-space: nowrap;
+}
+
+#sku-handbook-section .skuh-checkbox-item:hover {
+    background: #f7fafc;
+}
+
+#sku-handbook-section .skuh-checkbox-item input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+    width: auto;
+    height: auto;
+    min-width: auto;
+    accent-color: var(--km-brand-teal, #3abfb6);
 }
 
 /* Lifecycle Sections */
@@ -447,22 +546,25 @@
 
 #sku-handbook-section .skuh-lang-toggle {
     display: flex;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
+    border: 1px solid var(--km-filter-border, #d1d5db);
+    border-radius: var(--km-button-radius, 6px);
     overflow: hidden;
     flex-shrink: 0;
 }
 
 #sku-handbook-section .skuh-lang-btn {
-    padding: 6px 14px;
+    padding: 0 14px;
+    height: 30px;
     border: none;
-    background: white;
+    background: var(--km-filter-bg, white);
     font-size: 12px;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--km-filter-muted, #6b7280);
     cursor: pointer;
     transition: all 0.15s;
-    border-right: 1px solid #d1d5db;
+    border-right: 1px solid var(--km-filter-border, #d1d5db);
+    display: flex;
+    align-items: center;
 }
 
 #sku-handbook-section .skuh-lang-btn:last-child {
@@ -474,7 +576,7 @@
 }
 
 #sku-handbook-section .skuh-lang-btn.is-active {
-    background: #7fb069;
+    background: var(--km-ui-success, #7fb069);
     color: white;
 }
 
@@ -508,7 +610,7 @@
 /* Data mode badge in stats */
 #sku-handbook-section .skuh-stat--mode {
     background: #e0f2fe;
-    color: #0369a1;
+    color: var(--km-ui-info, #0369a1);
     border-color: #7dd3fc;
     font-size: 0.7rem;
     margin-left: auto;

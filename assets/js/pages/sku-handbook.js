@@ -4,18 +4,22 @@
 
 const SkuHandbookState = {
     search: '',
-    productLine: 'all',
-    brand: 'all',
-    lifecycle: 'all',
+    productLine: [],  // empty = all
+    brand: [],        // empty = all
+    lifecycle: [],    // empty = all
     selectedSku: null
 };
 
 const LIFECYCLE_MAP = {
-    'Active': 'Running in the market',
-    'Running': 'Running in the market',
+    'Active': 'Running in the Market',
+    'Running': 'Running in the Market',
+    'Running in the Market': 'Running in the Market',
+    'Running in the market': 'Running in the Market',
     'Upcoming': 'Upcoming SKU',
+    'Upcoming SKU': 'Upcoming SKU',
     'Phasing Out': 'Phasing Out',
-    'Closure': 'Closure'
+    'Closure': 'Closure',
+    'Closed': 'Closure'
 };
 
 function normalizeSkuHandbookItem(item, lifecycleGroup) {
@@ -356,14 +360,14 @@ function applySkuHandbookFilters(items) {
             return false;
         });
     }
-    if (s.productLine !== 'all') {
-        filtered = filtered.filter(i => i.productLine === s.productLine);
+    if (s.productLine.length > 0) {
+        filtered = filtered.filter(i => s.productLine.includes(i.productLine));
     }
-    if (s.brand !== 'all') {
-        filtered = filtered.filter(i => i.brand === s.brand);
+    if (s.brand.length > 0) {
+        filtered = filtered.filter(i => s.brand.includes(i.brand));
     }
-    if (s.lifecycle !== 'all') {
-        filtered = filtered.filter(i => i.lifecycle === s.lifecycle);
+    if (s.lifecycle.length > 0) {
+        filtered = filtered.filter(i => s.lifecycle.includes(i.lifecycle));
     }
     return filtered;
 }
@@ -384,20 +388,18 @@ function groupSkuHandbookItems(items) {
 
 function renderSkuHandbookFilters() {
     const data = getSkuHandbookData();
-    const productLines = [...new Set(data.map(i => i.productLine).filter(Boolean))];
-    const brands = [...new Set(data.map(i => i.brand).filter(Boolean))];
+    const productLines = [...new Set(data.map(i => i.productLine).filter(Boolean))].sort();
+    const brands = [...new Set(data.map(i => i.brand).filter(Boolean))].sort();
 
-    const plSelect = document.getElementById('skuh-filter-productline');
-    const brSelect = document.getElementById('skuh-filter-brand');
-    if (plSelect) {
-        plSelect.innerHTML = '<option value="all">All Product Lines</option>' +
-            productLines.map(pl => `<option value="${pl}">${pl}</option>`).join('');
-        plSelect.value = SkuHandbookState.productLine;
+    const plPanel = document.getElementById('skuh-panel-productline');
+    const brPanel = document.getElementById('skuh-panel-brand');
+    if (plPanel) {
+        plPanel.innerHTML = '<label class="skuh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
+            productLines.map(pl => `<label class="skuh-checkbox-item"><input type="checkbox" value="${pl}" checked> ${pl}</label>`).join('');
     }
-    if (brSelect) {
-        brSelect.innerHTML = '<option value="all">All Brands</option>' +
-            brands.map(b => `<option value="${b}">${b}</option>`).join('');
-        brSelect.value = SkuHandbookState.brand;
+    if (brPanel) {
+        brPanel.innerHTML = '<label class="skuh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
+            brands.map(b => `<label class="skuh-checkbox-item"><input type="checkbox" value="${b}" checked> ${b}</label>`).join('');
     }
 }
 
@@ -632,12 +634,117 @@ function toggleSkuhGroup(el) {
 
 function clearSkuHandbookFilters() {
     SkuHandbookState.search = '';
-    SkuHandbookState.productLine = 'all';
-    SkuHandbookState.brand = 'all';
-    SkuHandbookState.lifecycle = 'all';
+    SkuHandbookState.productLine = [];
+    SkuHandbookState.brand = [];
+    SkuHandbookState.lifecycle = [];
     const searchInput = document.getElementById('skuh-filter-search');
     if (searchInput) searchInput.value = '';
+    // Re-check all checkboxes
+    document.querySelectorAll('#sku-handbook-section .skuh-dropdown-panel input[type="checkbox"]').forEach(cb => cb.checked = true);
+    // Reset trigger text
+    _updateSkuhDropdownText('productline');
+    _updateSkuhDropdownText('brand');
+    _updateSkuhDropdownText('lifecycle');
     renderSkuHandbook();
+}
+
+// --- Checkbox Dropdown Logic ---
+function _initSkuhDropdowns() {
+    var root = document.getElementById('sku-handbook-section');
+    if (!root) return;
+
+    root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(trigger) {
+        trigger.onclick = function(e) {
+            e.stopPropagation();
+            var filterType = this.dataset.filter;
+            var panel = root.querySelector('.skuh-dropdown-panel[data-filter="' + filterType + '"]');
+            root.querySelectorAll('.skuh-dropdown-panel').forEach(function(p) {
+                if (p !== panel) { p.classList.remove('is-open'); }
+            });
+            root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
+            if (panel) {
+                panel.classList.toggle('is-open');
+                this.setAttribute('aria-expanded', panel.classList.contains('is-open') ? 'true' : 'false');
+            }
+        };
+    });
+
+    root.querySelectorAll('.skuh-dropdown-panel').forEach(function(panel) {
+        panel.onclick = function(e) { e.stopPropagation(); };
+        var filterType = panel.dataset.filter;
+        var allCb = panel.querySelector('input[value=""]');
+        var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+
+        if (allCb) {
+            allCb.onchange = function() {
+                otherCbs.forEach(function(cb) { cb.checked = allCb.checked; });
+                _syncSkuhFilterState(filterType, panel);
+            };
+        }
+        otherCbs.forEach(function(cb) {
+            cb.onchange = function() {
+                var checkedCount = Array.from(otherCbs).filter(function(c) { return c.checked; }).length;
+                if (allCb) allCb.checked = (checkedCount === otherCbs.length);
+                _syncSkuhFilterState(filterType, panel);
+            };
+        });
+    });
+
+    // Close on outside click
+    document.addEventListener('click', function(e) {
+        if (!root.contains(e.target)) {
+            root.querySelectorAll('.skuh-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
+            root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
+        }
+    });
+
+    // Close on Esc
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            root.querySelectorAll('.skuh-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
+            root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
+        }
+    });
+}
+
+function _syncSkuhFilterState(filterType, panel) {
+    var allCb = panel.querySelector('input[value=""]');
+    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    var selected = Array.from(otherCbs).filter(function(c) { return c.checked; }).map(function(c) { return c.value; });
+
+    // If all checked or none checked, treat as no filter
+    if (allCb && allCb.checked) selected = [];
+    if (selected.length === otherCbs.length) selected = [];
+
+    var stateKey = filterType === 'productline' ? 'productLine' : filterType;
+    SkuHandbookState[stateKey] = selected;
+
+    _updateSkuhDropdownText(filterType);
+    var filtered = applySkuHandbookFilters(getSkuHandbookData());
+    renderSkuHandbookGroups(filtered);
+}
+
+function _updateSkuhDropdownText(filterType) {
+    var root = document.getElementById('sku-handbook-section');
+    if (!root) return;
+    var trigger = root.querySelector('.skuh-dropdown-trigger[data-filter="' + filterType + '"]');
+    var panel = root.querySelector('.skuh-dropdown-panel[data-filter="' + filterType + '"]');
+    if (!trigger || !panel) return;
+    var textSpan = trigger.querySelector('.skuh-dropdown-text');
+    var allCb = panel.querySelector('input[value=""]');
+    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    var checked = Array.from(otherCbs).filter(function(c) { return c.checked; });
+
+    var labels = { productline: 'Product Lines', brand: 'Brands', lifecycle: 'Lifecycle' };
+    var label = labels[filterType] || filterType;
+
+    if (allCb && allCb.checked || checked.length === 0 || checked.length === otherCbs.length) {
+        textSpan.textContent = 'All ' + label;
+    } else if (checked.length === 1) {
+        textSpan.textContent = checked[0].value;
+    } else {
+        textSpan.textContent = checked.length + ' ' + label;
+    }
 }
 
 function initSkuHandbook() {
@@ -646,10 +753,6 @@ function initSkuHandbook() {
 
     // Bind filter events
     const searchInput = document.getElementById('skuh-filter-search');
-    const plSelect = document.getElementById('skuh-filter-productline');
-    const brSelect = document.getElementById('skuh-filter-brand');
-    const lcSelect = document.getElementById('skuh-filter-lifecycle');
-
     if (searchInput) {
         searchInput.addEventListener('input', function() {
             SkuHandbookState.search = this.value;
@@ -657,27 +760,9 @@ function initSkuHandbook() {
             renderSkuHandbookGroups(filtered);
         });
     }
-    if (plSelect) {
-        plSelect.addEventListener('change', function() {
-            SkuHandbookState.productLine = this.value;
-            const filtered = applySkuHandbookFilters(getSkuHandbookData());
-            renderSkuHandbookGroups(filtered);
-        });
-    }
-    if (brSelect) {
-        brSelect.addEventListener('change', function() {
-            SkuHandbookState.brand = this.value;
-            const filtered = applySkuHandbookFilters(getSkuHandbookData());
-            renderSkuHandbookGroups(filtered);
-        });
-    }
-    if (lcSelect) {
-        lcSelect.addEventListener('change', function() {
-            SkuHandbookState.lifecycle = this.value;
-            const filtered = applySkuHandbookFilters(getSkuHandbookData());
-            renderSkuHandbookGroups(filtered);
-        });
-    }
+
+    // Init checkbox dropdowns
+    _initSkuhDropdowns();
 }
 
 
@@ -729,3 +814,29 @@ if (window.KM && window.KM.lifecycle) {
         unmount() { closeSkuDetailModal(); }
     });
 }
+
+
+// Debug helper
+window.debugSkuHandbookLifecycleFilters = function() {
+    var data = getSkuHandbookData();
+    var lifecycles = data.map(function(i) { return i.lifecycle; });
+    var distinct = [...new Set(lifecycles)].sort();
+    var counts = {};
+    lifecycles.forEach(function(lc) { counts[lc] = (counts[lc] || 0) + 1; });
+
+    console.log('=== SKU Handbook Lifecycle Filter Debug ===');
+    console.log('Total items:', data.length);
+    console.log('Distinct lifecycle values:', distinct);
+    console.log('Counts by lifecycle:', counts);
+    console.log('Current filter state:', JSON.parse(JSON.stringify(SkuHandbookState.lifecycle)));
+    console.log('LIFECYCLE_MAP:', LIFECYCLE_MAP);
+
+    var panel = document.getElementById('skuh-panel-lifecycle');
+    if (panel) {
+        var opts = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+        console.log('Filter options in UI:', Array.from(opts).map(function(cb) { return { value: cb.value, checked: cb.checked }; }));
+    }
+
+    var unmapped = distinct.filter(function(v) { return v && !Object.values(LIFECYCLE_MAP).includes(v); });
+    if (unmapped.length) console.warn('Unmapped lifecycle values:', unmapped);
+};

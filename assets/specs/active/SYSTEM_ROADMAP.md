@@ -1,4 +1,4 @@
-# Kitchen Mama Operation System - System Roadmap
+﻿# Kitchen Mama Operation System - System Roadmap
 
 **Last Updated:** 2025-01-22
 **Maintained By:** Development Team
@@ -103,9 +103,10 @@
 **Possible Fields:**
 ```
 marketplace_sku_id, sku, country, marketplace, site_sku, asin,
-platform_product_id, platform_parent_id, listing_title, currency,
-regular_price, minimum_price, msrp, listing_status, sales_status,
-is_active, launch_date, end_date, source, created_at, updated_at
+currency, regular_price, minimum_price, msrp,
+marketplace_sku_status, created_at, updated_at
+
+marketplace_sku_status values: active, phasing_out, inactive, discontinued
 ```
 
 **Dependencies:** sku_details
@@ -363,3 +364,79 @@ AI Integration (Stage 5)
 ---
 
 **End of Document**
+
+
+---
+
+## UI / Table Standardization
+
+**Status:** Partially Started
+
+### Completed:
+- ✅ Inventory Replenishment table layout polish
+- ✅ Header/body scroll sync fix
+- ✅ Data-heavy table visual standard defined (in `TableTemplate_ScrollXY_Standard.md`)
+- ✅ Anti-patterns documented
+- ✅ Recommended pattern documented
+- ✅ Table category strategy defined: Raw Data Table vs User Operation Table
+- ✅ Shared SKU Column Standard defined
+- ✅ Raw Data Table cell padding standard defined (`8px 12px` / `6px 10px` compact)
+- ✅ Image Column Standard for Raw Data Tables defined (64px separate column)
+- ✅ Factory Stock aligned to Raw Data Table Visual Baseline
+- ✅ FC Summary aligned to Raw Data Table Visual Baseline
+- ✅ SKU Details aligned to Raw Data Table Visual Baseline
+- ✅ Promotion Risk Tracker aligned to Raw Data Table Visual Baseline
+- ✅ Shipping History inner SKU Details table aligned to Raw Data child table baseline
+
+### Not Completed:
+- ❌ Apply same standard to Shipping Plan table
+- ❌ Apply same standard to Shipment Overview table
+- ❌ Apply same standard to Promotion / Campaign tables
+- ❌ Apply Shared SKU Column Standard to Request Order
+- ❌ Apply Shared SKU Column Standard to future Shipping Plan / Shipment tables
+- ❌ Build reusable table component or shared CSS tokens
+
+**Note:** This is "standard defined / first page validated" — not a full system-wide completion.
+
+---
+
+## UI / Filter & Button Design System
+
+**Status:** Partially Started
+
+### Completed:
+- ✅ Filter/Button design standard defined (`FILTER_BUTTON_DESIGN_STANDARD.md`)
+- ✅ Brand color tokens added to `base.css`
+- ✅ UI semantic color tokens added
+- ✅ Filter UI tokens added
+- ✅ Button UI tokens added
+- ✅ Cascading filter guidance documented
+- ✅ Inventory Replenishment filter/button aligned
+- ✅ Shipping History filter/button aligned
+- ✅ Filter Dropdown Option Standard defined
+- ✅ FC Summary dropdown options aligned to Factory Stock baseline
+- ✅ Checked State Standard defined (accent-color: --km-brand-teal)
+- ✅ Shipping History Country/Method converted to checkbox dropdown
+- ✅ Promotion Risk Tracker filter/button aligned
+- ✅ SKU Handbook filter/button aligned
+- ✅ Pill Filter Variant documented
+- ✅ Request Order checkbox accent-color aligned
+- ✅ Forecast Review checkbox accent-color aligned
+- ✅ Promotion Risk Tracker Category/Series converted to checkbox dropdown
+- ✅ SKU Handbook Product Line/Brand/Lifecycle converted to checkbox dropdown
+- ✅ SKU Handbook lifecycle filter value/source alignment fixed
+- ✅ Promotion Risk Tracker checkbox selected-state sync fixed
+- ✅ Forecast Review cumulative goal demo-off cleanup
+- ✅ Promotion Risk Tracker demo-off cleanup
+- ✅ Inventory Replenishment modal horizontal overflow fixed
+- ✅ FILTER_OPTION_SOURCE_AUDIT.md created
+- ✅ INVENTORY_MARKETPLACE_SKU_FLOW_AUDIT.md created
+
+### Not Completed:
+- ❌ Apply button semantic colors to SKU Details toolbar
+- ❌ Apply button semantic colors to FC Summary actions
+- ❌ Build reusable filter/button component
+- ❌ marketplace_skus Google Sheet tab creation + read API
+- ❌ Inventory Replenishment Country/Marketplace linked filters
+- ❌ Add SKU write to marketplace_skus
+- ❌ FC Summary auto-create row on Add SKU

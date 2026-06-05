@@ -135,6 +135,9 @@ function initShippingHistoryPage() {
     loadHistoryData();
     updateHistoryDateTriggerText();
     
+    // Init custom dropdowns
+    _initShDropdowns();
+    
     // 直接綁定事件，不使用 clone
     searchBtn.onclick = onHistorySearch;
     dateTrigger.onclick = function(e) {
@@ -465,11 +468,11 @@ function onHistorySearch() {
 }
 
 function collectFilterParams() {
-    const selects = document.querySelectorAll("#shippinghistory-section .filter-group select");
     const skuInput = document.querySelector("#shippinghistory-section .filter-group--sku input");
     
-    const country = selects[0]?.value || "";
-    const method = selects[1]?.value || "";
+    // Read from checkbox dropdowns
+    const country = _getShDropdownValue('country');
+    const method = _getShDropdownValue('method');
     const sku = skuInput?.value.trim() || "";
     
     return { 
@@ -479,6 +482,18 @@ function collectFilterParams() {
         sku, 
         method 
     };
+}
+
+// Get single selected value from shipping history dropdown (single-select behavior)
+function _getShDropdownValue(filterType) {
+    const panel = document.querySelector(`#shippinghistory-section .sh-dropdown-panel[data-filter="${filterType}"]`);
+    if (!panel) return '';
+    const checked = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
+    const allCb = panel.querySelector('input[value=""]');
+    if (allCb && allCb.checked) return '';
+    if (checked.length === 0) return '';
+    // Single-select: return first checked value
+    return checked[0].value;
 }
 
 function filterHistoryData(data, params) {
@@ -546,22 +561,22 @@ function renderHistoryCard(shipment) {
             </div>
             <div class="history-card-details" style="display: none; padding: 16px; border-top: 1px solid #E2E8F0; background: #F8FAFC;">
                 <h4 style="font-size: 14px; margin-bottom: 12px; color: #1E293B;">SKU Details</h4>
-                <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+                <table class="sh-sku-table">
                     <thead>
-                        <tr style="background: #F1F5F9;">
-                            <th style="padding: 8px; text-align: left; border-bottom: 1px solid #E2E8F0;">SKU</th>
-                            <th style="padding: 8px; text-align: right; border-bottom: 1px solid #E2E8F0;">Quantity</th>
-                            <th style="padding: 8px; text-align: right; border-bottom: 1px solid #E2E8F0;">Cartons</th>
+                        <tr>
+                            <th class="sh-sku-table__th sh-sku-table__th--sku">SKU</th>
+                            <th class="sh-sku-table__th sh-sku-table__th--num">Quantity</th>
+                            <th class="sh-sku-table__th sh-sku-table__th--num">Cartons</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${shipment.skus.map(sku => {
                             const cartons = Math.ceil(sku.qty / 40);
                             return `
-                            <tr>
-                                <td style="padding: 8px; border-bottom: 1px solid #F1F5F9;">${sku.sku}</td>
-                                <td style="padding: 8px; text-align: right; border-bottom: 1px solid #F1F5F9;">${sku.qty.toLocaleString()}</td>
-                                <td style="padding: 8px; text-align: right; border-bottom: 1px solid #F1F5F9;">${cartons}</td>
+                            <tr class="sh-sku-table__row">
+                                <td class="sh-sku-table__td sh-sku-table__td--sku">${sku.sku}</td>
+                                <td class="sh-sku-table__td sh-sku-table__td--num">${sku.qty.toLocaleString()}</td>
+                                <td class="sh-sku-table__td sh-sku-table__td--num">${cartons}</td>
                             </tr>
                         `}).join('')}
                     </tbody>
@@ -598,6 +613,78 @@ function toggleHistoryCard(shipmentId) {
     } else {
         details.style.display = 'none';
         if (btn) btn.textContent = 'Expand';
+    }
+}
+
+// Shipping History custom dropdown logic (single-select behavior with checkbox visual)
+function _initShDropdowns() {
+    const root = document.querySelector('#shippinghistory-section');
+    if (!root) return;
+
+    // Trigger click
+    root.querySelectorAll('.sh-dropdown-trigger').forEach(trigger => {
+        trigger.onclick = function(e) {
+            e.stopPropagation();
+            const filterType = this.dataset.filter;
+            const panel = root.querySelector(`.sh-dropdown-panel[data-filter="${filterType}"]`);
+            root.querySelectorAll('.sh-dropdown-panel').forEach(p => {
+                if (p !== panel) p.classList.remove('is-open');
+            });
+            if (panel) panel.classList.toggle('is-open');
+        };
+    });
+
+    // Panel click stop propagation
+    root.querySelectorAll('.sh-dropdown-panel').forEach(panel => {
+        panel.onclick = e => e.stopPropagation();
+
+        const filterType = panel.dataset.filter;
+        const allCb = panel.querySelector('input[value=""]');
+        const otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+
+        // Single-select behavior: checking one unchecks others
+        if (allCb) {
+            allCb.onchange = function() {
+                if (this.checked) {
+                    otherCbs.forEach(cb => cb.checked = false);
+                }
+                _updateShDropdownText(filterType, root);
+            };
+        }
+        otherCbs.forEach(cb => {
+            cb.onchange = function() {
+                // Single-select: uncheck all others, uncheck "All"
+                otherCbs.forEach(other => { if (other !== cb) other.checked = false; });
+                if (allCb) allCb.checked = !this.checked;
+                _updateShDropdownText(filterType, root);
+            };
+        });
+    });
+
+    // Close on outside click
+    document.addEventListener('click', function _shOutside(e) {
+        if (!root.contains(e.target)) {
+            root.querySelectorAll('.sh-dropdown-panel').forEach(p => p.classList.remove('is-open'));
+        }
+    });
+}
+
+function _updateShDropdownText(filterType, root) {
+    const trigger = root.querySelector(`.sh-dropdown-trigger[data-filter="${filterType}"]`);
+    const panel = root.querySelector(`.sh-dropdown-panel[data-filter="${filterType}"]`);
+    if (!trigger || !panel) return;
+    const textSpan = trigger.querySelector('.sh-dropdown-text');
+    const allCb = panel.querySelector('input[value=""]');
+    const checked = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
+    if (allCb && allCb.checked) {
+        textSpan.textContent = 'All';
+    } else if (checked.length === 1) {
+        textSpan.textContent = checked[0].value;
+    } else if (checked.length === 0) {
+        textSpan.textContent = 'All';
+        if (allCb) allCb.checked = true;
+    } else {
+        textSpan.textContent = `${checked.length} selected`;
     }
 }
 

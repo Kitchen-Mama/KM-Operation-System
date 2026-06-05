@@ -1113,14 +1113,20 @@ function updateSummaryStats(actualData, forecastData, lastYearData, marketplaceB
   document.getElementById('fcRate3').textContent = '88%';
   
   // Update Cumulative Goal
-  const goalTarget = 5000000;
-  const goalCurrent = summary.totalSalesAmount;
-  const goalPercentage = ((goalCurrent / goalTarget) * 100).toFixed(1);
-  
-  document.getElementById('forecastGoalTarget').textContent = `$${goalTarget.toLocaleString()}`;
-  document.getElementById('forecastGoalCurrent').textContent = `$${Math.round(goalCurrent).toLocaleString()}`;
-  document.getElementById('forecastGoalFill').style.width = `${Math.min(goalPercentage, 100)}%`;
-  document.getElementById('forecastGoalPercentage').textContent = `${goalPercentage}%`;
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    const goalTarget = 5000000;
+    const goalCurrent = summary.totalSalesAmount;
+    const goalPercentage = ((goalCurrent / goalTarget) * 100).toFixed(1);
+    document.getElementById('forecastGoalTarget').textContent = `$${goalTarget.toLocaleString()}`;
+    document.getElementById('forecastGoalCurrent').textContent = `$${Math.round(goalCurrent).toLocaleString()}`;
+    document.getElementById('forecastGoalFill').style.width = `${Math.min(goalPercentage, 100)}%`;
+    document.getElementById('forecastGoalPercentage').textContent = `${goalPercentage}%`;
+  } else {
+    document.getElementById('forecastGoalTarget').textContent = '—';
+    document.getElementById('forecastGoalCurrent').textContent = '—';
+    document.getElementById('forecastGoalFill').style.width = '0%';
+    document.getElementById('forecastGoalPercentage').textContent = '—';
+  }
   
   // Update Share Chart with marketplace breakdown
   const shareChart = forecastReviewState.shareChart;
