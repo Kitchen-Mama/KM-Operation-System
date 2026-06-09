@@ -323,7 +323,7 @@
                                 <div class="fc-form-row">
                                     <div class="fc-form-group">
                                         <label>SKU *</label>
-                                        <input type="text" id="replen-add-sku" placeholder="Enter SKU...">
+                                        <input type="text" id="replen-add-sku" placeholder="Enter SKU..." oninput="prefillReplenSiteSku()">
                                     </div>
                                     <div class="fc-form-group">
                                         <label>Country *</label>
@@ -337,13 +337,38 @@
                                 <div class="fc-form-row">
                                     <div class="fc-form-group">
                                         <label>Marketplace *</label>
-                                        <select id="replen-add-marketplace">
-                                            <option value="Amazon">Amazon</option>
-                                            <option value="Shopify">Shopify</option>
-                                            <option value="Target">Target</option>
-                                            <option value="KM Walmart">KM Walmart</option>
+                                        <select id="replen-add-marketplace" onchange="onReplenAddMarketplaceChange()">
+                                            <option value="">Select marketplace…</option>
+                                        </select>
+                                        <input type="hidden" id="replen-add-marketplace-id">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Company *</label>
+                                        <select id="replen-add-company">
+                                            <option value="KM">Kitchen Mama</option>
+                                            <option value="ResUS">Res US</option>
+                                            <option value="ResTW">Res TW</option>
                                         </select>
                                     </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Site SKU *</label>
+                                        <input type="text" id="replen-add-site-sku" placeholder="Defaults to SKU" oninput="this.dataset.autofill='0'">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Currency *</label>
+                                        <select id="replen-add-currency">
+                                            <option value="USD">USD</option>
+                                            <option value="EUR">EUR</option>
+                                            <option value="GBP">GBP</option>
+                                            <option value="CAD">CAD</option>
+                                            <option value="JPY">JPY</option>
+                                            <option value="AUD">AUD</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
                                     <div class="fc-form-group">
                                         <label>Replenishment Model</label>
                                         <select id="replen-add-model">
@@ -351,8 +376,6 @@
                                             <option value="forecast_driven">Forecast Driven</option>
                                         </select>
                                     </div>
-                                </div>
-                                <div class="fc-form-row">
                                     <div class="fc-form-group">
                                         <label>Launch Date</label>
                                         <input type="date" id="replen-add-launch-date" placeholder="YYYY-MM-DD">
@@ -395,9 +418,9 @@
                                     <div class="fc-form-group">
                                         <label>Company *</label>
                                         <select id="add-mp-company">
-                                            <option value="Kitchen Mama">Kitchen Mama</option>
-                                            <option value="Res US">Res US</option>
-                                            <option value="Res TW">Res TW</option>
+                                            <option value="KM">Kitchen Mama</option>
+                                            <option value="ResUS">Res US</option>
+                                            <option value="ResTW">Res TW</option>
                                         </select>
                                     </div>
                                 </div>
@@ -405,6 +428,23 @@
                                     <div class="fc-form-group">
                                         <label>Marketplace *</label>
                                         <input type="text" id="add-mp-marketplace" placeholder="Enter marketplace name...">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Currency *</label>
+                                        <select id="add-mp-currency">
+                                            <option value="USD">USD</option>
+                                            <option value="EUR">EUR</option>
+                                            <option value="GBP">GBP</option>
+                                            <option value="CAD">CAD</option>
+                                            <option value="JPY">JPY</option>
+                                            <option value="AUD">AUD</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Display Name</label>
+                                        <input type="text" id="add-mp-display-name" placeholder="Optional, defaults to marketplace name">
                                     </div>
                                 </div>
                             </div>
@@ -492,7 +532,7 @@
 
                     <!-- Inventory Overview -->
                     <div class="ir-overview">
-                        <h3 class="ir-overview__title">Inventory Overview</h3>
+                        <h3 class="ir-overview__title">(待開發) Inventory Overview</h3>
                         <div class="ir-overview__tabs" id="irOverviewTabs">
                             <button class="ir-overview__tab is-active" data-series="All" onclick="setIrOverviewTab('All')">All</button>
                             <button class="ir-overview__tab" data-series="CO1100" onclick="setIrOverviewTab('CO1100')">CO1100</button>

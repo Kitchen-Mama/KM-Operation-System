@@ -200,6 +200,8 @@ function normalizeMarketplaceSkuRecord(raw) {
     var r = raw || {};
     return {
         marketplaceSkuId: String(r.marketplace_sku_id || '').trim(),
+        marketplaceId: String(r.marketplace_id || '').trim(),
+        company: String(r.company || '').trim(),
         sku: String(r.sku || '').trim(),
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
@@ -218,11 +220,32 @@ function normalizeMarketplaceSkuRecord(raw) {
     };
 }
 
+function normalizeMarketplaceRecord(raw) {
+    var r = raw || {};
+    return {
+        marketplaceId: String(r.marketplace_id || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        marketplaceDisplayName: String(r.marketplace_display_name || '').trim(),
+        currency: String(r.currency || '').trim(),
+        status: String(r.status || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
 function normalizePricingListRecord(raw) {
     var r = raw || {};
     return {
         pricingId: String(r.pricing_id || '').trim(),
         marketplaceSkuId: String(r.marketplace_sku_id || '').trim(),
+        marketplaceId: String(r.marketplace_id || '').trim(),
+        company: String(r.company || '').trim(),
         sku: String(r.sku || '').trim(),
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
@@ -308,6 +331,7 @@ function normalizeOperationDb(rawDb) {
         skuHandbookSummaries: (db.sku_handbook_summaries || []).map(normalizeSkuHandbookSummaryRecord),
         campaigns: (db.campaigns || []).map(normalizeCampaignRecord).filter(function(r) { return r.campaignId; }),
         campaignSkuLines: (db.campaign_sku_lines || []).map(normalizeCampaignSkuLineRecord).filter(function(r) { return r.campaignSkuLineId; }),
+        marketplaces: (db.marketplaces || []).map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; }),
         marketplaceSkus: (db.marketplace_skus || []).map(normalizeMarketplaceSkuRecord).filter(function(r) { return r.sku; }),
         pricingList: (db.pricing_list || []).map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; }),
         pricingChangeLog: (db.pricing_change_log || []).map(normalizePricingChangeLogRecord).filter(function(r) { return r.logId || r.pricingId; }),
@@ -557,6 +581,11 @@ window.KM.DB.getCampaignSkuLines = function() {
     return window._opDbCache.campaignSkuLines || [];
 };
 
+window.KM.DB.getMarketplaces = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.marketplaces || [];
+};
+
 window.KM.DB.getMarketplaceSkus = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.marketplaceSkus || [];
@@ -631,6 +660,24 @@ async function updateSkuLifecycleInSheet(sku, lifecycle) {
 // ========================================
 // marketplace_skus Write Methods
 // ========================================
+
+window.KM.DB.upsertMarketplace = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertMarketplace skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertMarketplace' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
 
 window.KM.DB.upsertMarketplaceSku = async function(payload) {
     if (!isOperationDbApiConfigured()) {
@@ -712,6 +759,7 @@ window.debugOperationDb = function() {
     console.log('sku_knowledge_items count:', window.KM.DB.getSkuKnowledgeItems().length);
     console.log('campaigns count:', (window._opDbCache.campaigns || []).length);
     console.log('campaign_sku_lines count:', (window._opDbCache.campaignSkuLines || []).length);
+    console.log('marketplaces count:', (window._opDbCache.marketplaces || []).length);
     console.log('marketplace_skus count:', (window._opDbCache.marketplaceSkus || []).length);
     console.log('pricing_list count:', (window._opDbCache.pricingList || []).length);
     console.log('pricing_change_log count:', (window._opDbCache.pricingChangeLog || []).length);

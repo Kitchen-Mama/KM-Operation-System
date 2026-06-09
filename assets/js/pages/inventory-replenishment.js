@@ -3,46 +3,94 @@
 function openReplenAddSkuModal() {
   const modal = document.getElementById('replen-add-sku-modal');
   const overlay = document.getElementById('replen-modal-overlay');
-  
+
   if (!modal || !overlay) return;
-  
-  const currentCountry = document.getElementById('replenCountry')?.value;
-  const currentMarketplace = document.getElementById('replenMarketplace')?.value;
-  
-  const countrySelect = document.getElementById('replen-add-country');
-  const marketplaceSelect = document.getElementById('replen-add-marketplace');
-  
-  if (countrySelect) {
-    countrySelect.innerHTML = '';
-    const countryFilter = document.getElementById('replenCountry');
-    if (countryFilter) {
-      Array.from(countryFilter.options).forEach(option => {
-        const newOption = document.createElement('option');
-        newOption.value = option.value;
-        newOption.textContent = option.textContent;
-        countrySelect.appendChild(newOption);
-      });
-    }
-    if (currentCountry) countrySelect.value = currentCountry;
-  }
-  
-  if (marketplaceSelect) {
-    marketplaceSelect.innerHTML = '';
-    const marketplaceFilter = document.getElementById('replenMarketplace');
-    if (marketplaceFilter) {
-      Array.from(marketplaceFilter.options).forEach(option => {
-        const newOption = document.createElement('option');
-        newOption.value = option.value;
-        newOption.textContent = option.textContent;
-        marketplaceSelect.appendChild(newOption);
-      });
-    }
-    if (currentMarketplace) marketplaceSelect.value = currentMarketplace;
-  }
-  
+
+  // Marketplace dropdown is sourced from the active marketplaces registry.
+  populateReplenAddSkuMarketplaces();
+
+  // Company / Country / Currency are derived (read-only) from the selected marketplace.
+  ['replen-add-company', 'replen-add-country', 'replen-add-currency'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+
+  // Reset SKU + Site SKU (Site SKU re-prefills from SKU).
+  var skuEl = document.getElementById('replen-add-sku');
+  if (skuEl) skuEl.value = '';
+  var siteEl = document.getElementById('replen-add-site-sku');
+  if (siteEl) { siteEl.value = ''; siteEl.dataset.autofill = '1'; }
+
   modal.classList.add('is-open');
   overlay.classList.add('is-open');
 }
+
+// Ensure a select carries (and selects) a value even if it's not in the static option list.
+function setSelectValueEnsureOption(sel, val) {
+  if (!sel) return;
+  val = val || '';
+  if (val) {
+    var found = false;
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === val) { found = true; break; }
+    }
+    if (!found) {
+      var o = document.createElement('option');
+      o.value = val; o.textContent = val;
+      sel.appendChild(o);
+    }
+  }
+  sel.value = val;
+}
+
+// Populate the Add SKU marketplace dropdown from active marketplaces (registry).
+function populateReplenAddSkuMarketplaces() {
+  var sel = document.getElementById('replen-add-marketplace');
+  if (!sel) return;
+  var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var active = list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
+  sel.innerHTML = '';
+  if (active.length === 0) {
+    var ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = 'No active marketplaces — add one first';
+    sel.appendChild(ph);
+  } else {
+    var ph0 = document.createElement('option');
+    ph0.value = '';
+    ph0.textContent = 'Select marketplace…';
+    sel.appendChild(ph0);
+    active.forEach(function(m) {
+      var o = document.createElement('option');
+      o.value = m.marketplaceId || '';
+      o.setAttribute('data-company', m.company || '');
+      o.setAttribute('data-country', m.country || '');
+      o.setAttribute('data-marketplace', m.marketplace || '');
+      o.setAttribute('data-currency', m.currency || '');
+      o.textContent = (m.marketplaceDisplayName || m.marketplace || '') + ' (' + (m.company || '') + ' / ' + (m.country || '') + ')';
+      sel.appendChild(o);
+    });
+  }
+  onReplenAddMarketplaceChange();
+}
+
+// When a marketplace is selected, auto-fill company / country / currency / marketplace_id.
+function onReplenAddMarketplaceChange() {
+  var sel = document.getElementById('replen-add-marketplace');
+  var opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+  var company = opt ? (opt.getAttribute('data-company') || '') : '';
+  var country = opt ? (opt.getAttribute('data-country') || '') : '';
+  var currency = opt ? (opt.getAttribute('data-currency') || '') : '';
+  var mpId = opt ? (opt.value || '') : '';
+  setSelectValueEnsureOption(document.getElementById('replen-add-company'), company);
+  setSelectValueEnsureOption(document.getElementById('replen-add-country'), country);
+  setSelectValueEnsureOption(document.getElementById('replen-add-currency'), currency);
+  var idEl = document.getElementById('replen-add-marketplace-id');
+  if (idEl) idEl.value = mpId;
+}
+
+window.populateReplenAddSkuMarketplaces = populateReplenAddSkuMarketplaces;
+window.onReplenAddMarketplaceChange = onReplenAddMarketplaceChange;
 
 function closeReplenModal() {
   const modal = document.getElementById('replen-add-sku-modal');
@@ -55,26 +103,78 @@ function closeReplenModal() {
   
   const skuInput = document.getElementById('replen-add-sku');
   if (skuInput) skuInput.value = '';
+
+  const siteInput = document.getElementById('replen-add-site-sku');
+  if (siteInput) { siteInput.value = ''; siteInput.dataset.autofill = '1'; }
 }
 
 function saveReplenSku() {
   const sku = document.getElementById('replen-add-sku')?.value.trim();
-  const country = document.getElementById('replen-add-country')?.value;
-  const marketplace = document.getElementById('replen-add-marketplace')?.value;
+  let siteSku = (document.getElementById('replen-add-site-sku')?.value || '').trim();
   const status = 'active';
   const model = document.getElementById('replen-add-model')?.value || 'sales_driven';
   const launchDate = document.getElementById('replen-add-launch-date')?.value || '';
-  
-  if (!sku) {
-    alert('SKU is required');
+  const asinEl = document.getElementById('replen-add-asin');
+  const asin = asinEl ? asinEl.value.trim() : '';
+
+  // Company / country / marketplace / currency / marketplace_id come from the selected
+  // marketplaces-registry option (authoritative), so they stay consistent.
+  const mpSelect = document.getElementById('replen-add-marketplace');
+  const opt = mpSelect && mpSelect.selectedOptions && mpSelect.selectedOptions[0];
+  const marketplaceId = opt ? (opt.value || '').trim() : '';
+  const marketplace = opt ? (opt.getAttribute('data-marketplace') || '').trim() : '';
+  const company = opt ? (opt.getAttribute('data-company') || '').trim() : '';
+  const country = opt ? (opt.getAttribute('data-country') || '').trim() : '';
+  const currency = opt ? (opt.getAttribute('data-currency') || '').trim() : '';
+
+  if (!sku) { alert('SKU is required'); return; }
+  if (!siteSku) siteSku = sku; // default/prefill from SKU
+  if (!marketplaceId || !marketplace || !company || !country) {
+    alert('Please select a marketplace. If the list is empty, add one via + Marketplace first.');
     return;
   }
-  if (!country || !marketplace) {
-    alert('Country and Marketplace are required');
+  if (!currency) { alert('The selected marketplace has no currency configured.'); return; }
+
+  // Primary path: shared import backend chain
+  // (creates marketplace_skus + pricing_list + fc_regular_forecast).
+  if (window.KM && window.KM.DB && window.KM.DB.importMarketplaceSkusBatch) {
+    var oneRow = {
+      sku: sku,
+      company: company,
+      country: country,
+      marketplace: marketplace,
+      marketplace_id: marketplaceId,
+      site_sku: siteSku,
+      currency: currency,
+      asin: asin,
+      marketplace_sku_status: status,
+      replenishment_model: model,
+      launch_date: launchDate
+    };
+    window.KM.DB.importMarketplaceSkusBatch([oneRow], {
+      priceStatusDefault: 'draft',
+      forecastStatusDefault: 'draft'
+    }).then(function(result) {
+      if (!result || result.success === false) {
+        alert('Could not add SKU. ' + (result && result.error ? result.error : 'Please check the API connection and try again.'));
+        return;
+      }
+      var data = result.data || {};
+      var rr = (data.results && data.results[0]) || {};
+      if (rr.status === 'error') {
+        alert('Could not add SKU. ' + (rr.message || 'Validation failed.'));
+        return;
+      }
+      alert('SKU "' + sku + '" ' + (rr.status || 'processed') + ' for ' + country + ' - ' + marketplace + (rr.message ? ('\n' + rr.message) : ''));
+      closeReplenModal();
+      renderReplenishment();
+    }).catch(function(err) {
+      alert('Error: ' + (err && err.message ? err.message : err));
+    });
     return;
   }
-  
-  // Cloud write via KM.DB
+
+  // Fallback: legacy single-row upsert (only if import method is unavailable).
   if (window.KM && window.KM.DB && window.KM.DB.upsertMarketplaceSku) {
     window.KM.DB.upsertMarketplaceSku({
       sku: sku,
@@ -96,8 +196,8 @@ function saveReplenSku() {
     });
     return;
   }
-  
-  // Fallback: in-memory only (demo/mock)
+
+  // Fallback: in-memory only (demo/mock, no KM.DB methods present)
   if (!window.replenishmentData) window.replenishmentData = [];
   var exists = replenishmentData.some(function(item) {
     return item.sku === sku && item.country === country && item.marketplace === marketplace;
@@ -111,6 +211,18 @@ function saveReplenSku() {
   closeReplenModal();
   alert('SKU "' + sku + '" added (in-memory only)');
 }
+
+function prefillReplenSiteSku() {
+  var skuEl = document.getElementById('replen-add-sku');
+  var siteEl = document.getElementById('replen-add-site-sku');
+  if (!skuEl || !siteEl) return;
+  // Auto-fill Site SKU from SKU while the user hasn't manually edited it.
+  if (!siteEl.value.trim() || siteEl.dataset.autofill === '1') {
+    siteEl.value = skuEl.value.trim();
+    siteEl.dataset.autofill = '1';
+  }
+}
+window.prefillReplenSiteSku = prefillReplenSiteSku;
   
 document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('replen-modal-overlay');
@@ -1465,25 +1577,52 @@ function closeAddMarketplaceModal() {
     }
     // Clear inputs
     document.getElementById('add-mp-country').value = 'US';
-    document.getElementById('add-mp-company').value = 'Kitchen Mama';
+    document.getElementById('add-mp-company').value = 'KM';
     document.getElementById('add-mp-marketplace').value = '';
+    var curEl = document.getElementById('add-mp-currency');
+    if (curEl) curEl.value = 'USD';
+    var dnEl = document.getElementById('add-mp-display-name');
+    if (dnEl) dnEl.value = '';
 }
 
 function saveMarketplace() {
     const country = document.getElementById('add-mp-country').value;
     const company = document.getElementById('add-mp-company').value;
     const marketplace = document.getElementById('add-mp-marketplace').value.trim();
-    
-    if (!marketplace) {
-        alert('Please enter marketplace name');
+    const curEl = document.getElementById('add-mp-currency');
+    const currency = curEl ? curEl.value : 'USD';
+    const dnEl = document.getElementById('add-mp-display-name');
+    const displayName = dnEl ? dnEl.value.trim() : '';
+
+    if (!marketplace) { alert('Please enter marketplace name'); return; }
+    if (!company || !country) { alert('Company and Country are required'); return; }
+    if (!currency) { alert('Currency is required'); return; }
+
+    if (!(window.KM && window.KM.DB && window.KM.DB.upsertMarketplace)) {
+        alert('Marketplace API is not available.');
         return;
     }
-    
-    // TODO: Stage 2 - Save to database and update filters
-    console.log('Add Marketplace:', { country, company, marketplace });
-    alert(`Marketplace added:\nCountry: ${country}\nCompany: ${company}\nMarketplace: ${marketplace}`);
-    
-    closeAddMarketplaceModal();
+
+    window.KM.DB.upsertMarketplace({
+        company: company,
+        country: country,
+        marketplace: marketplace,
+        marketplace_display_name: displayName || marketplace,
+        currency: currency,
+        status: 'active'
+    }).then(function(result) {
+        if (result && result.success === false) {
+            alert('Could not save marketplace. ' + (result.error || 'Please check the API connection and try again.'));
+            return;
+        }
+        var st = (result && result.status) ? result.status : 'saved';
+        alert('Marketplace ' + st + ': ' + company + ' / ' + country + ' / ' + marketplace);
+        closeAddMarketplaceModal();
+        // Refresh registry-backed dropdowns/filters.
+        if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+    }).catch(function(err) {
+        alert('Could not save marketplace. ' + (err && err.message ? err.message : err));
+    });
 }
 
 window.openAddMarketplaceModal = openAddMarketplaceModal;
@@ -1551,10 +1690,30 @@ window.addNewCountry = addNewCountry;
 // ========================================
 function searchReplenishment() {
     // Demo ON: just re-render (demo does not need search)
-    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    if (_replenDemoOn()) {
         renderReplenishment();
         return;
     }
+
+    // Demo OFF: if the DB cache isn't loaded yet, load once, populate filters, then search.
+    if (!window._opDbCache) {
+        var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
+            ? window.KM.DB.loadOperationDb
+            : (window.reloadOperationDb || null);
+        if (loader) {
+            loader({ force: true }).then(function() {
+                populateReplenFiltersFromRegistry();
+                _doReplenSearch();
+            }).catch(function() {
+                _doReplenSearch();
+            });
+            return;
+        }
+    }
+    _doReplenSearch();
+}
+
+function _doReplenSearch() {
     var country = document.getElementById('replenCountry').value;
     var marketplace = document.getElementById('replenMarketplace').value;
     if (!country && !marketplace) {
@@ -1961,7 +2120,7 @@ function runReplenImport() {
 
 function downloadReplenImportTemplate() {
     var headers = 'sku,company,country,marketplace,site_sku,currency,marketplace_sku_id,asin,marketplace_sku_status,replenishment_model,launch_date,base_currency,base_regular_price,base_minimum_price,base_msrp,regular_price,minimum_price,msrp';
-    var exampleRow = 'CO1100-R,Kitchen Mama,US,Amazon,CO1100-R,USD,,B07FVQLBL3,Active,sales_driven,2026-01-01,USD,,,,,,';
+    var exampleRow = 'CO1100-R,KM,US,Amazon,CO1100-R,USD,,B07FVQLBL3,active,sales_driven,2026-01-01,USD,,,,,,';
     var csv = headers + '\n' + exampleRow + '\n';
 
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1979,6 +2138,100 @@ window.openReplenImportModal = openReplenImportModal;
 window.closeReplenImportModal = closeReplenImportModal;
 window.runReplenImport = runReplenImport;
 window.downloadReplenImportTemplate = downloadReplenImportTemplate;
+
+// Populate the main Country / Marketplace filters from the marketplaces registry
+// (cloud mode only, non-destructive: keeps static options when registry is empty or in Demo mode).
+function _replenDemoOn() {
+    return !!(window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled());
+}
+
+function _replenActiveMarketplaces() {
+    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
+}
+
+// Rebuild Country options from active marketplaces, constrained by the currently selected marketplace.
+// Demo OFF only. Resets the current country selection if it is no longer valid.
+function refreshReplenCountryOptions() {
+    if (_replenDemoOn()) return;
+    var countrySel = document.getElementById('replenCountry');
+    var mpSel = document.getElementById('replenMarketplace');
+    if (!countrySel) return;
+
+    var active = _replenActiveMarketplaces();
+    var selMarketplace = mpSel ? mpSel.value : '';
+    var selCountry = countrySel.value;
+
+    var countries = [];
+    active.forEach(function(m) {
+        if (!m.country) return;
+        if (selMarketplace && m.marketplace !== selMarketplace) return;
+        if (countries.indexOf(m.country) === -1) countries.push(m.country);
+    });
+    countries.sort();
+
+    countrySel.innerHTML = '<option value="">Select Country</option>' +
+        countries.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+    countrySel.value = (selCountry && countries.indexOf(selCountry) !== -1) ? selCountry : '';
+}
+
+// Rebuild Marketplace options from active marketplaces, constrained by the currently selected country.
+// Demo OFF only. Resets the current marketplace selection if it is no longer valid.
+function refreshReplenMarketplaceOptions() {
+    if (_replenDemoOn()) return;
+    var countrySel = document.getElementById('replenCountry');
+    var mpSel = document.getElementById('replenMarketplace');
+    if (!mpSel) return;
+
+    var active = _replenActiveMarketplaces();
+    var selCountry = countrySel ? countrySel.value : '';
+    var selMarketplace = mpSel.value;
+
+    var mps = [];
+    active.forEach(function(m) {
+        if (!m.marketplace) return;
+        if (selCountry && m.country !== selCountry) return;
+        if (mps.indexOf(m.marketplace) === -1) mps.push(m.marketplace);
+    });
+    mps.sort();
+
+    mpSel.innerHTML = '<option value="">Select Marketplace</option>' +
+        mps.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
+    mpSel.value = (selMarketplace && mps.indexOf(selMarketplace) !== -1) ? selMarketplace : '';
+}
+
+// Full (initial) population of both filters from the registry. Demo OFF only;
+// in Demo mode this is a no-op so the static demo options/behavior are preserved.
+function populateReplenFiltersFromRegistry() {
+    if (_replenDemoOn()) return;
+    refreshReplenCountryOptions();
+    refreshReplenMarketplaceOptions();
+}
+
+// Bind bidirectional dependency handlers. Idempotent (onchange property assignment).
+function bindReplenFilterDependencies() {
+    var countrySel = document.getElementById('replenCountry');
+    var mpSel = document.getElementById('replenMarketplace');
+    if (countrySel) {
+        countrySel.onchange = function() {
+            if (_replenDemoOn()) return;
+            // Country changed -> refresh marketplace options (resets marketplace if now invalid).
+            refreshReplenMarketplaceOptions();
+        };
+    }
+    if (mpSel) {
+        mpSel.onchange = function() {
+            if (_replenDemoOn()) return;
+            // Marketplace changed -> refresh country options (resets country if now invalid).
+            refreshReplenCountryOptions();
+        };
+    }
+}
+
+window.populateReplenFiltersFromRegistry = populateReplenFiltersFromRegistry;
+window.refreshReplenCountryOptions = refreshReplenCountryOptions;
+window.refreshReplenMarketplaceOptions = refreshReplenMarketplaceOptions;
+window.bindReplenFilterDependencies = bindReplenFilterDependencies;
 
 window.debugInventoryDemoData = function() {
     var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
@@ -2002,6 +2255,8 @@ if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('ops-section', {
         mount() {
             console.log('[Replenishment] mount');
+            if (typeof bindReplenFilterDependencies === 'function') bindReplenFilterDependencies();
+            if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
             renderReplenishment();
         },
         unmount() {

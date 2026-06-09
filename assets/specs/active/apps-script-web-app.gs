@@ -53,7 +53,11 @@ function doPost(e) {
       return handleImportMarketplaceSkusBatch_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch' });
+    if (action === 'upsertMarketplace') {
+      return handleUpsertMarketplace_(body);
+    }
+
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace' });
 
   } catch (err) {
     Logger.log(err.stack);
@@ -66,7 +70,7 @@ function doPost(e) {
 // ========================================
 
 function handleGetOperationDb_() {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast'];
   var data = {};
 
   validTabs.forEach(function(tabName) {
@@ -83,7 +87,7 @@ function handleGetOperationDb_() {
 }
 
 function handleGetTable_(tableName) {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast'];
 
   if (!tableName || validTabs.indexOf(tableName) === -1) {
     return jsonResponse_({ success: false, error: 'Invalid table name. Valid tables: ' + validTabs.join(', ') });
@@ -184,6 +188,13 @@ function filterRows_(tabName, rows) {
     case 'campaign_sku_lines':
       return rows.filter(function(r) {
         return r.campaign_sku_line_id && String(r.campaign_sku_line_id).trim() !== '';
+      });
+
+    case 'marketplaces':
+      return rows.filter(function(r) {
+        var hasId = r.marketplace_id && String(r.marketplace_id).trim() !== '';
+        var hasMp = r.marketplace && String(r.marketplace).trim() !== '';
+        return hasId || hasMp;
       });
 
     case 'marketplace_skus':
@@ -587,7 +598,7 @@ function handleImportMarketplaceSkusBatch_(body) {
   // Header existence only; cell values (e.g. asin) may still be blank.
   var requiredHeaders = {
     sku_details: ['sku', 'category', 'series', 'selling_price', 'minimum_price', 'msrp'],
-    marketplace_skus: ['marketplace_sku_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'asin', 'currency', 'marketplace_sku_status', 'replenishment_model', 'launch_date', 'created_at', 'updated_at'],
+    marketplace_skus: ['marketplace_sku_id', 'marketplace_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'asin', 'currency', 'marketplace_sku_status', 'replenishment_model', 'launch_date', 'created_at', 'updated_at'],
     pricing_list: ['pricing_id', 'marketplace_sku_id', 'sku', 'country', 'marketplace', 'site_sku', 'asin', 'currency', 'base_currency', 'base_regular_price', 'base_minimum_price', 'base_msrp', 'fx_rate', 'fx_rate_date', 'auto_regular_price', 'auto_minimum_price', 'auto_msrp', 'regular_price', 'minimum_price', 'msrp', 'price_source', 'price_status', 'created_by', 'created_at', 'updated_by', 'updated_at', 'note'],
     fc_regular_forecast: ['forecast_id', 'year', 'company', 'country', 'marketplace', 'sku', 'category', 'series', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'total_fc', 'fc_share', 'forecast_status', 'source', 'created_at', 'updated_at']
   };
@@ -611,6 +622,29 @@ function handleImportMarketplaceSkusBatch_(body) {
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   var currentYear = String(new Date().getFullYear());
   var months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  // --- marketplaces registry: resolve marketplace_id by company|country|marketplace (optional) ---
+  var mpRegistryMap = {};
+  var mktSheet = ss.getSheetByName('marketplaces');
+  if (mktSheet) {
+    var mktData = mktSheet.getDataRange().getValues();
+    if (mktData.length >= 2) {
+      var mktHeaders = mktData[0].map(function(h) { return String(h).trim().toLowerCase(); });
+      var mk_id = mktHeaders.indexOf('marketplace_id');
+      var mk_company = mktHeaders.indexOf('company');
+      var mk_country = mktHeaders.indexOf('country');
+      var mk_mp = mktHeaders.indexOf('marketplace');
+      for (var mki = 1; mki < mktData.length; mki++) {
+        var mkKey = [
+          mk_company !== -1 ? String(mktData[mki][mk_company] || '').trim() : '',
+          mk_country !== -1 ? String(mktData[mki][mk_country] || '').trim() : '',
+          mk_mp !== -1 ? String(mktData[mki][mk_mp] || '').trim() : ''
+        ].join('|');
+        var mkId = mk_id !== -1 ? String(mktData[mki][mk_id] || '').trim() : '';
+        if (mkId) mpRegistryMap[mkKey] = mkId;
+      }
+    }
+  }
 
   var results = [];
   var batchProcessed = {};
@@ -680,8 +714,12 @@ function handleImportMarketplaceSkusBatch_(body) {
     // ---- New: create marketplace_skus + pricing_list + fc_regular_forecast ----
     var mpId = providedId || ('MPSKU-' + country + '-' + marketplace.substring(0, 3).toUpperCase() + '-' + sku + '-' + Utilities.getUuid().substring(0, 6));
 
+    // Resolve marketplace_id: use provided value, else look up registry by company|country|marketplace.
+    var resolvedMarketplaceId = String(row.marketplace_id || '').trim() || mpRegistryMap[[company, country, marketplace].join('|')] || '';
+
     var newMp = new Array(mpHeaders.length).fill('');
     if (mpCol('marketplace_sku_id') !== -1) newMp[mpCol('marketplace_sku_id')] = mpId;
+    if (mpCol('marketplace_id') !== -1) newMp[mpCol('marketplace_id')] = resolvedMarketplaceId;
     if (mpCol('sku') !== -1) newMp[mpCol('sku')] = sku;
     if (mpCol('company') !== -1) newMp[mpCol('company')] = company;
     if (mpCol('country') !== -1) newMp[mpCol('country')] = country;
@@ -752,6 +790,8 @@ function handleImportMarketplaceSkusBatch_(body) {
       var newPr = new Array(prHeaders.length).fill('');
       if (prCol('pricing_id') !== -1) newPr[prCol('pricing_id')] = pricingId;
       if (prCol('marketplace_sku_id') !== -1) newPr[prCol('marketplace_sku_id')] = mpId;
+      if (prCol('marketplace_id') !== -1) newPr[prCol('marketplace_id')] = resolvedMarketplaceId;
+      if (prCol('company') !== -1) newPr[prCol('company')] = company;
       if (prCol('sku') !== -1) newPr[prCol('sku')] = sku;
       if (prCol('country') !== -1) newPr[prCol('country')] = country;
       if (prCol('marketplace') !== -1) newPr[prCol('marketplace')] = marketplace;
@@ -823,4 +863,96 @@ function handleImportMarketplaceSkusBatch_(body) {
   results.forEach(function(r) { if (summary[r.status] !== undefined) summary[r.status]++; });
 
   return jsonResponse_({ success: true, data: { summary: summary, results: results, year: currentYear } });
+}
+
+
+// ========================================
+// marketplaces Write Handler (sales-channel registry)
+// ========================================
+
+function normalizeMarketplaceIdPart_(s) {
+  return String(s || '').trim().toUpperCase().replace(/\s+/g, '_');
+}
+
+/**
+ * Upsert a marketplaces (sales-channel registry) row.
+ * Required: company, country, marketplace, currency.
+ * Upsert key: company + country + marketplace.
+ * marketplace_id generated if missing: MKT-{COMPANY}-{COUNTRY}-{MARKETPLACE} (uppercase, spaces -> underscore).
+ * Does NOT write marketplace_skus. Header-based column lookup.
+ */
+function handleUpsertMarketplace_(body) {
+  var company = String(body.company || '').trim();
+  var country = String(body.country || '').trim();
+  var marketplace = String(body.marketplace || '').trim();
+  var currency = String(body.currency || '').trim();
+
+  if (!company) return jsonResponse_({ success: false, error: 'Missing company' });
+  if (!country) return jsonResponse_({ success: false, error: 'Missing country' });
+  if (!marketplace) return jsonResponse_({ success: false, error: 'Missing marketplace' });
+  if (!currency) return jsonResponse_({ success: false, error: 'Missing currency' });
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('marketplaces');
+  if (!sheet) return jsonResponse_({ success: false, error: 'marketplaces sheet not found' });
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 1) return jsonResponse_({ success: false, error: 'marketplaces sheet has no header row' });
+
+  var headers = data[0].map(function(h) { return String(h).trim().toLowerCase(); });
+  var col = function(n) { return headers.indexOf(n); };
+
+  var companyCol = col('company'), countryCol = col('country'), mpCol = col('marketplace');
+  if (companyCol === -1 || countryCol === -1 || mpCol === -1) {
+    return jsonResponse_({ success: false, error: 'Required columns (company, country, marketplace) not found in marketplaces header' });
+  }
+
+  var displayName = String(body.marketplace_display_name || '').trim() || marketplace;
+  var status = String(body.status || 'active').trim();
+  var updatedBy = String(body.updated_by || 'operation-system').trim();
+  var note = body.note !== undefined ? String(body.note).trim() : '';
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+
+  // Find existing by company + country + marketplace
+  var targetRow = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][companyCol]).trim() === company &&
+        String(data[i][countryCol]).trim() === country &&
+        String(data[i][mpCol]).trim() === marketplace) {
+      targetRow = i + 1;
+      break;
+    }
+  }
+
+  if (targetRow !== -1) {
+    // Update existing: display_name, currency, status, (note), updated_by, updated_at
+    if (col('marketplace_display_name') !== -1) sheet.getRange(targetRow, col('marketplace_display_name') + 1).setValue(displayName);
+    if (col('currency') !== -1) sheet.getRange(targetRow, col('currency') + 1).setValue(currency);
+    if (col('status') !== -1) sheet.getRange(targetRow, col('status') + 1).setValue(status);
+    if (body.note !== undefined && col('note') !== -1) sheet.getRange(targetRow, col('note') + 1).setValue(note);
+    if (col('updated_by') !== -1) sheet.getRange(targetRow, col('updated_by') + 1).setValue(updatedBy);
+    if (col('updated_at') !== -1) sheet.getRange(targetRow, col('updated_at') + 1).setValue(now);
+
+    var existingId = col('marketplace_id') !== -1 ? String(data[targetRow - 1][col('marketplace_id')] || '').trim() : '';
+    return jsonResponse_({ success: true, data: { marketplace_id: existingId, status: 'updated', company: company, country: country, marketplace: marketplace } });
+  }
+
+  // Create new
+  var id = 'MKT-' + normalizeMarketplaceIdPart_(company) + '-' + normalizeMarketplaceIdPart_(country) + '-' + normalizeMarketplaceIdPart_(marketplace);
+  var newRow = new Array(headers.length).fill('');
+  if (col('marketplace_id') !== -1) newRow[col('marketplace_id')] = id;
+  newRow[companyCol] = company;
+  newRow[countryCol] = country;
+  newRow[mpCol] = marketplace;
+  if (col('marketplace_display_name') !== -1) newRow[col('marketplace_display_name')] = displayName;
+  if (col('currency') !== -1) newRow[col('currency')] = currency;
+  if (col('status') !== -1) newRow[col('status')] = status;
+  if (col('created_by') !== -1) newRow[col('created_by')] = updatedBy;
+  if (col('created_at') !== -1) newRow[col('created_at')] = now;
+  if (col('updated_by') !== -1) newRow[col('updated_by')] = updatedBy;
+  if (col('updated_at') !== -1) newRow[col('updated_at')] = now;
+  if (col('note') !== -1) newRow[col('note')] = note;
+  sheet.appendRow(newRow);
+
+  return jsonResponse_({ success: true, data: { marketplace_id: id, status: 'created', company: company, country: country, marketplace: marketplace } });
 }
