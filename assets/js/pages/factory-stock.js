@@ -1,5 +1,7 @@
 ﻿// Factory Stock篩選器功能
 
+var _factoryDbLoadTried = false;
+
 function initFactoryStockPage() {
     console.log('✅ Factory Stock: initFactoryStockPage called');
     const root = document.querySelector('#factory-stock-section');
@@ -7,7 +9,27 @@ function initFactoryStockPage() {
         console.error('❌ Factory Stock: Section not found');
         return;
     }
-    
+
+    var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+
+    // Demo OFF: ensure the DB cache is loaded once, then re-init.
+    if (!demoOn && !window._opDbCache && !_factoryDbLoadTried) {
+        _factoryDbLoadTried = true;
+        var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
+            ? window.KM.DB.loadOperationDb
+            : (window.reloadOperationDb || null);
+        if (loader) {
+            loader({ force: true }).then(function() { initFactoryStockPage(); }).catch(function() { initFactoryStockPage(); });
+            return;
+        }
+    }
+
+    // Demo OFF: rebuild filter options from DB-backed data (factory/company from factory_stock,
+    // category/series joined from sku_details) BEFORE event binding below.
+    if (!demoOn) {
+        _populateFactoryFiltersFromDb(root);
+    }
+
     // Always re-bind events (clean previous first)
     // Remove old outside-click handler
     if (root._clickHandler) {
@@ -142,6 +164,8 @@ function renderFactoryStockTable(root) {
     var _factoryData = null; // Default: no data
     if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
         _factoryData = _getDemoFactoryStockData();
+    } else {
+        _factoryData = _getDbFactoryStockData();
     }
     // === End Demo Data Layer ===
     if (!_factoryData || _factoryData.length === 0) {
@@ -242,6 +266,73 @@ function _getDemoFactoryStockData() {
             completedOrderMonth2: Math.round(r.factory_stock * 0.2)
         };
     });
+}
+
+// ========================================
+// Cloud (Demo OFF) DB connection: factory_stock + sku_details join
+// ========================================
+// ----------------------------------------------------------------------------
+// factory_stock_id convention (documentation only — no write logic here):
+//   Format: FSTK-{SKU}-{COMPANY}-{FACTORY_CODE}
+//   Factory codes:
+//     CN_YOUXIN  = 東莞侑鑫
+//     TW_SHENGYI = 南投勝一
+//   Examples:
+//     FSTK-C01100-R-KM-CN_YOUXIN
+//     FSTK-C01100-R-RESTW-TW_SHENGYI
+//     FSTK-SP3210-R-RESUS-CN_YOUXIN
+// ----------------------------------------------------------------------------
+function _getDbFactoryStockData() {
+    // Source of truth = factory_stock ONLY. Rows with current_stock = 0 are kept.
+    // sku_details is used solely to join category/series metadata (NOT as a row universe).
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getFactoryStock) ? window.KM.DB.getFactoryStock() : [];
+    var skuMeta = {};
+    var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    details.forEach(function(d) { if (d.sku) skuMeta[d.sku] = { category: d.category || '', series: d.series || '' }; });
+    return rows.map(function(r) {
+        var meta = skuMeta[r.sku] || { category: '', series: '' };
+        return {
+            sku: r.sku,
+            company: r.company,
+            marketplace: '',
+            category: meta.category,
+            series: meta.series,
+            factory: r.factoryName,
+            stock: Number(r.currentStock) || 0,
+            completedOrderMonth0: 0,
+            completedOrderMonth1: 0,
+            completedOrderMonth2: 0
+        };
+    });
+}
+
+// Rebuild factory/company/category/series filter options from DB-backed data (Demo OFF).
+// Category/Series come from the sku_details join (NOT stored in factory_stock).
+function _populateFactoryFiltersFromDb(root) {
+    if (!root) root = document.querySelector('#factory-stock-section');
+    if (!root) return;
+    // Build options ONLY from actual factory_stock data (category/series via sku_details join).
+    // No static/demo fallback: empty DB rebuilds panels with just the "All" entry (no fake options).
+    var data = _getDbFactoryStockData();
+    var distinct = function(key) {
+        var arr = [];
+        data.forEach(function(d) { var v = String(d[key] || '').trim(); if (v && arr.indexOf(v) === -1) arr.push(v); });
+        arr.sort();
+        return arr;
+    };
+    var rebuild = function(filterType, values) {
+        var panel = root.querySelector('.fc-dropdown-panel[data-filter="' + filterType + '"]');
+        if (!panel) return;
+        var html = '<label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>';
+        values.forEach(function(v) {
+            html += '<label class="fc-checkbox-item"><input type="checkbox" value="' + v + '" checked> ' + v + '</label>';
+        });
+        panel.innerHTML = html;
+    };
+    rebuild('factory', distinct('factory'));
+    rebuild('company', distinct('company'));
+    rebuild('category', distinct('category'));
+    rebuild('series', distinct('series'));
 }
 
 function _showFactoryDemoBadge() {

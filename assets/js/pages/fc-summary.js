@@ -73,12 +73,14 @@ function renderFcRegularTable() {
     return;
   }
   
-  // === Demo Data Layer: Phase 3C ===
-  var _fcRegularSource = []; // Default: no data
+  // === Data source: Demo ON -> demo mapping; Demo OFF -> Google Sheet fc_regular_forecast ===
+  var _fcRegularSource = [];
   if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
     _fcRegularSource = _getDemoFcRegularData();
+  } else {
+    _fcRegularSource = _getDbFcRegularData();
   }
-  // === End Demo Data Layer ===
+  // === End Data source ===
   const filteredData = filterFcRegular(_fcRegularSource, filters);
   
   // Paginate data
@@ -1774,6 +1776,115 @@ window.debugFcSummaryDemoData = function() {
     console.table(rows.slice(0, 5));
     console.log('--- First 10 mapped regular rows ---');
     console.table(mapped.slice(0, 10));
+};
+
+// ========================================
+// Cloud (Demo OFF) DB connection: fc_regular_forecast
+// ========================================
+
+// Map fc_regular_forecast rows to the Regular Forecast render shape.
+// Source of truth is fc_regular_forecast ONLY (no marketplace_skus universe supplementation here).
+function _getDbFcRegularData() {
+    var fcRows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+    return fcRows.map(function(r) {
+        return {
+            sku: r.sku,
+            year: r.year,
+            company: r.company,
+            marketplace: r.marketplace,
+            country: r.country,
+            category: r.category,
+            series: r.series,
+            months: [r.jan, r.feb, r.mar, r.apr, r.may, r.jun, r.jul, r.aug, r.sep, r.oct, r.nov, r.dec]
+                .map(function(v) { return Number(v) || 0; }),
+            forecastStatus: r.forecastStatus,
+            fcShare: r.fcShare
+        };
+    });
+}
+
+// Rebuild a FC Summary filter checkbox panel from distinct DB values (Demo OFF).
+function _rebuildFcPanel(filterType, values) {
+    var panel = document.querySelector('#fc-summary-section .fc-dropdown-panel[data-filter="' + filterType + '"]');
+    if (!panel) return;
+    var html = '<label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, \'' + filterType + '\')"> <strong>All</strong></label>';
+    values.forEach(function(v) {
+        html += '<label class="fc-checkbox-item"><input type="checkbox" value="' + v + '" checked onchange="updateFcFilter(\'' + filterType + '\')"> ' + v + '</label>';
+    });
+    panel.innerHTML = html;
+}
+
+// Populate company/marketplace/country/category/series filter options from fc_regular_forecast distinct values.
+// Event filter is left as-is (Special Event not connected in this task).
+function _populateFcFilterOptionsFromDb() {
+    // Build options ONLY from actual fc_regular_forecast data. No static/demo fallback:
+    // when DB is empty, panels are rebuilt with just the "All" entry (no fake options).
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+    var distinct = function(key) {
+        var arr = [];
+        rows.forEach(function(r) { var v = String(r[key] || '').trim(); if (v && arr.indexOf(v) === -1) arr.push(v); });
+        arr.sort();
+        return arr;
+    };
+    _rebuildFcPanel('company', distinct('company'));
+    _rebuildFcPanel('marketplace', distinct('marketplace'));
+    _rebuildFcPanel('country', distinct('country'));
+    _rebuildFcPanel('category', distinct('category'));
+    _rebuildFcPanel('series', distinct('series'));
+    ['company', 'marketplace', 'country', 'category', 'series'].forEach(function(t) {
+        if (typeof updateFcFilterText === 'function') updateFcFilterText(t);
+    });
+}
+
+// Populate the Year dropdown from fc_regular_forecast.year distinct values (Demo OFF).
+function _populateFcYearFromDb() {
+    var sel = document.getElementById('fc-year-select');
+    if (!sel) return;
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+    var years = [];
+    rows.forEach(function(r) { var y = String(r.year || '').trim(); if (y && years.indexOf(y) === -1) years.push(y); });
+    years.sort(function(a, b) { return Number(b) - Number(a); });
+    var prev = sel.value;
+    // Always rebuild from DB distinct years (no static fallback). Empty DB -> only the default "----".
+    sel.innerHTML = '<option value="">----</option>' +
+        years.map(function(y) { return '<option value="' + y + '">' + y + '</option>'; }).join('');
+    // Preserve a previously selected year if still valid; do NOT auto-select (no auto table populate).
+    sel.value = (prev && years.indexOf(prev) !== -1) ? prev : '';
+}
+
+// Ensure DB is loaded (once), then populate filters/year and render (Demo OFF only).
+function _fcSummaryEnsureDbAndRender() {
+    var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+    if (demoOn) return; // demo keeps static options + its own data
+
+    // Clear static/demo filter + year options immediately so they never appear in Demo OFF,
+    // even before the DB cache finishes loading. (Empty cache -> default/empty state only.)
+    _populateFcFilterOptionsFromDb();
+    _populateFcYearFromDb();
+
+    var afterLoad = function() {
+        _populateFcFilterOptionsFromDb();
+        _populateFcYearFromDb();
+        // Render reflects current selection only: with no year selected this shows the
+        // "Please select a year" empty state — table does NOT auto-populate until user action.
+        renderFcRegularTable();
+        renderFcEventTable();
+    };
+    if (!window._opDbCache) {
+        var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
+            ? window.KM.DB.loadOperationDb
+            : (window.reloadOperationDb || null);
+        if (loader) { loader({ force: true }).then(afterLoad).catch(afterLoad); return; }
+    }
+    afterLoad();
+}
+
+// Extend the (already demo-patched) initFcSummaryPage to also wire the DB connection.
+var _prevInitFcSummaryPage = window.initFcSummaryPage;
+window.initFcSummaryPage = function() {
+    if (_prevInitFcSummaryPage) _prevInitFcSummaryPage();
+    // Defer slightly so dropdown init (also deferred) has run; panel rebuild is order-independent.
+    setTimeout(_fcSummaryEnsureDbAndRender, 60);
 };
 
 // ========================================

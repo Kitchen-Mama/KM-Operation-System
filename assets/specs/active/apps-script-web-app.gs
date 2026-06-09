@@ -70,7 +70,7 @@ function doPost(e) {
 // ========================================
 
 function handleGetOperationDb_() {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'factory_stock'];
   var data = {};
 
   validTabs.forEach(function(tabName) {
@@ -87,7 +87,7 @@ function handleGetOperationDb_() {
 }
 
 function handleGetTable_(tableName) {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'factory_stock'];
 
   if (!tableName || validTabs.indexOf(tableName) === -1) {
     return jsonResponse_({ success: false, error: 'Invalid table name. Valid tables: ' + validTabs.join(', ') });
@@ -222,6 +222,13 @@ function filterRows_(tabName, rows) {
         var hasForecastId = r.forecast_id && String(r.forecast_id).trim() !== '';
         var hasSku = r.sku && String(r.sku).trim() !== '';
         return hasForecastId || hasSku;
+      });
+
+    case 'factory_stock':
+      return rows.filter(function(r) {
+        var hasId = r.factory_stock_id && String(r.factory_stock_id).trim() !== '';
+        var hasSku = r.sku && String(r.sku).trim() !== '';
+        return hasId || hasSku;
       });
 
     default:

@@ -220,6 +220,21 @@ function normalizeMarketplaceSkuRecord(raw) {
     };
 }
 
+function normalizeFactoryStockRecord(raw) {
+    var r = raw || {};
+    return {
+        factoryStockId: String(r.factory_stock_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        company: String(r.company || '').trim(),
+        factoryName: String(r.factory_name || '').trim(),
+        currentStock: parseFloat(r.current_stock) || 0,
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        lastTransactionAt: String(r.last_transaction_at || '').trim(),
+        raw: r
+    };
+}
+
 function normalizeMarketplaceRecord(raw) {
     var r = raw || {};
     return {
@@ -335,7 +350,8 @@ function normalizeOperationDb(rawDb) {
         marketplaceSkus: (db.marketplace_skus || []).map(normalizeMarketplaceSkuRecord).filter(function(r) { return r.sku; }),
         pricingList: (db.pricing_list || []).map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; }),
         pricingChangeLog: (db.pricing_change_log || []).map(normalizePricingChangeLogRecord).filter(function(r) { return r.logId || r.pricingId; }),
-        fcRegularForecast: (db.fc_regular_forecast || []).map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; })
+        fcRegularForecast: (db.fc_regular_forecast || []).map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; }),
+        factoryStock: (db.factory_stock || []).map(normalizeFactoryStockRecord).filter(function(r) { return r.factoryStockId || r.sku; })
     };
 }
 
@@ -606,6 +622,11 @@ window.KM.DB.getFcRegularForecast = function() {
     return window._opDbCache.fcRegularForecast || [];
 };
 
+window.KM.DB.getFactoryStock = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.factoryStock || [];
+};
+
 
 window.KM.DB.getDataSourceMode = function() {
     return getOperationDbDataSourceMode();
@@ -764,6 +785,7 @@ window.debugOperationDb = function() {
     console.log('pricing_list count:', (window._opDbCache.pricingList || []).length);
     console.log('pricing_change_log count:', (window._opDbCache.pricingChangeLog || []).length);
     console.log('fc_regular_forecast count:', (window._opDbCache.fcRegularForecast || []).length);
+    console.log('factory_stock count:', (window._opDbCache.factoryStock || []).length);
     // Language distribution
     var langDist = {};
     (window._opDbCache.productFeatures || []).forEach(function(pf) {
