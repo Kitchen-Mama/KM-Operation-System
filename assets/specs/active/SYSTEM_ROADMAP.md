@@ -103,11 +103,16 @@
 **Possible Fields:**
 ```
 marketplace_sku_id, sku, country, marketplace, site_sku, asin,
-currency, regular_price, minimum_price, msrp,
-marketplace_sku_status, created_at, updated_at
+marketplace_sku_status, replenishment_model, launch_date,
+created_at, updated_at
 
 marketplace_sku_status values: active, phasing_out, inactive, discontinued
+replenishment_model values: sales_driven, forecast_driven
 ```
+
+**Notes:**
+- `marketplace_sku_status` = operational marketplace SKU status (active / phasing_out / inactive / discontinued).
+- Pricing fields (currency, regular_price, minimum_price, msrp) are intentionally NOT stored here. Pricing lives in `pricing_list` (see 3.5-X Pricing Database). Source of truth: `SKU_MASTER_FLOW.md`.
 
 **Dependencies:** sku_details
 
@@ -117,6 +122,33 @@ marketplace_sku_status values: active, phasing_out, inactive, discontinued
 - Campaign Overview / Detail
 - Sales Data join
 - Forecast
+
+#### 3.5-1b Pricing Database
+
+**Status:** Planned / Schema Design
+
+**Source of Truth:** `SKU_MASTER_FLOW.md`
+
+**Purpose:** 建立單一權威定價層，與 `marketplace_skus` 分離。
+
+**Planned Tables:** `pricing_list`, `pricing_change_log`
+
+**Core Rules:**
+- `pricing_list` is the only source of truth for Regular Price / Minimum Price / MSRP / Currency.
+- `marketplace_skus` must NOT store pricing.
+- Any page requiring pricing data must read from `pricing_list`.
+- `pricing_change_log` records all pricing changes (field-level audit).
+
+**Dependencies:** marketplace_skus (via marketplace_sku_id)
+
+**Affects:**
+- Inventory Replenishment
+- Promotion Risk Tracker
+- Campaign Overview / Detail
+- Request Order
+- Cost & Pricing analysis
+
+**Future Promotion Pricing:** time-bounded promotion pricing should use `pricing_campaigns` or `promotion_prices` — NOT `effective_from` / `effective_to` columns in `pricing_list`.
 
 #### 3.5-2 Sales Data Database
 
@@ -161,6 +193,8 @@ carrier_performance_history
 **Status:** Schema Planning
 
 **Purpose:** 建立 SKU 成本結構、平台費、運費、關稅、毛利與定價模擬基礎。
+
+**Scope note:** This database covers cost, margin, landed cost, scenarios, and pricing simulation only. It does NOT own effective selling prices. Effective selling prices (Regular Price / Minimum Price / MSRP / Currency) live in `pricing_list` (see 3.5-1b Pricing Database). This is a simulation layer built on top of `pricing_list`.
 
 **Planned Tables:**
 ```
@@ -225,8 +259,10 @@ margin_history
 - marketplace_skus cloud table
 - Inventory data cloud source
 - Factory stock cloud source
+  - On SKU creation, Factory Stock may optionally create an initialization row with current_stock default = 0. Initialization is optional, not mandatory.
 - Forecast data cloud source
 - Request order data cloud source
+  - Request Order uses dynamic SKU sourcing — no placeholder rows. SKU universe is read at runtime from marketplace_skus, joined with forecast and inventory data. Records are created only when an actual order/request is generated.
 - FC summary cloud source
 
 **Prerequisite:** Stage 3.5 schema planning complete
@@ -439,4 +475,4 @@ AI Integration (Stage 5)
 - ❌ marketplace_skus Google Sheet tab creation + read API
 - ❌ Inventory Replenishment Country/Marketplace linked filters
 - ❌ Add SKU write to marketplace_skus
-- ❌ FC Summary auto-create row on Add SKU
+- ❌ FC Summary: Auto-create FC Summary base row with Jan–Dec forecast initialized to 0.

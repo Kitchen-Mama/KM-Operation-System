@@ -1,4 +1,4 @@
-// ========================================
+﻿// ========================================
 // Operation System DB API Adapter
 // Google Sheet read-only integration
 // ========================================
@@ -195,6 +195,111 @@ function normalizeCampaignSkuLineRecord(raw) {
     };
 }
 
+
+function normalizeMarketplaceSkuRecord(raw) {
+    var r = raw || {};
+    return {
+        marketplaceSkuId: String(r.marketplace_sku_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        siteSku: String(r.site_sku || '').trim(),
+        asin: String(r.asin || '').trim(),
+        currency: String(r.currency || 'USD').trim(),
+        regularPrice: parseFloat(r.regular_price) || 0,
+        minimumPrice: parseFloat(r.minimum_price) || 0,
+        msrp: parseFloat(r.msrp) || 0,
+        marketplaceSkuStatus: String(r.marketplace_sku_status || '').trim(),
+        replenishmentModel: String(r.replenishment_model || 'sales_driven').trim(),
+        launchDate: String(r.launch_date || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+function normalizePricingListRecord(raw) {
+    var r = raw || {};
+    return {
+        pricingId: String(r.pricing_id || '').trim(),
+        marketplaceSkuId: String(r.marketplace_sku_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        siteSku: String(r.site_sku || '').trim(),
+        asin: String(r.asin || '').trim(),
+        currency: String(r.currency || '').trim(),
+        baseCurrency: String(r.base_currency || '').trim(),
+        baseRegularPrice: parseFloat(r.base_regular_price) || 0,
+        baseMinimumPrice: parseFloat(r.base_minimum_price) || 0,
+        baseMsrp: parseFloat(r.base_msrp) || 0,
+        fxRate: parseFloat(r.fx_rate) || 0,
+        fxRateDate: String(r.fx_rate_date || '').trim(),
+        autoRegularPrice: parseFloat(r.auto_regular_price) || 0,
+        autoMinimumPrice: parseFloat(r.auto_minimum_price) || 0,
+        autoMsrp: parseFloat(r.auto_msrp) || 0,
+        regularPrice: parseFloat(r.regular_price) || 0,
+        minimumPrice: parseFloat(r.minimum_price) || 0,
+        msrp: parseFloat(r.msrp) || 0,
+        priceSource: String(r.price_source || '').trim(),
+        priceStatus: String(r.price_status || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+function normalizePricingChangeLogRecord(raw) {
+    var r = raw || {};
+    return {
+        logId: String(r.log_id || '').trim(),
+        pricingId: String(r.pricing_id || '').trim(),
+        fieldName: String(r.field_name || '').trim(),
+        oldValue: String(r.old_value || '').trim(),
+        newValue: String(r.new_value || '').trim(),
+        changedBy: String(r.changed_by || '').trim(),
+        changedAt: String(r.changed_at || '').trim(),
+        changeReason: String(r.change_reason || '').trim(),
+        raw: r
+    };
+}
+
+function normalizeFcRegularForecastRecord(raw) {
+    var r = raw || {};
+    return {
+        forecastId: String(r.forecast_id || '').trim(),
+        year: String(r.year || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        sku: String(r.sku || '').trim(),
+        category: String(r.category || '').trim(),
+        series: String(r.series || '').trim(),
+        jan: parseFloat(r.jan) || 0,
+        feb: parseFloat(r.feb) || 0,
+        mar: parseFloat(r.mar) || 0,
+        apr: parseFloat(r.apr) || 0,
+        may: parseFloat(r.may) || 0,
+        jun: parseFloat(r.jun) || 0,
+        jul: parseFloat(r.jul) || 0,
+        aug: parseFloat(r.aug) || 0,
+        sep: parseFloat(r.sep) || 0,
+        oct: parseFloat(r.oct) || 0,
+        nov: parseFloat(r.nov) || 0,
+        dec: parseFloat(r.dec) || 0,
+        totalFc: parseFloat(r.total_fc) || 0,
+        fcShare: String(r.fc_share || '').trim(),
+        forecastStatus: String(r.forecast_status || '').trim(),
+        source: String(r.source || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
 function normalizeOperationDb(rawDb) {
     var db = rawDb || {};
     return {
@@ -202,7 +307,11 @@ function normalizeOperationDb(rawDb) {
         productFeatures: (db.product_features || []).map(normalizeProductFeatureRecord),
         skuHandbookSummaries: (db.sku_handbook_summaries || []).map(normalizeSkuHandbookSummaryRecord),
         campaigns: (db.campaigns || []).map(normalizeCampaignRecord).filter(function(r) { return r.campaignId; }),
-        campaignSkuLines: (db.campaign_sku_lines || []).map(normalizeCampaignSkuLineRecord).filter(function(r) { return r.campaignSkuLineId; })
+        campaignSkuLines: (db.campaign_sku_lines || []).map(normalizeCampaignSkuLineRecord).filter(function(r) { return r.campaignSkuLineId; }),
+        marketplaceSkus: (db.marketplace_skus || []).map(normalizeMarketplaceSkuRecord).filter(function(r) { return r.sku; }),
+        pricingList: (db.pricing_list || []).map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; }),
+        pricingChangeLog: (db.pricing_change_log || []).map(normalizePricingChangeLogRecord).filter(function(r) { return r.logId || r.pricingId; }),
+        fcRegularForecast: (db.fc_regular_forecast || []).map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; })
     };
 }
 
@@ -448,6 +557,27 @@ window.KM.DB.getCampaignSkuLines = function() {
     return window._opDbCache.campaignSkuLines || [];
 };
 
+window.KM.DB.getMarketplaceSkus = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.marketplaceSkus || [];
+};
+
+window.KM.DB.getPricingList = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.pricingList || [];
+};
+
+window.KM.DB.getPricingChangeLog = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.pricingChangeLog || [];
+};
+
+window.KM.DB.getFcRegularForecast = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.fcRegularForecast || [];
+};
+
+
 window.KM.DB.getDataSourceMode = function() {
     return getOperationDbDataSourceMode();
 };
@@ -499,6 +629,70 @@ async function updateSkuLifecycleInSheet(sku, lifecycle) {
 }
 
 // ========================================
+// marketplace_skus Write Methods
+// ========================================
+
+window.KM.DB.upsertMarketplaceSku = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertMarketplaceSku skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertMarketplaceSku' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+window.KM.DB.updateMarketplaceSkuModel = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateMarketplaceSkuModel skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updateMarketplaceSkuModel' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+window.KM.DB.importMarketplaceSkusBatch = async function(rows, options) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, importMarketplaceSkusBatch skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+            action: 'importMarketplaceSkusBatch',
+            rows: rows || [],
+            options: options || {}
+        })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    // Reload DB only after a successful import; return the full API result either way.
+    if (json && json.success) {
+        await loadOperationDb({ force: true });
+    }
+    return json;
+};
+
+// ========================================
 // Debug & Reload Helpers
 // ========================================
 
@@ -518,6 +712,10 @@ window.debugOperationDb = function() {
     console.log('sku_knowledge_items count:', window.KM.DB.getSkuKnowledgeItems().length);
     console.log('campaigns count:', (window._opDbCache.campaigns || []).length);
     console.log('campaign_sku_lines count:', (window._opDbCache.campaignSkuLines || []).length);
+    console.log('marketplace_skus count:', (window._opDbCache.marketplaceSkus || []).length);
+    console.log('pricing_list count:', (window._opDbCache.pricingList || []).length);
+    console.log('pricing_change_log count:', (window._opDbCache.pricingChangeLog || []).length);
+    console.log('fc_regular_forecast count:', (window._opDbCache.fcRegularForecast || []).length);
     // Language distribution
     var langDist = {};
     (window._opDbCache.productFeatures || []).forEach(function(pf) {

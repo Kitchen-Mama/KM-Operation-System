@@ -621,3 +621,19 @@ This page now serves as the **first validated example** of the Operation System 
 - Recommended: Phase 1 = read foundation, Phase 3 = write support, Phase 4 = cross-page sync.
 - FC Summary Add SKU button: keep as admin fallback, primary entry should be Inventory Replenishment.
 - No code changes made — audit and plan only.
+
+
+---
+
+## Inventory Replenishment: Replenishment Model + Edit/Delete SKU (2026-06)
+
+- Status column now displays `replenishmentModel` (Sales Driven / Forecast Driven) instead of lifecycle.
+- Add SKU modal: added Replenishment Model select + Launch Date input. Writes to `KM.DB.upsertMarketplaceSku()` when API connected.
+- Edit SKU modal: allows editing replenishment_model, launch_date, marketplace_sku_status. Writes via `KM.DB.updateMarketplaceSkuModel()`.
+- Delete SKU button: present but non-functional ("Delete SKU is not enabled yet.").
+- Button semantic colors: Search=blue, Submit=orange, Add=green, Edit=blue, Delete=red, Marketplace=secondary.
+- Apps Script: `upsertMarketplaceSku` and `updateMarketplaceSkuModel` POST actions added.
+- API: `KM.DB.upsertMarketplaceSku()` and `KM.DB.updateMarketplaceSkuModel()` public methods added.
+- `normalizeMarketplaceSkuRecord` now includes `replenishmentModel` and `launchDate`.
+- Demo mode unaffected — demo data defaults to `sales_driven`.
+- **Requires Apps Script redeployment** (new version) to activate POST actions.

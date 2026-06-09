@@ -261,7 +261,8 @@
                         <div class="replen-filters">
                             <div class="replen-filter-group">
                                 <label>Country</label>
-                                <select id="replenCountry" onchange="renderReplenishment()">
+                                <select id="replenCountry">
+                                    <option value="">Select Country</option>
                                     <option value="US">US</option>
                                     <option value="CA">CA</option>
                                     <option value="UK">UK</option>
@@ -276,7 +277,8 @@
                             </div>
                             <div class="replen-filter-group">
                                 <label>Marketplace</label>
-                                <select id="replenMarketplace" onchange="renderReplenishment()">
+                                <select id="replenMarketplace">
+                                    <option value="">Select Marketplace</option>
                                     <option value="Amazon">Amazon</option>
                                     <option value="KM Walmart">KM Walmart</option>
                                     <option value="Target">Target</option>
@@ -299,9 +301,17 @@
                             </div>
                         </div>
                         <div class="replen-actions">
-                            <button class="replen-btn replen-btn--primary" onclick="submitReplenishmentPlans()">Submit Plan</button>
-                            <button class="replen-btn replen-btn--add" onclick="openReplenAddSkuModal()">+ Add SKU</button>
-                            <button class="replen-btn replen-btn--add" onclick="openAddMarketplaceModal()">+ Add Marketplace</button>
+                            <div class="replen-actions__filter">
+                                <button class="replen-btn replen-btn--search" onclick="searchReplenishment()">Search</button>
+                            </div>
+                            <div class="replen-actions__ops">
+                                <button class="replen-btn replen-btn--primary" onclick="submitReplenishmentPlans()">Submit Plan</button>
+                                <button class="replen-btn replen-btn--add" onclick="openReplenAddSkuModal()">+ Add SKU</button>
+                                <button class="replen-btn replen-btn--import" onclick="openReplenImportModal()">Import SKU</button>
+                                <button class="replen-btn replen-btn--info" onclick="openEditSkuModal()">Edit SKU</button>
+                                <button class="replen-btn replen-btn--danger" onclick="handleDeleteSku()">Delete SKU</button>
+                                <button class="replen-btn replen-btn--secondary" onclick="openAddMarketplaceModal()">+ Marketplace</button>
+                            </div>
                         </div>
                     </div>
                     
@@ -335,12 +345,17 @@
                                         </select>
                                     </div>
                                     <div class="fc-form-group">
-                                        <label>Status</label>
-                                        <select id="replen-add-status">
-                                            <option value="Active">Active</option>
-                                            <option value="Low Stock">Low Stock</option>
-                                            <option value="Out of Stock">Out of Stock</option>
+                                        <label>Replenishment Model</label>
+                                        <select id="replen-add-model">
+                                            <option value="sales_driven">Sales Driven</option>
+                                            <option value="forecast_driven">Forecast Driven</option>
                                         </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Launch Date</label>
+                                        <input type="date" id="replen-add-launch-date" placeholder="YYYY-MM-DD">
                                     </div>
                                 </div>
                             </div>
@@ -400,6 +415,81 @@
                         </div>
                     </div>
                     
+                    <!-- Edit SKU Modal -->
+                    <div class="fc-modal" id="replen-edit-sku-modal">
+                        <div class="fc-modal-content">
+                            <h3>Edit Site SKU</h3>
+                            <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>SKU</label>
+                                        <input type="text" id="edit-sku-code" readonly style="background:#f1f5f9;">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Country / Marketplace</label>
+                                        <input type="text" id="edit-sku-site" readonly style="background:#f1f5f9;">
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Replenishment Model</label>
+                                        <select id="edit-sku-model">
+                                            <option value="sales_driven">Sales Driven</option>
+                                            <option value="forecast_driven">Forecast Driven</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Status</label>
+                                        <select id="edit-sku-status">
+                                            <option value="active">Active</option>
+                                            <option value="phasing_out">Phasing Out</option>
+                                            <option value="inactive">Inactive</option>
+                                            <option value="discontinued">Discontinued</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Launch Date</label>
+                                        <input type="date" id="edit-sku-launch-date">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeEditSkuModal()">Cancel</button>
+                                <button class="fc-btn fc-btn--primary" onclick="saveEditSku()">Save</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Import SKU Modal (CSV) -->
+                    <div class="fc-modal" id="replen-import-sku-modal">
+                        <div class="fc-modal-content">
+                            <h3>Import Marketplace SKUs (CSV)</h3>
+                            <div class="fc-modal-body">
+                                <p class="replen-import__hint">
+                                    Required columns: <strong>sku, company, country, marketplace, site_sku, currency</strong>.<br>
+                                    Optional: marketplace_sku_id, asin, marketplace_sku_status, replenishment_model, launch_date, base_currency, base_regular_price, base_minimum_price, base_msrp, regular_price, minimum_price, msrp.<br>
+                                    First row must be the header row. If price columns are omitted, pricing is auto-generated from sku_details by the backend.
+                                </p>
+                                <p class="replen-import__template">
+                                    <a href="#" class="replen-import__template-link" onclick="downloadReplenImportTemplate(); return false;">Download CSV Template</a>
+                                </p>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>CSV File *</label>
+                                        <input type="file" id="replen-import-file" accept=".csv,text/csv">
+                                    </div>
+                                </div>
+                                <div id="replen-import-result" class="replen-import__result" style="display:none;"></div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeReplenImportModal()">Close</button>
+                                <button class="fc-btn fc-btn--primary" id="replen-import-run-btn" onclick="runReplenImport()">Import</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Inventory Overview -->
                     <div class="ir-overview">
                         <h3 class="ir-overview__title">Inventory Overview</h3>

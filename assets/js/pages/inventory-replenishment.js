@@ -61,64 +61,65 @@ function saveReplenSku() {
   const sku = document.getElementById('replen-add-sku')?.value.trim();
   const country = document.getElementById('replen-add-country')?.value;
   const marketplace = document.getElementById('replen-add-marketplace')?.value;
-  const status = document.getElementById('replen-add-status')?.value;
+  const status = 'active';
+  const model = document.getElementById('replen-add-model')?.value || 'sales_driven';
+  const launchDate = document.getElementById('replen-add-launch-date')?.value || '';
   
   if (!sku) {
     alert('SKU is required');
     return;
   }
-  
-  if (!window.replenishmentData) {
-    alert('Data not loaded');
+  if (!country || !marketplace) {
+    alert('Country and Marketplace are required');
     return;
   }
   
-  const exists = replenishmentData.some(item => 
-    item.sku === sku && 
-    item.country === country && 
-    item.marketplace === marketplace
-  );
+  // Cloud write via KM.DB
+  if (window.KM && window.KM.DB && window.KM.DB.upsertMarketplaceSku) {
+    window.KM.DB.upsertMarketplaceSku({
+      sku: sku,
+      country: country,
+      marketplace: marketplace,
+      marketplace_sku_status: status,
+      replenishment_model: model,
+      launch_date: launchDate
+    }).then(function(result) {
+      if (result && result.success === false) {
+        alert('Could not add SKU. ' + (result.error || 'Please check the API connection and try again.'));
+        return;
+      }
+      alert('SKU "' + sku + '" added to ' + country + ' - ' + marketplace);
+      closeReplenModal();
+      renderReplenishment();
+    }).catch(function(err) {
+      alert('Error: ' + err.message);
+    });
+    return;
+  }
   
+  // Fallback: in-memory only (demo/mock)
+  if (!window.replenishmentData) window.replenishmentData = [];
+  var exists = replenishmentData.some(function(item) {
+    return item.sku === sku && item.country === country && item.marketplace === marketplace;
+  });
   if (exists) {
-    alert(`SKU "${sku}" already exists for ${country} - ${marketplace}`);
+    alert('SKU "' + sku + '" already exists for ' + country + ' - ' + marketplace);
     return;
   }
-  
-  const newItem = {
-    sku: sku,
-    country: country,
-    marketplace: marketplace,
-    status: status,
-    currentStock: 0,
-    onTheWay: 0,
-    thirdPartyStock: 0,
-    avgSalesPerDay: 0,
-    fc60Days: 0,
-    upcomingEvent: '',
-    daysOfSupply: 0,
-    suggestedQty: 0,
-    plannedQty: 0,
-    cnStock: 0,
-    twStock: 0
-  };
-  
-  replenishmentData.push(newItem);
-  
-  if (typeof renderReplenishment === 'function') {
-    renderReplenishment();
-  }
-  
+  replenishmentData.push({ sku: sku, country: country, marketplace: marketplace, status: status, currentStock: 0, onTheWay: 0, thirdPartyStock: 0, avgSalesPerDay: 0, fc60Days: 0, upcomingEvent: '', daysOfSupply: 0, suggestedQty: 0, plannedQty: 0, cnStock: 0, twStock: 0 });
+  if (typeof renderReplenishment === 'function') renderReplenishment();
   closeReplenModal();
-  
-  alert(`SKU "${sku}" added successfully to ${country} - ${marketplace}`);
+  alert('SKU "' + sku + '" added (in-memory only)');
 }
-
+  
 document.addEventListener('DOMContentLoaded', () => {
   const overlay = document.getElementById('replen-modal-overlay');
   if (overlay) {
     overlay.addEventListener('click', function() {
       closeReplenModal();
       closeAddMarketplaceModal();
+      closeEditSkuModal();
+      closeReplenImportModal();
     });
   }
 });
@@ -352,13 +353,48 @@ function getReplenishmentData() {
     if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
         return _getDemoReplenishmentData();
     }
+
     // === End Demo Data Layer ===
-    return []; // Demo OFF: no data source connected
-    const marketplace = document.getElementById('replenMarketplace').value;
-    const siteData = window.DataRepo.getSiteSkus(marketplace);
-    const targetDays = parseInt(document.getElementById('replenTargetDays').value) || 90;
-    const ltsFilter = document.getElementById('replenLTSFilter').value;
-    
+    // Demo OFF: search-triggered loading from KM.DB.getMarketplaceSkus()
+    var country = document.getElementById('replenCountry').value;
+    var marketplace = document.getElementById('replenMarketplace').value;
+    if (!country || !marketplace) {
+        return []; // No search yet - show empty state
+    }
+    var mpSkus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+    if (mpSkus.length === 0) return [];
+    var filtered = mpSkus.filter(function(mp) {
+        return mp.country === country && mp.marketplace === marketplace;
+    });
+    return filtered.map(function(mp) {
+        return {
+            sku: mp.sku,
+            lifecycle: '--',
+            replenishmentModel: mp.replenishmentModel || 'sales_driven',
+            company: '--',
+            country: mp.country,
+            marketplace: mp.marketplace,
+            currentInventory: 0,
+            onTheWay: 0,
+            thirdPartyStock: 0,
+            avgDailySales: '0.00',
+            forecast60d: 0,
+            upcomingEventQty: null,
+            daysOfSupply: '--',
+            needsAlert: false,
+            suggestedQty: 0,
+            cnStock: 0,
+            twStock: 0,
+            need18: 0,
+            need30: 0,
+            need45Plus: 0,
+            plannedQty: 0,
+            note: 'Cloud read only - sales data pending',
+            status: 'Pending Data',
+            productName: mp.siteSku || mp.sku,
+            _source: 'marketplace_skus'
+        };
+    });
     return siteData.map(item => {
         const mockData = replenishmentMockData.find(m => m.sku === item.sku) || {
             lifecycle: "Mature",
@@ -679,7 +715,7 @@ function renderReplenishment() {
     // Render scrollable columns
     scrollBody.innerHTML = data.map(item => `
         <div class="scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
-            <div class="scroll-cell">${item.lifecycle}</div>
+            <div class="scroll-cell">${item.replenishmentModel === 'forecast_driven' ? 'Forecast Driven' : 'Sales Driven'}</div>
             <div class="scroll-cell">${item.company}</div>
             <div class="scroll-cell">${item.marketplace}</div>
             <div class="scroll-cell">${item.currentInventory}</div>
@@ -1509,12 +1545,47 @@ window.cancelAddCountry = cancelAddCountry;
 window.addNewCountry = addNewCountry;
 
 
+
+// ========================================
+// Search-triggered loading (Demo OFF + Cloud Read)
+// ========================================
+function searchReplenishment() {
+    // Demo ON: just re-render (demo does not need search)
+    if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+        renderReplenishment();
+        return;
+    }
+    var country = document.getElementById('replenCountry').value;
+    var marketplace = document.getElementById('replenMarketplace').value;
+    if (!country && !marketplace) {
+        alert('Please select Country and Marketplace before searching.');
+        return;
+    }
+    if (!country) {
+        alert('Please select a Country.');
+        return;
+    }
+    if (!marketplace) {
+        alert('Please select a Marketplace.');
+        return;
+    }
+    renderReplenishment();
+}
+window.searchReplenishment = searchReplenishment;
+
 // ========================================
 // Demo Data Layer: Phase 2A - Inventory Mapping
 // ========================================
 function _getDemoReplenishmentData() {
+    var country = document.getElementById('replenCountry')?.value || '';
+    var marketplace = document.getElementById('replenMarketplace')?.value || '';
     var rows = window.KM.DemoData.getInventoryRows({});
-    return rows.map(function(r) {
+    return rows.filter(function(r) {
+        // Filter by selected country + marketplace
+        if (country && r.country && r.country !== country) return false;
+        if (marketplace && r.marketplace && r.marketplace !== marketplace) return false;
+        return true;
+    }).map(function(r) {
         var avgDaily = r.sales_30d > 0 ? (r.sales_30d / 30) : 0;
         var currentInv = r.fba_stock + r.third_wh_david + r.third_wh_winit;
         var onTheWay = r.overseas_on_way_18d + r.overseas_on_way_45d;
@@ -1526,7 +1597,9 @@ function _getDemoReplenishmentData() {
         return {
             sku: r.sku,
             lifecycle: r.warning_status === 'upcoming' ? 'New' : 'Mature',
+            replenishmentModel: r.replenishment_model || 'sales_driven',
             company: 'Kitchen Mama',
+            country: r.country || 'US',
             marketplace: r.marketplace,
             currentInventory: currentInv,
             onTheWay: onTheWay,
@@ -1588,6 +1661,325 @@ renderReplenishment = function() {
 window.renderReplenishment = renderReplenishment;
 
 // Debug helper
+// ========================================
+// Edit SKU / Delete SKU
+// ========================================
+
+var _editSkuTarget = null;
+
+function openEditSkuModal() {
+    // Find selected SKU from current table (use first expanded or prompt user)
+    var fixedRows = document.querySelectorAll('#ops-section .dual-layer-table:not(.ir-overview-table) .fixed-row');
+    var selectedSku = null;
+    fixedRows.forEach(function(row) {
+        if (row.classList.contains('expanded')) selectedSku = row.dataset.sku;
+    });
+    if (!selectedSku) {
+        // Prompt user to select
+        var allSkus = Array.from(fixedRows).map(function(r) { return r.dataset.sku; }).filter(Boolean);
+        if (allSkus.length === 0) { alert('No SKU data available. Please search first.'); return; }
+        selectedSku = prompt('Enter SKU to edit (or expand a row first):\n\nAvailable: ' + allSkus.slice(0, 10).join(', ') + (allSkus.length > 10 ? '...' : ''));
+        if (!selectedSku) return;
+    }
+
+    // Find the SKU in current data
+    var data = getReplenishmentData();
+    var item = data.find(function(d) { return d.sku === selectedSku; });
+    if (!item) { alert('SKU not found in current results: ' + selectedSku); return; }
+
+    // Also try to get marketplace_skus record for current values
+    var mpSkus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+    var mpRecord = mpSkus.find(function(mp) {
+        return mp.sku === selectedSku && mp.country === (item.country || document.getElementById('replenCountry')?.value) && mp.marketplace === (item.marketplace || document.getElementById('replenMarketplace')?.value);
+    });
+
+    _editSkuTarget = {
+        sku: selectedSku,
+        country: item.country || document.getElementById('replenCountry')?.value || '',
+        marketplace: item.marketplace || document.getElementById('replenMarketplace')?.value || '',
+        marketplaceSkuId: mpRecord ? mpRecord.marketplaceSkuId : '',
+        replenishmentModel: mpRecord ? mpRecord.replenishmentModel : 'sales_driven',
+        marketplaceSkuStatus: mpRecord ? mpRecord.marketplaceSkuStatus : 'active',
+        launchDate: mpRecord ? mpRecord.launchDate : ''
+    };
+
+    // Populate modal
+    document.getElementById('edit-sku-code').value = selectedSku;
+    document.getElementById('edit-sku-site').value = _editSkuTarget.country + ' / ' + _editSkuTarget.marketplace;
+    document.getElementById('edit-sku-model').value = _editSkuTarget.replenishmentModel || 'sales_driven';
+    document.getElementById('edit-sku-status').value = _editSkuTarget.marketplaceSkuStatus || 'active';
+    document.getElementById('edit-sku-launch-date').value = _editSkuTarget.launchDate || '';
+
+    // Open modal
+    var modal = document.getElementById('replen-edit-sku-modal');
+    var overlay = document.getElementById('replen-modal-overlay');
+    if (modal && overlay) {
+        modal.classList.add('is-open');
+        overlay.classList.add('is-open');
+    }
+}
+
+function closeEditSkuModal() {
+    var modal = document.getElementById('replen-edit-sku-modal');
+    var overlay = document.getElementById('replen-modal-overlay');
+    if (modal && overlay) {
+        modal.classList.remove('is-open');
+        overlay.classList.remove('is-open');
+    }
+    _editSkuTarget = null;
+}
+
+function saveEditSku() {
+    if (!_editSkuTarget) { alert('No SKU selected'); return; }
+
+    var model = document.getElementById('edit-sku-model').value;
+    var status = document.getElementById('edit-sku-status').value;
+    var launchDate = document.getElementById('edit-sku-launch-date').value;
+
+    var payload = {
+        marketplace_sku_id: _editSkuTarget.marketplaceSkuId,
+        sku: _editSkuTarget.sku,
+        country: _editSkuTarget.country,
+        marketplace: _editSkuTarget.marketplace,
+        replenishment_model: model,
+        marketplace_sku_status: status,
+        launch_date: launchDate
+    };
+
+    if (window.KM && window.KM.DB && window.KM.DB.updateMarketplaceSkuModel) {
+        window.KM.DB.updateMarketplaceSkuModel(payload).then(function(result) {
+            if (result && result.success === false) {
+                alert('Could not update SKU. ' + (result.error || 'Please check the API connection and try again.'));
+                return;
+            }
+            alert('SKU updated successfully.');
+            closeEditSkuModal();
+            renderReplenishment();
+        }).catch(function(err) {
+            alert('Error: ' + err.message);
+        });
+    } else {
+        alert('Cloud write not available. Edit saved locally only.');
+        closeEditSkuModal();
+    }
+}
+
+function handleDeleteSku() {
+    alert('Delete SKU is not enabled yet.');
+}
+
+window.openEditSkuModal = openEditSkuModal;
+window.closeEditSkuModal = closeEditSkuModal;
+window.saveEditSku = saveEditSku;
+window.handleDeleteSku = handleDeleteSku;
+
+// ========================================
+// Import SKU (CSV -> KM.DB.importMarketplaceSkusBatch)
+// ========================================
+
+var REPLEN_IMPORT_FIELDS = [
+    'marketplace_sku_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'asin',
+    'currency', 'marketplace_sku_status', 'replenishment_model', 'launch_date',
+    'base_currency', 'base_regular_price', 'base_minimum_price', 'base_msrp',
+    'regular_price', 'minimum_price', 'msrp'
+];
+var REPLEN_IMPORT_REQUIRED = ['sku', 'company', 'country', 'marketplace', 'site_sku', 'currency'];
+var REPLEN_IMPORT_NUMERIC = ['base_regular_price', 'base_minimum_price', 'base_msrp', 'regular_price', 'minimum_price', 'msrp'];
+
+function openReplenImportModal() {
+    var modal = document.getElementById('replen-import-sku-modal');
+    var overlay = document.getElementById('replen-modal-overlay');
+    if (!modal || !overlay) return;
+    var fileInput = document.getElementById('replen-import-file');
+    if (fileInput) fileInput.value = '';
+    var resultBox = document.getElementById('replen-import-result');
+    if (resultBox) { resultBox.style.display = 'none'; resultBox.innerHTML = ''; }
+    var runBtn = document.getElementById('replen-import-run-btn');
+    if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+    modal.classList.add('is-open');
+    overlay.classList.add('is-open');
+}
+
+function closeReplenImportModal() {
+    var modal = document.getElementById('replen-import-sku-modal');
+    var overlay = document.getElementById('replen-modal-overlay');
+    if (modal) modal.classList.remove('is-open');
+    if (overlay) overlay.classList.remove('is-open');
+}
+
+// Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes, and CRLF/LF.
+function parseReplenCsv(text) {
+    var rows = [];
+    var field = '', row = [], inQuotes = false;
+    text = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    for (var i = 0; i < text.length; i++) {
+        var c = text[i];
+        if (inQuotes) {
+            if (c === '"') {
+                if (text[i + 1] === '"') { field += '"'; i++; }
+                else { inQuotes = false; }
+            } else { field += c; }
+        } else {
+            if (c === '"') { inQuotes = true; }
+            else if (c === ',') { row.push(field); field = ''; }
+            else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+            else { field += c; }
+        }
+    }
+    if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+    return rows;
+}
+
+function csvRowsToImportObjects(cells) {
+    if (!cells || cells.length < 2) return [];
+    var headers = cells[0].map(function(h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+    var out = [];
+    for (var r = 1; r < cells.length; r++) {
+        var raw = cells[r];
+        var allEmpty = raw.every(function(v) { return String(v == null ? '' : v).trim() === ''; });
+        if (allEmpty) continue;
+        var obj = {};
+        for (var c = 0; c < headers.length; c++) {
+            var key = headers[c];
+            if (REPLEN_IMPORT_FIELDS.indexOf(key) === -1) continue;
+            var val = String(raw[c] == null ? '' : raw[c]).trim();
+            if (val === '') continue;
+            if (REPLEN_IMPORT_NUMERIC.indexOf(key) !== -1) {
+                var num = parseFloat(val);
+                obj[key] = isNaN(num) ? val : num;
+            } else {
+                obj[key] = val;
+            }
+        }
+        out.push(obj);
+    }
+    return out;
+}
+
+function escapeReplenHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderReplenImportError(message) {
+    var box = document.getElementById('replen-import-result');
+    if (!box) { alert(message); return; }
+    box.style.display = 'block';
+    box.innerHTML = '<div class="replen-import__status replen-import__status--error">Error: ' + escapeReplenHtml(message) + '</div>';
+}
+
+function renderReplenImportResult(data, clientInvalidCount) {
+    var box = document.getElementById('replen-import-result');
+    if (!box) return;
+    var summary = data.summary || { total: 0, created: 0, updated: 0, skipped: 0, error: 0 };
+    var results = data.results || [];
+
+    var html = '<div class="replen-import__summary">' +
+        '<span>Total: ' + summary.total + '</span>' +
+        '<span class="replen-import__status--created">Created: ' + summary.created + '</span>' +
+        '<span class="replen-import__status--updated">Updated: ' + summary.updated + '</span>' +
+        '<span class="replen-import__status--skipped">Skipped: ' + summary.skipped + '</span>' +
+        '<span class="replen-import__status--error">Error: ' + summary.error + '</span>' +
+        '</div>';
+
+    if (data.year) {
+        html += '<div style="font-size:11px;color:#888;margin-bottom:6px;">Forecast year: ' + escapeReplenHtml(String(data.year)) + '</div>';
+    }
+    if (clientInvalidCount > 0) {
+        html += '<div style="font-size:11px;color:#dc2626;margin-bottom:6px;">' + clientInvalidCount + ' row(s) missing required fields (reported as errors below).</div>';
+    }
+
+    html += results.map(function(rr) {
+        return '<div class="replen-import__row">' +
+            '<span class="replen-import__status replen-import__status--' + escapeReplenHtml(rr.status) + '">' + escapeReplenHtml(rr.status) + '</span>' +
+            '<span>#' + escapeReplenHtml(String(rr.rowIndex)) + '</span>' +
+            '<span>' + escapeReplenHtml(rr.sku || '') + '</span>' +
+            '<span>' + escapeReplenHtml(rr.message || '') + '</span>' +
+            '</div>';
+    }).join('');
+
+    box.style.display = 'block';
+    box.innerHTML = html;
+}
+
+function runReplenImport() {
+    var fileInput = document.getElementById('replen-import-file');
+    var runBtn = document.getElementById('replen-import-run-btn');
+
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert('Please choose a CSV file first.');
+        return;
+    }
+    if (!(window.KM && window.KM.DB && window.KM.DB.importMarketplaceSkusBatch)) {
+        alert('Import API is not available.');
+        return;
+    }
+
+    var file = fileInput.files[0];
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var rows;
+        try {
+            var cells = parseReplenCsv(e.target.result);
+            rows = csvRowsToImportObjects(cells);
+        } catch (err) {
+            renderReplenImportError('Failed to parse CSV: ' + (err && err.message ? err.message : err));
+            return;
+        }
+        if (rows.length === 0) {
+            renderReplenImportError('No data rows found (need a header row + at least one data row).');
+            return;
+        }
+
+        // Client-side required-field check (informational; backend remains source of truth).
+        var invalid = rows.filter(function(rw) {
+            return REPLEN_IMPORT_REQUIRED.some(function(f) { return !rw[f]; });
+        });
+
+        if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Importing...'; }
+
+        window.KM.DB.importMarketplaceSkusBatch(rows, { priceStatusDefault: 'draft', forecastStatusDefault: 'draft' })
+            .then(function(result) {
+                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                if (!result || result.success === false) {
+                    renderReplenImportError(result && result.error ? result.error : 'Import failed. API may not be configured.');
+                    return;
+                }
+                renderReplenImportResult(result.data || {}, invalid.length);
+                // Refresh table after a successful import (wrapper already reloaded the DB cache).
+                if (typeof renderReplenishment === 'function') renderReplenishment();
+            })
+            .catch(function(err) {
+                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                renderReplenImportError(err && err.message ? err.message : 'Import request failed.');
+            });
+    };
+    reader.onerror = function() { renderReplenImportError('Could not read the selected file.'); };
+    reader.readAsText(file);
+}
+
+function downloadReplenImportTemplate() {
+    var headers = 'sku,company,country,marketplace,site_sku,currency,marketplace_sku_id,asin,marketplace_sku_status,replenishment_model,launch_date,base_currency,base_regular_price,base_minimum_price,base_msrp,regular_price,minimum_price,msrp';
+    var exampleRow = 'CO1100-R,Kitchen Mama,US,Amazon,CO1100-R,USD,,B07FVQLBL3,Active,sales_driven,2026-01-01,USD,,,,,,';
+    var csv = headers + '\n' + exampleRow + '\n';
+
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'marketplace_skus_import_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+window.openReplenImportModal = openReplenImportModal;
+window.closeReplenImportModal = closeReplenImportModal;
+window.runReplenImport = runReplenImport;
+window.downloadReplenImportTemplate = downloadReplenImportTemplate;
+
 window.debugInventoryDemoData = function() {
     var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
     console.log('=== Inventory Demo Data Debug ===');
