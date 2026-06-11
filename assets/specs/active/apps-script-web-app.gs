@@ -57,7 +57,11 @@ function doPost(e) {
       return handleUpsertMarketplace_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace' });
+    if (action === 'importFcRegularForecastBatch') {
+      return handleImportFcRegularForecastBatch_(body);
+    }
+
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch' });
 
   } catch (err) {
     Logger.log(err.stack);
@@ -536,6 +540,9 @@ function handleImportMarketplaceSkusBatch_(body) {
   var sd_sell = skuHeaders.indexOf('selling_price');
   var sd_min = skuHeaders.indexOf('minimum_price');
   var sd_msrp = skuHeaders.indexOf('msrp');
+  // ASIN lookup is OPTIONAL: prefer 'asin', fall back to 'amz_asin'; -1 means unavailable (no fail).
+  var sd_asin = skuHeaders.indexOf('asin');
+  if (sd_asin === -1) sd_asin = skuHeaders.indexOf('amz_asin');
   var skuMap = {};
   for (var i = 1; i < skuData.length; i++) {
     var s = String(skuData[i][sd_sku] || '').trim();
@@ -545,7 +552,8 @@ function handleImportMarketplaceSkusBatch_(body) {
         series: sd_ser !== -1 ? String(skuData[i][sd_ser] || '').trim() : '',
         sellingPrice: sd_sell !== -1 ? skuData[i][sd_sell] : '',
         minimumPrice: sd_min !== -1 ? skuData[i][sd_min] : '',
-        msrp: sd_msrp !== -1 ? skuData[i][sd_msrp] : ''
+        msrp: sd_msrp !== -1 ? skuData[i][sd_msrp] : '',
+        asin: sd_asin !== -1 ? String(skuData[i][sd_asin] || '').trim() : ''
       };
     }
   }
@@ -555,19 +563,29 @@ function handleImportMarketplaceSkusBatch_(body) {
   var mpHeaders = mpData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var mpCol = function(n) { return mpHeaders.indexOf(n); };
   var mp_id = mpCol('marketplace_sku_id'), mp_sku = mpCol('sku'),
-      mp_company = mpCol('company'), mp_country = mpCol('country'), mp_mp = mpCol('marketplace');
+      mp_company = mpCol('company'), mp_country = mpCol('country'), mp_mp = mpCol('marketplace'),
+      mp_asin = mpCol('asin');
   var mpKeyToRow = {};
   var mpIdToRow = {};
+  var mpAsinByComposite = {}; // company|country|marketplace|sku -> non-empty asin
+  var mpAsinByIdSku = {};     // marketplace_id||sku -> non-empty asin
   for (var i = 1; i < mpData.length; i++) {
+    var rowSku = mp_sku !== -1 ? String(mpData[i][mp_sku] || '').trim() : '';
     var ck = [
       mp_company !== -1 ? String(mpData[i][mp_company] || '').trim() : '',
       mp_country !== -1 ? String(mpData[i][mp_country] || '').trim() : '',
       mp_mp !== -1 ? String(mpData[i][mp_mp] || '').trim() : '',
-      mp_sku !== -1 ? String(mpData[i][mp_sku] || '').trim() : ''
+      rowSku
     ].join('|');
     var existingId = mp_id !== -1 ? String(mpData[i][mp_id] || '').trim() : '';
     mpKeyToRow[ck] = { row: i + 1, id: existingId };
     if (existingId) mpIdToRow[existingId] = { row: i + 1, key: ck };
+    // Capture existing non-empty ASINs for auto-resolution.
+    var existingAsin = mp_asin !== -1 ? String(mpData[i][mp_asin] || '').trim() : '';
+    if (existingAsin) {
+      if (mpAsinByComposite[ck] === undefined) mpAsinByComposite[ck] = existingAsin;
+      if (existingId && rowSku) mpAsinByIdSku[existingId + '||' + rowSku] = existingAsin;
+    }
   }
 
   // --- pricing_list: headers + existing marketplace_sku_id set ---
@@ -575,11 +593,18 @@ function handleImportMarketplaceSkusBatch_(body) {
   var prHeaders = prData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var prCol = function(n) { return prHeaders.indexOf(n); };
   var pr_mpid = prCol('marketplace_sku_id');
+  var pr_asin = prCol('asin');
   var pricingMpIds = {};
+  var pricingByMpId = {}; // marketplace_sku_id -> { row, asin } for existing-row ASIN sync
   for (var i = 1; i < prData.length; i++) {
     if (pr_mpid !== -1) {
       var pv = String(prData[i][pr_mpid] || '').trim();
-      if (pv) pricingMpIds[pv] = true;
+      if (pv) {
+        pricingMpIds[pv] = true;
+        if (pricingByMpId[pv] === undefined) {
+          pricingByMpId[pv] = { row: i + 1, asin: pr_asin !== -1 ? String(prData[i][pr_asin] || '').trim() : '' };
+        }
+      }
     }
   }
 
@@ -694,6 +719,15 @@ function handleImportMarketplaceSkusBatch_(body) {
     }
     batchProcessed[compositeKey] = true;
 
+    // Auto-resolve ASIN (user no longer supplies it):
+    //   A) row.asin if provided (back-compat), B) existing by marketplace_id+sku,
+    //   C) existing by company+country+marketplace+sku, D) sku_details.asin, E) blank.
+    var rowMpIdForAsin = String(row.marketplace_id || '').trim() || mpRegistryMap[[company, country, marketplace].join('|')] || '';
+    var resolvedAsin = String(row.asin || '').trim();
+    if (!resolvedAsin && rowMpIdForAsin && mpAsinByIdSku[rowMpIdForAsin + '||' + sku]) resolvedAsin = mpAsinByIdSku[rowMpIdForAsin + '||' + sku];
+    if (!resolvedAsin && mpAsinByComposite[compositeKey]) resolvedAsin = mpAsinByComposite[compositeKey];
+    if (!resolvedAsin && skuMap[sku] && skuMap[sku].asin) resolvedAsin = skuMap[sku].asin;
+
     // Determine existing marketplace_skus row
     var providedId = String(row.marketplace_sku_id || '').trim();
     var existing = null;
@@ -708,13 +742,30 @@ function handleImportMarketplaceSkusBatch_(body) {
       }
       var trow = existing.row;
       if (mpCol('site_sku') !== -1) mpSheet.getRange(trow, mpCol('site_sku') + 1).setValue(siteSku);
-      if (row.asin !== undefined && mpCol('asin') !== -1) mpSheet.getRange(trow, mpCol('asin') + 1).setValue(String(row.asin).trim());
+      // ASIN: only write when we resolved a non-empty value — never clear an existing ASIN with blank.
+      if (resolvedAsin && mpCol('asin') !== -1) mpSheet.getRange(trow, mpCol('asin') + 1).setValue(resolvedAsin);
       if (mpCol('currency') !== -1) mpSheet.getRange(trow, mpCol('currency') + 1).setValue(currency);
       if (row.marketplace_sku_status !== undefined && mpCol('marketplace_sku_status') !== -1) mpSheet.getRange(trow, mpCol('marketplace_sku_status') + 1).setValue(String(row.marketplace_sku_status).trim());
       if (row.replenishment_model !== undefined && mpCol('replenishment_model') !== -1) mpSheet.getRange(trow, mpCol('replenishment_model') + 1).setValue(String(row.replenishment_model).trim());
       if (row.launch_date !== undefined && mpCol('launch_date') !== -1) mpSheet.getRange(trow, mpCol('launch_date') + 1).setValue(String(row.launch_date).trim());
       if (mpCol('updated_at') !== -1) mpSheet.getRange(trow, mpCol('updated_at') + 1).setValue(now);
-      results.push({ rowIndex: rowIndex, sku: sku, status: 'updated', message: 'marketplace_skus updated (pricing/forecast untouched)', marketplace_sku_id: existing.id || providedId, pricing_id: '', forecast_id: '' });
+
+      // Sync resolved ASIN to the matching pricing_list row (by marketplace_sku_id), when safe.
+      // Only touches asin (+ metadata); never clears, never touches prices.
+      var existingMpSkuId = existing.id || providedId;
+      var asinSynced = false;
+      if (resolvedAsin && existingMpSkuId && pricingByMpId[existingMpSkuId] && pr_asin !== -1) {
+        var prRef = pricingByMpId[existingMpSkuId];
+        if (prRef.asin !== resolvedAsin) {
+          prSheet.getRange(prRef.row, pr_asin + 1).setValue(resolvedAsin);
+          if (prCol('updated_at') !== -1) prSheet.getRange(prRef.row, prCol('updated_at') + 1).setValue(now);
+          if (prCol('updated_by') !== -1) prSheet.getRange(prRef.row, prCol('updated_by') + 1).setValue(createdBy);
+          prRef.asin = resolvedAsin;
+          asinSynced = true;
+        }
+      }
+
+      results.push({ rowIndex: rowIndex, sku: sku, status: 'updated', message: 'marketplace_skus updated' + (asinSynced ? ' + pricing_list ASIN synced' : '') + ' (prices untouched)', marketplace_sku_id: existingMpSkuId, pricing_id: '', forecast_id: '' });
       continue;
     }
 
@@ -732,7 +783,7 @@ function handleImportMarketplaceSkusBatch_(body) {
     if (mpCol('country') !== -1) newMp[mpCol('country')] = country;
     if (mpCol('marketplace') !== -1) newMp[mpCol('marketplace')] = marketplace;
     if (mpCol('site_sku') !== -1) newMp[mpCol('site_sku')] = siteSku;
-    if (mpCol('asin') !== -1) newMp[mpCol('asin')] = String(row.asin || '').trim();
+    if (mpCol('asin') !== -1) newMp[mpCol('asin')] = resolvedAsin;
     if (mpCol('currency') !== -1) newMp[mpCol('currency')] = currency;
     if (mpCol('marketplace_sku_status') !== -1) newMp[mpCol('marketplace_sku_status')] = String(row.marketplace_sku_status || 'active').trim();
     if (mpCol('replenishment_model') !== -1) newMp[mpCol('replenishment_model')] = String(row.replenishment_model || 'sales_driven').trim();
@@ -803,7 +854,7 @@ function handleImportMarketplaceSkusBatch_(body) {
       if (prCol('country') !== -1) newPr[prCol('country')] = country;
       if (prCol('marketplace') !== -1) newPr[prCol('marketplace')] = marketplace;
       if (prCol('site_sku') !== -1) newPr[prCol('site_sku')] = siteSku;
-      if (prCol('asin') !== -1) newPr[prCol('asin')] = String(row.asin || '').trim();
+      if (prCol('asin') !== -1) newPr[prCol('asin')] = resolvedAsin;
       if (prCol('currency') !== -1) newPr[prCol('currency')] = currency;
       if (prCol('base_currency') !== -1) newPr[prCol('base_currency')] = baseCurrency;
       if (prCol('base_regular_price') !== -1) newPr[prCol('base_regular_price')] = baseRegular;
@@ -962,4 +1013,175 @@ function handleUpsertMarketplace_(body) {
   sheet.appendRow(newRow);
 
   return jsonResponse_({ success: true, data: { marketplace_id: id, status: 'created', company: company, country: country, marketplace: marketplace } });
+}
+
+
+// ========================================
+// FC Regular Forecast Batch Import Handler
+// ========================================
+
+/**
+ * Batch import / upsert fc_regular_forecast rows.
+ * company/country/marketplace/year are supplied by the frontend modal (resolved from the
+ * marketplaces registry) — NOT from the CSV. CSV carries only sku + jan..dec.
+ *
+ * Business key: year + company + country + marketplace + sku.
+ * - Existing key  -> update months/category/series/total_fc/source/updated_at; preserve forecast_id.
+ *                    forecast_status updated only if existing blank or options.overwriteStatus === true.
+ * - New key       -> create with forecast_id = FC-{year}-{8 lowercase hex}.
+ * Header-validated before any write. Does NOT touch fc_special_events / fc_target_rules.
+ */
+function handleImportFcRegularForecastBatch_(body) {
+  var rows = body.rows;
+  if (!rows || !rows.length) {
+    return jsonResponse_({ success: false, error: 'No rows provided' });
+  }
+
+  var options = body.options || {};
+  var forecastStatusDefault = String(options.forecastStatusDefault || 'draft').trim();
+  var sourceDefault = String(options.sourceDefault || 'import').trim();
+  var overwriteStatus = options.overwriteStatus === true;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var fcSheet = ss.getSheetByName('fc_regular_forecast');
+  var skuSheet = ss.getSheetByName('sku_details');
+  if (!fcSheet) return jsonResponse_({ success: false, error: 'fc_regular_forecast sheet not found' });
+  if (!skuSheet) return jsonResponse_({ success: false, error: 'sku_details sheet not found' });
+
+  var months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  var fcData = fcSheet.getDataRange().getValues();
+  var fcHeaders = fcData[0].map(function(h) { return String(h).trim().toLowerCase(); });
+  var fcCol = function(n) { return fcHeaders.indexOf(n); };
+
+  var skuData = skuSheet.getDataRange().getValues();
+  var skuHeaders = skuData[0].map(function(h) { return String(h).trim().toLowerCase(); });
+
+  // --- Required-header validation (before any writes) ---
+  var requiredFc = ['forecast_id', 'year', 'company', 'country', 'marketplace', 'sku', 'category', 'series']
+    .concat(months)
+    .concat(['total_fc', 'fc_share', 'forecast_status', 'source', 'created_at', 'updated_at']);
+  var requiredSku = ['sku', 'category', 'series'];
+  var missingHeaders = [];
+  requiredFc.forEach(function(h) { if (fcHeaders.indexOf(h) === -1) missingHeaders.push('fc_regular_forecast.' + h); });
+  requiredSku.forEach(function(h) { if (skuHeaders.indexOf(h) === -1) missingHeaders.push('sku_details.' + h); });
+  if (missingHeaders.length) {
+    return jsonResponse_({ success: false, error: 'Missing required header(s): ' + missingHeaders.join(', ') });
+  }
+
+  // --- sku_details: sku -> {category, series} ---
+  var sd_sku = skuHeaders.indexOf('sku'), sd_cat = skuHeaders.indexOf('category'), sd_ser = skuHeaders.indexOf('series');
+  var skuMap = {};
+  for (var i = 1; i < skuData.length; i++) {
+    var s = String(skuData[i][sd_sku] || '').trim();
+    if (s) skuMap[s] = { category: String(skuData[i][sd_cat] || '').trim(), series: String(skuData[i][sd_ser] || '').trim() };
+  }
+
+  // --- existing fc_regular_forecast business-key map ---
+  var bk = function(y, co, cn, mp, sk) { return [y, co, cn, mp, sk].join('|'); };
+  var bkToRow = {};
+  for (var r = 1; r < fcData.length; r++) {
+    var rsku = String(fcData[r][fcCol('sku')] || '').trim();
+    if (!rsku) continue;
+    var key0 = bk(
+      String(fcData[r][fcCol('year')] || '').trim(),
+      String(fcData[r][fcCol('company')] || '').trim(),
+      String(fcData[r][fcCol('country')] || '').trim(),
+      String(fcData[r][fcCol('marketplace')] || '').trim(),
+      rsku
+    );
+    bkToRow[key0] = {
+      row: r + 1,
+      forecastId: String(fcData[r][fcCol('forecast_id')] || '').trim(),
+      status: String(fcData[r][fcCol('forecast_status')] || '').trim()
+    };
+  }
+
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var currentYear = String(new Date().getFullYear());
+  var results = [];
+  var batchSeen = {};
+
+  for (var idx = 0; idx < rows.length; idx++) {
+    var row = rows[idx] || {};
+    var rowIndex = idx + 1;
+    var year = String(row.year || '').trim() || currentYear;
+    var company = String(row.company || '').trim();
+    var country = String(row.country || '').trim();
+    var marketplace = String(row.marketplace || '').trim();
+    var sku = String(row.sku || '').trim();
+
+    var baseResult = { rowIndex: rowIndex, year: year, company: company, country: country, marketplace: marketplace, sku: sku };
+
+    var miss = [];
+    if (!year) miss.push('year');
+    if (!company) miss.push('company');
+    if (!country) miss.push('country');
+    if (!marketplace) miss.push('marketplace');
+    if (!sku) miss.push('sku');
+    if (miss.length) {
+      results.push(Object.assign({}, baseResult, { status: 'error', message: 'Missing required: ' + miss.join(', '), forecast_id: '' }));
+      continue;
+    }
+
+    if (!skuMap[sku]) {
+      results.push(Object.assign({}, baseResult, { status: 'error', message: 'SKU not found in sku_details', forecast_id: '' }));
+      continue;
+    }
+
+    var key = bk(year, company, country, marketplace, sku);
+    if (batchSeen[key]) {
+      results.push(Object.assign({}, baseResult, { status: 'skipped', message: 'Duplicate row in batch', forecast_id: '' }));
+      continue;
+    }
+    batchSeen[key] = true;
+
+    var monthVals = months.map(function(m) { var v = parseFloat(row[m]); return isNaN(v) ? 0 : v; });
+    var totalFc = monthVals.reduce(function(a, b) { return a + b; }, 0);
+    var meta = skuMap[sku];
+
+    var existing = bkToRow[key];
+    if (existing && existing.row !== -1) {
+      var tr = existing.row;
+      for (var mi = 0; mi < months.length; mi++) {
+        if (fcCol(months[mi]) !== -1) fcSheet.getRange(tr, fcCol(months[mi]) + 1).setValue(monthVals[mi]);
+      }
+      if (fcCol('category') !== -1) fcSheet.getRange(tr, fcCol('category') + 1).setValue(meta.category);
+      if (fcCol('series') !== -1) fcSheet.getRange(tr, fcCol('series') + 1).setValue(meta.series);
+      if (fcCol('total_fc') !== -1) fcSheet.getRange(tr, fcCol('total_fc') + 1).setValue(totalFc);
+      if (fcCol('source') !== -1) fcSheet.getRange(tr, fcCol('source') + 1).setValue(sourceDefault);
+      if (fcCol('forecast_status') !== -1 && (!existing.status || overwriteStatus)) {
+        fcSheet.getRange(tr, fcCol('forecast_status') + 1).setValue(forecastStatusDefault);
+      }
+      if (fcCol('updated_at') !== -1) fcSheet.getRange(tr, fcCol('updated_at') + 1).setValue(now);
+      results.push(Object.assign({}, baseResult, { status: 'updated', message: 'Updated existing forecast', forecast_id: existing.forecastId }));
+    } else {
+      var fid = 'FC-' + year + '-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+      var newRow = new Array(fcHeaders.length).fill('');
+      if (fcCol('forecast_id') !== -1) newRow[fcCol('forecast_id')] = fid;
+      if (fcCol('year') !== -1) newRow[fcCol('year')] = year;
+      if (fcCol('company') !== -1) newRow[fcCol('company')] = company;
+      if (fcCol('country') !== -1) newRow[fcCol('country')] = country;
+      if (fcCol('marketplace') !== -1) newRow[fcCol('marketplace')] = marketplace;
+      if (fcCol('sku') !== -1) newRow[fcCol('sku')] = sku;
+      if (fcCol('category') !== -1) newRow[fcCol('category')] = meta.category;
+      if (fcCol('series') !== -1) newRow[fcCol('series')] = meta.series;
+      for (var mj = 0; mj < months.length; mj++) {
+        if (fcCol(months[mj]) !== -1) newRow[fcCol(months[mj])] = monthVals[mj];
+      }
+      if (fcCol('total_fc') !== -1) newRow[fcCol('total_fc')] = totalFc;
+      if (fcCol('fc_share') !== -1) newRow[fcCol('fc_share')] = '';
+      if (fcCol('forecast_status') !== -1) newRow[fcCol('forecast_status')] = forecastStatusDefault;
+      if (fcCol('source') !== -1) newRow[fcCol('source')] = sourceDefault;
+      if (fcCol('created_at') !== -1) newRow[fcCol('created_at')] = now;
+      if (fcCol('updated_at') !== -1) newRow[fcCol('updated_at')] = now;
+      fcSheet.appendRow(newRow);
+      bkToRow[key] = { row: -1, forecastId: fid, status: forecastStatusDefault };
+      results.push(Object.assign({}, baseResult, { status: 'created', message: 'Created new forecast', forecast_id: fid }));
+    }
+  }
+
+  var summary = { total: rows.length, created: 0, updated: 0, skipped: 0, error: 0 };
+  results.forEach(function(x) { if (summary[x.status] !== undefined) summary[x.status]++; });
+  return jsonResponse_({ success: true, data: { summary: summary, results: results } });
 }

@@ -1936,19 +1936,47 @@ window.handleDeleteSku = handleDeleteSku;
 // Import SKU (CSV -> KM.DB.importMarketplaceSkusBatch)
 // ========================================
 
-var REPLEN_IMPORT_FIELDS = [
-    'marketplace_sku_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'asin',
-    'currency', 'marketplace_sku_status', 'replenishment_model', 'launch_date',
-    'base_currency', 'base_regular_price', 'base_minimum_price', 'base_msrp',
-    'regular_price', 'minimum_price', 'msrp'
-];
-var REPLEN_IMPORT_REQUIRED = ['sku', 'company', 'country', 'marketplace', 'site_sku', 'currency'];
-var REPLEN_IMPORT_NUMERIC = ['base_regular_price', 'base_minimum_price', 'base_msrp', 'regular_price', 'minimum_price', 'msrp'];
+// Marketplace-scoped import: user picks Country + Marketplace (display name); company/country/
+// marketplace/currency/marketplace_id are resolved from the registry. CSV carries only
+// sku, site_sku, replenishment_model.
+var REPLEN_VALID_MODELS = ['sales_driven', 'forecast_driven'];
+var _replenImportResolved = null; // { company, country, marketplace, marketplaceId, currency, displayName }
+
+function _replenImportActiveMarketplaces() {
+    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
+}
+
+function _replenImportRowValue(m) {
+    return (m.marketplaceId && m.marketplaceId !== '') ? m.marketplaceId : (m.company + '|' + m.country + '|' + m.marketplace);
+}
+
+function _replenImportSetResolvedText(message, color) {
+    var el = document.getElementById('replen-import-resolved');
+    if (!el) return;
+    el.style.color = color || '#475569';
+    el.textContent = message;
+}
 
 function openReplenImportModal() {
     var modal = document.getElementById('replen-import-sku-modal');
     var overlay = document.getElementById('replen-modal-overlay');
     if (!modal || !overlay) return;
+
+    var countrySel = document.getElementById('replen-import-country');
+    if (countrySel) {
+        var active = _replenImportActiveMarketplaces();
+        var countries = [];
+        active.forEach(function(m) { if (m.country && countries.indexOf(m.country) === -1) countries.push(m.country); });
+        countries.sort();
+        countrySel.innerHTML = '<option value="">Select Country</option>' +
+            countries.map(function(c) { return '<option value="' + escapeReplenHtml(c) + '">' + escapeReplenHtml(c) + '</option>'; }).join('');
+    }
+    var mpSel = document.getElementById('replen-import-marketplace');
+    if (mpSel) mpSel.innerHTML = '<option value="">Select Marketplace</option>';
+    _replenImportResolved = null;
+    _replenImportSetResolvedText('Select Country + Marketplace to resolve company/currency.', '#475569');
+
     var fileInput = document.getElementById('replen-import-file');
     if (fileInput) fileInput.value = '';
     var resultBox = document.getElementById('replen-import-result');
@@ -1964,6 +1992,61 @@ function closeReplenImportModal() {
     var overlay = document.getElementById('replen-modal-overlay');
     if (modal) modal.classList.remove('is-open');
     if (overlay) overlay.classList.remove('is-open');
+}
+
+function onReplenImportCountryChange() {
+    var countrySel = document.getElementById('replen-import-country');
+    var mpSel = document.getElementById('replen-import-marketplace');
+    var country = countrySel ? countrySel.value : '';
+    if (mpSel) {
+        var active = _replenImportActiveMarketplaces();
+        var rowsForCountry = active.filter(function(m) { return !country || m.country === country; });
+        mpSel.innerHTML = '<option value="">Select Marketplace</option>' +
+            rowsForCountry.map(function(m) {
+                var val = _replenImportRowValue(m);
+                var label = m.marketplaceDisplayName || m.marketplace || m.marketplaceId || val;
+                return '<option value="' + escapeReplenHtml(val) + '">' + escapeReplenHtml(label) + '</option>';
+            }).join('');
+    }
+    _replenImportResolved = null;
+    _replenImportSetResolvedText('Select Country + Marketplace to resolve company/currency.', '#475569');
+}
+
+// Resolve exactly one active registry row by the selected option value (marketplace_id / composite key).
+function _resolveReplenImportMarketplace() {
+    _replenImportResolved = null;
+    var mpSel = document.getElementById('replen-import-marketplace');
+    var val = mpSel ? mpSel.value : '';
+    if (!val) return { ok: false, error: 'Select Country and Marketplace.' };
+    var matches = _replenImportActiveMarketplaces().filter(function(m) { return _replenImportRowValue(m) === val; });
+    if (matches.length === 0) return { ok: false, error: 'Selected marketplace not found in the active registry.' };
+    if (matches.length > 1) return { ok: false, error: 'Selected marketplace value is ambiguous in the registry.' };
+    var m = matches[0];
+    _replenImportResolved = {
+        company: m.company,
+        country: m.country,
+        marketplace: m.marketplace,
+        marketplaceId: m.marketplaceId || '',
+        currency: m.currency || 'USD',
+        displayName: m.marketplaceDisplayName || m.marketplace || (m.marketplaceId || '')
+    };
+    return { ok: true };
+}
+
+function onReplenImportMarketplaceChange() {
+    var res = _resolveReplenImportMarketplace();
+    if (_replenImportResolved) {
+        _replenImportSetResolvedText(
+            'Resolved → Company: ' + _replenImportResolved.company +
+            ' | Country: ' + _replenImportResolved.country +
+            ' | Marketplace: ' + (_replenImportResolved.displayName || _replenImportResolved.marketplace) +
+            ' | Marketplace ID: ' + (_replenImportResolved.marketplaceId || '(none)') +
+            ' | Currency: ' + _replenImportResolved.currency,
+            '#166534'
+        );
+    } else {
+        _replenImportSetResolvedText((res && res.error) ? res.error : 'Select Country + Marketplace to resolve company/currency.', '#b91c1c');
+    }
 }
 
 // Minimal RFC4180-ish CSV parser: handles quoted fields, escaped quotes, and CRLF/LF.
@@ -1989,31 +2072,7 @@ function parseReplenCsv(text) {
     return rows;
 }
 
-function csvRowsToImportObjects(cells) {
-    if (!cells || cells.length < 2) return [];
-    var headers = cells[0].map(function(h) { return String(h == null ? '' : h).trim().toLowerCase(); });
-    var out = [];
-    for (var r = 1; r < cells.length; r++) {
-        var raw = cells[r];
-        var allEmpty = raw.every(function(v) { return String(v == null ? '' : v).trim() === ''; });
-        if (allEmpty) continue;
-        var obj = {};
-        for (var c = 0; c < headers.length; c++) {
-            var key = headers[c];
-            if (REPLEN_IMPORT_FIELDS.indexOf(key) === -1) continue;
-            var val = String(raw[c] == null ? '' : raw[c]).trim();
-            if (val === '') continue;
-            if (REPLEN_IMPORT_NUMERIC.indexOf(key) !== -1) {
-                var num = parseFloat(val);
-                obj[key] = isNaN(num) ? val : num;
-            } else {
-                obj[key] = val;
-            }
-        }
-        out.push(obj);
-    }
-    return out;
-}
+// (csvRowsToImportObjects removed — Import SKU is now marketplace-scoped; parsing is inline in runReplenImport.)
 
 function escapeReplenHtml(s) {
     return String(s == null ? '' : s)
@@ -2028,7 +2087,7 @@ function renderReplenImportError(message) {
     box.innerHTML = '<div class="replen-import__status replen-import__status--error">Error: ' + escapeReplenHtml(message) + '</div>';
 }
 
-function renderReplenImportResult(data, clientInvalidCount) {
+function renderReplenImportResult(data) {
     var box = document.getElementById('replen-import-result');
     if (!box) return;
     var summary = data.summary || { total: 0, created: 0, updated: 0, skipped: 0, error: 0 };
@@ -2041,13 +2100,6 @@ function renderReplenImportResult(data, clientInvalidCount) {
         '<span class="replen-import__status--skipped">Skipped: ' + summary.skipped + '</span>' +
         '<span class="replen-import__status--error">Error: ' + summary.error + '</span>' +
         '</div>';
-
-    if (data.year) {
-        html += '<div style="font-size:11px;color:#888;margin-bottom:6px;">Forecast year: ' + escapeReplenHtml(String(data.year)) + '</div>';
-    }
-    if (clientInvalidCount > 0) {
-        html += '<div style="font-size:11px;color:#dc2626;margin-bottom:6px;">' + clientInvalidCount + ' row(s) missing required fields (reported as errors below).</div>';
-    }
 
     html += results.map(function(rr) {
         return '<div class="replen-import__row">' +
@@ -2063,41 +2115,69 @@ function renderReplenImportResult(data, clientInvalidCount) {
 }
 
 function runReplenImport() {
+    var res = _resolveReplenImportMarketplace();
+    if (!_replenImportResolved) { renderReplenImportError((res && res.error) ? res.error : 'Select Country and Marketplace first.'); return; }
+
     var fileInput = document.getElementById('replen-import-file');
     var runBtn = document.getElementById('replen-import-run-btn');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) { alert('Please choose a CSV file first.'); return; }
+    if (!(window.KM && window.KM.DB && window.KM.DB.importMarketplaceSkusBatch)) { alert('Import API is not available.'); return; }
 
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        alert('Please choose a CSV file first.');
-        return;
-    }
-    if (!(window.KM && window.KM.DB && window.KM.DB.importMarketplaceSkusBatch)) {
-        alert('Import API is not available.');
-        return;
-    }
-
+    var meta = _replenImportResolved;
     var file = fileInput.files[0];
     var reader = new FileReader();
     reader.onload = function(e) {
-        var rows;
-        try {
-            var cells = parseReplenCsv(e.target.result);
-            rows = csvRowsToImportObjects(cells);
-        } catch (err) {
-            renderReplenImportError('Failed to parse CSV: ' + (err && err.message ? err.message : err));
-            return;
-        }
-        if (rows.length === 0) {
-            renderReplenImportError('No data rows found (need a header row + at least one data row).');
-            return;
+        var cells;
+        try { cells = parseReplenCsv(e.target.result); } catch (err) { renderReplenImportError('Failed to parse CSV: ' + (err && err.message ? err.message : err)); return; }
+        if (!cells || cells.length < 2) { renderReplenImportError('No data rows found (need a header row + at least one data row).'); return; }
+        var headers = cells[0].map(function(h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+        var skuIdx = headers.indexOf('sku');
+        var siteIdx = headers.indexOf('site_sku');
+        var modelIdx = headers.indexOf('replenishment_model');
+        if (skuIdx === -1 || siteIdx === -1) { renderReplenImportError('CSV must include "sku" and "site_sku" headers.'); return; }
+
+        var rows = [];
+        var clientErrors = [];
+        var dataRowNum = 0;
+        for (var r = 1; r < cells.length; r++) {
+            var raw = cells[r];
+            var allEmpty = raw.every(function(v) { return String(v == null ? '' : v).trim() === ''; });
+            if (allEmpty) continue;
+            dataRowNum++;
+            var sku = String(raw[skuIdx] == null ? '' : raw[skuIdx]).trim();
+            var siteSku = String(raw[siteIdx] == null ? '' : raw[siteIdx]).trim();
+            var model = modelIdx === -1 ? '' : String(raw[modelIdx] == null ? '' : raw[modelIdx]).trim();
+
+            if (!sku) { clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'SKU is required' }); continue; }
+            if (!siteSku) { clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'site_sku is required' }); continue; }
+            if (model && REPLEN_VALID_MODELS.indexOf(model) === -1) {
+                clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'Invalid replenishment_model: "' + model + '" (use sales_driven or forecast_driven)' });
+                continue;
+            }
+
+            rows.push({
+                sku: sku,
+                site_sku: siteSku,
+                company: meta.company,
+                country: meta.country,
+                marketplace: meta.marketplace,
+                marketplace_id: meta.marketplaceId,
+                currency: meta.currency,
+                marketplace_sku_status: 'active',
+                replenishment_model: model || 'sales_driven',
+                asin: '',
+                launch_date: ''
+            });
         }
 
-        // Client-side required-field check (informational; backend remains source of truth).
-        var invalid = rows.filter(function(rw) {
-            return REPLEN_IMPORT_REQUIRED.some(function(f) { return !rw[f]; });
-        });
+        if (rows.length === 0 && clientErrors.length === 0) { renderReplenImportError('No data rows found.'); return; }
+        if (rows.length === 0) {
+            // All rows rejected client-side; show errors, nothing sent to backend.
+            renderReplenImportResult({ summary: { total: clientErrors.length, created: 0, updated: 0, skipped: 0, error: clientErrors.length }, results: clientErrors });
+            return;
+        }
 
         if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Importing...'; }
-
         window.KM.DB.importMarketplaceSkusBatch(rows, { priceStatusDefault: 'draft', forecastStatusDefault: 'draft' })
             .then(function(result) {
                 if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
@@ -2105,7 +2185,17 @@ function runReplenImport() {
                     renderReplenImportError(result && result.error ? result.error : 'Import failed. API may not be configured.');
                     return;
                 }
-                renderReplenImportResult(result.data || {}, invalid.length);
+                var data = result.data || {};
+                var s = data.summary || { total: 0, created: 0, updated: 0, skipped: 0, error: 0 };
+                var mergedSummary = {
+                    total: (s.total || 0) + clientErrors.length,
+                    created: s.created || 0,
+                    updated: s.updated || 0,
+                    skipped: s.skipped || 0,
+                    error: (s.error || 0) + clientErrors.length
+                };
+                var mergedResults = clientErrors.concat(data.results || []);
+                renderReplenImportResult({ summary: mergedSummary, results: mergedResults });
                 // Refresh table after a successful import (wrapper already reloaded the DB cache).
                 if (typeof renderReplenishment === 'function') renderReplenishment();
             })
@@ -2119,9 +2209,11 @@ function runReplenImport() {
 }
 
 function downloadReplenImportTemplate() {
-    var headers = 'sku,company,country,marketplace,site_sku,currency,marketplace_sku_id,asin,marketplace_sku_status,replenishment_model,launch_date,base_currency,base_regular_price,base_minimum_price,base_msrp,regular_price,minimum_price,msrp';
-    var exampleRow = 'CO1100-R,KM,US,Amazon,CO1100-R,USD,,B07FVQLBL3,active,sales_driven,2026-01-01,USD,,,,,,';
-    var csv = headers + '\n' + exampleRow + '\n';
+    var res = _resolveReplenImportMarketplace();
+    if (!_replenImportResolved) { alert('Please select Country and Marketplace first.' + (res && res.error ? ('\n' + res.error) : '')); return; }
+    var headers = 'sku,site_sku,replenishment_model';
+    var sample = 'SAMPLE-SKU,SAMPLE-SITE-SKU,sales_driven';
+    var csv = headers + '\n' + sample + '\n';
 
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob);
@@ -2136,6 +2228,8 @@ function downloadReplenImportTemplate() {
 
 window.openReplenImportModal = openReplenImportModal;
 window.closeReplenImportModal = closeReplenImportModal;
+window.onReplenImportCountryChange = onReplenImportCountryChange;
+window.onReplenImportMarketplaceChange = onReplenImportMarketplaceChange;
 window.runReplenImport = runReplenImport;
 window.downloadReplenImportTemplate = downloadReplenImportTemplate;
 

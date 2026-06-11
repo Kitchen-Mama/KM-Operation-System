@@ -507,10 +507,25 @@
                         <div class="fc-modal-content">
                             <h3>Import Marketplace SKUs (CSV)</h3>
                             <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Country *</label>
+                                        <select id="replen-import-country" onchange="onReplenImportCountryChange()">
+                                            <option value="">Select Country</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Marketplace *</label>
+                                        <select id="replen-import-marketplace" onchange="onReplenImportMarketplaceChange()">
+                                            <option value="">Select Marketplace</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div id="replen-import-resolved" style="font-size:12px;color:#475569;margin:4px 0 12px;">Select Country + Marketplace to resolve company/currency.</div>
                                 <p class="replen-import__hint">
-                                    Required columns: <strong>sku, company, country, marketplace, site_sku, currency</strong>.<br>
-                                    Optional: marketplace_sku_id, asin, marketplace_sku_status, replenishment_model, launch_date, base_currency, base_regular_price, base_minimum_price, base_msrp, regular_price, minimum_price, msrp.<br>
-                                    First row must be the header row. If price columns are omitted, pricing is auto-generated from sku_details by the backend.
+                                    CSV columns: <strong>sku, site_sku, replenishment_model</strong>.<br>
+                                    <strong>sku</strong> required. <strong>site_sku</strong> required. <strong>replenishment_model</strong> optional — one of <code>sales_driven</code> / <code>forecast_driven</code> (blank defaults to sales_driven).<br>
+                                    company / country / marketplace / currency / marketplace_id are resolved automatically from the selected Marketplace — do NOT type them in the CSV. First row must be the header row.
                                 </p>
                                 <p class="replen-import__template">
                                     <a href="#" class="replen-import__template-link" onclick="downloadReplenImportTemplate(); return false;">Download CSV Template</a>
@@ -1258,6 +1273,7 @@
                         <button class="fc-btn fc-btn--add fc-btn-event" onclick="openAddEventModal()">+ New FC Update</button>
                         <button class="fc-btn fc-btn--edit fc-btn-regular" id="fc-edit-btn" onclick="enterFcEditMode()">Edit Base FC</button>
                         <button class="fc-btn fc-btn--add fc-btn-regular" id="fc-add-btn" onclick="openAddSkuModal()">+ Add SKU</button>
+                        <button class="fc-btn fc-btn--add fc-btn-regular" id="fc-import-btn" onclick="openFcImportModal()">Import Forecast</button>
                         <button class="fc-btn fc-btn--save fc-btn-regular" id="fc-save-btn" onclick="saveFcChanges()" style="display:none;">Save Changes</button>
                         <button class="fc-btn fc-btn--cancel fc-btn-regular" id="fc-cancel-btn" onclick="cancelFcEdit()" style="display:none;">Cancel</button>
                         <!-- Event Buttons -->
@@ -1395,7 +1411,53 @@
 
                 <!-- Modals -->
                 <div class="fc-modal-overlay" id="fc-modal-overlay"></div>
-                
+
+                <!-- Regular Forecast Import Modal (CSV) -->
+                <div class="fc-modal" id="fc-import-modal">
+                    <div class="fc-modal-content fc-modal-content--large">
+                        <h3>Import Regular Forecast (CSV)</h3>
+                        <div class="fc-modal-body">
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Year *</label>
+                                    <input type="number" id="fc-import-year" placeholder="YYYY">
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Country *</label>
+                                    <select id="fc-import-country" onchange="onFcImportCountryChange()">
+                                        <option value="">Select Country</option>
+                                    </select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Marketplace *</label>
+                                    <select id="fc-import-marketplace" onchange="onFcImportMarketplaceChange()">
+                                        <option value="">Select Marketplace</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="fc-import-resolved" style="font-size:12px;color:#475569;margin:4px 0 12px;">Select Country + Marketplace to resolve company.</div>
+                            <p style="font-size:12px;color:#475569;line-height:1.5;margin:0 0 8px;">
+                                CSV columns: <strong>sku, jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec</strong>.<br>
+                                Do NOT include company/country/marketplace — they come from the selection above. First row must be the header row.
+                            </p>
+                            <p style="margin:0 0 12px;">
+                                <a href="#" id="fc-import-template-link" onclick="downloadFcImportTemplate(); return false;" style="font-weight:600;color:#0080bb;text-decoration:underline;cursor:pointer;">Download CSV Template</a>
+                            </p>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>CSV File *</label>
+                                    <input type="file" id="fc-import-file" accept=".csv,text/csv">
+                                </div>
+                            </div>
+                            <div id="fc-import-result" style="display:none;margin-top:12px;max-height:240px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;font-size:12px;"></div>
+                        </div>
+                        <div class="fc-modal-actions">
+                            <button class="fc-btn fc-btn--cancel" onclick="closeFcImportModal()">Close</button>
+                            <button class="fc-btn fc-btn--add" id="fc-import-run-btn" onclick="runFcImport()">Import</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Mode Selection Modal -->
                 <div class="fc-modal" id="fc-mode-select-modal">
                     <div class="fc-modal-content">

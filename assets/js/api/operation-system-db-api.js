@@ -760,6 +760,31 @@ window.KM.DB.importMarketplaceSkusBatch = async function(rows, options) {
     return json;
 };
 
+window.KM.DB.importFcRegularForecastBatch = async function(rows, options) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, importFcRegularForecastBatch skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var opts = Object.assign({ forecastStatusDefault: 'draft', sourceDefault: 'import' }, options || {});
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+            action: 'importFcRegularForecastBatch',
+            rows: rows || [],
+            options: opts
+        })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    // Reload DB only after a successful import; return the full API result either way.
+    if (json && json.success) {
+        await loadOperationDb({ force: true });
+    }
+    return json;
+};
+
 // ========================================
 // Debug & Reload Helpers
 // ========================================

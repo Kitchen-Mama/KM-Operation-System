@@ -388,7 +388,7 @@ function updateActionButtons(tab) {
     
     // Show Regular buttons
     document.querySelectorAll('.fc-btn-regular').forEach(btn => {
-      if (btn.id === 'fc-edit-btn' || btn.id === 'fc-add-btn') {
+      if (btn.id === 'fc-edit-btn' || btn.id === 'fc-add-btn' || btn.id === 'fc-import-btn') {
         btn.style.display = fcEditState.isEditing ? 'none' : 'inline-flex';
       } else if (btn.id === 'fc-save-btn' || btn.id === 'fc-cancel-btn') {
         btn.style.display = fcEditState.isEditing ? 'inline-flex' : 'none';
@@ -1796,7 +1796,7 @@ function _getDbFcRegularData() {
             category: r.category,
             series: r.series,
             months: [r.jan, r.feb, r.mar, r.apr, r.may, r.jun, r.jul, r.aug, r.sep, r.oct, r.nov, r.dec]
-                .map(function(v) { return Number(v) || 0; }),
+                .map(function(v) { return Math.ceil(Number(v) || 0); }), // whole-unit display
             forecastStatus: r.forecastStatus,
             fcShare: r.fcShare
         };
@@ -1886,6 +1886,333 @@ window.initFcSummaryPage = function() {
     // Defer slightly so dropdown init (also deferred) has run; panel rebuild is order-independent.
     setTimeout(_fcSummaryEnsureDbAndRender, 60);
 };
+
+// ========================================
+// Regular Forecast Import (CSV -> KM.DB.importFcRegularForecastBatch)
+// Country + Marketplace are selected in the modal; company/country/marketplace/marketplace_id
+// are resolved from the marketplaces registry and attached to every row. CSV carries only
+// sku + jan..dec.
+// ========================================
+var FC_IMPORT_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+var _fcImportResolved = null; // { company, country, marketplace, marketplaceId }
+
+function _fcImportActiveMarketplaces() {
+    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
+}
+
+function _fcImportSetResolvedText(message, color) {
+    var el = document.getElementById('fc-import-resolved');
+    if (!el) return;
+    el.style.color = color || '#475569';
+    el.textContent = message;
+}
+
+function openFcImportModal() {
+    var yearEl = document.getElementById('fc-import-year');
+    if (yearEl) {
+        var ySel = document.getElementById('fc-year-select');
+        yearEl.value = (ySel && ySel.value) ? ySel.value : String(new Date().getFullYear());
+    }
+    var countrySel = document.getElementById('fc-import-country');
+    if (countrySel) {
+        var active = _fcImportActiveMarketplaces();
+        var countries = [];
+        active.forEach(function(m) { if (m.country && countries.indexOf(m.country) === -1) countries.push(m.country); });
+        countries.sort();
+        countrySel.innerHTML = '<option value="">Select Country</option>' +
+            countries.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+    }
+    var mpSel = document.getElementById('fc-import-marketplace');
+    if (mpSel) mpSel.innerHTML = '<option value="">Select Marketplace</option>';
+    _fcImportResolved = null;
+    _fcImportSetResolvedText('Select Country + Marketplace to resolve company.', '#475569');
+    var fileEl = document.getElementById('fc-import-file');
+    if (fileEl) fileEl.value = '';
+    var resultEl = document.getElementById('fc-import-result');
+    if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+    var runBtn = document.getElementById('fc-import-run-btn');
+    if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; runBtn.dataset.mode = ''; }
+    if (typeof showFcModal === 'function') showFcModal('fc-import-modal');
+}
+
+function closeFcImportModal() {
+    if (typeof closeFcModal === 'function') closeFcModal();
+}
+
+// Stable option value for a marketplace registry row: marketplace_id, else company|country|marketplace.
+function _fcImportRowValue(m) {
+    return (m.marketplaceId && m.marketplaceId !== '') ? m.marketplaceId : (m.company + '|' + m.country + '|' + m.marketplace);
+}
+
+function onFcImportCountryChange() {
+    var countrySel = document.getElementById('fc-import-country');
+    var mpSel = document.getElementById('fc-import-marketplace');
+    var country = countrySel ? countrySel.value : '';
+    if (mpSel) {
+        var active = _fcImportActiveMarketplaces();
+        // One option PER registry row (so e.g. "KM Amazon" and "Amazon" under ResUS are distinct),
+        // displaying marketplace_display_name, value = marketplace_id (fallback composite key).
+        var rowsForCountry = active.filter(function(m) { return !country || m.country === country; });
+        mpSel.innerHTML = '<option value="">Select Marketplace</option>' +
+            rowsForCountry.map(function(m) {
+                var val = _fcImportRowValue(m);
+                var label = m.marketplaceDisplayName || m.marketplace || m.marketplaceId || val;
+                return '<option value="' + _fcEscapeHtml(val) + '">' + _fcEscapeHtml(label) + '</option>';
+            }).join('');
+    }
+    _fcImportResolved = null;
+    _fcImportSetResolvedText('Select Country + Marketplace to resolve company.', '#475569');
+}
+
+// Resolve exactly one active marketplace registry row from the selected country + marketplace.
+// Sets _fcImportResolved on success; returns { ok, error? }.
+function _fcResolveImportMarketplace() {
+    _fcImportResolved = null;
+    var mpSel = document.getElementById('fc-import-marketplace');
+    var val = mpSel ? mpSel.value : '';
+    if (!val) return { ok: false, error: 'Select Country and Marketplace.' };
+    // Resolve the EXACT selected registry row by option value (marketplace_id / composite key),
+    // not by country + marketplace text — this disambiguates shared platform names.
+    var matches = _fcImportActiveMarketplaces().filter(function(m) { return _fcImportRowValue(m) === val; });
+    if (matches.length === 0) return { ok: false, error: 'Selected marketplace not found in the active registry.' };
+    if (matches.length > 1) return { ok: false, error: 'Selected marketplace value is ambiguous in the registry.' };
+    var m = matches[0];
+    _fcImportResolved = {
+        company: m.company,
+        country: m.country,
+        marketplace: m.marketplace,
+        marketplaceId: m.marketplaceId || '',
+        displayName: m.marketplaceDisplayName || m.marketplace || (m.marketplaceId || '')
+    };
+    return { ok: true };
+}
+
+function onFcImportMarketplaceChange() {
+    var res = _fcResolveImportMarketplace();
+    if (_fcImportResolved) {
+        _fcImportSetResolvedText(
+            'Resolved → Company: ' + _fcImportResolved.company +
+            ' | Country: ' + _fcImportResolved.country +
+            ' | Marketplace: ' + (_fcImportResolved.displayName || _fcImportResolved.marketplace) +
+            ' | Marketplace ID: ' + (_fcImportResolved.marketplaceId || '(none)'),
+            '#166534'
+        );
+    } else {
+        _fcImportSetResolvedText((res && res.error) ? res.error : 'Select Country + Marketplace to resolve company.', '#b91c1c');
+    }
+}
+
+// Quote / escaped-quote / CRLF aware CSV parser.
+function _parseFcCsv(text) {
+    var rows = [], field = '', row = [], inQuotes = false;
+    text = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    for (var i = 0; i < text.length; i++) {
+        var c = text[i];
+        if (inQuotes) {
+            if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; } }
+            else { field += c; }
+        } else {
+            if (c === '"') { inQuotes = true; }
+            else if (c === ',') { row.push(field); field = ''; }
+            else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+            else { field += c; }
+        }
+    }
+    if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+    return rows;
+}
+
+function downloadFcImportTemplate() {
+    var res = _fcResolveImportMarketplace();
+    if (!_fcImportResolved) { alert('Please select Country and Marketplace first.' + (res && res.error ? ('\n' + res.error) : '')); return; }
+    var headers = 'sku,jan,feb,mar,apr,may,jun,jul,aug,sep,oct,nov,dec';
+    var sample = 'SAMPLE-SKU,0,0,0,0,0,0,0,0,0,0,0,0';
+    var csv = headers + '\n' + sample + '\n';
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'fc_regular_forecast_import_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function _fcEscapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function _fcRenderImportError(message) {
+    var box = document.getElementById('fc-import-result');
+    if (!box) { alert(message); return; }
+    box.style.display = 'block';
+    box.innerHTML = '<div style="color:#dc2626;font-weight:600;">Error: ' + _fcEscapeHtml(message) + '</div>';
+}
+
+function _fcRenderImportResult(data, invalidCount) {
+    var box = document.getElementById('fc-import-result');
+    if (!box) return;
+    var s = data.summary || { total: 0, created: 0, updated: 0, skipped: 0, error: 0 };
+    var results = data.results || [];
+    var html = '<div style="font-weight:600;display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">' +
+        '<span>Total: ' + s.total + '</span>' +
+        '<span style="color:#16a34a;">Created: ' + s.created + '</span>' +
+        '<span style="color:#0080bb;">Updated: ' + s.updated + '</span>' +
+        '<span style="color:#d97706;">Skipped: ' + s.skipped + '</span>' +
+        '<span style="color:#dc2626;">Error: ' + s.error + '</span></div>';
+    if (invalidCount > 0) html += '<div style="font-size:11px;color:#dc2626;margin-bottom:6px;">' + invalidCount + ' row(s) missing SKU (reported as errors below).</div>';
+    html += results.map(function(rr) {
+        var color = rr.status === 'created' ? '#16a34a' : rr.status === 'updated' ? '#0080bb' : rr.status === 'skipped' ? '#d97706' : '#dc2626';
+        return '<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #f1f5f9;">' +
+            '<span style="font-weight:600;min-width:64px;color:' + color + ';">' + _fcEscapeHtml(rr.status) + '</span>' +
+            '<span>#' + _fcEscapeHtml(String(rr.rowIndex)) + '</span>' +
+            '<span>' + _fcEscapeHtml(rr.sku || '') + '</span>' +
+            '<span>' + _fcEscapeHtml(rr.message || '') + '</span></div>';
+    }).join('');
+    box.style.display = 'block';
+    box.innerHTML = html;
+}
+
+function runFcImport() {
+    // If the button is in "Done" state (after a clean success), this click completes the modal
+    // instead of re-importing — prevents accidental double imports.
+    var _modeBtn = document.getElementById('fc-import-run-btn');
+    if (_modeBtn && _modeBtn.dataset.mode === 'done') { _fcImportDone(); return; }
+
+    var res = _fcResolveImportMarketplace();
+    if (!_fcImportResolved) { _fcRenderImportError((res && res.error) ? res.error : 'Select Country and Marketplace first.'); return; }
+    var yearEl = document.getElementById('fc-import-year');
+    var year = yearEl ? String(yearEl.value || '').trim() : '';
+    if (!year) { _fcRenderImportError('Year is required.'); return; }
+    var fileEl = document.getElementById('fc-import-file');
+    if (!fileEl || !fileEl.files || !fileEl.files.length) { alert('Please choose a CSV file first.'); return; }
+    if (!(window.KM && window.KM.DB && window.KM.DB.importFcRegularForecastBatch)) { alert('Import API is not available.'); return; }
+
+    var meta = _fcImportResolved;
+    var runBtn = document.getElementById('fc-import-run-btn');
+    var file = fileEl.files[0];
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var cells;
+        try { cells = _parseFcCsv(e.target.result); } catch (err) { _fcRenderImportError('Failed to parse CSV: ' + (err && err.message ? err.message : err)); return; }
+        if (!cells || cells.length < 2) { _fcRenderImportError('No data rows found (need a header row + at least one data row).'); return; }
+        var headers = cells[0].map(function(h) { return String(h == null ? '' : h).trim().toLowerCase(); });
+        var skuIdx = headers.indexOf('sku');
+        if (skuIdx === -1) { _fcRenderImportError('CSV is missing the required "sku" header.'); return; }
+        var monthIdx = {};
+        FC_IMPORT_MONTHS.forEach(function(m) { monthIdx[m] = headers.indexOf(m); });
+
+        var rows = [];
+        var clientErrors = [];
+        var dataRowNum = 0;
+        // Accept non-negative integers/decimals only (e.g. 0, 10, 10.1, 100). Blank = 0.
+        // Reject ABC / N/A / - / test / mixed text. Accepted decimals round UP (whole units).
+        var NUMERIC_RE = /^\d+(\.\d+)?$/;
+        for (var r = 1; r < cells.length; r++) {
+            var raw = cells[r];
+            var allEmpty = raw.every(function(v) { return String(v == null ? '' : v).trim() === ''; });
+            if (allEmpty) continue;
+            dataRowNum++;
+            var sku = String(raw[skuIdx] == null ? '' : raw[skuIdx]).trim();
+            var monthVals = {};
+            var badMonth = null;
+            for (var mi = 0; mi < FC_IMPORT_MONTHS.length; mi++) {
+                var mm = FC_IMPORT_MONTHS[mi];
+                var ci = monthIdx[mm];
+                var v = ci === -1 ? '' : String(raw[ci] == null ? '' : raw[ci]).trim();
+                if (v === '') { monthVals[mm] = 0; continue; }
+                if (!NUMERIC_RE.test(v)) { badMonth = { col: mm, val: v }; break; }
+                monthVals[mm] = Math.ceil(parseFloat(v)); // round up to whole units
+            }
+            if (badMonth) {
+                clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'Non-numeric month value: ' + badMonth.col + '="' + badMonth.val + '"' });
+                continue;
+            }
+            if (!sku) {
+                clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'SKU is required' });
+                continue;
+            }
+            var obj = { sku: sku, year: year, company: meta.company, country: meta.country, marketplace: meta.marketplace, marketplace_id: meta.marketplaceId };
+            FC_IMPORT_MONTHS.forEach(function(m) { obj[m] = monthVals[m]; });
+            rows.push(obj);
+        }
+
+        if (rows.length === 0 && clientErrors.length === 0) { _fcRenderImportError('No data rows found.'); return; }
+
+        if (rows.length === 0) {
+            // All rows rejected client-side; show errors, nothing sent to backend.
+            _fcRenderImportResult({
+                summary: { total: clientErrors.length, created: 0, updated: 0, skipped: 0, error: clientErrors.length },
+                results: clientErrors
+            }, 0);
+            return;
+        }
+
+        if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Importing...'; }
+        window.KM.DB.importFcRegularForecastBatch(rows, { forecastStatusDefault: 'draft', sourceDefault: 'import' })
+            .then(function(result) {
+                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                if (!result || result.success === false) {
+                    _fcRenderImportError(result && result.error ? result.error : 'Import failed. API may not be configured.');
+                    return;
+                }
+                var data = result.data || {};
+                var s = data.summary || { total: 0, created: 0, updated: 0, skipped: 0, error: 0 };
+                var mergedSummary = {
+                    total: (s.total || 0) + clientErrors.length,
+                    created: s.created || 0,
+                    updated: s.updated || 0,
+                    skipped: s.skipped || 0,
+                    error: (s.error || 0) + clientErrors.length
+                };
+                var mergedResults = clientErrors.concat(data.results || []);
+                _fcRenderImportResult({ summary: mergedSummary, results: mergedResults }, 0);
+                // Wrapper already reloaded the DB cache on success — re-render the Regular Forecast table.
+                fcPaginationState.currentPage = 1;
+                renderFcRegularTable();
+                // Clean success (no errors) → switch the action button to "Done" (completion action).
+                // Any errors → keep it as "Import" so the user can fix and retry.
+                if (mergedSummary.error === 0 && runBtn) {
+                    runBtn.textContent = 'Done';
+                    runBtn.dataset.mode = 'done';
+                    runBtn.disabled = false;
+                }
+            })
+            .catch(function(err) {
+                if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                _fcRenderImportError(err && err.message ? err.message : 'Import request failed.');
+            });
+    };
+    reader.onerror = function() { _fcRenderImportError('Could not read the selected file.'); };
+    reader.readAsText(file);
+}
+
+// Completion action for the "Done" state: close modal, clear result/file, reset button.
+function _fcImportDone() {
+    var resultEl = document.getElementById('fc-import-result');
+    if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+    var fileEl = document.getElementById('fc-import-file');
+    if (fileEl) fileEl.value = '';
+    var runBtn = document.getElementById('fc-import-run-btn');
+    if (runBtn) { runBtn.textContent = 'Import'; runBtn.dataset.mode = ''; runBtn.disabled = false; }
+    // Data was already refreshed on successful import; re-render defensively to be safe.
+    if (typeof renderFcRegularTable === 'function') {
+        fcPaginationState.currentPage = 1;
+        renderFcRegularTable();
+    }
+    closeFcImportModal();
+}
+
+window.openFcImportModal = openFcImportModal;
+window.closeFcImportModal = closeFcImportModal;
+window.onFcImportCountryChange = onFcImportCountryChange;
+window.onFcImportMarketplaceChange = onFcImportMarketplaceChange;
+window.downloadFcImportTemplate = downloadFcImportTemplate;
+window.runFcImport = runFcImport;
 
 // ========================================
 // Lifecycle 註冊
