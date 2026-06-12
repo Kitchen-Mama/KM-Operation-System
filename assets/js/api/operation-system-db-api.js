@@ -225,12 +225,39 @@ function normalizeFactoryStockRecord(raw) {
     return {
         factoryStockId: String(r.factory_stock_id || '').trim(),
         sku: String(r.sku || '').trim(),
+        // Current factory_stock schema has NO company / factory_name — company & factory name are
+        // joined from warehouses via warehouse_id. Legacy fields kept only as defensive fallbacks.
+        warehouseId: String(r.warehouse_id || '').trim(),
         company: String(r.company || '').trim(),
         factoryName: String(r.factory_name || '').trim(),
         currentStock: parseFloat(r.current_stock) || 0,
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
         lastTransactionAt: String(r.last_transaction_at || '').trim(),
+        raw: r
+    };
+}
+
+function normalizeFactoryStockMovementRecord(raw) {
+    var r = raw || {};
+    // Actual factory_stock_movements schema:
+    //   factory_stock_movement_id, sku, warehouse_id, movement_type, qty,
+    //   related_entity_type, related_entity_id, before_qty, after_qty, note, created_by, created_at
+    // Read those exact columns; older alias names kept only as defensive fallbacks.
+    return {
+        movementId: String(r.factory_stock_movement_id || r.movement_id || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),
+        factoryName: String(r.factory_name || '').trim(),
+        sku: String(r.sku || '').trim(),
+        movementType: String(r.movement_type || '').trim(),
+        quantity: parseFloat(r.qty != null && r.qty !== '' ? r.qty : r.quantity) || 0,
+        quantityBefore: parseFloat(r.before_qty != null && r.before_qty !== '' ? r.before_qty : r.quantity_before) || 0,
+        quantityAfter: parseFloat(r.after_qty != null && r.after_qty !== '' ? r.after_qty : r.quantity_after) || 0,
+        relatedEntityType: String(r.related_entity_type || r.reference_type || '').trim(),
+        relatedEntityId: String(r.related_entity_id || r.reference_id || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        note: String(r.note || '').trim(),
         raw: r
     };
 }
@@ -338,6 +365,76 @@ function normalizeFcRegularForecastRecord(raw) {
     };
 }
 
+function normalizeWarehouseRecord(raw) {
+    var r = raw || {};
+    return {
+        warehouseId: String(r.warehouse_id || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        warehouseName: String(r.warehouse_name || '').trim(),
+        warehouseType: String(r.warehouse_type || '').trim(),
+        // Optional: surfaced for Movement Log marketplace filter. Empty if the sheet has no such column.
+        marketplace: String(r.marketplace || '').trim(),
+        status: String(r.status || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+function normalizeOverseasInventorySnapshotRecord(raw) {
+    var r = raw || {};
+    return {
+        snapshotId: String(r.snapshot_id || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        siteSku: String(r.site_sku || '').trim(),
+        availableStock: parseFloat(r.available_stock) || 0,
+        reservedStock: parseFloat(r.reserved_stock) || 0,
+        damagedStock: parseFloat(r.damaged_stock) || 0,
+        onTheWayQty: parseFloat(r.on_the_way_qty) || 0,
+        onTheWayEta: String(r.on_the_way_eta || '').trim(),
+        onTheWayBucket: String(r.on_the_way_bucket || '').trim(),
+        eventStatus: String(r.event_status || '').trim(),
+        // Optional warning-threshold columns (read-only; absent -> 0). Used by MVP display warning only.
+        reorderPoint: parseFloat(r.reorder_point) || 0,
+        overstockPoint: parseFloat(r.overstock_point) || 0,
+        lastMovementAt: String(r.last_movement_at || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+function normalizeOverseasInventoryMovementRecord(raw) {
+    var r = raw || {};
+    return {
+        movementId: String(r.movement_id || '').trim(),
+        movementDate: String(r.movement_date || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        siteSku: String(r.site_sku || '').trim(),
+        movementType: String(r.movement_type || '').trim(),
+        // Stock-direction fields (additive; empty if the sheet lacks these columns).
+        // Allowed values: available | reserved | damaged | on_the_way | none
+        fromStockType: String(r.from_stock_type || '').trim(),
+        toStockType: String(r.to_stock_type || '').trim(),
+        quantity: parseFloat(r.quantity) || 0,
+        quantityBefore: parseFloat(r.quantity_before) || 0,
+        quantityAfter: parseFloat(r.quantity_after) || 0,
+        referenceType: String(r.reference_type || '').trim(),
+        referenceId: String(r.reference_id || '').trim(),
+        sourceModule: String(r.source_module || '').trim(),
+        reason: String(r.reason || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
 function normalizeOperationDb(rawDb) {
     var db = rawDb || {};
     return {
@@ -351,7 +448,11 @@ function normalizeOperationDb(rawDb) {
         pricingList: (db.pricing_list || []).map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; }),
         pricingChangeLog: (db.pricing_change_log || []).map(normalizePricingChangeLogRecord).filter(function(r) { return r.logId || r.pricingId; }),
         fcRegularForecast: (db.fc_regular_forecast || []).map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; }),
-        factoryStock: (db.factory_stock || []).map(normalizeFactoryStockRecord).filter(function(r) { return r.factoryStockId || r.sku; })
+        factoryStock: (db.factory_stock || []).map(normalizeFactoryStockRecord).filter(function(r) { return r.factoryStockId || r.sku; }),
+        factoryStockMovements: (db.factory_stock_movements || []).map(normalizeFactoryStockMovementRecord).filter(function(r) { return r.movementId || r.sku; }),
+        warehouses: (db.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; }),
+        overseasInventorySnapshot: (db.overseas_inventory_snapshot || []).map(normalizeOverseasInventorySnapshotRecord).filter(function(r) { return r.warehouseId && r.sku; }),
+        overseasInventoryMovements: (db.overseas_inventory_movements || []).map(normalizeOverseasInventoryMovementRecord).filter(function(r) { return r.movementId || r.warehouseId; })
     };
 }
 
@@ -627,6 +728,26 @@ window.KM.DB.getFactoryStock = function() {
     return window._opDbCache.factoryStock || [];
 };
 
+window.KM.DB.getFactoryStockMovements = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.factoryStockMovements || [];
+};
+
+window.KM.DB.getWarehouses = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.warehouses || [];
+};
+
+window.KM.DB.getOverseasInventorySnapshot = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.overseasInventorySnapshot || [];
+};
+
+window.KM.DB.getOverseasInventoryMovements = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.overseasInventoryMovements || [];
+};
+
 
 window.KM.DB.getDataSourceMode = function() {
     return getOperationDbDataSourceMode();
@@ -779,6 +900,52 @@ window.KM.DB.importFcRegularForecastBatch = async function(rows, options) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     // Reload DB only after a successful import; return the full API result either way.
+    if (json && json.success) {
+        await loadOperationDb({ force: true });
+    }
+    return json;
+};
+
+// ========================================
+// overseas_inventory_snapshot / movements Write Methods
+// ========================================
+
+window.KM.DB.importOverseasInventorySnapshotBatch = async function(rows, options) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, importOverseasInventorySnapshotBatch skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+            action: 'importOverseasInventorySnapshotBatch',
+            rows: rows || [],
+            options: options || {}
+        })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (json && json.success) {
+        await loadOperationDb({ force: true });
+    }
+    return json;
+};
+
+window.KM.DB.adjustOverseasInventory = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, adjustOverseasInventory skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'adjustOverseasInventory' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
     if (json && json.success) {
         await loadOperationDb({ force: true });
     }

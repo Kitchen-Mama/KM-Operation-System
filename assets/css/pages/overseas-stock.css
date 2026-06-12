@@ -1,0 +1,670 @@
+/* ========================================
+   Overseas Stock Page (Warehouse Stock 子模組)
+   #overseas-stock-section 專屬樣式
+   參考 factory-stock.css 的 dual-layer table / filter dropdown 風格
+======================================== */
+
+/* Tabs */
+#overseas-stock-section .ovs-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: var(--space-md);
+    border-bottom: 1px solid #dbe3ea;
+}
+
+#overseas-stock-section .ovs-tab {
+    padding: 8px 18px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+#overseas-stock-section .ovs-tab:hover {
+    color: #1f2937;
+}
+
+#overseas-stock-section .ovs-tab.is-active {
+    color: var(--km-brand-teal, #3abfb6);
+    border-bottom-color: var(--km-brand-teal, #3abfb6);
+}
+
+/* Country tabs (Snapshot) — pill row generated from DB country values */
+#overseas-stock-section .ovs-country-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: var(--space-md);
+}
+#overseas-stock-section .ovs-country-tab {
+    padding: 6px 16px;
+    border: 1px solid var(--filter-border-color, #cbd5e0);
+    background: #ffffff;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+#overseas-stock-section .ovs-country-tab:hover {
+    border-color: var(--km-brand-teal, #3abfb6);
+    color: #1f2937;
+}
+#overseas-stock-section .ovs-country-tab.is-active {
+    background: var(--km-brand-teal, #3abfb6);
+    border-color: var(--km-brand-teal, #3abfb6);
+    color: #ffffff;
+}
+
+/* Filter Bar */
+#overseas-stock-section .fc-filter-bar {
+    display: flex;
+    gap: var(--space-md);
+    align-items: flex-end;
+    margin-bottom: var(--space-lg);
+    padding: var(--space-md);
+    background: var(--bg-surface);
+    border-radius: var(--radius-md);
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 130;
+}
+
+/* Filter Dropdown Styles */
+#overseas-stock-section .fc-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    background: #ffffff;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+    height: var(--filter-height);
+    line-height: 1;
+}
+
+#overseas-stock-section .fc-dropdown-trigger:hover {
+    border-color: #cbd5e0;
+    background: #f7fafc;
+}
+
+#overseas-stock-section .fc-dropdown-text {
+    color: #2d3748;
+    flex: 1;
+}
+
+#overseas-stock-section .fc-dropdown-icon {
+    font-size: 10px;
+    color: #a0aec0;
+    margin-left: 8px;
+}
+
+#overseas-stock-section .fc-dropdown-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #ffffff;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+#overseas-stock-section .fc-dropdown-panel.is-open {
+    display: block;
+}
+
+#overseas-stock-section .fc-checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-size: var(--filter-font-size);
+    color: #2d3748;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+#overseas-stock-section .fc-checkbox-item:hover {
+    background: #f7fafc;
+}
+
+#overseas-stock-section .fc-checkbox-item input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+    width: auto;
+    height: auto;
+    min-width: auto;
+    accent-color: var(--km-brand-teal, #3abfb6);
+}
+
+/* Movement Log: native Date preset select — match the dropdown trigger look */
+#overseas-stock-section .filter-group--dropdown select {
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    background: #ffffff;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    color: #2d3748;
+    cursor: pointer;
+    width: 100%;
+    height: var(--filter-height);
+    box-sizing: border-box;
+}
+
+/* ========================================
+   Table Structure - Dual Layer (mirror Factory Stock)
+======================================== */
+#overseas-stock-section .dual-layer-table {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    max-width: 100%;
+}
+
+#overseas-stock-section .table-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 120;
+    display: flex;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dbe3ea;
+    height: 40px;
+}
+
+#overseas-stock-section .fixed-header {
+    width: 120px;
+    min-width: 110px;
+    height: 40px;
+    flex-shrink: 0;
+    background: #f8f9fa;
+    border-right: 1px solid #dbe3ea;
+    box-shadow: 2px 0 4px rgba(15, 23, 42, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 8px 12px;
+    box-sizing: border-box;
+    font-weight: 600;
+    font-size: 12px;
+    color: #1f2937;
+    white-space: nowrap;
+}
+
+#overseas-stock-section .scroll-header-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+#overseas-stock-section .scroll-header {
+    display: flex;
+    background: #f8f9fa;
+    height: 40px;
+    min-width: max-content;
+}
+
+#overseas-stock-section .header-cell {
+    width: 120px;
+    min-width: 120px;
+    height: 40px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    color: #374151;
+    font-weight: 600;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    border-right: 1px solid #e5e7eb;
+}
+
+#overseas-stock-section .table-body-bar {
+    display: flex;
+    margin-top: 0;
+}
+
+#overseas-stock-section .fixed-col {
+    width: 120px;
+    min-width: 110px;
+    flex-shrink: 0;
+    background: white;
+    z-index: 110;
+    border-right: 1px solid #dbe3ea;
+    box-shadow: 2px 0 4px rgba(15, 23, 42, 0.06);
+    position: sticky;
+    left: 0;
+}
+
+#overseas-stock-section .fixed-body {
+    background: white;
+}
+
+#overseas-stock-section .fixed-row {
+    width: 120px;
+    min-width: 110px;
+    height: 36px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    border-bottom: 1px solid var(--border-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+    font-weight: 600;
+    font-size: 13px;
+    color: #1f2937;
+}
+
+#overseas-stock-section .fixed-row:hover {
+    background: #f1f5f9;
+}
+
+#overseas-stock-section .scroll-col {
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+#overseas-stock-section .scroll-body {
+    background: white;
+}
+
+#overseas-stock-section .scroll-row {
+    display: flex;
+    height: 36px;
+    border-bottom: 1px solid var(--border-light);
+    min-width: max-content;
+    box-sizing: border-box;
+}
+
+#overseas-stock-section .scroll-row:hover {
+    background: #f1f5f9;
+}
+
+#overseas-stock-section .scroll-cell {
+    width: 120px;
+    min-width: 120px;
+    height: 36px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    border-right: 1px solid #e5e7eb;
+    font-size: 13px;
+    color: #374151;
+}
+
+/* Numeric / right-align helper (opt-in via class so non-numeric cols stay left) */
+#overseas-stock-section .scroll-cell--num {
+    justify-content: flex-end;
+}
+
+/* Warning pill */
+#overseas-stock-section .ovs-warn {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+#overseas-stock-section .ovs-warn--low { background: #fef3c7; color: #b45309; }
+#overseas-stock-section .ovs-warn--over { background: #dbeafe; color: #1d4ed8; }
+#overseas-stock-section .ovs-warn--damaged { background: #fee2e2; color: #b91c1c; }
+#overseas-stock-section .ovs-warn--none { color: #94a3b8; }
+
+/* More Info link button */
+#overseas-stock-section .ovs-info-btn {
+    background: none;
+    border: none;
+    color: #0080bb;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+}
+
+/* ========================================
+   Modals
+======================================== */
+#overseas-stock-section .ovs-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 2000;
+}
+#overseas-stock-section .ovs-modal-overlay.is-open {
+    display: block;
+}
+
+#overseas-stock-section .ovs-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2010;
+    width: min(560px, calc(100vw - 48px));
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+}
+#overseas-stock-section .ovs-modal.is-open {
+    display: block;
+}
+
+#overseas-stock-section .ovs-modal-content {
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
+    padding: 20px 22px;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+#overseas-stock-section .ovs-modal-content--large {
+    width: min(680px, calc(100vw - 48px));
+}
+
+#overseas-stock-section .ovs-modal-content h3 {
+    margin: 0 0 14px;
+    font-size: 16px;
+    color: #1f2937;
+}
+
+#overseas-stock-section .ovs-form-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+#overseas-stock-section .ovs-form-group {
+    flex: 1 1 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#overseas-stock-section .ovs-form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+}
+
+#overseas-stock-section .ovs-form-group input,
+#overseas-stock-section .ovs-form-group select {
+    height: 36px;
+    padding: 6px 10px;
+    border: 1px solid var(--filter-border-color, #cbd5e0);
+    border-radius: 6px;
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+#overseas-stock-section .ovs-modal-body .ovs-info-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 8px 12px;
+    font-size: 13px;
+}
+#overseas-stock-section .ovs-info-grid .ovs-info-label {
+    color: #64748b;
+    font-weight: 600;
+}
+#overseas-stock-section .ovs-info-grid .ovs-info-value {
+    color: #1f2937;
+    word-break: break-word;
+}
+
+#overseas-stock-section .ovs-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* Demo badge (mirror factory stock) */
+#overseas-stock-section .demo-badge {
+    background: var(--km-ui-utility, #8b5cf6);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: 12px;
+    vertical-align: middle;
+}
+
+/* ========================================
+   Movement Log Date Range Picker
+   Style parity with Forecast Review (.fr-date-*), duplicated under isolated
+   ovs-date-* classes so Forecast Review's global handlers are never touched.
+======================================== */
+#overseas-stock-section .ovs-date-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9998;
+    display: none;
+}
+#overseas-stock-section .ovs-date-backdrop.is-open { display: block; }
+
+#overseas-stock-section .ovs-date-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 70vw;
+    max-width: 900px;
+    height: 60vh;
+    max-height: 600px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    z-index: 9999;
+    display: none;
+    flex-direction: column;
+}
+#overseas-stock-section .ovs-date-modal.is-open { display: flex; }
+
+#overseas-stock-section .ovs-date-modal-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+#overseas-stock-section .ovs-date-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    border-right: 1px solid #e2e8f0;
+    overflow-y: auto;
+    padding: 1rem 0;
+}
+
+#overseas-stock-section .ovs-preset-item {
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.875rem;
+    color: #4a5568;
+}
+#overseas-stock-section .ovs-preset-item:hover { background: #f7fafc; }
+#overseas-stock-section .ovs-preset-item.is-active {
+    background: #e6f7ff;
+    color: #1e40af;
+    border-left: 3px solid #3b82f6;
+}
+
+#overseas-stock-section .ovs-preset-divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 0.5rem 0;
+}
+
+#overseas-stock-section .ovs-date-content {
+    flex: 1;
+    padding: 1.5rem;
+    overflow-y: auto;
+}
+
+#overseas-stock-section .ovs-date-inputs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+#overseas-stock-section .ovs-date-input-group { flex: 1; }
+#overseas-stock-section .ovs-date-input-group label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+#overseas-stock-section .ovs-date-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    box-sizing: border-box;
+}
+
+#overseas-stock-section .ovs-calendars {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+}
+#overseas-stock-section .ovs-calendar {
+    flex: 1;
+    max-width: 280px;
+}
+#overseas-stock-section .ovs-calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+#overseas-stock-section .ovs-calendar-nav {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    margin: 0;
+    min-width: auto;
+}
+#overseas-stock-section .ovs-calendar-nav:hover {
+    color: #3b82f6;
+    background: #f3f4f6;
+    border-radius: 4px;
+}
+#overseas-stock-section .ovs-calendar-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+#overseas-stock-section .ovs-calendar-body {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+#overseas-stock-section .ovs-calendar-weekday {
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #9ca3af;
+    padding: 0.5rem 0;
+}
+#overseas-stock-section .ovs-calendar-day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #374151;
+}
+#overseas-stock-section .ovs-calendar-day:hover:not(.is-disabled) { background: #f3f4f6; }
+#overseas-stock-section .ovs-calendar-day.is-disabled { color: #d1d5db; cursor: default; }
+#overseas-stock-section .ovs-calendar-day.is-today { font-weight: 600; color: #3b82f6; }
+#overseas-stock-section .ovs-calendar-day.is-start,
+#overseas-stock-section .ovs-calendar-day.is-end {
+    background: #3b82f6;
+    color: white;
+    font-weight: 600;
+}
+#overseas-stock-section .ovs-calendar-day.is-in-range {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+#overseas-stock-section .ovs-date-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e2e8f0;
+}
+#overseas-stock-section .ovs-date-btn {
+    padding: 0.5rem 1.5rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    margin: 0;
+    min-width: auto;
+}
+#overseas-stock-section .ovs-date-btn--cancel { background: #f3f4f6; color: #4b5563; }
+#overseas-stock-section .ovs-date-btn--cancel:hover { background: #e5e7eb; }
+#overseas-stock-section .ovs-date-btn--clear { background: #fef3c7; color: #b45309; }
+#overseas-stock-section .ovs-date-btn--clear:hover { background: #fde68a; }
+#overseas-stock-section .ovs-date-btn--apply { background: #3b82f6; color: white; }
+#overseas-stock-section .ovs-date-btn--apply:hover { background: #2563eb; }
+
+@media (max-width: 768px) {
+    #overseas-stock-section .ovs-date-modal { width: 95vw; height: 80vh; }
+    #overseas-stock-section .ovs-date-modal-body { flex-direction: column; }
+    #overseas-stock-section .ovs-date-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid #e2e8f0;
+        max-height: 150px;
+    }
+    #overseas-stock-section .ovs-calendars { flex-direction: column; gap: 1rem; }
+}

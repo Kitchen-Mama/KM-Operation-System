@@ -109,7 +109,11 @@ function initFactoryStockPage() {
     
     // 立即渲染資料
     renderFactoryStockTable(root);
-    
+
+    // Movement Log (search-gated) init — additive; uses isolated fmv-* selectors so the
+    // snapshot filters/table above are not affected.
+    _initFactoryMovementLog(root);
+
     // 同步滾動
     setTimeout(() => {
         const scrollCol = root.querySelector('.scroll-col');
@@ -284,20 +288,24 @@ function _getDemoFactoryStockData() {
 // ----------------------------------------------------------------------------
 function _getDbFactoryStockData() {
     // Source of truth = factory_stock ONLY. Rows with current_stock = 0 are kept.
+    // Company & Factory are joined from warehouses via warehouse_id (factory_stock no longer
+    // stores company / factory_name): company = warehouses.company, factory = warehouses.warehouse_name.
     // sku_details is used solely to join category/series metadata (NOT as a row universe).
     var rows = (window.KM && window.KM.DB && window.KM.DB.getFactoryStock) ? window.KM.DB.getFactoryStock() : [];
+    var whMap = _factoryWarehouseMap();
     var skuMeta = {};
     var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
     details.forEach(function(d) { if (d.sku) skuMeta[d.sku] = { category: d.category || '', series: d.series || '' }; });
     return rows.map(function(r) {
         var meta = skuMeta[r.sku] || { category: '', series: '' };
+        var wh = whMap[r.warehouseId] || {};
         return {
             sku: r.sku,
-            company: r.company,
+            company: wh.company || r.company || '',
             marketplace: '',
             category: meta.category,
             series: meta.series,
-            factory: r.factoryName,
+            factory: wh.warehouseName || r.factoryName || '',
             stock: Number(r.currentStock) || 0,
             completedOrderMonth0: 0,
             completedOrderMonth1: 0,
@@ -378,6 +386,470 @@ window.debugFactoryDemoData = function() {
     console.log('--- First 10 mapped rows ---');
     console.table(mapped.slice(0, 10));
 };
+
+// ========================================
+// Factory Movement Log (Stage: search-gated read view)
+// Source of truth = factory_stock_movements. Joins:
+//   warehouse_id -> warehouses (factory/warehouse name), fallback factory_name field
+//   sku -> sku_details (category / series)
+// Self-contained: isolated fmv-* selectors + own state; the Factory Stock Snapshot is untouched.
+// ========================================
+var _factoryMovementSearched = false;       // no rows until Search is clicked
+var _factoryMovBound = false;
+var FACTORY_MOV_QTY_NUM = true;
+
+function _fmvEscapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function _factoryWarehouseMap() {
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? window.KM.DB.getWarehouses() : [];
+    var map = {};
+    rows.forEach(function(w) { if (w.warehouseId) map[w.warehouseId] = w; });
+    return map;
+}
+
+function _factorySkuMetaMap() {
+    var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    var map = {};
+    details.forEach(function(d) { if (d.sku) map[d.sku] = { category: d.category || '', series: d.series || '' }; });
+    return map;
+}
+
+// Joined movement rows. locationName = warehouse name (by warehouse_id) || factory_name field.
+function _getDbFactoryMovementData() {
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getFactoryStockMovements) ? window.KM.DB.getFactoryStockMovements() : [];
+    var whMap = _factoryWarehouseMap();
+    var skuMeta = _factorySkuMetaMap();
+    return rows.map(function(m) {
+        var wh = whMap[m.warehouseId];
+        var locationName = (wh && wh.warehouseName) ? wh.warehouseName : (m.factoryName || m.warehouseId || '');
+        var meta = skuMeta[m.sku] || { category: '', series: '' };
+        return {
+            sku: m.sku,
+            locationName: locationName,
+            category: meta.category,
+            series: meta.series,
+            movementType: m.movementType,
+            quantity: Number(m.quantity) || 0,
+            quantityBefore: Number(m.quantityBefore) || 0,
+            quantityAfter: Number(m.quantityAfter) || 0,
+            relatedEntityType: m.relatedEntityType,
+            relatedEntityId: m.relatedEntityId,
+            createdBy: m.createdBy,
+            createdAt: m.createdAt,
+            note: m.note
+        };
+    });
+}
+
+function _factoryMovDistinct(data, key) {
+    var arr = [];
+    data.forEach(function(d) { var v = String(d[key] || '').trim(); if (v && arr.indexOf(v) === -1) arr.push(v); });
+    arr.sort();
+    return arr;
+}
+
+function _factoryMovGetFilter(panel, type) {
+    var p = panel.querySelector('.fmv-dropdown-panel[data-filter="' + type + '"]');
+    if (!p) return [];
+    var allCb = p.querySelector('input[value=""]');
+    var others = p.querySelectorAll('input:not([value=""])');
+    var checked = Array.prototype.filter.call(others, function(cb) { return cb.checked; });
+    if ((allCb && allCb.checked) || checked.length === others.length) return [];
+    return checked.map(function(cb) { return cb.value; });
+}
+
+function _updateFactoryMovFilterText(type, panel) {
+    var p = panel.querySelector('.fmv-dropdown-panel[data-filter="' + type + '"]');
+    var trigger = panel.querySelector('.fmv-dropdown-trigger[data-filter="' + type + '"]');
+    if (!p || !trigger) return;
+    var textSpan = trigger.querySelector('.fmv-dropdown-text');
+    var checked = p.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
+    var total = p.querySelectorAll('input[type="checkbox"]:not([value=""])');
+    if (checked.length === 0) textSpan.textContent = 'None';
+    else if (checked.length === total.length) textSpan.textContent = 'All';
+    else textSpan.textContent = checked.length + ' selected';
+}
+
+function _populateFactoryMovFilters(movPanel) {
+    var data = _getDbFactoryMovementData();
+    var rebuild = function(type, values) {
+        var p = movPanel.querySelector('.fmv-dropdown-panel[data-filter="' + type + '"]');
+        if (!p) return;
+        var html = '<label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>';
+        values.forEach(function(v) {
+            html += '<label class="fc-checkbox-item"><input type="checkbox" value="' + _fmvEscapeHtml(v) + '" checked> ' + _fmvEscapeHtml(v) + '</label>';
+        });
+        p.innerHTML = html;
+    };
+    rebuild('warehouse', _factoryMovDistinct(data, 'locationName'));
+    rebuild('category', _factoryMovDistinct(data, 'category'));
+    rebuild('series', _factoryMovDistinct(data, 'series'));
+}
+
+function _bindFactoryMovControls(movPanel) {
+    var onChange = function() { _factoryMovementSearched = false; renderFactoryMovementTable(); };
+    movPanel.querySelectorAll('.fmv-dropdown-trigger').forEach(function(trigger) {
+        trigger.onclick = function(e) {
+            e.stopPropagation();
+            var type = this.dataset.filter;
+            var p = movPanel.querySelector('.fmv-dropdown-panel[data-filter="' + type + '"]');
+            movPanel.querySelectorAll('.fmv-dropdown-panel').forEach(function(x) { if (x !== p) x.classList.remove('is-open'); });
+            if (p) p.classList.toggle('is-open');
+        };
+    });
+    movPanel.querySelectorAll('.fmv-dropdown-panel').forEach(function(panel) {
+        panel.onclick = function(e) { e.stopPropagation(); };
+        var type = panel.dataset.filter;
+        var allCb = panel.querySelector('input[value=""]');
+        var others = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+        if (allCb) {
+            allCb.onchange = function() {
+                var c = this.checked; others.forEach(function(cb) { cb.checked = c; });
+                _updateFactoryMovFilterText(type, movPanel); onChange();
+            };
+        }
+        others.forEach(function(cb) {
+            cb.onchange = function() {
+                var cnt = Array.prototype.filter.call(others, function(x) { return x.checked; }).length;
+                if (allCb) allCb.checked = cnt === others.length;
+                _updateFactoryMovFilterText(type, movPanel); onChange();
+            };
+        });
+    });
+    // Outside click closes fmv panels.
+    if (!movPanel._fmvOutside) {
+        movPanel._fmvOutside = function(e) {
+            var root = document.querySelector('#factory-stock-section');
+            if (root && !root.contains(e.target)) return;
+            if (!e.target.closest('.fmv-dropdown-trigger') && !e.target.closest('.fmv-dropdown-panel')) {
+                movPanel.querySelectorAll('.fmv-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
+            }
+        };
+        document.addEventListener('click', movPanel._fmvOutside, true);
+    }
+}
+
+function _initFactoryMovementLog(root) {
+    if (!root) root = document.querySelector('#factory-stock-section');
+    var movPanel = root.querySelector('[data-fs-panel="movement"]');
+    if (!movPanel) return;
+    _populateFactoryMovFilters(movPanel);
+    _bindFactoryMovControls(movPanel);
+    ['warehouse', 'category', 'series'].forEach(function(t) { _updateFactoryMovFilterText(t, movPanel); });
+    var skuInput = root.querySelector('#factory-mov-sku-input');
+    if (skuInput) skuInput.oninput = function() { _factoryMovementSearched = false; renderFactoryMovementTable(); };
+    // Bind the Forecast-Review-style date range picker (replaces the old preset <select>).
+    _bindFactoryMovDatePicker();
+    _updateFactoryMovDateTriggerText();
+    // Reset to instruction state on each mount.
+    _factoryMovementSearched = false;
+    renderFactoryMovementTable();
+}
+
+function renderFactoryMovementTable(root) {
+    if (!root) root = document.querySelector('#factory-stock-section');
+    var fixedBody = root.querySelector('#factory-movement-fixed-body');
+    var scrollBody = root.querySelector('#factory-movement-scroll-body');
+    if (!fixedBody || !scrollBody) return;
+
+    if (!_factoryMovementSearched) {
+        fixedBody.innerHTML = '';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">Please select filters and click Search to view movement logs.</div>';
+        return;
+    }
+
+    var data = _getDbFactoryMovementData();
+    if (!data || data.length === 0) {
+        fixedBody.innerHTML = '';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">尚未連接資料來源</div>';
+        return;
+    }
+
+    var movPanel = root.querySelector('[data-fs-panel="movement"]') || root;
+    // Date range from the picker (inclusive, yyyy-MM-dd). Empty = no date filter. Filters by created_at.
+    var startStr = _fmvMovDate.start ? _fmvFormatDate(_fmvMovDate.start) : '';
+    var endStr = _fmvMovDate.end ? _fmvFormatDate(_fmvMovDate.end) : '';
+    var filters = {
+        warehouse: _factoryMovGetFilter(movPanel, 'warehouse'),
+        category: _factoryMovGetFilter(movPanel, 'category'),
+        series: _factoryMovGetFilter(movPanel, 'series'),
+        sku: (root.querySelector('#factory-mov-sku-input') && root.querySelector('#factory-mov-sku-input').value.toLowerCase()) || ''
+    };
+
+    var filtered = data.filter(function(m) {
+        if (startStr || endStr) {
+            var rowDate = (m.createdAt || '').slice(0, 10);
+            if (!rowDate) return false;
+            if (startStr && rowDate < startStr) return false;
+            if (endStr && rowDate > endStr) return false;
+        }
+        if (filters.warehouse.length > 0 && filters.warehouse.indexOf(m.locationName) === -1) return false;
+        if (filters.category.length > 0 && filters.category.indexOf(m.category) === -1) return false;
+        if (filters.series.length > 0 && filters.series.indexOf(m.series) === -1) return false;
+        if (filters.sku && String(m.sku).toLowerCase().indexOf(filters.sku) === -1) return false;
+        return true;
+    });
+
+    var sorted = filtered.slice().sort(function(a, b) {
+        var ka = (a.createdAt || ''), kb = (b.createdAt || '');
+        return ka < kb ? 1 : (ka > kb ? -1 : 0);
+    });
+
+    if (sorted.length === 0) {
+        fixedBody.innerHTML = '';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">No data found</div>';
+        return;
+    }
+
+    fixedBody.innerHTML = sorted.map(function(m) { return '<div class="fixed-row">' + _fmvEscapeHtml(m.sku) + '</div>'; }).join('');
+    scrollBody.innerHTML = sorted.map(function(m) {
+        return '<div class="scroll-row">' +
+            '<div class="scroll-cell">' + _fmvEscapeHtml(m.locationName) + '</div>' +
+            '<div class="scroll-cell">' + _fmvEscapeHtml(m.movementType) + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + (Number(m.quantity) || 0).toLocaleString() + '</div>' +
+            '<div class="scroll-cell">' + _fmvEscapeHtml(m.relatedEntityType) + '</div>' +
+            '<div class="scroll-cell">' + _fmvEscapeHtml(m.relatedEntityId) + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + (Number(m.quantityBefore) || 0).toLocaleString() + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + (Number(m.quantityAfter) || 0).toLocaleString() + '</div>' +
+            '<div class="scroll-cell">' + _fmvEscapeHtml(m.createdBy) + '</div>' +
+            '<div class="scroll-cell">' + _fmvEscapeHtml(m.createdAt) + '</div>' +
+            '<div class="scroll-cell">' + _fmvEscapeHtml(m.note) + '</div>' +
+            '</div>';
+    }).join('');
+
+    // Movement table horizontal scroll sync.
+    setTimeout(function() {
+        var scrollCol = root.querySelector('#factory-movement-scroll-col');
+        var scrollHeader = root.querySelector('#factory-movement-scroll-header');
+        if (scrollCol && scrollHeader) {
+            if (scrollCol._syncHandler) scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
+            scrollCol._syncHandler = function() { scrollHeader.style.transform = 'translateX(-' + scrollCol.scrollLeft + 'px)'; };
+            scrollCol.addEventListener('scroll', scrollCol._syncHandler);
+        }
+    }, 50);
+}
+
+function runFactoryMovementSearch() {
+    _factoryMovementSearched = true;
+    renderFactoryMovementTable();
+}
+
+// ----------------------------------------------------------------------------
+// Factory Movement Date Range Picker (same UX/style as Forecast Review / Overseas).
+// Self-contained: own state + fmvd-* ids/classes. Filters by created_at. Apply requires Search again.
+// ----------------------------------------------------------------------------
+var _fmvMovDate = { start: null, end: null, preset: null };
+var _fmvMovDateTemp = { start: null, end: null, preset: null };
+var _fmvMovCalMonths = { start: new Date(), end: new Date() };
+var _fmvDatePickerBound = false;
+var FMV_PRESET_LABELS = {
+    'today': 'Today', 'yesterday': 'Yesterday',
+    'last-7-days': 'Last 7 days', 'last-30-days': 'Last 30 days',
+    'last-60-days': 'Last 60 days', 'last-90-days': 'Last 90 days',
+    'last-month': 'Last month', 'last-2-months': 'Last 2 months',
+    'last-3-months': 'Last 3 months', 'last-year': 'Last year'
+};
+
+function _fmvFormatDate(date) {
+    if (!date) return '';
+    var y = date.getFullYear();
+    var m = String(date.getMonth() + 1).padStart(2, '0');
+    var d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+}
+function _fmvSameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function _bindFactoryMovDatePicker() {
+    if (_fmvDatePickerBound) return;
+    var modal = document.getElementById('fmvDateModal');
+    var backdrop = document.getElementById('fmvDateBackdrop');
+    if (!modal || !backdrop) return;
+    var cancelBtn = document.getElementById('fmvDateCancel');
+    var clearBtn = document.getElementById('fmvDateClear');
+    var applyBtn = document.getElementById('fmvDateApply');
+    if (cancelBtn) cancelBtn.onclick = function() { closeFactoryMovDateModal(); };
+    if (applyBtn) applyBtn.onclick = function() { _applyFactoryMovDate(); };
+    if (clearBtn) clearBtn.onclick = function() { _clearFactoryMovDate(); };
+    backdrop.onclick = function() { closeFactoryMovDateModal(); };
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal.classList.contains('is-open')) closeFactoryMovDateModal();
+    });
+    modal.querySelectorAll('.fmvd-preset-item').forEach(function(item) {
+        item.onclick = function() { _factoryPresetClick(item.dataset.preset); };
+    });
+    modal.querySelectorAll('.fmvd-calendar-nav').forEach(function(btn) {
+        btn.onclick = function() { _factoryCalendarNav(btn.dataset.nav); };
+    });
+    _fmvDatePickerBound = true;
+}
+
+function openFactoryMovDateModal() {
+    var modal = document.getElementById('fmvDateModal');
+    var backdrop = document.getElementById('fmvDateBackdrop');
+    if (!modal || !backdrop) return;
+    _fmvMovDateTemp = { start: _fmvMovDate.start, end: _fmvMovDate.end, preset: _fmvMovDate.preset };
+    _fmvMovCalMonths.start = _fmvMovDate.start ? new Date(_fmvMovDate.start) : new Date();
+    _fmvMovCalMonths.end = _fmvMovDate.end ? new Date(_fmvMovDate.end) : new Date();
+    backdrop.classList.add('is-open');
+    modal.classList.add('is-open');
+    _updateFactoryMovDateInputs();
+    _updateFactoryPresetHighlight();
+    _renderFactoryCalendars();
+}
+
+function closeFactoryMovDateModal() {
+    var modal = document.getElementById('fmvDateModal');
+    var backdrop = document.getElementById('fmvDateBackdrop');
+    if (modal) modal.classList.remove('is-open');
+    if (backdrop) backdrop.classList.remove('is-open');
+}
+
+function _applyFactoryMovDate() {
+    _fmvMovDate = { start: _fmvMovDateTemp.start, end: _fmvMovDateTemp.end, preset: _fmvMovDateTemp.preset };
+    _updateFactoryMovDateTriggerText();
+    closeFactoryMovDateModal();
+    // Changing the date requires pressing Search again (search-gated consistency).
+    _factoryMovementSearched = false;
+    renderFactoryMovementTable();
+}
+
+function _clearFactoryMovDate() {
+    _fmvMovDate = { start: null, end: null, preset: null };
+    _fmvMovDateTemp = { start: null, end: null, preset: null };
+    _updateFactoryMovDateTriggerText();
+    _updateFactoryPresetHighlight();
+    closeFactoryMovDateModal();
+    _factoryMovementSearched = false;
+    renderFactoryMovementTable();
+}
+
+function _updateFactoryMovDateTriggerText() {
+    var span = document.getElementById('factory-mov-date-text');
+    if (!span) return;
+    if (_fmvMovDate.preset) span.textContent = FMV_PRESET_LABELS[_fmvMovDate.preset] || 'Custom range';
+    else if (_fmvMovDate.start && _fmvMovDate.end) span.textContent = _fmvFormatDate(_fmvMovDate.start) + ' ~ ' + _fmvFormatDate(_fmvMovDate.end);
+    else span.textContent = 'All dates';
+}
+
+function _factoryPresetClick(preset) {
+    var today = new Date();
+    var start = new Date();
+    var end = new Date(today);
+    switch (preset) {
+        case 'today': start = new Date(today); break;
+        case 'yesterday': start.setDate(today.getDate() - 1); end.setDate(today.getDate() - 1); break;
+        case 'last-7-days': start.setDate(today.getDate() - 7); break;
+        case 'last-30-days': start.setDate(today.getDate() - 30); break;
+        case 'last-60-days': start.setDate(today.getDate() - 60); break;
+        case 'last-90-days': start.setDate(today.getDate() - 90); break;
+        case 'last-month': start = new Date(today.getFullYear(), today.getMonth() - 1, 1); end = new Date(today.getFullYear(), today.getMonth(), 0); break;
+        case 'last-2-months': start = new Date(today.getFullYear(), today.getMonth() - 2, 1); end = new Date(today.getFullYear(), today.getMonth(), 0); break;
+        case 'last-3-months': start = new Date(today.getFullYear(), today.getMonth() - 3, 1); end = new Date(today.getFullYear(), today.getMonth(), 0); break;
+        case 'last-year': start = new Date(today.getFullYear() - 1, 0, 1); end = new Date(today.getFullYear() - 1, 11, 31); break;
+    }
+    _fmvMovDateTemp.start = start;
+    _fmvMovDateTemp.end = end;
+    _fmvMovDateTemp.preset = preset;
+    _fmvMovCalMonths.start = new Date(start);
+    _fmvMovCalMonths.end = new Date(end);
+    _updateFactoryMovDateInputs();
+    _updateFactoryPresetHighlight();
+    _renderFactoryCalendars();
+}
+
+function _updateFactoryPresetHighlight() {
+    document.querySelectorAll('#factory-stock-section .fmvd-preset-item').forEach(function(item) {
+        item.classList.toggle('is-active', item.dataset.preset === _fmvMovDateTemp.preset);
+    });
+}
+
+function _updateFactoryMovDateInputs() {
+    var s = document.getElementById('fmvStartDisplay');
+    var e = document.getElementById('fmvEndDisplay');
+    if (s) s.value = _fmvFormatDate(_fmvMovDateTemp.start);
+    if (e) e.value = _fmvFormatDate(_fmvMovDateTemp.end);
+}
+
+function _factoryCalendarNav(nav) {
+    switch (nav) {
+        case 'prev-start': _fmvMovCalMonths.start.setMonth(_fmvMovCalMonths.start.getMonth() - 1); break;
+        case 'next-start': _fmvMovCalMonths.start.setMonth(_fmvMovCalMonths.start.getMonth() + 1); break;
+        case 'prev-end': _fmvMovCalMonths.end.setMonth(_fmvMovCalMonths.end.getMonth() - 1); break;
+        case 'next-end': _fmvMovCalMonths.end.setMonth(_fmvMovCalMonths.end.getMonth() + 1); break;
+    }
+    _renderFactoryCalendars();
+}
+
+function _renderFactoryCalendars() {
+    _renderFactoryCalendar('start');
+    _renderFactoryCalendar('end');
+}
+
+function _renderFactoryCalendar(type) {
+    var month = _fmvMovCalMonths[type];
+    var cap = type.charAt(0).toUpperCase() + type.slice(1);
+    var titleEl = document.getElementById('fmvCalendar' + cap + 'Title');
+    var bodyEl = document.getElementById('fmvCalendar' + cap + 'Body');
+    if (!titleEl || !bodyEl) return;
+    var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    titleEl.textContent = monthNames[month.getMonth()] + ' ' + month.getFullYear();
+    var lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+    var startDow = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
+    var html = '';
+    ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(function(d) { html += '<div class="fr-calendar-weekday">' + d + '</div>'; });
+    for (var i = 0; i < startDow; i++) html += '<div class="fr-calendar-day is-disabled"></div>';
+    var start = _fmvMovDateTemp.start, end = _fmvMovDateTemp.end, todayD = new Date();
+    for (var day = 1; day <= lastDay.getDate(); day++) {
+        var date = new Date(month.getFullYear(), month.getMonth(), day);
+        var classes = ['fr-calendar-day'];
+        if (start && _fmvSameDay(date, start)) classes.push('is-start');
+        if (end && _fmvSameDay(date, end)) classes.push('is-end');
+        if (start && end && date > start && date < end) classes.push('is-in-range');
+        if (_fmvSameDay(date, todayD)) classes.push('is-today');
+        html += '<div class="' + classes.join(' ') + '" data-date="' + date.toISOString() + '" data-type="' + type + '">' + day + '</div>';
+    }
+    bodyEl.innerHTML = html;
+    bodyEl.querySelectorAll('.fr-calendar-day:not(.is-disabled)').forEach(function(dayEl) {
+        dayEl.onclick = function() { _factoryDayClick(new Date(dayEl.dataset.date), dayEl.dataset.type); };
+    });
+}
+
+function _factoryDayClick(date, calType) {
+    var start = _fmvMovDateTemp.start, end = _fmvMovDateTemp.end;
+    if (calType === 'start') {
+        if (end && date > end) { _fmvMovDateTemp.start = end; _fmvMovDateTemp.end = date; }
+        else { _fmvMovDateTemp.start = date; }
+    } else {
+        if (start && date < start) { _fmvMovDateTemp.end = start; _fmvMovDateTemp.start = date; }
+        else { _fmvMovDateTemp.end = date; }
+    }
+    _fmvMovDateTemp.preset = null;
+    _updateFactoryMovDateInputs();
+    _updateFactoryPresetHighlight();
+    _renderFactoryCalendars();
+}
+
+window.openFactoryMovDateModal = openFactoryMovDateModal;
+window.closeFactoryMovDateModal = closeFactoryMovDateModal;
+
+function switchFactoryTab(tab) {
+    var root = document.querySelector('#factory-stock-section');
+    if (!root) return;
+    root.querySelectorAll('.fs-tab').forEach(function(b) { b.classList.toggle('is-active', b.dataset.fsTab === tab); });
+    root.querySelectorAll('.fs-tab-panel').forEach(function(p) { p.style.display = (p.dataset.fsPanel === tab) ? '' : 'none'; });
+    if (tab === 'movement') renderFactoryMovementTable(root);
+    else renderFactoryStockTable(root);
+}
+
+window.switchFactoryTab = switchFactoryTab;
+window.runFactoryMovementSearch = runFactoryMovementSearch;
+window.renderFactoryMovementTable = renderFactoryMovementTable;
 
 // ========================================
 // Lifecycle 註冊

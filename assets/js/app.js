@@ -55,6 +55,7 @@ function showSection(section) {
         const sectionMap = {
             'ops': 'ops-section',
             'factory-stock': 'factory-stock-section',
+            'overseas-stock': 'overseas-stock-section',
             'forecast': 'forecast-section',
             'request-order': 'request-order-section',
             'fc-summary': 'fc-summary-section',
@@ -73,8 +74,9 @@ function showSection(section) {
     
     // 顯示選擇的區塊
     const sectionMap = {
-        'ops': 'ops-section', 
+        'ops': 'ops-section',
         'factory-stock': 'factory-stock-section',
+        'overseas-stock': 'overseas-stock-section',
         'forecast': 'forecast-section',
         'request-order': 'request-order-section',
         'fc-summary': 'fc-summary-section',

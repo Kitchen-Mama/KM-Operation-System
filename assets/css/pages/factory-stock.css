@@ -262,3 +262,112 @@
 #factory-stock-section .scroll-cell:nth-child(n+5) {
     justify-content: flex-end;
 }
+
+/* ========================================
+   Factory Stock Tabs + Movement Log (additive; Snapshot styling untouched)
+======================================== */
+#factory-stock-section .fs-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: var(--space-md);
+    border-bottom: 1px solid #dbe3ea;
+}
+#factory-stock-section .fs-tab {
+    padding: 8px 18px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+#factory-stock-section .fs-tab:hover { color: #1f2937; }
+#factory-stock-section .fs-tab.is-active {
+    color: var(--km-brand-teal, #3abfb6);
+    border-bottom-color: var(--km-brand-teal, #3abfb6);
+}
+
+/* Movement Log filter dropdowns (fmv-*) — mirror the snapshot fc-dropdown look, isolated class */
+#factory-stock-section .filter-group--dropdown select {
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    background: #ffffff;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    color: #2d3748;
+    cursor: pointer;
+    width: 100%;
+    height: var(--filter-height);
+    box-sizing: border-box;
+}
+#factory-stock-section .fmv-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    background: #ffffff;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    box-sizing: border-box;
+    height: var(--filter-height);
+    line-height: 1;
+}
+#factory-stock-section .fmv-dropdown-trigger:hover { border-color: #cbd5e0; background: #f7fafc; }
+#factory-stock-section .fmv-dropdown-text { color: #2d3748; flex: 1; }
+#factory-stock-section .fmv-dropdown-icon { font-size: 10px; color: #a0aec0; margin-left: 8px; }
+#factory-stock-section .fmv-dropdown-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #ffffff;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+#factory-stock-section .fmv-dropdown-panel.is-open { display: block; }
+
+/* Movement table: reset the snapshot's nth-child(n+5) right-align; opt-in numeric via --num */
+#factory-stock-section [data-fs-panel="movement"] .scroll-cell { justify-content: flex-start; }
+#factory-stock-section [data-fs-panel="movement"] .scroll-cell.scroll-cell--num { justify-content: flex-end; }
+
+/* Factory Movement date picker: reuse global .fr-date-* styling, but isolated preset/nav
+   classes (Forecast binds .fr-preset-item / .fr-calendar-nav globally, so we must not reuse those). */
+#factory-stock-section .fmvd-preset-item {
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.875rem;
+    color: #4a5568;
+}
+#factory-stock-section .fmvd-preset-item:hover { background: #f7fafc; }
+#factory-stock-section .fmvd-preset-item.is-active {
+    background: #e6f7ff;
+    color: #1e40af;
+    border-left: 3px solid #3b82f6;
+}
+#factory-stock-section .fmvd-calendar-nav {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    margin: 0;
+    min-width: auto;
+}
+#factory-stock-section .fmvd-calendar-nav:hover { color: #3b82f6; background: #f3f4f6; border-radius: 4px; }
+#factory-stock-section .fr-date-btn--clear { background: #fef3c7; color: #b45309; }
+#factory-stock-section .fr-date-btn--clear:hover { background: #fde68a; }
