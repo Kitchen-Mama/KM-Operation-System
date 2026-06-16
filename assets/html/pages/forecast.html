@@ -1,0 +1,252 @@
+﻿<!-- Forecast Review Section — extracted from index.html (Phase 3-6). Injected into #forecast-mount by KM.partialLoader on the page lifecycle mount. Markup unchanged. -->
+            <section id="forecast-section" class="module-section page-forecast-review">
+                <div class="page-header">
+                    <h2 class="page-title">Forecast Review</h2>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="forecast-filters">
+                    <!-- Date Trigger Button -->
+                    <div class="forecast-filter forecast-filter--date">
+                        <label>Date</label>
+                        <button type="button" class="forecast-date-trigger" id="forecastDateTrigger">
+                            <span class="forecast-date-trigger-text">Last 30 days</span>
+                            <span class="forecast-date-trigger-icon">▼</span>
+                        </button>
+                    </div>
+
+                    <!-- Country -->
+                    <div class="forecast-filter forecast-filter--dropdown">
+                        <label>Country</label>
+                        <button type="button" class="forecast-dropdown-trigger" data-filter="country">
+                            <span class="forecast-dropdown-text">All</span>
+                            <span class="forecast-dropdown-icon">▼</span>
+                        </button>
+                        <div class="forecast-dropdown-panel" data-filter="country">
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'country')"> <strong>All</strong></label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="US" checked onchange="updateForecastFilter('country')"> US</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="JP" checked onchange="updateForecastFilter('country')"> JP</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="UK" checked onchange="updateForecastFilter('country')"> UK</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="DE" checked onchange="updateForecastFilter('country')"> DE</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="CA" checked onchange="updateForecastFilter('country')"> CA</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="FR" checked onchange="updateForecastFilter('country')"> FR</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="IT" checked onchange="updateForecastFilter('country')"> IT</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="ES" checked onchange="updateForecastFilter('country')"> ES</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="CA" checked onchange="updateForecastFilter('country')"> CA</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="JP" checked onchange="updateForecastFilter('country')"> JP</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="AU" checked onchange="updateForecastFilter('country')"> AU</label>
+                        </div>
+                    </div>
+
+                    <!-- Marketplace -->
+                    <div class="forecast-filter forecast-filter--dropdown">
+                        <label>Marketplace</label>
+                        <button type="button" class="forecast-dropdown-trigger" data-filter="marketplace">
+                            <span class="forecast-dropdown-text">All</span>
+                            <span class="forecast-dropdown-icon">▼</span>
+                        </button>
+                        <div class="forecast-dropdown-panel" data-filter="marketplace">
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'marketplace')"> <strong>All</strong></label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateForecastFilter('marketplace')"> Amazon</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Shopify" checked onchange="updateForecastFilter('marketplace')"> Shopify</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateForecastFilter('marketplace')"> Target</label>
+                        </div>
+                    </div>
+
+                    <!-- Category -->
+                    <div class="forecast-filter forecast-filter--dropdown">
+                        <label>Category</label>
+                        <button type="button" class="forecast-dropdown-trigger" data-filter="category">
+                            <span class="forecast-dropdown-text">All</span>
+                            <span class="forecast-dropdown-icon">▼</span>
+                        </button>
+                        <div class="forecast-dropdown-panel" data-filter="category">
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'category')"> <strong>All</strong></label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked onchange="updateForecastFilter('category')"> Electric Can Opener</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Silicone Product" checked onchange="updateForecastFilter('category')"> Silicone Product</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="Manual Opener" checked onchange="updateForecastFilter('category')"> Manual Opener</label>
+                        </div>
+                    </div>
+
+                    <!-- Series -->
+                    <div class="forecast-filter forecast-filter--dropdown">
+                        <label>Series</label>
+                        <button type="button" class="forecast-dropdown-trigger" data-filter="series">
+                            <span class="forecast-dropdown-text">All</span>
+                            <span class="forecast-dropdown-icon">▼</span>
+                        </button>
+                        <div class="forecast-dropdown-panel" data-filter="series">
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'series')"> <strong>All</strong></label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="CO1100" checked onchange="updateForecastFilter('series')"> CO1100</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="CO1150" checked onchange="updateForecastFilter('series')"> CO1150</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="SP3120" checked onchange="updateForecastFilter('series')"> SP3120</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="SP3410" checked onchange="updateForecastFilter('series')"> SP3410</label>
+                            <label class="forecast-checkbox-item"><input type="checkbox" value="MO5600" checked onchange="updateForecastFilter('series')"> MO5600</label>
+                        </div>
+                    </div>
+
+                    <!-- SKU -->
+                    <div class="forecast-filter">
+                        <label>SKU</label>
+                        <input type="text" class="forecast-filter-sku" placeholder="Enter SKU..." />
+                    </div>
+                </div>
+
+                <!-- Chart Area -->
+                <div class="forecast-chart-area">
+                    <!-- Summary Stats Row -->
+                    <div class="forecast-summary-stats">
+                        <!-- 1. Total Sales & Units Sold -->
+                        <div class="forecast-stat-card forecast-stat-card--dual">
+                            <div class="forecast-stat-row">
+                                <div class="forecast-stat-label">Total Sales</div>
+                                <div class="forecast-stat-value" id="forecastTotalSales">$0</div>
+                            </div>
+                            <div class="forecast-stat-row">
+                                <div class="forecast-stat-label">Units Sold</div>
+                                <div class="forecast-stat-value" id="forecastTotalUnits">0</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 2. Sessions & USP -->
+                        <div class="forecast-stat-card forecast-stat-card--dual">
+                            <div class="forecast-stat-row">
+                                <div class="forecast-stat-label">Sessions</div>
+                                <div class="forecast-stat-value" id="forecastTotalSessions">0</div>
+                            </div>
+                            <div class="forecast-stat-row">
+                                <div class="forecast-stat-label">Unit Session Percentage</div>
+                                <div class="forecast-stat-value" id="forecastUSP">0%</div>
+                            </div>
+                        </div>
+                        
+                        <!-- 3. Sales Share by Country -->
+                        <div class="forecast-stat-card forecast-stat-card--chart">
+                            <div class="forecast-stat-label">Sales Share by Country</div>
+                            <canvas id="shareChart" style="max-height: 120px;"></canvas>
+                        </div>
+                        
+                        <!-- 4. Forecast Accuracy -->
+                        <div class="forecast-stat-card forecast-stat-card--accuracy">
+                            <div class="forecast-stat-label">Forecast Accuracy</div>
+                            <div class="forecast-accuracy-list">
+                                <div class="forecast-accuracy-item" onclick="toggleFCDetails(1)">
+                                    <span class="forecast-accuracy-month" id="fcMonth1">Jan 2026</span>
+                                    <span class="forecast-accuracy-rate" id="fcRate1">95%</span>
+                                </div>
+                                <div class="forecast-accuracy-details" id="fcDetails1">
+                                    <div class="forecast-accuracy-detail-row">
+                                        <span>FC:</span>
+                                        <span id="fcValue1">$100,000</span>
+                                    </div>
+                                    <div class="forecast-accuracy-detail-row">
+                                        <span>Actual:</span>
+                                        <span id="fcActual1">$95,000</span>
+                                    </div>
+                                </div>
+                                <div class="forecast-accuracy-item" onclick="toggleFCDetails(2)">
+                                    <span class="forecast-accuracy-month" id="fcMonth2">Dec 2025</span>
+                                    <span class="forecast-accuracy-rate" id="fcRate2">92%</span>
+                                </div>
+                                <div class="forecast-accuracy-details" id="fcDetails2">
+                                    <div class="forecast-accuracy-detail-row">
+                                        <span>FC:</span>
+                                        <span id="fcValue2">$90,000</span>
+                                    </div>
+                                    <div class="forecast-accuracy-detail-row">
+                                        <span>Actual:</span>
+                                        <span id="fcActual2">$82,800</span>
+                                    </div>
+                                </div>
+                                <div class="forecast-accuracy-item" onclick="toggleFCDetails(3)">
+                                    <span class="forecast-accuracy-month" id="fcMonth3">Nov 2025</span>
+                                    <span class="forecast-accuracy-rate" id="fcRate3">88%</span>
+                                </div>
+                                <div class="forecast-accuracy-details" id="fcDetails3">
+                                    <div class="forecast-accuracy-detail-row">
+                                        <span>FC:</span>
+                                        <span id="fcValue3">$85,000</span>
+                                    </div>
+                                    <div class="forecast-accuracy-detail-row">
+                                        <span>Actual:</span>
+                                        <span id="fcActual3">$74,800</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 5. Cumulative Goal -->
+                        <div class="forecast-stat-card forecast-stat-card--goal">
+                            <div class="forecast-stat-label">Cumulative Goal</div>
+                            <div class="forecast-goal-content">
+                                <div class="forecast-goal-row">
+                                    <span class="forecast-goal-label">2026 Target</span>
+                                    <span class="forecast-goal-value" id="forecastGoalTarget">$5,000,000</span>
+                                </div>
+                                <div class="forecast-goal-row">
+                                    <span class="forecast-goal-label">Current Sales</span>
+                                    <span class="forecast-goal-value" id="forecastGoalCurrent">$1,250,000</span>
+                                </div>
+                                <div class="forecast-goal-progress">
+                                    <div class="forecast-goal-progress-bar">
+                                        <div class="forecast-goal-progress-fill" id="forecastGoalFill" style="width: 25%;"></div>
+                                    </div>
+                                    <span class="forecast-goal-percentage" id="forecastGoalPercentage">25%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="forecast-chart-header">
+                        <h3 id="forecastChartTitle">Actual vs Forecast Sales</h3>
+                        <div class="forecast-chart-controls">
+                            <button class="btn btn-secondary forecast-unit-switch-btn" id="forecastUnitSwitchBtn">
+                                <span class="forecast-unit-text">By Sales</span>
+                            </button>
+                            <button class="btn btn-secondary forecast-comparison-btn" id="forecastComparisonBtn">Comparison</button>
+                            <div class="forecast-chart-view-toggle">
+                                <button data-view="daily" class="is-active">Daily</button>
+                                <button data-view="weekly">Weekly</button>
+                                <button data-view="monthly">Monthly</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="forecast-chart-card">
+                        <canvas id="forecastChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Session Chart Area -->
+                <div class="forecast-chart-area" style="margin-top: 2rem;">
+                    <div class="forecast-chart-header">
+                        <h3>Sessions</h3>
+                    </div>
+
+                    <div class="forecast-chart-card">
+                        <canvas id="sessionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Achievement Summary Row -->
+                <div class="forecast-achievement-row">
+                    <!-- Category Achievement -->
+                    <div class="forecast-achievement-card">
+                        <h4 class="forecast-achievement-title">Category Achievement</h4>
+                        <div id="categoryAchievementList" class="forecast-achievement-list"></div>
+                    </div>
+                    
+                    <!-- Top 5 Growth SKUs -->
+                    <div class="forecast-achievement-card">
+                        <h4 class="forecast-achievement-title">Top 5 Growth SKUs</h4>
+                        <div id="top5GrowthList" class="forecast-achievement-list"></div>
+                    </div>
+                    
+                    <!-- Top 5 Worst SKUs -->
+                    <div class="forecast-achievement-card">
+                        <h4 class="forecast-achievement-title">Top 5 Worst SKUs</h4>
+                        <div id="top5WorstList" class="forecast-achievement-list"></div>
+                    </div>
+                </div>
+
+            </section>

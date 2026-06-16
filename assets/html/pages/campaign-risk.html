@@ -1,0 +1,63 @@
+﻿<!-- Promotion Risk Tracker / Campaign Risk Section — extracted from index.html (Phase 3-10). Injected into #campaign-risk-mount by KM.partialLoader on the page lifecycle mount. Markup unchanged. -->
+            <section id="campaign-risk-section" class="module-section">
+                <div class="cr-page-header">
+                    <div class="cr-page-title">
+                        <h2>Promotion Risk Tracker</h2>
+                        <p>Rolling 90-day promotion analysis by SKU</p>
+                    </div>
+                    <div class="cr-page-actions">
+                        <button class="cr-btn cr-btn--filter" id="cr-country-filter-btn" onclick="openCrCountryMarketplaceModal()">US • 1 marketplace</button>
+                        <button class="cr-btn cr-btn--danger" onclick="crDeletePromotions()">Delete Promotions</button>
+                        <button class="cr-btn cr-btn--primary" onclick="crAddPromotion()">+ Add Promotion</button>
+                    </div>
+                </div>
+                
+                <div class="cr-kpi-cards" id="cr-kpi-cards"></div>
+                
+                <div class="cr-filter-panel">
+                    <div class="cr-filter-group cr-filter-group--dropdown">
+                        <div class="cr-filter-group-label">Product Category</div>
+                        <button type="button" class="cr-dropdown-trigger" data-filter="category" aria-expanded="false">
+                            <span class="cr-dropdown-text">All Categories</span>
+                            <span class="cr-dropdown-icon">▼</span>
+                        </button>
+                        <div class="cr-dropdown-panel" data-filter="category" id="cr-category-panel"></div>
+                    </div>
+                    <div class="cr-filter-group cr-filter-group--dropdown">
+                        <div class="cr-filter-group-label">Product Series</div>
+                        <button type="button" class="cr-dropdown-trigger" data-filter="series" aria-expanded="false">
+                            <span class="cr-dropdown-text">All Series</span>
+                            <span class="cr-dropdown-icon">▼</span>
+                        </button>
+                        <div class="cr-dropdown-panel" data-filter="series" id="cr-series-panel"></div>
+                    </div>
+                </div>
+                
+                <div class="dual-layer-table cr-table">
+                    <div class="table-header-bar">
+                        <div class="fixed-header"><div class="header-cell">SKU</div></div>
+                        <div class="scroll-header-viewport">
+                            <div class="scroll-header">
+                                <div class="header-cell cr-hcell--img">Image</div>
+                                <div class="header-cell cr-hcell--name">Product Name</div>
+                                <div class="header-cell">90-Day Promo</div>
+                                <div class="header-cell">Future Promo</div>
+                                <div class="header-cell">Annual Events</div>
+                                <div class="header-cell">LPS</div>
+                                <div class="header-cell">Risk Level</div>
+                                <div class="header-cell">Total Promos</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-body-bar">
+                        <div class="fixed-col">
+                            <div class="fixed-body" id="cr-table-fixed-body"></div>
+                        </div>
+                        <div class="scroll-col">
+                            <div class="scroll-body" id="cr-table-scroll-body"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="cr-pagination" id="cr-pagination"></div>
+            </section>

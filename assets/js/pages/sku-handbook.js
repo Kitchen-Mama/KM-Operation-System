@@ -807,10 +807,43 @@ window.closeSkuDetailModal = closeSkuDetailModal;
 window.toggleSkuhGroup = toggleSkuhGroup;
 window.clearSkuHandbookFilters = clearSkuHandbookFilters;
 
+// Ensure the SKU Handbook markup is present before initSkuHandbook runs.
+// Idempotent: if #sku-handbook-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureSkuHandbookMarkup() {
+    if (document.getElementById('sku-handbook-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('sku-handbook', 'assets/html/pages/sku-handbook.html', '#sku-handbook-mount')
+            .then(function() {
+                if (!document.getElementById('sku-handbook-section')) {
+                    console.warn('[SkuHandbook] partial loaded but #sku-handbook-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[SkuHandbook] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[SkuHandbook] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 // Lifecycle registration
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('sku-handbook-section', {
-        mount() { initSkuHandbook(); },
+        mount() {
+            // Markup is partial-loaded (Phase 3-9). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            _ensureSkuHandbookMarkup().then(function() {
+                var sec = document.getElementById('sku-handbook-section');
+                if (sec) sec.classList.add('active');
+                initSkuHandbook();
+            });
+        },
         unmount() { closeSkuDetailModal(); }
     });
 }

@@ -642,12 +642,11 @@ function _initShDropdowns() {
         const allCb = panel.querySelector('input[value=""]');
         const otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
 
-        // Single-select behavior: checking one unchecks others
+        // "All" toggles every option together (checking All also checks the others).
         if (allCb) {
             allCb.onchange = function() {
-                if (this.checked) {
-                    otherCbs.forEach(cb => cb.checked = false);
-                }
+                const isChecked = this.checked;
+                otherCbs.forEach(cb => cb.checked = isChecked);
                 _updateShDropdownText(filterType, root);
             };
         }
@@ -703,12 +702,43 @@ if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('shippinghistory-section', {
         mount() {
             console.log('[ShippingHistory] mount');
-            if (window.initShippingHistoryPage) {
-                window.initShippingHistoryPage();
-            }
+            // Markup is partial-loaded (Phase 3-1). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            _ensureShippingHistoryMarkup().then(function() {
+                var sec = document.getElementById('shippinghistory-section');
+                if (sec) sec.classList.add('active');
+                if (window.initShippingHistoryPage) {
+                    window.initShippingHistoryPage();
+                }
+            });
         },
         unmount() {
             console.log('[ShippingHistory] unmount');
         }
     });
+}
+
+// Ensure the Shipping History markup is present before its init runs.
+// Idempotent: if #shippinghistory-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureShippingHistoryMarkup() {
+    if (document.getElementById('shippinghistory-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('shippinghistory', 'assets/html/pages/shipping-history.html', '#shippinghistory-mount')
+            .then(function() {
+                if (!document.getElementById('shippinghistory-section')) {
+                    console.warn('[ShippingHistory] partial loaded but #shippinghistory-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[ShippingHistory] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[ShippingHistory] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
 }

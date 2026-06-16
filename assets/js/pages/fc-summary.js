@@ -539,12 +539,28 @@ function initFcSearch() {
   });
 }
 
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', () => {
+// One-time wiring of tabs / search / pagination / modal-overlay listeners.
+// These bind plain (non-cloneNode) listeners, so they must run EXACTLY once.
+// Markup is partial-loaded (Phase 3-4), so this can only run after #fc-summary-section
+// exists. The guard makes it a safe no-op when the markup hasn't been injected yet
+// (e.g. on initial DOMContentLoaded before the user opens FC Summary); the page lifecycle
+// mount calls it again once the partial is present.
+var _fcSummaryStaticInitDone = false;
+function _fcSummaryStaticInit() {
+  if (_fcSummaryStaticInitDone) return;
+  if (!document.getElementById('fc-summary-section')) return;
   initFcTabs();
   initFcSearch();
   initFcPagination();
   updatePaginationInfo(0);
+  var overlay = document.getElementById('fc-modal-overlay');
+  if (overlay) overlay.addEventListener('click', closeFcModal);
+  _fcSummaryStaticInitDone = true;
+}
+
+// Initialize on DOM ready (no-op until the FC Summary partial is injected)
+document.addEventListener('DOMContentLoaded', () => {
+  _fcSummaryStaticInit();
 });
 
 // Re-initialize dropdown when FC Summary section is shown
@@ -1109,10 +1125,8 @@ function closeFcModal() {
   document.querySelectorAll('.fc-modal').forEach(m => m.classList.remove('is-open'));
 }
 
-// Close modal on overlay click
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('fc-modal-overlay')?.addEventListener('click', closeFcModal);
-});
+// Close modal on overlay click — bound once in _fcSummaryStaticInit() after the
+// FC Summary partial is injected (the overlay lives inside the partial markup).
 
 
 // ========================================
@@ -2217,13 +2231,47 @@ window.runFcImport = runFcImport;
 // ========================================
 // Lifecycle 註冊
 // ========================================
+// Ensure the FC Summary markup is present before initFcSummaryPage runs.
+// Idempotent: if #fc-summary-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureFcSummaryMarkup() {
+    if (document.getElementById('fc-summary-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('fc-summary', 'assets/html/pages/fc-summary.html', '#fc-summary-mount')
+            .then(function() {
+                if (!document.getElementById('fc-summary-section')) {
+                    console.warn('[FCSummary] partial loaded but #fc-summary-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[FCSummary] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[FCSummary] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('fc-summary-section', {
         mount() {
             console.log('[FCSummary] mount');
-            if (window.initFcSummaryPage) {
-                window.initFcSummaryPage();
-            }
+            // Markup is partial-loaded (Phase 3-4). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            _ensureFcSummaryMarkup().then(function() {
+                var sec = document.getElementById('fc-summary-section');
+                if (sec) sec.classList.add('active');
+                // Wire tabs/search/pagination/modal-overlay once now that the markup exists
+                // (the initial DOMContentLoaded ran before the partial was injected).
+                _fcSummaryStaticInit();
+                if (window.initFcSummaryPage) {
+                    window.initFcSummaryPage();
+                }
+            });
         },
         unmount() {
             console.log('[FCSummary] unmount');

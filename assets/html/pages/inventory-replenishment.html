@@ -1,0 +1,396 @@
+﻿<!-- Inventory Replenishment Section (ops-section) — extracted from index.html (Phase 3-12). Injected into #inventory-replenishment-mount by KM.partialLoader on the page lifecycle mount. Markup unchanged. -->
+            <section id="ops-section" class="module-section">
+                <div id="opsSection" class="page-inventory">
+                    <h2>Inventory Replenishment</h2>
+                    
+                    <!-- Control Panel (Sticky) -->
+                    <div class="replen-control-panel">
+                        <div class="replen-filters">
+                            <div class="replen-filter-group">
+                                <label>Country</label>
+                                <select id="replenCountry">
+                                    <option value="">Select Country</option>
+                                    <option value="US">US</option>
+                                    <option value="CA">CA</option>
+                                    <option value="UK">UK</option>
+                                    <option value="DE">DE</option>
+                                    <option value="FR">FR</option>
+                                    <option value="AU">AU</option>
+                                    <option value="JP">JP</option>
+                                    <option value="SG">SG</option>
+                                    <option value="ES">ES</option>
+                                    <option value="NL">NL</option>
+                                </select>
+                            </div>
+                            <div class="replen-filter-group">
+                                <label>Marketplace</label>
+                                <select id="replenMarketplace">
+                                    <option value="">Select Marketplace</option>
+                                    <option value="Amazon">Amazon</option>
+                                    <option value="KM Walmart">KM Walmart</option>
+                                    <option value="Target">Target</option>
+                                    <option value="Shopify">Shopify</option>
+                                    <option value="Wayfair">Wayfair</option>
+                                    <option value="Newegg">Newegg</option>
+                                </select>
+                            </div>
+                            <div class="replen-filter-group">
+                                <label>LTS Filter</label>
+                                <select id="replenLTSFilter" onchange="renderReplenishment()">
+                                    <option value="">All SKU</option>
+                                    <option value="over90">Over 90+</option>
+                                    <option value="over180">Over 180+</option>
+                                </select>
+                            </div>
+                            <div class="replen-filter-group">
+                                <label>Target Days</label>
+                                <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="Days">
+                            </div>
+                        </div>
+                        <div class="replen-actions">
+                            <div class="replen-actions__filter">
+                                <button class="replen-btn replen-btn--search" onclick="searchReplenishment()">Search</button>
+                            </div>
+                            <div class="replen-actions__ops">
+                                <button class="replen-btn replen-btn--primary" onclick="submitReplenishmentPlans()">Submit Plan</button>
+                                <button class="replen-btn replen-btn--add" onclick="openReplenAddSkuModal()">+ Add SKU</button>
+                                <button class="replen-btn replen-btn--import" onclick="openReplenImportModal()">Import SKU</button>
+                                <button class="replen-btn replen-btn--info" onclick="openEditSkuModal()">Edit SKU</button>
+                                <button class="replen-btn replen-btn--danger" onclick="handleDeleteSku()">Delete SKU</button>
+                                <button class="replen-btn replen-btn--secondary" onclick="openAddMarketplaceModal()">+ Marketplace</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Add SKU Modal for Inventory Replenishment -->
+                    <div class="fc-modal" id="replen-add-sku-modal">
+                        <div class="fc-modal-content">
+                            <h3>Add SKU to Inventory</h3>
+                            <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>SKU *</label>
+                                        <input type="text" id="replen-add-sku" placeholder="Enter SKU..." oninput="prefillReplenSiteSku()">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Country *</label>
+                                        <select id="replen-add-country">
+                                            <option value="US">US</option>
+                                            <option value="UK">UK</option>
+                                            <option value="DE">DE</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Marketplace *</label>
+                                        <select id="replen-add-marketplace" onchange="onReplenAddMarketplaceChange()">
+                                            <option value="">Select marketplace…</option>
+                                        </select>
+                                        <input type="hidden" id="replen-add-marketplace-id">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Company *</label>
+                                        <select id="replen-add-company">
+                                            <option value="KM">Kitchen Mama</option>
+                                            <option value="ResUS">Res US</option>
+                                            <option value="ResTW">Res TW</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Site SKU *</label>
+                                        <input type="text" id="replen-add-site-sku" placeholder="Defaults to SKU" oninput="this.dataset.autofill='0'">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Currency *</label>
+                                        <select id="replen-add-currency">
+                                            <option value="USD">USD</option>
+                                            <option value="EUR">EUR</option>
+                                            <option value="GBP">GBP</option>
+                                            <option value="CAD">CAD</option>
+                                            <option value="JPY">JPY</option>
+                                            <option value="AUD">AUD</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Replenishment Model</label>
+                                        <select id="replen-add-model">
+                                            <option value="sales_driven">Sales Driven</option>
+                                            <option value="forecast_driven">Forecast Driven</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Launch Date</label>
+                                        <input type="date" id="replen-add-launch-date" placeholder="YYYY-MM-DD">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeReplenModal()">Cancel</button>
+                                <button class="fc-btn fc-btn--primary" onclick="saveReplenSku()">Add SKU</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="fc-modal-overlay" id="replen-modal-overlay"></div>
+                    
+                    <!-- Add Marketplace Modal -->
+                    <div class="fc-modal" id="add-marketplace-modal">
+                        <div class="fc-modal-content">
+                            <h3>Add Marketplace</h3>
+                            <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Country *</label>
+                                        <select id="add-mp-country">
+                                            <option value="US">US</option>
+                                            <option value="UK">UK</option>
+                                            <option value="DE">DE</option>
+                                            <option value="CA">CA</option>
+                                            <option value="JP">JP</option>
+                                            <option value="AU">AU</option>
+                                        </select>
+                                        <small style="color: #7FB069; cursor: pointer; margin-top: 4px; display: block; font-size: 12px;" onclick="showAddCountryInput()">+ Add Country</small>
+                                        <div id="add-country-input-container" style="display: none; margin-top: 8px;">
+                                            <input type="text" id="new-country-code" placeholder="Enter country code (e.g. FR)" style="width: 100%; padding: 6px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px;">
+                                            <div style="display: flex; gap: 4px; margin-top: 4px;">
+                                                <button onclick="addNewCountry()" style="flex: 1; background: #7FB069; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Add</button>
+                                                <button onclick="cancelAddCountry()" style="flex: 1; background: #94A3B8; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">Cancel</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Company *</label>
+                                        <select id="add-mp-company">
+                                            <option value="KM">Kitchen Mama</option>
+                                            <option value="ResUS">Res US</option>
+                                            <option value="ResTW">Res TW</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Marketplace *</label>
+                                        <input type="text" id="add-mp-marketplace" placeholder="Enter marketplace name...">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Currency *</label>
+                                        <select id="add-mp-currency">
+                                            <option value="USD">USD</option>
+                                            <option value="EUR">EUR</option>
+                                            <option value="GBP">GBP</option>
+                                            <option value="CAD">CAD</option>
+                                            <option value="JPY">JPY</option>
+                                            <option value="AUD">AUD</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Display Name</label>
+                                        <input type="text" id="add-mp-display-name" placeholder="Optional, defaults to marketplace name">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeAddMarketplaceModal()">Cancel</button>
+                                <button class="fc-btn fc-btn--primary" onclick="saveMarketplace()">Add Marketplace</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Edit SKU Modal -->
+                    <div class="fc-modal" id="replen-edit-sku-modal">
+                        <div class="fc-modal-content">
+                            <h3>Edit Site SKU</h3>
+                            <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>SKU</label>
+                                        <input type="text" id="edit-sku-code" readonly style="background:#f1f5f9;">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Country / Marketplace</label>
+                                        <input type="text" id="edit-sku-site" readonly style="background:#f1f5f9;">
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Replenishment Model</label>
+                                        <select id="edit-sku-model">
+                                            <option value="sales_driven">Sales Driven</option>
+                                            <option value="forecast_driven">Forecast Driven</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Status</label>
+                                        <select id="edit-sku-status">
+                                            <option value="active">Active</option>
+                                            <option value="phasing_out">Phasing Out</option>
+                                            <option value="inactive">Inactive</option>
+                                            <option value="discontinued">Discontinued</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Launch Date</label>
+                                        <input type="date" id="edit-sku-launch-date">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeEditSkuModal()">Cancel</button>
+                                <button class="fc-btn fc-btn--primary" onclick="saveEditSku()">Save</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Import SKU Modal (CSV) -->
+                    <div class="fc-modal" id="replen-import-sku-modal">
+                        <div class="fc-modal-content">
+                            <h3>Import Marketplace SKUs (CSV)</h3>
+                            <div class="fc-modal-body">
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Country *</label>
+                                        <select id="replen-import-country" onchange="onReplenImportCountryChange()">
+                                            <option value="">Select Country</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Marketplace *</label>
+                                        <select id="replen-import-marketplace" onchange="onReplenImportMarketplaceChange()">
+                                            <option value="">Select Marketplace</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div id="replen-import-resolved" style="font-size:12px;color:#475569;margin:4px 0 12px;">Select Country + Marketplace to resolve company/currency.</div>
+                                <p class="replen-import__hint">
+                                    CSV columns: <strong>sku, site_sku, replenishment_model</strong>.<br>
+                                    <strong>sku</strong> required. <strong>site_sku</strong> required. <strong>replenishment_model</strong> optional — one of <code>sales_driven</code> / <code>forecast_driven</code> (blank defaults to sales_driven).<br>
+                                    company / country / marketplace / currency / marketplace_id are resolved automatically from the selected Marketplace — do NOT type them in the CSV. First row must be the header row.
+                                </p>
+                                <p class="replen-import__template">
+                                    <a href="#" class="replen-import__template-link" onclick="downloadReplenImportTemplate(); return false;">Download CSV Template</a>
+                                </p>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>CSV File *</label>
+                                        <input type="file" id="replen-import-file" accept=".csv,text/csv">
+                                    </div>
+                                </div>
+                                <div id="replen-import-result" class="replen-import__result" style="display:none;"></div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeReplenImportModal()">Close</button>
+                                <button class="fc-btn fc-btn--primary" id="replen-import-run-btn" onclick="runReplenImport()">Import</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inventory Overview -->
+                    <div class="ir-overview">
+                        <h3 class="ir-overview__title">(待開發) Inventory Overview</h3>
+                        <div class="ir-overview__tabs" id="irOverviewTabs">
+                            <button class="ir-overview__tab is-active" data-series="All" onclick="setIrOverviewTab('All')">All</button>
+                            <button class="ir-overview__tab" data-series="CO1100" onclick="setIrOverviewTab('CO1100')">CO1100</button>
+                            <button class="ir-overview__tab" data-series="CO1150" onclick="setIrOverviewTab('CO1150')">CO1150</button>
+                            <button class="ir-overview__tab" data-series="CO1200" onclick="setIrOverviewTab('CO1200')">CO1200</button>
+                        </div>
+                        <div class="dual-layer-table ir-overview-table">
+                            <div class="table-header-bar">
+                                <div class="fixed-header" style="width:120px;"><div class="header-cell">SKU</div></div>
+                                <div class="scroll-header-viewport">
+                                    <div class="scroll-header" id="ir-overview-scroll-header">
+                                        <!-- Warning & Recommend: rowspan headers -->
+                                        <div class="iro-rowspan-cell" style="left:0; width:90px;">Warning</div>
+                                        <div class="iro-rowspan-cell" style="left:1080px; width:110px;">Recommend</div>
+                                        <!-- Level 1: Group headers -->
+                                        <div class="km-table__header-row km-table__header-row--level1">
+                                            <div class="km-table__header-cell iro-sales" style="flex:0 0 360px;">Sales</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">Amazon</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">3rd WH</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">Overseas On The Way</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">Factory</div>
+                                        </div>
+                                        <!-- Level 2: Sub headers -->
+                                        <div class="km-table__header-row km-table__header-row--level2">
+                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">1d</div>
+                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">7d</div>
+                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">30d</div>
+                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">90d</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">FBA</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">David</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">Winit</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&le;18 Days</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&le;45 Days</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&#20369;&#37995;</div>
+                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&#21213;&#19968;</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-body-bar">
+                                <div class="fixed-col" style="width:120px;">
+                                    <div class="fixed-body" id="ir-overview-fixed-body"></div>
+                                </div>
+                                <div class="scroll-col" id="ir-overview-scroll-col">
+                                    <div class="scroll-body" id="ir-overview-scroll-body"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Replenishment Table -->
+                    <div class="dual-layer-table">
+                        <!-- Table Header Bar (Sticky) -->
+                        <div class="table-header-bar">
+                            <div class="fixed-header">
+                                <div class="header-cell">SKU</div>
+                            </div>
+                            <div class="scroll-header-viewport">
+                                <div class="scroll-header">
+                                    <!-- First Layer: Group Headers -->
+                                    <div class="km-table__header-row km-table__header-row--level1">
+                                        <div class="km-table__header-cell km-table__header-cell--status">Status</div>
+                                        <div class="km-table__header-cell km-table__header-cell--company">Company</div>
+                                        <div class="km-table__header-cell km-table__header-cell--marketplace">Marketplace</div>
+                                        <div class="km-table__header-cell km-table__header-cell--inventory">Inventory</div>
+                                        <div class="km-table__header-cell km-table__header-cell--sales">Sales</div>
+                                        <div class="km-table__header-cell km-table__header-cell--replen">Replenishment</div>
+                                        <div class="km-table__header-cell km-table__header-cell--factory">工廠Stock</div>
+                                        <div class="km-table__header-cell km-table__header-cell--note-span">AI Action</div>
+                                    </div>
+                                    <!-- Second Layer: Sub Headers -->
+                                    <div class="km-table__header-row km-table__header-row--level2">
+                                        <div class="km-table__header-cell">Current Stock</div>
+                                        <div class="km-table__header-cell">On the Way</div>
+                                        <div class="km-table__header-cell">3rd Party Stock</div>
+                                        <div class="km-table__header-cell">Avg. Sales/day</div>
+                                        <div class="km-table__header-cell">60 days FC</div>
+                                        <div class="km-table__header-cell">Upcoming Event</div>
+                                        <div class="km-table__header-cell">Days of Supply</div>
+                                        <div class="km-table__header-cell">Suggested Qty</div>
+                                        <div class="km-table__header-cell">Planned Qty</div>
+                                        <div class="km-table__header-cell">CN</div>
+                                        <div class="km-table__header-cell">TW</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Table Body Bar -->
+                        <div class="table-body-bar">
+                            <div class="fixed-col">
+                                <div class="fixed-body" id="replenFixedBody"></div>
+                            </div>
+                            <div class="scroll-col">
+                                <div class="scroll-body" id="replenScrollBody"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>

@@ -113,6 +113,24 @@
     cursor: grabbing;
 }
 
+/* Empty-state hint — anchored to the viewport (always centred in view, unaffected by
+   pan/zoom). Shown by renderItems() only when there are no items/arrows. pointer-events:none
+   so it never blocks canvas dragging/clicking. */
+#supplychain-section .sc-empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #94A3B8;
+    font-size: 1rem;
+    text-align: center;
+    pointer-events: none;
+    z-index: 1;
+}
+
 /* Zoom control - bottom right */
 #supplychain-section .sc-zoom-control {
     margin-bottom:20px;

@@ -854,13 +854,44 @@ window.renderFactoryMovementTable = renderFactoryMovementTable;
 // ========================================
 // Lifecycle 註冊
 // ========================================
+// Ensure the Factory Stock markup is present before initFactoryStockPage runs.
+// Idempotent: if #factory-stock-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureFactoryStockMarkup() {
+    if (document.getElementById('factory-stock-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('factory-stock', 'assets/html/pages/factory-stock.html', '#factory-stock-mount')
+            .then(function() {
+                if (!document.getElementById('factory-stock-section')) {
+                    console.warn('[FactoryStock] partial loaded but #factory-stock-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[FactoryStock] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[FactoryStock] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('factory-stock-section', {
         mount() {
             console.log('[FactoryStock] mount');
-            if (window.initFactoryStockPage) {
-                window.initFactoryStockPage();
-            }
+            // Markup is partial-loaded (Phase 3-2). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            _ensureFactoryStockMarkup().then(function() {
+                var sec = document.getElementById('factory-stock-section');
+                if (sec) sec.classList.add('active');
+                if (window.initFactoryStockPage) {
+                    window.initFactoryStockPage();
+                }
+            });
         },
         unmount() {
             console.log('[FactoryStock] unmount');

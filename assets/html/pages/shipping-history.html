@@ -1,0 +1,78 @@
+<!-- Shipping History / Shipment Overview Section — extracted from index.html (Frontend Modularization Phase 3-1).
+     Markup is identical to the original inline section; injected into #shippinghistory-mount by KM.partialLoader.
+     NOTE: route key (shippinghistory) and section id (shippinghistory-section) intentionally unchanged. -->
+<section id="shippinghistory-section" class="module-section">
+    <div class="page-shipping-history">
+        <div class="page-header">
+            <h2 class="page-title">Shipping History</h2>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="fc-filter-bar">
+            <!-- Date Range -->
+            <div class="filter-group">
+                <label>Date</label>
+                <button type="button" class="history-date-trigger" id="historyDateTrigger">
+                    <span class="history-date-trigger-text">Last 30 days</span>
+                    <span class="history-date-trigger-icon">▼</span>
+                </button>
+            </div>
+
+            <!-- Country -->
+            <div class="filter-group filter-group--dropdown">
+                <label>Country</label>
+                <button type="button" class="sh-dropdown-trigger" data-filter="country">
+                    <span class="sh-dropdown-text">All</span>
+                    <span class="sh-dropdown-icon">▼</span>
+                </button>
+                <div class="sh-dropdown-panel" data-filter="country">
+                    <label class="sh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="US" checked> US</label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="UK" checked> UK</label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="DE" checked> DE</label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="CA" checked> CA</label>
+                </div>
+            </div>
+
+            <!-- SKU -->
+            <div class="filter-group filter-group--sku">
+                <label>SKU</label>
+                <input type="text" placeholder="Search SKU..." />
+            </div>
+
+            <!-- Shipping Method -->
+            <div class="filter-group filter-group--dropdown">
+                <label>Shipping Method</label>
+                <button type="button" class="sh-dropdown-trigger" data-filter="method">
+                    <span class="sh-dropdown-text">All</span>
+                    <span class="sh-dropdown-icon">▼</span>
+                </button>
+                <div class="sh-dropdown-panel" data-filter="method">
+                    <label class="sh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="Air Freight" checked> Air Freight</label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="Sea Freight" checked> Sea Freight</label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="AGL Ship" checked> AGL Ship</label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="Private Ship" checked> Private Ship</label>
+                    <label class="sh-checkbox-item"><input type="checkbox" value="Express" checked> Express</label>
+                </div>
+            </div>
+
+            <!-- Search Button -->
+            <div class="filter-group">
+                <label>&nbsp;</label>
+                <button class="btn btn-primary">Search</button>
+            </div>
+        </div>
+
+        <!-- Results Area -->
+        <div class="history-results">
+            <!-- Empty State -->
+            <div class="history-empty-state">
+                <p>Use the filters above and click <strong>Search</strong> to view shipping history.</p>
+            </div>
+
+            <!-- Results List -->
+            <div class="history-list" hidden></div>
+        </div>
+    </div>
+</section>

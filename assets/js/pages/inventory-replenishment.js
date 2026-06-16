@@ -224,16 +224,12 @@ function prefillReplenSiteSku() {
 }
 window.prefillReplenSiteSku = prefillReplenSiteSku;
   
+// The modal-overlay listener lives inside the partial markup (Phase 3-12), so it is bound
+// once via _inventoryReplenStaticInit() after the markup is injected. On the initial
+// DOMContentLoaded (before the user opens the page) the markup isn't present yet, so this
+// is a safe no-op; the page lifecycle mount calls it again once the partial exists.
 document.addEventListener('DOMContentLoaded', () => {
-  const overlay = document.getElementById('replen-modal-overlay');
-  if (overlay) {
-    overlay.addEventListener('click', function() {
-      closeReplenModal();
-      closeAddMarketplaceModal();
-      closeEditSkuModal();
-      closeReplenImportModal();
-    });
-  }
+  _inventoryReplenStaticInit();
 });
 
 // ========================================
@@ -364,10 +360,13 @@ function closeIrShipmentPopover() {
 
 // Init: hook into showSection lifecycle after all scripts loaded
 document.addEventListener('DOMContentLoaded', () => {
-    renderIrOverview();
-    syncIrOverviewScroll();
+    // Once-only DOM bindings (overlay close + overview scroll sync) run after the partial is
+    // injected — no-op here on first load, re-attempted by the lifecycle mount. The overview
+    // render itself happens via the wrapped renderReplenishment on mount.
+    _inventoryReplenStaticInit();
 
-    // Wrap renderReplenishment (defined in app.js, loaded after this file)
+    // Wrap renderReplenishment (defined in app.js, loaded after this file). DOM-independent,
+    // so it is safe to apply now; the wrap adds renderIrOverview() after each replenishment render.
     const _origRenderReplen = window.renderReplenishment;
     if (typeof _origRenderReplen === 'function') {
         window.renderReplenishment = function() {
@@ -2345,13 +2344,66 @@ window.debugInventoryDemoData = function() {
 // ========================================
 // Lifecycle 註冊
 // ========================================
+// Ensure the Inventory Replenishment markup is present before initialization runs.
+// Idempotent: if #ops-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureInventoryReplenishmentMarkup() {
+    if (document.getElementById('ops-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('inventory-replenishment', 'assets/html/pages/inventory-replenishment.html', '#inventory-replenishment-mount')
+            .then(function() {
+                if (!document.getElementById('ops-section')) {
+                    console.warn('[Replenishment] partial loaded but #ops-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[Replenishment] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[Replenishment] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
+// One-time wiring of the modal-overlay close listener + overview scroll sync. These bind plain
+// (non-cloneNode) listeners, so they must run EXACTLY once. Markup is partial-loaded (Phase 3-12),
+// so this is a safe no-op until #ops-section exists; mount calls it again once the partial is present.
+var _invReplenStaticInitDone = false;
+function _inventoryReplenStaticInit() {
+    if (_invReplenStaticInitDone) return;
+    if (!document.getElementById('ops-section')) return;
+    var overlay = document.getElementById('replen-modal-overlay');
+    if (overlay) {
+        overlay.addEventListener('click', function() {
+            closeReplenModal();
+            closeAddMarketplaceModal();
+            closeEditSkuModal();
+            closeReplenImportModal();
+        });
+    }
+    if (typeof syncIrOverviewScroll === 'function') syncIrOverviewScroll();
+    _invReplenStaticInitDone = true;
+}
+
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('ops-section', {
         mount() {
             console.log('[Replenishment] mount');
-            if (typeof bindReplenFilterDependencies === 'function') bindReplenFilterDependencies();
-            if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
-            renderReplenishment();
+            // Markup is partial-loaded (Phase 3-12). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open), wire the once-only
+            // listeners, and run the existing initialization unchanged.
+            _ensureInventoryReplenishmentMarkup().then(function() {
+                var sec = document.getElementById('ops-section');
+                if (sec) sec.classList.add('active');
+                _inventoryReplenStaticInit();
+                if (typeof bindReplenFilterDependencies === 'function') bindReplenFilterDependencies();
+                if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+                renderReplenishment();
+            });
         },
         unmount() {
             console.log('[Replenishment] unmount');

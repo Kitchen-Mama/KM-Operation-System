@@ -392,7 +392,13 @@
     box-sizing: border-box;
     overflow-x: hidden;
 }
+/* Large modal: the WIDTH must live on the .ovs-modal wrapper, not the content. Setting it on
+   the content made it wider (680) than its wrapper (560) -> right-side clipping + h-scroll.
+   Content now fills the wrapper; the import modal wrapper carries the large width below. */
 #overseas-stock-section .ovs-modal-content--large {
+    width: 100%;
+}
+#overseas-stock-section #overseas-import-modal {
     width: min(680px, calc(100vw - 48px));
 }
 

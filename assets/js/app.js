@@ -46,7 +46,9 @@ window.toggleSidebar = toggleSidebar;
 // 區塊切換函式
 function showSection(section) {
     // 隱藏所有區塊
-    document.getElementById('home-section').style.display = 'none';
+    // home-section is partial-loaded (Phase 1) and may not be in the DOM yet — null-guard it.
+    var _homeSection = document.getElementById('home-section');
+    if (_homeSection) _homeSection.style.display = 'none';
     document.getElementById('world-time-bar').style.display = 'none';
     document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
     
@@ -93,9 +95,9 @@ function showSection(section) {
         const targetSection = document.getElementById(targetSectionId);
         if (targetSection) {
             targetSection.classList.add('active');
-        } else {
-            console.error('Section not found:', targetSectionId);
         }
+        // If the section isn't in the DOM yet, it's a partial-loaded page (e.g. shippinghistory):
+        // its lifecycle mount injects the markup and applies the 'active' class after load.
     }
     
     // 更新選單狀態
@@ -107,71 +109,17 @@ function showSection(section) {
         }
     }
     
-    if (section === 'forecast') {
-        setTimeout(() => {
-            if (window.initForecastReviewPage) {
-                window.initForecastReviewPage();
-            }
-        }, 100);
-    }
-    if (section === 'request-order') {
-        setTimeout(() => {
-            if (window.initRequestOrderSection) {
-                window.initRequestOrderSection();
-            }
-        }, 100);
-    }
-    if (section === 'fc-summary') {
-        setTimeout(() => {
-            if (window.initFcSummaryPage) {
-                window.initFcSummaryPage();
-            }
-        }, 100);
-    }
+    // forecast: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-2)
+    // request-order: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-1)
+    // fc-summary: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-2)
     // factory-stock: 已由 lifecycle mount 接管，手動 init 已移除
-    if (section === 'skuDetails') {
-        renderSkuDetailsTable();
-        setTimeout(() => {
-            if (window.initSkuScroll) {
-                window.initSkuScroll();
-            }
-            if (window.updateSkuScrollWidth) {
-                window.updateSkuScrollWidth();
-            }
-            if (window.updateSkuScrollHeight) {
-                window.updateSkuScrollHeight();
-            }
-        }, 100);
-    }
+    // skuDetails: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-2)
+    //   (scroll height/width 由 scroll-sync.js / sku-details.js 的 MutationObserver 於 .active 時自動重算)
     // ops: 已由 lifecycle mount 接管，手動 init 已移除
-    if (section === 'supplychain') {
-        setTimeout(() => {
-            if (window.CanvasController) {
-                window.CanvasController.init();
-            }
-        }, 100);
-    }
-    if (section === 'sku-handbook') {
-        setTimeout(() => {
-            if (window.initSkuHandbook) {
-                window.initSkuHandbook();
-            }
-        }, 100);
-    }
-    if (section === 'shippinghistory') {
-        setTimeout(() => {
-            if (window.initShippingHistoryPage) {
-                window.initShippingHistoryPage();
-            }
-        }, 200);
-    }
-    if (section === 'campaign-risk') {
-        setTimeout(() => {
-            if (window.renderCampaignRiskTracker) {
-                window.renderCampaignRiskTracker();
-            }
-        }, 100);
-    }
+    // supplychain: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-4)
+    // sku-handbook: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-1)
+    // shippinghistory: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-1)
+    // campaign-risk: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-3)
 }
 
 // 清空運營管理表格
@@ -386,13 +334,19 @@ window.addEventListener('DOMContentLoaded', () => {
             } catch(e) {}
         });
     }
-    renderRecords();
-    initWorldTimes();
-    renderHomepage();
-    initSkuUnifiedScroll();
-
-    // 設定初始頁面生命週期（首頁）
+    // 設定初始頁面生命週期（首頁）— MUST run before the other startup inits.
+    // Home markup is partial-loaded (Phase 1): switchTo('home-section') triggers the Home mount,
+    // which loads the partial and renders. Running it first ensures a failure in any later init
+    // below cannot abort startup and leave the homepage blank (only the world time bar showing).
     if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {
         KM.lifecycle.switchTo('home-section');
+    } else if (window.renderHomepage) {
+        renderHomepage();
     }
+
+    // Remaining startup inits — each guarded so one failure can't abort the rest (or Home).
+    try { renderRecords(); } catch (e) { console.error('[App] renderRecords failed:', e); }
+    try { initWorldTimes(); } catch (e) { console.error('[App] initWorldTimes failed:', e); }
+    try { renderHomepage(); } catch (e) { console.error('[App] renderHomepage failed:', e); }
+    try { initSkuUnifiedScroll(); } catch (e) { console.error('[App] initSkuUnifiedScroll failed:', e); }
 });

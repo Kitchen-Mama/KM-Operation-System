@@ -1,0 +1,156 @@
+﻿<!-- Request Order Section (下單系統) — extracted from index.html (Phase 3-5). Injected into #request-order-mount by KM.partialLoader on the page lifecycle mount. Markup unchanged. -->
+            <section id="request-order-section" class="module-section page-request-order">
+                <div class="page-header">
+                    <h2 class="page-title">下單系統</h2>
+                </div>
+                
+                <!-- Filter Bar -->
+                <div class="ro-filters">
+                    <div class="ro-filter ro-filter--date">
+                        <label>Date</label>
+                        <button type="button" class="ro-date-trigger" id="roDateTrigger">
+                            <span class="ro-date-trigger-text">Last 3 months</span>
+                            <span class="ro-date-trigger-icon">▼</span>
+                        </button>
+                    </div>
+                    
+                    <div class="ro-filter ro-filter--dropdown">
+                        <label>Country</label>
+                        <button type="button" class="ro-dropdown-trigger" data-filter="country">
+                            <span class="ro-dropdown-text">All</span>
+                            <span class="ro-dropdown-icon">▼</span>
+                        </button>
+                        <div class="ro-dropdown-panel" data-filter="country">
+                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'country')"> <strong>All</strong></label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="US" checked onchange="updateRequestOrderFilter('country')"> US</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="UK" checked onchange="updateRequestOrderFilter('country')"> UK</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="DE" checked onchange="updateRequestOrderFilter('country')"> DE</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="CA" checked onchange="updateRequestOrderFilter('country')"> CA</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="JP" checked onchange="updateRequestOrderFilter('country')"> JP</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="AU" checked onchange="updateRequestOrderFilter('country')"> AU</label>
+                        </div>
+                    </div>
+                    
+                    <div class="ro-filter ro-filter--dropdown">
+                        <label>Marketplace</label>
+                        <button type="button" class="ro-dropdown-trigger" data-filter="marketplace">
+                            <span class="ro-dropdown-text">All</span>
+                            <span class="ro-dropdown-icon">▼</span>
+                        </button>
+                        <div class="ro-dropdown-panel" data-filter="marketplace">
+                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'marketplace')"> <strong>All</strong></label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateRequestOrderFilter('marketplace')"> Amazon</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Shopify" checked onchange="updateRequestOrderFilter('marketplace')"> Shopify</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateRequestOrderFilter('marketplace')"> Target</label>
+                        </div>
+                    </div>
+                    
+                    <div class="ro-filter ro-filter--dropdown">
+                        <label>Category</label>
+                        <button type="button" class="ro-dropdown-trigger" data-filter="category">
+                            <span class="ro-dropdown-text">All</span>
+                            <span class="ro-dropdown-icon">▼</span>
+                        </button>
+                        <div class="ro-dropdown-panel" data-filter="category">
+                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'category')"> <strong>All</strong></label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked onchange="updateRequestOrderFilter('category')"> Electric Can Opener</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Silicone Product" checked onchange="updateRequestOrderFilter('category')"> Silicone Product</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Manual Opener" checked onchange="updateRequestOrderFilter('category')"> Manual Opener</label>
+                        </div>
+                    </div>
+                    
+                    <div class="ro-filter">
+                        <label>SKU</label>
+                        <input type="text" class="ro-filter-sku" placeholder="Enter SKU..." onchange="updateRequestOrderFilter('sku')" />
+                    </div>
+                </div>
+                
+                <div class="ro-panel ro-header">
+                    <div class="ro-tabs ro-tabs--series">
+                        <button class="ro-tab ro-tab--active" data-series="All" onclick="setRequestOrderSeries('All')">All</button>
+                        <button class="ro-tab" data-series="Classic" onclick="setRequestOrderSeries('Classic')">Classic</button>
+                        <button class="ro-tab" data-series="Deluxe" onclick="setRequestOrderSeries('Deluxe')">Deluxe</button>
+                    </div>
+                    
+                    <div class="ro-controls">
+                        <div class="ro-show-filter">
+                            <label>Show:</label>
+                            <select id="ro-show-mode" onchange="setRequestOrderShowMode(this.value)">
+                                <option value="all">All</option>
+                                <option value="needOnly">Need Order</option>
+                            </select>
+                        </div>
+                        
+                        <div class="ro-send">
+                            <select id="ro-request-type">
+                                <option value="all">All Request</option>
+                                <option value="t1">T1 Request</option>
+                                <option value="t2">T2 Request</option>
+                                <option value="t3">T3 Request</option>
+                            </select>
+                            <button class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="ro-panel ro-table-wrapper">
+                    <div class="dual-layer-table dual-layer-table--multi-header ro-table">
+                        <div class="table-header-bar">
+                            <div class="fixed-header">
+                                <div class="header-cell">SKU</div>
+                            </div>
+                            <div class="scroll-header-viewport">
+                                <div class="scroll-header" id="ro-scroll-header">
+                                    <!-- Risk/Country/Marketplace rowspan headers -->
+                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 0; width: 60px;">Risk</div>
+                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 60px; width: 100px;">Country</div>
+                                    <div class="km-table__header-cell km-table__header-cell--rowspan" style="left: 160px; width: 120px;">Marketplace</div>
+                                    
+                                    <!-- 第一層表頭：群組標題 -->
+                                    <div class="km-table__header-row km-table__header-row--level1">
+                                        <!-- Upcoming FC (2個子欄位) -->
+                                        <div class="km-table__header-cell" style="width:280px;">Upcoming FC</div>
+                                        <!-- Inventory & Ongoing (4個子欄位) -->
+                                        <div class="km-table__header-cell" style="width:560px;">Inventory &amp; Ongoing</div>
+                                        <!-- Coverage & Time (2個子欄位) -->
+                                        <div class="km-table__header-cell" style="width:200px;">Coverage &amp; Time</div>
+                                        <!-- Shortage (3個子欄位) - 隱藏但保有篩選功能 -->
+                                        <div class="km-table__header-cell" style="width:300px; display:none;">Shortage</div>
+                                        <!-- Decision (1個子欄位) -->
+                                        <div class="km-table__header-cell" style="width:200px;">Decision</div>
+                                    </div>
+                                    <!-- 第二層表頭：詳細欄位 -->
+                                    <div class="km-table__header-row km-table__header-row--level2">
+                                        <!-- Upcoming FC 子欄位 (2個) -->
+                                        <div class="km-table__header-cell" style="width:140px;">Basic(T3)</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Special Events</div>
+                                        <!-- Inventory & Ongoing 子欄位 (4個) -->
+                                        <div class="km-table__header-cell" style="width:140px;">Site Stock</div>
+                                        <div class="km-table__header-cell" style="width:140px;">3rd Party</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Factory Stock</div>
+                                        <div class="km-table__header-cell" style="width:140px;">Ongoing Orders</div>
+                                        <!-- Coverage & Time 子欄位 (2個) -->
+                                        <div class="km-table__header-cell" style="width:100px;">Remaining</div>
+                                        <div class="km-table__header-cell" style="width:100px;">Lead Time</div>
+                                        <!-- Shortage 子欄位 (3個) - 隱藏但保有篩選功能 -->
+                                        <div class="km-table__header-cell" style="width:100px; display:none;">M1</div>
+                                        <div class="km-table__header-cell" style="width:100px; display:none;">M2</div>
+                                        <div class="km-table__header-cell" style="width:100px; display:none;">M3</div>
+                                        <!-- Decision 子欄位 (1個) -->
+                                        <div class="km-table__header-cell" style="width:200px;">Suggest Order</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-body-bar">
+                            <div class="fixed-col">
+                                <div class="fixed-body" id="ro-fixed-body"></div>
+                            </div>
+                            <div class="scroll-col" id="ro-scroll-col">
+                                <div class="scroll-body" id="ro-scroll-body"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>

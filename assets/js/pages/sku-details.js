@@ -328,15 +328,47 @@ window.toggleDisplayPanel = toggleDisplayPanel;
 window.toggleColumn = toggleColumn;
 window.toggleAllColumns = toggleAllColumns;
 
+// Ensure the SKU Details markup is present before rendering / scroll init runs.
+// Idempotent: if #sku-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureSkuDetailsMarkup() {
+    if (document.getElementById('sku-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('sku-details', 'assets/html/pages/sku-details.html', '#sku-details-mount')
+            .then(function() {
+                if (!document.getElementById('sku-section')) {
+                    console.warn('[SkuDetails] partial loaded but #sku-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[SkuDetails] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[SkuDetails] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 // Lifecycle
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('sku-section', {
         mount() {
-            renderSkuDetailsTable();
-            setTimeout(function() {
-                if (window.initSkuScroll) initSkuScroll();
-                if (window.updateSkuScrollWidth) updateSkuScrollWidth();
-            }, 100);
+            // Markup is partial-loaded (Phase 3-7). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and run the
+            // existing render + scroll init unchanged.
+            _ensureSkuDetailsMarkup().then(function() {
+                var sec = document.getElementById('sku-section');
+                if (sec) sec.classList.add('active');
+                renderSkuDetailsTable();
+                setTimeout(function() {
+                    if (window.initSkuScroll) initSkuScroll();
+                    if (window.updateSkuScrollWidth) updateSkuScrollWidth();
+                }, 100);
+            });
         },
         unmount() {}
     });

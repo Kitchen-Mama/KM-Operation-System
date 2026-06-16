@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check assets/js/pages/shipping-history.js)",
+      "Bash(sed -n '395,403p' assets/css/pages/overseas-stock.css)",
+      "Bash(sed -n '1171,1175p;1200,1224p' assets/css/pages/fc-overview.css)",
+      "Bash(node --check assets/js/pages/fc-summary.js)"
+    ]
+  }
+}

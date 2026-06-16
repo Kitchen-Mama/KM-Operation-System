@@ -93,10 +93,42 @@ function renderGoal() {
 }
 
 function showHome() {
-    document.getElementById('home-section').style.display = 'block';
-    document.getElementById('world-time-bar').style.display = 'flex';
-    document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
-    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+    // Home markup is partial-loaded (Phase 1); ensure it exists, then show. Null-guarded so an
+    // early click (before the partial resolves) cannot crash — markup re-renders when ready.
+    _ensureHomeMarkup().then(function() {
+        var home = document.getElementById('home-section');
+        if (home) home.style.display = 'block';
+        var bar = document.getElementById('world-time-bar');
+        if (bar) bar.style.display = 'flex';
+        document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
+        document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+        renderHomepage();
+    });
+}
+
+// Ensure the Home section markup is present in the DOM before Home logic runs.
+// Idempotent: if #home-section already exists, resolves immediately (no re-fetch, no duplicate).
+// Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureHomeMarkup() {
+    if (document.getElementById('home-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('home', 'assets/html/pages/home.html', '#home-mount')
+            .then(function() {
+                if (!document.getElementById('home-section')) {
+                    console.warn('[Home] partial loaded but #home-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[Home] failed to load home partial:', err);
+                return false;
+            });
+    }
+    console.warn('[Home] KM.partialLoader unavailable; Home markup not loaded.');
+    return Promise.resolve(false);
 }
 
 // 暴露到全域
@@ -204,7 +236,11 @@ if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('home-section', {
         mount() {
             console.log('[Home] mount');
-            renderHomepage();
+            // Ensure partial markup is injected before rendering (Phase 1). renderHomepage is
+            // itself null-guarded, so the worst case (load failure) is an empty home, not a crash.
+            _ensureHomeMarkup().then(function() {
+                renderHomepage();
+            });
         },
         unmount() {
             console.log('[Home] unmount');

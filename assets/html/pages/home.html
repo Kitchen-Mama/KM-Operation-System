@@ -1,0 +1,67 @@
+<!-- Homepage Section — extracted from index.html (Frontend Modularization Phase 1).
+     Markup is identical to the original inline section; injected into #home-mount by KM.partialLoader. -->
+<section id="home-section">
+    <h1>歡迎使用 Kitchen Mama 供應鏈管理系統</h1>
+    <p>請從左側選單選擇功能模組</p>
+
+    <!-- Row 1: 兩欄資訊區塊 -->
+    <div class="home-row-1">
+        <!-- 左欄: Upcoming Event -->
+        <div class="event-container">
+            <h3>Upcoming Event</h3>
+            <div id="eventsList"></div>
+        </div>
+
+        <!-- 右欄: 2026 Goal -->
+        <div class="goal-container">
+            <h3 id="goalYear">2026 Goal</h3>
+            <div class="goal-content">
+                <div class="achievement-rate" id="achievementRate">0%</div>
+                <div class="goal-amount" id="goalAmount">$0</div>
+            </div>
+            <div class="goal-content">
+                <div class="achievement-spacer"></div>
+                <div class="sales-amount" id="salesAmount">$0</div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Row 2: 公告/警訊/個人提醒 -->
+    <div class="home-row-2">
+        <!-- 左側 70%：公告 + Urgent Issue -->
+        <div class="left-section">
+            <!-- 公告區塊 -->
+            <div class="announcement-container">
+                <div class="home-section-header">
+                    <h3>公告</h3>
+                    <span class="see-more">See More</span>
+                </div>
+                <div id="announcementsList"></div>
+            </div>
+
+            <!-- Urgent Issue 區塊 -->
+            <div class="urgent-container">
+                <div class="home-section-header">
+                    <h3>Urgent Issue</h3>
+                </div>
+                <div id="urgentIssuesList"></div>
+            </div>
+        </div>
+
+        <!-- 右側 30%：個人提醒代辦 -->
+        <div class="todo-container">
+            <div class="home-section-header">
+                <h3>Personal Notes / To-do</h3>
+            </div>
+            <div id="todoList" class="todo-list"></div>
+            <div class="todo-input">
+                <input type="text" id="todoInput" placeholder="輸入提醒事項..." onkeypress="handleTodoEnter(event)">
+                <button onclick="addTodo()">Add</button>
+            </div>
+        </div>
+    </div>
+</section>

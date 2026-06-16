@@ -81,8 +81,12 @@ button:hover {
     color: #374151;
 }
 
+/* Text-input / select styling. Excludes checkbox & radio so dropdown option checkboxes
+   (which live inside .filter-group--dropdown) don't inherit the full-width box model,
+   transition:all, and :hover/:focus border/background changes — those caused the option
+   rows to flicker / jump on hover. Dropdown checkboxes keep their own page-level styling. */
 .filter-group select,
-.filter-group input {
+.filter-group input:not([type="checkbox"]):not([type="radio"]) {
     padding: var(--filter-padding-block) var(--filter-padding-inline);
     border: 1px solid var(--filter-border-color);
     border-radius: var(--filter-border-radius);
@@ -97,13 +101,13 @@ button:hover {
 }
 
 .filter-group select:hover,
-.filter-group input:hover {
+.filter-group input:not([type="checkbox"]):not([type="radio"]):hover {
     border-color: #cbd5e0;
     background: #f7fafc;
 }
 
 .filter-group select:focus,
-.filter-group input:focus {
+.filter-group input:not([type="checkbox"]):not([type="radio"]):focus {
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);

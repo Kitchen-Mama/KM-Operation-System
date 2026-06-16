@@ -331,17 +331,36 @@ function _initCrDropdowns() {
         });
     });
 
-    document.addEventListener('click', function(e) {
-        if (!root.contains(e.target)) {
-            root.querySelectorAll('.cr-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
-        }
-    });
+    // Document-level outside-click / ESC handlers — bound via idempotent helper so repeated
+    // renderRiskFilters()/_initCrDropdowns() (DOMContentLoaded, refresh, lifecycle mount) never stack them.
+    _bindCrDocListeners();
+}
 
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
+// Module-scoped refs so the document listeners can be removed (idempotent + lifecycle unmount).
+var _crDocClick = null;
+var _crDocKeydown = null;
+
+function _bindCrDocListeners() {
+    _unbindCrDocListeners(); // remove any existing pair first → never stack
+    _crDocClick = function(e) {
+        var root = document.getElementById('campaign-risk-section');
+        if (root && !root.contains(e.target)) {
             root.querySelectorAll('.cr-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
         }
-    });
+    };
+    _crDocKeydown = function(e) {
+        if (e.key === 'Escape') {
+            var root = document.getElementById('campaign-risk-section');
+            if (root) root.querySelectorAll('.cr-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
+        }
+    };
+    document.addEventListener('click', _crDocClick);
+    document.addEventListener('keydown', _crDocKeydown);
+}
+
+function _unbindCrDocListeners() {
+    if (_crDocClick) { document.removeEventListener('click', _crDocClick); _crDocClick = null; }
+    if (_crDocKeydown) { document.removeEventListener('keydown', _crDocKeydown); _crDocKeydown = null; }
 }
 
 function _syncCrFilterState(filterType, panel) {
@@ -1044,6 +1063,56 @@ window.updateCrFilterButton = updateCrFilterButton;
 
 window.crBuildGroups = crBuildGroups;
 window.crPreviewAdd = crPreviewAdd;
+
+// --- Lifecycle registration (Phase 2B-3) ---
+// mount re-binds the document outside-click/ESC listeners (idempotent) and renders via the
+// existing renderCampaignRiskTracker behavior; unmount removes those document listeners so
+// repeated Home → Promotion Risk Tracker → Home cycles never stack listeners.
+// Ensure the Campaign Risk markup is present before renderCampaignRiskTracker runs.
+// Idempotent: if #campaign-risk-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureCampaignRiskMarkup() {
+    if (document.getElementById('campaign-risk-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('campaign-risk', 'assets/html/pages/campaign-risk.html', '#campaign-risk-mount')
+            .then(function() {
+                if (!document.getElementById('campaign-risk-section')) {
+                    console.warn('[CampaignRisk] partial loaded but #campaign-risk-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[CampaignRisk] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[CampaignRisk] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
+if (window.KM && window.KM.lifecycle) {
+    KM.lifecycle.register('campaign-risk-section', {
+        mount() {
+            console.log('[CampaignRisk] mount');
+            // Markup is partial-loaded (Phase 3-10). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and run the existing
+            // idempotent listener bind + render unchanged.
+            _ensureCampaignRiskMarkup().then(function() {
+                var sec = document.getElementById('campaign-risk-section');
+                if (sec) sec.classList.add('active');
+                _bindCrDocListeners();
+                renderCampaignRiskTracker();
+            });
+        },
+        unmount() {
+            console.log('[CampaignRisk] unmount');
+            _unbindCrDocListeners();
+        }
+    });
+}
 
 // --- Debug / Test Helpers ---
 function debugPromotionRecords() {

@@ -1,0 +1,346 @@
+<!-- Overseas Stock Section (Warehouse Stock 子模組) — extracted from index.html (Frontend Modularization Phase 3-3).
+     Markup is identical to the original inline section; injected into #overseas-stock-mount by KM.partialLoader.
+     NOTE: route key (overseas-stock) and section id (overseas-stock-section) intentionally unchanged. -->
+            <section id="overseas-stock-section" class="module-section">
+                <h2 class="module-title">Overseas Stock</h2>
+
+                <!-- Tabs: Stock Snapshot / Movement Log -->
+                <div class="ovs-tabs">
+                    <button type="button" class="ovs-tab is-active" data-tab="snapshot" onclick="switchOverseasTab('snapshot')">Stock Snapshot</button>
+                    <button type="button" class="ovs-tab" data-tab="movement" onclick="switchOverseasTab('movement')">Movement Log</button>
+                </div>
+
+                <!-- ============ Stock Snapshot Tab ============ -->
+                <div class="ovs-tab-panel" data-tab-panel="snapshot">
+                    <!-- Filter Bar with Action Buttons -->
+                    <div class="fc-filter-bar" style="display: flex; justify-content: space-between; align-items: flex-end;">
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; flex: 1;">
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Company</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="company">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="company">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Warehouse</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="warehouse">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="warehouse">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Category</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="category">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="category">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Series</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="series">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="series">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--sku">
+                                <label>SKU</label>
+                                <input id="overseas-sku-input" type="text" placeholder="Search SKU..." />
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: flex-end;">
+                            <button class="btn btn-primary" id="overseas-import-btn" onclick="openOverseasImportModal()">Import Inventory</button>
+                            <button class="btn btn-secondary" id="overseas-adjust-btn" onclick="openOverseasAdjustModal()">Manual Adjustment</button>
+                        </div>
+                    </div>
+
+                    <!-- Country tabs (generated from joined DB country values) -->
+                    <div class="ovs-country-tabs" id="overseas-country-tabs"></div>
+
+                    <!-- Snapshot Table -->
+                    <div class="dual-layer-table">
+                        <div class="table-header-bar">
+                            <div class="fixed-header">
+                                <div class="header-cell">SKU</div>
+                            </div>
+                            <div class="scroll-header-viewport">
+                                <div class="scroll-header" id="overseas-snapshot-scroll-header">
+                                    <div class="header-cell">Company</div>
+                                    <div class="header-cell">Country</div>
+                                    <div class="header-cell">Category</div>
+                                    <div class="header-cell">Series</div>
+                                    <div class="header-cell">Warehouse Name</div>
+                                    <div class="header-cell">Available</div>
+                                    <div class="header-cell">Reserved</div>
+                                    <div class="header-cell">Damaged</div>
+                                    <div class="header-cell">On The Way Qty</div>
+                                    <div class="header-cell">Warning</div>
+                                    <div class="header-cell">More Info</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-body-bar">
+                            <div class="fixed-col">
+                                <div class="fixed-body" id="overseas-snapshot-fixed-body"></div>
+                            </div>
+                            <div class="scroll-col" id="overseas-snapshot-scroll-col">
+                                <div class="scroll-body" id="overseas-snapshot-scroll-body"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ Movement Log Tab ============ -->
+                <div class="ovs-tab-panel" data-tab-panel="movement" style="display:none;">
+                    <!-- Movement Log Filter Bar (Forecast Review style: label-on-top row) -->
+                    <div class="fc-filter-bar">
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; flex: 1;">
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Date</label>
+                                <button type="button" class="forecast-date-trigger" id="overseas-mov-date-trigger" onclick="openOverseasMovDateModal()">
+                                    <span class="forecast-date-trigger-text" id="overseas-mov-date-text">All dates</span>
+                                    <span class="forecast-date-trigger-icon">▼</span>
+                                </button>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Country</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="country">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="country">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Marketplace</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="marketplace">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="marketplace">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Category</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="category">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="category">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Series</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="series">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="series">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--sku">
+                                <label>SKU</label>
+                                <input id="overseas-mov-sku-input" type="text" placeholder="Search SKU..." />
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <label>&nbsp;</label>
+                            <button class="btn btn-primary" id="overseas-mov-search-btn" onclick="runOverseasMovementSearch()">Search</button>
+                        </div>
+                    </div>
+
+                    <div class="dual-layer-table">
+                        <div class="table-header-bar">
+                            <div class="fixed-header">
+                                <div class="header-cell">SKU</div>
+                            </div>
+                            <div class="scroll-header-viewport">
+                                <div class="scroll-header" id="overseas-movement-scroll-header">
+                                    <div class="header-cell">Warehouse Name</div>
+                                    <div class="header-cell">Movement Type</div>
+                                    <div class="header-cell">From</div>
+                                    <div class="header-cell">To</div>
+                                    <div class="header-cell">Quantity</div>
+                                    <div class="header-cell">Qty Before</div>
+                                    <div class="header-cell">Qty After</div>
+                                    <div class="header-cell">Reference Type</div>
+                                    <div class="header-cell">Reference ID</div>
+                                    <div class="header-cell">Created By</div>
+                                    <div class="header-cell">Created At</div>
+                                    <div class="header-cell">Note</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-body-bar">
+                            <div class="fixed-col">
+                                <div class="fixed-body" id="overseas-movement-fixed-body"></div>
+                            </div>
+                            <div class="scroll-col" id="overseas-movement-scroll-col">
+                                <div class="scroll-body" id="overseas-movement-scroll-body"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ Modals ============ -->
+                <div class="ovs-modal-overlay" id="overseas-modal-overlay" onclick="closeOverseasModals()"></div>
+
+                <!-- Import Inventory Modal -->
+                <div class="ovs-modal" id="overseas-import-modal">
+                    <div class="ovs-modal-content ovs-modal-content--large">
+                        <h3>Import Overseas Inventory Snapshot (CSV)</h3>
+                        <div class="ovs-modal-body">
+                            <p style="font-size:12px;color:#475569;line-height:1.5;margin:0 0 8px;">
+                                CSV columns: <strong>warehouse_id, sku, available_stock, reserved_stock, damaged_stock, on_the_way_qty, on_the_way_eta, note</strong>.<br>
+                                Do NOT include company / country / warehouse_name / warehouse_type — they are resolved from <strong>warehouse_id</strong>. First row must be the header row.<br>
+                                Quantities must be numbers ≥ 0 (decimals round up). Non-numeric values are rejected.
+                            </p>
+                            <p style="margin:0 0 12px;">
+                                <a href="#" id="overseas-import-template-link" onclick="downloadOverseasImportTemplate(); return false;" style="font-weight:600;color:#0080bb;text-decoration:underline;cursor:pointer;">Download CSV Template</a>
+                            </p>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group">
+                                    <label>CSV File *</label>
+                                    <input type="file" id="overseas-import-file" accept=".csv,text/csv">
+                                </div>
+                            </div>
+                            <div id="overseas-import-result" style="display:none;margin-top:12px;max-height:240px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;font-size:12px;"></div>
+                        </div>
+                        <div class="ovs-modal-actions">
+                            <button class="btn btn-secondary" onclick="closeOverseasModals()">Close</button>
+                            <button class="btn btn-primary" id="overseas-import-run-btn" onclick="runOverseasImport()">Import</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Manual Adjustment Modal -->
+                <div class="ovs-modal" id="overseas-adjust-modal">
+                    <div class="ovs-modal-content">
+                        <h3>Manual Stock Adjustment</h3>
+                        <div class="ovs-modal-body">
+                            <p style="font-size:12px;color:#475569;line-height:1.5;margin:0 0 8px;">
+                                Adjusts <strong>available_stock</strong> for one warehouse + SKU and records a movement.
+                                The snapshot row must already exist (import it first).
+                            </p>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group">
+                                    <label>Warehouse *</label>
+                                    <select id="overseas-adjust-warehouse" onchange="onOverseasAdjustWarehouseChange()">
+                                        <option value="">Select Warehouse</option>
+                                    </select>
+                                </div>
+                                <div class="ovs-form-group">
+                                    <label>SKU *</label>
+                                    <input type="text" id="overseas-adjust-sku" placeholder="e.g. CO1100-R">
+                                </div>
+                            </div>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group">
+                                    <label>Adjustment Qty * (+/-)</label>
+                                    <input type="number" id="overseas-adjust-qty" step="1" placeholder="e.g. -10 or 25">
+                                </div>
+                                <div class="ovs-form-group">
+                                    <label>Reason *</label>
+                                    <input type="text" id="overseas-adjust-reason" placeholder="e.g. cycle_count, damage, correction">
+                                </div>
+                            </div>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group" style="flex:1 1 100%;">
+                                    <label>Note</label>
+                                    <input type="text" id="overseas-adjust-note" placeholder="Optional note">
+                                </div>
+                            </div>
+                            <div id="overseas-adjust-result" style="display:none;margin-top:12px;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;font-size:12px;"></div>
+                        </div>
+                        <div class="ovs-modal-actions">
+                            <button class="btn btn-secondary" onclick="closeOverseasModals()">Close</button>
+                            <button class="btn btn-primary" id="overseas-adjust-run-btn" onclick="runOverseasAdjust()">Apply Adjustment</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- More Info Modal -->
+                <div class="ovs-modal" id="overseas-info-modal">
+                    <div class="ovs-modal-content">
+                        <h3>More Info</h3>
+                        <div class="ovs-modal-body" id="overseas-info-body"></div>
+                        <div class="ovs-modal-actions">
+                            <button class="btn btn-secondary" onclick="closeOverseasModals()">Close</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Movement Log Date Range Picker (same UX/style as Forecast Review; isolated ovs-date-* classes) -->
+                <div class="ovs-date-backdrop" id="ovsDateBackdrop"></div>
+                <div class="ovs-date-modal" id="ovsDateModal">
+                    <div class="ovs-date-modal-body">
+                        <!-- Left: Presets -->
+                        <div class="ovs-date-sidebar">
+                            <div class="ovs-preset-item" data-preset="today">Today</div>
+                            <div class="ovs-preset-item" data-preset="yesterday">Yesterday</div>
+                            <div class="ovs-preset-divider"></div>
+                            <div class="ovs-preset-item" data-preset="last-7-days">Last 7 days</div>
+                            <div class="ovs-preset-item" data-preset="last-30-days">Last 30 days</div>
+                            <div class="ovs-preset-item" data-preset="last-60-days">Last 60 days</div>
+                            <div class="ovs-preset-item" data-preset="last-90-days">Last 90 days</div>
+                            <div class="ovs-preset-divider"></div>
+                            <div class="ovs-preset-item" data-preset="last-month">Last month</div>
+                            <div class="ovs-preset-item" data-preset="last-2-months">Last 2 months</div>
+                            <div class="ovs-preset-item" data-preset="last-3-months">Last 3 months</div>
+                            <div class="ovs-preset-item" data-preset="last-year">Last year</div>
+                        </div>
+                        <!-- Right: Calendars -->
+                        <div class="ovs-date-content">
+                            <div class="ovs-date-inputs">
+                                <div class="ovs-date-input-group">
+                                    <label>Start</label>
+                                    <input type="text" class="ovs-date-input" id="ovsStartDisplay" readonly />
+                                </div>
+                                <div class="ovs-date-input-group">
+                                    <label>End</label>
+                                    <input type="text" class="ovs-date-input" id="ovsEndDisplay" readonly />
+                                </div>
+                            </div>
+                            <div class="ovs-calendars">
+                                <div class="ovs-calendar" id="ovsCalendarStart">
+                                    <div class="ovs-calendar-header">
+                                        <button type="button" class="ovs-calendar-nav" data-nav="prev-start">‹</button>
+                                        <span class="ovs-calendar-title" id="ovsCalendarStartTitle"></span>
+                                        <button type="button" class="ovs-calendar-nav" data-nav="next-start">›</button>
+                                    </div>
+                                    <div class="ovs-calendar-body" id="ovsCalendarStartBody"></div>
+                                </div>
+                                <div class="ovs-calendar" id="ovsCalendarEnd">
+                                    <div class="ovs-calendar-header">
+                                        <button type="button" class="ovs-calendar-nav" data-nav="prev-end">‹</button>
+                                        <span class="ovs-calendar-title" id="ovsCalendarEndTitle"></span>
+                                        <button type="button" class="ovs-calendar-nav" data-nav="next-end">›</button>
+                                    </div>
+                                    <div class="ovs-calendar-body" id="ovsCalendarEndBody"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ovs-date-modal-footer">
+                        <button type="button" class="ovs-date-btn ovs-date-btn--cancel" id="ovsDateCancel">Cancel</button>
+                        <button type="button" class="ovs-date-btn ovs-date-btn--clear" id="ovsDateClear">Clear</button>
+                        <button type="button" class="ovs-date-btn ovs-date-btn--apply" id="ovsDateApply">Apply</button>
+                    </div>
+                </div>
+            </section>

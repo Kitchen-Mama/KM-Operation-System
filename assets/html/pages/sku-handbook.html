@@ -1,0 +1,63 @@
+﻿<!-- SKU Handbook Section — extracted from index.html (Phase 3-9). Injected into #sku-handbook-mount by KM.partialLoader on the page lifecycle mount. Markup unchanged. -->
+            <section id="sku-handbook-section" class="module-section">
+                <div class="skuh-header">
+                    <div class="skuh-header-top">
+                        <div>
+                            <h2 id="skuh-title">SKU Handbook</h2>
+                            <p id="skuh-subtitle">Learn product lines, SKU codes, lifecycle status, and key product knowledge.</p>
+                        </div>
+                        <div class="skuh-lang-toggle">
+                            <button class="skuh-lang-btn" data-lang="en" onclick="setSkuhLang('en')">EN</button>
+                            <button class="skuh-lang-btn" data-lang="zh" onclick="setSkuhLang('zh')">中文</button>
+                        </div>
+                    </div>
+                    <div class="skuh-stats" id="skuh-stats"></div>
+                </div>
+                <div class="skuh-info-card">
+                    <strong>How to use this handbook</strong>
+                    Browse products by lifecycle, product line, and series. Click a SKU card to review product images, specs, and key selling points. Use search when you already know the SKU or product name.
+                </div>
+                <div class="skuh-filters">
+                    <div class="skuh-filter">
+                        <label>Search</label>
+                        <input type="text" id="skuh-filter-search" placeholder="Search product name or SKU...">
+                    </div>
+                    <div class="skuh-filter skuh-filter--dropdown">
+                        <label>Product Line</label>
+                        <button type="button" class="skuh-dropdown-trigger" data-filter="productline" aria-expanded="false">
+                            <span class="skuh-dropdown-text">All Product Lines</span>
+                            <span class="skuh-dropdown-icon">▼</span>
+                        </button>
+                        <div class="skuh-dropdown-panel" data-filter="productline" id="skuh-panel-productline"></div>
+                    </div>
+                    <div class="skuh-filter skuh-filter--dropdown">
+                        <label>Brand</label>
+                        <button type="button" class="skuh-dropdown-trigger" data-filter="brand" aria-expanded="false">
+                            <span class="skuh-dropdown-text">All Brands</span>
+                            <span class="skuh-dropdown-icon">▼</span>
+                        </button>
+                        <div class="skuh-dropdown-panel" data-filter="brand" id="skuh-panel-brand"></div>
+                    </div>
+                    <div class="skuh-filter skuh-filter--dropdown">
+                        <label>Lifecycle</label>
+                        <button type="button" class="skuh-dropdown-trigger" data-filter="lifecycle" aria-expanded="false">
+                            <span class="skuh-dropdown-text">All Lifecycle</span>
+                            <span class="skuh-dropdown-icon">▼</span>
+                        </button>
+                        <div class="skuh-dropdown-panel" data-filter="lifecycle" id="skuh-panel-lifecycle">
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Upcoming SKU" checked> Upcoming SKU</label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Running in the Market" checked> Running in the Market</label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Phasing Out" checked> Phasing Out</label>
+                            <label class="skuh-checkbox-item"><input type="checkbox" value="Closure" checked> Closure</label>
+                        </div>
+                    </div>
+                </div>
+                <div id="skuh-content"></div>
+                <div class="skuh-modal-overlay" id="skuh-modal-overlay" onclick="closeSkuDetailModal()">
+                    <div class="skuh-modal" onclick="event.stopPropagation()">
+                        <button class="skuh-modal-close" onclick="closeSkuDetailModal()">&times;</button>
+                        <div id="skuh-modal-body"></div>
+                    </div>
+                </div>
+            </section>

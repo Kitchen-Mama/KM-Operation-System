@@ -1187,13 +1187,44 @@ window.debugRequestOrderDemoData = function() {
 // ========================================
 // Lifecycle 註冊
 // ========================================
+// Ensure the Request Order markup is present before initRequestOrderSection runs.
+// Idempotent: if #request-order-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureRequestOrderMarkup() {
+    if (document.getElementById('request-order-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('request-order', 'assets/html/pages/request-order.html', '#request-order-mount')
+            .then(function() {
+                if (!document.getElementById('request-order-section')) {
+                    console.warn('[RequestOrder] partial loaded but #request-order-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[RequestOrder] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[RequestOrder] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('request-order-section', {
         mount() {
             console.log('[RequestOrder] mount');
-            if (window.initRequestOrderSection) {
-                window.initRequestOrderSection();
-            }
+            // Markup is partial-loaded (Phase 3-5). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            _ensureRequestOrderMarkup().then(function() {
+                var sec = document.getElementById('request-order-section');
+                if (sec) sec.classList.add('active');
+                if (window.initRequestOrderSection) {
+                    window.initRequestOrderSection();
+                }
+            });
         },
         unmount() {
             console.log('[RequestOrder] unmount');

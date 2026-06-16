@@ -1,0 +1,253 @@
+<!-- Factory Stock Section — extracted from index.html (Frontend Modularization Phase 3-2).
+     Markup is identical to the original inline section; injected into #factory-stock-mount by KM.partialLoader.
+     NOTE: route key (factory-stock) and section id (factory-stock-section) intentionally unchanged. -->
+            <section id="factory-stock-section" class="module-section">
+                <h2 class="module-title">Factory Stock</h2>
+
+                <!-- Tabs: Stock Snapshot / Movement Log -->
+                <div class="fs-tabs">
+                    <button type="button" class="fs-tab is-active" data-fs-tab="snapshot" onclick="switchFactoryTab('snapshot')">Stock Snapshot</button>
+                    <button type="button" class="fs-tab" data-fs-tab="movement" onclick="switchFactoryTab('movement')">Movement Log</button>
+                </div>
+
+                <!-- ============ Stock Snapshot Tab ============ -->
+                <div class="fs-tab-panel" data-fs-panel="snapshot">
+                <!-- Filter Bar with Edit Button -->
+                <div class="fc-filter-bar" style="display: flex; justify-content: space-between; align-items: flex-end;">
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; flex: 1;">
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Factory</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="factory">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="factory">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CN" checked> CN</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="TW" checked> TW</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Company</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="company">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="company">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Kitchen Mama" checked> Kitchen Mama</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Res US" checked> Res US</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Res TW" checked> Res TW</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Category</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="category">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="category">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked> Electric Can Opener</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Silicone Product" checked> Silicone Product</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Manual Opener" checked> Manual Opener</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Series</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="series">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="series">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CO1100" checked> CO1100</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="CO1150" checked> CO1150</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="SP3120" checked> SP3120</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="SP3410" checked> SP3410</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="MO5600" checked> MO5600</label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--sku">
+                        <label>SKU</label>
+                        <input id="factory-sku-input" type="text" placeholder="Search SKU..." />
+                    </div>
+                    </div>
+                    
+                    <!-- Edit Button (Admin Only) -->
+                    <button class="btn btn-secondary" id="factory-stock-edit-btn" onclick="toggleFactoryStockEdit()">Edit</button>
+                </div>
+                
+                <!-- Factory Stock Table -->
+                <div class="dual-layer-table">
+                    <!-- Table Header Bar (Sticky) -->
+                    <div class="table-header-bar">
+                        <div class="fixed-header">
+                            <div class="header-cell">SKU</div>
+                        </div>
+                        <div class="scroll-header-viewport">
+                            <div class="scroll-header" id="factory-stock-scroll-header">
+                                <div class="header-cell">Company</div>
+                                <div class="header-cell">Category</div>
+                                <div class="header-cell">Series</div>
+                                <div class="header-cell">Factory</div>
+                                <div class="header-cell">Stock</div>
+                                <div class="header-cell" id="factory-month-0">Jan</div>
+                                <div class="header-cell" id="factory-month-1">Feb</div>
+                                <div class="header-cell" id="factory-month-2">Mar</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Table Body Bar -->
+                    <div class="table-body-bar">
+                        <div class="fixed-col">
+                            <div class="fixed-body" id="factory-stock-fixed-body"></div>
+                        </div>
+                        <div class="scroll-col" id="factory-stock-scroll-col">
+                            <div class="scroll-body" id="factory-stock-scroll-body"></div>
+                        </div>
+                    </div>
+                </div>
+                </div><!-- /Stock Snapshot panel -->
+
+                <!-- ============ Movement Log Tab ============ -->
+                <div class="fs-tab-panel" data-fs-panel="movement" style="display:none;">
+                    <!-- Movement Log Filter Row -->
+                    <div class="fc-filter-bar">
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; flex: 1;">
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Date</label>
+                                <button type="button" class="forecast-date-trigger" id="factory-mov-date-trigger" onclick="openFactoryMovDateModal()">
+                                    <span class="forecast-date-trigger-text" id="factory-mov-date-text">All dates</span>
+                                    <span class="forecast-date-trigger-icon">▼</span>
+                                </button>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Factory</label>
+                                <button type="button" class="fmv-dropdown-trigger" data-filter="warehouse">
+                                    <span class="fmv-dropdown-text">All</span>
+                                    <span class="fmv-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fmv-dropdown-panel" data-filter="warehouse">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Category</label>
+                                <button type="button" class="fmv-dropdown-trigger" data-filter="category">
+                                    <span class="fmv-dropdown-text">All</span>
+                                    <span class="fmv-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fmv-dropdown-panel" data-filter="category">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Series</label>
+                                <button type="button" class="fmv-dropdown-trigger" data-filter="series">
+                                    <span class="fmv-dropdown-text">All</span>
+                                    <span class="fmv-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fmv-dropdown-panel" data-filter="series">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--sku">
+                                <label>SKU</label>
+                                <input id="factory-mov-sku-input" type="text" placeholder="Search SKU..." />
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <label>&nbsp;</label>
+                            <button class="btn btn-primary" id="factory-mov-search-btn" onclick="runFactoryMovementSearch()">Search</button>
+                        </div>
+                    </div>
+
+                    <!-- Movement Log Table -->
+                    <div class="dual-layer-table">
+                        <div class="table-header-bar">
+                            <div class="fixed-header">
+                                <div class="header-cell">SKU</div>
+                            </div>
+                            <div class="scroll-header-viewport">
+                                <div class="scroll-header" id="factory-movement-scroll-header">
+                                    <div class="header-cell">Factory</div>
+                                    <div class="header-cell">Movement Type</div>
+                                    <div class="header-cell">Quantity</div>
+                                    <div class="header-cell">Related Entity Type</div>
+                                    <div class="header-cell">Related Entity ID</div>
+                                    <div class="header-cell">Qty Before</div>
+                                    <div class="header-cell">Qty After</div>
+                                    <div class="header-cell">Created By</div>
+                                    <div class="header-cell">Created At</div>
+                                    <div class="header-cell">Note</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-body-bar">
+                            <div class="fixed-col">
+                                <div class="fixed-body" id="factory-movement-fixed-body"></div>
+                            </div>
+                            <div class="scroll-col" id="factory-movement-scroll-col">
+                                <div class="scroll-body" id="factory-movement-scroll-body"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Factory Movement Log Date Range Picker (same UX/style as Forecast Review / Overseas; isolated fmvd ids) -->
+                    <div class="fr-date-backdrop" id="fmvDateBackdrop"></div>
+                    <div class="fr-date-modal" id="fmvDateModal">
+                        <div class="fr-date-modal-body">
+                            <div class="fr-date-sidebar">
+                                <div class="fmvd-preset-item" data-preset="today">Today</div>
+                                <div class="fmvd-preset-item" data-preset="yesterday">Yesterday</div>
+                                <div class="fr-preset-divider"></div>
+                                <div class="fmvd-preset-item" data-preset="last-7-days">Last 7 days</div>
+                                <div class="fmvd-preset-item" data-preset="last-30-days">Last 30 days</div>
+                                <div class="fmvd-preset-item" data-preset="last-60-days">Last 60 days</div>
+                                <div class="fmvd-preset-item" data-preset="last-90-days">Last 90 days</div>
+                                <div class="fr-preset-divider"></div>
+                                <div class="fmvd-preset-item" data-preset="last-month">Last month</div>
+                                <div class="fmvd-preset-item" data-preset="last-2-months">Last 2 months</div>
+                                <div class="fmvd-preset-item" data-preset="last-3-months">Last 3 months</div>
+                                <div class="fmvd-preset-item" data-preset="last-year">Last year</div>
+                            </div>
+                            <div class="fr-date-content">
+                                <div class="fr-date-inputs">
+                                    <div class="fr-date-input-group">
+                                        <label>Start</label>
+                                        <input type="text" class="fr-date-input" id="fmvStartDisplay" readonly />
+                                    </div>
+                                    <div class="fr-date-input-group">
+                                        <label>End</label>
+                                        <input type="text" class="fr-date-input" id="fmvEndDisplay" readonly />
+                                    </div>
+                                </div>
+                                <div class="fr-calendars">
+                                    <div class="fr-calendar" id="fmvCalendarStart">
+                                        <div class="fr-calendar-header">
+                                            <button type="button" class="fmvd-calendar-nav" data-nav="prev-start">‹</button>
+                                            <span class="fr-calendar-title" id="fmvCalendarStartTitle"></span>
+                                            <button type="button" class="fmvd-calendar-nav" data-nav="next-start">›</button>
+                                        </div>
+                                        <div class="fr-calendar-body" id="fmvCalendarStartBody"></div>
+                                    </div>
+                                    <div class="fr-calendar" id="fmvCalendarEnd">
+                                        <div class="fr-calendar-header">
+                                            <button type="button" class="fmvd-calendar-nav" data-nav="prev-end">‹</button>
+                                            <span class="fr-calendar-title" id="fmvCalendarEndTitle"></span>
+                                            <button type="button" class="fmvd-calendar-nav" data-nav="next-end">›</button>
+                                        </div>
+                                        <div class="fr-calendar-body" id="fmvCalendarEndBody"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="fr-date-modal-footer">
+                            <button type="button" class="fr-date-btn fr-date-btn--cancel" id="fmvDateCancel">Cancel</button>
+                            <button type="button" class="fr-date-btn fr-date-btn--clear" id="fmvDateClear">Clear</button>
+                            <button type="button" class="fr-date-btn fr-date-btn--apply" id="fmvDateApply">Apply</button>
+                        </div>
+                    </div>
+                </div><!-- /Movement Log panel -->
+            </section>

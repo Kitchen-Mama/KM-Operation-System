@@ -1170,6 +1170,7 @@
 
 .fc-modal-content {
     padding: 24px;
+    box-sizing: border-box;
 }
 
 .fc-modal-content--large {
@@ -1199,6 +1200,7 @@
 
 .fc-form-group {
     flex: 1;
+    min-width: 0; /* allow flex item to shrink so long <select> options can't overflow the modal */
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1216,6 +1218,9 @@
     border: 1px solid #E2E8F0;
     border-radius: 6px;
     font-size: 13px;
+    box-sizing: border-box;
+    width: 100%; /* fill the (now shrinkable) group; prevents wide selects from clipping the modal */
+    max-width: 100%;
 }
 
 .fc-form-note {

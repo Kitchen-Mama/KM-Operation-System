@@ -18,25 +18,44 @@ const CanvasController = {
     currentTool: 'select',
     nextId: 1,
     nextArrowId: 1,
-    
+
+    // Idempotency / listener-cleanup state (Phase 2B-4)
+    _initialized: false,   // element-level listeners + storage load are wired only once
+    _docMouseMove: null,   // stored refs so document listeners can be removed on unmount
+    _docMouseUp: null,
+    _docKeydown: null,
+
     init() {
         const canvas = document.getElementById('scCanvas');
         if (!canvas) {
             console.error('Canvas element not found');
             return;
         }
-        
+
+        // Document-level listeners: (re)bind every mount, idempotently. They are removed on
+        // unmount, so they must be re-attached when the page is mounted again.
+        this._bindDocListeners();
+
+        // Element-level setup + storage load run only ONCE. The Supply Chain section markup
+        // persists in the DOM, so re-binding canvas/toolbar listeners on each mount would stack
+        // them (e.g. zoom firing twice). On later mounts we only refresh the view below.
+        if (this._initialized) {
+            this.updateTransform();
+            this.updateZoomLabel();
+            this.renderItems();
+            return;
+        }
+        this._initialized = true;
+
         console.log('CanvasController initialized');
-        
+
         this.loadFromStorage();
-        
+
         // Mouse events
         canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-        document.addEventListener('mousemove', this.onMouseMove.bind(this));
-        document.addEventListener('mouseup', this.onMouseUp.bind(this));
         canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
         canvas.addEventListener('click', this.onCanvasClick.bind(this));
-        
+
         // Zoom buttons
         const zoomInBtn = document.querySelector('.sc-zoom-in');
         const zoomOutBtn = document.querySelector('.sc-zoom-out');
@@ -105,8 +124,20 @@ const CanvasController = {
             });
         }
         
-        // Delete key handler
-        document.addEventListener('keydown', (e) => {
+        this.updateTransform();
+        this.updateZoomLabel();
+        this.renderItems();
+
+        console.log('CanvasController setup complete');
+    },
+
+    // Bind document-level listeners (mousemove / mouseup / keydown) idempotently. Stores refs so
+    // they can be removed on unmount; remove-before-add guarantees no stacking across mounts.
+    _bindDocListeners() {
+        this._unbindDocListeners();
+        this._docMouseMove = this.onMouseMove.bind(this);
+        this._docMouseUp = this.onMouseUp.bind(this);
+        this._docKeydown = (e) => {
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (this.selectedItem) {
                     this.deleteSelectedItem();
@@ -114,15 +145,19 @@ const CanvasController = {
                     this.deleteSelectedArrow();
                 }
             }
-        });
-        
-        this.updateTransform();
-        this.updateZoomLabel();
-        this.renderItems();
-        
-        console.log('CanvasController setup complete');
+        };
+        document.addEventListener('mousemove', this._docMouseMove);
+        document.addEventListener('mouseup', this._docMouseUp);
+        document.addEventListener('keydown', this._docKeydown);
     },
-    
+
+    // Remove the document-level listeners added by _bindDocListeners (called on unmount).
+    _unbindDocListeners() {
+        if (this._docMouseMove) { document.removeEventListener('mousemove', this._docMouseMove); this._docMouseMove = null; }
+        if (this._docMouseUp) { document.removeEventListener('mouseup', this._docMouseUp); this._docMouseUp = null; }
+        if (this._docKeydown) { document.removeEventListener('keydown', this._docKeydown); this._docKeydown = null; }
+    },
+
     onToolClick(e) {
         const tool = e.currentTarget;
         if (tool.classList.contains('sc-tool--shape')) {
@@ -278,17 +313,22 @@ const CanvasController = {
     addShape(shapeType, x, y) {
         console.log('Adding shape:', shapeType, 'at', x, y);
         
-        // If no position provided, place in center of viewport
+        // If no position provided (shape comes from the toolbar modal, not a canvas click),
+        // place it at the CURRENT visible viewport centre. Use the exact same screen→canvas
+        // mapping as onCanvasClick (clientPos - canvasRect - pan) / zoom, so the shape lands
+        // where a click in the viewport centre would — never off-screen, regardless of pan/zoom.
         if (x === undefined || y === undefined) {
             const canvas = document.getElementById('scCanvas');
-            const viewport = canvas?.parentElement;
-            if (viewport) {
-                const rect = viewport.getBoundingClientRect();
-                // Calculate center of viewport in canvas coordinates
-                x = (rect.width / 2 - this.panX) / this.zoom + 2000;
-                y = (rect.height / 2 - this.panY) / this.zoom + 2000;
+            const viewport = canvas ? canvas.parentElement : null;
+            if (canvas && viewport) {
+                const canvasRect = canvas.getBoundingClientRect();
+                const vpRect = viewport.getBoundingClientRect();
+                const screenCx = vpRect.left + vpRect.width / 2;
+                const screenCy = vpRect.top + vpRect.height / 2;
+                x = (screenCx - canvasRect.left - this.panX) / this.zoom;
+                y = (screenCy - canvasRect.top - this.panY) / this.zoom;
             } else {
-                // Fallback to canvas center
+                // Fallback to canvas centre
                 x = 2500;
                 y = 2500;
             }
@@ -380,8 +420,15 @@ const CanvasController = {
             const el = this.createItemElement(item);
             canvas.appendChild(el);
         });
-        
+
         this.renderArrows();
+
+        // Toggle the viewport-anchored empty-state hint: visible only when the canvas is empty.
+        const emptyState = document.getElementById('scEmptyState');
+        if (emptyState) {
+            emptyState.style.display =
+                (this.items.length === 0 && this.arrows.length === 0) ? 'flex' : 'none';
+        }
     },
     
     createItemElement(item) {
@@ -1557,16 +1604,53 @@ CanvasController.updateOpacitySliderGradient = CanvasController.updateOpacitySli
 // ========================================
 // Lifecycle 註冊
 // ========================================
+// Ensure the Supply Chain markup is present before CanvasController.init runs.
+// Idempotent: if #supplychain-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureSupplyChainMarkup() {
+    if (document.getElementById('supplychain-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('supplychain', 'assets/html/pages/supplychain.html', '#supplychain-mount')
+            .then(function() {
+                if (!document.getElementById('supplychain-section')) {
+                    console.warn('[SupplyChain] partial loaded but #supplychain-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[SupplyChain] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[SupplyChain] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('supplychain-section', {
         mount() {
             console.log('[SupplyChain] mount');
-            if (window.CanvasController) {
-                window.CanvasController.init();
-            }
+            // Markup is partial-loaded (Phase 3-11). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            // CanvasController.init's own _initialized guard + _bindDocListeners idempotency
+            // (Phase 2B-4) still prevent stacked element/document listeners across mounts.
+            _ensureSupplyChainMarkup().then(function() {
+                var sec = document.getElementById('supplychain-section');
+                if (sec) sec.classList.add('active');
+                if (window.CanvasController) {
+                    window.CanvasController.init();
+                }
+            });
         },
         unmount() {
             console.log('[SupplyChain] unmount');
+            // Remove document-level listeners so they don't stack across navigations.
+            if (window.CanvasController && window.CanvasController._unbindDocListeners) {
+                window.CanvasController._unbindDocListeners();
+            }
         }
     });
 }

@@ -1117,11 +1117,42 @@ window.runOverseasAdjust = runOverseasAdjust;
 // ----------------------------------------------------------------------------
 // Lifecycle 註冊
 // ----------------------------------------------------------------------------
+// Ensure the Overseas Stock markup is present before initialization (Phase 3-3).
+// Idempotent: if #overseas-stock-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureOverseasStockMarkup() {
+    if (document.getElementById('overseas-stock-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('overseas-stock', 'assets/html/pages/overseas-stock.html', '#overseas-stock-mount')
+            .then(function() {
+                if (!document.getElementById('overseas-stock-section')) {
+                    console.warn('[OverseasStock] partial loaded but #overseas-stock-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[OverseasStock] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[OverseasStock] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('overseas-stock-section', {
         mount: function() {
             console.log('[OverseasStock] mount');
-            if (window.initOverseasStockPage) window.initOverseasStockPage();
+            // Markup is partial-loaded (Phase 3-3). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            _ensureOverseasStockMarkup().then(function() {
+                var sec = document.getElementById('overseas-stock-section');
+                if (sec) sec.classList.add('active');
+                if (window.initOverseasStockPage) window.initOverseasStockPage();
+            });
         },
         unmount: function() {
             console.log('[OverseasStock] unmount');

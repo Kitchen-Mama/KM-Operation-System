@@ -1876,13 +1876,46 @@ window.debugForecastDemoData = function() {
 // ========================================
 // Lifecycle 註冊
 // ========================================
+// Ensure the Forecast Review markup is present before initForecastReviewPage runs.
+// Idempotent: if #forecast-section already exists, resolves immediately (no re-fetch, no
+// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
+function _ensureForecastMarkup() {
+    if (document.getElementById('forecast-section')) {
+        return Promise.resolve(true);
+    }
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('forecast', 'assets/html/pages/forecast.html', '#forecast-mount')
+            .then(function() {
+                if (!document.getElementById('forecast-section')) {
+                    console.warn('[Forecast] partial loaded but #forecast-section not found');
+                }
+                return true;
+            })
+            .catch(function(err) {
+                console.warn('[Forecast] failed to load partial:', err);
+                return false;
+            });
+    }
+    console.warn('[Forecast] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('forecast-section', {
         mount() {
             console.log('[Forecast] mount');
-            if (window.initForecastReviewPage) {
-                window.initForecastReviewPage();
-            }
+            // Markup is partial-loaded (Phase 3-6). Ensure it exists, then (re)apply the .active
+            // class (showSection ran before the async injection on first open) and init.
+            // initForecastReviewPage's own _forecastInitialized guard still prevents duplicate
+            // init/charts; unmount resets the flag and destroys charts as before.
+            _ensureForecastMarkup().then(function() {
+                var sec = document.getElementById('forecast-section');
+                if (sec) sec.classList.add('active');
+                if (window.initForecastReviewPage) {
+                    window.initForecastReviewPage();
+                }
+            });
         },
         unmount() {
             console.log('[Forecast] unmount');
