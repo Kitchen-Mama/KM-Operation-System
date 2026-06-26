@@ -11,7 +11,10 @@
 > - `marketplaces.marketplace` may contain a platform name such as `Amazon` / `Walmart` / `Shopify`.
 > - `marketplace_display_name` is user-facing display text.
 > - Some display names may include company-specific wording such as `KM Amazon`.
+> - `marketplace_alias` is an **import-normalization / source-name matching** helper. It **defaults to the same value as `marketplace`** (MVP: `marketplace_alias == marketplace`). On **add**, it is auto-filled from `marketplace` when blank; on **edit**, an existing non-blank alias is **never auto-overwritten** (only auto-filled when empty). Future import normalization may match a source marketplace value against `marketplace_alias` → `marketplace_display_name` → `marketplace`.
 > - This document does **not** propose renaming or restructuring marketplace rows.
+
+> **`marketplaces` columns (current live headers):** `marketplace_id`, `company`, `country`, `marketplace`, `marketplace_display_name`, `marketplace_alias`, `currency`, `status`, `created_by`, `created_at`, `updated_by`, `updated_at`, `note`. A **single-alias** column only — there is **no** `marketplace_aliases` table (multiple aliases is a future option, not implemented).
 
 ---
 
@@ -98,6 +101,8 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 ## 6. Inventory Layer
 
 **Tables:** `factory_stock`, `factory_stock_movements`, `warehouses`, `overseas_inventory_snapshot`, `overseas_inventory_movements`, *future* `amazon_inventory_snapshot` (and similar).
+
+> **Amazon snapshot + import-log tables:** the Amazon snapshot tables (`amazon_inventory_snapshot`, `amazon_inventory_health_snapshot`, `amazon_weekly_sales_snapshot`, `amazon_daily_sales_snapshot`) and the import-governance tables (`import_sync_runs`, `import_sync_issues`) are **import-only**, populated by the config-driven importer. Their **field-level headers, governance, freshness/fallback, and capping flags** are specified in [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md) (this relationship map intentionally does not duplicate field-level schema).
 
 | Relationship | Key |
 |--------------|-----|

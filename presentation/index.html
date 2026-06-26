@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kitchen Mama Operation System — Presentation Portal</title>
+<meta name="description" content="Standalone introduction & presentation portal for the Kitchen Mama Operation System. Documentation only — not the ERP runtime.">
+<link rel="stylesheet" href="css/portal.css">
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+    <div class="topbar__brand">
+        <span class="topbar__logo">KM</span>
+        <span id="brandSub">Operation System</span>
+    </div>
+    <span class="topbar__tag" id="brandTag">Presentation Portal</span>
+    <div class="topbar__spacer"></div>
+    <div class="search">
+        <input id="searchInput" type="search" autocomplete="off" aria-label="Search">
+    </div>
+    <button class="iconbtn" id="langToggle" title="Switch language"></button>
+    <button class="iconbtn" id="expandAll"></button>
+    <button class="iconbtn" id="themeToggle" title="Toggle dark / light mode">🌗 <span id="themeLabel"></span></button>
+</header>
+
+<div class="layout">
+    <!-- Sidebar + content are rendered by portal.js from the active language. -->
+    <nav class="sidebar" id="sidebar" aria-label="Section navigation"></nav>
+    <main class="main">
+        <div class="content" id="content"></div>
+    </main>
+</div>
+
+<!-- i18n content map must load before the renderer -->
+<script src="js/i18n.js"></script>
+<script src="js/portal.js"></script>
+</body>
+</html>

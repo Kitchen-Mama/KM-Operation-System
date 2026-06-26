@@ -1607,6 +1607,8 @@ function saveMarketplace() {
         country: country,
         marketplace: marketplace,
         marketplace_display_name: displayName || marketplace,
+        // MVP: alias defaults to the marketplace value. (Backend also defaults this when blank.)
+        marketplace_alias: marketplace,
         currency: currency,
         status: 'active'
     }).then(function(result) {

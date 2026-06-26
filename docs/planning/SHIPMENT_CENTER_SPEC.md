@@ -1,7 +1,7 @@
 # Shipment Center / Shipment Draft / Shipment Overview — Specification
 
-**Status:** 🟡 Draft v2.1 — Architecture / Spec only (NO code, NO DB, NO implementation)
-**Last Updated:** 2026-06-12
+**Status:** 🟡 Draft v2.3 — Architecture / Spec only (NO code, NO DB, NO implementation)
+**Last Updated:** 2026-06-17
 **Maintained By:** Development Team
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), `assets/specs/active/SYSTEM_ROADMAP.md`
 
@@ -14,6 +14,23 @@
 > - Added future allocation version / `plan_run_id` requirement for `factory_stock_allocation_plans`.
 > - Added open item for received / delivered / completed status distinction.
 > - Clarified Formal Shipment positioning (execution layer, not a separate duplicate table).
+>
+> **Changelog v2.1 → v2.2:**
+> - Added the complete **Formal Shipment end-to-end execution flow** (§15) — stock/order/rate confirmation → Weekly Shipping Plan → Manager + COO approval → Shipment Draft → Confirm & Ship → document generation → manual carrier/factory email → in-transit → receiving → completion → Overview/History.
+> - **Clarified factory-stock reservation & deduction timing** unambiguously (§15.1): plan creation/submission never deducts `current_stock`; reservation increases on approval/shipment creation; **Confirm & Ship is the physical deduction trigger**; cancellation releases reservation only.
+> - Reconfirmed **Shipment Draft = `shipments.status = draft`** (no `shipment_drafts` table) as a dedicated role subsection (§15.2).
+> - Added **Shipment Document Generation** (§16): `document_templates` / `generated_documents` as the MVP document DB, document-type catalog, and shipment-focused document set.
+> - Added field lists for **Shipment Detail Sheet**, **Carrier Booking Form / 托單**, **Commercial Invoice**, **Packing List**, and **Amazon AGL Combined Invoice + Packing** (§16.1–§16.3).
+> - Clarified **MVP manual email flow** to carrier/factory (download → attach labels → email; future API).
+> - Clarified **receiving / completion inventory impact**, including the **Amazon API / live-inventory exception** (§17).
+> - Clarified the **future `shipment_events` / `shipment_routes`** role as enrichment only — Overview / On The Way / World Map still read `shipments` + `shipment_lines` (§18).
+>
+> **Changelog v2.2 → v2.3:**
+> - Added **Shipment Planning Inputs** section (§19) + module-boundary rule: Shipment Center **does not calculate replenishment quantity**; it **executes** approved/planned shipping needs and must not create a parallel replenishment engine.
+> - Added **Inventory Replenishment factory-stock allocation display rules** (§19.1) — allocated factory stock shown per site is **planning metadata only** (no `current_stock` deduction, no ownership transfer, no intercompany transaction; aligns with future `factory_stock_allocation_plans`).
+> - Added **Shipment Plan Quantity Limit** rule (§19.2): a site's planned shipment qty cannot exceed its allocated available factory stock unless explicit borrowing/reallocation is allowed.
+> - Added **future Cross-site / Cross-company Borrowing** planning exception (§19.3) — planning only, never ownership/accounting.
+> - Added the **Shipment Document Dataset** concept (§20): one shared dataset → many rendered templates → `generated_documents`; template controls layout, dataset controls values.
 
 ---
 
@@ -375,9 +392,306 @@ Do **not** implement (now): code · Apps Script · API · UI · DB migration · 
 - **`factory_stock_allocation_plans` approval workflow.**
 - **Exact allocation calculation method** by forecast / company / marketplace / warehouse.
 - **Intercompany ownership / SO / accounting flow** (future only).
+- **`shipment_events` / `shipment_routes` schema** (milestone + route detail — §18).
+- **Carrier master / rate card** (`carriers`, `carrier_routes`, `carrier_rate_cards`, lead times, performance).
+- **Document template token mapping** (token → DB field for each template — future Mapping / Export Center spec).
+- **Export Center field mapping** (which records/fields feed each document type).
+- **Automatic email / carrier API** (replace MVP manual download-and-email).
+- **Amazon API receiving sync** (FBA live-inventory pull vs manual receiving — §17).
+- **`country_of_origin` / customs master data** (likely sourced from SKU Details or a future product/customs master — §16.3).
+- **Document generation logs / `document_template_fields`** (if per-template field definitions are needed later).
+- **Shipment receiving workflow** (manual MVP vs API; partial_received → completed reconciliation).
+- **Cost analysis integration** (freight/duty/fee inputs from shipment + document data).
+- **Exact factory stock allocation formula** (forecast share / shortage / other — Replenishment / Allocation Engine Spec).
+- **Integer allocation rounding / reconciliation** (rounding method; reconcile rounded site allocations vs physical available stock — §19.1).
+- **Cross-company / site borrowing rules** (when an unused allocation may be borrowed by a short site — §19.3).
+- **Borrowing approval rules** (`manager_approval_required` / `COO_approval_required` / `reallocation_reason` — §19.3).
+- **Shipment Plan Quantity Limit behavior: warn vs block** (business rule when planned qty exceeds allocated available stock — §19.2).
+- **Shipment Document Dataset mapping** (dataset → record sources; §20).
+- **Token-to-dataset mapping** (template token → dataset field — future Export Center / Mapping Spec; §16, §20).
+- **Export Center / Mapping Spec dependency** (the authoritative home for token/field mapping).
 
 ---
 
-**Draft v2.1 — Spec only. No code, DB, or implementation changes are implied by this document.**
+## 15. Formal Shipment End-to-End Flow
+
+This section documents the **full shipment-side operating flow**, from stock/order confirmation through document generation to receiving/completion. It is the operational narrative behind the Core Flow (§3); the status enum and reservation rules in §3/§7/§8 remain authoritative.
+
+```
+ 1. Factory / overseas warehouse stock confirmation
+ 2. Purchase Order completed / incomplete qty + delivery schedule confirmation
+ 3. Carrier / forwarder rate confirmation        (MVP manual; future auto / API)
+ 4. Notify OP team
+ 5. Inventory Replenishment gives suggestions; OP plans shipping needs
+ 6. OP pushes selected needs into Weekly Shipping Plan
+ 7. Weekly Shipping Plan review: OP confirms plan, logistics choice, notes → Submit
+ 8. Manager approval
+ 9. COO approval
+10. Approved Weekly Shipping Plan → create shipments + shipment_lines   (shipments.status = draft)
+11. Shipment Draft stage: OP completes shipment details
+       (Amazon shipment ID / reference / warehouse code / ship date / ETD / ETA / carrier / shipping method / note)
+12. Confirm & Ship: status → ready_to_ship / in_transit (as applicable); FACTORY STOCK DEDUCTION HAPPENS HERE
+13. Generate shipment documents:
+       Shipment Detail Sheet · Carrier Booking Form / 托單 · Commercial Invoice · Packing List ·
+       Commercial Invoice + Packing Combined (e.g. Amazon AGL combined form)
+14. MVP manual communication:
+       Download generated documents · attach Shipping Labels · email to factory & carrier/forwarder manually
+       (Future: API / automatic email integration)
+15. Shipment in transit        (future shipment_events / shipment_routes track milestones + route)
+16. Arrival / receiving        (manual MVP, or future API receiving)
+17. Shipment completed:
+       Non-Amazon warehouse / overseas warehouse inventory increases;
+       Amazon inventory should generally come from Amazon API / live inventory pull, NOT manual increase
+18. Shipment remains searchable in Shipment Overview / History
+```
+
+**Step notes:**
+- **Steps 1–4 (pre-plan readiness):** factory/overseas stock and PO completion (`completed_qty` / delivery schedule) are confirmed; carrier/forwarder rate is confirmed (MVP manual, future API-driven); the OP team is notified. These are prerequisites — they do not write shipment records.
+- **Steps 5–9 (planning + approval):** Inventory Replenishment suggestions drive the Weekly Shipping Plan; OP submits; **Manager then COO** approve. This is the planning/approval layer (`shipping_plans` / `shipping_plan_lines`).
+- **Step 10:** approval **creates `shipments` + `shipment_lines` with `status = draft`** and may reserve factory stock (§15.1).
+- **Steps 11–12:** Shipment Draft completes formal data; **Confirm & Ship is the physical execution trigger** (§15.1) and finalizes FIFO PO allocation (§6).
+- **Steps 13–14:** documents are generated (§16) and, in MVP, manually emailed to factory/carrier.
+- **Steps 15–18:** in-transit (future events/routes §18) → receiving (§17) → completed → searchable in Overview/History.
+
+### 15.1 Factory Stock Reservation / Deduction Timing
+
+This makes the reservation/deduction timing in §7/§8 **unambiguous across the full flow**:
+
+- **Creating a Shipping Plan does NOT deduct `factory_stock.current_stock`.**
+- **Submitting a Weekly Shipping Plan does NOT deduct `factory_stock.current_stock`.**
+- **Approved Weekly Shipping Plan / shipment creation (Step 10) may increase `factory_stock.reserved_stock`** (reservation), writing `factory_stock_movements` with `movement_type = stock_reserved` (`current_stock` unchanged).
+- **Shipment Draft is `shipments.status = draft` and does NOT deduct `current_stock` by itself.**
+- **Confirm & Ship (Step 12) is the physical execution trigger:**
+  - `factory_stock.current_stock` **decreases**.
+  - `factory_stock.reserved_stock` **decreases / is released to zero** for the shipped allocation.
+  - `factory_stock_movements` writes a **`stock_shipped`** (a.k.a. shipment_allocated) movement, recording before/after for both current and reserved stock, `related_entity_type = shipment_line`, `related_entity_id = shipment_line_id`.
+- **Cancelled shipments must release `reserved_stock` and must NOT deduct `current_stock`** (write `stock_reservation_released`).
+- **`completed` / `cancelled` shipments must NOT count as on-the-way.**
+
+> Consistent with §7 (reservation on plan approval) and §8 (deduction on ready_to_ship/confirm). The single authoritative deduction moment is **Confirm & Ship**.
+
+### 15.2 Shipment Draft Role
+
+- **Shipment Draft is NOT a separate DB.**
+- **Shipment Draft = records in `shipments` + `shipment_lines` where `shipments.status = draft`.**
+- Shipment Draft is the **editable formal preparation view** after Weekly Shipping Plan approval.
+- **Shipping Plan is the planning / approval layer**; **Shipment is the formal execution layer.**
+- **Do NOT create `shipment_drafts` / `shipment_draft_lines` tables.**
+
+---
+
+## 16. Shipment Document Generation
+
+> **Generated documents are derived outputs, not source-of-truth records.** They are assembled from the authoritative shipment/PO/SKU/warehouse data; regenerating a document must not change underlying records.
+
+**MVP document DB (unchanged):**
+
+**`document_templates`** —
+```
+template_id
+template_name
+document_type
+carrier_id
+country
+marketplace
+language
+template_file_type
+template_file_id
+template_drive_url
+template_version
+is_active
+created_at
+updated_at
+```
+
+**`generated_documents`** —
+```
+document_id
+template_id
+related_entity_type
+related_entity_id
+document_type
+file_name
+file_id
+file_url
+generated_by
+generated_at
+status
+note
+```
+
+**Document-type catalog** (`document_type`): `PURCHASE_ORDER`, `SHIPMENT_DETAIL_SHEET`, `CARRIER_BOOKING_FORM`, `COMMERCIAL_INVOICE`, `PACKING_LIST`, `COMMERCIAL_INVOICE_PACKING_COMBINED`, `CUSTOMS_DECLARATION`, `CERTIFICATE_OF_ORIGIN`, `MSDS`, `OTHER`.
+
+**Shipment-focused document types (this spec):** `SHIPMENT_DETAIL_SHEET`, `CARRIER_BOOKING_FORM`, `COMMERCIAL_INVOICE`, `PACKING_LIST`, `COMMERCIAL_INVOICE_PACKING_COMBINED`.
+
+**Generation rules:**
+- **A single shipment may generate multiple documents.**
+- Example: a **Taiwan export to US** can generate **TW Invoice, TW Packing List, US Invoice, US Packing List**.
+- **Amazon AGL** may use `COMMERCIAL_INVOICE_PACKING_COMBINED`.
+- **Invoice and Packing List remain separate document types** even though they share most data — international trade / forwarder / customs workflows may require them as separate documents.
+- The system should build **one shared Shipment Document Dataset** per shipment and generate multiple templates from it (one dataset → many rendered documents).
+- **Exact token-to-DB mapping is future Mapping Spec / Export Center Spec work** — not part of this update.
+
+### 16.1 Shipment Detail Sheet — fields
+
+Minimum fields:
+- Shipment ID · Reference · SKU · Quantity · Carton Qty · Weight KG · CBM · Carton No. · PO No. · Warehouse Code · Destination Warehouse · Expected Ship Date / ETD · Expected Arrival Date / ETA · Carrier · Shipping Method · Note.
+
+Likely sources: `shipments`, `shipment_lines`, `shipment_line_allocations`, `purchase_order_lines`, `purchase_orders`, `warehouses`, `carriers` / future carrier master, `shipment_events` / future milestone data (if needed).
+
+### 16.2 Carrier Booking Form / 托單 — fields
+
+**Header / recipient:**
+- customer order number (usually `shipment_id` or `shipment_no`) · service / `shipping_method` · recipient name · recipient company · recipient address · recipient city · recipient postal code · recipient country code · PO number · carton count · battery flag · magnetic flag · customs declaration type · declaration currency.
+
+**SKU / customs section:**
+- cargo item number (e.g. `shipment_no` + six-digit sequence) · PO number · cargo weight KG · carton length / width / height CM · English product name · Chinese product name · declared unit value · per-carton declared quantity · HS / HTS code · model · material · product usage · sales link · battery flag · magnetic flag.
+
+Likely sources: `shipments`, `shipment_lines`, `sku_details`, `marketplace_skus`, `purchase_orders`, `warehouses`, carrier / shipping method, future template mapping.
+
+### 16.3 Commercial Invoice / Packing List / Amazon AGL Combined — fields
+
+**Commercial Invoice:**
+- Invoice No · Invoice Date · Ship To · Invoice Of · Marks / No. · SKU · Product Description · Quantity · Unit Price · Amount · Total PCS / Amount · Material.
+
+**Packing List:**
+- PO No · Invoice Of · Invoice No · Ship To · Invoice Date · Marks / No. · SKU · Product Description · Quantity · SKU-level Total CTNS / Gross Weight / Net Weight / CBM · Total PCS / CTNS / Gross Weight / Net Weight / CBM · Carton Size.
+
+**Amazon AGL Combined Invoice + Packing:**
+- FBA Shipment ID · Description of Goods · Material · HTS Code · Country of Origin · Qty PCS · Actual Unit Cost · Total Unit Value · CTNS · GW KGS · NW KGS · CBM · Total Currency / PCS / CTN / GW / NW / CBM · Date.
+
+> **`country_of_origin`** will likely need to be available from **SKU Details or a future product / customs master**. **No DB schema is added now** — this is flagged as a **future mapping / master-data item** (see Open Items).
+
+---
+
+## 17. Receiving & Inventory Impact
+
+- **Receiving can be manual (MVP) or API-driven (future).**
+- **Non-Amazon overseas warehouse / 3PL receiving** can update `overseas_inventory_snapshot` and `overseas_inventory_movements` (inventory increases on receipt).
+- **Amazon FBA receiving should generally NOT manually increase inventory** when Amazon API / live inventory sync is the source of truth (avoid double-counting).
+- **`completed` status should be set only after receiving / completion confirmation.**
+- **`partial_received` remains valid** when only part of a shipment is received.
+
+---
+
+## 18. Future `shipment_events` / `shipment_routes`
+
+- **Shipment Overview, On The Way, and World Map still read `shipments` + `shipment_lines` as the authoritative shipment records.**
+- **`shipment_events` and `shipment_routes` are future detail / enrichment tables** — they **must NOT replace** `shipments` / `shipment_lines`.
+- **`shipment_events`** may track milestones: `booked`, `picked_up`, `departed`, `arrived_port`, `customs_clearance`, `delivered`, `received`, `exception` / `stuck`.
+- **`shipment_routes`** may support: `origin`, `destination`, route points, carrier route, map visualization.
+- **Exact schema is future work** (see Open Items).
+
+---
+
+## 19. Shipment Planning Inputs
+
+**Shipment Center is NOT the primary calculation engine for replenishment quantity.** It **receives planned shipping needs** from Inventory Replenishment / Weekly Shipping Plan and turns them into execution records, documents, and tracking.
+
+**Inputs considered before a Weekly Shipping Plan** (read / reference, not recomputed here):
+- Factory Stock
+- Factory Stock `reserved_stock` / `available_stock` (`available_stock = current_stock − reserved_stock`, computed)
+- Overseas Inventory / Warehouse Stock
+- On-the-way shipments
+- Forecast / FC Summary
+- Inventory Replenishment suggestions
+- Purchase Order `completed_qty` / incomplete qty / expected completion date
+- Production Schedule
+- Carrier / forwarder rate
+- OP manual adjustment / notes
+
+**Module boundary (must hold):**
+- **Inventory Replenishment calculates or displays the suggested shipping need.**
+- **Shipment Center turns selected shipping needs into Weekly Shipping Plan → Shipment Draft → formal Shipment → documents → tracking.**
+- **Shipment Center must NOT create a parallel replenishment calculation engine.** Replenishment / allocation math lives in `SUPPLY_PLANNING_CALCULATION_RULES.md` and the future Calculation Engine Spec.
+
+### 19.1 Inventory Replenishment Factory Stock Allocation Display
+
+- **Factory stock is physical stock, not company/site-owned inventory.**
+- For **planning display**, factory stock may be **virtually allocated** across company / country / marketplace / warehouse / site / SKU according to forecast share, shortage, or other calculation rules.
+- Inventory Replenishment may display each site's allocated factory stock as an **integer quantity**.
+- **Allocated factory stock shown in Inventory Replenishment is planning metadata only:**
+  - It does **NOT** deduct `factory_stock.current_stock`.
+  - It does **NOT** transfer ownership.
+  - It does **NOT** create intercompany transactions.
+- It should **align with the future `factory_stock_allocation_plans`** planning-layer table (§9).
+
+**Suggested display rule:**
+```
+site_allocated_factory_stock_qty = rounded integer allocation for that site / SKU
+```
+
+- **Exact formula belongs to the Forecast / Replenishment Calculation Spec.**
+- **Rounding method must be defined later.**
+- If the **total rounded allocation differs from physical available stock**, the future calculation spec must define **rounding reconciliation** (see Open Items).
+
+### 19.2 Shipment Plan Quantity Limit
+
+- **A site's planned shipment quantity should not exceed the site's allocated available factory stock quantity.**
+- If a user attempts to plan more than the allocated available stock, the system should **warn or block** (the warn-vs-block business rule is a future decision — see Open Items).
+- This **prevents over-planning against shared factory stock**.
+- **Physical stock deduction still happens only at Confirm & Ship** (§15.1), **not at planning time.**
+
+**Example:**
+```
+Factory available stock for SKU A = 10,000
+Allocation display:
+  KM US   = 4,000
+  ResUS US = 3,000
+  ResTW CA = 3,000
+→ KM US normally cannot plan more than 4,000,
+  unless borrowing / reallocation is explicitly allowed (§19.3).
+```
+
+### 19.3 Cross-site / Cross-company Borrowing *(future planning exception)*
+
+- Some sites may **not need their full allocated factory stock**.
+- Another site / company may have a **shortage** and may need to **borrow** the unused allocation.
+- **This is a planning exception, not ownership / accounting.**
+- Future rules may support: `borrow_from_low_risk_site`, `manual_override`, `manager_approval_required`, `COO_approval_required`, `reallocation_reason`.
+- **Do not implement now. Do not create intercompany SO / AP / AR.**
+- This should be finalized in the **Replenishment Calculation / Allocation Engine Spec**.
+
+---
+
+## 20. Shipment Document Dataset
+
+**Shipment documents should be generated from one shared Shipment Document Dataset.**
+
+```
+Authoritative DB records
+        ↓
+Build Shipment Document Dataset        (one dataset per shipment)
+        ↓
+Render multiple document_templates     (Detail Sheet · Booking Form · Invoice · Packing List · AGL Combined)
+        ↓
+Save generated_documents
+```
+
+**Purpose:**
+- Avoid each document template implementing its **own DB query logic**.
+- Keep values **consistent** across Shipment Detail Sheet, Carrier Booking Form, Commercial Invoice, Packing List, and AGL Combined forms.
+- **Template file controls layout; dataset controls values.**
+
+**Dataset may include:**
+
+**Header fields:**
+`shipment_id`, `shipment_no`, `reference_id`, `fba_shipment_id`, `invoice_no`, `invoice_date`, `carrier_id`, `shipping_method`, `etd`, `eta`, `warehouse_code`, `destination_warehouse`, `ship_to`, `ship_from`, `currency`.
+
+**Line fields:**
+`sku`, `product_name_en`, `product_name_cn`, `qty`, `carton_qty`, `carton_no_start`, `carton_no_end`, `gross_weight`, `net_weight`, `cbm`, `carton_length`, `carton_width`, `carton_height`, `declared_unit_value`, `amount`, `hs_code` / `hts_code`, `material`, `usage`, `model`, `country_of_origin`, `sales_link`, `battery_flag`, `magnetic_flag`, `po_no`.
+
+**Total fields:**
+`total_qty`, `total_cartons`, `total_gross_weight`, `total_net_weight`, `total_cbm`, `total_amount`.
+
+**Notes:**
+- **Exact token-to-dataset mapping belongs to the future Export Center / Mapping Spec.**
+- **`country_of_origin`** may require **SKU Details or a future customs / product master** (no schema added now — see Open Items).
+- **The Shipment Document Dataset is a generated runtime / mapping concept, not necessarily a DB table in MVP.**
+- **Do not add DB schema now** unless a future Mapping Spec requires it.
+
+---
+
+**Draft v2.3 — Spec only. No code, DB, or implementation changes are implied by this document.**
 
 **End of Document**
