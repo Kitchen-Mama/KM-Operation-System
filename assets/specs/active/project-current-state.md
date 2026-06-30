@@ -674,3 +674,215 @@ This page now serves as the **first validated example** of the Operation System 
 - Google Apps Script shares one global scope across all `.gs` files in a project, so functions/globals were moved (not duplicated) across files with **no imports/exports**. All `.gs` files in `apps-script/` must be copied into the Apps Script project **together**.
 - Validation: 42 functions → 42 (identical name set, no duplicates); each global const (`VALID_LIFECYCLES_`, `VALID_REPLENISHMENT_MODELS_`, `VALID_MARKETPLACE_SKU_STATUSES_`, `AMAZON_DESTINATION_SPREADSHEET_ID_`, `AMAZON_TEXT_FIELDS_`, `IMPORT_CONFIGS`) declared exactly once; `doGet`/`doPost`/`runAmazonSnapshotImports`/`clearAmazonImportTestLogs` present; all 11 POST actions still routed; Amazon Health inv-age mapping intact; `node --check` passes on the concatenated modules.
 - No DB headers, mappings, routes, frontend, or business logic changed. **Requires redeploying the Apps Script project from the new module files.**
+
+
+---
+
+## Inventory Table Mapping Spec v0.1 + Daily Sales 7-Day Window (2026-06)
+
+- **`docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md` created (Draft v0.1)** — mapping for the Inventory Replenishment main table (貨物庫存表): Country+Marketplace mandatory scope; Stock block (Available/FC Transfer/FC Processing/C Orders/Unfulfillable ← `amazon_inventory_snapshot`); Long Term Storage (Over 90 / Over 180 ← `amazon_inventory_health_snapshot`); Sales Trend Past 7 Days ← `amazon_daily_sales_snapshot`; Forecast Breakdown (SKU>Series>Category target priority) ← `fc_regular_forecast`/`fc_target_rules`; Upcoming Event ← `fc_special_events`. Many sections TBD (AI Suggestion, Days of Supply, Suggested/Planned Qty, 3rd Party Stock, Shipping). No frontend / calc engine / DB change.
+  - Open question logged: `inv_age_366_to_455_days`/`inv_age_456_plus_days` requested in §4 do **not** exist in the current health snapshot (top bucket is `inv_age_365_plus_days`); Over 180 maps to existing buckets until finer buckets are added.
+  - Monthly Sales summary deferred to a future BigQuery table (`AmazonSales.amazon_monthly_sales_summary`) with close/refresh/recalc policy TBD.
+- **Amazon Daily Sales import window changed: rolling 4-day → past 7 completed days, EXCLUDING today** (`06_amazon_import_config.gs`: `lookbackDays: 7` + `excludeToday: true`; `08_amazon_import_sources.gs`: rolling `WHERE DATE(Date) BETWEEN DATE_SUB(CURRENT_DATE("Asia/Taipei"), INTERVAL 7 DAY) AND DATE_SUB(..., INTERVAL 1 DAY)`). Per-group fallback retained, now using each group's own 7-completed-day window ending on its latest date (`INTERVAL 6 DAY`). No other import sources changed; Amazon Health mapping intact. **Requires Apps Script redeploy.**
+
+
+---
+
+## Inventory Table Mapping Spec v0.2 (2026-06-29)
+
+- **`docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md` upgraded v0.1 → v0.2 (spec/doc only — no code, frontend, Apps Script, API, or DB change).**
+- **DB sync documented:** `overseas_inventory_snapshot` now carries `physical_stock` / `available_stock` / `reserved_stock` / `damaged_stock` / `on_the_way_qty` / `on_the_way_eta` / `on_the_way_bucket` / `last_movement_at` + audit fields (`available_stock = physical_stock − reserved_stock − damaged_stock`). New `overseas_inventory_movements` ledger (before/after per stock type, `from_stock_type → to_stock_type`, reference linkage) registered for **future reservation control** — no logic implemented.
+- **Stock block:** added **Unsellable** = `amazon_inventory_snapshot.unfulfillable_qty` (same field as Unfulfillable; display label only, not double-counted).
+- **AI Suggestion columns:** replaced old columns with incremental buckets **Need 0–18d / 19–30d / 31–45d / 46–90d** + **Suggested Qty** (= sum of the four buckets, floored at 0).
+- **Sales Driven algorithm rewritten:** consumes **Upcoming Event** (count-once, one bucket only) and **Shipping Shipment / On-the-Way** (FIFO-by-ETA waterfall: 0–18 → 19–30 → 31–45 → 46–90; consume-once, never reused across buckets). Shipment Allocation Priority Rule stated explicitly.
+- **Forecast Driven algorithm:** Safety Days **15 → 30**; `Forecast Daily Demand = Adjusted 60-Day FC / 60`; `Suggested Qty = max(0, Adj 60-Day FC + Daily×30 + Event − Current Stock − On The Way)`.
+- **Days of Supply UI:** `<30` Red (Needs Action) · `30–150` Normal · `>150` Light Brown (Potential Overstock).
+- **Mixed Carton:** `mixed_carton_rules` exists in DB — **Future Extension only, no implementation.**
+- All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` (this spec records Inventory-Table-level intent/direction only). New open questions logged (demand run-rate window, event-to-bucket attribution, On-the-Way source unification, Current Stock definition).
+
+
+---
+
+## Supply Planning Finalized — Inventory Table V1 + Shared Allocation + Fulfillment Model (2026-06-29)
+
+**Spec/doc only — no code, frontend, Apps Script, BigQuery, API, or DB implementation. Four docs synchronized consistently.**
+
+- **`INVENTORY_TABLE_MAPPING_SPEC.md` → v1.0 (Inventory Table Mapping V1 finalized):**
+  - Filter scope finalized to **Company + Country + Marketplace** (Company added; never aggregate all marketplaces).
+  - Stock Card finalized (Available / FC Transfer / FC Processing / Customer Orders / **Unsellable** = `unfulfillable_qty`).
+  - Long Term Storage **Over 180+** = `181_270 + 271_365 + 366_455 + 456_plus` (importer source dependency flagged: config currently tops at `365_plus`).
+  - Sales Trend = **Past 7 Days** (previous 7 complete days, exclude today) + Apps Script requirement stated in spec.
+  - **First Layer Summary Mapping** added: Current Stock (`Available+FC Transfer+FC Processing`), On The Way (pending), 3rd Party Stock (eligible overseas `available_stock`), Avg Sales/Day (`weekly sales_units_7d ÷ 7`, 1 dp), 60 Days FC (`M+1 + M+2`, target applied), Upcoming Event (Total Event FC), Days of Supply (`Current Stock ÷ Avg/Day`), Suggested Qty, Factory CN/TW (`factory_stock.current_stock` by `warehouses.country`).
+  - **Sales Driven** replaced: cumulative incremental Need buckets `0–18/19–30/31–45/46–90`, **events count once**, **on-the-way deducted once (FIFO by ETA)**; Suggested Qty = final remaining demand after stock/on-the-way/event processed.
+  - **Forecast Driven** finalized: **Safety Days = 30**; `max(0, FC M+1 + FC M+2 + Safety − Current Stock − Qualified On-the-Way)`, target rule applied.
+  - **Days of Supply** color: `<30` Red · `30–150` Normal · `>150` Khaki/Brown (long inventory warning).
+  - **Overseas Shared Inventory Allocation** chapter (7 rules, now official): scope same company + same country; platform = no sharing; self = required; hybrid = both visible; **18-day minimum survival stock = highest priority**; remaining by `allocation_priority` (higher = higher, PM-editable); future Factory/Shipping/Carrier reuse the same priority.
+  - **Marketplace Fulfillment Model UI flow:** Add Marketplace picks `platform_fulfilled`/`self_fulfilled`/`hybrid`; Add SKU locks model for platform/self, PM selects for hybrid; Inventory UI shows platform layout / hides platform card (self) / both (hybrid).
+- **`DATABASE_RELATIONSHIP_MAP.md` synced:** `marketplaces` + `fulfillment_model` + `allocation_priority`; `marketplace_skus` + `fulfillment_model` (SKU-level override + lock rule); `overseas_inventory_snapshot` current columns (physical/available/reserved/damaged/on_the_way_*); `overseas_inventory_movements` current columns (`movement_scope` + before/after per stock type); **`mixed_carton_rules`** new table mentioned (future extension); Import SKU Template note (hybrid marketplace requires Fulfillment Model column).
+- **`SUPPLY_PLANNING_CALCULATION_RULES.md` → Draft v3:** new chapter **§20 Overseas Shared Inventory Allocation Engine** (scope, fulfillment-model behavior, 18-day survival stock, `allocation_priority` distribution, Sales/Forecast Need alignment with Safety Days = 30, future Shipping allocation extension).
+- **Status: Inventory Table Mapping V1 finalized · Shared Overseas Allocation Rule finalized · Marketplace Fulfillment Model finalized · Allocation Priority finalized. Ready for next module.**
+
+
+---
+
+## Amazon Inventory Health — Optional Age-Bucket Importer Support (2026-06-29)
+
+**Importer bug fix only — no frontend, no DB schema, no BigQuery, no other import sources changed.**
+
+- **Problem:** the config-driven importer validated **every** `fieldMap` source header as required, so an Amazon Inventory Health report missing an age-bucket header (reports vary by marketplace/version) raised `missing_required_header` and stopped the whole `amazon_inventory_health_snapshot` source.
+- **Fix:** added **`optionalFieldMap`** support in `07_amazon_import_runner.gs` — header validation still checks **only** `fieldMap`; optional fields are mapped **only if the source header exists**, otherwise set to blank (safe for `rowHashFields` + dedup). Optional headers never raise `missing_required_header`.
+- **`06_amazon_import_config.gs`** (config 2, `amazon_inventory_health_snapshot`): required `fieldMap` = Date / Country / SKU / ASIN / Available + `inv_age_61_to_90` / `91_to_180` / `181_to_270` / `271_to_365`. Moved to `optionalFieldMap`: `inv_age_0_to_90_days`, `inv_age_365_plus_days`, `inv_age_366_to_455_days`, `inv_age_456_plus_days`. `rowHashFields` extended to all required + optional buckets.
+- **Compatibility:** `inv_age_365_plus_days` = backward-compatible top bucket for old reports; `inv_age_366_to_455_days` / `inv_age_456_plus_days` = newer finer buckets, preferred when present. Missing buckets → blank/0; import still succeeds.
+- **DB header reminder:** destination tab headers must be underscored (e.g. `inv_age_456_plus_days`), **not** hyphenated (`inv-age-456-plus-days`) — the writer maps by destination header, so a hyphenated header silently drops the value. DB not changed automatically.
+- **Docs:** `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` → Draft v1.5 (§7.2 + §9.1 optionalFieldMap); `INVENTORY_TABLE_MAPPING_SPEC.md` → v1.2 (§5 report-version note, Over 180+ formula unchanged).
+- **Requires Apps Script redeploy** to take effect (repo `.gs` is the source mirror).
+
+
+---
+
+## Weekly Shipping Plan Mapping Spec — Decision Layer (2026-06-29)
+
+**Spec/doc only — no code, frontend, Apps Script, DB migration, or BigQuery.**
+
+- **`docs/planning/WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` created (Draft v1).** Defines Weekly Shipping Plan as the **Decision Layer** between Inventory Replenishment (**Analysis Layer**) and Shipment Draft/Overview (**Execution Layer**).
+- **Submit Plan DB write contract clarified:** Submit Plan creates `shipping_plans` + `shipping_plan_lines`; **one `shipping_method` = one `shipping_plan` card** (SKUs grouped by method); created in `status = draft`; no factory-stock reservation/deduction at submit (that stays in Shipment Center).
+- **`shipping_plans` / `shipping_plan_lines` column schema defined** (this fills the gap flagged in the Shipment/Request/PO readiness audit — `DATABASE_RELATIONSHIP_MAP.md` §8 listed the tables without columns; this spec is now their authoritative column definition, planned/not migrated).
+- **Decision snapshot rule:** Submit Plan freezes Current Stock / Avg Sales-Day / Days of Supply / Suggested Qty / Target Days / Shipping Method / Inventory Snapshot Date (+ optional FC/event context) onto the plan so it does not drift with daily inventory changes.
+- **Status flow:** `draft → pending_approval → approved → (convert) Shipment Draft`; `draft → cancelled`; `pending_approval → rejected → draft` (Reject requires `rejected_reason`, appended to `note`). Plan-layer status is **distinct** from shipment execution status (`SHIPMENT_CENTER_SPEC.md` §3).
+- **Editable rule:** Shipping Qty editable **only in Draft** (updates `approved_qty` → `carton_qty` → plan totals → cost if carrier selected); read-only in Pending Approval / Approved.
+- **Shipment hand-off:** Approved plan converts to Shipment Draft as an execution snapshot (initial plan→shipment field copy documented); shipment never recalculates planning.
+- **`SUPPLY_CHAIN_SYSTEM_FLOW.md` → Draft v1.1:** added §5.1 Decision Layer chain + cross-reference; Inventory Replenishment / Weekly Shipping Plan / Shipment layer roles stated.
+- Cost Breakdown left as placeholder (future Carrier Price Spec). Non-goals: no carrier pricing formula, no Request/PO conversion, no Shipping Allocation algorithm, no code.
+
+
+---
+
+## Weekly Shipping Plan Architecture Finalized (2026-06-29)
+
+**Spec/doc only — no code, frontend, Apps Script, DB migration, or BigQuery.**
+
+- **`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` → Draft v1.1.** Finalized the Weekly Shipping Plan architecture before implementation:
+  - **Shipping Plan Group Key (FINAL):** a plan is uniquely grouped by the **six values** Company + Country + Marketplace + Ship From + Destination + Shipping Method; if any differs → new plan. Supersedes the method-only rule. `company` added to `shipping_plans`.
+  - **`plan_version`** added (default 1; in-Draft edits do not bump; Reject→Draft→resubmit = +1; decision revisions only).
+  - **`submit_batch_id`** added (one Submit Plan action → many plans share one batch id; for history / audit / AI / reporting).
+  - **Snapshot location FINALIZED to `shipping_plan_lines` only** (per-SKU); planning snapshots are **not** stored on `shipping_plans`. Required fields: `snapshot_current_stock`, `snapshot_avg_sales_per_day`, `snapshot_days_of_supply`, `snapshot_suggested_qty`, `snapshot_target_days`, `snapshot_fc_context`, `snapshot_event_context`. SKU Shipping Details displays them after Submit; Shipment Draft inherits them **without recalculation**.
+- **`SUPPLY_CHAIN_SYSTEM_FLOW.md` → Draft v1.1:** added **§2A Core Architecture Philosophy — Three-Layer Separation**: Inventory Replenishment always **recalculates** (Analysis), Weekly Shipping Plan always **preserves planning decisions** (Decision), Shipment always **preserves execution records** (Execution) — these three must never be mixed.
+- **`DATABASE_RELATIONSHIP_MAP.md` §8 synced:** documented full `shipping_plans` columns (incl. `plan_version`, `submit_batch_id`, six group-key fields) and confirmed the `shipping_plan_lines` snapshot fields; snapshot location finalized on the line. Marked authoritative-in-Weekly-Shipping-Plan-spec (planned, not migrated).
+- Resolved prior open questions (grouping key, snapshot location, submit batch). Remaining open: plan_no/plan_name format, approval actor model, ship_from/destination source, cancel-from-pending semantics, resubmit history retention, cost recalc trigger.
+
+
+---
+
+## Weekly Shipping Plan — Version / Batch / Immutable-Flow Finalized (2026-06-29)
+
+**Spec/doc only — no code, frontend, Apps Script, DB migration, or BigQuery.**
+
+- **`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` → Draft v1.2:**
+  - **Reject/Resubmit (FINAL MVP):** keeps the **same `shipping_plan_id`** (one row); **only `plan_version` increments** (e.g. SP-001 v1 pending → reject → v1 draft → resubmit → v2 pending). No new row per version.
+  - **`parent_shipping_plan_id` added:** MVP `parent_shipping_plan_id = shipping_plan_id`; reserved for a future one-row-per-version model (version rows point back to the original) without changing the conceptual model.
+  - **`batch_status` added:** batch-level summary across the `submit_batch_id` group (`open / partial_approved / approved / rejected / cancelled / mixed`), **derived helper only**; `shipping_plans.status` stays the **primary** approval status.
+  - **Glossary added:** **Decision Commit** (= Submit Plan: before = recalculated/unpersisted, after = `shipping_plans`/lines created + snapshot frozen) and **Decision Snapshot** (immutable per-SKU planning context on `shipping_plan_lines`; single source of truth for Shipment; never recalculated).
+- **`SUPPLY_CHAIN_SYSTEM_FLOW.md`:** added the **Immutable Flow Principle** (every downstream layer inherits/copies upstream into its own snapshot but never mutates upstream — Replenishment→Plan→Shipment) and the **Single Source of Truth by layer** table (Analysis = live data; Decision = `shipping_plans`/lines; Execution = `shipments`/lines; Procurement = `purchase_orders`/lines; Documents = `generated_documents`). No new DB required.
+- **`DATABASE_RELATIONSHIP_MAP.md` §8:** added `parent_shipping_plan_id` + `batch_status` to the `shipping_plans` column list; clarified `status` (individual, primary) vs `batch_status` (batch summary, helper); documented MVP same-row reject/resubmit + `parent_shipping_plan_id = shipping_plan_id`.
+
+
+---
+
+## Supply Chain Architecture Principles File Created (2026-06-29)
+
+**Spec/doc only — no code, frontend, Apps Script, DB schema, or BigQuery.**
+
+- **`docs/planning/SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` created (v1)** — the single stable home for supply-chain architecture language, reusable by all current/future specs (Inventory Replenishment, Weekly Shipping Plan, Shipment Draft/Overview, Request Order, Purchase Order, Export Center, API Architecture).
+- **Analysis / Decision / Execution architecture language centralized:** Analysis Layer (Inventory Replenishment — recalculates from live data), Decision Layer (Weekly Shipping Plan — `shipping_plans`/lines), Execution Layer (Shipment — `shipments`/lines), each with owner, source-of-truth, and rules.
+- **Formalized:** **Decision Commit** (= Submit Plan), **Decision Snapshot** (immutable per-SKU context on `shipping_plan_lines`, 7 fields, never recalculated), **Immutable Flow** (every layer owns its truth; downstream copies upstream into its own snapshot but never mutates upstream), **Single Source of Truth** table (Analysis/Decision/Execution/Procurement/Documents), **Business Object Identity** (stable business identity vs physical DB identity; MVP `parent_shipping_plan_id = shipping_plan_id` + `plan_version` on same row; future one-row-per-version — no new DB field now), plus the Analysis→Decision→Execution→History/Documents diagram.
+- **Docs synchronized to reference it:** `SUPPLY_CHAIN_SYSTEM_FLOW.md` (Related + §2A pointer; "every layer owns its own truth, downstream copies but never mutates"), `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` (Authority line + §0 Glossary governed-by note), `DATABASE_RELATIONSHIP_MAP.md` §8 (architecture-governance note). No duplicate/conflicting definitions; no DB schema change.
+
+
+---
+
+## Weekly Shipping Plan Phase 1 — Implemented (2026-06-29)
+
+**Code change (frontend + Apps Script source mirror); requires Apps Script redeploy + the two new tabs.**
+
+- **Submit Plan now writes real records.** Inventory Replenishment `submitReplenishmentPlans()` builds a flat per-SKU line list and calls **`KM.DB.createShippingPlansBatch`** (Decision Commit). Backend groups by the six-value key → `shipping_plans` (status=draft, plan_version=1, parent=self, batch_status=open, source=inventory_replenishment_submit_plan, shared submit_batch_id) + `shipping_plan_lines` (requested/approved/carton + 7 Decision Snapshot fields). Falls back to legacy sessionStorage only when cloud write is unavailable (Demo). AI Suggestion algorithm untouched.
+- **Apps Script:** new module `11_shipping_plan_handlers.gs` (`handleCreateShippingPlansBatch_` / `handleUpdateShippingPlanStatus_` / `handleUpdateShippingPlanLineQty_`); router wired (3 POST actions); `shipping_plans` + `shipping_plan_lines` added to `getOperationDb`/`getTable` validTabs + `filterRows_`. Handlers auto-create the two tabs with the documented headers if missing (the only schema-affecting action; no existing table/field altered).
+- **DB API:** normalizers + cache + getters (`getShippingPlans` / `getShippingPlanLines`) + write methods (`createShippingPlansBatch` / `updateShippingPlanStatus` / `updateShippingPlanLineQty`).
+- **Weekly Shipping Plan page** reads `shipping_plans`/`shipping_plan_lines` from DB (one plan = one card) with the spec's card + SKU-detail mapping (snapshots displayed). Draft: editable Shipping Qty (live totals) + Save + Submit + Cancel; Pending Approval: Approve + Reject (reason required, appended to note, → Draft); Approved: read-only. Resubmit reuses the same `shipping_plan_id`, `plan_version +1`. Legacy sessionStorage render kept as fallback.
+- **DB impact:** two NEW tables only (`shipping_plans`, `shipping_plan_lines`) auto-created with documented headers in the operation DB spreadsheet; no existing schema changed. **Requires Apps Script redeploy.**
+
+
+---
+
+## Normalized Avg Sales Rule + Daily Sales 30-Day Window (2026-06-29)
+
+**Spec + import config. No new table, no BigQuery schema change, no Shipment/Request/PO/Carrier change.**
+
+- **Normalized Avg Sales / Day Rule finalized** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22, Draft v3.2): Promotion / campaign / special event days are **excluded from the baseline sales calculation**. Default `sales_units_7d ÷ 7`; when event/promotion contamination exists in the recent window, use `normalized_avg_sales_per_day = sum(sales on normal days) ÷ count(normal days)` over the **latest 30 completed days excluding today**, with normal days = 30-day window − event/promo days (from `fc_special_events` + `campaigns` + `campaign_sku_lines`). Fallback ladder: ≥7 normal days → normalized; 3–6 → normalized + `low_sample_warning`; <3 → weekly fallback + `insufficient_normal_days`. Forecast-Driven SKUs: Avg Sales auxiliary only.
+- **Amazon Daily Sales snapshot expanded 7 → 30 complete days** (still excludes today): `06_amazon_import_config.gs` `lookbackDays: 7→30`, `excludeToday: true`; spec §4/§7.4/Appendix synced (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` Draft v1.6). One snapshot now feeds both the Sales Trend 7-day display and the Avg Sales 30-day normalization. **No new column, no BigQuery schema change.**
+- **`INVENTORY_TABLE_MAPPING_SPEC.md` → v1.3:** Avg Sales/Day no longer always `weekly_7d ÷ 7` (primary = normalized 30-day when applicable; fallback = weekly); Sales Trend still Past 7 complete days.
+- **Weekly Shipping Plan line snapshot extended** (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` → v1.3): added `snapshot_avg_sales_source` (the Avg-Sales source field; renamed on 2026-06-29), `snapshot_normal_days_count`, `snapshot_excluded_event_days_count`, `snapshot_avg_sales_warning`; `snapshot_avg_sales_per_day` now stores the final adopted value. `DATABASE_RELATIONSHIP_MAP.md` §8 synced (decision-context fields, not live calc).
+- **Note:** the runtime normalization engine (reading the 30-day daily snapshot + event/campaign overlap to compute `normalized_avg_sales_per_day` and the method/warning) is **spec-defined but not yet implemented** in the frontend/Apps Script — Submit Plan currently snapshots the displayed Avg Sales as `weekly_7d` until the engine lands.
+
+
+---
+
+## Shipping Allocation Working Draft — Principle + Bug Fix (2026-06-29)
+
+**Spec + frontend behavior fix. No DB table/schema change; no Shipment/Request/PO/Carrier change.**
+
+- **Shipping Allocation Working Draft principle added.** The pre-Submit allocation is a **Temporary Decision** (Analysis Layer), **not** a Decision Snapshot. It **creates no `shipping_plans` / `shipping_plan_lines`** and **never updates** a Weekly Shipping Plan. Working Draft uses **JS State + sessionStorage recovery** (context-scoped: country/marketplace; sessionStorage is recovery only, not a committed record).
+- **Submit Plan is the only Decision Commit and only creator of Weekly Shipping Plan records.** Submit reads the Working Draft (SKUs edited-then-collapsed are included; SKUs without a draft fall back to AI-default allocation). Success → clears the draft (JS + sessionStorage); failure → keeps it.
+- **Bug fixed:** Shipping Allocation inputs no longer disappear on collapse/expand. `initializeShippingAllocation` rebuilds from the Working Draft (exact qty, no re-rounding) when a draft exists for the SKU+context; otherwise it shows the AI-default preview (which is captured into the draft only once the user edits). Allocation edits (`addShippingMethod` / `removeShippingMethod` / qty input via `onAllocationEdit`) update the draft only — **none call `createShippingPlansBatch`**.
+- **Context lifecycle:** changing Country/Marketplace (both demo + cloud) clears the draft; mount restores the draft from sessionStorage and applies it per-SKU only when the active context matches.
+- **State object:** `window.KM.shippingAllocationDraft` ( `{ context:{country,marketplace}, targetDays, bySku:{ sku:[ {shipping_method, qty, ship_from, destination, source_reason} ] } }` ); sessionStorage key `km_replen_alloc_draft_v1`.
+- **Specs updated:** `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A; `SUPPLY_CHAIN_SYSTEM_FLOW.md` §5.1 (Working Draft inserted before Decision Commit); `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §2A (Draft v1.4). No Apps Script / DB change in this task.
+
+
+---
+
+## Normalized Avg Sales Runtime Architecture Alignment (Draft v3.3) (2026-06-29)
+
+**Spec-only documentation refactor — NO calculation logic, runtime engine, Apps Script, API, BigQuery, Submit Plan flow, or DB table-count change.**
+
+- **Runtime Calculation Rule** added (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22.6, Draft v3.3): `normalized_avg_sales_per_day` is a **Runtime result, not a DB column** — recomputed each time, displayed in the Inventory Table (Analysis Layer), **not persisted**; only at **Submit Plan (Decision Commit)** is the final adopted value written to `shipping_plan_lines.snapshot_avg_sales_per_day` → immutable Decision Snapshot. Aligned with `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`.
+- **Renamed the Avg-Sales method/source snapshot field to `snapshot_avg_sales_source`** across all specs (records the *source* of the Avg Sales basis, not an algorithm; fits Analysis → Decision data flow). No residual of the old field name remains.
+- **`snapshot_avg_sales_source` fixed enum:** `weekly_7d`, `normalized_30d`, `manual_override`, `forecast_override`, `ai_adjusted` (runtime currently only `weekly_7d` / `normalized_30d`; rest Future Extension).
+- **Source ⟂ Warning fully decoupled:** removed combined tokens (`normalized_30d_low_sample`, `weekly_7d_fallback_insufficient_normal_days`). `snapshot_avg_sales_warning` enum stays `blank` / `low_sample_warning` / `insufficient_normal_days` / `event_contaminated_weekly_sales`; a warning never alters the source.
+- **Fallback ladder (§22.3) restated** as independent source + warning: ≥7 → `normalized_30d` / blank; 3–6 → `normalized_30d` / `low_sample_warning`; <3 → `weekly_7d` / `insufficient_normal_days`.
+- **Docs synced:** `SUPPLY_PLANNING_CALCULATION_RULES.md` (v3.3), `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` (v1.5), `DATABASE_RELATIONSHIP_MAP.md` §8, `INVENTORY_TABLE_MAPPING_SPEC.md` §13. `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` unchanged (no snapshot-field reference; 30-day window rule already in place). **Deploy impact: None.**
+
+
+---
+
+## Architecture Finalization v1.1 — Execution Commit / Execution Snapshot + Terminology (2026-06-29)
+
+**Spec-only. No Frontend / Apps Script / API / DB migration / BigQuery / runtime change. No new DB table.**
+
+- **Avg Sales snapshot naming unified:** all literal residuals of the old method field name removed; everywhere uses **`snapshot_avg_sales_source`** (fixed enum `weekly_7d` / `normalized_30d` / `manual_override` / `forecast_override` / `ai_adjusted`; runtime uses the first two). `snapshot_avg_sales_warning` stays an independent field (Source ⟂ Warning).
+- **`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` extended:** §1A **canonical Terminology table** (all 11 terms — every spec references, never redefines); §3A **Execution Commit** (Approved Weekly Shipping Plan → Create Shipment Draft: creates `shipments`/`shipment_lines`, copies Decision Snapshot, creates Execution Snapshot, no recalculation); §4A **Execution Snapshot** (Shipment-layer copy of the Decision Snapshot; immutable; never mutates the Decision); §4 Decision Snapshot field list + `snapshot_avg_sales_source` enum added; §5 Immutable Flow full chain; §6 Architecture Diagram expanded (Analysis → Working Draft → Decision Commit → Decision Snapshot → Execution Commit → Execution Snapshot → Shipment Events → History → Documents); §7 Single Source of Truth now Owner / Truth / Snapshot per layer.
+- **`SUPPLY_CHAIN_SYSTEM_FLOW.md` §5.1:** named **Execution Commit**, added Shipment Draft → Shipment Overview → Shipping History as the Execution Layer; Execution Layer must not recalculate the Decision.
+- **`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §12:** added "Shipment Draft inherits Decision Snapshot and creates Execution Snapshot; Execution Snapshot is immutable; Shipment never mutates the Decision Snapshot."
+- **Canonical Architecture Language now finalized:** Analysis → Working Draft → Decision Commit → Decision Snapshot → Execution Commit → Execution Snapshot → Shipment Events → History → Documents. All specs reference one shared vocabulary.
+
+## Architecture Finalization — Snapshot Provenance + Truth Flow Principle (2026-06-29)
+
+**Spec-only. No Frontend / Apps Script / API / DB migration / BigQuery / runtime change. No new DB table or column.**
+
+- **`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` → v1.1:** added **§4B Snapshot Provenance** (a snapshot = **Value + Source + Provenance**; Value=`snapshot_avg_sales_per_day`, Source=`snapshot_avg_sales_source` are persisted; **Provenance** = which engine/decision produced the value is **architecture-reserved for a future AI Audit Trail, NOT persisted, no new column**). Added **§5A Truth Flow Principle** (*truth flows downstream, context flows with it, authority never flows back*: Shipment inherits Shipping Plan, Shipping Plan inherits Inventory Replenishment, Inventory inherits Amazon Runtime Data — never editing upstream). Both added to §1A Terminology; §4 cross-references §4B.
+- **`SUPPLY_CHAIN_SYSTEM_FLOW.md`:** Immutable Flow section now references Truth Flow Principle + Snapshot Provenance (architecture file authoritative; not redefined here).
+- **`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §5.3:** added a **Snapshot Provenance (Architecture Reserved)** note under the Decision Snapshot — Value + Source persisted, Provenance reserved, no new field.
+- **`SUPPLY_PLANNING_CALCULATION_RULES.md` §22.5:** clarified `snapshot_avg_sales_source` is current persisted metadata; Snapshot Provenance is architecture-reserved for future AI / Planning audit, not persisted.
+- **No change to:** Runtime calculation, Decision Commit, Decision Snapshot, Immutable Flow, Single Source of Truth. Architecture extended only.
+
+## Weekly Shipping Plan — UI / Mapping Fixes Before Execution Phase (2026-06-29)
+
+**Frontend + API + Apps Script fix (no DB migration, no BigQuery, no Carrier formula, no Shipment Draft/Overview, no Request Order/PO). Spec → `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` Draft v1.6.**
+
+- **Fix 1 — `shipping_plans.company` resolution (was blank):** `handleCreateShippingPlansBatch_` now resolves company server-side per priority `marketplace_skus` (country+marketplace+sku) → `marketplaces` (country+marketplace) → payload company (`--` treated as blank) → blank; resolved **per line before the six-key grouping**. Frontend submit also stops sending the `--` placeholder. New plans get a populated Company.
+- **Fix 2 — Add Note restored in Plan Rationale (DB card):** `+ Add Note` button + inline editor; new `appendShippingPlanNote` action (`01_router.gs` + `handleAppendShippingPlanNote_`) appends to `shipping_plans.note` (append-only, preserves history, **never touches `rejected_reason`**); `KM.DB.appendShippingPlanNote` added.
+- **Fix 3 — Cost Breakdown placeholder restored:** expanded DB card now shows **Plan Rationale + Cost Breakdown side by side** (Carrier Name / Carrier Fee / Duty-Custom / Total Cost / Unit Cost, `--` when unpriced). UI placeholder only — no carrier formula.
+- **Fix 4 — Total SKU removed from Layer 1 card** (DB card header).
+- **Fix 5 — SKU Shipping Details footer totals** added (Total SKU / Total Qty / Total Cartons), kept in sync with header totals while editing qty.
+- **Fix 6 — Current Stock / Avg Sales now show** via snapshot-first display: `snapshot_current_stock` → live `available+fc_transfer+fc_processing` → 0; `snapshot_avg_sales_per_day` → live `sales_units_7d/7` → 0; Days of Supply snapshot → `stock/avg` → `--`.
+- **Fix 7 — Shipping Allocation enforces full-carton qty:** every submitted line qty must be an integer multiple of `sku_details.units_per_carton`; missing UPC or non-multiple shows inline red text and **blocks Submit Plan** (no silent rounding). `unitsPerCarton` added to cloud + demo replenishment data; live validation in `updateShippingAllocationTotal`; gate in `submitReplenishmentPlans`.
+- **Files:** `assets/js/pages/shipping-plan.js`, `assets/js/pages/inventory-replenishment.js`, `assets/js/api/operation-system-db-api.js`, `assets/specs/active/apps-script/11_shipping_plan_handlers.gs`, `assets/specs/active/apps-script/01_router.gs`, `docs/planning/WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`. **Apps Script repo is a source mirror — redeploy `01_router.gs` + `11_shipping_plan_handlers.gs` for Fix 1 / Fix 2 backend to take effect.**

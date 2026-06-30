@@ -166,6 +166,42 @@ function filterRows_(tabName, rows) {
         return hasId || hasWh;
       });
 
+    // Amazon snapshot source tables (import-populated) — keep rows that carry a SKU.
+    case 'amazon_inventory_snapshot':
+    case 'amazon_inventory_health_snapshot':
+    case 'amazon_daily_sales_snapshot':
+    case 'amazon_weekly_sales_snapshot':
+      return rows.filter(function(r) {
+        return r.sku && String(r.sku).trim() !== '';
+      });
+
+    case 'fc_special_events':
+      return rows.filter(function(r) {
+        var hasEvent = r.event && String(r.event).trim() !== '';
+        var hasSku = r.sku && String(r.sku).trim() !== '';
+        var hasScopeId = r.scope_id && String(r.scope_id).trim() !== '';
+        return hasEvent || hasSku || hasScopeId;
+      });
+
+    case 'fc_target_rules':
+      return rows.filter(function(r) {
+        var hasRuleId = (r.target_rule_id && String(r.target_rule_id).trim() !== '') || (r.rule_id && String(r.rule_id).trim() !== '');
+        var hasScopeId = r.scope_id && String(r.scope_id).trim() !== '';
+        return hasRuleId || hasScopeId;
+      });
+
+    case 'shipping_plans':
+      return rows.filter(function(r) {
+        return r.shipping_plan_id && String(r.shipping_plan_id).trim() !== '';
+      });
+
+    case 'shipping_plan_lines':
+      return rows.filter(function(r) {
+        var hasLineId = r.shipping_plan_line_id && String(r.shipping_plan_line_id).trim() !== '';
+        var hasPlanId = r.shipping_plan_id && String(r.shipping_plan_id).trim() !== '';
+        return hasLineId || hasPlanId;
+      });
+
     default:
       return rows;
   }

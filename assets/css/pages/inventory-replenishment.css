@@ -986,3 +986,106 @@
 }
 .ir-overview__popover-row span:last-child { font-weight: 500; color: #1f2937; }
 .ir-overview__popover-backdrop { position: fixed; inset: 0; z-index: 9998; }
+
+/* ============================================================
+   Inventory Table Mapping (Phase 1)
+   Days of Supply UI color rule + Fulfillment Model foundation
+   (INVENTORY_TABLE_MAPPING_SPEC.md v1.0 §12, §17)
+   ============================================================ */
+
+/* Days of Supply: <30 red (needs action) · 30–150 normal · >150 khaki/brown (overstock). */
+#ops-section .scroll-cell.ir-dos--red,
+#ops-section .scroll-cell.alert-red {
+    color: #b91c1c;
+    font-weight: 700;
+    background: rgba(239, 68, 68, 0.08);
+}
+#ops-section .scroll-cell.ir-dos--khaki {
+    color: #8a6d3b;
+    font-weight: 600;
+    background: rgba(189, 154, 107, 0.14); /* khaki / brown — long inventory warning */
+}
+
+/* Fulfillment model badge in the Stock card title. */
+.ir-ff-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #475569;
+    background: #eef2f7;
+    border: 1px solid #e2e8f0;
+    vertical-align: middle;
+}
+.ir-fulfillment--self_fulfilled .ir-ff-badge { color: #166534; background: #ecfdf5; border-color: #bbf7d0; }
+.ir-fulfillment--platform_fulfilled .ir-ff-badge { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.ir-fulfillment--hybrid .ir-ff-badge { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+
+/* Fulfillment foundation: self-fulfilled prepares to de-emphasize the platform Stock card and
+   promote 3rd Party Stock as primary. Phase 1 keeps both visible (no full layout change yet). */
+.ir-fulfillment--self_fulfilled .replen-card--third-party { order: -1; }
+
+/* ============================================================
+   Main-table Series tabs — filter the 貨物庫存表 by Series
+   ============================================================ */
+/* Sits ABOVE the sticky .table-header-bar (z-index:120, whose `0 -100vh 0 100vh white`
+   box-shadow paints a white curtain over everything above it). z-index must beat 120 and
+   the row needs a solid background so the tabs are not masked. */
+#ops-section .replen-series-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    margin: 0 0 8px;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    position: relative;
+    z-index: 130;            /* > .table-header-bar z-index:120 */
+    min-height: 44px;
+    overflow: visible;
+    visibility: visible;
+    opacity: 1;
+}
+#ops-section .replen-series-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 999px;
+    background: #f9fafb;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+#ops-section .replen-series-tab:hover { background: #eef2f7; }
+#ops-section .replen-series-tab.is-active {
+    background: #7fb069;
+    border-color: #7fb069;
+    color: #ffffff;
+}
+#ops-section .replen-series-tab__count {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 16px;
+    background: rgba(100, 116, 139, 0.14);
+    color: inherit;
+    opacity: 0.85;
+}
+#ops-section .replen-series-tab.is-active .replen-series-tab__count {
+    background: rgba(255, 255, 255, 0.28);
+    opacity: 1;
+}

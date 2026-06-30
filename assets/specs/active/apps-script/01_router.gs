@@ -81,7 +81,23 @@ function doPost(e) {
       return handleRunAmazonSnapshotImports_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, runAmazonSnapshotImports' });
+    if (action === 'createShippingPlansBatch') {
+      return handleCreateShippingPlansBatch_(body);
+    }
+
+    if (action === 'updateShippingPlanStatus') {
+      return handleUpdateShippingPlanStatus_(body);
+    }
+
+    if (action === 'updateShippingPlanLineQty') {
+      return handleUpdateShippingPlanLineQty_(body);
+    }
+
+    if (action === 'appendShippingPlanNote') {
+      return handleAppendShippingPlanNote_(body);
+    }
+
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote' });
 
   } catch (err) {
     Logger.log(err.stack);

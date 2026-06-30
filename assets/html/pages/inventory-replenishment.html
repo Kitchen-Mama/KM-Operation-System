@@ -128,6 +128,13 @@
                                         <input type="date" id="replen-add-launch-date" placeholder="YYYY-MM-DD">
                                     </div>
                                 </div>
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group">
+                                        <label>Fulfillment Model</label>
+                                        <select id="replen-add-fulfillment"></select>
+                                        <small id="replen-add-fulfillment-hint" style="color:#64748b; font-size:11px; margin-top:4px; display:block;">Select a marketplace first.</small>
+                                    </div>
+                                </div>
                             </div>
                             <div class="fc-modal-actions">
                                 <button class="fc-btn fc-btn--cancel" onclick="closeReplenModal()">Cancel</button>
@@ -193,6 +200,14 @@
                                         <label>Display Name</label>
                                         <input type="text" id="add-mp-display-name" placeholder="Optional, defaults to marketplace name">
                                     </div>
+                                    <div class="fc-form-group">
+                                        <label>Fulfillment Model *</label>
+                                        <select id="add-mp-fulfillment">
+                                            <option value="platform_fulfilled">Platform Fulfilled</option>
+                                            <option value="self_fulfilled">Self Fulfilled</option>
+                                            <option value="hybrid">Hybrid</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                             <div class="fc-modal-actions">
@@ -240,6 +255,11 @@
                                         <label>Launch Date</label>
                                         <input type="date" id="edit-sku-launch-date">
                                     </div>
+                                    <div class="fc-form-group">
+                                        <label>Fulfillment Model</label>
+                                        <select id="edit-sku-fulfillment"></select>
+                                        <small id="edit-sku-fulfillment-hint" style="color:#64748b; font-size:11px; margin-top:4px; display:block;"></small>
+                                    </div>
                                 </div>
                             </div>
                             <div class="fc-modal-actions">
@@ -272,6 +292,7 @@
                                 <p class="replen-import__hint">
                                     CSV columns: <strong>sku, site_sku, replenishment_model</strong>.<br>
                                     <strong>sku</strong> required. <strong>site_sku</strong> required. <strong>replenishment_model</strong> optional — one of <code>sales_driven</code> / <code>forecast_driven</code> (blank defaults to sales_driven).<br>
+                                    <strong>fulfillment_model</strong> — <em>Only required for Hybrid Marketplace</em> (one of <code>platform_fulfilled</code> / <code>self_fulfilled</code>). For non-hybrid marketplaces this column is not added and is ignored.<br>
                                     company / country / marketplace / currency / marketplace_id are resolved automatically from the selected Marketplace — do NOT type them in the CSV. First row must be the header row.
                                 </p>
                                 <p class="replen-import__template">
@@ -347,6 +368,9 @@
                     
                     <!-- Replenishment Table -->
                     <div class="dual-layer-table">
+                        <!-- Series Tabs (inside the main table card, above the SKU/Status header).
+                             Filters this main 貨物庫存表 by Series to keep the page focused. -->
+                        <div class="replen-series-tabs" id="replenSeriesTabs"></div>
                         <!-- Table Header Bar (Sticky) -->
                         <div class="table-header-bar">
                             <div class="fixed-header">

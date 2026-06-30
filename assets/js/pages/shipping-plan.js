@@ -3,7 +3,16 @@
 // 從 app.js 搬移，不改行為
 // ========================================
 
+function _spUseDb() {
+    return !!(window.KM && window.KM.DB && window.KM.DB.isCloudWriteEnabled &&
+        window.KM.DB.isCloudWriteEnabled() && window.KM.DB.getShippingPlans);
+}
+
 function renderShippingPlan() {
+    // Cloud (DB) path: read shipping_plans / shipping_plan_lines. Falls back to the legacy
+    // sessionStorage rendering only when cloud write is not enabled (Demo / unconfigured).
+    if (_spUseDb()) { renderShippingPlanFromDb(); return; }
+
     console.log('=== Render Shipping Plan ===');
     const allPlansStr = sessionStorage.getItem('allShippingPlans');
     console.log('sessionStorage data:', allPlansStr);
@@ -523,6 +532,360 @@ function filterByStatus() {
     }
 }
 
+// ========================================
+// Weekly Shipping Plan — DB (Decision Layer) rendering + actions
+// Reads shipping_plans / shipping_plan_lines via KM.DB; one shipping_plan = one card.
+// ========================================
+function _spEsc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function _spNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+// True only when a raw snapshot cell actually carries a value (distinguishes a stored 0 / blank).
+function _spHasRaw(line, key) {
+    var r = line && line.raw;
+    if (!r) return false;
+    var v = r[key];
+    return !(v === '' || v == null);
+}
+function _spKey(country, marketplace, sku) {
+    return String(country || '').trim().toLowerCase() + '||' +
+           String(marketplace || '').trim().toLowerCase() + '||' +
+           String(sku || '').trim().toLowerCase();
+}
+// Latest-by-snapshot-date map: key country||marketplace||sku → record. Also keeps a sku-only fallback.
+function _spLatestMap(rows) {
+    var byScope = {}, bySku = {};
+    (rows || []).forEach(function(r) {
+        var d = String(r.snapshotDate || '');
+        var k = _spKey(r.country, r.marketplace, r.sku);
+        if (!byScope[k] || d >= String(byScope[k].snapshotDate || '')) byScope[k] = r;
+        var sk = String(r.sku || '').trim().toLowerCase();
+        if (!bySku[sk] || d >= String(bySku[sk].snapshotDate || '')) bySku[sk] = r;
+    });
+    return { byScope: byScope, bySku: bySku };
+}
+function _spLookup(map, country, marketplace, sku) {
+    if (!map) return null;
+    return map.byScope[_spKey(country, marketplace, sku)] ||
+           map.bySku[String(sku || '').trim().toLowerCase()] || null;
+}
+
+function renderShippingPlanFromDb() {
+    var plans = window.KM.DB.getShippingPlans() || [];
+    var lines = window.KM.DB.getShippingPlanLines() || [];
+    var linesByPlan = {};
+    lines.forEach(function(l) {
+        (linesByPlan[l.shippingPlanId] = linesByPlan[l.shippingPlanId] || []).push(l);
+    });
+
+    // Live fallback sources (Current Stock / Avg Sales) — used only when a line snapshot is absent.
+    var invMap = _spLatestMap((window.KM.DB.getAmazonInventorySnapshot && window.KM.DB.getAmazonInventorySnapshot()) || []);
+    var weeklyMap = _spLatestMap((window.KM.DB.getAmazonWeeklySalesSnapshot && window.KM.DB.getAmazonWeeklySalesSnapshot()) || []);
+    var live = { inv: invMap, weekly: weeklyMap };
+
+    var countryFilter = (document.getElementById('spCountryFilter') || {}).value || '';
+    var visible = plans.filter(function(p) {
+        if (p.status === 'cancelled') return false;          // cancelled is not shown in the 3 sections
+        if (countryFilter && p.country !== countryFilter) return false;
+        return true;
+    });
+
+    var draft = visible.filter(function(p) { return p.status === 'draft'; });
+    var pending = visible.filter(function(p) { return p.status === 'pending_approval'; });
+    var approved = visible.filter(function(p) { return p.status === 'approved'; });
+
+    _spRenderDbSection('shippingPlanCards', draft, 'draft', linesByPlan, 'No shipping plans available.', live);
+    _spRenderDbSection('pendingApprovalCards', pending, 'pending_approval', linesByPlan, 'No pending approvals.', live);
+    _spRenderDbSection('approvedCards', approved, 'approved', linesByPlan, 'No approved plans.', live);
+}
+
+// Resolve the three SKU-detail display values per spec §7 priority (snapshot → live → 0 / --).
+function _spLineDisplay(line, plan, live) {
+    // Current Stock: snapshot → available_qty + fc_transfer_qty + fc_processing_qty → 0
+    var currentStock;
+    if (_spHasRaw(line, 'snapshot_current_stock')) {
+        currentStock = _spNum(line.snapshotCurrentStock);
+    } else {
+        var inv = live && _spLookup(live.inv, plan.country, plan.marketplace, line.sku);
+        currentStock = inv ? (_spNum(inv.availableQty) + _spNum(inv.fcTransferQty) + _spNum(inv.fcProcessingQty)) : 0;
+    }
+    // Avg Sales: snapshot → sales_units_7d / 7 → 0
+    var avgSales;
+    if (_spHasRaw(line, 'snapshot_avg_sales_per_day')) {
+        avgSales = _spNum(line.snapshotAvgSalesPerDay);
+    } else {
+        var wk = live && _spLookup(live.weekly, plan.country, plan.marketplace, line.sku);
+        avgSales = wk ? (_spNum(wk.salesUnits7d) / 7) : 0;
+    }
+    // Days of Supply: snapshot → currentStock / avgSales → --
+    var dos;
+    if (_spHasRaw(line, 'snapshot_days_of_supply')) {
+        dos = line.snapshotDaysOfSupply;
+    } else if (avgSales > 0) {
+        dos = (currentStock / avgSales).toFixed(1);
+    } else {
+        dos = '--';
+    }
+    var avgDisp = (avgSales > 0) ? avgSales.toFixed(1) : (_spHasRaw(line, 'snapshot_avg_sales_per_day') ? _spNum(line.snapshotAvgSalesPerDay).toFixed(1) : '0.0');
+    return { currentStock: currentStock, avgSales: avgDisp, daysOfSupply: (dos === '' || dos == null) ? '--' : dos };
+}
+
+function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMsg, live) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    if (!plans.length) { container.innerHTML = '<p>' + emptyMsg + '</p>'; return; }
+
+    var statusLabel = { draft: 'Draft', pending_approval: 'Pending Approval', approved: 'Approved' }[statusType] || statusType;
+    var html = '';
+
+    plans.forEach(function(plan) {
+        var planLines = linesByPlan[plan.shippingPlanId] || [];
+        var totalSku = planLines.length;
+        var totalPcs = planLines.reduce(function(s, l) { return s + _spNum(l.approvedQty); }, 0);
+        var totalCartons = planLines.reduce(function(s, l) { return s + _spNum(l.cartonQty); }, 0);
+        var totalCostNum = (plan.estimatedTotalCost === '' || plan.estimatedTotalCost == null) ? null : _spNum(plan.estimatedTotalCost);
+        var totalCostDisp = (totalCostNum == null) ? '--' : ('$' + totalCostNum.toFixed(2));
+        var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ('$' + (totalCostNum / totalPcs).toFixed(2));
+        var editable = (statusType === 'draft');
+        var pid = plan.shippingPlanId;
+        // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
+        var dsAttr = (statusType === 'pending_approval') ? 'pendingApproval' : statusType;
+
+        var actions = '<button class="sp-btn sp-btn-expand" onclick="toggleSpDbCard(\'' + pid + '\')">Expand</button>';
+        if (statusType === 'draft') {
+            actions += '<button class="sp-btn sp-btn-submit" onclick="spDbSaveQty(\'' + pid + '\')">Save</button>'
+                    + '<button class="sp-btn sp-btn-submit" onclick="spDbSubmit(\'' + pid + '\')">Submit</button>'
+                    + '<button class="sp-btn sp-btn-cancel" onclick="spDbCancel(\'' + pid + '\')">Cancel</button>';
+        } else if (statusType === 'pending_approval') {
+            actions += '<button class="sp-btn sp-btn-submit" onclick="spDbApprove(\'' + pid + '\')">Approve</button>'
+                    + '<button class="sp-btn sp-btn-cancel" onclick="spDbReject(\'' + pid + '\')">Reject</button>';
+        }
+
+        var rows = planLines.map(function(l) {
+            var qtyCell = editable
+                ? '<input type="number" min="0" value="' + _spNum(l.approvedQty) + '" data-line-id="' + _spEsc(l.shippingPlanLineId) + '" data-upc="' + _spNum(l.unitsPerCarton) + '" oninput="spDbOnQtyInput(this, \'' + pid + '\')" style="text-align:right; width:90px;">'
+                : _spNum(l.approvedQty);
+            var disp = _spLineDisplay(l, plan, live);
+            return '<tr>' +
+                '<td>' + _spEsc(l.sku) + '</td>' +
+                '<td>' + disp.currentStock + '</td>' +
+                '<td>' + disp.avgSales + '</td>' +
+                '<td>' + disp.daysOfSupply + '</td>' +
+                '<td>' + qtyCell + '</td>' +
+                '<td id="sp-line-carton-' + _spEsc(l.shippingPlanLineId) + '">' + _spNum(l.cartonQty) + '</td>' +
+                '</tr>';
+        }).join('');
+
+        // SKU Shipping Details footer totals (Total SKU / Total Qty / Total Cartons).
+        var footer = '<tfoot><tr class="sp-sku-footer" style="font-weight:600; border-top:2px solid #CBD5E1;">' +
+            '<td>Total SKU: ' + totalSku + '</td>' +
+            '<td>—</td><td>—</td><td>—</td>' +
+            '<td id="sp-foot-pcs-' + _spEsc(pid) + '" style="text-align:right;">' + totalPcs + '</td>' +
+            '<td id="sp-foot-cartons-' + _spEsc(pid) + '">' + totalCartons + '</td>' +
+            '</tr></tfoot>';
+
+        var noteHtml = plan.note ? ('<div class="sp-rationale-item" style="white-space:pre-line; background:#FEF2F2; padding:8px; border-radius:4px; border-left:3px solid #EF4444; margin-top:6px;"><strong>Notes:</strong>\n' + _spEsc(plan.note) + '</div>') : '';
+        // Plan Rationale Add Note (Draft/Pending/Approved all allow appending history; append-only).
+        var addNoteBtn = '<button class="sp-btn sp-btn-submit" onclick="spDbShowNote(\'' + pid + '\')" style="font-size:12px; padding:4px 12px;">+ Add Note</button>';
+        var noteInput = '<div id="sp-note-input-' + _spEsc(pid) + '" style="display:none; margin-top:8px;">' +
+            '<textarea id="sp-note-text-' + _spEsc(pid) + '" style="width:100%; min-height:60px; padding:8px; border:1px solid #E2E8F0; border-radius:4px; font-size:13px; resize:vertical;"></textarea>' +
+            '<div style="display:flex; justify-content:flex-end; gap:8px; margin-top:4px;">' +
+                '<button onclick="spDbCancelNote(\'' + pid + '\')" style="background:#EF4444; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px;">✕</button>' +
+                '<button onclick="spDbSaveNote(\'' + pid + '\')" style="background:#10B981; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px;">✓</button>' +
+            '</div></div>';
+
+        // Cost Breakdown placeholder (UI only — final logic in the future Carrier Price Spec).
+        var cbTotalCost = (plan.estimatedTotalCost === '' || plan.estimatedTotalCost == null) ? '--' : ('$' + _spNum(plan.estimatedTotalCost).toFixed(2));
+        var cbFreight = _spHasRaw(plan, 'estimated_freight_cost') ? ('$' + _spNum(plan.estimatedFreightCost).toFixed(2)) : '--';
+        var cbDuty = _spHasRaw(plan, 'estimated_duty') ? ('$' + _spNum(plan.estimatedDuty).toFixed(2)) : '--';
+        var cbCarrier = plan.carrierId ? _spEsc(plan.carrierId) : '--';
+        var costBreakdown =
+            '<div class="sp-section">' +
+                '<h4 class="sp-section-title">Cost Breakdown</h4>' +
+                '<div class="sp-cost-row"><span class="sp-cost-label">Carrier Name</span><span class="sp-cost-value">' + cbCarrier + '</span></div>' +
+                '<div class="sp-cost-row"><span class="sp-cost-label">Carrier Fee</span><span class="sp-cost-value">' + cbFreight + '</span></div>' +
+                '<div class="sp-cost-row"><span class="sp-cost-label">Duty / Custom</span><span class="sp-cost-value">' + cbDuty + '</span></div>' +
+                '<div class="sp-cost-row"><span class="sp-cost-label">Total Cost</span><span class="sp-cost-value">' + cbTotalCost + '</span></div>' +
+                '<div class="sp-cost-row"><span class="sp-cost-label">Unit Cost</span><span class="sp-cost-value">' + unitCostDisp + '</span></div>' +
+                '<div style="font-size:11px; color:#94A3B8; margin-top:6px;">Placeholder — carrier pricing not yet calculated.</div>' +
+            '</div>';
+
+        html += '' +
+        '<div class="sp-card" id="sp-card-' + _spEsc(pid) + '" data-plan-id="' + _spEsc(pid) + '" data-status="' + dsAttr + '">' +
+            '<div class="sp-card-header">' +
+                '<div class="sp-card-summary">' +
+                    _spSummary('Status', '<span class="plan-status-badge plan-status-badge--' + (statusType === 'pending_approval' ? 'pendingApproval' : statusType) + '">' + statusLabel + ' (v' + _spNum(plan.planVersion) + ')</span>') +
+                    _spSummary('Submitted Date', _spEsc(plan.createdAt || '')) +
+                    _spSummary('Company', _spEsc(plan.company || '')) +
+                    _spSummary('Country', _spEsc(plan.country || '')) +
+                    _spSummary('Marketplace', _spEsc(plan.marketplace || '')) +
+                    _spSummary('Shipping Method', _spEsc(plan.shippingMethod || '')) +
+                    _spSummary('Total Pcs', '<span id="sp-total-pcs-' + _spEsc(pid) + '">' + totalPcs + '</span>') +
+                    _spSummary('Total Cartons', '<span id="sp-total-cartons-' + _spEsc(pid) + '">' + totalCartons + '</span>') +
+                    _spSummary('Total Cost', totalCostDisp) +
+                    _spSummary('Unit Cost', '<span id="sp-unit-cost-' + _spEsc(pid) + '">' + unitCostDisp + '</span>') +
+                '</div>' +
+                '<div class="sp-card-actions">' + actions + '</div>' +
+            '</div>' +
+            '<div class="sp-card-details">' +
+                '<div class="sp-details-grid">' +
+                    '<div class="sp-section">' +
+                        '<h4 class="sp-section-title">SKU Shipping Details</h4>' +
+                        '<table class="sp-sku-table"><thead><tr>' +
+                            '<th>SKU</th><th>Current Stock</th><th>Avg. Sales</th><th>Days of Supply</th><th>Shipping Qty</th><th>Cartons</th>' +
+                        '</tr></thead><tbody>' + rows + '</tbody>' + footer + '</table>' +
+                    '</div>' +
+                    '<div class="sp-section">' +
+                        '<h4 class="sp-section-title" style="display:flex; justify-content:space-between; align-items:center;">' +
+                            '<span>Plan Rationale</span>' + addNoteBtn +
+                        '</h4>' +
+                        '<div class="sp-rationale-text">' +
+                            '<div class="sp-rationale-item"><strong>Target Days:</strong> ' + (planLines[0] ? _spNum(planLines[0].snapshotTargetDays) : '--') + '</div>' +
+                            '<div class="sp-rationale-item"><strong>Method:</strong> ' + _spEsc(plan.shippingMethod || '') + '</div>' +
+                            '<div class="sp-rationale-item"><strong>Plan No:</strong> ' + _spEsc(plan.shippingPlanNo || '') + '</div>' +
+                            noteInput +
+                            noteHtml +
+                        '</div>' +
+                    '</div>' +
+                    costBreakdown +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    });
+
+    container.innerHTML = html;
+}
+
+function _spSummary(label, valueHtml) {
+    return '<div class="sp-summary-item"><span class="sp-summary-label">' + label + '</span>' +
+        '<span class="sp-summary-value">' + valueHtml + '</span></div>';
+}
+
+function toggleSpDbCard(planId) {
+    var card = document.getElementById('sp-card-' + planId);
+    if (!card) return;
+    var btn = card.querySelector('.sp-btn-expand');
+    card.classList.toggle('is-expanded');
+    if (btn) btn.textContent = card.classList.contains('is-expanded') ? 'Collapse' : 'Expand';
+}
+
+// Live recompute of card totals while editing Shipping Qty (Draft only).
+function spDbOnQtyInput(input, planId) {
+    var card = document.getElementById('sp-card-' + planId);
+    if (!card) return;
+    var inputs = card.querySelectorAll('input[data-line-id]');
+    var totalPcs = 0, totalCartons = 0;
+    inputs.forEach(function(inp) {
+        var qty = parseInt(inp.value) || 0;
+        var upc = parseFloat(inp.getAttribute('data-upc')) || 0;
+        var carton = upc > 0 ? Math.ceil(qty / upc) : 0;
+        totalPcs += qty;
+        totalCartons += carton;
+        var cartonCell = document.getElementById('sp-line-carton-' + inp.getAttribute('data-line-id'));
+        if (cartonCell) cartonCell.textContent = carton;
+    });
+    var pcsEl = document.getElementById('sp-total-pcs-' + planId);
+    var ctnEl = document.getElementById('sp-total-cartons-' + planId);
+    if (pcsEl) pcsEl.textContent = totalPcs;
+    if (ctnEl) ctnEl.textContent = totalCartons;
+    // Keep the SKU Shipping Details footer totals in sync with header totals.
+    var footPcs = document.getElementById('sp-foot-pcs-' + planId);
+    var footCtn = document.getElementById('sp-foot-cartons-' + planId);
+    if (footPcs) footPcs.textContent = totalPcs;
+    if (footCtn) footCtn.textContent = totalCartons;
+}
+
+function _spCollectQtyLines(planId) {
+    var card = document.getElementById('sp-card-' + planId);
+    if (!card) return [];
+    var out = [];
+    card.querySelectorAll('input[data-line-id]').forEach(function(inp) {
+        out.push({ shipping_plan_line_id: inp.getAttribute('data-line-id'), approved_qty: parseInt(inp.value) || 0 });
+    });
+    return out;
+}
+
+function spDbSaveQty(planId) {
+    var lines = _spCollectQtyLines(planId);
+    if (!lines.length) { renderShippingPlan(); return; }
+    window.KM.DB.updateShippingPlanLineQty({ lines: lines }).then(function() {
+        alert('Shipping Qty saved.');
+        renderShippingPlan();
+    }).catch(function(err) { alert('Save failed: ' + (err && err.message ? err.message : err)); });
+}
+
+function spDbSubmit(planId) {
+    // Persist any qty edits first, then move Draft → Pending Approval.
+    var lines = _spCollectQtyLines(planId);
+    var doSubmit = function() {
+        window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system' })
+            .then(function() { alert('Submitted for approval.'); renderShippingPlan(); })
+            .catch(function(err) { alert('Submit failed: ' + (err && err.message ? err.message : err)); });
+    };
+    if (lines.length) {
+        window.KM.DB.updateShippingPlanLineQty({ lines: lines }).then(doSubmit).catch(doSubmit);
+    } else { doSubmit(); }
+}
+
+function spDbApprove(planId) {
+    window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'approve', actor: 'operation-system' })
+        .then(function() { alert('Plan approved.'); renderShippingPlan(); })
+        .catch(function(err) { alert('Approve failed: ' + (err && err.message ? err.message : err)); });
+}
+
+function spDbReject(planId) {
+    var reason = prompt('Rejection reason (required):', '');
+    if (reason == null) return;            // cancelled the prompt
+    reason = String(reason).trim();
+    if (!reason) { alert('Rejection reason is required.'); return; }
+    window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'reject', rejected_reason: reason, actor: 'operation-system' })
+        .then(function() { alert('Plan rejected and returned to Draft.'); renderShippingPlan(); })
+        .catch(function(err) { alert('Reject failed: ' + (err && err.message ? err.message : err)); });
+}
+
+function spDbCancel(planId) {
+    if (!confirm('Cancel this shipping plan?')) return;
+    window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'cancel', actor: 'operation-system' })
+        .then(function() { renderShippingPlan(); })
+        .catch(function(err) { alert('Cancel failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// ---- Plan Rationale: Add Note (append-only to shipping_plans.note) ----
+function spDbShowNote(planId) {
+    var box = document.getElementById('sp-note-input-' + planId);
+    if (box) box.style.display = 'block';
+}
+function spDbCancelNote(planId) {
+    var box = document.getElementById('sp-note-input-' + planId);
+    var ta = document.getElementById('sp-note-text-' + planId);
+    if (box) box.style.display = 'none';
+    if (ta) ta.value = '';
+}
+function spDbSaveNote(planId) {
+    var ta = document.getElementById('sp-note-text-' + planId);
+    var note = ta ? String(ta.value || '').trim() : '';
+    if (!note) { alert('Please enter a note.'); return; }
+    if (!window.KM.DB.appendShippingPlanNote) { alert('Add Note is not available.'); return; }
+    // Append-only: the backend preserves existing note history and never touches rejected_reason.
+    window.KM.DB.appendShippingPlanNote({ shipping_plan_id: planId, note: note, actor: 'operation-system' })
+        .then(function() { alert('Note added.'); renderShippingPlan(); })
+        .catch(function(err) { alert('Add note failed: ' + (err && err.message ? err.message : err)); });
+}
+
+window.renderShippingPlanFromDb = renderShippingPlanFromDb;
+window.spDbShowNote = spDbShowNote;
+window.spDbCancelNote = spDbCancelNote;
+window.spDbSaveNote = spDbSaveNote;
+window.toggleSpDbCard = toggleSpDbCard;
+window.spDbOnQtyInput = spDbOnQtyInput;
+window.spDbSaveQty = spDbSaveQty;
+window.spDbSubmit = spDbSubmit;
+window.spDbApprove = spDbApprove;
+window.spDbReject = spDbReject;
+window.spDbCancel = spDbCancel;
+
 // 暴露到全域
 window.renderShippingPlan = renderShippingPlan;
 window.toggleShippingPlanCard = toggleShippingPlanCard;
@@ -577,7 +940,13 @@ if (window.KM && window.KM.lifecycle) {
             _ensureShippingPlanMarkup().then(function() {
                 var sec = document.getElementById('shippingplan-section');
                 if (sec) sec.classList.add('active');
-                renderShippingPlan();
+                // Cloud mode: ensure the operation DB cache is loaded so shipping_plans render
+                // even on a direct visit (Submit Plan also reloads the cache after writing).
+                if (_spUseDb() && !window._opDbCache && window.KM.DB.loadOperationDb) {
+                    window.KM.DB.loadOperationDb({ force: true }).then(renderShippingPlan).catch(renderShippingPlan);
+                } else {
+                    renderShippingPlan();
+                }
             });
         },
         unmount() {

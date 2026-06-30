@@ -1,7 +1,7 @@
 # Amazon Snapshot Import — Mapping Reference Spec
 
-**Status:** 🟡 Draft v1.4 — Mapping + import-governance reference spec only (NO code, NO Apps Script, NO DB migration, NO API, NO frontend, NO routes)
-**Last Updated:** 2026-06-26
+**Status:** 🟡 Draft v1.6 — Mapping + import-governance reference spec only (NO DB migration, NO BigQuery, NO API, NO frontend, NO routes)
+**Last Updated:** 2026-06-29
 **Maintained By:** Development Team
 **Audience:** developers building the config-driven importer · OP / data stakeholders
 **Cross-reference (context only, not edited here):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (Inventory Layer notes a *future* `amazon_inventory_snapshot`).
@@ -9,6 +9,9 @@
 > **Spec only.** This document records the **finalized mapping rules** for importing Amazon snapshot data into the Operation System DB Google Sheet, **plus the import-governance rules** around those imports. It introduces **no** code, Apps Script, DB schema/migration, API, or frontend change. It is the authoritative reference for the **next** task: refactoring Apps Script into a **config-driven importer**. The config blocks in §7 and the Appendix (§21) are the **source of truth** and are reproduced verbatim.
 
 ### Changelog
+
+- **Draft v1.6 (2026-06-29)** — **Amazon Daily Sales window 7 → 30 completed days (excludes today).** Updated config 4 (§7.4) + the BigQuery rolling-window rule (§4) + Appendix verbatim config to `lookbackDays: 30`, `excludeToday: true`. The 30-day snapshot now serves **both** the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change** — window length only. Applies to `06_amazon_import_config.gs`.
+- **Draft v1.5 (2026-06-29)** — **Optional source headers (`optionalFieldMap`) bug fix.** Added `optionalFieldMap` behavior (§9.1): header validation checks **only** `fieldMap`; optional headers map-if-present else blank and never raise `missing_required_header`. Reworked **Amazon Inventory Health** config (§7.2): age buckets that vary by report version (`inv_age_0_to_90_days`, `inv_age_365_plus_days`, `inv_age_366_to_455_days`, `inv_age_456_plus_days`) moved to `optionalFieldMap`; required `fieldMap` keeps Date/Country/SKU/ASIN/Available + the 61–90 / 91–180 / 181–270 / 271–365 buckets; `rowHashFields` extended to all required + optional buckets. Documented the destination-header naming reminder (`inv_age_456_plus_days`, underscored — not `inv-age-456-plus-days`). Applies to `06_amazon_import_config.gs` + `07_amazon_import_runner.gs` (importer code; spec is the reference).
 
 - **Draft v1.4 (2026-06-26)** — **DB header requirements ahead of the Apps Script refactor.** Added importer-generated **destination headers**: `amazon_daily_sales_snapshot` gains `data_window_start_date`, `data_window_end_date`, `latest_source_date`, `is_fallback_used`, `fallback_reason`, `data_age_days` (§7.4); `amazon_inventory_snapshot` gains `total_days_of_supply_including_open_shipments_is_capped`, `days_of_supply_amazon_fulfillment_network_is_capped` (§7.1). Added 8 governance fields to `import_sync_runs` (§16): `latest_source_date`, `data_window_start_date`, `data_window_end_date`, `is_fallback_used`, `fallback_group_count`, `normalized_placeholder_count`, `data_age_days`, `quality_note`. Clarified **capping** (§10): `365+` writes numeric `365` **and** sets the companion `*_is_capped = TRUE`; exact values → `*_is_capped = FALSE`/blank; `/` and blank numeric → null; known placeholders create **no** `import_sync_issues`. **The four config blocks (§7, §27) are unchanged** (these new fields are importer-generated, not `fieldMap` entries).
 - **Draft v1.3 (2026-06-26)** — **Daily-sales fallback + Amazon numeric normalization.** §4: added the **Daily Sales fallback rule** (when the rolling 4-day window returns no rows, fall back to latest-available data **evaluated per country/marketplace/channel/sku group** — no single global latest date; runtime/UI must expose the **actual data date range used**). §10: added **Amazon numeric normalization** (`365+` → `365` meaning "365 or more"; `/` → null/unavailable; empty numeric → null) and tightened the **`invalid_number` policy** (only truly unexpected non-numeric values are logged; known Amazon placeholders are normalized and optionally counted, not data-quality errors). Updated Future Work / Open items. **The four config blocks (§7, §27) are unchanged.**
@@ -82,7 +85,7 @@ These apply to **all four** sources unless a config note overrides them.
 11. **`synced_at` / `created_at` / `updated_at` are generated at sync time** (§5).
 12. **Dates are normalized to `yyyy-MM-dd`** (§4).
 13. **Weekly date ranges** (e.g. `2026-06-15~2026-06-21`) are parsed into `snapshot_week`, `snapshot_month`, `week_start_date`, `week_end_date` (§4, §7.3).
-14. **BigQuery** fetches only the needed fields and the recent rolling 4-day window (§4, §7.4).
+14. **BigQuery** fetches only the needed fields and the recent rolling 30 completed-day window, excluding today (§4, §7.4).
 
 ---
 
@@ -106,16 +109,17 @@ The source `Week` column is formatted as a range: **`2026-06-15~2026-06-21`** (s
 > `snapshot_week` is the **mapped** raw range; `snapshot_month`, `week_start_date`, and `week_end_date` are **derived** (config 3 `derivedFields`).
 
 ### BigQuery rolling window (config 4 — Amazon Daily Sales)
-- The query pulls a **rolling 4-day window**: **today, yesterday, the day before yesterday, and 3 days ago** (`lookbackDays: 3` ⇒ today minus 0/1/2/3 days = 4 calendar days).
+- The query pulls a **rolling 30 completed-day window, excluding today** (`lookbackDays: 30`, `excludeToday: true` ⇒ window ends yesterday and covers the prior 30 completed days). Example: today **2026-06-29** (Asia/Taipei) → **2026-05-30 → 2026-06-28**.
+- The window is **30 days** (not 7) so the same snapshot can feed both the **Sales Trend 7-day display** (latest 7 completed days) and the **Normalized Avg Sales 30-day calculation** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). This is a **window-length change only** — no new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.
 - This handles **timezone differences and Amazon reporting delay**, so late-arriving rows for recent days are picked up on subsequent syncs.
 - **Daily sync schedule target: 16:00 `Asia/Taipei`** (`scheduleTime: "16:00"`, `scheduleTimezone: "Asia/Taipei"`).
 - The query must **only fetch the needed fields** (those in `fieldMap`) **and only the recent rolling window** (filter on `dateField: "Date"`) — never a full-table scan.
 
 #### Daily Sales fallback rule (no rows in the rolling window)
 
-The rolling 4-day window is the **default**. It must not silently produce an empty snapshot when Amazon is late or a market simply had no recent reporting.
+The rolling 30 completed-day window is the **default**. It must not silently produce an empty snapshot when Amazon is late or a market simply had no recent reporting.
 
-- **Default:** rolling 4-day window (above).
+- **Default:** rolling 30 completed-day window, excluding today (above).
 - **Fallback:** if the rolling window returns **no rows**, fall back to the **latest available data** instead of writing an empty snapshot.
 - **Group-level evaluation:** the fallback is evaluated **per `country` / `marketplace` / `channel` / `sku` group** where applicable — **not** a single global latest date. Different groups may legitimately resolve to **different latest dates** (one market may be a day behind another); do **not** force every country/site onto one global latest date when group-level data differs.
 - **Transparency:** the runtime / UI must **expose the actual data date range used** (per group where relevant), so a reader always knows whether they are looking at fresh rolling-window data or fallback latest-available data, and from which date(s).
@@ -262,9 +266,12 @@ Each config classifies destination fields into four kinds:
 
 **Plain language:** Reads the `Combined Sheet` tab of the Amazon Inventory Health source spreadsheet into `amazon_inventory_health_snapshot`. The inventory-age buckets are **direct source mappings** (note the source headers use hyphens, e.g. `inv-age-0-to-90-days`, mapped to underscored destination headers). `marketplace` is **fixed** (`Amazon`); metadata/hash/batch/timestamps are **importer-generated**. `site_sku` is **blank in MVP**; `asin` **is** mapped from source `ASIN`.
 
+> **Optional age buckets (report-version compatibility).** Amazon Inventory Health reports differ by marketplace / report version: some sources carry `inv-age-365-plus-days`, others carry the finer `inv-age-366-to-455-days` / `inv-age-456-plus-days`, and a source may not have all of them at once. The age buckets that vary are therefore in **`optionalFieldMap`**, not `fieldMap`. A missing optional header maps the destination field to **blank** and must **not** raise `missing_required_header` or stop the source. Only `fieldMap` headers are required/validated. See §9.1.
+
 | Kind | Fields |
 |------|--------|
-| Direct source mappings | `snapshot_date`←Date, `country`←Country, `sku`←SKU, `asin`←ASIN, `available_qty`←Available, `inv_age_0_to_90_days`←inv-age-0-to-90-days, `inv_age_61_to_90_days`←inv-age-61-to-90-days, `inv_age_91_to_180_days`←inv-age-91-to-180-days, `inv_age_181_to_270_days`←inv-age-181-to-270-days, `inv_age_271_to_365_days`←inv-age-271-to-365-days, `inv_age_365_plus_days`←inv-age-365-plus-days |
+| Direct source mappings (REQUIRED `fieldMap`) | `snapshot_date`←Date, `country`←Country, `sku`←SKU, `asin`←ASIN, `available_qty`←Available, `inv_age_61_to_90_days`←inv-age-61-to-90-days, `inv_age_91_to_180_days`←inv-age-91-to-180-days, `inv_age_181_to_270_days`←inv-age-181-to-270-days, `inv_age_271_to_365_days`←inv-age-271-to-365-days |
+| Optional source mappings (`optionalFieldMap`, map-if-present else blank) | `inv_age_0_to_90_days`←inv-age-0-to-90-days, `inv_age_365_plus_days`←inv-age-365-plus-days, `inv_age_366_to_455_days`←inv-age-366-to-455-days, `inv_age_456_plus_days`←inv-age-456-plus-days |
 | Fixed values | `marketplace` = `Amazon` |
 | Derived fields | — (none) |
 | Importer-generated | `source_system`, `source_report`, `source_file_id`, `source_sheet_name`, `source_row_hash`, `sync_batch_id`, `synced_at`, `created_at`, `updated_at` |
@@ -281,18 +288,26 @@ Each config classifies destination fields into four kinds:
   fixedValues: {
     marketplace: "Amazon"
   },
+  // REQUIRED source headers (validated before any write).
   fieldMap: {
     snapshot_date: "Date",
     country: "Country",
     sku: "SKU",
     asin: "ASIN",
     available_qty: "Available",
-    inv_age_0_to_90_days: "inv-age-0-to-90-days",
     inv_age_61_to_90_days: "inv-age-61-to-90-days",
     inv_age_91_to_180_days: "inv-age-91-to-180-days",
     inv_age_181_to_270_days: "inv-age-181-to-270-days",
-    inv_age_271_to_365_days: "inv-age-271-to-365-days",
-    inv_age_365_plus_days: "inv-age-365-plus-days"
+    inv_age_271_to_365_days: "inv-age-271-to-365-days"
+  },
+  // OPTIONAL source headers — map only if present; missing => blank (never fails the import).
+  // inv-age-365-plus-days = backward-compatible top bucket (old reports);
+  // inv-age-366-to-455-days / inv-age-456-plus-days = newer finer buckets (preferred when available).
+  optionalFieldMap: {
+    inv_age_0_to_90_days: "inv-age-0-to-90-days",
+    inv_age_365_plus_days: "inv-age-365-plus-days",
+    inv_age_366_to_455_days: "inv-age-366-to-455-days",
+    inv_age_456_plus_days: "inv-age-456-plus-days"
   },
   rowHashFields: [
     "snapshot_date",
@@ -306,11 +321,15 @@ Each config classifies destination fields into four kinds:
     "inv_age_91_to_180_days",
     "inv_age_181_to_270_days",
     "inv_age_271_to_365_days",
-    "inv_age_365_plus_days"
+    "inv_age_365_plus_days",
+    "inv_age_366_to_455_days",
+    "inv_age_456_plus_days"
   ],
-  notes: "site_sku is intentionally left blank in MVP and will be filled later by joining country + marketplace + sku to marketplace_skus."
+  notes: "site_sku is intentionally left blank in MVP and will be filled later by joining country + marketplace + sku to marketplace_skus. Age buckets that vary by Amazon report version are in optionalFieldMap; a missing optional header maps to blank and does not fail the import."
 }
 ```
+
+> **Destination header naming (required):** the destination tab headers must use the **underscored** names, e.g. `inv_age_456_plus_days` — **not** the hyphenated source form `inv-age-456-plus-days`. The writer maps values by **destination header**, so a hyphenated destination header will silently not receive the value (DB schema is not changed automatically — fix the header in the tab).
 
 ---
 
@@ -379,16 +398,18 @@ Each config classifies destination fields into four kinds:
 
 ---
 
-### 7.4 `amazon_daily_sales_snapshot` (BigQuery, rolling 4-day window)
+### 7.4 `amazon_daily_sales_snapshot` (BigQuery, rolling 30 completed-day window, excludes today)
 
-**Plain language:** Unlike configs 1–3, this source is **BigQuery**, not a Google Sheet. The importer queries `amazon-database-489810.AmazonSales.Raw Daily Sales`, fetching **only the mapped fields** and **only the rolling 4-day window** (today, yesterday, day-before-yesterday, 3 days ago) filtered on the `Date` field — to absorb timezone and Amazon reporting delay. The daily sync runs at **16:00 `Asia/Taipei`**. Sales/traffic metrics are **direct source mappings** (`country` from `Marketplace`; note BQ source headers use underscores, e.g. `Sales_Units`, and `sales_amount_usd`←`Sales_Amount_`). `marketplace` is **fixed** (`Amazon`); metadata/hash/batch/timestamps are **importer-generated**. **Both `site_sku` and `asin` are blank in MVP.** For metadata, `source_file_id` is the fully qualified BQ table reference and `source_sheet_name` is the BQ table name (or blank) — **not** a Google Sheet tab.
+**Daily Sales snapshot window: 30 complete days, exclude today.** This single snapshot serves **two** purposes: (a) the **Sales Trend 7-day display** (the most recent 7 completed days) and (b) the **Normalized Avg Sales 30-day calculation** (event/promotion-day exclusion, `SUPPLY_PLANNING_CALCULATION_RULES.md` §22). Widening 7 → 30 days only increases available snapshot days — **no new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.**
+
+**Plain language:** Unlike configs 1–3, this source is **BigQuery**, not a Google Sheet. The importer queries `amazon-database-489810.AmazonSales.Raw Daily Sales`, fetching **only the mapped fields** and **only the rolling 30 completed-day window excluding today** (window ends yesterday) filtered on the `Date` field — to absorb timezone and Amazon reporting delay. The daily sync runs at **16:00 `Asia/Taipei`**. Sales/traffic metrics are **direct source mappings** (`country` from `Marketplace`; note BQ source headers use underscores, e.g. `Sales_Units`, and `sales_amount_usd`←`Sales_Amount_`). `marketplace` is **fixed** (`Amazon`); metadata/hash/batch/timestamps are **importer-generated**. **Both `site_sku` and `asin` are blank in MVP.** For metadata, `source_file_id` is the fully qualified BQ table reference and `source_sheet_name` is the BQ table name (or blank) — **not** a Google Sheet tab.
 
 | Kind | Fields |
 |------|--------|
 | Direct source mappings | `snapshot_date`←Date, `country`←Marketplace, `channel`←Channel, `sku`←SKU, `currency`←Currency, `sales_units`←Sales_Units, `sales_amount`←Sales_Amount, `sales_amount_usd`←Sales_Amount_, `return_units`←Return_Units, `total_orders`←Total_Orders, `session`←Session, `page_view`←Page_View, `unit_session_percentage`←Unit_Session_Percentage, `buy_box_percentage`←Buy_Box_Percentage, `browser_session`←browser_session, `browser_page_views`←browser_page_views, `app_session`←app_session, `app_page_view`←app_page_view |
 | Fixed values | `marketplace` = `Amazon` |
 | Derived fields | — (none) |
-| Query control (not destination fields) | `queryMode: rolling_window`, `dateField: Date`, `lookbackDays: 3` (⇒ 4-day window), `scheduleTime: 16:00`, `scheduleTimezone: Asia/Taipei` |
+| Query control (not destination fields) | `queryMode: rolling_window`, `dateField: Date`, `lookbackDays: 30`, `excludeToday: true` (⇒ 30 completed days, ends yesterday), `scheduleTime: 16:00`, `scheduleTimezone: Asia/Taipei` |
 | Importer-generated | `source_system`, `source_report`, `source_file_id` (= `amazon-database-489810.AmazonSales.Raw Daily Sales`), `source_sheet_name` (`Raw Daily Sales` or blank), `source_row_hash`, `sync_batch_id`, `synced_at`, `created_at`, `updated_at` |
 | Blank in MVP | `site_sku`, `asin` |
 
@@ -399,7 +420,7 @@ Each config classifies destination fields into four kinds:
 | `data_window_start_date` | date `yyyy-MM-dd` | earliest source date actually included for this row's group |
 | `data_window_end_date` | date `yyyy-MM-dd` | latest source date actually included for this row's group |
 | `latest_source_date` | date `yyyy-MM-dd` | the most recent `snapshot_date` present for this row's group |
-| `is_fallback_used` | boolean | `TRUE` when the rolling 4-day window was empty and the importer fell back to latest-available data for this group (§4); else `FALSE` |
+| `is_fallback_used` | boolean | `TRUE` when the rolling 30-day window was empty and the importer fell back to latest-available data for this group (§4); else `FALSE` |
 | `fallback_reason` | text | short reason when `is_fallback_used = TRUE` (e.g. `rolling_window_empty`); blank otherwise |
 | `data_age_days` | integer | days between `latest_source_date` and the sync date (0 = same-day; higher = staler) |
 
@@ -414,7 +435,8 @@ Each config classifies destination fields into four kinds:
 
   queryMode: "rolling_window",
   dateField: "Date",
-  lookbackDays: 3,
+  lookbackDays: 30,
+  excludeToday: true,
   scheduleTime: "16:00",
   scheduleTimezone: "Asia/Taipei",
 
@@ -471,7 +493,7 @@ Each config classifies destination fields into four kinds:
     "app_page_view"
   ],
 
-  notes: "Pull a rolling 4-day window: today, yesterday, the day before yesterday, and 3 days ago. This handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
+  notes: "Pull a rolling 30 completed-day window excluding today (window ends yesterday). Feeds the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation. This handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
 }
 ```
 
@@ -481,7 +503,7 @@ Each config classifies destination fields into four kinds:
 |--------|----------------------------|----------------------|
 | Source identifier | `sourceId` (spreadsheet ID) + `sourceSheetName: "Combined Sheet"` | `sourceProjectId` / `sourceDataset` / `sourceTable` |
 | Read mechanism | read all rows of the `Combined Sheet` tab | **query** with `queryMode: rolling_window`, filtered on `dateField` |
-| Volume control | full sheet (snapshot already scoped) | **rolling 4-day window only**; fetch only mapped fields |
+| Volume control | full sheet (snapshot already scoped) | **rolling 30 completed-day window only** (excludes today); fetch only mapped fields |
 | Schedule | per importer schedule | **16:00 `Asia/Taipei`**, daily |
 | `source_system` | `Google Sheet Import` | `BigQuery Import` |
 | `source_file_id` | spreadsheet ID | `amazon-database-489810.AmazonSales.Raw Daily Sales` |
@@ -531,6 +553,15 @@ The importer must validate that all **required source headers** (every `fieldMap
 - **Do not write partial data** to the destination snapshot tab (the existing snapshot is left intact; no clear-and-rewrite is performed for a failed validation).
 
 Header validation is per-source and independent: one source failing validation does not block the others.
+
+### 9.1 Optional source headers (`optionalFieldMap`)
+
+A config may declare an **`optionalFieldMap`** in addition to `fieldMap`. It maps optional source headers to destination fields for columns that **vary by source / report version**.
+
+- **Header validation checks `fieldMap` only.** `optionalFieldMap` headers are **never** treated as required and **never** raise `missing_required_header`.
+- **During row mapping:** `fieldMap` fields are mapped normally; each `optionalFieldMap` field is mapped **only if its source header exists**, otherwise the destination field is set to **blank** (`""`).
+- **`rowHashFields`** may include optional destination fields; blank optional values hash safely (treated as empty string), so the row hash stays stable whether or not the optional column is present.
+- **Use case — Amazon Inventory Health age buckets (§7.2):** `inv_age_0_to_90_days`, `inv_age_365_plus_days`, `inv_age_366_to_455_days`, `inv_age_456_plus_days` are optional. A source missing `inv-age-366-to-455-days` / `inv-age-456-plus-days` / `inv-age-365-plus-days` still imports successfully (those fields blank); required headers (Date, Country, SKU, ASIN, Available, and the 61–90 / 91–180 / 181–270 / 271–365 buckets) must still be present or the source fails as before.
 
 ---
 
@@ -1132,7 +1163,8 @@ The authoritative config blocks, reproduced together for the importer task. (Ide
 
   queryMode: "rolling_window",
   dateField: "Date",
-  lookbackDays: 3,
+  lookbackDays: 30,
+  excludeToday: true,
   scheduleTime: "16:00",
   scheduleTimezone: "Asia/Taipei",
 
@@ -1189,7 +1221,7 @@ The authoritative config blocks, reproduced together for the importer task. (Ide
     "app_page_view"
   ],
 
-  notes: "Pull a rolling 4-day window: today, yesterday, the day before yesterday, and 3 days ago. This handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
+  notes: "Pull a rolling 30 completed-day window excluding today (window ends yesterday). Feeds the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation. This handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
 }
 ```
 

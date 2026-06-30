@@ -67,6 +67,7 @@ function populateReplenAddSkuMarketplaces() {
       o.setAttribute('data-country', m.country || '');
       o.setAttribute('data-marketplace', m.marketplace || '');
       o.setAttribute('data-currency', m.currency || '');
+      o.setAttribute('data-fulfillment', m.fulfillmentModel || '');
       o.textContent = (m.marketplaceDisplayName || m.marketplace || '') + ' (' + (m.company || '') + ' / ' + (m.country || '') + ')';
       sel.appendChild(o);
     });
@@ -81,16 +82,307 @@ function onReplenAddMarketplaceChange() {
   var company = opt ? (opt.getAttribute('data-company') || '') : '';
   var country = opt ? (opt.getAttribute('data-country') || '') : '';
   var currency = opt ? (opt.getAttribute('data-currency') || '') : '';
+  var ffModel = opt ? (opt.getAttribute('data-fulfillment') || '') : '';
   var mpId = opt ? (opt.value || '') : '';
   setSelectValueEnsureOption(document.getElementById('replen-add-company'), company);
   setSelectValueEnsureOption(document.getElementById('replen-add-country'), country);
   setSelectValueEnsureOption(document.getElementById('replen-add-currency'), currency);
   var idEl = document.getElementById('replen-add-marketplace-id');
   if (idEl) idEl.value = mpId;
+
+  // Fulfillment Model lock rule (platform/self locked; hybrid lets PM choose platform/self).
+  var ffSel = document.getElementById('replen-add-fulfillment');
+  var ffHint = document.getElementById('replen-add-fulfillment-hint');
+  if (!mpId) {
+    if (ffSel) { ffSel.innerHTML = '<option value=""></option>'; ffSel.disabled = true; ffSel.value = ''; }
+    if (ffHint) ffHint.textContent = 'Select a marketplace first.';
+  } else {
+    applyFulfillmentLock(ffSel, ffHint, ffModel, '');
+  }
+}
+
+// Fulfillment Model lock rule (shared by Add SKU / Edit SKU):
+//  - marketplace = platform_fulfilled | self_fulfilled  -> SKU value auto-filled + locked.
+//  - marketplace = hybrid                               -> PM picks platform_fulfilled / self_fulfilled.
+//  - marketplace model unknown/blank                    -> free choice (no enforcement).
+var FULFILLMENT_LABELS = { platform_fulfilled: 'Platform Fulfilled', self_fulfilled: 'Self Fulfilled', hybrid: 'Hybrid' };
+function applyFulfillmentLock(selectEl, hintEl, marketplaceModel, currentValue) {
+  if (!selectEl) return;
+  marketplaceModel = String(marketplaceModel || '').trim();
+  function opt(v) { return '<option value="' + v + '">' + (FULFILLMENT_LABELS[v] || v) + '</option>'; }
+  if (marketplaceModel === 'platform_fulfilled' || marketplaceModel === 'self_fulfilled') {
+    selectEl.innerHTML = opt(marketplaceModel);
+    selectEl.value = marketplaceModel;
+    selectEl.disabled = true;
+    if (hintEl) hintEl.textContent = 'Locked — inherited from marketplace (' + FULFILLMENT_LABELS[marketplaceModel] + ').';
+  } else if (marketplaceModel === 'hybrid') {
+    selectEl.innerHTML = opt('platform_fulfilled') + opt('self_fulfilled');
+    selectEl.value = (currentValue === 'platform_fulfilled' || currentValue === 'self_fulfilled') ? currentValue : 'platform_fulfilled';
+    selectEl.disabled = false;
+    if (hintEl) hintEl.textContent = 'Hybrid marketplace — select this SKU\'s fulfillment model.';
+  } else {
+    selectEl.innerHTML = '<option value="">(marketplace has no fulfillment model)</option>' + opt('platform_fulfilled') + opt('self_fulfilled') + opt('hybrid');
+    selectEl.value = currentValue || '';
+    selectEl.disabled = false;
+    if (hintEl) hintEl.textContent = 'Marketplace has no fulfillment model set; choose if known.';
+  }
 }
 
 window.populateReplenAddSkuMarketplaces = populateReplenAddSkuMarketplaces;
 window.onReplenAddMarketplaceChange = onReplenAddMarketplaceChange;
+window.applyFulfillmentLock = applyFulfillmentLock;
+
+// ============================================================================
+// IRMap — Inventory Table Mapping (Phase 1)
+// Pure mapping/calculation helpers from existing snapshot/forecast/inventory data
+// to the 貨物庫存表 fields. Implements docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md v1.0
+// (Stock Card, Long Term Storage, Sales Trend, First Layer Summary, Days-of-Supply UI,
+// AI Suggestion column structure, Fulfillment Model foundation).
+//
+// Constraints: read-only mapping. NO source is fabricated — every missing field/table
+// safe-falls-back to 0 / empty (never random / placeholder values that look like data).
+// The Need-bucket calculation engine is NOT implemented in Phase 1 (returns 0 structure).
+// ============================================================================
+window.IRMap = (function () {
+  var MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+  function eq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+  function ymd(s) { return String(s == null ? '' : s).trim().slice(0, 10); }
+
+  function todayYmd() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+  function ymdNDaysAgo(n) {
+    var d = new Date();
+    d.setDate(d.getDate() - n);
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+
+  // Pick the row with the latest snapshotDate matching country + sku (marketplace optional).
+  function latestSnapshot(rows, scope) {
+    if (!rows || !rows.length) return null;
+    var best = null;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!eq(r.sku, scope.sku)) continue;
+      if (scope.country && r.country && !eq(r.country, scope.country)) continue;
+      if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) continue;
+      if (!best || ymd(r.snapshotDate) > ymd(best.snapshotDate)) best = r;
+    }
+    return best;
+  }
+
+  // Stock Card ← amazon_inventory_snapshot
+  function stockCard(inv) {
+    return {
+      available: inv ? num(inv.availableQty) : 0,
+      fcTransfer: inv ? num(inv.fcTransferQty) : 0,
+      fcProcessing: inv ? num(inv.fcProcessingQty) : 0,
+      customerOrders: inv ? num(inv.customerOrderQty) : 0,
+      unsellable: inv ? num(inv.unfulfillableQty) : 0
+    };
+  }
+
+  // Long Term Storage ← amazon_inventory_health_snapshot.
+  // Over 90+ = 91–180 bucket; Over 180+ = 181_270 + 271_365 + 366_455 + 456_plus.
+  // The finer 366_455 / 456_plus buckets may be absent → safe 0 (no error).
+  function longTermStorage(h) {
+    if (!h) return { over90: 0, over180: 0 };
+    var over180 = num(h.invAge181To270Days) + num(h.invAge271To365Days)
+                + num(h.invAge366To455Days) + num(h.invAge456PlusDays);
+    return { over90: num(h.invAge91To180Days), over180: over180 };
+  }
+
+  // Sales Trend — past 7 completed days, EXCLUDING today. Returns only days that exist in
+  // the data (no fabrication). Aggregates sales_units by date across channels.
+  function salesTrend7d(dailyRows, scope) {
+    var start = ymdNDaysAgo(7);   // today-7
+    var end = ymdNDaysAgo(1);     // yesterday (exclude today)
+    var byDate = {};
+    (dailyRows || []).forEach(function (r) {
+      if (!eq(r.sku, scope.sku)) return;
+      if (scope.country && r.country && !eq(r.country, scope.country)) return;
+      if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) return;
+      var d = ymd(r.snapshotDate);
+      if (d < start || d > end) return;
+      byDate[d] = (byDate[d] || 0) + num(r.salesUnits);
+    });
+    return Object.keys(byDate).sort().map(function (d) {
+      return { date: d, label: d.slice(5).replace('-', '/'), units: byDate[d] };
+    });
+  }
+
+  // Avg Sales / Day ← amazon_weekly_sales_snapshot.sales_units_7d / 7 (1 decimal).
+  function avgSalesPerDay(weeklyRows, scope) {
+    if (!weeklyRows || !weeklyRows.length) return 0;
+    var best = null;
+    weeklyRows.forEach(function (r) {
+      if (!eq(r.sku, scope.sku)) return;
+      if (scope.country && r.country && !eq(r.country, scope.country)) return;
+      if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) return;
+      var key = r.weekEndDate || r.snapshotWeek || '';
+      if (!best || String(key) > String(best.weekEndDate || best.snapshotWeek || '')) best = r;
+    });
+    if (!best) return 0;
+    return Math.round((num(best.salesUnits7d) / 7) * 10) / 10;
+  }
+
+  // Resolve the single applicable Target Rule % (SKU > Series > Category). Default 100%.
+  function targetPct(rules, scope) {
+    if (!rules || !rules.length) return 100;
+    function inScope(r) {
+      if (r.company && scope.company && !eq(r.company, scope.company)) return false;
+      if (r.country && scope.country && !eq(r.country, scope.country)) return false;
+      if (r.marketplace && scope.marketplace && !eq(r.marketplace, scope.marketplace)) return false;
+      return true;
+    }
+    var levels = [['sku', scope.sku], ['series', scope.series], ['category', scope.category]];
+    for (var i = 0; i < levels.length; i++) {
+      var type = levels[i][0], id = levels[i][1];
+      if (!id) continue;
+      var hit = rules.find(function (r) {
+        return inScope(r) && r.scopeType === type && eq(r.scopeId, id) && r.targetPercentage != null;
+      });
+      if (hit) return num(hit.targetPercentage);
+    }
+    return 100;
+  }
+
+  // 60 Days FC = (FC Month+1 + FC Month+2) with Target Rule applied. ← fc_regular_forecast.
+  function forecast60d(fcRows, rules, scope) {
+    if (!fcRows || !fcRows.length) return 0;
+    var fc = fcRows.find(function (r) {
+      return eq(r.sku, scope.sku)
+        && (!scope.country || !r.country || eq(r.country, scope.country))
+        && (!scope.marketplace || !r.marketplace || eq(r.marketplace, scope.marketplace));
+    });
+    if (!fc) return 0;
+    var cm = new Date().getMonth();
+    var m1 = MONTHS[(cm + 1) % 12];
+    var m2 = MONTHS[(cm + 2) % 12];
+    var pct = targetPct(rules, {
+      company: scope.company, country: scope.country, marketplace: scope.marketplace,
+      sku: scope.sku, series: fc.series || scope.series, category: fc.category || scope.category
+    }) / 100;
+    return Math.round((num(fc[m1]) + num(fc[m2])) * pct);
+  }
+
+  function parseEventMonth(ev) {
+    if (ev.eventMonth) { var em = parseInt(ev.eventMonth, 10); if (em >= 1 && em <= 12) return em; }
+    var m = String(ev.eventPeriod || '').match(/(\d{1,2})\s*[\/\-]/);
+    if (m) { var mm = parseInt(m[1], 10); if (mm >= 1 && mm <= 12) return mm; }
+    return null;
+  }
+
+  // Upcoming Event = sum of fc_qty for events in the next 3 months (scope-matched).
+  // If an event's month cannot be parsed, it is INCLUDED (never silently dropped).
+  function upcomingEventQty(events, scope) {
+    if (!events || !events.length) return 0;
+    var cm = new Date().getMonth();
+    var next3 = [((cm + 1) % 12) + 1, ((cm + 2) % 12) + 1, ((cm + 3) % 12) + 1];
+    var total = 0, matched = 0;
+    events.forEach(function (ev) {
+      if (ev.country && scope.country && !eq(ev.country, scope.country)) return;
+      if (ev.marketplace && scope.marketplace && !eq(ev.marketplace, scope.marketplace)) return;
+      var scopeMatch =
+        (ev.sku && eq(ev.sku, scope.sku)) ||
+        (ev.scopeType === 'sku' && eq(ev.scopeId, scope.sku)) ||
+        (ev.scopeType === 'series' && eq(ev.scopeId, scope.series)) ||
+        (ev.scopeType === 'category' && eq(ev.scopeId, scope.category)) ||
+        (!ev.sku && !ev.scopeId);
+      if (!scopeMatch) return;
+      var mo = parseEventMonth(ev);
+      if (mo !== null && next3.indexOf(mo) === -1) return;
+      matched++; total += num(ev.fcQty);
+    });
+    return matched > 0 ? total : 0;
+  }
+
+  // 3rd Party Stock = Σ available_stock across eligible overseas warehouses (same country).
+  function thirdPartyStock(overseasRows, warehouses, scope) {
+    if (!overseasRows || !overseasRows.length) return 0;
+    var whById = {};
+    (warehouses || []).forEach(function (w) { if (w.warehouseId) whById[w.warehouseId] = w; });
+    var total = 0;
+    overseasRows.forEach(function (r) {
+      if (!eq(r.sku, scope.sku)) return;
+      var wh = whById[r.warehouseId];
+      // Eligible = same country; exclude factory warehouses (warehouse country is the source of truth).
+      if (wh) {
+        if (scope.country && wh.country && !eq(wh.country, scope.country)) return;
+        var isFactory = String((wh.raw && wh.raw.is_factory_warehouse) || '').toLowerCase();
+        if (isFactory === 'true' || isFactory === '1' || isFactory === 'yes') return;
+      }
+      total += num(r.availableStock);
+    });
+    return total;
+  }
+
+  // Factory CN / TW = Σ factory_stock.current_stock joined to warehouses by warehouse_id,
+  // filtered by warehouse country (CN / TW).
+  function factoryByCountry(factoryRows, warehouses, sku, countryCode) {
+    if (!factoryRows || !factoryRows.length) return 0;
+    var whById = {};
+    (warehouses || []).forEach(function (w) { if (w.warehouseId) whById[w.warehouseId] = w; });
+    var total = 0;
+    factoryRows.forEach(function (f) {
+      if (!eq(f.sku, sku)) return;
+      var wh = whById[f.warehouseId];
+      var c = (wh && wh.country) || f.country || '';
+      // Fallback: parse country from the WH-{COMPANY}-{COUNTRY}-... id convention.
+      if (!c && f.warehouseId) { var parts = f.warehouseId.split('-'); if (parts.length >= 3) c = parts[2]; }
+      if (eq(c, countryCode)) total += num(f.currentStock);
+    });
+    return total;
+  }
+
+  function daysOfSupply(currentStock, avgPerDay) {
+    if (!avgPerDay || avgPerDay <= 0) return null; // undefined coverage — show '--', never fake
+    return Math.round((num(currentStock) / avgPerDay) * 10) / 10;
+  }
+
+  // Days of Supply UI color: <30 red, 30–150 normal, >150 khaki/brown (long inventory warning).
+  function dosColorClass(dos) {
+    if (dos === null || dos === undefined || dos === '' || dos === '--') return '';
+    var n = parseFloat(dos);
+    if (isNaN(n)) return '';
+    if (n < 30) return 'ir-dos--red';
+    if (n > 150) return 'ir-dos--khaki';
+    return '';
+  }
+
+  // Fulfillment model resolution + lock rule (Marketplace SKU overrides only when marketplace = hybrid).
+  function resolveFulfillment(mpRow, mpSkuRow) {
+    var mpModel = (mpRow && mpRow.fulfillmentModel) || '';
+    var skuModel = (mpSkuRow && mpSkuRow.fulfillmentModel) || '';
+    if (mpModel === 'platform_fulfilled') return { model: 'platform_fulfilled', locked: true, source: 'marketplace' };
+    if (mpModel === 'self_fulfilled') return { model: 'self_fulfilled', locked: true, source: 'marketplace' };
+    if (mpModel === 'hybrid') return { model: skuModel || 'hybrid', locked: false, source: skuModel ? 'sku' : 'marketplace' };
+    // Marketplace model unknown (column absent): fall back to the SKU-level value if present.
+    return { model: skuModel || '', locked: false, source: skuModel ? 'sku' : 'none' };
+  }
+
+  // Need-bucket structure. Phase 1: the calculation engine is NOT implemented → return 0s.
+  // The bucket windows and Suggested Qty roll-up shape match the spec so the engine can drop in.
+  function needBuckets() {
+    return { need0_18: 0, need19_30: 0, need31_45: 0, need46_90: 0, suggestedQty: 0 };
+  }
+
+  return {
+    num: num, latestSnapshot: latestSnapshot, stockCard: stockCard,
+    longTermStorage: longTermStorage, salesTrend7d: salesTrend7d, avgSalesPerDay: avgSalesPerDay,
+    targetPct: targetPct, forecast60d: forecast60d, upcomingEventQty: upcomingEventQty,
+    thirdPartyStock: thirdPartyStock, factoryByCountry: factoryByCountry,
+    daysOfSupply: daysOfSupply, dosColorClass: dosColorClass,
+    resolveFulfillment: resolveFulfillment, needBuckets: needBuckets
+  };
+})();
 
 function closeReplenModal() {
   const modal = document.getElementById('replen-add-sku-modal');
@@ -114,6 +406,7 @@ function saveReplenSku() {
   const status = 'active';
   const model = document.getElementById('replen-add-model')?.value || 'sales_driven';
   const launchDate = document.getElementById('replen-add-launch-date')?.value || '';
+  const fulfillmentModel = document.getElementById('replen-add-fulfillment')?.value || '';
   const asinEl = document.getElementById('replen-add-asin');
   const asin = asinEl ? asinEl.value.trim() : '';
 
@@ -149,6 +442,7 @@ function saveReplenSku() {
       asin: asin,
       marketplace_sku_status: status,
       replenishment_model: model,
+      fulfillment_model: fulfillmentModel,
       launch_date: launchDate
     };
     window.KM.DB.importMarketplaceSkusBatch([oneRow], {
@@ -466,46 +760,11 @@ function getReplenishmentData() {
     }
 
     // === End Demo Data Layer ===
-    // Demo OFF: search-triggered loading from KM.DB.getMarketplaceSkus()
-    var country = document.getElementById('replenCountry').value;
-    var marketplace = document.getElementById('replenMarketplace').value;
-    if (!country || !marketplace) {
-        return []; // No search yet - show empty state
-    }
-    var mpSkus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
-    if (mpSkus.length === 0) return [];
-    var filtered = mpSkus.filter(function(mp) {
-        return mp.country === country && mp.marketplace === marketplace;
-    });
-    return filtered.map(function(mp) {
-        return {
-            sku: mp.sku,
-            lifecycle: '--',
-            replenishmentModel: mp.replenishmentModel || 'sales_driven',
-            company: '--',
-            country: mp.country,
-            marketplace: mp.marketplace,
-            currentInventory: 0,
-            onTheWay: 0,
-            thirdPartyStock: 0,
-            avgDailySales: '0.00',
-            forecast60d: 0,
-            upcomingEventQty: null,
-            daysOfSupply: '--',
-            needsAlert: false,
-            suggestedQty: 0,
-            cnStock: 0,
-            twStock: 0,
-            need18: 0,
-            need30: 0,
-            need45Plus: 0,
-            plannedQty: 0,
-            note: 'Cloud read only - sales data pending',
-            status: 'Pending Data',
-            productName: mp.siteSku || mp.sku,
-            _source: 'marketplace_skus'
-        };
-    });
+    // Demo OFF: search-triggered loading from KM.DB. The Inventory Table (貨物庫存表) is mapped
+    // from existing snapshot/forecast/inventory tables via IRMap (Phase 1). Source tables that
+    // are not yet exposed to the frontend return [] → every field safe-falls-back to 0 / '--'
+    // (no fabricated data). See docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md v1.0.
+    return _getCloudReplenishmentData();
     return siteData.map(item => {
         const mockData = replenishmentMockData.find(m => m.sku === item.sku) || {
             lifecycle: "Mature",
@@ -807,13 +1066,71 @@ function getReplenishmentData() {
     });
 }
 
+// ========================================
+// Main table Series tabs — filter the 貨物庫存表 main table by Series so the page
+// stays focused instead of rendering every SKU at once. Tabs are built dynamically
+// from the Series present in the current (search-scoped) result set, plus "All".
+// ========================================
+var replenSeriesTab = 'All';
+
+function _replenSeriesOf(item) {
+    var s = item && item.series != null ? String(item.series).trim() : '';
+    return s || 'Other';
+}
+
+function setReplenSeriesTab(series) {
+    replenSeriesTab = series;
+    renderReplenishment();
+}
+window.setReplenSeriesTab = setReplenSeriesTab;
+
+function renderReplenSeriesTabs(allData) {
+    var bar = document.getElementById('replenSeriesTabs');
+    if (!bar) return;
+
+    if (!allData || allData.length === 0) {
+        bar.innerHTML = '';
+        bar.style.display = 'none';
+        return;
+    }
+
+    // Distinct series in the current result set.
+    var seriesList = [];
+    allData.forEach(function (it) {
+        var s = _replenSeriesOf(it);
+        if (seriesList.indexOf(s) === -1) seriesList.push(s);
+    });
+    seriesList.sort();
+
+    // Reset to All if the previously-active series is no longer present.
+    if (replenSeriesTab !== 'All' && seriesList.indexOf(replenSeriesTab) === -1) replenSeriesTab = 'All';
+
+    bar.style.display = '';
+    var tabs = ['All'].concat(seriesList);
+    bar.innerHTML = tabs.map(function (s) {
+        var count = (s === 'All') ? allData.length : allData.filter(function (it) { return _replenSeriesOf(it) === s; }).length;
+        var active = (s === replenSeriesTab) ? ' is-active' : '';
+        var safe = escapeReplenHtml(s);
+        var arg = String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return '<button class="replen-series-tab' + active + '" onclick="setReplenSeriesTab(\'' + arg + '\')">' +
+            safe + ' <span class="replen-series-tab__count">' + count + '</span></button>';
+    }).join('');
+}
+window.renderReplenSeriesTabs = renderReplenSeriesTabs;
+
 function renderReplenishment() {
-    const data = getReplenishmentData();
+    const allData = getReplenishmentData();
     const fixedBody = document.getElementById('replenFixedBody');
     const scrollBody = document.getElementById('replenScrollBody');
-    
+
     if (!fixedBody || !scrollBody) return;
-    
+
+    // Build/refresh the Series tabs from the full result set, then filter to the active tab.
+    renderReplenSeriesTabs(allData);
+    const data = (replenSeriesTab === 'All')
+        ? allData
+        : allData.filter(function (it) { return _replenSeriesOf(it) === replenSeriesTab; });
+
     currentExpandedRow = null;
     
     // Render fixed column (SKU)
@@ -835,7 +1152,7 @@ function renderReplenishment() {
             <div class="scroll-cell">${item.avgDailySales}</div>
             <div class="scroll-cell">${item.forecast60d}</div>
             <div class="scroll-cell">${item.upcomingEventQty !== null ? item.upcomingEventQty : '-'}</div>
-            <div class="scroll-cell${item.needsAlert ? ' alert-red' : ''}">${item.daysOfSupply}</div>
+            <div class="scroll-cell ${(window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '')}${item.needsAlert ? ' alert-red' : ''}">${item.daysOfSupply}</div>
             <div class="scroll-cell">${item.suggestedQty}</div>
             <div class="scroll-cell" style="display: flex; gap: 4px; align-items: center; justify-content: center; width: 120px; min-width: 120px; max-width: 120px; flex-shrink: 0;">
                 <span style="color: #64748B; font-size: 12px; cursor: pointer;" onclick="openShippingAllocation(event, '${item.sku}')">See Details</span>
@@ -935,20 +1252,21 @@ function toggleReplenRow(sku) {
     const expandScrollHTML = `
         <div class="replen-expand-panel replen-expand-panel--scroll">
             <div class="replen-expand-scroll">
-                <div class="ir-panel ir-panel--inventory-group">
+                <div class="ir-panel ir-panel--inventory-group ir-fulfillment--${skuData?.fulfillmentModel || 'unset'}" data-fulfillment="${skuData?.fulfillmentModel || ''}">
                     <section class="replen-expand-section--inventory">
                         <div class="replen-card-grid">
                             <article class="replen-card replen-card--stock">
-                                <h4 class="replen-card__title">Stock</h4>
+                                <h4 class="replen-card__title">Stock${skuData?.fulfillmentModel ? ` <span class="ir-ff-badge">${skuData.fulfillmentModel}</span>` : ''}</h4>
                                 <div class="replen-card__row"><span class="replen-card__label">Available</span><span class="replen-card__value">${skuData?.available || 0}</span></div>
                                 <div class="replen-card__row"><span class="replen-card__label">FC Transfer</span><span class="replen-card__value">${skuData?.fcTransfer || 0}</span></div>
                                 <div class="replen-card__row"><span class="replen-card__label">FC Processing</span><span class="replen-card__value">${skuData?.fcProcessing || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">C Orders</span><span class="replen-card__value">10</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Customer Orders</span><span class="replen-card__value">${skuData?.customerOrders || 0}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Unsellable</span><span class="replen-card__value">${skuData?.unsellable || 0}</span></div>
                             </article>
                             <article class="replen-card replen-card--lts">
                                 <h4 class="replen-card__title">Long Term Storage</h4>
-                                <div class="replen-card__row"><span class="replen-card__label">Over 90+</span><span class="replen-card__value">${cachedExpandData[sku]?.over90 || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">Over 180+</span><span class="replen-card__value">${cachedExpandData[sku]?.over180 || 0}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Over 90+</span><span class="replen-card__value">${skuData?.over90 || 0}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">Over 180+</span><span class="replen-card__value">${skuData?.over180 || 0}</span></div>
                             </article>
                             <article class="replen-card replen-card--shipping">
                                 <h4 class="replen-card__title">Shipping Shipment</h4>
@@ -990,11 +1308,12 @@ function toggleReplenRow(sku) {
                 </div>
                 <article class="ir-panel replen-card--suggestion-allocation">
                     <div class="replen-card replen-card--ai-suggestion">
-                        <h4 class="replen-card__title">AI Suggestion (Stage 1 Basic)</h4>
-                        <div class="replen-card__row"><span class="replen-card__label">18天內 Need</span><span class="replen-card__value">${skuData?.need18 || 0}</span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">30天內 Need</span><span class="replen-card__value">${skuData?.need30 || 0}</span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">30天以上 Need</span><span class="replen-card__value">${skuData?.need45Plus || 0}</span></div>
-                        <div class="replen-card__row" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; font-weight: 600;"><span class="replen-card__label">Total</span><span class="replen-card__value">${skuData?.suggestedQty || 0}</span></div>
+                        <h4 class="replen-card__title">AI Suggestion</h4>
+                        <div class="replen-card__row"><span class="replen-card__label">Need 0–18d</span><span class="replen-card__value">${skuData?.need0_18 || 0}</span></div>
+                        <div class="replen-card__row"><span class="replen-card__label">Need 19–30d</span><span class="replen-card__value">${skuData?.need19_30 || 0}</span></div>
+                        <div class="replen-card__row"><span class="replen-card__label">Need 31–45d</span><span class="replen-card__value">${skuData?.need31_45 || 0}</span></div>
+                        <div class="replen-card__row"><span class="replen-card__label">Need 46–90d</span><span class="replen-card__value">${skuData?.need46_90 || 0}</span></div>
+                        <div class="replen-card__row" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; font-weight: 600;"><span class="replen-card__label">Suggested Qty</span><span class="replen-card__value">${skuData?.suggestedQty || 0}</span></div>
                     </div>
                     <div class="replen-card replen-card--shipping-allocation" id="shipping-allocation-${sku}" style="margin-top: 12px;">
                         <h4 class="replen-card__title">Shipping Allocation</h4>
@@ -1013,6 +1332,7 @@ function toggleReplenRow(sku) {
                             <span class="replen-card__summary-value" id="allocation-total-${sku}">0</span>
                         </div>
                         <div class="replen-card__hint" id="allocation-hint-${sku}" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Factory Stock Available</div>
+                        <div class="replen-card__carton-error" id="allocation-carton-error-${sku}" style="display: none; font-size: 11px; color: #EF4444; margin-top: 4px;"></div>
                     </div>
                 </article>
                 <article class="ir-panel replen-card replen-card--shipping-plan">
@@ -1090,60 +1410,47 @@ function submitReplenishmentPlans() {
     console.log('=== Submit Plan Debug ===');
     console.log('Total SKUs:', data.length);
     
-    // 檢查所有 SKU 的 Shipping Allocation
+    // Submit Plan reads the Working Draft (the single source of the user's allocation decision),
+    // not the live DOM. A SKU edited then collapsed is still included. SKUs with no draft fall back
+    // to the AI-default allocation (US-Amazon). This is the only place that turns the Working Draft
+    // into shipping_plans — Decision Commit.
     data.forEach(item => {
-        const methodsList = document.getElementById(`shipping-methods-${item.sku}`);
-        
-        if (methodsList) {
-            // SKU 已展開，收集實際填寫的數值
-            const inputs = methodsList.querySelectorAll('input[type="number"]');
-            inputs.forEach(input => {
-                const method = input.dataset.method;
-                const qty = parseInt(input.value) || 0;
-                
+        const draftRows = _allocationDraftRowsFor(item.sku);
+
+        if (draftRows && draftRows.length) {
+            draftRows.forEach(r => {
+                const method = r.shipping_method;
+                const qty = parseInt(r.qty) || 0;
                 if (qty > 0 && method) {
-                    if (!shippingPlans[method]) {
-                        shippingPlans[method] = [];
-                    }
+                    if (!shippingPlans[method]) shippingPlans[method] = [];
                     shippingPlans[method].push({
                         sku: item.sku,
                         qty: qty,
-                        skuData: item
+                        skuData: item,
+                        sourceReason: r.source_reason || 'pm_adjustment'
                     });
                 }
             });
         } else {
-            // SKU 未展開，使用 AI Suggestion 預設分配（僅 US-Amazon）
+            // No Working Draft for this SKU → AI Suggestion default allocation (US-Amazon only).
             if (country === 'US' && marketplace === 'amazon') {
                 const mockData = replenishmentMockData.find(m => m.sku === item.sku);
                 const unitsPerCarton = mockData?.unitsPerCarton || 40;
-                
+
                 if (item.need18 > 0) {
                     const roundedQty = Math.ceil(item.need18 / unitsPerCarton) * unitsPerCarton;
                     if (!shippingPlans['Air Freight']) shippingPlans['Air Freight'] = [];
-                    shippingPlans['Air Freight'].push({ 
-                        sku: item.sku, 
-                        qty: roundedQty,
-                        skuData: item
-                    });
+                    shippingPlans['Air Freight'].push({ sku: item.sku, qty: roundedQty, skuData: item, sourceReason: 'ai_suggestion' });
                 }
                 if (item.need30 > 0) {
                     const roundedQty = Math.ceil(item.need30 / unitsPerCarton) * unitsPerCarton;
                     if (!shippingPlans['Private Ship']) shippingPlans['Private Ship'] = [];
-                    shippingPlans['Private Ship'].push({ 
-                        sku: item.sku, 
-                        qty: roundedQty,
-                        skuData: item
-                    });
+                    shippingPlans['Private Ship'].push({ sku: item.sku, qty: roundedQty, skuData: item, sourceReason: 'ai_suggestion' });
                 }
                 if (item.need45Plus > 0) {
                     const roundedQty = Math.ceil(item.need45Plus / unitsPerCarton) * unitsPerCarton;
                     if (!shippingPlans['AGL Ship']) shippingPlans['AGL Ship'] = [];
-                    shippingPlans['AGL Ship'].push({ 
-                        sku: item.sku, 
-                        qty: roundedQty,
-                        skuData: item
-                    });
+                    shippingPlans['AGL Ship'].push({ sku: item.sku, qty: roundedQty, skuData: item, sourceReason: 'ai_suggestion' });
                 }
             }
         }
@@ -1162,16 +1469,99 @@ function submitReplenishmentPlans() {
         alert('No SKUs Submitted');
         return;
     }
-    
-    // 讀取現有資料
-    let allPlans = [];
-    const existingData = sessionStorage.getItem('allShippingPlans');
-    if (existingData) {
-        allPlans = JSON.parse(existingData);
+
+    var targetDaysNum = parseFloat(targetDays) || 0;
+
+    // Build a flat line list (one row per SKU×method). The backend groups into shipping_plans by
+    // the six-value key (company + country + marketplace + ship_from + destination + shipping_method)
+    // and freezes the per-SKU Decision Snapshot. See WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md.
+    var planLines = [];
+    Object.keys(shippingPlans).forEach(function(method) {
+        shippingPlans[method].forEach(function(item) {
+            var sd = item.skuData || {};
+            var mock = (typeof replenishmentMockData !== 'undefined') ? replenishmentMockData.find(function(m){ return m.sku === item.sku; }) : null;
+            var lineCompany = (sd.company && sd.company !== '--') ? sd.company : '';   // backend resolves if blank
+            planLines.push({
+                company: lineCompany,
+                country: country,
+                marketplace: marketplace,
+                ship_from: '',            // Shipping Allocation (future finalized logic)
+                destination: '',          // Shipping Allocation (future finalized logic)
+                shipping_method: method,
+                sku: item.sku,
+                requested_qty: item.qty,
+                units_per_carton: (mock && mock.unitsPerCarton) || sd.unitsPerCarton || '',
+                source_page: 'inventory_replenishment',
+                source_reason: item.sourceReason || 'manual_submit',
+                inventory_snapshot_date: '',
+                snapshot_current_stock: sd.currentInventory != null ? sd.currentInventory : '',
+                snapshot_avg_sales_per_day: sd.avgDailySales != null ? sd.avgDailySales : '',
+                snapshot_days_of_supply: sd.daysOfSupply != null ? sd.daysOfSupply : '',
+                snapshot_suggested_qty: sd.suggestedQty != null ? sd.suggestedQty : '',
+                snapshot_target_days: targetDaysNum,
+                snapshot_fc_context: sd.forecast60d != null ? sd.forecast60d : '',
+                snapshot_event_context: (sd.upcomingEventQty != null ? sd.upcomingEventQty : '')
+            });
+        });
+    });
+
+    // Carton validation gate (Fix 7): every submitted line qty must be an integer multiple of
+    // units_per_carton; a missing units_per_carton blocks Submit Plan. Never silently round.
+    var cartonErrors = [];
+    var badSkus = {};
+    planLines.forEach(function(l) {
+        var upc = parseInt(l.units_per_carton) || 0;
+        var qty = parseInt(l.requested_qty) || 0;
+        if (qty <= 0) return;
+        if (!upc) {
+            cartonErrors.push(l.sku + ' (units per carton missing)');
+            badSkus[l.sku] = true;
+        } else if (qty % upc !== 0) {
+            cartonErrors.push(l.sku + ' (qty ' + qty + ' not a multiple of ' + upc + ')');
+            badSkus[l.sku] = true;
+        }
+    });
+    if (cartonErrors.length) {
+        // Surface inline red text on any expanded allocation blocks for the offending SKUs.
+        Object.keys(badSkus).forEach(function(sku) {
+            if (typeof validateAllocationCartons === 'function') validateAllocationCartons(sku);
+        });
+        alert('Cannot Submit Plan — Shipping Qty must be a full carton multiple.\n\n' + cartonErrors.join('\n'));
+        return;
     }
-    
-    // 新增本次提交的資料（每個 method 獨立 status 和 note）
-    const newPlan = {
+
+    // Primary path: persist to shipping_plans / shipping_plan_lines via the API (Decision Commit).
+    var canCloudWrite = window.KM && window.KM.DB && window.KM.DB.createShippingPlansBatch &&
+        window.KM.DB.isCloudWriteEnabled && window.KM.DB.isCloudWriteEnabled();
+    if (canCloudWrite) {
+        window.KM.DB.createShippingPlansBatch({
+            source: 'inventory_replenishment_submit_plan',
+            target_days: targetDaysNum,
+            lines: planLines
+        }).then(function(result) {
+            if (result && result.success === false) {
+                alert('Could not create Weekly Shipping Plan. ' + (result.error || 'Please check the API connection and try again.'));
+                return;
+            }
+            var planCount = (result && result.plan_count) || 0;
+            var lineCount = (result && result.line_count) || planLines.length;
+            // Decision Commit succeeded → clear the Working Draft (JS State + sessionStorage).
+            _clearAllocationDraft();
+            alert('Weekly Shipping Plan created.\nShipping Plans: ' + planCount + '\nSKU lines: ' + lineCount + '\nStatus: Draft');
+            showSection('shippingplan');
+            setTimeout(function() { renderShippingPlan(); }, 100);
+        }).catch(function(err) {
+            // Failure → keep the Working Draft (JS State + sessionStorage) so the user can retry.
+            alert('Error creating Weekly Shipping Plan: ' + (err && err.message ? err.message : err));
+        });
+        return;
+    }
+
+    // Fallback (Demo / API not configured): keep the legacy sessionStorage behavior so navigation works.
+    var allPlans = [];
+    var existingData = sessionStorage.getItem('allShippingPlans');
+    if (existingData) { allPlans = JSON.parse(existingData); }
+    var newPlan = {
         id: Date.now(),
         date: new Date().toISOString().split('T')[0],
         country: country,
@@ -1181,28 +1571,17 @@ function submitReplenishmentPlans() {
         status: {},
         notes: {}
     };
-    
-    // 為每個 method 初始化 status 和 notes（notes 改為陣列）
-    Object.keys(shippingPlans).forEach(method => {
+    Object.keys(shippingPlans).forEach(function(method) {
         newPlan.status[method] = 'draft';
         newPlan.notes[method] = [];
     });
     allPlans.push(newPlan);
-    
-    // 儲存累積的資料
     sessionStorage.setItem('allShippingPlans', JSON.stringify(allPlans));
-    console.log('Saved to sessionStorage:', allPlans);
-    
-    // 顯示推送結果
-    alert(`推送成功！\n總 SKU 數: ${totalSkus}\n總運輸方式: ${Object.keys(shippingPlans).length}`);
-    
-    // 導向 Shipping Plan 頁面
+    // Demo fallback success → also clear the Working Draft (kept separate from the demo store).
+    _clearAllocationDraft();
+    alert('Weekly Shipping Plan created (Demo / local mode).\nTotal SKUs: ' + totalSkus + '\nMethods: ' + Object.keys(shippingPlans).length);
     showSection('shippingplan');
-    
-    // 延遲渲染確保 DOM 已顯示
-    setTimeout(() => {
-        renderShippingPlan();
-    }, 100);
+    setTimeout(function() { renderShippingPlan(); }, 100);
 }
 
 window.renderReplenishment = renderReplenishment;
@@ -1243,21 +1622,160 @@ function openAISuggestion(event, sku) {
     }
 }
 
+// ============================================================================
+// Shipping Allocation Working Draft (Temporary Decision — NOT a Decision Snapshot)
+// Lives only inside Inventory Replenishment before Submit Plan. JS State is the live
+// editing state; sessionStorage is temporary recovery only. It NEVER writes shipping_plans
+// or updates Weekly Shipping Plan — only Submit Plan (Decision Commit) does that.
+// See SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md (Working Draft Principle) +
+//     WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md (Shipping Allocation Working Draft).
+// ============================================================================
+var REPLEN_ALLOC_DRAFT_KEY = 'km_replen_alloc_draft_v1';
+var replenAllocationDraft = { context: { country: '', marketplace: '' }, targetDays: '', bySku: {} };
+if (!window.KM) window.KM = {};
+window.KM.shippingAllocationDraft = replenAllocationDraft;
+
+function _replenCtx() {
+    return {
+        country: (document.getElementById('replenCountry') || {}).value || '',
+        marketplace: (document.getElementById('replenMarketplace') || {}).value || ''
+    };
+}
+function _replenCtxEq(a, b) {
+    return !!a && !!b && a.country === b.country && a.marketplace === b.marketplace;
+}
+function _persistAllocationDraft() {
+    try { sessionStorage.setItem(REPLEN_ALLOC_DRAFT_KEY, JSON.stringify(replenAllocationDraft)); } catch (e) {}
+}
+function _clearAllocationDraft() {
+    replenAllocationDraft = { context: { country: '', marketplace: '' }, targetDays: '', bySku: {} };
+    window.KM.shippingAllocationDraft = replenAllocationDraft;
+    try { sessionStorage.removeItem(REPLEN_ALLOC_DRAFT_KEY); } catch (e) {}
+}
+// Recovery only — restores the live JS state from sessionStorage (not a committed record).
+function _restoreAllocationDraftFromSession() {
+    try {
+        var raw = sessionStorage.getItem(REPLEN_ALLOC_DRAFT_KEY);
+        if (!raw) return;
+        var parsed = JSON.parse(raw);
+        if (parsed && parsed.bySku) {
+            replenAllocationDraft = {
+                context: parsed.context || { country: '', marketplace: '' },
+                targetDays: parsed.targetDays || '',
+                bySku: parsed.bySku || {}
+            };
+            window.KM.shippingAllocationDraft = replenAllocationDraft;
+        }
+    } catch (e) {}
+}
+// Discard the draft if the stored context no longer matches the active Country/Marketplace.
+function _clearAllocationDraftIfContextChanged() {
+    var ctx = _replenCtx();
+    if (!_replenCtxEq(replenAllocationDraft.context, ctx)) _clearAllocationDraft();
+}
+// Returns the draft rows for a SKU only when the draft context matches the active search.
+function _allocationDraftRowsFor(sku) {
+    var ctx = _replenCtx();
+    if (!_replenCtxEq(replenAllocationDraft.context, ctx)) return null;
+    var rows = replenAllocationDraft.bySku[sku];
+    return (rows && rows.length) ? rows : null;
+}
+// Capture the current DOM allocation inputs for a SKU into the Working Draft (live + sessionStorage).
+function _saveAllocationDraftFromDom(sku) {
+    var methodsList = document.getElementById('shipping-methods-' + sku);
+    if (!methodsList) return;
+    var ctx = _replenCtx();
+    replenAllocationDraft.context = ctx;
+    replenAllocationDraft.targetDays = (document.getElementById('replenTargetDays') || {}).value || '';
+    var rows = [];
+    methodsList.querySelectorAll('input[type="number"]').forEach(function (inp) {
+        var method = inp.dataset.method || '';
+        var qty = parseInt(inp.value) || 0;
+        if (method) {
+            rows.push({
+                shipping_method: method,
+                qty: qty,
+                ship_from: inp.dataset.shipFrom || '',     // future: Shipping Allocation ship_from
+                destination: inp.dataset.destination || '', // future: Shipping Allocation destination
+                source_reason: 'pm_adjustment'
+            });
+        }
+    });
+    if (rows.length) replenAllocationDraft.bySku[sku] = rows;
+    else delete replenAllocationDraft.bySku[sku];
+    window.KM.shippingAllocationDraft = replenAllocationDraft;
+    _persistAllocationDraft();
+}
+// Explicit user edit: recompute totals AND capture the Working Draft. (Pure render must NOT call this.)
+function onAllocationEdit(sku) {
+    updateShippingAllocationTotal(sku);
+    _saveAllocationDraftFromDom(sku);
+}
+window.onAllocationEdit = onAllocationEdit;
+window._clearAllocationDraft = _clearAllocationDraft;
+
+// Resolve units_per_carton for a SKU (cloud: sku_details; demo/mock: replenishmentMockData). 0 = missing.
+function _replenUnitsPerCarton(sku) {
+    try {
+        var data = getReplenishmentData();
+        var item = data && data.find(function (d) { return d.sku === sku; });
+        if (item && item.unitsPerCarton) return parseInt(item.unitsPerCarton) || 0;
+    } catch (e) {}
+    var mock = (typeof replenishmentMockData !== 'undefined') ? replenishmentMockData.find(function (m) { return m.sku === sku; }) : null;
+    return (mock && mock.unitsPerCarton) ? (parseInt(mock.unitsPerCarton) || 0) : 0;
+}
+
+// Carton-multiple validation for a SKU's Shipping Allocation (Fix 7). Shows inline red text and
+// returns { valid, unitsPerCarton, reason }. Each method qty must be an integer multiple of UPC;
+// a missing UPC is invalid (blocks Submit Plan).
+function validateAllocationCartons(sku) {
+    var methodsList = document.getElementById('shipping-methods-' + sku);
+    var errDiv = document.getElementById('allocation-carton-error-' + sku);
+    var upc = _replenUnitsPerCarton(sku);
+    function showErr(msg) { if (errDiv) { errDiv.textContent = msg; errDiv.style.display = 'block'; } }
+    function clearErr() { if (errDiv) { errDiv.textContent = ''; errDiv.style.display = 'none'; } }
+
+    var qtys = [];
+    if (methodsList) {
+        methodsList.querySelectorAll('input[type="number"]').forEach(function (inp) {
+            qtys.push(parseInt(inp.value) || 0);
+        });
+    }
+    var hasQty = qtys.some(function (q) { return q > 0; });
+    if (!hasQty) { clearErr(); return { valid: true, unitsPerCarton: upc, reason: '' }; }
+
+    if (!upc || upc <= 0) {
+        showErr('Units per carton is missing for this SKU. Submit Plan is blocked until it is set.');
+        return { valid: false, unitsPerCarton: 0, reason: 'missing_upc' };
+    }
+    var bad = qtys.some(function (q) { return q > 0 && (q % upc !== 0); });
+    if (bad) {
+        showErr('Shipping Qty must be a full carton multiple. Units per carton: ' + upc + '.');
+        return { valid: false, unitsPerCarton: upc, reason: 'not_multiple' };
+    }
+    clearErr();
+    return { valid: true, unitsPerCarton: upc, reason: '' };
+}
+window.validateAllocationCartons = validateAllocationCartons;
+
 function updateShippingAllocationTotal(sku) {
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
     if (!methodsList) return;
-    
+
     const inputs = methodsList.querySelectorAll('input[type="number"]');
     let total = 0;
     inputs.forEach(input => {
         total += parseInt(input.value) || 0;
     });
-    
+
     const totalSpan = document.getElementById(`allocation-total-${sku}`);
     const hintDiv = document.getElementById(`allocation-hint-${sku}`);
-    
+
     if (totalSpan) totalSpan.textContent = total;
-    
+
+    // Live carton-multiple validation (inline red text under the allocation block).
+    validateAllocationCartons(sku);
+
     if (hintDiv) {
         // 獲取工廠庫存 (CN + TW)
         const data = getReplenishmentData();
@@ -1286,18 +1804,18 @@ function addShippingMethod(event, sku) {
     methodRow.className = 'replen-card__row';
     methodRow.innerHTML = `
         <span class="replen-card__label">${method}</span>
-        <input class="replen-card__input" type="number" value="0" 
-               oninput="updateShippingAllocationTotal('${sku}')" 
-               onclick="event.stopPropagation()" 
+        <input class="replen-card__input" type="number" value="0"
+               oninput="onAllocationEdit('${sku}')"
+               onclick="event.stopPropagation()"
                data-method="${method}">
-        <button class="replen-card__remove-btn" 
-                onclick="removeShippingMethod(event, '${sku}')" 
+        <button class="replen-card__remove-btn"
+                onclick="removeShippingMethod(event, '${sku}')"
                 title="Remove">×</button>
     `;
-    
+
     methodsList.appendChild(methodRow);
     select.value = '';
-    updateShippingAllocationTotal(sku);
+    onAllocationEdit(sku);
     syncExpandPanelHeight(sku);
 }
 
@@ -1306,7 +1824,7 @@ function removeShippingMethod(event, sku) {
     const row = event.target.closest('.replen-card__row');
     if (row) {
         row.remove();
-        updateShippingAllocationTotal(sku);
+        onAllocationEdit(sku);
         syncExpandPanelHeight(sku);
     }
 }
@@ -1342,10 +1860,20 @@ function initializeShippingAllocation(sku, skuData) {
     const marketplace = document.getElementById('replenMarketplace').value;
     const country = document.getElementById('replenCountry').value;
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
-    
+
     if (!methodsList || !skuData) return;
-    
-    // US-Amazon 預設規則
+
+    // 1) If a Working Draft exists for this SKU (same context), rebuild from it so user edits
+    //    survive collapse / expand. This is a pure render — it must NOT capture the draft again.
+    var draftRows = _allocationDraftRowsFor(sku);
+    if (draftRows) {
+        draftRows.forEach(function (r) { addPredefinedMethod(sku, r.shipping_method, r.qty, true); });
+        updateShippingAllocationTotal(sku);
+        return;
+    }
+
+    // 2) Otherwise show the AI-default allocation (US-Amazon). This is a default preview, not a
+    //    committed draft — it is captured into the Working Draft only once the user edits it.
     if (country === 'US' && marketplace === 'amazon') {
         if (skuData.need18 > 0) {
             addPredefinedMethod(sku, 'Air Freight', skuData.need18);
@@ -1357,32 +1885,37 @@ function initializeShippingAllocation(sku, skuData) {
             addPredefinedMethod(sku, 'AGL Ship', skuData.need45Plus);
         }
     }
-    
+
     updateShippingAllocationTotal(sku);
 }
 
-function addPredefinedMethod(sku, method, quantity) {
+function addPredefinedMethod(sku, method, quantity, noRound) {
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
     if (!methodsList) return;
-    
-    // 進位到整箱數量
-    const mockData = replenishmentMockData.find(m => m.sku === sku);
-    const unitsPerCarton = mockData?.unitsPerCarton || 40;
-    const roundedQty = quantity > 0 ? Math.ceil(quantity / unitsPerCarton) * unitsPerCarton : 0;
-    
+
+    // Draft restore (noRound) keeps the exact stored qty; AI-default preview rounds to a full carton.
+    let qtyValue;
+    if (noRound) {
+        qtyValue = parseInt(quantity) || 0;
+    } else {
+        const mockData = replenishmentMockData.find(m => m.sku === sku);
+        const unitsPerCarton = mockData?.unitsPerCarton || 40;
+        qtyValue = quantity > 0 ? Math.ceil(quantity / unitsPerCarton) * unitsPerCarton : 0;
+    }
+
     const methodRow = document.createElement('div');
     methodRow.className = 'replen-card__row';
     methodRow.innerHTML = `
         <span class="replen-card__label">${method}</span>
-        <input class="replen-card__input" type="number" value="${roundedQty}" 
-               oninput="updateShippingAllocationTotal('${sku}')" 
-               onclick="event.stopPropagation()" 
+        <input class="replen-card__input" type="number" value="${qtyValue}"
+               oninput="onAllocationEdit('${sku}')"
+               onclick="event.stopPropagation()"
                data-method="${method}">
-        <button class="replen-card__remove-btn" 
-                onclick="removeShippingMethod(event, '${sku}')" 
+        <button class="replen-card__remove-btn"
+                onclick="removeShippingMethod(event, '${sku}')"
                 title="Remove">×</button>
     `;
-    
+
     methodsList.appendChild(methodRow);
 }
 
@@ -1407,19 +1940,25 @@ function initSalesTrendChart(sku, skuData) {
     const today = new Date();
     const labels = [];
     const data = [];
-    
-    // Generate past 7 days data
-    for (let i = 6; i >= 0; i--) {
-        const date = new Date(today);
-        date.setDate(today.getDate() - i);
-        labels.push(`${date.getMonth() + 1}/${date.getDate()}`);
-        
-        // Generate random sales data based on SKU
-        const baseValue = skuData.lastWeek / 7;
-        const variance = baseValue * 0.3;
-        data.push(Math.round(baseValue + (Math.random() - 0.5) * variance));
+
+    const realTrend = skuData && Array.isArray(skuData.salesTrend7d) ? skuData.salesTrend7d : null;
+    if (realTrend && realTrend.length) {
+        // Cloud mapping: real past-7-completed-days data (excludes today). Show only days that exist.
+        realTrend.forEach(function(pt) { labels.push(pt.label); data.push(pt.units); });
+    } else if (skuData && skuData._source === 'cloud-mapping') {
+        // Cloud mapping with no daily-sales data — show empty (never fabricate sales).
+    } else {
+        // Demo fallback: synthetic past-7-day shape derived from the weekly average.
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(today.getDate() - i);
+            labels.push(`${date.getMonth() + 1}/${date.getDate()}`);
+            const baseValue = skuData.lastWeek / 7;
+            const variance = baseValue * 0.3;
+            data.push(Math.round(baseValue + (Math.random() - 0.5) * variance));
+        }
     }
-    
+
     new Chart(ctx, {
         type: 'line',
         data: {
@@ -1582,6 +2121,8 @@ function closeAddMarketplaceModal() {
     if (curEl) curEl.value = 'USD';
     var dnEl = document.getElementById('add-mp-display-name');
     if (dnEl) dnEl.value = '';
+    var ffEl = document.getElementById('add-mp-fulfillment');
+    if (ffEl) ffEl.value = 'platform_fulfilled';
 }
 
 function saveMarketplace() {
@@ -1592,10 +2133,13 @@ function saveMarketplace() {
     const currency = curEl ? curEl.value : 'USD';
     const dnEl = document.getElementById('add-mp-display-name');
     const displayName = dnEl ? dnEl.value.trim() : '';
+    const ffEl = document.getElementById('add-mp-fulfillment');
+    const fulfillmentModel = ffEl ? ffEl.value : '';
 
     if (!marketplace) { alert('Please enter marketplace name'); return; }
     if (!company || !country) { alert('Company and Country are required'); return; }
     if (!currency) { alert('Currency is required'); return; }
+    if (!fulfillmentModel) { alert('Fulfillment Model is required'); return; }
 
     if (!(window.KM && window.KM.DB && window.KM.DB.upsertMarketplace)) {
         alert('Marketplace API is not available.');
@@ -1609,6 +2153,7 @@ function saveMarketplace() {
         marketplace_display_name: displayName || marketplace,
         // MVP: alias defaults to the marketplace value. (Backend also defaults this when blank.)
         marketplace_alias: marketplace,
+        fulfillment_model: fulfillmentModel,
         currency: currency,
         status: 'active'
     }).then(function(result) {
@@ -1690,6 +2235,9 @@ window.addNewCountry = addNewCountry;
 // Search-triggered loading (Demo OFF + Cloud Read)
 // ========================================
 function searchReplenishment() {
+    // A new search (incl. Country / Marketplace change then Search) resets the Series tab to All.
+    replenSeriesTab = 'All';
+
     // Demo ON: just re-render (demo does not need search)
     if (_replenDemoOn()) {
         renderReplenishment();
@@ -1734,6 +2282,162 @@ function _doReplenSearch() {
 window.searchReplenishment = searchReplenishment;
 
 // ========================================
+// Cloud mapping (Demo OFF): Inventory Table Phase 1 mapping via IRMap
+// ========================================
+function _getCloudReplenishmentData() {
+    var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
+    var IR = window.IRMap;
+    var country = document.getElementById('replenCountry') ? document.getElementById('replenCountry').value : '';
+    var marketplace = document.getElementById('replenMarketplace') ? document.getElementById('replenMarketplace').value : '';
+    var ltsFilter = document.getElementById('replenLTSFilter') ? document.getElementById('replenLTSFilter').value : '';
+    if (!country || !marketplace || !DB || !DB.getMarketplaceSkus || !IR) return [];
+
+    function eqv(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+    function get(name) { return (DB[name]) ? (DB[name]() || []) : []; }
+
+    var mpSkus = get('getMarketplaceSkus');
+    var filtered = mpSkus.filter(function (mp) { return eqv(mp.country, country) && eqv(mp.marketplace, marketplace); });
+    if (filtered.length === 0) return [];
+
+    // Source tables — all safe [] when not yet exposed to the frontend.
+    var invSnaps = get('getAmazonInventorySnapshot');
+    var healthSnaps = get('getAmazonInventoryHealthSnapshot');
+    var dailyRows = get('getAmazonDailySalesSnapshot');
+    var weeklyRows = get('getAmazonWeeklySalesSnapshot');
+    var fcRows = get('getFcRegularForecast');
+    var targetRules = get('getFcTargetRules');
+    var events = get('getFcSpecialEvents');
+    var overseas = get('getOverseasInventorySnapshot');
+    var warehouses = get('getWarehouses');
+    var factory = get('getFactoryStock');
+    var marketplacesReg = get('getMarketplaces');
+    var skuDetails = get('getSkuDetails');
+
+    var monthNames = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
+    var MK = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    var cm = new Date().getMonth();
+
+    var rows = filtered.map(function (mp) {
+        var det = skuDetails.find(function (d) { return eqv(d.sku, mp.sku); }) || {};
+        var scope = {
+            company: mp.company, country: mp.country, marketplace: mp.marketplace, sku: mp.sku,
+            series: det.series || '', category: det.category || det.productLine || ''
+        };
+
+        var inv = IR.latestSnapshot(invSnaps, scope);
+        var health = IR.latestSnapshot(healthSnaps, scope);
+        var stock = IR.stockCard(inv);
+        var lts = IR.longTermStorage(health);
+        var trend = IR.salesTrend7d(dailyRows, scope);
+        var avg = IR.avgSalesPerDay(weeklyRows, scope);
+        var fc60 = IR.forecast60d(fcRows, targetRules, scope);
+        var eventQty = IR.upcomingEventQty(events, scope);
+        var thirdParty = IR.thirdPartyStock(overseas, warehouses, scope);
+        var cnStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'CN');
+        var twStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'TW');
+        var need = IR.needBuckets();
+
+        var currentStock = stock.available + stock.fcTransfer + stock.fcProcessing;
+        var dos = IR.daysOfSupply(currentStock, avg);
+
+        // Forecast breakdown (next 3 months, Target Rule applied)
+        var fcRow = fcRows.find(function (r) {
+            return eqv(r.sku, mp.sku) && (!r.country || eqv(r.country, mp.country)) && (!r.marketplace || eqv(r.marketplace, mp.marketplace));
+        });
+        var pct = IR.targetPct(targetRules, scope) / 100;
+        function fcMonth(off) { return fcRow ? Math.round((parseFloat(fcRow[MK[(cm + off) % 12]]) || 0) * pct) : 0; }
+
+        // Fulfillment model resolution
+        var mpReg = marketplacesReg.find(function (m) {
+            return (mp.marketplaceId && m.marketplaceId === mp.marketplaceId) || (eqv(m.country, mp.country) && eqv(m.marketplace, mp.marketplace));
+        });
+        var ff = IR.resolveFulfillment(mpReg, mp);
+
+        // Upcoming event display rows (next 3 months, scope-matched)
+        var next3 = [((cm + 1) % 12) + 1, ((cm + 2) % 12) + 1, ((cm + 3) % 12) + 1];
+        function evMatch(ev) {
+            if (ev.country && !eqv(ev.country, scope.country)) return false;
+            if (ev.marketplace && !eqv(ev.marketplace, scope.marketplace)) return false;
+            var sm = (ev.sku && eqv(ev.sku, scope.sku)) ||
+                (ev.scopeType === 'sku' && eqv(ev.scopeId, scope.sku)) ||
+                (ev.scopeType === 'series' && eqv(ev.scopeId, scope.series)) ||
+                (ev.scopeType === 'category' && eqv(ev.scopeId, scope.category)) ||
+                (!ev.sku && !ev.scopeId);
+            if (!sm) return false;
+            var mm = null;
+            if (ev.eventMonth) { var em = parseInt(ev.eventMonth, 10); if (em >= 1 && em <= 12) mm = em; }
+            if (mm === null) { var x = String(ev.eventPeriod || '').match(/(\d{1,2})\s*[\/\-]/); if (x) mm = parseInt(x[1], 10); }
+            return mm === null ? true : next3.indexOf(mm) !== -1;
+        }
+        var evRows = events.filter(evMatch);
+        var upcomingEventsText = evRows.length > 0
+            ? evRows.map(function (ev) {
+                return '<div class="replen-card__row"><span class="replen-card__label">' +
+                    (ev.event || ev.scopeId || 'Event') + (ev.eventPeriod ? (' (' + ev.eventPeriod + ')') : '') +
+                    '</span><span class="replen-card__value">' + IR.num(ev.fcQty) + '</span></div>';
+            }).join('')
+            : '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>';
+
+        return {
+            sku: mp.sku,
+            lifecycle: det.lifecycle || '--',
+            replenishmentModel: mp.replenishmentModel || 'sales_driven',
+            company: mp.company || '--',
+            country: mp.country,
+            marketplace: mp.marketplace,
+            series: scope.series || '',
+            // First Layer Summary
+            currentInventory: currentStock,
+            onTheWay: 0,                       // Shipping Shipment — pending mapping (spec §9)
+            thirdPartyStock: thirdParty,
+            avgDailySales: avg.toFixed(1),     // spec: 1 decimal
+            forecast60d: fc60,
+            upcomingEventQty: eventQty > 0 ? eventQty : null,
+            daysOfSupply: (dos === null ? '--' : String(dos)),
+            needsAlert: false,                 // color now driven by IRMap.dosColorClass
+            suggestedQty: need.suggestedQty,
+            cnStock: cnStock,
+            twStock: twStock,
+            unitsPerCarton: det.unitsPerCarton || 0,   // from sku_details — drives carton validation
+            // AI Suggestion buckets (Phase 1 structure — engine not implemented)
+            need0_18: need.need0_18, need19_30: need.need19_30, need31_45: need.need31_45, need46_90: need.need46_90,
+            plannedQty: (typeof replenishmentPlans !== 'undefined' && replenishmentPlans[mp.sku]) || 0,
+            note: (DB.getAmazonInventorySnapshot && get('getAmazonInventorySnapshot').length === 0) ? 'Cloud read — Amazon snapshot data pending' : '',
+            status: need.suggestedQty > 0 ? 'Need Restock' : 'Sufficient',
+            productName: mp.siteSku || mp.sku,
+            // Stock Card detail (expand)
+            available: stock.available,
+            fcTransfer: stock.fcTransfer,
+            fcProcessing: stock.fcProcessing,
+            customerOrders: stock.customerOrders,
+            unsellable: stock.unsellable,
+            // Long Term Storage
+            over90: lts.over90,
+            over180: lts.over180,
+            // Shipping Shipment (pending)
+            within18days: 0, within30days: 0, within45days: 0,
+            // 3rd Party detail (only aggregate available in Phase 1)
+            winitStock: 0, onusStock: 0,
+            // Forecast breakdown (next 3 months)
+            nextMonth: monthNames[(cm + 1) % 12], next2Month: monthNames[(cm + 2) % 12], next3Month: monthNames[(cm + 3) % 12],
+            fcNextMonth: fcMonth(1), fcNext2Month: fcMonth(2), fcNext3Month: fcMonth(3),
+            upcomingEventsText: upcomingEventsText,
+            // Sales trend (past 7 completed days)
+            salesTrend7d: trend,
+            lastWeek: Math.round(avg * 7),
+            // Fulfillment model foundation
+            fulfillmentModel: ff.model, fulfillmentLocked: ff.locked,
+            _source: 'cloud-mapping'
+        };
+    });
+
+    // LTS filter (Over 90+ / Over 180+)
+    if (ltsFilter === 'over90') rows = rows.filter(function (r) { return r.over90 > 0; });
+    else if (ltsFilter === 'over180') rows = rows.filter(function (r) { return r.over180 > 0; });
+    return rows;
+}
+
+// ========================================
 // Demo Data Layer: Phase 2A - Inventory Mapping
 // ========================================
 function _getDemoReplenishmentData() {
@@ -1761,6 +2465,7 @@ function _getDemoReplenishmentData() {
             company: 'Kitchen Mama',
             country: r.country || 'US',
             marketplace: r.marketplace,
+            series: r.series || '',
             currentInventory: currentInv,
             onTheWay: onTheWay,
             thirdPartyStock: thirdParty,
@@ -1772,9 +2477,12 @@ function _getDemoReplenishmentData() {
             suggestedQty: suggestedQty,
             cnStock: r.factory_youxin,
             twStock: r.factory_shengyi,
+            unitsPerCarton: r.units_per_carton || 0,   // drives carton validation
             need18: 0,
             need30: 0,
             need45Plus: suggestedQty,
+            // New AI Suggestion bucket structure (Phase 1: engine not implemented → 0)
+            need0_18: 0, need19_30: 0, need31_45: 0, need46_90: 0,
             plannedQty: 0,
             note: r.recommendation || '',
             status: suggestedQty > 0 ? 'Need Restock' : 'Sufficient',
@@ -1782,12 +2490,18 @@ function _getDemoReplenishmentData() {
             available: r.fba_stock,
             fcTransfer: 0,
             fcProcessing: 0,
+            customerOrders: 0,
+            unsellable: 0,
+            over90: 0,
+            over180: 0,
             winitStock: r.third_wh_winit,
             onusStock: r.third_wh_david,
             within18days: r.overseas_on_way_18d,
             within30days: 0,
             within45days: r.overseas_on_way_45d,
-            lastWeek: Math.round(avgDaily * 7)
+            lastWeek: Math.round(avgDaily * 7),
+            salesTrend7d: [],
+            fulfillmentModel: '', fulfillmentLocked: false
         };
     });
 }
@@ -1860,7 +2574,8 @@ function openEditSkuModal() {
         marketplaceSkuId: mpRecord ? mpRecord.marketplaceSkuId : '',
         replenishmentModel: mpRecord ? mpRecord.replenishmentModel : 'sales_driven',
         marketplaceSkuStatus: mpRecord ? mpRecord.marketplaceSkuStatus : 'active',
-        launchDate: mpRecord ? mpRecord.launchDate : ''
+        launchDate: mpRecord ? mpRecord.launchDate : '',
+        fulfillmentModel: mpRecord ? mpRecord.fulfillmentModel : ''
     };
 
     // Populate modal
@@ -1869,6 +2584,19 @@ function openEditSkuModal() {
     document.getElementById('edit-sku-model').value = _editSkuTarget.replenishmentModel || 'sales_driven';
     document.getElementById('edit-sku-status').value = _editSkuTarget.marketplaceSkuStatus || 'active';
     document.getElementById('edit-sku-launch-date').value = _editSkuTarget.launchDate || '';
+
+    // Fulfillment Model with the same lock rule, resolved from the marketplace registry.
+    var _mpReg = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces ? window.KM.DB.getMarketplaces() : []).find(function(m) {
+        if (mpRecord && mpRecord.marketplaceId && m.marketplaceId === mpRecord.marketplaceId) return true;
+        return String(m.country || '').toLowerCase() === String(_editSkuTarget.country || '').toLowerCase()
+            && String(m.marketplace || '').toLowerCase() === String(_editSkuTarget.marketplace || '').toLowerCase();
+    });
+    applyFulfillmentLock(
+        document.getElementById('edit-sku-fulfillment'),
+        document.getElementById('edit-sku-fulfillment-hint'),
+        _mpReg ? _mpReg.fulfillmentModel : '',
+        _editSkuTarget.fulfillmentModel
+    );
 
     // Open modal
     var modal = document.getElementById('replen-edit-sku-modal');
@@ -1895,6 +2623,7 @@ function saveEditSku() {
     var model = document.getElementById('edit-sku-model').value;
     var status = document.getElementById('edit-sku-status').value;
     var launchDate = document.getElementById('edit-sku-launch-date').value;
+    var fulfillmentModel = document.getElementById('edit-sku-fulfillment') ? document.getElementById('edit-sku-fulfillment').value : '';
 
     var payload = {
         marketplace_sku_id: _editSkuTarget.marketplaceSkuId,
@@ -1903,6 +2632,7 @@ function saveEditSku() {
         marketplace: _editSkuTarget.marketplace,
         replenishment_model: model,
         marketplace_sku_status: status,
+        fulfillment_model: fulfillmentModel,
         launch_date: launchDate
     };
 
@@ -2029,6 +2759,7 @@ function _resolveReplenImportMarketplace() {
         marketplace: m.marketplace,
         marketplaceId: m.marketplaceId || '',
         currency: m.currency || 'USD',
+        fulfillmentModel: m.fulfillmentModel || '',
         displayName: m.marketplaceDisplayName || m.marketplace || (m.marketplaceId || '')
     };
     return { ok: true };
@@ -2037,12 +2768,15 @@ function _resolveReplenImportMarketplace() {
 function onReplenImportMarketplaceChange() {
     var res = _resolveReplenImportMarketplace();
     if (_replenImportResolved) {
+        var isHybrid = _replenImportResolved.fulfillmentModel === 'hybrid';
         _replenImportSetResolvedText(
             'Resolved → Company: ' + _replenImportResolved.company +
             ' | Country: ' + _replenImportResolved.country +
             ' | Marketplace: ' + (_replenImportResolved.displayName || _replenImportResolved.marketplace) +
             ' | Marketplace ID: ' + (_replenImportResolved.marketplaceId || '(none)') +
-            ' | Currency: ' + _replenImportResolved.currency,
+            ' | Currency: ' + _replenImportResolved.currency +
+            ' | Fulfillment: ' + (_replenImportResolved.fulfillmentModel || '(unset)') +
+            (isHybrid ? '  ⚠ Hybrid — CSV must include a fulfillment_model column (platform_fulfilled / self_fulfilled).' : ''),
             '#166534'
         );
     } else {
@@ -2135,7 +2869,10 @@ function runReplenImport() {
         var skuIdx = headers.indexOf('sku');
         var siteIdx = headers.indexOf('site_sku');
         var modelIdx = headers.indexOf('replenishment_model');
+        var ffIdx = headers.indexOf('fulfillment_model');
+        var isHybridImport = meta.fulfillmentModel === 'hybrid';
         if (skuIdx === -1 || siteIdx === -1) { renderReplenImportError('CSV must include "sku" and "site_sku" headers.'); return; }
+        if (isHybridImport && ffIdx === -1) { renderReplenImportError('Hybrid marketplace requires a "fulfillment_model" column (platform_fulfilled / self_fulfilled).'); return; }
 
         var rows = [];
         var clientErrors = [];
@@ -2156,6 +2893,14 @@ function runReplenImport() {
                 continue;
             }
 
+            // Fulfillment model: only consumed for Hybrid marketplaces (required there);
+            // ignored for platform/self marketplaces (model is fixed by the marketplace).
+            var ff = ffIdx === -1 ? '' : String(raw[ffIdx] == null ? '' : raw[ffIdx]).trim();
+            if (isHybridImport) {
+                if (!ff) { clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'fulfillment_model required for Hybrid (platform_fulfilled / self_fulfilled)' }); continue; }
+                if (ff !== 'platform_fulfilled' && ff !== 'self_fulfilled') { clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'Invalid fulfillment_model: "' + ff + '" (use platform_fulfilled / self_fulfilled)' }); continue; }
+            }
+
             rows.push({
                 sku: sku,
                 site_sku: siteSku,
@@ -2166,6 +2911,7 @@ function runReplenImport() {
                 currency: meta.currency,
                 marketplace_sku_status: 'active',
                 replenishment_model: model || 'sales_driven',
+                fulfillment_model: isHybridImport ? ff : '',
                 asin: '',
                 launch_date: ''
             });
@@ -2212,8 +2958,11 @@ function runReplenImport() {
 function downloadReplenImportTemplate() {
     var res = _resolveReplenImportMarketplace();
     if (!_replenImportResolved) { alert('Please select Country and Marketplace first.' + (res && res.error ? ('\n' + res.error) : '')); return; }
-    var headers = 'sku,site_sku,replenishment_model';
-    var sample = 'SAMPLE-SKU,SAMPLE-SITE-SKU,sales_driven';
+    // Hybrid marketplace: template gains a fulfillment_model column (platform_fulfilled / self_fulfilled).
+    // Non-hybrid: column is omitted (the SKU model is fixed by the marketplace).
+    var isHybrid = _replenImportResolved.fulfillmentModel === 'hybrid';
+    var headers = isHybrid ? 'sku,site_sku,replenishment_model,fulfillment_model' : 'sku,site_sku,replenishment_model';
+    var sample = isHybrid ? 'SAMPLE-SKU,SAMPLE-SITE-SKU,sales_driven,platform_fulfilled' : 'SAMPLE-SKU,SAMPLE-SITE-SKU,sales_driven';
     var csv = headers + '\n' + sample + '\n';
 
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -2309,6 +3058,8 @@ function bindReplenFilterDependencies() {
     var mpSel = document.getElementById('replenMarketplace');
     if (countrySel) {
         countrySel.onchange = function() {
+            // Context (Country) changed → discard the Shipping Allocation Working Draft (both modes).
+            _clearAllocationDraft();
             if (_replenDemoOn()) return;
             // Country changed -> refresh marketplace options (resets marketplace if now invalid).
             refreshReplenMarketplaceOptions();
@@ -2316,6 +3067,8 @@ function bindReplenFilterDependencies() {
     }
     if (mpSel) {
         mpSel.onchange = function() {
+            // Context (Marketplace) changed → discard the Shipping Allocation Working Draft (both modes).
+            _clearAllocationDraft();
             if (_replenDemoOn()) return;
             // Marketplace changed -> refresh country options (resets country if now invalid).
             refreshReplenCountryOptions();
@@ -2402,6 +3155,10 @@ if (window.KM && window.KM.lifecycle) {
                 var sec = document.getElementById('ops-section');
                 if (sec) sec.classList.add('active');
                 _inventoryReplenStaticInit();
+                // Recovery: restore the Shipping Allocation Working Draft from sessionStorage (live
+                // JS State). It is applied per-SKU only when the active Country/Marketplace context
+                // matches the stored context (see _allocationDraftRowsFor); otherwise it stays dormant.
+                _restoreAllocationDraftFromSession();
                 if (typeof bindReplenFilterDependencies === 'function') bindReplenFilterDependencies();
                 if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
                 renderReplenishment();

@@ -213,6 +213,9 @@ function normalizeMarketplaceSkuRecord(raw) {
         msrp: parseFloat(r.msrp) || 0,
         marketplaceSkuStatus: String(r.marketplace_sku_status || '').trim(),
         replenishmentModel: String(r.replenishment_model || 'sales_driven').trim(),
+        // Fulfillment model (SKU-level override). Empty when the column is absent — the
+        // marketplace-level model then applies. Values: platform_fulfilled | self_fulfilled | hybrid.
+        fulfillmentModel: String(r.fulfillment_model || '').trim(),
         launchDate: String(r.launch_date || '').trim(),
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
@@ -270,6 +273,11 @@ function normalizeMarketplaceRecord(raw) {
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
         marketplaceDisplayName: String(r.marketplace_display_name || '').trim(),
+        marketplaceAlias: String(r.marketplace_alias || '').trim(),
+        // Fulfillment model: platform_fulfilled | self_fulfilled | hybrid (empty when column absent).
+        fulfillmentModel: String(r.fulfillment_model || '').trim(),
+        // Shared overseas inventory allocation priority (higher = higher priority). 0 when absent.
+        allocationPriority: parseFloat(r.allocation_priority) || 0,
         currency: String(r.currency || '').trim(),
         status: String(r.status || '').trim(),
         createdBy: String(r.created_by || '').trim(),
@@ -390,6 +398,7 @@ function normalizeOverseasInventorySnapshotRecord(raw) {
         warehouseId: String(r.warehouse_id || '').trim(),
         sku: String(r.sku || '').trim(),
         siteSku: String(r.site_sku || '').trim(),
+        physicalStock: parseFloat(r.physical_stock) || 0,
         availableStock: parseFloat(r.available_stock) || 0,
         reservedStock: parseFloat(r.reserved_stock) || 0,
         damagedStock: parseFloat(r.damaged_stock) || 0,
@@ -435,6 +444,179 @@ function normalizeOverseasInventoryMovementRecord(raw) {
     };
 }
 
+// ---- Amazon snapshot + forecast-event source readers (read-only; import-populated tables) ----
+// These tables are import-only (see AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md). They live in a
+// separate Amazon destination spreadsheet; when the operation-DB payload does not include them
+// these normalize to [] and every downstream mapping must safe-fallback to 0 (no fabricated data).
+
+function normalizeAmazonInventorySnapshotRecord(raw) {
+    var r = raw || {};
+    return {
+        snapshotDate: String(r.snapshot_date || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || 'Amazon').trim(),
+        sku: String(r.sku || '').trim(),
+        asin: String(r.asin || '').trim(),
+        availableQty: parseFloat(r.available_qty) || 0,
+        fcTransferQty: parseFloat(r.fc_transfer_qty) || 0,
+        fcProcessingQty: parseFloat(r.fc_processing_qty) || 0,
+        customerOrderQty: parseFloat(r.customer_order_qty) || 0,
+        unfulfillableQty: parseFloat(r.unfulfillable_qty) || 0,
+        raw: r
+    };
+}
+
+function normalizeAmazonInventoryHealthSnapshotRecord(raw) {
+    var r = raw || {};
+    return {
+        snapshotDate: String(r.snapshot_date || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || 'Amazon').trim(),
+        sku: String(r.sku || '').trim(),
+        invAge91To180Days: parseFloat(r.inv_age_91_to_180_days) || 0,
+        invAge181To270Days: parseFloat(r.inv_age_181_to_270_days) || 0,
+        invAge271To365Days: parseFloat(r.inv_age_271_to_365_days) || 0,
+        // Finer top buckets — may be absent in the current source (top bucket is inv_age_365_plus_days).
+        // Safe fallback to 0 so Over 180+ never errors (see INVENTORY_TABLE_MAPPING_SPEC §5).
+        invAge366To455Days: parseFloat(r.inv_age_366_to_455_days) || 0,
+        invAge456PlusDays: parseFloat(r.inv_age_456_plus_days) || 0,
+        invAge365PlusDays: parseFloat(r.inv_age_365_plus_days) || 0,
+        raw: r
+    };
+}
+
+function normalizeAmazonDailySalesSnapshotRecord(raw) {
+    var r = raw || {};
+    return {
+        snapshotDate: String(r.snapshot_date || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || 'Amazon').trim(),
+        channel: String(r.channel || '').trim(),
+        sku: String(r.sku || '').trim(),
+        salesUnits: parseFloat(r.sales_units) || 0,
+        raw: r
+    };
+}
+
+function normalizeAmazonWeeklySalesSnapshotRecord(raw) {
+    var r = raw || {};
+    return {
+        snapshotWeek: String(r.snapshot_week || '').trim(),
+        weekEndDate: String(r.week_end_date || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || 'Amazon').trim(),
+        channel: String(r.channel || '').trim(),
+        sku: String(r.sku || '').trim(),
+        salesUnits7d: parseFloat(r.sales_units_7d) || 0,
+        raw: r
+    };
+}
+
+function normalizeFcSpecialEventRecord(raw) {
+    var r = raw || {};
+    return {
+        eventId: String(r.event_id || r.special_event_id || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        scopeType: String(r.scope_type || '').trim().toLowerCase(),
+        scopeId: String(r.scope_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        series: String(r.series || '').trim(),
+        category: String(r.category || '').trim(),
+        event: String(r.event || r.event_name || '').trim(),
+        eventPeriod: String(r.event_period || r.period || '').trim(),
+        eventMonth: String(r.event_month || r.month || '').trim(),
+        fcQty: parseFloat(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty) || 0,
+        raw: r
+    };
+}
+
+function normalizeFcTargetRuleRecord(raw) {
+    var r = raw || {};
+    // Defensive: target-rule column names are not finalized. Read several plausible aliases.
+    var pct = r.target_percentage != null && r.target_percentage !== '' ? r.target_percentage
+            : (r.target_rate != null && r.target_rate !== '' ? r.target_rate
+            : (r.target != null && r.target !== '' ? r.target : r.percentage));
+    return {
+        ruleId: String(r.target_rule_id || r.rule_id || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        scopeType: String(r.scope_type || r.scope || r.level || '').trim().toLowerCase(),
+        scopeId: String(r.scope_id || r.sku || r.series || r.category || '').trim(),
+        targetPercentage: (pct != null && pct !== '') ? parseFloat(pct) : null,
+        raw: r
+    };
+}
+
+// ---- Weekly Shipping Plan (Decision Layer) readers ----------------
+function normalizeShippingPlanRecord(raw) {
+    var r = raw || {};
+    return {
+        shippingPlanId: String(r.shipping_plan_id || '').trim(),
+        shippingPlanNo: String(r.shipping_plan_no || '').trim(),
+        planName: String(r.plan_name || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        shipFrom: String(r.ship_from || '').trim(),
+        destination: String(r.destination || '').trim(),
+        shippingMethod: String(r.shipping_method || '').trim(),
+        planVersion: parseFloat(r.plan_version) || 1,
+        parentShippingPlanId: String(r.parent_shipping_plan_id || '').trim(),
+        submitBatchId: String(r.submit_batch_id || '').trim(),
+        batchStatus: String(r.batch_status || '').trim(),
+        carrierId: String(r.carrier_id || '').trim(),
+        estimatedFreightCost: parseFloat(r.estimated_freight_cost) || 0,
+        estimatedDuty: parseFloat(r.estimated_duty) || 0,
+        estimatedTotalCost: (r.estimated_total_cost === '' || r.estimated_total_cost == null) ? '' : (parseFloat(r.estimated_total_cost) || 0),
+        currency: String(r.currency || '').trim(),
+        status: String(r.status || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        submittedBy: String(r.submitted_by || '').trim(),
+        submittedAt: String(r.submitted_at || '').trim(),
+        approvedBy: String(r.approved_by || '').trim(),
+        approvedAt: String(r.approved_at || '').trim(),
+        rejectedBy: String(r.rejected_by || '').trim(),
+        rejectedAt: String(r.rejected_at || '').trim(),
+        rejectedReason: String(r.rejected_reason || '').trim(),
+        note: String(r.note || '').trim(),
+        source: String(r.source || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+function normalizeShippingPlanLineRecord(raw) {
+    var r = raw || {};
+    return {
+        shippingPlanLineId: String(r.shipping_plan_line_id || '').trim(),
+        shippingPlanId: String(r.shipping_plan_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        requestedQty: parseFloat(r.requested_qty) || 0,
+        approvedQty: parseFloat(r.approved_qty) || 0,
+        cartonQty: parseFloat(r.carton_qty) || 0,
+        unitsPerCarton: parseFloat(r.units_per_carton) || 0,
+        sourcePage: String(r.source_page || '').trim(),
+        sourceReason: String(r.source_reason || '').trim(),
+        inventorySnapshotDate: String(r.inventory_snapshot_date || '').trim(),
+        note: String(r.note || '').trim(),
+        // Decision Snapshot (per-SKU, immutable after commit)
+        snapshotCurrentStock: parseFloat(r.snapshot_current_stock) || 0,
+        snapshotAvgSalesPerDay: parseFloat(r.snapshot_avg_sales_per_day) || 0,
+        snapshotDaysOfSupply: (r.snapshot_days_of_supply === '' || r.snapshot_days_of_supply == null) ? '' : r.snapshot_days_of_supply,
+        snapshotSuggestedQty: parseFloat(r.snapshot_suggested_qty) || 0,
+        snapshotTargetDays: parseFloat(r.snapshot_target_days) || 0,
+        snapshotFcContext: (r.snapshot_fc_context == null) ? '' : r.snapshot_fc_context,
+        snapshotEventContext: (r.snapshot_event_context == null) ? '' : r.snapshot_event_context,
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
 function normalizeOperationDb(rawDb) {
     var db = rawDb || {};
     return {
@@ -452,7 +634,16 @@ function normalizeOperationDb(rawDb) {
         factoryStockMovements: (db.factory_stock_movements || []).map(normalizeFactoryStockMovementRecord).filter(function(r) { return r.movementId || r.sku; }),
         warehouses: (db.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; }),
         overseasInventorySnapshot: (db.overseas_inventory_snapshot || []).map(normalizeOverseasInventorySnapshotRecord).filter(function(r) { return r.warehouseId && r.sku; }),
-        overseasInventoryMovements: (db.overseas_inventory_movements || []).map(normalizeOverseasInventoryMovementRecord).filter(function(r) { return r.movementId || r.warehouseId; })
+        overseasInventoryMovements: (db.overseas_inventory_movements || []).map(normalizeOverseasInventoryMovementRecord).filter(function(r) { return r.movementId || r.warehouseId; }),
+        // Amazon snapshot + forecast-event source tables (import-only; [] when payload lacks them).
+        amazonInventorySnapshot: (db.amazon_inventory_snapshot || []).map(normalizeAmazonInventorySnapshotRecord).filter(function(r) { return r.sku; }),
+        amazonInventoryHealthSnapshot: (db.amazon_inventory_health_snapshot || []).map(normalizeAmazonInventoryHealthSnapshotRecord).filter(function(r) { return r.sku; }),
+        amazonDailySalesSnapshot: (db.amazon_daily_sales_snapshot || []).map(normalizeAmazonDailySalesSnapshotRecord).filter(function(r) { return r.sku; }),
+        amazonWeeklySalesSnapshot: (db.amazon_weekly_sales_snapshot || []).map(normalizeAmazonWeeklySalesSnapshotRecord).filter(function(r) { return r.sku; }),
+        fcSpecialEvents: (db.fc_special_events || []).map(normalizeFcSpecialEventRecord).filter(function(r) { return r.event || r.sku || r.scopeId; }),
+        fcTargetRules: (db.fc_target_rules || []).map(normalizeFcTargetRuleRecord).filter(function(r) { return r.scopeId || r.ruleId; }),
+        shippingPlans: (db.shipping_plans || []).map(normalizeShippingPlanRecord).filter(function(r) { return r.shippingPlanId; }),
+        shippingPlanLines: (db.shipping_plan_lines || []).map(normalizeShippingPlanLineRecord).filter(function(r) { return r.shippingPlanLineId || r.shippingPlanId; })
     };
 }
 
@@ -748,6 +939,49 @@ window.KM.DB.getOverseasInventoryMovements = function() {
     return window._opDbCache.overseasInventoryMovements || [];
 };
 
+// Amazon snapshot + forecast-event source getters (read-only). Return [] when the cache is
+// unloaded or the payload does not include the table — callers must safe-fallback to 0.
+window.KM.DB.getAmazonInventorySnapshot = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.amazonInventorySnapshot || [];
+};
+
+window.KM.DB.getAmazonInventoryHealthSnapshot = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.amazonInventoryHealthSnapshot || [];
+};
+
+window.KM.DB.getAmazonDailySalesSnapshot = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.amazonDailySalesSnapshot || [];
+};
+
+window.KM.DB.getAmazonWeeklySalesSnapshot = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.amazonWeeklySalesSnapshot || [];
+};
+
+window.KM.DB.getFcSpecialEvents = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.fcSpecialEvents || [];
+};
+
+window.KM.DB.getFcTargetRules = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.fcTargetRules || [];
+};
+
+// Weekly Shipping Plan (Decision Layer) getters.
+window.KM.DB.getShippingPlans = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shippingPlans || [];
+};
+
+window.KM.DB.getShippingPlanLines = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shippingPlanLines || [];
+};
+
 
 window.KM.DB.getDataSourceMode = function() {
     return getOperationDbDataSourceMode();
@@ -853,6 +1087,84 @@ window.KM.DB.updateMarketplaceSkuModel = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Weekly Shipping Plan (Decision Layer) write methods.
+// Submit Plan → create shipping_plans + shipping_plan_lines (grouped server-side by the six-key).
+window.KM.DB.createShippingPlansBatch = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, createShippingPlansBatch skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'createShippingPlansBatch' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Create shipping plans failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Status transitions: { shipping_plan_id, transition: submit|approve|reject|cancel, rejected_reason?, actor? }
+window.KM.DB.updateShippingPlanStatus = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateShippingPlanStatus skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updateShippingPlanStatus' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update status failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Edit approved_qty (Draft only): { lines: [ { shipping_plan_line_id, approved_qty } ] }
+window.KM.DB.updateShippingPlanLineQty = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateShippingPlanLineQty skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updateShippingPlanLineQty' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update qty failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Append a note to shipping_plans.note (append-only history): { shipping_plan_id, note, actor? }.
+// Never overwrites existing notes and never touches rejected_reason.
+window.KM.DB.appendShippingPlanNote = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, appendShippingPlanNote skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'appendShippingPlanNote' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Append note failed');
     await loadOperationDb({ force: true });
     return json.data;
 };

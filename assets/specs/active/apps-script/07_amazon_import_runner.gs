@@ -131,7 +131,9 @@ function runAmazonSnapshotImport_(config, triggeredBy) {
     return finalize('failed', 'source_read_error: ' + (e && e.message ? e.message : e));
   }
 
-  // 2) Header validation — every fieldMap source header must exist
+  // 2) Header validation — every fieldMap (REQUIRED) source header must exist.
+  //    optionalFieldMap headers are intentionally EXCLUDED here: a missing optional header
+  //    must NOT raise missing_required_header or stop the source (it maps to blank instead).
   var requiredHeaders = [];
   for (var k in config.fieldMap) { if (config.fieldMap.hasOwnProperty(k)) requiredHeaders.push(config.fieldMap[k]); }
   var headerSet = {};
@@ -159,11 +161,25 @@ function runAmazonSnapshotImport_(config, triggeredBy) {
 
     // fixed values
     if (config.fixedValues) { for (var fk in config.fixedValues) { if (config.fixedValues.hasOwnProperty(fk)) dest[fk] = config.fixedValues[fk]; } }
-    // mapped fields (by header name)
+    // mapped fields (by header name) — REQUIRED source headers (validated above)
     for (var df in config.fieldMap) {
       if (!config.fieldMap.hasOwnProperty(df)) continue;
       var raw = sr[config.fieldMap[df]];
       dest[df] = (raw === null || raw === undefined) ? '' : (typeof raw === 'string' ? raw.trim() : raw);
+    }
+    // optional mapped fields — map ONLY if the source header exists; otherwise set blank.
+    // optionalFieldMap headers are NOT required and never trigger missing_required_header.
+    if (config.optionalFieldMap) {
+      for (var odf in config.optionalFieldMap) {
+        if (!config.optionalFieldMap.hasOwnProperty(odf)) continue;
+        var oHeader = config.optionalFieldMap[odf];
+        if (headerSet[oHeader]) {
+          var oraw = sr[oHeader];
+          dest[odf] = (oraw === null || oraw === undefined) ? '' : (typeof oraw === 'string' ? oraw.trim() : oraw);
+        } else {
+          dest[odf] = ''; // optional source header absent -> blank destination (safe for rowHash + dedup)
+        }
+      }
     }
 
     // weekly derived fields

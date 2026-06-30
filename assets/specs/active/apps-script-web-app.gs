@@ -33,6 +33,9 @@
 //   08_amazon_import_sources.gs       — amazonReadSheetSource_, amazonReadBigQuerySource_, amazonRunBigQuery_
 //   09_amazon_import_writer_logger.gs — amazonWriteSnapshot_, amazonLogRun_, amazonLogIssues_,
 //                                        amazonAppendByHeader_, amazonAddIssue_
+//   11_shipping_plan_handlers.gs      — handleCreateShippingPlansBatch_,
+//                                        handleUpdateShippingPlanStatus_, handleUpdateShippingPlanLineQty_
+//                                        (Weekly Shipping Plan / Decision Layer writes)
 //   10_amazon_import_helpers.gs       — amazonKeyOf_, amazonRowHash_, amazonNormalizeDate_,
 //                                        amazonDeriveWeekParts_, amazonQualityScore_,
 //                                        amazonNormalizeNumeric_, amazonGroupFields_,
@@ -44,7 +47,8 @@
 // Supported POST actions (unchanged): getOperationDb, getTable, updateSkuLifecycle,
 //   upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch,
 //   upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch,
-//   adjustOverseasInventory, runAmazonSnapshotImports.
+//   adjustOverseasInventory, runAmazonSnapshotImports, createShippingPlansBatch,
+//   updateShippingPlanStatus, updateShippingPlanLineQty.
 //
 // Requires (unchanged): Advanced Google Service "BigQuery API" enabled in the
 //   Apps Script project + BigQuery API enabled in the Google Cloud project.

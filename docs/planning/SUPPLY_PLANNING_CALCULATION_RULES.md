@@ -1,11 +1,19 @@
 # Supply Planning Calculation Rules
 
-**Status:** 🟢 Draft v2 — Calculation Specification (NOT implementation)
-**Last Updated:** 2026-06-09
+**Status:** 🟢 Draft v3.3 — Calculation Specification (NOT implementation)
+**Last Updated:** 2026-06-29
 **Maintained By:** Development Team
-**Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) (operational flow), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships)
+**Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) (operational flow), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) (Inventory Table mapping + AI Suggestion display), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md)
 
 > **Changelog v1 → v2:** Added Document Scope, Company/Ownership context, explicit Inventory Sources, Target Days logic, carton rounding, Request Order role, Inventory Replenishment vs Request Order distinction, validation rules, and expanded current/future month projection with on-the-way and pull-forward special-event terms. Sign convention now explicit in the source formulas.
+>
+> **Changelog v3.2 → v3.3:** Normalized Avg Sales architecture alignment (no logic change): (1) added §22.6 **Runtime Calculation Rule** — `normalized_avg_sales_per_day` is a **Runtime result, not a DB column**; persisted only at Submit Plan into `shipping_plan_lines.snapshot_avg_sales_per_day`. (2) Renamed the Avg-Sales method/source snapshot field to **`snapshot_avg_sales_source`** (records the *source* of the Avg Sales basis, not an algorithm). (3) Defined `snapshot_avg_sales_source` as a fixed enum (`weekly_7d`, `normalized_30d`, `manual_override`, `forecast_override`, `ai_adjusted`; runtime uses the first two, rest Future Extension). (4) **Fully decoupled Source from Warning** — removed combined tokens (`normalized_30d_low_sample`, `weekly_7d_fallback_insufficient_normal_days`); §22.3 fallback ladder now sets `source` + `warning` independently.
+>
+> **Changelog v3.1 → v3.2:** Added the **Normalized Avg Sales / Day Rule** (§22) — when a SKU had a Special Event / Campaign / Deal day in the recent window, Avg Sales/Day is computed from `amazon_daily_sales_snapshot` over the **latest 30 completed days excluding today**, **excluding** event/promotion days, instead of `sales_units_7d ÷ 7`. Includes the normal-day fallback ladder (≥7 normal days → normalized; 3–6 → normalized + `low_sample_warning`; <3 → weekly fallback + `insufficient_normal_days`) and the Forecast-Driven note. Requires the Daily Sales snapshot window to be 30 completed days (see `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`).
+>
+> **Changelog v3 → v3.1:** Added the **Supply Planning Optimization Goal** (§21) — the system default objective and its priority order (Supply Safety → Lowest Logistics Cost → Minimum Number of Shipments → Container Utilization), the slowest-first / 45-day-sea-freight default, and the rule that faster logistics is only escalated when the 18-day Minimum Survival Stock cannot otherwise be met (never default to air).
+>
+> **Changelog v2 → v3:** Added the **Overseas Shared Inventory Allocation Engine** (§20) — allocation scope (same company + same country), 18-day minimum survival stock (highest priority), `allocation_priority`-based distribution, Platform vs Self vs Hybrid behavior, the Sales-Driven / Forecast-Driven Need calculation alignment (Safety Days = 30), and the future Shipping/Factory/Carrier allocation extension. Synchronizes the finalized Inventory Table rules from `INVENTORY_TABLE_MAPPING_SPEC.md` v1.0.
 
 ---
 
@@ -344,6 +352,141 @@ Recommended Order Qty = CEILING(Order Need ÷ Units Per Carton) × Units Per Car
 
 ---
 
-**Draft v2 Calculation Specification — subject to revision. No code or DB changes are implied by this document.**
+## 20. Overseas Shared Inventory Allocation Engine
+
+Defines how **shared overseas warehouse inventory** is allocated across self-fulfilled sites. This is the calculation-engine form of the official rule in [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) §16. **Calculation rule only — no code, no DB, no implementation.**
+
+### 20.1 Allocation Scope
+
+- Allocate **only within the same Company AND the same Country.**
+- **Never allocate across companies. Never allocate across countries.**
+- Eligible supply = `overseas_inventory_snapshot.available_stock` (`physical_stock − reserved_stock − damaged_stock`) across **eligible overseas warehouses** for that company + country.
+
+### 20.2 Fulfillment Model behavior (Platform vs Self vs Hybrid)
+
+| `fulfillment_model` | Shared allocation? | Behavior |
+|---------------------|--------------------|----------|
+| `platform_fulfilled` | **No** | Inventory belongs to the platform (e.g. Amazon FBA). Excluded from shared overseas allocation. |
+| `self_fulfilled` | **Yes** | Uses shared overseas inventory; allocation **required**. |
+| `hybrid` | Mixed | Platform inventory and 3rd-party (shared) inventory **both visible**; the **Marketplace SKU's** `fulfillment_model` decides whether that SKU participates in shared allocation. |
+
+### 20.3 Minimum Survival Stock = 18 Days (highest priority)
+
+- **Before any priority distribution**, every eligible self-fulfilled site must first receive enough inventory to **survive 18 days**.
+```
+Survival Need[site] = 18 × Avg Sales Per Day[site]
+```
+- Avg Sales Per Day per the Inventory Table mapping = `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7` (rounded to 1 decimal), or the engine-defined run-rate.
+- Survival allocation is the **highest priority**; only **remaining** inventory after all sites hit 18-day survival stock continues to §20.4.
+
+### 20.4 Allocation Priority (remaining inventory)
+
+- After all eligible sites reach 18-day survival stock, distribute the **remaining** inventory by **`marketplaces.allocation_priority`**.
+- **Higher number = higher priority.** Editable by PM.
+- Ties / leftover rounding reconciliation: see Open Items (integer allocation rounding).
+
+### 20.5 Need Calculation alignment (Sales Driven / Forecast Driven)
+
+The allocation consumes the **Need** produced by the Inventory Table engines (`INVENTORY_TABLE_MAPPING_SPEC.md` §14–§15):
+
+- **Sales Driven** — cumulative incremental Need over buckets `0–18 / 19–30 / 31–45 / 46–90`. **Each upcoming event counted once; each on-the-way shipment deducted once** (FIFO by ETA). `Suggested Qty` = final remaining demand after Current Stock, On-the-Way, and Upcoming Event are processed (min 0).
+- **Forecast Driven** — `Suggested Qty = max(0, Forecast Month+1 + Forecast Month+2 + Safety Stock − Current Stock − Qualified On-the-Way)`, with **Safety Days = 30** and Target Rule (SKU > Series > Category) already applied (min 0).
+
+### 20.6 Future Shipping Allocation Extension
+
+- `allocation_priority` becomes the **system-wide shared allocation priority**.
+- Future **Factory Allocation**, **Shipping Allocation**, and **Carrier Capacity** allocation may **reuse the same priority field** rather than defining parallel priorities.
+- This remains **planning only** — it does not deduct physical stock, transfer ownership, or create intercompany SO/PO/AR/AP. Physical deduction still happens only at shipment **Confirm & Ship** (`SHIPMENT_CENTER_SPEC.md` §15.1).
+
+> **Open items (this engine):** eligible-warehouse resolution; integer allocation rounding + reconciliation vs physical available stock; cross-site / cross-company borrowing of unused allocation (planning exception only — see `SHIPMENT_CENTER_SPEC.md` §19.3); exact Avg-Sales-Per-Day run-rate window.
+
+---
+
+## 21. Supply Planning Optimization Goal
+
+Defines the **system default objective** the planning engine optimizes toward when proposing replenishment / shipping. This is a calculation/priority rule only — it does **not** change any shortage/projection/allocation formula and is **not** an implementation.
+
+### 21.1 System Default Objective (priority order)
+
+The system optimizes in this strict priority order — a lower priority is improved **only without sacrificing a higher one**:
+
+| Priority | Goal | Meaning |
+|----------|------|---------|
+| **Priority 1** | **Supply Safety** | Demand coverage / no stockout. Highest priority — never traded away. Must at minimum satisfy the **18-day Minimum Survival Stock** (§20.3) for eligible self-fulfilled sites. |
+| **Priority 2** | **Lowest Logistics Cost** | Among options that keep supply safe, choose the cheapest. The system should **always try to satisfy demand by the slowest available shipping method first** (slowest = cheapest). |
+| **Priority 3** | **Minimum Number of Shipments** | Prefer fewer, consolidated shipments over many small ones. |
+| **Priority 4** | **Container Utilization** | Fill containers efficiently (improve fill rate) once the above are satisfied. |
+
+### 21.2 Default shipping behavior
+
+- The system should **default to planning 45-day sea freight** (the slowest / cheapest mode).
+- Faster logistics is **escalated step-by-step only when** the **18-day Minimum Survival Stock cannot be met** by the slower mode (i.e. supply safety, Priority 1, would be violated).
+- **The system must NOT default to recommending air freight.** Air (and other expedited modes) are exceptions used only to protect supply safety, never the default proposal.
+
+> This goal frames how suggestions are ranked; it does not override the Need calculation (§14–§15 of the Inventory Table mapping), the allocation engine (§20), or Shipment Center execution (which remains a separate module). Shipment-method allocation detail lives in the future Allocation / Shipment specs.
+
+---
+
+## 22. Normalized Avg Sales / Day Rule
+
+Avg Sales/Day drives Days of Supply and the Sales-Driven replenishment baseline. A single Special Event / Campaign / Deal day can spike weekly sales and **falsely inflate** the baseline, over-ordering. This rule **excludes event/promotion days** from the baseline when contamination is present.
+
+### 22.1 Default
+
+```
+Avg Sales/Day = amazon_weekly_sales_snapshot.sales_units_7d ÷ 7
+```
+
+### 22.2 Exception — event/promotion contamination
+
+If, **within the recent window, the SKU has any day overlapping a Special Event / Campaign / Deal**, do **NOT** use `sales_units_7d ÷ 7`. Compute a **Normalized Avg Sales** from `amazon_daily_sales_snapshot` instead.
+
+- **Window:** the **latest 30 completed days, excluding today**.
+- **Event / Promotion Days source:** `fc_special_events`, `campaigns`, `campaign_sku_lines` (any day overlapping an event/campaign/deal period in scope for the SKU).
+- **Normal Sales Days = (latest 30 completed days) − (Event / Promotion Days).**
+
+```
+normalized_avg_sales_per_day = sum(sales_units on normal days) ÷ count(normal days)
+```
+
+### 22.3 Fallback ladder (by available normal days)
+
+**Source and Warning are fully decoupled** — the source records *which* Avg Sales basis was used; the warning records *data quality*. They are independent fields (never combined into one token).
+
+| `normal_days_count` | `source` | Avg Sales/Day used | `warning` |
+|---------------------|----------|--------------------|-----------|
+| **≥ 7** | `normalized_30d` | `normalized_avg_sales_per_day` | blank |
+| **3 – 6** | `normalized_30d` | `normalized_avg_sales_per_day` | `low_sample_warning` |
+| **< 3** | `weekly_7d` | `sales_units_7d ÷ 7` (weekly fallback) | `insufficient_normal_days` |
+
+- **Correct:** `source = normalized_30d` + `warning = low_sample_warning` (two separate values). **Do NOT** combine into `normalized_30d_low_sample`.
+- When no contamination exists in the window, the default (§22.1) applies → `source = weekly_7d`, `warning = blank`; if weekly data is nonetheless event-affected but still used, `warning = event_contaminated_weekly_sales`.
+
+### 22.4 Forecast-Driven SKUs
+
+- For **Forecast-Driven** SKUs, **Avg Sales is auxiliary reference only** and **must not** be the primary replenishment basis (the Forecast-Driven formula in `INVENTORY_TABLE_MAPPING_SPEC.md` §15 governs). The normalization still applies to the displayed Avg Sales, but it does not drive the Forecast-Driven suggested qty.
+
+### 22.5 Persistence at Decision Commit
+
+The **chosen** Avg Sales/Day, the **source**, the **normal/excluded day counts**, and any **warning** are frozen onto `shipping_plan_lines` at Submit Plan (Decision Commit) via `snapshot_avg_sales_per_day`, `snapshot_avg_sales_source`, `snapshot_normal_days_count`, `snapshot_excluded_event_days_count`, `snapshot_avg_sales_warning` (see `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §5). The snapshot is the Decision Truth and is never recalculated afterward (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`).
+
+**Snapshot Provenance (architecture reserved).** `snapshot_avg_sales_source` is the **current persisted metadata** — it records the **Source** that produced the value (`weekly_7d` / `normalized_30d` / …). The broader **Snapshot Provenance** concept — *which engine / decision produced the value* (AI Engine, Forecast Engine, Planning Engine, Promotion Normalization, Current MVP Rule) — is **architecture-reserved for a future AI / Planning audit trail** and is **NOT persisted** today (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §4B). **No new column / table is added by this note.**
+
+> **Scope:** this rule defines the calculation; it adds **no new table** and **no BigQuery schema change**. It depends only on the Daily Sales snapshot covering 30 completed days (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`).
+
+### 22.6 Runtime Calculation Rule (Runtime result vs Persistent data)
+
+**`normalized_avg_sales_per_day` is a Runtime Calculation Result, NOT a Database Column.**
+
+- The **Runtime Engine recalculates it every time** from the 30-day Daily Sales snapshot + event/promotion overlap; it is never stored.
+- The **Inventory Table displays the Runtime result** (Analysis Layer — always reflects the latest data; `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §2.1).
+- It is **not written to any persistent table** during analysis.
+- **Only at Submit Plan (Decision Commit)** is the final adopted Avg Sales/Day written to **`shipping_plan_lines.snapshot_avg_sales_per_day`** (together with `snapshot_avg_sales_source` / `snapshot_avg_sales_warning` / day counts). From that moment it is an **immutable Decision Snapshot** (Decision Layer) and is never recalculated (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §4, §8A).
+
+> In short: **Analysis Layer = Runtime recompute (not persisted); Decision Layer = frozen snapshot at Submit Plan.** This rule changes no calculation logic — it only states where the value lives.
+
+---
+
+**Draft v3.3 Calculation Specification — subject to revision. No code or DB changes are implied by this document.**
 
 **End of Document**

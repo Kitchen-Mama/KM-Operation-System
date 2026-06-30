@@ -261,6 +261,8 @@ function handleImportMarketplaceSkusBatch_(body) {
       if (mpCol('currency') !== -1) mpSheet.getRange(trow, mpCol('currency') + 1).setValue(currency);
       if (row.marketplace_sku_status !== undefined && mpCol('marketplace_sku_status') !== -1) mpSheet.getRange(trow, mpCol('marketplace_sku_status') + 1).setValue(String(row.marketplace_sku_status).trim());
       if (row.replenishment_model !== undefined && mpCol('replenishment_model') !== -1) mpSheet.getRange(trow, mpCol('replenishment_model') + 1).setValue(String(row.replenishment_model).trim());
+      // Fulfillment model: written only when supplied (Hybrid template) AND the column exists.
+      if (row.fulfillment_model !== undefined && String(row.fulfillment_model).trim() !== '' && mpCol('fulfillment_model') !== -1) mpSheet.getRange(trow, mpCol('fulfillment_model') + 1).setValue(String(row.fulfillment_model).trim());
       if (row.launch_date !== undefined && mpCol('launch_date') !== -1) mpSheet.getRange(trow, mpCol('launch_date') + 1).setValue(String(row.launch_date).trim());
       if (mpCol('updated_at') !== -1) mpSheet.getRange(trow, mpCol('updated_at') + 1).setValue(now);
 
@@ -301,6 +303,8 @@ function handleImportMarketplaceSkusBatch_(body) {
     if (mpCol('currency') !== -1) newMp[mpCol('currency')] = currency;
     if (mpCol('marketplace_sku_status') !== -1) newMp[mpCol('marketplace_sku_status')] = String(row.marketplace_sku_status || 'active').trim();
     if (mpCol('replenishment_model') !== -1) newMp[mpCol('replenishment_model')] = String(row.replenishment_model || 'sales_driven').trim();
+    // Fulfillment model (SKU-level): blank unless the Hybrid template supplied it.
+    if (mpCol('fulfillment_model') !== -1) newMp[mpCol('fulfillment_model')] = String(row.fulfillment_model || '').trim();
     if (mpCol('launch_date') !== -1) newMp[mpCol('launch_date')] = String(row.launch_date || '').trim();
     if (mpCol('created_at') !== -1) newMp[mpCol('created_at')] = now;
     if (mpCol('updated_at') !== -1) newMp[mpCol('updated_at')] = now;

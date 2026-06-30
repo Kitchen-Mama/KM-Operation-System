@@ -37,32 +37,40 @@ function amazonReadBigQuerySource_(config) {
   var cols = [];
   for (var k in config.fieldMap) { if (config.fieldMap.hasOwnProperty(k)) cols.push('`' + config.fieldMap[k] + '`'); }
   var table = '`' + config.sourceProjectId + '.' + config.sourceDataset + '.' + config.sourceTable + '`';
-  var lookback = (config.lookbackDays != null) ? config.lookbackDays : 3;
+  var windowDays = (config.lookbackDays != null) ? config.lookbackDays : 7;  // completed-day window length
+  var excludeToday = (config.excludeToday === true);
   var tz = config.scheduleTimezone || 'Asia/Taipei';
   var dateF = '`' + config.dateField + '`';
 
-  // Default: rolling window (today, yesterday, day-before-yesterday, 3 days ago = INTERVAL 3 DAY).
+  // Default: past N completed days (N = windowDays, default 7), EXCLUDING today (Asia/Taipei),
+  // to avoid partial same-day Amazon data. e.g. today 2026-06-26 -> [2026-06-19 .. 2026-06-25].
+  var startExpr = 'DATE_SUB(CURRENT_DATE("' + tz + '"), INTERVAL ' + windowDays + ' DAY)';
+  var endExpr = excludeToday
+    ? 'DATE_SUB(CURRENT_DATE("' + tz + '"), INTERVAL 1 DAY)'
+    : 'CURRENT_DATE("' + tz + '")';
   var rollingSql = 'SELECT ' + cols.join(', ') + ' FROM ' + table +
-    ' WHERE DATE(' + dateF + ') >= DATE_SUB(CURRENT_DATE("' + tz + '"), INTERVAL ' + lookback + ' DAY)';
+    ' WHERE DATE(' + dateF + ') BETWEEN ' + startExpr + ' AND ' + endExpr;
   var rolling = amazonRunBigQuery_(config.sourceProjectId, rollingSql);
   if (rolling.rows.length) {
     rolling.isFallback = false;
     return rolling;
   }
 
-  // Fallback: rolling window empty → latest-available data PER GROUP (country/marketplace/channel/sku,
-  // excluding the fixed marketplace + the date field). Each group gets a 4-day window ending on its
-  // own latest date. Never fabricate rows; only return rows that exist.
+  // Fallback: completed window empty → latest-available data PER GROUP (country/marketplace/channel/sku,
+  // excluding the fixed marketplace + the date field). Each group gets its OWN N-completed-day window
+  // ENDING ON that group's latest date (INTERVAL windowDays-1 DAY = N days inclusive). Never use one
+  // global latest date; never fabricate rows; only return rows that exist.
   var groupFields = amazonGroupFields_(config);             // dest field names
   var groupSrc = groupFields.map(function (f) { return '`' + config.fieldMap[f] + '`'; });
   var tcols = cols.map(function (c) { return 't.' + c; });
   var groupSel = groupSrc.join(', ');
   var joinOn = groupSrc.map(function (g) { return 't.' + g + ' = l.' + g; }).join(' AND ');
+  var fbSpan = (windowDays > 0 ? windowDays - 1 : 0);       // inclusive span ending on group latest
   var fallbackSql =
     'SELECT ' + tcols.join(', ') + ' FROM ' + table + ' t ' +
     'JOIN ( SELECT ' + groupSel + ', MAX(DATE(' + dateF + ')) AS __grp_latest FROM ' + table +
     ' GROUP BY ' + groupSel + ' ) l ON ' + joinOn +
-    ' WHERE DATE(t.' + dateF + ') BETWEEN DATE_SUB(l.__grp_latest, INTERVAL ' + lookback + ' DAY) AND l.__grp_latest';
+    ' WHERE DATE(t.' + dateF + ') BETWEEN DATE_SUB(l.__grp_latest, INTERVAL ' + fbSpan + ' DAY) AND l.__grp_latest';
   var fb = amazonRunBigQuery_(config.sourceProjectId, fallbackSql);
   fb.isFallback = true;
   return fb;

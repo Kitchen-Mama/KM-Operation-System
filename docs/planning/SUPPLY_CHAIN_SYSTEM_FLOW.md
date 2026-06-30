@@ -1,11 +1,13 @@
 # Supply Chain System Flow
 
-**Status:** 🟡 Draft v1 — Architecture Specification (documentation only)
-**Last Updated:** 2026-06-09
+**Status:** 🟡 Draft v1.1 — Architecture Specification (documentation only)
+**Last Updated:** 2026-06-29
 **Maintained By:** Development Team
-**Related:** [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (calculation logic), `assets/specs/active/SKU_MASTER_FLOW.md` (SKU/marketplace/pricing creation)
+**Related:** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (**authoritative architecture language**), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (calculation logic), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md) (Decision Layer / Submit Plan write contract), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), `assets/specs/active/SKU_MASTER_FLOW.md` (SKU/marketplace/pricing creation)
 
 > This document defines the **operational supply chain flow** — the sequence of pages, actions, and records across Kitchen Mama's weekly supply cycle. It is **not** a formula specification; detailed shortage/surplus/order math lives in `SUPPLY_PLANNING_CALCULATION_RULES.md`. No code changes. No DB changes.
+
+> **Update (2026-06-29):** Added the **Core Architecture Philosophy — Three-Layer Separation** (§2A: Analysis recalculates · Decision preserves planning · Execution preserves records · never mixed), the **Immutable Flow Principle** (downstream inherits/copies upstream, never mutates it), the **Single Source of Truth by layer** table, and the explicit **Decision Layer chain** (§5.1) — Inventory Replenishment → Submit Plan → Weekly Shipping Plan (Draft → Pending Approval → Approved) → Shipment Draft → Shipment Overview. Inventory Replenishment = **Analysis Layer**, Weekly Shipping Plan = **Decision Layer**, Shipment Draft/Overview = **Execution Layer**. The `shipping_plans` / `shipping_plan_lines` write contract (incl. six-value group key, `plan_version`, `submit_batch_id`, line-level snapshots) is defined in [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md).
 
 ---
 
@@ -48,6 +50,63 @@ These layers are **separate**: a physical shipment can occur independently of ho
 
 ---
 
+## 2A. Core Architecture Philosophy — Three-Layer Separation
+
+> **The full, stable architecture principles are centralized in [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md)** (layer language, Decision Commit, Decision Snapshot, Snapshot Provenance, Immutable Flow, Truth Flow Principle, Single Source of Truth, Business Object Identity). The summary below is kept here for flow context; that file governs the definitions.
+>
+> **Every layer owns its own truth. Every downstream layer copies the upstream truth into its own snapshot — but downstream must never mutate upstream.**
+
+> ### 🧭 The core architecture philosophy of the Kitchen Mama Supply Chain System
+>
+> 1. **Inventory Replenishment always RECALCULATES.** It is the Analysis Layer — it re-derives stock, sales, Days of Supply, and suggestions from the latest data every time. It owns no decision and no execution record.
+> 2. **Weekly Shipping Plan always PRESERVES planning decisions.** It is the Decision Layer — at Submit Plan it **snapshots** the decision basis (stock, avg sales, days of supply, suggested qty, target days, method) and never silently drifts with live data afterward.
+> 3. **Shipment always PRESERVES execution records.** It is the Execution Layer — it copies the approved plan as an execution snapshot and tracks the physical movement; it never recalculates planning.
+>
+> **These three layers must NEVER be mixed.**
+> - Analysis must not be treated as a decision.
+> - A decision must not be re-derived from live analysis after it is made.
+> - Execution must not recompute the planning decision.
+
+See [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md) for how the Decision Layer snapshots and preserves the plan, and [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) for how the Execution Layer copies (never recalculates) the decision.
+
+### Immutable Flow Principle
+
+> **Every downstream layer inherits the upstream layer, but never mutates it.**
+
+```
+Inventory Replenishment
+        ↓
+Weekly Shipping Plan
+```
+- Weekly Shipping Plan **may copy** live analysis data into a **Decision Snapshot**.
+- Weekly Shipping Plan **must never mutate** Inventory Replenishment data.
+
+```
+Weekly Shipping Plan
+        ↓
+Shipment
+```
+- Shipment **may copy** approved Weekly Shipping Plan data into an **Execution Snapshot**.
+- Shipment **must never mutate** the Weekly Shipping Plan decision.
+
+This is the **Immutable Flow** principle: each layer reads/copies from upstream into its own frozen snapshot and owns only its own records; it never writes back into the layer above it.
+
+The companion **Truth Flow Principle** states the direction of authority: *truth flows downstream, context flows with it, authority never flows back* (Shipment inherits Shipping Plan but never edits it; Shipping Plan inherits Inventory Replenishment but never edits it; Inventory inherits Amazon Runtime Data but never edits it). Both are defined authoritatively in [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §5 / §5A — referenced here, not redefined.
+
+### Single Source of Truth (by layer)
+
+| Layer | Source of Truth |
+|-------|-----------------|
+| **Analysis** | Live inventory + forecast + sales source data |
+| **Decision** | `shipping_plans` + `shipping_plan_lines` |
+| **Execution** | `shipments` + `shipment_lines` |
+| **Procurement** | `purchase_orders` + `purchase_order_lines` |
+| **Documents** | `generated_documents` |
+
+> **No new DB is required for this principle** — it is a discipline over the existing tables: read upstream, freeze a snapshot, own only your layer's records.
+
+---
+
 ## 3. Company Roles
 
 | Company | Role |
@@ -87,6 +146,36 @@ ResUS ─demand──▶ ResTW
         ─▶ 4. Formal Shipment Creation ─▶ 5. Shipment On The Way ─▶ 6. Shipping History
    (parallel/periodic) 7. FC Summary Monthly Review ─▶ 8. Request Order / 下單系統 ─▶ 9. Export / Document Center
 ```
+
+### 5.1 Decision Layer chain (Inventory Replenishment → Weekly Shipping Plan → Shipment)
+
+The shipment-planning portion of Steps 1, 3, and 4 forms a three-layer chain. Weekly Shipping Plan is the **Decision Layer** that sits between inventory analysis and shipment execution:
+
+```
+Inventory Replenishment  (Analysis Layer — what the data says / suggests)
+        ↓
+Shipping Allocation Working Draft   (Temporary Decision — JS State + sessionStorage recovery;
+                                     editable many times; creates NOTHING)
+        ↓  Submit Plan = Decision Commit   (group by six-key; the ONLY creator of plans)
+Weekly Shipping Plan — Draft        (Decision Layer; editable Shipping Qty)
+        ↓  Submit for approval
+Pending Approval                    (read-only; Manager → COO; Reject requires reason → back to Draft)
+        ↓  Approve
+Approved                            (read-only)
+        ↓  Execution Commit  (Approved → Create Shipment Draft; copies Execution Snapshot)
+Shipment Draft                      (Execution Layer; shipments.status = draft)
+        ↓
+Shipment Overview                   (tracking)
+        ↓
+Shipping History                    (completed / historical shipments)
+```
+
+**Execution Layer scope:** **Shipment Draft, Shipment Overview, and Shipping History all belong to the Execution Layer.** After **Execution Commit** they read/copy the Decision Snapshot into the **Execution Snapshot** and **must NOT recalculate the Decision** (Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event context are copied, never re-derived). See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §3A (Execution Commit) + §4A (Execution Snapshot).
+
+- **Shipping Allocation Working Draft exists BEFORE Decision Commit.** It belongs to the **Analysis Layer / Temporary Decision** state — edited freely (method / ship-from / destination / qty), surviving collapse/expand and re-render via JS State + sessionStorage recovery. It **creates no `shipping_plans` / `shipping_plan_lines`** and **never updates** an existing Weekly Shipping Plan. See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §8A.
+- **Decision Snapshot begins only after Submit Plan.** **Submit Plan** writes `shipping_plans` + `shipping_plan_lines` and **snapshots the decision context** (Current Stock, Avg Sales/Day, Days of Supply, Suggested Qty, Target Days, Shipping Method, Inventory Snapshot Date) so the plan does not drift with daily inventory changes. See [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md).
+- **Shipping Qty is editable only in Draft**; Pending Approval / Approved are read-only.
+- **Immutable Flow:** every downstream layer **inherits/copies** the upstream truth into its own snapshot, but **never mutates upstream**. **Shipment does not recalculate planning** — it copies the approved plan as an execution snapshot (`SHIPMENT_CENTER_SPEC.md`). Plan-layer status (`draft / pending_approval / approved / rejected / cancelled`) is distinct from shipment execution status.
 
 ### Step 1 — Inventory Replenishment
 - User selects **Country, Marketplace, Target Days**.

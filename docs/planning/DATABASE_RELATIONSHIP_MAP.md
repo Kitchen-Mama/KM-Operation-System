@@ -14,7 +14,9 @@
 > - `marketplace_alias` is an **import-normalization / source-name matching** helper. It **defaults to the same value as `marketplace`** (MVP: `marketplace_alias == marketplace`). On **add**, it is auto-filled from `marketplace` when blank; on **edit**, an existing non-blank alias is **never auto-overwritten** (only auto-filled when empty). Future import normalization may match a source marketplace value against `marketplace_alias` → `marketplace_display_name` → `marketplace`.
 > - This document does **not** propose renaming or restructuring marketplace rows.
 
-> **`marketplaces` columns (current live headers):** `marketplace_id`, `company`, `country`, `marketplace`, `marketplace_display_name`, `marketplace_alias`, `currency`, `status`, `created_by`, `created_at`, `updated_by`, `updated_at`, `note`. A **single-alias** column only — there is **no** `marketplace_aliases` table (multiple aliases is a future option, not implemented).
+> **`marketplaces` columns (current live headers):** `marketplace_id`, `company`, `country`, `marketplace`, `marketplace_display_name`, `marketplace_alias`, `fulfillment_model`, `allocation_priority`, `currency`, `status`, `created_by`, `created_at`, `updated_by`, `updated_at`, `note`. A **single-alias** column only — there is **no** `marketplace_aliases` table (multiple aliases is a future option, not implemented).
+> - `fulfillment_model` ∈ `platform_fulfilled` / `self_fulfilled` / `hybrid` — decides whether the marketplace uses platform inventory, shared overseas inventory, or both (see Supply Planning Allocation rule).
+> - `allocation_priority` is a numeric priority for **shared overseas inventory allocation** — **higher number = higher priority**, editable by PM; becomes the system-wide shared allocation priority (future Factory / Shipping / Carrier allocation may reuse it).
 
 ---
 
@@ -72,9 +74,15 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 | `marketplace_skus` → `pricing_list` | `marketplace_sku_id` | 1 → 1 |
 | `pricing_list` → `pricing_change_log` | `pricing_id` | 1 → many |
 
-- `marketplace_skus` stores **site identity and operational settings** (site_sku, asin, status, replenishment_model, launch_date).
+- `marketplace_skus` stores **site identity and operational settings** (site_sku, asin, status, replenishment_model, launch_date, `fulfillment_model`).
 - `pricing_list` is the **pricing source of truth** (Regular / Minimum / MSRP / Currency, base + FX + effective).
 - **`marketplace_skus` must NOT be treated as the final pricing source.**
+
+**Fulfillment model:**
+- `marketplaces.fulfillment_model` ∈ `platform_fulfilled` / `self_fulfilled` / `hybrid`.
+- `marketplace_skus.fulfillment_model` is the **SKU-level override**: when the marketplace is `platform_fulfilled` or `self_fulfilled` the SKU value is **locked** to that model; when the marketplace is `hybrid` the **PM must select** the SKU-level fulfillment model. The Marketplace SKU's fulfillment model decides final fulfillment behavior and whether the SKU participates in **shared overseas inventory allocation** (only `self_fulfilled` — platform-fulfilled inventory is not shared).
+
+**Import SKU Template:** for a **hybrid** marketplace, the marketplace-SKU import template must include a **Fulfillment Model column** (so each imported SKU carries its `fulfillment_model`). For `platform_fulfilled` / `self_fulfilled` marketplaces the column may be omitted/locked because the SKU model is fixed by the marketplace.
 
 **Company rule:**
 - `company` on `marketplace_skus` is **required**.
@@ -100,7 +108,16 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 
 ## 6. Inventory Layer
 
-**Tables:** `factory_stock`, `factory_stock_movements`, `warehouses`, `overseas_inventory_snapshot`, `overseas_inventory_movements`, *future* `amazon_inventory_snapshot` (and similar).
+**Tables:** `factory_stock`, `factory_stock_movements`, `warehouses`, `overseas_inventory_snapshot`, `overseas_inventory_movements`, `mixed_carton_rules`, *future* `amazon_inventory_snapshot` (and similar).
+
+> **Current `overseas_inventory_snapshot` columns (warehouse-side inventory):** `overseas_inventory_id`, `snapshot_date`, `warehouse_id`, `sku`, `site_sku`, `physical_stock`, `available_stock`, `reserved_stock`, `damaged_stock`, `on_the_way_qty`, `on_the_way_eta`, `on_the_way_bucket`, `last_movement_at`, `updated_by`, `created_at`, `updated_at`, `note`.
+> - `available_stock = physical_stock − reserved_stock − damaged_stock`.
+> - `on_the_way_qty` / `on_the_way_eta` / `on_the_way_bucket` = inbound-to-warehouse qty + ETA + ETA bucket (warehouse-side on-the-way source).
+>
+> **Current `overseas_inventory_movements` columns (movement ledger):** `movement_id`, `movement_date`, `warehouse_id`, `sku`, `site_sku`, `movement_type`, `movement_scope`, `from_stock_type`, `to_stock_type`, `quantity`, `quantity_before`, `quantity_after`, `before_physical_stock`, `after_physical_stock`, `before_reserved_stock`, `after_reserved_stock`, `before_available_stock`, `after_available_stock`, `reference_type`, `reference_id`, `source_module`, `created_by`, `created_at`, `note`.
+> - Logs **before/after balances per stock type** (physical / reserved / available); `movement_scope` classifies the movement domain; `from_stock_type → to_stock_type` models holds/releases (e.g. `available → reserved`). Intended write path for **future reservation control** (not yet implemented).
+>
+> **`mixed_carton_rules` (newly added table):** registered for a **future mixed-carton extension**. **Not implemented** — no mapping, write path, or relationship is defined yet.
 
 > **Amazon snapshot + import-log tables:** the Amazon snapshot tables (`amazon_inventory_snapshot`, `amazon_inventory_health_snapshot`, `amazon_weekly_sales_snapshot`, `amazon_daily_sales_snapshot`) and the import-governance tables (`import_sync_runs`, `import_sync_issues`) are **import-only**, populated by the config-driven importer. Their **field-level headers, governance, freshness/fallback, and capping flags** are specified in [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md) (this relationship map intentionally does not duplicate field-level schema).
 
@@ -144,9 +161,25 @@ Examples:
 
 **Tables:** `shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_events`, `shipment_routes`
 
+> **`shipping_plans` / `shipping_plan_lines` columns (authoritative definition in [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md); planned design, not yet migrated):**
+> - **`shipping_plans`:** `shipping_plan_id`, `shipping_plan_no`, `plan_name`, `company`, `country`, `marketplace`, `ship_from`, `destination`, `shipping_method`, **`plan_version`**, **`parent_shipping_plan_id`**, **`submit_batch_id`**, **`batch_status`**, `carrier_id`, `carrier_unit_rate`, `carrier_rate_type`, `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `currency`, `status`, `created_by`, `created_at`, `submitted_by`, `submitted_at`, `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `rejected_reason`, `note`, `source`, `updated_at`.
+>   - **Group key (FINAL):** a Shipping Plan is uniquely grouped by the **six values** `company` + `country` + `marketplace` + `ship_from` + `destination` + `shipping_method`; if any differs, it is a new plan.
+>   - **`plan_version`** — decision-revision counter (default 1; in-Draft edits do not bump; Reject→Draft→resubmit = +1). **MVP reuses the same `shipping_plan_id` row across reject/resubmit** — only `plan_version` increments (no new row per version).
+>   - **`parent_shipping_plan_id`** — version-lineage anchor; **MVP: `parent_shipping_plan_id = shipping_plan_id`**. Reserved for a future one-row-per-version model (each version row points back to the original); MVP does not create per-version rows.
+>   - **`submit_batch_id`** — shared across all plans created by one Submit Plan action (history / audit / AI / reporting).
+>   - **`batch_status`** — batch-level summary across the `submit_batch_id` group (`open` / `partial_approved` / `approved` / `rejected` / `cancelled` / `mixed`); **derived helper only**, may be rolled up from member plans.
+>   - **`status` vs `batch_status`:** `status` = the **individual** Shipping Plan approval status (PRIMARY: `draft / pending_approval / approved / rejected / cancelled`); `batch_status` = **batch-level summary** for all plans sharing the same `submit_batch_id` (helper, never the primary approval status).
+> - **`shipping_plan_lines`:** `shipping_plan_line_id`, `shipping_plan_id` (FK), `sku`, `requested_qty`, `approved_qty`, `carton_qty`, `units_per_carton`, `source_page`, `source_reason`, `inventory_snapshot_date`, `note`, `created_at`, `updated_at`, **+ planning snapshots (FINALIZED on the line, not on the header):** `snapshot_current_stock`, `snapshot_avg_sales_per_day`, `snapshot_days_of_supply`, `snapshot_suggested_qty`, `snapshot_target_days`, `snapshot_fc_context`, `snapshot_event_context`, **+ Avg-Sales source/quality snapshot:** `snapshot_avg_sales_source`, `snapshot_normal_days_count`, `snapshot_excluded_event_days_count`, `snapshot_avg_sales_warning`.
+>   - `snapshot_avg_sales_source` — records **which Avg Sales source** the Decision adopted (fixed enum: `weekly_7d` / `normalized_30d` / `manual_override` / `forecast_override` / `ai_adjusted`; runtime uses `weekly_7d` / `normalized_30d`).
+>   - `snapshot_avg_sales_per_day` — records the **final Avg Sales/day the Runtime Engine adopted** at Decision Commit.
+>   - The Normalized Avg Sales **Runtime Calculation itself is NOT persisted** — only this frozen snapshot is (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22.6). These are **frozen decision context, not a live calculation**; `snapshot_avg_sales_source` and `snapshot_avg_sales_warning` are independent fields.
+> - **Snapshot location is finalized to `shipping_plan_lines`** (per-SKU); planning snapshots are **not** stored on `shipping_plans`. Shipment Draft inherits the line snapshots without recalculation.
+>
+> **Architecture governance:** the principles for **immutable flow**, **decision snapshot**, **execution snapshot**, **layer source-of-truth**, and **business object identity** are governed by [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md). **No DB schema change** is implied by that file — it is a discipline over the existing tables (read upstream, freeze a snapshot, own only your layer's records).
+
 ```
 shipping_plans ──1:many──▶ shipping_plan_lines
-       │ (approved → convert)
+       │ (approved → convert; shipment copies an execution snapshot, never recalculates)
        ▼
 shipments ──1:many──▶ shipment_lines
    ├──1:many──▶ shipment_events

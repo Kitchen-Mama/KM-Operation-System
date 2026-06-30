@@ -11,7 +11,7 @@
 // ========================================
 
 function handleGetOperationDb_() {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines'];
   var data = {};
 
   validTabs.forEach(function(tabName) {
@@ -28,7 +28,7 @@ function handleGetOperationDb_() {
 }
 
 function handleGetTable_(tableName) {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines'];
 
   if (!tableName || validTabs.indexOf(tableName) === -1) {
     return jsonResponse_({ success: false, error: 'Invalid table name. Valid tables: ' + validTabs.join(', ') });
@@ -157,6 +157,8 @@ function handleUpsertMarketplaceSku_(body) {
   if (col('msrp') !== -1) newRow[col('msrp')] = body.msrp || '';
   if (col('marketplace_sku_status') !== -1) newRow[col('marketplace_sku_status')] = String(body.marketplace_sku_status || 'active').trim();
   if (col('replenishment_model') !== -1) newRow[col('replenishment_model')] = String(body.replenishment_model || 'sales_driven').trim();
+  // Fulfillment model (SKU-level). Written only if the column exists; blank when not supplied.
+  if (col('fulfillment_model') !== -1) newRow[col('fulfillment_model')] = String(body.fulfillment_model || '').trim();
   if (col('launch_date') !== -1) newRow[col('launch_date')] = String(body.launch_date || '').trim();
   if (col('created_at') !== -1) newRow[col('created_at')] = now;
   if (col('updated_at') !== -1) newRow[col('updated_at')] = now;
@@ -232,6 +234,15 @@ function handleUpdateMarketplaceSkuModel_(body) {
     sheet.getRange(targetRow, col('launch_date') + 1).setValue(String(body.launch_date || '').trim());
   }
 
+  if (body.fulfillment_model !== undefined && col('fulfillment_model') !== -1) {
+    var ffm = String(body.fulfillment_model).trim();
+    var VALID_SKU_FULFILLMENT_MODELS_ = ['platform_fulfilled', 'self_fulfilled', 'hybrid'];
+    if (ffm && VALID_SKU_FULFILLMENT_MODELS_.indexOf(ffm) === -1) {
+      return jsonResponse_({ success: false, error: 'Invalid fulfillment_model. Valid: ' + VALID_SKU_FULFILLMENT_MODELS_.join(', ') });
+    }
+    sheet.getRange(targetRow, col('fulfillment_model') + 1).setValue(ffm);
+  }
+
   if (body.marketplace_sku_status !== undefined && col('marketplace_sku_status') !== -1) {
     var status = String(body.marketplace_sku_status).trim();
     if (VALID_MARKETPLACE_SKU_STATUSES_.indexOf(status) === -1) {
@@ -303,6 +314,14 @@ function handleUpsertMarketplace_(body) {
   var displayName = String(body.marketplace_display_name || '').trim() || marketplace;
   var marketplaceAlias = String(body.marketplace_alias || '').trim();
   var status = String(body.status || 'active').trim();
+  // Fulfillment model (platform_fulfilled | self_fulfilled | hybrid). Written only if the column
+  // exists. allocation_priority is optional (numeric; higher = higher priority).
+  var fulfillmentModel = String(body.fulfillment_model || '').trim();
+  var VALID_FULFILLMENT_MODELS_ = ['platform_fulfilled', 'self_fulfilled', 'hybrid'];
+  if (fulfillmentModel && VALID_FULFILLMENT_MODELS_.indexOf(fulfillmentModel) === -1) {
+    return jsonResponse_({ success: false, error: 'Invalid fulfillment_model. Valid: ' + VALID_FULFILLMENT_MODELS_.join(', ') });
+  }
+  var allocationPriority = (body.allocation_priority !== undefined && body.allocation_priority !== '') ? body.allocation_priority : '';
   var updatedBy = String(body.updated_by || 'operation-system').trim();
   var note = body.note !== undefined ? String(body.note).trim() : '';
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
@@ -330,6 +349,8 @@ function handleUpsertMarketplace_(body) {
     }
     if (col('currency') !== -1) sheet.getRange(targetRow, col('currency') + 1).setValue(currency);
     if (col('status') !== -1) sheet.getRange(targetRow, col('status') + 1).setValue(status);
+    if (fulfillmentModel && col('fulfillment_model') !== -1) sheet.getRange(targetRow, col('fulfillment_model') + 1).setValue(fulfillmentModel);
+    if (allocationPriority !== '' && col('allocation_priority') !== -1) sheet.getRange(targetRow, col('allocation_priority') + 1).setValue(allocationPriority);
     if (body.note !== undefined && col('note') !== -1) sheet.getRange(targetRow, col('note') + 1).setValue(note);
     if (col('updated_by') !== -1) sheet.getRange(targetRow, col('updated_by') + 1).setValue(updatedBy);
     if (col('updated_at') !== -1) sheet.getRange(targetRow, col('updated_at') + 1).setValue(now);
@@ -348,6 +369,8 @@ function handleUpsertMarketplace_(body) {
   if (col('marketplace_display_name') !== -1) newRow[col('marketplace_display_name')] = displayName;
   // marketplace_alias defaults to marketplace when blank/not provided (MVP: alias == marketplace).
   if (col('marketplace_alias') !== -1) newRow[col('marketplace_alias')] = marketplaceAlias || marketplace;
+  if (col('fulfillment_model') !== -1) newRow[col('fulfillment_model')] = fulfillmentModel;
+  if (col('allocation_priority') !== -1 && allocationPriority !== '') newRow[col('allocation_priority')] = allocationPriority;
   if (col('currency') !== -1) newRow[col('currency')] = currency;
   if (col('status') !== -1) newRow[col('status')] = status;
   if (col('created_by') !== -1) newRow[col('created_by')] = updatedBy;
