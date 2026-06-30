@@ -492,42 +492,41 @@ function markAsDone(planId, method) {
 }
 
 function filterByStatus() {
-    const statusFilter = document.getElementById('spStatusFilter').value;
+    const sel = document.getElementById('spStatusFilter');
+    const statusFilter = sel ? sel.value : 'all';
     const allCards = document.querySelectorAll('.sp-card');
-    const draftTitle = document.getElementById('draftSectionTitle');
-    const pendingTitle = document.getElementById('pendingSectionTitle');
-    const approvedTitle = document.getElementById('approvedSectionTitle');
-    const draftCards = document.getElementById('shippingPlanCards');
-    const pendingCards = document.getElementById('pendingApprovalCards');
-    const approvedCards = document.getElementById('approvedCards');
+    // section key (matches card data-status tokens) → { title element id, cards container id }
+    const sections = {
+        draft:           { title: 'draftSectionTitle',     cards: 'shippingPlanCards' },
+        pendingApproval: { title: 'pendingSectionTitle',   cards: 'pendingApprovalCards' },
+        approved:        { title: 'approvedSectionTitle',  cards: 'approvedCards' },
+        completed:       { title: 'completedSectionTitle', cards: 'completedCards' },
+        cancelled:       { title: 'cancelledSectionTitle', cards: 'cancelledCards' }
+    };
+    function showSec(key, show) {
+        const t = document.getElementById(sections[key].title);
+        const c = document.getElementById(sections[key].cards);
+        if (t) t.style.display = show ? '' : 'none';
+        if (c) c.style.display = show ? '' : 'none';
+    }
+
+    // Hidden-by-default statuses (preserved in DB, viewable only via their own filter option).
+    var HIDDEN_DEFAULT = { completed: true, cancelled: true };
     if (statusFilter === 'all') {
-        draftTitle.style.display = '';
-        pendingTitle.style.display = '';
-        approvedTitle.style.display = '';
-        draftCards.style.display = '';
-        pendingCards.style.display = '';
-        approvedCards.style.display = '';
-        allCards.forEach(card => card.style.display = '');
-    } else {
-        draftTitle.style.display = 'none';
-        pendingTitle.style.display = 'none';
-        approvedTitle.style.display = 'none';
-        draftCards.style.display = 'none';
-        pendingCards.style.display = 'none';
-        approvedCards.style.display = 'none';
-        if (statusFilter === 'draft') {
-            draftTitle.style.display = '';
-            draftCards.style.display = '';
-        } else if (statusFilter === 'pendingApproval') {
-            pendingTitle.style.display = '';
-            pendingCards.style.display = '';
-        } else if (statusFilter === 'approved') {
-            approvedTitle.style.display = '';
-            approvedCards.style.display = '';
-        }
+        // "All Active" = draft + pending_approval + approved; EXCLUDES completed and cancelled.
+        showSec('draft', true); showSec('pendingApproval', true); showSec('approved', true);
+        showSec('completed', false); showSec('cancelled', false);
         allCards.forEach(card => {
-            const cardStatus = card.getAttribute('data-status');
-            card.style.display = cardStatus === statusFilter ? '' : 'none';
+            card.style.display = HIDDEN_DEFAULT[card.getAttribute('data-status')] ? 'none' : '';
+        });
+    } else {
+        showSec('draft', statusFilter === 'draft');
+        showSec('pendingApproval', statusFilter === 'pendingApproval');
+        showSec('approved', statusFilter === 'approved');
+        showSec('completed', statusFilter === 'completed');
+        showSec('cancelled', statusFilter === 'cancelled');
+        allCards.forEach(card => {
+            card.style.display = card.getAttribute('data-status') === statusFilter ? '' : 'none';
         });
     }
 }
@@ -572,7 +571,18 @@ function _spLookup(map, country, marketplace, sku) {
            map.bySku[String(sku || '').trim().toLowerCase()] || null;
 }
 
+// Has the plan been transferred to a Shipment Draft (Execution Commit done)? → eligible for Done.
+function _spTransferred(p) {
+    return !!((p.transferredShipmentId && String(p.transferredShipmentId).trim()) ||
+              (p.transferredToShipmentAt && String(p.transferredToShipmentAt).trim()));
+}
+// Has the Decision Layer been marked Completed (Done pressed)? → leaves the Active view.
+function _spCompleted(p) {
+    return !!(p.completedAt && String(p.completedAt).trim());
+}
+
 function renderShippingPlanFromDb() {
+    _spSkuLogiCache = null;   // rebuild the sku logistics lookup from the freshest cache each render
     var plans = window.KM.DB.getShippingPlans() || [];
     var lines = window.KM.DB.getShippingPlanLines() || [];
     var linesByPlan = {};
@@ -583,22 +593,39 @@ function renderShippingPlanFromDb() {
     // Live fallback sources (Current Stock / Avg Sales) — used only when a line snapshot is absent.
     var invMap = _spLatestMap((window.KM.DB.getAmazonInventorySnapshot && window.KM.DB.getAmazonInventorySnapshot()) || []);
     var weeklyMap = _spLatestMap((window.KM.DB.getAmazonWeeklySalesSnapshot && window.KM.DB.getAmazonWeeklySalesSnapshot()) || []);
-    var live = { inv: invMap, weekly: weeklyMap };
+    // Company live-join map (country||marketplace → company). LEGACY DISPLAY FALLBACK ONLY —
+    // new rows persist shipping_plans.company at Submit Plan (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.3).
+    var mpCompany = {};
+    ((window.KM.DB.getMarketplaces && window.KM.DB.getMarketplaces()) || []).forEach(function(m) {
+        var k = String(m.country || '').trim().toLowerCase() + '||' + String(m.marketplace || '').trim().toLowerCase();
+        if (m.company && !mpCompany[k]) mpCompany[k] = m.company;
+    });
+    var live = { inv: invMap, weekly: weeklyMap, mpCompany: mpCompany };
 
     var countryFilter = (document.getElementById('spCountryFilter') || {}).value || '';
-    var visible = plans.filter(function(p) {
-        if (p.status === 'cancelled') return false;          // cancelled is not shown in the 3 sections
+    var inScope = plans.filter(function(p) {
         if (countryFilter && p.country !== countryFilter) return false;
         return true;
     });
 
-    var draft = visible.filter(function(p) { return p.status === 'draft'; });
-    var pending = visible.filter(function(p) { return p.status === 'pending_approval'; });
-    var approved = visible.filter(function(p) { return p.status === 'approved'; });
+    // Decision Layer Completion: a plan is "Completed" once Done is pressed (completed_at set).
+    // Completed plans leave the Active view entirely (preserved in DB; viewable via the Completed
+    // filter). An Approved plan that has been transferred to a Shipment Draft STAYS in Approved with
+    // a Done button until the user marks it Completed (supersedes the v1.8 auto-hide-on-transfer rule).
+    var draft = inScope.filter(function(p) { return p.status === 'draft' && !_spCompleted(p); });
+    var pending = inScope.filter(function(p) { return p.status === 'pending_approval' && !_spCompleted(p); });
+    var approved = inScope.filter(function(p) { return p.status === 'approved' && !_spCompleted(p); });
+    var cancelled = inScope.filter(function(p) { return p.status === 'cancelled' && !_spCompleted(p); });
+    var completed = inScope.filter(function(p) { return _spCompleted(p); });
 
     _spRenderDbSection('shippingPlanCards', draft, 'draft', linesByPlan, 'No shipping plans available.', live);
     _spRenderDbSection('pendingApprovalCards', pending, 'pending_approval', linesByPlan, 'No pending approvals.', live);
     _spRenderDbSection('approvedCards', approved, 'approved', linesByPlan, 'No approved plans.', live);
+    _spRenderDbSection('completedCards', completed, 'completed', linesByPlan, 'No completed plans.', live);
+    _spRenderDbSection('cancelledCards', cancelled, 'cancelled', linesByPlan, 'No cancelled plans.', live);
+
+    // Apply the current Status filter so cancelled stays hidden under "All Active".
+    if (typeof filterByStatus === 'function') filterByStatus();
 }
 
 // Resolve the three SKU-detail display values per spec §7 priority (snapshot → live → 0 / --).
@@ -637,7 +664,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
     if (!container) return;
     if (!plans.length) { container.innerHTML = '<p>' + emptyMsg + '</p>'; return; }
 
-    var statusLabel = { draft: 'Draft', pending_approval: 'Pending Approval', approved: 'Approved' }[statusType] || statusType;
+    var statusLabel = { draft: 'Draft', pending_approval: 'Pending Approval', approved: 'Approved', cancelled: 'Cancelled', completed: 'Completed' }[statusType] || statusType;
     var html = '';
 
     plans.forEach(function(plan) {
@@ -645,11 +672,18 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var totalSku = planLines.length;
         var totalPcs = planLines.reduce(function(s, l) { return s + _spNum(l.approvedQty); }, 0);
         var totalCartons = planLines.reduce(function(s, l) { return s + _spNum(l.cartonQty); }, 0);
+        // Header logistics totals are RUNTIME (Σ of the line Decision-Snapshot values) — not stored on the header.
+        var totalCbm = planLines.reduce(function(s, l) { return s + _spNum(l.cbm); }, 0);
+        var totalGross = planLines.reduce(function(s, l) { return s + _spNum(l.grossWeight); }, 0);
+        var totalNet = planLines.reduce(function(s, l) { return s + _spNum(l.netWeight); }, 0);
         var totalCostNum = (plan.estimatedTotalCost === '' || plan.estimatedTotalCost == null) ? null : _spNum(plan.estimatedTotalCost);
         var totalCostDisp = (totalCostNum == null) ? '--' : ('$' + totalCostNum.toFixed(2));
         var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ('$' + (totalCostNum / totalPcs).toFixed(2));
         var editable = (statusType === 'draft');
         var pid = plan.shippingPlanId;
+        // Company: persisted snapshot first; live-join marketplaces ONLY as a legacy fallback when blank.
+        var companyDisp = plan.company ||
+            (live && live.mpCompany ? (live.mpCompany[String(plan.country || '').trim().toLowerCase() + '||' + String(plan.marketplace || '').trim().toLowerCase()] || '') : '');
         // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
         var dsAttr = (statusType === 'pending_approval') ? 'pendingApproval' : statusType;
 
@@ -660,12 +694,16 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                     + '<button class="sp-btn sp-btn-cancel" onclick="spDbCancel(\'' + pid + '\')">Cancel</button>';
         } else if (statusType === 'pending_approval') {
             actions += '<button class="sp-btn sp-btn-submit" onclick="spDbApprove(\'' + pid + '\')">Approve</button>'
-                    + '<button class="sp-btn sp-btn-cancel" onclick="spDbReject(\'' + pid + '\')">Reject</button>';
+                    + '<button class="sp-btn sp-btn-cancel" onclick="spDbReject(\'' + pid + '\')">Reject</button>'
+                    + '<button class="sp-btn sp-btn-cancel" onclick="spDbCancel(\'' + pid + '\')">Cancel</button>';
+        } else if (statusType === 'approved' && _spTransferred(plan)) {
+            // Execution Commit done → Decision Layer can be marked Completed (Done).
+            actions += '<button class="sp-btn sp-btn-submit" onclick="spDbDone(\'' + pid + '\')">Done</button>';
         }
 
         var rows = planLines.map(function(l) {
             var qtyCell = editable
-                ? '<input type="number" min="0" value="' + _spNum(l.approvedQty) + '" data-line-id="' + _spEsc(l.shippingPlanLineId) + '" data-upc="' + _spNum(l.unitsPerCarton) + '" oninput="spDbOnQtyInput(this, \'' + pid + '\')" style="text-align:right; width:90px;">'
+                ? '<input type="number" min="0" value="' + _spNum(l.approvedQty) + '" data-line-id="' + _spEsc(l.shippingPlanLineId) + '" data-upc="' + _spNum(l.unitsPerCarton) + '" data-sku="' + _spEsc(l.sku) + '" oninput="spDbOnQtyInput(this, \'' + pid + '\')" style="text-align:right; width:90px;">'
                 : _spNum(l.approvedQty);
             var disp = _spLineDisplay(l, plan, live);
             return '<tr>' +
@@ -718,12 +756,15 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                 '<div class="sp-card-summary">' +
                     _spSummary('Status', '<span class="plan-status-badge plan-status-badge--' + (statusType === 'pending_approval' ? 'pendingApproval' : statusType) + '">' + statusLabel + ' (v' + _spNum(plan.planVersion) + ')</span>') +
                     _spSummary('Submitted Date', _spEsc(plan.createdAt || '')) +
-                    _spSummary('Company', _spEsc(plan.company || '')) +
+                    _spSummary('Company', _spEsc(companyDisp)) +
                     _spSummary('Country', _spEsc(plan.country || '')) +
                     _spSummary('Marketplace', _spEsc(plan.marketplace || '')) +
                     _spSummary('Shipping Method', _spEsc(plan.shippingMethod || '')) +
                     _spSummary('Total Pcs', '<span id="sp-total-pcs-' + _spEsc(pid) + '">' + totalPcs + '</span>') +
                     _spSummary('Total Cartons', '<span id="sp-total-cartons-' + _spEsc(pid) + '">' + totalCartons + '</span>') +
+                    _spSummary('Total CBM', '<span id="sp-total-cbm-' + _spEsc(pid) + '">' + totalCbm.toFixed(3) + '</span>') +
+                    _spSummary('Total Gross Wt', '<span id="sp-total-gross-' + _spEsc(pid) + '">' + totalGross.toFixed(2) + '</span>') +
+                    _spSummary('Total Net Wt', '<span id="sp-total-net-' + _spEsc(pid) + '">' + totalNet.toFixed(2) + '</span>') +
                     _spSummary('Total Cost', totalCostDisp) +
                     _spSummary('Unit Cost', '<span id="sp-unit-cost-' + _spEsc(pid) + '">' + unitCostDisp + '</span>') +
                 '</div>' +
@@ -745,6 +786,8 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                             '<div class="sp-rationale-item"><strong>Target Days:</strong> ' + (planLines[0] ? _spNum(planLines[0].snapshotTargetDays) : '--') + '</div>' +
                             '<div class="sp-rationale-item"><strong>Method:</strong> ' + _spEsc(plan.shippingMethod || '') + '</div>' +
                             '<div class="sp-rationale-item"><strong>Plan No:</strong> ' + _spEsc(plan.shippingPlanNo || '') + '</div>' +
+                            (plan.transferredShipmentId ? '<div class="sp-rationale-item"><strong>Shipment Draft:</strong> ' + _spEsc(plan.transferredShipmentId) + (plan.transferredToShipmentAt ? ' (' + _spEsc(plan.transferredToShipmentAt) + ')' : '') + '</div>' : '') +
+                            (plan.completedAt ? '<div class="sp-rationale-item"><strong>Decision Completed:</strong> ' + _spEsc(plan.completedAt) + (plan.completedBy ? ' by ' + _spEsc(plan.completedBy) : '') + '</div>' : '') +
                             noteInput +
                             noteHtml +
                         '</div>' +
@@ -771,18 +814,46 @@ function toggleSpDbCard(planId) {
     if (btn) btn.textContent = card.classList.contains('is-expanded') ? 'Collapse' : 'Expand';
 }
 
-// Live recompute of card totals while editing Shipping Qty (Draft only).
+// sku_details logistics lookup (rebuilt each render). Used for the live header CBM/weight totals
+// and the post-Save local cache patch. Mirrors the Apps Script logistics formula (cm only for now).
+var _spSkuLogiCache = null;
+function _spSkuDetail(sku) {
+    if (!_spSkuLogiCache) {
+        _spSkuLogiCache = {};
+        var list = (window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [];
+        list.forEach(function(d) { if (d.sku) _spSkuLogiCache[String(d.sku).trim().toLowerCase()] = d; });
+    }
+    return _spSkuLogiCache[String(sku || '').trim().toLowerCase()] || null;
+}
+function _spLineLogistics(sku, approvedQty, cartonQty) {
+    var d = _spSkuDetail(sku);
+    if (!d) return { cbm: 0, gross: 0, net: 0 };
+    var cl = parseFloat(d.cartonLength) || 0, cw = parseFloat(d.cartonWidth) || 0, ch = parseFloat(d.cartonHeight) || 0;
+    var unit = String(d.cartonDimensionUnit || 'cm').toLowerCase();
+    var cartonCbm = (unit === 'cm' || unit === '') ? (cl * cw * ch / 1000000) : 0;
+    return {
+        cartonCbm: cartonCbm,
+        cbm: cartonQty * cartonCbm,
+        gross: cartonQty * (parseFloat(d.cartonWeight) || 0),
+        net: approvedQty * (parseFloat(d.itemWeight) || 0)
+    };
+}
+
+// Live recompute of card totals while editing Shipping Qty (Draft only) — including Runtime
+// Total CBM / Gross / Net (Σ of per-line logistics).
 function spDbOnQtyInput(input, planId) {
     var card = document.getElementById('sp-card-' + planId);
     if (!card) return;
     var inputs = card.querySelectorAll('input[data-line-id]');
-    var totalPcs = 0, totalCartons = 0;
+    var totalPcs = 0, totalCartons = 0, totalCbm = 0, totalGross = 0, totalNet = 0;
     inputs.forEach(function(inp) {
         var qty = parseInt(inp.value) || 0;
         var upc = parseFloat(inp.getAttribute('data-upc')) || 0;
         var carton = upc > 0 ? Math.ceil(qty / upc) : 0;
         totalPcs += qty;
         totalCartons += carton;
+        var L = _spLineLogistics(inp.getAttribute('data-sku'), qty, carton);
+        totalCbm += L.cbm; totalGross += L.gross; totalNet += L.net;
         var cartonCell = document.getElementById('sp-line-carton-' + inp.getAttribute('data-line-id'));
         if (cartonCell) cartonCell.textContent = carton;
     });
@@ -790,6 +861,12 @@ function spDbOnQtyInput(input, planId) {
     var ctnEl = document.getElementById('sp-total-cartons-' + planId);
     if (pcsEl) pcsEl.textContent = totalPcs;
     if (ctnEl) ctnEl.textContent = totalCartons;
+    var cbmEl = document.getElementById('sp-total-cbm-' + planId);
+    var grossEl = document.getElementById('sp-total-gross-' + planId);
+    var netEl = document.getElementById('sp-total-net-' + planId);
+    if (cbmEl) cbmEl.textContent = totalCbm.toFixed(3);
+    if (grossEl) grossEl.textContent = totalGross.toFixed(2);
+    if (netEl) netEl.textContent = totalNet.toFixed(2);
     // Keep the SKU Shipping Details footer totals in sync with header totals.
     var footPcs = document.getElementById('sp-foot-pcs-' + planId);
     var footCtn = document.getElementById('sp-foot-cartons-' + planId);
@@ -807,13 +884,39 @@ function _spCollectQtyLines(planId) {
     return out;
 }
 
+// Patch the in-memory cache lines with the just-saved qty so a re-render shows the new values
+// immediately — even if the forced reload returned stale data. Save NEVER touches plan.status.
+function _spPatchLocalQty(savedLines) {
+    if (!window._opDbCache || !Array.isArray(window._opDbCache.shippingPlanLines)) return;
+    var byId = {};
+    savedLines.forEach(function(l) { byId[String(l.shipping_plan_line_id)] = l; });
+    window._opDbCache.shippingPlanLines.forEach(function(rec) {
+        var s = byId[String(rec.shippingPlanLineId)];
+        if (!s) return;
+        var qty = parseInt(s.approved_qty) || 0;
+        rec.approvedQty = qty;
+        var upc = parseFloat(rec.unitsPerCarton) || 0;
+        rec.cartonQty = upc > 0 ? Math.ceil(qty / upc) : 0;
+        // Recompute the logistics Decision Snapshot locally so the Runtime header totals are correct
+        // immediately after Save (the backend persisted the same values).
+        var L = _spLineLogistics(rec.sku, qty, rec.cartonQty);
+        rec.cartonCbm = L.cartonCbm; rec.cbm = L.cbm; rec.grossWeight = L.gross; rec.netWeight = L.net;
+    });
+}
+
 function spDbSaveQty(planId) {
     var lines = _spCollectQtyLines(planId);
     if (!lines.length) { renderShippingPlan(); return; }
     window.KM.DB.updateShippingPlanLineQty({ lines: lines }).then(function() {
+        // Write persisted. Patch the local cache so the re-render keeps the card in the Draft section
+        // with the new qty/cartons/totals (status stays 'draft'; no navigation, no state clear).
+        _spPatchLocalQty(lines);
         alert('Shipping Qty saved.');
         renderShippingPlan();
-    }).catch(function(err) { alert('Save failed: ' + (err && err.message ? err.message : err)); });
+    }).catch(function(err) {
+        // Write failed → keep the current cards on screen; just report the error (no destructive render).
+        alert('Save failed: ' + (err && err.message ? err.message : err));
+    });
 }
 
 function spDbSubmit(planId) {
@@ -830,8 +933,18 @@ function spDbSubmit(planId) {
 }
 
 function spDbApprove(planId) {
+    // Approve = Execution Commit: the backend also creates the Shipment Draft (shipments +
+    // shipment_lines), copying the Decision Snapshot into the Execution Snapshot.
     window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'approve', actor: 'operation-system' })
-        .then(function() { alert('Plan approved.'); renderShippingPlan(); })
+        .then(function(data) {
+            var sh = data && data.shipment;
+            var msg = 'Plan approved.';
+            if (sh && sh.created) msg += '\nShipment Draft created: ' + (sh.shipment_no || sh.shipment_id) + ' (' + (sh.line_count || 0) + ' lines).';
+            else if (sh && sh.reason === 'already_exists') msg += '\nShipment Draft already exists (' + (sh.shipment_id || '') + ').';
+            else if (sh && (sh.error || (sh.created === false && sh.reason))) msg += '\nNote: Shipment Draft not created (' + (sh.error || sh.reason) + '). You can retry from Shipment Overview.';
+            alert(msg);
+            renderShippingPlan();
+        })
         .catch(function(err) { alert('Approve failed: ' + (err && err.message ? err.message : err)); });
 }
 
@@ -843,6 +956,15 @@ function spDbReject(planId) {
     window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'reject', rejected_reason: reason, actor: 'operation-system' })
         .then(function() { alert('Plan rejected and returned to Draft.'); renderShippingPlan(); })
         .catch(function(err) { alert('Reject failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// Decision Layer Completion (Done). Allowed only on an Approved + transferred plan. Writes
+// completed_at / completed_by; the card then leaves the Active view (preserved in DB).
+function spDbDone(planId) {
+    if (!confirm('This shipping plan has already been transferred to Shipment Draft.\n\nMark this planning task as completed?')) return;
+    window.KM.DB.completeShippingPlan({ shipping_plan_id: planId, actor: 'system_user' })
+        .then(function() { alert('Planning task marked as completed.'); renderShippingPlan(); })
+        .catch(function(err) { alert('Done failed: ' + (err && err.message ? err.message : err)); });
 }
 
 function spDbCancel(planId) {
@@ -885,6 +1007,7 @@ window.spDbSubmit = spDbSubmit;
 window.spDbApprove = spDbApprove;
 window.spDbReject = spDbReject;
 window.spDbCancel = spDbCancel;
+window.spDbDone = spDbDone;
 
 // 暴露到全域
 window.renderShippingPlan = renderShippingPlan;

@@ -11,10 +11,12 @@
                                 <option value="DE">DE</option>
                             </select>
                             <select id="spStatusFilter" class="shipping-plan__filter shipping-plan__filter--status" onchange="filterByStatus()">
-                                <option value="all">All Status</option>
+                                <option value="all">All Active</option>
                                 <option value="draft">Draft</option>
                                 <option value="pendingApproval">Pending Approval</option>
                                 <option value="approved">Approved</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
                             </select>
                         </div>
                     </div>
@@ -26,5 +28,11 @@
                     
                     <h2 id="approvedSectionTitle" style="margin-top: 40px; margin-bottom: 20px;">Approved</h2>
                     <div id="approvedCards"></div>
+
+                    <h2 id="completedSectionTitle" style="margin-top: 40px; margin-bottom: 20px; display: none;">Completed (Decision Layer finished — handed off to Shipment)</h2>
+                    <div id="completedCards" style="display: none;"></div>
+
+                    <h2 id="cancelledSectionTitle" style="margin-top: 40px; margin-bottom: 20px; display: none;">Cancelled</h2>
+                    <div id="cancelledCards" style="display: none;"></div>
                 </div>
             </section>

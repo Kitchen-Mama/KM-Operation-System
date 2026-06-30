@@ -164,13 +164,23 @@ Pending Approval                    (read-only; Manager → COO; Reject requires
 Approved                            (read-only)
         ↓  Execution Commit  (Approved → Create Shipment Draft; copies Execution Snapshot)
 Shipment Draft                      (Execution Layer; shipments.status = draft)
+        ↓  Done  (Decision Layer Completion — plan leaves Active view; row preserved)
+Weekly Shipping Plan Completed      (Decision Layer finished; completed_at set)
         ↓
-Shipment Overview                   (tracking)
+Shipment Lifecycle                  (Execution Layer: Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Received → Closed)
         ↓
-Shipping History                    (completed / historical shipments)
+Settlement Layer                    (final immutable records: documents / audit / KPI)
+        ↓
+History                             (Shipment History / Shipping History)
+        ↓
+Documents                           (Invoice / Packing List / Commercial Invoice / POD / generated_documents)
 ```
 
+> **Four-layer lifecycle (Supply Chain Architecture v1.2):** Analysis → Decision → Execution → **Settlement**. **Decision Layer Completion (Done)** marks the plan Completed (`shipping_plans.completed_at`) — it is independent of the shipment lifecycle and does not change any shipment status. See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §10–§12.
+
 **Execution Layer scope:** **Shipment Draft, Shipment Overview, and Shipping History all belong to the Execution Layer.** After **Execution Commit** they read/copy the Decision Snapshot into the **Execution Snapshot** and **must NOT recalculate the Decision** (Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event context are copied, never re-derived). See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §3A (Execution Commit) + §4A (Execution Snapshot).
+
+> **Phase 2 menu/pages (current).** The left menu now has a **Shipment Center** group with **Shipment Draft** (statuses `draft` / `planned` / `ready_to_ship`; execution fields editable) and **Shipment Overview** (all non-draft shipments; execution fields read-only). Both pages read `shipments` / `shipment_lines` and **display Marketplace** on the card header; logistics (`carton_cbm` / `cbm` / `gross_weight` / `net_weight`) and the Decision Snapshot are shown **read-only** (copied, never recalculated). A status-advance placeholder steps `draft → planned → ready_to_ship → shipped → in_transit → delivered → completed` with **no factory-stock side effects** (`SHIPMENT_CENTER_SPEC.md` §4/§5). Factory-stock reservation/deduction remains **deferred**.
 
 - **Shipping Allocation Working Draft exists BEFORE Decision Commit.** It belongs to the **Analysis Layer / Temporary Decision** state — edited freely (method / ship-from / destination / qty), surviving collapse/expand and re-render via JS State + sessionStorage recovery. It **creates no `shipping_plans` / `shipping_plan_lines`** and **never updates** an existing Weekly Shipping Plan. See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §8A.
 - **Decision Snapshot begins only after Submit Plan.** **Submit Plan** writes `shipping_plans` + `shipping_plan_lines` and **snapshots the decision context** (Current Stock, Avg Sales/Day, Days of Supply, Suggested Qty, Target Days, Shipping Method, Inventory Snapshot Date) so the plan does not drift with daily inventory changes. See [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md).

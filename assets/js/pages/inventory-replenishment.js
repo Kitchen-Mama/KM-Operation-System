@@ -192,11 +192,17 @@ window.IRMap = (function () {
   // Long Term Storage ← amazon_inventory_health_snapshot.
   // Over 90+ = 91–180 bucket; Over 180+ = 181_270 + 271_365 + 366_455 + 456_plus.
   // The finer 366_455 / 456_plus buckets may be absent → safe 0 (no error).
+  // Long Term Storage (unified, no country branch; missing/blank → 0):
+  //   Over 90+  = inv_age_91_to_180_days   (inv_age_0_to_90_days is NOT included)
+  //   Over 180+ = inv_age_181_to_270_days + inv_age_271_to_365_days + inv_age_365_plus_days
+  //               + inv_age_366_to_455_days + inv_age_456_plus_days
+  // (INVENTORY_TABLE_MAPPING_SPEC §5; never uses inv_age_61_to_90_days.)
   function longTermStorage(h) {
     if (!h) return { over90: 0, over180: 0 };
+    var over90 = num(h.invAge91To180Days);
     var over180 = num(h.invAge181To270Days) + num(h.invAge271To365Days)
-                + num(h.invAge366To455Days) + num(h.invAge456PlusDays);
-    return { over90: num(h.invAge91To180Days), over180: over180 };
+                + num(h.invAge365PlusDays) + num(h.invAge366To455Days) + num(h.invAge456PlusDays);
+    return { over90: over90, over180: over180 };
   }
 
   // Sales Trend — past 7 completed days, EXCLUDING today. Returns only days that exist in

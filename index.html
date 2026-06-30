@@ -91,8 +91,19 @@
             <div class="menu-item" onclick="showSection('shippingplan')" title="Shipping Plan">
                 <span class="menu-icon">📋</span><span class="menu-label">Shipping Plan</span>
             </div>
-            <div class="menu-item" onclick="showSection('shippinghistory')" title="Shipment Overview">
-                <span class="menu-icon">📜</span><span class="menu-label">Shipment Overview</span>
+            <!-- Shipment Center 父子選單 (Execution Layer) -->
+            <div class="menu-parent"
+                 data-menu-id="shipment"
+                 onclick="toggleMenu('shipment')" title="Shipment Center">
+                <span class="menu-icon">🚢</span><span class="menu-label">Shipment Center</span>
+            </div>
+            <div class="menu-children" data-parent="shipment">
+                <div class="menu-item" onclick="showShipmentDraft()" title="Shipment Draft">
+                    <span class="menu-label">Shipment Draft</span>
+                </div>
+                <div class="menu-item" onclick="showShipmentOverview()" title="Shipment Overview">
+                    <span class="menu-label">Shipment Overview</span>
+                </div>
             </div>
             <div class="menu-item menu-item--disabled" style="position: relative;" title="Shipping Management">
                 <span class="menu-icon">🚢</span><span class="menu-label">Shipping Management</span>

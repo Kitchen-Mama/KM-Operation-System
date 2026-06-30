@@ -1,12 +1,15 @@
 # Inventory Table Mapping Spec (Inventory Replenishment / 貨物庫存表)
 
-**Status:** 🟢 v1.3 — Inventory Table Mapping **finalized** (Spec only — formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`)
-**Last Updated:** 2026-06-29
+**Status:** 🟢 v1.4 — Inventory Table Mapping **finalized** (Spec only — formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`)
+**Last Updated:** 2026-06-30
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md), [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md).
 
 > **Mapping + finalized rules.** This defines how the Inventory Replenishment main table (貨物庫存表) maps to data sources, the finalized AI-suggestion / replenishment direction, the Overseas Shared Inventory Allocation rule, and the Marketplace Fulfillment Model flow. It is **not** the final frontend and **not** the calculation engine code. Where this and a domain spec differ, the **domain spec wins** (formulas live in `SUPPLY_PLANNING_CALCULATION_RULES.md`).
 
+> **Changelog v1.3 → v1.4:**
+> - **§5 Long Term Storage standardized (no country branch):** **Over 90+ = `inv_age_91_to_180_days`** (the `inv_age_0_to_90_days` bucket is **not** included — corrected after the initial v1.4 draft); **Over 180+ = `inv_age_181_to_270_days` + `inv_age_271_to_365_days` + `inv_age_365_plus_days` + `inv_age_366_to_455_days` + `inv_age_456_plus_days`** (previously omitted `inv_age_365_plus_days` — corrected). **`inv_age_61_to_90_days` removed** (superseded by `0–90` in DB/import only); missing buckets count as 0. Implemented in `inventory-replenishment.js` (`IRMap.longTermStorage`), `operation-system-db-api.js` (added `invAge0To90Days`, retained for storage), and `06_amazon_import_config.gs` (all age buckets optional; `inv-age-61-to-90-days` removed).
+>
 > **Changelog v1.2 → v1.3:**
 > - **Avg Sales/Day is no longer always `sales_units_7d ÷ 7`.** It now uses **`normalized_avg_sales_per_day`** (30-day daily-sales window excluding event/promotion days) when event/promotion contamination exists and enough normal days are available; otherwise it falls back to `sales_units_7d ÷ 7` (per `SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **Sales Trend still shows the Past 7 complete days** — only the Avg Sales *calculation* may use the 30-day normalization (§8, §13).
 >
@@ -106,23 +109,30 @@ Scope: selected Company + Country + Marketplace, per SKU. Source: `amazon_invent
 Scope: selected Company + Country + Marketplace, per SKU. Source: `amazon_inventory_health_snapshot`.
 Purpose: identify **slow-moving inventory** for promotion / discount / ad actions.
 
-| UI field | Meaning | Source |
-|----------|---------|--------|
-| **Over 90+** | stock aged **91–180 days** | `amazon_inventory_health_snapshot.inv_age_91_to_180_days` |
-| **Over 180+** | stock aged **above 180 days** | sum of the buckets below |
-
-**Over 180+ (finalized):**
+**Unified formula (FINAL — no country branch; missing / blank / undefined buckets all count as 0):**
 ```
+Over 90+  = inv_age_91_to_180_days        (inv_age_0_to_90_days is NOT included)
+
 Over 180+ = inv_age_181_to_270_days
           + inv_age_271_to_365_days
+          + inv_age_365_plus_days
           + inv_age_366_to_455_days
           + inv_age_456_plus_days
 ```
 
-> **Report-version compatibility (importer optional buckets).** Amazon Inventory Health reports differ by marketplace / report version. The importer now treats the variable age buckets as **optional** (`optionalFieldMap`, per [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md) §7.2 / §9.1): a missing bucket maps to **blank (0 in the sum)** and never fails the import.
-> - **`inv_age_366_to_455_days` + `inv_age_456_plus_days` are preferred** when the source provides them (finer detail).
-> - **`inv_age_365_plus_days` is the backward-compatible fallback** for older Amazon report versions that only expose a single `365+` top bucket. When present it represents all stock >365 days; when the finer buckets are present instead, it is blank/0.
-> - Because the buckets are mutually exclusive per report version, the finalized sum stays correct whichever set the source supplies (absent buckets contribute 0). The Inventory Table reads whatever the snapshot holds — no Inventory-Table change is implied here.
+| UI field | Meaning | Source |
+|----------|---------|--------|
+| **Over 90+** | stock aged **91–180 days** | `inv_age_91_to_180_days` |
+| **Over 180+** | stock aged **above 180 days** | sum of the 181+ buckets above |
+
+> **`inv_age_0_to_90_days` is NOT part of Over 90+.** It remains imported/stored in `amazon_inventory_health_snapshot` but does **not** contribute to the Over 90+ display.
+
+> **One algorithm for every country / marketplace** — there is **no country-specific branch**.
+> **`inv_age_61_to_90_days` is removed** and must never be used (the `0–90` bucket supersedes it).
+>
+> **Report-version compatibility (importer optional buckets).** Amazon Inventory Health reports differ by marketplace / report version. The importer treats **all age buckets as optional** (`optionalFieldMap`, per [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md) §7.2 / §9.1): a missing bucket maps to **blank (0 in the sum)** and never fails the import.
+> - A given report supplies **either** the single `inv_age_365_plus_days` top bucket (older reports) **or** the finer `inv_age_366_to_455_days` / `inv_age_456_plus_days` buckets (newer reports) — they are mutually exclusive per report version, so summing all three in Over 180+ stays correct (the absent set contributes 0).
+> - The Inventory Table reads whatever the snapshot holds — no Inventory-Table schema change is implied here.
 
 ---
 

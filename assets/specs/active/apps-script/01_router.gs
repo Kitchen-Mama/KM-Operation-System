@@ -97,7 +97,19 @@ function doPost(e) {
       return handleAppendShippingPlanNote_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote' });
+    if (action === 'completeShippingPlan') {
+      return handleCompleteShippingPlan_(body);
+    }
+
+    if (action === 'createShipmentFromPlan') {
+      return handleCreateShipmentFromPlan_(body);
+    }
+
+    if (action === 'updateShipment') {
+      return handleUpdateShipment_(body);
+    }
+
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment' });
 
   } catch (err) {
     Logger.log(err.stack);

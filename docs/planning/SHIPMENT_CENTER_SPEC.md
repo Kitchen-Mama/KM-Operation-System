@@ -63,9 +63,14 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 - No `factory_name`. Use `warehouse_id` → `warehouses`.
 - **Upstream production-readiness data.** Shipment Center MVP must **not** depend on it for shipment execution; shipment allocation primarily uses `purchase_order_lines.remaining_qty` / `completed_qty`. `production_schedule` may later estimate future available stock / expected completion.
 
-**`shipments`** — `shipment_id, shipment_no, shipping_plan_id, reference_id, warehouse_id, warehouse_code, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, status, sales_order_id, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, total_qty, total_cartons, total_cbm, total_gross_weight, total_net_weight, freight_cost_actual, duty_actual, currency, created_by, created_at, updated_at`
+**`shipments`** — `shipment_id, shipment_no, shipping_plan_id, reference_id, warehouse_id, warehouse_code, company, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, status, sales_order_id, booking_no, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, total_qty, total_cartons, total_cbm, total_gross_weight, total_net_weight, freight_cost_actual, duty_actual, currency, note, created_by, created_at, updated_by, updated_at`
+- **`company`** = **copied from `shipping_plans.company` at Execution Commit** (when the Shipment Draft is created). It is a **persisted execution snapshot of company ownership** — the Shipment must **NOT** live-join `marketplaces` to recover company for historical records. Company lives on the **header only**; `shipment_lines` do **not** carry company (they inherit it via `shipment_id`).
+- **`booking_no` / `note` / `updated_by`** added for the Execution Layer: `booking_no` = carrier/forwarder booking reference; `note` = shipment remark; `updated_by` = placeholder actor of the last execution edit (Role & Permission integration is future, like the plan-layer actors).
+- **`marketplace`** is **copied from `shipping_plans.marketplace` at Execution Commit** (part of the six-key header copy) and is **displayed on the Shipment Overview card header** (Marketplace / Company / Country / Method / Total Pcs / Cartons). It is not live-joined. *(`destination` is intentionally NOT shown on the card yet — destination routing is finalized in `CARRIER_AND_ROUTE_SPEC.md` / future Shipping Allocation.)*
+- The header six-key context (`company` / `country` / `marketplace` / `ship_from` / `destination` / `shipping_method`) and `total_qty` / `total_cartons` are **copied from the approved plan at Execution Commit and are NOT recalculated**. Editable execution-layer fields: `carrier_id`, `rate_card_id`, `shipping_method`, `booking_no`, `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `actual_*_date`, `customs_clearance_date`, `delivered_date`, `total_cbm` / weights, `freight_cost_actual`, `duty_actual`, `currency`, `warehouse_code`, `reference_id`, `note`, and `status`.
 
-**`shipment_lines`** — `shipment_line_id, shipment_id, sku, qty, factory_stock_allocation_qty, carton_qty, carton_no_start, carton_no_end, units_per_carton, cbm, gross_weight, net_weight, purchase_order_line_id, note, created_at, updated_at`
+**`shipment_lines`** — `shipment_line_id, shipment_id, sku, qty, factory_stock_allocation_qty, carton_qty, carton_no_start, carton_no_end, units_per_carton, carton_cbm, cbm, gross_weight, net_weight, purchase_order_line_id, note, created_at, updated_at, snapshot_current_stock, snapshot_avg_sales_per_day, snapshot_days_of_supply, snapshot_suggested_qty, snapshot_target_days, snapshot_fc_context, snapshot_event_context, snapshot_avg_sales_source, snapshot_avg_sales_warning`
+- **`snapshot_*` = the Execution Snapshot** — a **verbatim copy of the line's Decision Snapshot** taken at Execution Commit (ARCHITECTURE §4A). These are **frozen and never recalculated** in the Execution Layer (Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event are all copied, not re-derived). `qty` = the plan line's `approved_qty`; `carton_qty` / `units_per_carton` are copied from the plan line.
 - `qty` = **final shipment quantity** and the source for on-the-way / arrival quantity.
 - `factory_stock_allocation_qty` = factory stock reserved/allocated for this line; usually equals `qty`, but may differ during partial preparation.
 
@@ -156,6 +161,18 @@ Status transitions are explicit user actions in MVP (no auto-scheduler yet — s
 ### Status enum
 `draft, planned, ready_to_ship, in_transit, partial_received, completed, cancelled, stuck`
 
+### Execution Layer Lifecycle (Supply Chain Architecture v1.2)
+
+The Execution Layer (Shipment) owns **Execution Truth** and runs a lifecycle **independent** of the Decision Layer — it must **never modify** the Weekly Shipping Plan / Decision Snapshot (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §10/§12):
+
+```
+Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Received → Closed
+```
+
+- **Execution Commit source = an Approved Weekly Shipping Plan** (Approve → Create Shipment Draft; `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §12). The Shipment Draft is the lifecycle's `Draft` state.
+- This is the **architecture lifecycle**; the MVP `status` enum above is the implemented subset. The Phase-2 UI status-advance placeholder steps `draft → planned → ready_to_ship → shipped → in_transit → delivered → completed` (§4); `booked` / `arrived` / `received` / `closed` are architecture lifecycle names to be reconciled with the enum in the §15 status-granularity Open Question. No factory-stock side effects are added by the placeholder.
+- **Decision Layer Completion (the plan's Done) is independent of the shipment lifecycle** — marking the plan Completed does not change any shipment status, and advancing a shipment does not change the plan.
+
 ### Page filter grouping
 | Group | Statuses |
 |-------|----------|
@@ -190,11 +207,19 @@ Status transitions are explicit user actions in MVP (no auto-scheduler yet — s
 - Save edited draft → `planned`.
 - Confirm / Ready to Ship → `ready_to_ship` (triggers FIFO PO allocation §6 and factory stock deduction §8).
 
+> **Phase 2 implementation (current).** Menu: **Shipment Center → Shipment Draft / Shipment Overview** (parent + two children; both read `shipments` / `shipment_lines`, differing only by a **view-mode status filter**). The Shipment Draft page shows statuses **`draft` / `planned` / `ready_to_ship`**.
+> - **Card header shows:** Shipment No · Status · **Marketplace** · Company · Country · Method · Total Pcs · Total Cartons · **Total CBM** · **Total Gross Wt** · **Total Net Wt** · ETD · ETA.
+> - **SKU lines show:** SKU · Qty · Cartons · **Carton CBM** · **CBM** · **Gross Wt** · **Net Wt** · (Decision Snapshot: Current Stock / Avg Sales / Days of Supply, read-only).
+> - **Editable execution fields (Draft page only, via `updateShipment` whitelist):** `carrier_id`, `booking_no`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `tracking_number`, `note`. **Never editable:** `company` / `country` / `marketplace` / `shipping_method`, `qty` / `carton_qty`, and the copied logistics + Decision Snapshot (`carton_cbm` / `cbm` / `gross_weight` / `net_weight` / `snapshot_*`).
+> - **Status-advance placeholder:** a per-card "Advance →" button steps the linear flow `draft → planned → ready_to_ship → shipped → in_transit → delivered → completed` (`shipped` / `delivered` are **Phase-2 placeholder statuses** pending the §15 status-granularity Open Question). **No factory-stock reservation/deduction is performed by the Phase-2 status advance** (deferred — §15.1).
+
 ---
 
 ## 5. Shipment Overview Page Spec
 
 **Role:** tracking / history / search across all shipments. Read-only.
+
+> **Phase 2 implementation (current).** Shipment Overview shows **all non-draft shipments**; the **card header shows Marketplace** (Marketplace / Company / Country / Method / Pcs / Cartons / CBM / Gross / Net / ETD / ETA). **Execution fields are READ-ONLY on Overview** (editing belongs to the Shipment Draft page). The status-advance placeholder button is still available for post-draft progression. **`destination` is not shown yet** (routing not finalized). No factory-stock side effects.
 
 **Filters:** Date · Country · Marketplace · Carrier · Shipping Method · Status · SKU · **Search** button.
 - **Date** uses the **same standard date range picker** as Forecast Review / Overseas Stock Movement Log (preset list + start/end inputs + dual calendar + Apply/Cancel).
@@ -448,7 +473,8 @@ This section documents the **full shipment-side operating flow**, from stock/ord
 **Step notes:**
 - **Steps 1–4 (pre-plan readiness):** factory/overseas stock and PO completion (`completed_qty` / delivery schedule) are confirmed; carrier/forwarder rate is confirmed (MVP manual, future API-driven); the OP team is notified. These are prerequisites — they do not write shipment records.
 - **Steps 5–9 (planning + approval):** Inventory Replenishment suggestions drive the Weekly Shipping Plan; OP submits; **Manager then COO** approve. This is the planning/approval layer (`shipping_plans` / `shipping_plan_lines`).
-- **Step 10:** approval **creates `shipments` + `shipment_lines` with `status = draft`** and may reserve factory stock (§15.1).
+- **Step 10 (Execution Commit):** approval **creates `shipments` + `shipment_lines` with `status = draft`** and may reserve factory stock (§15.1). The Shipment Draft **copies the header context from `shipping_plans`** — including **`shipping_plans.company` → `shipments.company`** (persisted execution snapshot; **never live-joined from `marketplaces`**, §2) — and **copies each line's Decision Snapshot into the line Execution Snapshot** (`snapshot_*`, §2 / ARCHITECTURE §4A). The Execution Layer **never recalculates** Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event — all are copied. Once created, the Shipment reads **only** `shipments` / `shipment_lines` and no longer reads the Weekly Shipping Plan.
+  - **Execution Commit Phase 1 (implemented):** Approve auto-creates the Shipment Draft (idempotent — one shipment per approved plan; an explicit `createShipmentFromPlan` action retries). Execution-layer fields (carrier / booking / container / BL / invoice / ETD / ETA / tracking / remark / status) are editable via `updateShipment`; the Execution Snapshot is immutable. **Factory-stock reservation (§15.1) is NOT performed in Phase 1** (deferred — out of this scope); no `factory_stock` / `factory_stock_movements` write occurs yet.
 - **Steps 11–12:** Shipment Draft completes formal data; **Confirm & Ship is the physical execution trigger** (§15.1) and finalizes FIFO PO allocation (§6).
 - **Steps 13–14:** documents are generated (§16) and, in MVP, manually emailed to factory/carrier.
 - **Steps 15–18:** in-transit (future events/routes §18) → receiving (§17) → completed → searchable in Overview/History.
@@ -477,6 +503,26 @@ This makes the reservation/deduction timing in §7/§8 **unambiguous across the 
 - Shipment Draft is the **editable formal preparation view** after Weekly Shipping Plan approval.
 - **Shipping Plan is the planning / approval layer**; **Shipment is the formal execution layer.**
 - **Do NOT create `shipment_drafts` / `shipment_draft_lines` tables.**
+
+### 15.3 Shipment CBM / Weight Calculation (FUTURE — basis defined, not implemented)
+
+When CBM / weight is computed for `shipment_lines`, it uses the **carton** dimensions from `sku_details` (per `SKU_DETAILS_LOGISTICS_SPEC.md`) — **never the item `*_2` secondary size**:
+
+```
+carton_cbm = carton_length * carton_width * carton_height / 1,000,000      (when carton_dimension_unit = cm)
+shipment_lines.cbm          = carton_qty * carton_cbm
+shipment_lines.gross_weight = carton_qty * carton_weight
+shipment_lines.net_weight   = qty * item_weight
+```
+
+- **CBM is based on carton dimensions only.** `item_length_2` / `item_width_2` / `item_height_2` do **not** participate in any logistics calculation (they are product-content display only).
+- **Units are read, never hard-coded:** dimension unit from `carton_dimension_unit` (default `cm`); weight unit from `carton_weight_unit` / `item_weight_unit` (default `kg`). Non-cm / non-kg values require conversion (handled by the future engine).
+- **Execution Commit COPIES, never recalculates.** Since the Weekly Shipping Plan now computes `carton_cbm` / `cbm` / `gross_weight` / `net_weight` on `shipping_plan_lines` (logistics Decision Snapshot, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §5.4), the Execution Commit **copies** those line values verbatim into `shipment_lines.carton_cbm` / `cbm` / `gross_weight` / `net_weight` (Execution Snapshot) and sums the shipment header:
+  - `shipments.total_cbm = Σ shipment_lines.cbm`
+  - `shipments.total_gross_weight = Σ shipment_lines.gross_weight`
+  - `shipments.total_net_weight = Σ shipment_lines.net_weight`
+  The **Shipment header may store** these totals (unlike the Shipping Plan header, which keeps them Runtime). The formula above is the **definition** of how the plan values were produced; the Execution Layer **does not re-run it**.
+- If a plan line has no logistics value (blank — e.g. `sku_details` missing carton dims), the copied value stays blank; no fabrication.
 
 ---
 

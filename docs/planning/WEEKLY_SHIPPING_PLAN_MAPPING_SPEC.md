@@ -1,13 +1,17 @@
 # Weekly Shipping Plan — Mapping Spec (Decision Layer)
 
-**Status:** 🟡 Draft v1.6 — Mapping + Submit-Plan write contract (mapping spec; the v1.6 UI/mapping fixes are implemented in the frontend/API/Apps Script — see project-current-state)
-**Last Updated:** 2026-06-29
+**Status:** 🟡 Draft v1.10 — Mapping + Submit-Plan write contract (mapping spec; the v1.6–v1.10 UI/mapping fixes are implemented in the frontend/API/Apps Script — see project-current-state)
+**Last Updated:** 2026-06-30
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (**authoritative architecture language — Decision Commit / Decision Snapshot / Immutable Flow / layer source-of-truth**), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md).
 
 > **Spec only.** This document defines how a Submit Plan action in Inventory Replenishment becomes **Weekly Shipping Plan** records, the **`shipping_plans` / `shipping_plan_lines` column schema** (previously undefined — see the implementation-readiness audit), the plan status/approval flow, and the hand-off to Shipment Draft. It introduces **no** code, frontend, Apps Script, API, DB migration, or runtime change. Calculation formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; shipment execution remains owned by `SHIPMENT_CENTER_SPEC.md`.
 
 > **Changelog:**
+> - **Draft v1.10 (2026-06-30)** — **Decision Layer Completion** (Supply Chain Architecture v1.2): added `completed_at` / `completed_by` to `shipping_plans` (§4) and **§12.2 Done / Completed rules** — an Approved+transferred plan shows a **Done** button (`completeShippingPlan`: writes only `completed_at`/`completed_by`, never touches Shipment); **Completed plans leave the Active view** (`completed_at IS NULL` only) but are preserved and viewable via the new **Completed** filter (§9B). **Supersedes the v1.8 "Converted auto-hide on transfer"** — visibility is now completion-driven; transferred-but-not-completed plans stay in Approved with the Done button. Implemented in `11_shipping_plan_handlers.gs` (+2 headers + `handleCompleteShippingPlan_`), `01_router.gs`, `operation-system-db-api.js`, `shipping-plan.js` + `shipping-plan.html` (Done button + Completed section/filter).
+> - **Draft v1.9 (2026-06-30)** — Logistics runtime: added **`carton_cbm`** / `cbm` / `gross_weight` / `net_weight` to `shipping_plan_lines` as **logistics Decision Snapshot** (§5.1, §5.4), computed from `sku_details` carton dims/weights at **Submit Plan** and **recomputed on every Draft Save** (§8, §9A). `carton_cbm` = single-carton CBM (L×W×H/1e6, cm). Header **Total CBM / Total Gross Wt / Total Net Wt** are **Runtime** Σ of the line values (not stored on the header; §6). Execution Commit **copies** these into `shipment_lines` and sums `shipments.total_cbm/total_gross_weight/total_net_weight` (`SHIPMENT_CENTER_SPEC.md` §15.3). Implemented in `11_shipping_plan_handlers.gs` (+3 line headers + logistics map/compute on create & save), `12_shipment_handlers.gs` (copy + header totals), `operation-system-db-api.js` (normalizer), `shipping-plan.js` (runtime header totals + live recompute + Save patch).
+> - **Draft v1.8 (2026-06-30)** — Converted visibility after Execution Commit: added `transferred_shipment_id` / `transferred_to_shipment_at` **handoff metadata** to `shipping_plans` (§4); §12.1 — on Approve→Create Shipment Draft the backend stamps these (status stays `approved`; rows + Decision Snapshot preserved; Immutable Flow intact); a **Converted** plan is hidden from the default view and shown only via the new **Converted** Status-filter option (§9B). Implemented in `11_shipping_plan_handlers.gs` (+2 headers), `12_shipment_handlers.gs` (writeback on Execution Commit), `shipping-plan.js` + `shipping-plan.html` (Converted section + filter), `operation-system-db-api.js` (normalizer).
+> - **Draft v1.7 (2026-06-30)** — Save / Submit / Cancel button semantics finalized: added **§9A** (Save = Draft-only save of `approved_qty`/`carton_qty` + note append, **no status change, no `submitted_at`**; Submit = `draft → pending_approval` + `submitted_at`/`submitted_by`; **Cancel = soft cancel from Draft OR Pending Approval**, `status = cancelled` + `cancelled_at`/`cancelled_by`, **rows + lines preserved, never deleted**) and **§9B** (default view excludes cancelled; Status filter adds **Cancelled**). Added **`cancelled_by`, `cancelled_at`, `updated_by`** columns to `shipping_plans` (§4) and **§13A People/Actor placeholder rule** (actors are placeholders until the Role & Permission module exists; never block the flow). Implemented in `11_shipping_plan_handlers.gs` (cancel now allows pending_approval; writes `cancelled_*` / `updated_by`), `shipping-plan.js` + `shipping-plan.html` (Cancelled section + filter; Cancel on Pending cards), `operation-system-db-api.js` (normalizer).
 > - **Draft v1.6 (2026-06-29)** — Weekly Shipping Plan UI / mapping fixes before the Execution phase: (1) **`shipping_plans.company` resolution** server-side (`marketplace_skus` → `marketplaces` → payload → blank; §3.3). (2) **Carton Quantity Validation** (§3.4) — Shipping Qty must be a `units_per_carton` multiple; missing UPC or non-multiple **blocks Submit Plan**, never silently rounds (§8 aligned). (3) **Removed Total SKU from the Layer 1 card** (§6) and **moved it to the SKU Shipping Details footer** alongside Total Qty / Total Cartons (§7.1). (4) **Snapshot-first display rule** for Current Stock / Avg. Sales / Days of Supply with live fallback then `0` / `--` (§7). (5) **Add Note reconfirmed** append-only to `shipping_plans.note`, never overwriting `rejected_reason` (§10; `appendShippingPlanNote`). (6) **Cost Breakdown placeholder** always visible before the Carrier Price Spec (§11). These are implemented in `shipping-plan.js` / `inventory-replenishment.js` / `operation-system-db-api.js` / `11_shipping_plan_handlers.gs` / `01_router.gs`.
 > - **Draft v1.5 (2026-06-29)** — Normalized Avg Sales alignment (no logic change): renamed the Avg-Sales method/source snapshot field to **`snapshot_avg_sales_source`** (records the source, not an algorithm); defined `snapshot_avg_sales_source` as a fixed enum (`weekly_7d` / `normalized_30d` / `manual_override` / `forecast_override` / `ai_adjusted`; runtime uses the first two); **decoupled Source from Warning** (removed combined tokens; §5.3); noted that the pre-submit Avg Sales value is a **Runtime result, persisted only at Submit Plan** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22.6).
 > - **Draft v1.4 (2026-06-29)** — Added the **Shipping Allocation Working Draft** section (§2A): the pre-Submit temporary decision inside Inventory Replenishment (JS State + sessionStorage recovery) that **creates nothing** and **never updates** a Weekly Shipping Plan; Submit Plan reads it and is the **only** creator of `shipping_plans` / `shipping_plan_lines`; draft lifetime (keep on collapse/expand/edit/re-render; clear on submit success / context change / clear search) and the context-scoped sessionStorage rule. Governed by `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.
@@ -160,16 +164,18 @@ If, say, two SKUs share the same Method but have different `ship_from`, they sti
 - **No factory-stock reservation or deduction happens at Submit Plan** — reservation/deduction belongs to Shipment Center (`SHIPMENT_CENTER_SPEC.md` §7, §8, §15.1).
 - `shipping_plans.company` is **resolved from the marketplace context** at write time (§3.3).
 
-### 3.3 Company resolution (FINAL — `shipping_plans.company` must never be blank when a source exists)
+### 3.3 Company resolution (FINAL — `shipping_plans.company` is a persisted snapshot, never blank when a source exists)
 
-When creating `shipping_plans`, `company` is resolved per this priority:
+`company` is **copied from marketplace master data into `shipping_plans.company` at Submit Plan / Decision Commit** — it is a **persisted layer snapshot**, not a display-only field. It is resolved per this priority:
 
-1. `marketplace_skus.company` by `company + country + marketplace + sku` (when available),
-2. else `marketplaces.company` by `country + marketplace`,
-3. else the existing payload `company` (if present; the `--` placeholder counts as blank),
-4. else blank (only when no source exists).
+1. `marketplaces.company` by `country + marketplace` (**PRIMARY** — company is marketplace-level ownership),
+2. else `marketplace_skus.company` by `country + marketplace + sku` (fallback when the marketplace row is missing),
+3. else the existing payload `company` (if already resolved by the frontend; the `--` placeholder counts as blank),
+4. else blank — **and log a warning** (the unresolved gap must be visible; only happens when no source exists).
 
-Resolution happens **server-side in `createShippingPlansBatch`** so the value is authoritative regardless of what the frontend payload carried. Because `company` is **group key 1** (§3.1), it is resolved **per line before grouping**.
+Resolution happens **server-side in `createShippingPlansBatch`** so the value is authoritative regardless of what the frontend payload carried. Because `company` is **group key 1** (§3.1), it is resolved **per line before grouping** — `company` is **part of the group key, not display-only**.
+
+> **Snapshot-flow rule:** `marketplaces.company` → `shipping_plans.company` (Decision Commit) → `shipments.company` (Execution Commit, §12). Each layer **copies** company into its own header; downstream layers must **not** live-join `marketplaces` to recover company for historical records (legacy blank rows may fall back to a live join for display only — §6). Company lives on the **header**, never duplicated onto `shipping_plan_lines` / `shipment_lines` (lines inherit it via `shipping_plan_id` / `shipment_id`).
 
 ### 3.4 Carton Quantity Validation (FINAL — required before Submit Plan)
 
@@ -192,7 +198,7 @@ Every Shipping Allocation qty submitted must be an **integer multiple of `sku_de
 | `shipping_plan_id` | system generated (PK) |
 | `shipping_plan_no` | system generated (human-readable no.) |
 | `plan_name` | system generated (e.g. `{company}-{country}-{marketplace}-{method}-{date}`) |
-| `company` | source company of the grouped lines (**group key 1**, §3.1) |
+| `company` | **persisted snapshot** copied from marketplace master data at Submit Plan (**group key 1**, §3.1; resolution priority §3.3). Not display-only. |
 | `country` | current selected Inventory Replenishment **country** (**group key 2**) |
 | `marketplace` | current selected Inventory Replenishment **marketplace** (**group key 3**) |
 | `ship_from` | from Shipping Allocation, future finalized logic (**group key 4**) |
@@ -210,17 +216,24 @@ Every Shipping Allocation qty submitted must be an **integer multiple of `sku_de
 | `estimated_total_cost` | `estimated_freight_cost + estimated_duty` |
 | `currency` | from carrier / marketplace context |
 | `status` | enum (§9); default `draft` |
-| `created_by` | system / user |
+| `created_by` | placeholder actor (§13A) |
 | `created_at` | system timestamp (used as "Submitted Date" display, §6) |
-| `submitted_by` | system / user (set on Submit-for-approval) |
-| `submitted_at` | system timestamp |
-| `approved_by` | system / user |
+| `submitted_by` | placeholder actor set on Submit (§13A) |
+| `submitted_at` | system timestamp set on Submit |
+| `approved_by` | placeholder actor (§13A) |
 | `approved_at` | system timestamp |
-| `rejected_by` | system / user |
+| `rejected_by` | placeholder actor (§13A) |
 | `rejected_at` | system timestamp |
 | `rejected_reason` | **required when status = rejected** |
+| `cancelled_by` | placeholder actor set on Cancel (§13A) |
+| `cancelled_at` | system timestamp set on Cancel (soft cancel, §9A) |
+| `transferred_shipment_id` | the `shipment_id` created at Execution Commit; **handoff metadata** (§12.1). Non-blank ⇒ the Approved card shows the **Done** button (§12.2). |
+| `transferred_to_shipment_at` | system timestamp when the plan was converted to a Shipment Draft (§12.1) |
+| `completed_at` | **Decision Layer Completion** timestamp set by **Done** (§12.2). Non-blank ⇒ plan leaves the Active view (preserved in DB). |
+| `completed_by` | placeholder actor that pressed Done (`system_user`; future Role & Permission) (§12.2, §13A) |
 | `note` | user note / rejection reason / plan rationale (append-only history, §10) |
 | `source` | `inventory_replenishment_submit_plan` |
+| `updated_by` | placeholder actor of the last write (§13A) |
 | `updated_at` | system timestamp |
 
 ### 4.1 `plan_version` (decision-revision counter) + reject/resubmit rule (FINAL MVP)
@@ -304,6 +317,10 @@ SP-001 | plan_version = 2 | status = pending_approval
 | `snapshot_normal_days_count` | normal (non-event) days available in the 30-day window — see §5.3 |
 | `snapshot_excluded_event_days_count` | event/promotion days excluded from the window — see §5.3 |
 | `snapshot_avg_sales_warning` | data-quality warning for the Avg Sales calc — see §5.3 |
+| `carton_cbm` | **logistics Decision Snapshot** — single-carton CBM `carton_length × carton_width × carton_height ÷ 1,000,000` (cm) (§5.4) |
+| `cbm` | **logistics Decision Snapshot** — `carton_qty × carton_cbm` (§5.4) |
+| `gross_weight` | **logistics Decision Snapshot** — `carton_qty × carton_weight` (§5.4) |
+| `net_weight` | **logistics Decision Snapshot** — `approved_qty × item_weight` (§5.4) |
 
 ### 5.2 Snapshot Rule (FINAL — snapshots live on `shipping_plan_lines` only)
 
@@ -349,6 +366,24 @@ These freeze **which Avg Sales source** the decision adopted and its **data qual
 
 > **Snapshot Provenance (Architecture Reserved).** Per the snapshot model in `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §4B, a snapshot is **Value + Source + Provenance**. The fields above persist the **Value** (`snapshot_avg_sales_per_day`) and the **Source** (`snapshot_avg_sales_source`). The **Provenance** — *which engine / decision produced the value* (e.g. AI Engine, Forecast Engine, Planning Engine, Promotion Normalization, Current MVP Rule) — is **architecture-reserved for a future AI Audit Trail and is NOT persisted here. No new column is added.**
 
+### 5.4 Logistics snapshot fields — `cbm` / `gross_weight` / `net_weight` (FINAL)
+
+`carton_cbm`, `cbm`, `gross_weight`, `net_weight` are **part of the Decision Snapshot** (persisted on `shipping_plan_lines`, **not** a runtime cache, **not** temporary). They are computed from `sku_details` logistics columns (`SKU_DETAILS_LOGISTICS_SPEC.md` §4) at **Submit Plan** and **recomputed on every Draft Save**.
+
+```
+carton_cbm   = carton_length × carton_width × carton_height / 1,000,000     (carton_dimension_unit = cm; other units reserved → 0)
+cbm          = carton_qty × carton_cbm
+gross_weight = carton_qty × carton_weight
+net_weight   = approved_qty × item_weight
+```
+
+- **`carton_cbm` (single-carton CBM) is persisted on the line** alongside `cbm` (it normally does not change with qty, but is re-derived on each Save for consistency).
+- **Editable while Draft** (recomputed each Save, §8). **Read-only** in Pending Approval / Approved (frozen Decision Snapshot).
+- **Header totals are RUNTIME, not stored** — see §6 (Total CBM / Gross / Net = Σ of the line values).
+- **Units are read from `sku_details`, never hard-coded** (`*_dimension_unit` default `cm`, `*_weight_unit` default `kg`). The non-cm dimension branch is reserved (Phase 1 contributes 0 cbm for non-cm).
+- **`item_*_2` secondary size is NOT used** in any logistics calc.
+- At Execution Commit **`carton_cbm` / `cbm` / `gross_weight` / `net_weight` are copied** into `shipment_lines` as the Execution Snapshot (`SHIPMENT_CENTER_SPEC.md` §15.3) — never recalculated.
+
 ---
 
 ## 6. Weekly Shipping Plan Card Mapping (Layer 1 — collapsed)
@@ -359,16 +394,23 @@ Each `shipping_plan` renders one card.
 |------------|--------|
 | Status | `shipping_plans.status` |
 | Submitted Date | `shipping_plans.created_at` |
-| Company | `shipping_plans.company` |
+| Company | `shipping_plans.company` (persisted snapshot, §3.3) |
 | Country | `shipping_plans.country` |
 | Marketplace | `shipping_plans.marketplace` |
 | Shipping Method | `shipping_plans.shipping_method` |
 | Total Pcs | Σ `shipping_plan_lines.approved_qty` |
 | Total Cartons | Σ `shipping_plan_lines.carton_qty` |
+| Total CBM | **Runtime** Σ `shipping_plan_lines.cbm` (not stored on the header) |
+| Total Gross Wt | **Runtime** Σ `shipping_plan_lines.gross_weight` (not stored) |
+| Total Net Wt | **Runtime** Σ `shipping_plan_lines.net_weight` (not stored) |
 | Total Cost | `shipping_plans.estimated_total_cost` |
 | Unit Cost | `Total Cost ÷ Total Pcs` (display; guard divide-by-zero → blank/`--`) |
 
+> **Header logistics totals are RUNTIME** (summed from the line Decision-Snapshot values at render and live while editing qty in Draft). They are **not persisted on `shipping_plans`**. A future Carrier Cost step reads these Runtime totals.
+
 > **Total SKU is NOT shown on the Layer 1 card.** The SKU count moved to the **SKU Shipping Details footer** (§7) so the collapsed card stays focused on plan-level totals.
+
+> **Company display rule:** the card reads **`shipping_plans.company`** (the persisted snapshot). **Do NOT live-join `marketplaces` for display.** A **live join is allowed only as a fallback for legacy rows where `company` is blank** (rows created before company was persisted); **new rows always persist company** (§3.3), so the fallback should rarely fire.
 
 ---
 
@@ -403,12 +445,14 @@ The SKU Shipping Details table ends with a **footer total row**:
 
 ## 8. Editable Field Rule
 
-**Draft:** `Shipping Qty` is **editable**. Editing it updates, in order:
+**Draft:** `Shipping Qty` is **editable**. Editing + **Save** updates, in order:
 1. `shipping_plan_lines.approved_qty`
 2. `shipping_plan_lines.carton_qty` (= `approved_qty ÷ units_per_carton`)
-3. `shipping_plans` Total Pcs (Σ `approved_qty`)
-4. `shipping_plans` Total Cartons (Σ `carton_qty`)
+3. `shipping_plan_lines.carton_cbm` / `cbm` / `gross_weight` / `net_weight` (recomputed, §5.4) — **Save updates these too; no need to wait for Submit**
+4. `shipping_plans` Total Pcs / Total Cartons + Runtime Total CBM / Gross / Net (header, §6)
 5. Cost Breakdown — only if a carrier has already been selected (re-derive `estimated_freight_cost` / `estimated_total_cost`)
+
+> **Save behavior (FINAL):** Save persists `approved_qty`, `carton_qty`, **and `carton_cbm` / `cbm` / `gross_weight` / `net_weight`** for the Draft line — immediately, on every Save (§9A). Pending Approval / Approved are **read-only** (logistics snapshot frozen).
 
 **Pending Approval:** `Shipping Qty` is **read-only**.
 **Approved:** `Shipping Qty` is **read-only**.
@@ -432,13 +476,49 @@ The SKU Shipping Details table ends with a **footer total row**:
 Draft ──Submit──▶ Pending Approval ──Approve──▶ Approved ──Convert──▶ Shipment Draft
   │                      │
   │                      └──Reject (requires rejected_reason)──▶ Draft (editable again)
-  └──Cancel──▶ Cancelled
+  │                      │
+  └────────Cancel────────┴──▶ Cancelled (SOFT — row + lines preserved, hidden by default)
 ```
 
 - **Reject requires `rejected_reason`** and returns the plan to `draft`.
+- **Cancel is allowed from `draft` OR `pending_approval`** and is a **soft cancel** (§9A) — it never deletes rows.
 - **Approved records are not editable** except by an explicit **future admin override** (out of scope here).
 - This plan-layer status set is **distinct** from the shipment execution status set (`draft / planned / ready_to_ship / in_transit / partial_received / completed / cancelled / stuck` in `SHIPMENT_CENTER_SPEC.md` §3). The Weekly Shipping Plan owns the **planning/approval** lifecycle; the shipment owns the **execution** lifecycle. They must not be conflated.
 - **Approval actors:** per `SUPPLY_CHAIN_SYSTEM_FLOW.md` Step 3, approval is Manager → COO. MVP may model this as a single `pending_approval` → `approved` transition; multi-step approval actor granularity is an Open Question (§15).
+
+---
+
+## 9A. Save / Submit / Cancel Button Semantics (FINAL)
+
+These three actions have **distinct** meaning and must not be conflated.
+
+### Save (Draft only)
+- **Allowed only when `status = draft`.**
+- Saves the Draft's editable content: writes `shipping_plan_lines.approved_qty`, **recomputes `carton_qty`** (= `approved_qty ÷ units_per_carton`), and **recomputes the logistics snapshot `carton_cbm` / `cbm` / `gross_weight` / `net_weight`** (§5.4) — all on every Save, not deferred to Submit; if a note was added it **appends** to `shipping_plans.note`.
+- **Does NOT change `status`. Does NOT write `submitted_at` / `submitted_by`.**
+- **Save ≠ Submit.** After Save, the plan stays in Draft and the user stays on the Weekly Shipping Plan page.
+- Backend: Save uses `updateShippingPlanLineQty` (and `appendShippingPlanNote` for notes) — it must **NOT** call a status transition.
+
+### Submit (Draft → Pending Approval)
+- **Allowed only when `status = draft`.**
+- `status: draft → pending_approval`; writes `submitted_at = now` and `submitted_by` (placeholder actor, §13A).
+- Backend: `updateShippingPlanStatus { transition: 'submit' }`. A resubmit after a prior rejection bumps `plan_version` (§4.1).
+
+### Cancel (Soft Cancel — Draft or Pending Approval → Cancelled)
+- **Allowed from `status = draft` OR `status = pending_approval`.**
+- **Soft cancel only:** `status = cancelled`; writes `cancelled_at = now` and `cancelled_by` (placeholder actor, §13A).
+- **Does NOT delete `shipping_plans`. Does NOT delete `shipping_plan_lines`.** Rows and lines are preserved for audit/history.
+- **UI default hides cancelled plans;** they appear only when the Status filter = **Cancelled** (§9B).
+- Backend: `updateShippingPlanStatus { transition: 'cancel' }`.
+
+> **Cancel is NOT Delete.** There is no hard delete / row removal anywhere in this flow.
+
+## 9B. Cancelled Display Rule
+
+- The Weekly Shipping Plan page **default view excludes `status = cancelled`** (the Status filter default is **All Active**).
+- The Status filter offers: **All Active** (draft + pending_approval + approved, `completed_at IS NULL`), **Draft**, **Pending Approval**, **Approved**, **Completed** (Decision Layer finished, §12.2), **Cancelled**.
+- **Cancelled plans are shown only when the Status filter = Cancelled.** **Completed plans are shown only when the Status filter = Completed.** Both are preserved in DB.
+- An **Approved plan that has been transferred** to a Shipment Draft still appears under **All Active / Approved** (with a **Done** button) until it is marked Completed.
 
 ---
 
@@ -485,6 +565,36 @@ Carrier confirmation updates the `shipping_plans` cost fields (`carrier_id`, `ca
 
 > **Shipment Draft inherits the Decision Snapshot and creates an Execution Snapshot. The Execution Snapshot is immutable. Shipment never mutates the Decision Snapshot.** (Architecture: `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §3A Execution Commit, §4A Execution Snapshot.)
 
+### 12.1 Execution Commit handoff metadata (FINAL)
+
+When the Execution Commit (Approve → Create Shipment Draft) succeeds, the plan is marked as **handed off to the Execution Layer**:
+
+- The backend writes **`transferred_shipment_id` = the new `shipment_id`** and **`transferred_to_shipment_at` = now** onto `shipping_plans` (and bumps `updated_at`).
+- **`shipping_plans` and `shipping_plan_lines` are NOT deleted.** The Decision Snapshot on the lines is **never modified** — these two fields are **Decision-Layer handoff metadata**, not part of the Decision Snapshot, so the **Immutable Flow is preserved** (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`).
+- **`status` stays `approved`.** It is NOT changed to `deleted` or any new status.
+- **The Approved card STAYS visible** (in the Approved section) after the Execution Commit, now showing a **Done** button (§12.2). *(This supersedes the earlier v1.8 "Converted = auto-hidden on transfer" rule — visibility is now driven by **Decision Layer Completion**, not by the transfer itself.)*
+- Idempotent: re-running the Execution Commit for an already-transferred plan does not create a second shipment and does not overwrite the original handoff metadata.
+
+### 12.2 Decision Layer Completion — Done / Completed (FINAL)
+
+The Decision Layer lifecycle is **Draft → Pending Approval → Approved → Execution Commit → Completed** (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §10).
+
+**Done button (Approved card):**
+- Shown when **`status = approved` AND** (`transferred_shipment_id` is not null **OR** `transferred_to_shipment_at` is not null) — i.e. the Execution Commit has already created the Shipment Draft.
+- Confirm dialog: *"This shipping plan has already been transferred to Shipment Draft. Mark this planning task as completed?"*
+
+**Done behavior (`completeShippingPlan`):**
+- Writes **`completed_at = now`** and **`completed_by` = placeholder actor** (`system_user`; §13A) (+ `updated_*`).
+- **Writes nothing else** — `status` stays `approved`; **Shipment / `shipment_lines` are NOT touched**; **no row is deleted**; Decision/Execution Snapshot unchanged.
+- Guard: only an **Approved + transferred** plan may be completed.
+
+**Completed = Decision Layer finished its job** (the Execution Layer has taken over). It does **NOT** mean the shipment shipped / arrived — only that the **decision** is complete; the Decision Snapshot is **preserved permanently**.
+
+**Completed visibility rule (FINAL):**
+- The Weekly Shipping Plan **Active view shows only `completed_at IS NULL`**. A Completed plan **leaves the Active view** and stays hidden **after refresh**.
+- Completed plans are **preserved in DB** and viewable via the **Completed** Status-filter option (§9B).
+- The **Shipment is completely unaffected** by Done.
+
 - An **Approved** Weekly Shipping Plan can be **converted into a Shipment Draft** (this conversion is the **Execution Commit**).
 - Shipment Draft must **copy from the Weekly Shipping Plan as an execution snapshot** — it does **not** recalculate planning logic.
 - **Planning decision is owned by Weekly Shipping Plan; shipment execution is owned by Shipment Center.**
@@ -498,7 +608,7 @@ Carrier confirmation updates the `shipping_plans` cost fields (`carrier_id`, `ca
 | `shipping_method` | → | `shipments.shipping_method` |
 | `carrier_id` | → | `shipments.carrier_id` |
 | `shipping_plan_id` | → | `shipments.shipping_plan_id` (provenance) |
-| `company` | → | (shipment company context / `warehouse` resolution) |
+| `company` | → | **`shipments.company`** (copied at Execution Commit; **not** live-joined from `marketplaces`) |
 | line `sku` | → | `shipment_lines.sku` |
 | line `approved_qty` | → | `shipment_lines.qty` |
 | line `carton_qty` / `units_per_carton` | → | `shipment_lines.carton_qty` / `units_per_carton` |
@@ -509,9 +619,25 @@ Carrier confirmation updates the `shipping_plans` cost fields (`carrier_id`, `ca
 
 ---
 
+## 13A. People / Actor Fields (MVP placeholder)
+
+The following actor fields are **reserved now but not yet wired to a real user/permission system**:
+
+- `created_by`, `submitted_by`, `approved_by`, `rejected_by`, `cancelled_by`, `completed_by`, `updated_by`
+
+**MVP rule:**
+- They may be written with a **placeholder identity** — e.g. `system_user`, `current_user`, or `admin@kitchenmama.com` (the current implementation uses the request `actor`, defaulting to a placeholder).
+- A missing actor **must NEVER block** Save / Submit / Cancel / Approve / Reject — the action proceeds with the placeholder.
+- The backend resolves each actor as `body.<field> || body.updated_by || actor || 'system_user'`.
+
+**Future:** once the **Role & Permission / User Management** spec is complete, these fields are replaced with the real `user_id` / `user_email` identity. No schema change is needed then — only the value source changes.
+
+---
+
 ## 13. Non-Goals
 
 - **Do not** define the Carrier pricing formula here (future Carrier Price Spec).
+- **Do not** implement Role & Permission / User Management here — actor fields stay placeholders (§13A).
 - **Do not** define Request Order / PO conversion here (`REQUEST_ORDER_AND_PO_SPEC.md`).
 - **Do not** implement the Shipping Allocation algorithm here (`ship_from` / `destination` finalized logic deferred).
 - **Do not** implement Monthly Sales / Achievement Rate here.
@@ -524,7 +650,7 @@ Carrier confirmation updates the `shipping_plans` cost fields (`carrier_id`, `ca
 - **`shipping_plan_no` / `plan_name` generation format** (prefix, sequence, per-week reset?).
 - **Approval actor model** — single `pending_approval` vs explicit Manager → COO sub-states; permission model (out of scope, but fields needed).
 - **`ship_from` / `destination` source** — finalized by the future Shipping Allocation spec; until then these may be blank/manual (and, being group keys §3.1, a blank value still counts as a distinct group).
-- **Cancel semantics from Pending Approval** — can a Pending Approval plan be cancelled directly, or only Reject → Draft → Cancel? (Current flow allows Cancel from Draft only.)
+- ~~**Cancel semantics from Pending Approval**~~ **RESOLVED (§9A):** Cancel is allowed directly from **Draft OR Pending Approval**, as a **soft cancel** (status → `cancelled`, rows preserved, hidden by default).
 - **Re-submit `submitted_at`** — whether `submitted_at` is overwritten on each resubmit or a per-version submit history is kept (MVP increments `plan_version` on the same row; whether to log each submit timestamp is open).
 - **`batch_status` derivation precedence** — exact roll-up rule for `mixed` / `partial_approved` when plans in a batch differ.
 - **Cost recalculation trigger** — exact recompute rule when qty changes after carrier selection (deferred to Carrier Price Spec).
@@ -533,6 +659,6 @@ Carrier confirmation updates the `shipping_plans` cost fields (`carrier_id`, `ca
 
 ---
 
-**Draft v1.6 — Weekly Shipping Plan Mapping Spec. Decision Layer between Inventory Analysis and Shipment Execution. The v1.6 UI/mapping fixes (company resolution, carton validation, card/footer layout, snapshot-first display, Add Note, Cost Breakdown placeholder) are implemented in the frontend/API/Apps Script; no DB migration or BigQuery change. Formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; execution owned by `SHIPMENT_CENTER_SPEC.md`.**
+**Draft v1.7 — Weekly Shipping Plan Mapping Spec. Decision Layer between Inventory Analysis and Shipment Execution. The v1.6/v1.7 UI/mapping fixes (company resolution, carton validation, card/footer layout, snapshot-first display, Add Note, Cost Breakdown placeholder, Save/Submit/Cancel semantics + soft cancel, placeholder actor fields) are implemented in the frontend/API/Apps Script; the only new `shipping_plans` columns are `cancelled_by` / `cancelled_at` / `updated_by`. Formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; execution owned by `SHIPMENT_CENTER_SPEC.md`.**
 
 **End of Document**

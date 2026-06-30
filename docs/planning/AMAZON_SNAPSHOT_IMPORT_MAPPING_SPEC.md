@@ -268,10 +268,12 @@ Each config classifies destination fields into four kinds:
 
 > **Optional age buckets (report-version compatibility).** Amazon Inventory Health reports differ by marketplace / report version: some sources carry `inv-age-365-plus-days`, others carry the finer `inv-age-366-to-455-days` / `inv-age-456-plus-days`, and a source may not have all of them at once. The age buckets that vary are therefore in **`optionalFieldMap`**, not `fieldMap`. A missing optional header maps the destination field to **blank** and must **not** raise `missing_required_header` or stop the source. Only `fieldMap` headers are required/validated. See §9.1.
 
+> **`inv_age_0_to_90_days` is imported and stored, but it is NOT part of the Long Term Storage Over 90+ display.** Over 90+ uses only `inv_age_91_to_180_days` (the consumer formula lives in [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) §5). The `0–90` bucket stays in the schema/import for completeness and future use.
+
 | Kind | Fields |
 |------|--------|
-| Direct source mappings (REQUIRED `fieldMap`) | `snapshot_date`←Date, `country`←Country, `sku`←SKU, `asin`←ASIN, `available_qty`←Available, `inv_age_61_to_90_days`←inv-age-61-to-90-days, `inv_age_91_to_180_days`←inv-age-91-to-180-days, `inv_age_181_to_270_days`←inv-age-181-to-270-days, `inv_age_271_to_365_days`←inv-age-271-to-365-days |
-| Optional source mappings (`optionalFieldMap`, map-if-present else blank) | `inv_age_0_to_90_days`←inv-age-0-to-90-days, `inv_age_365_plus_days`←inv-age-365-plus-days, `inv_age_366_to_455_days`←inv-age-366-to-455-days, `inv_age_456_plus_days`←inv-age-456-plus-days |
+| Direct source mappings (REQUIRED `fieldMap`) | `snapshot_date`←Date, `country`←Country, `sku`←SKU, `asin`←ASIN, `available_qty`←Available |
+| Optional source mappings (`optionalFieldMap`, map-if-present else blank) | `inv_age_0_to_90_days`←inv-age-0-to-90-days, `inv_age_91_to_180_days`←inv-age-91-to-180-days, `inv_age_181_to_270_days`←inv-age-181-to-270-days, `inv_age_271_to_365_days`←inv-age-271-to-365-days, `inv_age_365_plus_days`←inv-age-365-plus-days, `inv_age_366_to_455_days`←inv-age-366-to-455-days, `inv_age_456_plus_days`←inv-age-456-plus-days. **`inv_age_61_to_90_days` is REMOVED** (superseded by the `0–90` bucket; must not be mapped). |
 | Fixed values | `marketplace` = `Amazon` |
 | Derived fields | — (none) |
 | Importer-generated | `source_system`, `source_report`, `source_file_id`, `source_sheet_name`, `source_row_hash`, `sync_batch_id`, `synced_at`, `created_at`, `updated_at` |
@@ -288,23 +290,23 @@ Each config classifies destination fields into four kinds:
   fixedValues: {
     marketplace: "Amazon"
   },
-  // REQUIRED source headers (validated before any write).
+  // REQUIRED source headers (validated before any write) — core identity + Available only.
   fieldMap: {
     snapshot_date: "Date",
     country: "Country",
     sku: "SKU",
     asin: "ASIN",
-    available_qty: "Available",
-    inv_age_61_to_90_days: "inv-age-61-to-90-days",
-    inv_age_91_to_180_days: "inv-age-91-to-180-days",
-    inv_age_181_to_270_days: "inv-age-181-to-270-days",
-    inv_age_271_to_365_days: "inv-age-271-to-365-days"
+    available_qty: "Available"
   },
   // OPTIONAL source headers — map only if present; missing => blank (never fails the import).
+  // inv-age-61-to-90-days REMOVED (superseded by the 0–90 bucket).
   // inv-age-365-plus-days = backward-compatible top bucket (old reports);
   // inv-age-366-to-455-days / inv-age-456-plus-days = newer finer buckets (preferred when available).
   optionalFieldMap: {
     inv_age_0_to_90_days: "inv-age-0-to-90-days",
+    inv_age_91_to_180_days: "inv-age-91-to-180-days",
+    inv_age_181_to_270_days: "inv-age-181-to-270-days",
+    inv_age_271_to_365_days: "inv-age-271-to-365-days",
     inv_age_365_plus_days: "inv-age-365-plus-days",
     inv_age_366_to_455_days: "inv-age-366-to-455-days",
     inv_age_456_plus_days: "inv-age-456-plus-days"
@@ -317,7 +319,6 @@ Each config classifies destination fields into four kinds:
     "asin",
     "available_qty",
     "inv_age_0_to_90_days",
-    "inv_age_61_to_90_days",
     "inv_age_91_to_180_days",
     "inv_age_181_to_270_days",
     "inv_age_271_to_365_days",
@@ -561,7 +562,7 @@ A config may declare an **`optionalFieldMap`** in addition to `fieldMap`. It map
 - **Header validation checks `fieldMap` only.** `optionalFieldMap` headers are **never** treated as required and **never** raise `missing_required_header`.
 - **During row mapping:** `fieldMap` fields are mapped normally; each `optionalFieldMap` field is mapped **only if its source header exists**, otherwise the destination field is set to **blank** (`""`).
 - **`rowHashFields`** may include optional destination fields; blank optional values hash safely (treated as empty string), so the row hash stays stable whether or not the optional column is present.
-- **Use case — Amazon Inventory Health age buckets (§7.2):** `inv_age_0_to_90_days`, `inv_age_365_plus_days`, `inv_age_366_to_455_days`, `inv_age_456_plus_days` are optional. A source missing `inv-age-366-to-455-days` / `inv-age-456-plus-days` / `inv-age-365-plus-days` still imports successfully (those fields blank); required headers (Date, Country, SKU, ASIN, Available, and the 61–90 / 91–180 / 181–270 / 271–365 buckets) must still be present or the source fails as before.
+- **Use case — Amazon Inventory Health age buckets (§7.2):** **all** inventory-age buckets are optional (`inv_age_0_to_90_days`, `inv_age_91_to_180_days`, `inv_age_181_to_270_days`, `inv_age_271_to_365_days`, `inv_age_365_plus_days`, `inv_age_366_to_455_days`, `inv_age_456_plus_days`). A source missing any of them still imports successfully (those fields blank → 0 on read); only the core headers (Date, Country, SKU, ASIN, Available) are required. **`inv_age_61_to_90_days` is removed and must not be mapped.**
 
 ---
 
@@ -1070,18 +1071,23 @@ The authoritative config blocks, reproduced together for the importer task. (Ide
   fixedValues: {
     marketplace: "Amazon"
   },
+  // Core identity + Available are required; all age buckets are optional (reports vary).
   fieldMap: {
     snapshot_date: "Date",
     country: "Country",
     sku: "SKU",
     asin: "ASIN",
-    available_qty: "Available",
+    available_qty: "Available"
+  },
+  // inv-age-61-to-90-days REMOVED (superseded by the 0–90 bucket). Any subset of buckets is allowed.
+  optionalFieldMap: {
     inv_age_0_to_90_days: "inv-age-0-to-90-days",
-    inv_age_61_to_90_days: "inv-age-61-to-90-days",
     inv_age_91_to_180_days: "inv-age-91-to-180-days",
     inv_age_181_to_270_days: "inv-age-181-to-270-days",
     inv_age_271_to_365_days: "inv-age-271-to-365-days",
-    inv_age_365_plus_days: "inv-age-365-plus-days"
+    inv_age_365_plus_days: "inv-age-365-plus-days",
+    inv_age_366_to_455_days: "inv-age-366-to-455-days",
+    inv_age_456_plus_days: "inv-age-456-plus-days"
   },
   rowHashFields: [
     "snapshot_date",
@@ -1091,11 +1097,12 @@ The authoritative config blocks, reproduced together for the importer task. (Ide
     "asin",
     "available_qty",
     "inv_age_0_to_90_days",
-    "inv_age_61_to_90_days",
     "inv_age_91_to_180_days",
     "inv_age_181_to_270_days",
     "inv_age_271_to_365_days",
-    "inv_age_365_plus_days"
+    "inv_age_365_plus_days",
+    "inv_age_366_to_455_days",
+    "inv_age_456_plus_days"
   ],
   notes: "site_sku is intentionally left blank in MVP and will be filled later by joining country + marketplace + sku to marketplace_skus."
 }

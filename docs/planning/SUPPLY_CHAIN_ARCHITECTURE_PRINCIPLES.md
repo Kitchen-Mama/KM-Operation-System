@@ -1,8 +1,10 @@
 # Supply Chain Architecture Principles
 
-**Status:** 🟢 v1.1 — Stable architecture principles (Spec only — NO code, NO frontend, NO Apps Script, NO DB schema change, NO BigQuery, NO runtime)
-**Last Updated:** 2026-06-29
-**Changelog:** v1.1 — Added §4B **Snapshot Provenance** (Value + Source + Provenance; Provenance is architecture-reserved, not persisted) and §5A **Truth Flow Principle** (truth flows downstream, authority never flows back); added both to §1A terminology; cross-referenced from §4. No DB / runtime / API change.
+**Status:** 🟢 v1.2 — Stable architecture principles (four-layer lifecycle; one small DB addition: `shipping_plans.completed_at` / `completed_by`)
+**Last Updated:** 2026-06-30
+**Changelog:**
+- v1.2 — Formalized the **four-layer lifecycle** (Analysis → Decision → Execution → **Settlement**): added §10 **Supply Chain Layer Lifecycle** (per-layer owner/truth/lifecycle, incl. **Decision Layer Completion** and the Execution lifecycle Draft→Booked→…→Closed), §11 **Truth Flow extended to Settlement**, §12 **Layer Responsibility**. Added **Settlement Truth** + **Decision Layer Completion** to §1A. Drives `shipping_plans.completed_at` / `completed_by` (Done) — see `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`.
+- v1.1 — Added §4B **Snapshot Provenance** (Value + Source + Provenance; Provenance is architecture-reserved, not persisted) and §5A **Truth Flow Principle** (truth flows downstream, authority never flows back); added both to §1A terminology; cross-referenced from §4. No DB / runtime / API change.
 **Maintained By:** Development Team
 **Governs:** the layer language, immutable-flow discipline, decision/execution commit points, and single-source-of-truth rules used across all Kitchen Mama Operation System supply-chain specs.
 **Referenced by:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), and future Export Center / API Architecture specs.
@@ -31,6 +33,8 @@ These are the **official, single-definition** terms for the Kitchen Mama Supply 
 | **Analysis Truth** | The live, always-recalculated state owned by Inventory Replenishment. | §2.1 |
 | **Decision Truth** | The committed planning decision owned by Weekly Shipping Plan (`shipping_plans` / `shipping_plan_lines`). | §2.2 |
 | **Execution Truth** | The physical execution record owned by Shipment (`shipments` / `shipment_lines`). | §2.3 |
+| **Settlement Truth** | The final, immutable records owned by the Settlement Layer (history / documents / audit / KPI). | §10 |
+| **Decision Layer Completion** | The Decision Layer's terminal state (Done): decision finished, Execution Layer has taken over, snapshot preserved (`completed_at`). | §10 |
 | **Working Draft** | Temporary Decision inside Inventory Replenishment before Submit Plan; persists nothing (JS State + sessionStorage recovery). | §8A |
 | **Decision Commit** | The moment Analysis output becomes a persisted decision = **Submit Plan**. | §3 |
 | **Execution Commit** | Approved Weekly Shipping Plan → Create Shipment Draft. | §3A |
@@ -341,6 +345,80 @@ Each layer has an **Owner**, a **Truth** (its source of truth), and a **Snapshot
 
 ---
 
-**v1 — Supply Chain Architecture Principles. Stable, reusable architecture language. Spec only; no code, DB schema, Apps Script, BigQuery, API, or runtime change is implied.**
+## 10. Supply Chain Layer Lifecycle (v1.2 — four layers)
+
+Kitchen Mama Supply Chain is a **four-layer** architecture. Each layer owns its Truth and a lifecycle; **no layer may modify another layer's Truth** (§12).
+
+```
+Analysis Layer → Decision Layer → Execution Layer → Settlement Layer
+```
+
+### Layer 1 — Analysis Layer
+- **Owner:** Inventory Replenishment.
+- **Truth:** Analysis Truth.
+- **Purpose:** live calculation / live analysis / Planning Runtime. **Persists no Decision.**
+
+### Layer 2 — Decision Layer
+- **Owner:** Weekly Shipping Plan.
+- **Truth:** Decision Truth.
+- **Purpose:** Decision Commit, Decision Snapshot, Approval, Planning Version.
+- **Decision Layer Lifecycle:**
+  ```
+  Draft → Pending Approval → Approved → Execution Commit (Create Shipment Draft) → Completed
+  ```
+- **Completed** means: the Decision Layer has finished its job and the Execution Layer has taken over; the **Decision Snapshot is preserved permanently**. Completed does **NOT** mean the shipment is done / shipped / arrived — only that the **decision** is complete. (Implementation: `shipping_plans.completed_at` / `completed_by`; the plan leaves the Active view but the row is never deleted — `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`.)
+
+### Layer 3 — Execution Layer
+- **Owner:** Shipment.
+- **Truth:** Execution Truth.
+- **Purpose:** execution — Booking, Carrier, Shipment, Container, Tracking, Execution Snapshot.
+- **Execution Layer Lifecycle:**
+  ```
+  Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Received → Closed
+  ```
+- The Execution Layer is **fully independent** and **must NOT modify the Decision Layer**.
+
+### Layer 4 — Settlement Layer
+- **Owner:** Export Center / Documents / History / Reports / Audit.
+- **Truth:** Settlement Truth.
+- **Purpose:** all **final, immutable records** — Shipment History, Export Documents (Invoice / Packing List / Commercial Invoice / POD), Generated Documents, Audit Trail, KPI.
+- The Settlement Layer **only stores final results**; it never feeds back upstream.
+
+---
+
+## 11. Truth Flow (v1.2 — extended to Settlement)
+
+```
+Analysis Truth
+   ↓ Decision Commit
+Decision Truth
+   ↓ Execution Commit
+Execution Truth
+   ↓ Decision Layer Completed   (Decision Layer hands off; snapshot preserved)
+Shipment Lifecycle
+   ↓
+Settlement
+   ↓
+History
+   ↓
+Documents
+```
+
+This extends §5A (Truth Flow Principle): **truth flows downstream, context flows with it, authority never flows back** — now through all four layers and into Settlement.
+
+---
+
+## 12. Layer Responsibility
+
+- **Analysis Layer** — only analyzes.
+- **Decision Layer** — only decides.
+- **Execution Layer** — only executes.
+- **Settlement Layer** — only stores final results.
+
+**No layer may modify another layer's Truth.** Each reads/copies upstream into its own snapshot and owns only its own records (§5 Immutable Flow, §5A Truth Flow).
+
+---
+
+**v1.2 — Supply Chain Architecture Principles. Four-layer lifecycle (Analysis → Decision → Execution → Settlement) + Decision Layer Completion. Stable, reusable architecture language. Spec only; no runtime change is implied beyond the documented `shipping_plans.completed_at` / `completed_by` Decision-Layer-completion fields.**
 
 **End of Document**

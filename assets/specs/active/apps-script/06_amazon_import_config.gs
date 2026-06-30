@@ -96,23 +96,24 @@ var IMPORT_CONFIGS = [
     sourceReport: 'Amazon Inventory Health',
     fixedValues: { marketplace: 'Amazon' },
     // REQUIRED source headers (must exist or the source fails header validation).
+    // Only core identity + Available are required; all age buckets are OPTIONAL (reports vary).
     fieldMap: {
       snapshot_date: 'Date',
       country: 'Country',
       sku: 'SKU',
       asin: 'ASIN',
-      available_qty: 'Available',
-      inv_age_61_to_90_days: 'inv-age-61-to-90-days',
-      inv_age_91_to_180_days: 'inv-age-91-to-180-days',
-      inv_age_181_to_270_days: 'inv-age-181-to-270-days',
-      inv_age_271_to_365_days: 'inv-age-271-to-365-days'
+      available_qty: 'Available'
     },
     // OPTIONAL source headers — Amazon Inventory Health reports vary by marketplace/report version.
-    // A missing optional header maps to blank and does NOT fail the import. inv-age-365-plus-days is the
-    // backward-compatible top bucket for older reports; inv-age-366-to-455-days / inv-age-456-plus-days
-    // are the newer finer buckets. Sources may have any subset of these.
+    // A missing optional header maps to blank (→ 0 on read) and does NOT fail the import.
+    // inv-age-61-to-90-days has been REMOVED (the 0–90 bucket supersedes the 61–90 split).
+    // inv-age-365-plus-days is the backward-compatible top bucket for older reports;
+    // inv-age-366-to-455-days / inv-age-456-plus-days are the newer finer buckets. Any subset is allowed.
     optionalFieldMap: {
       inv_age_0_to_90_days: 'inv-age-0-to-90-days',
+      inv_age_91_to_180_days: 'inv-age-91-to-180-days',
+      inv_age_181_to_270_days: 'inv-age-181-to-270-days',
+      inv_age_271_to_365_days: 'inv-age-271-to-365-days',
       inv_age_365_plus_days: 'inv-age-365-plus-days',
       inv_age_366_to_455_days: 'inv-age-366-to-455-days',
       inv_age_456_plus_days: 'inv-age-456-plus-days'
@@ -121,7 +122,7 @@ var IMPORT_CONFIGS = [
     dateFields: ['snapshot_date'],
     // rowHashFields include all required + optional destination fields; blank optional values hash safely.
     rowHashFields: ['snapshot_date', 'country', 'marketplace', 'sku', 'asin', 'available_qty',
-      'inv_age_0_to_90_days', 'inv_age_61_to_90_days', 'inv_age_91_to_180_days',
+      'inv_age_0_to_90_days', 'inv_age_91_to_180_days',
       'inv_age_181_to_270_days', 'inv_age_271_to_365_days', 'inv_age_365_plus_days',
       'inv_age_366_to_455_days', 'inv_age_456_plus_days']
   },

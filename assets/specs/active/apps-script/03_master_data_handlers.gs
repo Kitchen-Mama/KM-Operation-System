@@ -11,7 +11,7 @@
 // ========================================
 
 function handleGetOperationDb_() {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines'];
   var data = {};
 
   validTabs.forEach(function(tabName) {
@@ -28,7 +28,7 @@ function handleGetOperationDb_() {
 }
 
 function handleGetTable_(tableName) {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines'];
 
   if (!tableName || validTabs.indexOf(tableName) === -1) {
     return jsonResponse_({ success: false, error: 'Invalid table name. Valid tables: ' + validTabs.join(', ') });

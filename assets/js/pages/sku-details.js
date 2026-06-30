@@ -89,6 +89,29 @@ function renderSkuDetailsTable() {
     setTimeout(() => { syncSkuHeaderScroll(); }, 100);
 }
 
+// Item Dimensions cell: "{A} + {B} {unit}" when a secondary size exists, else "{A} {unit}".
+// Each numeric group is a .dim-line span so the CM/IN unit toggle can still convert it; the unit
+// suffix (.dim-unit) toggles cm↔in too. The secondary size is product-content display only — it is
+// NOT used for carton CBM (logistics uses carton_* — see SKU_DETAILS_LOGISTICS_SPEC §2/§4).
+function _skuItemDimCell(item) {
+    var d1 = item.itemDimensions || item.item_dimensions || '';
+    var d2 = item.itemDimensions2 || '';
+    if (!d1 && !d2) return '';
+    var unit = String(item.itemDimensionUnit || '').trim() || 'cm';
+    var groups = [];
+    if (d1) groups.push('<span class="dim-line">' + d1 + '</span>');
+    if (d2) groups.push('<span class="dim-line">' + d2 + '</span>');
+    return groups.join('<span class="dim-sep"> + </span>') +
+        '<span class="dim-unit" data-base-unit="' + unit + '"> ' + unit + '</span>';
+}
+// Price cell: "{value} {unit}" (units have no metric/imperial toggle, so they are shown inline).
+function _skuPrice(val, unit) {
+    val = String(val == null ? '' : val).trim();
+    if (!val) return '';
+    unit = String(unit == null ? '' : unit).trim();
+    return unit ? (val + ' ' + unit) : val;
+}
+
 function renderSkuLifecycleTable(section, data) {
     const fixedBody = document.getElementById(section + 'FixedBody');
     const scrollBody = document.getElementById(section + 'ScrollBody');
@@ -122,7 +145,7 @@ function renderSkuLifecycleTable(section, data) {
             '<div class="scroll-cell" data-col="6">' + (item.gs1Code || item.gs1_code || '') + '</div>' +
             '<div class="scroll-cell" data-col="7">' + (item.gs1Type || item.gs1_type || '') + '</div>' +
             '<div class="scroll-cell" data-col="8">' + (item.amzAsin || item.amz_asin || '') + '</div>' +
-            '<div class="scroll-cell" data-col="9" data-unit="dim">' + (item.itemDimensions || item.item_dimensions || '') + '</div>' +
+            '<div class="scroll-cell" data-col="9" data-unit="dim">' + _skuItemDimCell(item) + '</div>' +
             '<div class="scroll-cell" data-col="10" data-unit="wt">' + (item.itemWeight || item.item_weight || '') + '</div>' +
             '<div class="scroll-cell" data-col="11" data-unit="dim">' + (item.packageDimensions || item.package || item.package_dimensions || '') + '</div>' +
             '<div class="scroll-cell" data-col="12" data-unit="wt">' + (item.packageWeight || item.package_weight || '') + '</div>' +
@@ -130,10 +153,10 @@ function renderSkuLifecycleTable(section, data) {
             '<div class="scroll-cell" data-col="14" data-unit="wt">' + (item.cartonWeight || item.carton_weight || '') + '</div>' +
             '<div class="scroll-cell" data-col="15">' + (item.unitsPerCarton || item.units_per_carton || '') + '</div>' +
             '<div class="scroll-cell" data-col="16">' + (item.hsCode || item.hscode || '') + '</div>' +
-            '<div class="scroll-cell" data-col="17">' + (item.declaredValue || item.declared_value || '') + '</div>' +
-            '<div class="scroll-cell" data-col="18">' + (item.minimumPrice || item.minimum_price || '') + '</div>' +
-            '<div class="scroll-cell" data-col="19">' + (item.msrp || '') + '</div>' +
-            '<div class="scroll-cell" data-col="20">' + (item.sellingPrice || item.selling_price || '') + '</div>' +
+            '<div class="scroll-cell" data-col="17">' + _skuPrice(item.declaredValue || item.declared_value, item.declaredValueUnit) + '</div>' +
+            '<div class="scroll-cell" data-col="18">' + _skuPrice(item.minimumPrice || item.minimum_price, item.minimumPriceUnit) + '</div>' +
+            '<div class="scroll-cell" data-col="19">' + _skuPrice(item.msrp, item.msrpUnit) + '</div>' +
+            '<div class="scroll-cell" data-col="20">' + _skuPrice(item.sellingPrice || item.selling_price, item.sellingUnit) + '</div>' +
             '<div class="scroll-cell" data-col="21">' + item.pm + '</div>' +
         '</div>';
     }).join('');
@@ -405,6 +428,22 @@ function updateSkuUnitLabels() {
 
 function convertSkuUnitValues() {
     document.querySelectorAll('#sku-section .scroll-cell[data-unit=dim]').forEach(function(cell) {
+        // Multi-line cells (item dimensions with a secondary size): convert each .dim-line span.
+        var lines = cell.querySelectorAll('.dim-line');
+        if (lines.length) {
+            lines.forEach(function(span) {
+                var lraw = span.getAttribute('data-raw');
+                if (!lraw) { lraw = span.textContent.trim(); span.setAttribute('data-raw', lraw); }
+                span.textContent = skuUnitSystem === 'imperial' ? convertDimStr(lraw, CM_TO_IN) : lraw;
+            });
+            // Toggle the inline unit suffix (only when the stored base unit is cm — the converter's baseline).
+            var unitSpan = cell.querySelector('.dim-unit');
+            if (unitSpan) {
+                var base = (unitSpan.getAttribute('data-base-unit') || 'cm').toLowerCase();
+                if (base === 'cm' || base === '') unitSpan.textContent = ' ' + (skuUnitSystem === 'imperial' ? 'in' : 'cm');
+            }
+            return;
+        }
         var raw = cell.getAttribute('data-raw');
         if (!raw) { raw = cell.textContent.trim(); cell.setAttribute('data-raw', raw); }
         cell.textContent = skuUnitSystem === 'imperial' ? convertDimStr(raw, CM_TO_IN) : raw;
@@ -452,8 +491,9 @@ window.debugSkuTemplateTools = function() {
     console.log('=== SKU Template Tools Debug ===');
     console.log('Data Source Mode:', mode);
     console.log('Export source:', dbItems.length > 0 ? 'KM.DB (' + dbItems.length + ' SKUs)' : 'mock fallback');
-    console.log('Export schema headers:', ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_dimensions','item_weight','package_dimensions','package_weight','carton_dimensions','carton_weight','units_per_carton','hscode','declared_value','minimum_price','msrp','selling_price','pm','created_at','updated_at']);
-    console.log('Import expected schema:', ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_dimensions','item_weight','package_dimensions','package_weight','carton_dimensions','carton_weight','units_per_carton','hscode','declared_value','minimum_price','msrp','selling_price','pm']);
+    var SKU_HEADERS = ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_length','item_width','item_height','item_length_2','item_width_2','item_height_2','item_dimension_unit','item_weight','item_weight_unit','package_length','package_width','package_height','package_dimension_unit','package_weight','package_weight_unit','carton_length','carton_width','carton_height','carton_dimension_unit','carton_weight','carton_weight_unit','units_per_carton','hscode','declared_value','declared_value_unit','minimum_price','minimum_price_unit','msrp','msrp_unit','selling_price','selling_unit','pm','created_at','updated_at'];
+    console.log('Export schema headers:', SKU_HEADERS);
+    console.log('Import expected schema:', SKU_HEADERS.filter(function(h){ return h !== 'created_at' && h !== 'updated_at'; }));
     console.log('Import required fields:', ['sku','product_name','category','series','lifecycle']);
     console.log('Has bulk import cloud write action:', false, '(next phase)');
     console.log('Current SKU count:', dbItems.length);

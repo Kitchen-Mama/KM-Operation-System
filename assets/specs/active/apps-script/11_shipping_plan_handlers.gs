@@ -20,7 +20,10 @@ var SHIPPING_PLANS_HEADERS_ = [
   'estimated_freight_cost', 'estimated_duty', 'estimated_total_cost', 'currency',
   'status', 'created_by', 'created_at', 'submitted_by', 'submitted_at',
   'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'rejected_reason',
-  'note', 'source', 'updated_at'
+  'cancelled_by', 'cancelled_at',
+  'transferred_to_shipment_at', 'transferred_shipment_id',
+  'completed_at', 'completed_by',
+  'note', 'source', 'updated_by', 'updated_at'
 ];
 
 var SHIPPING_PLAN_LINES_HEADERS_ = [
@@ -29,7 +32,9 @@ var SHIPPING_PLAN_LINES_HEADERS_ = [
   'source_page', 'source_reason', 'inventory_snapshot_date', 'note',
   'created_at', 'updated_at',
   'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
-  'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_fc_context', 'snapshot_event_context'
+  'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_fc_context', 'snapshot_event_context',
+  // Logistics Decision Snapshot (computed from sku_details carton dims/weights at Submit Plan / Save).
+  'carton_cbm', 'cbm', 'gross_weight', 'net_weight'
 ];
 
 // ---- helpers ------------------------------------------------------
@@ -90,10 +95,66 @@ function shippingPlanUpcMap_(ss) {
 
 function shippingPlanNum_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
+function shippingPlanRound_(v, d) { var f = Math.pow(10, d); return Math.round((parseFloat(v) || 0) * f) / f; }
+
 /**
- * Company resolution maps for shipping_plans.company (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC Fix 1).
- * Source priority is applied by the caller: marketplace_skus (country+marketplace+sku) →
- * marketplaces (country+marketplace) → payload company → blank.
+ * sku -> logistics record from sku_details:
+ *   { cartonL, cartonW, cartonH, cartonDimUnit, cartonWeight, itemWeight, upc }
+ * Used to compute the shipping_plan_lines logistics snapshot (cbm / gross_weight / net_weight).
+ */
+function shippingPlanSkuLogisticsMap_(ss) {
+  var map = {};
+  var sh = ss.getSheetByName('sku_details');
+  if (!sh) return map;
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return map;
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  function ix(n) { return h.indexOf(n); }
+  var cSku = ix('sku');
+  if (cSku === -1) return map;
+  var cL = ix('carton_length'), cW = ix('carton_width'), cH = ix('carton_height'),
+      cDU = ix('carton_dimension_unit'), cWt = ix('carton_weight'), iWt = ix('item_weight'), cUpc = ix('units_per_carton');
+  for (var i = 1; i < data.length; i++) {
+    var s = String(data[i][cSku] || '').trim();
+    if (!s) continue;
+    map[s] = {
+      cartonL: cL === -1 ? 0 : (parseFloat(data[i][cL]) || 0),
+      cartonW: cW === -1 ? 0 : (parseFloat(data[i][cW]) || 0),
+      cartonH: cH === -1 ? 0 : (parseFloat(data[i][cH]) || 0),
+      cartonDimUnit: cDU === -1 ? '' : String(data[i][cDU] || '').trim().toLowerCase(),
+      cartonWeight: cWt === -1 ? 0 : (parseFloat(data[i][cWt]) || 0),
+      itemWeight: iWt === -1 ? 0 : (parseFloat(data[i][iWt]) || 0),
+      upc: cUpc === -1 ? 0 : (parseFloat(data[i][cUpc]) || 0)
+    };
+  }
+  return map;
+}
+
+/**
+ * Logistics snapshot for one line (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §5.4; SKU_DETAILS_LOGISTICS_SPEC §4):
+ *   carton_cbm = L*W*H/1,000,000  (cm only; other units deferred → 0)
+ *   cbm        = carton_qty * carton_cbm
+ *   gross_weight = carton_qty * carton_weight
+ *   net_weight   = approved_qty * item_weight
+ * Returns blanks when no sku_details logistics row exists (never fabricates).
+ */
+function shippingPlanLineLogistics_(logi, approvedQty, cartonQty) {
+  if (!logi) return { carton_cbm: '', cbm: '', gross_weight: '', net_weight: '' };
+  var unit = logi.cartonDimUnit || 'cm';
+  var cartonCbm = (unit === 'cm' || unit === '') ? (logi.cartonL * logi.cartonW * logi.cartonH) / 1000000 : 0;
+  cartonCbm = shippingPlanRound_(cartonCbm, 6);
+  return {
+    carton_cbm: cartonCbm,
+    cbm: shippingPlanRound_(cartonQty * cartonCbm, 4),
+    gross_weight: shippingPlanRound_(cartonQty * (logi.cartonWeight || 0), 3),
+    net_weight: shippingPlanRound_(approvedQty * (logi.itemWeight || 0), 3)
+  };
+}
+
+/**
+ * Company resolution maps for shipping_plans.company (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.3).
+ * Source priority is applied by the caller: marketplaces (country+marketplace) →
+ * marketplace_skus (country+marketplace+sku) → payload company → blank (with warning).
  * Returns { bySku: { 'country||marketplace||sku': company }, byMarket: { 'country||marketplace': company } }.
  */
 function shippingPlanCompanyMaps_(ss) {
@@ -135,20 +196,21 @@ function shippingPlanCompanyMaps_(ss) {
   return { bySku: bySku, byMarket: byMarket };
 }
 
-/** Resolve a line's company per spec priority. */
+/** Resolve a line's company per spec §3.3 priority (marketplaces → marketplace_skus → payload → blank). */
 function shippingPlanResolveCompany_(maps, country, marketplace, sku, payloadCompany) {
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
   var pc = String(payloadCompany == null ? '' : payloadCompany).trim();
   if (pc === '--') pc = '';
-  // 1) marketplace_skus by country+marketplace+sku
-  var s = maps.bySku[lc(country) + '||' + lc(marketplace) + '||' + lc(sku)];
-  if (s) return s;
-  // 2) marketplaces by country+marketplace
+  // 1) marketplaces by country+marketplace (PRIMARY — company is marketplace-level ownership)
   var m = maps.byMarket[lc(country) + '||' + lc(marketplace)];
   if (m) return m;
-  // 3) payload company if present
+  // 2) marketplace_skus by country+marketplace+sku (fallback)
+  var s = maps.bySku[lc(country) + '||' + lc(marketplace) + '||' + lc(sku)];
+  if (s) return s;
+  // 3) payload company if already resolved by the frontend
   if (pc) return pc;
-  // 4) blank
+  // 4) blank — log a warning so the unresolved gap is visible
+  Logger.log('[createShippingPlansBatch] company unresolved for country=' + country + ' marketplace=' + marketplace + ' sku=' + sku);
   return '';
 }
 
@@ -173,6 +235,7 @@ function handleCreateShippingPlansBatch_(body) {
   var lineSheet = shippingPlanEnsureSheet_(ss, 'shipping_plan_lines', SHIPPING_PLAN_LINES_HEADERS_);
   var upcMap = shippingPlanUpcMap_(ss);
   var companyMaps = shippingPlanCompanyMaps_(ss);
+  var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
 
   var now = shippingPlanTimestamp_();
   var today = shippingPlanToday_();
@@ -227,6 +290,7 @@ function handleCreateShippingPlansBatch_(body) {
       created_at: now,
       note: '',
       source: source,
+      updated_by: createdBy,
       updated_at: now
     });
 
@@ -237,6 +301,7 @@ function handleCreateShippingPlansBatch_(body) {
       var upc = shippingPlanNum_(l.units_per_carton) || upcMap[sku2] || 0;
       var approved = requested;
       var carton = (upc > 0) ? Math.ceil(approved / upc) : 0;
+      var logi = shippingPlanLineLogistics_(logisticsMap[sku2], approved, carton);
 
       shippingPlanAppendByHeader_(lineSheet, {
         shipping_plan_line_id: 'SPL-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
@@ -258,7 +323,11 @@ function handleCreateShippingPlansBatch_(body) {
         snapshot_suggested_qty: shippingPlanNum_(l.snapshot_suggested_qty),
         snapshot_target_days: shippingPlanNum_(l.snapshot_target_days),
         snapshot_fc_context: (l.snapshot_fc_context == null) ? '' : l.snapshot_fc_context,
-        snapshot_event_context: (l.snapshot_event_context == null) ? '' : l.snapshot_event_context
+        snapshot_event_context: (l.snapshot_event_context == null) ? '' : l.snapshot_event_context,
+        carton_cbm: logi.carton_cbm,
+        cbm: logi.cbm,
+        gross_weight: logi.gross_weight,
+        net_weight: logi.net_weight
       });
       totalLines++;
     }
@@ -276,13 +345,21 @@ function handleCreateShippingPlansBatch_(body) {
  *   submit  : draft -> pending_approval (if previously rejected, plan_version +1, clear rejected_*)
  *   approve : pending_approval -> approved
  *   reject  : pending_approval -> draft (rejected_* recorded; reason appended to note)
- *   cancel  : draft -> cancelled
+ *   cancel  : draft|pending_approval -> cancelled (SOFT cancel — row + lines preserved)
+ * Actor fields are placeholder identities for MVP (see WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §13A);
+ * a future Role & Permission module replaces them with real user identity.
  */
 function handleUpdateShippingPlanStatus_(body) {
   var planId = String((body && body.shipping_plan_id) || '').trim();
   var transition = String((body && body.transition) || '').trim();
   var actor = String((body && body.actor) || 'operation-system').trim();
   var reason = String((body && body.rejected_reason) || '').trim();
+  // Placeholder actor identities (MVP) — never block the flow if absent.
+  var submittedBy = String((body && (body.submitted_by || body.updated_by)) || actor || 'system_user').trim();
+  var cancelledBy = String((body && (body.cancelled_by || body.updated_by)) || actor || 'system_user').trim();
+  var rejectedBy  = String((body && (body.rejected_by || body.updated_by)) || actor || 'system_user').trim();
+  var approvedBy  = String((body && (body.approved_by || body.updated_by)) || actor || 'system_user').trim();
+  var updatedBy   = String((body && body.updated_by) || actor || 'system_user').trim();
 
   if (!planId) return jsonResponse_({ success: false, error: 'Missing shipping_plan_id' });
   var VALID_TRANSITIONS = ['submit', 'approve', 'reject', 'cancel'];
@@ -325,17 +402,17 @@ function handleUpdateShippingPlanStatus_(body) {
       setCell('rejected_by', ''); setCell('rejected_at', ''); setCell('rejected_reason', '');
     }
     setCell('status', 'pending_approval');
-    setCell('submitted_by', actor);
+    setCell('submitted_by', submittedBy);
     setCell('submitted_at', now);
   } else if (transition === 'approve') {
     if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval plan can be approved (current: ' + curStatus + ')' });
     setCell('status', 'approved');
-    setCell('approved_by', actor);
+    setCell('approved_by', approvedBy);
     setCell('approved_at', now);
   } else if (transition === 'reject') {
     if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval plan can be rejected (current: ' + curStatus + ')' });
     var verForNote = col('plan_version') !== -1 ? (parseFloat(rowVals[col('plan_version')]) || 1) : 1;
-    setCell('rejected_by', actor);
+    setCell('rejected_by', rejectedBy);
     setCell('rejected_at', now);
     setCell('rejected_reason', reason);
     // Append the reason to the note history (preserve existing notes).
@@ -346,12 +423,32 @@ function handleUpdateShippingPlanStatus_(body) {
     }
     setCell('status', 'draft'); // returns to Draft (editable again); resubmit will bump plan_version
   } else if (transition === 'cancel') {
-    if (curStatus !== 'draft') return jsonResponse_({ success: false, error: 'Only a Draft plan can be cancelled (current: ' + curStatus + ')' });
+    // SOFT cancel: allowed from Draft or Pending Approval; row + lines are NEVER deleted.
+    if (curStatus !== 'draft' && curStatus !== 'pending_approval') {
+      return jsonResponse_({ success: false, error: 'Only a Draft or Pending Approval plan can be cancelled (current: ' + curStatus + ')' });
+    }
     setCell('status', 'cancelled');
+    setCell('cancelled_by', cancelledBy);
+    setCell('cancelled_at', now);
   }
 
+  setCell('updated_by', updatedBy);
   setCell('updated_at', now);
-  return jsonResponse_({ success: true, data: { shipping_plan_id: planId, transition: transition } });
+
+  // EXECUTION COMMIT: approving a plan creates its Shipment Draft (shipments + shipment_lines),
+  // copying the Decision Snapshot into the Execution Snapshot (SHIPMENT_CENTER_SPEC §15 step 10;
+  // ARCHITECTURE §3A/§4A). Idempotent. A failure here does NOT roll back the approval — the
+  // explicit createShipmentFromPlan action can retry.
+  var shipmentResult = null;
+  if (transition === 'approve') {
+    try {
+      shipmentResult = createShipmentFromApprovedPlan_(ss, planId, approvedBy);
+    } catch (e) {
+      shipmentResult = { created: false, error: String(e && e.message ? e.message : e) };
+    }
+  }
+
+  return jsonResponse_({ success: true, data: { shipping_plan_id: planId, transition: transition, shipment: shipmentResult } });
 }
 
 // ---- updateShippingPlanLineQty ------------------------------------
@@ -387,11 +484,19 @@ function handleUpdateShippingPlanLineQty_(body) {
   var col = function (n) { return headers.indexOf(n); };
   var idCol = col('shipping_plan_line_id');
   var planIdCol = col('shipping_plan_id');
+  var skuCol = col('sku');
   var approvedCol = col('approved_qty');
   var cartonCol = col('carton_qty');
   var upcCol = col('units_per_carton');
+  var cartonCbmCol = col('carton_cbm');
+  var cbmCol = col('cbm');
+  var grossCol = col('gross_weight');
+  var netCol = col('net_weight');
   var updatedCol = col('updated_at');
   if (idCol === -1) return jsonResponse_({ success: false, error: 'shipping_plan_line_id column not found' });
+
+  // sku -> logistics, to recompute the line logistics snapshot on a qty edit (Save).
+  var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
 
   // index line id -> sheet row
   var rowById = {};
@@ -411,11 +516,70 @@ function handleUpdateShippingPlanLineQty_(body) {
     var carton = (upc > 0) ? Math.ceil(approved / upc) : 0;
     if (approvedCol !== -1) lineSheet.getRange(ref.row, approvedCol + 1).setValue(approved);
     if (cartonCol !== -1) lineSheet.getRange(ref.row, cartonCol + 1).setValue(carton);
+    // Recompute the logistics Decision Snapshot (cbm / gross_weight / net_weight) on Save.
+    var skuVal = skuCol !== -1 ? String(ref.vals[skuCol] || '').trim() : '';
+    var logi = shippingPlanLineLogistics_(logisticsMap[skuVal], approved, carton);
+    if (cartonCbmCol !== -1) lineSheet.getRange(ref.row, cartonCbmCol + 1).setValue(logi.carton_cbm);
+    if (cbmCol !== -1) lineSheet.getRange(ref.row, cbmCol + 1).setValue(logi.cbm);
+    if (grossCol !== -1) lineSheet.getRange(ref.row, grossCol + 1).setValue(logi.gross_weight);
+    if (netCol !== -1) lineSheet.getRange(ref.row, netCol + 1).setValue(logi.net_weight);
     if (updatedCol !== -1) lineSheet.getRange(ref.row, updatedCol + 1).setValue(now);
     updated++;
   }
 
   return jsonResponse_({ success: true, data: { updated: updated, skipped: skipped } });
+}
+
+// ---- completeShippingPlan (Decision Layer Completion) -------------
+
+/**
+ * Mark an Approved + transferred Weekly Shipping Plan as COMPLETED (Decision Layer finished its job;
+ * the Execution Layer has taken over). Writes ONLY completed_at / completed_by (+ updated_*).
+ * Body: { shipping_plan_id, actor? }.
+ * Guards: plan must be status=approved AND already transferred to a Shipment Draft
+ *         (transferred_shipment_id OR transferred_to_shipment_at present).
+ * Does NOT touch shipments / shipment_lines / Decision Snapshot / Execution Snapshot. No row delete.
+ */
+function handleCompleteShippingPlan_(body) {
+  var planId = String((body && body.shipping_plan_id) || '').trim();
+  var actor = String((body && (body.completed_by || body.actor)) || 'system_user').trim();
+  if (!planId) return jsonResponse_({ success: false, error: 'Missing shipping_plan_id' });
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('shipping_plans');
+  if (!sheet) return jsonResponse_({ success: false, error: 'shipping_plans sheet not found' });
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return jsonResponse_({ success: false, error: 'shipping_plans is empty' });
+  var headers = data[0].map(function (h) { return String(h).trim(); });
+  var col = function (n) { return headers.indexOf(n); };
+  var idCol = col('shipping_plan_id');
+  if (idCol === -1) return jsonResponse_({ success: false, error: 'shipping_plan_id column not found' });
+
+  var targetRow = -1, rowVals = null;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]).trim() === planId) { targetRow = i + 1; rowVals = data[i]; break; }
+  }
+  if (targetRow === -1) return jsonResponse_({ success: false, error: 'Shipping plan not found: ' + planId });
+
+  var curStatus = col('status') !== -1 ? String(rowVals[col('status')]).trim() : '';
+  if (curStatus !== 'approved') {
+    return jsonResponse_({ success: false, error: 'Only an Approved plan can be completed (current: ' + curStatus + ')' });
+  }
+  var transferredId = col('transferred_shipment_id') !== -1 ? String(rowVals[col('transferred_shipment_id')]).trim() : '';
+  var transferredAt = col('transferred_to_shipment_at') !== -1 ? String(rowVals[col('transferred_to_shipment_at')]).trim() : '';
+  if (!transferredId && !transferredAt) {
+    return jsonResponse_({ success: false, error: 'Plan has not been transferred to a Shipment Draft yet (Execution Commit required before Done).' });
+  }
+
+  var now = shippingPlanTimestamp_();
+  function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(value); }
+  setCell('completed_at', now);
+  setCell('completed_by', actor);
+  setCell('updated_by', actor);
+  setCell('updated_at', now);
+
+  return jsonResponse_({ success: true, data: { shipping_plan_id: planId, completed_at: now, completed_by: actor } });
 }
 
 // ---- appendShippingPlanNote ---------------------------------------

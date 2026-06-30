@@ -202,6 +202,18 @@ function filterRows_(tabName, rows) {
         return hasLineId || hasPlanId;
       });
 
+    case 'shipments':
+      return rows.filter(function(r) {
+        return r.shipment_id && String(r.shipment_id).trim() !== '';
+      });
+
+    case 'shipment_lines':
+      return rows.filter(function(r) {
+        var hasLineId = r.shipment_line_id && String(r.shipment_line_id).trim() !== '';
+        var hasShipmentId = r.shipment_id && String(r.shipment_id).trim() !== '';
+        return hasLineId || hasShipmentId;
+      });
+
     default:
       return rows;
   }

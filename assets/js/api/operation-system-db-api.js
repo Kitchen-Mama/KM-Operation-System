@@ -66,32 +66,64 @@ async function getOperationDbTableFromSheet(tableName) {
 function normalizeSkuDetailsRecord(raw) {
     var r = raw || {};
     var category = String(r.category || '').trim();
+    function s(v) { return String(v == null ? '' : v).trim(); }
+    // Compose "L x W x H" (numeric only — unit lives in the column header / unit toggle).
+    function dim3(l, w, h) {
+        var a = [s(l), s(w), s(h)];
+        if (a[0] === '' && a[1] === '' && a[2] === '') return '';
+        return a.join(' × ');   // "L × W × H" (× is also accepted by the CM/IN converter)
+    }
+    // New split columns take priority; fall back to the legacy combined column when split is empty.
+    var itemDim = dim3(r.item_length, r.item_width, r.item_height) || s(r.item_dimensions);
+    var itemDim2 = dim3(r.item_length_2, r.item_width_2, r.item_height_2);   // secondary (display only)
+    var packageDim = dim3(r.package_length, r.package_width, r.package_height) || s(r.package_dimensions);
+    var cartonDim = dim3(r.carton_length, r.carton_width, r.carton_height) || s(r.carton_dimensions);
     return {
-        sku: String(r.sku || '').trim(),
+        sku: s(r.sku),
         productName: String(r.product_name || ''),
         category: category,
         productLine: category,
         series: String(r.series || ''),
         lifecycle: String(r.lifecycle || 'Running in the Market'),
         image: String(r.image_url || ''),
-        gs1Code: String(r.gs1_code || ''),
-        gs1Type: String(r.gs1_type || ''),
-        amzAsin: String(r.amz_asin || ''),
-        itemDimensions: String(r.item_dimensions || ''),
-        itemWeight: String(r.item_weight || ''),
-        packageDimensions: String(r.package_dimensions || ''),
-        packageWeight: String(r.package_weight || ''),
-        cartonDimensions: String(r.carton_dimensions || ''),
-        cartonWeight: String(r.carton_weight || ''),
+        gs1Code: s(r.gs1_code),
+        gs1Type: s(r.gs1_type),
+        amzAsin: s(r.amz_asin),
+
+        // --- Item dimensions (split + secondary + composed display) ---
+        itemLength: s(r.item_length), itemWidth: s(r.item_width), itemHeight: s(r.item_height),
+        itemLength2: s(r.item_length_2), itemWidth2: s(r.item_width_2), itemHeight2: s(r.item_height_2),
+        itemDimensionUnit: s(r.item_dimension_unit),
+        itemDimensions: itemDim,        // composed PRIMARY ("L x W x H") — drives the table + unit toggle
+        itemDimensions2: itemDim2,      // composed SECONDARY ("" when *_2 all blank) — display only
+        itemWeight: s(r.item_weight),
+        itemWeightUnit: s(r.item_weight_unit),
+
+        // --- Package dimensions ---
+        packageLength: s(r.package_length), packageWidth: s(r.package_width), packageHeight: s(r.package_height),
+        packageDimensionUnit: s(r.package_dimension_unit),
+        packageDimensions: packageDim,
+        packageWeight: s(r.package_weight),
+        packageWeightUnit: s(r.package_weight_unit),
+
+        // --- Carton dimensions (the logistics / CBM basis) ---
+        cartonLength: s(r.carton_length), cartonWidth: s(r.carton_width), cartonHeight: s(r.carton_height),
+        cartonDimensionUnit: s(r.carton_dimension_unit),
+        cartonDimensions: cartonDim,
+        cartonWeight: s(r.carton_weight),
+        cartonWeightUnit: s(r.carton_weight_unit),
         unitsPerCarton: parseInt(r.units_per_carton) || 0,
-        hsCode: String(r.hscode || ''),
-        declaredValue: String(r.declared_value || ''),
-        minimumPrice: String(r.minimum_price || ''),
-        msrp: String(r.msrp || ''),
-        sellingPrice: String(r.selling_price || ''),
+
+        // --- Customs / price (value + unit) ---
+        hsCode: s(r.hscode),
+        declaredValue: s(r.declared_value), declaredValueUnit: s(r.declared_value_unit),
+        minimumPrice: s(r.minimum_price), minimumPriceUnit: s(r.minimum_price_unit),
+        msrp: s(r.msrp), msrpUnit: s(r.msrp_unit),
+        sellingPrice: s(r.selling_price), sellingUnit: s(r.selling_unit),
+
         pm: String(r.pm || ''),
-        createdAt: String(r.created_at || ''),
-        updatedAt: String(r.updated_at || ''),
+        createdAt: s(r.created_at),
+        updatedAt: s(r.updated_at),
         isSellingMaterial: category.toLowerCase() === 'selling material',
         raw: r
     };
@@ -473,6 +505,7 @@ function normalizeAmazonInventoryHealthSnapshotRecord(raw) {
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || 'Amazon').trim(),
         sku: String(r.sku || '').trim(),
+        invAge0To90Days: parseFloat(r.inv_age_0_to_90_days) || 0,
         invAge91To180Days: parseFloat(r.inv_age_91_to_180_days) || 0,
         invAge181To270Days: parseFloat(r.inv_age_181_to_270_days) || 0,
         invAge271To365Days: parseFloat(r.inv_age_271_to_365_days) || 0,
@@ -582,8 +615,17 @@ function normalizeShippingPlanRecord(raw) {
         rejectedBy: String(r.rejected_by || '').trim(),
         rejectedAt: String(r.rejected_at || '').trim(),
         rejectedReason: String(r.rejected_reason || '').trim(),
+        cancelledBy: String(r.cancelled_by || '').trim(),
+        cancelledAt: String(r.cancelled_at || '').trim(),
+        // Execution-Layer handoff metadata (set when the plan is converted to a Shipment Draft).
+        transferredToShipmentAt: String(r.transferred_to_shipment_at || '').trim(),
+        transferredShipmentId: String(r.transferred_shipment_id || '').trim(),
+        // Decision Layer Completion (Done) — Decision Layer finished; Execution Layer has taken over.
+        completedAt: String(r.completed_at || '').trim(),
+        completedBy: String(r.completed_by || '').trim(),
         note: String(r.note || '').trim(),
         source: String(r.source || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
         raw: r
     };
@@ -611,8 +653,97 @@ function normalizeShippingPlanLineRecord(raw) {
         snapshotTargetDays: parseFloat(r.snapshot_target_days) || 0,
         snapshotFcContext: (r.snapshot_fc_context == null) ? '' : r.snapshot_fc_context,
         snapshotEventContext: (r.snapshot_event_context == null) ? '' : r.snapshot_event_context,
+        // Logistics Decision Snapshot (computed at Submit Plan / Save from sku_details carton dims/weights).
+        cartonCbm: parseFloat(r.carton_cbm) || 0,
+        cbm: parseFloat(r.cbm) || 0,
+        grossWeight: parseFloat(r.gross_weight) || 0,
+        netWeight: parseFloat(r.net_weight) || 0,
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// Shipment (Execution Layer) header. Execution Snapshot lives on the lines (see below).
+function normalizeShipmentRecord(raw) {
+    var r = raw || {};
+    return {
+        shipmentId: String(r.shipment_id || '').trim(),
+        shipmentNo: String(r.shipment_no || '').trim(),
+        shippingPlanId: String(r.shipping_plan_id || '').trim(),
+        referenceId: String(r.reference_id || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),
+        warehouseCode: String(r.warehouse_code || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        shipFrom: String(r.ship_from || '').trim(),
+        destination: String(r.destination || '').trim(),
+        carrierId: String(r.carrier_id || '').trim(),
+        rateCardId: String(r.rate_card_id || '').trim(),
+        shippingMethod: String(r.shipping_method || '').trim(),
+        status: String(r.status || '').trim(),
+        salesOrderId: String(r.sales_order_id || '').trim(),
+        bookingNo: String(r.booking_no || '').trim(),
+        trackingNumber: String(r.tracking_number || '').trim(),
+        containerNo: String(r.container_no || '').trim(),
+        blNo: String(r.bl_no || '').trim(),
+        invoiceNo: String(r.invoice_no || '').trim(),
+        etd: String(r.etd || '').trim(),
+        eta: String(r.eta || '').trim(),
+        actualDepartureDate: String(r.actual_departure_date || '').trim(),
+        actualArrivalDate: String(r.actual_arrival_date || '').trim(),
+        customsClearanceDate: String(r.customs_clearance_date || '').trim(),
+        deliveredDate: String(r.delivered_date || '').trim(),
+        totalQty: parseFloat(r.total_qty) || 0,
+        totalCartons: parseFloat(r.total_cartons) || 0,
+        totalCbm: (r.total_cbm === '' || r.total_cbm == null) ? '' : (parseFloat(r.total_cbm) || 0),
+        totalGrossWeight: (r.total_gross_weight === '' || r.total_gross_weight == null) ? '' : (parseFloat(r.total_gross_weight) || 0),
+        totalNetWeight: (r.total_net_weight === '' || r.total_net_weight == null) ? '' : (parseFloat(r.total_net_weight) || 0),
+        freightCostActual: (r.freight_cost_actual === '' || r.freight_cost_actual == null) ? '' : (parseFloat(r.freight_cost_actual) || 0),
+        dutyActual: (r.duty_actual === '' || r.duty_actual == null) ? '' : (parseFloat(r.duty_actual) || 0),
+        currency: String(r.currency || '').trim(),
+        note: String(r.note || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// Shipment line. snapshot_* fields are the Execution Snapshot — a verbatim copy of the Decision
+// Snapshot (immutable; never recalculated in the Execution Layer).
+function normalizeShipmentLineRecord(raw) {
+    var r = raw || {};
+    return {
+        shipmentLineId: String(r.shipment_line_id || '').trim(),
+        shipmentId: String(r.shipment_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        qty: parseFloat(r.qty) || 0,
+        factoryStockAllocationQty: (r.factory_stock_allocation_qty === '' || r.factory_stock_allocation_qty == null) ? '' : (parseFloat(r.factory_stock_allocation_qty) || 0),
+        cartonQty: parseFloat(r.carton_qty) || 0,
+        cartonNoStart: String(r.carton_no_start || '').trim(),
+        cartonNoEnd: String(r.carton_no_end || '').trim(),
+        unitsPerCarton: parseFloat(r.units_per_carton) || 0,
+        cartonCbm: (r.carton_cbm === '' || r.carton_cbm == null) ? '' : (parseFloat(r.carton_cbm) || 0),
+        cbm: (r.cbm === '' || r.cbm == null) ? '' : (parseFloat(r.cbm) || 0),
+        grossWeight: (r.gross_weight === '' || r.gross_weight == null) ? '' : (parseFloat(r.gross_weight) || 0),
+        netWeight: (r.net_weight === '' || r.net_weight == null) ? '' : (parseFloat(r.net_weight) || 0),
+        purchaseOrderLineId: String(r.purchase_order_line_id || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        // Execution Snapshot (copied from the Decision Snapshot; immutable)
+        snapshotCurrentStock: parseFloat(r.snapshot_current_stock) || 0,
+        snapshotAvgSalesPerDay: parseFloat(r.snapshot_avg_sales_per_day) || 0,
+        snapshotDaysOfSupply: (r.snapshot_days_of_supply === '' || r.snapshot_days_of_supply == null) ? '' : r.snapshot_days_of_supply,
+        snapshotSuggestedQty: parseFloat(r.snapshot_suggested_qty) || 0,
+        snapshotTargetDays: parseFloat(r.snapshot_target_days) || 0,
+        snapshotFcContext: (r.snapshot_fc_context == null) ? '' : r.snapshot_fc_context,
+        snapshotEventContext: (r.snapshot_event_context == null) ? '' : r.snapshot_event_context,
+        snapshotAvgSalesSource: String(r.snapshot_avg_sales_source || '').trim(),
+        snapshotAvgSalesWarning: String(r.snapshot_avg_sales_warning || '').trim(),
         raw: r
     };
 }
@@ -643,7 +774,9 @@ function normalizeOperationDb(rawDb) {
         fcSpecialEvents: (db.fc_special_events || []).map(normalizeFcSpecialEventRecord).filter(function(r) { return r.event || r.sku || r.scopeId; }),
         fcTargetRules: (db.fc_target_rules || []).map(normalizeFcTargetRuleRecord).filter(function(r) { return r.scopeId || r.ruleId; }),
         shippingPlans: (db.shipping_plans || []).map(normalizeShippingPlanRecord).filter(function(r) { return r.shippingPlanId; }),
-        shippingPlanLines: (db.shipping_plan_lines || []).map(normalizeShippingPlanLineRecord).filter(function(r) { return r.shippingPlanLineId || r.shippingPlanId; })
+        shippingPlanLines: (db.shipping_plan_lines || []).map(normalizeShippingPlanLineRecord).filter(function(r) { return r.shippingPlanLineId || r.shippingPlanId; }),
+        shipments: (db.shipments || []).map(normalizeShipmentRecord).filter(function(r) { return r.shipmentId; }),
+        shipmentLines: (db.shipment_lines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; })
     };
 }
 
@@ -828,9 +961,19 @@ async function loadOperationDb(options) {
             console.log('[OP DB] Loaded from Google Sheet. SKUs:', normalized.skuDetails.length);
             return normalized;
         } catch (e) {
-            console.warn('[OP DB] Google Sheet API failed:', e.message, '- falling back to mock data.');
             OperationDbState.lastFetchStatus = 'failed';
             OperationDbState.lastError = e.message;
+            // Preserve a previously-good Google Sheet cache on a (forced) reload failure. Clobbering it
+            // with mock data would silently drop shipping_plans / shipments and flip the UI to demo mode
+            // (the "card disappears after Save / reappears after refresh" bug). A write that already
+            // succeeded server-side stays visible; the next successful load reconciles any staleness.
+            if (window._opDbCache && window._opDbCache._sourceMode === 'google-sheet') {
+                console.warn('[OP DB] Google Sheet reload failed:', e.message, '- keeping existing cloud cache.');
+                window._opDbCache._apiFailed = true;
+                OperationDbState.lastLoadedAt = new Date().toISOString();
+                return window._opDbCache;
+            }
+            console.warn('[OP DB] Google Sheet API failed:', e.message, '- falling back to mock data.');
             window._opDbCache = _buildMockFallbackDb();
             window._opDbCache._apiFailed = true;
             OperationDbState.dataSourceMode = 'mock';
@@ -980,6 +1123,17 @@ window.KM.DB.getShippingPlans = function() {
 window.KM.DB.getShippingPlanLines = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.shippingPlanLines || [];
+};
+
+// Shipment (Execution Layer) getters.
+window.KM.DB.getShipments = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shipments || [];
+};
+
+window.KM.DB.getShipmentLines = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shipmentLines || [];
 };
 
 
@@ -1165,6 +1319,69 @@ window.KM.DB.appendShippingPlanNote = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Append note failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Decision Layer Completion (Done): mark an Approved + transferred plan completed. Writes only
+// completed_at / completed_by. { shipping_plan_id, actor? }. Does NOT touch shipments.
+window.KM.DB.completeShippingPlan = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, completeShippingPlan skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'completeShippingPlan' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Complete shipping plan failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Execution Commit (explicit / retry): Approved shipping_plan → shipments + shipment_lines (draft).
+// Normally Approve auto-creates the Shipment Draft server-side; this is the idempotent retry path.
+// { shipping_plan_id, actor? }
+window.KM.DB.createShipmentFromPlan = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, createShipmentFromPlan skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'createShipmentFromPlan' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Create shipment failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Edit EXECUTION-layer fields only (carrier/container/booking/ETD/ETA/tracking/remark/...).
+// The Execution Snapshot and six-key context are immutable and rejected server-side.
+// { shipment_id, carrier_id?, container_no?, booking_no?, bl_no?, invoice_no?, tracking_number?,
+//   etd?, eta?, note?, status?, actor? }
+window.KM.DB.updateShipment = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateShipment skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updateShipment' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update shipment failed');
     await loadOperationDb({ force: true });
     return json.data;
 };
