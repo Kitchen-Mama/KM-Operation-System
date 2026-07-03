@@ -1,0 +1,21 @@
+<!-- Shipment Draft Section — SEPARATE page from Shipment Overview.
+     Shares the shipments / shipment_lines DB and the card render helper (_shRenderDbCard),
+     but owns its section, filter UI (compact top-right Country + Status), init and render.
+     Injected into #shipment-draft-mount by KM.partialLoader on the page lifecycle mount.
+     The compact filter is injected into .page-header by _shdEnsureFilter() (shipping-history.js). -->
+<section id="shipment-draft-section" class="module-section">
+    <div class="page-shipping-history">
+        <div class="page-header">
+            <h2 class="page-title">Shipment Draft</h2>
+            <!-- #shd-simple-filter (Country + Status) is injected here by _shdEnsureFilter(). -->
+        </div>
+
+        <!-- Results Area (Draft / Ready to Ship / Shipped work area) -->
+        <div class="history-results">
+            <div class="history-empty-state">
+                <p>Loading shipment drafts…</p>
+            </div>
+            <div class="history-list" hidden></div>
+        </div>
+    </div>
+</section>

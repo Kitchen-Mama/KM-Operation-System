@@ -670,6 +670,7 @@ function normalizeShipmentRecord(raw) {
     return {
         shipmentId: String(r.shipment_id || '').trim(),
         shipmentNo: String(r.shipment_no || '').trim(),
+        externalShipmentId: String(r.external_shipment_id || '').trim(),
         shippingPlanId: String(r.shipping_plan_id || '').trim(),
         referenceId: String(r.reference_id || '').trim(),
         warehouseId: String(r.warehouse_id || '').trim(),
@@ -703,6 +704,11 @@ function normalizeShipmentRecord(raw) {
         freightCostActual: (r.freight_cost_actual === '' || r.freight_cost_actual == null) ? '' : (parseFloat(r.freight_cost_actual) || 0),
         dutyActual: (r.duty_actual === '' || r.duty_actual == null) ? '' : (parseFloat(r.duty_actual) || 0),
         currency: String(r.currency || '').trim(),
+        // Ship / Done (Shipment Draft workspace) lifecycle metadata.
+        shippedAt: String(r.shipped_at || '').trim(),
+        shippedBy: String(r.shipped_by || '').trim(),
+        hiddenFromDraftAt: String(r.hidden_from_draft_at || '').trim(),
+        hiddenFromDraftBy: String(r.hidden_from_draft_by || '').trim(),
         note: String(r.note || '').trim(),
         createdBy: String(r.created_by || '').trim(),
         createdAt: String(r.created_at || '').trim(),
@@ -748,9 +754,198 @@ function normalizeShipmentLineRecord(raw) {
     };
 }
 
+// ========================================
+// Procurement Layer (Phase 1) normalizers
+// request_orders / request_order_lines / purchase_orders / purchase_order_lines.
+// See REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md + DATABASE_RELATIONSHIP_MAP.md §7.
+// ========================================
+
+// Request Order (Procurement Planning Draft) header.
+function normalizeRequestOrderRecord(raw) {
+    var r = raw || {};
+    return {
+        requestOrderId: String(r.request_order_id || '').trim(),
+        requestOrderNo: String(r.request_order_no || '').trim(),
+        requestOrderVersion: parseFloat(r.request_order_version) || 1,
+        parentRequestOrderId: String(r.parent_request_order_id || '').trim(),
+        company: String(r.company || '').trim(),
+        supplierId: String(r.supplier_id || '').trim(),
+        supplierName: String(r.supplier_name || '').trim(),
+        factoryId: String(r.factory_id || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),
+        status: String(r.status || '').trim(),
+        totalSku: parseFloat(r.total_sku) || 0,
+        totalQty: parseFloat(r.total_qty) || 0,
+        totalCartons: parseFloat(r.total_cartons) || 0,
+        estimatedAmount: (r.estimated_amount === '' || r.estimated_amount == null) ? '' : (parseFloat(r.estimated_amount) || 0),
+        currency: String(r.currency || '').trim(),
+        source: String(r.source || '').trim(),
+        sourceRefType: String(r.source_ref_type || '').trim(),
+        sourceRefId: String(r.source_ref_id || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        submittedBy: String(r.submitted_by || '').trim(),
+        submittedAt: String(r.submitted_at || '').trim(),
+        approvedBy: String(r.approved_by || '').trim(),
+        approvedAt: String(r.approved_at || '').trim(),
+        rejectedBy: String(r.rejected_by || '').trim(),
+        rejectedAt: String(r.rejected_at || '').trim(),
+        rejectedReason: String(r.rejected_reason || '').trim(),
+        cancelledBy: String(r.cancelled_by || '').trim(),
+        cancelledAt: String(r.cancelled_at || '').trim(),
+        completedBy: String(r.completed_by || '').trim(),
+        completedAt: String(r.completed_at || '').trim(),
+        note: String(r.note || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+function normalizeRequestOrderLineRecord(raw) {
+    var r = raw || {};
+    return {
+        requestOrderLineId: String(r.request_order_line_id || '').trim(),
+        requestOrderId: String(r.request_order_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        productName: String(r.product_name || '').trim(),
+        series: String(r.series || '').trim(),
+        company: String(r.company || '').trim(),
+        requestBucket: String(r.request_bucket || '').trim(),
+        requestMonth: String(r.request_month || '').trim(),
+        inspectionDate: String(r.inspection_date || '').trim(),
+        expectedReadyDate: String(r.expected_ready_date || '').trim(),
+        expectedShipDate: String(r.expected_ship_date || '').trim(),
+        requestedQty: parseFloat(r.requested_qty) || 0,
+        approvedQty: parseFloat(r.approved_qty) || 0,
+        finalOrderQty: (r.final_order_qty === '' || r.final_order_qty == null) ? '' : (parseFloat(r.final_order_qty) || 0),
+        unitsPerCarton: parseFloat(r.units_per_carton) || 0,
+        cartonQty: parseFloat(r.carton_qty) || 0,
+        forecastQty: (r.forecast_qty === '' || r.forecast_qty == null) ? '' : (parseFloat(r.forecast_qty) || 0),
+        currentStock: (r.current_stock === '' || r.current_stock == null) ? '' : (parseFloat(r.current_stock) || 0),
+        onTheWayQty: (r.on_the_way_qty === '' || r.on_the_way_qty == null) ? '' : (parseFloat(r.on_the_way_qty) || 0),
+        factoryAllocatedQty: (r.factory_allocated_qty === '' || r.factory_allocated_qty == null) ? '' : (parseFloat(r.factory_allocated_qty) || 0),
+        shortageQty: (r.shortage_qty === '' || r.shortage_qty == null) ? '' : (parseFloat(r.shortage_qty) || 0),
+        reallocationQty: (r.reallocation_qty === '' || r.reallocation_qty == null) ? '' : (parseFloat(r.reallocation_qty) || 0),
+        calculationMethod: String(r.calculation_method || '').trim(),
+        lineStatus: String(r.line_status || '').trim(),
+        linkedPurchaseOrderLineId: String(r.linked_purchase_order_line_id || '').trim(),
+        supplierId: String(r.supplier_id || '').trim(),
+        supplierName: String(r.supplier_name || '').trim(),
+        supplierSku: String(r.supplier_sku || '').trim(),
+        unitCost: (r.unit_cost === '' || r.unit_cost == null) ? '' : (parseFloat(r.unit_cost) || 0),
+        estimatedAmount: (r.estimated_amount === '' || r.estimated_amount == null) ? '' : (parseFloat(r.estimated_amount) || 0),
+        currency: String(r.currency || '').trim(),
+        needReason: String(r.need_reason || '').trim(),
+        relatedEntityType: String(r.related_entity_type || '').trim(),
+        relatedEntityId: String(r.related_entity_id || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// Purchase Order (Procurement Commitment) header.
+function normalizePurchaseOrderRecord(raw) {
+    var r = raw || {};
+    return {
+        purchaseOrderId: String(r.purchase_order_id || '').trim(),
+        purchaseOrderNo: String(r.purchase_order_no || '').trim(),
+        poVersion: parseFloat(r.po_version) || 1,
+        parentPurchaseOrderId: String(r.parent_purchase_order_id || '').trim(),
+        requestOrderId: String(r.request_order_id || '').trim(),
+        company: String(r.company || '').trim(),
+        supplierId: String(r.supplier_id || '').trim(),
+        supplierName: String(r.supplier_name || '').trim(),
+        factoryId: String(r.factory_id || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),
+        status: String(r.status || '').trim(),
+        currency: String(r.currency || '').trim(),
+        totalSku: parseFloat(r.total_sku) || 0,
+        totalQty: parseFloat(r.total_qty) || 0,
+        totalAmount: (r.total_amount === '' || r.total_amount == null) ? '' : (parseFloat(r.total_amount) || 0),
+        expectedReadyDate: String(r.expected_ready_date || '').trim(),
+        confirmedReadyDate: String(r.confirmed_ready_date || '').trim(),
+        issuedBy: String(r.issued_by || '').trim(),
+        issuedAt: String(r.issued_at || '').trim(),
+        confirmedBy: String(r.confirmed_by || '').trim(),
+        confirmedAt: String(r.confirmed_at || '').trim(),
+        cancelledBy: String(r.cancelled_by || '').trim(),
+        cancelledAt: String(r.cancelled_at || '').trim(),
+        completedBy: String(r.completed_by || '').trim(),
+        completedAt: String(r.completed_at || '').trim(),
+        // Closure (auto when all lines remaining_qty=0, or manual with a reason).
+        closureReason: String(r.closure_reason || '').trim(),
+        closedBy: String(r.closed_by || '').trim(),
+        closedAt: String(r.closed_at || '').trim(),
+        note: String(r.note || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+function normalizePurchaseOrderLineRecord(raw) {
+    var r = raw || {};
+    return {
+        purchaseOrderLineId: String(r.purchase_order_line_id || '').trim(),
+        purchaseOrderId: String(r.purchase_order_id || '').trim(),
+        requestOrderLineId: String(r.request_order_line_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        productName: String(r.product_name || '').trim(),
+        series: String(r.series || '').trim(),
+        orderedQty: parseFloat(r.ordered_qty) || 0,
+        completedQty: parseFloat(r.completed_qty) || 0,
+        shippedQty: parseFloat(r.shipped_qty) || 0,
+        remainingQty: (r.remaining_qty === '' || r.remaining_qty == null) ? '' : (parseFloat(r.remaining_qty) || 0),
+        unitsPerCarton: parseFloat(r.units_per_carton) || 0,
+        cartonQty: parseFloat(r.carton_qty) || 0,
+        supplierId: String(r.supplier_id || '').trim(),
+        supplierSku: String(r.supplier_sku || '').trim(),
+        unitCost: (r.unit_cost === '' || r.unit_cost == null) ? '' : (parseFloat(r.unit_cost) || 0),
+        lineAmount: (r.line_amount === '' || r.line_amount == null) ? '' : (parseFloat(r.line_amount) || 0),
+        currency: String(r.currency || '').trim(),
+        relatedShipmentId: String(r.related_shipment_id || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// supplier_price_list — v1 lead-time / cost detail layer. IMPORT/MASTER table; [] when the payload
+// lacks it (missing-source safe). `suppliers` master table is future (see REQUEST_ORDER spec §12.6).
+function normalizeSupplierPriceListRecord(raw) {
+    var r = raw || {};
+    return {
+        supplierPriceId: String(r.supplier_price_id || r.price_id || '').trim(),
+        supplierId: String(r.supplier_id || '').trim(),
+        supplierName: String(r.supplier_name || r.supplier_name_snapshot || '').trim(),
+        supplierWarehouseId: String(r.supplier_warehouse_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        supplierSku: String(r.supplier_sku || '').trim(),
+        unitCost: (r.unit_cost === '' || r.unit_cost == null) ? '' : (parseFloat(r.unit_cost) || 0),
+        currency: String(r.currency || '').trim(),
+        leadTimeDays: (r.lead_time_days === '' || r.lead_time_days == null) ? '' : (parseFloat(r.lead_time_days) || 0),
+        moq: (r.moq === '' || r.moq == null) ? '' : (parseFloat(r.moq) || 0),
+        isActive: String(r.is_active == null ? '' : r.is_active).trim(),
+        effectiveFrom: String(r.effective_from || '').trim(),
+        effectiveTo: String(r.effective_to || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
 function normalizeOperationDb(rawDb) {
     var db = rawDb || {};
     return {
+        // supplier_price_list — [] when the tab is absent from the payload (Lead Time then shows '--').
+        supplierPriceList: (db.supplier_price_list || []).map(normalizeSupplierPriceListRecord).filter(function(r) { return r.sku; }),
         skuDetails: (db.sku_details || []).map(normalizeSkuDetailsRecord).filter(function(r) { return r.sku; }),
         productFeatures: (db.product_features || []).map(normalizeProductFeatureRecord),
         skuHandbookSummaries: (db.sku_handbook_summaries || []).map(normalizeSkuHandbookSummaryRecord),
@@ -776,7 +971,116 @@ function normalizeOperationDb(rawDb) {
         shippingPlans: (db.shipping_plans || []).map(normalizeShippingPlanRecord).filter(function(r) { return r.shippingPlanId; }),
         shippingPlanLines: (db.shipping_plan_lines || []).map(normalizeShippingPlanLineRecord).filter(function(r) { return r.shippingPlanLineId || r.shippingPlanId; }),
         shipments: (db.shipments || []).map(normalizeShipmentRecord).filter(function(r) { return r.shipmentId; }),
-        shipmentLines: (db.shipment_lines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; })
+        shipmentLines: (db.shipment_lines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; }),
+        // Procurement Layer (Phase 1) — [] when the payload lacks the table (missing-header safe).
+        requestOrders: (db.request_orders || []).map(normalizeRequestOrderRecord).filter(function(r) { return r.requestOrderId; }),
+        requestOrderLines: (db.request_order_lines || []).map(normalizeRequestOrderLineRecord).filter(function(r) { return r.requestOrderLineId || r.requestOrderId; }),
+        purchaseOrders: (db.purchase_orders || []).map(normalizePurchaseOrderRecord).filter(function(r) { return r.purchaseOrderId; }),
+        purchaseOrderLines: (db.purchase_order_lines || []).map(normalizePurchaseOrderLineRecord).filter(function(r) { return r.purchaseOrderLineId || r.purchaseOrderId; }),
+        // Request Order second-layer allocation drafts (planning scratchpads — no stock movement).
+        requestOrderAllocationDrafts: (db.request_order_allocation_drafts || []).map(normalizeRequestOrderAllocationDraftRecord).filter(function(r) { return r.requestAllocationDraftId; }),
+        requestOrderAllocationDraftLines: (db.request_order_allocation_draft_lines || []).map(normalizeRequestOrderAllocationDraftLineRecord).filter(function(r) { return r.requestAllocationLineId || r.requestAllocationDraftId; }),
+        // Request Order site confirmations (site-level approval state — no stock movement, no request_orders).
+        requestOrderSiteConfirmations: (db.request_order_site_confirmations || []).map(normalizeRequestOrderSiteConfirmationRecord).filter(function(r) { return r.siteConfirmationId; }),
+        // Request Order line SOURCES — source of truth for company/site/month allocation detail (read-only
+        // here; write handler is spec-only / pending). [] when the tab is absent (missing-header safe).
+        requestOrderLineSources: (db.request_order_line_sources || []).map(normalizeRequestOrderLineSourceRecord)
+    };
+}
+
+// Request Order line source — the append-only company/site/month allocation detail behind each request
+// line. Source of truth for the Company Allocation popup. Write path is spec-only (pending); this
+// normalizer only READS whatever the tab contains (numbers coerced). tier_type = T1/T2/T3; source_month = YYYY-MM.
+function normalizeRequestOrderLineSourceRecord(raw) {
+    var r = raw || {};
+    return {
+        lineSourceId: String(r.line_source_id || r.request_order_line_source_id || '').trim(),
+        requestOrderLineId: String(r.request_order_line_id || '').trim(),
+        requestOrderId: String(r.request_order_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        tierType: String(r.tier_type || r.request_bucket || '').trim(),
+        sourceMonth: String(r.source_month || r.request_month || '').trim(),
+        requestedQty: parseFloat(r.requested_qty) || 0,
+        approvedQty: parseFloat(r.approved_qty) || 0,
+        shortageQty: parseFloat(r.shortage_qty) || 0,
+        sourceType: String(r.source_type || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+// Request Order site confirmation. Upsert key = planning_cycle + company + country + marketplace +
+// series + bucket. status enum pending/confirmed/cancelled. Records approval only (Confirm Site).
+function normalizeRequestOrderSiteConfirmationRecord(raw) {
+    var r = raw || {};
+    return {
+        siteConfirmationId: String(r.site_confirmation_id || '').trim(),
+        planningCycle: String(r.planning_cycle || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        series: String(r.series || '').trim(),
+        bucket: String(r.bucket || '').trim(),
+        status: String(r.status || '').trim(),
+        confirmedBy: String(r.confirmed_by || '').trim(),
+        confirmedAt: String(r.confirmed_at || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// Request Order second-layer allocation draft (header). Planning scratchpad only (no stock effect).
+function normalizeRequestOrderAllocationDraftRecord(raw) {
+    var r = raw || {};
+    return {
+        requestAllocationDraftId: String(r.request_allocation_draft_id || '').trim(),
+        planningCycle: String(r.planning_cycle || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        sku: String(r.sku || '').trim(),
+        category: String(r.category || '').trim(),
+        series: String(r.series || '').trim(),
+        status: String(r.status || '').trim(),
+        sourceType: String(r.source_type || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        submittedBy: String(r.submitted_by || '').trim(),
+        submittedAt: String(r.submitted_at || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+// Request Order second-layer allocation draft (line). request_bucket = T1/T2/T3.
+function normalizeRequestOrderAllocationDraftLineRecord(raw) {
+    var r = raw || {};
+    return {
+        requestAllocationLineId: String(r.request_allocation_line_id || '').trim(),
+        requestAllocationDraftId: String(r.request_allocation_draft_id || '').trim(),
+        requestMonth: String(r.request_month || '').trim(),
+        requestBucket: String(r.request_bucket || '').trim(),
+        recommendedQty: parseFloat(r.recommended_qty) || 0,
+        orderQty: parseFloat(r.order_qty) || 0,
+        cartonQty: parseFloat(r.carton_qty) || 0,
+        unitsPerCarton: parseFloat(r.units_per_carton) || 0,
+        factoryStockSnapshot: parseFloat(r.factory_stock_snapshot) || 0,
+        siteStockSnapshot: parseFloat(r.site_stock_snapshot) || 0,
+        thirdPartyStockSnapshot: parseFloat(r.third_party_stock_snapshot) || 0,
+        fcQtySnapshot: parseFloat(r.fc_qty_snapshot) || 0,
+        targetPctSnapshot: parseFloat(r.target_pct_snapshot) || 0,
+        allocationMethod: String(r.allocation_method || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
     };
 }
 
@@ -1062,6 +1366,12 @@ window.KM.DB.getFactoryStock = function() {
     return window._opDbCache.factoryStock || [];
 };
 
+// supplier_price_list (v1 lead-time / cost source). [] when the tab is absent (missing-source safe).
+window.KM.DB.getSupplierPriceList = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.supplierPriceList || [];
+};
+
 window.KM.DB.getFactoryStockMovements = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.factoryStockMovements || [];
@@ -1134,6 +1444,48 @@ window.KM.DB.getShipments = function() {
 window.KM.DB.getShipmentLines = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.shipmentLines || [];
+};
+
+// Procurement Layer (Phase 1) getters. Return [] when the cache is unloaded or the payload
+// does not include the table (missing procurement tabs are created on first write).
+window.KM.DB.getRequestOrders = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.requestOrders || [];
+};
+
+window.KM.DB.getRequestOrderLines = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.requestOrderLines || [];
+};
+
+window.KM.DB.getPurchaseOrders = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.purchaseOrders || [];
+};
+
+window.KM.DB.getRequestOrderAllocationDrafts = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.requestOrderAllocationDrafts || [];
+};
+
+window.KM.DB.getRequestOrderAllocationDraftLines = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.requestOrderAllocationDraftLines || [];
+};
+
+window.KM.DB.getRequestOrderSiteConfirmations = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.requestOrderSiteConfirmations || [];
+};
+
+window.KM.DB.getRequestOrderLineSources = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.requestOrderLineSources || [];
+};
+
+window.KM.DB.getPurchaseOrderLines = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.purchaseOrderLines || [];
 };
 
 
@@ -1382,6 +1734,289 @@ window.KM.DB.updateShipment = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update shipment failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// ========================================
+// Procurement Layer (Phase 1) writers — API-ready. All POST { action, ...payload } and reload
+// the DB on success (same pattern as the shipping-plan / shipment writers). The frontend never
+// treats the DOM as the source of truth; sessionStorage is demo fallback / draft recovery only.
+// ========================================
+
+// Create a Request Order Draft (Procurement Planning Draft). Body:
+// { company?, supplier_id?, supplier_name?, factory_id?, warehouse_id?, source?, currency?,
+//   note?, created_by?, lines: [ { sku, product_name?, series?, requested_qty, units_per_carton?,
+//   supplier_sku?, unit_cost?, need_reason?, related_entity_type?, related_entity_id? } ] }
+window.KM.DB.createRequestOrderDraft = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, createRequestOrderDraft skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'createRequestOrderDraft' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Create request order failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// ---- Request Order second-layer allocation drafts (planning scratchpads; no stock movement) ----
+// Upsert ONE draft header. { request_allocation_draft_id?, planning_cycle?, company?, country?,
+//   marketplace?, sku?, category?, series?, status?, source_type?, created_by?, note? } → { request_allocation_draft_id }.
+window.KM.DB.upsertRequestOrderAllocationDraft = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertRequestOrderAllocationDraft skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertRequestOrderAllocationDraft' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert allocation draft failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Replace the lines of ONE draft. { request_allocation_draft_id, lines: [ ... ] } → { line_count }.
+window.KM.DB.upsertRequestOrderAllocationDraftLines = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertRequestOrderAllocationDraftLines skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertRequestOrderAllocationDraftLines' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert allocation draft lines failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Mark drafts submitted. { draft_ids: [ ... ], submitted_by? } → { submitted }.
+window.KM.DB.submitRequestOrderAllocationDrafts = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, submitRequestOrderAllocationDrafts skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'submitRequestOrderAllocationDrafts' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Submit allocation drafts failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Batch upsert Site Confirmations. { confirmations: [ { planning_cycle, company, country,
+//   marketplace, series, bucket, status?, note? } ], confirmed_by? } → { upserted, created, updated }.
+// Records site-level approval only — does NOT create request_orders (Confirm Site ≠ Send Request).
+window.KM.DB.upsertRequestOrderSiteConfirmations = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertRequestOrderSiteConfirmations skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertRequestOrderSiteConfirmations' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert site confirmations failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Request Order status transitions: { request_order_id, transition: submit|approve|reject|cancel|done,
+//   rejected_reason?, actor? }. reject → draft (version +1 on resubmit); done sets completed_* (Approved only).
+window.KM.DB.updateRequestOrderStatus = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateRequestOrderStatus skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updateRequestOrderStatus' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update request order status failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Edit request_order_lines (Draft only). Each line: { request_order_line_id, approved_qty?,
+//   inspection_date?, expected_ready_date?, expected_ship_date?, note? }. Recomputes carton/est.
+window.KM.DB.updateRequestOrderLineQty = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateRequestOrderLineQty skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updateRequestOrderLineQty' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update request order line qty failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Cancel a tier/block by STATUS (soft): { request_order_line_ids: [ ... ], actor? }. Sets each line's
+// line_status='cancelled'; if a parent request has no active line left, its status → cancelled.
+window.KM.DB.cancelRequestOrderTier = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, cancelRequestOrderTier skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'cancelRequestOrderTier' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Cancel request order tier failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Convert an Approved Request Order into a Purchase Order (Procurement Commitment):
+// { request_order_id, actor? }. Copies request → PO + lines; sets request status=converted_to_po.
+window.KM.DB.createPurchaseOrderFromRequest = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, createPurchaseOrderFromRequest skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'createPurchaseOrderFromRequest' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Create purchase order failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Purchase Order status transitions: { purchase_order_id, transition: issue|confirm|start_production|
+//   ready_to_ship|complete|cancel, actor?, expected_ready_date?, confirmed_ready_date?, note? }.
+window.KM.DB.updatePurchaseOrderStatus = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updatePurchaseOrderStatus skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updatePurchaseOrderStatus' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update purchase order status failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Edit purchase_order_lines fields (e.g. ordered_qty / unit_cost / note): { lines: [ { purchase_order_line_id, ordered_qty?, unit_cost?, note? } ] }.
+window.KM.DB.updatePurchaseOrderLine = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updatePurchaseOrderLine skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updatePurchaseOrderLine' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update purchase order line failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// ========================================
+// FC Summary write path (Phase 1) — Special Events + Target % Rules.
+// upsert = create when id missing, update when id present. delete = hard delete by id.
+// All reload the Operation DB on success (getFcSpecialEvents / getFcTargetRules then reflect it).
+// ========================================
+
+// { event_id?, company, country, marketplace, scope_type?, scope_id?, sku, series?, category?,
+//   event_name, event_period?, event_month?, year?, fc_qty, note?, actor? }
+window.KM.DB.upsertFcSpecialEvent = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertFcSpecialEvent skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertFcSpecialEvent' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert special event failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// { event_id }
+window.KM.DB.deleteFcSpecialEvent = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, deleteFcSpecialEvent skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'deleteFcSpecialEvent' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Delete special event failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// { target_rule_id?, company?, country?, marketplace?, scope_type, scope_id, year?, category?,
+//   series?, sku?, target_percentage?, jan_pct..dec_pct, note?, actor? }
+window.KM.DB.upsertFcTargetRule = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertFcTargetRule skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertFcTargetRule' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert target rule failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// { target_rule_id }
+window.KM.DB.deleteFcTargetRule = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, deleteFcTargetRule skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'deleteFcTargetRule' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Delete target rule failed');
     await loadOperationDb({ force: true });
     return json.data;
 };

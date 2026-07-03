@@ -14,7 +14,8 @@
 //   - preserves destination header row; clears + rewrites data rows only
 //   - writes only columns present in destination headers
 //   - records import_sync_runs (1 per source) + import_sync_issues
-//   - Amazon Daily Sales is read from BigQuery (rolling 30 completed-day window, excludes today)
+//   - Amazon Daily Sales is read from BigQuery with an INCREMENTAL rolling upsert (default 1 new
+//     completed day, excludes today) + prune to retentionDays; other snapshots keep full rewrite
 // Phase 3A additions:
 //   - Amazon numeric placeholder normalization ("N+"→N + companion *_is_capped=TRUE,
 //     "/"→null, blank→null, "1,234"/"12%"→number) BEFORE invalid_number; only truly
@@ -159,10 +160,14 @@ var IMPORT_CONFIGS = [
       'sales_units_7d', 'sales_amount_7d', 'sales_amount_usd_7d', 'return_units_7d', 'total_orders_7d',
       'session_7d', 'page_view_7d', 'unit_session_percentage_7d']
   },
-  // 4 — amazon_daily_sales_snapshot (BigQuery, past 30 completed days, EXCLUDES today)
-  //   Window widened 7 -> 30 completed days: feeds BOTH the Sales Trend 7-day display AND the
-  //   Normalized Avg Sales/Day 30-day calculation (event/promotion-day exclusion). This only
-  //   increases the Google Sheet snapshot's available days — no new columns, no BigQuery schema change.
+  // 4 — amazon_daily_sales_snapshot (BigQuery, INCREMENTAL rolling upsert, EXCLUDES today)
+  //   Write mode = rolling_upsert (see 07/08/09): each daily run reads ONLY new completed-day data
+  //   (default = yesterday / 1 completed day), UPSERTs by natural key (no full-table rewrite), then
+  //   PRUNES destination rows older than retentionDays. The Google Sheet keeps a rolling 30 completed
+  //   days; BigQuery keeps full history (never pruned). Backfill: POST body.backfill_days = N reads
+  //   the last N completed days and upserts them (still no full rewrite). No new columns, no BQ schema
+  //   change. The 30-day window feeds BOTH the Sales Trend 7-day display AND the Normalized Avg
+  //   Sales/Day 30-day calculation (event/promotion-day exclusion).
   {
     sourceType: 'bigquery',
     sourceProjectId: 'amazon-database-489810',
@@ -170,8 +175,12 @@ var IMPORT_CONFIGS = [
     sourceTable: 'Raw Daily Sales',
     queryMode: 'rolling_window',
     dateField: 'Date',
-    lookbackDays: 30,       // window length in COMPLETED days (excludes today)
-    excludeToday: true,     // window ends yesterday (avoid partial same-day Amazon data)
+    // Incremental rolling upsert (daily sales only). Other configs keep full snapshot rewrite.
+    writeMode: 'rolling_upsert',
+    retentionDays: 30,             // destination keeps this many completed days; older rows pruned
+    incrementalDefaultDays: 1,     // default daily read = 1 completed day (yesterday)
+    lookbackDays: 30,              // legacy/back-compat window cap (used as backfill ceiling)
+    excludeToday: true,            // window ends yesterday (avoid partial same-day Amazon data)
     scheduleTime: '16:00',
     scheduleTimezone: 'Asia/Taipei',
     destinationSpreadsheetId: '1EMe9l6ow0-OZkNY9ZP6IxHk84YGs5bqD5nVKHOPt-Kk',

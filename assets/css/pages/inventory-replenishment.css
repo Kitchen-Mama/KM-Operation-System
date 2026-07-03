@@ -23,7 +23,7 @@
     align-items: flex-end;
     flex-wrap: wrap;
     gap: 12px;
-    z-index: 131;
+    z-index: var(--km-sticky-z-toolbar, 131); /* KM Sticky Header Framework: toolbar above headers */
     border: 1px solid var(--km-filter-border);
 }
 
@@ -353,11 +353,16 @@
     box-shadow: var(--shadow-soft);
 }
 
+/* KM Sticky Header Framework: this single bar holds BOTH header rows (level1 + level2),
+   stacked in a flex column, so row-1/row-2 overlap is structurally impossible. It pins at
+   --km-sticky-top-base (the sticky control panel's live height, set by KM.stickyHeader on
+   mount/resize) instead of a hard-coded 72px — which is why it was previously covered by the
+   taller / wrapping control panel. Height = row1 + row2 (from framework vars). */
 #ops-section .table-header-bar {
-    height: 96px;
+    height: var(--km-sticky-header-total, 96px);
     position: sticky;
-    top: 72px;
-    z-index: 120;
+    top: var(--km-sticky-top-base, 72px);
+    z-index: var(--km-sticky-z-header-1, 120);
     display: flex;
     background: #f5f5f5;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 -100vh 0 100vh white;
@@ -366,7 +371,7 @@
 #ops-section .fixed-header {
     width: 120px;
     min-width: 110px;
-    height: 96px;
+    height: var(--km-sticky-header-total, 96px);
     background: #f5f5f5;
     border-right: 1px solid #dbe3ea;
     box-shadow: 2px 0 4px rgba(0,0,0,0.06);
@@ -389,7 +394,7 @@
     display: flex;
     flex-direction: column;
     min-width: max-content;
-    height: 96px;
+    height: var(--km-sticky-header-total, 96px);
     background: transparent;
     padding-right: 0;
 }
@@ -398,12 +403,14 @@
     display: flex;
 }
 
+/* Header Row 1 (Inventory / Sales / Replenishment / 工廠Stock group headers) */
 #ops-section .km-table__header-row--level1 {
-    height: 48px;
+    height: var(--km-sticky-row-1-height, 48px);
 }
 
+/* Header Row 2 (Current Stock / On the Way / Avg. Sales/day / …) */
 #ops-section .km-table__header-row--level2 {
-    height: 48px;
+    height: var(--km-sticky-row-2-height, 48px);
 }
 
 #ops-section .km-table__header-cell {
@@ -422,11 +429,11 @@
     background: #f5f5f5;
     width: 100px;
     min-width: 100px;
-    height: 96px;
+    height: var(--km-sticky-header-total, 96px);
     position: absolute;
     left: 0;
     top: 0;
-    z-index: 121;
+    z-index: var(--km-sticky-z-corner, 121); /* corner: above header rows, below toolbar */
     border-right: 1px solid #dbe3ea;
     display: flex;
     align-items: center;
@@ -543,7 +550,7 @@
     min-width: 110px;
     flex-shrink: 0;
     background: white;
-    z-index: 110;
+    z-index: var(--km-sticky-z-col, 110); /* left sticky column: below header rows */
     border-right: 1px solid #dbe3ea;
     box-shadow: 2px 0 4px rgba(0,0,0,0.06);
     position: sticky;
@@ -614,14 +621,24 @@
     min-height: auto;
 }
 
+/* Expanded-row content area (Layout v3). Fixed-width horizontal groups — NO wrap, NO nested
+   scrollbar. The four groups always sit in ONE row; when they exceed the viewport the MAIN TABLE's
+   .scroll-col provides the single horizontal scroll (same as the first layer). Height is
+   content-driven (no overflow-y / max-height) so the expanded row always pushes the next SKU row
+   down and never overlaps it. align-items:stretch makes the four group boxes equal height. */
 #ops-section .replen-expand-scroll {
     flex: 1;
     padding: var(--space-md);
     display: flex;
+    flex-wrap: nowrap;
     gap: 16px;
     background: #F8F9FA;
-    overflow-x: visible;
-    align-items: stretch;
+    overflow: visible;
+    /* flex-start (not stretch): each group is content-height so the SECOND-row cards (Upcoming
+       Event / 3rd Party / Recommendation Summary / Execution Plan) size to their content and are
+       NOT force-stretched tall. Top-row alignment is provided by the shared min-height on the
+       top cards, not by stretching. */
+    align-items: flex-start;
     min-height: auto;
 }
 
@@ -633,9 +650,11 @@
     min-width: 200px;
 }
 
+/* Top-row cards do NOT flex-grow (that made Forecast / Achievement stretch tall and misalign the
+   divider). They size to a shared min-height instead — see the consolidated top-card rule below. */
 .replen-card--sales-trend,
 .replen-card--achievement {
-    flex: 1.15 1 0;
+    flex: 0 0 auto;
 }
 
 #ops-section .replen-expand-fixed {
@@ -646,20 +665,16 @@
     min-height: auto;
 }
 
+/* (Canonical .replen-expand-scroll rule is defined above: flex-wrap:nowrap + overflow:visible.
+   This block intentionally only re-affirms gap; NO overflow-x:auto — no nested scroll.) */
 #ops-section .replen-expand-scroll {
-    flex: 1;
-    padding: var(--space-md);
-    display: flex;
     gap: var(--space-md);
-    background: #F8F9FA;
-    overflow-x: auto;
-    min-height: auto;
 }
 
-/* Inventory Group - 4個卡片 */
+/* Inventory Group - 4個卡片 (fills the 320px Group A column) */
 #ops-section .replen-expand-section--inventory {
-    width: 360px;
-    min-width: 360px;
+    width: 100%;
+    min-width: 0;
     display: flex;
     flex-direction: column;
 }
@@ -810,6 +825,225 @@
     margin-bottom: 8px;
 }
 
+/* ================================================================
+   Recommendation Summary + Execution Plan (Planning column)
+   Replaces AI Suggestion / Shipping Allocation / Shipping Plan Suggestions.
+   - Stacked VERTICALLY (Recommendation Summary above Execution Plan) inside one column.
+   - Same card styling as the left detail cards (base .replen-card: white / border / radius / padding).
+   - No inner vertical scrollbar; height content-driven; wraps below other panels on narrow widths.
+   ================================================================ */
+
+/* Expanded Row Layout v2 — four horizontal groups, each stacking its cards vertically:
+   A = inventory state (Stock / LTS / Shipping / 3rd Party)   [.ir-panel--inventory-group]
+   B = planning context (Forecast / Upcoming Event)           [.ir-panel-column--context]  (narrow)
+   C = recommendation insight (Sales Trend / Recommendation Summary) [.ir-panel-column--insight]
+   D = decision action (Achievement Rate / Execution Plan)    [.ir-panel-column--action]
+   OVERFLOW SAFETY: every group + card gets min-width:0 so grid/flex items can shrink instead of
+   overflowing their card/container. The ONLY scroll is the main table's .scroll-col. */
+
+/* Every direct child of the expanded row (the four groups) must be shrinkable. */
+#ops-section .replen-expand-scroll > * { min-width: 0; }
+
+/* Cards inside the vertical group columns must not enforce a 200px floor (would overflow narrow
+   groups); they size to their column and their content clips/wraps instead of overflowing. */
+#ops-section .ir-panel-column .ir-panel,
+#ops-section .ir-panel-column .replen-card { min-width: 0; }
+
+/* Group A (Stock/LTS/Shipping/3rd Party) small cards must shrink inside their 2-col grid too. */
+#ops-section .replen-card-grid > .replen-card { min-width: 0; }
+#ops-section .replen-card__row { min-width: 0; }
+#ops-section .replen-card__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Groups use FIXED widths and never shrink/grow (Layout v3). The row extends past the viewport as
+   needed; the main table's .scroll-col scrolls it — no wrap, no reflow. */
+/* Group B — forecast context (narrow). */
+#ops-section .ir-panel-column--context {
+    flex: 0 0 240px;
+    width: 240px;
+}
+/* Group C — sales recommendation (Sales Trend needs 7 days; Recommendation Summary Reason single-line). */
+#ops-section .ir-panel-column--insight {
+    flex: 0 0 420px;
+    width: 420px;
+    min-width: 420px;
+}
+/* Group D — action plan. Wide enough that the Execution Plan grid (From 100 / To 100 / Qty 60 /
+   Method 130 / Delete 36 + 4×8px gaps ≈ 458px min) fits inside the card padding WITHOUT shrinking
+   the Method track under the Delete button (no overlap). */
+#ops-section .ir-panel-column--action {
+    flex: 0 0 490px;
+    width: 490px;
+    min-width: 490px;
+}
+
+/* Recommendation Summary / Execution Plan cards size to content — never scroll internally. */
+#ops-section .replen-card--recommendation-summary,
+#ops-section .replen-card--execution-plan {
+    overflow: hidden;          /* clip stray child overflow at the card boundary (safety) */
+    min-height: auto;
+    flex: 0 0 auto;
+}
+
+/* Small grey note next to a card title (replaces inline styles; wraps/clips, never overflows). */
+#ops-section .replen-card__title-note {
+    font-size: 10px;
+    color: #94A3B8;
+    font-weight: 400;
+}
+
+/* Title + action button on one line (Execution Plan header). */
+#ops-section .replen-card__title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+#ops-section .replen-card__title-row .replen-card__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+#ops-section .replen-card__add-route-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    border: 1px solid #3B82F6;
+    color: #3B82F6;
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+#ops-section .replen-card__add-route-btn:hover { background: #EFF6FF; }
+
+/* Recommendation Summary — compact table that fits its (400px) card. Headers and values show in
+   FULL (no ellipsis, Part 4); long values wrap instead of clipping. Title sits directly above the
+   table with tight spacing (Part 3). No inner scrollbar. */
+/* Match the Long Term Storage title → content spacing (base .replen-card__title margin-bottom: 4px);
+   the warm header cell padding provides the small gap under the title. */
+#ops-section .replen-card--recommendation-summary .replen-card__title { margin-bottom: 4px; }
+#ops-section .replen-recsum-table {
+    width: 100%;
+    table-layout: auto;        /* columns size to content so Reason fits on ONE line */
+    border-collapse: collapse;
+    font-size: 12px;
+    /* Override the global 20px table margin — keep this compact table tight to its title (Part 2). */
+    margin: 10px 0;
+}
+#ops-section .replen-recsum-table th,
+#ops-section .replen-recsum-table td {
+    padding: 4px 8px;
+    text-align: left;
+    white-space: nowrap;       /* single line — e.g. "Stock Sufficient" never wraps, never ellipsis */
+    overflow: visible;
+    vertical-align: middle;
+}
+/* Header: light gray background (Part 2), dark readable text — Recommendation Summary ONLY. */
+#ops-section .replen-recsum-table thead th {
+    background: #F1F5F9;
+    color: #1f2937;
+    font-weight: 600;
+}
+#ops-section .replen-recsum-table .replen-recsum-table__num { text-align: right; }
+
+/* Execution Plan — shared grid for header + every route row so columns align. Flexible tracks use
+   minmax(100/130px, 1fr) so From/To/Method stay readable; Qty is 60px; the Delete button sits in a
+   fixed 36px track with an 8px column-gap so the Method select and the red X never overlap. The
+   header's last cell (Delete column) has no text (Part 4). */
+#ops-section .ir-exec-plan__grid {
+    display: grid;
+    grid-template-columns: minmax(100px, 1fr) minmax(100px, 1fr) 60px minmax(130px, 1fr) 36px;
+    column-gap: 8px;
+    row-gap: 6px;
+    align-items: center;
+}
+#ops-section .ir-exec-plan__grid--head {
+    font-size: 11px;
+    color: #64748B;
+    font-weight: 600;
+    margin-top: 8px;
+    padding: 0 2px;
+}
+#ops-section .ir-exec-plan__grid--head > span {
+    min-width: 0;
+    white-space: nowrap;       /* labels are short (From / To / Qty / Method) — show in full; last cell empty */
+}
+/* Part 4: From / To / Qty / Method all left-aligned so headers and inputs read consistently. */
+#ops-section .ir-exec-plan__grid--head .ir-exec-plan__qty { text-align: left; }
+#ops-section .ir-exec-plan__grid--head > span:last-child { text-align: center; }
+
+#ops-section .exec-routes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+#ops-section .exec-route-row { margin-bottom: 0; }
+
+/* Route inputs/selects shrink inside their grid tracks (no overflow); Delete button fixed in-track. */
+#ops-section .exec-route-row .replen-card__input {
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+    padding: 2px 4px;
+    box-sizing: border-box;
+}
+#ops-section .exec-route-row .replen-card__input[data-field="qty"] {
+    text-align: left;      /* Part 4: match From / To / Method left alignment */
+}
+#ops-section .exec-route-row .replen-card__select {
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 0;
+    padding: 2px 4px;
+    box-sizing: border-box;
+}
+#ops-section .exec-route-row .replen-card__remove-btn {
+    width: 24px;
+    height: 24px;
+    /* Override the global button min-width: 60px so the X stays a small square and never
+       overlaps the Method select (Part 3). */
+    min-width: 24px;
+    max-width: 24px;
+    padding: 0;
+    margin: 0;
+    justify-self: center;   /* sits centered in its 36px track — not flush to the card edge */
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* Layout v3: NO responsive reflow. On small screens the four groups stay horizontal (fixed width)
+   and the whole expanded row scrolls with the main table (.scroll-col) — the groups never wrap to a
+   new line and never overlap the following SKU rows. (The former @media max-width:900px single-
+   column rule was intentionally removed.) */
+
+/* Top-row cards across ALL groups share one min-height and do not grow, so their bottoms (the
+   divider before the second-row card) line up: Stock / Long Term Storage (Group A grid row 1),
+   Forecast Breakdown (B), Sales Trend (C), Achievement Rate (D). Charts keep their 100px canvas
+   (inline max-height) inside the 150px card — not squeezed. Second-row cards flow naturally. */
+#ops-section .replen-card--stock,
+#ops-section .replen-card--lts,
+#ops-section .replen-card--forecast,
+#ops-section .replen-card--sales-trend,
+#ops-section .replen-card--achievement {
+    min-height: 150px;
+    flex: 0 0 auto;
+}
+/* Chart cards center their canvas in the fixed-height card (no stretch-squeeze). */
+#ops-section .replen-card--sales-trend canvas,
+#ops-section .replen-card--achievement canvas {
+    max-height: 100px;
+}
+
+/* Second-row cards size to content (not stretched) so Upcoming Event matches the Shipping Shipment
+   / 3rd Party Stock small cards in height, and Recommendation Summary / Execution Plan stay compact. */
+#ops-section .replen-card--upcoming,
+#ops-section .replen-card--recommendation-summary,
+#ops-section .replen-card--execution-plan {
+    flex: 0 0 auto;
+}
+
 .ir-panel {
     flex: 1;
     display: flex;
@@ -819,9 +1053,9 @@
 }
 
 .ir-panel--inventory-group {
-    width: 360px;
-    min-width: 360px;
-    flex: 0 0 360px;
+    width: 320px;
+    min-width: 320px;
+    flex: 0 0 320px;
 }
 
 /* ========================================

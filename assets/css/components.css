@@ -825,3 +825,47 @@ table td button {
         gap: 1rem;
     }
 }
+
+/* ============================================================
+   Shared Table Pagination Footer (FC Summary + Request Order)
+   Footer sits OUTSIDE the table markup, below the table container.
+   Left  = "Showing X-Y of N rows"
+   Right = Previous / Page X / Y / Next (+ optional page-size selector)
+   ============================================================ */
+.km-table-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 4px 4px;
+    margin-top: 12px;
+    border-top: 1px solid #E2E8F0;
+}
+.km-table-footer:empty { display: none; }
+.km-table-footer__left {
+    font-size: 13px;
+    color: #64748B;
+}
+.km-table-footer__right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.km-page-btn {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    background: #fff;
+    color: #334155;
+    font-size: 13px;
+    cursor: pointer;
+}
+.km-page-btn:hover:not(:disabled) { background: #F1F5F9; }
+.km-page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.km-page-info {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1E293B;
+}

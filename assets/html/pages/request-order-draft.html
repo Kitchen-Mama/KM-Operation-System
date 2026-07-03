@@ -1,0 +1,18 @@
+<!-- Request Order Draft (Procurement Planning Draft) — Procurement Layer Phase 1.
+     Injected into #request-order-draft-mount by KM.partialLoader on the page lifecycle mount.
+     See docs/planning/REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md. -->
+<section id="request-order-draft-section" class="module-section procurement-page">
+    <div class="page-header procurement-page__header">
+        <h2 class="page-title">Request Order Draft</h2>
+        <div class="procurement-page__header-actions">
+            <button type="button" class="pc-btn pc-btn--primary" onclick="roCreateManualDraft()">+ New Manual Draft</button>
+            <button type="button" class="pc-btn pc-btn--ghost" onclick="roCreateFromShortage()" title="From Shipment / Inventory shortage (Phase 1 placeholder)">From Shortage (soon)</button>
+        </div>
+    </div>
+
+    <div class="procurement-page__note" id="ro-mode-note"></div>
+
+    <div class="procurement-groups" id="ro-groups">
+        <div class="procurement-empty" id="ro-empty">Loading request orders…</div>
+    </div>
+</section>

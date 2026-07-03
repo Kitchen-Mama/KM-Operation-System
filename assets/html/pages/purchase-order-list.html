@@ -1,0 +1,53 @@
+<!-- Purchase Order List (PO operational list / history) — Procurement Layer Phase 1.
+     Injected into #purchase-order-list-mount by KM.partialLoader on the page lifecycle mount.
+     See docs/planning/REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md. -->
+<section id="purchase-order-list-section" class="module-section procurement-page">
+    <div class="page-header procurement-page__header">
+        <h2 class="page-title">Purchase Order List</h2>
+    </div>
+
+    <div class="procurement-page__note" id="pol-mode-note"></div>
+
+    <div class="procurement-filter-bar" id="pol-filter-bar">
+        <div class="procurement-filter procurement-filter--date"><label>Date</label>
+            <button type="button" class="history-date-trigger" id="pol-date-trigger" onclick="polOpenDateModal()">
+                <span class="history-date-trigger-text" id="pol-date-trigger-text">All</span>
+                <span class="history-date-trigger-icon">▼</span>
+            </button>
+        </div>
+        <div class="procurement-filter"><label>Status</label>
+            <select id="pol-f-status" class="pc-input">
+                <option value="">All</option>
+                <option value="draft">Draft</option>
+                <option value="issued">Issued</option>
+                <option value="in_production">In Production</option>
+                <option value="partial_completed">Partial Completed</option>
+                <option value="completed">Completed</option>
+                <option value="partial_shipped">Partial Shipped</option>
+                <option value="shipped">Shipped</option>
+                <option value="closure">Closure</option>
+                <option value="cancelled">Cancelled</option>
+            </select>
+        </div>
+        <div class="procurement-filter"><label>Supplier</label><input type="text" id="pol-f-supplier" class="pc-input" placeholder="All"></div>
+        <div class="procurement-filter"><label>Category</label><input type="text" id="pol-f-category" class="pc-input" placeholder="All"></div>
+        <div class="procurement-filter"><label>Series</label><input type="text" id="pol-f-series" class="pc-input" placeholder="All"></div>
+        <div class="procurement-filter"><label>SKU</label><input type="text" id="pol-f-sku" class="pc-input" placeholder="All"></div>
+        <button type="button" class="pc-btn pc-btn--primary" onclick="polSearch()">Search</button>
+        <button type="button" class="pc-btn pc-btn--default" onclick="polReset()">Reset</button>
+    </div>
+
+    <div class="procurement-table-wrap">
+        <table class="procurement-table procurement-table--list">
+            <thead><tr>
+                <th>SKU</th><th>Category</th><th>Series</th><th>Supplier</th><th>Factory</th>
+                <th>PO No</th><th>Status</th>
+                <th class="pc-num">Ordered</th><th class="pc-num">Completed</th>
+                <th class="pc-num">Shipped</th><th class="pc-num">Remaining</th><th>Updated</th>
+            </tr></thead>
+            <tbody id="pol-tbody">
+                <tr><td colspan="12" class="procurement-empty">Loading purchase orders…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>

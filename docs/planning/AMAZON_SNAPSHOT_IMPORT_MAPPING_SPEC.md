@@ -1,7 +1,7 @@
 # Amazon Snapshot Import — Mapping Reference Spec
 
-**Status:** 🟡 Draft v1.6 — Mapping + import-governance reference spec only (NO DB migration, NO BigQuery, NO API, NO frontend, NO routes)
-**Last Updated:** 2026-06-29
+**Status:** 🟡 Draft v1.7 — Mapping + import-governance reference spec (Daily Sales now uses incremental rolling upsert; NO DB migration, NO BigQuery schema change, NO API, NO frontend, NO routes)
+**Last Updated:** 2026-07-01
 **Maintained By:** Development Team
 **Audience:** developers building the config-driven importer · OP / data stakeholders
 **Cross-reference (context only, not edited here):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (Inventory Layer notes a *future* `amazon_inventory_snapshot`).
@@ -10,6 +10,7 @@
 
 ### Changelog
 
+- **Draft v1.7 (2026-07-01)** — **Amazon Daily Sales → incremental rolling upsert + prune (Daily Sales ONLY).** Config 4 (§7.4, §4, Appendix) gains `writeMode: rolling_upsert`, `retentionDays: 30`, `incrementalDefaultDays: 1` (`lookbackDays: 30` kept as the backfill ceiling). Each daily run now reads **only new completed-day data (default 1 = yesterday)**, **UPSERTs** by natural key `snapshot_date + country + marketplace + channel + sku` (**no full-table rewrite**), then **prunes** destination rows older than 30 days. **BigQuery keeps full history (never pruned); the Google Sheet keeps a rolling 30 completed days.** POST `backfill_days: N` re-reads the last N completed days and upserts them. `import_sync_runs.quality_note` records `write_mode=rolling_upsert; rows_pruned=<n>`. **No new column, no BigQuery schema change.** Implemented in `06_amazon_import_config.gs` (config), `07_amazon_import_runner.gs` (rolling_upsert branch + `options.backfillDays`), `08_amazon_import_sources.gs` (incremental read window), `09_amazon_import_writer_logger.gs` (`amazonUpsertRollingSnapshot_` + `amazonRollingCutoffDate_`). **Configs 1–3 (Inventory / Health / Weekly) unchanged (full snapshot rewrite).**
 - **Draft v1.6 (2026-06-29)** — **Amazon Daily Sales window 7 → 30 completed days (excludes today).** Updated config 4 (§7.4) + the BigQuery rolling-window rule (§4) + Appendix verbatim config to `lookbackDays: 30`, `excludeToday: true`. The 30-day snapshot now serves **both** the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change** — window length only. Applies to `06_amazon_import_config.gs`.
 - **Draft v1.5 (2026-06-29)** — **Optional source headers (`optionalFieldMap`) bug fix.** Added `optionalFieldMap` behavior (§9.1): header validation checks **only** `fieldMap`; optional headers map-if-present else blank and never raise `missing_required_header`. Reworked **Amazon Inventory Health** config (§7.2): age buckets that vary by report version (`inv_age_0_to_90_days`, `inv_age_365_plus_days`, `inv_age_366_to_455_days`, `inv_age_456_plus_days`) moved to `optionalFieldMap`; required `fieldMap` keeps Date/Country/SKU/ASIN/Available + the 61–90 / 91–180 / 181–270 / 271–365 buckets; `rowHashFields` extended to all required + optional buckets. Documented the destination-header naming reminder (`inv_age_456_plus_days`, underscored — not `inv-age-456-plus-days`). Applies to `06_amazon_import_config.gs` + `07_amazon_import_runner.gs` (importer code; spec is the reference).
 
@@ -108,12 +109,13 @@ The source `Week` column is formatted as a range: **`2026-06-15~2026-06-21`** (s
 
 > `snapshot_week` is the **mapped** raw range; `snapshot_month`, `week_start_date`, and `week_end_date` are **derived** (config 3 `derivedFields`).
 
-### BigQuery rolling window (config 4 — Amazon Daily Sales)
-- The query pulls a **rolling 30 completed-day window, excluding today** (`lookbackDays: 30`, `excludeToday: true` ⇒ window ends yesterday and covers the prior 30 completed days). Example: today **2026-06-29** (Asia/Taipei) → **2026-05-30 → 2026-06-28**.
-- The window is **30 days** (not 7) so the same snapshot can feed both the **Sales Trend 7-day display** (latest 7 completed days) and the **Normalized Avg Sales 30-day calculation** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). This is a **window-length change only** — no new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.
-- This handles **timezone differences and Amazon reporting delay**, so late-arriving rows for recent days are picked up on subsequent syncs.
+### BigQuery incremental rolling upsert (config 4 — Amazon Daily Sales)
+- **Write mode `rolling_upsert` (§7.4):** the daily query reads **only the incremental completed-day window** — **default 1 completed day (yesterday)** via `incrementalDefaultDays: 1`, `excludeToday: true`. A POST `backfill_days: N` widens the read to the last **N** completed days (capped at `lookbackDays: 30`). Example: today **2026-07-01** (Asia/Taipei) → default reads **2026-06-30**; `backfill_days: 30` reads **2026-06-01 → 2026-06-30**.
+- Read rows are **UPSERTed** into `amazon_daily_sales_snapshot` by natural key (`snapshot_date + country + marketplace + channel + sku`) — **no full-table rewrite** — then rows older than **`retentionDays: 30`** are **pruned** so the Google Sheet keeps a rolling 30 completed days. **BigQuery keeps full history and is never pruned.**
+- The retained 30 days feed both the **Sales Trend 7-day display** (latest 7 completed days) and the **Normalized Avg Sales 30-day calculation** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.**
+- This handles **timezone differences and Amazon reporting delay**; late-arriving rows for recent days are picked up (and their prior value updated in place, not duplicated) on subsequent syncs.
 - **Daily sync schedule target: 16:00 `Asia/Taipei`** (`scheduleTime: "16:00"`, `scheduleTimezone: "Asia/Taipei"`).
-- The query must **only fetch the needed fields** (those in `fieldMap`) **and only the recent rolling window** (filter on `dateField: "Date"`) — never a full-table scan.
+- The query must **only fetch the needed fields** (those in `fieldMap`) **and only the incremental window** (filter on `dateField: "Date"`) — never a full-table scan.
 
 #### Daily Sales fallback rule (no rows in the rolling window)
 
@@ -399,18 +401,30 @@ Each config classifies destination fields into four kinds:
 
 ---
 
-### 7.4 `amazon_daily_sales_snapshot` (BigQuery, rolling 30 completed-day window, excludes today)
+### 7.4 `amazon_daily_sales_snapshot` (BigQuery, **incremental rolling upsert** + prune, excludes today)
 
-**Daily Sales snapshot window: 30 complete days, exclude today.** This single snapshot serves **two** purposes: (a) the **Sales Trend 7-day display** (the most recent 7 completed days) and (b) the **Normalized Avg Sales 30-day calculation** (event/promotion-day exclusion, `SUPPLY_PLANNING_CALCULATION_RULES.md` §22). Widening 7 → 30 days only increases available snapshot days — **no new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.**
+**Write mode = `rolling_upsert` (Daily Sales ONLY).** The destination Google Sheet keeps a **rolling 30 completed days**; **BigQuery keeps full history and is never pruned**. Each daily run reads **only new completed-day data (default = yesterday / 1 completed day)**, **UPSERTs** it into `amazon_daily_sales_snapshot` by natural key (**no full-table rewrite**), then **prunes** destination rows older than `retentionDays` (30). This replaces the previous behaviour of re-reading and rewriting the whole 30-day window every day. Configs 1–3 are **unchanged** (full snapshot rewrite).
 
-**Plain language:** Unlike configs 1–3, this source is **BigQuery**, not a Google Sheet. The importer queries `amazon-database-489810.AmazonSales.Raw Daily Sales`, fetching **only the mapped fields** and **only the rolling 30 completed-day window excluding today** (window ends yesterday) filtered on the `Date` field — to absorb timezone and Amazon reporting delay. The daily sync runs at **16:00 `Asia/Taipei`**. Sales/traffic metrics are **direct source mappings** (`country` from `Marketplace`; note BQ source headers use underscores, e.g. `Sales_Units`, and `sales_amount_usd`←`Sales_Amount_`). `marketplace` is **fixed** (`Amazon`); metadata/hash/batch/timestamps are **importer-generated**. **Both `site_sku` and `asin` are blank in MVP.** For metadata, `source_file_id` is the fully qualified BQ table reference and `source_sheet_name` is the BQ table name (or blank) — **not** a Google Sheet tab.
+The 30 retained completed days still serve **two** purposes: (a) the **Sales Trend 7-day display** (most recent 7 completed days) and (b) the **Normalized Avg Sales 30-day calculation** (event/promotion-day exclusion, `SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.**
+
+**Plain language:** Unlike configs 1–3, this source is **BigQuery**, not a Google Sheet. The importer queries `amazon-database-489810.AmazonSales.Raw Daily Sales`, fetching **only the mapped fields** and **only the incremental completed-day window** (default the single prior completed day; `backfill_days` widens it) filtered on the `Date` field — to absorb timezone and Amazon reporting delay. The daily sync runs at **16:00 `Asia/Taipei`**. Sales/traffic metrics are **direct source mappings** (`country` from `Marketplace`; note BQ source headers use underscores, e.g. `Sales_Units`, and `sales_amount_usd`←`Sales_Amount_`). `marketplace` is **fixed** (`Amazon`); metadata/hash/batch/timestamps are **importer-generated**. **Both `site_sku` and `asin` are blank in MVP.** For metadata, `source_file_id` is the fully qualified BQ table reference and `source_sheet_name` is the BQ table name (or blank) — **not** a Google Sheet tab.
+
+**Write mode — incremental rolling upsert + prune (authoritative):**
+
+1. **Read window:** default `incrementalDefaultDays: 1` completed day (yesterday, `excludeToday`). A POST `backfill_days: N` reads the last **N** completed days instead (capped at `lookbackDays: 30`).
+2. **Upsert by natural key** `snapshot_date + country + marketplace + channel + sku`: an existing destination row with the same key is **updated**; a new key is **appended**. **No full-table clear.**
+3. **Prune** destination rows where `snapshot_date < today − retentionDays` (30) — Google Sheet keeps only the most recent ~30 completed days. **BigQuery is never pruned** (full history preserved).
+4. The **header row is always preserved**; existing rows **not** in the current batch are preserved (only stale-by-date rows are pruned).
+5. `backfill_days = 30` re-reads the last 30 completed days but still **upserts** (no wipe) — safe to re-run for correction/backfill.
+6. `import_sync_runs` records `rows_read` / `rows_written` (updated + appended) / `status` as usual; `quality_note` adds `write_mode=rolling_upsert; rows_pruned=<n>`.
+7. Implemented by `amazonUpsertRollingSnapshot_()` (09) + the `rolling_upsert` branch in `runAmazonSnapshotImport_` (07) + the incremental window in `amazonReadBigQuerySource_` (08). The **fallback rule below still applies** to the read window (if the incremental window is empty, fall back to latest-available per group).
 
 | Kind | Fields |
 |------|--------|
 | Direct source mappings | `snapshot_date`←Date, `country`←Marketplace, `channel`←Channel, `sku`←SKU, `currency`←Currency, `sales_units`←Sales_Units, `sales_amount`←Sales_Amount, `sales_amount_usd`←Sales_Amount_, `return_units`←Return_Units, `total_orders`←Total_Orders, `session`←Session, `page_view`←Page_View, `unit_session_percentage`←Unit_Session_Percentage, `buy_box_percentage`←Buy_Box_Percentage, `browser_session`←browser_session, `browser_page_views`←browser_page_views, `app_session`←app_session, `app_page_view`←app_page_view |
 | Fixed values | `marketplace` = `Amazon` |
 | Derived fields | — (none) |
-| Query control (not destination fields) | `queryMode: rolling_window`, `dateField: Date`, `lookbackDays: 30`, `excludeToday: true` (⇒ 30 completed days, ends yesterday), `scheduleTime: 16:00`, `scheduleTimezone: Asia/Taipei` |
+| Query / write control (not destination fields) | `queryMode: rolling_window`, `dateField: Date`, **`writeMode: rolling_upsert`**, **`retentionDays: 30`**, **`incrementalDefaultDays: 1`**, `lookbackDays: 30` (backfill ceiling), `excludeToday: true` (window ends yesterday), `scheduleTime: 16:00`, `scheduleTimezone: Asia/Taipei` |
 | Importer-generated | `source_system`, `source_report`, `source_file_id` (= `amazon-database-489810.AmazonSales.Raw Daily Sales`), `source_sheet_name` (`Raw Daily Sales` or blank), `source_row_hash`, `sync_batch_id`, `synced_at`, `created_at`, `updated_at` |
 | Blank in MVP | `site_sku`, `asin` |
 
@@ -436,7 +450,10 @@ Each config classifies destination fields into four kinds:
 
   queryMode: "rolling_window",
   dateField: "Date",
-  lookbackDays: 30,
+  writeMode: "rolling_upsert",     // incremental upsert + prune (Daily Sales only)
+  retentionDays: 30,               // destination keeps 30 completed days; older rows pruned
+  incrementalDefaultDays: 1,       // default daily read = 1 completed day (yesterday)
+  lookbackDays: 30,                // backfill ceiling (POST backfill_days is capped at this)
   excludeToday: true,
   scheduleTime: "16:00",
   scheduleTimezone: "Asia/Taipei",
@@ -494,7 +511,7 @@ Each config classifies destination fields into four kinds:
     "app_page_view"
   ],
 
-  notes: "Pull a rolling 30 completed-day window excluding today (window ends yesterday). Feeds the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation. This handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
+  notes: "Incremental rolling upsert: read only new completed-day data (default 1 = yesterday; backfill_days widens up to 30), upsert by natural key (no full rewrite), then prune rows older than retentionDays (30). Google Sheet keeps 30 completed days; BigQuery keeps full history. Feeds the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation. Handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
 }
 ```
 
@@ -504,7 +521,8 @@ Each config classifies destination fields into four kinds:
 |--------|----------------------------|----------------------|
 | Source identifier | `sourceId` (spreadsheet ID) + `sourceSheetName: "Combined Sheet"` | `sourceProjectId` / `sourceDataset` / `sourceTable` |
 | Read mechanism | read all rows of the `Combined Sheet` tab | **query** with `queryMode: rolling_window`, filtered on `dateField` |
-| Volume control | full sheet (snapshot already scoped) | **rolling 30 completed-day window only** (excludes today); fetch only mapped fields |
+| Volume control | full sheet (snapshot already scoped) | **incremental completed-day window** (default 1 day = yesterday; `backfill_days` widens up to 30, excludes today); fetch only mapped fields |
+| Write mode | full snapshot rewrite (clear + rewrite data rows) | **`rolling_upsert`**: upsert by natural key + prune to `retentionDays` (30); header + non-batch rows preserved (no full rewrite) |
 | Schedule | per importer schedule | **16:00 `Asia/Taipei`**, daily |
 | `source_system` | `Google Sheet Import` | `BigQuery Import` |
 | `source_file_id` | spreadsheet ID | `amazon-database-489810.AmazonSales.Raw Daily Sales` |
@@ -877,11 +895,12 @@ Freshness tells dashboards and the replenishment page whether snapshot data is *
 
 **Current MVP behavior: "latest snapshot retained in the DB sheet, refreshed on each sync."**
 
-- Snapshot tabs are refreshed by **clear-and-rewrite of the data rows** (header preserved).
+- Snapshot tabs (configs 1–3: Inventory / Health / Weekly Sales) are refreshed by **clear-and-rewrite of the data rows** (header preserved).
+- **Exception — `amazon_daily_sales_snapshot` (config 4) uses an incremental rolling upsert + prune** (`writeMode: rolling_upsert`, §7.4): each run **upserts** only new completed-day rows by natural key (no clear-and-rewrite) and **prunes** rows older than `retentionDays` (30). The tab therefore holds a **rolling 30 completed days** — a bounded window, still not a permanent archive.
 - They represent the **latest operational snapshot** available to the system.
 - They are **not** designed as the long-term historical archive in MVP.
 - **Do not** describe the Google Sheet snapshot tabs as holding full permanent row-level history.
-- Historical retention may later move to **BigQuery or a dedicated history table** (future).
+- Historical retention lives in **BigQuery** (the Daily Sales source table keeps full history and is **never pruned** by the importer); a dedicated history table may be added later.
 - The daily / weekly / inventory / health **source systems may still preserve their own history externally** — that history lives upstream, not in these snapshot tabs.
 
 ---
@@ -1170,7 +1189,10 @@ The authoritative config blocks, reproduced together for the importer task. (Ide
 
   queryMode: "rolling_window",
   dateField: "Date",
-  lookbackDays: 30,
+  writeMode: "rolling_upsert",     // incremental upsert + prune (Daily Sales only)
+  retentionDays: 30,               // destination keeps 30 completed days; older rows pruned
+  incrementalDefaultDays: 1,       // default daily read = 1 completed day (yesterday)
+  lookbackDays: 30,                // backfill ceiling (POST backfill_days is capped at this)
   excludeToday: true,
   scheduleTime: "16:00",
   scheduleTimezone: "Asia/Taipei",
@@ -1228,7 +1250,7 @@ The authoritative config blocks, reproduced together for the importer task. (Ide
     "app_page_view"
   ],
 
-  notes: "Pull a rolling 30 completed-day window excluding today (window ends yesterday). Feeds the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation. This handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
+  notes: "Incremental rolling upsert: read only new completed-day data (default 1 = yesterday; backfill_days widens up to 30), upsert by natural key (no full rewrite), then prune rows older than retentionDays (30). Google Sheet keeps 30 completed days; BigQuery keeps full history. Feeds the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation. Handles timezone and Amazon reporting delay. site_sku and asin are intentionally left blank in MVP."
 }
 ```
 

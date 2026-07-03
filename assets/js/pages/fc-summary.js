@@ -32,28 +32,33 @@ function getFcFilters() {
   };
 }
 
-// Filter Regular Forecast data
+// Filter Regular Forecast data.
+// Checkbox-dimension semantics (Company / Marketplace / Country / Category / Series):
+//   all checked (default) → every value included → all rows shown;
+//   a subset checked      → only those values shown;
+//   NONE checked (All toggled off) → show NOTHING for that dimension (empty until the user selects).
+// Matching is by internal value (marketplace = canonical key), never the display label.
 function filterFcRegular(data, filters) {
   return data.filter(item => {
     if (filters.year && item.year.toString() !== filters.year) return false;
-    if (filters.companies.length > 0 && !filters.companies.includes(item.company)) return false;
-    if (filters.marketplaces.length > 0 && !filters.marketplaces.includes(item.marketplace)) return false;
-    if (filters.countries.length > 0 && !filters.countries.includes(item.country)) return false;
-    if (filters.categories.length > 0 && !filters.categories.includes(item.category)) return false;
-    if (filters.series.length > 0 && !filters.series.includes(item.series)) return false;
+    if (!filters.companies.includes(item.company)) return false;
+    if (!filters.marketplaces.includes(item.marketplace)) return false;
+    if (!filters.countries.includes(item.country)) return false;
+    if (!filters.categories.includes(item.category)) return false;
+    if (!filters.series.includes(item.series)) return false;
     if (filters.sku && !item.sku.toLowerCase().includes(filters.sku)) return false;
     return true;
   });
 }
 
-// Filter Event Forecast data
+// Filter Event Forecast data (same "none checked → show nothing" semantics as filterFcRegular).
 function filterFcEvent(data, filters) {
   return data.filter(item => {
     if (filters.year && item.year.toString() !== filters.year) return false;
-    if (filters.companies.length > 0 && !filters.companies.includes(item.company)) return false;
-    if (filters.marketplaces.length > 0 && !filters.marketplaces.includes(item.marketplace)) return false;
-    if (filters.countries.length > 0 && !filters.countries.includes(item.country)) return false;
-    if (filters.events.length > 0 && !filters.events.includes(item.event)) return false;
+    if (!filters.companies.includes(item.company)) return false;
+    if (!filters.marketplaces.includes(item.marketplace)) return false;
+    if (!filters.countries.includes(item.country)) return false;
+    if (!filters.events.includes(item.event)) return false;
     if (filters.sku && !item.sku.toLowerCase().includes(filters.sku)) return false;
     return true;
   });
@@ -114,7 +119,7 @@ function renderFcRegularTable() {
       <div class="scroll-row">
         <div class="scroll-cell">${item.year}</div>
         <div class="scroll-cell">${item.company}</div>
-        <div class="scroll-cell">${item.marketplace}</div>
+        <div class="scroll-cell">${_fcMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
         <div class="scroll-cell">${item.country}</div>
         <div class="scroll-cell">${item.category}</div>
         <div class="scroll-cell">${item.series}</div>
@@ -189,12 +194,14 @@ function renderFcEventTable() {
     return;
   }
   
-  // === Demo Data Layer: Phase 3C (Event) ===
-  var _fcEventSource = []; // Default: no data
+  // === Data source: Demo ON -> demo mapping; Demo OFF -> Google Sheet fc_special_events ===
+  var _fcEventSource;
   if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
     _fcEventSource = _getDemoFcEventData();
+  } else {
+    _fcEventSource = _getDbFcEventData();
   }
-  // === End Demo Data Layer ===
+  // === End Data source ===
   const filteredData = filterFcEvent(_fcEventSource, filters);
   
   // Paginate data
@@ -227,7 +234,7 @@ function renderFcEventTable() {
       <div class="scroll-row">
         <div class="scroll-cell">${item.year}</div>
         <div class="scroll-cell">${item.company}</div>
-        <div class="scroll-cell">${item.marketplace}</div>
+        <div class="scroll-cell">${_fcMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
         <div class="scroll-cell">${item.country}</div>
         <div class="scroll-cell">${item.category}</div>
         <div class="scroll-cell">${item.series}</div>
@@ -289,19 +296,53 @@ function calculateEventFcPercentages(data) {
   return percentages;
 }
 
-// Update pagination info and controls
-function updatePaginationInfo(totalItems) {
+// Which FC Summary tab is active (regular / event / target).
+function _fcActiveTab() {
+  const t = document.querySelector('.fc-tab--active');
+  return t ? (t.dataset.tab || 'regular') : 'regular';
+}
+
+// Filtered row count for the CURRENTLY ACTIVE tab (Regular / Event share one footer, so the footer
+// must always reflect the active tab — not whichever table rendered last).
+function _fcActiveFilteredCount() {
+  const filters = getFcFilters();
+  if (!filters.year) return 0;
+  const demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  const tab = _fcActiveTab();
+  if (tab === 'event') {
+    const es = demoOn ? _getDemoFcEventData() : _getDbFcEventData();
+    return filterFcEvent(es, filters).length;
+  }
+  if (tab === 'regular') {
+    const rs = demoOn ? _getDemoFcRegularData() : _getDbFcRegularData();
+    return filterFcRegular(rs, filters).length;
+  }
+  return 0;   // target tab is not paginated
+}
+
+// Update pagination footer + controls. Always recomputes from the ACTIVE tab (the passed argument,
+// if any, is ignored) so the order in which the Regular/Event tables render can never leave a stale
+// "Showing 0-0 of 0". Footer is hidden on the (non-paginated) Target tab.
+function updatePaginationInfo() {
+  const pag = document.querySelector('.fc-pagination');
+  const tab = _fcActiveTab();
+  if (tab === 'target') { if (pag) pag.style.display = 'none'; return; }
+  if (pag) pag.style.display = '';
+
+  const totalItems = _fcActiveFilteredCount();
   fcPaginationState.totalItems = totalItems;
   const totalPages = Math.ceil(totalItems / fcPaginationState.pageSize);
+  // Safety clamp (handlers already reset page on filter/page-size/tab change).
+  if (fcPaginationState.currentPage > totalPages) fcPaginationState.currentPage = totalPages || 1;
+
   const startIdx = totalItems === 0 ? 0 : (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize + 1;
   const endIdx = Math.min(fcPaginationState.currentPage * fcPaginationState.pageSize, totalItems);
-  
-  document.getElementById('fc-pagination-info').textContent = 
-    `Showing ${startIdx}-${endIdx} of ${totalItems}`;
-  document.getElementById('fc-page-number').textContent = 
-    totalPages === 0 ? '0' : `${fcPaginationState.currentPage} / ${totalPages}`;
-  
-  // Update button states
+
+  document.getElementById('fc-pagination-info').textContent =
+    `Showing ${startIdx}-${endIdx} of ${totalItems} rows`;
+  document.getElementById('fc-page-number').textContent =
+    totalPages === 0 ? 'Page 0 / 0' : `Page ${fcPaginationState.currentPage} / ${totalPages}`;
+
   document.getElementById('fc-prev-page').disabled = fcPaginationState.currentPage <= 1;
   document.getElementById('fc-next-page').disabled = fcPaginationState.currentPage >= totalPages;
 }
@@ -369,6 +410,12 @@ function initFcTabs() {
       
       // Update action buttons based on tab
       updateActionButtons(targetTab);
+
+      // Re-render the active tab so the shared pagination footer reflects it (reset to page 1).
+      fcPaginationState.currentPage = 1;
+      if (targetTab === 'regular') renderFcRegularTable();
+      else if (targetTab === 'event') renderFcEventTable();
+      else { if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable(); updatePaginationInfo(); }
     });
   });
 }
@@ -478,7 +525,7 @@ function toggleFcAll(checkbox, filterType) {
   checkboxes.forEach(cb => {
     cb.checked = checkbox.checked;
   });
-  
+
   updateFcFilterText(filterType);
   fcPaginationState.currentPage = 1;
   renderFcRegularTable();
@@ -491,10 +538,10 @@ function updateFcFilter(filterType) {
   const allCheckbox = panel.querySelector('input[value=""]');
   const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
   const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-  
+
   // Update "All" checkbox
   allCheckbox.checked = checkedCount === checkboxes.length;
-  
+
   updateFcFilterText(filterType);
   fcPaginationState.currentPage = 1;
   renderFcRegularTable();
@@ -643,7 +690,7 @@ function renderFcRegularTableEditable() {
       <div class="scroll-row" data-row-idx="${idx}">
         <div class="scroll-cell fc-cell-readonly">${item.year}</div>
         <div class="scroll-cell fc-cell-readonly">${item.company}</div>
-        <div class="scroll-cell fc-cell-readonly">${item.marketplace}</div>
+        <div class="scroll-cell fc-cell-readonly">${_fcMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
         <div class="scroll-cell fc-cell-readonly">${item.country}</div>
         <div class="scroll-cell fc-cell-readonly">${item.category}</div>
         <div class="scroll-cell fc-cell-readonly">${item.series}</div>
@@ -799,7 +846,7 @@ function renderFcEventTableEditable() {
       <div class="scroll-row" data-row-idx="${idx}">
         <div class="scroll-cell fc-cell-readonly">${item.year}</div>
         <div class="scroll-cell fc-cell-readonly">${item.company}</div>
-        <div class="scroll-cell fc-cell-readonly">${item.marketplace}</div>
+        <div class="scroll-cell fc-cell-readonly">${_fcMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
         <div class="scroll-cell fc-cell-readonly">${item.country}</div>
         <div class="scroll-cell fc-cell-readonly">${item.category}</div>
         <div class="scroll-cell fc-cell-readonly">${item.series}</div>
@@ -1008,18 +1055,34 @@ function saveNewTargetRule() {
     percentages[m] = parseInt(document.getElementById(`target-${m}`).value) || 100;
   });
   
-  const rule = {
-    id: `rule-${Date.now()}`,
-    scope,
-    year,
-    marketplace,
-    category: scope !== 'SKU' ? document.getElementById('target-category-input').value : null,
-    series: (scope === 'Series' || scope === 'SKU') ? document.getElementById('target-series-input').value : null,
-    sku: scope === 'SKU' ? document.getElementById('target-sku-input').value : null,
-    percentages
-  };
-  
-  targetRules.push(rule);
+  const category = scope !== 'SKU' ? document.getElementById('target-category-input').value : null;
+  const series = (scope === 'Series' || scope === 'SKU') ? document.getElementById('target-series-input').value : null;
+  const sku = scope === 'SKU' ? document.getElementById('target-sku-input').value : null;
+
+  // Demo OFF → write fc_target_rules; Demo ON → keep local mock (no DB dependency in demo).
+  if (_fcUseDb()) {
+    const payload = {
+      scope_type: scope,
+      scope_id: scope === 'SKU' ? sku : (scope === 'Series' ? series : category),
+      year: year,
+      marketplace: marketplace,
+      category: category || '',
+      series: series || '',
+      sku: sku || '',
+      target_percentage: percentages.jan,
+      actor: 'fc-summary'
+    };
+    months.forEach(m => { payload[`${m}_pct`] = percentages[m]; });
+    if (!window.KM.DB.upsertFcTargetRule) { alert('Target rule write API not available.'); return; }
+    window.KM.DB.upsertFcTargetRule(payload)
+      .then(() => { renderTargetRulesTable(); closeFcModal(); alert('Target rule saved to DB'); })
+      .catch(err => alert('Save failed: ' + (err && err.message ? err.message : err)));
+    return;
+  }
+
+  targetRules.push({
+    id: `rule-${Date.now()}`, scope, year, marketplace, category, series, sku, percentages
+  });
   renderTargetRulesTable();
   closeFcModal();
   alert('Target rule added successfully');
@@ -1027,8 +1090,9 @@ function saveNewTargetRule() {
 
 // Get effective target percentage
 function getEffectiveTargetPct({ sku, year, month, category, series, marketplace }) {
+  const targetRules = _getActiveTargetRules();   // live DB (Demo OFF) or local mock (Demo ON)
   // 1. Check SKU level
-  const skuRule = targetRules.find(r => 
+  const skuRule = targetRules.find(r =>
     r.scope === 'SKU' && 
     r.sku === sku && 
     r.year === year &&
@@ -1068,20 +1132,23 @@ function calculateEffectiveFC(baseFC, targetPct) {
 function renderTargetRulesTable() {
   const fixedBody = document.getElementById('fc-target-fixed-body');
   const scrollBody = document.getElementById('fc-target-scroll-body');
-  
-  if (targetRules.length === 0) {
+
+  // Demo OFF → live fc_target_rules; Demo ON → local mock array. No longer local-only.
+  const rules = _getActiveTargetRules();
+
+  if (rules.length === 0) {
     fixedBody.innerHTML = '';
     scrollBody.innerHTML = '<div class="empty-row">No target rules defined</div>';
     return;
   }
-  
-  fixedBody.innerHTML = targetRules.map(rule => `
+
+  fixedBody.innerHTML = rules.map(rule => `
     <div class="fixed-row">
       <div class="fixed-cell">${rule.scope}</div>
     </div>
   `).join('');
-  
-  scrollBody.innerHTML = targetRules.map(rule => {
+
+  scrollBody.innerHTML = rules.map(rule => {
     const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     return `
       <div class="scroll-row">
@@ -1103,7 +1170,16 @@ function renderTargetRulesTable() {
 
 function deleteTargetRule(ruleId) {
   if (!confirm('Delete this target rule?')) return;
-  
+
+  // Demo OFF → hard-delete fc_target_rules by id; Demo ON → local splice.
+  if (_fcUseDb()) {
+    if (!window.KM.DB.deleteFcTargetRule) { alert('Target rule delete API not available.'); return; }
+    window.KM.DB.deleteFcTargetRule({ target_rule_id: ruleId })
+      .then(() => { renderTargetRulesTable(); })
+      .catch(err => alert('Delete failed: ' + (err && err.message ? err.message : err)));
+    return;
+  }
+
   const idx = targetRules.findIndex(r => r.id === ruleId);
   if (idx !== -1) {
     targetRules.splice(idx, 1);
@@ -1136,7 +1212,8 @@ function closeFcModal() {
 // Validate data integrity across all three datasets
 function validateDataIntegrity() {
   const issues = [];
-  
+  const targetRules = _getActiveTargetRules();   // live DB (Demo OFF) or local mock (Demo ON)
+
   // Check 1: Target Rules with SKU scope should have matching Base FC
   targetRules.forEach(rule => {
     if (rule.scope === 'SKU' && rule.sku) {
@@ -1358,163 +1435,786 @@ function openRegularUpdateModal() {
   document.getElementById('regular-target-year').value = fcTargetYear;
   document.getElementById('regular-base-year').value = fcTargetYear - 1;
   document.getElementById('regular-update-method').value = 'actual';
+  var skuEl = document.getElementById('regular-sku'); if (skuEl) skuEl.value = '';
+  _populateRegularScopeSelects();
+  // Reset manual month inputs.
+  ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].forEach(function(m){
+    var el = document.getElementById('reg-' + m); if (el) el.value = 0;
+  });
   toggleRegularMethodFields();
   showFcModal('fc-regular-update-modal');
 }
 
-// Toggle fields based on selected method
+// SKU / Country / Marketplace changed — if in Manual mode, (re)prefill Jan–Dec from existing FC.
+function onRegularScopeChange() {
+  if (document.getElementById('regular-update-method').value === 'manual') _regularPrefillManual();
+}
+// Back-compat alias (SKU field still calls this).
+function onRegularSkuChange() { onRegularScopeChange(); }
+
+// Resolve a dropdown value (which may be a canonical marketplace key OR a display name) back to the
+// canonical marketplace key stored in the DB. Canonical value → itself; a display name → its key.
+function _fcResolveMarketplaceKey(value) {
+  value = String(value == null ? '' : value).trim();
+  if (!value) return '';
+  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  function lo(v){ return String(v == null ? '' : v).trim().toLowerCase(); }
+  // Already a canonical key?
+  if (mkts.some(function(m){ return lo(m.marketplace) === lo(value); })) return value;
+  // A display name → map to its canonical key.
+  var byDisplay = mkts.filter(function(m){ return lo(m.marketplaceDisplayName) === lo(value); })[0];
+  return byDisplay ? byDisplay.marketplace : value;
+}
+
+// Resolve a canonical marketplace key to its display label (marketplace_display_name if present,
+// else the key). Prefer a company + country match to disambiguate shared platform names.
+function _fcMarketplaceLabel(key, company, country) {
+  key = String(key == null ? '' : key).trim();
+  if (!key) return '';
+  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  function up(v){ return String(v == null ? '' : v).trim().toUpperCase(); }
+  var exact = mkts.filter(function(m){ return up(m.marketplace) === up(key) &&
+    (!company || up(m.company) === up(company)) && (!country || up(m.country) === up(country)) &&
+    m.marketplaceDisplayName; })[0];
+  if (exact) return exact.marketplaceDisplayName;
+  var any = mkts.filter(function(m){ return up(m.marketplace) === up(key) && m.marketplaceDisplayName; })[0];
+  return any ? any.marketplaceDisplayName : key;
+}
+
+// Build marketplace dropdown options: { value: canonical key, label: display name (fallback key) }.
+// Deduped by value+label PAIR so distinct display names for the same key are all kept (never
+// collapsed on key alone). fc_regular_forecast keys not in the registry appear canonical-only.
+function _fcMarketplaceOptions() {
+  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var fcRows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var out = [], seenPair = {}, seenValue = {};
+  function add(value, label) {
+    value = String(value == null ? '' : value).trim(); if (!value) return;
+    label = String(label == null ? '' : label).trim() || value;
+    var k = value + '||' + label;
+    if (seenPair[k]) return; seenPair[k] = 1; seenValue[value] = 1;
+    out.push({ value: value, label: label });
+  }
+  mkts.forEach(function(m){ add(m.marketplace, m.marketplaceDisplayName || m.marketplace); });
+  fcRows.forEach(function(r){ var v = String(r.marketplace || '').trim(); if (v && !seenValue[v]) add(v, v); });
+  out.sort(function(a, b){ return a.label.localeCompare(b.label); });
+  if (!out.length) ['Amazon','Walmart','Shopify','Target'].forEach(function(m){ add(m, m); });
+  return out;
+}
+
+// Prefill the Jan–Dec inputs from the existing fc_regular_forecast row for the selected
+// full SITE identity: COMPANY + Country + Marketplace + SKU + Target Year (read-only lookup).
+//   - Company is derived from the selected marketplace(site) option (KM Amazon ≠ ResUS Amazon).
+//   - No SKU selected  → do NOT touch the month inputs (avoids wiping a partially-typed grid to 0).
+//   - Live + cache not loaded yet → disable Save, show "loading" helper, do not overwrite.
+//   - Match found      → fill each month; a blank/empty stored month stays blank (never forced 0).
+//   - No match         → reset ALL months to 0 (never fall back to a different company's row).
+function _regularPrefillManual() {
+  var months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  var sku = ((document.getElementById('regular-sku') || {}).value || '').trim();
+  var site = _regularSelectedSite();
+  var company = site.company, country = site.country, marketplace = site.marketplace;
+  var year = parseInt(document.getElementById('regular-target-year').value);
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+
+  // Loading guard: in live mode, if the DB cache has not loaded yet, do NOT prefill (would read an
+  // empty set and could mislead). Disable Save until it is ready.
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  if (!demoOn && !window._opDbCache) {
+    _setRegularSaveEnabled(false);
+    _setRegularManualHelp('Loading existing forecast… please wait.', '#b45309');
+    return;
+  }
+
+  if (!sku) {
+    _setRegularSaveEnabled(true);
+    _setRegularManualHelp('Enter a SKU to load its existing monthly forecast.', '#64748B');
+    return;
+  }
+
+  // Match by the FULL site identity (company + country + marketplace + sku + year). Company MUST
+  // match — KM / US / Amazon never loads ResUS / US / Amazon (and vice-versa).
+  var demoSrc = demoOn ? (fcRegularMock || []).map(function(r){ return { company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku, year: r.year,
+    jan: r.months && r.months[0], feb: r.months && r.months[1], mar: r.months && r.months[2], apr: r.months && r.months[3],
+    may: r.months && r.months[4], jun: r.months && r.months[5], jul: r.months && r.months[6], aug: r.months && r.months[7],
+    sep: r.months && r.months[8], oct: r.months && r.months[9], nov: r.months && r.months[10], dec: r.months && r.months[11] }; }) : null;
+  var rows = demoSrc || ((window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : []);
+  var match = rows.filter(function(r){
+    return up(r.sku) === up(sku) && String(r.year) === String(year) &&
+      up(r.company) === up(company) &&
+      up(r.country) === up(country) &&
+      lo(r.marketplace) === lo(marketplace);
+  })[0];
+
+  if (match) {
+    months.forEach(function(m){
+      var el = document.getElementById('reg-' + m); if (!el) return;
+      var raw = match[m];
+      // Blank/empty stored month → keep the field blank (do NOT force 0). Otherwise show the value.
+      el.value = (raw === '' || raw === null || raw === undefined) ? '' : (Math.round(Number(raw)) || 0);
+    });
+    _setRegularManualHelp('Existing forecast loaded for ' + sku + ' (' + (company || '—') + ' / ' + (country || '—') + ' / ' +
+      _fcMarketplaceLabel(marketplace, company, country) + ', ' + year + '). Editing will update this row.', '#0f766e');
+  } else {
+    // No existing row for this SKU + Country + Marketplace + Year → reset EVERY month to 0.
+    // (Must NOT retain the previously-loaded marketplace's values, e.g. switching US Amazon → eBay.)
+    months.forEach(function(m){ var el = document.getElementById('reg-' + m); if (el) el.value = 0; });
+    _setRegularManualHelp('No existing FC found for this Marketplace. Saving will create a new forecast row.', '#b45309');
+  }
+  _setRegularSaveEnabled(true);
+}
+
+// Enable/disable the Regular modal Save button (used during prefill loading).
+function _setRegularSaveEnabled(on) {
+  var btn = document.getElementById('regular-save-btn');
+  if (btn) { btn.disabled = !on; btn.style.opacity = on ? '' : '0.5'; btn.style.pointerEvents = on ? '' : 'none'; }
+}
+
+// Set the Manual-mode helper text (created new / loaded existing / loading).
+function _setRegularManualHelp(msg, color) {
+  var el = document.getElementById('regular-manual-help');
+  if (el) { el.textContent = msg || ''; el.style.color = color || '#64748B'; el.style.display = msg ? '' : 'none'; }
+}
+
+// Populate Country / Marketplace selects from live marketplaces (Demo OFF) or fc_regular_forecast /
+// static fallback. NO Company select — company is derived from marketplaces / marketplace_skus.
+function _populateRegularScopeSelects() {
+  // Demo ON → demo dataset only; Demo OFF (live) → live sources only (never mix demo into live,
+  // which previously produced duplicate marketplaces e.g. two "Amazon").
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  var mkts = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
+  var srcCountries = demoOn
+    ? (fcRegularMock || []).map(function(r){ return r.country; })
+    : mkts.map(function(m){return m.country;}).concat(fcRows.map(function(r){return r.country;}));
+  var countries = distinct(srcCountries);
+  if (!countries.length) countries = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
+
+  var filters = (typeof getFcFilters === 'function') ? getFcFilters() : { countries: [], marketplaces: [] };
+  var defCountry = (filters.countries && filters.countries.length === 1) ? filters.countries[0] : (countries[0] || '');
+
+  var cSel = document.getElementById('regular-country');
+  if (cSel) cSel.innerHTML = countries.map(function(c){ return '<option value="' + c + '"' + (c === defCountry ? ' selected' : '') + '>' + c + '</option>'; }).join('');
+  // Marketplace select carries the full SITE identity (company|country|marketplace) — see below.
+  _regularRebuildSites();
+}
+
+// Distinct forecast SITES (company + country + marketplace) for a country, for the Regular modal's
+// Marketplace select. value = "company|country|marketplace" (full site identity, so KM Amazon and
+// ResUS Amazon are DISTINCT options); label = display name, disambiguated by company when a
+// country+marketplace maps to more than one company. Sources: marketplaces registry + live
+// fc_regular_forecast + demo fcRegularMock.
+function _fcRegularSiteOptions(country) {
+  // Demo ON → demo dataset only; Demo OFF (live) → live registry + live fc_regular_forecast only.
+  // (Mixing the demo dataset into live is what produced duplicate marketplaces like two "Amazon".)
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  var mkts = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  function tr(v){ return String(v==null?'':v).trim(); }
+  function up(v){ return tr(v).toUpperCase(); }
+  var map = {};
+  function add(company, ctry, mkt, display) {
+    company = tr(company); ctry = tr(ctry); mkt = tr(mkt);
+    if (!company || !ctry || !mkt) return;
+    if (country && up(ctry) !== up(country)) return;
+    // Case-insensitive identity key so the SAME site from different sources (registry vs
+    // fc_regular_forecast) never becomes two options; the option value keeps the original casing.
+    var key = up(company) + '|' + up(ctry) + '|' + up(mkt);
+    if (!map[key]) map[key] = { value: company + '|' + ctry + '|' + mkt, company: company, country: ctry, marketplace: mkt, display: tr(display) };
+    else if (!map[key].display && display) map[key].display = tr(display);
+  }
+  if (demoOn) {
+    (fcRegularMock || []).forEach(function(r){ add(r.company, r.country, r.marketplace, _fcMarketplaceLabel(r.marketplace, r.company, r.country)); });
+  } else {
+    mkts.forEach(function(m){ add(m.company, m.country, m.marketplace, m.marketplaceDisplayName || m.marketplace); });
+    fcRows.forEach(function(r){ add(r.company, r.country, r.marketplace, _fcMarketplaceLabel(r.marketplace, r.company, r.country)); });
+  }
+  var list = Object.keys(map).map(function(k){ return map[k]; });
+  // Visible label = marketplace_display_name only (fallback to marketplace). Company is NOT appended
+  // — the internal identity (value = company|country|marketplace) still keeps KM Amazon vs ResUS
+  // Amazon strictly separated; only the displayed text is the clean display name.
+  list.forEach(function(s){ s.label = s.display || s.marketplace; });
+  list.sort(function(a,b){ return a.label.localeCompare(b.label) || a.company.localeCompare(b.company); });
+  return list;
+}
+
+// Rebuild the Marketplace(site) options for the currently-selected country; preserve the selection
+// if still valid. Called on open and whenever Country changes.
+function _regularRebuildSites() {
+  var cSel = document.getElementById('regular-country');
+  var mSel = document.getElementById('regular-marketplace');
+  if (!mSel) return;
+  var country = cSel ? cSel.value : '';
+  var prev = mSel.value;
+  var sites = _fcRegularSiteOptions(country);
+  mSel.innerHTML = sites.map(function(s){ return '<option value="' + s.value + '">' + s.label + '</option>'; }).join('');
+  if (prev && sites.some(function(s){ return s.value === prev; })) mSel.value = prev;
+}
+
+// Resolve the selected Regular modal site → { company, country, marketplace } (full identity).
+// Marketplace value is "company|country|marketplace"; legacy/blank falls back to canonical marketplace.
+function _regularSelectedSite() {
+  var v = String((document.getElementById('regular-marketplace') || {}).value || '');
+  var parts = v.split('|');
+  if (parts.length === 3) return { company: parts[0], country: parts[1], marketplace: parts[2] };
+  var country = (document.getElementById('regular-country') || {}).value || '';
+  return { company: '', country: country, marketplace: _fcResolveMarketplaceKey(v) };
+}
+
+// Country changed → rebuild the site (Marketplace) options for that country, then re-prefill.
+function onRegularCountryChange() {
+  _regularRebuildSites();
+  onRegularScopeChange();
+}
+
+// Toggle fields based on selected method (Part 3 conditional UI).
+//   actual    → Country/Marketplace/Target Year/Base Year/Growth Rate   (hide Month + Jan–Dec)
+//   prevMonth → Country/Marketplace/Target Year/Month/Growth Rate        (hide Base Year + Jan–Dec)
+//   manual    → Country/Marketplace/Target Year/Jan–Dec                  (hide Base Year + Growth + Month)
 function toggleRegularMethodFields() {
   const method = document.getElementById('regular-update-method').value;
-  const targetMonthRow = document.getElementById('target-month-row');
-  const growthRateInput = document.getElementById('regular-growth-rate');
+  const monthRow = document.getElementById('regular-month-row');
+  const basedRow = document.getElementById('regular-based-row');
+  const manualGrid = document.getElementById('regular-manual-months');
+  const baseYearGroup = document.getElementById('regular-base-year-group');
+  const growthGroup = document.getElementById('regular-growth-group');
   const methodDesc = document.getElementById('method-description');
-  
-  if (method === 'manual') {
-    targetMonthRow.style.display = 'flex';
-    growthRateInput.parentElement.parentElement.style.display = 'flex';
-    methodDesc.innerHTML = '<strong>Manual Input:</strong> Select a specific month. Uses Base Year\'s Forecast Units for that month × (1 + Growth Rate%) to generate Target Year forecast for the selected month only.';
-  } else {
-    targetMonthRow.style.display = 'none';
-    growthRateInput.parentElement.parentElement.style.display = 'flex';
-    
-    if (method === 'actual') {
-      methodDesc.innerHTML = '<strong>Apply Growth Rate:</strong> Uses Base Year\'s Actual Units × (1 + Growth Rate%) to generate Target Year forecast for all months.';
-    } else if (method === 'forecast') {
-      methodDesc.innerHTML = '<strong>Copy from Previous Year:</strong> Uses Base Year\'s Forecast Units × (1 + Growth Rate%) to generate Target Year forecast for all months.';
-    }
+  function show(el, on) { if (el) el.style.display = on ? '' : 'none'; }
+
+  if (method === 'actual') {
+    show(baseYearGroup, true); show(growthGroup, true); show(monthRow, false); show(basedRow, false); show(manualGrid, false);
+    methodDesc.innerHTML = '<strong>Apply Growth Rate (Based on Actual Sales):</strong> use Base Year actual sales (from BQ) for the selected Country / Marketplace / SKU, then apply Growth Rate. Growth Rate must be &gt; 0.';
+    _setRegularManualHelp('', ''); _setRegularSaveEnabled(true);   // manual-only guards don't apply
+  } else if (method === 'prevMonth') {
+    show(baseYearGroup, false); show(growthGroup, true); show(monthRow, true); show(basedRow, true); show(manualGrid, false);
+    _regularSyncBasedFromTarget();   // default Based Year/Month = the month before Target (editable)
+    methodDesc.innerHTML = '<strong>Adjust From Previous Month Forecast:</strong> select the Target Year + Month and the source Based Year + Month explicitly (e.g. Target 2027 Jan → Based 2026 Dec), then apply the rate. The source month is never silently inferred.';
+    _setRegularManualHelp('', ''); _setRegularSaveEnabled(true);
+  } else if (method === 'manual') {
+    show(baseYearGroup, false); show(growthGroup, false); show(monthRow, false); show(basedRow, false); show(manualGrid, true);
+    methodDesc.innerHTML = '<strong>Manual Monthly Forecast:</strong> enter the forecast for each month (Jan–Dec) directly. Existing values for the selected SKU / Country / Marketplace / Target Year are prefilled — a blank stored month stays blank (never forced to 0).';
+    _regularPrefillManual();   // fills months + sets helper text + toggles Save
   }
 }
 
-// Open Event Modal
+// Default the Based Year / Based Month to the month immediately before the selected Target Month
+// (Target Jan → previous-year Dec). Only sets defaults; the user may override either field.
+function _regularSyncBasedFromTarget() {
+  var basedYearEl = document.getElementById('regular-based-year');
+  var basedMonthEl = document.getElementById('regular-based-month');
+  var targetMonthEl = document.getElementById('regular-target-month');
+  if (!basedYearEl || !basedMonthEl || !targetMonthEl) return;
+  var targetYear = parseInt(document.getElementById('regular-target-year').value) || (new Date()).getFullYear();
+  var tm = parseInt(targetMonthEl.value || '0');
+  var basedMonth = tm > 0 ? tm - 1 : 11;
+  var basedYear = tm > 0 ? targetYear : targetYear - 1;
+  basedMonthEl.value = String(basedMonth);
+  basedYearEl.value = basedYear;
+}
+
+// ===== Special Event Builder v2 (Single SKU rows / Category-Series group cards) =====
+var EVT_MAX_ROWS = 8;
+var _evtGroups = [];   // batch-mode group cards: { category, series, regularPrice, skus[], dealPrice, fcQty }
+
+// Open Event Modal (Scope → Event Info → Mode → Single-SKU rows OR Category/Series group cards).
 function openEventModal() {
   document.getElementById('event-target-year').value = fcTargetYear;
-  document.getElementById('event-base-year').value = fcTargetYear - 1;
-  document.getElementById('event-update-method').value = 'actual';
-  toggleEventMethodFields();
+  var flagEl = document.getElementById('event-name-input'); if (flagEl) flagEl.value = 'Normal';
+  var periodEl = document.getElementById('event-period-input'); if (periodEl) periodEl.value = '';
+  // reset mode → single
+  var single = document.querySelector('input[name="event-mode"][value="single"]'); if (single) single.checked = true;
+  // reset batch controls (Category / Series multi-selects reset inside _populateEventBatchSelects)
+  var dp = document.getElementById('event-discount-pct'); if (dp) dp.value = '';
+  var by = document.getElementById('event-assist-base-year'); if (by) by.value = '';
+  var gr = document.getElementById('event-assist-growth'); if (gr) gr.value = '';
+  _evtGroups = [];
+  var cards = document.getElementById('event-group-cards'); if (cards) cards.innerHTML = '';
+  _evtSetAssistHelp('', '');
+  _populateEventScopeSelects();
+  _populateEventBatchSelects();
+  _evtPopulateBaseCampaigns();
+  // Single-SKU rows: start with one empty row.
+  var rows = document.getElementById('event-sku-rows'); if (rows) rows.innerHTML = '';
+  _evtAddSingleRow();
+  _evtSwitchMode();
+  toggleEventFlagFields();
   showFcModal('fc-add-event-modal');
 }
 
-// Toggle Event method fields
-function toggleEventMethodFields() {
-  const method = document.getElementById('event-update-method').value;
-  const eventSelectRow = document.getElementById('event-select-row');
-  const manualFields = document.getElementById('event-manual-fields');
-  const growthRateInput = document.getElementById('event-growth-rate');
-  const methodDesc = document.getElementById('event-method-description');
-  
-  if (method === 'manual') {
-    eventSelectRow.style.display = 'none';
-    manualFields.style.display = 'block';
-    growthRateInput.parentElement.parentElement.style.display = 'none';
-    methodDesc.innerHTML = '<strong>Manual Input:</strong> Manually enter all event details including SKU, Event, Period, and FC Qty.';
+// Scope (country / marketplace) changed → regular prices depend on it; refresh single-row prices
+// and rebuild group cards if already built.
+function _evtOnScopeChange() {
+  _evtRefreshSingleRowPrices();
+  if (_evtGroups.length) _evtBuildGroups();
+}
+
+// Switch builder mode (single | batch).
+function _evtSwitchMode() {
+  var mode = _evtMode();
+  var s = document.getElementById('event-mode-single');
+  var b = document.getElementById('event-mode-batch');
+  if (s) s.style.display = mode === 'single' ? '' : 'none';
+  if (b) b.style.display = mode === 'batch' ? '' : 'none';
+  // Highlight the active segmented button (deterministic — no reliance on :has()).
+  Array.prototype.slice.call(document.querySelectorAll('#event-builder-mode .fc-mode-pill')).forEach(function(p){
+    var input = p.querySelector('input[type="radio"]');
+    p.classList.toggle('is-active', !!(input && input.checked));
+  });
+}
+function _evtMode() {
+  var el = document.querySelector('input[name="event-mode"]:checked');
+  return el ? el.value : 'single';
+}
+
+// Populate Special Event Country / Marketplace selects (same source as Regular).
+function _populateEventScopeSelects() {
+  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var fcRows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
+  var countries = distinct(mkts.map(function(m){return m.country;}).concat(fcRows.map(function(r){return r.country;})));
+  var marketplaces = distinct(mkts.map(function(m){return m.marketplace;}).concat(fcRows.map(function(r){return r.marketplace;})));
+  if (!countries.length) countries = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
+  if (!marketplaces.length) marketplaces = ['Amazon', 'Walmart', 'Shopify', 'Target'];
+  var filters = (typeof getFcFilters === 'function') ? getFcFilters() : { countries: [], marketplaces: [] };
+  var defCountry = (filters.countries && filters.countries.length === 1) ? filters.countries[0] : '';
+  var defMarketplace = (filters.marketplaces && filters.marketplaces.length === 1) ? filters.marketplaces[0] : '';
+  var cSel = document.getElementById('event-country');
+  var mSel = document.getElementById('event-marketplace');
+  if (cSel) cSel.innerHTML = countries.map(function(c){ return '<option value="' + c + '"' + (c === defCountry ? ' selected' : '') + '>' + c + '</option>'; }).join('');
+  // Marketplace: label = display name, value = canonical key.
+  if (mSel) mSel.innerHTML = _fcMarketplaceOptions().map(function(o){ return '<option value="' + o.value + '"' + (o.value === defMarketplace ? ' selected' : '') + '>' + o.label + '</option>'; }).join('');
+}
+
+// Populate Category / Series dropdown multi-selects for Batch mode from sku_details (distinct values).
+// Defaults to "All" (All checkbox on, no individual option checked).
+function _populateEventBatchSelects() {
+  var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+  function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
+  function fill(which, values) {
+    var box = document.getElementById('event-' + which + '-options');
+    if (box) box.innerHTML = values.map(function(v){
+      var safe = String(v).replace(/"/g, '&quot;');
+      return '<label class="fc-ms-item"><input type="checkbox" value="' + safe + '" onchange="_evtMsChanged(\'' + which + '\')"><span>' + v + '</span></label>';
+    }).join('');
+    var allCb = document.getElementById('event-' + which + '-all'); if (allCb) allCb.checked = true;   // default = All
+    var panel = document.getElementById('event-' + which + '-panel'); if (panel) panel.style.display = 'none';
+    _evtMsUpdateText(which);
+  }
+  fill('category', distinct(details.map(function(d){ return d.category; })));
+  fill('series', distinct(details.map(function(d){ return d.series; })));
+  _evtUpdateDiscountRow();
+}
+
+// ---- In-modal dropdown multi-select (Category / Series), compact like the FC filter multiselect ----
+// which = 'category' | 'series'. Selected values drive Build / Refresh Group Cards; "All" = null.
+function _evtToggleMsPanel(which) {
+  var panel = document.getElementById('event-' + which + '-panel');
+  if (!panel) return;
+  var show = (panel.style.display === 'none' || !panel.style.display);
+  ['category','series'].forEach(function(w){ var p = document.getElementById('event-' + w + '-panel'); if (p) p.style.display = 'none'; });
+  panel.style.display = show ? '' : 'none';
+}
+// "All" checkbox toggled → checking it clears individual options (= all); then resync state/text.
+function _evtMsAll(which, cb) {
+  if (cb.checked) {
+    Array.prototype.slice.call(document.querySelectorAll('#event-' + which + '-options input[type="checkbox"]'))
+      .forEach(function(o){ o.checked = false; });
+  }
+  _evtMsSyncAll(which);
+}
+// Individual option toggled → All is on only when no option is checked.
+function _evtMsChanged(which) { _evtMsSyncAll(which); }
+function _evtMsSyncAll(which) {
+  var opts = Array.prototype.slice.call(document.querySelectorAll('#event-' + which + '-options input[type="checkbox"]'));
+  var anyChecked = opts.some(function(o){ return o.checked; });
+  var allCb = document.getElementById('event-' + which + '-all');
+  if (allCb) allCb.checked = !anyChecked;
+  _evtMsUpdateText(which);
+  _evtUpdateDiscountRow();
+}
+// Selected values, or null when "All" (All checked / nothing individually checked).
+function _evtMsValues(which) {
+  var allCb = document.getElementById('event-' + which + '-all');
+  var opts = Array.prototype.slice.call(document.querySelectorAll('#event-' + which + '-options input[type="checkbox"]:checked'));
+  if ((allCb && allCb.checked) || !opts.length) return null;   // null = All
+  return opts.map(function(o){ return o.value; });
+}
+// Trigger summary text.
+function _evtMsUpdateText(which) {
+  var label = which === 'category' ? 'Category' : 'Series';
+  var vals = _evtMsValues(which);
+  var el = document.getElementById('event-' + which + '-text');
+  if (!el) return;
+  if (!vals) el.textContent = 'All ' + label;
+  else if (vals.length <= 2) el.textContent = vals.join(', ');
+  else el.textContent = vals.length + ' ' + label + ' selected';
+}
+// Discount % row is shown only when All Category OR All Series is selected (Part 4).
+function _evtUpdateDiscountRow() {
+  var catAll = _evtMsValues('category') === null;
+  var serAll = _evtMsValues('series') === null;
+  var discRow = document.getElementById('event-discount-row');
+  if (discRow) discRow.style.display = (catAll || serAll) ? '' : 'none';
+}
+
+// Toggle Event Flag behaviour.
+//   Normal    → NOT a special event; Event Period hidden, Save creates nothing.
+//   != Normal → Event Period shown/required; Forecast Qty required per SKU row / group card.
+function toggleEventFlagFields() {
+  var flag = (document.getElementById('event-name-input') || {}).value || 'Normal';
+  var isNormal = flag === 'Normal';
+  var periodRow = document.getElementById('event-period-row');
+  if (periodRow) periodRow.style.display = isNormal ? 'none' : '';
+  var desc = document.getElementById('event-method-description');
+  if (desc) {
+    desc.innerHTML = isNormal
+      ? '<strong>Normal:</strong> no special-event forecast is created — regular monthly forecast (fc_regular_forecast) already covers baseline demand. Nothing is written to campaigns / fc_special_events.'
+      : '<strong>' + flag + ':</strong> Event Period + Target Year required. Forecast Qty is required per SKU row (Single) / group card (Category-Series). Save targets campaigns → campaign_sku_lines → fc_special_events.';
+  }
+}
+
+// ---- Regular price lookup (marketplace_skus for the selected country + marketplace) ----
+function _evtRegularPrice(sku, country, marketplace) {
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var mkey = _fcResolveMarketplaceKey(marketplace);
+  var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+  var m = mskus.filter(function(x){ return up(x.sku) === up(sku) &&
+    (!country || up(x.country) === up(country)) && (!mkey || lo(x.marketplace) === lo(mkey)); })[0];
+  return m ? (parseFloat(m.regularPrice) || 0) : 0;
+}
+
+// ================= Single SKU mode =================
+function _evtAddSingleRow() {
+  var wrap = document.getElementById('event-sku-rows');
+  if (!wrap) return;
+  if (wrap.children.length >= EVT_MAX_ROWS) { alert('Maximum ' + EVT_MAX_ROWS + ' SKU rows.'); return; }
+  var row = document.createElement('div');
+  row.className = 'fc-evt-row';
+  row.innerHTML =
+    '<input type="text" class="evt-sku" placeholder="SKU" onchange="_evtSingleRowSkuChange(this)">' +
+    '<input type="number" class="evt-reg" placeholder="Regular" step="0.01" readonly>' +
+    '<input type="number" class="evt-deal" placeholder="Deal" step="0.01">' +
+    '<input type="number" class="evt-fc" placeholder="Qty" min="0">' +
+    '<button type="button" class="fc-evt-row-remove" title="Remove" onclick="_evtRemoveSingleRow(this)">×</button>';
+  wrap.appendChild(row);
+  _evtUpdateAddRowBtn();
+}
+function _evtRemoveSingleRow(btn) {
+  var row = btn.closest('.fc-evt-row');
+  if (row) row.remove();
+  var wrap = document.getElementById('event-sku-rows');
+  if (wrap && !wrap.children.length) _evtAddSingleRow();  // always keep at least one row
+  _evtUpdateAddRowBtn();
+}
+function _evtUpdateAddRowBtn() {
+  var wrap = document.getElementById('event-sku-rows');
+  var btn = document.getElementById('event-add-row-btn');
+  if (wrap && btn) { var full = wrap.children.length >= EVT_MAX_ROWS; btn.disabled = full; btn.style.opacity = full ? '0.5' : ''; }
+}
+// SKU entered in a single row → auto-fill Regular Price from marketplace_skus.
+function _evtSingleRowSkuChange(input) {
+  var row = input.closest('.fc-evt-row'); if (!row) return;
+  var country = (document.getElementById('event-country') || {}).value || '';
+  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
+  var reg = _evtRegularPrice((input.value || '').trim(), country, marketplace);
+  var regEl = row.querySelector('.evt-reg'); if (regEl) regEl.value = reg || '';
+}
+function _evtRefreshSingleRowPrices() {
+  var country = (document.getElementById('event-country') || {}).value || '';
+  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
+  var wrap = document.getElementById('event-sku-rows'); if (!wrap) return;
+  Array.prototype.slice.call(wrap.querySelectorAll('.fc-evt-row')).forEach(function(row){
+    var sku = ((row.querySelector('.evt-sku') || {}).value || '').trim();
+    if (!sku) return;
+    var regEl = row.querySelector('.evt-reg'); if (regEl) regEl.value = _evtRegularPrice(sku, country, marketplace) || '';
+  });
+}
+// Read the single-SKU rows into objects.
+function _evtReadSingleRows() {
+  var wrap = document.getElementById('event-sku-rows'); if (!wrap) return [];
+  return Array.prototype.slice.call(wrap.querySelectorAll('.fc-evt-row')).map(function(row){
+    return {
+      sku: ((row.querySelector('.evt-sku') || {}).value || '').trim(),
+      regularPrice: parseFloat((row.querySelector('.evt-reg') || {}).value) || 0,
+      dealPrice: parseFloat((row.querySelector('.evt-deal') || {}).value),
+      fcQty: parseInt((row.querySelector('.evt-fc') || {}).value)
+    };
+  }).filter(function(r){ return r.sku; });
+}
+
+// Derive category / series / company for a SKU from sku_details / marketplace_skus (company is
+// never entered in the FC Summary UI — it comes from the marketplace relation).
+function _fcDeriveSkuMeta(sku, country, marketplace) {
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var meta = { category: '', series: '', company: '' };
+  var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+  var d = details.filter(function(x){ return up(x.sku) === up(sku); })[0];
+  if (d) { meta.category = d.category || ''; meta.series = d.series || ''; }
+  var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+  var m = mskus.filter(function(x){ return up(x.sku) === up(sku) &&
+    (!country || up(x.country) === up(country)) && (!marketplace || lo(x.marketplace) === lo(marketplace)); })[0];
+  if (m) meta.company = m.company || '';
+  return meta;
+}
+
+// ================= Category / Series mode =================
+// Candidate {sku, category, series, company, regularPrice} rows for the selected scope + category/series.
+function _evtCandidateRows() {
+  var country = (document.getElementById('event-country') || {}).value || '';
+  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
+  var mkey = _fcResolveMarketplaceKey(marketplace);
+  var cats = _evtMsValues('category');   // null = All Category
+  var series = _evtMsValues('series');   // null = All Series
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+
+  var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+  var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+  var detBySku = {}; details.forEach(function(d){ detBySku[up(d.sku)] = d; });
+
+  // Base on marketplace_skus for the selected scope (that is where regular price + company live).
+  var rows = mskus.filter(function(m){
+    return (!country || up(m.country) === up(country)) && (!mkey || lo(m.marketplace) === lo(mkey));
+  }).map(function(m){
+    var d = detBySku[up(m.sku)] || {};
+    return { sku: m.sku, company: m.company || '', category: d.category || '', series: d.series || '',
+      regularPrice: parseFloat(m.regularPrice) || 0 };
+  }).filter(function(r){
+    var cOk = !cats || cats.indexOf(r.category) >= 0;
+    var sOk = !series || series.indexOf(r.series) >= 0;
+    return r.sku && cOk && sOk;
+  });
+  return rows;
+}
+
+// Build group cards keyed by category + series + regular_price (same series, different price ⇒ split).
+function _evtBuildGroups() {
+  var rows = _evtCandidateRows();
+  var groupsByKey = {};
+  rows.forEach(function(r){
+    var key = r.category + '||' + r.series + '||' + r.regularPrice;
+    if (!groupsByKey[key]) groupsByKey[key] = { category: r.category, series: r.series, regularPrice: r.regularPrice, skus: [], dealPrice: NaN, fcQty: NaN };
+    if (groupsByKey[key].skus.indexOf(r.sku) === -1) groupsByKey[key].skus.push(r.sku);
+  });
+  // Preserve any deal/fc the user already typed for a matching key.
+  var prev = {}; _evtGroups.forEach(function(g){ prev[g.category+'||'+g.series+'||'+g.regularPrice] = g; });
+  _evtGroups = Object.keys(groupsByKey).map(function(k){
+    var g = groupsByKey[k], p = prev[k];
+    if (p) { g.dealPrice = p.dealPrice; g.fcQty = p.fcQty; }
+    return g;
+  }).sort(function(a,b){ return (a.category+a.series).localeCompare(b.category+b.series) || a.regularPrice - b.regularPrice; });
+  _evtRenderGroupCards();
+}
+
+function _evtRenderGroupCards() {
+  var wrap = document.getElementById('event-group-cards');
+  if (!wrap) return;
+  if (!_evtGroups.length) { wrap.innerHTML = '<p class="fc-hint">No matching SKUs for the selected scope + category/series. Adjust the selection and click Build.</p>'; return; }
+  wrap.innerHTML = _evtGroups.map(function(g, i){
+    return '<div class="fc-evt-card">' +
+      '<div class="fc-evt-card-head">' +
+        '<span class="fc-evt-tag">' + (g.category || '—') + '</span>' +
+        '<span class="fc-evt-tag">' + (g.series || '—') + '</span>' +
+        '<span class="fc-evt-tag fc-evt-tag--price">Regular ' + (g.regularPrice || 0) + '</span>' +
+        '<button type="button" class="fc-evt-row-remove" title="Remove group" onclick="_evtRemoveGroup(' + i + ')">×</button>' +
+      '</div>' +
+      '<div class="fc-evt-card-skus">' + g.skus.map(function(s){
+        return '<span class="fc-evt-sku-chip">' + s + ' <a onclick="_evtRemoveGroupSku(' + i + ',\'' + s.replace(/'/g,"\\'") + '\')">×</a></span>'; }).join('') + '</div>' +
+      '<div class="fc-evt-card-fields">' +
+        '<label>Deal Price <input type="number" step="0.01" value="' + (isNaN(g.dealPrice) ? '' : g.dealPrice) + '" onchange="_evtGroupField(' + i + ',\'dealPrice\',this.value)"></label>' +
+        '<label>Forecast Qty <input type="number" min="0" value="' + (isNaN(g.fcQty) ? '' : g.fcQty) + '" onchange="_evtGroupField(' + i + ',\'fcQty\',this.value)"></label>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+function _evtGroupField(i, field, val) { if (_evtGroups[i]) _evtGroups[i][field] = (val === '' ? NaN : parseFloat(val)); }
+function _evtRemoveGroup(i) { _evtGroups.splice(i, 1); _evtRenderGroupCards(); }
+function _evtRemoveGroupSku(i, sku) {
+  var g = _evtGroups[i]; if (!g) return;
+  g.skus = g.skus.filter(function(s){ return s !== sku; });
+  if (!g.skus.length) _evtGroups.splice(i, 1);
+  _evtRenderGroupCards();
+}
+
+// Discount %: deal_price = regular_price × (1 − discount/100), pre-filled per card (user may override).
+function _evtApplyDiscount() {
+  var pct = parseFloat((document.getElementById('event-discount-pct') || {}).value);
+  if (isNaN(pct) || pct < 0 || pct > 100) { alert('Enter a Discount % between 0 and 100.'); return; }
+  if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
+  _evtGroups.forEach(function(g){ g.dealPrice = Math.round((g.regularPrice * (1 - pct / 100)) * 100) / 100; });
+  _evtRenderGroupCards();
+}
+
+// ---- Forecast Assist (Category/Series only): pre-fill Forecast Qty; NEVER auto-writes to DB ----
+function _evtPopulateBaseCampaigns() {
+  var sel = document.getElementById('event-assist-base-campaign');
+  if (!sel) return;
+  var campaigns = (window.KM && window.KM.DB && window.KM.DB.getCampaigns) ? window.KM.DB.getCampaigns() : [];
+  if (campaigns && campaigns.length) {
+    sel.disabled = false;
+    sel.innerHTML = '<option value="">(none)</option>' + campaigns.map(function(c){
+      var id = c.campaignId || c.campaign_id || '';
+      var name = c.campaignName || c.campaign_name || id || 'Campaign';
+      return '<option value="' + id + '">' + name + '</option>';
+    }).join('');
   } else {
-    eventSelectRow.style.display = 'flex';
-    manualFields.style.display = 'none';
-    growthRateInput.parentElement.parentElement.style.display = 'flex';
-    
-    if (method === 'actual') {
-      methodDesc.innerHTML = '<strong>Apply Growth Rate:</strong> Uses Base Year\'s Actual Event Units × (1 + Growth Rate%) to generate Target Year event forecast.';
-    } else if (method === 'forecast') {
-      methodDesc.innerHTML = '<strong>Copy from Previous Year:</strong> Uses Base Year\'s Forecast Event Units × (1 + Growth Rate%) to generate Target Year event forecast.';
-    }
+    // No campaign records available → disabled/pending state (reported, not faked).
+    sel.disabled = true;
+    sel.innerHTML = '<option value="">(no campaign records — pending)</option>';
+  }
+}
+function _evtSetAssistHelp(msg, color) {
+  var el = document.getElementById('event-assist-help');
+  if (el) { el.textContent = msg || ''; el.style.color = color || '#64748B'; el.style.display = msg ? '' : 'none'; }
+}
+// Simple growth pre-fill (NOT AI): if a Base Campaign is chosen, use its linked fc_special_events qty
+// per group as the base; otherwise use the group's current Forecast Qty. base × (1 + growth%).
+function _evtApplyForecastAssist() {
+  if (_evtMode() !== 'batch') return;
+  if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
+  var growth = parseFloat((document.getElementById('event-assist-growth') || {}).value);
+  if (isNaN(growth)) { alert('Enter a Forecast Growth Rate %.'); return; }
+  var baseCampaignId = (document.getElementById('event-assist-base-campaign') || {}).value || '';
+  var baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value);
+
+  // Base-campaign qty by (category||series||price) group, from linked fc_special_events (read-only).
+  var baseByKey = {};
+  if (baseCampaignId) {
+    var events = (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
+    var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+    var detBySku = {}; details.forEach(function(d){ detBySku[up(d.sku)] = d; });
+    events.filter(function(e){ return String(e.campaignId || e.campaign_id || '') === baseCampaignId &&
+        (!baseYear || String(e.year) === String(baseYear)); })
+      .forEach(function(e){
+        var d = detBySku[up(e.sku)] || {};
+        var reg = _evtRegularPrice(e.sku, e.country, e.marketplace);
+        var key = (e.category || d.category || '') + '||' + (e.series || d.series || '') + '||' + reg;
+        baseByKey[key] = (baseByKey[key] || 0) + (parseFloat(e.fcQty || e.fc_qty) || 0);
+      });
+  }
+  var filled = 0;
+  _evtGroups.forEach(function(g){
+    var key = g.category + '||' + g.series + '||' + g.regularPrice;
+    var base = baseCampaignId ? (baseByKey[key] || 0) : (isNaN(g.fcQty) ? 0 : g.fcQty);
+    var suggested = Math.round(base * (1 + growth / 100));
+    if (suggested > 0) { g.fcQty = suggested; filled++; }
+  });
+  _evtRenderGroupCards();
+  if (baseCampaignId && !Object.keys(baseByKey).length) {
+    _evtSetAssistHelp('Base Campaign has no linked fc_special_events to base on — nothing pre-filled. Enter Forecast Qty manually.', '#b45309');
+  } else {
+    _evtSetAssistHelp('Pre-filled Forecast Qty for ' + filled + ' group(s) (base × (1 + ' + growth + '%)). Review before Save — nothing is written until you click Save.', '#0f766e');
   }
 }
 
-// Open Add New Event Name modal (placeholder)
-function openAddNewEventName() {
-  const newEventName = prompt('Enter new event name:');
-  if (newEventName && newEventName.trim()) {
-    // Add to both dropdowns
-    const option1 = new Option(newEventName.trim(), newEventName.trim());
-    const option2 = new Option(newEventName.trim(), newEventName.trim());
-    document.getElementById('event-event-select').add(option1);
-    document.getElementById('event-event-input').add(option2);
-    alert(`Event "${newEventName.trim()}" added successfully`);
-  }
-}
-
-// Save Event Update
+// ================= Save (campaigns → campaign_sku_lines → fc_special_events) =================
+// Writers for campaigns / campaign_sku_lines do NOT exist yet → report PENDING, write nothing (no
+// fake success). Demo ON → illustrative in-memory rows only.
 function saveEventUpdate() {
-  const targetYear = parseInt(document.getElementById('event-target-year').value);
-  const baseYear = parseInt(document.getElementById('event-base-year').value);
-  const method = document.getElementById('event-update-method').value;
-  const growthRate = parseFloat(document.getElementById('event-growth-rate').value) || 0;
-  
-  if (method === 'manual') {
-    // Manual Input mode - save single event
-    saveNewEvent();
+  var country = (document.getElementById('event-country') || {}).value || '';
+  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
+  var mkey = _fcResolveMarketplaceKey(marketplace);
+  var targetYear = parseInt(document.getElementById('event-target-year').value);
+  var eventFlag = (document.getElementById('event-name-input') || {}).value || 'Normal';
+  var eventPeriod = ((document.getElementById('event-period-input') || {}).value || '').trim();
+  var mode = _evtMode();
+
+  if (!country || !marketplace) { alert('Country and Marketplace are required.'); return; }
+
+  if (eventFlag === 'Normal') {
+    alert('Event Flag is "Normal" — no campaign / special-event forecast is created.\n\n' +
+      'Baseline demand is covered by the regular monthly forecast (fc_regular_forecast).');
+    closeFcModal();
     return;
   }
-  
-  // Apply Growth Rate or Copy from Previous Year
-  const selectedEvent = document.getElementById('event-event-select').value;
-  let addedCount = 0;
-  let skippedCount = 0;
-  
-  // Get base year event data
-  const baseYearEvents = fcEventMock.filter(item => 
-    item.year === baseYear && item.event === selectedEvent
-  );
-  
-  if (baseYearEvents.length === 0) {
-    alert(`No event data found for "${selectedEvent}" in Base Year ${baseYear}.`);
-    return;
+  if (!targetYear) { alert('Target Year is required.'); return; }
+  if (!eventPeriod) { alert('Event Period is required for a non-Normal event.'); return; }
+
+  // ---- Collect SKU lines from the active mode ----
+  var lines = [];   // { sku, company, category, series, regularPrice, dealPrice, fcQty }
+  if (mode === 'single') {
+    var rows = _evtReadSingleRows();
+    if (!rows.length) { alert('Add at least one SKU row.'); return; }
+    if (rows.length > EVT_MAX_ROWS) { alert('Maximum ' + EVT_MAX_ROWS + ' SKU rows.'); return; }
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r.sku) { alert('Row ' + (i + 1) + ': SKU is required.'); return; }
+      if (isNaN(r.dealPrice)) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Deal Price is required.'); return; }
+      if (isNaN(r.fcQty) || r.fcQty <= 0) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Forecast Qty is required (> 0) for a non-Normal event.'); return; }
+      var meta = _fcDeriveSkuMeta(r.sku, country, mkey);
+      lines.push({ sku: r.sku, company: meta.company, category: meta.category, series: meta.series,
+        regularPrice: r.regularPrice, dealPrice: r.dealPrice, fcQty: r.fcQty });
+    }
+  } else {
+    if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
+    for (var gi = 0; gi < _evtGroups.length; gi++) {
+      var g = _evtGroups[gi];
+      if (isNaN(g.dealPrice)) { alert('Group ' + (g.category || '—') + ' / ' + (g.series || '—') + ': Deal Price is required.'); return; }
+      if (isNaN(g.fcQty) || g.fcQty <= 0) { alert('Group ' + (g.category || '—') + ' / ' + (g.series || '—') + ': Forecast Qty is required (> 0).'); return; }
+      g.skus.forEach(function(sku){
+        var meta = _fcDeriveSkuMeta(sku, country, mkey);
+        lines.push({ sku: sku, company: meta.company || '', category: g.category, series: g.series,
+          regularPrice: g.regularPrice, dealPrice: g.dealPrice, fcQty: g.fcQty });
+      });
+    }
+    if (!lines.length) { alert('No SKU lines to save.'); return; }
   }
-  
-  baseYearEvents.forEach(baseEvent => {
-    // Check if already exists
-    const exists = fcEventMock.some(item => 
-      item.sku === baseEvent.sku && 
-      item.year === targetYear && 
-      item.event === baseEvent.event
-    );
-    
-    if (exists) {
-      skippedCount++;
+
+  var discountPct = parseFloat((document.getElementById('event-discount-pct') || {}).value);
+  var company = (lines[0] && lines[0].company) || '';
+  var campaignPayload = { campaign_name: eventFlag + ' ' + targetYear, country: country, marketplace: mkey,
+    promotion_type: eventFlag, event_flag: eventFlag, year: targetYear, event_period: eventPeriod,
+    status: 'active', source: 'fc_summary_builder' };
+  var linePayloads = lines.map(function(l){
+    var disc = (!isNaN(discountPct)) ? discountPct
+      : (l.regularPrice > 0 ? Math.round((1 - l.dealPrice / l.regularPrice) * 1000) / 10 : 0);
+    return { sku: l.sku, regular_price: l.regularPrice, deal_price: l.dealPrice, discount_percent: disc,
+      line_status: 'active', source: 'fc_summary_builder' };
+  });
+  var fcPayloads = lines.map(function(l){
+    return { sku: l.sku, company: l.company, marketplace: mkey, country: country, category: l.category,
+      series: l.series, event_name: eventFlag, event_period: eventPeriod, year: targetYear, fc_qty: l.fcQty,
+      source: 'campaign_sync', status: 'active', note: 'FC Summary Special Event Builder' };
+  });
+
+  // ---- Backend writers ----
+  // campaigns / campaign_sku_lines writers are NOT implemented. To avoid orphan fc_special_events
+  // (rows with a blank campaign_id) and fake completeness, we write NOTHING on live and report pending.
+  var haveCampaignWriter = !!(window.KM && window.KM.DB && window.KM.DB.upsertCampaign);
+  var haveLineWriter = !!(window.KM && window.KM.DB && window.KM.DB.upsertCampaignSkuLine);
+
+  if (_fcUseDb()) {
+    if (!haveCampaignWriter || !haveLineWriter) {
+      alert('Save is PENDING — backend not complete (no data written).\n\n' +
+        'Would create/update:\n' +
+        '• campaigns: 1 (' + campaignPayload.campaign_name + ', ' + country + ' / ' + mkey + ')\n' +
+        '• campaign_sku_lines: ' + linePayloads.length + '\n' +
+        '• fc_special_events: ' + fcPayloads.length + ' (source=campaign_sync, linked by campaign_id / campaign_sku_line_id)\n\n' +
+        'Missing writers: ' + (!haveCampaignWriter ? 'upsertCampaign ' : '') + (!haveLineWriter ? 'upsertCampaignSkuLine' : '') +
+        '.\nfc_special_events is intentionally NOT written alone (would create rows with no parent campaign). ' +
+        'See FC_SUMMARY_SPEC §12.');
       return;
     }
-    
-    // Calculate new FC Qty
-    let newFcQty;
-    if (method === 'actual') {
-      // Use Actual Event Units (mock - using forecast as actual)
-      newFcQty = Math.round(baseEvent.fcQty * (1 + growthRate / 100));
-    } else if (method === 'forecast') {
-      // Use Forecast Event Units
-      newFcQty = Math.round(baseEvent.fcQty * (1 + growthRate / 100));
-    }
-    
-    const newEvent = {
-      sku: baseEvent.sku,
-      year: targetYear,
-      company: baseEvent.company,
-      marketplace: baseEvent.marketplace,
-      country: baseEvent.country,
-      category: baseEvent.category,
-      series: baseEvent.series,
-      event: baseEvent.event,
-      eventPeriod: baseEvent.eventPeriod,
-      fcQty: newFcQty
-    };
-    
-    fcEventMock.push(newEvent);
-    addedCount++;
+    // (Future) real 3-table write path goes here once writers exist.
+    alert('Campaign/FC writers present but the 3-table transaction path is not wired in this build.');
+    return;
+  }
+
+  // Demo ON → illustrative in-memory rows (clearly labelled).
+  fcPayloads.forEach(function(p){
+    fcEventMock.push({ sku: p.sku, year: p.year, company: p.company, marketplace: p.marketplace,
+      country: p.country, category: p.category, series: p.series, event: p.event_name,
+      eventPeriod: p.event_period, fcQty: p.fc_qty });
   });
-  
-  const methodName = method === 'actual' ? 'Apply Growth Rate (Actual)' : 'Copy from Previous Year (Forecast)';
-  
-  alert(
-    `Event FC Update Complete!\n\n` +
-    `Method: ${methodName}\n` +
-    `Event: ${selectedEvent}\n` +
-    `Target Year: ${targetYear}\n` +
-    `Growth Rate: ${growthRate}%\n\n` +
-    `Added: ${addedCount} event(s)\n` +
-    `Skipped: ${skippedCount} event(s) (already exists)`
-  );
-  
   renderFcEventTable();
   closeFcModal();
+  alert('DEMO (in-memory only): ' + fcPayloads.length + ' fc_special_events row(s) illustrated. ' +
+    'campaigns (1) + campaign_sku_lines (' + linePayloads.length + ') would be created in live mode.');
 }
 
 // Check if data already exists
@@ -1531,175 +2231,104 @@ function checkDataExists(sku, year, monthIndex = null) {
 
 // Save Regular Update
 function saveRegularUpdate() {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // Full site identity from the selected marketplace(site) option (KM Amazon ≠ ResUS Amazon).
+  const _site = _regularSelectedSite();
+  const company = _site.company;
+  const country = _site.country;
+  const marketplace = _site.marketplace;
+  const sku = ((document.getElementById('regular-sku') || {}).value || '').trim();
   const targetYear = parseInt(document.getElementById('regular-target-year').value);
   const baseYear = parseInt(document.getElementById('regular-base-year').value);
   const method = document.getElementById('regular-update-method').value;
   const growthRate = parseFloat(document.getElementById('regular-growth-rate').value) || 0;
-  const targetMonth = method === 'manual' ? parseInt(document.getElementById('regular-target-month').value) : null;
-  
-  let addedCount = 0;
-  let skippedCount = 0;
-  let updatedData = [];
-  
-  // Get base year data
-  const baseYearData = fcRegularMock.filter(item => item.year === baseYear);
-  
-  if (baseYearData.length === 0) {
-    alert(`No data found for Base Year ${baseYear}. Please ensure base year data exists.`);
+  const targetMonth = parseInt((document.getElementById('regular-target-month') || {}).value || '0');
+  const basedYear = parseInt((document.getElementById('regular-based-year') || {}).value);
+  const basedMonth = parseInt((document.getElementById('regular-based-month') || {}).value || '0');
+  const monthNamesFull = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const methodName = method === 'actual' ? 'Apply Growth Rate (Based on Actual Sales)'
+    : method === 'prevMonth' ? 'Adjust From Previous Month Forecast'
+    : 'Manual Monthly Forecast';
+
+  // ---- Validation (Part 3) ----
+  if (!country || !marketplace) { alert('Country and Marketplace are required.'); return; }
+  if (!sku) { alert('SKU is required.'); return; }
+  if (method === 'actual' && !(growthRate > 0)) {
+    alert('Growth Rate must be greater than 0 for "Apply Growth Rate (Based on Actual Sales)".');
     return;
   }
-  
-  // Process based on method
-  baseYearData.forEach(baseItem => {
-    const sku = baseItem.sku;
-    
-    if (method === 'manual') {
-      // Manual Input: Only update specific month
-      if (checkDataExists(sku, targetYear, targetMonth)) {
-        skippedCount++;
-        return;
-      }
-      
-      // Check if SKU exists for target year
-      let targetItem = fcRegularMock.find(item => item.sku === sku && item.year === targetYear);
-      
-      if (!targetItem) {
-        // Create new entry
-        targetItem = {
-          sku: baseItem.sku,
-          year: targetYear,
-          company: baseItem.company,
-          marketplace: baseItem.marketplace,
-          country: baseItem.country,
-          category: baseItem.category,
-          series: baseItem.series,
-          months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        };
-        fcRegularMock.push(targetItem);
-      }
-      
-      // Update specific month using Forecast Units from base year
-      const baseForecast = baseItem.months[targetMonth];
-      targetItem.months[targetMonth] = Math.round(baseForecast * (1 + growthRate / 100));
-      addedCount++;
-      updatedData.push({ sku, month: targetMonth, value: targetItem.months[targetMonth] });
-      
-    } else {
-      // Apply Growth Rate or Copy from Previous Year: Update all months
-      if (checkDataExists(sku, targetYear)) {
-        skippedCount++;
-        return;
-      }
-      
-      let newMonths;
-      
-      if (method === 'actual') {
-        // Use Actual Units (mock data - in real app would fetch from sales)
-        // For demo, we'll use base year forecast as "actual"
-        newMonths = baseItem.months.map(m => Math.round(m * (1 + growthRate / 100)));
-      } else if (method === 'forecast') {
-        // Use Forecast Units from base year
-        newMonths = baseItem.months.map(m => Math.round(m * (1 + growthRate / 100)));
-      }
-      
-      const newItem = {
-        sku: baseItem.sku,
-        year: targetYear,
-        company: baseItem.company,
-        marketplace: baseItem.marketplace,
-        country: baseItem.country,
-        category: baseItem.category,
-        series: baseItem.series,
-        months: newMonths
-      };
-      
-      fcRegularMock.push(newItem);
-      addedCount++;
-      updatedData.push({ sku, months: newMonths });
+  if (method === 'prevMonth') {
+    if (isNaN(targetYear)) { alert('Target Year is required.'); return; }
+    if (isNaN(targetMonth)) { alert('Target Month is required.'); return; }
+    if (isNaN(basedYear)) { alert('Based Year is required.'); return; }
+    if (isNaN(basedMonth)) { alert('Based Month is required.'); return; }
+  }
+  let manualMonths = null;
+  if (method === 'manual') {
+    manualMonths = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+      .map(m => parseInt((document.getElementById('reg-' + m) || {}).value) || 0);
+  }
+
+  // ---- Live DB (Demo OFF): PENDING. No single-row fc_regular_forecast writer / no BQ actual-sales
+  // source exists yet — do NOT fake success and do NOT write (guardrail). ----
+  if (typeof _fcUseDb === 'function' && _fcUseDb()) {
+    let detail = 'Method: ' + methodName + '\nSKU: ' + sku + '\nCompany / Country / Marketplace: ' +
+      (company || '—') + ' / ' + country + ' / ' + marketplace + '\nTarget Year: ' + targetYear;
+    if (method === 'actual') detail += '\nBase Year: ' + baseYear + '\nGrowth Rate: ' + growthRate + '%';
+    if (method === 'prevMonth') detail += '\nTarget: ' + monthNamesFull[targetMonth] + ' ' + targetYear +
+      '\nBased (source): ' + monthNamesFull[basedMonth] + ' ' + basedYear + '\nRate: ' + growthRate + '%';
+    alert('Regular Forecast update is NOT yet written to the Operation DB.\n\n' + detail +
+      '\n\nUpsert target: fc_regular_forecast (key company + country + marketplace + sku + year). ' +
+      'The single-row writer (and the BQ actual-sales source for "Apply Growth Rate") ' +
+      'are PENDING — see FC_SUMMARY_SPEC (Phase 2 / Pending Backend). No data was written.');
+    closeFcModal();
+    return;
+  }
+
+  // ---- Demo mode (in-memory only) — illustrative; clearly labeled, never claims a DB write. ----
+  // Match by the FULL site identity (company + country + marketplace + sku + year) — only the
+  // selected site's row is created/updated (KM Amazon never touches ResUS Amazon).
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function sameSite(i, yr) { return up(i.sku) === up(sku) && i.year === yr && up(i.company) === up(company) && up(i.country) === up(country) && up(i.marketplace) === up(marketplace); }
+  const findTarget = () => fcRegularMock.find(i => sameSite(i, targetYear));
+  const baseItem = fcRegularMock.find(i => sameSite(i, baseYear));
+  let touched = 0;
+
+  if (method === 'manual') {
+    // Upsert the entered Jan–Dec into the specific site's target-year row (create if missing).
+    let t = findTarget();
+    if (!t) {
+      t = { sku: sku, year: targetYear, company: company, marketplace: marketplace, country: country, category: (baseItem && baseItem.category) || '', series: (baseItem && baseItem.series) || '', months: [0,0,0,0,0,0,0,0,0,0,0,0] };
+      fcRegularMock.push(t);
     }
-  });
-  
-  // Show result
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const methodName = method === 'actual' ? 'Apply Growth Rate (Actual)' : 
-                     method === 'forecast' ? 'Copy from Previous Year (Forecast)' : 
-                     'Manual Input';
-  const targetInfo = method === 'manual' ? ` for ${monthNames[targetMonth]}` : ' for all months';
-  
-  alert(
-    `Regular FC Update Complete!\n\n` +
-    `Method: ${methodName}\n` +
-    `Target Year: ${targetYear}${targetInfo}\n` +
-    `Growth Rate: ${growthRate}%\n\n` +
-    `Added: ${addedCount} SKU(s)\n` +
-    `Skipped: ${skippedCount} SKU(s) (already exists)\n\n` +
-    `Note: This is a demo. Data is stored in memory only.`
-  );
-  
-  console.log('Updated Data:', updatedData);
-  
-  // Refresh table if on Regular Forecast tab
+    t.months = manualMonths.slice();
+    touched = 1;
+  } else if (method === 'actual') {
+    const b = baseItem;
+    if (!b) { alert('Demo: no Base Year ' + baseYear + ' row for ' + sku + ' (' + (company || '—') + ' / ' + country + ' / ' + marketplace + '). (In-memory demo only.)'); return; }
+    let t = findTarget();
+    if (!t) { t = { sku: sku, year: targetYear, company: company, marketplace: marketplace, country: country, category: b.category, series: b.series, months: [0,0,0,0,0,0,0,0,0,0,0,0] }; fcRegularMock.push(t); }
+    t.months = b.months.map(m => Math.round(m * (1 + growthRate / 100)));
+    touched = 1;
+  } else { // prevMonth: source = the explicit Based Year + Based Month value × (1 + rate) → Target Month
+    const src = fcRegularMock.find(i => sameSite(i, basedYear));
+    const srcVal = src ? (src.months[basedMonth] || 0) : 0;
+    let t = findTarget();
+    if (!t) { t = { sku: sku, year: targetYear, company: company, marketplace: marketplace, country: country, category: (src && src.category) || '', series: (src && src.series) || '', months: [0,0,0,0,0,0,0,0,0,0,0,0] }; fcRegularMock.push(t); }
+    t.months[targetMonth] = Math.round(srcVal * (1 + growthRate / 100));
+    touched = 1;
+  }
+
+  alert('Regular FC Update — DEMO (in-memory only, NOT written to DB).\n\n' +
+    'Method: ' + methodName + '\nCompany / Country / Marketplace: ' + (company || '—') + ' / ' + country + ' / ' + marketplace +
+    '\nTarget Year: ' + targetYear + (method === 'prevMonth' ? ' / ' + monthNames[targetMonth] : '') +
+    '\nRows touched: ' + touched);
   renderFcRegularTable();
   closeFcModal();
 }
 
-function saveNewEvent() {
-  const sku = document.getElementById('event-sku-input').value.trim();
-  const year = parseInt(document.getElementById('event-year-input').value);
-  const event = document.getElementById('event-event-input').value;
-  const eventPeriod = document.getElementById('event-period-input').value.trim();
-  const fcQty = parseInt(document.getElementById('event-qty-input').value);
-  
-  if (!sku) {
-    alert('SKU is required');
-    return;
-  }
-  
-  if (!eventPeriod) {
-    alert('Event Period is required');
-    return;
-  }
-  
-  if (isNaN(fcQty) || fcQty < 0) {
-    alert('Please enter a valid FC Qty');
-    return;
-  }
-  
-  // Check duplicate
-  const exists = fcEventMock.some(item => 
-    item.sku === sku && 
-    item.year === year && 
-    item.event === event &&
-    item.eventPeriod === eventPeriod
-  );
-  
-  if (exists) {
-    alert('This event already exists for the selected SKU and period');
-    return;
-  }
-  
-  // Create new event item
-  const newEvent = {
-    sku,
-    year,
-    company: document.getElementById('event-company-input').value,
-    marketplace: document.getElementById('event-marketplace-input').value,
-    country: document.getElementById('event-country-input').value,
-    category: document.getElementById('event-category-input').value,
-    series: document.getElementById('event-series-input').value,
-    event,
-    eventPeriod,
-    fcQty
-  };
-  
-  // Add to data
-  fcEventMock.push(newEvent);
-  
-  // Re-render
-  renderFcEventTable();
-  closeFcModal();
-  alert('Event added successfully');
-}
+// (Removed dead saveNewEvent — superseded by the Special Event Builder v2 saveEventUpdate;
+//  it referenced obsolete single-field element IDs that no longer exist in the modal.)
 
 
 
@@ -1817,16 +2446,84 @@ function _getDbFcRegularData() {
     });
 }
 
+// Live DB (Demo OFF) = the page reads/writes Operation DB; Demo ON keeps the local mock arrays.
+function _fcUseDb() {
+    var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+    return !demoOn;
+}
+
+// Map fc_special_events rows → Event Forecast render shape (Demo OFF). Source = getFcSpecialEvents().
+function _getDbFcEventData() {
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
+    return rows.map(function(r) {
+        var raw = r.raw || {};
+        return {
+            eventId: r.eventId || raw.event_id || '',
+            sku: r.sku,
+            year: raw.year || r.year || '',
+            company: r.company,
+            marketplace: r.marketplace,
+            country: r.country,
+            category: r.category,
+            series: r.series,
+            event: r.event,                 // normalizer: event || event_name
+            eventPeriod: r.eventPeriod,      // normalizer: event_period || period
+            fcQty: Number(r.fcQty) || 0
+        };
+    });
+}
+
+// Map fc_target_rules rows → Target Rule shape used by the table + effective-rule resolver (Demo OFF).
+// Extra UI columns (year / category / series / sku) are read from raw for round-trip fidelity.
+var _FC_MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function _getDbTargetRules() {
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcTargetRules) ? window.KM.DB.getFcTargetRules() : [];
+    return rows.map(function(r) {
+        var raw = r.raw || {};
+        var fallback = (r.targetPercentage != null) ? r.targetPercentage : 100;
+        var pct = {};
+        _FC_MONTH_KEYS.forEach(function(m) {
+            var v = raw[m + '_pct'];
+            pct[m] = (v === '' || v == null) ? fallback : (parseFloat(v) || 0);
+        });
+        var scope = String(raw.scope_type || '').trim();
+        return {
+            id: r.ruleId || raw.target_rule_id || '',
+            scope: scope,
+            year: raw.year ? (parseInt(raw.year, 10) || raw.year) : '',
+            marketplace: r.marketplace || raw.marketplace || 'All',
+            category: raw.category || (scope === 'Category' ? r.scopeId : null) || null,
+            series: raw.series || (scope === 'Series' ? r.scopeId : null) || null,
+            sku: raw.sku || (scope === 'SKU' ? r.scopeId : null) || null,
+            percentages: pct
+        };
+    });
+}
+
+// Active target-rule set: live DB rows on Demo OFF, else the local mock array.
+function _getActiveTargetRules() {
+    return _fcUseDb() ? _getDbTargetRules() : targetRules;
+}
+
 // Rebuild a FC Summary filter checkbox panel from distinct DB values (Demo OFF).
+// values: array of strings OR { value, label } objects. Checkbox value stays the canonical key
+// (used for filter matching); label is what the user sees (e.g. marketplace_display_name).
 function _rebuildFcPanel(filterType, values) {
     var panel = document.querySelector('#fc-summary-section .fc-dropdown-panel[data-filter="' + filterType + '"]');
     if (!panel) return;
     var html = '<label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, \'' + filterType + '\')"> <strong>All</strong></label>';
     values.forEach(function(v) {
-        html += '<label class="fc-checkbox-item"><input type="checkbox" value="' + v + '" checked onchange="updateFcFilter(\'' + filterType + '\')"> ' + v + '</label>';
+        var value = (v && typeof v === 'object') ? v.value : v;
+        var label = (v && typeof v === 'object') ? v.label : v;
+        html += '<label class="fc-checkbox-item"><input type="checkbox" value="' + value + '" checked onchange="updateFcFilter(\'' + filterType + '\')"> ' + label + '</label>';
     });
     panel.innerHTML = html;
 }
+
+// NOTE: Cascading/faceted filter narrowing was intentionally removed — every dimension keeps its full
+// option set (selecting US must NOT hide other countries' related options). Options are built once per
+// load by _populateFcFilterOptionsFromDb; table filtering (filterFcRegular / filterFcEvent) still
+// applies the selected values. (_rebuildFcPanelChecked / _fcCascadeFilters removed.)
 
 // Populate company/marketplace/country/category/series filter options from fc_regular_forecast distinct values.
 // Event filter is left as-is (Special Event not connected in this task).
@@ -1841,7 +2538,8 @@ function _populateFcFilterOptionsFromDb() {
         return arr;
     };
     _rebuildFcPanel('company', distinct('company'));
-    _rebuildFcPanel('marketplace', distinct('marketplace'));
+    // Marketplace: checkbox value = canonical key present in the data; label = display name.
+    _rebuildFcPanel('marketplace', distinct('marketplace').map(function(mk){ return { value: mk, label: _fcMarketplaceLabel(mk) }; }));
     _rebuildFcPanel('country', distinct('country'));
     _rebuildFcPanel('category', distinct('category'));
     _rebuildFcPanel('series', distinct('series'));
@@ -1883,6 +2581,7 @@ function _fcSummaryEnsureDbAndRender() {
         // "Please select a year" empty state — table does NOT auto-populate until user action.
         renderFcRegularTable();
         renderFcEventTable();
+        if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable();  // live fc_target_rules
     };
     if (!window._opDbCache) {
         var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)

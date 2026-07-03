@@ -8,6 +8,12 @@ function _spUseDb() {
         window.KM.DB.isCloudWriteEnabled() && window.KM.DB.getShippingPlans);
 }
 
+// Set a section-title count badge (e.g. Draft / Pending Approval / Approved). Safe no-op if absent.
+function _spSetSectionCount(id, n) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = n;
+}
+
 function renderShippingPlan() {
     // Cloud (DB) path: read shipping_plans / shipping_plan_lines. Falls back to the legacy
     // sessionStorage rendering only when cloud write is not enabled (Demo / unconfigured).
@@ -55,6 +61,11 @@ function renderShippingPlan() {
     const approvedPlans = filteredPlans.filter(p => {
         return Object.keys(p.plans).some(method => p.status[method] === 'approved');
     });
+
+    // Section count badges (visual — matches Request Order Draft's count display).
+    _spSetSectionCount('draftSectionCount', draftPlans.length);
+    _spSetSectionCount('pendingSectionCount', pendingPlans.length);
+    _spSetSectionCount('approvedSectionCount', approvedPlans.length);
 
     if (allPlans.length === 0) {
         document.getElementById('shippingPlanCards').innerHTML = '<p>No shipping plans available.</p>';
@@ -571,10 +582,14 @@ function _spLookup(map, country, marketplace, sku) {
            map.bySku[String(sku || '').trim().toLowerCase()] || null;
 }
 
+// plan_id → true when a shipment exists for it (rebuilt each render). Lets the Done button appear
+// even if the plan's transferred_* columns were never persisted (missing header on an old tab).
+var _spPlanHasShipment = {};
 // Has the plan been transferred to a Shipment Draft (Execution Commit done)? → eligible for Done.
 function _spTransferred(p) {
     return !!((p.transferredShipmentId && String(p.transferredShipmentId).trim()) ||
-              (p.transferredToShipmentAt && String(p.transferredToShipmentAt).trim()));
+              (p.transferredToShipmentAt && String(p.transferredToShipmentAt).trim()) ||
+              (p.shippingPlanId && _spPlanHasShipment[p.shippingPlanId]));
 }
 // Has the Decision Layer been marked Completed (Done pressed)? → leaves the Active view.
 function _spCompleted(p) {
@@ -585,6 +600,11 @@ function renderShippingPlanFromDb() {
     _spSkuLogiCache = null;   // rebuild the sku logistics lookup from the freshest cache each render
     var plans = window.KM.DB.getShippingPlans() || [];
     var lines = window.KM.DB.getShippingPlanLines() || [];
+    // Map which plans already have a shipment (robust Done-button detection).
+    _spPlanHasShipment = {};
+    ((window.KM.DB.getShipments && window.KM.DB.getShipments()) || []).forEach(function(sh) {
+        if (sh.shippingPlanId) _spPlanHasShipment[sh.shippingPlanId] = true;
+    });
     var linesByPlan = {};
     lines.forEach(function(l) {
         (linesByPlan[l.shippingPlanId] = linesByPlan[l.shippingPlanId] || []).push(l);
@@ -617,6 +637,13 @@ function renderShippingPlanFromDb() {
     var approved = inScope.filter(function(p) { return p.status === 'approved' && !_spCompleted(p); });
     var cancelled = inScope.filter(function(p) { return p.status === 'cancelled' && !_spCompleted(p); });
     var completed = inScope.filter(function(p) { return _spCompleted(p); });
+
+    // Section count badges (visual — matches Request Order Draft's count display).
+    _spSetSectionCount('draftSectionCount', draft.length);
+    _spSetSectionCount('pendingSectionCount', pending.length);
+    _spSetSectionCount('approvedSectionCount', approved.length);
+    _spSetSectionCount('completedSectionCount', completed.length);
+    _spSetSectionCount('cancelledSectionCount', cancelled.length);
 
     _spRenderDbSection('shippingPlanCards', draft, 'draft', linesByPlan, 'No shipping plans available.', live);
     _spRenderDbSection('pendingApprovalCards', pending, 'pending_approval', linesByPlan, 'No pending approvals.', live);

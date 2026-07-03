@@ -251,7 +251,7 @@ Each **downstream** layer **inherits** the upstream truth (value **and** its con
         Analysis Truth
    (Inventory Replenishment)
             |
-            | Working Draft        (Shipping Allocation — temporary, persists nothing; §8A)
+            | Working Draft        (Execution Plan — temporary, persists nothing; §8A)
             v
             | Decision Commit      (Submit Plan)
             v
@@ -289,8 +289,15 @@ Each layer has an **Owner**, a **Truth** (its source of truth), and a **Snapshot
 | **Analysis** | Inventory Replenishment | Live inventory + forecast + sales source data | — (Runtime only; Working Draft is temporary, persists nothing) |
 | **Decision** | Weekly Shipping Plan | `shipping_plans` + `shipping_plan_lines` | **Decision Snapshot** (§4) |
 | **Execution** | Shipment (Draft / Overview) | `shipments` + `shipment_lines` | **Execution Snapshot** (§4A) |
-| **Procurement** | Purchase Order | `purchase_orders` + `purchase_order_lines` | (procurement snapshot — future) |
+| **Procurement (Planning)** | Request Order Draft | `request_orders` + `request_order_lines` | Procurement Planning Draft (copies upstream demand; never writes back) |
+| **Procurement (Commitment)** | Purchase Order | `purchase_orders` + `purchase_order_lines` | Procurement Commitment (copies from the approved Request Order; never writes back) |
 | **Documents** | Export / Document Center | `generated_documents` | (derived output) |
+
+> **Procurement Layer Phase 1 (Immutable Flow):** `Shipment / Inventory / Factory Stock` → **Request Order Draft** (Procurement Planning Draft) → **Purchase Order** (Procurement Commitment). Downstream copies upstream but never writes back: **PO does not write Request Order; Request Order does not write Shipment / Inventory / Factory Stock.** Request Order / PO are **API-ready** modules (see [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)). Future links to Shipment / Factory Stock / Supplier Price List are copy-only references.
+
+> **Overseas Inbound (planning input, Immutable Flow):** an Overseas Inbound Draft is a **planning input** that feeds the **Decision Layer** — **Submit creates a Weekly Shipping Plan** (never a Shipment Draft directly, never a direct overseas-stock or factory-stock write). Only an approved plan reaches the Execution Layer; Overseas Stock updates only on shipment **receipt**. See [`OVERSEAS_INBOUND_SPEC.md`](./OVERSEAS_INBOUND_SPEC.md).
+
+> **Master edits never rewrite snapshots (Immutable Flow):** editing a master record — e.g. **SKU Details Add/Edit** ([`SKU_DETAILS_ADD_EDIT_SPEC.md`](./SKU_DETAILS_ADD_EDIT_SPEC.md)) — updates `sku_details` only. Historical **Decision / Execution / PO snapshots** (`shipping_plan_lines` / `shipment_lines` / `purchase_order_lines`) captured product name, dims, weights, and prices at commit time and are **frozen**; the master is a live reference only for **new** records.
 
 > **No new DB is required for this principle.** It is a discipline over existing tables: read upstream, freeze a snapshot, own only your layer's records. **Analysis Truth** has no persisted snapshot (it is recomputed at runtime); **Decision Truth** owns the **Decision Snapshot**; **Execution Truth** owns the **Execution Snapshot**.
 
@@ -314,9 +321,11 @@ Each layer has an **Owner**, a **Truth** (its source of truth), and a **Snapshot
 
 ---
 
-## 8A. Shipping Allocation Working Draft Principle
+## 8A. Execution Plan Working Draft Principle *(formerly "Shipping Allocation Working Draft")*
 
-**Definition:** the **Shipping Allocation Working Draft** is a **Temporary Decision** inside Inventory Replenishment. It is **NOT** a Decision Snapshot.
+**Definition:** the **Execution Plan Working Draft** is a **Temporary Decision** inside Inventory Replenishment. It backs the **Execution Plan** block (Inventory Replenishment second-layer right panel; `INVENTORY_TABLE_MAPPING_SPEC.md` §11). It is **NOT** a Decision Snapshot.
+
+> **Recommendation Summary vs Execution Plan.** The **Recommendation Summary** is the read-only **system suggestion** (per-window need + suggested route + reason) and is **never committed**. The **Execution Plan** is the PM's actual plan and is the **only** thing **Submit Plan** commits. "Shipping Allocation" is the legacy name for the Execution Plan.
 
 **Rules:**
 - Working Draft may be edited **many times** before Submit Plan.
@@ -377,6 +386,7 @@ Analysis Layer → Decision Layer → Execution Layer → Settlement Layer
   Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Received → Closed
   ```
 - The Execution Layer is **fully independent** and **must NOT modify the Decision Layer**.
+- **UI split:** **Shipment Draft = the execution working area** (`draft → ready_to_ship → shipped`, hidden after Done); **Shipment Overview = the official shipped/history view** (`shipped` onward). **Save** only edits execution fields (not official, not in Overview); **Ship** makes the shipment official (`shipped_at`) and puts it in Overview; **Done** only hides the card from the Draft workspace (row preserved). The UI groups the Decision-Layer **Weekly Shipping Plan** together with the Execution-Layer **Shipment Draft / Shipment Overview** under one **Shipment Center** menu — a grouping convenience, **not** a layer merge (`SHIPMENT_CENTER_SPEC.md` §3–§5).
 
 ### Layer 4 — Settlement Layer
 - **Owner:** Export Center / Documents / History / Reports / Audit.

@@ -62,6 +62,22 @@ function shippingPlanEnsureSheet_(ss, name, headers) {
   return sh;
 }
 
+/**
+ * Ensure the given column names exist in a sheet's header row; append any that are missing.
+ * Lets new fields (e.g. completed_at / transferred_* / external_shipment_id) persist on an
+ * already-created tab without a manual migration. Shared across handlers (single global scope).
+ */
+function sheetEnsureColumns_(sheet, names) {
+  if (!sheet || !names || !names.length) return;
+  var lastCol = sheet.getLastColumn();
+  var headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); }) : [];
+  var toAdd = [];
+  for (var i = 0; i < names.length; i++) {
+    if (headers.indexOf(names[i]) === -1 && toAdd.indexOf(names[i]) === -1) toAdd.push(names[i]);
+  }
+  if (toAdd.length) sheet.getRange(1, lastCol + 1, 1, toAdd.length).setValues([toAdd]);
+}
+
 /** Append a row to a sheet using its existing header row (writes only known columns). */
 function shippingPlanAppendByHeader_(sheet, obj) {
   var lastCol = sheet.getLastColumn();
@@ -549,6 +565,11 @@ function handleCompleteShippingPlan_(body) {
   var sheet = ss.getSheetByName('shipping_plans');
   if (!sheet) return jsonResponse_({ success: false, error: 'shipping_plans sheet not found' });
 
+  // Auto-add the completion + transfer columns if the tab predates them (no manual migration).
+  // Ensuring transfer columns up front lets us BACKFILL them when the Execution Commit created a
+  // shipment but the transfer writeback was silently skipped (missing header on an old tab).
+  sheetEnsureColumns_(sheet, ['completed_at', 'completed_by', 'transferred_shipment_id', 'transferred_to_shipment_at', 'updated_by', 'updated_at']);
+
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return jsonResponse_({ success: false, error: 'shipping_plans is empty' });
   var headers = data[0].map(function (h) { return String(h).trim(); });
@@ -566,20 +587,34 @@ function handleCompleteShippingPlan_(body) {
   if (curStatus !== 'approved') {
     return jsonResponse_({ success: false, error: 'Only an Approved plan can be completed (current: ' + curStatus + ')' });
   }
+
+  var now = shippingPlanTimestamp_();
+  function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(value); }
+
+  // Transfer detection: the plan's own transferred_shipment_id / transferred_to_shipment_at, OR an
+  // actual shipments row that references this plan (robust — the transfer metadata may never have
+  // persisted). If a shipment exists but the columns are blank, BACKFILL them here.
   var transferredId = col('transferred_shipment_id') !== -1 ? String(rowVals[col('transferred_shipment_id')]).trim() : '';
   var transferredAt = col('transferred_to_shipment_at') !== -1 ? String(rowVals[col('transferred_to_shipment_at')]).trim() : '';
+  if (!transferredId && !transferredAt) {
+    var foundShipmentId = shipmentFindForPlan_(ss, planId);
+    if (foundShipmentId) {
+      transferredId = foundShipmentId;
+      transferredAt = now;
+      setCell('transferred_shipment_id', foundShipmentId);
+      setCell('transferred_to_shipment_at', now);
+    }
+  }
   if (!transferredId && !transferredAt) {
     return jsonResponse_({ success: false, error: 'Plan has not been transferred to a Shipment Draft yet (Execution Commit required before Done).' });
   }
 
-  var now = shippingPlanTimestamp_();
-  function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(value); }
   setCell('completed_at', now);
   setCell('completed_by', actor);
   setCell('updated_by', actor);
   setCell('updated_at', now);
 
-  return jsonResponse_({ success: true, data: { shipping_plan_id: planId, completed_at: now, completed_by: actor } });
+  return jsonResponse_({ success: true, data: { shipping_plan_id: planId, completed_at: now, completed_by: actor, transferred_shipment_id: transferredId } });
 }
 
 // ---- appendShippingPlanNote ---------------------------------------

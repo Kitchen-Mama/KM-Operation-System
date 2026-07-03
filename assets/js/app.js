@@ -66,14 +66,19 @@ function showSection(section) {
             'sku-handbook': 'sku-handbook-section',
             'shippingplan': 'shippingplan-section',
             'shippinghistory': 'shippinghistory-section',
-            'campaign-risk': 'campaign-risk-section'
+            'shipment-draft': 'shipment-draft-section',
+            'shipment-overview': 'shippinghistory-section',
+            'campaign-risk': 'campaign-risk-section',
+            'request-order-draft': 'request-order-draft-section',
+            'purchase-order-overview': 'purchase-order-overview-section',
+            'purchase-order-list': 'purchase-order-list-section'
         };
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
             KM.lifecycle.switchTo(targetSectionId);
         }
     }
-    
+
     // 顯示選擇的區塊
     const sectionMap = {
         'ops': 'ops-section',
@@ -87,7 +92,12 @@ function showSection(section) {
         'sku-handbook': 'sku-handbook-section',
         'shippingplan': 'shippingplan-section',
         'shippinghistory': 'shippinghistory-section',
-        'campaign-risk': 'campaign-risk-section'
+        'shipment-draft': 'shipment-draft-section',
+        'shipment-overview': 'shippinghistory-section',
+        'campaign-risk': 'campaign-risk-section',
+        'request-order-draft': 'request-order-draft-section',
+        'purchase-order-overview': 'purchase-order-overview-section',
+        'purchase-order-list': 'purchase-order-list-section'
     };
     
     const targetSectionId = sectionMap[section];

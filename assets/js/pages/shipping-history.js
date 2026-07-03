@@ -119,43 +119,30 @@ function loadHistoryData() {
     }
 }
 
-function initShippingHistoryPage() {
-    console.log('Initializing Shipping History Page');
-    
+// Shipment Overview page init (full filter bar). Separate from the Shipment Draft page.
+function initShipmentOverviewPage() {
     const searchBtn = document.querySelector("#shippinghistory-section .btn-primary");
     const dateTrigger = document.getElementById('historyDateTrigger');
-    
-    if (!searchBtn || !dateTrigger) {
-        console.error('Shipping History elements not found:', { searchBtn, dateTrigger });
-        return;
-    }
-    
-    console.log('Elements found, setting up events');
-    
+
     loadHistoryData();
     updateHistoryDateTriggerText();
-    
-    // Init custom dropdowns
+
+    // Init custom dropdowns (Country / Shipping Method) — scoped to the Overview section.
     _initShDropdowns();
-    
-    // 直接綁定事件，不使用 clone
-    searchBtn.onclick = onHistorySearch;
-    dateTrigger.onclick = function(e) {
+
+    // Bind the full filter bar's Search + Date trigger (no cloneNode).
+    if (searchBtn) searchBtn.onclick = onHistorySearch;
+    if (dateTrigger) dateTrigger.onclick = function(e) {
         e.preventDefault();
         e.stopPropagation();
-        console.log('Date trigger clicked');
         openHistoryDateModal();
     };
-    
-    // Execution Layer: when cloud DB is enabled, render real shipments (shipments + shipment_lines)
-    // instead of the mock history. Shows the Shipment Draft (status=draft) + all other shipments.
-    if (_shUseDb()) {
-        _shLoadAndRender();
-    } else {
-        renderHistoryResults([]);
-    }
-    console.log('Shipping History initialized');
+
+    // Render official shipments (shipped onward) from the DB, or the mock/demo path when no DB.
+    renderShipmentOverview();
 }
+// Back-compat alias (old name).
+var initShippingHistoryPage = initShipmentOverviewPage;
 
 function openHistoryDateModal() {
     console.log('openHistoryDateModal called');
@@ -466,7 +453,8 @@ function formatHistoryDate(date) {
 }
 
 function onHistorySearch() {
-    if (_shUseDb()) { _shLoadAndRender(); return; }
+    // Overview Search. DB → render official shipments with the full filters; else mock/demo.
+    if (_shUseDb()) { renderShipmentOverview(); return; }
     const params = collectFilterParams();
     const results = filterHistoryData(historyState.data, params);
 
@@ -520,9 +508,11 @@ function filterHistoryData(data, params) {
 }
 
 function renderHistoryResults(list) {
-    const emptyStateEl = document.querySelector(".history-empty-state");
-    const listEl = document.querySelector(".history-list");
-    
+    // Overview (mock/demo) results — scoped to the Overview section so it never touches the
+    // Shipment Draft page's list (separate pages, separate DOM state).
+    const emptyStateEl = document.querySelector("#shippinghistory-section .history-empty-state");
+    const listEl = document.querySelector("#shippinghistory-section .history-list");
+
     if (!emptyStateEl || !listEl) return;
     
     if (!historyState.hasSearched) {
@@ -641,37 +631,73 @@ function _initShDropdowns() {
         };
     });
 
-    // Panel click stop propagation
-    root.querySelectorAll('.sh-dropdown-panel').forEach(panel => {
-        panel.onclick = e => e.stopPropagation();
+    // Panel checkbox binding (extracted so DB-driven option rebuilds can re-bind — see
+    // _shOverviewSyncFilterOptions). Idempotent: safe to call again after replacing panel contents.
+    root.querySelectorAll('.sh-dropdown-panel').forEach(panel => _shBindDropdownPanel(panel, root));
 
-        const filterType = panel.dataset.filter;
-        const allCb = panel.querySelector('input[value=""]');
-        const otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-
-        // "All" toggles every option together (checking All also checks the others).
-        if (allCb) {
-            allCb.onchange = function() {
-                const isChecked = this.checked;
-                otherCbs.forEach(cb => cb.checked = isChecked);
-                _updateShDropdownText(filterType, root);
-            };
-        }
-        otherCbs.forEach(cb => {
-            cb.onchange = function() {
-                // Single-select: uncheck all others, uncheck "All"
-                otherCbs.forEach(other => { if (other !== cb) other.checked = false; });
-                if (allCb) allCb.checked = !this.checked;
-                _updateShDropdownText(filterType, root);
-            };
+    // Close on outside click — bound once per section (guard against stacking on re-init).
+    if (!root._shOutsideBound) {
+        root._shOutsideBound = true;
+        document.addEventListener('click', function _shOutside(e) {
+            if (!root.contains(e.target)) {
+                root.querySelectorAll('.sh-dropdown-panel').forEach(p => p.classList.remove('is-open'));
+            }
         });
-    });
+    }
+}
 
-    // Close on outside click
-    document.addEventListener('click', function _shOutside(e) {
-        if (!root.contains(e.target)) {
-            root.querySelectorAll('.sh-dropdown-panel').forEach(p => p.classList.remove('is-open'));
-        }
+// Bind (or re-bind) one dropdown panel's checkbox behavior (single-select with an "All" master).
+function _shBindDropdownPanel(panel, root) {
+    if (!panel) return;
+    panel.onclick = e => e.stopPropagation();
+    const filterType = panel.dataset.filter;
+    const allCb = panel.querySelector('input[value=""]');
+    const otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
+
+    // "All" toggles every option together (checking All also checks the others).
+    if (allCb) {
+        allCb.onchange = function() {
+            const isChecked = this.checked;
+            otherCbs.forEach(cb => cb.checked = isChecked);
+            _updateShDropdownText(filterType, root);
+        };
+    }
+    otherCbs.forEach(cb => {
+        cb.onchange = function() {
+            // Single-select: uncheck all others, uncheck "All"
+            otherCbs.forEach(other => { if (other !== cb) other.checked = false; });
+            if (allCb) allCb.checked = !this.checked;
+            _updateShDropdownText(filterType, root);
+        };
+    });
+}
+
+// Rebuild the Overview Country / Shipping Method dropdown options from LIVE DB values (no mock
+// options). Preserves the current single selection. When the DB has no shipments the panel shows
+// only "All" (SHIPMENT_CENTER_SPEC / Part 3 — never inject hardcoded sample options).
+function _shOverviewSyncFilterOptions(shipments) {
+    var root = document.querySelector('#shippinghistory-section');
+    if (!root) return;
+    var official = (shipments || []).filter(function(s) { return SH_OVERVIEW_STATUSES[s.status]; });
+    var optionSets = {
+        country: _shDistinct(official.map(function(s) { return s.country; })),
+        method: _shDistinct(official.map(function(s) { return s.shippingMethod; }))
+    };
+    Object.keys(optionSets).forEach(function(filter) {
+        var panel = root.querySelector('.sh-dropdown-panel[data-filter="' + filter + '"]');
+        if (!panel) return;
+        var prev = (typeof _getShDropdownValue === 'function') ? _getShDropdownValue(filter) : '';
+        var vals = optionSets[filter];
+        var allChecked = !prev || vals.indexOf(prev) === -1; // fall back to All if prior value is gone
+        panel.innerHTML = '<label class="sh-checkbox-item"><input type="checkbox" value="" ' +
+                (allChecked ? 'checked' : '') + '> <strong>All</strong></label>' +
+            vals.map(function(v) {
+                var checked = allChecked || v === prev;
+                return '<label class="sh-checkbox-item"><input type="checkbox" value="' + _shEsc(v) + '" ' +
+                    (checked ? 'checked' : '') + '> ' + _shEsc(v) + '</label>';
+            }).join('');
+        _shBindDropdownPanel(panel, root);
+        _updateShDropdownText(filter, root);
     });
 }
 
@@ -711,146 +737,315 @@ function _shEsc(s) {
 function _shNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
 var SH_STATUS_LABEL = {
-    draft: 'Draft', planned: 'Planned', ready_to_ship: 'Ready to Ship', shipped: 'Shipped',
-    in_transit: 'In Transit', partial_received: 'Partial Received', delivered: 'Delivered',
-    completed: 'Completed', cancelled: 'Cancelled', stuck: 'Stuck'
+    draft: 'Draft', ready_to_ship: 'Ready to Ship', shipped: 'Shipped',
+    in_transit: 'In Transit', arrived: 'Arrived', received: 'Received', closed: 'Closed',
+    cancelled: 'Cancelled', stuck: 'Stuck',
+    // legacy labels (still displayed if present)
+    planned: 'Planned', partial_received: 'Partial Received', delivered: 'Delivered', completed: 'Completed'
 };
-// Linear status flow (Phase 2 placeholder — no factory stock side effects).
-var SH_STATUS_FLOW = ['draft', 'planned', 'ready_to_ship', 'shipped', 'in_transit', 'delivered', 'completed'];
+// Execution Layer linear flow (Supply Chain Architecture v1.2 §10). Overview uses this to advance
+// AFTER shipped. Draft-page transitions use the explicit Ready to Ship / Ship buttons.
+var SH_STATUS_FLOW = ['draft', 'ready_to_ship', 'shipped', 'in_transit', 'arrived', 'received', 'closed'];
 function _shNextStatus(status) {
     var i = SH_STATUS_FLOW.indexOf(status);
     return (i >= 0 && i < SH_STATUS_FLOW.length - 1) ? SH_STATUS_FLOW[i + 1] : null;
 }
-// Execution fields stay editable until the shipment is completed or cancelled.
-function _shEditable(status) { return status !== 'completed' && status !== 'cancelled'; }
 
-// View mode: 'draft' (Shipment Draft page) vs 'overview' (Shipment Overview page).
-function _shViewMode() {
-    return (window.KM && window.KM.shipmentViewMode) || 'overview';
-}
-// Status sets per page. Draft = preparation lifecycle; Overview = everything except draft.
-var SH_DRAFT_STATUSES = { draft: 1, planned: 1, ready_to_ship: 1 };
-function _shInView(status, mode) {
-    if (mode === 'draft') return !!SH_DRAFT_STATUSES[status];
-    return status !== 'draft';   // overview: all post-draft shipments
-}
-function _shUpdateTitle(mode) {
-    var t = document.querySelector('#shippinghistory-section .page-title');
-    if (t) t.textContent = (mode === 'draft') ? 'Shipment Draft' : 'Shipment Overview';
-}
+// Shipment Draft workspace = draft / ready_to_ship / shipped (until Done hides it).
+var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped'];
+// Shipment Overview = official records only (shipped onward).
+var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 };
+// Done marker: hidden from the Draft workspace (still shown in Overview; row never deleted).
+function _shHiddenFromDraft(s) { return !!(s.hiddenFromDraftAt && String(s.hiddenFromDraftAt).trim()); }
 
+function _shDistinct(arr) {
+    var seen = {}, out = [];
+    (arr || []).forEach(function(v) { v = String(v == null ? '' : v).trim(); if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out.sort();
+}
+// ============================================================
+// Page separation: Shipment Draft and Shipment Overview are TWO independent pages.
+// They SHARE the shipments / shipment_lines DB and the card render helper (_shRenderDbCard),
+// but each owns its section, filter UI, init, and render — no shared filter DOM state.
+//   Shipment Draft    → #shipment-draft-section   (compact Country + Status filter; draft/ready_to_ship/shipped)
+//   Shipment Overview → #shippinghistory-section   (full filter bar; shipped onward)
+// ============================================================
+
+// Re-render whichever Shipment page is currently active. Called by the card action handlers
+// after a write (updateShipment already reloads the DB, so render-only is correct here).
 function _shLoadAndRender() {
-    historyState.hasSearched = true;
-    if (!window._opDbCache && window.KM.DB.loadOperationDb) {
-        window.KM.DB.loadOperationDb({ force: true }).then(_shRenderFromDb).catch(_shRenderFromDb);
-    } else {
-        _shRenderFromDb();
-    }
+    var draftSec = document.getElementById('shipment-draft-section');
+    if (draftSec && draftSec.classList.contains('active')) { renderShipmentDraft(); return; }
+    renderShipmentOverview();
 }
 
-function _shRenderFromDb() {
+// ---- Shipment Draft page --------------------------------------------------
+function initShipmentDraftPage() {
+    _shdEnsureFilter();
+    renderShipmentDraft();
+}
+
+// Build the compact top-right filter (Country + Status) in the Draft section header.
+// NO Marketplace; NO Date / SKU / Shipping Method / Search (that is Overview's full bar).
+function _shdEnsureFilter() {
+    var header = document.querySelector('#shipment-draft-section .page-header');
+    if (!header) return;
+    if (document.getElementById('shd-simple-filter')) return;
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    var wrap = document.createElement('div');
+    wrap.id = 'shd-simple-filter';
+    wrap.style.cssText = 'display:flex;gap:12px;align-items:center;margin-left:auto;';
+    wrap.innerHTML =
+        '<label style="font-size:13px;color:#475569;">Country ' +
+            '<select id="shd-filter-country" onchange="renderShipmentDraft()" style="margin-left:4px;padding:4px 8px;border:1px solid #E2E8F0;border-radius:4px;font-size:13px;"></select></label>' +
+        '<label style="font-size:13px;color:#475569;">Status ' +
+            '<select id="shd-filter-status" onchange="renderShipmentDraft()" style="margin-left:4px;padding:4px 8px;border:1px solid #E2E8F0;border-radius:4px;font-size:13px;">' +
+                '<option value="">All</option>' +
+                '<option value="draft">Draft</option>' +
+                '<option value="ready_to_ship">Ready to Ship</option>' +
+                '<option value="shipped">Shipped</option>' +
+            '</select></label>';
+    header.appendChild(wrap);
+}
+
+// Populate the Draft Country select from the draft-eligible shipments (preserve current choice).
+function _shdPopulateCountry(shipments) {
+    var sel = document.getElementById('shd-filter-country');
+    if (!sel) return;
+    var cur = sel.value;
+    var vals = _shDistinct(shipments
+        .filter(function(s) { return SH_DRAFT_STATUSES.indexOf(s.status) !== -1 && !_shHiddenFromDraft(s); })
+        .map(function(s) { return s.country; }));
+    sel.innerHTML = ['<option value="">All</option>'].concat(vals.map(function(v) {
+        return '<option value="' + _shEsc(v) + '">' + _shEsc(v) + '</option>';
+    })).join('');
+    if (cur && vals.indexOf(cur) !== -1) sel.value = cur;
+}
+
+function renderShipmentDraft() {
+    var sec = document.getElementById('shipment-draft-section');
+    if (!sec) return;
+    var emptyStateEl = sec.querySelector('.history-empty-state');
+    var listEl = sec.querySelector('.history-list');
+    if (!emptyStateEl || !listEl) return;
+
+    if (!_shUseDb()) {
+        emptyStateEl.textContent = 'Connect the Operation DB (Google Sheet) to see Shipment Drafts.';
+        emptyStateEl.hidden = false; listEl.hidden = true; listEl.innerHTML = '';
+        return;
+    }
+    if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+        window.KM.DB.loadOperationDb({ force: true }).then(renderShipmentDraft).catch(renderShipmentDraft);
+        return;
+    }
+
     var shipments = window.KM.DB.getShipments() || [];
     var lines = window.KM.DB.getShipmentLines() || [];
     var linesByShipment = {};
-    lines.forEach(function(l) {
-        (linesByShipment[l.shipmentId] = linesByShipment[l.shipmentId] || []).push(l);
+    lines.forEach(function(l) { (linesByShipment[l.shipmentId] = linesByShipment[l.shipmentId] || []).push(l); });
+
+    _shdPopulateCountry(shipments);
+    var fCountry = (document.getElementById('shd-filter-country') || {}).value || '';
+    var fStatus = (document.getElementById('shd-filter-status') || {}).value || '';
+
+    // Draft work area: draft / ready_to_ship / shipped (not yet hidden via Done).
+    var pool = shipments.filter(function(s) {
+        return SH_DRAFT_STATUSES.indexOf(s.status) !== -1 && !_shHiddenFromDraft(s)
+            && (!fCountry || s.country === fCountry)
+            && (!fStatus || s.status === fStatus);
     });
+    if (!pool.length) {
+        emptyStateEl.textContent = 'No shipment drafts. Approve a Weekly Shipping Plan to create a Shipment Draft.';
+        emptyStateEl.hidden = false; listEl.hidden = true; listEl.innerHTML = '';
+        return;
+    }
+    emptyStateEl.hidden = true; listEl.hidden = false;
+    var groups = [['draft', 'Draft'], ['ready_to_ship', 'Ready to Ship'], ['shipped', 'Shipped']];
+    listEl.innerHTML = groups.filter(function(g) { return !fStatus || g[0] === fStatus; }).map(function(g) {
+        var items = pool.filter(function(s) { return s.status === g[0]; });
+        var body = items.length
+            ? items.map(function(s) { return _shRenderDbCard(s, linesByShipment[s.shipmentId] || [], 'draft'); }).join('')
+            : '<p style="color:#94A3B8;font-size:13px;margin:0 0 8px;">No ' + g[1] + ' shipments.</p>';
+        // Section title styled like Request Order Draft: compact 15px heading + count badge.
+        return '<h3 class="shd-group-title">' + g[1] +
+            ' <span class="shd-group-title__count">' + items.length + '</span></h3>' + body;
+    }).join('');
+}
 
-    var mode = _shViewMode();
-    _shUpdateTitle(mode);
+// ---- Shipment Overview page -----------------------------------------------
+// Full filter bar (Date / Country / SKU / Shipping Method / Search) in #shippinghistory-section.
+// Shows official records only (shipped onward). Read-only fields.
+function renderShipmentOverview() {
+    var sec = document.getElementById('shippinghistory-section');
+    if (!sec) return;
+    var emptyStateEl = sec.querySelector('.history-empty-state');
+    var listEl = sec.querySelector('.history-list');
+    if (!emptyStateEl || !listEl) return;
 
-    // Apply the page filters (country / sku / method) + the view-mode status filter.
-    var params = collectFilterParams();
+    if (!_shUseDb()) {
+        // Demo mode: keep the existing mock-history behavior (Search-gated).
+        renderHistoryResults(historyState.hasSearched ? filterHistoryData(historyState.data, collectFilterParams()) : []);
+        return;
+    }
+    if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+        window.KM.DB.loadOperationDb({ force: true }).then(renderShipmentOverview).catch(renderShipmentOverview);
+        return;
+    }
+    historyState.hasSearched = true;
+
+    var shipments = window.KM.DB.getShipments() || [];
+    var lines = window.KM.DB.getShipmentLines() || [];
+    var linesByShipment = {};
+    lines.forEach(function(l) { (linesByShipment[l.shipmentId] = linesByShipment[l.shipmentId] || []).push(l); });
+
+    // Refresh Country / Shipping Method options from live DB (Part 3) before reading the filters.
+    _shOverviewSyncFilterOptions(shipments);
+
+    var fCountry = (typeof _getShDropdownValue === 'function') ? _getShDropdownValue('country') : '';
+    var fMethod = (typeof _getShDropdownValue === 'function') ? _getShDropdownValue('method') : '';
+    var skuInput = document.querySelector('#shippinghistory-section .filter-group--sku input');
+    var fSku = skuInput ? String(skuInput.value || '').trim().toLowerCase() : '';
+    var startStr = (historyState.dateRange && historyState.dateRange.start) ? formatHistoryDate(historyState.dateRange.start) : '';
+    var endStr = (historyState.dateRange && historyState.dateRange.end) ? formatHistoryDate(historyState.dateRange.end) : '';
+
     var list = shipments.filter(function(s) {
-        if (!_shInView(s.status, mode)) return false;
-        if (params.country && s.country !== params.country) return false;
-        if (params.method && s.shippingMethod !== params.method) return false;
-        if (params.start && s.createdAt && s.createdAt.substring(0, 10) < params.start) return false;
-        if (params.end && s.createdAt && s.createdAt.substring(0, 10) > params.end) return false;
-        if (params.sku) {
-            var has = (linesByShipment[s.shipmentId] || []).some(function(l) {
-                return l.sku.toLowerCase().indexOf(params.sku.toLowerCase()) !== -1;
-            });
-            if (!has) return false;
+        if (!SH_OVERVIEW_STATUSES[s.status]) return false;
+        if (fCountry && s.country !== fCountry) return false;
+        if (fMethod && s.shippingMethod !== fMethod) return false;
+        if (fSku) {
+            var lns = linesByShipment[s.shipmentId] || [];
+            if (!lns.some(function(l) { return String(l.sku || '').toLowerCase().indexOf(fSku) !== -1; })) return false;
+        }
+        if (startStr || endStr) {
+            var d = _shShipmentDate(s); // missing date is never hidden
+            if (d) {
+                if (startStr && d < startStr) return false;
+                if (endStr && d > endStr) return false;
+            }
         }
         return true;
     });
-
-    var emptyStateEl = document.querySelector('.history-empty-state');
-    var listEl = document.querySelector('.history-list');
-    if (!emptyStateEl || !listEl) return;
-
     if (!list.length) {
-        emptyStateEl.textContent = (mode === 'draft')
-            ? 'No shipment drafts. Approve a Weekly Shipping Plan to create a Shipment Draft.'
-            : 'No shipments to show in Overview.';
-        emptyStateEl.hidden = false;
-        listEl.hidden = true;
-        listEl.innerHTML = '';
+        emptyStateEl.textContent = 'No shipped shipments yet. Ship a Shipment Draft to see it here.';
+        emptyStateEl.hidden = false; listEl.hidden = true; listEl.innerHTML = '';
         return;
     }
-    emptyStateEl.hidden = true;
-    listEl.hidden = false;
-    listEl.innerHTML = list.map(function(s) { return _shRenderDbCard(s, linesByShipment[s.shipmentId] || [], mode); }).join('');
+    emptyStateEl.hidden = true; listEl.hidden = false;
+    listEl.innerHTML = list.map(function(s) { return _shRenderDbCard(s, linesByShipment[s.shipmentId] || [], 'overview'); }).join('');
+}
+
+// Best-available shipment date for the Overview Date filter.
+// Priority: shipped_at → etd → eta → created_at (SHIPMENT_CENTER_SPEC). shipped_at is stamped when
+// the shipment leaves the Draft workspace, so a just-shipped shipment (shipped_at = today) always
+// falls inside the default "Last 30 days" window — ETD/ETA are frequently FUTURE dates and, if used
+// first, would push a freshly-shipped shipment outside the window and hide it from Overview.
+function _shShipmentDate(s) {
+    var raw = s.shippedAt || s.etd || s.eta || s.createdAt || '';
+    return String(raw).slice(0, 10);
 }
 
 function _shRenderDbCard(s, planLines, mode) {
     var sid = s.shipmentId;
     var statusLabel = SH_STATUS_LABEL[s.status] || s.status || '—';
-    // Execution FIELDS are editable only on the Shipment Draft page (and only while non-terminal).
-    // Overview is read-only for fields. Status-advance is available on both while non-terminal.
-    var fieldsEditable = (mode === 'draft') && _shEditable(s.status);
-    var canAdvance = _shEditable(s.status) && !!_shNextStatus(s.status);
+    var status = s.status;
+    // Execution FIELDS editable only in the Draft workspace, and only while draft / ready_to_ship
+    // (shipped is read-only on the Draft page; Overview is always read-only).
+    var fieldsEditable = (mode === 'draft') && (status === 'draft' || status === 'ready_to_ship');
 
-    // SKU lines — Execution Snapshot (copied, read-only) + copied logistics (carton_cbm/cbm/gross/net).
+    // SKU Lines — logistics copied (read-only) + editable carton number range.
+    // Columns: SKU / Qty / Cartons / Carton CBM (single carton) / Gross Wt / Net Wt / Carton No. Start / End.
     var rows = planLines.map(function(l) {
-        var dos = (l.snapshotDaysOfSupply === '' || l.snapshotDaysOfSupply == null) ? '--' : l.snapshotDaysOfSupply;
         function n(v) { return (v === '' || v == null) ? '--' : v; }
+        function cartonCell(which, val) {
+            if (!fieldsEditable) return '<td style="text-align:right;">' + (val === '' || val == null ? '--' : _shEsc(val)) + '</td>';
+            return '<td style="text-align:right;"><input type="number" min="0" step="1" data-line-id="' + _shEsc(l.shipmentLineId) + '" data-carton="' + which + '" value="' + _shEsc(val) + '" oninput="_shClearCartonError(\'' + _shEsc(sid) + '\')" style="width:78px;text-align:right;padding:2px 4px;border:1px solid #E2E8F0;border-radius:4px;font-size:12px;"></td>';
+        }
         return '<tr>' +
             '<td>' + _shEsc(l.sku) + '</td>' +
             '<td style="text-align:right;">' + _shNum(l.qty) + '</td>' +
             '<td style="text-align:right;">' + _shNum(l.cartonQty) + '</td>' +
             '<td style="text-align:right;">' + n(l.cartonCbm) + '</td>' +
-            '<td style="text-align:right;">' + n(l.cbm) + '</td>' +
             '<td style="text-align:right;">' + n(l.grossWeight) + '</td>' +
             '<td style="text-align:right;">' + n(l.netWeight) + '</td>' +
-            '<td style="text-align:right;color:#94A3B8;">' + _shNum(l.snapshotCurrentStock) + '</td>' +
-            '<td style="text-align:right;color:#94A3B8;">' + (l.snapshotAvgSalesPerDay === '' ? '--' : l.snapshotAvgSalesPerDay) + '</td>' +
-            '<td style="text-align:right;color:#94A3B8;">' + dos + '</td>' +
+            cartonCell('start', l.cartonNoStart) +
+            cartonCell('end', l.cartonNoEnd) +
             '</tr>';
     }).join('');
+    // Totals row. Total Carton CBM = Σ(carton_cbm × carton_qty) — total shipment volume.
+    var tQty = planLines.reduce(function(a, l) { return a + _shNum(l.qty); }, 0);
+    var tCtn = planLines.reduce(function(a, l) { return a + _shNum(l.cartonQty); }, 0);
+    var tCartonCbm = planLines.reduce(function(a, l) { return a + _shNum(l.cartonCbm) * _shNum(l.cartonQty); }, 0);
+    var tGross = planLines.reduce(function(a, l) { return a + _shNum(l.grossWeight); }, 0);
+    var tNet = planLines.reduce(function(a, l) { return a + _shNum(l.netWeight); }, 0);
+    var footRow = '<tr style="font-weight:600;border-top:2px solid #CBD5E1;">' +
+        '<td>Total: ' + planLines.length + ' SKU</td>' +
+        '<td style="text-align:right;">' + tQty + '</td>' +
+        '<td style="text-align:right;">' + tCtn + '</td>' +
+        '<td style="text-align:right;">' + tCartonCbm.toFixed(3) + '</td>' +
+        '<td style="text-align:right;">' + tGross.toFixed(2) + '</td>' +
+        '<td style="text-align:right;">' + tNet.toFixed(2) + '</td>' +
+        '<td>—</td><td>—</td>' +
+        '</tr>';
 
-    // Execution fields. Editable only when fieldsEditable; otherwise read-only display.
-    function field(label, key, val, type) {
+    // Execution fields form (clean 2-column grid). Editable only when fieldsEditable; Carrier is
+    // always read-only (chosen on the Shipping Plan). Internal shipment_id is never editable.
+    function fld(label, key, val, type) {
         var v = _shEsc(val);
-        if (!fieldsEditable) return '<div class="sh-exec-row"><span class="sh-exec-label">' + label + '</span><span class="sh-exec-value">' + (v || '--') + '</span></div>';
-        return '<div class="sh-exec-row"><span class="sh-exec-label">' + label + '</span>' +
-            '<input class="sh-exec-input" data-field="' + key + '" type="' + (type || 'text') + '" value="' + v + '" style="padding:4px 8px;border:1px solid #E2E8F0;border-radius:4px;font-size:13px;"></div>';
+        var inner = fieldsEditable
+            ? '<input class="sh-exec-input" data-field="' + key + '" type="' + (type || 'text') + '" value="' + v + '" style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">'
+            : '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (v || '--') + '</div>';
+        return '<div style="display:flex;flex-direction:column;gap:2px;">' +
+            '<label style="font-size:11px;color:#64748B;">' + label + '</label>' + inner + '</div>';
     }
-    var execEditor =
-        field('Carrier', 'carrier_id', s.carrierId) +
-        field('Booking No', 'booking_no', s.bookingNo) +
-        field('Container No', 'container_no', s.containerNo) +
-        field('BL No', 'bl_no', s.blNo) +
-        field('Invoice No', 'invoice_no', s.invoiceNo) +
-        field('ETD', 'etd', s.etd, 'date') +
-        field('ETA', 'eta', s.eta, 'date') +
-        field('Tracking', 'tracking_number', s.trackingNumber) +
-        field('Remark', 'note', s.note);
-    var saveBtn = fieldsEditable
-        ? '<button class="sh-exec-save" onclick="shSaveExecution(\'' + sid + '\')" style="margin-top:8px;background:#10B981;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;">Save Execution Fields</button>'
-        : '';
-    // Status-advance placeholder (Phase 2 — no factory-stock side effects).
-    var next = _shNextStatus(s.status);
-    var advanceBtn = canAdvance
-        ? '<button onclick="shAdvanceStatus(\'' + sid + '\', \'' + next + '\')" style="margin-top:8px;margin-left:8px;background:#3B82F6;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;">Advance → ' + _shEsc(SH_STATUS_LABEL[next] || next) + '</button>'
-        : '';
+    function roField(label, val) {
+        return '<div style="display:flex;flex-direction:column;gap:2px;">' +
+            '<label style="font-size:11px;color:#64748B;">' + label + '</label>' +
+            '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(val) || '--') + '</div></div>';
+    }
+    var execGrid =
+        '<div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">Internal ID: ' + _shEsc(sid) + ' <span style="color:#CBD5E1;">(system, not editable)</span></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;">' +
+            fld('Shipment ID (external)', 'external_shipment_id', s.externalShipmentId) +
+            roField('Carrier (from plan)', s.carrierId) +
+            fld('Reference ID', 'reference_id', s.referenceId) +
+            fld('Warehouse Code', 'warehouse_code', s.warehouseCode) +
+            fld('Tracking No', 'tracking_number', s.trackingNumber) +
+            fld('Booking No', 'booking_no', s.bookingNo) +
+            fld('Container No', 'container_no', s.containerNo) +
+            fld('BL No', 'bl_no', s.blNo) +
+            fld('Invoice No', 'invoice_no', s.invoiceNo) +
+            fld('ETD', 'etd', s.etd, 'date') +
+            fld('ETA', 'eta', s.eta, 'date') +
+            fld('Remark', 'note', s.note) +
+        '</div>';
+    function btn(onclick, label, bg) {
+        return '<button onclick="' + onclick + '" style="margin-top:8px;margin-right:8px;background:' + bg + ';color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;">' + label + '</button>';
+    }
+    // Section-specific actions.
+    var actionsHtml = '';
+    if (mode === 'draft') {
+        if (status === 'draft') {
+            actionsHtml = btn("shSaveExecution('" + sid + "')", 'Save', '#10B981') +
+                          btn("shReadyToShip('" + sid + "')", 'Ready to Ship →', '#3B82F6');
+        } else if (status === 'ready_to_ship') {
+            actionsHtml = btn("shSaveExecution('" + sid + "')", 'Save', '#10B981') +
+                          btn("shShip('" + sid + "')", 'Ship 🚢', '#0EA5E9') +
+                          btn("shReturnToDraft('" + sid + "')", '← Return to Draft', '#94A3B8');
+        } else if (status === 'shipped') {
+            actionsHtml = btn("shShipmentDone('" + sid + "')", 'Done', '#64748B');
+        }
+    } else {
+        // Overview: official records advance through the post-ship lifecycle (no factory-stock effects).
+        var next = _shNextStatus(status);
+        if (next && status !== 'closed') actionsHtml = btn("shAdvanceStatus('" + sid + "', '" + next + "')", 'Advance → ' + _shEsc(SH_STATUS_LABEL[next] || next), '#3B82F6');
+    }
 
     return '' +
     '<div class="history-card" id="sh-card-' + _shEsc(sid) + '" style="border:1px solid #E2E8F0;border-radius:8px;background:#fff;margin-bottom:12px;">' +
         '<div class="history-card-header" style="padding:16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleShipmentCard(\'' + _shEsc(sid) + '\')">' +
             '<div>' +
-                '<strong style="font-size:14px;">' + _shEsc(s.shipmentNo || sid) + '</strong>' +
+                '<strong style="font-size:14px;">' + _shEsc(s.externalShipmentId || s.shipmentNo || sid) + '</strong>' +
                 '<span style="margin-left:10px;padding:2px 8px;border-radius:10px;background:#EEF2FF;color:#3730A3;font-size:12px;">' + _shEsc(statusLabel) + '</span>' +
                 '<span style="margin-left:10px;color:#64748B;font-size:12px;">Plan: ' + _shEsc(s.shippingPlanId || '') + '</span>' +
             '</div>' +
@@ -858,12 +1053,9 @@ function _shRenderDbCard(s, planLines, mode) {
                 '<span><strong>Marketplace:</strong> ' + _shEsc(s.marketplace || '--') + '</span>' +
                 '<span><strong>Company:</strong> ' + _shEsc(s.company || '--') + '</span>' +
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +
+                '<span><strong>Destination:</strong> ' + _shEsc(s.destination || '--') + '</span>' +
                 '<span><strong>Method:</strong> ' + _shEsc(s.shippingMethod || '--') + '</span>' +
                 '<span><strong>Pcs:</strong> ' + _shNum(s.totalQty) + '</span>' +
-                '<span><strong>Cartons:</strong> ' + _shNum(s.totalCartons) + '</span>' +
-                '<span><strong>CBM:</strong> ' + (s.totalCbm === '' ? '--' : _shNum(s.totalCbm)) + '</span>' +
-                '<span><strong>Gross:</strong> ' + (s.totalGrossWeight === '' ? '--' : _shNum(s.totalGrossWeight)) + '</span>' +
-                '<span><strong>Net:</strong> ' + (s.totalNetWeight === '' ? '--' : _shNum(s.totalNetWeight)) + '</span>' +
                 '<span><strong>ETD:</strong> ' + _shEsc(s.etd || '--') + '</span>' +
                 '<span><strong>ETA:</strong> ' + _shEsc(s.eta || '--') + '</span>' +
                 '<button class="history-expand-btn" style="padding:6px 12px;border:1px solid #E2E8F0;border-radius:4px;background:#fff;cursor:pointer;font-size:13px;color:#3B82F6;" onclick="event.stopPropagation();toggleShipmentCard(\'' + _shEsc(sid) + '\')">Expand</button>' +
@@ -872,24 +1064,23 @@ function _shRenderDbCard(s, planLines, mode) {
         '<div class="history-card-details" style="display:none;padding:16px;border-top:1px solid #E2E8F0;background:#F8FAFC;">' +
             '<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:24px;">' +
                 '<div style="overflow-x:auto;">' +
-                    '<h4 style="font-size:14px;margin-bottom:12px;color:#1E293B;">SKU Lines (logistics copied; Decision Snapshot read-only)</h4>' +
+                    '<h4 style="font-size:14px;margin-bottom:12px;color:#1E293B;">SKU Lines</h4>' +
                     '<table class="sh-sku-table"><thead><tr>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--sku">SKU</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Qty</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Cartons</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Carton CBM</th>' +
-                        '<th class="sh-sku-table__th sh-sku-table__th--num">CBM</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Gross Wt</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Net Wt</th>' +
-                        '<th class="sh-sku-table__th sh-sku-table__th--num">Cur. Stock</th>' +
-                        '<th class="sh-sku-table__th sh-sku-table__th--num">Avg Sales</th>' +
-                        '<th class="sh-sku-table__th sh-sku-table__th--num">DoS</th>' +
-                    '</tr></thead><tbody>' + rows + '</tbody></table>' +
+                        '<th class="sh-sku-table__th sh-sku-table__th--num">Carton No. Start</th>' +
+                        '<th class="sh-sku-table__th sh-sku-table__th--num">Carton No. End</th>' +
+                    '</tr></thead><tbody id="sh-lines-' + _shEsc(sid) + '">' + rows + footRow + '</tbody></table>' +
+                    '<div id="sh-lines-err-' + _shEsc(sid) + '" style="display:none;margin-top:8px;color:#DC2626;font-size:12px;"></div>' +
                 '</div>' +
                 '<div>' +
                     '<h4 style="font-size:14px;margin-bottom:12px;color:#1E293B;">Execution Fields' + (fieldsEditable ? '' : ' (read-only)') + '</h4>' +
-                    '<div id="sh-exec-' + _shEsc(sid) + '">' + execEditor + '</div>' +
-                    saveBtn + advanceBtn +
+                    '<div id="sh-exec-' + _shEsc(sid) + '" data-total-qty="' + _shNum(s.totalQty) + '" data-total-cartons="' + _shNum(s.totalCartons) + '">' + execGrid + '</div>' +
+                    actionsHtml +
                 '</div>' +
             '</div>' +
         '</div>' +
@@ -910,21 +1101,157 @@ function toggleShipmentCard(shipmentId) {
     }
 }
 
-function shSaveExecution(shipmentId) {
-    var box = document.getElementById('sh-exec-' + shipmentId);
-    if (!box) return;
-    var payload = { shipment_id: shipmentId, actor: 'operation-system' };
-    box.querySelectorAll('input[data-field]').forEach(function(inp) {
-        payload[inp.getAttribute('data-field')] = inp.value;
+// Clear carton-number error styling / message for a shipment card (called on input).
+function _shClearCartonError(shipmentId) {
+    var linesBox = document.getElementById('sh-lines-' + shipmentId);
+    if (linesBox) linesBox.querySelectorAll('input[data-carton]').forEach(function(inp) { inp.style.borderColor = '#E2E8F0'; });
+    var errBox = document.getElementById('sh-lines-err-' + shipmentId);
+    if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+}
+
+// Validate carton numbers within a shipment card: integers only, start <= end, and no overlapping
+// ranges. requireComplete=true additionally demands every line has both start and end (Ship gate).
+// Returns { ok, error }. On failure, offending inputs get a red border + a message is shown.
+function _shValidateCartons(shipmentId, requireComplete) {
+    var linesBox = document.getElementById('sh-lines-' + shipmentId);
+    if (!linesBox) return { ok: true };
+    _shClearCartonError(shipmentId);
+    var byId = {};
+    linesBox.querySelectorAll('input[data-carton]').forEach(function(inp) {
+        var id = inp.getAttribute('data-line-id');
+        if (!id) return;
+        byId[id] = byId[id] || {};
+        byId[id][inp.getAttribute('data-carton')] = inp;
     });
-    window.KM.DB.updateShipment(payload).then(function() {
-        alert('Execution fields saved.');
+    function isInt(v) { return /^\d+$/.test(String(v).trim()); }
+    function markErr(shipmentId, msg, inputs) {
+        (inputs || []).forEach(function(i) { if (i) i.style.borderColor = '#DC2626'; });
+        var errBox = document.getElementById('sh-lines-err-' + shipmentId);
+        if (errBox) { errBox.textContent = msg; errBox.style.display = 'block'; }
+        return { ok: false, error: msg };
+    }
+    var ranges = [];
+    var keys = Object.keys(byId);
+    for (var i = 0; i < keys.length; i++) {
+        var pair = byId[keys[i]];
+        var sInp = pair.start, eInp = pair.end;
+        var sVal = sInp ? String(sInp.value).trim() : '';
+        var eVal = eInp ? String(eInp.value).trim() : '';
+        if (sVal === '' && eVal === '') {
+            if (requireComplete) return markErr(shipmentId, 'Carton No. Start / End are required for every SKU before Ship.', [sInp, eInp]);
+            continue;
+        }
+        if (sVal === '' || eVal === '') return markErr(shipmentId, 'Both Carton No. Start and End must be filled.', [sInp, eInp]);
+        if (!isInt(sVal) || !isInt(eVal)) return markErr(shipmentId, 'Carton No. must be whole numbers.', [sInp, eInp]);
+        var st = parseInt(sVal, 10), en = parseInt(eVal, 10);
+        if (st > en) return markErr(shipmentId, 'Carton No. Start must be less than or equal to End.', [sInp, eInp]);
+        ranges.push({ start: st, end: en, sInp: sInp, eInp: eInp });
+    }
+    for (var a = 0; a < ranges.length; a++) {
+        for (var b = a + 1; b < ranges.length; b++) {
+            if (ranges[a].start <= ranges[b].end && ranges[b].start <= ranges[a].end) {
+                return markErr(shipmentId, 'Carton No. ranges must not overlap (' + ranges[a].start + '-' + ranges[a].end + ' vs ' + ranges[b].start + '-' + ranges[b].end + ').',
+                    [ranges[a].sInp, ranges[a].eInp, ranges[b].sInp, ranges[b].eInp]);
+            }
+        }
+    }
+    return { ok: true };
+}
+
+// Collect the editable execution fields from a card's exec box into an updateShipment payload.
+function _shCollectExec(shipmentId) {
+    var box = document.getElementById('sh-exec-' + shipmentId);
+    var payload = { shipment_id: shipmentId, actor: 'operation-system' };
+    if (box) {
+        box.querySelectorAll('input[data-field]').forEach(function(inp) {
+            payload[inp.getAttribute('data-field')] = inp.value;
+        });
+    }
+    // Editable shipment_line fields: carton number range.
+    var linesBox = document.getElementById('sh-lines-' + shipmentId);
+    if (linesBox) {
+        var byId = {};
+        linesBox.querySelectorAll('input[data-carton]').forEach(function(inp) {
+            var id = inp.getAttribute('data-line-id');
+            if (!id) return;
+            byId[id] = byId[id] || { shipment_line_id: id };
+            if (inp.getAttribute('data-carton') === 'start') byId[id].carton_no_start = inp.value;
+            else byId[id].carton_no_end = inp.value;
+        });
+        var arr = Object.keys(byId).map(function(k) { return byId[k]; });
+        if (arr.length) payload.lines = arr;
+    }
+    return payload;
+}
+
+// Save = update execution fields only. Does NOT change status, NOT create history, NOT enter Overview.
+// Carton numbers are validated (integers / start<=end / no overlap) before saving.
+function shSaveExecution(shipmentId) {
+    var v = _shValidateCartons(shipmentId, false);
+    if (!v.ok) { alert('Cannot Save — ' + v.error); return; }
+    window.KM.DB.updateShipment(_shCollectExec(shipmentId)).then(function() {
+        alert('Draft saved.');
         _shLoadAndRender();
     }).catch(function(err) { alert('Save failed: ' + (err && err.message ? err.message : err)); });
 }
 
-// Status-advance placeholder (Phase 2). Sets shipments.status to the next step via updateShipment.
-// No factory-stock reservation/deduction is performed (deferred).
+// Draft → Ready to Ship (still in the Draft workspace; saves current field edits too).
+function shReadyToShip(shipmentId) {
+    var v = _shValidateCartons(shipmentId, false);
+    if (!v.ok) { alert('Cannot proceed — ' + v.error); return; }
+    var payload = _shCollectExec(shipmentId);
+    payload.status = 'ready_to_ship';
+    window.KM.DB.updateShipment(payload).then(function() {
+        _shLoadAndRender();
+    }).catch(function(err) { alert('Update failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// Ship = official shipment. Validates required fields, then status=shipped (+ shipped_at/by server-side).
+// Required (SHIPMENT_CENTER_SPEC §5B): external_shipment_id, Carton No. Start/End (all lines),
+// reference_id, warehouse_code, ETD, ETA. After this the shipment appears in Shipment Overview.
+function shShip(shipmentId) {
+    var cartonV = _shValidateCartons(shipmentId, true);
+    if (!cartonV.ok) { alert('Cannot Ship — ' + cartonV.error); return; }
+    var payload = _shCollectExec(shipmentId);
+    var box = document.getElementById('sh-exec-' + shipmentId);
+    var totalQty = box ? (parseFloat(box.getAttribute('data-total-qty')) || 0) : 0;
+    var missing = [];
+    if (!String(payload.external_shipment_id || '').trim()) missing.push('Shipment ID (external)');
+    if (!String(payload.reference_id || '').trim()) missing.push('Reference ID');
+    if (!String(payload.warehouse_code || '').trim()) missing.push('Warehouse Code');
+    if (!String(payload.etd || '').trim()) missing.push('ETD');
+    if (!String(payload.eta || '').trim()) missing.push('ETA');
+    if (totalQty <= 0) missing.push('Total Qty');
+    if (missing.length) { alert('Cannot Ship — please complete:\n\n• ' + missing.join('\n• ')); return; }
+    if (!confirm('Mark this shipment as SHIPPED? It will then appear in Shipment Overview.')) return;
+    payload.status = 'shipped';
+    window.KM.DB.updateShipment(payload).then(function() {
+        alert('Shipment marked as Shipped.');
+        _shLoadAndRender();
+    }).catch(function(err) { alert('Ship failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// Return to Draft (Phase-2 placeholder, no permissions): send a Ready to Ship shipment back to
+// Draft with a required revision reason (appended to the note history server-side).
+function shReturnToDraft(shipmentId) {
+    var reason = prompt('Return this shipment to Draft for revision.\n\nEnter a reason (required):');
+    if (reason == null) return;
+    reason = String(reason).trim();
+    if (!reason) { alert('A reason is required to return to Draft.'); return; }
+    window.KM.DB.updateShipment({ shipment_id: shipmentId, status: 'draft', revision_reason: reason, actor: 'operation-system' })
+        .then(function() { _shLoadAndRender(); })
+        .catch(function(err) { alert('Return to Draft failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// Done = hide the shipped card from the Shipment Draft workspace (still shown in Overview; not deleted).
+function shShipmentDone(shipmentId) {
+    if (!confirm('This shipment is already Shipped and visible in Shipment Overview.\n\nHide it from the Shipment Draft workspace?')) return;
+    window.KM.DB.updateShipment({ shipment_id: shipmentId, hidden_from_draft: true, actor: 'operation-system' })
+        .then(function() { _shLoadAndRender(); })
+        .catch(function(err) { alert('Done failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// Status-advance placeholder (Overview post-ship lifecycle). No factory-stock side effects.
 function shAdvanceStatus(shipmentId, nextStatus) {
     if (!nextStatus) return;
     if (!confirm('Advance shipment to "' + (SH_STATUS_LABEL[nextStatus] || nextStatus) + '"?')) return;
@@ -933,28 +1260,32 @@ function shAdvanceStatus(shipmentId, nextStatus) {
         .catch(function(err) { alert('Status update failed: ' + (err && err.message ? err.message : err)); });
 }
 
-// Menu entry points: same page (shippinghistory-section), different view mode + status filter.
+// Menu entry points — TWO independent pages / sections (no shared view-mode flag).
 function showShipmentDraft() {
-    window.KM = window.KM || {};
-    window.KM.shipmentViewMode = 'draft';
-    if (typeof showSection === 'function') showSection('shippinghistory');
-    setTimeout(function() { if (_shUseDb() && document.getElementById('shippinghistory-section')) _shLoadAndRender(); }, 60);
+    if (typeof showSection === 'function') showSection('shipment-draft');
 }
 function showShipmentOverview() {
-    window.KM = window.KM || {};
-    window.KM.shipmentViewMode = 'overview';
-    if (typeof showSection === 'function') showSection('shippinghistory');
-    setTimeout(function() { if (_shUseDb() && document.getElementById('shippinghistory-section')) _shLoadAndRender(); }, 60);
+    if (typeof showSection === 'function') showSection('shipment-overview'); // → #shippinghistory-section
 }
 
+window._shLoadAndRender = _shLoadAndRender;
+window._shClearCartonError = _shClearCartonError;
 window.toggleShipmentCard = toggleShipmentCard;
 window.shSaveExecution = shSaveExecution;
+window.shReadyToShip = shReadyToShip;
+window.shShip = shShip;
+window.shReturnToDraft = shReturnToDraft;
+window.shShipmentDone = shShipmentDone;
 window.shAdvanceStatus = shAdvanceStatus;
 window.showShipmentDraft = showShipmentDraft;
 window.showShipmentOverview = showShipmentOverview;
 
 window.toggleHistoryCard = toggleHistoryCard;
-window.initShippingHistoryPage = initShippingHistoryPage;
+window.initShipmentDraftPage = initShipmentDraftPage;
+window.initShipmentOverviewPage = initShipmentOverviewPage;
+window.initShippingHistoryPage = initShipmentOverviewPage; // back-compat
+window.renderShipmentDraft = renderShipmentDraft;
+window.renderShipmentOverview = renderShipmentOverview;
 
 window.addEventListener('DOMContentLoaded', () => {
     // 移除自動初始化，改由 showSection 控制
@@ -962,49 +1293,54 @@ window.addEventListener('DOMContentLoaded', () => {
 
 
 // ========================================
-// Lifecycle 註冊
+// Lifecycle 註冊 — two separate pages (shared DB, separate section + state)
 // ========================================
 if (window.KM && window.KM.lifecycle) {
+    // Shipment Overview (full filter bar) → #shippinghistory-section
     KM.lifecycle.register('shippinghistory-section', {
         mount() {
-            console.log('[ShippingHistory] mount');
-            // Markup is partial-loaded (Phase 3-1). Ensure it exists, then (re)apply the .active
-            // class (showSection ran before the async injection on first open) and init.
-            _ensureShippingHistoryMarkup().then(function() {
+            _ensureShipmentOverviewMarkup().then(function() {
                 var sec = document.getElementById('shippinghistory-section');
                 if (sec) sec.classList.add('active');
-                if (window.initShippingHistoryPage) {
-                    window.initShippingHistoryPage();
-                }
+                initShipmentOverviewPage();
             });
         },
-        unmount() {
-            console.log('[ShippingHistory] unmount');
-        }
+        unmount() {}
+    });
+
+    // Shipment Draft (compact Country + Status filter) → #shipment-draft-section
+    KM.lifecycle.register('shipment-draft-section', {
+        mount() {
+            _ensureShipmentDraftMarkup().then(function() {
+                var sec = document.getElementById('shipment-draft-section');
+                if (sec) sec.classList.add('active');
+                initShipmentDraftPage();
+            });
+        },
+        unmount() {}
     });
 }
 
-// Ensure the Shipping History markup is present before its init runs.
-// Idempotent: if #shippinghistory-section already exists, resolves immediately (no re-fetch, no
-// duplicate). Loads the partial via KM.partialLoader; on any failure it warns and resolves (never throws).
-function _ensureShippingHistoryMarkup() {
-    if (document.getElementById('shippinghistory-section')) {
-        return Promise.resolve(true);
-    }
+// Ensure the Shipment Overview markup is present before its init runs (idempotent; never throws).
+function _ensureShipmentOverviewMarkup() {
+    if (document.getElementById('shippinghistory-section')) return Promise.resolve(true);
     if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
         return window.KM.partialLoader
             .loadPartial('shippinghistory', 'assets/html/pages/shipping-history.html', '#shippinghistory-mount')
-            .then(function() {
-                if (!document.getElementById('shippinghistory-section')) {
-                    console.warn('[ShippingHistory] partial loaded but #shippinghistory-section not found');
-                }
-                return true;
-            })
-            .catch(function(err) {
-                console.warn('[ShippingHistory] failed to load partial:', err);
-                return false;
-            });
+            .then(function() { return true; })
+            .catch(function(err) { console.warn('[ShipmentOverview] failed to load partial:', err); return false; });
     }
-    console.warn('[ShippingHistory] KM.partialLoader unavailable; markup not loaded.');
+    return Promise.resolve(false);
+}
+
+// Ensure the Shipment Draft markup is present before its init runs (idempotent; never throws).
+function _ensureShipmentDraftMarkup() {
+    if (document.getElementById('shipment-draft-section')) return Promise.resolve(true);
+    if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
+        return window.KM.partialLoader
+            .loadPartial('shipment-draft', 'assets/html/pages/shipment-draft.html', '#shipment-draft-mount')
+            .then(function() { return true; })
+            .catch(function(err) { console.warn('[ShipmentDraft] failed to load partial:', err); return false; });
+    }
     return Promise.resolve(false);
 }

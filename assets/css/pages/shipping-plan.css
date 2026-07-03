@@ -10,6 +10,26 @@
     margin-bottom: var(--space-lg);
 }
 
+/* Section group titles (Draft / Pending Approval / Approved / …) — visual design matched to
+   Request Order Draft: compact 15px heading + count badge beside it. */
+#shippingplan-section .plan-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1E293B;
+    margin: 24px 0 12px;
+}
+#shippingplan-section .plan-section-title__count {
+    font-size: 12px;
+    color: #64748B;
+    background: #F1F5F9;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-weight: 600;
+}
+
 #shippingplan-section .shipping-plan__filters {
     display: flex;
     gap: var(--space-md);

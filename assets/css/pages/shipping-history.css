@@ -208,18 +208,39 @@
     flex-shrink: 0;
 }
 
-/* Results Area */
-#shippinghistory-section .history-empty-state {
+/* Results Area — shared by both Shipment Overview and Shipment Draft pages
+   (both wrap content in .page-shipping-history). */
+.page-shipping-history .history-empty-state {
     text-align: center;
     padding: 3rem;
     color: var(--text-muted);
+}
+
+/* Shipment Draft section group titles (Draft / Ready to Ship / Shipped) — visual design matched
+   to Request Order Draft: compact 15px heading + count badge beside it. */
+#shipment-draft-section .shd-group-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1E293B;
+    margin: 24px 0 12px;
+}
+#shipment-draft-section .shd-group-title__count {
+    font-size: 12px;
+    color: #64748B;
+    background: #F1F5F9;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-weight: 600;
 }
 
 
 /* ========================================
    SKU Details Sub-Table — Raw Data Child Table Baseline
 ======================================== */
-#shippinghistory-section .sh-sku-table {
+.page-shipping-history .sh-sku-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
@@ -229,7 +250,7 @@
     overflow: hidden;
 }
 
-#shippinghistory-section .sh-sku-table__th {
+.page-shipping-history .sh-sku-table__th {
     padding: 8px 12px;
     height: 40px;
     font-size: 12px;
@@ -244,17 +265,17 @@
     text-align: left;
 }
 
-#shippinghistory-section .sh-sku-table__th--sku {
+.page-shipping-history .sh-sku-table__th--sku {
     width: 120px;
     min-width: 110px;
 }
 
-#shippinghistory-section .sh-sku-table__th--num {
+.page-shipping-history .sh-sku-table__th--num {
     text-align: right;
     width: 100px;
 }
 
-#shippinghistory-section .sh-sku-table__td {
+.page-shipping-history .sh-sku-table__td {
     padding: 8px 12px;
     font-size: 13px;
     color: #374151;
@@ -265,22 +286,22 @@
     box-sizing: border-box;
 }
 
-#shippinghistory-section .sh-sku-table__td--sku {
+.page-shipping-history .sh-sku-table__td--sku {
     width: 120px;
     min-width: 110px;
     font-weight: 600;
     color: #1f2937;
 }
 
-#shippinghistory-section .sh-sku-table__td--num {
+.page-shipping-history .sh-sku-table__td--num {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
-#shippinghistory-section .sh-sku-table__row:hover {
+.page-shipping-history .sh-sku-table__row:hover {
     background: #f1f5f9;
 }
 
-#shippinghistory-section .sh-sku-table__row:last-child .sh-sku-table__td {
+.page-shipping-history .sh-sku-table__row:last-child .sh-sku-table__td {
     border-bottom: none;
 }

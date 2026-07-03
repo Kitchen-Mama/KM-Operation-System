@@ -109,7 +109,69 @@ function doPost(e) {
       return handleUpdateShipment_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment' });
+    // Procurement Layer (Phase 1) — Request Order / Purchase Order.
+    if (action === 'createRequestOrderDraft') {
+      return handleCreateRequestOrderDraft_(body);
+    }
+
+    if (action === 'updateRequestOrderStatus') {
+      return handleUpdateRequestOrderStatus_(body);
+    }
+
+    if (action === 'updateRequestOrderLineQty') {
+      return handleUpdateRequestOrderLineQty_(body);
+    }
+
+    if (action === 'cancelRequestOrderTier') {
+      return handleCancelRequestOrderTier_(body);
+    }
+
+    if (action === 'createPurchaseOrderFromRequest') {
+      return handleCreatePurchaseOrderFromRequest_(body);
+    }
+
+    if (action === 'updatePurchaseOrderStatus') {
+      return handleUpdatePurchaseOrderStatus_(body);
+    }
+
+    if (action === 'updatePurchaseOrderLine') {
+      return handleUpdatePurchaseOrderLine_(body);
+    }
+
+    // FC Summary write path (Phase 1) — Special Events + Target % Rules.
+    if (action === 'upsertFcSpecialEvent') {
+      return handleUpsertFcSpecialEvent_(body);
+    }
+
+    if (action === 'deleteFcSpecialEvent') {
+      return handleDeleteFcSpecialEvent_(body);
+    }
+
+    if (action === 'upsertFcTargetRule') {
+      return handleUpsertFcTargetRule_(body);
+    }
+
+    if (action === 'deleteFcTargetRule') {
+      return handleDeleteFcTargetRule_(body);
+    }
+
+    if (action === 'upsertRequestOrderAllocationDraft') {
+      return handleUpsertRequestOrderAllocationDraft_(body);
+    }
+
+    if (action === 'upsertRequestOrderAllocationDraftLines') {
+      return handleUpsertRequestOrderAllocationDraftLines_(body);
+    }
+
+    if (action === 'submitRequestOrderAllocationDrafts') {
+      return handleSubmitRequestOrderAllocationDrafts_(body);
+    }
+
+    if (action === 'upsertRequestOrderSiteConfirmations') {
+      return handleUpsertRequestOrderSiteConfirmations_(body);
+    }
+
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations' });
 
   } catch (err) {
     Logger.log(err.stack);

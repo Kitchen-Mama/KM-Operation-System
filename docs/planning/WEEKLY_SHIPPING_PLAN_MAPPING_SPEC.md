@@ -8,6 +8,8 @@
 > **Spec only.** This document defines how a Submit Plan action in Inventory Replenishment becomes **Weekly Shipping Plan** records, the **`shipping_plans` / `shipping_plan_lines` column schema** (previously undefined — see the implementation-readiness audit), the plan status/approval flow, and the hand-off to Shipment Draft. It introduces **no** code, frontend, Apps Script, API, DB migration, or runtime change. Calculation formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; shipment execution remains owned by `SHIPMENT_CENTER_SPEC.md`.
 
 > **Changelog:**
+> - **Draft v1.12 (2026-07-01)** — **Execution Plan terminology (§2A/§3):** the pre-Submit Working Draft is now the **Execution Plan Working Draft** ("Shipping Allocation" is legacy). Submit Plan reads the **Execution Plan** (Ship From / Destination / Suggested Qty / Shipping Method per route) — never the **Recommendation Summary** (system suggestion). `ship_from` / `destination` / `shipping_method` now come from the Execution Plan route (future default: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md` §5A). See `INVENTORY_TABLE_MAPPING_SPEC.md` §11. Frontend implemented in `inventory-replenishment.js`; no backend/DB change.
+> - **Draft v1.11 (2026-07-01)** — **Done bug fix (§12.2):** `handleCompleteShippingPlan_` now detects the transfer **robustly** — if `transferred_shipment_id` is blank it looks up an existing `shipments` row (by `shipping_plan_id` / `source_shipping_plan_id` / `plan_id`) and **backfills** `transferred_shipment_id` + `transferred_to_shipment_at` before writing `completed_at` / `completed_by`. Fixes *"Plan has not been transferred to a Shipment Draft yet"* when the Draft existed but the metadata was never persisted. Implemented in `11_shipping_plan_handlers.gs` + a shared `shipmentFindForPlan_` helper in `12_shipment_handlers.gs`.
 > - **Draft v1.10 (2026-06-30)** — **Decision Layer Completion** (Supply Chain Architecture v1.2): added `completed_at` / `completed_by` to `shipping_plans` (§4) and **§12.2 Done / Completed rules** — an Approved+transferred plan shows a **Done** button (`completeShippingPlan`: writes only `completed_at`/`completed_by`, never touches Shipment); **Completed plans leave the Active view** (`completed_at IS NULL` only) but are preserved and viewable via the new **Completed** filter (§9B). **Supersedes the v1.8 "Converted auto-hide on transfer"** — visibility is now completion-driven; transferred-but-not-completed plans stay in Approved with the Done button. Implemented in `11_shipping_plan_handlers.gs` (+2 headers + `handleCompleteShippingPlan_`), `01_router.gs`, `operation-system-db-api.js`, `shipping-plan.js` + `shipping-plan.html` (Done button + Completed section/filter).
 > - **Draft v1.9 (2026-06-30)** — Logistics runtime: added **`carton_cbm`** / `cbm` / `gross_weight` / `net_weight` to `shipping_plan_lines` as **logistics Decision Snapshot** (§5.1, §5.4), computed from `sku_details` carton dims/weights at **Submit Plan** and **recomputed on every Draft Save** (§8, §9A). `carton_cbm` = single-carton CBM (L×W×H/1e6, cm). Header **Total CBM / Total Gross Wt / Total Net Wt** are **Runtime** Σ of the line values (not stored on the header; §6). Execution Commit **copies** these into `shipment_lines` and sums `shipments.total_cbm/total_gross_weight/total_net_weight` (`SHIPMENT_CENTER_SPEC.md` §15.3). Implemented in `11_shipping_plan_handlers.gs` (+3 line headers + logistics map/compute on create & save), `12_shipment_handlers.gs` (copy + header totals), `operation-system-db-api.js` (normalizer), `shipping-plan.js` (runtime header totals + live recompute + Save patch).
 > - **Draft v1.8 (2026-06-30)** — Converted visibility after Execution Commit: added `transferred_shipment_id` / `transferred_to_shipment_at` **handoff metadata** to `shipping_plans` (§4); §12.1 — on Approve→Create Shipment Draft the backend stamps these (status stays `approved`; rows + Decision Snapshot preserved; Immutable Flow intact); a **Converted** plan is hidden from the default view and shown only via the new **Converted** Status-filter option (§9B). Implemented in `11_shipping_plan_handlers.gs` (+2 headers), `12_shipment_handlers.gs` (writeback on Execution Commit), `shipping-plan.js` + `shipping-plan.html` (Converted section + filter), `operation-system-db-api.js` (normalizer).
@@ -89,9 +91,11 @@ Shipment Overview                     (tracking / history)
 
 ---
 
-## 2A. Shipping Allocation Working Draft
+## 2A. Execution Plan Working Draft *(formerly "Shipping Allocation Working Draft")*
 
-The **Shipping Allocation Working Draft** is the **pre-Submit temporary decision** inside Inventory Replenishment. It is **not** a Decision Snapshot (architecture: `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A).
+The **Execution Plan Working Draft** is the **pre-Submit temporary decision** inside Inventory Replenishment. It backs the **Execution Plan** block (Inventory Replenishment second-layer right panel — `INVENTORY_TABLE_MAPPING_SPEC.md` §11). It is **not** a Decision Snapshot (architecture: `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A).
+
+> **Naming:** "Shipping Allocation" is a **legacy name**. The block is now the **Execution Plan**; its backing state is the **Execution Plan Working Draft** (`window.KM.shippingAllocationDraft`, key kept for back-compat). The **Recommendation Summary** (system suggestion) is separate and is **never submitted** — Submit Plan reads only the Execution Plan.
 
 **Rules:**
 - Exists **only inside Inventory Replenishment, before Submit Plan**.
@@ -145,7 +149,7 @@ A Shipping Plan is **uniquely grouped by the following six values**:
 - This is the **official system grouping rule** and supersedes the earlier "one shipping method = one plan" wording (shipping method is now just one of the six keys).
 - Each `shipping_plan` owns its own `shipping_plan_lines`.
 
-> The six group-key values are persisted on `shipping_plans` as `company`, `country`, `marketplace`, `ship_from`, `destination`, `shipping_method` (§4). `ship_from` / `destination` come from Shipping Allocation (future finalized logic) — until finalized they are part of the key as whatever value the allocation/selection provides (blank counts as a distinct value).
+> The six group-key values are persisted on `shipping_plans` as `company`, `country`, `marketplace`, `ship_from`, `destination`, `shipping_method` (§4). `ship_from` / `destination` / `shipping_method` come from the **Execution Plan route** the PM built (future default source: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md` §5A) — until route rules are implemented they are whatever the PM entered on the Execution Plan route (blank counts as a distinct value).
 
 **Example (same Company/Country/Marketplace/Ship From/Destination, differing only by Method):**
 ```
@@ -179,10 +183,10 @@ Resolution happens **server-side in `createShippingPlansBatch`** so the value is
 
 ### 3.4 Carton Quantity Validation (FINAL — required before Submit Plan)
 
-Every Shipping Allocation qty submitted must be an **integer multiple of `sku_details.units_per_carton`**.
+Every Execution Plan route qty submitted must be an **integer multiple of `sku_details.units_per_carton`**.
 
 - If `units_per_carton` is **missing** for a SKU → show a validation error and **block Submit Plan**.
-- If a qty is **not a multiple** of `units_per_carton` → show small red text under the Shipping Allocation block: **「Shipping Qty must be a full carton multiple. Units per carton: {units_per_carton}.」**
+- If a qty is **not a multiple** of `units_per_carton` → show small red text under the Execution Plan block: **「Shipping Qty must be a full carton multiple. Units per carton: {units_per_carton}.」**
 - **Submit Plan must NOT proceed** if any draft allocation has an invalid carton quantity. **Do not silently round.**
 - Examples: with `units_per_carton = 40`, qty **41 is invalid**; qty **40 / 80 / 120 are valid**.
 - An invalid allocation **does not create any `shipping_plans`**.
@@ -201,9 +205,9 @@ Every Shipping Allocation qty submitted must be an **integer multiple of `sku_de
 | `company` | **persisted snapshot** copied from marketplace master data at Submit Plan (**group key 1**, §3.1; resolution priority §3.3). Not display-only. |
 | `country` | current selected Inventory Replenishment **country** (**group key 2**) |
 | `marketplace` | current selected Inventory Replenishment **marketplace** (**group key 3**) |
-| `ship_from` | from Shipping Allocation, future finalized logic (**group key 4**) |
-| `destination` | from Shipping Allocation, future finalized logic (**group key 5**) |
-| `shipping_method` | the Shipping Allocation selected method (**group key 6**, §3.1) |
+| `ship_from` | from the **Execution Plan** route (future default: `replenishment_route_rules`) (**group key 4**) |
+| `destination` | from the **Execution Plan** route (future default: `replenishment_route_rules`) (**group key 5**) |
+| `shipping_method` | the **Execution Plan** route's selected method (**group key 6**, §3.1) |
 | `plan_version` | decision-revision counter (§4.1); default `1` |
 | `parent_shipping_plan_id` | version-lineage anchor (§4.3); **MVP = `shipping_plan_id`** |
 | `submit_batch_id` | shared id for all plans created by one Submit Plan action (§4.2) |
@@ -580,13 +584,15 @@ When the Execution Commit (Approve → Create Shipment Draft) succeeds, the plan
 The Decision Layer lifecycle is **Draft → Pending Approval → Approved → Execution Commit → Completed** (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §10).
 
 **Done button (Approved card):**
-- Shown when **`status = approved` AND** (`transferred_shipment_id` is not null **OR** `transferred_to_shipment_at` is not null) — i.e. the Execution Commit has already created the Shipment Draft.
+- Shown when **`status = approved` AND `completed_at` is empty AND** the Execution Commit has already created the Shipment Draft — detected by `transferred_shipment_id` / `transferred_to_shipment_at` **OR robustly by an existing `shipments` row whose `shipping_plan_id` = this plan** (so the button appears even if the `transferred_*` columns were never persisted on an older tab).
 - Confirm dialog: *"This shipping plan has already been transferred to Shipment Draft. Mark this planning task as completed?"*
+- **Auto-migration:** `completeShippingPlan` **auto-adds `completed_at` / `completed_by` columns** to the `shipping_plans` tab if missing (no manual migration), so Done persists and the plan hides after refresh.
 
 **Done behavior (`completeShippingPlan`):**
+- **Robust transfer detection + backfill:** the handler no longer relies solely on `transferred_shipment_id`. If that column is blank it looks up an existing `shipments` row referencing this plan (by `shipping_plan_id` / `source_shipping_plan_id` / `plan_id`); when found it **backfills `transferred_shipment_id` + `transferred_to_shipment_at`** (auto-adding the columns first) so a plan that truly has a Shipment Draft can always be completed. *(Fixes the "Plan has not been transferred to a Shipment Draft yet" error when the Draft existed but the transfer metadata was never persisted.)*
 - Writes **`completed_at = now`** and **`completed_by` = placeholder actor** (`system_user`; §13A) (+ `updated_*`).
-- **Writes nothing else** — `status` stays `approved`; **Shipment / `shipment_lines` are NOT touched**; **no row is deleted**; Decision/Execution Snapshot unchanged.
-- Guard: only an **Approved + transferred** plan may be completed.
+- **Writes nothing else** on the Shipment side — `status` stays `approved`; **Shipment / `shipment_lines` are NOT touched**; **no row is deleted**; Decision/Execution Snapshot unchanged.
+- Guard: only an **Approved** plan that **has a Shipment Draft** (recorded or detected) may be completed.
 
 **Completed = Decision Layer finished its job** (the Execution Layer has taken over). It does **NOT** mean the shipment shipped / arrived — only that the **decision** is complete; the Decision Snapshot is **preserved permanently**.
 

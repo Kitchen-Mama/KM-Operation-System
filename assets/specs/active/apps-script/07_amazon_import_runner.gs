@@ -8,25 +8,32 @@
 
 // ---- entry points -------------------------------------------------
 
-/** Run all configured Amazon snapshot imports. Safe to attach to a time-based trigger. */
+/** Run all configured Amazon snapshot imports. Safe to attach to a time-based trigger.
+ *  Scheduler passes no options → Daily Sales (rolling_upsert) reads its incremental default
+ *  (1 completed day = yesterday). */
 function runAmazonSnapshotImports() {
   var summaries = [];
   for (var i = 0; i < IMPORT_CONFIGS.length; i++) {
-    summaries.push(runAmazonSnapshotImport_(IMPORT_CONFIGS[i], 'scheduler'));
+    summaries.push(runAmazonSnapshotImport_(IMPORT_CONFIGS[i], 'scheduler', {}));
   }
   Logger.log(JSON.stringify(summaries, null, 2));
   return summaries;
 }
 
-/** POST handler: run all, or a single source via body.destination_table. */
+/** POST handler: run all, or a single source via body.destination_table.
+ *  body.backfill_days = N re-reads the last N completed days for rolling_upsert configs
+ *  (Daily Sales) and UPSERTs them (still no full-table rewrite). */
 function handleRunAmazonSnapshotImports_(body) {
   var only = (body && body.destination_table) ? String(body.destination_table).trim() : '';
   var triggeredBy = (body && body.triggered_by) ? String(body.triggered_by).trim() : 'api';
+  var backfillDays = (body && body.backfill_days != null) ? parseInt(body.backfill_days, 10) : null;
+  if (backfillDays != null && (isNaN(backfillDays) || backfillDays <= 0)) backfillDays = null;
+  var options = { backfillDays: backfillDays };
   var summaries = [];
   for (var i = 0; i < IMPORT_CONFIGS.length; i++) {
     var cfg = IMPORT_CONFIGS[i];
     if (only && cfg.destinationSheetName !== only) continue;
-    summaries.push(runAmazonSnapshotImport_(cfg, triggeredBy));
+    summaries.push(runAmazonSnapshotImport_(cfg, triggeredBy, options));
   }
   return jsonResponse_({ success: true, data: { runs: summaries } });
 }
@@ -58,7 +65,8 @@ function clearAmazonImportTestLogs() {
 
 // ---- per-source importer ------------------------------------------
 
-function runAmazonSnapshotImport_(config, triggeredBy) {
+function runAmazonSnapshotImport_(config, triggeredBy, options) {
+  options = options || {};
   var startedAt = amazonTimestamp_();
   var syncRunId = 'RUN-' + Utilities.getUuid().substring(0, 12);
   var syncBatchId = 'SYNC-' + config.destinationSheetName + '-' + Utilities.getUuid().substring(0, 8);
@@ -70,7 +78,7 @@ function runAmazonSnapshotImport_(config, triggeredBy) {
   var ctx = {
     config: config, syncRunId: syncRunId, syncBatchId: syncBatchId,
     sourceFileId: sourceFileId, sourceSheetName: sourceSheetName,
-    issues: [], rowsRead: 0, rowsWritten: 0, rowsError: 0, rowsDuplicate: 0,
+    issues: [], rowsRead: 0, rowsWritten: 0, rowsError: 0, rowsDuplicate: 0, rowsPruned: 0,
     // Phase 3A: placeholder + data-window governance (daily sales / capping)
     placeholderCount: 0, isFallback: false, fallbackGroupCount: 0,
     runLatestDate: '', runWindowStart: '', runWindowEnd: '', dataAgeDays: ''
@@ -110,6 +118,7 @@ function runAmazonSnapshotImport_(config, triggeredBy) {
       data_age_days: ctx.dataAgeDays,
       quality_note: 'quality_score=' + amazonQualityScore_(ctx.rowsRead, ctx.rowsWritten, ctx.rowsError, ctx.rowsDuplicate) +
         '; placeholders=' + ctx.placeholderCount +
+        (config.writeMode === 'rolling_upsert' ? ('; write_mode=rolling_upsert; rows_pruned=' + ctx.rowsPruned) : '') +
         (ctx.isFallback ? ('; fallback=' + ctx.fallbackGroupCount + ' groups (rolling_window_empty)') : '')
     };
     amazonLogRun_(config.destinationSpreadsheetId, run);
@@ -125,7 +134,7 @@ function runAmazonSnapshotImport_(config, triggeredBy) {
   // 1) Read source
   var src;
   try {
-    src = (config.sourceType === 'bigquery') ? amazonReadBigQuerySource_(config) : amazonReadSheetSource_(config);
+    src = (config.sourceType === 'bigquery') ? amazonReadBigQuerySource_(config, options) : amazonReadSheetSource_(config);
   } catch (e) {
     amazonAddIssue_(ctx, 'source_read_error', 'critical', '', '', 'source must be readable', 'stopped_import', '', String(e && e.message ? e.message : e));
     return finalize('failed', 'source_read_error: ' + (e && e.message ? e.message : e));
@@ -273,9 +282,23 @@ function runAmazonSnapshotImport_(config, triggeredBy) {
     amazonApplyDailyWindow_(ctx, config, destObjs, !!src.isFallback);
   }
 
-  // 4) Write snapshot (preserve header, clear + rewrite data rows)
+  // 4) Write to destination.
+  //    - rolling_upsert (Daily Sales): incremental UPSERT by natural key + prune to retentionDays
+  //      (preserves the header AND every existing row not in this batch — no full-table rewrite).
+  //    - all other configs: full snapshot rewrite (preserve header, clear + rewrite data rows).
   try {
-    ctx.rowsWritten = amazonWriteSnapshot_(config.destinationSpreadsheetId, config.destinationSheetName, destObjs);
+    if (config.writeMode === 'rolling_upsert') {
+      var up = amazonUpsertRollingSnapshot_(
+        config.destinationSpreadsheetId, config.destinationSheetName, destObjs,
+        config.naturalKey, (config.dateFields && config.dateFields[0]) || 'snapshot_date',
+        (config.retentionDays != null ? config.retentionDays : 30),
+        config.scheduleTimezone
+      );
+      ctx.rowsWritten = up.rowsWritten;
+      ctx.rowsPruned = up.pruned;
+    } else {
+      ctx.rowsWritten = amazonWriteSnapshot_(config.destinationSpreadsheetId, config.destinationSheetName, destObjs);
+    }
   } catch (e2) {
     amazonAddIssue_(ctx, 'destination_write_error', 'critical', '', '', 'destination must be writable', 'stopped_import', '', String(e2 && e2.message ? e2.message : e2));
     return finalize('failed', 'destination_write_error: ' + (e2 && e2.message ? e2.message : e2));

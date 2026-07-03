@@ -1033,3 +1033,585 @@ This page now serves as the **first validated example** of the Operation System 
 - **Frontend:** `shipping-plan.js` — `_spCompleted`/`_spTransferred` helpers, Done button on approved+transferred cards, `spDbDone`, Completed bucket/section, `filterByStatus` Converted→Completed, rationale shows completion; `shipping-plan.html` — Completed section + filter option (replaced Converted).
 - **Specs:** `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` v1.2 (§1A/§10/§11/§12), `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` v1.10 (§4/§9B/§12.1/§12.2/§13A), `SHIPMENT_CENTER_SPEC.md` §3 (Execution Layer Lifecycle), `SUPPLY_CHAIN_SYSTEM_FLOW.md` (flow incl. Completed + Settlement), `DATABASE_RELATIONSHIP_MAP.md` §8.
 - **Files:** `assets/specs/active/apps-script/11_shipping_plan_handlers.gs`, `01_router.gs`, `assets/js/api/operation-system-db-api.js`, `assets/js/pages/shipping-plan.js`, `assets/html/pages/shipping-plan.html`, `docs/planning/SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`, `docs/planning/WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`, `docs/planning/SHIPMENT_CENTER_SPEC.md`, `docs/planning/SUPPLY_CHAIN_SYSTEM_FLOW.md`, `docs/planning/DATABASE_RELATIONSHIP_MAP.md`. **Redeploy `11_*` + `01_router` `.gs`; add `completed_at` / `completed_by` headers to the `shipping_plans` tab** so Done persists (until added, `setValue` skips them and the card won't hide after refresh).
+
+## Shipment Center Menu + Shipment Draft Lifecycle Redesign (2026-07-01)
+
+**Spec + existing-UI refactor. No factory stock, Carrier engine, RO/PO, Decision Snapshot recompute; no `shipments`/`shipment_lines` row deletes.**
+
+- **Menu:** the standalone "Shipping Plan" item moved **under Shipment Center**. Now **Shipment Center → Weekly Shipping Plan / Shipment Draft / Shipment Overview** (no function removed — `showSection('shippingplan')` reused).
+- **Shipment Draft = execution working area** (three sections, only `hidden_from_draft_at IS NULL`): **Draft** (`status=draft`; fields editable; Save / Ready to Ship), **Ready to Ship** (`status=ready_to_ship`; fields editable; Save / Ship), **Shipped** (`status=shipped`; read-only; Done).
+- **Save vs Ship:** **Save** (`updateShipment`, no status) updates execution fields only — **does NOT enter Overview**. **Ship** validates required fields then `status=shipped` + stamps **`shipped_at` / `shipped_by`** — **only Ship makes it official**; then it appears in Overview.
+- **Required-before-Ship** (frontend + server-side in `updateShipment`): `carrier_id`, `etd`, `eta`, (`tracking_number` OR `booking_no`), `total_qty>0`, `total_cartons>0`. Missing → error, Ship blocked.
+- **Shipment Overview = official view:** shows only `shipped` / `in_transit` / `arrived` / `received` / `closed`; read-only fields; per-card Advance → steps the post-ship lifecycle. `draft` / `ready_to_ship` never shown.
+- **Done:** Shipped card's Done sets **`hidden_from_draft_at` / `hidden_from_draft_by`** (new columns) → hidden from the Shipment Draft workspace; **still in Overview; not deleted; status unchanged**. (Minimal-change design: `hidden_from_draft_*`, not `completed_*`, since the shipment lifecycle continues.)
+- **New `shipments` columns:** `shipped_at`, `shipped_by`, `hidden_from_draft_at`, `hidden_from_draft_by` (headers in `12_shipment_handlers.gs` + db-api normalizer). Execution status flow updated to `draft → ready_to_ship → shipped → in_transit → arrived → received → closed`.
+- **Apps Script:** `handleUpdateShipment_` extended — Ship gate (required-field validation) + stamps `shipped_at`/`shipped_by` on `→shipped`; handles `hidden_from_draft` (Done). No new action; no Shipment Commit change.
+- **Specs:** `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §10, `SUPPLY_CHAIN_SYSTEM_FLOW.md`, `SHIPMENT_CENTER_SPEC.md` §2/§3/§4/§5, `DATABASE_RELATIONSHIP_MAP.md` §8.
+- **Files:** `index.html` (menu), `assets/js/pages/shipping-history.js` (draft sections, Save/ReadyToShip/Ship/Done, overview filter), `assets/specs/active/apps-script/12_shipment_handlers.gs`, `assets/js/api/operation-system-db-api.js`, `docs/planning/*`. **Redeploy `12_shipment_handlers.gs`; add `shipped_at` / `shipped_by` / `hidden_from_draft_at` / `hidden_from_draft_by` headers to the `shipments` tab** (until added, Ship/Done still change status but the timestamps won't persist).
+
+## Weekly Shipping Plan Done Fix + Shipment Draft UI Refinement (2026-07-01)
+
+**Bug fix + UI refinement + spec sync. No Factory Stock / Carrier engine / RO / PO / Inventory runtime; no PK change; no row deletes; no snapshot recompute.**
+
+- **Root cause (Done button missing):** the Approved card's Done relied on `plan.transferredShipmentId` / `transferred_to_shipment_at`, which never persisted because those headers were absent on the live `shipping_plans` tab (writeback silently skipped). **Fix:** (a) frontend now also detects transfer by **an existing `shipments` row for the plan** (`getShipments()` map) so Done shows regardless; (b) Apps Script **auto-adds missing columns** — `completeShippingPlan` ensures `completed_at`/`completed_by`; `createShipmentFromApprovedPlan_` / `updateShipment` ensure `transferred_*` / `external_shipment_id` / `shipped_*` / `hidden_from_draft_*` / line `carton_no_*`. `sheetEnsureColumns_` helper added.
+- **Weekly Shipping Plan Done:** condition `status=approved` + transferred + `completed_at` empty → Done; writes `completed_at`/`completed_by`; plan leaves Active view (preserved; Completed filter). (unchanged semantics; now actually works.)
+- **Shipment Draft filter:** legacy big bar hidden; compact top-right **Country / Marketplace** filter injected.
+- **Shipment Draft header:** Marketplace · Company · Country · **Destination (`--` if blank)** · Method · Pcs · ETD · ETA.
+- **SKU Lines:** clean title "SKU Lines"; columns SKU / Qty / Cartons / Carton CBM / CBM / Gross Wt / Net Wt / **Carton No Start / Carton No End (editable numeric)** + totals row (Total SKU / Qty / Ctn. / CBM / Gross / Net). Carton numbers saved to `shipment_lines` via `updateShipment { lines }`.
+- **Execution Fields (redesigned 2-col form):** **Shipment ID = `external_shipment_id` (editable)** — internal `shipment_id` PK shown read-only, never editable; auto-generated `COMPANY-MARKETPLACE-COUNTRY-YYYYMMDD-###`. **Carrier read-only.** reference_id / warehouse_code / tracking / booking / container / BL / invoice / ETD / ETA / Remark editable.
+- **New DB columns:** `shipments.external_shipment_id`; (`shipment_lines.carton_no_start/end` already existed). Execution status flow unchanged (`draft→ready_to_ship→shipped→in_transit→arrived→received→closed`). Warehouse_id future-mapped from destination (spec only).
+- **Specs:** `SHIPMENT_CENTER_SPEC.md` §2/§4, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §12.2, `DATABASE_RELATIONSHIP_MAP.md` §8.
+- **Files:** `assets/js/pages/shipping-plan.js`, `assets/js/pages/shipping-history.js`, `assets/js/api/operation-system-db-api.js`, `assets/specs/active/apps-script/11_shipping_plan_handlers.gs`, `assets/specs/active/apps-script/12_shipment_handlers.gs`, `docs/planning/*`. **Redeploy `11_*` + `12_*` `.gs`** — columns auto-add on first write, but redeploy is required for the new handler logic.
+
+## Shipment Draft Bug Fix + Carton Validation + External ID Refinement (2026-07-01)
+
+**Bug fix + UI refinement + spec sync. No Factory Stock / Carrier engine / RO / PO / Inventory runtime / Role Permission; no `shipment_id` PK change; no row deletes; no Decision Snapshot recompute.**
+
+- **Done "not transferred" bug (Part 1):** `handleCompleteShippingPlan_` no longer relies solely on `transferred_shipment_id`. If it's blank it looks up an existing `shipments` row for the plan (new shared helper `shipmentFindForPlan_` in `12_shipment_handlers.gs`, matching `shipping_plan_id` / `source_shipping_plan_id` / `plan_id`) and **backfills `transferred_shipment_id` + `transferred_to_shipment_at`** (auto-adding columns) before writing `completed_at` / `completed_by`. An Approved plan that truly has a Shipment Draft can now always be completed.
+- **External Shipment ID format (Part 2):** default reformatted from `COMPANY-MARKETPLACE-COUNTRY-YYYYMMDD-###` to **`COMPANY-MKT-YYMMDD-##`** — company uppercased no-spaces; marketplace short code (`Amazon→AMZ`, `Walmart→WMT`, `Shopify→SHP`, `eBay→EBY`, `Target→TGT`, `Wayfair→WYF`, else first 3 chars); 2-digit daily serial per company+marketplace(+country). e.g. `RESUS-AMZ-260701-01`. Helper `shipmentMarketplaceAbbrev_`.
+- **Card header shows external ID (Part 3):** first header field = `external_shipment_id` (fallback `shipment_no` → internal `shipment_id`); refreshes after Save (`_shLoadAndRender` reload). Internal `shipment_id` never editable.
+- **`shipment_lines.cbm` → `carton_cbm` (Part 4/5):** user renamed the column. `carton_cbm` = single-carton CBM (only stored CBM column); Execution Commit copies `shipping_plan_lines.carton_cbm` (fallback: compute from `sku_details` carton dims), drops the line `cbm` write; `total_cbm = Σ(carton_cbm × carton_qty)`. SKU Lines show **Carton CBM only** (CBM column removed); columns SKU / Qty / Cartons / Carton CBM / Gross Wt / Net Wt / **Carton No. Start / End**; totals row shows **Total Carton CBM = Σ(carton_cbm × carton_qty)**.
+- **Carton No. validation (Part 6):** integers only, `start ≤ end`, non-overlapping within a shipment — enforced frontend (`_shValidateCartons`, red border + message) AND server-side (`shipmentValidateCartons_`). Blocks Save / Ready to Ship / Ship.
+- **Required before Ship (Part 7):** now `external_shipment_id`, Carton No. Start/End (every line), `reference_id`, `warehouse_code`, `etd`, `eta` (+ `total_qty>0`). `tracking_number` / `booking_no` no longer required. Enforced frontend (`shShip`) + `updateShipment` ship gate.
+- **Remark mapping (Part 8):** UI Remark = `shipments.note` (confirmed; documented in `SHIPMENT_CENTER_SPEC.md` §4).
+- **Return to Draft (Part 9):** future revision rule + reserved **← Return to Draft** button on Ready to Ship cards → prompts required reason (appended to `shipments.note` via `revision_reason`) and sets `status=draft`. No permissions yet. Future `shipment_revision_log` table documented (NOT created).
+- **Specs:** `SHIPMENT_CENTER_SPEC.md` (v2.4: §2/§4/§5B/§12/§12A/§15.3), `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` (v1.11: §12.2), `DATABASE_RELATIONSHIP_MAP.md` §8.
+- **Files:** `assets/js/pages/shipping-history.js`, `assets/specs/active/apps-script/11_shipping_plan_handlers.gs`, `assets/specs/active/apps-script/12_shipment_handlers.gs`, `docs/planning/SHIPMENT_CENTER_SPEC.md`, `docs/planning/WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`, `docs/planning/DATABASE_RELATIONSHIP_MAP.md`. **Redeploy `11_*` + `12_*` `.gs`** — columns auto-add on first write; redeploy required for the new handler logic. **User already renamed `shipment_lines.cbm` → `carton_cbm` in the sheet.**
+
+## Inventory Replenishment — Recommendation Summary + Execution Plan (2026-07-01)
+
+**Spec update + first-version UI refactor. No AI Recommendation Engine, no Carrier Rate Engine, no Factory Allocation Engine, no Inventory runtime recompute; Submit Plan / Weekly Shipping Plan / Shipment Draft / Overview unchanged in mechanism.**
+
+- **Second-layer right panel redefined** (`inventory-replenishment.js` + `.css`): the legacy trio **AI Suggestion / Shipping Allocation / Shipping Plan Suggestions** is replaced by two blocks — **Recommendation Summary** (top) and **Execution Plan** (bottom). `Shipping Plan Suggestions` removed; `Shipping Allocation` is now a legacy name.
+- **Recommendation Summary (read-only system suggestion, NOT submitted):** table **Target Window / Suggested Qty / Suggested Route / Reason** over rows `0–18d / 19–30d / 31–45d / 46–90d / Total`. Suggested Qty from existing need-bucket data; **Suggested Route = `--`** and **Reason = `AI Pending`/`Stock Sufficient`** placeholders (no AI engine). New helper `_recSummaryRows`.
+- **Execution Plan (submitted):** route list **Ship From / Destination / Suggested Qty / Shipping Method / Delete** + **`+ Add Route`**. First version: manual entry. New functions `addExecutionRoute` / `removeExecutionRoute` / `_renderExecutionRoute` / `onExecutionRouteEdit`; rewrote `_saveAllocationDraftFromDom`, `initializeShippingAllocation`, `updateShippingAllocationTotal`, `validateAllocationCartons` to the route-row model. Carton-multiple gate unchanged.
+- **Terminology:** Recommendation Summary = 系統建議摘要 (not submitted); Execution Plan = 使用者實際提交到 Weekly Shipping Plan 的出貨計畫. **Submit Plan uses the Execution Plan only.**
+- **API-ready:** Execution Plan lives in centralized JS state (`window.KM.shippingAllocationDraft`); **Submit Plan reads ONLY the Execution Plan state** (removed the old AI-default fallback that read need buckets); `sessionStorage` = recovery only; writes go through `KM.DB.createShippingPlansBatch`. `ship_from` / `destination` now threaded from Execution Plan routes into `shipping_plan_lines`.
+- **Route Rule spec:** `CARRIER_AND_ROUTE_SPEC.md` v1.1 — new **`replenishment_route_rules`** (§5A, Part 4 columns) for Inventory Replenishment / Recommendation Summary / Execution Plan defaults; **explicitly distinct from `shipment_routes`** (Shipment/World Map/in-transit only). Added **`carrier_lead_times`** (§4A) and the **import-oriented `carrier_rate_cards` column variant** (§4.1). Carrier tables (`carriers` / `carrier_rate_cards` / `carrier_lead_times`) synced to spec — no Carrier Engine.
+- **Specs updated:** `INVENTORY_TABLE_MAPPING_SPEC.md` v1.5 (§11 rewrite + §11.4 API-ready), `CARRIER_AND_ROUTE_SPEC.md` v1.1, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` v1.12 (§2A/§3 Execution Plan terminology), `DATABASE_RELATIONSHIP_MAP.md` §9 (replenishment_route_rules + carrier_lead_times), `SUPPLY_CHAIN_SYSTEM_FLOW.md` §5.1 (Recommendation Summary → Execution Plan → Submit), `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A (Execution Plan Working Draft Principle).
+- **Files:** `assets/js/pages/inventory-replenishment.js`, `assets/css/pages/inventory-replenishment.css`, `docs/planning/{INVENTORY_TABLE_MAPPING_SPEC,CARRIER_AND_ROUTE_SPEC,WEEKLY_SHIPPING_PLAN_MAPPING_SPEC,DATABASE_RELATIONSHIP_MAP,SUPPLY_CHAIN_SYSTEM_FLOW,SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES}.md`. **No Apps Script / DB change required** (frontend + spec only; `replenishment_route_rules` / `carrier_lead_times` are future tables, not migrated).
+
+## Inventory Replenishment — Expanded Row Layout Fix (2026-07-01)
+
+**UI / CSS fix only. No Submit Plan logic, Execution Plan data structure, Apps Script, DB, Weekly Shipping Plan, Shipment, Recommendation calculation, or Carrier/Route/AI engine change.**
+
+- **Stacked planning column:** Recommendation Summary and Execution Plan are now **stacked vertically** (Recommendation above Execution) inside one `.ir-panel-column--planning`, instead of side-by-side. Both blocks now carry the base **`.replen-card`** class → same white / border / radius / padding styling as the left detail cards.
+- **Single overflow strategy (Part 1/4):** removed the nested `overflow-x: auto` on `.replen-expand-scroll` (consolidated the two duplicate rules) → the expanded row no longer creates its own scrollbar; panels **wrap** (`flex-wrap: wrap`). The only horizontal scroll is the main table's `.scroll-col`. No `overflow-y` / `max-height` anywhere in the expanded row → **no nested vertical scrollbar**; height is content-driven. (The two remaining `overflow-y:auto` rules are modals — `.replen-import__result` + import modal — unrelated.)
+- **Execution Plan grid:** header row + every route row share one CSS grid class **`.ir-exec-plan__grid`** (`1fr 1fr 72px 1fr 24px`) so columns align; route inputs use `min-width: 0` to shrink inside grid tracks without overflowing. Moved inline styles (title-row, add-route button, grid) into CSS classes (`.replen-card__title-row`, `.replen-card__add-route-btn`, `.ir-exec-plan__grid--head`, `.replen-recsum-table`).
+- **Responsive (Part 3):** added `@media (max-width: 900px)` → the whole expanded row collapses to a single top-to-bottom column (inventory group / columns / planning column all full-width; `.replen-card-grid` → 1 column). No hard-coded over-wide widths in the planning column (`flex: 1 1 320px; min-width: 260px; max-width: 460px`).
+- **Sticky header (Part 5):** verified `.table-header-bar { position: sticky; top: 72px; z-index: 120 }` and `.fixed-col` sticky are intact and unaffected; removing the nested expand-row scroll + side-by-side over-wide layout restores the correct sticky/top-aligned two-row header behavior. No ancestor `overflow` was introduced.
+- **Spec:** `INVENTORY_TABLE_MAPPING_SPEC.md` v1.5.1 — new **§11.5 expanded-row layout rule** (stacked planning blocks; no nested scrollbars; main-table horizontal scroll is the single strategy; responsive card-grid).
+- **Files:** `assets/js/pages/inventory-replenishment.js` (planning-column wrapper markup + shared grid class), `assets/css/pages/inventory-replenishment.css` (expand-scroll wrap, planning column, rec/exec card styling, responsive media query), `docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md`. **No Apps Script / DB / other-page change.**
+
+## Inventory Replenishment — Expanded Row Layout v2 Fix (2026-07-01)
+
+**UI / CSS fix only. No Submit Plan logic, Execution Plan state, Recommendation calculation, Apps Script, DB, Weekly Shipping Plan, Shipment, or Carrier/Route/AI engine change.**
+
+- **Layout v2 — four horizontal groups, each stacking vertically:** A = inventory state (Stock / LTS / Shipping / 3rd Party, kept as the 2×2 small-card group), B = planning context (Forecast / Upcoming Event, **narrowed** to ≈190px), C = recommendation insight (**Sales Trend → Recommendation Summary**), D = decision action (**Achievement Rate → Execution Plan**). Recommendation Summary and Execution Plan **no longer share one narrow vertical stack** — they now live under Sales Trend / Achievement Rate respectively. New group classes `.ir-panel-column--context / --insight / --action` (replaced `--planning`).
+- **Overflow hardening (no content exceeds card/container):** `#ops-section .replen-expand-scroll > * { min-width: 0 }`; cards inside columns + `.replen-card-grid` children + card rows/labels `min-width: 0` (labels ellipsis); Recommendation Summary table `table-layout: fixed` with cell ellipsis (removed the `.replen-recsum-table-wrap` overflow-x box → **no nested horizontal scrollbar**); Execution Plan grid `grid-template-columns: minmax(0,1fr) minmax(0,1fr) 52px minmax(0,1fr) 22px` so tracks shrink; inputs/selects `min-width:0`; **Delete `×` button fixed in a 22px track** (no longer spills out). Cards use `overflow: hidden` as a boundary safety.
+- **Recommendation Summary spacing (Part 3):** title `margin-bottom: 6px`, table sits directly under the title (no wrapper div / extra top margin).
+- **Execution Plan width (Part 4):** all five columns (Ship From / Destination / Qty / Method / Delete) stay inside the card; header labels shortened (`Qty` / `Method`) + ellipsis so they never overflow.
+- **Responsive (Part 5):** `@media (max-width: 900px)` collapses all four groups to a single top-to-bottom column (`--context/--insight/--action` + inventory group full-width, `.replen-card-grid` → 1 col); nothing falls outside the expanded-row container. The main table remains the single horizontal-scroll surface; the expanded row scrolls with it.
+- **Sticky header (Part 6):** `.table-header-bar { position: sticky; top: 72px; z-index: 120 }` and `.fixed-col` sticky verified intact; no ancestor `overflow` introduced; the removal of nested expand-row scrollbars restores correct sticky/top-aligned behavior.
+- **Spec:** `INVENTORY_TABLE_MAPPING_SPEC.md` v1.5.2 — §11.5 rewritten as **Expanded Row Layout v2** (group A/B/C/D table; no content exceeds card/container; single main-table overflow; no inner scrollbars).
+- **Files:** `assets/js/pages/inventory-replenishment.js` (expand-row regroup markup), `assets/css/pages/inventory-replenishment.css` (group columns, overflow safety, exec grid minmax, rec table fixed layout, title spacing, responsive), `docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md`. **No Apps Script / DB / other-page change.**
+
+## Inventory Replenishment — Expanded Row Layout v3 (Stable Horizontal) (2026-07-01)
+
+**UI / CSS fix only. No Submit Plan logic, Execution Plan state, Recommendation calculation, Apps Script, DB, Weekly Shipping Plan, Shipment, or Carrier/Route/AI engine change.**
+
+- **Root cause:** v2 used `flex-wrap` + an `@media (max-width:900px)` single-column reflow on the expanded row. On small screens the groups reflowed vertically and the scroll panel's height (measured once by `syncExpandPanelHeight`) went stale relative to the reflowed content, so the expanded content visually overlapped the next SKU row (CO1100-S/-T). Recommendation Summary / Execution Plan were also over-compressed and clipped (ellipsis).
+- **Layout Strategy v3 (fixed-width horizontal, no reflow):** `.replen-expand-scroll` → `flex-wrap: nowrap; align-items: stretch; overflow: visible`. Four groups with **fixed widths, no shrink/grow/wrap**: A (`.ir-panel--inventory-group`) 320px, B (`.ir-panel-column--context`) 240px, C (`.ir-panel-column--insight`) 400px, D (`.ir-panel-column--action`) 420px. **Removed the `@media (max-width:900px)` reflow block.** The row extends past the viewport and is viewed via the main table's `.scroll-col` horizontal scroll (same as layer 1). Also fixed `.replen-expand-section--inventory` (was width:360 → width:100%/min-width:0) to fit the 320 group.
+- **Row overlap fix:** expanded row is content-height (no `position:absolute`, no `transform`, no height-collapsing children); `syncExpandPanelHeight` still equalizes the fixed-col and scroll-col panels to `max(...)` so neither clips → bottom always sits above the next SKU row. Stable now that content height no longer depends on viewport width.
+- **Recommendation Summary UI:** removed the "(system suggestion — not submitted)" title note (title = just "Recommendation Summary"); title `margin-bottom: 6px`; columns renamed **Window / Qty / Route / Reason**; table `white-space: normal` (full text, wrap if needed) — **no ellipsis**, `Stock Sufficient` shown complete; font 12px.
+- **Execution Plan UI:** columns **From / To / Qty / Method / X**; grid `minmax(90px,1fr) minmax(90px,1fr) 56px minmax(96px,1fr) 28px`, `gap: 6px`; Method select and `X` never overlap; `X` in a 28px track (justify-self:center) so it never touches the card edge; input placeholders shortened to From / To.
+- **Top-card alignment (best-effort):** `.replen-card--sales-trend, .replen-card--achievement { min-height: 150px }`; `align-items: stretch` makes the four group boxes equal height; charts not squeezed.
+- **Sticky header (Part 6/11):** `.table-header-bar` sticky + `.fixed-col` sticky untouched and verified; no ancestor overflow introduced.
+- **Spec:** `INVENTORY_TABLE_MAPPING_SPEC.md` v1.5.3 — §11.5 rewritten as **Expanded Row Layout v3** (fixed-width horizontal groups; no vertical reflow; main-table scroll; no overlap; readable Recommendation/Execution labels without header ellipsis).
+- **Files:** `assets/js/pages/inventory-replenishment.js` (labels: Window/Qty/Route/Reason, From/To/Qty/Method/X, removed title note, From/To placeholders), `assets/css/pages/inventory-replenishment.css` (nowrap+stretch expand-scroll, fixed group widths, removed media query, rec table no-ellipsis, exec grid widths, top-card min-height), `docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md`. **No Apps Script / DB / other-page change.**
+
+## Amazon Daily Sales — Incremental Rolling Upsert Snapshot (2026-07-01)
+
+**Apps Script optimization + spec sync. Scope: `amazon_daily_sales_snapshot` ONLY. No change to Inventory / Health / Weekly Sales importers, no BigQuery schema change, no frontend, no replenishment calculation. No header deletion. BigQuery history never pruned.**
+
+- **Problem:** `runAmazonSnapshotImport_` previously re-read a rolling 30-day window from BigQuery and handed it to `amazonWriteSnapshot_`, which **cleared + rewrote all data rows** every day. Acceptable for true snapshots, wasteful for Daily Sales as a daily job.
+- **New write mode `rolling_upsert` (Daily Sales only):** config 4 gains `writeMode: 'rolling_upsert'`, `retentionDays: 30`, `incrementalDefaultDays: 1` (`lookbackDays: 30` kept as backfill ceiling). Each daily run reads **only new completed-day data (default 1 = yesterday, excludes today)**, **UPSERTs** by natural key `snapshot_date + country + marketplace + channel + sku` (existing key → update in place; new key → append), then **prunes** destination rows with `snapshot_date < today − 30d`. Header + all non-batch rows preserved — **no full-table wipe**. Google Sheet keeps a rolling 30 completed days; **BigQuery keeps full history (never pruned).**
+- **Backfill:** POST `{ action:'runAmazonSnapshotImports', destination_table:'amazon_daily_sales_snapshot', backfill_days: N }` re-reads the last N completed days (capped at 30) and upserts them — still no wipe; safe to re-run. Default (scheduler / no `backfill_days`) reads just yesterday.
+- **New function** `amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, naturalKey, dateField, retentionDays, tz)` (09) — reads dest header, builds existing-row map by natural key, updates existing / appends new, prunes by date (`amazonRollingCutoffDate_` helper), preserves header, returns `{rowsWritten, updated, appended, pruned, total}`.
+- **Runner (07):** `runAmazonSnapshotImport_(config, triggeredBy, options)` now threads `options.backfillDays`; write step branches on `writeMode==='rolling_upsert'` (else legacy `amazonWriteSnapshot_`); `ctx.rowsPruned` added; `handleRunAmazonSnapshotImports_` parses `body.backfill_days`; `runAmazonSnapshotImports()` passes `{}` (scheduler → incremental default). `import_sync_runs.quality_note` records `write_mode=rolling_upsert; rows_pruned=<n>`; `rows_read`/`rows_written`/`status` unchanged in shape.
+- **Sources (08):** `amazonReadBigQuerySource_(config, options)` computes the completed-day window = `incrementalDefaultDays` (1) by default, or `backfill_days` (capped at `lookbackDays`) for rolling_upsert; other configs keep `lookbackDays` (7 default). Same start/end SQL (`excludeToday`), same per-group fallback when the window is empty.
+- **BigQuery credit impact:** daily query now scans ~1 completed day instead of 30 → ~30× less data scanned per daily run (unless a manual `backfill_days` is requested). No schema change.
+- **Spec:** `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` v1.7 — §4 (incremental rolling upsert), §7.4 (write-mode rules + config), §20 (retention exception), config code blocks + comparison table + changelog/status.
+- **Files:** `assets/specs/active/apps-script/06_amazon_import_config.gs`, `07_amazon_import_runner.gs`, `08_amazon_import_sources.gs`, `09_amazon_import_writer_logger.gs`, `docs/planning/AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`. **Redeploy `06`–`09` `.gs`.** No sheet header change required (natural key + date columns already exist).
+
+## Inventory Replenishment — Expanded Row UI Polish (2026-07-01)
+
+**UI / CSS fix only. No Submit Plan, Execution Plan state, Recommendation calculation, Apps Script, DB, Weekly Shipping Plan, Shipment, or Carrier/Route/AI engine change.**
+
+- **Top-row equal height (Part 1):** the top card of each group — **Stock / Long Term Storage** (Group A grid row 1), **Forecast Breakdown** (B), **Sales Trend** (C), **Achievement Rate** (D) — now share `min-height: 150px` and `flex: 0 0 auto` (removed the old `flex: 1.15` / `.ir-panel flex:1` grow), so Forecast Breakdown and Achievement Rate no longer stretch tall and the divider line aligns across groups. Chart canvases keep `max-height: 100px` (not squeezed). Second-row cards flow naturally.
+- **Recommendation Summary Reason single-line (Part 2):** `.replen-recsum-table` changed to `table-layout: auto` + cells `white-space: nowrap` (was `normal`/wrap) — `Stock Sufficient` stays on one line, no ellipsis. Group C widened to 420px so it fits.
+- **Recommendation Summary header color (Part 3):** `thead th` background `rgb(255, 248, 240)` with `#1f2937` text — that table only (no green, no impact on other tables).
+- **Execution Plan Method/Delete (Part 4):** removed the `X` text from the header row (empty last cell; red `×` button only). Grid changed to `minmax(90px,1fr) minmax(90px,1fr) 56px minmax(110px,1fr) 32px` with `column-gap: 8px` (was `…96px…28px`, gap 6px) so Method select and the red `×` never overlap and `×` sits inside a 32px track (20px centered) — off the card edge.
+- **Width / overflow (Part 5):** Group C min-width 400→**420px**, Group D 420→**440px** (both `flex: 0 0` fixed). Groups still never wrap; overflow past viewport uses the main table's `.scroll-col` horizontal scroll. Lower cards (Recommendation Summary / Execution Plan) are not squeezed.
+- **Sticky header:** unchanged and unaffected (no ancestor overflow touched).
+- **Spec:** `INVENTORY_TABLE_MAPPING_SPEC.md` v1.5.4 — §11.5 top-row alignment + Recommendation Summary single-line Reason + warm header color + Execution Plan Method/Delete spacing + Group C/D widths.
+- **Files:** `assets/css/pages/inventory-replenishment.css` (top-card min-height/no-grow, rec table nowrap + header color, exec grid widths/gap, Group C/D widths), `assets/js/pages/inventory-replenishment.js` (exec header `X` → empty span), `docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md`. **No Apps Script / DB / other-page change.**
+
+## Inventory UI Polish + Carrier Rate Card Spec Update (2026-07-01)
+
+**UI fix + spec update only. No Submit Plan, Apps Script, DB handler, Carrier Engine, Request Order/PO, or Shipment logic change.**
+
+### Inventory Expanded Row UI (CSS + 1 markup)
+- **Upcoming Event height:** expanded row changed `align-items: stretch → flex-start`; `.replen-card--upcoming` / `--recommendation-summary` / `--execution-plan` set `flex: 0 0 auto` → Upcoming Event no longer stretched tall, matches Shipping Shipment / 3rd Party small cards. Top-row alignment still from the shared `min-height: 150px` on top cards.
+- **Recommendation Summary title spacing:** title `margin-bottom: 6px → 4px` (matches Long Term Storage title→content).
+- **Recommendation Summary Total row:** `_recSummaryRows` now blanks Route + Reason on the Total row (shows only Total + Qty); qty cell uses `replen-recsum-table__num`.
+- **Execution Plan Method/Delete overlap:** grid `minmax(90/90/…/110)px 28px` → **`minmax(100px,1fr) minmax(100px,1fr) 60px minmax(130px,1fr) 36px`**, `column-gap: 8px`; **Group D widened 440 → 490px** so the grid (≈458px min) fits without shrinking Method under the `×` button. `×` sits centered in a 36px track, off the card edge.
+- **Files:** `assets/css/pages/inventory-replenishment.css`, `assets/js/pages/inventory-replenishment.js` (Total-row markup), `docs/planning/INVENTORY_TABLE_MAPPING_SPEC.md` v1.5.5.
+
+### Carrier & Route Spec (spec only — no engine)
+- `CARRIER_AND_ROUTE_SPEC.md` v1.2:
+  - **`carriers.carrier_type` enum** → `forwarder / courier / trucker / warehouse_partner / customs_broker / other` (§3).
+  - **`carrier_rate_cards` (§4) rewritten** to authoritative import schema: `rate_card_id, carrier_id, origin_country, origin_city, destination_country, destination_city, destination_postal_code_start/end, destination_warehouse_code, marketplace, shipping_method, charge_type, charge_unit, dim_divisor, min_box_weight(+unit), weight_tier(+unit), currency, unit_rate, min_charge, fuel_surcharge, customs_fee, doc_fee, transit_days, effective_from/to, status, source_file_name, import_batch_id, created_at, updated_at`. `charge_type` = actual_weight/dim_weight/chargeable_weight/cbm/carton/shipment; `charge_unit` = kg/cbm/carton/shipment; `dim_divisor` e.g. 5000/6000; `min_box_weight` = per-carton min chargeable weight; `weight_tier` = tier start (20/50/100); `unit_rate` = per charge_unit. Matching: warehouse_code → postal range → city → country + marketplace + method + weight_tier. **`route_code` optional/deprecated — not the primary match key.**
+  - **§4B Estimated Quote vs Actual Cost:** coarse estimate at Shipping Plan (country+marketplace+method+weight_tier) → refined at Shipment Draft (warehouse_code/postal/city known) → actual after carrier invoice. Suggested columns: `shipping_plans.estimated_freight_cost/estimated_duty/estimated_total_cost/estimated_unit_cost`; `shipments` same `estimated_*` + `freight_cost_actual/duty_actual/total_cost_actual`.
+  - **§4A lead-time rule:** rate-card `transit_days` = quoted reference; `carrier_lead_times.avg_days` = actual/observed; future AI prefers `avg_days`.
+  - **§6A `shipment_routes` (planned nodes) vs `shipment_events` (actual events)** clarified (routes = 東莞工廠→深圳出口海關→太平洋航段→洛杉磯港→ONT8; events = picked_up/customs_cleared/vessel_departed/arrived_port/delivered). Execution-layer, distinct from planning route rules.
+- `DATABASE_RELATIONSHIP_MAP.md` §9 synced: carrier_type enum, new carrier_rate_cards columns, route_code deprecated, transit_days vs carrier_lead_times, cost lifecycle, shipment_routes vs shipment_events, and **DB Columns Needed** (estimated_*/*_actual).
+
+### DB Columns Needed (future — planned, no writer/engine)
+- `shipping_plans`: `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `estimated_unit_cost`.
+- `shipments`: `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `estimated_unit_cost`, `total_cost_actual` (new); `freight_cost_actual` / `duty_actual` already exist.
+- `carrier_rate_cards`: new expanded schema (§4). `carrier_lead_times`: as defined. **All spec-only — not migrated, no engine.**
+
+## Inventory UI CSS Override + Shipment Events Spec Check (2026-07-01)
+
+**Small UI override + spec sync only. No components.css global change, no Submit Plan / Apps Script / DB handler / Carrier Engine / PO / Request Order change.**
+
+### shipment_events spec (Part 1)
+- `SHIPMENT_CENTER_SPEC.md` §18 expanded with **§18.1 `shipment_events` definition**: optional actual tracking/event records = actual event history; **does not affect Ship main flow**; **no route/event required to Ship**; sources = `manual` / `carrier API` / `tracking API` / `import`; `shipment_routes` = planned route nodes vs `shipment_events` = actual event history. Preserved full field list: `shipment_event_id, shipment_id, event_time, event_type, event_status, location_name, country, city, latitude, longitude, source, note, created_at, updated_at`. Schema future work (spec-only, no migration).
+- `DATABASE_RELATIONSHIP_MAP.md` already documents `shipment_events` consistently (planned nodes vs actual events) — no change needed.
+
+### Recommendation Summary table CSS (Part 2 — Inventory Replenishment scoped only)
+- Header background warm `rgb(255,248,240)` → **gray `#F1F5F9`** (`.replen-recsum-table thead th`, `#ops-section` scoped).
+- `.replen-recsum-table` given explicit **`margin: 10px 0`** to override the global 20px table margin — keeps the table tight to its title (visual close to Long Term Storage). Title `margin-bottom` stays 4px.
+
+### Execution Plan Delete Button CSS (Part 3)
+- `.exec-route-row .replen-card__remove-btn` now **overrides global button `min-width: 60px`** via `min-width/max-width: 24px`; fixed `24×24` square, `padding: 0`, `justify-self: center` in its 36px track (off the card edge), flex-centered `×`. Method select and `×` no longer overlap.
+
+### Execution Plan alignment (Part 4)
+- Unified to **left align**: Qty header (`.ir-exec-plan__qty`) and Qty input (`[data-field="qty"]`) changed `text-align: right → left` so From / To / Qty / Method headers and inputs read consistently. Delete header cell stays centered.
+
+- **Files:** `assets/css/pages/inventory-replenishment.css`, `docs/planning/SHIPMENT_CENTER_SPEC.md`. No JS/markup change needed (labels/classes unchanged). No components.css / Apps Script / DB / other-page change.
+
+## Procurement Layer Phase 1 — Request Order Draft + Purchase Order Foundation (2026-07-01)
+
+**New Procurement Center (下單系統) module: UI + mapping + DB handler foundation. API-ready. No auto-procurement engine, supplier API, payment flow, or formal document generation. Existing Inventory / Weekly Shipping Plan / Shipment / Apps Script actions untouched.**
+
+### Menu / Navigation
+- `index.html`: new **Procurement Center** parent menu (`toggleMenu('procurement')`) with children **Request Order Draft** / **Purchase Order Overview** / **Purchase Order List** (`showSection('request-order-draft' | 'purchase-order-overview' | 'purchase-order-list')`). Legacy 下單系統 (request-order) leaf under Forecast preserved. Added 3 mount points + 3 page `<script>`s + `procurement.css` link.
+- `app.js`: both `sectionMap` objects gained the three new section ids.
+
+### Pages (partial-loaded, lifecycle-registered — same pattern as shipping-history)
+- **Request Order Draft** (`assets/html/pages/request-order-draft.html` + `assets/js/pages/request-order-draft.js`): Draft / Pending Approval / Approved sections; card + expand SKU Details (SKU/Product/Series/Requested/Approved[editable in Draft]/Units-Ctn/Cartons/Supplier/Supplier SKU/Unit Cost/Est. Amount/Need Reason/Related). Save (`updateRequestOrderLineQty`), Submit, Cancel, Approve, Reject (reason required), Convert to PO (`createPurchaseOrderFromRequest`), Done. **+ New Manual Draft** modal (`createRequestOrderDraft`); **From Shortage** = placeholder alert.
+- **Purchase Order Overview** (`purchase-order-overview.html` + `.js`): status-grouped PO cards (Draft/Issued/Confirmed/In Production/Ready to Ship/Partially Shipped/Completed/Cancelled); expand PO Lines (SKU/Product/Ordered[editable in Draft]/Shipped/Remaining/Unit Cost/Line Amount/Cartons/Related Request/Related Shipment/Note). Save/Issue/Confirm/Start Production/Ready to Ship/Complete/Cancel via `updatePurchaseOrderStatus` + `updatePurchaseOrderLine`. `partially_shipped` displayed (partial impl).
+- **Purchase Order List** (`purchase-order-list.html` + `.js`): filter bar (Company/Supplier/Status/PO No/SKU/Date range) + table (PO No/Status/Supplier/Company/Currency/Total Qty/Total Amount/Expected Ready/Created/Updated/Action). Action: View (modal) / Overview (jump+expand) / Edit-if-draft.
+- **CSS:** `assets/css/pages/procurement.css` (scoped `.procurement-*` / `.pc-*`; no global override).
+
+### API (`operation-system-db-api.js`)
+- Normalizers: `normalizeRequestOrderRecord` / `normalizeRequestOrderLineRecord` / `normalizePurchaseOrderRecord` / `normalizePurchaseOrderLineRecord`; wired into `normalizeOperationDb` (`requestOrders` / `requestOrderLines` / `purchaseOrders` / `purchaseOrderLines`; [] when payload lacks the table).
+- Getters: `getRequestOrders` / `getRequestOrderLines` / `getPurchaseOrders` / `getPurchaseOrderLines`.
+- Writers (POST { action } + reload): `createRequestOrderDraft` / `updateRequestOrderStatus` / `updateRequestOrderLineQty` / `createPurchaseOrderFromRequest` / `updatePurchaseOrderStatus` / `updatePurchaseOrderLine`. API-ready; sessionStorage only for the create modal's working input.
+
+### Apps Script
+- **New `13_procurement_handlers.gs`**: 4 header constants + ensure-sheet (auto-create with documented header; missing-header safe; reuses global `sheetEnsureColumns_`) + append-by-header + `handleCreateRequestOrderDraft_` / `handleUpdateRequestOrderStatus_` (submit/approve/reject/cancel/done) / `handleUpdateRequestOrderLineQty_` (Draft only; recalc header totals) / `handleCreatePurchaseOrderFromRequest_` (Approved→PO; sets request `converted_to_po` — the only write-back) / `handleUpdatePurchaseOrderStatus_` (issue/confirm/start_production/ready_to_ship/complete/cancel) / `handleUpdatePurchaseOrderLine_` (Draft PO only; recalc totals).
+- `01_router.gs`: 6 new POST actions routed. `02_core_sheet_db.gs`: `filterRows_` cases for the 4 tables. `03_master_data_handlers.gs`: both `validTabs` arrays include the 4 tables.
+
+### DB Schema Foundation
+- `request_orders` / `request_order_lines` / `purchase_orders` / `purchase_order_lines` — exact Phase-1 columns per the task. Auto-created on first write; no manual migration; no existing table altered.
+
+### Status Flow
+- Request Order: `draft → pending_approval → approved → converted_to_po`; reject → draft (version +1 on resubmit); cancel (soft); done sets `completed_*` (visual hide).
+- Purchase Order: `draft → issued → confirmed → in_production → ready_to_ship → completed`; cancel; `partially_shipped` display-only.
+
+### Immutable Flow (enforced)
+- `Shipment / Inventory / Factory Stock` → Request Order Draft → Purchase Order. PO never writes Request Order (except the one-time `converted_to_po` marker the request sets on itself). Request Order never writes Shipment / Inventory / Factory Stock (upstream refs are copy-only `source_ref_*` / `related_entity_*`).
+
+### Spec Sync
+- **New** `docs/planning/REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` (Phase-1 implemented spec; cross-references the extended future design `REQUEST_ORDER_AND_PO_SPEC.md`).
+- `DATABASE_RELATIONSHIP_MAP.md` §7 expanded (4-table schema + relationships + supplier price source); Entity Layers row updated.
+- `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §7 (Snapshot Provenance table + Immutable-Flow note); `SUPPLY_CHAIN_SYSTEM_FLOW.md` Step 8 (Procurement Layer Phase 1 note).
+
+### Verification
+- `node --check` passes for all 5 touched/new JS files; all 5 touched/new `.gs` files pass syntax check (copied to `.js`). Supplier price source: Phase 1 reads existing list where available, `--` fallback + manual entry (future audit) — supplier price list NOT refactored.
+
+## KM Sticky Header Framework + Inventory Sticky-Header Bug Fix (2026-07-01)
+
+**Reusable sticky-header framework + fix for the Inventory Replenishment two-layer header being covered. CSS + core helper only. No Apps Script / DB / Submit Plan / calculation / Weekly Shipping Plan / Shipment / RO-PO change; expanded-row layout untouched.**
+
+### Root cause
+- `#ops-section .table-header-bar` pinned at hard-coded `top: 72px`, but the sticky `.replen-control-panel` above it is **taller than 72px** (≈83px desktop, and **wraps much taller on small screens**). Since the panel's z-index (131) > header bar (120), it overlapped and **covered Header Row 2** (`Current Stock / On the Way / Avg. Sales/day`). The fixed app header (`.top-header`) is outside the `.main-content` scroll container, so it was never the offending element.
+
+### Framework (new, reusable, global)
+- **`assets/css/core/km-sticky-header.css`** — `:root` variables: `--km-sticky-top-base` (default 0), `--km-sticky-row-1-height` / `-2-` / `-3-height` (48/48/0), `--km-sticky-header-total` (calc), z-scale `--km-sticky-z-toolbar 131 / -corner 121 / -header-1 120 / -header-2 119 / -header-3 118 / -col 110`. Reusable classes `.km-sticky-table` / `.km-sticky-row-1/2/3` (accumulated top offsets) / `.km-sticky-col` / `.km-sticky-corner`. Linked in `index.html` after `layout.css`.
+- **`assets/js/core/sticky-header.js`** — `KM.stickyHeader.bindToolbar(pageRoot, toolbar, opts)`: measures the toolbar's live height, writes `--km-sticky-top-base` on `pageRoot`, re-measures on `ResizeObserver` + `window resize`; returns `{ refresh, destroy }`. Linked after `partial-loader.js`.
+
+### Inventory application
+- `inventory-replenishment.css`: `.table-header-bar` `top: 72px → var(--km-sticky-top-base, 72px)`, `height/z` from vars; `.fixed-header` / `.scroll-header` height, `--level1/2` row heights, `--status` corner height/z, `.fixed-col` z, `.replen-control-panel` z all routed through framework vars (identical computed values — no visual change except the fix).
+- `inventory-replenishment.js`: `_bindReplenStickyHeader()` calls `KM.stickyHeader.bindToolbar(#opsSection, .replen-control-panel)` in `ops-section` mount; `_replenStickyHeaderHandle.destroy()` in unmount.
+
+### Result
+- Both header rows fully visible on scroll; Header Row 2 no longer covered; correct on small screens (dynamic base) and horizontal scroll; left sticky SKU column + corner z-indexes unchanged relative to headers; expanded row still below the header. No new magic numbers.
+
+### Spec sync
+- **New** `docs/planning/UI_COMPONENT_GUIDELINES.md` (framework reference for future RO / PO / Shipment / Warehouse Stock tables).
+- `INVENTORY_TABLE_MAPPING_SPEC.md` v1.5.6: §11.6 Sticky Header — KM Sticky Header Framework + changelog.
+- Verified `node --check` on `sticky-header.js` + `inventory-replenishment.js`.
+
+## Shipment Overview Filter Restore + PO List Date Range Picker (2026-07-02)
+
+**Frontend filter UI only. No Apps Script / DB / procurement handlers / PO or Shipment status flow change; Shipment Draft's simple filter unchanged.**
+
+### Shipment Overview filter restore + Draft isolation (`shipping-history.js`)
+- **Root cause:** `_shRenderFromDb` called `_shEnsureSimpleFilter` **unconditionally**, so the compact Country/Marketplace filter (built for Shipment Draft) also replaced Shipment Overview's full filter bar.
+- **Fix:** new `_shApplyFilterUiForMode(mode, shipments)` — **draft** hides `.fc-filter-bar` and shows the compact top-right Country/Marketplace filter; **overview** restores the full `.fc-filter-bar` (Date / Country / SKU / Shipping Method / Search) and hides the compact filter (display toggle, so switching modes is reversible).
+- New `_shBuildPassFilters(mode, linesByShipment)` — **draft** filters by the compact Country/Marketplace selects; **overview** filters by the full bar: Country + Shipping Method dropdowns (`_getShDropdownValue`), SKU (matched against shipment lines), and the Date range (`historyState.dateRange`, matched via `_shShipmentDate` = etd→eta→shippedAt→createdAt; **shipments with no date are never hidden**). Search re-applies live values (`onHistorySearch` → `_shLoadAndRender` in DB mode).
+
+### PO List single Date Range picker (`purchase-order-list.html` / `.js`, `procurement.css`)
+- Replaced the two `Created From` / `Created To` `<input type=date>` with a single **Date** filter: a `.history-date-trigger` button (`#pol-date-trigger`) that opens the **shared** `#frDateModal` / `.fr-*` date-range picker (same component as Forecast Review / Shipment Overview — no new picker invented; reused global `components.css` styles).
+- `purchase-order-list.js`: added `polDateState` + PO-scoped picker fns (`polOpenDateModal` / `polSetupDateModalEvents` / `polApplyDateRange` / `polHandlePresetClick` / `polRenderCalendar[s]` / `polHandleDayClick` / …) bound to the shared modal via `.onclick =` (established per-page claim pattern). Presets: Today / Yesterday / Last 7 / 30 / 60 / 90 days / Last month / Custom range. Apply writes `polDateState.createdFrom` / `createdTo` (YYYY-MM-DD) → `passesFilters` matches `created_at >= from` / `<= to`. **Reset** clears the range (trigger back to "All"). Other filters (Company / Supplier / Status / PO No / SKU) unchanged.
+- `procurement.css`: `.procurement-filter--date` min-width so the trigger matches the other controls.
+- Spec: `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §7.3 notes the single Date Range filter.
+- Verified `node --check` on `shipping-history.js` + `purchase-order-list.js`.
+
+## Overseas Inbound Spec + SKU Add/Edit Spec (2026-07-02)
+
+**Spec-only. No code, Apps Script, DB handler, or UI change. Two new planning specs + doc sync.**
+
+### New specs
+- **`docs/planning/OVERSEAS_INBOUND_SPEC.md`** (Draft v1): Overseas Inbound = **Overseas Stock planning input**, NOT a Shipment Draft. Flow `Overseas Stock → Inbound Draft → Submit to Weekly Shipping Plan → Pending Approval → Approved → Shipment Draft → Ship → received → Overseas Stock 入庫`. Layer roles (Inbound=Planning Input / Weekly Shipping Plan=Decision / Shipment=Execution / Receiving=Inventory Update). Header `overseas_inbound` (v1) + lines `overseas_inbound_lines` (v1) columns. Status `draft / submitted_to_shipping_plan / cancelled`. Rules: Submit creates a Weekly Shipping Plan (never a Shipment Draft directly); no factory-stock deduction; no direct overseas-available write; never bypass plan approval; stock updates only on `received`.
+- **`docs/planning/SKU_DETAILS_ADD_EDIT_SPEC.md`** (Draft v1): Add/Edit dialog tabs (General / Logistics / Pricing / Marketplace v1; Supplier-Cost / Attributes / Images future). v1 required + optional (`item_*_2` all-or-nothing) + system fields following the **current `sku_details` template**. Validation (dims/weights > 0, `units_per_carton` positive int, prices ≥ 0, units non-empty, unique SKU, edit never mutates historical snapshots). Dropdown source strategy (front-end enum → `option_lists`/`system_settings` → Company/Site/Role). Default enums (dimension/weight/currency units, gs1_type, lifecycle) — **flagged lifecycle reconciliation** with live `VALID_LIFECYCLES_` (`Running in the Market` / `Phasing Out` / `Closure` / `Other`) as an open item. Add may seed a Factory Stock baseline row (future); Edit updates `sku_details` only.
+
+### Doc sync
+- `DATABASE_RELATIONSHIP_MAP.md`: §6 Inventory Layer lists planned `overseas_inbound` / `overseas_inbound_lines` + note (Submit→Weekly Shipping Plan, receipt-only stock update); §3 note for SKU Add/Edit (Add=master row + future factory baseline; Edit=`sku_details` only; snapshots frozen; dropdown source; lifecycle reconciliation).
+- `SUPPLY_CHAIN_SYSTEM_FLOW.md`: note that Overseas Inbound Submit → Weekly Shipping Plan (not Shipment Draft directly), stock updates on `received`.
+- `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §7: Overseas Inbound = planning input feeding Decision Layer; master edits (SKU Add/Edit) never rewrite Decision/Execution/PO snapshots.
+- `option_lists` / `system_settings` documented as **future** dropdown source (not implemented).
+
+## Split Shipment Draft and Shipment Overview into Separate Pages (2026-07-02)
+
+**Frontend page-separation fix. No Apps Script / DB / status flow / Weekly Shipping Plan / Inventory / Procurement / Carrier change. Save / Ready to Ship / Ship / Done handlers unchanged.**
+
+### Root cause
+- `shipping-history.js` treated Draft/Overview as one page toggled by `window.KM.shipmentViewMode`; `_shRenderFromDb` + `_shApplyFilterUiForMode` mutated the **same** `.fc-filter-bar` / injected the compact filter into the **same** section, so switching modes polluted the other's filter UI.
+
+### Fix — two independent pages (shared DB + card helper, separate section/state)
+- **Shipment Draft → `#shipment-draft-section`** (new partial `assets/html/pages/shipment-draft.html`, new mount `#shipment-draft-mount`): compact top-right **Country + Status** filter (Status = All / Draft / Ready to Ship / Shipped); shows draft / ready_to_ship / shipped (Done-hidden excluded). `initShipmentDraftPage` / `renderShipmentDraft` / `_shdEnsureFilter` / `_shdPopulateCountry`.
+- **Shipment Overview → `#shippinghistory-section`** (existing `shipping-history.html`, title → "Shipment Overview"): full filter bar **Date / Country / SKU / Shipping Method / Search**; shows shipped / in_transit / arrived / received / closed. `initShipmentOverviewPage` / `renderShipmentOverview` (mock/demo path preserved, scoped to the section).
+- Removed the mode machinery (`_shViewMode`, `_shUpdateTitle`, `_shEnsureSimpleFilter`, `_shApplyFilterUiForMode`, `_shBuildPassFilters`, `_shRenderFromDb`, `shipmentViewMode`).
+- `_shLoadAndRender()` is now a **dispatcher** that re-renders whichever page is `.active` (called by shSaveExecution / shReadyToShip / shShip / shReturnToDraft / shShipmentDone / shAdvanceStatus — all unchanged; `_shRenderDbCard(mode)` reused for both pages).
+- **Card render + empty-state queries scoped to their own section** (`.history-list` / `.history-empty-state` no longer global) so the two pages never cross-write.
+- **Two lifecycle registrations** (`shippinghistory-section`, `shipment-draft-section`) with `_ensureShipmentOverviewMarkup` / `_ensureShipmentDraftMarkup`. `showShipmentDraft()` → `showSection('shipment-draft')`; `showShipmentOverview()` → `showSection('shipment-overview')` (both maps in `app.js`; `shipment-overview` → `shippinghistory-section`).
+
+### CSS
+- `shipping-history.css`: retargeted the **shared** card styles (`.sh-sku-table*`, `.history-empty-state`) from `#shippinghistory-section` → **`.page-shipping-history`** (both pages wrap in it). Overview-only filter-bar selectors stay `#shippinghistory-section`.
+
+### Spec
+- `SHIPMENT_CENTER_SPEC.md` §4: **Page separation (FINAL)** note (two independent pages; Draft = Country + Status; Overview = full bar); §5 Overview note updated.
+- Verified `node --check` on `shipping-history.js` + `app.js`.
+
+## Shipment Draft + Weekly Shipping Plan section-title restyle + count badges (2026-07-02)
+
+**Visual-only: section group titles on Shipment Draft and Weekly Shipping Plan now match Request Order Draft (compact 15px heading + count badge beside each status group). No functional / data / status-flow change; no other page touched.**
+
+- **Weekly Shipping Plan:** `shipping-plan.html` 5 section titles `<h2 …>` → `<h3 class="plan-section-title">Label <span class="plan-section-title__count" id="…SectionCount">0</span></h3>` (Draft / Pending Approval / Approved / Completed / Cancelled; ids preserved so `filterByStatus` still toggles them; completed/cancelled keep inline `display:none`). `shipping-plan.css`: `.plan-section-title` (15px, flex, gap) + `.plan-section-title__count` (badge) mirroring `procurement-group__title/__count`. `shipping-plan.js`: `_spSetSectionCount(id,n)` helper; counts set in both `renderShippingPlanFromDb` (draft/pending/approved/completed/cancelled `.length`) and the mock `renderShippingPlan` (draft/pending/approved).
+- **Shipment Draft:** `shipping-history.js` `renderShipmentDraft` group titles → `<h3 class="shd-group-title">Label <span class="shd-group-title__count">N</span></h3>` (Draft / Ready to Ship / Shipped, N = items in group). `shipping-history.css`: `#shipment-draft-section .shd-group-title` + `__count` mirroring the Request Order look.
+- Verified `node --check` on `shipping-plan.js` + `shipping-history.js`.
+
+## PO List Mapping Update + Lifecycle Enum + Closure + Procurement DB Test (2026-07-02)
+
+**Spec sync + PO List UI mapping + Procurement DB connection validation. No auto-procurement algorithm / factory-stock deduction / shipment allocation / payment / template / supplier API / role permission.**
+
+### Lifecycle enum (Part 1 — spec only)
+- `SKU_DETAILS_ADD_EDIT_SPEC.md` §6 reconciled to the **live** enum: `Upcoming SKU / Running in the Market / Phasing Out / Closure / Other` (dropped `Running in Market / Phase Out / Discontinued`); §9 open item marked resolved. **Front-end already used these values** (`operation-system-db-api.js` normalizer + `saveEditSku` `validLc`), so no front-end enum change needed.
+
+### PO List filters + columns (Parts 2–3)
+- `purchase-order-list.html`: filters now **Date / Status / Supplier / Category / Series / SKU / Search** (removed Company + PO No as primary filters; Date = shared range picker). Table is **line-level**: **SKU / Category / Series / Supplier / Factory / PO No / Status / Ordered / Completed / Shipped / Remaining / Updated**.
+- `purchase-order-list.js`: `renderRows` rewritten to iterate `purchase_order_lines`, join `sku_details` (Category/Series) + `purchase_orders` (Supplier/Factory/Status/Updated) + `warehouses` (Factory name); PO-header filters (Status/Supplier/Date) + line filters (Category/Series/SKU); PO No links to Overview; `PO_STATUS_LABEL` extended with target enum; `reset()` updated to new filter ids.
+
+### PO status enum + Closure (Part 4)
+- `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §6 rewritten: target enum `draft / issued / in_production / partial_completed / completed / partial_shipped / shipped / closure / cancelled`; **§6.1 Closure rule** (auto when all lines `remaining_qty=0`; manual requires `closure_reason` + `closed_by` + `closed_at`). §3.3/§3.4 + `DATABASE_RELATIONSHIP_MAP.md` §7.3/§7.4: added `purchase_orders.factory_id/warehouse_id/closure_reason/closed_by/closed_at` and `purchase_order_lines.completed_qty`.
+- Apps Script `13_procurement_handlers.gs`: `PURCHASE_ORDERS_HEADERS_` + `PURCHASE_ORDER_LINES_HEADERS_` gained the new columns (auto-created via `procurementEnsureSheet_`); `createPurchaseOrderFromRequest` now copies `factory_id`/`warehouse_id` and sets line `completed_qty=0`.
+- API `operation-system-db-api.js`: `normalizePurchaseOrderRecord` gained `factoryId/warehouseId/closureReason/closedBy/closedAt`; `normalizePurchaseOrderLineRecord` gained `completedQty`.
+- **Note:** the live `updatePurchaseOrderStatus` handler still implements the Phase-1 subset (draft→issued→confirmed→in_production→ready_to_ship→completed, cancel); the fuller enum + closure transitions are spec-defined targets (status-flow wiring deferred, per guardrails).
+
+### Procurement DB connection (Part 5)
+- **Audit:** API getters (`getRequestOrders/getRequestOrderLines/getPurchaseOrders/getPurchaseOrderLines`), `normalizeOperationDb` mapping, router actions, `filterRows_` cases, and `validTabs` (both arrays) are **all present and correct**. So the pages will show live data once the Apps Script is (re)deployed and the tabs exist.
+- **Missing tabs are created on first WRITE** (`procurementEnsureSheet_`), not on read (`handleGetOperationDb_` returns `[]` for a missing tab). Added **`seedProcurementSampleData()`** to `13_procurement_handlers.gs` — a manual, run-once helper (not wired to any trigger) that creates the 4 tabs + 1 sample Request Order (approved) + 1 sample Purchase Order (in_production) with lines, so Request Order Draft / PO Overview / PO List display real rows.
+- **"Demo mode" root cause is deployment, not code:** the `.gs` files under `assets/specs/active/apps-script/` are a source mirror that must be copied into the live Apps Script project and redeployed; the pages show Demo mode only when the DB isn't loaded as `google-sheet`.
+- Verified `node --check` on `purchase-order-list.js`, `operation-system-db-api.js`, and `13_procurement_handlers.gs` (copied to .js).
+
+## Request Order UI — KM Design System v1 Alignment (2026-07-02)
+
+**UI/CSS only. No DB / API / Apps Script / business logic / calculation / status-flow change. Only Request Order (下單系統) touched; `request-order.css` + 1 line of `request-order.js` (empty-state markup).**
+
+- **Legacy green header removed:** the saturated green table header (level-1 `#6cae4f`/`#7fb069` white-on-green band, level-2 `#f5fbf2`/`#e8f5e8`, green rowspan) → **KM Design System neutral**: level-1 `#F1F5F9` bg + `#1E293B` text + `#E2E8F0` border; level-2 white + `#475569` + thin grey border; rowspan `#F1F5F9` neutral. Matches FC Summary / Shipment / Purchase Order header language.
+- **Shared Sticky Header Framework:** `.ro-table .table-header-bar` / `.fixed-header` / `.fixed-col` / rowspan corner now use `--km-sticky-top-base` / `--km-sticky-z-header-1` / `--km-sticky-z-col` / `--km-sticky-z-corner` / `--km-sticky-header-total` (assets/css/core/km-sticky-header.css) instead of hard-coded `top:0` / `z-index:120/110/121` / `height:96px`. No second sticky implementation.
+- **Brand/action green → design-system blue `#3B82F6`** (hover `#2563EB`): active Series tab, Send Request / date-apply / request-row / Update FC primary buttons, coverage bar fill, decision-coverage value, expand toggle/tier-label/AI-input focus rings, row-hover key-column outline, light-green accent bg `#f0f7ed → #EFF6FF`. **Semantic status colors kept** (risk red/orange/green badges, remaining-days urgency, suggest-order "action" green) — consistent with the cross-page semantic palette.
+- **Column alignment (Part 8):** data cells now **text left** (Country/Marketplace), **numbers right** (Basic/Special FC, Site/3rd/Factory Stock, Ongoing, Lead Time, Remaining, Suggest), **status center** (Risk) — replaced the blanket center alignment.
+- **Empty state:** ad-hoc inline `Please select a date range…` → `.ro-empty-state` (KM neutral: muted grey, dashed border, `#F8FAFC`) matching Purchase Order `.procurement-empty` / Shipment empty state.
+- **Consistency audit:** filter card already used shared `--filter-*` tokens (height/padding/radius/font) — unchanged. Header/table/sticky/empty-state/colors now aligned. **Follow-up:** `.ro-*` classes remain a page-local copy; a future step can extract shared table/filter components (Part 10) to avoid three parallel copies (Inventory / FC Summary / Request Order).
+- Verified `node --check` on `request-order.js`; CSS braces balanced (228/228); brand-green audit = 0 remaining.
+
+## Request Order Mapping v1 — Data Source + Filters + Tabs + Second-Layer (2026-07-02)
+
+**Spec-first mapping audit + safe frontend wiring for 下單系統 (Request Order analysis page). NO calculation engine, NO Remaining/Risk/Suggested formula, NO PO/Shipment/Inventory/Weekly-Plan change, NO new DB tables (spec note only), NO Inventory-DOM dependency.**
+
+- **Data source (Part 3):** added `_buildRequestOrderRowsFromDb()` — rows built from normalized DB (`marketplace_skus` identity SKU+Country+Marketplace, join `sku_details` for category/series, **real Factory Stock = Σ `factory_stock.current_stock` per SKU**). Every calc-dependent column (Risk / Basic T3 FC / Special Events / Site Stock / 3rd Party / Ongoing Orders / Remaining / Lead Time / Suggested Order) is a **placeholder → `--`** (`_roFmt`). Source priority **live DB (`google-sheet`) → Demo Data → empty**; the page no longer depends on `window.fcRegularData` / `window.factoryStockData` DOM globals for the DB path.
+- **Filters (Part 1):** filter bar is now **Country · Marketplace · Risk · SKU · Search** (removed Date + Category filters). **Country/Marketplace use OR semantics** via shared `_applyRequestOrderFilters()` (neither→all; one→that one; both→country OR marketplace). Risk = placeholder dropdown. Added a **Search** button (`handleRequestOrderSearch`). Country/Marketplace options rebuilt from live data (`_populateRequestOrderFilterOptions`).
+- **Category tabs (Part 2):** Series tabs → **Category tabs** from distinct `sku_details.category` (`_populateRequestOrderCategoryTabs` + `setRequestOrderCategory`), "All" first. CSS `.ro-tabs--category` shares the `.ro-tabs--series` styling.
+- **Site vs 3rd Party (Part 4):** kept as **two separate columns** (never merged); documented platform-fulfilled vs self-fulfilled meaning in spec §12.5.
+- **Supplier / Lead Time (Part 5/6):** Lead Time source = `supplier_price_list.lead_time_days` (placeholder — no normalized getter yet). Future **`suppliers` master table** documented (spec §12.6 + DB map) — spec only, not implemented.
+- **Second layer (Part 6):** inspected — the expand panel is a **mock-only design (no functional DB-backed second layer)**. Live-DB rows now show a clean placeholder inside the expand panel (guarded against missing fields); the rich mock panel renders only for Demo rows. Expand/collapse works. No new second-layer design invented.
+- **Spec sync (Part 7):** `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` **§12 Request Order Analysis Page (下單系統) — Mapping v1** added (filter rules / category tabs / main-table mapping / DB source principle / Site–3rd Party rule / lead-time source / suppliers future table / second-layer status). `DATABASE_RELATIONSHIP_MAP.md` updated (suppliers master note + Request Order consumer row).
+- Verified `node --check` on `request-order.js` (OK).
+
+## Request Order Mapping v2 — Pagination + Real Source Mapping + Site Confirmation + Second-Layer (2026-07-02)
+
+**Data mapping + UX only. NO calculation engine, NO Remaining/Risk/Suggested formula, NO AI, NO real RO Draft aggregation, NO PO/Shipment/Weekly-Plan change, NO Inventory DOM.**
+
+- **Pagination (Part 1):** main table renders **25 rows/page** (`requestOrderState.page/pageSize`); filter + category tab apply before slicing; page resets to 1 on Search / filter / tab / show-mode change. Controls (`#ro-pagination`): Prev / Page X/N / Next + "Showing a–b of N".
+- **Real source mapping (Parts 2–6)** in `_buildRequestOrderRowsFromDb()` (added `_roNextMonths`/`_roPastMonths` runtime month helper): **Basic(T3)** = Σ `fc_regular_forecast` next 3 months (sku+country+marketplace, per-year); **Site Stock** = latest `amazon_inventory_snapshot` (available+fc_transfer+fc_processing); **3rd Party** = Σ `overseas_inventory_snapshot.available_stock` same-country non-factory WH; **Factory Stock** = Σ `factory_stock.current_stock` (unchanged, Part 4); **Ongoing Orders** = Σ open-PO remaining_qty (`purchase_order_lines` ⋈ `purchase_orders.status ∈ open set`; per-SKU, best-effort); **Lead Time** = `supplier_price_list.lead_time_days` (active row, latest effective_from). Missing source → `--` (never fabricated).
+- **API:** added `normalizeSupplierPriceListRecord` + `supplierPriceList` in `normalizeOperationDb` + `getSupplierPriceList()` getter (`[]` when tab absent). No suppliers table.
+- **Site Confirmation (Part 7):** `Confirm Site` button + status in top bar; `handleConfirmSite` marks `requestOrderState.confirmedSites[scope]` — **frontend-only marker, no DB write, no permissions**. Future `request_order_site_confirmations` table documented (spec §12.9 + DB map).
+- **Series aggregation (Part 8):** documented as the target (Send Request → aggregate by Series → RO Draft expands per company/site/country/marketplace); **not implemented** (guardrail).
+- **Second-layer v2 (Part 9):** replaced mock-only panel with clean v1 structure (4 right panels: Past Achievement / Future Basic+Special FC / Factory Orders (Future 2 Months) / Recommendation Summary — structure only, no formula). Basic FC + Upcoming Events pull real `fc_regular_forecast` / `fc_special_events`; unsourced cells `--`. Left buttons **Edit Target %** (`fc_target_rules`, read-only modal) + **FC Update** (`fc_regular_forecast`, read-only modal) — no save handler yet. Site Stock / 3rd Party NOT duplicated in the second layer.
+- **Spec sync (Part 10):** `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §12 upgraded to v1/v2 (mapping table statuses, §12.7 second-layer UI, §12.8 pagination, §12.9 site confirmation + future table, §12.10 Series aggregation, §12.11 non-goals). `DATABASE_RELATIONSHIP_MAP.md` updated (v2 consumer sources, supplier_price_list getter note, future request_order_site_confirmations).
+- Verified `node --check` on `request-order.js` + `operation-system-db-api.js`; CSS braces balanced (249/249).
+
+## FC Summary Write Path Phase 1 — Special Events + Target Rules (2026-07-02)
+
+**Wires fc_special_events + fc_target_rules read/write. NO FC/Target-resolver formula change; NO Edit Base FC / + Add SKU / Regular single-row write (Phase 2); NO Request Order / Inventory / PO / Shipment change.**
+
+- **New spec:** `docs/planning/FC_SUMMARY_SPEC.md` (tables, phased status, schemas, actions, deploy note, non-goals).
+- **Apps Script** `assets/specs/active/apps-script/14_fc_write_handlers.gs` (new): `handleUpsertFcSpecialEvent_` / `handleDeleteFcSpecialEvent_` / `handleUpsertFcTargetRule_` / `handleDeleteFcTargetRule_` + self-contained helpers (`fcWriteEnsureSheet_`, `fcWriteUpsert_`, `fcWriteDelete_`). Auto-create tab + header row; update-by-id-else-create; stamp created/updated meta; header-based writes; hard delete by id. `01_router.gs` routes the 4 new actions (error string updated).
+- **API adapter** `operation-system-db-api.js`: added `upsertFcSpecialEvent` / `deleteFcSpecialEvent` / `upsertFcTargetRule` / `deleteFcTargetRule` (POST + `loadOperationDb({force:true})`). Getters `getFcSpecialEvents` / `getFcTargetRules` pre-existed; normalizers untouched (UI mappers read extra columns via `.raw`).
+- **UI** `fc-summary.js`: added `_fcUseDb()`, `_getDbFcEventData()`, `_getDbTargetRules()`, `_getActiveTargetRules()`.
+  - **Special Event** table now reads `getFcSpecialEvents()` on Demo OFF (was fixed `[]`). `saveNewEvent` (Manual) + `saveEventUpdate` (growth/copy batch) write `fc_special_events` on Demo OFF (base source is DB-aware); Demo ON keeps mock.
+  - **Target Rules** table/`getEffectiveTargetPct`/`validateDataIntegrity` read `_getActiveTargetRules()` (live on Demo OFF). `saveNewTargetRule` → `upsertFcTargetRule`; `deleteTargetRule` → `deleteFcTargetRule`. `const targetRules=[]` now used **only in Demo ON**.
+  - `_fcSummaryEnsureDbAndRender` afterLoad also calls `renderTargetRulesTable()`.
+- **DB columns:** `fc_special_events` core + UI-continuity `event_period` / `year`; `fc_target_rules` core + UI-continuity `year` / `category` / `series` / `sku` (documented in spec §3/§4).
+- **Deploy dependency:** `14_fc_write_handlers.gs` + `01_router.gs` must be copied into the live Apps Script project and redeployed before writes hit the sheet.
+- Verified `node --check`: fc-summary.js, operation-system-db-api.js, 14_fc_write_handlers.gs, 01_router.gs all OK.
+
+## FC Summary — New FC Update Regular Forecast UI + Mapping (2026-07-02)
+
+**UI + mapping/spec only. NO BQ query, NO forecast calc engine, NO Edit Base FC / Add SKU / Target Rules change, NO Inventory/Request Order/PO/Shipment change. Live-DB write reported as PENDING (never faked).**
+
+- **First screen (Part 1):** `+ New FC Update` chooser is now **two large card buttons** (Regular Forecast / Special Events) with hover + selected state + Cancel/Next (`.fc-mode-options--cards` in fc-overview.css).
+- **Regular modal (Part 2/3):** added **Country + Marketplace** selects (no Company — derived from marketplaces/marketplace_skus). Update Method → 3 options: **Apply Growth Rate (Based on Actual Sales)** / **Adjust From Previous Month Forecast** / **Manual Monthly Forecast** (on its own full-width row so the label isn't truncated). Conditional show/hide via `toggleRegularMethodFields`: actual → Base Year + Growth (Growth **required > 0**); prevMonth → Month + Growth (hide Base Year); manual → Jan–Dec grid (hide Base Year/Growth/Month).
+- **Save (`saveRegularUpdate`):** validates per method; **Demo OFF (live) → PENDING alert, no write, no fake success** (no single-row `fc_regular_forecast` writer / no BQ actual-sales source yet); **Demo ON → in-memory illustrative update clearly labeled DEMO**.
+- **Files:** `assets/html/pages/fc-summary.html`, `assets/js/pages/fc-summary.js`, `assets/css/pages/fc-overview.css` (FC Summary styles live here), `docs/planning/FC_SUMMARY_SPEC.md` §8 added.
+- **Pending backend:** single-row fc_regular_forecast upsert action + BQ actual-sales source (documented in FC_SUMMARY_SPEC §8.4).
+- Verified `node --check` fc-summary.js OK; fc-overview.css braces 216/216.
+
+## FC Summary — New FC Update: Regular Manual + Special Event Mapping (2026-07-02)
+
+**UI + mapping/spec + limited wiring. NO BQ query, NO forecast calc engine, NO Inventory/Request Order/PO/Shipment change. Live writes reported PENDING where no writer exists (never faked).**
+
+- **Regular modal (Part 1):** added **SKU** field. Manual Monthly Forecast **prefills Jan–Dec from existing `fc_regular_forecast`** (SKU+Country+Marketplace+Target Year) via `_regularPrefillManual()` (read-only lookup; onchange on SKU + on method switch); manual hides Growth Rate. Save is SKU-scoped upsert intent. **Live write still PENDING** (no single-row `fc_regular_forecast` writer — only batch import); Demo ON = in-memory. Actual (BQ) + prevMonth also pending on live.
+- **Special Event modal (Part 2/3):** rebuilt to Scope → Target → Event Info → FC Qty with same base fields (Country/Marketplace/SKU/Target Year/Base Year/Update Method/Growth Rate/Event/Event Period/FC Qty). No Company (derived); Category/Series joined from sku_details. Event enum = Spring Deal / Prime Day / Fall Prime / BFCM / Mother's Day. Two methods: **Manual Event Forecast → writes `fc_special_events`** (real `upsertFcSpecialEvent` on Demo OFF; mock on Demo ON); **Apply Growth Rate (Based on Actual Sales) → PENDING** (BQ, no fake success).
+- **fc_special_events DB spec (Part 4):** FC_SUMMARY_SPEC §3.1 target schema added — PK `event_fc_id`, + `marketplace_id`, `fc_share`(runtime), `source`(manual/growth_actual_sales/import), `status`(active/inactive/archived); `company` derived; `event` fixed enum. **Reconciliation pending:** live `14_fc_write_handlers.gs` still uses `event_id` PK and does not persist source/status/marketplace_id/fc_share (header not aligned — out of this task's file scope). Manual save passes source/status forward-compatibly (silently dropped until columns added).
+- **Files:** fc-summary.html, fc-summary.js, fc-overview.css (FC styles), FC_SUMMARY_SPEC.md (§3.1, §8.2/8.3a, §9), DATABASE_RELATIONSHIP_MAP.md. No Apps Script / API adapter change needed (upsertFcSpecialEvent already existed).
+- **Pending backend:** single-row `fc_regular_forecast` upsert + BQ actual-sales source; fc_special_events header alignment (event_fc_id/source/status/marketplace_id/fc_share).
+- Verified `node --check` fc-summary.js OK; fc-overview.css braces balanced.
+
+## FC Summary Safety Fix + Regular FC Modal Refinement (2026-07-02)
+
+**UI + mapping only. NO Inventory/Request Order/PO/Shipment change, NO BQ query, NO calc engine, NO Import Forecast change, NO Special Event UI change. Live write reported PENDING (never faked).**
+
+- **+ Add SKU REMOVED (Part 1):** the FC Summary "+ Add SKU" button is deleted (data safety). SKU / FC base-row creation is owned by SKU Details / Inventory SKU flow (+ batch Import). The Add SKU modal markup is now unreachable dead code. Docs: FC_SUMMARY_SPEC §1.1 + §2, SUPPLY_CHAIN_SYSTEM_FLOW Step 7.
+- **Import Forecast UNCHANGED (Part 2):** still `openFcImportModal()` → `importFcRegularForecastBatch` → writes `fc_regular_forecast` (batch upsert + marketplace-import base-row create). Not touched.
+- **Previous Month method (Part 3):** modal now has explicit **Target Year / Target Month / Based Year / Based Month** (+ Country/Marketplace/SKU/Rate). `_regularSyncBasedFromTarget()` defaults Based = month before Target (editable); source is never silently inferred. Validation requires all of the above. Live save = PENDING (no writer); demo applies Based(year,month) value × (1+rate) → Target month.
+- **Manual Monthly Forecast (Part 4):** has SKU; hides Growth Rate + Base Year; prefills Jan–Dec from existing `fc_regular_forecast` (SKU+Country+Marketplace+Target Year) via `_regularPrefillManual()` (on SKU change + method switch); 0 when no row. Save = upsert intent; **live PENDING** (no single-row writer — clear pending message, no fake success); demo = in-memory upsert on that SKU.
+- **DB writer status:** single-row `fc_regular_forecast` upsert still NOT implemented (only batch Import). Regular modal Save reports pending on Demo OFF.
+- **Files:** fc-summary.html, fc-summary.js, FC_SUMMARY_SPEC.md, SUPPLY_CHAIN_SYSTEM_FLOW.md. (No CSS change needed; no API/Apps Script change.)
+- Verified `node --check` fc-summary.js OK; + Add SKU button absent from markup.
+
+## 2026-07-02 — FC Summary Special Event UI rebuild + Campaign sync rule spec
+
+**Special Event modal** (`fc-summary.html` / `.js` / `fc-overview.css`) rebuilt to mirror the Promotion Risk Tracker "Add Promotion" structure — four labelled sections **Scope → Target → Event Info → Forecast**:
+- **Scope:** Country, Marketplace.
+- **Target:** Target Mode = Single SKU / Category-Series Batch (Batch = Category + Series multi-selects sourced from `sku_details`; matched SKUs resolved in JS).
+- **Event Info:** **Event Flag** (Normal / Spring Deal / Prime Day / Fall Prime / BFCM / Mother's Day), Target Year, Event Period.
+- **Forecast:** FC Qty + source note (`manual_fc_summary`).
+
+**Rules:** Event Flag = Normal → creates **no** `fc_special_events` (period + qty hidden, Save explains + writes nothing). Event Flag != Normal → Event Period + FC Qty (> 0) required; Save writes one `fc_special_events` row **per target SKU** (Batch = one row per matched SKU, same qty; no allocation calc). Removed the old Update Method / Growth Rate / BQ actual-sales path.
+
+**Backend writer:** `upsertFcSpecialEvent` writes the columns present in the live `14_fc_write_handlers.gs` header. New target columns — `campaign_id`, `campaign_sku_line_id`, `source` (enum `manual_fc_summary`/`campaign_sync`/`import`/`growth_actual_sales`), `status` — are **passed but PENDING** (header not aligned; `.gs` change intentionally out of scope). No fake success.
+
+**Campaign sync rule (spec only):** Campaign = promotion source of truth (`campaigns` + `campaign_sku_lines`); `fc_special_events` = supply-chain forecast source of truth; **linked** by `campaign_id`/`campaign_sku_line_id`, **not** blind two-way synced. Campaign Add Promotion (Event Flag != Normal) should write `campaigns` → `campaign_sku_lines` → `fc_special_events` (`source='campaign_sync'`) — Campaign-side writer **PENDING**.
+
+Specs: FC_SUMMARY_SPEC §3.1 (campaign cols + source enum), §9 (rebuilt UI), §10 (new Campaign sync rule); DATABASE_RELATIONSHIP_MAP (fc_special_events → campaigns link + sync note); SUPPLY_CHAIN_SYSTEM_FLOW Step 7.
+
+## 2026-07-02 — FC Summary manual prefill hardening + Marketplace display-name labels
+
+**Regular FC Manual prefill** (`fc-summary.html` / `.js`): prefill now re-triggers on **Country / Marketplace / SKU** change (not just SKU) while in Manual mode. New protections against silent zero overwrite:
+- No SKU → month inputs untouched (no wipe); helper "Enter a SKU…".
+- Live + DB cache not loaded → prefill skipped, **Save disabled**, helper "Loading existing forecast…".
+- Match found → months filled; a **blank stored month stays blank** (never forced 0); helper "Existing forecast loaded…".
+- No match → 0s kept, helper "No existing FC found. Saving will create a new forecast row."
+Marketplace value is resolved to the canonical key before matching (`_fcResolveMarketplaceKey`). Single-row `fc_regular_forecast` writer still **PENDING** — no fake success.
+
+**Marketplace display-name labels** (presentation only; canonical key stays the DB value / write payload):
+- FC Summary — filter panel, Regular + Special Event modal dropdowns, Regular/Event table marketplace column now show `marketplace_display_name` (fallback `marketplace`).
+- Inventory Replenishment — main Marketplace filter + results-table marketplace column now show display name (`_replenMarketplaceLabel`).
+- Options dedupe by value+label pair (not key alone) so `KM Walmart` etc. appear and are selectable.
+- Helpers: `_fcMarketplaceLabel` / `_fcMarketplaceOptions` / `_fcResolveMarketplaceKey`; `_replenMarketplaceLabel`. `_rebuildFcPanel` extended to accept `{value,label}`. **No normalizer/API/DB-key change** (`marketplaceDisplayName` already normalized). Import Forecast untouched.
+
+Specs: FC_SUMMARY_SPEC §8.3a (prefill + no-silent-zero), new §11 (display label rule); INVENTORY_TABLE_MAPPING_SPEC §2.1; DATABASE_RELATIONSHIP_MAP marketplaces note.
+
+## 2026-07-02 — FC Summary Special Event Builder v2
+
+Rebuilt the Special Event builder (`fc-summary.html` / `.js` / `fc-overview.css`) with two modes selected by radio pills:
+- **Single SKU** — up to **8 rows** (add/remove; ≥1 kept), each: SKU / Regular Price (auto-filled read-only from `marketplace_skus`) / Deal Price / Forecast Qty. No growth/base-campaign here.
+- **Category / Series** — Category + Series multi-selects, each with **All** checkbox. **Build Group Cards** groups candidate SKUs by **category + series + regular_price** (same series, different price ⇒ separate cards). Cards show regular price + SKU chips + Deal Price + Forecast Qty, with remove-group / remove-SKU controls.
+- **Discount %** appears only when All Category / All Series; **Apply Discount** pre-fills `deal = regular × (1 − disc%)` (overridable).
+- **Forecast Assist** (Category/Series only): Base Year / Base Campaign / Growth Rate % → **pre-fills** suggested Forecast Qty (base × (1+growth%)); never silently writes. Base Campaign source = `getCampaigns()`; disabled/pending when no campaign records.
+
+**Event Flag** enum Normal + Spring Deal / Prime Day / Fall Prime / BFCM / Mother's Day. Normal → creates nothing. != Normal → Target Year + Event Period + Forecast Qty (>0 per row/card) required.
+
+**Save mapping (documented, §12):** `campaigns` → `campaign_sku_lines` → `fc_special_events`, linked by campaign_id / campaign_sku_line_id (source `campaign_sync`). **Writer status PENDING** — `upsertCampaign` / `upsertCampaignSkuLine` do NOT exist (only `upsertFcSpecialEvent`). Live Save writes **nothing** and shows a clear pending message enumerating what would be created; `fc_special_events` is intentionally NOT written alone (would orphan). **No fake success.** Demo ON = illustrative in-memory rows only.
+
+Removed dead `saveNewEvent` (referenced obsolete element IDs). Specs: FC_SUMMARY_SPEC §9 (rewritten) + §12 (save mapping/backend); DATABASE_RELATIONSHIP_MAP; SUPPLY_CHAIN_SYSTEM_FLOW Step 7.
+
+## 2026-07-03 — FC Summary Target Year editable + cascading filters
+
+**Part 1 — Target Year editable:** removed `readonly` from `regular-target-year` and `event-target-year`. Root cause was purely the `readonly` attribute (no JS reset). Default (`fcTargetYear`) is written only in `openRegularUpdateModal` / `openEventModal`; method/scope/SKU/flag/mode changes only read it, so a user edit persists until reopen.
+
+**Part 2/4 — Marketplace display name (already in place, verified):** FC Summary filter panel, Regular + Special Event modal dropdowns, and both tables show `marketplace_display_name` (fallback `marketplace`) via `_fcMarketplaceLabel` / `_fcMarketplaceOptions`; filtering compares the internal canonical key (`item.marketplace`), never the label.
+
+**Part 3 — Cascading filters:** new `_fcCascadeFilters()` + `_rebuildFcPanelChecked()` in fc-summary.js, hooked into `updateFcFilter` + `toggleFcAll`. Company / Marketplace / Country / Category / Series are faceted over `fc_regular_forecast`: each dimension's options are limited by the others' current selections; valid checked values preserved, fully-invalid selections reset to All (All always present). Marketplace options carry canonical value + display label. SKU stays a free-text row filter (dropdown facet impractical). Demo mode keeps static options (cascade no-op).
+
+Docs: FC_SUMMARY_SPEC §13 (target year + cascading); DATABASE_RELATIONSHIP_MAP marketplaces note. No schema / calc / other-page changes.
+
+## 2026-07-03 — FC Summary filters: revert cascading (full option set)
+
+Reverted the faceted/cascading filter narrowing in FC Summary. Company / Marketplace / Country / Category / Series / Event Type dropdowns now **always show their full option set** — selecting e.g. Country = US filters the table but no longer hides other countries' related options. Removed `_fcCascadeFilters` / `_rebuildFcPanelChecked` and their calls from `updateFcFilter` / `toggleFcAll`. Options are built once per load by `_populateFcFilterOptionsFromDb`. The All-toggle behaviour and internal-value table filtering (marketplace by canonical key, display by `_fcMarketplaceLabel`) are unchanged. FC Summary only; no other page touched. Docs: FC_SUMMARY_SPEC §13.2, DATABASE_RELATIONSHIP_MAP.
+
+## 2026-07-03 — Milestone: Factory Stock Allocation architecture finalized (docs only)
+
+**Factory Stock Allocation architecture finalized.**
+- **Weekly allocation snapshot DB finalized** — `factory_stock_allocation_plans` (planning snapshot ONLY: no inventory movement / no reservation / no ownership change). Allocated by **FC Share** (`fc_regular_forecast` + target rules); `allocation_version` enables recalculation without losing historical plans; `status` = draft / confirmed / archived (future). Column purposes documented in DATABASE_RELATIONSHIP_MAP §6.
+- **Allocation rule finalized** — existing inventory = **shared pool**; new POs may carry intended-company info but factory allocation is **recalculated weekly** and **never permanently bound to a company**.
+- **Reserved Stock lifecycle finalized** — Submit Plan = no movement; **Shipment Draft → `reserved_stock +=`** (current_stock unchanged); **Ship → `current_stock −=` and `reserved_stock −=`**. Inventory effects live only at the Execution Layer.
+- Finalized flow: SUPPLY_CHAIN_SYSTEM_FLOW §5.2 (Factory → Shipping workflow), §5.3 (Allocation Rule), §5.4 (Reserved Stock Rule).
+
+**Ready for next implementation:** Request Order Draft → Purchase Order → Shipment.
+
+*Documentation only — no code / UI / schema changes in this update.*
+
+## 2026-07-03 — FC Summary pagination fix + Special Event Builder UI refinement
+
+- **FC Summary pagination display fixed.** Footer no longer shows "Showing 0-0 of 0" when the table has rows. Root cause: Regular + Event tables share one footer and both called `updatePaginationInfo`; the last (often empty Event) render overwrote the count. `updatePaginationInfo` now always recomputes from the **active tab**, format = `Showing 1-25 of 493 rows` + `Page 1 / 20`, buttons `‹ Previous` / `Next ›` styled to match Request Order (`.fc-page-btn` = `.ro-page-btn`). Tab switch re-renders the active tab (resets to page 1); footer hidden on the non-paginated Target tab. Works with the page-size selector (25/50/100).
+- **Special Event Builder Category / Series changed to dropdown multi-select** (replacing raw multi-line list boxes): dropdown button + checkbox panel + All Category / All Series + summary text; selection drives Build / Refresh Group Cards. Discount % row shows when All Category or All Series is selected.
+- **Modal clipping fixed.** The base `.fc-modal` capped width at 500px so `--large` (700px) never applied; the Special Event Builder wrapper is widened to 900px and content fills it — no clipped fields, Save/Cancel always visible, no unnecessary inner horizontal scrollbar.
+
+FC Summary only. No FC calculation / schema / Campaign sync / Import Forecast / Request Order changes.
+
+## 2026-07-03 — FC Regular Manual: match by full site identity (company+country+marketplace+sku+year)
+
+Fixed wrong-data load when two sites share a platform name (e.g. ResUS/US/Amazon vs KM/US/Amazon). The Regular FC Update Marketplace select now carries the **full site identity** (`value = company|country|marketplace`, label = display name, disambiguated by company when needed) built per selected Country from marketplaces registry + fc_regular_forecast (+ demo fcRegularMock). New helpers `_fcRegularSiteOptions` / `_regularSelectedSite` / `_regularRebuildSites` / `onRegularCountryChange`. `_regularPrefillManual` and `saveRegularUpdate` now match/upsert by **company + country + marketplace + sku + year** (company derived from the selected site; strict — no fallback to another company). If no row exists for the selected site → Jan–Dec = 0. Single-row live writer still PENDING (no fake success); pending message + demo matching updated to include company. FC Summary only; no schema/calc/other-page changes.
+
+## 2026-07-03 — Standardized table pagination footer (FC Summary + Request Order)
+
+Unified both table footers on a shared `.km-table-footer` component (in `components.css`): footer sits **outside** the table markup (below the table container), **left** = `Showing X-Y of N rows`, **right** = `‹ Previous` / `Page X / Y` / `Next ›` (+ page-size selector where present). Shared button `.km-page-btn` (+ `:disabled`) and `.km-page-info` give consistent style/disabled state across pages. Request Order footer was reordered to match FC (previously controls-left / showing-right) and now uses the shared classes; FC keeps `.fc-pagination` only as the JS show/hide hook. No changes to data calc, filtering, page-size logic, or modals.
+
+## 2026-07-03 — FC Summary Special Event Builder UI overflow fixes + Regular marketplace clean label
+
+Part A (CSS only, builder-scoped): Builder Mode pills forced one-line (`white-space:nowrap`, `flex-wrap:nowrap`); Single SKU row X button no longer clipped (`.fc-evt-row > * { min-width:0 }` stops number inputs expanding grid tracks + `justify-self:center` on the remove button); Category/Series dropdown panel constrained to trigger width with `overflow-x:hidden` (vertical scroll only) and wrapping option text. Part B: Regular FC marketplace dropdown label now shows `marketplace_display_name` only (fallback `marketplace`) — removed the `(company)` disambiguation suffix; the option value still carries the full identity `company|country|marketplace`, so KM Amazon / ResUS Amazon stay strictly separated internally. No DB/API/save/mapping-key/calculation changes.
+
+## 2026-07-03 — Request Order draft persistence + second-layer UI v3 + Send Request wiring
+
+**Docs:** REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC §3.6 (`shipping_allocation_drafts*` — spec only) + §3.7 (`request_order_allocation_drafts*` — implemented); DATABASE_RELATIONSHIP_MAP §7.5 (draft layers, relationships). Both draft layers are **planning scratchpads — no stock movement / reservation**. Status enum draft/site_confirmed/submitted/cancelled. Buckets T1=next month, T2=next 2 months, T3=next 3 months.
+
+**Second-layer UI (request-order.js / .css):** expand panel rebuilt as a 2×2 grid (`ro-sku-expand-grid--v3`) so top-row cards share equal height: Past Achievement (compact) | Factory (Factory Stock over Factory Orders); Future Basic/Special FC (compact, Basic FC now has **Target %** column → `_roTargetPct` reads fc_target_rules, default 100% placeholder) | Recommendation Summary (future 4 months) over **Order Allocation** (T1/T2/T3, **editable Order Qty** + Note). Factory Stock shows Factory/Warehouse/Current/Reserved/Available (Available = current − reserved when reserved present, else --). Left cards ~35% lighter footprint (narrower column + compact cells). Edits held in `requestOrderState.allocEdits`.
+
+**Persistence + Send Request (request-order.js, operation-system-db-api.js, Apps Script 15_request_allocation_handlers.gs + 01_router + 03 validTabs):** new handlers `upsertRequestOrderAllocationDraft` / `upsertRequestOrderAllocationDraftLines` (replace-by-draft_id) / `submitRequestOrderAllocationDrafts`; adapter getters `getRequestOrderAllocationDrafts` / `getRequestOrderAllocationDraftLines` + writers; tabs auto-create headers; reload after write. **Send Request** now: gate on confirmed sites → collect confirmed rows with positive Order Qty in selected buckets → (live) persist allocation drafts+lines, create `request_orders`/`request_order_lines` via existing `createRequestOrderDraft` grouped by Series (supplier/factory pending; site/bucket/month snapshot preserved in need_reason/note/related_entity_type), then mark drafts submitted → records appear on Request Order Draft page → existing Approve / Convert to PO / PO Overview / PO List flow unchanged. Demo = in-memory simulation only. Pagination = 50 rows/page; footer already on shared `.km-table-footer`.
+
+**No** shortage/recommendation formula, supplier-selection algorithm, factory lead-time logic, or Inventory/Shipment/FC Summary changes. Apps Script files are source mirrors — must be copied into the live project and redeployed.
+
+## 2026-07-03 — Procurement & Shipment lifecycle finalized (documentation sync only)
+
+- **Procurement lifecycle finalized:** Recommendation Engine → `request_order_allocation_drafts`/`_lines` (regenerable) → **Send Request** → `request_orders`/`request_order_lines` (official) → `request_order_line_sources` (every source: FC / Inventory / Lead Time / Target Rules / Manual — never deleted) → **Approve** → `purchase_orders`/`purchase_order_lines` → `request_order_po_links` (Request↔PO many-to-many; supplier/factory split). Documented in SUPPLY_CHAIN_SYSTEM_FLOW §5.5.
+- **Shipment lifecycle finalized:** Recommendation Engine → `shipping_allocation_drafts`/`_lines` (regenerable) → **Submit Plan** → `shipping_plans`/`shipping_plan_lines` → **Approve** → `shipments`/`shipment_lines` → `shipment_events` (full lifecycle log; future tracking integration). Documented in SUPPLY_CHAIN_SYSTEM_FLOW §5.6.
+- **Export Template source finalized:** Purchase Order Template ALWAYS from `purchase_orders`/`purchase_order_lines`; Shipping Template ALWAYS from `shipments`/`shipment_lines`. **Never generated from a Draft.**
+- **Request Order / Shipment Draft architecture officially documented:** DATABASE_RELATIONSHIP_MAP §7.6 adds both relationship trees. `request_order_line_sources`, `request_order_po_links`, and the full `shipment_events` lifecycle log are **documented (spec-only), not yet implemented** — no schema/code change.
+- **Documentation sync only — no code / API / DB / calculation / Shipment Center Spec / frontend / backend changes.**
+
+## 2026-07-03 — Request Order second-layer layout small fix
+
+- **3-column grouping:** expand panel moved from a 2×2 grid to three columns (`ro-sku-expand-grid--v4`, top-aligned, no stagger): **Left** = Past Achievement + Future Basic/Special FC; **Middle** = Factory Stock + Factory Orders; **Right (Decision block)** = Recommendation Summary + Order Allocation. Recommendation/Order Allocation no longer sit under the Factory section.
+- **Factory Stock factory name:** Factory column now displays `warehouses.warehouse_name` (join by `warehouse_id`; fallback `warehouse_id` → `--`).
+- **Order Allocation column order:** swapped to **Month | Bucket** (display only; stored allocEdits keys / data-attributes unchanged).
+- Docs: REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC §12.7 updated. **No DB schema / calculation / mapping-key changes**; UI/CSS + spec only.
+
+## 2026-07-03 — Request Order: Site Confirmation persistence + composite row key + second-layer 3×2 layout
+
+**Fix 1 — Confirm Site now persists to DB (was frontend-only).** New table `request_order_site_confirmations` (site_confirmation_id, planning_cycle, company, country, marketplace, series, bucket, status, confirmed_by/at, note, created/updated_at). New Apps Script `16_request_site_confirmation_handlers.gs` (`upsertRequestOrderSiteConfirmations` — batch upsert by `planning_cycle+company+country+marketplace+series+bucket`) + router action + `03` validTabs (×2). API adapter: `normalizeRequestOrderSiteConfirmationRecord`, assembly `requestOrderSiteConfirmations`, `getRequestOrderSiteConfirmations` getter, `upsertRequestOrderSiteConfirmations` writer (reload after write). Frontend: Confirm Site modal reworked to **Planning Bucket(s) T1/T2/T3 (each with month) + Confirm All checkbox**; `saveConfirmSite` is async → writes one record per (scope × bucket), demo = in-memory. `confirmedSites` **rehydrated from DB on every render** (`_roLoadConfirmationsFromDb`) so it survives reload. **Send Request gate is now bucket-aware**: Send T1/T2/T3 requires all site scopes confirmed for that bucket; All requires T1∧T2∧T3; block message = "Please confirm all site scopes before sending this request." Confirm Site records approval ONLY — never creates request_orders, never moves stock.
+
+**Fix 2 — expand row key.** Row expansion identity changed from **SKU-only** (`expandedSku`) to composite **`sku|company|country|marketplace`** (`expandedRowKey` + `_roRowKey`). `toggleRequestOrderSkuExpand(sku,country,marketplace,company)` rebuilds the key; wrappers use `data-rowkey`; height sync selects the single open panel by class. CO1100-R/US/Amazon and CO1100-R/CA/Amazon now expand/collapse independently.
+
+**Fix 3+4+5 — second-layer layout.** Expand panel rebuilt as a true **3-column × 2-row grid** (`ro-sku-expand-grid--v5`, columns **A 34% · B 24% · C 42%**): every block is its **own card** (Factory Stock ≠ Factory Orders; Recommendation ≠ Order Allocation). Explicit grid placement → top row (Past Achievement / Factory Stock / Recommendation) and bottom row (Future FC / Factory Orders / Order Allocation) each auto-align to equal height. DOM order is column-major → clean grouped stacking on ≤900px, no horizontal overflow. **Factory Stock table dropped the Warehouse column** → Factory · Current Stock · Reserved · Available (Factory = `warehouses.warehouse_name`, fallback warehouse_id → --).
+
+**Fix 6 — Order Allocation column order** already correct: Month | Bucket | Suggested | Order Qty | Carton | Note (no change).
+
+**No** shortage/recommendation formula, supplier-selection, lead-time logic, or Inventory/Shipment/FC Summary changes. `request_order_site_confirmations` is the only new table (approval state, no stock effect). Apps Script files are source mirrors — must be copied into the live project and **redeployed**.
+
+## 2026-07-03 — Request Order Draft card UI + Send Request data integrity + bucket preservation
+
+**Part A/B — Request Order Draft card (request-order-draft.js + procurement.css).** Card restructured to the **Weekly Shipping Plan visual** (`.sp-card` header summary + right-side actions; `.sp-card-details` shown via `.is-expanded`; styles replicated scoped to `#request-order-draft-section` in procurement.css). Header Layer 1 = Status · Request No · Company (summary; per-line split → `request_order_line_sources` future) · Factory/WH (default Tier 1 `WH-TW-CN-FACTORY-YOUXIN`, shows `warehouses.warehouse_name`) · Series · Total Qty · Total Ctn · Est. Amount · Created. Actions = Expand/Save/Submit/Cancel. Expanded detail = **3 blocks**: **A SKU Details** (SKU +T1/T2/T3 chip · Current Stock · Following 3 Month FC · Avg Sales/FC · Days of Supply · Requested · Approved [editable] · Carton; Approved edits recompute Carton + totals live; Save via updateRequestOrderLineQty), **B Schedule/Reason** (inspection/ready/ship dates placeholders + note), **C Factory/Payment** (Factory · deposit · balance · Total=estimated_amount · payment_status; deposit/balance/status are `--` placeholders). **Full-carton gate blocks Submit** when Approved not a multiple of units/carton.
+
+**Part C/D — data integrity + mapping (13_procurement_handlers.gs, operation-system-db-api.js, request-order.js).** `request_order_lines` schema extended (additive, sheetEnsureColumns_-safe): `request_bucket`, `request_month`, `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `shortage_qty`, `reallocation_qty`, `calculation_method`, `line_status`, `linked_purchase_order_line_id`. `createRequestOrderDraft` writes bucket/month + snapshots + calculation_method='manual_order_allocation' + line_status='draft'. Status transitions set line_status + lock `final_order_qty`=approved on submit/approve (clear on reject; cancelled on cancel) via new `procurementUpdateRequestLines_`. **Send Request (下單系統)** now: full-carton validation blocks send when order_qty not a multiple of units/carton; threads bucket/month + snapshots (factory/site/third-party/fc/target) into allocation-draft lines AND request_order_lines; **bucket preserved per line, never merged**. API normalizer exposes all new line fields.
+
+**Finalized rule (docs — SPEC §3.2/§7.1/§12.13, DB_MAP §7.2, FLOW §5.5):** Request Layer preserves T1/T2/T3; PO Layer may merge later via `request_order_po_links`; T1/T2/T3 are demand buckets, not direct PO-grouping rules. Send Request creates official request_orders/lines only on action; drafts are never official until sent.
+
+**Part E:** Phase 1 only (bucket + data integrity preserved; current selector kept). T1/T2/T3 tabs = Phase 2; PO Overview grouping = Phase 3 — spec-documented, not built.
+
+**Part F (from prior task, verified):** composite expand key `sku|company|country|marketplace`; second-layer 3×2 independent-card grid (`--v5`); Factory Stock without Warehouse column (shows warehouse_name); Order Allocation order Month|Bucket. No change needed this task.
+
+**Snapshots left blank when source absent (documented):** on_the_way_qty (no shipment-overview join), factory_allocated_qty (no allocation engine), shortage_qty (no formula), reallocation_qty (no reallocation engine); Avg Sales/FC + Days of Supply on the draft card (no sales snapshot join); Schedule dates + deposit/balance/payment_status (no source). **No** calculation formula / AI / carrier-template / shipment-flow / FC-Summary-Campaign-Inventory change. Apps Script `13_` is a source mirror — copy into live project and **redeploy**.
+
+## 2026-07-03 — Request Order Draft = Decision Layer (finalized 3-block refactor)
+
+**Direction:** PO Overview split/merge PAUSED. All ordering decisions now finish in Request Order Draft; PO Overview later only inherits the approved result + execution info (supplier/factory/payment/dates).
+
+**Part A — first-layer header (request-order-draft.js):** `Factory/WH` → **`Factory`** showing `warehouses.warehouse_name` only (warehouse_id is source of truth, shown only if no name; default Tier 1 `WH-TW-CN-FACTORY-YOUXIN`). Company summary now from the real per-line `company` column (KM / ResUS / ResTW).
+
+**Parts B–E — expanded card = exactly 3 stacked blocks:** (1) **SKU In Total** read-only `SKU · KM · ResUS · ResTW · Requested · Approved · Carton` + footer Total SKUs/Approved/Ctn, **computed live = T1 + (T2+T3)**; removed Current Stock / Following 3 Month FC / Avg Sales·FC / Days of Supply. (2) **T1 Request** and (3) **T2 + T3 Request**: upper table same columns (one row per (sku,bucket) to preserve bucket), **Approved editable**; KM/ResUS/ResTW split **locked when Approved==Requested**, **editable + must sum to Approved when Approved≠Requested** (each company cell = one real request_order_line via new `company` column); lower editable schedule **Inspection/Expected Ready/Expected Ship dates**; top-right **✕ (cancel tier)** + **+ Add Note**. **Factory/Payment block REMOVED** (only Est. Amount stays in header). Save/Submit validate company-split==Approved and full-carton.
+
+**✕ cancel tier:** new Apps Script `cancelRequestOrderTier` (+ router + `KM.DB.cancelRequestOrderTier`) — soft sets `line_status='cancelled'` for the tier's lines; if a request has no active line left, header `status='cancelled'` + cancelled_by/at; totals recalc excludes cancelled lines. No hard delete.
+
+**Add Note:** writes to `request_order_lines.note` for the tier's lines (via extended `updateRequestOrderLineQty`, which now also persists `inspection_date`/`expected_ready_date`/`expected_ship_date`/`note` per line).
+
+**DB (13_procurement_handlers.gs, additive columns on `request_order_lines`):** `company`, `inspection_date`, `expected_ready_date`, `expected_ship_date`. `createRequestOrderDraft` writes `company` (Send Request passes `item.company`); recalc excludes cancelled lines. API normalizer exposes company/schedule fields. CSS: decision-layer blocks scoped to `#request-order-draft-section` in procurement.css.
+
+**Data integrity (Part F):** Send Request preserves T1/T2/T3 bucket + company per line + Requested/Approved/Carton + schedule (if entered).
+
+**MISSING DB FIELD (documented, no silent behavior):** there is **no structured company-split store** — split = one line per company. Re-allocating Approved to a company with **no existing line** for a (sku,bucket) is **not supported** in Phase 1 (would need a new company line). `request_order_line_sources` (append-only source incl. company allocation) remains **spec-only, not implemented** — its status is NOT touched by tier-cancel.
+
+**Unchanged:** PO Overview split/merge, PO List, Shipment/Shipping Plan, FC Summary, calculation engine, supplier/payment automation. Apps Script `13_`/`01_` are source mirrors — copy to live project + **redeploy**.
+
+## 2026-07-03 — Request Order mapping finalization: DB cleanup spec + Company Allocation popup + horizontal blocks
+
+**Part 1 — DB cleanup (docs only, no columns deleted from live sheets):** `request_order_lines` fields marked **DEPRECATED / not source of truth**: final_order_qty, forecast_qty, current_stock, on_the_way_qty, factory_allocated_qty, reallocation_qty, source_company_count, source_site_count, product_name, need_reason, related_entity_type, related_entity_id. **PRIMARY:** company, request_bucket, request_month, series, requested_qty, approved_qty, shortage_qty, carton_qty, units_per_carton, inspection/expected_ready/expected_ship dates, calculation_method, line_status (+ reserved km/resus/restw/recommended_qty). Documented in SPEC §3.2, DB_MAP §7.2, FLOW §5.5.
+
+**Part 2 — request_order_line_sources = source of truth for company/site/month:** spec adds **tier_type** + **source_month** (SPEC §3.8). **Read path implemented** (safe/additive): validTabs (03) + adapter `getRequestOrderLineSources()` + `normalizeRequestOrderLineSourceRecord` (exposes tierType/sourceMonth; requested/approved/shortage as numbers). **Write path PENDING** — no handler populates it yet (documented, no invented behavior).
+
+**Part 3 — purchase_order_lines future snapshot (SPEC ONLY):** documented `km_qty`/`resus_qty`/`restw_qty` snapshot at PO creation (commitment layer shouldn't recompute Request source). No PO code changed.
+
+**Part 4/5 — Company Allocation popup (request-order-draft.js + procurement.css):** in SKU In Total, KM/ResUS/ResTW values are **clickable when >0** → read-only modal "Company Allocation Detail" (Company · SKU · Tier · Month · Country · Marketplace · Requested · Approved · Shortage · Note). Source = `request_order_line_sources` filtered to the card's lines for that SKU+company; **fallback** = card's `request_order_lines` grouped by company with a **"Site-level source pending."** banner. Clicking 0/-- does nothing; empty → "No allocation detail." Read-only, closes on ✕/overlay/Esc, never stacks (`.pc-modal` style). Per-card line cache `roLinesCache`.
+
+**Part 6 supplement — horizontal equal-height blocks:** SKU In Total / T1 Request / T2+T3 Request now render side-by-side via `.ro-decision-grid` (3 equal columns, `align-items:stretch`), tables scroll inside their wrapper (no page overflow), stacks ≤1100px.
+
+**Part 6 — normalizer:** request_order_line_sources normalized with numeric requested/approved/shortage + tier_type/source_month exposure.
+
+**No changes to:** PO Overview, PO List, Shipment, FC Summary, Inventory, Carrier/Template/Export, calculation engine. Apps Script `03_` is a source mirror — copy to live project + redeploy for the new validTab to take effect (until then getRequestOrderLineSources returns []).

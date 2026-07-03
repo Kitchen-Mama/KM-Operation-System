@@ -4,16 +4,12 @@
                     <h2 class="page-title">下單系統</h2>
                 </div>
                 
-                <!-- Filter Bar -->
+                <!-- Filter Bar (Part 1): left = Country / Marketplace / Risk / Show / SKU / Search;
+                     right = Confirm Site / All Request / Send Request (action group, right-aligned,
+                     same height as Search — NOT in the Category tabs row, NOT above the card).
+                     Country & Marketplace filtering uses OR semantics (see _applyRequestOrderFilters).
+                     Category is a TAB (below), not a filter. -->
                 <div class="ro-filters">
-                    <div class="ro-filter ro-filter--date">
-                        <label>Date</label>
-                        <button type="button" class="ro-date-trigger" id="roDateTrigger">
-                            <span class="ro-date-trigger-text">Last 3 months</span>
-                            <span class="ro-date-trigger-icon">▼</span>
-                        </button>
-                    </div>
-                    
                     <div class="ro-filter ro-filter--dropdown">
                         <label>Country</label>
                         <button type="button" class="ro-dropdown-trigger" data-filter="country">
@@ -30,7 +26,7 @@
                             <label class="ro-checkbox-item"><input type="checkbox" value="AU" checked onchange="updateRequestOrderFilter('country')"> AU</label>
                         </div>
                     </div>
-                    
+
                     <div class="ro-filter ro-filter--dropdown">
                         <label>Marketplace</label>
                         <button type="button" class="ro-dropdown-trigger" data-filter="marketplace">
@@ -44,52 +40,67 @@
                             <label class="ro-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateRequestOrderFilter('marketplace')"> Target</label>
                         </div>
                     </div>
-                    
+
+                    <!-- Risk — placeholder filter (options fixed until the risk engine exists). -->
                     <div class="ro-filter ro-filter--dropdown">
-                        <label>Category</label>
-                        <button type="button" class="ro-dropdown-trigger" data-filter="category">
+                        <label>Risk</label>
+                        <button type="button" class="ro-dropdown-trigger" data-filter="risk">
                             <span class="ro-dropdown-text">All</span>
                             <span class="ro-dropdown-icon">▼</span>
                         </button>
-                        <div class="ro-dropdown-panel" data-filter="category">
-                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'category')"> <strong>All</strong></label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked onchange="updateRequestOrderFilter('category')"> Electric Can Opener</label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="Silicone Product" checked onchange="updateRequestOrderFilter('category')"> Silicone Product</label>
-                            <label class="ro-checkbox-item"><input type="checkbox" value="Manual Opener" checked onchange="updateRequestOrderFilter('category')"> Manual Opener</label>
+                        <div class="ro-dropdown-panel" data-filter="risk">
+                            <label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, 'risk')"> <strong>All</strong></label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="High" checked onchange="updateRequestOrderFilter('risk')"> High</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Medium" checked onchange="updateRequestOrderFilter('risk')"> Medium</label>
+                            <label class="ro-checkbox-item"><input type="checkbox" value="Low" checked onchange="updateRequestOrderFilter('risk')"> Low</label>
                         </div>
                     </div>
-                    
+
+                    <!-- Show (Part 1) — sits between Risk and SKU. Confirmed/Pending filter rows by
+                         their site-confirmation state; All / All Request show everything. -->
+                    <div class="ro-filter ro-filter--show">
+                        <label>Show</label>
+                        <select id="ro-show-mode" class="ro-filter-select" onchange="setRequestOrderShowMode(this.value)">
+                            <option value="all">All</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="pending">Pending</option>
+                            <option value="allRequest">All Request</option>
+                        </select>
+                    </div>
+
                     <div class="ro-filter">
                         <label>SKU</label>
                         <input type="text" class="ro-filter-sku" placeholder="Enter SKU..." onchange="updateRequestOrderFilter('sku')" />
                     </div>
-                </div>
-                
-                <div class="ro-panel ro-header">
-                    <div class="ro-tabs ro-tabs--series">
-                        <button class="ro-tab ro-tab--active" data-series="All" onclick="setRequestOrderSeries('All')">All</button>
-                        <button class="ro-tab" data-series="Classic" onclick="setRequestOrderSeries('Classic')">Classic</button>
-                        <button class="ro-tab" data-series="Deluxe" onclick="setRequestOrderSeries('Deluxe')">Deluxe</button>
+
+                    <div class="ro-filter ro-filter--search">
+                        <label>&nbsp;</label>
+                        <button type="button" class="ro-btn ro-btn--primary" onclick="handleRequestOrderSearch()">Search</button>
                     </div>
-                    
-                    <div class="ro-controls">
-                        <div class="ro-show-filter">
-                            <label>Show:</label>
-                            <select id="ro-show-mode" onchange="setRequestOrderShowMode(this.value)">
-                                <option value="all">All</option>
-                                <option value="needOnly">Need Order</option>
-                            </select>
-                        </div>
-                        
-                        <div class="ro-send">
-                            <select id="ro-request-type">
+
+                    <!-- Right-side action group (Part 1/2): Confirm Site / All Request / Send Request.
+                         Pushed right via margin-left:auto; controls share Search's height. Confirm Site
+                         opens a modal (Part 2); Send Request is gated on confirmations (Part 3). -->
+                    <div class="ro-filter ro-filter--actions">
+                        <label class="ro-confirm-status" id="ro-confirm-status">No site confirmed yet</label>
+                        <div class="ro-action-group">
+                            <button type="button" class="ro-btn ro-btn--secondary" onclick="openConfirmSiteModal()">Confirm Site</button>
+                            <select id="ro-request-type" class="ro-action-select">
                                 <option value="all">All Request</option>
                                 <option value="t1">T1 Request</option>
                                 <option value="t2">T2 Request</option>
                                 <option value="t3">T3 Request</option>
                             </select>
-                            <button class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
+                            <button type="button" class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
                         </div>
+                    </div>
+                </div>
+
+                <div class="ro-panel ro-header">
+                    <!-- Category tabs ONLY (Part 2) — no action buttons here. Populated from
+                         sku_details.category by _populateRequestOrderCategoryTabs(). -->
+                    <div class="ro-tabs ro-tabs--category" id="ro-category-tabs">
+                        <button class="ro-tab ro-tab--active" data-category="All" onclick="setRequestOrderCategory('All', this)">All</button>
                     </div>
                 </div>
                 
@@ -152,5 +163,9 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Pagination footer — shared .km-table-footer layout (outside the table markup);
+                         populated by _roRenderPagination (25 rows/page). -->
+                    <div class="km-table-footer" id="ro-pagination"></div>
                 </div>
             </section>

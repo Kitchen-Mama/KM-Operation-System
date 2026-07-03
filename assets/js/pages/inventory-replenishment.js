@@ -1151,7 +1151,7 @@ function renderReplenishment() {
         <div class="scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
             <div class="scroll-cell">${item.replenishmentModel === 'forecast_driven' ? 'Forecast Driven' : 'Sales Driven'}</div>
             <div class="scroll-cell">${item.company}</div>
-            <div class="scroll-cell">${item.marketplace}</div>
+            <div class="scroll-cell">${_replenMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
             <div class="scroll-cell">${item.currentInventory}</div>
             <div class="scroll-cell">${item.onTheWay}</div>
             <div class="scroll-cell">${item.thirdPartyStock}</div>
@@ -1170,7 +1170,7 @@ function renderReplenishment() {
             <div class="scroll-cell">${item.cnStock || 0}</div>
             <div class="scroll-cell">${item.twStock || 0}</div>
             <div class="scroll-cell ai-action-cell" onclick="openAISuggestion(event, '${item.sku}')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">
-                <span class="ai-action-cell__text">View AI recommendation</span>
+                <span class="ai-action-cell__text">View Recommendation</span>
             </div>
         </div>
     `).join('');
@@ -1206,6 +1206,40 @@ function initReplenHeaderSync() {
 // ========================================
 // Inventory Replenishment - 從 app.js 搬移 (批次 2: toggleReplenRow + 操作函式 + Shipping Allocation)
 // ========================================
+
+// Recommendation Summary table body (read-only system suggestion — NOT the submitted plan).
+// Rows: 0–18d / 19–30d / 31–45d / 46–90d / Total. Columns: Window / Qty / Route / Reason.
+// First version: Qty from the need-bucket data; Route is a placeholder ('--') until
+// replenishment_route_rules is implemented; Reason is a placeholder from the allowed set
+// (AI Pending / Stock Sufficient). See INVENTORY_TABLE_MAPPING_SPEC §11.
+function _recSummaryRows(skuData) {
+    function num(v) { return (typeof v === 'number') ? v : (parseInt(v, 10) || 0); }
+    var windows = [
+        ['0–18d', num(skuData && skuData.need0_18)],
+        ['19–30d', num(skuData && skuData.need19_30)],
+        ['31–45d', num(skuData && skuData.need31_45)],
+        ['46–90d', num(skuData && skuData.need46_90)]
+    ];
+    var total = num(skuData && skuData.suggestedQty);
+    function reasonFor(qty) { return qty > 0 ? 'AI Pending' : 'Stock Sufficient'; }
+    function row(label, qty, isTotal) {
+        var style = isTotal
+            ? 'border-top: 1px solid var(--border-light); font-weight: 600;'
+            : '';
+        // Total row shows only Total + Qty; Route + Reason are intentionally blank.
+        var route = isTotal ? '' : '--';
+        var reason = isTotal ? '' : reasonFor(qty);
+        return '<tr style="' + style + '">' +
+            '<td>' + label + '</td>' +
+            '<td class="replen-recsum-table__num">' + qty + '</td>' +
+            '<td style="color: #94A3B8;">' + route + '</td>' +
+            '<td style="color: #64748B;">' + reason + '</td>' +
+            '</tr>';
+    }
+    var html = windows.map(function (w) { return row(w[0], w[1], false); }).join('');
+    html += row('Total', total, true);
+    return html;
+}
 
 function toggleReplenRow(sku) {
     const fixedRows = document.querySelectorAll('#ops-section .fixed-row');
@@ -1288,17 +1322,7 @@ function toggleReplenRow(sku) {
                         </div>
                     </section>
                 </div>
-                <div class="ir-panel-column">
-                    <article class="ir-panel replen-card replen-card--sales-trend">
-                        <h4 class="replen-card__title">Sales Trend (Past Week)</h4>
-                        <canvas id="sales-trend-chart-${sku}" style="max-height: 100px;"></canvas>
-                    </article>
-                    <article class="ir-panel replen-card replen-card--achievement">
-                        <h4 class="replen-card__title">Achievement Rate (Past 3 Months)</h4>
-                        <canvas id="achievement-chart-${sku}" style="max-height: 100px;"></canvas>
-                    </article>
-                </div>
-                <div class="ir-panel-column">
+                <div class="ir-panel-column ir-panel-column--context">
                     <article class="ir-panel replen-card replen-card--forecast">
                         <h4 class="replen-card__title">Forecast Breakdown</h4>
                         <div class="replen-card__row" style="font-weight: 600; margin-top: 4px;"><span class="replen-card__label">The Following</span><span class="replen-card__value"></span></div>
@@ -1312,41 +1336,48 @@ function toggleReplenRow(sku) {
                         ${skuData?.upcomingEventsText || '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>'}
                     </article>
                 </div>
-                <article class="ir-panel replen-card--suggestion-allocation">
-                    <div class="replen-card replen-card--ai-suggestion">
-                        <h4 class="replen-card__title">AI Suggestion</h4>
-                        <div class="replen-card__row"><span class="replen-card__label">Need 0–18d</span><span class="replen-card__value">${skuData?.need0_18 || 0}</span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">Need 19–30d</span><span class="replen-card__value">${skuData?.need19_30 || 0}</span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">Need 31–45d</span><span class="replen-card__value">${skuData?.need31_45 || 0}</span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">Need 46–90d</span><span class="replen-card__value">${skuData?.need46_90 || 0}</span></div>
-                        <div class="replen-card__row" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; font-weight: 600;"><span class="replen-card__label">Suggested Qty</span><span class="replen-card__value">${skuData?.suggestedQty || 0}</span></div>
-                    </div>
-                    <div class="replen-card replen-card--shipping-allocation" id="shipping-allocation-${sku}" style="margin-top: 12px;">
-                        <h4 class="replen-card__title">Shipping Allocation</h4>
-                        <div class="replen-card__row">
-                            <select class="replen-card__select" onchange="addShippingMethod(event, '${sku}')" onclick="event.stopPropagation()">
-                                <option value="">+ Add Method</option>
-                                <option value="Air Freight">Air Freight</option>
-                                <option value="Sea Freight">Sea Freight</option>
-                                <option value="Express">Express</option>
-                                <option value="Rail Freight">Rail Freight</option>
-                            </select>
+                <div class="ir-panel-column ir-panel-column--insight">
+                    <article class="ir-panel replen-card replen-card--sales-trend">
+                        <h4 class="replen-card__title">Sales Trend (Past Week)</h4>
+                        <canvas id="sales-trend-chart-${sku}" style="max-height: 100px;"></canvas>
+                    </article>
+                    <article class="replen-card replen-card--recommendation-summary" id="recommendation-summary-${sku}">
+                        <h4 class="replen-card__title">Recommendation Summary</h4>
+                        <table class="replen-recsum-table">
+                            <thead>
+                                <tr>
+                                    <th>Window</th>
+                                    <th class="replen-recsum-table__num">Qty</th>
+                                    <th>Route</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>${_recSummaryRows(skuData)}</tbody>
+                        </table>
+                    </article>
+                </div>
+                <div class="ir-panel-column ir-panel-column--action">
+                    <article class="ir-panel replen-card replen-card--achievement">
+                        <h4 class="replen-card__title">Achievement Rate (Past 3 Months)</h4>
+                        <canvas id="achievement-chart-${sku}" style="max-height: 100px;"></canvas>
+                    </article>
+                    <article class="replen-card replen-card--execution-plan" id="execution-plan-${sku}">
+                        <div class="replen-card__title-row">
+                            <h4 class="replen-card__title" style="margin: 0;">Execution Plan</h4>
+                            <button class="replen-card__add-route-btn" onclick="addExecutionRoute(event, '${sku}')" onmousedown="event.stopPropagation()">+ Add Route</button>
                         </div>
-                        <div id="shipping-methods-${sku}" class="shipping-methods-list"></div>
+                        <div class="ir-exec-plan__grid ir-exec-plan__grid--head">
+                            <span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span></span>
+                        </div>
+                        <div id="shipping-methods-${sku}" class="exec-routes-list"></div>
                         <div class="replen-card__summary" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: 600;">
                             <span class="replen-card__summary-label">Total</span>
                             <span class="replen-card__summary-value" id="allocation-total-${sku}">0</span>
                         </div>
                         <div class="replen-card__hint" id="allocation-hint-${sku}" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Factory Stock Available</div>
                         <div class="replen-card__carton-error" id="allocation-carton-error-${sku}" style="display: none; font-size: 11px; color: #EF4444; margin-top: 4px;"></div>
-                    </div>
-                </article>
-                <article class="ir-panel replen-card replen-card--shipping-plan">
-                    <h4 class="replen-card__title">Shipping Plan Suggestions <span style="font-size: 10px; color: #94A3B8;">(Stage 2)</span></h4>
-                    <div class="replen-card__placeholder" style="padding: 16px; text-align: center; color: #94A3B8; font-size: 12px; border: 1px dashed #E2E8F0; border-radius: 4px;">
-                        Multi-method shipping optimization<br/>will be available in Stage 2
-                    </div>
-                </article>
+                    </article>
+                </div>
             </div>
         </div>
     `;
@@ -1372,7 +1403,7 @@ function toggleReplenRow(sku) {
     setTimeout(() => {
         syncExpandPanelHeight(sku);
         
-        // Auto-populate Shipping Allocation based on AI Suggestion
+        // Seed / restore the Execution Plan routes (from Working Draft, or a default preview).
         initializeShippingAllocation(sku, skuData);
         
         // Initialize charts
@@ -1416,50 +1447,30 @@ function submitReplenishmentPlans() {
     console.log('=== Submit Plan Debug ===');
     console.log('Total SKUs:', data.length);
     
-    // Submit Plan reads the Working Draft (the single source of the user's allocation decision),
-    // not the live DOM. A SKU edited then collapsed is still included. SKUs with no draft fall back
-    // to the AI-default allocation (US-Amazon). This is the only place that turns the Working Draft
-    // into shipping_plans — Decision Commit.
+    // Submit Plan reads ONLY the Execution Plan state (the Working Draft) — the single source of
+    // the PM's actual shipping decision. It NEVER reads the Recommendation Summary (system
+    // suggestion) or the live DOM. A SKU whose Execution Plan the PM never customized (no draft
+    // row) is NOT submitted. Each Execution Plan route carries ship_from / destination /
+    // shipping_method / qty. This is the only place that turns the Execution Plan into
+    // shipping_plans — Decision Commit.
     data.forEach(item => {
         const draftRows = _allocationDraftRowsFor(item.sku);
-
-        if (draftRows && draftRows.length) {
-            draftRows.forEach(r => {
-                const method = r.shipping_method;
-                const qty = parseInt(r.qty) || 0;
-                if (qty > 0 && method) {
-                    if (!shippingPlans[method]) shippingPlans[method] = [];
-                    shippingPlans[method].push({
-                        sku: item.sku,
-                        qty: qty,
-                        skuData: item,
-                        sourceReason: r.source_reason || 'pm_adjustment'
-                    });
-                }
-            });
-        } else {
-            // No Working Draft for this SKU → AI Suggestion default allocation (US-Amazon only).
-            if (country === 'US' && marketplace === 'amazon') {
-                const mockData = replenishmentMockData.find(m => m.sku === item.sku);
-                const unitsPerCarton = mockData?.unitsPerCarton || 40;
-
-                if (item.need18 > 0) {
-                    const roundedQty = Math.ceil(item.need18 / unitsPerCarton) * unitsPerCarton;
-                    if (!shippingPlans['Air Freight']) shippingPlans['Air Freight'] = [];
-                    shippingPlans['Air Freight'].push({ sku: item.sku, qty: roundedQty, skuData: item, sourceReason: 'ai_suggestion' });
-                }
-                if (item.need30 > 0) {
-                    const roundedQty = Math.ceil(item.need30 / unitsPerCarton) * unitsPerCarton;
-                    if (!shippingPlans['Private Ship']) shippingPlans['Private Ship'] = [];
-                    shippingPlans['Private Ship'].push({ sku: item.sku, qty: roundedQty, skuData: item, sourceReason: 'ai_suggestion' });
-                }
-                if (item.need45Plus > 0) {
-                    const roundedQty = Math.ceil(item.need45Plus / unitsPerCarton) * unitsPerCarton;
-                    if (!shippingPlans['AGL Ship']) shippingPlans['AGL Ship'] = [];
-                    shippingPlans['AGL Ship'].push({ sku: item.sku, qty: roundedQty, skuData: item, sourceReason: 'ai_suggestion' });
-                }
+        if (!draftRows || !draftRows.length) return;
+        draftRows.forEach(r => {
+            const method = r.shipping_method;
+            const qty = parseInt(r.qty) || 0;
+            if (qty > 0 && method) {
+                if (!shippingPlans[method]) shippingPlans[method] = [];
+                shippingPlans[method].push({
+                    sku: item.sku,
+                    qty: qty,
+                    skuData: item,
+                    ship_from: r.ship_from || '',
+                    destination: r.destination || '',
+                    sourceReason: r.source_reason || 'pm_adjustment'
+                });
             }
-        }
+        });
     });
     
     console.log('Shipping Plans:', shippingPlans);
@@ -1491,8 +1502,8 @@ function submitReplenishmentPlans() {
                 company: lineCompany,
                 country: country,
                 marketplace: marketplace,
-                ship_from: '',            // Shipping Allocation (future finalized logic)
-                destination: '',          // Shipping Allocation (future finalized logic)
+                ship_from: item.ship_from || '',       // from the Execution Plan route (future: replenishment_route_rules)
+                destination: item.destination || '',   // from the Execution Plan route (future: replenishment_route_rules)
                 shipping_method: method,
                 sku: item.sku,
                 requested_qty: item.qty,
@@ -1611,9 +1622,9 @@ function openShippingAllocation(event, sku) {
             toggleReplenRow(sku);
         }
         setTimeout(() => {
-            const allocationCard = document.getElementById(`shipping-allocation-${sku}`);
-            if (allocationCard) {
-                allocationCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const execCard = document.getElementById(`execution-plan-${sku}`);
+            if (execCard) {
+                execCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         }, 100);
     }
@@ -1626,6 +1637,11 @@ function openAISuggestion(event, sku) {
     if (!targetRow || !targetRow.classList.contains('expanded')) {
         toggleReplenRow(sku);
     }
+    // Scroll to the Recommendation Summary (system suggestion) block.
+    setTimeout(() => {
+        const recCard = document.getElementById(`recommendation-summary-${sku}`);
+        if (recCard) recCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
 }
 
 // ============================================================================
@@ -1686,23 +1702,32 @@ function _allocationDraftRowsFor(sku) {
     var rows = replenAllocationDraft.bySku[sku];
     return (rows && rows.length) ? rows : null;
 }
-// Capture the current DOM allocation inputs for a SKU into the Working Draft (live + sessionStorage).
+// Capture the current Execution Plan route rows for a SKU into the Working Draft (live +
+// sessionStorage). One draft row per Execution Plan route: { ship_from, destination,
+// shipping_method, qty }. This is the SINGLE source Submit Plan reads (API-ready — never the DOM).
 function _saveAllocationDraftFromDom(sku) {
-    var methodsList = document.getElementById('shipping-methods-' + sku);
-    if (!methodsList) return;
+    var routesList = document.getElementById('shipping-methods-' + sku);
+    if (!routesList) return;
     var ctx = _replenCtx();
     replenAllocationDraft.context = ctx;
     replenAllocationDraft.targetDays = (document.getElementById('replenTargetDays') || {}).value || '';
     var rows = [];
-    methodsList.querySelectorAll('input[type="number"]').forEach(function (inp) {
-        var method = inp.dataset.method || '';
-        var qty = parseInt(inp.value) || 0;
-        if (method) {
+    routesList.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
+        function fieldVal(f) {
+            var el = rowEl.querySelector('[data-field="' + f + '"]');
+            return el ? String(el.value || '').trim() : '';
+        }
+        var method = fieldVal('shipping_method');
+        var qty = parseInt(fieldVal('qty')) || 0;
+        var shipFrom = fieldVal('ship_from');
+        var destination = fieldVal('destination');
+        // Keep a row if it carries ANY user intent (method / qty / ship_from / destination).
+        if (method || qty > 0 || shipFrom || destination) {
             rows.push({
                 shipping_method: method,
                 qty: qty,
-                ship_from: inp.dataset.shipFrom || '',     // future: Shipping Allocation ship_from
-                destination: inp.dataset.destination || '', // future: Shipping Allocation destination
+                ship_from: shipFrom,
+                destination: destination,
                 source_reason: 'pm_adjustment'
             });
         }
@@ -1712,11 +1737,15 @@ function _saveAllocationDraftFromDom(sku) {
     window.KM.shippingAllocationDraft = replenAllocationDraft;
     _persistAllocationDraft();
 }
-// Explicit user edit: recompute totals AND capture the Working Draft. (Pure render must NOT call this.)
-function onAllocationEdit(sku) {
+// Explicit user edit on an Execution Plan route: recompute totals AND capture the Working Draft.
+// (Pure render must NOT call this.)
+function onExecutionRouteEdit(sku) {
     updateShippingAllocationTotal(sku);
     _saveAllocationDraftFromDom(sku);
 }
+// Back-compat alias (older callers).
+function onAllocationEdit(sku) { onExecutionRouteEdit(sku); }
+window.onExecutionRouteEdit = onExecutionRouteEdit;
 window.onAllocationEdit = onAllocationEdit;
 window._clearAllocationDraft = _clearAllocationDraft;
 
@@ -1743,7 +1772,7 @@ function validateAllocationCartons(sku) {
 
     var qtys = [];
     if (methodsList) {
-        methodsList.querySelectorAll('input[type="number"]').forEach(function (inp) {
+        methodsList.querySelectorAll('input[data-field="qty"]').forEach(function (inp) {
             qtys.push(parseInt(inp.value) || 0);
         });
     }
@@ -1768,7 +1797,7 @@ function updateShippingAllocationTotal(sku) {
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
     if (!methodsList) return;
 
-    const inputs = methodsList.querySelectorAll('input[type="number"]');
+    const inputs = methodsList.querySelectorAll('input[data-field="qty"]');
     let total = 0;
     inputs.forEach(input => {
         total += parseInt(input.value) || 0;
@@ -1798,42 +1827,55 @@ function updateShippingAllocationTotal(sku) {
     }
 }
 
-function addShippingMethod(event, sku) {
-    const select = event.target;
-    const method = select.value;
-    if (!method) return;
-    
-    const methodsList = document.getElementById(`shipping-methods-${sku}`);
-    if (!methodsList) return;
-    
-    const methodRow = document.createElement('div');
-    methodRow.className = 'replen-card__row';
-    methodRow.innerHTML = `
-        <span class="replen-card__label">${method}</span>
-        <input class="replen-card__input" type="number" value="0"
-               oninput="onAllocationEdit('${sku}')"
-               onclick="event.stopPropagation()"
-               data-method="${method}">
-        <button class="replen-card__remove-btn"
-                onclick="removeShippingMethod(event, '${sku}')"
-                title="Remove">×</button>
-    `;
+// Escape a value for use inside an HTML attribute (Execution Plan route inputs).
+function _execEsc(v) {
+    return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-    methodsList.appendChild(methodRow);
-    select.value = '';
-    onAllocationEdit(sku);
+// Execution Plan shipping-method options. FUTURE: ship_from / destination / shipping_method are
+// defaulted from replenishment_route_rules and may be permission-locked (see CARRIER_AND_ROUTE_SPEC).
+var EXEC_PLAN_METHODS = ['Air Freight', 'Sea Freight', 'Express', 'Rail Freight'];
+
+// Render one Execution Plan route row: Ship From / Destination / Suggested Qty / Shipping Method / Delete.
+function _renderExecutionRoute(sku, route) {
+    route = route || {};
+    var methodOpts = '<option value="">Method…</option>' + EXEC_PLAN_METHODS.map(function (m) {
+        var sel = (String(route.shipping_method || '') === m) ? ' selected' : '';
+        return '<option value="' + _execEsc(m) + '"' + sel + '>' + _execEsc(m) + '</option>';
+    }).join('');
+    var qty = parseInt(route.qty) || 0;
+    var row = document.createElement('div');
+    row.className = 'exec-route-row ir-exec-plan__grid';
+    row.innerHTML =
+        '<input class="replen-card__input" type="text" data-field="ship_from" value="' + _execEsc(route.ship_from) + '" placeholder="From" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
+        '<input class="replen-card__input" type="text" data-field="destination" value="' + _execEsc(route.destination) + '" placeholder="To" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
+        '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
+        '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' + methodOpts + '</select>' +
+        '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" title="Delete">×</button>';
+    var list = document.getElementById('shipping-methods-' + sku);
+    if (list) list.appendChild(row);
+}
+
+// + Add Route: append a blank Execution Plan route the PM fills in.
+function addExecutionRoute(event, sku) {
+    if (event) event.stopPropagation();
+    _renderExecutionRoute(sku, {});
+    onExecutionRouteEdit(sku);
     syncExpandPanelHeight(sku);
 }
 
-function removeShippingMethod(event, sku) {
-    event.stopPropagation();
-    const row = event.target.closest('.replen-card__row');
+// Delete an Execution Plan route.
+function removeExecutionRoute(event, sku) {
+    if (event) event.stopPropagation();
+    var row = event.target.closest('.exec-route-row');
     if (row) {
         row.remove();
-        onAllocationEdit(sku);
+        onExecutionRouteEdit(sku);
         syncExpandPanelHeight(sku);
     }
 }
+window.addExecutionRoute = addExecutionRoute;
+window.removeExecutionRoute = removeExecutionRoute;
 
 function syncExpandPanelHeight(sku) {
     setTimeout(() => {
@@ -1859,70 +1901,27 @@ function syncExpandPanelHeight(sku) {
     }, 0);
 }
 
-window.addShippingMethod = addShippingMethod;
-window.removeShippingMethod = removeShippingMethod;
-
+// Render the Execution Plan routes for a SKU (from Working Draft, or a default preview).
 function initializeShippingAllocation(sku, skuData) {
-    const marketplace = document.getElementById('replenMarketplace').value;
-    const country = document.getElementById('replenCountry').value;
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
-
     if (!methodsList || !skuData) return;
 
-    // 1) If a Working Draft exists for this SKU (same context), rebuild from it so user edits
-    //    survive collapse / expand. This is a pure render — it must NOT capture the draft again.
+    // 1) If a Working Draft exists for this SKU (same context), rebuild the Execution Plan from it
+    //    so PM edits survive collapse / expand. This is a pure render — it must NOT re-capture.
     var draftRows = _allocationDraftRowsFor(sku);
     if (draftRows) {
-        draftRows.forEach(function (r) { addPredefinedMethod(sku, r.shipping_method, r.qty, true); });
+        draftRows.forEach(function (r) { _renderExecutionRoute(sku, r); });
         updateShippingAllocationTotal(sku);
         return;
     }
 
-    // 2) Otherwise show the AI-default allocation (US-Amazon). This is a default preview, not a
-    //    committed draft — it is captured into the Working Draft only once the user edits it.
-    if (country === 'US' && marketplace === 'amazon') {
-        if (skuData.need18 > 0) {
-            addPredefinedMethod(sku, 'Air Freight', skuData.need18);
-        }
-        if (skuData.need30 > 0) {
-            addPredefinedMethod(sku, 'Private Ship', skuData.need30);
-        }
-        if (skuData.need45Plus > 0) {
-            addPredefinedMethod(sku, 'AGL Ship', skuData.need45Plus);
-        }
-    }
-
+    // 2) Otherwise seed a single default Execution Plan route from the Recommendation Summary total
+    //    (Suggested Qty). ship_from / destination / shipping_method are left blank — FUTURE they are
+    //    defaulted from replenishment_route_rules (CARRIER_AND_ROUTE_SPEC). This is a default preview:
+    //    it is captured into the Working Draft only once the PM edits it.
+    var suggested = parseInt(skuData.suggestedQty) || 0;
+    _renderExecutionRoute(sku, { ship_from: '', destination: '', shipping_method: '', qty: suggested });
     updateShippingAllocationTotal(sku);
-}
-
-function addPredefinedMethod(sku, method, quantity, noRound) {
-    const methodsList = document.getElementById(`shipping-methods-${sku}`);
-    if (!methodsList) return;
-
-    // Draft restore (noRound) keeps the exact stored qty; AI-default preview rounds to a full carton.
-    let qtyValue;
-    if (noRound) {
-        qtyValue = parseInt(quantity) || 0;
-    } else {
-        const mockData = replenishmentMockData.find(m => m.sku === sku);
-        const unitsPerCarton = mockData?.unitsPerCarton || 40;
-        qtyValue = quantity > 0 ? Math.ceil(quantity / unitsPerCarton) * unitsPerCarton : 0;
-    }
-
-    const methodRow = document.createElement('div');
-    methodRow.className = 'replen-card__row';
-    methodRow.innerHTML = `
-        <span class="replen-card__label">${method}</span>
-        <input class="replen-card__input" type="number" value="${qtyValue}"
-               oninput="onAllocationEdit('${sku}')"
-               onclick="event.stopPropagation()"
-               data-method="${method}">
-        <button class="replen-card__remove-btn"
-                onclick="removeShippingMethod(event, '${sku}')"
-                title="Remove">×</button>
-    `;
-
-    methodsList.appendChild(methodRow);
 }
 
 window.initializeShippingAllocation = initializeShippingAllocation;
@@ -3037,18 +3036,42 @@ function refreshReplenMarketplaceOptions() {
     var selCountry = countrySel ? countrySel.value : '';
     var selMarketplace = mpSel.value;
 
-    var mps = [];
+    // Build { value: canonical key, label: display name } options; dedupe by value+label pair so
+    // distinct display names for the same key are kept (never collapsed on key alone).
+    var opts = [], seenPair = {}, keys = [];
     active.forEach(function(m) {
         if (!m.marketplace) return;
         if (selCountry && m.country !== selCountry) return;
-        if (mps.indexOf(m.marketplace) === -1) mps.push(m.marketplace);
+        var value = m.marketplace;
+        var label = m.marketplaceDisplayName || m.marketplace;
+        var k = value + '||' + label;
+        if (seenPair[k]) return; seenPair[k] = 1;
+        if (keys.indexOf(value) === -1) keys.push(value);
+        opts.push({ value: value, label: label });
     });
-    mps.sort();
+    opts.sort(function(a, b) { return a.label.localeCompare(b.label); });
 
     mpSel.innerHTML = '<option value="">Select Marketplace</option>' +
-        mps.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
-    mpSel.value = (selMarketplace && mps.indexOf(selMarketplace) !== -1) ? selMarketplace : '';
+        opts.map(function(o) { return '<option value="' + o.value + '">' + o.label + '</option>'; }).join('');
+    // Keep the current selection if its canonical key is still present.
+    mpSel.value = (selMarketplace && keys.indexOf(selMarketplace) !== -1) ? selMarketplace : '';
 }
+
+// Resolve a canonical marketplace key to its display label (marketplace_display_name if present,
+// else the key). Optionally disambiguate by company + country.
+function _replenMarketplaceLabel(key, company, country) {
+    key = String(key == null ? '' : key).trim();
+    if (!key) return '';
+    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    function up(v){ return String(v == null ? '' : v).trim().toUpperCase(); }
+    var exact = list.filter(function(m){ return up(m.marketplace) === up(key) &&
+        (!company || up(m.company) === up(company)) && (!country || up(m.country) === up(country)) &&
+        m.marketplaceDisplayName; })[0];
+    if (exact) return exact.marketplaceDisplayName;
+    var any = list.filter(function(m){ return up(m.marketplace) === up(key) && m.marketplaceDisplayName; })[0];
+    return any ? any.marketplaceDisplayName : key;
+}
+window._replenMarketplaceLabel = _replenMarketplaceLabel;
 
 // Full (initial) population of both filters from the registry. Demo OFF only;
 // in Demo mode this is a no-op so the static demo options/behavior are preserved.
@@ -3130,6 +3153,24 @@ function _ensureInventoryReplenishmentMarkup() {
     return Promise.resolve(false);
 }
 
+// KM Sticky Header Framework binding for the Inventory Replenishment main table.
+// The sticky control panel (.replen-control-panel) sits above the main table's two-layer header;
+// its height varies (it wraps taller on small screens), so we measure it live and write
+// --km-sticky-top-base onto #opsSection. The main table header (.table-header-bar) pins at that
+// variable — replacing the old hard-coded top:72px that let the taller/wrapping panel cover the
+// Current Stock / On the Way / Avg. Sales/day row. Reusable helper: KM.stickyHeader (core).
+var _replenStickyHeaderHandle = null;
+function _bindReplenStickyHeader() {
+    if (!(window.KM && window.KM.stickyHeader && window.KM.stickyHeader.bindToolbar)) return;
+    var root = document.getElementById('opsSection');            // .page-inventory (var scope)
+    var toolbar = document.querySelector('#ops-section .replen-control-panel');
+    if (!root || !toolbar) return;
+    if (_replenStickyHeaderHandle && _replenStickyHeaderHandle.destroy) {
+        _replenStickyHeaderHandle.destroy();
+    }
+    _replenStickyHeaderHandle = window.KM.stickyHeader.bindToolbar(root, toolbar);
+}
+
 // One-time wiring of the modal-overlay close listener + overview scroll sync. These bind plain
 // (non-cloneNode) listeners, so they must run EXACTLY once. Markup is partial-loaded (Phase 3-12),
 // so this is a safe no-op until #ops-section exists; mount calls it again once the partial is present.
@@ -3161,6 +3202,10 @@ if (window.KM && window.KM.lifecycle) {
                 var sec = document.getElementById('ops-section');
                 if (sec) sec.classList.add('active');
                 _inventoryReplenStaticInit();
+                // KM Sticky Header Framework: drive --km-sticky-top-base from the sticky control
+                // panel's LIVE height (it wraps taller on small screens), so the main table's
+                // two-layer header pins right below it instead of being covered (hard-coded top:72px bug).
+                _bindReplenStickyHeader();
                 // Recovery: restore the Shipping Allocation Working Draft from sessionStorage (live
                 // JS State). It is applied per-SKU only when the active Country/Marketplace context
                 // matches the stored context (see _allocationDraftRowsFor); otherwise it stays dormant.
@@ -3172,6 +3217,11 @@ if (window.KM && window.KM.lifecycle) {
         },
         unmount() {
             console.log('[Replenishment] unmount');
+            // Release the sticky-header toolbar observer (ResizeObserver + resize listener).
+            if (_replenStickyHeaderHandle && _replenStickyHeaderHandle.destroy) {
+                _replenStickyHeaderHandle.destroy();
+                _replenStickyHeaderHandle = null;
+            }
             // 清理展開面板中的 Chart.js 實例
             var expandPanels = document.querySelectorAll('#ops-section .replen-expand-panel');
             expandPanels.forEach(function(panel) { panel.remove(); });

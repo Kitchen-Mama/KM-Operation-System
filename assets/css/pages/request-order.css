@@ -40,6 +40,17 @@
     flex: 0 0 250px;
 }
 
+/* Search action column — sizes to the button (not a fixed 160px filter) and bottom-aligns it. */
+.ro-filter--search {
+    min-width: auto;
+    flex: 0 0 auto;
+}
+.ro-filter--search .ro-btn {
+    height: var(--filter-height);
+    display: inline-flex;
+    align-items: center;
+}
+
 .ro-date-trigger {
     display: flex;
     align-items: center;
@@ -126,7 +137,7 @@
 
 .ro-date-presets button:hover {
     background: #f9fafb;
-    border-color: #7fb069;
+    border-color: #3B82F6;
 }
 
 .ro-date-custom {
@@ -180,12 +191,12 @@
 }
 
 .ro-date-actions button:last-child {
-    background: #7fb069;
+    background: #3B82F6;
     color: white;
 }
 
 .ro-date-actions button:last-child:hover {
-    background: #6a9556;
+    background: #2563EB;
 }
 
 .ro-dropdown-trigger {
@@ -293,12 +304,14 @@
     margin-bottom: 16px;
 }
 
-.ro-tabs--series {
+.ro-tabs--series,
+.ro-tabs--category {
     display: flex;
     gap: 0;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     overflow: hidden;
+    flex-wrap: wrap;
 }
 
 .ro-tab {
@@ -317,7 +330,7 @@
 }
 
 .ro-tab--active {
-    background: #7fb069;
+    background: #3B82F6;
     color: white;
 }
 
@@ -373,12 +386,12 @@
 }
 
 .ro-btn--primary {
-    background: #7fb069;
+    background: #3B82F6;
     color: white;
 }
 
 .ro-btn--primary:hover {
-    background: #6a9556;
+    background: #2563EB;
 }
 
 /* Table Wrapper */
@@ -388,11 +401,26 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+/* Empty state — KM Design System neutral (matches Purchase Order .procurement-empty /
+   Shipment Overview empty state): muted grey, centered, dashed border. */
+.ro-empty-state {
+    margin: 16px;
+    padding: 24px;
+    text-align: center;
+    color: #64748B;
+    font-size: 14px;
+    background: #F8FAFC;
+    border: 1px dashed #CBD5E1;
+    border-radius: 8px;
+}
+
+/* Shared KM Sticky Header Framework (assets/css/core/km-sticky-header.css): top/z/height from
+   CSS variables — no page-local magic numbers, no second sticky implementation. */
 .ro-table .table-header-bar {
-    height: 96px;
+    height: var(--km-sticky-header-total, 96px);
     position: sticky;
-    top: 0;
-    z-index: 120;
+    top: var(--km-sticky-top-base, 0px);
+    z-index: var(--km-sticky-z-header-1, 120);
     display: flex;
     background: #f5f5f5;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -400,7 +428,7 @@
 
 .ro-table .fixed-header {
     width: 143px;
-    height: 96px;
+    height: var(--km-sticky-header-total, 96px);
     background: #f5f5f5;
     border-right: 2px solid var(--border-medium);
     box-shadow: 4px 0 8px rgba(0,0,0,0.06);
@@ -509,7 +537,7 @@
 
 .coverage-bar__fill {
     height: 100%;
-    background: #7FB069;
+    background: #3B82F6;
     transition: width 0.3s ease;
 }
 
@@ -585,12 +613,12 @@
 }
 
 .decision-row--coverage .decision-value {
-    color: #7FB069;
+    color: #3B82F6;
 }
 
 .btn-request {
     padding: 4px 12px;
-    background: #7FB069;
+    background: #3B82F6;
     color: white;
     border: none;
     border-radius: 4px;
@@ -601,7 +629,7 @@
 }
 
 .btn-request:hover {
-    background: #6A9B57;
+    background: #2563EB;
 }
 
 .btn-request--critical {
@@ -642,32 +670,32 @@
     display: flex !important;
     align-items: center;
     justify-content: center;
-    background: #e8f5e8;
-    border-bottom: 1px solid #d1d5db;
+    background: #F1F5F9;
+    border-bottom: 1px solid #E2E8F0;
 }
 
-/* 第一層表頭背景色 */
+/* 第一層表頭 — KM Design System neutral (see effective block below) */
 .ro-table .km-table__header-row--level1 {
     padding-left: 280px;
 }
 
 .ro-table .km-table__header-row--level1 .km-table__header-cell {
-    background: #7fb069;
-    color: white;
+    background: #F1F5F9;
+    color: #1E293B;
     font-weight: 700;
-    border-bottom: 1px solid #6a9556;
+    border-bottom: 1px solid #E2E8F0;
 }
 
-/* 第二層表頭背景色 */
+/* 第二層表頭 — KM Design System neutral (see effective block below) */
 .ro-table .km-table__header-row--level2 {
     padding-left: 280px;
 }
 
 .ro-table .km-table__header-row--level2 .km-table__header-cell {
-    background: #e8f5e8;
-    color: #2d5016;
+    background: #FFFFFF;
+    color: #475569;
     font-weight: 600;
-    border-top: 1px solid #d1d5db;
+    border-top: 1px solid #E2E8F0;
 }
 
 /* Risk 欄位樣式 */
@@ -675,6 +703,7 @@
     width: 60px;
     min-width: 60px;
     text-align: center;
+    justify-content: center;   /* status badge centered (overrides numeric flex-end default) */
     font-weight: 600;
     font-size: 12px;
 }
@@ -700,23 +729,30 @@
     font-weight: normal;
 }
 
+/* Column alignment (KM Design System): text left, numbers right, status center. */
 .ro-table .scroll-cell--country {
     width: 100px;
     min-width: 100px;
+    justify-content: flex-start;
+    text-align: left;
 }
 
 .ro-table .scroll-cell--marketplace {
     width: 120px;
     min-width: 120px;
+    justify-content: flex-start;
+    text-align: left;
 }
 
+/* Numeric data cells default to RIGHT alignment (Basic/Special FC, Site/3rd/Factory Stock,
+   Ongoing, Lead Time, …). Text columns (Country/Marketplace) and Risk override above/below. */
 .ro-table .scroll-cell {
     width: 140px;
     min-width: 140px;
-    text-align: center;
+    text-align: right;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
     font-size: 13px;
 }
 
@@ -743,8 +779,8 @@
 }
 
 .ro-request-order-icon:hover {
-    color: #7fb069;
-    background: #f0f7ed;
+    color: #3B82F6;
+    background: #EFF6FF;
 }
 
 .ro-table .scroll-row {
@@ -767,7 +803,7 @@
     width: 143px;
     flex-shrink: 0;
     background: white;
-    z-index: 110;
+    z-index: var(--km-sticky-z-col, 110);
     border-right: 2px solid var(--border-medium);
     box-shadow: 4px 0 8px rgba(0,0,0,0.06);
     position: sticky;
@@ -859,7 +895,7 @@
 }
 
 .ro-sku-expand-toggle.is-expanded {
-    color: #7fb069;
+    color: #3B82F6;
 }
 
 /* Expand Panel Container */
@@ -925,6 +961,147 @@
     height: 100%;
 }
 
+/* ---- Second-layer v2 layout (UI-only): two columns. Left column stacks Past Achievement over
+   Future Basic/Special FC; the Future block splits Basic FC | Upcoming Events side by side.
+   Right column keeps Factory Orders + Recommendation Summary. id-scoped so it wins over the legacy
+   4-column .ro-sku-expand-grid rules (incl. their media queries) without editing them. ---- */
+#request-order-section .ro-sku-expand-grid--v2 {
+    grid-template-columns: 1.6fr 1fr;
+    grid-template-rows: auto;
+    align-items: start;
+}
+#request-order-section .ro-expand-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;               /* allow children to shrink so tables never overflow the card */
+}
+#request-order-section .ro-expand-col .ro-sku-expand-card {
+    height: auto;               /* natural height — cards grow with content, no overlap */
+}
+#request-order-section .ro-expand-fc-split {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+#request-order-section .ro-expand-fc-col {
+    flex: 1 1 0;
+    min-width: 0;
+}
+#request-order-section .ro-sku-expand-grid--v2 .ro-expand-table {
+    width: 100%;
+    max-width: 100%;            /* keep tables inside the card; no inner scrollbar */
+}
+
+/* Small screens: stack the two columns, and stack Basic FC / Upcoming Events. */
+@media (max-width: 900px) {
+    #request-order-section .ro-sku-expand-grid--v2 {
+        grid-template-columns: 1fr;
+    }
+    #request-order-section .ro-expand-fc-split {
+        flex-direction: column;
+    }
+}
+
+/* ---- Second-layer v3: 2×2 grid. Cards are direct grid children, so the two cards in each grid row
+   auto-stretch to equal height (no staggered cards). Left column is narrower (~35% lighter footprint)
+   for Past Achievement / Future FC; the right column holds the taller Factory (Stock+Orders) and
+   Recommendation+Order Allocation cards. id-scoped so it wins over the legacy grid rules. ---- */
+#request-order-section .ro-sku-expand-grid--v3 {
+    grid-template-columns: 1fr 1.55fr;
+    grid-auto-rows: auto;
+    align-items: stretch;
+}
+#request-order-section .ro-sku-expand-grid--v3 .ro-sku-expand-card {
+    height: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+#request-order-section .ro-sku-expand-grid--v3 .ro-expand-table {
+    width: 100%;
+    max-width: 100%;            /* keep tables inside the card; no inner horizontal scrollbar */
+}
+/* Compact left cards (~35% lighter footprint): tighter cells + smaller type. */
+#request-order-section .ro-expand-card--compact .ro-expand-table { font-size: 11px; }
+#request-order-section .ro-expand-card--compact .ro-expand-table th,
+#request-order-section .ro-expand-card--compact .ro-expand-table td { padding: 3px 5px; }
+#request-order-section .ro-sku-expand-grid--v3 .ro-expand-fc-split {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+#request-order-section .ro-sku-expand-grid--v3 .ro-expand-fc-col { flex: 1 1 0; min-width: 0; }
+.ro-expand-subtitle--gap { margin-top: 12px; }
+.ro-expand-empty { text-align: center; color: #94A3B8; font-style: italic; }
+.ro-alloc-qty { width: 68px; padding: 4px 6px; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
+.ro-alloc-note { width: 100%; min-width: 60px; padding: 4px 6px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
+
+@media (max-width: 900px) {
+    #request-order-section .ro-sku-expand-grid--v3 { grid-template-columns: 1fr; }
+    #request-order-section .ro-sku-expand-grid--v3 .ro-expand-fc-split { flex-direction: column; }
+}
+
+/* ---- Second-layer v4: THREE columns — Left (Past Achievement + Future FC), Middle (Factory Stock +
+   Factory Orders), Right/Decision (Recommendation Summary + Order Allocation). Recommendation / Order
+   Allocation live in the right Decision block, NOT under Factory. Columns top-align so the upper cards
+   line up (no staggered layout). id-scoped so it wins over the legacy grid rules. ---- */
+#request-order-section .ro-sku-expand-grid--v4 {
+    grid-template-columns: 1.2fr 1fr 1.25fr;
+    grid-auto-rows: auto;
+    align-items: start;        /* top-align the three columns → upper cards aligned, no stagger */
+}
+#request-order-section .ro-sku-expand-grid--v4 .ro-expand-table {
+    width: 100%;
+    max-width: 100%;           /* keep tables inside the card; no inner horizontal scrollbar */
+}
+@media (max-width: 900px) {
+    #request-order-section .ro-sku-expand-grid--v4 { grid-template-columns: 1fr; }
+    #request-order-section .ro-sku-expand-grid--v4 .ro-expand-fc-split { flex-direction: column; }
+}
+
+/* ---- Second-layer v5: true 3-column × 2-row grid. Each block is its OWN card (independent spacing) —
+   Factory Stock ≠ Factory Orders card; Recommendation ≠ Order Allocation card. Cards are direct grid
+   children with explicit column/row placement, so each grid ROW auto-stretches to equal height:
+   top row (Past Achievement / Factory Stock / Recommendation) aligns; bottom row (Future FC /
+   Factory Orders / Order Allocation) aligns. Column A 34% · B 24% · C 42%. DOM order is column-major
+   so on small screens columns stack grouped & clean (no horizontal overflow). id-scoped to win over
+   the legacy .ro-sku-expand-card--* positioning rules. ---- */
+#request-order-section .ro-sku-expand-grid--v5 {
+    grid-template-columns: 34fr 24fr 42fr;
+    grid-template-rows: auto auto;
+    gap: 16px;
+    align-items: stretch;
+}
+#request-order-section .ro-sku-expand-grid--v5 .ro-sku-expand-card {
+    height: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+#request-order-section .ro-sku-expand-grid--v5 .ro-expand-table {
+    width: 100%;
+    max-width: 100%;            /* keep tables inside the card; no inner horizontal scrollbar */
+}
+#request-order-section .ro-sku-expand-grid--v5 .ro-expand-fc-split {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+#request-order-section .ro-sku-expand-grid--v5 .ro-expand-fc-col { flex: 1 1 0; min-width: 0; }
+/* Explicit 3×2 placement (DOM is column-major: a1,a2,b1,b2,c1,c2). */
+#request-order-section .ro-sku-expand-grid--v5 .ro-v5-a1 { grid-column: 1; grid-row: 1; }
+#request-order-section .ro-sku-expand-grid--v5 .ro-v5-a2 { grid-column: 1; grid-row: 2; }
+#request-order-section .ro-sku-expand-grid--v5 .ro-v5-b1 { grid-column: 2; grid-row: 1; }
+#request-order-section .ro-sku-expand-grid--v5 .ro-v5-b2 { grid-column: 2; grid-row: 2; }
+#request-order-section .ro-sku-expand-grid--v5 .ro-v5-c1 { grid-column: 3; grid-row: 1; }
+#request-order-section .ro-sku-expand-grid--v5 .ro-v5-c2 { grid-column: 3; grid-row: 2; }
+
+/* Small screens: single column; drop explicit placement so cards flow in DOM (column-major) order. */
+@media (max-width: 900px) {
+    #request-order-section .ro-sku-expand-grid--v5 { grid-template-columns: 1fr; }
+    #request-order-section .ro-sku-expand-grid--v5 [class*="ro-v5-"] { grid-column: 1 !important; grid-row: auto !important; }
+    #request-order-section .ro-sku-expand-grid--v5 .ro-expand-fc-split { flex-direction: column; }
+}
+
 .ro-expand-card-title {
     font-size: 13px;
     font-weight: 600;
@@ -949,8 +1126,8 @@
 .ro-expand-tier-label {
     font-size: 10px;
     font-weight: 700;
-    color: #7fb069;
-    background: #f0f7ed;
+    color: #3B82F6;
+    background: #EFF6FF;
     padding: 2px 6px;
     border-radius: 3px;
     min-width: 24px;
@@ -1011,7 +1188,7 @@
 }
 
 .ro-expand-table--avg tbody tr {
-    background: #f0f7ed !important;
+    background: #EFF6FF !important;
 }
 
 .ro-expand-table--avg tbody tr:hover {
@@ -1072,8 +1249,8 @@
 
 .ro-ai-input:focus {
     outline: none;
-    border-color: #7fb069;
-    box-shadow: 0 0 0 2px rgba(127, 176, 105, 0.1);
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
 
 .ro-expand-divider {
@@ -1114,12 +1291,12 @@
 }
 
 .ro-btn-update-fc {
-    background: #7fb069;
+    background: #3B82F6;
     color: white;
 }
 
 .ro-btn-update-fc:hover {
-    background: #6a9556;
+    background: #2563EB;
 }
 
 /* Responsive adjustments */
@@ -1187,17 +1364,17 @@
     align-items: center;
     justify-content: center;
 }
-/* Fix rowspan headers positioning */
+/* Fix rowspan headers positioning — sticky z from the shared framework; KM neutral colors */
 .ro-table .km-table__header-cell--rowspan {
     position: absolute;
     top: 0;
-    z-index: 121;
-    height: 96px;
+    z-index: var(--km-sticky-z-corner, 121);
+    height: var(--km-sticky-header-total, 96px);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #e8f5e8;
-    color: #2d5016;
+    background: #F1F5F9;
+    color: #1E293B;
     font-weight: 600;
 }
 
@@ -1252,33 +1429,33 @@
    HEADER LAYER DIFFERENTIATION
    ======================================== */
 
-/* Level 1: Group Headers (Deep Green) */
+/* Level 1: Group Headers — KM Design System (neutral slate, thin grey border; NOT legacy green) */
 .ro-table .km-table__header-row--level1 .km-table__header-cell {
-    background-color: #6cae4f;
-    color: #fff;
+    background-color: #F1F5F9;
+    color: #1E293B;
     font-weight: 600;
     text-align: center;
-    border-bottom: 1px solid #5a9542;
-    border-right: 1px solid rgba(255,255,255,0.2);
+    border-bottom: 1px solid #E2E8F0;
+    border-right: 1px solid #E2E8F0;
 }
 
-/* Level 2: Sub Headers (Light Green) */
+/* Level 2: Sub Headers — KM Design System (white, thin grey border) */
 .ro-table .km-table__header-row--level2 .km-table__header-cell {
-    background-color: #f5fbf2;
-    color: #4b5563;
+    background-color: #FFFFFF;
+    color: #475569;
     font-weight: 500;
     text-align: center;
-    border-bottom: 1px solid #dfe7da;
-    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #E2E8F0;
+    border-right: 1px solid #E2E8F0;
 }
 
-/* Rowspan Headers (Basic Info: SKU/Risk/Country/Marketplace) */
+/* Rowspan Headers (Basic Info: SKU/Risk/Country/Marketplace) — KM neutral */
 .ro-table .km-table__header-cell--rowspan {
-    background-color: #f8fafc;
-    color: #111827;
+    background-color: #F1F5F9;
+    color: #1E293B;
     font-weight: 600;
-    border-right: 1px solid #cbd5e1;
-    border-bottom: 1px solid #e2e8f0;
+    border-right: 1px solid #E2E8F0;
+    border-bottom: 1px solid #E2E8F0;
 }
 
 /* ========================================
@@ -1503,8 +1680,8 @@
 
 .ro-table .col-suggest-order input:focus {
     outline: none;
-    border-color: #7fb069;
-    box-shadow: 0 0 0 3px rgba(127, 176, 105, 0.1);
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 /* ========================================
@@ -1535,5 +1712,179 @@
 .ro-table .scroll-row:hover .col-remaining,
 .ro-table .scroll-row:hover .col-suggest-order {
     background-color: #ffffff;
-    box-shadow: inset 0 0 0 1px rgba(127, 176, 105, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.2);
+}
+
+/* ==========================================================================
+   Request Order Mapping v2 — pagination / site-confirm / second-layer modals
+   ========================================================================== */
+
+/* Pagination controls (Part 1) */
+.ro-pagination {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 4px 4px;
+    flex-wrap: wrap;
+}
+.ro-pagination:empty { display: none; }
+.ro-page-btn {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid #CBD5E1;
+    background: #fff;
+    color: #334155;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+.ro-page-btn:hover:not(:disabled) { background: #F1F5F9; }
+.ro-page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ro-page-info { font-size: 13px; font-weight: 600; color: #1E293B; }
+.ro-page-total { font-size: 12px; color: #64748B; margin-left: auto; }
+
+/* Site confirmation (Part 7) */
+.ro-site-confirm { display: flex; align-items: center; gap: 8px; }
+.ro-btn--secondary {
+    background: #fff;
+    border: 1px solid #3B82F6;
+    color: #3B82F6;
+}
+.ro-btn--secondary:hover { background: #EFF6FF; }
+.ro-confirm-status { font-size: 12px; color: #64748B; }
+.ro-confirm-status.is-confirmed { color: #166534; font-weight: 600; }
+
+/* Second-layer panel helpers (Part 9) */
+.ro-expand-subtitle { font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 4px; }
+.ro-expand-note { margin-top: 8px; font-size: 11px; color: #94A3B8; font-style: italic; }
+
+/* Second-layer modals (Edit Target % / FC Update) */
+.ro-modal-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 6px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #F1F5F9;
+}
+.ro-modal-row span { color: #64748B; }
+.ro-modal-row strong { color: #1E293B; }
+.ro-modal-note { margin-top: 12px; font-size: 12px; color: #64748B; }
+.ro-modal-note code { background: #F1F5F9; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+/* ==========================================================================
+   Top action bar + Show filter + Confirm Site modal (Mapping v2 layout fix)
+   Confirm Site / All Request / Send Request live here — NOT in the Category tabs row.
+   ========================================================================== */
+/* Right-side action group inside the filter row: pushed right, aligned with the other filter cells. */
+.ro-filter--actions {
+    margin-left: auto;      /* push the action cell to the right edge of the filter row */
+    min-width: auto;
+    flex: 0 0 auto;
+    align-items: flex-end;
+}
+.ro-filter--actions .ro-confirm-status { text-align: right; }
+.ro-action-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+/* Confirm Site / All Request / Send Request — one consistent height / radius / font / alignment. */
+.ro-action-group .ro-btn,
+.ro-action-select {
+    height: var(--filter-height);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    line-height: 1;
+}
+.ro-action-group .ro-btn { padding: 0 16px; }
+.ro-action-select {
+    padding: 0 10px;
+    border: 1px solid var(--filter-border-color);
+    background: #fff;
+    color: #1e293b;
+    cursor: pointer;
+}
+
+/* Show filter (between Risk and SKU) — match the other filter controls' height. */
+.ro-filter--show .ro-filter-select {
+    height: var(--filter-height);
+    padding: 0 10px;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    background: #fff;
+    color: #1e293b;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 4px 0;
+}
+
+/* Confirm Site modal form controls (label + input rows). */
+.ro-modal-row label {
+    color: #475569;
+    font-weight: 500;
+    min-width: 160px;
+    display: flex;
+    align-items: center;
+}
+.ro-modal-input {
+    flex: 1;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: 13px;
+    box-sizing: border-box;
+}
+.ro-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+}
+.ro-modal-actions .ro-btn {
+    height: var(--filter-height);
+    padding: 0 16px;
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    display: inline-flex;
+    align-items: center;
+}
+
+/* Confirm Site modal — Planning Month multi-select checkboxes. */
+.ro-cs-months {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+.ro-cs-month-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: #1e293b;
+    cursor: pointer;
+}
+.ro-cs-month-item input { cursor: pointer; }
+/* Confirm All toggle — spans the row, reads as a distinct scope-wide action. */
+.ro-cs-all-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #334155;
+    cursor: pointer;
+}
+.ro-cs-all-label input { cursor: pointer; }
+/* Readonly locked fields (Company / Country) read as non-editable. */
+.ro-modal-input[readonly] {
+    background: #f1f5f9;
+    color: #475569;
+    cursor: not-allowed;
 }

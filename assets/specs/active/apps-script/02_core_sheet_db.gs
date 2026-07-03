@@ -214,6 +214,31 @@ function filterRows_(tabName, rows) {
         return hasLineId || hasShipmentId;
       });
 
+    // Procurement Layer (Phase 1) — Request Order / Purchase Order.
+    case 'request_orders':
+      return rows.filter(function(r) {
+        return r.request_order_id && String(r.request_order_id).trim() !== '';
+      });
+
+    case 'request_order_lines':
+      return rows.filter(function(r) {
+        var hasLineId = r.request_order_line_id && String(r.request_order_line_id).trim() !== '';
+        var hasReqId = r.request_order_id && String(r.request_order_id).trim() !== '';
+        return hasLineId || hasReqId;
+      });
+
+    case 'purchase_orders':
+      return rows.filter(function(r) {
+        return r.purchase_order_id && String(r.purchase_order_id).trim() !== '';
+      });
+
+    case 'purchase_order_lines':
+      return rows.filter(function(r) {
+        var hasPoLineId = r.purchase_order_line_id && String(r.purchase_order_line_id).trim() !== '';
+        var hasPoId = r.purchase_order_id && String(r.purchase_order_id).trim() !== '';
+        return hasPoLineId || hasPoId;
+      });
+
     default:
       return rows;
   }

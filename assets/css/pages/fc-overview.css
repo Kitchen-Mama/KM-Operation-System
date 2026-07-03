@@ -1080,26 +1080,9 @@
 }
 
 /* FC Pagination */
-.fc-pagination {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    margin-top: 1rem;
-    border-top: 1px solid #E2E8F0;
-}
-
-.fc-pagination-left {
-    font-size: 13px;
-    color: #64748B;
-}
-
-.fc-pagination-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
+/* Footer layout + button styling now come from the shared .km-table-footer / .km-page-btn /
+   .km-page-info classes in components.css (used by both FC Summary and Request Order).
+   .fc-pagination is retained ONLY as the JS show/hide hook (Target tab) — no layout here. */
 .fc-page-size-select {
     padding: 4px 8px;
     border: 1px solid #E2E8F0;
@@ -1111,25 +1094,6 @@
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.fc-page-btn {
-    padding: 4px 10px;
-    border: 1px solid #E2E8F0;
-    border-radius: 4px;
-    background: white;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.fc-page-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.fc-page-number {
-    font-size: 13px;
-    font-weight: 500;
 }
 
 /* FC Modal */
@@ -1175,6 +1139,16 @@
 
 .fc-modal-content--large {
     max-width: 700px;
+}
+
+/* Special Event Builder needs more room than the 500px base .fc-modal — widen the WRAPPER (the base
+   max-width was clipping the builder) and let the content fill it. No inner horizontal scrollbar. */
+#fc-add-event-modal.fc-modal {
+    width: 92%;
+    max-width: 900px;
+}
+#fc-add-event-modal .fc-modal-content--large {
+    max-width: none;
 }
 
 .fc-modal-content h3 {
@@ -1246,6 +1220,189 @@
     border-radius: 4px;
     font-size: 12px;
 }
+
+/* New FC Update — first-screen card buttons (Part 1) */
+.fc-mode-options--cards {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+}
+.fc-mode-options--cards .fc-mode-option {
+    flex: 1 1 0;
+    min-width: 0;
+    cursor: pointer;
+    display: block;
+}
+.fc-mode-options--cards .fc-mode-option input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.fc-mode-options--cards .fc-mode-card {
+    height: 100%;
+    border: 2px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 20px 18px;
+    background: #fff;
+    transition: all 0.15s;
+    box-sizing: border-box;
+}
+.fc-mode-options--cards .fc-mode-option:hover .fc-mode-card {
+    border-color: #93C5FD;
+    background: #F8FAFC;
+}
+.fc-mode-options--cards .fc-mode-option input[type="radio"]:checked + .fc-mode-card {
+    border-color: #3B82F6;
+    background: #EFF6FF;
+    box-shadow: 0 0 0 1px #3B82F6 inset;
+}
+.fc-mode-options--cards .fc-mode-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1E293B;
+    margin-bottom: 8px;
+}
+.fc-mode-options--cards .fc-mode-desc {
+    font-size: 12px;
+    color: #64748B;
+    line-height: 1.5;
+}
+
+/* Update Method group spans the full row so the option label is never truncated (Part 2). */
+.fc-form-group--wide { flex: 1 1 100%; }
+.fc-form-group--wide select { white-space: normal; }
+
+/* Special Event modal — section labels (Scope / Target / Event Info / Forecast) mirror the
+   Add Promotion grouping. */
+.fc-form-section-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748B;
+    margin: 14px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #E2E8F0;
+}
+.fc-form-section-label:first-child { margin-top: 0; }
+
+/* Manual Monthly Forecast prefill status line (loaded existing / will create new / loading). */
+.fc-manual-help {
+    font-size: 12px;
+    font-weight: 600;
+    margin: 8px 0 0;
+    color: #64748B;
+}
+
+/* ===== Special Event Builder v2 ===== */
+.fc-hint { font-size: 11px; font-weight: 400; color: #94A3B8; }
+.fc-btn--secondary { background: #3B82F6; color: #fff; }
+.fc-btn--ghost { background: #fff; color: #334155; border: 1px solid #CBD5E1; }
+.fc-inline-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #475569; margin: 2px 0 6px; font-weight: 500; }
+.fc-inline-check input { margin: 0; }
+
+/* Mode toggle — two equal segmented buttons on one row. The native radio is visually hidden (this
+   also neutralises the modal's .fc-form-group input{width:100%} rule that was stretching the radio
+   and breaking the layout); the active button is highlighted via the JS-toggled .is-active class. */
+.fc-mode-toggle { display: flex; gap: 8px; }
+.fc-mode-pill {
+    flex: 1 1 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px 14px;
+    border: 1px solid #CBD5E1; border-radius: 8px;
+    background: #fff; color: #334155; font-size: 13px; font-weight: 500;
+    cursor: pointer; text-align: center; white-space: nowrap; box-sizing: border-box;
+}
+.fc-mode-pill input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; pointer-events: none; }
+.fc-mode-pill:hover { border-color: #93C5FD; }
+.fc-mode-pill.is-active { border-color: #3B82F6; background: #EFF6FF; color: #1D4ED8; box-shadow: inset 0 0 0 1px #3B82F6; }
+
+/* Single-SKU rows */
+.fc-evt-rows-head, .fc-evt-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 28px; gap: 8px; align-items: center; box-sizing: border-box; }
+.fc-evt-rows-head { font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em; margin: 6px 0 4px; }
+.fc-evt-row { margin-bottom: 6px; }
+/* min-width:0 stops number inputs' intrinsic min-width from expanding the grid tracks and pushing
+   the last (X) column past the modal edge — the delete button then stays fully inside the row. */
+.fc-evt-row > * { min-width: 0; }
+.fc-evt-row input { width: 100%; padding: 6px 8px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px; box-sizing: border-box; }
+.fc-evt-row input[readonly] { background: #F8FAFC; color: #64748B; }
+.fc-evt-row-remove { border: none; background: #FEE2E2; color: #DC2626; border-radius: 4px; width: 28px; height: 28px; padding: 0; cursor: pointer; font-size: 15px; line-height: 1; justify-self: center; flex: none; }
+#event-add-row-btn { margin-top: 4px; }
+
+/* Group cards */
+.fc-evt-cards { display: flex; flex-direction: column; gap: 10px; }
+.fc-evt-card { border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px; background: #F8FAFC; }
+.fc-evt-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fc-evt-tag { background: #E0E7FF; color: #3730A3; border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+.fc-evt-tag--price { background: #DCFCE7; color: #166534; }
+.fc-evt-card-head .fc-evt-row-remove { margin-left: auto; }
+.fc-evt-card-skus { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.fc-evt-sku-chip { background: #fff; border: 1px solid #E2E8F0; border-radius: 4px; padding: 2px 8px; font-size: 12px; color: #334155; }
+.fc-evt-sku-chip a { color: #DC2626; cursor: pointer; margin-left: 4px; font-weight: 700; }
+.fc-evt-card-fields { display: flex; gap: 16px; }
+.fc-evt-card-fields label { font-size: 12px; color: #475569; display: flex; flex-direction: column; gap: 4px; }
+.fc-evt-card-fields input { padding: 6px 8px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px; width: 120px; }
+.fc-form-group select[multiple] {
+    height: auto;
+    min-height: 96px;
+    padding: 4px;
+}
+
+/* In-modal dropdown multi-select (Category / Series) — compact, like the FC filter multiselect. */
+.fc-ms { position: relative; }
+.fc-ms-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    color: #1E293B;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+.fc-ms-trigger:hover { border-color: #CBD5E1; }
+.fc-ms-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-ms-caret { color: #94A3B8; font-size: 11px; flex: none; }
+.fc-ms-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;              /* panel width = trigger width (fills the .fc-ms field) */
+    width: auto;
+    z-index: 5;
+    background: #fff;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    max-height: 220px;
+    overflow-y: auto;      /* vertical scroll for many options */
+    overflow-x: hidden;    /* never a horizontal scrollbar */
+    padding: 6px;
+    box-sizing: border-box;
+}
+.fc-ms-item {
+    display: flex;
+    align-items: flex-start;   /* checkbox top-aligned when option text wraps */
+    gap: 8px;
+    padding: 6px 8px;
+    font-size: 13px;
+    color: #334155;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: normal;       /* long option text wraps instead of overflowing */
+    overflow-wrap: anywhere;
+}
+.fc-ms-item:hover { background: #F1F5F9; }
+/* Compact ~16px checkbox — explicit width overrides the modal's .fc-form-group input{width:100%}
+   rule that was stretching the checkbox and creating the huge gap before the option label. */
+.fc-ms-item input { width: 16px; height: 16px; flex: none; margin: 1px 0 0; }
+.fc-ms-item > span, .fc-ms-item > strong { flex: 1 1 auto; min-width: 0; }
+.fc-ms-options { border-top: 1px solid #EEF2F6; margin-top: 4px; padding-top: 4px; }
 
 /* Empty row placeholder */
 .empty-row {

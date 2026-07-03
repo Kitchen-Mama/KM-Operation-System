@@ -30,20 +30,36 @@ function amazonReadSheetSource_(config) {
   return { headers: headers, rows: rows };
 }
 
-function amazonReadBigQuerySource_(config) {
+function amazonReadBigQuerySource_(config, options) {
   if (typeof BigQuery === 'undefined') {
     throw new Error('BigQuery Advanced Service not enabled. Enable "BigQuery API" in Apps Script Services and in the Google Cloud project.');
   }
+  options = options || {};
   var cols = [];
   for (var k in config.fieldMap) { if (config.fieldMap.hasOwnProperty(k)) cols.push('`' + config.fieldMap[k] + '`'); }
   var table = '`' + config.sourceProjectId + '.' + config.sourceDataset + '.' + config.sourceTable + '`';
-  var windowDays = (config.lookbackDays != null) ? config.lookbackDays : 7;  // completed-day window length
+
+  // Completed-day window length.
+  //   - rolling_upsert (Daily Sales): default = incrementalDefaultDays (1 = yesterday). A POST
+  //     backfill_days override reads the last N completed days (capped at lookbackDays if set).
+  //   - all other configs: legacy behaviour (lookbackDays, default 7) — full snapshot rewrite.
+  var windowDays;
+  if (config.writeMode === 'rolling_upsert') {
+    var incDefault = (config.incrementalDefaultDays != null) ? config.incrementalDefaultDays : 1;
+    var bf = (options.backfillDays != null) ? parseInt(options.backfillDays, 10) : 0;
+    if (isNaN(bf) || bf <= 0) bf = 0;
+    var cap = (config.lookbackDays != null) ? config.lookbackDays : bf;
+    windowDays = bf > 0 ? Math.min(bf, cap || bf) : incDefault;
+    if (windowDays < 1) windowDays = 1;
+  } else {
+    windowDays = (config.lookbackDays != null) ? config.lookbackDays : 7;
+  }
   var excludeToday = (config.excludeToday === true);
   var tz = config.scheduleTimezone || 'Asia/Taipei';
   var dateF = '`' + config.dateField + '`';
 
-  // Default: past N completed days (N = windowDays, default 7), EXCLUDING today (Asia/Taipei),
-  // to avoid partial same-day Amazon data. e.g. today 2026-06-26 -> [2026-06-19 .. 2026-06-25].
+  // Default: past N completed days (N = windowDays), EXCLUDING today (Asia/Taipei),
+  // to avoid partial same-day Amazon data. windowDays=1 -> just yesterday (incremental daily).
   var startExpr = 'DATE_SUB(CURRENT_DATE("' + tz + '"), INTERVAL ' + windowDays + ' DAY)';
   var endExpr = excludeToday
     ? 'DATE_SUB(CURRENT_DATE("' + tz + '"), INTERVAL 1 DAY)'

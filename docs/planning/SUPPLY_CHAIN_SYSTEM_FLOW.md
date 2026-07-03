@@ -1,13 +1,15 @@
 # Supply Chain System Flow
 
-**Status:** 🟡 Draft v1.1 — Architecture Specification (documentation only)
-**Last Updated:** 2026-06-29
+**Status:** 🟡 Draft v1.2 — Architecture Specification (documentation only)
+**Last Updated:** 2026-07-03
 **Maintained By:** Development Team
 **Related:** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (**authoritative architecture language**), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (calculation logic), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md) (Decision Layer / Submit Plan write contract), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), `assets/specs/active/SKU_MASTER_FLOW.md` (SKU/marketplace/pricing creation)
 
 > This document defines the **operational supply chain flow** — the sequence of pages, actions, and records across Kitchen Mama's weekly supply cycle. It is **not** a formula specification; detailed shortage/surplus/order math lives in `SUPPLY_PLANNING_CALCULATION_RULES.md`. No code changes. No DB changes.
 
 > **Update (2026-06-29):** Added the **Core Architecture Philosophy — Three-Layer Separation** (§2A: Analysis recalculates · Decision preserves planning · Execution preserves records · never mixed), the **Immutable Flow Principle** (downstream inherits/copies upstream, never mutates it), the **Single Source of Truth by layer** table, and the explicit **Decision Layer chain** (§5.1) — Inventory Replenishment → Submit Plan → Weekly Shipping Plan (Draft → Pending Approval → Approved) → Shipment Draft → Shipment Overview. Inventory Replenishment = **Analysis Layer**, Weekly Shipping Plan = **Decision Layer**, Shipment Draft/Overview = **Execution Layer**. The `shipping_plans` / `shipping_plan_lines` write contract (incl. six-value group key, `plan_version`, `submit_batch_id`, line-level snapshots) is defined in [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md).
+
+> **Update (2026-07-03):** Finalized the **Factory Stock Allocation → Shipping workflow** (§5.2), the **Allocation Rule** (§5.3 — existing inventory = shared pool; allocation recalculated weekly by FC Share; never permanently bound to a company), and the **Reserved Stock lifecycle** (§5.4 — Submit Plan moves nothing; Shipment Draft raises `reserved_stock`; Ship lowers `current_stock` and `reserved_stock`). `factory_stock_allocation_plans` is a **weekly planning snapshot only** — it does **not** move, reserve, or change ownership of inventory. Column purposes for `factory_stock_allocation_plans` are documented in [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) §6.
 
 ---
 
@@ -153,10 +155,12 @@ The shipment-planning portion of Steps 1, 3, and 4 forms a three-layer chain. We
 
 ```
 Inventory Replenishment  (Analysis Layer — what the data says / suggests)
+   ├─ Recommendation Summary  (system suggestion: Target Window / Suggested Qty / Route / Reason — READ-ONLY, never submitted)
+   └─ Execution Plan          (PM's actual routes: Ship From / Destination / Suggested Qty / Shipping Method)
         ↓
-Shipping Allocation Working Draft   (Temporary Decision — JS State + sessionStorage recovery;
-                                     editable many times; creates NOTHING)
-        ↓  Submit Plan = Decision Commit   (group by six-key; the ONLY creator of plans)
+Execution Plan Working Draft        (Temporary Decision — JS State + sessionStorage recovery;
+                                     editable many times; creates NOTHING; "Shipping Allocation" = legacy name)
+        ↓  Submit Plan = Decision Commit   (reads ONLY the Execution Plan; group by six-key; the ONLY creator of plans)
 Weekly Shipping Plan — Draft        (Decision Layer; editable Shipping Qty)
         ↓  Submit for approval
 Pending Approval                    (read-only; Manager → COO; Reject requires reason → back to Draft)
@@ -180,17 +184,146 @@ Documents                           (Invoice / Packing List / Commercial Invoice
 
 **Execution Layer scope:** **Shipment Draft, Shipment Overview, and Shipping History all belong to the Execution Layer.** After **Execution Commit** they read/copy the Decision Snapshot into the **Execution Snapshot** and **must NOT recalculate the Decision** (Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event context are copied, never re-derived). See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §3A (Execution Commit) + §4A (Execution Snapshot).
 
-> **Phase 2 menu/pages (current).** The left menu now has a **Shipment Center** group with **Shipment Draft** (statuses `draft` / `planned` / `ready_to_ship`; execution fields editable) and **Shipment Overview** (all non-draft shipments; execution fields read-only). Both pages read `shipments` / `shipment_lines` and **display Marketplace** on the card header; logistics (`carton_cbm` / `cbm` / `gross_weight` / `net_weight`) and the Decision Snapshot are shown **read-only** (copied, never recalculated). A status-advance placeholder steps `draft → planned → ready_to_ship → shipped → in_transit → delivered → completed` with **no factory-stock side effects** (`SHIPMENT_CENTER_SPEC.md` §4/§5). Factory-stock reservation/deduction remains **deferred**.
+> **Phase 2 menu/pages (current).** The left menu groups **Shipment Center → Weekly Shipping Plan (Decision Layer) / Shipment Draft / Shipment Overview (Execution Layer)** — grouping only, not a layer merge.
+> - **Shipment Draft = execution working area** (three sections: **Draft → Ready to Ship → Shipped**, `hidden_from_draft_at IS NULL`). Execution fields editable in Draft / Ready to Ship. **Save** updates fields only — it does **NOT** create history or enter Overview. **Ship** validates required fields (carrier, ETD, ETA, tracking-or-booking, totals) then `status = shipped` (+ `shipped_at` / `shipped_by`) — **only Ship makes a shipment official**. **Done** sets `hidden_from_draft_at` → the Shipped card leaves the Draft workspace (still in Overview; row never deleted).
+> - **Shipment Overview = official shipped/history view**: shows only `shipped` / `in_transit` / `arrived` / `received` / `closed`; read-only fields; a per-card Advance → steps the post-ship lifecycle. `draft` / `ready_to_ship` never appear here.
+> - Both pages read `shipments` / `shipment_lines`, **display Marketplace**, and show logistics + Decision Snapshot **read-only** (copied, never recalculated). **No factory-stock side effects** (deferred).
 
-- **Shipping Allocation Working Draft exists BEFORE Decision Commit.** It belongs to the **Analysis Layer / Temporary Decision** state — edited freely (method / ship-from / destination / qty), surviving collapse/expand and re-render via JS State + sessionStorage recovery. It **creates no `shipping_plans` / `shipping_plan_lines`** and **never updates** an existing Weekly Shipping Plan. See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §8A.
+> **Overseas Inbound (planning input — spec [`OVERSEAS_INBOUND_SPEC.md`](./OVERSEAS_INBOUND_SPEC.md)):** an Inbound Draft created on **Overseas Stock** is a **planning input**, **not** a Shipment Draft. **Submit does NOT create a Shipment Draft directly — it creates a Weekly Shipping Plan + `shipping_plan_lines` (Decision Layer)**; only an **approved** plan advances to a Shipment Draft (existing Execution Commit). Overseas Stock (`overseas_inventory_snapshot`) is updated **only after the shipment is `received`** (via `overseas_inventory_movements`) — Submit/Approve never writes overseas available stock and never deducts `factory_stock`. Flow: `Overseas Stock → Inbound Draft → Submit to Weekly Shipping Plan → Pending Approval → Approved → Shipment Draft → Ship → received → Overseas Stock 入庫`. Planned design — not implemented.
+
+- **Execution Plan Working Draft exists BEFORE Decision Commit** ("Shipping Allocation" = legacy name). It belongs to the **Analysis Layer / Temporary Decision** state — edited freely (ship-from / destination / qty / method per route), surviving collapse/expand and re-render via JS State + sessionStorage recovery. It **creates no `shipping_plans` / `shipping_plan_lines`** and **never updates** an existing Weekly Shipping Plan. The **Recommendation Summary** (system suggestion) is separate and **never submitted**. See [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) §8A and [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) §11.
 - **Decision Snapshot begins only after Submit Plan.** **Submit Plan** writes `shipping_plans` + `shipping_plan_lines` and **snapshots the decision context** (Current Stock, Avg Sales/Day, Days of Supply, Suggested Qty, Target Days, Shipping Method, Inventory Snapshot Date) so the plan does not drift with daily inventory changes. See [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md).
 - **Shipping Qty is editable only in Draft**; Pending Approval / Approved are read-only.
 - **Immutable Flow:** every downstream layer **inherits/copies** the upstream truth into its own snapshot, but **never mutates upstream**. **Shipment does not recalculate planning** — it copies the approved plan as an execution snapshot (`SHIPMENT_CENTER_SPEC.md`). Plan-layer status (`draft / pending_approval / approved / rejected / cancelled`) is distinct from shipment execution status.
 
+### 5.2 Factory Stock Allocation → Shipping workflow (finalized)
+
+The finalized Factory → Shipping workflow. **Allocation is a planning snapshot only** — physical inventory is never moved, reserved, or re-owned by the allocation step.
+
+```
+Factory Stock / Overseas Stock
+        ↓
+Weekly inventory confirmation                 (manual now; future API)
+        ↓
+Calculate available stock allocation by FC Share
+   (using fc_regular_forecast + target rules)
+        ↓
+Save allocation snapshot into
+   factory_stock_allocation_plans             (NO inventory movement)
+        ↓
+Reflect allocated quantity to Inventory Replenishment
+   (CN / TW available quantity display)
+        ↓
+Submit Plan
+        ↓
+Weekly Shipping Plan
+        ↓
+Approval
+        ↓
+Shipment Draft
+   (reserved_stock += shipment qty)
+   (current_stock unchanged)
+        ↓
+Ship
+   (current_stock -= shipment qty)
+   (reserved_stock -= shipment qty)
+        ↓
+Shipment Overview
+```
+
+> **`factory_stock_allocation_plans` is ONLY a planning snapshot.** It does **NOT**:
+> - move inventory
+> - reserve inventory
+> - change ownership
+>
+> It records *how much factory stock a planning cycle intends to make available by FC Share* — the physical `factory_stock` balance is untouched by allocation. Actual inventory effects happen only later at Shipment Draft (reserve) and Ship (deduct). Column-level purposes are in [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) §6.
+
+### 5.3 Allocation Rule (shared pool, recalculated weekly)
+
+- **Existing inventory = Shared Pool.** Factory stock is one shared pool across companies (§4).
+- **New purchase orders may carry intended-company information**, **but** factory allocation is **recalculated weekly** and is **not** bound to that company permanently.
+- **Do NOT permanently bind factory inventory to a company.** Ownership/company intent is metadata, not a physical partition of stock.
+- **Allocation always follows the FC Share calculation** (`fc_regular_forecast` + target rules). A new `allocation_version` each cycle lets recalculation happen **without losing historical plans**.
+
+### 5.4 Reserved Stock Rule (inventory-effect lifecycle)
+
+Inventory quantities change **only** at the Execution Layer — never at planning:
+
+| Action | `current_stock` | `reserved_stock` |
+|--------|-----------------|------------------|
+| **Submit Plan** | unchanged | unchanged — **no inventory movement** |
+| **Shipment Draft created** | unchanged | **+= shipment qty** (soft hold) |
+| **Shipment shipped (Ship)** | **−= shipment qty** | **−= shipment qty** (hold released as goods leave) |
+
+- **Submit Plan / Weekly Shipping Plan / Approval move nothing** — they are Decision Layer records.
+- **Reserve happens at Shipment Draft**, **deduction happens at Ship** — consistent with the Execution Layer owning all physical inventory effects (§2A).
+
+### 5.5 Procurement lifecycle (finalized)
+
+The finalized Request Order → Purchase Order chain. Draft layers are **editable recommendation scratchpads** (no procurement commitment); official records begin only at **Send Request** / **Approve**.
+
+```
+Recommendation Engine
+        ↓
+request_order_allocation_drafts
+request_order_allocation_draft_lines      (editable recommendation — regenerable; no commitment)
+        ↓  Send Request
+request_orders
+request_order_lines                       (OFFICIAL Request Order — created only on Send Request)
+        ↓
+request_order_line_sources                (every recommendation source per line — never deleted)
+        ↓  Approve
+purchase_orders
+purchase_order_lines                      (Procurement Commitment)
+        ↓
+request_order_po_links                    (Request ↔ PO relationship; supports split/merge)
+        ↓
+Purchase Order Export Template            (ALWAYS from purchase_orders / purchase_order_lines)
+```
+
+**Rules:**
+1. **`request_order_allocation_drafts` / `request_order_allocation_draft_lines`** — a **temporary, editable** recommendation **generated by the calculation engine**; **can be regenerated** at any time. No stock movement, no procurement commitment. (Persistence layer already documented — `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.7.)
+2. **`request_orders` / `request_order_lines`** — the **official Request Order**, **created only after the user presses "Send Request"** (never auto-created from a draft).
+3. **`request_order_line_sources`** — **the source of truth for company / site / month allocation detail**, storing **every recommendation source** that contributed to a request line: **FC, Inventory, Lead Time, Target Rules, Manual Adjustment, etc.**, plus **`tier_type` (T1/T2/T3)** and **`source_month` (YYYY-MM)**, and per-source `company` / `country` / `marketplace` / `requested_qty` / `approved_qty` / `shortage_qty` / `note`. Append-only, **never deleted**. **Read path is implemented** (surfaced in the Request Order Draft *Company Allocation* popup); the **write path is pending** — until it exists the popup falls back to `request_order_lines` grouped by company ("Site-level source pending"). Deprecated `request_order_lines` columns (`final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `reallocation_qty`, `source_company_count`, `source_site_count`, `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`) are **no longer source of truth** (kept for back-compat, not deleted).
+4. **`request_order_po_links`** *(new — spec only)* — the **relationship table** between Request Orders and Purchase Orders. Supports **one Request → multiple POs**, **multiple Requests → one PO**, **supplier split**, **factory split**, and **future expansion**. (This is the many-to-many join; the legacy one-time `request_orders.status = converted_to_po` marker + copied `purchase_orders.request_order_id` remain valid for simple 1→1 traceability.)
+5. **Purchase Order Export Template** — **always generated from `purchase_orders` / `purchase_order_lines`**, **never from a Draft** (Request Order / allocation draft). The template is an Execution/Commitment output, not a planning preview.
+6. **T1 / T2 / T3 buckets are PRESERVED at the Request Layer** — `request_order_lines.request_bucket` (+ `request_month`) is set on every line and **never merged at the Request stage**. **T1/T2/T3 are demand buckets, NOT direct PO-grouping rules.** The **PO Layer may merge later** (T1 urgent PO / T2+T3 normal PO / custom supplier·factory·SKU·series grouping) via **`request_order_po_links`**. Send Request does not force three PO records. Full-carton qty is enforced before an order becomes official.
+7. **Request Order Draft = Decision Layer; Purchase Order Overview = Execution Layer (finalized).** ALL ordering decisions — **Approved qty, company split (KM/ResUS/ResTW), T1 vs T2+T3, schedule dates, tier cancel** — are completed in **Request Order Draft**. **PO Overview inherits the approved result** and handles execution only (supplier / factory / payment / delivery dates); its **split/merge logic is PAUSED** and must not re-decide T1/T2/T3 until an explicit future design. Company split is stored as **one `request_order_line` per company** (`company` column); a structured `request_order_line_sources` company-split field remains spec-only. **Factory display = `warehouses.warehouse_name`; `warehouse_id` stays the source of truth** (default Tier 1 = `WH-TW-CN-FACTORY-YOUXIN`).
+
+### 5.6 Shipment lifecycle (finalized)
+
+The finalized Shipping Allocation → Shipment chain. Same discipline: draft = editable recommendation; official records begin at **Submit Plan** / **Approve**.
+
+```
+Recommendation Engine
+        ↓
+shipping_allocation_drafts
+shipping_allocation_draft_lines           (editable recommendation — regenerable; no commitment)
+        ↓  Submit Plan
+shipping_plans
+shipping_plan_lines                       (OFFICIAL Shipping Plan — created on Submit Plan)
+        ↓  Approve
+shipments
+shipment_lines                            (OFFICIAL shipment — created after approval)
+        ↓
+shipment_events                           (complete shipment lifecycle log)
+        ↓
+Shipping Export Template                  (ALWAYS from shipments / shipment_lines)
+```
+
+**Rules:**
+1. **`shipping_allocation_drafts` / `shipping_allocation_draft_lines`** — an **editable** recommendation **generated by the recommendation engine**; **can be regenerated**. No stock movement (planning scratchpad). (Documented — `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6.)
+2. **`shipping_plans` / `shipping_plan_lines`** — the **official Shipping Plan**, **created after Submit Plan** (Decision Commit).
+3. **`shipments` / `shipment_lines`** — the **official shipment**, **created after approval** (Execution Commit copies the approved plan as an execution snapshot).
+4. **`shipment_events`** — the **complete shipment lifecycle log**, e.g. **Created / Approved / Booked / Loaded / Departed / Arrived / Custom Clearance / Delivered / Received / Cancelled**. Designed to **support future tracking integration** (carrier/API events append here).
+5. **Shipping Export Template** — **always generated from `shipments` / `shipment_lines`**, **never from a Draft** (shipping-allocation draft / shipping plan draft).
+
+> These two lifecycles are the **finalized** architecture for future implementation. `request_order_line_sources`, `request_order_po_links`, and `shipment_events` (as a full lifecycle log) are **documented, not yet implemented** — no schema/code change is made by this sync. Existing table names are unchanged; the Shipment Center execution behavior (`SHIPMENT_CENTER_SPEC.md`) is unchanged.
+
 ### Step 1 — Inventory Replenishment
 - User selects **Country, Marketplace, Target Days**.
 - System calculates current inventory, sales, forecast, factory stock, on-the-way, and **suggested replenishment**.
-- **Shipping Allocation is a calculation preview only.**
+- **Recommendation Summary is a calculation preview only** (system suggestion; never submitted). The **Execution Plan** is the PM's actual plan that Submit Plan reads.
 - A **persisted record starts only after Submit Plan**, which creates `shipping_plans` / `shipping_plan_lines`.
 - **No separate `shipping_allocation` DB for MVP.**
 
@@ -198,6 +331,7 @@ Documents                           (Invoice / Packing List / Commercial Invoice
 - Factory users may review `factory_stock`, future purchase orders, and production schedule.
 - Purpose: **verify stock and production availability before shipment planning**.
 - Reduces the risk of submitting shipment details that factories cannot fulfill.
+- **Weekly inventory confirmation** here feeds the **Factory Stock Allocation** step: available stock is allocated by **FC Share** and saved as a planning snapshot in `factory_stock_allocation_plans` (no inventory movement) — see §5.2–§5.4.
 
 ### Step 3 — Shipping Plan
 - User reviews the **Draft** shipping plan.
@@ -227,6 +361,9 @@ Documents                           (Invoice / Packing List / Commercial Invoice
 - User can add/edit base forecast, special events, target rules.
 - **Special event and target rules feed the future calculation engine.**
 - **FC Summary is forecast management, not direct order execution.**
+- **FC Summary does NOT create SKUs / FC base rows** (the "+ Add SKU" button is removed for data safety). SKU + FC base-row creation is owned by the **SKU Details / Inventory SKU flow** (and batch Import Forecast). See [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md) §1.1.
+- **Special Event forecast** (`fc_special_events`) has two linked sources — **Campaign** (promotion source of truth) and **FC Summary direct** (supply-chain forecast source of truth) — joined by `campaign_id` / `campaign_sku_line_id`, never blind two-way synced. Event Flag = **Normal** creates no special-event row (baseline is `fc_regular_forecast`); Event Flag != Normal requires FC Qty. See [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md) §9–§10, §12.
+- **FC Summary Special Event Builder v2** creates deal-priced events in **Single SKU** (≤8 rows) or **Category / Series** group-card mode (grouped by category + series + regular_price). Save target = `campaigns` → `campaign_sku_lines` → `fc_special_events`. Campaign / line writers are **PENDING** — live Save reports pending and writes nothing (no orphan `fc_special_events`, no fake success). See [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md) §9, §12.
 
 ### Step 8 — Request Order / 下單系統
 - Existing page.
@@ -236,6 +373,8 @@ Documents                           (Invoice / Packing List / Commercial Invoice
 - Reallocation and order-need logic are defined in [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md).
 - User can review, adjust, and send the request.
 - Future output creates `purchase_orders` / `purchase_order_lines` and documents.
+
+> **Procurement Layer Phase 1 (implemented — API-ready foundation):** the Procurement Center adds **Request Order Draft** (= Procurement Planning Draft; `request_orders` + `request_order_lines`; Draft / Pending Approval / Approved), **Purchase Order Overview** (= Procurement Commitment dashboard; `purchase_orders` + `purchase_order_lines`), and **Purchase Order List** (= PO operational list / history). **Immutable Flow:** `Shipment / Inventory / Factory Stock` → Request Order Draft → Purchase Order — downstream copies upstream, never writes back (PO ⇏ Request Order; Request Order ⇏ Shipment / Inventory / Factory Stock). No auto-procurement engine, supplier API, or payment flow in Phase 1. See [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md).
 
 ### Step 9 — Export / Document Center
 - Future page / module. **Template Management is only a sub-tab.**
@@ -286,14 +425,15 @@ Ownership: Demand (KM / ResUS) ──▶ ResTW (hub) ──▶ [future SO/AR/AP 
 ## 7. Data Persistence Rules
 
 - **Calculation previews are not persisted unless the user submits.**
-- **Shipping Allocation preview does not require a DB in MVP.**
+- **Recommendation Summary + Execution Plan preview does not require a DB in MVP** (the Execution Plan Working Draft lives in JS State + sessionStorage recovery only).
 - **Approved plans become shipments through explicit user action** (Step 4), not automatically.
 - **Shipments are historical snapshots** and **must not rely only on a `shipping_plans` join to reconstruct actual shipment state** — the snapshot (header + lines copied at creation) is the authoritative shipment record.
 
 | Artifact | Persisted? | Trigger |
 |----------|-----------|---------|
 | Replenishment calculation | No | — (preview) |
-| Shipping Allocation preview | No | — (preview, no DB in MVP) |
+| Recommendation Summary (system suggestion) | No | — (preview, never submitted) |
+| Execution Plan preview / Working Draft | No | — (JS State + sessionStorage recovery, no DB in MVP) |
 | `shipping_plans` / lines | Yes | Submit Plan |
 | `shipments` / `shipment_lines` | Yes (snapshot) | Explicit "create shipment" |
 | `generated_documents` | Yes | Document generation |

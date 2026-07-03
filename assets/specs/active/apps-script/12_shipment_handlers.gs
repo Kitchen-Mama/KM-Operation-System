@@ -21,7 +21,7 @@
 // ============================================================
 
 var SHIPMENTS_HEADERS_ = [
-  'shipment_id', 'shipment_no', 'shipping_plan_id', 'reference_id',
+  'shipment_id', 'shipment_no', 'external_shipment_id', 'shipping_plan_id', 'reference_id',
   'warehouse_id', 'warehouse_code',
   'company', 'country', 'marketplace', 'ship_from', 'destination',
   'carrier_id', 'rate_card_id', 'shipping_method', 'status', 'sales_order_id',
@@ -30,13 +30,17 @@ var SHIPMENTS_HEADERS_ = [
   'customs_clearance_date', 'delivered_date',
   'total_qty', 'total_cartons', 'total_cbm', 'total_gross_weight', 'total_net_weight',
   'freight_cost_actual', 'duty_actual', 'currency',
+  // Ship / Done lifecycle metadata (Shipment Draft workspace).
+  'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by',
   'note', 'created_by', 'created_at', 'updated_by', 'updated_at'
 ];
 
+// NOTE: shipment_lines.carton_cbm = single-carton CBM (m³). Line/header total CBM is RUNTIME =
+// carton_cbm × carton_qty (there is no stored line `cbm` column — renamed to carton_cbm).
 var SHIPMENT_LINES_HEADERS_ = [
   'shipment_line_id', 'shipment_id', 'sku',
   'qty', 'factory_stock_allocation_qty', 'carton_qty', 'carton_no_start', 'carton_no_end',
-  'units_per_carton', 'carton_cbm', 'cbm', 'gross_weight', 'net_weight',
+  'units_per_carton', 'carton_cbm', 'gross_weight', 'net_weight',
   'purchase_order_line_id', 'note', 'created_at', 'updated_at',
   // Execution Snapshot = a verbatim COPY of the Decision Snapshot (ARCHITECTURE §4A). Never recalculated.
   'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
@@ -47,6 +51,7 @@ var SHIPMENT_LINES_HEADERS_ = [
 // Execution-layer fields a user MAY edit on a Shipment (everything else — identity, the six-key
 // context, totals, and the whole Execution Snapshot — is immutable here).
 var SHIPMENT_EDITABLE_FIELDS_ = [
+  'external_shipment_id',
   'carrier_id', 'rate_card_id', 'shipping_method',
   'booking_no', 'tracking_number', 'container_no', 'bl_no', 'invoice_no',
   'etd', 'eta', 'actual_departure_date', 'actual_arrival_date',
@@ -63,6 +68,18 @@ function shipmentToday_() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 function shipmentNum_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+/** Marketplace short code for the external_shipment_id default (unknown -> first 3 chars uppercased). */
+var SHIPMENT_MARKETPLACE_ABBREV_ = {
+  amazon: 'AMZ', walmart: 'WMT', shopify: 'SHP', ebay: 'EBY', target: 'TGT', wayfair: 'WYF'
+};
+function shipmentMarketplaceAbbrev_(marketplace) {
+  var m = String(marketplace == null ? '' : marketplace).trim();
+  if (!m) return '';
+  var key = m.toLowerCase();
+  if (SHIPMENT_MARKETPLACE_ABBREV_[key]) return SHIPMENT_MARKETPLACE_ABBREV_[key];
+  return m.toUpperCase().replace(/[^A-Z0-9]+/g, '').substring(0, 3);
+}
 
 /** Get (or create with the documented header row) an Execution-Layer tab. */
 function shipmentEnsureSheet_(ss, name, headers) {
@@ -102,6 +119,77 @@ function shipmentReadSheet_(sheet) {
   };
 }
 
+/**
+ * Find an existing shipment for a shipping_plan_id. Robust to the column name used to record the
+ * plan reference (shipping_plan_id / source_shipping_plan_id / plan_id). Returns the shipment_id
+ * (or '' when none). Lets Weekly Shipping Plan Done detect the Execution Commit even when the
+ * plan's own transferred_shipment_id column was never persisted. Shared global scope (used by 11_).
+ */
+function shipmentFindForPlan_(ss, planId) {
+  planId = String(planId || '').trim();
+  if (!planId) return '';
+  var sheet = ss.getSheetByName('shipments');
+  if (!sheet) return '';
+  var s = shipmentReadSheet_(sheet);
+  var idCol = s.col('shipment_id');
+  var refCols = ['shipping_plan_id', 'source_shipping_plan_id', 'plan_id']
+    .map(function (n) { return s.col(n); }).filter(function (c) { return c !== -1; });
+  if (!refCols.length) return '';
+  for (var r = 1; r < s.rows.length; r++) {
+    for (var c = 0; c < refCols.length; c++) {
+      if (String(s.rows[r][refCols[c]]).trim() === planId) {
+        return idCol !== -1 ? String(s.rows[r][idCol]).trim() : 'MATCH';
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * Validate the carton-number ranges (carton_no_start / carton_no_end) for a shipment's lines.
+ * Rules: integers only; start <= end; ranges must not overlap within the same shipment.
+ * When requireComplete is true, EVERY line must have both start and end (Ship gate).
+ * Returns { ok, error }.
+ */
+function shipmentValidateCartons_(ss, shipmentId, requireComplete) {
+  var sheet = ss.getSheetByName('shipment_lines');
+  if (!sheet) return { ok: true };
+  var s = shipmentReadSheet_(sheet);
+  var idCol = s.col('shipment_id');
+  var startCol = s.col('carton_no_start');
+  var endCol = s.col('carton_no_end');
+  var skuCol = s.col('sku');
+  if (idCol === -1) return { ok: true };
+  var ranges = [];
+  for (var r = 1; r < s.rows.length; r++) {
+    if (String(s.rows[r][idCol]).trim() !== String(shipmentId).trim()) continue;
+    var sku = skuCol !== -1 ? String(s.rows[r][skuCol] || '').trim() : ('line ' + r);
+    var rawStart = startCol !== -1 ? String(s.rows[r][startCol] == null ? '' : s.rows[r][startCol]).trim() : '';
+    var rawEnd = endCol !== -1 ? String(s.rows[r][endCol] == null ? '' : s.rows[r][endCol]).trim() : '';
+    if (rawStart === '' && rawEnd === '') {
+      if (requireComplete) return { ok: false, error: 'Carton No. required for SKU ' + sku };
+      continue;
+    }
+    if (rawStart === '' || rawEnd === '') {
+      return { ok: false, error: 'Both Carton No. Start and End are required for SKU ' + sku };
+    }
+    var st = parseInt(rawStart, 10), en = parseInt(rawEnd, 10);
+    if (isNaN(st) || isNaN(en) || String(st) !== rawStart || String(en) !== rawEnd) {
+      return { ok: false, error: 'Carton No. must be whole numbers for SKU ' + sku };
+    }
+    if (st > en) return { ok: false, error: 'Carton No. Start must be <= End for SKU ' + sku };
+    ranges.push({ sku: sku, start: st, end: en });
+  }
+  for (var i = 0; i < ranges.length; i++) {
+    for (var j = i + 1; j < ranges.length; j++) {
+      if (ranges[i].start <= ranges[j].end && ranges[j].start <= ranges[i].end) {
+        return { ok: false, error: 'Carton No. ranges overlap: ' + ranges[i].sku + ' (' + ranges[i].start + '-' + ranges[i].end + ') and ' + ranges[j].sku + ' (' + ranges[j].start + '-' + ranges[j].end + ')' };
+      }
+    }
+  }
+  return { ok: true };
+}
+
 // ---- Execution Commit: Approved shipping_plan → shipments + shipment_lines (draft) ----
 
 /**
@@ -136,6 +224,10 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
 
   var shipmentSheet = shipmentEnsureSheet_(ss, 'shipments', SHIPMENTS_HEADERS_);
   var shipmentLineSheet = shipmentEnsureSheet_(ss, 'shipment_lines', SHIPMENT_LINES_HEADERS_);
+  // Auto-add columns on tabs that predate them (no manual migration).
+  sheetEnsureColumns_(shipmentSheet, ['external_shipment_id', 'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by']);
+  sheetEnsureColumns_(shipmentLineSheet, ['carton_no_start', 'carton_no_end']);
+  sheetEnsureColumns_(planSheet, ['transferred_to_shipment_at', 'transferred_shipment_id']);
 
   // Idempotency: one Shipment Draft per approved plan (Phase 1). Skip if one already exists.
   var s = shipmentReadSheet_(shipmentSheet);
@@ -163,12 +255,47 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   var shipmentId = 'SH-' + Utilities.getUuid().substring(0, 10).toUpperCase();
   var shipmentNo = 'SHP-' + today.replace(/-/g, '') + '-' + shipmentId.substring(3, 7);
 
+  // Default external shipment id: COMPANY-MKT-YYMMDD-## (user-overridable later).
+  //   Company abbrev = company uppercased, non-alphanumerics removed (e.g. "Res US" -> "RESUS").
+  //   Marketplace abbrev = known short code (Amazon->AMZ, Walmart->WMT, ...) else first 3 chars.
+  //   YYMMDD = today; ## = 2-digit serial per company+marketplace+country that day.
+  function normSeg_(v) { return String(v == null ? '' : v).trim().toUpperCase().replace(/[^A-Z0-9]+/g, ''); }
+  var companyAbbrev = normSeg_(pv('company'));
+  var marketplaceAbbrev = shipmentMarketplaceAbbrev_(pv('marketplace'));
+  var yymmdd = today.replace(/-/g, '').substring(2); // YYYYMMDD -> YYMMDD
+  var extPrefix = [companyAbbrev, marketplaceAbbrev, yymmdd].filter(String).join('-');
+  var extCol = s.col('external_shipment_id');
+  var extSerial = 1;
+  if (extCol !== -1) {
+    for (var e = 1; e < s.rows.length; e++) {
+      if (String(s.rows[e][extCol] || '').indexOf(extPrefix + '-') === 0) extSerial++;
+    }
+  }
+  var externalShipmentId = extPrefix + '-' + ('0' + extSerial).slice(-2);
+
+  // sku -> logistics (for carton_cbm fallback when the plan line has none).
+  var logisticsMap = (typeof shippingPlanSkuLogisticsMap_ === 'function') ? shippingPlanSkuLogisticsMap_(ss) : {};
+  function cartonCbmFor_(rowVals) {
+    var v = plv(rowVals, 'carton_cbm');
+    if (v !== '' && v != null) return shipmentNum_(v);
+    var sku = String(plv(rowVals, 'sku') || '').trim();
+    var logi = logisticsMap[sku];
+    if (!logi) return '';
+    var unit = logi.cartonDimUnit || 'cm';
+    if (unit !== 'cm' && unit !== '') return '';
+    var cbm = (logi.cartonL * logi.cartonW * logi.cartonH) / 1000000;
+    return Math.round(cbm * 1000000) / 1000000;
+  }
+
   // Totals are COPIED / summed from the plan lines (not recalculated from live inventory).
+  // total_cbm = Σ(carton_cbm × carton_qty) — carton_cbm is single-carton volume.
   var totalQty = 0, totalCartons = 0, totalCbm = 0, totalGross = 0, totalNet = 0;
   for (var t = 0; t < planLines.length; t++) {
+    var tCartons = shipmentNum_(plv(planLines[t], 'carton_qty'));
+    var tCartonCbm = shipmentNum_(cartonCbmFor_(planLines[t]));
     totalQty += shipmentNum_(plv(planLines[t], 'approved_qty'));
-    totalCartons += shipmentNum_(plv(planLines[t], 'carton_qty'));
-    totalCbm += shipmentNum_(plv(planLines[t], 'cbm'));
+    totalCartons += tCartons;
+    totalCbm += tCartonCbm * tCartons;
     totalGross += shipmentNum_(plv(planLines[t], 'gross_weight'));
     totalNet += shipmentNum_(plv(planLines[t], 'net_weight'));
   }
@@ -177,6 +304,7 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   shipmentAppendByHeader_(shipmentSheet, {
     shipment_id: shipmentId,
     shipment_no: shipmentNo,
+    external_shipment_id: externalShipmentId,
     shipping_plan_id: planId,
     company: pv('company'),
     country: pv('country'),
@@ -210,8 +338,8 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
       carton_qty: shipmentNum_(plv(lr, 'carton_qty')),
       units_per_carton: shipmentNum_(plv(lr, 'units_per_carton')),
       // Logistics: COPIED from the plan line (Execution Snapshot — never recalculated).
-      carton_cbm: (plv(lr, 'carton_cbm') === '' || plv(lr, 'carton_cbm') == null) ? '' : plv(lr, 'carton_cbm'),
-      cbm: (plv(lr, 'cbm') === '' || plv(lr, 'cbm') == null) ? '' : plv(lr, 'cbm'),
+      // carton_cbm = single-carton CBM (copied from plan; sku_details fallback when absent).
+      carton_cbm: cartonCbmFor_(lr),
       gross_weight: (plv(lr, 'gross_weight') === '' || plv(lr, 'gross_weight') == null) ? '' : plv(lr, 'gross_weight'),
       net_weight: (plv(lr, 'net_weight') === '' || plv(lr, 'net_weight') == null) ? '' : plv(lr, 'net_weight'),
       note: plv(lr, 'note'),
@@ -279,6 +407,9 @@ function handleUpdateShipment_(body) {
   var sheet = ss.getSheetByName('shipments');
   if (!sheet) return jsonResponse_({ success: false, error: 'shipments sheet not found' });
 
+  // Auto-add columns on tabs that predate them.
+  sheetEnsureColumns_(sheet, ['external_shipment_id', 'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by']);
+
   var s = shipmentReadSheet_(sheet);
   var idCol = s.col('shipment_id');
   if (idCol === -1) return jsonResponse_({ success: false, error: 'shipment_id column not found' });
@@ -289,22 +420,113 @@ function handleUpdateShipment_(body) {
   }
   if (targetRow === -1) return jsonResponse_({ success: false, error: 'Shipment not found: ' + shipmentId });
 
+  var rowVals = s.rows[targetRow - 1] || [];
   function setCell(name, value) { var c = s.col(name); if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(value); }
+  // Merged value = body override if present, else the current row value.
+  function mv(name) {
+    if (body.hasOwnProperty(name) && String(body[name]).trim() !== '') return String(body[name]).trim();
+    var c = s.col(name); return c === -1 ? '' : String(rowVals[c] == null ? '' : rowVals[c]).trim();
+  }
+  function mnum(name) { var v = parseFloat(mv(name)); return isNaN(v) ? 0 : v; }
 
+  var newStatus = (body.hasOwnProperty('status') && String(body.status).trim() !== '') ? String(body.status).trim() : '';
+  var curStatus = (function () { var c = s.col('status'); return c === -1 ? '' : String(rowVals[c] || '').trim(); })();
+
+  var now = shipmentTimestamp_();
+
+  // Write editable fields FIRST so the Ship gate below validates the just-saved carton numbers.
   var changed = 0;
   for (var f = 0; f < SHIPMENT_EDITABLE_FIELDS_.length; f++) {
     var fld = SHIPMENT_EDITABLE_FIELDS_[f];
     if (body.hasOwnProperty(fld)) { setCell(fld, body[fld]); changed++; }
   }
-  // Optional execution status advance (draft → planned → ready_to_ship → ...). Snapshot stays frozen.
-  if (body.hasOwnProperty('status') && String(body.status).trim() !== '') {
-    setCell('status', String(body.status).trim());
+
+  // Optional: update editable shipment_line fields (carton_no_start / carton_no_end — numeric).
+  var linesUpdated = 0;
+  if (body.lines && body.lines.length) {
+    var lineSheet0 = ss.getSheetByName('shipment_lines');
+    if (lineSheet0) {
+      sheetEnsureColumns_(lineSheet0, ['carton_no_start', 'carton_no_end']);
+      var ls0 = shipmentReadSheet_(lineSheet0);
+      var lIdCol0 = ls0.col('shipment_line_id');
+      var lStartCol0 = ls0.col('carton_no_start');
+      var lEndCol0 = ls0.col('carton_no_end');
+      var lUpdCol0 = ls0.col('updated_at');
+      if (lIdCol0 !== -1) {
+        var rowByLineId0 = {};
+        for (var q = 1; q < ls0.rows.length; q++) rowByLineId0[String(ls0.rows[q][lIdCol0]).trim()] = q + 1;
+        for (var b = 0; b < body.lines.length; b++) {
+          var bl = body.lines[b] || {};
+          var lid = String(bl.shipment_line_id || '').trim();
+          var rowIdx = rowByLineId0[lid];
+          if (!rowIdx) continue;
+          function numOrBlank_(v) { if (v === '' || v == null) return ''; var n = parseInt(v, 10); return isNaN(n) ? '' : n; }
+          if (bl.hasOwnProperty('carton_no_start') && lStartCol0 !== -1) lineSheet0.getRange(rowIdx, lStartCol0 + 1).setValue(numOrBlank_(bl.carton_no_start));
+          if (bl.hasOwnProperty('carton_no_end') && lEndCol0 !== -1) lineSheet0.getRange(rowIdx, lEndCol0 + 1).setValue(numOrBlank_(bl.carton_no_end));
+          if (lUpdCol0 !== -1) lineSheet0.getRange(rowIdx, lUpdCol0 + 1).setValue(now);
+          linesUpdated++;
+        }
+      }
+    }
+  }
+
+  // Carton-number integrity (any save/advance): integers, start<=end, no overlap within the shipment.
+  var cartonCheck = shipmentValidateCartons_(ss, shipmentId, false);
+  if (!cartonCheck.ok) {
+    return jsonResponse_({ success: false, error: cartonCheck.error });
+  }
+
+  // Ship gate: before marking a shipment `shipped`, required execution data must be complete
+  // (SHIPMENT_CENTER_SPEC §5B). Required: external_shipment_id, reference_id, warehouse_code,
+  // ETD, ETA + every line has a Carton No. range (integers, non-overlapping).
+  if (newStatus === 'shipped' && curStatus !== 'shipped') {
+    var missing = [];
+    if (!mv('external_shipment_id')) missing.push('Shipment ID (external)');
+    if (!mv('reference_id')) missing.push('Reference ID');
+    if (!mv('warehouse_code')) missing.push('Warehouse Code');
+    if (!mv('etd')) missing.push('ETD');
+    if (!mv('eta')) missing.push('ETA');
+    if (mnum('total_qty') <= 0) missing.push('Total Qty');
+    if (missing.length) {
+      return jsonResponse_({ success: false, error: 'Cannot Ship — missing required fields: ' + missing.join(', ') });
+    }
+    var shipCarton = shipmentValidateCartons_(ss, shipmentId, true);
+    if (!shipCarton.ok) {
+      return jsonResponse_({ success: false, error: 'Cannot Ship — ' + shipCarton.error });
+    }
+  }
+
+  // Return to Draft (Phase-2 placeholder, no permissions yet): a revision reason is appended to
+  // the note history (append-only) when a Ready to Ship shipment is sent back to Draft to edit.
+  if (body.hasOwnProperty('revision_reason') && String(body.revision_reason).trim()) {
+    var reasonText = String(body.revision_reason).trim();
+    var noteC = s.col('note');
+    var existingNote = noteC === -1 ? '' : String(rowVals[noteC] == null ? '' : rowVals[noteC]).trim();
+    var appended = '[RETURN TO DRAFT @' + now + ' by ' + actor + '] ' + reasonText;
+    setCell('note', existingNote ? (existingNote + '\n' + appended) : appended);
     changed++;
   }
 
-  var now = shipmentTimestamp_();
+  // Status advance. Snapshot stays frozen. Marking `shipped` stamps shipped_at / shipped_by once.
+  if (newStatus) {
+    setCell('status', newStatus);
+    changed++;
+    if (newStatus === 'shipped' && curStatus !== 'shipped') {
+      setCell('shipped_at', now);
+      setCell('shipped_by', actor);
+    }
+  }
+
+  // Done (Shipment Draft workspace): hide from the Draft page. NOT a status change; NOT a delete.
+  // The shipment stays fully visible in Shipment Overview.
+  if (body.hasOwnProperty('hidden_from_draft') && body.hidden_from_draft) {
+    setCell('hidden_from_draft_at', now);
+    setCell('hidden_from_draft_by', actor);
+    changed++;
+  }
+
   setCell('updated_by', actor);
   setCell('updated_at', now);
 
-  return jsonResponse_({ success: true, data: { shipment_id: shipmentId, fields_updated: changed } });
+  return jsonResponse_({ success: true, data: { shipment_id: shipmentId, fields_updated: changed, lines_updated: linesUpdated, status: newStatus || curStatus } });
 }

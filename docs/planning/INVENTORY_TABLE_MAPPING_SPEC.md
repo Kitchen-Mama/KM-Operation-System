@@ -1,12 +1,36 @@
 # Inventory Table Mapping Spec (Inventory Replenishment / 貨物庫存表)
 
-**Status:** 🟢 v1.4 — Inventory Table Mapping **finalized** (Spec only — formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`)
-**Last Updated:** 2026-06-30
+**Status:** 🟢 v1.5.6 — Inventory Table Mapping **finalized** (Spec only — formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`)
+**Last Updated:** 2026-07-01
 **Maintained By:** Development Team
-**Authority / context (read, not overridden):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md), [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md).
+**Authority / context (read, not overridden):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md), [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md), [`UI_COMPONENT_GUIDELINES.md`](./UI_COMPONENT_GUIDELINES.md) (**KM Sticky Header Framework**).
+
+> **Changelog v1.5.5 → v1.5.6 (2026-07-01):**
+> - **§11.6 added — KM Sticky Header Framework:** the main table's two-layer sticky header now pins at **`--km-sticky-top-base`** (the sticky control panel's **live measured height**, set by the reusable `KM.stickyHeader` helper on mount/resize) instead of a hard-coded `top: 72px`. **Root cause of the covered-header bug:** the control panel is taller than 72px (and wraps taller on small screens), so with a fixed 72px offset it overlapped/covered the `Current Stock / On the Way / Avg. Sales/day` row. Header height + row heights + all sticky z-indexes now come from centralized framework variables (`assets/css/core/km-sticky-header.css`); **no per-page magic numbers.** Future Request Order / Purchase Order / Shipment / Warehouse Stock tables reuse the same framework (see [`UI_COMPONENT_GUIDELINES.md`](./UI_COMPONENT_GUIDELINES.md)). CSS + core helper only; no data / calculation / Submit Plan change.
 
 > **Mapping + finalized rules.** This defines how the Inventory Replenishment main table (貨物庫存表) maps to data sources, the finalized AI-suggestion / replenishment direction, the Overseas Shared Inventory Allocation rule, and the Marketplace Fulfillment Model flow. It is **not** the final frontend and **not** the calculation engine code. Where this and a domain spec differ, the **domain spec wins** (formulas live in `SUPPLY_PLANNING_CALCULATION_RULES.md`).
 
+> **Changelog v1.5.4 → v1.5.5 (2026-07-01):**
+> - **§11 UI polish:** (1) **Upcoming Event** no longer over-tall — the expanded row uses `align-items: flex-start` and second-row cards are `flex: 0 0 auto`, so Upcoming Event matches the Shipping Shipment / 3rd Party small-card height. (2) **Recommendation Summary title→table spacing** tightened to match Long Term Storage (title `margin-bottom: 4px`). (3) **Recommendation Summary Total row** shows only `Total` + `Qty` — **Route and Reason blank**. (4) **Execution Plan Method/Delete no longer overlap** — grid `minmax(100px,1fr) minmax(100px,1fr) 60px minmax(130px,1fr) 36px`, `column-gap: 8px`, **Group D widened to 490px**. Cross-ref: cost shown at planning is an **estimated quote** (`CARRIER_AND_ROUTE_SPEC.md` §4B). CSS-only + Total-row markup; no data/logic change.
+>
+> **Changelog v1.5.3 → v1.5.4 (2026-07-01):**
+> - **§11.5 UI polish:** (1) **Top-row cards visually aligned** — Stock / LTS / Forecast Breakdown / Sales Trend / Achievement Rate share `min-height` ≈150px and no longer flex-grow (Forecast & Achievement stop stretching tall); charts keep 100px canvas (not squeezed). (2) **Recommendation Summary `Reason` single-line** (`table-layout: auto` + `white-space: nowrap`, no ellipsis) with Group C widened to **420px**. (3) **Recommendation Summary header background = `rgb(255,248,240)`** (light warm, dark text) — that table only. (4) **Execution Plan** delete-column header text removed (red `×` only); grid `… 56px minmax(110px,1fr) 32px` + `column-gap: 8px` so Method and `×` never overlap; Group D widened to **440px**. CSS-only + one label markup change; no Submit Plan / data / calculation change.
+>
+> **Changelog v1.5.2 → v1.5.3 (2026-07-01):**
+> - **§11.5 rewritten — Expanded Row Layout v3 (stable fixed-width horizontal):** the four groups (A inventory / B forecast context / C sales recommendation / D action plan) use **fixed widths (A≈320 / B≈240 / C≈400 / D≈420)** and **never shrink, grow, or wrap**. **Removed the `@media (max-width:900px)` vertical single-column reflow and all `flex-wrap` on the expanded row** — small screens now keep the groups horizontal and scroll them via the **main table's horizontal scroll**. Expanded row is **content-height** (no absolute/transform/height-collapse) so it **never overlaps the next SKU row**. Recommendation Summary: title note removed (just "Recommendation Summary"), columns **Window / Qty / Route / Reason** shown in full (no ellipsis; `Stock Sufficient` complete). Execution Plan: columns **From / To / Qty / Method / X**, grid `minmax(90px,1fr) minmax(90px,1fr) 56px minmax(96px,1fr) 28px` (Method/X never overlap; X off the card edge). Top chart cards share `min-height` for visual alignment. CSS-only + label/markup tweaks in `inventory-replenishment.js` / `.css`. No Submit Plan / data-structure / calculation change.
+>
+> **Changelog v1.5.1 → v1.5.2 (2026-07-01):**
+> - **§11.5 rewritten — Expanded Row Layout v2:** four horizontal groups, each stacking vertically — **A** inventory state (Stock/LTS/Shipping/3rd Party), **B** planning context (Forecast/Event, narrowed), **C** recommendation insight (Sales Trend → **Recommendation Summary**), **D** decision action (Achievement Rate → **Execution Plan**). Recommendation Summary and Execution Plan no longer share one narrow stack. Hardened overflow: **no content may exceed its card/container** (Delete `×` fixed in-track), `min-width:0` on all grid/flex items + inputs/selects, Recommendation table `table-layout:fixed`, Execution grid `minmax(0,1fr)` tracks, Recommendation Summary title spacing tightened. Single overflow = main-table `.scroll-col`; no nested scrollbars; ≤900px collapses to one column. CSS-only + markup regrouping in `inventory-replenishment.js` / `.css`. No Submit Plan / data-structure / calculation change.
+>
+> **Changelog v1.5 → v1.5.1 (2026-07-01):**
+> - **§11.5 added — expanded-row layout rule (UI):** Recommendation Summary and Execution Plan are **stacked vertically** in one planning column (not side-by-side); both reuse the left detail-card styling. The expanded row must **not** use nested vertical or horizontal scrollbars — panels **wrap** (`flex-wrap`) and the **main table's horizontal scroll is the single overflow strategy**; the sticky/top-aligned two-row header is preserved. Narrow widths (≤ 900px) collapse to a single top-to-bottom column. CSS-only fix in `inventory-replenishment.css` + minor markup/class changes in `inventory-replenishment.js` (planning column wrapper; shared exec-plan grid class). No Submit Plan / data-structure change.
+>
+> **Changelog v1.4 → v1.5:**
+> - **§11 rewritten — second-layer right panel redefined as `Recommendation Summary` (top, read-only system suggestion) + `Execution Plan` (bottom, the submitted plan).** Replaces the legacy `AI Suggestion` / `Shipping Allocation` / `Shipping Plan Suggestions` trio. **`Shipping Allocation` is now a legacy name; `Shipping Plan Suggestions` removed.**
+>   - Recommendation Summary table: **Target Window / Suggested Qty / Suggested Route / Reason** over rows `0–18d / 19–30d / 31–45d / 46–90d / Total`. Suggested Route + Reason are **first-version placeholders** (`--` / `AI Pending`); no AI engine introduced.
+>   - Execution Plan route list: **Ship From / Destination / Suggested Qty / Shipping Method / Delete** + **`+ Add Route`**. First version allows manual entry; future `ship_from` / `destination` / `shipping_method` come from **`replenishment_route_rules`** (`CARRIER_AND_ROUTE_SPEC.md`) and may be permission-locked.
+>   - **API-ready (§11.4):** Execution Plan lives in centralized JS state (`window.KM.shippingAllocationDraft`); **Submit Plan reads ONLY the Execution Plan state**, never the Recommendation Summary or the DOM; `sessionStorage` is recovery-only; all writes go through `KM.DB` / Apps Script. Implemented in `inventory-replenishment.js` + `inventory-replenishment.css`.
+>
 > **Changelog v1.3 → v1.4:**
 > - **§5 Long Term Storage standardized (no country branch):** **Over 90+ = `inv_age_91_to_180_days`** (the `inv_age_0_to_90_days` bucket is **not** included — corrected after the initial v1.4 draft); **Over 180+ = `inv_age_181_to_270_days` + `inv_age_271_to_365_days` + `inv_age_365_plus_days` + `inv_age_366_to_455_days` + `inv_age_456_plus_days`** (previously omitted `inv_age_365_plus_days` — corrected). **`inv_age_61_to_90_days` removed** (superseded by `0–90` in DB/import only); missing buckets count as 0. Implemented in `inventory-replenishment.js` (`IRMap.longTermStorage`), `operation-system-db-api.js` (added `invAge0To90Days`, retained for storage), and `06_amazon_import_config.gs` (all age buckets optional; `inv-age-61-to-90-days` removed).
 >
@@ -47,6 +71,12 @@
 - Only the **selected marketplace's data** is displayed. **Never aggregate all marketplaces together.**
 - All stock, sales, forecast, long-term-storage, event, shipment, allocation, and recommendation logic must be computed **within the selected Company + Country + Marketplace**.
 - **SKU is already the unique key inside the table** (display grain = SKU). SKU and Status are already wired and out of scope for this mapping.
+
+### 2.1 Marketplace display label rule (UI display vs DB key)
+- The Marketplace **filter dropdown** and the **results-table marketplace column** display **`marketplace_display_name`** (e.g. `KM Walmart`), falling back to the canonical `marketplace` key when the display name is blank.
+- The **selected/stored value stays the canonical `marketplace` key** — the display name is never used as the DB key. Country/marketplace filtering and all downstream scope logic continue to match on the canonical key.
+- Options are **deduped by `value` + `label` pair** (not by key alone) so distinct display names for the same key remain visible/selectable.
+- Helper: `_replenMarketplaceLabel(key, company, country)` (runtime label resolution from the `marketplaces` registry). Add SKU / Import marketplace dropdowns already showed the display name. See `FC_SUMMARY_SPEC.md` §11 for the shared rule.
 
 ---
 
@@ -203,20 +233,118 @@ Preparation Date = Event Start Date − 30 days
 
 ---
 
-## 11. AI Suggestion columns (display)
+## 11. Second-layer right panel — Recommendation Summary + Execution Plan
 
-Old display replaced. New layout (incremental, non-overlapping windows):
+The expanded SKU row's **right panel** is split into two blocks (top → bottom). This **replaces the legacy trio `AI Suggestion` / `Shipping Allocation` / `Shipping Plan Suggestions`.**
 
-| UI column | Meaning |
-|-----------|---------|
-| **Need 0–18d** | net incremental qty needed to cover demand within the next 0–18 days |
-| **Need 19–30d** | net incremental qty needed to cover the 19–30 day window |
-| **Need 31–45d** | net incremental qty needed to cover the 31–45 day window |
-| **Need 46–90d** | net incremental qty needed to cover the 46–90 day window |
-| **Suggested Qty** | final remaining demand after Current Stock, On-the-Way, and Upcoming Event are processed |
+### 11.1 Terminology (authoritative)
 
-- Each Need bucket has a **minimum value of 0**.
-- Which engine fills the buckets depends on the SKU's `replenishment_model` (and fulfillment model): **Sales Driven** (§14) or **Forecast Driven** (§15).
+| New name | Meaning | Submitted? |
+|----------|---------|-----------|
+| **Recommendation Summary** | the **system suggestion** (per-window need + suggested route + reason). Read-only. Replaces **AI Suggestion**. | ❌ NOT submitted |
+| **Execution Plan** | the PM's **actual shipping plan** (one or more routes) that Submit Plan pushes to the Weekly Shipping Plan. Replaces **Shipping Allocation** (legacy name). | ✅ the only thing submitted |
+
+- **`Shipping Allocation` is a LEGACY name** — no longer used as a primary block title. The Working Draft that backs the Execution Plan may still be called the "Execution Plan Working Draft" (was "Shipping Allocation Working Draft").
+- **`Shipping Plan Suggestions` (Stage 2 placeholder) is removed.**
+- **Submit Plan uses the Execution Plan only — never the Recommendation Summary.**
+
+### 11.2 Recommendation Summary (top block, read-only)
+
+A 4-column table over the incremental, non-overlapping need windows:
+
+| Column | Meaning |
+|--------|---------|
+| **Target Window** | `0–18d`, `19–30d`, `31–45d`, `46–90d`, and a **Total** row |
+| **Suggested Qty** | net incremental qty for that window (`Need 0–18d` / `Need 19–30d` / `Need 31–45d` / `Need 46–90d`); **Total = Suggested Qty** (§14.3). Each floored at 0. |
+| **Suggested Route** | e.g. `CN → Amazon FBA / Sea`, `Overseas WH → Amazon FBA / Truck`, `CN → Overseas WH / Sea`. **First version: placeholder `--`** (future source: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md`). |
+| **Reason** | one of `Stock Sufficient` / `Normal Replenishment` / `Upcoming Event` / `Promotion` / `Safety Stock` / `Manual Override` / `AI Pending`. **First version: placeholder** (`AI Pending` when qty > 0, `Stock Sufficient` when 0) — no AI engine is introduced. |
+
+- Which engine fills the need windows depends on the SKU's `replenishment_model`: **Sales Driven** (§14) or **Forecast Driven** (§15). First version reuses the existing need-bucket data (engine not changed).
+- Recommendation Summary is a **pure display** of the system suggestion; editing happens only in the Execution Plan.
+- **Total row shows only `Total` + `Qty`** — its **Route and Reason cells are blank** (a total has no single route/reason).
+- **Cost is an estimated quote at this (planning) stage.** Any cost shown at Shipping Plan is a **coarse estimate** from `country + marketplace + shipping_method + weight_tier` (not final actual cost); it is refined at Shipment Draft and reconciled to actuals after the carrier invoice — see `CARRIER_AND_ROUTE_SPEC.md` §4B.
+
+### 11.3 Execution Plan (bottom block, submitted)
+
+A route list the PM builds. Each **route** row:
+
+| Column | Meaning |
+|--------|---------|
+| **Ship From** | origin (logical warehouse / location). **First version: manual input.** Future: defaulted from `replenishment_route_rules`, permission-lockable. |
+| **Destination** | destination (logical warehouse / location). First version: manual input; future: route-rule default. |
+| **Suggested Qty** | route quantity (integer; must be a full-carton multiple, §carton rule below). |
+| **Shipping Method** | `Air Freight` / `Sea Freight` / `Express` / `Rail Freight` (first version). Future: from `replenishment_route_rules`. |
+| **Delete** | remove the route. |
+
+- **`+ Add Route`** button adds a blank route.
+- **Submit Plan** reads the Execution Plan **state** (see §11.4) and emits one Weekly Shipping Plan line per route: `company / country / marketplace / ship_from / destination / shipping_method / sku / requested_qty` + the frozen Decision Snapshot (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`). A route with **qty > 0 AND a shipping_method** is submittable; blank-method routes are ignored.
+- **Carton gate (unchanged):** every submitted route qty must be an integer multiple of the SKU's `units_per_carton`; a missing UPC blocks Submit.
+- **Factory-stock hint** is display-only (no deduction; no allocation engine).
+
+### 11.4 API-ready state rule (Execution Plan)
+
+- The Execution Plan lives in a **centralized JS state** (`window.KM.shippingAllocationDraft` — the Execution Plan Working Draft), **not** the DOM. The DOM is a view.
+- **Submit Plan reads ONLY the Execution Plan state** — never the Recommendation Summary, never the raw DOM.
+- **`sessionStorage` is recovery-only** (working-draft restore); it is never the authoritative record and never writes `shipping_plans`.
+- All persistence goes through **`KM.DB` / Apps Script handlers** (`createShippingPlansBatch` = Decision Commit). No direct DOM-to-DB writes.
+- A SKU whose Execution Plan the PM never customized (no state row) is **not** submitted (the Recommendation Summary alone never commits).
+
+### 11.5 Expanded-row layout rule v3 — stable fixed-width horizontal (UI — authoritative)
+
+The expanded row is organized into **four fixed-width horizontal groups**, each **stacking its cards vertically**:
+
+| Group | Name | Cards (top → bottom) |
+|-------|------|----------------------|
+| **A** | Inventory state | Stock · Long Term Storage · Shipping Shipment · 3rd Party Stock |
+| **B** | Planning context | Forecast Breakdown · Upcoming Event |
+| **C** | Recommendation insight | Sales Trend · **Recommendation Summary** |
+| **D** | Decision action | Achievement Rate · **Execution Plan** |
+
+- Groups are arranged **horizontally A → B → C → D**; each group stacks its cards **vertically**.
+- **Recommendation Summary sits under Sales Trend (Group C); Execution Plan sits under Achievement Rate (Group D).** They must **NOT** share one narrow vertical stack.
+- **Group B (Forecast / Event) is narrow** — close to a single small-card width (≈190px), not a wide panel.
+- **Both Recommendation Summary and Execution Plan reuse the left detail-card styling** (`.replen-card`: white background, border, border-radius, padding, compact title/table).
+
+**Group widths (fixed, Layout v3):** Group A ≈ 320px · Group B ≈ 240px · Group C ≈ 400px (Sales Trend needs 7 days; Recommendation Summary needs full columns) · Group D ≈ 420px (Execution Plan has more columns). The four groups **never shrink, grow, or wrap**.
+
+**Overflow strategy (single, shared with the main table):**
+
+- **Fixed-width horizontal groups — NO responsive reflow.** The four groups always sit in **one horizontal row**. On small screens they do **NOT** reflow to a vertical single column; the whole expanded row simply extends past the viewport and is viewed via the **main table's horizontal scroll** (`.scroll-col`) — exactly like the first layer. (The former `@media (max-width: 900px)` single-column rule and any `flex-wrap` on the expanded row are **removed**.)
+- **No expanded content may overlap the following SKU rows.** The expanded-row container is sized by its **content height** (no `position: absolute`, no `transform` overlay, no child positioning that collapses the parent to height 0); its bottom always sits **above** the next SKU row.
+- **Main table:** horizontal scroll is the **only** overflow strategy; the two-row header (`Current Stock / On the Way / Avg. Sales/day / …`) stays **sticky / top-aligned** (`.table-header-bar` sticky) and its column widths are **not** affected by expanded-row content.
+- **No nested scrollbars** anywhere in the expanded row (no `overflow-y` / `max-height` / inner `overflow-x: auto`).
+- **No content exceeds its card / container boundary:** all grid/flex items + inputs/selects set `min-width: 0`; the Execution Plan Delete button is fixed within its track and never touches the card edge.
+
+**Group widths (v3 fixed):** A ≈ 320px · B ≈ 240px · **C ≈ 420px** · **D ≈ 440px** (C/D widened so Recommendation Summary Reason stays single-line and Execution Plan Method + Delete never overlap). Overflow past the viewport is handled by the main table's horizontal scroll — never wrap, never squeeze the lower cards.
+
+**Top-row visual alignment (Part 1):**
+
+- The **top-row cards align visually** across groups: **Stock · Long Term Storage** (Group A grid row 1), **Forecast Breakdown** (B), **Sales Trend** (C), **Achievement Rate** (D) share a `min-height` (≈150px) and do **not** flex-grow — so their bottom divider lines up. Second-row cards (Shipping / 3rd Party / Upcoming Event / Recommendation Summary / Execution Plan) flow naturally below. **Forecast Breakdown and Achievement Rate no longer stretch tall.** Charts keep their 100px canvas — **not squeezed**.
+
+**Recommendation Summary (Parts 2–3):**
+
+- Columns `Window` · `Qty` · `Route` · `Reason`. Title is just **"Recommendation Summary"**; `margin-bottom: 6px`.
+- **`Reason` must stay on a single line** (e.g. `Stock Sufficient` never wraps to `Stock` / `Sufficient`); **no ellipsis** — the table is `table-layout: auto` + `white-space: nowrap` and Group C is wide enough (≈420px).
+- **Header background = `rgb(255, 248, 240)`** (light warm), text `#1f2937` — **Recommendation Summary table ONLY** (not green, not other tables).
+
+**Execution Plan (Part 4):**
+
+- Columns `From` · `To` · `Qty` · `Method` · *(delete)* — the **delete column header shows no text** (the red `×` button alone).
+- Grid `minmax(90px,1fr) minmax(90px,1fr) 56px minmax(110px,1fr) 32px`, **`column-gap: 8px`**; the **Method select and the red `×` button never overlap** and `×` does not touch the card edge (32px track, 20px centered button).
+
+---
+
+## 11.6 Sticky Header — KM Sticky Header Framework
+
+The main 貨物庫存表 uses the reusable **KM Sticky Header Framework** (`assets/css/core/km-sticky-header.css` + `assets/js/core/sticky-header.js`; authoritative reference: [`UI_COMPONENT_GUIDELINES.md`](./UI_COMPONENT_GUIDELINES.md)). It replaces the previous hard-coded `top: 72px`.
+
+**Rules (must hold):**
+- The main table may use a **two-layer sticky header** (Header Row 1 = `Status / Company / Marketplace / Inventory / Sales / Replenishment / 工廠Stock / AI Action` group headers; Header Row 2 = `Current Stock / On the Way / 3rd Party Stock / Avg. Sales/day / …`).
+- **Header Row 1 pins at `top = var(--km-sticky-top-base)`; Header Row 2 pins at `top = base + var(--km-sticky-row-1-height)`** (accumulated offset). The two rows **must not** share the same `top`. *(Implementation note: the Inventory main table stacks both rows inside ONE sticky bar `.table-header-bar` pinned at the base, so the accumulated-offset overlap is structurally impossible; the framework's independent `.km-sticky-row-1/2/3` classes exist for future tables that pin rows separately.)*
+- **`--km-sticky-top-base` is NOT a magic number.** It equals the **live height of the sticky control panel** (`.replen-control-panel`), measured by `KM.stickyHeader.bindToolbar(#opsSection, .replen-control-panel)` on mount and on resize, and written as a CSS variable on `#opsSection`. This is what fixes the covered-header bug: the control panel is taller than 72px (and **wraps taller on small screens**), so a fixed offset let it cover Header Row 2. The fixed app header (`.top-header`) is **outside** the `.main-content` scroll container and does **not** count toward the base.
+- **Z-index order (centralized variables, high → low):** control panel (`--km-sticky-z-toolbar`) > top-left corner (`--km-sticky-z-corner`) > Header Row 1 (`--km-sticky-z-header-1`) > Row 2 (`--km-sticky-z-header-2`) > left sticky column (`--km-sticky-z-col`) > table body / **expanded row** (unset). The **expanded row never covers the sticky header**; the **left sticky SKU column never conflicts** with the top headers.
+- **No per-page magic `top` / `z-index` numbers.** All values come from the framework variables; row heights come from `--km-sticky-row-1-height` / `--km-sticky-row-2-height`.
+- **Future Request Order / Purchase Order / Shipment / Warehouse Stock tables must reuse the same framework** — never re-hard-code offsets.
 
 ---
 

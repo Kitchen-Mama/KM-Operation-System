@@ -11,6 +11,8 @@
 > - `marketplaces.marketplace` may contain a platform name such as `Amazon` / `Walmart` / `Shopify`.
 > - `marketplace_display_name` is user-facing display text.
 > - Some display names may include company-specific wording such as `KM Amazon`.
+> - **UI display label rule (FC Summary + Inventory Replenishment):** dropdowns / tables show `marketplace_display_name` (fallback `marketplace`); the **selected/stored value + write payload stay the canonical `marketplace` key** (display name is never the DB key). Options dedupe by value+label pair (not key alone) so `KM Walmart` etc. stay visible. See `FC_SUMMARY_SPEC.md` §11 / `INVENTORY_TABLE_MAPPING_SPEC.md` §2.1.
+> - **FC Summary filters (FC_SUMMARY_SPEC §13):** Company / Marketplace / Country / Category / Series / Event Type dropdowns always show their **full option set** (non-cascading — earlier faceted narrowing was removed). Selecting a value filters the table only, not the other dropdowns' options. Table filtering uses the **internal** marketplace key (label is display-only); a dimension with nothing checked shows no rows. SKU stays a free-text row filter.
 > - `marketplace_alias` is an **import-normalization / source-name matching** helper. It **defaults to the same value as `marketplace`** (MVP: `marketplace_alias == marketplace`). On **add**, it is auto-filled from `marketplace` when blank; on **edit**, an existing non-blank alias is **never auto-overwritten** (only auto-filled when empty). Future import normalization may match a source marketplace value against `marketplace_alias` → `marketplace_display_name` → `marketplace`.
 > - This document does **not** propose renaming or restructuring marketplace rows.
 
@@ -36,7 +38,7 @@ It is a **relationship map**, not a schema definition and not an implementation 
 | **Marketplace / Pricing Layer** | `marketplaces`, `marketplace_skus`, `pricing_list`, `pricing_change_log` |
 | **Forecast Layer** | `fc_regular_forecast`, `fc_special_events`, `fc_target_rules` |
 | **Inventory Layer** | `factory_stock`, `factory_stock_movements`, `warehouses`, `overseas_inventory_snapshot`, `overseas_inventory_movements`, *future* marketplace inventory snapshots (e.g. `amazon_inventory_snapshot`) |
-| **Factory / Procurement Layer** | `purchase_orders`, `purchase_order_lines`, `production_schedule` |
+| **Factory / Procurement Layer** | `request_orders`, `request_order_lines`, `purchase_orders`, `purchase_order_lines`, `production_schedule` |
 | **Shipping / Logistics Layer** | `shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_events`, `shipment_routes` |
 | **Carrier / Route Layer** | `carriers`, `carrier_rate_cards`, `shipping_route_rules`, `carrier_lead_times` |
 | **Document / Export Layer** | `document_templates`, `generated_documents` |
@@ -69,6 +71,8 @@ It is a **relationship map**, not a schema definition and not an implementation 
 | `sku_details` ← `product_features` (scope: sku / series / category) | 1 → many (logical, scoped) |
 
 > `sku_details` is referenced by `marketplace_skus`, `factory_stock`, `fc_regular_forecast`, etc. via `sku`.
+
+> **SKU Add / Edit dialog (planned — spec [`SKU_DETAILS_ADD_EDIT_SPEC.md`](./SKU_DETAILS_ADD_EDIT_SPEC.md)):** the v1 Add/Edit field set follows the **current `sku_details` template** above. **Add** creates a master row (and MAY seed a Factory Stock baseline row — future); **Edit** updates `sku_details` only. **Editing the master must NOT mutate historical Decision / Execution / PO snapshots** (`shipping_plan_lines` / `shipment_lines` / `purchase_order_lines` froze their values at commit — Immutable Flow). Dropdown options come from front-end enums now → future `option_lists` / `system_settings` (not yet implemented). Lifecycle enum needs reconciliation with `00_config.gs` `VALID_LIFECYCLES_` before build.
 
 ---
 
@@ -111,16 +115,24 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 |--------------|-------------|
 | `fc_regular_forecast` → `marketplace_skus` | `company + country + marketplace + sku` |
 | `fc_special_events` → `marketplace_skus` | `marketplace_id` and/or `company + country + marketplace + sku` |
+| `fc_special_events` → `campaigns` / `campaign_sku_lines` | `campaign_id` / `campaign_sku_line_id` (link only — see Campaign sync rule below) |
 | `fc_target_rules` → forecast | by **scope**: category / series / sku |
 
 - **Target rules adjust Regular FC only** (`Target Adjusted Forecast = Regular Forecast × Target Rule %`, default 100%).
 - **Special Event FC is independent and always 100%** (no target adjustment); event demand is pulled forward one month (see calculation rules doc §8).
+- **Write path (FC Summary Phase 1 — see [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md)):** `fc_special_events` and `fc_target_rules` now have live read + write. Apps Script `14_fc_write_handlers.gs`: `upsertFcSpecialEvent` / `deleteFcSpecialEvent`, `upsertFcTargetRule` / `deleteFcTargetRule` (auto-create tab + header, update-by-id-else-create, audit meta). API adapter: `upsertFcSpecialEvent` / `deleteFcSpecialEvent` / `upsertFcTargetRule` / `deleteFcTargetRule`.
+  - `fc_special_events` **live handler** columns: `event_id` (PK), `company`, `country`, `marketplace`, `scope_type`, `scope_id`, `sku`, `series`, `category`, `event_name`, `event_period`, `event_month`, `year`, `fc_qty`, `note`, `created_by/at`, `updated_by/at`.
+  - `fc_special_events` **target schema** (FC_SUMMARY_SPEC §3.1 — reconciliation pending): PK renamed `event_fc_id`; add `campaign_id`, `campaign_sku_line_id`, `marketplace_id`, `fc_share` (runtime), `source` (enum `manual_fc_summary` / `campaign_sync` / `import` / `growth_actual_sales`), `status` (enum `active` / `inactive` / `archived`). `company` derived from marketplace / marketplace_skus; `event` = Event Flag enum (**Normal** / Spring Deal / Prime Day / Fall Prime / BFCM / Mother's Day; Normal never produces a row). The FC Summary Special Event modal writes via `upsertFcSpecialEvent` (source `manual_fc_summary`, blank campaign link); **`campaign_id` / `campaign_sku_line_id` / `source` / `status` / `marketplace_id` / `fc_share` are not persisted yet** (handler header not aligned — pending).
+  - **Campaign ↔ fc_special_events sync (FC_SUMMARY_SPEC §10, §12):** Campaign (`campaigns` + `campaign_sku_lines`) = promotion source of truth; `fc_special_events` = supply-chain forecast source of truth; **linked** by `campaign_id` / `campaign_sku_line_id`, **not** blind two-way synced.
+  - **FC Summary Special Event Builder v2 (FC_SUMMARY_SPEC §9, §12):** Single-SKU (≤8 rows: SKU / regular_price / deal_price / fc_qty) or Category-Series group cards (group key = category + series + regular_price; same series different price ⇒ separate cards; All-Category/All-Series → Discount %; optional Forecast Assist pre-fill). Save target = `campaigns` → `campaign_sku_lines` → `fc_special_events` (`source='campaign_sync'`, linked). **Writer status PENDING:** `upsertCampaign` + `upsertCampaignSkuLine` do **not** exist (only `upsertFcSpecialEvent`); live Save writes **nothing** and reports pending (fc_special_events is NOT written alone → would orphan). `campaign_sku_lines` regular/deal price sourced from `marketplace_skus.regular_price` + user deal price.
+  - `fc_target_rules` columns: `target_rule_id` (PK), `company`, `country`, `marketplace`, `scope_type`, `scope_id`, `year`, `category`, `series`, `sku`, `target_percentage`, `jan_pct…dec_pct`, `note`, `created_by/at`, `updated_by/at`.
+  - `fc_regular_forecast` single-row edit (Edit Base FC / + Add SKU) remains **Phase 2 (not wired)**; only batch **Import** writes it today.
 
 ---
 
 ## 6. Inventory Layer
 
-**Tables:** `factory_stock`, `factory_stock_movements`, `warehouses`, `overseas_inventory_snapshot`, `overseas_inventory_movements`, `mixed_carton_rules`, *future* `amazon_inventory_snapshot` (and similar).
+**Tables:** `factory_stock`, `factory_stock_movements`, `factory_stock_allocation_plans`, `warehouses`, `overseas_inventory_snapshot`, `overseas_inventory_movements`, `mixed_carton_rules`, *future* `amazon_inventory_snapshot` (and similar), *planned* `overseas_inbound` / `overseas_inbound_lines` (Overseas Inbound planning input — see below).
 
 > **Current `overseas_inventory_snapshot` columns (warehouse-side inventory):** `overseas_inventory_id`, `snapshot_date`, `warehouse_id`, `sku`, `site_sku`, `physical_stock`, `available_stock`, `reserved_stock`, `damaged_stock`, `on_the_way_qty`, `on_the_way_eta`, `on_the_way_bucket`, `last_movement_at`, `updated_by`, `created_at`, `updated_at`, `note`.
 > - `available_stock = physical_stock − reserved_stock − damaged_stock`.
@@ -131,12 +143,37 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 >
 > **`mixed_carton_rules` (newly added table):** registered for a **future mixed-carton extension**. **Not implemented** — no mapping, write path, or relationship is defined yet.
 
+> **`factory_stock_allocation_plans` (Factory Stock Allocation — weekly planning snapshot):** stores *how much factory stock a planning cycle intends to make available per SKU, allocated by FC Share*. It is a **planning snapshot ONLY** — it does **NOT move inventory, reserve inventory, or change ownership**; the physical `factory_stock` balance is untouched. Consumed by Inventory Replenishment to display CN / TW available quantity. Finalized flow in [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) §5.2–§5.4.
+>
+> **Columns + purposes:**
+> - `allocation_plan_id` — PK.
+> - `status` — `draft` / `confirmed` / `archived` (future lifecycle).
+> - `plan_month` — monthly planning cycle.
+> - `plan_week` — weekly allocation snapshot.
+> - `warehouse_id` — target warehouse context.
+> - `company` · `country` · `marketplace` · `sku` — allocation scope grain.
+> - `forecast_qty` — forecast quantity for the cycle.
+> - `forecast_share` — **FC percentage** used during allocation (FC Share).
+> - `allocated_factory_stock_qty` — **final available factory stock** for this planning cycle (the allocation result).
+> - `allocation_version` — allows **recalculation without losing historical plans** (a new version per recalculation).
+> - `source_factory_warehouse_id` — the factory pool the stock is drawn from.
+> - `calculation_method` — how the allocation was derived (e.g. FC-Share method tag).
+> - `created_at` · `updated_at` · `note` — audit + note.
+>
+> **Allocation rule:** existing inventory = **shared pool**; new POs may carry intended-company info but **factory allocation is recalculated weekly by FC Share** and is **never permanently bound to a company**.
+>
+> **Reserved Stock lifecycle (inventory effects live only at the Execution Layer):** **Submit Plan → no inventory movement**; **Shipment Draft created → `reserved_stock += shipment qty`** (`current_stock` unchanged); **Shipment shipped → `current_stock −= shipment qty` and `reserved_stock −= shipment qty`**. Planning steps (allocation snapshot / Submit Plan / Weekly Shipping Plan / Approval) move nothing.
+
+> **`overseas_inbound` / `overseas_inbound_lines` (planned — Overseas Inbound planning input):** an **Overseas Stock planning input** (spec: [`OVERSEAS_INBOUND_SPEC.md`](./OVERSEAS_INBOUND_SPEC.md)), **not** a Shipment Draft. Header status `draft` / `submitted_to_shipping_plan` / `cancelled`; **Submit creates a Weekly Shipping Plan + `shipping_plan_lines` (Decision Layer)** — it does **NOT** create a Shipment Draft directly and does **NOT** write `overseas_inventory_snapshot.available_stock` or deduct `factory_stock`. Overseas Stock is updated **only after the resulting shipment is `received`** (via `overseas_inventory_movements`). Flow: `Overseas Inbound → Weekly Shipping Plan (approval) → Shipment Draft → Ship → received → Overseas Stock`. Header/line columns in `OVERSEAS_INBOUND_SPEC.md` §4–§5. **Planned design — not implemented (no table/handler/UI yet).**
+
 > **Amazon snapshot + import-log tables:** the Amazon snapshot tables (`amazon_inventory_snapshot`, `amazon_inventory_health_snapshot`, `amazon_weekly_sales_snapshot`, `amazon_daily_sales_snapshot`) and the import-governance tables (`import_sync_runs`, `import_sync_issues`) are **import-only**, populated by the config-driven importer. Their **field-level headers, governance, freshness/fallback, and capping flags** are specified in [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md) (this relationship map intentionally does not duplicate field-level schema).
 
 | Relationship | Key |
 |--------------|-----|
 | `factory_stock` → `sku_details` | `sku` |
 | `factory_stock_movements` → `factory_stock` | logical: `sku + factory_name` |
+| `factory_stock_allocation_plans` → `factory_stock` | logical: `sku` (+ `source_factory_warehouse_id`) — **read/snapshot only, no write-back** |
+| `factory_stock_allocation_plans` → `fc_regular_forecast` / target rules | `company + country + marketplace + sku` (FC Share source) |
 | `overseas_inventory_snapshot` → `warehouses` | `warehouse_id` |
 | `overseas_inventory_movements` → `warehouses` | `warehouse_id` (+ `sku`) |
 
@@ -156,16 +193,141 @@ Examples:
 
 ## 7. Factory / Procurement Layer
 
-**Tables:** `purchase_orders`, `purchase_order_lines`, `production_schedule`
+**Tables:** `request_orders`, `request_order_lines`, `purchase_orders`, `purchase_order_lines`, `production_schedule`
+
+> **Procurement Layer (Phase 1) — authoritative definition in [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md); planned design, tables auto-created by `13_procurement_handlers.gs` with the documented header row (no manual migration).**
+>
+> **Immutable Flow (must hold):** `Shipment / Inventory / Factory Stock` → **`request_orders`** (Procurement Planning Draft) → **`purchase_orders`** (Procurement Commitment). Downstream may **copy** upstream data but **must NOT write back** upstream: `purchase_orders` never writes `request_orders`; `request_orders` never writes `shipments` / `inventory` / `factory_stock`.
+
+### 7.1 `request_orders` (Procurement Planning Draft)
+
+> **Columns:** `request_order_id` (PK), `request_order_no`, `request_order_version`, `parent_request_order_id`, `company`, `supplier_id`, `supplier_name`, `factory_id`, `warehouse_id`, `status`, `total_sku`, `total_qty`, `total_cartons`, `estimated_amount`, `currency`, `source`, `source_ref_type`, `source_ref_id`, `created_by`, `created_at`, `submitted_by`, `submitted_at`, `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `rejected_reason`, `cancelled_by`, `cancelled_at`, `completed_by`, `completed_at`, `note`, `updated_by`, `updated_at`.
+> - **`status`** enum: `draft / pending_approval / approved / converted_to_po / cancelled`.
+> - **`source`** enum: `manual / inventory_shortage / factory_stock_shortage / shipment_allocation_shortage / approved_shipment_demand / ai_recommendation` (Phase 1 writes `manual`; the others are reserved placeholders — no auto engine).
+> - **`source_ref_type` / `source_ref_id`** — optional upstream reference (e.g. `shipment` / `shipping_plan` / `inventory_snapshot`) copied for traceability; **never written back**.
+> - **`request_order_version`** — bumped +1 on resubmit after a reject (MVP reuses the same `request_order_id` row; `parent_request_order_id` = self).
+> - **Actor fields** are placeholder identities (MVP; future Role & Permission), must never block Save / Submit / Cancel.
+> - **`completed_at`** — non-blank ⇒ hidden from the default Approved view (Done); the row is **never deleted**.
+
+### 7.2 `request_order_lines`
+
+> **Columns:** `request_order_line_id` (PK), `request_order_id` (FK), `sku`, `product_name`, `series`, **`company`**, **`request_bucket`**, **`request_month`**, **`inspection_date`**, **`expected_ready_date`**, **`expected_ship_date`**, `requested_qty`, `approved_qty`, **`final_order_qty`**, `units_per_carton`, `carton_qty`, **`forecast_qty`**, **`current_stock`**, **`on_the_way_qty`**, **`factory_allocated_qty`**, **`shortage_qty`**, **`reallocation_qty`**, `supplier_id`, `supplier_name`, `supplier_sku`, `unit_cost`, `estimated_amount`, `currency`, `need_reason`, **`calculation_method`**, **`line_status`**, **`linked_purchase_order_line_id`**, `related_entity_type`, `related_entity_id`, `note`, `created_at`, `updated_at`.
+> - **`company`** — the site owner (KM / ResUS / ResTW …). **One line = one company;** the Draft's KM/ResUS/ResTW split is the set of per-company lines for a `(sku, bucket)`. **No separate company-split table** (a structured `request_order_line_sources` company split is spec-only, not implemented).
+> - **`inspection_date` / `expected_ready_date` / `expected_ship_date`** — decision-layer schedule, written to all lines of a tier at Save.
+> - **`request_bucket`** (`T1`/`T2`/`T3`) + **`request_month`** — demand bucket **preserved on every line**; Request Layer keeps T1/T2/T3 separated, PO Layer may merge later via `request_order_po_links`.
+> - **`line_status`** = draft/submitted/approved/**cancelled** — a Draft tier can be soft-cancelled (`cancelRequestOrderTier`); when a request has no active line left its header goes `cancelled`. Totals exclude cancelled lines.
+> - **PRIMARY columns:** `company`, `request_bucket`, `request_month`, `series`, `requested_qty`, `approved_qty`, `shortage_qty`, `carton_qty`, `units_per_carton`, `inspection_date`, `expected_ready_date`, `expected_ship_date`, `calculation_method`, `line_status` (+ reserved `km_qty`/`resus_qty`/`restw_qty`/`recommended_qty`). **DEPRECATED / not source of truth** (kept for back-compat, not deleted): `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `reallocation_qty`, `source_company_count`, `source_site_count`, `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`. Company/site/month allocation detail is owned by **`request_order_line_sources`**.
+> - **`requested_qty`** (from draft) → **`approved_qty`** (editable in Draft) → **`final_order_qty`** (locked = approved at Submit/Approve; cleared on Reject). **`carton_qty`** recomputed from `units_per_carton`.
+> - Snapshots from the allocation draft: **`forecast_qty`** ← `fc_qty_snapshot`, **`current_stock`** ← `site_stock_snapshot`. **`on_the_way_qty`** / **`factory_allocated_qty`** / **`shortage_qty`** / **`reallocation_qty`** blank in Phase 1 (no shipment join / allocation engine / formula yet).
+> - **`calculation_method`** = source label (`manual_order_allocation` …); **`line_status`** = draft/submitted/approved/cancelled; **`linked_purchase_order_line_id`** blank until PO line created (traceability → `request_order_po_links`, future). All added columns are **additive** (missing-header safe).
+> - **`unit_cost`** preferred source = **`supplier_price_list` / `pricing_list`** (future); manual input allowed with `--` fallback (future audit).
+> - **`estimated_amount`** = `approved_qty × unit_cost` (line); header `estimated_amount` = Σ lines.
+> - **`related_entity_type` / `related_entity_id`** — optional link to the upstream demand (shipment / inventory), copy-only.
+
+### 7.3 `purchase_orders` (Procurement Commitment)
+
+> **Columns:** `purchase_order_id` (PK), `purchase_order_no`, `po_version`, `parent_purchase_order_id`, `request_order_id` (FK, copied at conversion), `company`, `supplier_id`, `supplier_name`, `factory_id`, `warehouse_id` (copied from the source Request Order — for the PO List Factory column), `status`, `currency`, `total_sku`, `total_qty`, `total_amount`, `expected_ready_date`, `confirmed_ready_date`, `issued_by`, `issued_at`, `confirmed_by`, `confirmed_at`, `cancelled_by`, `cancelled_at`, `completed_by`, `completed_at`, `closure_reason`, `closed_by`, `closed_at`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`.
+> - **`status`** target enum: `draft / issued / in_production / partial_completed / completed / partial_shipped / shipped / closure / cancelled` (see `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §6; the Phase-1 runtime handler implements a subset and reconciles toward this).
+> - **`closure`** (DB value; UI "Closure") — two sources: **auto** when all lines `remaining_qty = 0`, or **manual** with a required `closure_reason` (+ `closed_by` / `closed_at`).
+> - **`factory_id` / `warehouse_id`** copied from the Request Order at conversion (Factory display; `warehouse_id → warehouses.warehouse_name`).
+> - **`request_order_id`** is a **copy** of the source request order (traceability). PO **never writes back** to `request_orders` — conversion only sets `request_orders.status = converted_to_po` on the request side, once, at creation.
+
+### 7.4 `purchase_order_lines`
+
+> **Columns:** `purchase_order_line_id` (PK), `purchase_order_id` (FK), `request_order_line_id` (copied), `sku`, `product_name`, `series`, `ordered_qty`, `completed_qty`, `shipped_qty`, `remaining_qty`, `units_per_carton`, `carton_qty`, `supplier_id`, `supplier_sku`, `unit_cost`, `line_amount`, `currency`, `related_shipment_id`, `note`, `created_at`, `updated_at`.
+> - **`completed_qty`** = production-completed quantity (drives `partial_completed` / `completed`; `available_to_ship = completed_qty − shipped_qty`).
+> - **`remaining_qty`** = `ordered_qty − shipped_qty` (Runtime helper; `shipped_qty` future-updated when Shipment consumes a PO line via `shipment_lines.purchase_order_line_id`).
+> - **PO List (line-level view)** joins `sku_details` (Category / Series) + `purchase_orders` (Supplier / Factory / Status / Updated) — see `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §7.3.
+> - **`related_shipment_id`** — set when a Ready-to-Ship PO line is linked to a Shipment Draft (future; copy-only).
+
+### 7.5 Second-layer draft tables (planning scratchpads — NO stock movement / reservation)
+
+> Two **draft layers** persist second-layer user input / AI suggestions so a reload does not lose work. **Neither reserves nor deducts stock.** See `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6 / §3.7.
+>
+> - **`shipping_allocation_drafts` / `shipping_allocation_draft_lines`** *(spec only — not implemented)* — Inventory Replenishment second-layer Shipping Allocation / Execution Plan draft. Only **Submit Plan** promotes it to `shipping_plans` / `shipping_plan_lines` (Decision Layer). Header: `allocation_draft_id`, `source_page`, `company`, `country`, `marketplace`, `sku`, `plan_month`, `target_window`, `source_type`, `status`, audit. Lines: `allocation_line_id`, `allocation_draft_id`, `route_no`, `ship_from`, `destination`, `qty`, `allocation_method`, `source_factory_warehouse_id`, `available_stock_snapshot`, `note`, `created_at`, `updated_at`.
+> - **`request_order_allocation_drafts` / `request_order_allocation_draft_lines`** *(implemented — this task)* — Request Order second-layer Order Allocation (T1/T2/T3) editable draft; source for **Send Request → `request_orders` / `request_order_lines`**. Header: `request_allocation_draft_id`, `planning_cycle`, `company`, `country`, `marketplace`, `sku`, `category`, `series`, `status`, `source_type`, audit, `submitted_by`, `submitted_at`, `note`. Lines: `request_allocation_line_id`, `request_allocation_draft_id`, `request_month`, `request_bucket` (`T1`/`T2`/`T3`), `recommended_qty`, `order_qty` (editable), `carton_qty`, `units_per_carton`, `factory_stock_snapshot`, `site_stock_snapshot`, `third_party_stock_snapshot`, `fc_qty_snapshot`, `target_pct_snapshot`, `allocation_method`, `note`, `created_at`, `updated_at`.
+> - **Status enum (both):** `draft` / `site_confirmed` / `submitted` / `cancelled`. **Buckets:** T1 = next month, T2 = next two months, T3 = next three months (independently pushable). **No calculation formula** in this task.
+> - **Immutable Flow preserved:** these drafts are upstream scratchpads; Send Request **copies** eligible lines into `request_orders` (never writes back to inventory / factory / shipments).
 
 | Relationship | Key | Cardinality |
 |--------------|-----|-------------|
+| `shipping_allocation_drafts` → `shipping_allocation_draft_lines` | `allocation_draft_id` | 1 → many |
+| `request_order_allocation_drafts` → `request_order_allocation_draft_lines` | `request_allocation_draft_id` | 1 → many |
+| `request_order_allocation_draft_lines` → `request_order_lines` | copied at Send Request (order_qty → requested_qty) | many → many (grouped by series + supplier) |
+| `request_orders` → `request_order_lines` | `request_order_id` | 1 → many |
+| `request_orders` → `purchase_orders` | `request_order_id` (copied at conversion) | 1 → many (typically 1) |
+| `request_order_lines` → `purchase_order_lines` | `request_order_line_id` (copied) | 1 → 1 |
 | `purchase_orders` → `purchase_order_lines` | `purchase_order_id` | 1 → many |
 | `purchase_order_lines` → `production_schedule` | `purchase_order_line_id` (if needed) | 1 → many |
 | `purchase_order_lines` → `shipment_lines` | `purchase_order_line_id` | linkable |
 
 - **ResTW is the procurement hub** (KM / ResUS route demand through ResTW).
 - Factories **CN_YOUXIN** and **TW_SHENGYI** are **production resources, not company entities**.
+- **Supplier / price source:** Phase 1 reads unit cost from the existing supplier price list (`supplier_price_list` / `pricing_list`) when available; missing prices fall back to `--` and allow manual entry (future audit). Not refactored in Phase 1.
+
+### 7.6 Finalized lifecycle relationships (Procurement + Shipment)
+
+> Finalized end-to-end chains (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §5.5 / §5.6). **`request_order_line_sources`, `request_order_po_links`, and the full `shipment_events` lifecycle log are documented, not yet implemented** — no schema/code change is made by this documentation sync. Existing table names unchanged.
+
+**Procurement**
+
+```
+request_order_allocation_drafts
+    │
+    ├── request_order_allocation_draft_lines
+    │
+    ▼  Send Request
+request_orders
+    │
+    ├── request_order_lines
+    │
+    ├── request_order_line_sources        (every recommendation source per line — never deleted)
+    │
+    ▼  Approve
+purchase_orders
+    │
+    ├── purchase_order_lines
+    │
+    ▼
+request_order_po_links                     (Request ↔ PO join: 1→N, N→1, supplier/factory split)
+```
+
+- **`request_order_allocation_drafts` → `request_order_allocation_draft_lines`** — `request_allocation_draft_id`, 1 → many.
+- **`request_orders` → `request_order_lines`** — `request_order_id`, 1 → many.
+- **`request_order_lines` → `request_order_line_sources`** — `request_order_line_id`, 1 → many; **append-only, never deleted**. **Source of truth for company / site / month allocation.** Columns: `line_source_id` (PK), `request_order_line_id`, `request_order_id`, `sku`, `company`, `country`, `marketplace`, **`tier_type`** (T1/T2/T3), **`source_month`** (YYYY-MM), `requested_qty`, `approved_qty`, `shortage_qty`, `source_type` (FC / Inventory / Lead Time / Target Rules / Manual …), `note`. **Read path implemented** (`validTabs` + adapter `getRequestOrderLineSources()` + normalizer exposing `tierType`/`sourceMonth`); **write path pending** → the Company Allocation popup falls back to `request_order_lines` grouped by company ("Site-level source pending").
+- **`purchase_order_lines` company snapshot** *(spec only — future)* — should add `km_qty` / `resus_qty` / `restw_qty` captured at PO creation so the commitment layer never recomputes the Request source.
+- **`request_orders` ↔ `purchase_orders` via `request_order_po_links`** *(new — spec only)* — many-to-many (`request_order_id` × `purchase_order_id`); supports **one Request → many PO**, **many Requests → one PO**, **supplier split**, **factory split**. Legacy 1→1 traceability (copied `purchase_orders.request_order_id` + one-time `request_orders.status = converted_to_po`) remains valid.
+- **Purchase Order Export Template** — always from `purchase_orders` / `purchase_order_lines` (never a Draft).
+
+**Shipment**
+
+```
+shipping_allocation_drafts
+    │
+    ├── shipping_allocation_draft_lines
+    │
+    ▼  Submit Plan
+shipping_plans
+    │
+    ├── shipping_plan_lines
+    │
+    ▼  Approve
+shipments
+    │
+    ├── shipment_lines
+    │
+    ▼
+shipment_events                            (complete lifecycle log; future tracking integration)
+```
+
+- **`shipping_allocation_drafts` → `shipping_allocation_draft_lines`** — `allocation_draft_id`, 1 → many.
+- **`shipping_plans` → `shipping_plan_lines`** — `shipping_plan_id`, 1 → many (created on Submit Plan).
+- **`shipments` → `shipment_lines`** — `shipment_id`, 1 → many (created after approval; execution snapshot copy).
+- **`shipments` → `shipment_events`** — `shipment_id`, 1 → many (Created / Approved / Booked / Loaded / Departed / Arrived / Custom Clearance / Delivered / Received / Cancelled).
+- **Shipping Export Template** — always from `shipments` / `shipment_lines` (never a Draft).
+- **Lead Time source (下單系統 / Request Order analysis page):** `supplier_price_list.lead_time_days` (active supplier row per SKU) — v1 placeholder until a normalized getter + supplier-selection rule exist (see `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §12.6).
+- **Future `suppliers` master table (spec only — not implemented):** the vendor **master layer** — `supplier_id` (PK) · `supplier_name` · `supplier_type` · `contact_name` · `contact_email` · `contact_phone` · `country` · `city` · `payment_term_id` · `is_active` · `created_at` · `updated_at` · `note`. `supplier_price_list` (with `supplier_warehouse_id` / `supplier_name_snapshot`) remains the **price-detail layer** and joins to the master via `supplier_id`. See spec §12.6. **`supplier_price_list` is normalized in the API adapter** (`getSupplierPriceList()`; `[]` when the tab is absent) and supplies the 下單系統 **Lead Time** column (`lead_time_days`, active row, latest `effective_from`).
+- **Future `request_order_site_confirmations` table (spec only — not implemented):** records per-site confirmation before Series aggregation (Site Confirmation flow, spec §12.10 + §3.5) — `confirmation_id` (PK) · `planning_cycle` · `planning_month` (`YYYY-MM`, **one record per month**) · `company` · `country` · `marketplace` · `series` · `status` (enum: `pending` / `confirmed` / `cancelled`) · `confirmed_by` · `confirmed_at` · `note` · `created_at` · `updated_at`. V1 Confirm Site is a **frontend-only modal marker** (no DB handler / getter / writer yet). **Send Request is gated** on all required site/month/SKU being `confirmed`. Confirm Site ≠ Send Request.
 
 ---
 
@@ -186,7 +348,7 @@ Examples:
 >   - **`batch_status`** — batch-level summary across the `submit_batch_id` group (`open` / `partial_approved` / `approved` / `rejected` / `cancelled` / `mixed`); **derived helper only**, may be rolled up from member plans.
 >   - **`status` vs `batch_status`:** `status` = the **individual** Shipping Plan approval status (PRIMARY: `draft / pending_approval / approved / rejected / cancelled`); `batch_status` = **batch-level summary** for all plans sharing the same `submit_batch_id` (helper, never the primary approval status).
 > - **`shipping_plan_lines`:** `shipping_plan_line_id`, `shipping_plan_id` (FK), `sku`, `requested_qty`, `approved_qty`, `carton_qty`, `units_per_carton`, `source_page`, `source_reason`, `inventory_snapshot_date`, `note`, `created_at`, `updated_at`, **+ planning snapshots (FINALIZED on the line, not on the header):** `snapshot_current_stock`, `snapshot_avg_sales_per_day`, `snapshot_days_of_supply`, `snapshot_suggested_qty`, `snapshot_target_days`, `snapshot_fc_context`, `snapshot_event_context`, **+ Avg-Sales source/quality snapshot:** `snapshot_avg_sales_source`, `snapshot_normal_days_count`, `snapshot_excluded_event_days_count`, `snapshot_avg_sales_warning`, **+ logistics Decision Snapshot:** `carton_cbm`, `cbm`, `gross_weight`, `net_weight`.
->   - **`carton_cbm` / `cbm` / `gross_weight` / `net_weight` are part of the Decision Snapshot** (per-line), computed from `sku_details` carton dims/weights at Submit Plan and recomputed on every Draft Save (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §5.4). `carton_cbm` = single-carton CBM (`L×W×H/1,000,000`, cm); `cbm = carton_qty × carton_cbm`. Header CBM/weight totals are **Runtime** (Σ lines), not stored on `shipping_plans`. Copied into `shipment_lines` (`carton_cbm` / `cbm` / `gross_weight` / `net_weight`) at Execution Commit (`SHIPMENT_CENTER_SPEC.md` §15.3).
+>   - **`carton_cbm` / `cbm` / `gross_weight` / `net_weight` are part of the Decision Snapshot** (per-line), computed from `sku_details` carton dims/weights at Submit Plan and recomputed on every Draft Save (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §5.4). `carton_cbm` = single-carton CBM (`L×W×H/1,000,000`, cm); `cbm = carton_qty × carton_cbm`. Header CBM/weight totals are **Runtime** (Σ lines), not stored on `shipping_plans`. Copied into `shipment_lines` (`carton_cbm` / `gross_weight` / `net_weight` — **`shipment_lines` stores only `carton_cbm`, no line `cbm`**) at Execution Commit (`SHIPMENT_CENTER_SPEC.md` §15.3).
 >   - `snapshot_avg_sales_source` — records **which Avg Sales source** the Decision adopted (fixed enum: `weekly_7d` / `normalized_30d` / `manual_override` / `forecast_override` / `ai_adjusted`; runtime uses `weekly_7d` / `normalized_30d`).
 >   - `snapshot_avg_sales_per_day` — records the **final Avg Sales/day the Runtime Engine adopted** at Decision Commit.
 >   - The Normalized Avg Sales **Runtime Calculation itself is NOT persisted** — only this frozen snapshot is (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22.6). These are **frozen decision context, not a live calculation**; `snapshot_avg_sales_source` and `snapshot_avg_sales_warning` are independent fields.
@@ -195,9 +357,13 @@ Examples:
 > - **`company` is NOT duplicated onto line tables:** neither `shipping_plan_lines` nor `shipment_lines` carry `company` — lines inherit it from the header via `shipping_plan_id` / `shipment_id`.
 >
 > **`shipments` / `shipment_lines` columns (Execution Layer; authoritative definition in [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) §2; created at Execution Commit):**
-> - **`shipments`:** `shipment_id`, `shipment_no`, `shipping_plan_id`, `reference_id`, `warehouse_id`, `warehouse_code`, `company`, `country`, `marketplace`, `ship_from`, `destination`, `carrier_id`, `rate_card_id`, `shipping_method`, `status`, `sales_order_id`, `booking_no`, `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `actual_departure_date`, `actual_arrival_date`, `customs_clearance_date`, `delivered_date`, `total_qty`, `total_cartons`, `total_cbm`, `total_gross_weight`, `total_net_weight`, `freight_cost_actual`, `duty_actual`, `currency`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`.
+> - **`shipments`:** `shipment_id`, `shipment_no`, **`external_shipment_id`**, `shipping_plan_id`, `reference_id`, `warehouse_id`, `warehouse_code`, `company`, `country`, `marketplace`, `ship_from`, `destination`, `carrier_id`, `rate_card_id`, `shipping_method`, `status`, `sales_order_id`, `booking_no`, `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `actual_departure_date`, `actual_arrival_date`, `customs_clearance_date`, `delivered_date`, `total_qty`, `total_cartons`, `total_cbm`, `total_gross_weight`, `total_net_weight`, `freight_cost_actual`, `duty_actual`, `currency`, **`shipped_at`**, **`shipped_by`**, **`hidden_from_draft_at`**, **`hidden_from_draft_by`**, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`.
+>   - **`shipment_id` = internal PK (never user-editable)**; **`external_shipment_id` = user-facing/carrier number (editable)**, default **`COMPANY-MKT-YYMMDD-##`** (company uppercased no-spaces; marketplace short code Amazon→AMZ / Walmart→WMT / …; 2-digit daily serial; e.g. `RESUS-AMZ-260701-01`). Shown as the **first field of the Shipment Draft card header**. `shipment_lines.shipment_id` FK never changes. **`carrier_id` read-only in UI** (chosen on the plan). **`warehouse_id` is future-mapped from `destination`** (`destination → warehouses / shipping_route_rules → warehouse_id`; not implemented yet). Apps Script **auto-adds** `external_shipment_id` / `shipped_*` / `hidden_from_draft_*` columns on demand.
+>   - **`shipment_lines.carton_no_start` / `carton_no_end` are user-editable numeric** (Shipment Draft); saved via `updateShipment { lines: [...] }`. `completeShippingPlan` / `createShipmentFromApprovedPlan_` auto-add missing `shipping_plans.completed_*` / `transferred_*` columns.
 >   - The header six-key context + `carrier_id` + `total_qty` / `total_cartons` are **copied from the approved `shipping_plan` at Execution Commit (not recalculated)**. Editable execution fields: carrier / booking / container / BL / invoice / ETD / ETA / tracking / dates / costs / `note` / `status`.
-> - **`shipment_lines`:** `shipment_line_id`, `shipment_id` (FK), `sku`, `qty`, `factory_stock_allocation_qty`, `carton_qty`, `carton_no_start`, `carton_no_end`, `units_per_carton`, `cbm`, `gross_weight`, `net_weight`, `purchase_order_line_id`, `note`, `created_at`, `updated_at`, **+ Execution Snapshot (copied verbatim from the Decision Snapshot, immutable):** `snapshot_current_stock`, `snapshot_avg_sales_per_day`, `snapshot_days_of_supply`, `snapshot_suggested_qty`, `snapshot_target_days`, `snapshot_fc_context`, `snapshot_event_context`, `snapshot_avg_sales_source`, `snapshot_avg_sales_warning`.
+>   - **`shipped_at` / `shipped_by`** — stamped when the Shipment is **Shipped** (Ready to Ship → Ship); a shipment enters **Shipment Overview** only after this (Save does not). **`hidden_from_draft_at` / `hidden_from_draft_by`** — **Done** marker that hides the Shipped card from the **Shipment Draft** workspace only; the shipment stays in Overview, status unchanged, **row never deleted**. **Shipment Draft** = draft/ready_to_ship/shipped working area; **Shipment Overview** = official `shipped`/`in_transit`/`arrived`/`received`/`closed` records (`SHIPMENT_CENTER_SPEC.md` §4/§5).
+> - **`shipment_lines`:** `shipment_line_id`, `shipment_id` (FK), `sku`, `qty`, `factory_stock_allocation_qty`, `carton_qty`, `carton_no_start`, `carton_no_end`, `units_per_carton`, `carton_cbm`, `gross_weight`, `net_weight`, `purchase_order_line_id`, `note`, `created_at`, `updated_at`, **+ Execution Snapshot (copied verbatim from the Decision Snapshot, immutable):** `snapshot_current_stock`, `snapshot_avg_sales_per_day`, `snapshot_days_of_supply`, `snapshot_suggested_qty`, `snapshot_target_days`, `snapshot_fc_context`, `snapshot_event_context`, `snapshot_avg_sales_source`, `snapshot_avg_sales_warning`.
+>   - **`carton_cbm` = single-carton CBM — the ONLY stored CBM column on `shipment_lines`** (the former line `cbm` was **renamed to `carton_cbm`**). Line/header total CBM is **runtime**: `total_cbm = Σ(carton_cbm × carton_qty)`. `carton_no_start`/`carton_no_end` are integers, `start ≤ end`, non-overlapping within a shipment (validated on Save/Ship, `SHIPMENT_CENTER_SPEC.md` §12).
 >   - **Execution Snapshot = copy, never recalculation** (ARCHITECTURE §4A). `qty` = the plan line's `approved_qty`. After creation the Shipment reads only `shipments` / `shipment_lines` — never the Weekly Shipping Plan.
 >   - **Shipment Draft** and **Shipment Overview** are **two views over the same `shipments` / `shipment_lines`** (differing only by a status filter): Draft = `draft` / `planned` / `ready_to_ship` (execution fields editable); Overview = all non-draft (read-only fields). Both display **Marketplace**. Editable execution fields go through the `updateShipment` whitelist; snapshot + logistics columns are read-only (`SHIPMENT_CENTER_SPEC.md` §4/§5).
 >
@@ -230,29 +396,44 @@ shipments ──1:many──▶ shipment_lines
 
 ## 9. Carrier / Route Layer
 
-**Tables:** `carriers`, `carrier_rate_cards`, `shipping_route_rules`, `carrier_lead_times`
+**Tables:** `carriers`, `carrier_rate_cards`, `shipping_route_rules`, `replenishment_route_rules`, `carrier_lead_times`
 
-> **Authoritative column definitions for `carriers` / `carrier_rate_cards` / `shipping_route_rules` live in [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md)** (foundation tables; planned design, not yet migrated; **no pricing engine**).
-> - **`carriers`:** `carrier_id`, `carrier_code`, `carrier_name`, `carrier_type` (`air`/`sea`/`express`/`rail`/`courier`/`forwarder`), `scac_code`, `default_currency`, `contact_name`, `contact_email`, `contact_phone`, `website`, `is_active`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`.
-> - **`carrier_rate_cards`:** `rate_card_id`, `carrier_id` (FK), `route_code`, `ship_from`, `destination`, `shipping_method`, `rate_type` (`per_kg`/`per_cbm`/`per_carton`/`per_container`/`flat`), `unit_rate`, `currency`, `min_charge`, `fuel_surcharge_pct`, `duty_rate_pct`, `transit_days`, `valid_from`, `valid_to`, `is_active`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`. **Price + validity source for the future Carrier Price Engine only — no calculation defined.**
+> **Authoritative column definitions for `carriers` / `carrier_rate_cards` / `shipping_route_rules` / `replenishment_route_rules` / `carrier_lead_times` live in [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md)** (foundation tables; planned design, not yet migrated; **no pricing engine**).
+> - **`carriers`:** `carrier_id`, `carrier_code`, `carrier_name`, `carrier_type` (`forwarder`/`courier`/`trucker`/`warehouse_partner`/`customs_broker`/`other`), `scac_code`, `default_currency`, `contact_name`, `contact_email`, `contact_phone`, `website`, `is_active`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`.
+> - **`carrier_rate_cards`** (authoritative import schema, `CARRIER_AND_ROUTE_SPEC.md` §4)**:** `rate_card_id`, `carrier_id` (FK), `origin_country`, `origin_city`, `destination_country`, `destination_city`, `destination_postal_code_start`, `destination_postal_code_end`, `destination_warehouse_code`, `marketplace`, `shipping_method`, `charge_type` (`actual_weight`/`dim_weight`/`chargeable_weight`/`cbm`/`carton`/`shipment`), `charge_unit` (`kg`/`cbm`/`carton`/`shipment`), `dim_divisor`, `min_box_weight`, `min_box_weight_unit`, `weight_tier`, `weight_tier_unit`, `currency`, `unit_rate`, `min_charge`, `fuel_surcharge`, `customs_fee`, `doc_fee`, `transit_days`, `effective_from`, `effective_to`, `status`, `source_file_name`, `import_batch_id`, `created_at`, `updated_at`. **Matching by destination_warehouse_code → postal-code range → city → country + marketplace + method + weight_tier; `route_code` is optional/deprecated (NOT the match key).** Price + validity source for the future Carrier Price Engine only — **no calculation defined**.
 > - **`shipping_route_rules`:** `route_rule_id`, `company`, `country`, `marketplace`, `shipping_method`, `route_code`, `default_ship_from`, `default_destination`, `default_carrier_id` (FK), `priority`, `is_active`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`. **Drives the default `ship_from` / `destination` / `route_code` pre-filled on a Weekly Shipping Plan; the plan may OVERRIDE `ship_from` / `destination`.**
+> - **`replenishment_route_rules`:** `route_rule_id`, `company`, `country`, `marketplace`, `shipping_method`, `ship_from`, `destination`, `origin_country`, `origin_city`, `destination_country`, `destination_city`, `route_code`, `default_carrier_id` (FK), `priority`, `is_active`, `created_by`, `created_at`, `updated_by`, `updated_at`, `note`. **Route defaults for Inventory Replenishment → Recommendation Summary (Suggested Route) + Execution Plan (`ship_from`/`destination`/`shipping_method` per route). DISTINCT from `shipment_routes` (Shipment/World Map/in-transit only) — do NOT conflate.**
+> - **`carrier_lead_times`:** `lead_time_id`, `carrier_id` (FK), `origin_country`, `destination_country`, `shipping_method`, `min_days`, `max_days`, `avg_days`, `created_at`, `updated_at`. ETA-planning master; no ETA engine yet.
 
 | Relationship | Key | Cardinality |
 |--------------|-----|-------------|
 | `carriers` → `carrier_rate_cards` | `carrier_id` | 1 → many |
 | `carriers` → `shipping_route_rules` | `default_carrier_id` | 1 → many (optional) |
+| `carriers` → `replenishment_route_rules` | `default_carrier_id` | 1 → many (optional) |
 | `carriers` → `carrier_lead_times` | `carrier_id` | 1 → many |
 | `shipping_route_rules` → `shipping_plans` | `company + country + marketplace + shipping_method` → default `ship_from` / `destination` / `route_code` | reference (overridable) |
-| `carrier_rate_cards` ↔ `shipping_route_rules` | `route_code` | shared route identifier |
+| `replenishment_route_rules` → Inventory Replenishment (Recommendation Summary / Execution Plan) | `company + country + marketplace + shipping_method` → default `ship_from` / `destination` / `shipping_method` | reference (overridable by PM) |
+| `carrier_rate_cards` ↔ `shipping_route_rules` | `route_code` | legacy shared identifier — **deprecated for MVP matching** |
 | `shipping_plans` → `carriers` | `carrier_id` | reference |
 | `shipments` → `carriers` | `carrier_id` | reference |
 | `shipments` → `carrier_rate_cards` | `rate_card_id` | reference |
 
-- `carrier_rate_cards` include `route_code` and `transit_days`.
+- `carrier_rate_cards` match by **`destination_warehouse_code` → postal-code range → city → country + `marketplace` + `shipping_method` + `weight_tier`**; **`route_code` is optional/deprecated (NOT the match key)**. `charge_type` / `charge_unit` / `dim_divisor` / `min_box_weight` / `weight_tier` define the billable basis (future engine).
+- **`carrier_rate_cards.transit_days` = the quoted reference time on the rate card; `carrier_lead_times.min_days`/`max_days`/`avg_days` = actual/observed time. Future AI recommendation prefers `carrier_lead_times.avg_days`** (`CARRIER_AND_ROUTE_SPEC.md` §4A).
+- **Cost lifecycle (`CARRIER_AND_ROUTE_SPEC.md` §4B):** Shipping Plan produces a **coarse estimate** (country+marketplace+method+weight_tier) → Shipment Draft **refines** it when warehouse_code/postal/city are known → **actuals** filled after carrier invoice. Estimated fields never overwrite actuals.
 - `shipping_route_rules` provides routing **defaults only** — the Weekly Shipping Plan's chosen `ship_from` / `destination` win and are persisted on `shipping_plans` (part of the six-value group key, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1).
 - `ship_from` / `destination` are **logical warehouse / location ids** resolved via `warehouses` (consistent with `shipments.warehouse_id`).
 - Until the future **Carrier Price Engine** exists, the Weekly Shipping Plan **Cost Breakdown stays a placeholder** (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §11).
 - `carrier_lead_times` supports **ETA planning** (used by On The Way ETA buckets and shipment planning; defined later).
+
+**`shipment_routes` (planned nodes) vs `shipment_events` (actual events) — Execution layer, do NOT conflate:**
+- **`shipment_routes`** = the **planned** leg-by-leg path (e.g. 東莞工廠 → 深圳出口海關 → 太平洋航段 → 洛杉磯港 → Amazon ONT8). Used by On-The-Way / World Map for the route line.
+- **`shipment_events`** = the **actual** timestamped events (`picked_up` / `customs_cleared` / `vessel_departed` / `arrived_port` / `delivered`). Used for progress along the route.
+- Both are **Execution-layer** (Shipment) tables — **distinct** from the planning-side `replenishment_route_rules` / `shipping_route_rules`. Neither is implemented yet (`SHIPMENT_CENTER_SPEC.md` §18).
+
+**Cost columns needed (future — planned schema, no writer/engine yet):**
+- `shipping_plans`: `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `estimated_unit_cost`.
+- `shipments`: `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `estimated_unit_cost` (estimate) + `freight_cost_actual`, `duty_actual`, `total_cost_actual` (actual, post-invoice). *(`shipments.freight_cost_actual` / `duty_actual` already exist; `estimated_*` and `total_cost_actual` are new/future.)*
 
 ---
 
@@ -337,7 +518,7 @@ Procurement branch (links into shipment_lines):
 | Formal Shipment | shipping_plans, shipping_plan_lines (snapshot source), carriers, carrier_rate_cards | shipments, shipment_lines |
 | Shipment On The Way | shipments, shipment_lines, shipment_events, shipment_routes, carrier_lead_times | — (visualization) |
 | Shipment History | shipments, shipment_lines | — (read) |
-| Request Order / 下單系統 | fc_regular_forecast, marketplace_skus, factory_stock, overseas_inventory_snapshot, shipments (on-the-way) | future: purchase_orders, purchase_order_lines |
+| Request Order / 下單系統 | **identity:** marketplace_skus (sku+country+marketplace) + sku_details (category/series). **v2 connected sources:** fc_regular_forecast (Basic T3 + 2nd-layer), amazon_inventory_snapshot (Site Stock), overseas_inventory_snapshot + warehouses (3rd Party), factory_stock (Factory Stock), purchase_orders + purchase_order_lines (Ongoing Orders), supplier_price_list (Lead Time), fc_special_events (2nd-layer events), fc_target_rules (2nd-layer Edit Target %). Remaining / Risk / Suggested Order still placeholders (Mapping v2 §12). **Never reads the Inventory Replenishment DOM.** | future: purchase_orders, purchase_order_lines (Send Request aggregation — not implemented) |
 | Purchase Order | purchase_orders, purchase_order_lines, production_schedule | purchase_orders, purchase_order_lines |
 | Carrier / Route Management | carriers, carrier_rate_cards, shipping_route_rules, carrier_lead_times | carriers, carrier_rate_cards, shipping_route_rules, carrier_lead_times |
 | Export / Document Center | document_templates, shipments / purchase_orders | generated_documents |

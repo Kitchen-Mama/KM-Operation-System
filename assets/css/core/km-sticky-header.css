@@ -1,0 +1,108 @@
+/* ============================================================
+   KM Operation System — Sticky Header Framework (core, reusable)
+   ------------------------------------------------------------
+   Single source of truth for sticky table-header behavior across the app
+   (Inventory Replenishment today; Request Order / Purchase Order / Shipment /
+   Warehouse Stock next). Pages must NOT hard-code `top: 72px`-style magic
+   numbers — they consume these CSS variables so a two- (or three-) layer
+   header pins with ACCUMULATED offsets and never overlaps or gets covered.
+
+   MODEL
+   -----
+   A page has (optionally) a sticky toolbar/control panel at the top of its
+   scroll container. Table header rows must pin *below* that toolbar:
+
+     Header Row 1: top = var(--km-sticky-top-base)
+     Header Row 2: top = base + row-1-height
+     Header Row 3: top = base + row-1-height + row-2-height
+
+   `--km-sticky-top-base` = the height of the sticky element(s) that would
+   otherwise cover the table header (usually the page's sticky control panel).
+   It is 0 by default and should be set PER PAGE — statically in CSS when the
+   toolbar has a fixed height, or dynamically via `KM.stickyHeader.bindToolbar`
+   (assets/js/core/sticky-header.js) when the toolbar can wrap (small screens).
+   The fixed app header (`.top-header`) lives OUTSIDE the `.main-content` scroll
+   container, so it does NOT count toward the base.
+
+   Z-INDEX ORDER (high → low), so nothing masks the layer below it:
+     sticky toolbar/control panel  (--km-sticky-z-toolbar)
+       > sticky top-left corner    (--km-sticky-z-corner)   ← visible both axes
+         > header row 1            (--km-sticky-z-header-1)
+           > header row 2          (--km-sticky-z-header-2)
+             > header row 3        (--km-sticky-z-header-3)
+               > left sticky col   (--km-sticky-z-col)
+                 > table body / expanded rows (auto / unset)
+
+   A table MAY instead place both header rows inside ONE sticky bar that pins at
+   `--km-sticky-top-base` (Inventory Replenishment does this): the two rows are
+   stacked in a flex column inside the single pinned bar, so row-1/row-2 overlap
+   is structurally impossible and only the base offset matters.
+   ============================================================ */
+
+:root {
+    /* Offset from the scroll container's top to where the FIRST header row pins.
+       0 by default; set per page (static CSS or KM.stickyHeader.bindToolbar). */
+    --km-sticky-top-base: 0px;
+
+    /* Header row heights — used to accumulate row-2 / row-3 tops. Override per
+       table if its rows are a different height. */
+    --km-sticky-row-1-height: 48px;
+    --km-sticky-row-2-height: 48px;
+    --km-sticky-row-3-height: 0px;
+
+    /* Combined header height helper (row1 + row2 + row3). */
+    --km-sticky-header-total: calc(
+        var(--km-sticky-row-1-height) +
+        var(--km-sticky-row-2-height) +
+        var(--km-sticky-row-3-height)
+    );
+
+    /* Z-index scale — one place, in descending stacking order. */
+    --km-sticky-z-toolbar: 131;   /* page sticky control panel / filter toolbar */
+    --km-sticky-z-corner: 121;    /* top-left corner cell (sticky both axes)     */
+    --km-sticky-z-header-1: 120;  /* header row 1                                 */
+    --km-sticky-z-header-2: 119;  /* header row 2                                 */
+    --km-sticky-z-header-3: 118;  /* header row 3                                 */
+    --km-sticky-z-col: 110;       /* left sticky column body                      */
+}
+
+/* ---- Reusable classes (opt-in) ------------------------------------------
+   Future pages can attach these directly to independently-sticky header rows
+   / cells instead of re-deriving offsets. Inventory Replenishment keeps its
+   existing class names but sources the SAME variables (see its page CSS). */
+
+.km-sticky-table { position: relative; }
+
+.km-sticky-row-1 {
+    position: sticky;
+    top: var(--km-sticky-top-base);
+    z-index: var(--km-sticky-z-header-1);
+}
+
+.km-sticky-row-2 {
+    position: sticky;
+    top: calc(var(--km-sticky-top-base) + var(--km-sticky-row-1-height));
+    z-index: var(--km-sticky-z-header-2);
+}
+
+.km-sticky-row-3 {
+    position: sticky;
+    top: calc(var(--km-sticky-top-base) + var(--km-sticky-row-1-height) + var(--km-sticky-row-2-height));
+    z-index: var(--km-sticky-z-header-3);
+}
+
+/* Left sticky column body (pins horizontally; scrolls under header vertically). */
+.km-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: var(--km-sticky-z-col);
+}
+
+/* Top-left corner: sticky on BOTH axes, above the header rows so it stays
+   visible when scrolling down AND right. */
+.km-sticky-corner {
+    position: sticky;
+    top: var(--km-sticky-top-base);
+    left: 0;
+    z-index: var(--km-sticky-z-corner);
+}

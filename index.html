@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="assets/css/base.css">
     <link rel="stylesheet" href="assets/css/components.css">
     <link rel="stylesheet" href="assets/css/layout.css">
+    <!-- Core: reusable Sticky Header Framework (CSS variables + .km-sticky-* classes) -->
+    <link rel="stylesheet" href="assets/css/core/km-sticky-header.css">
     <link rel="stylesheet" href="assets/css/pages/home.css">
     <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css">
     <link rel="stylesheet" href="assets/css/pages/factory-stock.css">
@@ -20,6 +22,7 @@
     <link rel="stylesheet" href="assets/css/pages/supply-chain-canvas.css">
     <link rel="stylesheet" href="assets/css/pages/sku-handbook.css">
     <link rel="stylesheet" href="assets/css/pages/campaign-risk.css">
+    <link rel="stylesheet" href="assets/css/pages/procurement.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -88,21 +91,38 @@
             <div class="menu-item" onclick="showSection('skuDetails')" title="SKU Details">
                 <span class="menu-icon">📝</span><span class="menu-label">SKU Details</span>
             </div>
-            <div class="menu-item" onclick="showSection('shippingplan')" title="Shipping Plan">
-                <span class="menu-icon">📋</span><span class="menu-label">Shipping Plan</span>
-            </div>
-            <!-- Shipment Center 父子選單 (Execution Layer) -->
+            <!-- Shipment Center 父子選單 (Decision + Execution Layers) -->
             <div class="menu-parent"
                  data-menu-id="shipment"
                  onclick="toggleMenu('shipment')" title="Shipment Center">
                 <span class="menu-icon">🚢</span><span class="menu-label">Shipment Center</span>
             </div>
             <div class="menu-children" data-parent="shipment">
+                <div class="menu-item" onclick="showSection('shippingplan')" title="Weekly Shipping Plan">
+                    <span class="menu-label">Weekly Shipping Plan</span>
+                </div>
                 <div class="menu-item" onclick="showShipmentDraft()" title="Shipment Draft">
                     <span class="menu-label">Shipment Draft</span>
                 </div>
                 <div class="menu-item" onclick="showShipmentOverview()" title="Shipment Overview">
                     <span class="menu-label">Shipment Overview</span>
+                </div>
+            </div>
+            <!-- Procurement Center 父子選單 (下單系統) — Procurement Layer Phase 1 -->
+            <div class="menu-parent"
+                 data-menu-id="procurement"
+                 onclick="toggleMenu('procurement')" title="Procurement Center">
+                <span class="menu-icon">🧾</span><span class="menu-label">Procurement Center</span>
+            </div>
+            <div class="menu-children" data-parent="procurement">
+                <div class="menu-item" onclick="showSection('request-order-draft')" title="Request Order Draft">
+                    <span class="menu-label">Request Order Draft</span>
+                </div>
+                <div class="menu-item" onclick="showSection('purchase-order-overview')" title="Purchase Order Overview">
+                    <span class="menu-label">Purchase Order Overview</span>
+                </div>
+                <div class="menu-item" onclick="showSection('purchase-order-list')" title="Purchase Order List">
+                    <span class="menu-label">Purchase Order List</span>
                 </div>
             </div>
             <div class="menu-item menu-item--disabled" style="position: relative;" title="Shipping Management">
@@ -250,6 +270,10 @@
                  #shippinghistory-section into this mount point on the page's lifecycle mount. -->
             <div id="shippinghistory-mount"></div>
 
+            <!-- Shipment Draft Section — SEPARATE page from Shipment Overview (shares shipments DB, not page state).
+                 KM.partialLoader injects #shipment-draft-section into this mount point on the page lifecycle mount. -->
+            <div id="shipment-draft-mount"></div>
+
             <!-- Promotion Risk Tracker / Campaign Risk Section - markup moved to assets/html/pages/campaign-risk.html (Phase 3-10).
                  KM.partialLoader injects #campaign-risk-section into this mount point on the page lifecycle mount. -->
             <div id="campaign-risk-mount"></div>
@@ -261,6 +285,12 @@
             <!-- Supply Chain Canvas Section - markup moved to assets/html/pages/supplychain.html (Phase 3-11).
                  KM.partialLoader injects #supplychain-section into this mount point on the page lifecycle mount. -->
             <div id="supplychain-mount"></div>
+
+            <!-- Procurement Layer (Phase 1) — Request Order Draft / Purchase Order Overview / Purchase Order List.
+                 KM.partialLoader injects each section into its mount point on the page lifecycle mount. -->
+            <div id="request-order-draft-mount"></div>
+            <div id="purchase-order-overview-mount"></div>
+            <div id="purchase-order-list-mount"></div>
             </main>
         </div>
     </div>
@@ -271,6 +301,7 @@
     <script src="assets/js/core/lifecycle.js"></script>
     <script src="assets/js/core/state.js"></script>
     <script src="assets/js/core/partial-loader.js"></script>
+    <script src="assets/js/core/sticky-header.js"></script>
     
     <!-- Utils -->
     <script src="assets/js/utils/forecast-engine.js"></script>
@@ -298,7 +329,11 @@
     <script src="assets/js/pages/sku-handbook.js"></script>
     <script src="assets/js/i18n/sku-handbook.js"></script>
     <script src="assets/js/pages/campaign-risk.js"></script>
-    
+    <!-- Procurement Layer (Phase 1) -->
+    <script src="assets/js/pages/request-order-draft.js"></script>
+    <script src="assets/js/pages/purchase-order-overview.js"></script>
+    <script src="assets/js/pages/purchase-order-list.js"></script>
+
     <!-- App (Global) -->
     <script src="assets/js/app.js"></script>
     
