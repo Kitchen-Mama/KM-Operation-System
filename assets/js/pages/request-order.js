@@ -1664,13 +1664,12 @@ async function handleSendRequest() {
       bySeries[key].push({
         sku: d.item.sku, series: series, company: d.item.company || '', requested_qty: l.orderQty,
         request_bucket: l.bucket, request_month: l.month,           // bucket PRESERVED per line (never merged)
+        // country/marketplace flow into request_order_line_sources (source of truth for site allocation).
+        country: d.item.country || '', marketplace: d.item.marketplace || '',
         units_per_carton: l.upc || '',
-        forecast_qty: l.fcQty, current_stock: l.siteStock,          // snapshots (same sources as 下單系統 table)
         calculation_method: 'manual_order_allocation', line_status: 'draft',
-        need_reason: 'Order Allocation ' + l.bucket + ' ' + (l.month || ''),
         note: (d.item.company || '--') + ' / ' + (d.item.country || '--') + ' / ' + (d.item.marketplace || '--') +
-              ' · ' + l.bucket + ' ' + (l.month || '') + (l.note ? (' — ' + l.note) : ''),
-        related_entity_type: 'request_order_allocation', related_entity_id: ''
+              ' · ' + l.bucket + ' ' + (l.month || '') + (l.note ? (' — ' + l.note) : '')
       });
     });
   });

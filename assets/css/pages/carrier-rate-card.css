@@ -1,0 +1,54 @@
+/* ============================================================
+   Carrier Rate Card page (Carrier & Route Spec v1.4 §4C)
+   Reference/Master-like logistics pricing. Scoped to #carrier-rate-card-section.
+   Sticky header pins at the top of the table's own scroll container (no magic top numbers).
+   ============================================================ */
+#carrier-rate-card-section { padding: 16px 20px; }
+#carrier-rate-card-section .crc-page__header {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+#carrier-rate-card-section .page-title { margin: 0; }
+#carrier-rate-card-section .crc-page__header-actions { display: flex; gap: 8px; }
+
+#carrier-rate-card-section .crc-btn {
+    padding: 8px 16px; border: 1px solid transparent; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .2s;
+}
+#carrier-rate-card-section .crc-btn--primary { background: #3B82F6; color: #fff; }
+#carrier-rate-card-section .crc-btn--primary:hover { background: #2563EB; }
+#carrier-rate-card-section .crc-btn--ghost { background: #fff; color: #334155; border-color: #CBD5E1; }
+#carrier-rate-card-section .crc-btn--ghost:hover { background: #F1F5F9; }
+
+#carrier-rate-card-section .crc-note { margin: 4px 0 10px; font-size: 13px; }
+#carrier-rate-card-section .crc-note--demo { color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; display: inline-block; }
+
+/* Filters */
+#carrier-rate-card-section .crc-filters {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+    background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px; margin-bottom: 12px;
+}
+#carrier-rate-card-section .crc-filter { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#carrier-rate-card-section .crc-filter label { font-size: 12px; color: #64748B; font-weight: 500; }
+#carrier-rate-card-section .crc-filter--action { justify-content: flex-end; }
+#carrier-rate-card-section .crc-input {
+    padding: 7px 10px; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 13px; min-width: 160px; box-sizing: border-box; background: #fff;
+}
+
+#carrier-rate-card-section .crc-result-meta { font-size: 12px; color: #64748B; margin-bottom: 6px; }
+
+/* Results — horizontal + vertical scroll inside the wrapper; sticky header at top:0 of this container. */
+#carrier-rate-card-section .crc-table-wrap {
+    max-height: 62vh; overflow: auto; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff;
+}
+#carrier-rate-card-section .crc-empty { padding: 28px; text-align: center; color: #94A3B8; font-size: 14px; }
+#carrier-rate-card-section .crc-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+#carrier-rate-card-section .crc-table th {
+    position: sticky; top: var(--km-sticky-top-base, 0px); z-index: var(--km-sticky-z-header-1, 30);
+    background: #F1F5F9; color: #334155; text-align: left; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid #E2E8F0;
+}
+#carrier-rate-card-section .crc-table td { padding: 7px 10px; border-bottom: 1px solid #EEF2F7; color: #1E293B; }
+#carrier-rate-card-section .crc-table tbody tr:hover { background: #F8FAFC; }
+#carrier-rate-card-section .crc-table .crc-num { text-align: right; }
+
+@media (max-width: 900px) {
+    #carrier-rate-card-section .crc-input { min-width: 120px; }
+}

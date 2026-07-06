@@ -1615,3 +1615,201 @@ Part A (CSS only, builder-scoped): Builder Mode pills forced one-line (`white-sp
 **Part 6 — normalizer:** request_order_line_sources normalized with numeric requested/approved/shortage + tier_type/source_month exposure.
 
 **No changes to:** PO Overview, PO List, Shipment, FC Summary, Inventory, Carrier/Template/Export, calculation engine. Apps Script `03_` is a source mirror — copy to live project + redeploy for the new validTab to take effect (until then getRequestOrderLineSources returns []).
+
+## 2026-07-06 — Request Order Draft → Request Order DB mapping finalization
+
+**1. request_order_line_sources WRITE path implemented (13_procurement_handlers.gs):** `handleCreateRequestOrderDraft_` now appends one `request_order_line_sources` row per request line at Send Request. Finalized header: line_source_id, request_order_line_id, request_order_id, sku, company, country, marketplace, tier_type(=request_bucket), source_month(=request_month), requested_qty, approved_qty, shortage_qty, source_type, note, created_at, updated_at. Deprecated old fields NOT created (ownership_company, warehouse_id, site_sku, forecast_qty, current_stock, on_the_way_qty, factory_allocated_qty, reallocation_qty, recommended_qty, allocation_method, source_bucket, source_priority). Send Request (request-order.js) now passes country/marketplace into the RO line payload. Company Allocation popup shows REAL rows (legacy pre-write requests still fall back).
+
+**2. request_order_lines km_qty/resus_qty/restw_qty:** new columns written at creation (matched company = approved, others 0) via `procurementCompanyQty_`; recomputed in `updateRequestOrderLineQty` when approved changes. Normalizer exposes kmQty/resusQty/restwQty.
+
+**3. tier_type on request_order_lines:** removed from header; canonical bucket = request_bucket. Not written/ensured/re-added.
+
+**4. request_orders.tier_group:** new column; `procurementTierGroup_` computes T1 / T2_T3 / mixed / blank from the request's line buckets at creation.
+
+**5. Header-level dates removed:** request_orders never writes inspection_date/expected_ready_date/expected_ship_date (line-level only, already on request_order_lines).
+
+**6. request_status canonical:** request_orders header uses `request_status` (draft/pending_approval/approved/cancelled/converted_to_po). Legacy `status` removed from header array (not recreated). All handlers read via `procurementReqStatus_` (request_status || status fallback) and write ONLY request_status (createRequestOrderDraft, updateRequestOrderStatus, cancelRequestOrderTier, createPurchaseOrderFromRequest, seed). Normalizer: requestStatus + status both = request_status||status; tierGroup exposed. Handlers `sheetEnsureColumns_(['request_status'])` before findRow so old rows resolve.
+
+**7. Default warehouse_id:** createRequestOrderDraft defaults warehouse_id to `WH-TW-CN-FACTORY-YOUXIN` (CN Youxin) when none supplied.
+
+**8. Deprecated request_order_lines fields removed from header/write:** product_name, need_reason, related_entity_type, related_entity_id, final_order_qty, forecast_qty, current_stock, on_the_way_qty, factory_allocated_qty, reallocation_qty (source_company_count/source_site_count were never present). `procurementUpdateRequestLines_` no longer writes final_order_qty. Normalizer drops these (keeps productName/finalOrderQty read-only for back-compat). Missing-header safe (appendByHeader writes only existing columns).
+
+**Files:** 13_procurement_handlers.gs, operation-system-db-api.js (normalizers), request-order.js (Send Request line payload). 03 validTabs already had request_order_line_sources. **No PO Overview/List/Shipment/Carrier/Export/calc changes.** Apps Script `13_` is a source mirror — copy to live project + redeploy; on old sheets the new columns auto-append (missing-header safe), old `status`/deprecated columns remain but are no longer written.
+
+## 2026-07-06 — Carrier Rate Card v1 spec finalized (spec only — pending implementation)
+
+**Docs only — no code / frontend / Apps Script / DB migration / pricing engine.** Updated `CARRIER_AND_ROUTE_SPEC.md` → Draft v1.3 and `DATABASE_RELATIONSHIP_MAP.md` §9.
+
+- **Purpose:** Carrier Rate Card is **Reference / Master-like** logistics pricing data — NOT a Decision Layer, does NOT auto-decide carrier, no calculation; supports lookup / filter / manual comparison + future pricing engine.
+- **Schema (`carrier_rate_cards` §4):** added `transit_type` (port_to_port/door_to_port/port_to_door/door_to_door), `battery_type` (no_battery/built_in_battery/removable_battery/lithium_battery/unknown), `customs_type` (buy_export_license/tax_refund_export/not_applicable/unknown), `note`. Clarified `charge_type` = pricing model (weight/volume/container/shipment/carton), `charge_unit` (kg/lb/cbm/20GP/40HQ/shipment/carton), `min_charge` = per-row minimum billable amount.
+- **Carrier Rate Card page v1 (§4C.2):** filters Date / Country-Ship To / Method / Carrier + Search; **no data before Search**; 23 display columns; **Lead Time from `carrier_lead_times.min_days~max_days`, blank if none**.
+- **Template Export v1 (§4C.3):** from active rows; preserve fixed route/method/charge structure; clear `unit_rate`/`effective_from`/`effective_to`; optionally editable `fuel_surcharge`/`customs_fee`/`doc_fee`/`min_charge`; example rows + protected columns; **template-only `row_type` (example/data) NOT persisted**.
+- **Template Import v1 (§4C.4):** **append-only** (no overwrite); validation (carrier/method/charge_type/charge_unit/currency exist, numeric unit_rate, valid dates, effective_from ≤ effective_to, status defaults active, `example` skipped).
+- **Effective-date overlap (§4C.5):** append new rate version, never overwrite; future engine tie-break latest effective_from → latest import_batch_id/updated_at → conflict warning; v1 page shows both.
+- **Deferred (§4C.6):** `carrier_fee_types` + `carrier_rate_breakdowns` NOT v1 (FCL/container breakdown later); v1 keeps all rate rows flat in `carrier_rate_cards`.
+
+**Status: Carrier Rate Card v1 spec FINALIZED / pending implementation** (no schema migrated, no page/handlers built).
+
+## 2026-07-06 — Carrier & Route Spec v1.4 finalized (final architecture sync; spec only)
+
+**Docs only — no code / frontend / Apps Script / DB migration / engine.** `CARRIER_AND_ROUTE_SPEC.md` → Draft v1.4; `DATABASE_RELATIONSHIP_MAP.md` §9 synced.
+
+- **`carrier_rate_cards.transit_days` REMOVED** everywhere — Lead Time is no longer stored on rate cards.
+- **`carrier_lead_times` = the SINGLE SOURCE OF TRUTH for Lead Time.** `carrier_rate_cards` must never duplicate lead-time data.
+- **Carrier Rate Card page:** Lead Time is a **display-only join** to `carrier_lead_times` matched by `carrier_id + origin_country + destination_country + shipping_method`; **blank if no match — no fallback value**.
+- **Carrier Rate Template:** does **NOT** include Lead Time; responsible only for `unit_rate` / `effective_from` / `effective_to` / `fuel_surcharge` / `customs_fee` / `doc_fee` / `min_charge`; all routing/method/charge-structure columns locked.
+- **`carrier_lead_times` lifecycle is independent** from Carrier Rate — Kitchen-Mama-maintained (manual now; future manual/shipment-history auto updates); never updated by the rate template.
+- **Relationship Map:** `carriers → carrier_rate_cards` and `carriers → carrier_lead_times` shown as **independent master tables**; the page reads both together **for display only — neither writes to the other**.
+
+**Status: Carrier Rate Card Spec v1.4 finalized — Carrier implementation ready. Carrier Lead Time finalized as independent master data.**
+
+## 2026-07-06 — Carrier Rate Card page v1 implemented (Carrier & Route Spec v1.4)
+
+**New modular page** following the partial-loader + lifecycle architecture. Carrier Rate Card = Reference/Master-like data (NOT a Decision Layer; no pricing engine, no ranking, no auto carrier decision).
+
+**Files added:** `assets/html/pages/carrier-rate-card.html`, `assets/js/pages/carrier-rate-card.js`, `assets/css/pages/carrier-rate-card.css`, `assets/specs/active/apps-script/17_carrier_handlers.gs`.
+**Files changed:** `index.html` (CSS link + `#carrier-rate-card-mount` + JS include + "Carrier / Route" sidebar menu), `assets/js/app.js` (sectionMap `carrier-rate-card` → `carrier-rate-card-section`, both maps), `assets/js/api/operation-system-db-api.js` (normalizers + getters + export/import wrappers), `01_router.gs` (`importCarrierRateCards` action), `03_master_data_handlers.gs` (validTabs += carriers, carrier_rate_cards, carrier_lead_times).
+
+**Reads (missing-tab/header safe → []):** `getCarriers()`, `getCarrierRateCards()`, `getCarrierLeadTimes()` + `normalizeCarrierRecord` / `normalizeCarrierRateCardRecord` / `normalizeCarrierLeadTimeRecord`. `carrier_rate_cards` normalizer has **NO** `transit_days`.
+
+**Page:** filters Date / Country-Ship To / Method / Carrier + **Search**; **no data before Search**; 23 columns in spec order; `carrier_name` joined from `carriers`; **Lead Time is a display-only join** to `carrier_lead_times` by `carrier_id + origin_country + destination_country + shipping_method` → `min ~ max days` / `avg days avg` / **blank (no fallback)**. Sticky header via `--km-sticky-top-base` (no magic numbers).
+
+**Template Export (client-side CSV, `KM.DB.exportCarrierRateTemplate`):** from current Search result; `row_type` helper (example/data, not persisted); one example row; clears `unit_rate`/`effective_from`/`effective_to`; editable = unit_rate/effective dates/fuel/customs/doc/min_charge/note/status; fixed structure columns preserved (visually via a documented fixed/editable split). **Excludes** rate_card_id/import_batch_id/created/updated + **all Lead Time columns + transit_days**.
+
+**Template Import (`KM.DB.importCarrierRateTemplate` → `importCarrierRateCards` handler):** **APPEND-ONLY** (never overwrites/deletes; overlapping effective dates allowed = multiple rows); new `rate_card_id` + `source_file_name` + `import_batch_id` + timestamps per row; `row_type=example` skipped; blank row_type treated as data. **Rejects the whole import** if forbidden columns present (transit_days / min_days / max_days / avg_days / lead_time_id — client pre-check + server guard). Per-row validation: carrier_id exists, shipping_method not blank, charge_type/charge_unit valid enum, currency not blank, numeric unit_rate, valid effective_from/effective_to, effective_from ≤ effective_to; status defaults active. Returns imported / skipped_examples / rejected / batch_id / per-row errors → shown in a summary; Search refreshes after success.
+
+**Out of scope (not built):** Carrier Price Engine, carrier recommendation, shipment ETA, carrier_fee_types, carrier_rate_breakdowns, carrier_quote_history. No `transit_days` anywhere.
+
+**Deploy note:** Apps Script `01_`/`03_`/`17_` are source mirrors — copy into the live project and **redeploy** for the new validTabs + `importCarrierRateCards` action to take effect (until then reads return [] and import is a no-op with "API not configured").
+
+## 2026-07-06 — SKU Master + SKU Regional Details architecture spec finalized (spec only — no DB migration)
+
+**Docs only. No code / frontend / Apps Script / API / DB migration. The actual DB is NOT modified — implementation pending; the user will update the real DB after the MD + implementation are ready.**
+
+**New doc:** `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` (authoritative). **Updated:** DATABASE_RELATIONSHIP_MAP.md §3/§4/§4A + layer table, SKU_DETAILS_ADD_EDIT_SPEC.md, SKU_DETAILS_LOGISTICS_SPEC.md, INVENTORY_TABLE_MAPPING_SPEC.md §17.3A.
+
+- **`sku_details` = Product Master** (global product facts only). Keeps brand **baseline** prices `minimum_price` / `msrp` / `selling_price` (reference/governance, NOT live price).
+- **`base_currency` ADDED** to `sku_details`; **`minimum_price_unit` / `msrp_unit` / `selling_unit` DEPRECATED** (all three prices use base_currency).
+- **Attributes ADDED** to `sku_details`: `material` (multi-value underscore, e.g. Stainless_Steel_ABS), `battery_type` (none/built_in/removable/lithium/unknown), `magnet_type` (none/magnetic/unknown).
+- **`hscode` / `declared_value` / `declared_value_unit` MOVED OUT** of `sku_details` → `sku_regional_details`.
+- **NEW `sku_regional_details`** (extension, not master): regional_detail_id, sku, company, country, marketplace, marketplace_sku_id, site_sku, marketplace_product_id, hscode, declared_value, declared_currency, duty_rate, extra_duty_rate, packaging_regulation, regulation_url, manual_language, warning_label, status(active/inactive/pending), note, created/updated_at. Match grain sku+company+country+marketplace+marketplace_sku_id.
+- **`marketplace_skus.asin → marketplace_product_id`** (platform-neutral; Amazon ASIN stored there; UI may label "ASIN"). `asin` = read-fallback only during migration, not canonical.
+- **Creation rule:** Add SKU / Add Marketplace SKU also creates/ensures the paired `sku_regional_details` row (copies identity + status=active; compliance blank).
+- **Sync rules:** site_sku / marketplace_product_id edits propagate both ways; conflict → marketplace_skus wins operational identity, sku_regional_details wins compliance; surface warning / repair-sync.
+- **Pricing unchanged & independent:** `pricing_list` = live price, `pricing_change_log` = history; NOT moved into sku_regional_details; no pricing edit on the Regional Details page.
+- **UI:** SKU Details ADD material/battery_type/magnet_type/base_currency, REMOVE hscode/declared_value/declared_value_unit + the three *_unit; new simple **SKU Regional Details** page manages sku_regional_details (no pricing).
+
+**Legacy read-fallback during migration:** `*_unit` (until base_currency set), `hscode`/`declared_value` on sku_details (until moved), `asin` (until copied to marketplace_product_id). Backfill is a future user-run migration step.
+
+## 2026-07-06 — SKU Domain Architecture v2.0 finalized (spec only — no DB migration)
+
+**Docs only. No code / frontend / Apps Script / API / DB migration. Actual DB NOT modified — implementation pending; user updates the real DB later.**
+
+**SKU Domain restructured into 4 layers:** (1) `sku_details` = Product Master; (2) `sku_regional_details` = Regional/Marketplace Compliance Master (higher-level source of marketplace identifiers); (3) `marketplace_skus` = Operational Marketplace Layer (synced copy); (4) **`tax_referral_rates` = Tax/Referral/Duty Reference Master (NEW)**.
+
+- **`sku_regional_details` simplified (v2):** now `regional_detail_id`, `sku`, `company`, `country`, `marketplace`, `site_sku`, `marketplace_product_id`, `packaging_regulation`, `regulation_url`, `language`, `manual_version`, `label_version`, `battery_regulation`, created/updated_at. **Removed** all tax fields (`hscode`, `duty_rate`, `extra_duty_rate`, `vat`, `port_tax`, `referral_fee_rate`, `declared_value`, `declared_currency`) + `marketplace_sku_id` / `status` / `note` / `warning_label` (→ `manual_language` renamed `language`).
+- **New `TAX_AND_REFERRAL_RATES_SPEC.md`:** Reference Master `tax_referral_rates` (`tax_rate_id` PK, `series`, `duty_country`, `country_of_origin`, `hscode`, `duty_rate`, `extra_tax_rate`, `vat`, `port_tax`, `referral_fee_rate`, `declared_value`, `declared_currency`, `effective_from/to`, `note`, created/updated_at). Keyed by `series`. **Single source of truth** for HS Code / Duty / VAT / Referral / Declared Value — not duplicated anywhere. **`country_of_origin` intentionally stays here, NOT moved to `sku_details`.** Future Cost/Duty/Shipment-cost/Export/AI reference; no engine.
+- **Marketplace sync updated:** `sku_regional_details` = higher-level source; `marketplace_skus` = synchronized operational copy. Primary synced fields: `site_sku`, `marketplace_product_id`, `company`, `country`, `marketplace`. Two flows (A: replenishment first → ensure regional; B: regional first → marketplace copies). Conflict → Regional Details wins (reverses v1).
+- **Inventory mapping:** duty synchronization **removed**; tax info now comes from `tax_referral_rates` via `series`.
+- **DATABASE_RELATIONSHIP_MAP:** §4A rewritten (v2 schema), **§4B `tax_referral_rates` added**, layer table + relationship diagrams updated (`sku_details → sku_regional_details → marketplace_skus`; `sku_details → series → tax_referral_rates`).
+
+**Files:** NEW `TAX_AND_REFERRAL_RATES_SPEC.md`; updated `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` (→ v2.0), `DATABASE_RELATIONSHIP_MAP.md`, `INVENTORY_TABLE_MAPPING_SPEC.md`, this file. **No implementation, no DB migration.**
+
+## 2026-07-06 — SKU Domain v2.0 DB/API/UI sync IMPLEMENTED (DB already updated by user)
+
+**API adapter (operation-system-db-api.js):**
+- `sku_details` normalizer: added `material` / `batteryType` / `magnetType` / `baseCurrency` (base_currency canonical; falls back to legacy *_unit only when blank). Kept `hsCode`/`declaredValue`/`*Unit` as **read-only** back-compat (no longer displayed/written).
+- `marketplace_skus` + `pricing_list` normalizers: added canonical **`marketplaceProductId`** (reads `marketplace_product_id`, falls back to legacy `asin`). `asin` kept read-only alias.
+- NEW normalizers/getters: `getSkuRegionalDetails()` + `normalizeSkuRegionalDetailRecord` (v2 schema), `getTaxReferralRates()` + `normalizeTaxReferralRateRecord` (**read-only**). NEW writer `upsertSkuRegionalDetail(payload)`.
+
+**Apps Script:**
+- `04_marketplace_forecast_import.gs` (primary Add SKU path): required headers use `marketplace_product_id` (not `asin`); reads product id from marketplace_product_id (asin fallback); **writes canonical marketplace_product_id, never asin** (marketplace_skus + pricing_list, create + update). Added SKU-domain sync: **Flow B** (regional row exists → its site_sku/marketplace_product_id override), **Flow A** (create → ensure sku_regional_details), and operational-edit → regional sync.
+- `03_master_data_handlers.gs`: `handleUpsertMarketplaceSku_` writes company + marketplace_product_id (never asin), applies Flow B + ensures regional; validTabs += `sku_regional_details`, `tax_referral_rates` (both arrays).
+- NEW `18_sku_regional_handlers.gs`: `handleUpsertSkuRegionalDetail_` (page writer, optional sync into marketplace_skus) + shared helpers `skuRegionalLookup_` / `skuRegionalEnsure_` / `skuRegionalSyncIdentity_` / `marketplaceSkuSyncIdentity_`. Regional = higher-priority source.
+- `01_router.gs`: + action `upsertSkuRegionalDetail`.
+
+**Frontend:**
+- `inventory-replenishment.js` Add SKU payload: `asin` → `marketplace_product_id` (input id `replen-add-asin` retained; UI may label "ASIN").
+- `sku-details.js` + `sku-details.html`: repurposed table cols 16/17 (HScode / 申報價值) → **Material / Battery·Magnet**; price columns now display with **base_currency** (removed per-price units + hscode + declared value from SKU Details display). 21-col grid intact (no scroll refactor).
+- NEW **SKU Regional Details** page (`sku-regional-details.html/.js/.css`, lifecycle `sku-regional-details-section`, sidebar item, app.js sectionMap): list + Edit modal for sku/company/country/marketplace/site_sku/marketplace_product_id/packaging_regulation/regulation_url/language/manual_version/label_version/battery_regulation. Editing site_sku/marketplace_product_id syncs to marketplace_skus (regional higher-priority) via `upsertSkuRegionalDetail({sync_marketplace_sku:true})`. No pricing/tax editing.
+
+**Out of scope (not implemented):** Cost/Duty/Tax calculation engines, Carrier, Shipment, Pricing engine. `tax_referral_rates` is **read-only** (no CRUD/engine).
+
+**Deploy note:** Apps Script `01_`/`03_`/`04_`/`18_` are source mirrors — copy to the live project + **redeploy**. DB already updated by user (marketplace_product_id, base_currency, material/battery/magnet, sku_regional_details, tax_referral_rates present). Missing-tab/header remains safe (getters return []; asin read-fallback until legacy column dropped).
+
+## 2026-07-06 — SKU Regional Details backfill tool + Carrier `last_mile_delivery` split
+
+**A. SKU Regional Details backfill (fixes empty `sku_regional_details` after redeploy; idempotent + resumable).** The Flow-A "ensure" only fires on future Add/Upsert SKU; it does not populate rows for pre-existing `marketplace_skus`. Added a repeatable, timeout-safe backfill:
+- `18_sku_regional_handlers.gs`: `handleSyncMarketplaceSkusToSkuRegionalDetails_(body)` — walks ALL `marketplace_skus` rows; match key `sku + company + country + marketplace`. **Idempotent:** existing regional keys are indexed ONCE up front (`skuRegionalKeyIndex_`, single read → O(1) per-row lookup, replacing the old per-row full-sheet re-read that caused timeouts); a row whose key already exists is **skipped immediately — never updated/rewritten**. Missing identity → skipped (invalid) + warning. Missing key → **create** (`SRD-<10-char UUID>`, copies sku/company/country/marketplace/site_sku/marketplace_product_id, `created_at`+`updated_at`), **`SpreadsheetApp.flush()` after each create** so a timeout never rolls back earlier rows. **Batch limit** `body.batch_limit` (default 300, ceiling 5000) caps CREATES per execution; on hit it stops gracefully. Never touches `packaging_regulation`/`regulation_url`/`language`/`manual_version`/`label_version`/`battery_regulation`. Writes `marketplace_product_id` only (never `asin`). Returns `{created_count, skipped_exists_count, skipped_invalid_count, remaining_count, next_start_index, finished, batch_limit, warning_count, errors, warnings}`. **Click again to continue** — already-created rows are skipped, so it converges with no duplicates.
+- `01_router.gs`: + action `syncMarketplaceSkusToSkuRegionalDetails` → `handleSyncMarketplaceSkusToSkuRegionalDetails_`.
+- `operation-system-db-api.js`: `KM.DB.syncMarketplaceSkusToSkuRegionalDetails()` (POST + reload).
+- `inventory-replenishment.html` / `.js`: **Sync Regional Details** button — summary alert shows Created / Skipped(exists) / Skipped(invalid) / Remaining / Finished, and prompts to click again when not finished.
+- **Note on the reported "handler is not defined" error:** the function + router wiring were already correct in the source mirror — the error was purely because the live Apps Script project had not been redeployed with `18_`/`01_`. Redeploy all `.gs` files together to resolve.
+
+**B. Carrier `shipping_method` vs `last_mile_delivery` split (runtime + UI implemented).** `shipping_method` = main transportation mode (`Sea`/`Sea Express`/`Air`/`Courier`); new `last_mile_delivery` = final delivery mode (`Parcel`/`Truck`). Separate columns — never combined, never `Sea/P`/`P`/`T`.
+- `operation-system-db-api.js`: `normalizeCarrierRateCardRecord` + `normalizeCarrierLeadTimeRecord` add `lastMileDelivery`. Template export: `last_mile_delivery` added to `CARRIER_RATE_TEMPLATE_FIXED_COLS` + example/data rows (slice bound `19→20` to keep `currency` in structure block).
+- `17_carrier_handlers.gs`: `CARRIER_RATE_CARDS_HEADERS_` + import write path add `last_mile_delivery`.
+- `carrier-rate-card.js` / `.html`: **Shipping Method** and **Last Mile Delivery** shown as separate columns; optional **Last Mile Delivery** filter. Lead Time display join now keys on `carrier_id + origin_country + destination_country + shipping_method + last_mile_delivery`, with **legacy fallback** to `… + shipping_method` when the rate card's `last_mile_delivery` is blank; still blank (no fabricated value) if nothing matches.
+- Specs: `CARRIER_AND_ROUTE_SPEC.md` v1.5, `DATABASE_RELATIONSHIP_MAP.md` §9 updated (schema rows, join key, separation note).
+
+**Out of scope (unchanged):** NO Carrier Price Engine, NO Cost Engine, no unrelated refactor.
+
+**Deploy note:** `01_`/`17_`/`18_` are source mirrors — copy to the live project + **redeploy together**. DB must have the new `carrier_rate_cards.last_mile_delivery` + `carrier_lead_times.last_mile_delivery` columns (auto-added on next import for rate cards; add manually to `carrier_lead_times`). All reads remain missing-column safe (blank).
+
+## 2026-07-06 — Carrier v1.1 template modes + matching priority + SKU Management nav + Sync button removed
+
+**A. Carrier Rate Card — two export template modes** (`operation-system-db-api.js` `exportCarrierRateTemplate(rows, {mode})`; `carrier-rate-card.js` + `.html` two buttons):
+- **Export Update Template** (`mode:'update'`, default) — weekly/monthly rate update. Uses current Search result; route/method/charge structure locked; `unit_rate` / `effective_from` / `effective_to` cleared for re-fill. (Prior behavior, now explicit.)
+- **Export Master Template** (`mode:'master'`) — one-time full import / new-route setup. Exports ALL loaded `carrier_rate_cards` rows (no Search required); every field editable, nothing cleared; supports adding new `shipping_method` / `last_mile_delivery` / `destination_warehouse_code` / city / zip / country rows.
+- Both include `last_mile_delivery`; **neither** includes Lead Time / `transit_days`. Import path unchanged (append-only + validation). Handlers: `crcExportUpdateTemplate` / `crcExportMasterTemplate` (+ `crcExportTemplate` back-compat alias → update).
+
+**B. Carrier destination matching priority FINALIZED** (spec only — no engine): `destination_warehouse_code` → `destination_city` → `destination_postal_code_start~end` → `destination_country`, **stop at the first (most specific) matching level** (higher wins; lower ignored). Then `marketplace` + `shipping_method` + `last_mile_delivery` + `weight_tier`. Documented in `CARRIER_AND_ROUTE_SPEC.md` §4 + `DATABASE_RELATIONSHIP_MAP.md` §9. Note: priority now puts **city above postal-range** (was postal→city).
+
+**C. `last_mile_delivery`** — confirmed already implemented (separate columns on `carrier_rate_cards` + `carrier_lead_times`, separate UI column + filter). No code change this task.
+
+**D. SKU Management nav grouping** (`index.html`): SKU Details + SKU Regional Details moved under a new collapsible **SKU Management** parent menu (`toggleMenu('sku-management')`), plus a disabled **Tax & Referral Rates** placeholder (Soon badge; page not built — spec only). Pages themselves unchanged; `showSection` keys (`skuDetails`, `sku-regional-details`) unchanged.
+
+**E. Sync Regional Details button removed** (`inventory-replenishment.html`) — one-time backfill migration complete; not a permanent feature. Button replaced with an explanatory comment. The JS handler `syncRegionalDetails()` and backend action `syncMarketplaceSkusToSkuRegionalDetails` remain available (idempotent, safe to re-run) but are no longer user-facing.
+
+**F. Specs:** `CARRIER_AND_ROUTE_SPEC.md` → v1.6 (Carrier v1.1: two template modes §4C.3, matching priority §4, last_mile), `DATABASE_RELATIONSHIP_MAP.md` §9 (matching priority).
+
+**Out of scope (unchanged):** NO Request Order / PO / Calculation / Cost / Shipment logic touched; no unrelated refactor. Carrier changes are frontend + client CSV export only — no new Apps Script / API / DB migration required (Master export reuses the existing append-only import path).
+
+## 2026-07-06 — Request Order Draft source mapping fixed + real-time validation
+
+**A. `request_order_line_sources` write mapping fixed** (`13_procurement_handlers.gs` `handleCreateRequestOrderDraft_`). Header expanded to the full source schema; canonical PK renamed to **`request_order_line_source_id`** (generated `ROLS-<10-char UUID>`; legacy `line_source_id` dual-written so existing tabs stay populated; normalizer reads either). Per line now populates:
+- **site_sku / marketplace_product_id** — looked up from `marketplace_skus` by `sku+company+country+marketplace` (`procurementMarketplaceSkuMap_`; asin read-fallback).
+- **forecast_qty** — Σ next-3-month `fc_regular_forecast` (M+1, M+2, M+3, year-aware) × target multiplier (`procurementForecastNext3Map_` + `procurementTargetRuleResolver_`, priority **SKU > Series > Category > default 100%**; percent/fraction auto-normalized).
+- **current_stock** — `amazon_inventory_snapshot.available_qty`, latest snapshot per `sku(+country+marketplace)` (`procurementInventoryStockMaps_`). *Limitation:* that snapshot has no `company` column → matched on sku/country/marketplace only (documented).
+- **on_the_way_qty** — Σ `shipment_lines.qty` for the SKU where the parent `shipments.status` is NOT completed/received/closed/cancelled/delivered (`procurementOnTheWayMaps_`); narrows by parent country/marketplace when the line carries them. Status-join unavailable → 0 (missing-safe, documented).
+- **allocation_method** = `manual_order_allocation` (never blank); **source_type** = `request_order_draft`; **source_bucket** = tier T1/T2/T3; **source_priority** = 1/2/3 (`procurementSourcePriority_`); **tier_type** = bucket.
+- **shortage_qty / reallocation_qty / recommended_qty** = blank (Calculation Engine not implemented).
+- All source-table reads are missing-tab/header safe. Manual drafts without company/country/marketplace still write correctly (identity-dependent fields resolve to '' / 0). API normalizer `normalizeRequestOrderLineSourceRecord` extended to expose the new fields.
+
+**B. No deprecated fields written** — only current source-table columns are written; `procurementAppendByHeader_` writes only columns present in the sheet header, so nothing deprecated is recreated.
+
+**C+D. Real-time Request Order Draft validation** (`request-order-draft.js`) — runs on every input/change **and** on expand, before Save (Part D: no layout/card redesign — only validation state added):
+- **Approved = KM+ResUS+ResTW** (company allocation total) and **Approved = full-carton multiple** of units_per_carton, validated per editable tier row live.
+- Invalid inputs get an immediate **red border** (`setInvalid_`) + a short **inline message** under the Approved input ("Approved qty must equal company allocation total." / "Approved qty must be a full-carton multiple.").
+- **Save + Submit buttons are disabled** while any row is invalid (`setSaveBlocked_`; marker classes `ro-save-btn` / `ro-submit-btn`); the existing Save/Submit guards remain as a fallback.
+- Applies across **T1 Request** and **T2+T3 Request** (SKU In Total is read-only). Full-carton is validated on the row TOTAL only — per-company full-carton NOT required (documented in code).
+
+**Deploy note:** `13_procurement_handlers.gs` is a source mirror — copy to the live project + **redeploy**. `request_order_line_sources` gains new columns automatically (`sheetEnsureColumns_`) on the next createRequestOrderDraft. Out of scope (untouched): Purchase Order, Shipment, Carrier, Template/Export Center, Calculation Engine.
+
+## 2026-07-06 — Carrier Rate Template: update/create by rate_card_id + carrier-scoped Update Template + importer-enforced locking
+
+**Server (`17_carrier_handlers.gs` `handleImportCarrierRateCards_` rewritten):** import now classifies each data row by **`rate_card_id`**:
+- **Existing row** (`rate_card_id` present, must exist) → **UPDATE**. In **`update` mode** only `unit_rate`/`effective_from`/`effective_to`/`fuel_surcharge`/`customs_fee`/`doc_fee`/`status`/`note` are writable; edits to any **locked** field (carrier_id/origin/destination keys/marketplace/shipping_method/last_mile_delivery/charge_*/dim_divisor/min_box_weight(+unit)/weight_tier(+unit)/currency/min_charge/transit_type/battery_type/customs_type) are **ignored (DB value kept) + counted (`locked_fields_ignored_count`) + row-warned**. In **`master` mode** any stored field may be updated.
+- **New row** (blank `rate_card_id` + meaningful values) → **CREATE** (new `CRC-…` id; all fields editable; `carrier_id` defaults to the resolved **carrier scope**; may add new shipping_method/last_mile_delivery/destination_warehouse_code/city/zip/country). Required-field validation; invalid → rejected + reported.
+- **Blank row** (no id, no meaningful values) → **skipped** (`blank_skipped_count`).
+- New summary returned: `mode`, `updated_existing_count`, `created_new_count`, `blank_skipped_count`, `rejected_count`, `locked_fields_ignored_count`, `skipped_examples`, `warnings`, `errors`, `batch_id` (+ `imported` = updated+created back-compat). Lead Time/`transit_days` columns still reject the whole import. **Field locking is enforced here (importer), not by the CSV** (documented).
+
+**Client:**
+- `operation-system-db-api.js`: templates now include **`rate_card_id`** (2nd column; blank on example/new rows, populated on existing rows); `CARRIER_RATE_TEMPLATE_EDITABLE_COLS` aligned to the 8 editable fields (min_charge moved to locked). `exportCarrierRateTemplate` writes `rate_card_id`; `importCarrierRateTemplate` unchanged signature but callers now pass `mode` + `carrier_scope`.
+- `carrier-rate-card.js`: **Export Update Template requires a selected carrier** (else blocks with *"Please select a carrier before exporting Update Template."*) and exports **only that carrier's active rows** (with `rate_card_id`), full set regardless of date/country filters, carrier-named filename. **Import** derives `mode` from the filename (`master` → master rules, else update) and passes the selected carrier as `carrier_scope` for new rows. Import result alert shows the full new summary (updated/created/blank-skipped/locked-ignored/rejected + warnings + errors).
+
+**Master Template** unchanged in intent (all carriers, all fields editable, create-or-update by `rate_card_id`) — now genuinely updates existing rows on import.
+
+**Specs:** `CARRIER_AND_ROUTE_SPEC.md` → v1.7 (§4C.3 two modes + carrier scope + `rate_card_id`, new **§4C.3A** row semantics & importer-enforced locking, **§4C.4** update/create import + full summary, new **§4C.7 future Export Center → carrier-email round-trip — documentation only**). `DATABASE_RELATIONSHIP_MAP.md` §9 carrier import note updated.
+
+**Deploy note:** `17_carrier_handlers.gs` is a source mirror — copy to the live project + **redeploy**. No DB migration (columns unchanged; `rate_card_id` already exists). **Out of scope / NOT implemented:** email automation, Gmail/Inbox parser, Export Center, Carrier Price Engine, Shipment Cost Engine — the carrier round-trip is manual export → manual import; email return is documented as future only.

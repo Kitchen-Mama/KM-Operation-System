@@ -1,0 +1,42 @@
+/* ============================================================
+   SKU Regional Details page (SKU Domain v2.0 Layer 2). Scoped to #sku-regional-details-section.
+   Simple management UI: view + edit regional identity / compliance-document fields. No pricing/tax.
+   ============================================================ */
+#sku-regional-details-section { padding: 16px 20px; }
+#sku-regional-details-section .srd-page__header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+#sku-regional-details-section .page-title { margin: 0; }
+#sku-regional-details-section .srd-filters { display: flex; gap: 8px; }
+#sku-regional-details-section .srd-input { padding: 7px 10px; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 13px; box-sizing: border-box; background: #fff; }
+#sku-regional-details-section #srd-search { min-width: 280px; }
+#sku-regional-details-section .srd-note { margin: 4px 0 8px; font-size: 13px; }
+#sku-regional-details-section .srd-note--demo { color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; display: inline-block; }
+#sku-regional-details-section .srd-result-meta { font-size: 12px; color: #64748B; margin-bottom: 6px; }
+
+#sku-regional-details-section .srd-table-wrap { max-height: 66vh; overflow: auto; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; }
+#sku-regional-details-section .srd-empty { padding: 28px; text-align: center; color: #94A3B8; font-size: 14px; }
+#sku-regional-details-section .srd-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+#sku-regional-details-section .srd-table th { position: sticky; top: var(--km-sticky-top-base, 0px); z-index: 5; background: #F1F5F9; color: #334155; text-align: left; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid #E2E8F0; }
+#sku-regional-details-section .srd-table td { padding: 7px 10px; border-bottom: 1px solid #EEF2F7; color: #1E293B; }
+#sku-regional-details-section .srd-table tbody tr:hover { background: #F8FAFC; }
+
+#sku-regional-details-section .srd-btn { padding: 7px 14px; border: 1px solid transparent; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
+#sku-regional-details-section .srd-btn--sm { padding: 3px 10px; font-size: 12px; background: #EEF2FF; color: #4338CA; }
+#sku-regional-details-section .srd-btn--sm:hover { background: #E0E7FF; }
+#sku-regional-details-section .srd-btn--primary { background: #3B82F6; color: #fff; }
+#sku-regional-details-section .srd-btn--primary:hover { background: #2563EB; }
+#sku-regional-details-section .srd-btn--default { background: #fff; color: #334155; border-color: #CBD5E1; }
+
+/* Edit modal */
+#sku-regional-details-section .srd-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 1000; }
+#sku-regional-details-section .srd-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1001; width: min(92vw, 640px); max-height: 88vh; overflow: auto; background: #fff; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.2); }
+#sku-regional-details-section .srd-modal__head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #E2E8F0; }
+#sku-regional-details-section .srd-modal__head h3 { margin: 0; font-size: 16px; }
+#sku-regional-details-section .srd-modal__close { border: none; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: #64748B; }
+#sku-regional-details-section .srd-modal__body { padding: 16px 18px; }
+#sku-regional-details-section .srd-modal__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#sku-regional-details-section .srd-modal__grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475569; }
+#sku-regional-details-section .srd-modal__grid input { width: 100%; }
+#sku-regional-details-section .srd-input[readonly] { background: #F1F5F9; color: #64748B; }
+#sku-regional-details-section .srd-modal__hint { font-size: 12px; color: #64748B; margin: 12px 0 0; }
+#sku-regional-details-section .srd-modal__foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid #E2E8F0; }
+@media (max-width: 720px) { #sku-regional-details-section .srd-modal__grid { grid-template-columns: 1fr; } }

@@ -1,0 +1,50 @@
+<!-- Carrier Rate Card (Carrier & Route Spec v1.4 §4C) — Reference/Master-like logistics pricing.
+     Injected into #carrier-rate-card-mount by KM.partialLoader on the page lifecycle mount.
+     Reference data only — NOT a Decision Layer; no pricing engine / no carrier ranking. -->
+<section id="carrier-rate-card-section" class="module-section crc-page">
+    <div class="page-header crc-page__header">
+        <h2 class="page-title">Carrier Rate Card</h2>
+        <div class="crc-page__header-actions">
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcExportUpdateBtn" onclick="crcExportUpdateTemplate()" title="Weekly/monthly rate update — route/method locked; unit_rate + effective dates cleared for re-fill">Export Update Template</button>
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcExportMasterBtn" onclick="crcExportMasterTemplate()" title="One-time full import / new-route setup — all fields editable; add new carrier/method/last-mile/warehouse/city/zip/country rows">Export Master Template</button>
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcImportBtn" onclick="crcOpenImport()">Import Template</button>
+            <input type="file" id="crcImportFile" accept=".csv,text/csv" style="display:none;" onchange="crcImportTemplate(this)">
+        </div>
+    </div>
+
+    <div class="crc-note" id="crc-mode-note"></div>
+
+    <!-- Filters — no data is shown before Search. -->
+    <div class="crc-filters" id="crc-filters">
+        <div class="crc-filter">
+            <label>Date</label>
+            <input type="date" id="crcFilterDate" class="crc-input">
+        </div>
+        <div class="crc-filter">
+            <label>Country / Ship To</label>
+            <input type="text" id="crcFilterCountry" class="crc-input" placeholder="e.g. US">
+        </div>
+        <div class="crc-filter">
+            <label>Method</label>
+            <select id="crcFilterMethod" class="crc-input"><option value="">All</option></select>
+        </div>
+        <div class="crc-filter">
+            <label>Last Mile Delivery</label>
+            <select id="crcFilterLastMile" class="crc-input"><option value="">All</option></select>
+        </div>
+        <div class="crc-filter">
+            <label>Carrier</label>
+            <select id="crcFilterCarrier" class="crc-input"><option value="">All</option></select>
+        </div>
+        <div class="crc-filter crc-filter--action">
+            <button type="button" class="crc-btn crc-btn--primary" onclick="crcSearch()">Search</button>
+        </div>
+    </div>
+
+    <div class="crc-result-meta" id="crc-result-meta"></div>
+
+    <!-- Results (empty until Search). Sticky header pins at the top of this scroll container. -->
+    <div class="crc-table-wrap" id="crc-table-wrap">
+        <div class="crc-empty" id="crc-empty">Set filters and click <strong>Search</strong> to view carrier rate cards.</div>
+    </div>
+</section>

@@ -413,8 +413,10 @@ function saveReplenSku() {
   const model = document.getElementById('replen-add-model')?.value || 'sales_driven';
   const launchDate = document.getElementById('replen-add-launch-date')?.value || '';
   const fulfillmentModel = document.getElementById('replen-add-fulfillment')?.value || '';
+  // SKU Domain v2.0: the field is a platform-neutral marketplace_product_id (UI may label it "ASIN"
+  // for Amazon). We send marketplace_product_id and never write the legacy `asin` column.
   const asinEl = document.getElementById('replen-add-asin');
-  const asin = asinEl ? asinEl.value.trim() : '';
+  const marketplaceProductId = asinEl ? asinEl.value.trim() : '';
 
   // Company / country / marketplace / currency / marketplace_id come from the selected
   // marketplaces-registry option (authoritative), so they stay consistent.
@@ -445,7 +447,7 @@ function saveReplenSku() {
       marketplace_id: marketplaceId,
       site_sku: siteSku,
       currency: currency,
-      asin: asin,
+      marketplace_product_id: marketplaceProductId,
       marketplace_sku_status: status,
       replenishment_model: model,
       fulfillment_model: fulfillmentModel,
@@ -2179,6 +2181,62 @@ function saveMarketplace() {
 window.openAddMarketplaceModal = openAddMarketplaceModal;
 window.closeAddMarketplaceModal = closeAddMarketplaceModal;
 window.saveMarketplace = saveMarketplace;
+
+// ---- Sync Regional Details (idempotent, resumable backfill trigger) ----
+// Scans marketplace_skus and CREATES the missing sku_regional_details row for each
+// (match key sku+company+country+marketplace). Idempotent: existing rows are skipped, never rewritten.
+// Batched server-side (default 300 creates/run) to avoid timeouts — if it stops early, click again to
+// continue. Repeatable without creating duplicates. Compliance-document fields are never touched.
+function syncRegionalDetails() {
+    if (!window.KM || !window.KM.DB || typeof window.KM.DB.syncMarketplaceSkusToSkuRegionalDetails !== 'function') {
+        alert('Sync is unavailable (KM.DB API not loaded).');
+        return;
+    }
+    if (!confirm('Backfill SKU Regional Details from marketplace_skus?\n\n' +
+        '• Missing regional rows are CREATED.\n' +
+        '• Rows that already exist are SKIPPED (never rewritten).\n' +
+        '• Runs in batches (default 300 per click) to avoid timeouts.\n' +
+        '• Safe to run repeatedly — no duplicates. If it stops early, click again to continue.\n\n' +
+        'Continue?')) {
+        return;
+    }
+    var btn = document.querySelector('button[onclick="syncRegionalDetails()"]');
+    var prevLabel = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+
+    window.KM.DB.syncMarketplaceSkusToSkuRegionalDetails().then(function(res) {
+        var r = res || {};
+        var finished = (r.finished !== false) && !(r.remaining_count > 0);
+        var lines = [
+            finished ? 'SKU Regional Details sync FINISHED.' : 'SKU Regional Details batch done — more rows remain.',
+            '',
+            'Created:                ' + (r.created_count || 0),
+            'Skipped (already exists): ' + (r.skipped_exists_count || 0),
+            'Skipped (invalid):       ' + (r.skipped_invalid_count || 0),
+            'Remaining:               ' + (r.remaining_count || 0),
+            'Finished:                ' + (finished ? 'true' : 'false')
+        ];
+        if (!finished) {
+            lines.push('', '➡ Click "Sync Regional Details" again to continue (already-created rows are skipped).');
+        }
+        if (r.warnings && r.warnings.length) {
+            lines.push('', '— Warnings —');
+            lines.push.apply(lines, r.warnings.slice(0, 20));
+            if (r.warnings.length > 20) lines.push('…and ' + (r.warnings.length - 20) + ' more');
+        }
+        if (r.errors && r.errors.length) {
+            lines.push('', '— Errors —');
+            lines.push.apply(lines, r.errors.slice(0, 20));
+            if (r.errors.length > 20) lines.push('…and ' + (r.errors.length - 20) + ' more');
+        }
+        alert(lines.join('\n'));
+    }).catch(function(err) {
+        alert('Sync failed. ' + (err && err.message ? err.message : err));
+    }).then(function() {
+        if (btn) { btn.disabled = false; btn.textContent = prevLabel; }
+    });
+}
+window.syncRegionalDetails = syncRegionalDetails;
 
 // Add Country Functions
 function showAddCountryInput() {

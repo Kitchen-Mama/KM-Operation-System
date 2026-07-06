@@ -1,0 +1,46 @@
+<!-- SKU Regional Details (SKU Domain v2.0 Layer 2 — sku_regional_details).
+     Injected into #sku-regional-details-mount by KM.partialLoader on lifecycle mount.
+     Regional identity + compliance-document fields. NO pricing, NO tax/duty (those live in tax_referral_rates). -->
+<section id="sku-regional-details-section" class="module-section srd-page">
+    <div class="page-header srd-page__header">
+        <h2 class="page-title">SKU Regional Details</h2>
+        <div class="srd-filters">
+            <input type="text" id="srd-search" class="srd-input" placeholder="Search SKU / site SKU / product id…" oninput="srdRender()">
+        </div>
+    </div>
+
+    <div class="srd-note" id="srd-mode-note"></div>
+    <div class="srd-result-meta" id="srd-result-meta"></div>
+
+    <div class="srd-table-wrap" id="srd-table-wrap">
+        <div class="srd-empty" id="srd-empty">Loading regional details…</div>
+    </div>
+
+    <!-- Edit modal -->
+    <div class="srd-modal-overlay" id="srd-modal-overlay" style="display:none;" onclick="srdCloseModal()"></div>
+    <div class="srd-modal" id="srd-modal" style="display:none;">
+        <div class="srd-modal__head"><h3 id="srd-modal-title">Edit Regional Detail</h3>
+            <button class="srd-modal__close" onclick="srdCloseModal()">×</button></div>
+        <div class="srd-modal__body">
+            <div class="srd-modal__grid">
+                <label>SKU<input id="srd-f-sku" class="srd-input" readonly></label>
+                <label>Company<input id="srd-f-company" class="srd-input" readonly></label>
+                <label>Country<input id="srd-f-country" class="srd-input" readonly></label>
+                <label>Marketplace<input id="srd-f-marketplace" class="srd-input" readonly></label>
+                <label>Site SKU<input id="srd-f-site_sku" class="srd-input"></label>
+                <label>Marketplace Product ID (ASIN)<input id="srd-f-marketplace_product_id" class="srd-input"></label>
+                <label>Packaging Regulation<input id="srd-f-packaging_regulation" class="srd-input"></label>
+                <label>Regulation URL<input id="srd-f-regulation_url" class="srd-input"></label>
+                <label>Language<input id="srd-f-language" class="srd-input"></label>
+                <label>Manual Version<input id="srd-f-manual_version" class="srd-input"></label>
+                <label>Label Version<input id="srd-f-label_version" class="srd-input"></label>
+                <label>Battery Regulation<input id="srd-f-battery_regulation" class="srd-input"></label>
+            </div>
+            <p class="srd-modal__hint">Editing <strong>Site SKU</strong> / <strong>Marketplace Product ID</strong> also syncs the matching <code>marketplace_skus</code> row (Regional Details is the higher-priority source). No pricing / tax fields here.</p>
+        </div>
+        <div class="srd-modal__foot">
+            <button class="srd-btn srd-btn--default" onclick="srdCloseModal()">Cancel</button>
+            <button class="srd-btn srd-btn--primary" onclick="srdSave()">Save</button>
+        </div>
+    </div>
+</section>

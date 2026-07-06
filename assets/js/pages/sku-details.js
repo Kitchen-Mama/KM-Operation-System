@@ -152,12 +152,16 @@ function renderSkuLifecycleTable(section, data) {
             '<div class="scroll-cell" data-col="13" data-unit="dim">' + (item.cartonDimensions || item.carton_dimensions || '') + '</div>' +
             '<div class="scroll-cell" data-col="14" data-unit="wt">' + (item.cartonWeight || item.carton_weight || '') + '</div>' +
             '<div class="scroll-cell" data-col="15">' + (item.unitsPerCarton || item.units_per_carton || '') + '</div>' +
-            '<div class="scroll-cell" data-col="16">' + (item.hsCode || item.hscode || '') + '</div>' +
-            '<div class="scroll-cell" data-col="17">' + _skuPrice(item.declaredValue || item.declared_value, item.declaredValueUnit) + '</div>' +
-            '<div class="scroll-cell" data-col="18">' + _skuPrice(item.minimumPrice || item.minimum_price, item.minimumPriceUnit) + '</div>' +
-            '<div class="scroll-cell" data-col="19">' + _skuPrice(item.msrp, item.msrpUnit) + '</div>' +
-            '<div class="scroll-cell" data-col="20">' + _skuPrice(item.sellingPrice || item.selling_price, item.sellingUnit) + '</div>' +
-            '<div class="scroll-cell" data-col="21">' + item.pm + '</div>' +
+            // SKU Domain v2.0: cols 16/17/18 = Material / Battery Type / Magnet Type (two INDEPENDENT
+            // attributes, 1:1 with sku_details.battery_type / magnet_type). HS Code + Declared Value
+            // moved to tax_referral_rates. Prices use the single base_currency.
+            '<div class="scroll-cell" data-col="16">' + (item.material || '') + '</div>' +
+            '<div class="scroll-cell" data-col="17">' + (item.batteryType || '') + '</div>' +
+            '<div class="scroll-cell" data-col="18">' + (item.magnetType || '') + '</div>' +
+            '<div class="scroll-cell" data-col="19">' + _skuPrice(item.minimumPrice || item.minimum_price, item.baseCurrency) + '</div>' +
+            '<div class="scroll-cell" data-col="20">' + _skuPrice(item.msrp, item.baseCurrency) + '</div>' +
+            '<div class="scroll-cell" data-col="21">' + _skuPrice(item.sellingPrice || item.selling_price, item.baseCurrency) + '</div>' +
+            '<div class="scroll-cell" data-col="22">' + item.pm + '</div>' +
         '</div>';
     }).join('');
 }

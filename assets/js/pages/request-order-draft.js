@@ -277,10 +277,14 @@
                     'value="' + rowApproved + '" oninput="roOnApprovedInput(this)" style="text-align:right;width:90px;">'
                 : rowApproved.toLocaleString();
             var bucketTag = ' <span class="ro-bucket-tag">' + esc(r.bucket) + '</span>';
+            // Inline validation message (draft only) — appended under the Approved input; no column added.
+            var apprCell = isDraft
+                ? apprInput + '<div class="ro-row-msg" id="ro-msg-' + rk + '" style="display:none;color:#DC2626;font-size:11px;line-height:1.3;margin-top:2px;text-align:right;"></div>'
+                : apprInput;
             return '<tr data-rk="' + rk + '" data-sku="' + esc(r.sku) + '">' +
                 '<td>' + dash(r.sku) + bucketTag + '</td>' + coCells +
                 '<td class="pc-num">' + rowReq.toLocaleString() + '</td>' +
-                '<td class="pc-num">' + apprInput + '</td>' +
+                '<td class="pc-num">' + apprCell + '</td>' +
                 '<td class="pc-num" id="ro-ctn-' + rk + '">' + ctn.toLocaleString() + '</td>' +
             '</tr>';
         }).join('');
@@ -325,8 +329,9 @@
     function renderActions(o) {
         var id = "'" + o.requestOrderId + "'";
         if (o.status === 'draft') {
-            return btn('roSaveDraft(' + id + ')', 'Save', 'ok') +
-                   btn('roSubmit(' + id + ')', 'Submit', 'primary') +
+            // Save / Submit carry marker classes so live validation can disable them while invalid.
+            return '<button class="sp-btn sp-btn-submit ro-save-btn" onclick="roSaveDraft(' + id + ')">Save</button>' +
+                   '<button class="sp-btn sp-btn-submit ro-submit-btn" onclick="roSubmit(' + id + ')">Submit</button>' +
                    btn('roCancel(' + id + ')', 'Cancel', 'danger');
         }
         if (o.status === 'pending_approval') {
@@ -431,25 +436,62 @@
         set('ro-total-ctn2-', totCtn.toLocaleString());
         set('ro-total-qty-', totAppr.toLocaleString());     // header Total Qty / Ctn
         set('ro-total-ctn-', totCtn.toLocaleString());
+        // Re-run live validation after every recompute (expand + every Approved / company input change).
+        validateCard(id);
     }
 
-    // Validate every editable tier row: company split must equal Approved, and Approved must be full-carton.
-    // Returns [] when valid, else messages.
+    // ---- real-time validation (runs on every input + on expand; blocks Save/Submit while invalid) ----
+    // Two rules per editable tier row:
+    //   (1) Approved qty must equal the company allocation total (KM + ResUS + ResTW …).
+    //   (2) Approved qty must be a full-carton multiple of units_per_carton.
+    // NOTE (Part C.3): the current design validates the FULL-CARTON rule on the ROW's TOTAL Approved qty
+    // only — each individual company allocation is NOT required to be a full-carton multiple. If per-company
+    // full cartons are ever required, add a per-company check in validateRowLive_ below.
+    function setInvalid_(el, bad) {
+        if (!el) return;
+        if (bad) { el.style.borderColor = '#DC2626'; el.style.background = '#FEF2F2'; el.classList.add('ro-invalid'); }
+        else { el.style.borderColor = ''; el.style.background = ''; el.classList.remove('ro-invalid'); }
+    }
+    // Validate ONE tier row live; toggles red borders + inline message. Returns detailed messages ([] = ok).
+    function validateRowLive_(card, tr) {
+        var rk = tr.getAttribute('data-rk'), sku = tr.getAttribute('data-sku');
+        var appr = card.querySelector('.ro-appr-input[data-rk="' + rk + '"]');
+        if (!appr) return [];   // read-only (non-draft) row — nothing to validate
+        var approved = parseInt(appr.value, 10) || 0;
+        var upc = parseFloat(appr.getAttribute('data-upc')) || 0;
+        var coInputs = rowCompanyInputs(card, rk);
+        var coSum = coInputs.reduce(function (s, ci) { return s + (parseInt(ci.value, 10) || 0); }, 0);
+        var splitBad = (coSum !== approved);
+        var cartonBad = (upc > 0 && (approved % upc !== 0));
+        var inlineMsgs = [], detailMsgs = [];
+        if (splitBad) { inlineMsgs.push('Approved qty must equal company allocation total.'); detailMsgs.push(sku + ': company split (' + coSum + ') ≠ Approved (' + approved + ')'); }
+        if (cartonBad) { inlineMsgs.push('Approved qty must be a full-carton multiple.'); detailMsgs.push(sku + ': Approved ' + approved + ' not a multiple of ' + upc + '/ctn'); }
+        setInvalid_(appr, splitBad || cartonBad);
+        coInputs.forEach(function (ci) { setInvalid_(ci, splitBad); });
+        var msgEl = document.getElementById('ro-msg-' + rk);
+        if (msgEl) { msgEl.innerHTML = inlineMsgs.join('<br>'); msgEl.style.display = inlineMsgs.length ? 'block' : 'none'; }
+        return detailMsgs;
+    }
+    // Toggle the Save / Submit buttons of a card.
+    function setSaveBlocked_(card, blocked) {
+        card.querySelectorAll('.ro-save-btn, .ro-submit-btn').forEach(function (b) {
+            b.disabled = blocked;
+            b.classList.toggle('is-disabled', blocked);
+            b.style.opacity = blocked ? '0.5' : '';
+            b.style.cursor = blocked ? 'not-allowed' : '';
+            b.title = blocked ? 'Fix the highlighted validation errors first.' : '';
+        });
+    }
+    // Validate the whole card live (all tiers: SKU In Total is read-only; T1 + T2/T3 are editable),
+    // apply per-row UI state, block/unblock Save+Submit, and return detailed messages ([] = valid).
     function validateCard(id) {
         var card = document.getElementById('ro-card-' + id);
         if (!card) return [];
         var bad = [];
         card.querySelectorAll('.ro-tier tr[data-rk]').forEach(function (tr) {
-            var rk = tr.getAttribute('data-rk'), sku = tr.getAttribute('data-sku');
-            var appr = card.querySelector('.ro-appr-input[data-rk="' + rk + '"]');
-            if (!appr) return;
-            var approved = parseInt(appr.value, 10) || 0;
-            var upc = parseFloat(appr.getAttribute('data-upc')) || 0;
-            var coInputs = rowCompanyInputs(card, rk);
-            var coSum = coInputs.reduce(function (s, ci) { return s + (parseInt(ci.value, 10) || 0); }, 0);
-            if (coSum !== approved) bad.push(sku + ': company split (' + coSum + ') ≠ Approved (' + approved + ')');
-            if (upc > 0 && (approved % upc !== 0)) bad.push(sku + ': Approved ' + approved + ' not a multiple of ' + upc + '/ctn');
+            bad = bad.concat(validateRowLive_(card, tr));
         });
+        setSaveBlocked_(card, bad.length > 0);
         return bad;
     }
 

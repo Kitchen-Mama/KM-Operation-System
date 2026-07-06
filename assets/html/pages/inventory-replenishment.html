@@ -58,6 +58,10 @@
                                 <button class="replen-btn replen-btn--info" onclick="openEditSkuModal()">Edit SKU</button>
                                 <button class="replen-btn replen-btn--danger" onclick="handleDeleteSku()">Delete SKU</button>
                                 <button class="replen-btn replen-btn--secondary" onclick="openAddMarketplaceModal()">+ Marketplace</button>
+                                <!-- "Sync Regional Details" button removed (2026-07-06) — one-time sku_regional_details
+                                     backfill migration is complete; not a permanent operational feature. The backend action
+                                     `syncMarketplaceSkusToSkuRegionalDetails` + JS handler `syncRegionalDetails()` remain
+                                     available (idempotent, safe to re-run) should another backfill ever be needed. -->
                             </div>
                         </div>
                     </div>

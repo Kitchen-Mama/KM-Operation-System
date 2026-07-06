@@ -18,7 +18,12 @@
 
 var REQUEST_ORDERS_HEADERS_ = [
   'request_order_id', 'request_order_no', 'request_order_version', 'parent_request_order_id',
-  'company', 'supplier_id', 'supplier_name', 'factory_id', 'warehouse_id', 'status',
+  'company', 'supplier_id', 'supplier_name', 'factory_id', 'warehouse_id',
+  // request_status is the CANONICAL header status (draft / pending_approval / approved / cancelled /
+  // converted_to_po). The legacy `status` column is NO LONGER written / ensured (read-fallback only).
+  'request_status',
+  // tier_group summarizes the buckets present across the request's lines: T1 / T2_T3 / mixed / blank.
+  'tier_group',
   'total_sku', 'total_qty', 'total_cartons', 'estimated_amount', 'currency',
   'source', 'source_ref_type', 'source_ref_id',
   'created_by', 'created_at', 'submitted_by', 'submitted_at',
@@ -28,22 +33,33 @@ var REQUEST_ORDERS_HEADERS_ = [
 ];
 
 var REQUEST_ORDER_LINES_HEADERS_ = [
-  'request_order_line_id', 'request_order_id', 'sku', 'product_name', 'series',
-  // company = the site owner (KM / ResUS / ResTW …) this line's demand belongs to. Each line maps to
-  // ONE company; the KM/ResUS/ResTW split in the Draft UI is the set of per-company lines (no separate
-  // split-storage table yet — see request_order_line_sources note in the spec).
+  'request_order_line_id', 'request_order_id', 'sku', 'series',
+  // company = the site owner (KM / ResUS / ResTW …) this line's demand belongs to (one company per line).
   'company',
-  // Demand bucket is preserved on EVERY line (Request Layer keeps T1/T2/T3 separated; PO Layer may
-  // merge later via request_order_po_links). request_month = YYYY-MM the bucket maps to.
+  // Demand bucket preserved on EVERY line (canonical T1/T2/T3 field — NOT tier_type). request_month = YYYY-MM.
   'request_bucket', 'request_month',
-  // Decision-layer schedule fields (per tier; written to all lines of the tier at Save). Blank until entered.
+  // Decision-layer schedule fields (line-level; per tier). Blank until entered.
   'inspection_date', 'expected_ready_date', 'expected_ship_date',
-  'requested_qty', 'approved_qty', 'final_order_qty', 'units_per_carton', 'carton_qty',
-  // Snapshots carried from the Order Allocation draft (same sources as 下單系統 table; blank when absent).
-  'forecast_qty', 'current_stock', 'on_the_way_qty', 'factory_allocated_qty', 'shortage_qty', 'reallocation_qty',
+  // Quantities. km_qty/resus_qty/restw_qty = per-company allocation for this line (matched company = qty,
+  // others = 0). shortage_qty kept as primary.
+  'requested_qty', 'approved_qty', 'km_qty', 'resus_qty', 'restw_qty', 'units_per_carton', 'carton_qty', 'shortage_qty',
   'supplier_id', 'supplier_name', 'supplier_sku', 'unit_cost', 'estimated_amount', 'currency',
-  'need_reason', 'calculation_method', 'line_status', 'linked_purchase_order_line_id',
-  'related_entity_type', 'related_entity_id', 'note', 'created_at', 'updated_at'
+  'calculation_method', 'line_status', 'linked_purchase_order_line_id',
+  'note', 'created_at', 'updated_at'
+];
+
+// request_order_line_sources — SOURCE OF TRUTH for company / site / month allocation detail. One row per
+// request line (append-only). Written at request creation (Send Request → createRequestOrderDraft).
+// Canonical PK column = request_order_line_source_id (legacy tabs may still carry line_source_id — the
+// write dual-writes both so an existing sheet stays populated; the normalizer reads either).
+var REQUEST_ORDER_LINE_SOURCES_HEADERS_ = [
+  'request_order_line_source_id', 'request_order_line_id', 'request_order_id', 'sku',
+  'company', 'country', 'marketplace', 'site_sku', 'marketplace_product_id',
+  'tier_type', 'source_month',
+  'forecast_qty', 'current_stock', 'on_the_way_qty', 'shortage_qty',
+  'reallocation_qty', 'recommended_qty', 'requested_qty', 'approved_qty',
+  'allocation_method', 'source_bucket', 'source_priority', 'source_type', 'note',
+  'created_at', 'updated_at'
 ];
 
 var PURCHASE_ORDERS_HEADERS_ = [
@@ -75,6 +91,39 @@ function procurementToday_() {
 }
 
 function procurementNum_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+/** Map a company + qty onto { km_qty, resus_qty, restw_qty } (matched company = qty, others = 0). */
+function procurementCompanyQty_(company, qty) {
+  var c = String(company || '').trim().toUpperCase();
+  var out = { km_qty: 0, resus_qty: 0, restw_qty: 0 };
+  var q = procurementNum_(qty);
+  if (c.indexOf('RESUS') !== -1 || c === 'RES US') out.resus_qty = q;
+  else if (c.indexOf('RESTW') !== -1 || c === 'RES TW') out.restw_qty = q;
+  else if (c === 'KM' || c.indexOf('KITCHEN MAMA') !== -1 || c === 'KITCHENMAMA') out.km_qty = q;
+  // Unknown company → all 0 (documented). Never blank.
+  return out;
+}
+
+/** Canonical request status: prefer request_status, fall back to legacy status (read-only back-compat). */
+function procurementReqStatus_(ref) {
+  var rs = ref.col('request_status') !== -1 ? String(ref.vals[ref.col('request_status')]).trim() : '';
+  if (rs) return rs;
+  return ref.col('status') !== -1 ? String(ref.vals[ref.col('status')]).trim() : '';
+}
+
+/** tier_group from an array of buckets: only T1 → 'T1'; only T2/T3 → 'T2_T3'; both → 'mixed'; none → ''. */
+function procurementTierGroup_(buckets) {
+  var hasT1 = false, hasT23 = false;
+  (buckets || []).forEach(function (b) {
+    var t = String(b || '').trim().toUpperCase();
+    if (t === 'T1' || t === '') { if (t === 'T1') hasT1 = true; }
+    else if (t === 'T2' || t === 'T3') hasT23 = true;
+  });
+  if (hasT1 && hasT23) return 'mixed';
+  if (hasT1) return 'T1';
+  if (hasT23) return 'T2_T3';
+  return '';
+}
 
 /** Get (or create with the documented header row) a procurement tab in the operation DB. */
 function procurementEnsureSheet_(ss, name, headers) {
@@ -144,6 +193,226 @@ function procurementSkuInfoMap_(ss) {
   return map;
 }
 
+// ---- request_order_line_sources mapping helpers (Part A) ----------
+// All maps are built ONCE per createRequestOrderDraft call (small draft; cheap). Every source table is
+// missing-tab / missing-header safe — absent data yields '' / 0 (never fabricated). Match grain for the
+// identity fields = sku + company + country + marketplace (lowercased).
+
+function procSrcNorm_(v) { return String(v == null ? '' : v).trim(); }
+function procSrcKey_(sku, company, country, marketplace) {
+  return procSrcNorm_(sku).toLowerCase() + '|' + procSrcNorm_(company).toLowerCase() + '|' +
+         procSrcNorm_(country).toLowerCase() + '|' + procSrcNorm_(marketplace).toLowerCase();
+}
+var PROC_MONTH_KEYS_ = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** source_priority from bucket: T1→1, T2→2, T3→3 (else ''). */
+function procurementSourcePriority_(bucket) {
+  var b = String(bucket || '').trim().toUpperCase();
+  if (b === 'T1') return 1;
+  if (b === 'T2') return 2;
+  if (b === 'T3') return 3;
+  return '';
+}
+
+/** marketplace_skus identity map: sku|company|country|marketplace -> { site_sku, marketplace_product_id }.
+ *  marketplace_product_id falls back to legacy asin (read-only). Missing-tab safe. */
+function procurementMarketplaceSkuMap_(ss) {
+  var map = {};
+  var sh = ss.getSheetByName('marketplace_skus');
+  if (!sh) return map;
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return map;
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var cS = h.indexOf('sku'), cC = h.indexOf('company'), cCo = h.indexOf('country'), cM = h.indexOf('marketplace'),
+      cSite = h.indexOf('site_sku'), cPid = h.indexOf('marketplace_product_id'), cAsin = h.indexOf('asin');
+  if (cS === -1) return map;
+  for (var i = 1; i < data.length; i++) {
+    var key = procSrcKey_(data[i][cS], cC !== -1 ? data[i][cC] : '', cCo !== -1 ? data[i][cCo] : '', cM !== -1 ? data[i][cM] : '');
+    if (map[key]) continue;   // first wins
+    map[key] = {
+      site_sku: cSite !== -1 ? procSrcNorm_(data[i][cSite]) : '',
+      marketplace_product_id: (cPid !== -1 ? procSrcNorm_(data[i][cPid]) : '') || (cAsin !== -1 ? procSrcNorm_(data[i][cAsin]) : '')
+    };
+  }
+  return map;
+}
+
+/** fc_target_rules → a resolver fn(sku, series, category) => multiplier (priority SKU > Series > Category
+ *  > default 1.0). target_percentage is normalized to a multiplier: >1 treated as percent (÷100), else
+ *  as a fraction; blank/absent → 1.0 (100%). Missing-tab safe. */
+function procurementTargetRuleResolver_(ss) {
+  var bySku = {}, bySeries = {}, byCat = {};
+  var sh = ss.getSheetByName('fc_target_rules');
+  function toMult(v) {
+    if (v === '' || v == null) return null;
+    var n = parseFloat(v); if (isNaN(n)) return null;
+    return n > 1 ? (n / 100) : n;   // 80 -> 0.8 ; 0.8 -> 0.8 ; 100 -> 1.0
+  }
+  if (sh) {
+    var data = sh.getDataRange().getValues();
+    if (data.length >= 2) {
+      var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+      var cScope = h.indexOf('scope_type'); if (cScope === -1) cScope = h.indexOf('scope'); if (cScope === -1) cScope = h.indexOf('level');
+      var cScopeId = h.indexOf('scope_id');
+      var cSku = h.indexOf('sku'), cSeries = h.indexOf('series'), cCat = h.indexOf('category');
+      var cPct = h.indexOf('target_percentage'); if (cPct === -1) cPct = h.indexOf('target_rate'); if (cPct === -1) cPct = h.indexOf('target'); if (cPct === -1) cPct = h.indexOf('percentage');
+      for (var i = 1; i < data.length; i++) {
+        var mult = cPct !== -1 ? toMult(data[i][cPct]) : null;
+        if (mult == null) continue;
+        var scope = cScope !== -1 ? String(data[i][cScope]).trim().toLowerCase() : '';
+        var scopeId = cScopeId !== -1 ? procSrcNorm_(data[i][cScopeId]) : '';
+        // Resolve the target key: prefer explicit scope_type + scope_id; else infer from sku/series/category columns.
+        if (scope === 'sku' || (!scope && cSku !== -1 && procSrcNorm_(data[i][cSku]))) { bySku[(scopeId || procSrcNorm_(data[i][cSku])).toUpperCase()] = mult; }
+        else if (scope === 'series' || (!scope && cSeries !== -1 && procSrcNorm_(data[i][cSeries]))) { bySeries[(scopeId || procSrcNorm_(data[i][cSeries])).toUpperCase()] = mult; }
+        else if (scope === 'category' || (!scope && cCat !== -1 && procSrcNorm_(data[i][cCat]))) { byCat[(scopeId || procSrcNorm_(data[i][cCat])).toUpperCase()] = mult; }
+        else if (scopeId) { bySku[scopeId.toUpperCase()] = mult; }   // best-effort: bare scope_id treated as SKU
+      }
+    }
+  }
+  return function (sku, series, category) {
+    var s = String(sku || '').trim().toUpperCase(), se = String(series || '').trim().toUpperCase(), c = String(category || '').trim().toUpperCase();
+    if (s && bySku[s] != null) return bySku[s];
+    if (se && bySeries[se] != null) return bySeries[se];
+    if (c && byCat[c] != null) return byCat[c];
+    return 1.0;   // default 100%
+  };
+}
+
+/** fc_regular_forecast → map sku|company|country|marketplace -> summed next-3-month forecast with the
+ *  target multiplier applied (SKU>Series>Category>100%). "Next 3 months" = the three calendar months
+ *  AFTER the current month (M+1, M+2, M+3), matched against each forecast row's `year`. Missing-tab safe. */
+function procurementForecastNext3Map_(ss, targetResolver) {
+  var map = {};
+  var sh = ss.getSheetByName('fc_regular_forecast');
+  if (!sh) return map;
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return map;
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var cS = h.indexOf('sku'), cC = h.indexOf('company'), cCo = h.indexOf('country'), cM = h.indexOf('marketplace'),
+      cYear = h.indexOf('year'), cSeries = h.indexOf('series'), cCat = h.indexOf('category');
+  if (cS === -1) return map;
+  var monthCol = PROC_MONTH_KEYS_.map(function (mk) { return h.indexOf(mk); });
+  // Next 3 months (M+1..M+3) as {year, monthIndex} pairs relative to today.
+  var now = new Date();
+  var yNow = now.getFullYear(), mNow = now.getMonth();   // 0-based
+  var windows = [];
+  for (var k = 1; k <= 3; k++) { var mm = mNow + k; windows.push({ year: yNow + Math.floor(mm / 12), mi: ((mm % 12) + 12) % 12 }); }
+  for (var i = 1; i < data.length; i++) {
+    var rowYear = cYear !== -1 ? parseInt(String(data[i][cYear]).trim(), 10) : NaN;
+    var mult = targetResolver(cS !== -1 ? data[i][cS] : '', cSeries !== -1 ? data[i][cSeries] : '', cCat !== -1 ? data[i][cCat] : '');
+    var add = 0;
+    for (var w = 0; w < windows.length; w++) {
+      // If the forecast rows carry a year, only add the month when the row's year matches the window's year.
+      if (!isNaN(rowYear) && rowYear !== windows[w].year) continue;
+      var mc = monthCol[windows[w].mi];
+      if (mc !== -1) add += (parseFloat(data[i][mc]) || 0) * mult;
+    }
+    if (!add) continue;
+    var key = procSrcKey_(data[i][cS], cC !== -1 ? data[i][cC] : '', cCo !== -1 ? data[i][cCo] : '', cM !== -1 ? data[i][cM] : '');
+    map[key] = (map[key] || 0) + add;
+  }
+  return map;
+}
+
+/** amazon_inventory_snapshot → current_stock lookup. The snapshot has NO company column, so identity is
+ *  matched on sku (+ country + marketplace when present on the line). Returns { exact, bySku } where
+ *  exact[sku|country|marketplace] = latest available_qty and bySku[sku] = Σ latest per (country,marketplace).
+ *  Limitation: company is not part of this table — documented; matched on sku/country/marketplace only. */
+function procurementInventoryStockMaps_(ss) {
+  var exact = {}, bySku = {}, latestDate = {};
+  var sh = ss.getSheetByName('amazon_inventory_snapshot');
+  if (!sh) return { exact: exact, bySku: bySku };
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return { exact: exact, bySku: bySku };
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var cS = h.indexOf('sku'), cCo = h.indexOf('country'), cM = h.indexOf('marketplace'),
+      cQty = h.indexOf('available_qty'), cDate = h.indexOf('snapshot_date');
+  if (cS === -1 || cQty === -1) return { exact: exact, bySku: bySku };
+  for (var i = 1; i < data.length; i++) {
+    var sku = procSrcNorm_(data[i][cS]); if (!sku) continue;
+    var country = cCo !== -1 ? procSrcNorm_(data[i][cCo]) : '';
+    var mkt = cM !== -1 ? procSrcNorm_(data[i][cM]) : '';
+    var date = cDate !== -1 ? procSrcNorm_(data[i][cDate]) : '';
+    var qty = parseFloat(data[i][cQty]) || 0;
+    var ek = sku.toLowerCase() + '|' + country.toLowerCase() + '|' + mkt.toLowerCase();
+    // Keep only the latest snapshot_date per (sku,country,marketplace).
+    if (latestDate[ek] === undefined || date >= latestDate[ek]) { latestDate[ek] = date; exact[ek] = qty; }
+  }
+  // bySku = sum of the latest per-key value across all (country,marketplace) for that sku.
+  Object.keys(exact).forEach(function (ek) { var sku = ek.split('|')[0]; bySku[sku] = (bySku[sku] || 0) + exact[ek]; });
+  return { exact: exact, bySku: bySku };
+}
+
+/** current_stock for a line from the inventory maps. Exact (sku|country|marketplace) when country+marketplace
+ *  are present; else sum-by-sku (documented fallback). */
+function procurementCurrentStock_(invMaps, sku, country, marketplace) {
+  var s = procSrcNorm_(sku); if (!s) return 0;
+  if (procSrcNorm_(country) && procSrcNorm_(marketplace)) {
+    var ek = s.toLowerCase() + '|' + procSrcNorm_(country).toLowerCase() + '|' + procSrcNorm_(marketplace).toLowerCase();
+    return invMaps.exact[ek] || 0;
+  }
+  return invMaps.bySku[s.toLowerCase()] || 0;
+}
+
+/** shipment_lines → on_the_way_qty per sku, counting ONLY lines whose parent shipment is ACTIVE
+ *  (status NOT in completed/received/closed/cancelled/delivered). When the line has country/marketplace
+ *  and the parent shipment records them, they must match (best-effort narrowing). Missing-tab safe.
+ *  LIMITATION: if the shipments status join is unavailable, returns {} (0 for every sku) — never fabricated. */
+function procurementOnTheWayMaps_(ss) {
+  var active = {};   // shipment_id -> { country, marketplace }
+  var CLOSED = { completed: 1, received: 1, closed: 1, cancelled: 1, canceled: 1, delivered: 1 };
+  var shSh = ss.getSheetByName('shipments');
+  if (shSh) {
+    var sd = shSh.getDataRange().getValues();
+    if (sd.length >= 2) {
+      var sh = sd[0].map(function (x) { return String(x).trim().toLowerCase(); });
+      var cId = sh.indexOf('shipment_id'), cStatus = sh.indexOf('status'),
+          cCo = sh.indexOf('country'), cM = sh.indexOf('marketplace');
+      if (cId !== -1) {
+        for (var i = 1; i < sd.length; i++) {
+          var id = procSrcNorm_(sd[i][cId]); if (!id) continue;
+          var st = cStatus !== -1 ? String(sd[i][cStatus]).trim().toLowerCase() : '';
+          if (CLOSED[st]) continue;   // not active
+          active[id] = { country: cCo !== -1 ? procSrcNorm_(sd[i][cCo]) : '', marketplace: cM !== -1 ? procSrcNorm_(sd[i][cM]) : '' };
+        }
+      }
+    }
+  }
+  // Sum active shipment_lines.qty into a per-(sku|country|marketplace) and per-sku structure.
+  var exact = {}, bySku = {};
+  var lnSh = ss.getSheetByName('shipment_lines');
+  if (lnSh) {
+    var ld = lnSh.getDataRange().getValues();
+    if (ld.length >= 2) {
+      var lh = ld[0].map(function (x) { return String(x).trim().toLowerCase(); });
+      var cSid = lh.indexOf('shipment_id'), cSku = lh.indexOf('sku'), cQty = lh.indexOf('qty');
+      if (cSid !== -1 && cSku !== -1 && cQty !== -1) {
+        for (var j = 1; j < ld.length; j++) {
+          var sid = procSrcNorm_(ld[j][cSid]);
+          if (!active[sid]) continue;   // parent not active (or status join unavailable)
+          var sku = procSrcNorm_(ld[j][cSku]); if (!sku) continue;
+          var qty = parseFloat(ld[j][cQty]) || 0;
+          var ap = active[sid];
+          var ek = sku.toLowerCase() + '|' + ap.country.toLowerCase() + '|' + ap.marketplace.toLowerCase();
+          exact[ek] = (exact[ek] || 0) + qty;
+          bySku[sku.toLowerCase()] = (bySku[sku.toLowerCase()] || 0) + qty;
+        }
+      }
+    }
+  }
+  return { exact: exact, bySku: bySku };
+}
+
+/** on_the_way_qty for a line: narrow by country+marketplace when present (via parent shipment), else sum-by-sku. */
+function procurementOnTheWay_(otwMaps, sku, country, marketplace) {
+  var s = procSrcNorm_(sku); if (!s) return 0;
+  if (procSrcNorm_(country) && procSrcNorm_(marketplace)) {
+    var ek = s.toLowerCase() + '|' + procSrcNorm_(country).toLowerCase() + '|' + procSrcNorm_(marketplace).toLowerCase();
+    if (otwMaps.exact[ek] !== undefined) return otwMaps.exact[ek];
+  }
+  return otwMaps.bySku[s.toLowerCase()] || 0;
+}
+
 /** Find the sheet row (1-indexed) whose id column matches; returns { row, vals, headers, col } or null. */
 function procurementFindRow_(sheet, idColName, idValue) {
   var data = sheet.getDataRange().getValues();
@@ -182,8 +451,15 @@ function handleCreateRequestOrderDraft_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var roSheet = procurementEnsureSheet_(ss, 'request_orders', REQUEST_ORDERS_HEADERS_);
   var rolSheet = procurementEnsureSheet_(ss, 'request_order_lines', REQUEST_ORDER_LINES_HEADERS_);
+  var srcSheet = procurementEnsureSheet_(ss, 'request_order_line_sources', REQUEST_ORDER_LINE_SOURCES_HEADERS_);
   var upcMap = procurementUpcMap_(ss);
   var infoMap = procurementSkuInfoMap_(ss);
+  // request_order_line_sources mapping inputs (built once; all missing-tab / missing-header safe).
+  var mskuMap = procurementMarketplaceSkuMap_(ss);
+  var targetResolver = procurementTargetRuleResolver_(ss);
+  var forecastMap = procurementForecastNext3Map_(ss, targetResolver);
+  var invMaps = procurementInventoryStockMaps_(ss);
+  var otwMaps = procurementOnTheWayMaps_(ss);
 
   var now = procurementTimestamp_();
   var today = procurementToday_();
@@ -192,11 +468,15 @@ function handleCreateRequestOrderDraft_(body) {
   var currency = String((body && body.currency) || '').trim();
   var supplierId = String((body && body.supplier_id) || '').trim();
   var supplierName = String((body && body.supplier_name) || '').trim();
+  // Default preferred factory warehouse (CN Youxin) when none supplied.
+  var DEFAULT_WAREHOUSE_ID = 'WH-TW-CN-FACTORY-YOUXIN';
+  var warehouseId = String((body && body.warehouse_id) || '').trim() || DEFAULT_WAREHOUSE_ID;
 
   var requestOrderId = 'RO-' + Utilities.getUuid().substring(0, 10).toUpperCase();
   var requestOrderNo = 'REQ-' + today.replace(/-/g, '') + '-' + Utilities.getUuid().substring(0, 4).toUpperCase();
 
   var totalQty = 0, totalCartons = 0, estimatedAmount = 0, lineCount = 0;
+  var buckets = [];
 
   for (var j = 0; j < lines.length; j++) {
     var l = lines[j] || {};
@@ -210,47 +490,87 @@ function handleCreateRequestOrderDraft_(body) {
     var unitCost = hasUnitCost ? parseFloat(l.unit_cost) : '';
     var lineAmount = hasUnitCost ? Math.round(approved * unitCost * 100) / 100 : '';
     var info = infoMap[sku] || { product_name: '', series: '' };
+    var company = String(l.company || '').trim();
+    var bucket = String(l.request_bucket || '').trim();
+    var month = String(l.request_month || '').trim();
+    var shortage = (l.shortage_qty !== '' && l.shortage_qty != null && !isNaN(parseFloat(l.shortage_qty))) ? procurementNum_(l.shortage_qty) : '';
+    var coQty = procurementCompanyQty_(company, approved);
+    var lineId = 'ROL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+    buckets.push(bucket);
 
-    function snap(v) { return (v !== '' && v != null && !isNaN(parseFloat(v))) ? procurementNum_(v) : ''; }
     procurementAppendByHeader_(rolSheet, {
-      request_order_line_id: 'ROL-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
+      request_order_line_id: lineId,
       request_order_id: requestOrderId,
       sku: sku,
-      product_name: String(l.product_name || info.product_name || '').trim(),
       series: String(l.series || info.series || '').trim(),
-      company: String(l.company || '').trim(),                               // site owner (KM/ResUS/ResTW …)
-      request_bucket: String(l.request_bucket || '').trim(),                 // T1 / T2 / T3 preserved
-      request_month: String(l.request_month || '').trim(),
+      company: company,                                                      // site owner (KM/ResUS/ResTW …)
+      request_bucket: bucket,                                                // canonical T1 / T2 / T3 (NOT tier_type)
+      request_month: month,
       inspection_date: String(l.inspection_date || '').trim(),
       expected_ready_date: String(l.expected_ready_date || '').trim(),
       expected_ship_date: String(l.expected_ship_date || '').trim(),
       requested_qty: requested,
       approved_qty: approved,
-      final_order_qty: '',                                                   // locked at submit/approve
+      km_qty: coQty.km_qty,
+      resus_qty: coQty.resus_qty,
+      restw_qty: coQty.restw_qty,
       units_per_carton: upc,
       carton_qty: carton,
-      forecast_qty: snap(l.forecast_qty),                                    // ← draft fc_qty_snapshot
-      current_stock: snap(l.current_stock),                                  // ← draft site/current stock snapshot
-      on_the_way_qty: snap(l.on_the_way_qty),                                // future shipment overview (blank now)
-      factory_allocated_qty: snap(l.factory_allocated_qty),                  // allocation engine (blank now)
-      shortage_qty: snap(l.shortage_qty),                                    // calc result (blank now — no formula)
-      reallocation_qty: snap(l.reallocation_qty),                            // cross-site suggestion (blank now)
+      shortage_qty: shortage,
       supplier_id: String(l.supplier_id || supplierId || '').trim(),
       supplier_name: String(l.supplier_name || supplierName || '').trim(),
       supplier_sku: String(l.supplier_sku || '').trim(),
       unit_cost: unitCost,
       estimated_amount: lineAmount,
       currency: String(l.currency || currency || '').trim(),
-      need_reason: String(l.need_reason || '').trim(),
       calculation_method: String(l.calculation_method || 'manual_order_allocation').trim(),
       line_status: String(l.line_status || 'draft').trim(),
       linked_purchase_order_line_id: '',                                     // blank until PO created
-      related_entity_type: String(l.related_entity_type || '').trim(),
-      related_entity_id: String(l.related_entity_id || '').trim(),
       note: String(l.note || '').trim(),
       created_at: now,
       updated_at: now
     });
+
+    // request_order_line_sources — source of truth for company/site/month allocation (one row per line).
+    var country = String(l.country || '').trim();
+    var marketplace = String(l.marketplace || '').trim();
+    var identity = mskuMap[procSrcKey_(sku, company, country, marketplace)] || { site_sku: '', marketplace_product_id: '' };
+    var srcKey = procSrcKey_(sku, company, country, marketplace);
+    // forecast_qty = next-3-month FC × target% (SKU>Series>Category>100%); rounded to whole units.
+    var forecastQty = forecastMap[srcKey] !== undefined ? Math.round(forecastMap[srcKey]) : '';
+    var currentStock = procurementCurrentStock_(invMaps, sku, country, marketplace);
+    var onTheWayQty = procurementOnTheWay_(otwMaps, sku, country, marketplace);
+    var sourceId = 'ROLS-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+    procurementAppendByHeader_(srcSheet, {
+      request_order_line_source_id: sourceId,   // canonical PK
+      line_source_id: sourceId,                 // legacy column dual-write (only written if the tab has it)
+      request_order_line_id: lineId,
+      request_order_id: requestOrderId,
+      sku: sku,
+      company: company,
+      country: country,
+      marketplace: marketplace,
+      site_sku: identity.site_sku,                                   // from marketplace_skus (sku+co+country+mkt)
+      marketplace_product_id: identity.marketplace_product_id,       // from marketplace_skus (asin fallback)
+      tier_type: bucket,
+      source_month: month,
+      forecast_qty: forecastQty,                                     // next-3-month FC w/ target rules
+      current_stock: currentStock,                                   // amazon_inventory_snapshot.available_qty
+      on_the_way_qty: onTheWayQty,                                   // active shipment_lines.qty sum
+      shortage_qty: '',                                              // blank — Calculation Engine not implemented
+      reallocation_qty: '',                                          // blank — Calculation Engine not implemented
+      recommended_qty: '',                                           // blank — Calculation Engine not implemented
+      requested_qty: requested,
+      approved_qty: approved,
+      allocation_method: 'manual_order_allocation',                  // never blank (current manual/request flow)
+      source_bucket: bucket,                                         // T1 / T2 / T3
+      source_priority: procurementSourcePriority_(bucket),           // T1=1 / T2=2 / T3=3
+      source_type: 'request_order_draft',
+      note: String(l.note || '').trim(),
+      created_at: now,
+      updated_at: now
+    });
+
     totalQty += approved;
     totalCartons += carton;
     if (hasUnitCost) estimatedAmount += (approved * unitCost);
@@ -268,8 +588,9 @@ function handleCreateRequestOrderDraft_(body) {
     supplier_id: supplierId,
     supplier_name: supplierName,
     factory_id: String((body && body.factory_id) || '').trim(),
-    warehouse_id: String((body && body.warehouse_id) || '').trim(),
-    status: 'draft',
+    warehouse_id: warehouseId,
+    request_status: 'draft',
+    tier_group: procurementTierGroup_(buckets),
     total_sku: lineCount,
     total_qty: totalQty,
     total_cartons: totalCartons,
@@ -316,14 +637,17 @@ function handleUpdateRequestOrderStatus_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('request_orders');
   if (!sheet) return jsonResponse_({ success: false, error: 'request_orders sheet not found' });
-  sheetEnsureColumns_(sheet, ['completed_by', 'completed_at', 'updated_by', 'updated_at']);
+  // Ensure canonical columns exist BEFORE findRow captures headers (old rows may predate request_status).
+  sheetEnsureColumns_(sheet, ['request_status', 'tier_group', 'completed_by', 'completed_at', 'updated_by', 'updated_at']);
 
   var ref = procurementFindRow_(sheet, 'request_order_id', roId);
   if (!ref) return jsonResponse_({ success: false, error: 'Request order not found: ' + roId });
   var col = ref.col;
-  var curStatus = col('status') !== -1 ? String(ref.vals[col('status')]).trim() : '';
+  var curStatus = procurementReqStatus_(ref);   // canonical request_status (falls back to legacy status)
   var now = procurementTimestamp_();
   function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(ref.row, c + 1).setValue(value); }
+  // Write ONLY request_status (legacy `status` is no longer written / recreated).
+  function setStatus(value) { setCell('request_status', value); }
 
   if (transition === 'submit') {
     if (curStatus !== 'draft') return jsonResponse_({ success: false, error: 'Only a Draft request can be submitted (current: ' + curStatus + ')' });
@@ -333,12 +657,12 @@ function handleUpdateRequestOrderStatus_(body) {
       setCell('request_order_version', curVer + 1);
       setCell('rejected_by', ''); setCell('rejected_at', ''); setCell('rejected_reason', '');
     }
-    setCell('status', 'pending_approval');
+    setStatus('pending_approval');
     setCell('submitted_by', actor);
     setCell('submitted_at', now);
   } else if (transition === 'approve') {
     if (curStatus !== 'pending_approval') return jsonResponse_({ success: false, error: 'Only a Pending Approval request can be approved (current: ' + curStatus + ')' });
-    setCell('status', 'approved');
+    setStatus('approved');
     setCell('approved_by', actor);
     setCell('approved_at', now);
   } else if (transition === 'reject') {
@@ -352,12 +676,12 @@ function handleUpdateRequestOrderStatus_(body) {
       var appended = '[REJECTED v' + verForNote + ' @' + now + '] ' + reason;
       setCell('note', existingNote ? (existingNote + '\n' + appended) : appended);
     }
-    setCell('status', 'draft');
+    setStatus('draft');
   } else if (transition === 'cancel') {
     if (curStatus !== 'draft' && curStatus !== 'pending_approval') {
       return jsonResponse_({ success: false, error: 'Only a Draft or Pending Approval request can be cancelled (current: ' + curStatus + ')' });
     }
-    setCell('status', 'cancelled');
+    setStatus('cancelled');
     setCell('cancelled_by', actor);
     setCell('cancelled_at', now);
   } else if (transition === 'done') {
@@ -368,10 +692,10 @@ function handleUpdateRequestOrderStatus_(body) {
     setCell('completed_at', now);
   }
 
-  // Propagate line_status + final_order_qty (locked = approved_qty on submit/approve; cleared on reject).
-  if (transition === 'submit') procurementUpdateRequestLines_(ss, roId, { lineStatus: 'submitted', lockFinal: true });
-  else if (transition === 'approve') procurementUpdateRequestLines_(ss, roId, { lineStatus: 'approved', lockFinal: true });
-  else if (transition === 'reject') procurementUpdateRequestLines_(ss, roId, { lineStatus: 'draft', clearFinal: true });
+  // Propagate line_status (final_order_qty is deprecated — no longer written).
+  if (transition === 'submit') procurementUpdateRequestLines_(ss, roId, { lineStatus: 'submitted' });
+  else if (transition === 'approve') procurementUpdateRequestLines_(ss, roId, { lineStatus: 'approved' });
+  else if (transition === 'reject') procurementUpdateRequestLines_(ss, roId, { lineStatus: 'draft' });
   else if (transition === 'cancel') procurementUpdateRequestLines_(ss, roId, { lineStatus: 'cancelled' });
 
   setCell('updated_by', actor);
@@ -380,24 +704,21 @@ function handleUpdateRequestOrderStatus_(body) {
   return jsonResponse_({ success: true, data: { request_order_id: roId, transition: transition } });
 }
 
-/** Set line_status / final_order_qty on all request_order_lines of a request. opts:
- *   { lineStatus?, lockFinal? (final=approved_qty), clearFinal? }. Missing columns are skipped. */
+/** Set line_status on all request_order_lines of a request. opts: { lineStatus? }. Missing cols skipped.
+ *  (final_order_qty is deprecated and no longer written.) */
 function procurementUpdateRequestLines_(ss, roId, opts) {
   var sh = ss.getSheetByName('request_order_lines');
   if (!sh) return;
-  sheetEnsureColumns_(sh, ['line_status', 'final_order_qty', 'updated_at']);
+  sheetEnsureColumns_(sh, ['line_status', 'updated_at']);
   var data = sh.getDataRange().getValues();
   if (data.length < 2) return;
   var h = data[0].map(function (x) { return String(x).trim(); });
-  var roCol = h.indexOf('request_order_id'), lsCol = h.indexOf('line_status'),
-      apCol = h.indexOf('approved_qty'), foCol = h.indexOf('final_order_qty'), upCol = h.indexOf('updated_at');
+  var roCol = h.indexOf('request_order_id'), lsCol = h.indexOf('line_status'), upCol = h.indexOf('updated_at');
   if (roCol === -1) return;
   var now = procurementTimestamp_();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][roCol]).trim() !== roId) continue;
     if (opts.lineStatus && lsCol !== -1) sh.getRange(i + 1, lsCol + 1).setValue(opts.lineStatus);
-    if (opts.lockFinal && foCol !== -1) sh.getRange(i + 1, foCol + 1).setValue(apCol !== -1 ? (parseFloat(data[i][apCol]) || 0) : '');
-    if (opts.clearFinal && foCol !== -1) sh.getRange(i + 1, foCol + 1).setValue('');
     if (upCol !== -1) sh.getRange(i + 1, upCol + 1).setValue(now);
   }
 }
@@ -419,14 +740,18 @@ function handleUpdateRequestOrderLineQty_(body) {
   if (!lineSheet) return jsonResponse_({ success: false, error: 'request_order_lines sheet not found' });
   if (!roSheet) return jsonResponse_({ success: false, error: 'request_orders sheet not found' });
 
-  // request_order_id -> status
+  // request_order_id -> canonical status (request_status, fallback legacy status)
   var roData = roSheet.getDataRange().getValues();
   var roHeaders = roData[0].map(function (h) { return String(h).trim(); });
   var roIdCol = roHeaders.indexOf('request_order_id');
+  var roReqStatusCol = roHeaders.indexOf('request_status');
   var roStatusCol = roHeaders.indexOf('status');
   var statusById = {};
   for (var p = 1; p < roData.length; p++) {
-    if (roIdCol !== -1) statusById[String(roData[p][roIdCol]).trim()] = roStatusCol !== -1 ? String(roData[p][roStatusCol]).trim() : '';
+    if (roIdCol === -1) continue;
+    var rs = roReqStatusCol !== -1 ? String(roData[p][roReqStatusCol]).trim() : '';
+    if (!rs && roStatusCol !== -1) rs = String(roData[p][roStatusCol]).trim();
+    statusById[String(roData[p][roIdCol]).trim()] = rs;
   }
 
   var data = lineSheet.getDataRange().getValues();
@@ -445,6 +770,8 @@ function handleUpdateRequestOrderLineQty_(body) {
   var readyCol = col('expected_ready_date');
   var shipCol = col('expected_ship_date');
   var noteCol = col('note');
+  var companyCol = col('company');
+  var kmCol = col('km_qty'), resusCol = col('resus_qty'), restwCol = col('restw_qty');
   if (idCol === -1) return jsonResponse_({ success: false, error: 'request_order_line_id column not found' });
 
   var rowById = {};
@@ -469,6 +796,12 @@ function handleUpdateRequestOrderLineQty_(body) {
       if (cartonCol !== -1) lineSheet.getRange(ent.row, cartonCol + 1).setValue(carton);
       var uc = unitCostCol !== -1 ? parseFloat(ent.vals[unitCostCol]) : NaN;
       if (estCol !== -1 && !isNaN(uc)) lineSheet.getRange(ent.row, estCol + 1).setValue(Math.round(approved * uc * 100) / 100);
+      // Re-derive the per-company allocation (this line's company gets approved; others 0).
+      var lineCompany = companyCol !== -1 ? String(ent.vals[companyCol] || '').trim() : '';
+      var cq = procurementCompanyQty_(lineCompany, approved);
+      if (kmCol !== -1) lineSheet.getRange(ent.row, kmCol + 1).setValue(cq.km_qty);
+      if (resusCol !== -1) lineSheet.getRange(ent.row, resusCol + 1).setValue(cq.resus_qty);
+      if (restwCol !== -1) lineSheet.getRange(ent.row, restwCol + 1).setValue(cq.restw_qty);
     }
     // Optional decision-layer schedule fields + note (per tier → applied to each tier line).
     if (rq.inspection_date !== undefined && inspCol !== -1) lineSheet.getRange(ent.row, inspCol + 1).setValue(String(rq.inspection_date || '').trim());
@@ -538,6 +871,7 @@ function handleCancelRequestOrderTier_(body) {
   if (!lineSheet) return jsonResponse_({ success: false, error: 'request_order_lines sheet not found' });
   if (!roSheet) return jsonResponse_({ success: false, error: 'request_orders sheet not found' });
   sheetEnsureColumns_(lineSheet, ['line_status', 'updated_at']);
+  sheetEnsureColumns_(roSheet, ['request_status']);   // ensure canonical column before the header cancel
 
   var data = lineSheet.getDataRange().getValues();
   if (data.length < 2) return jsonResponse_({ success: false, error: 'request_order_lines is empty' });
@@ -546,12 +880,17 @@ function handleCancelRequestOrderTier_(body) {
       lsCol = h.indexOf('line_status'), upCol = h.indexOf('updated_at');
   if (idCol === -1 || roCol === -1) return jsonResponse_({ success: false, error: 'required columns not found' });
 
-  // request_order_id -> status (Draft-only cancellation).
+  // request_order_id -> canonical status (request_status, fallback legacy status). Draft-only cancellation.
   var roData = roSheet.getDataRange().getValues();
   var rh = roData[0].map(function (x) { return String(x).trim(); });
-  var rIdCol = rh.indexOf('request_order_id'), rStatusCol = rh.indexOf('status');
+  var rIdCol = rh.indexOf('request_order_id'), rReqStatusCol = rh.indexOf('request_status'), rStatusCol = rh.indexOf('status');
   var roStatus = {};
-  for (var p = 1; p < roData.length; p++) { if (rIdCol !== -1) roStatus[String(roData[p][rIdCol]).trim()] = rStatusCol !== -1 ? String(roData[p][rStatusCol]).trim() : ''; }
+  for (var p = 1; p < roData.length; p++) {
+    if (rIdCol === -1) continue;
+    var rsv = rReqStatusCol !== -1 ? String(roData[p][rReqStatusCol]).trim() : '';
+    if (!rsv && rStatusCol !== -1) rsv = String(roData[p][rStatusCol]).trim();
+    roStatus[String(roData[p][rIdCol]).trim()] = rsv;
+  }
 
   var idSet = {}; ids.forEach(function (x) { idSet[String(x).trim()] = 1; });
   var now = procurementTimestamp_();
@@ -584,7 +923,7 @@ function handleCancelRequestOrderTier_(body) {
       var ref = procurementFindRow_(roSheet, 'request_order_id', roId);
       if (ref) {
         function setRo(name, val) { var c = ref.col(name); if (c !== -1) roSheet.getRange(ref.row, c + 1).setValue(val); }
-        setRo('status', 'cancelled');
+        setRo('request_status', 'cancelled');   // canonical status (legacy `status` no longer written)
         setRo('cancelled_by', actor);
         setRo('cancelled_at', now);
         setRo('updated_by', actor);
@@ -619,11 +958,12 @@ function handleCreatePurchaseOrderFromRequest_(body) {
   var rolSheet = ss.getSheetByName('request_order_lines');
   if (!roSheet) return jsonResponse_({ success: false, error: 'request_orders sheet not found' });
   if (!rolSheet) return jsonResponse_({ success: false, error: 'request_order_lines sheet not found' });
+  sheetEnsureColumns_(roSheet, ['request_status']);   // ensure canonical column before findRow
 
   var ref = procurementFindRow_(roSheet, 'request_order_id', roId);
   if (!ref) return jsonResponse_({ success: false, error: 'Request order not found: ' + roId });
   var col = ref.col;
-  var curStatus = col('status') !== -1 ? String(ref.vals[col('status')]).trim() : '';
+  var curStatus = procurementReqStatus_(ref);   // canonical request_status (fallback legacy status)
   if (curStatus === 'converted_to_po') return jsonResponse_({ success: false, error: 'Request order already converted to a Purchase Order' });
   if (curStatus !== 'approved') return jsonResponse_({ success: false, error: 'Only an Approved request can be converted (current: ' + curStatus + ')' });
 
@@ -714,9 +1054,9 @@ function handleCreatePurchaseOrderFromRequest_(body) {
   });
 
   // The request records its OWN conversion (the only write back to request_orders).
-  sheetEnsureColumns_(roSheet, ['updated_by', 'updated_at']);
-  function setRo(name, value) { var c = col(name); if (c !== -1) roSheet.getRange(ref.row, c + 1).setValue(value); }
-  setRo('status', 'converted_to_po');
+  sheetEnsureColumns_(roSheet, ['request_status', 'updated_by', 'updated_at']);
+  function setRo(name, value) { var c = ref.col(name); if (c !== -1) roSheet.getRange(ref.row, c + 1).setValue(value); }
+  setRo('request_status', 'converted_to_po');   // canonical status (legacy `status` no longer written)
   setRo('updated_by', actor);
   setRo('updated_at', now);
 
@@ -931,26 +1271,43 @@ function seedProcurementSampleData() {
   var poId = 'PO-SAMPLE-' + Utilities.getUuid().substring(0, 6).toUpperCase();
 
   // Request Order (approved) — appears on Request Order Draft under Approved (Convert to PO ready).
+  var srcSheet = procurementEnsureSheet_(ss, 'request_order_line_sources', REQUEST_ORDER_LINE_SOURCES_HEADERS_);
   procurementAppendByHeader_(roSheet, {
     request_order_id: roId, request_order_no: 'REQ-' + today.replace(/-/g, '') + '-SMPL',
     request_order_version: 1, parent_request_order_id: roId,
     company: 'ResTW', supplier_id: 'SUP-YOUXIN', supplier_name: 'Dongguan Youxin',
-    factory_id: 'CN_YOUXIN', warehouse_id: '', status: 'approved',
+    factory_id: 'CN_YOUXIN', warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN', request_status: 'approved', tier_group: 'T1',
     total_sku: 2, total_qty: 900, total_cartons: 0, estimated_amount: 2250, currency: 'USD',
     source: 'manual', created_by: 'sample', created_at: now, submitted_by: 'sample', submitted_at: now,
     approved_by: 'sample', approved_at: now, note: 'Sample seed', updated_by: 'sample', updated_at: now
   });
   procurementAppendByHeader_(rolSheet, {
-    request_order_line_id: 'ROL-SMPL-1', request_order_id: roId, sku: 'CO1100-R', product_name: 'Can Opener Red',
-    series: 'CO1100', requested_qty: 500, approved_qty: 500, units_per_carton: 40, carton_qty: 13,
+    request_order_line_id: 'ROL-SMPL-1', request_order_id: roId, sku: 'CO1100-R',
+    series: 'CO1100', company: 'ResTW', request_bucket: 'T1', request_month: today.substring(0, 7),
+    requested_qty: 500, approved_qty: 500, km_qty: 0, resus_qty: 0, restw_qty: 500, units_per_carton: 40, carton_qty: 13,
     supplier_id: 'SUP-YOUXIN', supplier_name: 'Dongguan Youxin', supplier_sku: 'YX-CO1100R',
-    unit_cost: 2.5, estimated_amount: 1250, currency: 'USD', need_reason: 'Sample', created_at: now, updated_at: now
+    unit_cost: 2.5, estimated_amount: 1250, currency: 'USD', calculation_method: 'manual_order_allocation',
+    line_status: 'approved', created_at: now, updated_at: now
   });
   procurementAppendByHeader_(rolSheet, {
-    request_order_line_id: 'ROL-SMPL-2', request_order_id: roId, sku: 'CO1150-S', product_name: 'Can Opener Silver',
-    series: 'CO1150', requested_qty: 400, approved_qty: 400, units_per_carton: 40, carton_qty: 10,
+    request_order_line_id: 'ROL-SMPL-2', request_order_id: roId, sku: 'CO1150-S',
+    series: 'CO1150', company: 'ResTW', request_bucket: 'T1', request_month: today.substring(0, 7),
+    requested_qty: 400, approved_qty: 400, km_qty: 0, resus_qty: 0, restw_qty: 400, units_per_carton: 40, carton_qty: 10,
     supplier_id: 'SUP-YOUXIN', supplier_name: 'Dongguan Youxin', supplier_sku: 'YX-CO1150S',
-    unit_cost: 2.5, estimated_amount: 1000, currency: 'USD', need_reason: 'Sample', created_at: now, updated_at: now
+    unit_cost: 2.5, estimated_amount: 1000, currency: 'USD', calculation_method: 'manual_order_allocation',
+    line_status: 'approved', created_at: now, updated_at: now
+  });
+  procurementAppendByHeader_(srcSheet, {
+    line_source_id: 'ROLS-SMPL-1', request_order_line_id: 'ROL-SMPL-1', request_order_id: roId, sku: 'CO1100-R',
+    company: 'ResTW', country: 'US', marketplace: 'amazon', tier_type: 'T1', source_month: today.substring(0, 7),
+    requested_qty: 500, approved_qty: 500, shortage_qty: '', source_type: 'manual_order_allocation', note: 'Sample seed',
+    created_at: now, updated_at: now
+  });
+  procurementAppendByHeader_(srcSheet, {
+    line_source_id: 'ROLS-SMPL-2', request_order_line_id: 'ROL-SMPL-2', request_order_id: roId, sku: 'CO1150-S',
+    company: 'ResTW', country: 'US', marketplace: 'amazon', tier_type: 'T1', source_month: today.substring(0, 7),
+    requested_qty: 400, approved_qty: 400, shortage_qty: '', source_type: 'manual_order_allocation', note: 'Sample seed',
+    created_at: now, updated_at: now
   });
 
   // Purchase Order (in_production) — appears on PO Overview + PO List with production/shipment qtys.

@@ -78,11 +78,12 @@ function handleImportMarketplaceSkusBatch_(body) {
   var mpCol = function(n) { return mpHeaders.indexOf(n); };
   var mp_id = mpCol('marketplace_sku_id'), mp_sku = mpCol('sku'),
       mp_company = mpCol('company'), mp_country = mpCol('country'), mp_mp = mpCol('marketplace'),
-      mp_asin = mpCol('asin');
+      // SKU Domain v2.0: canonical marketplace_product_id; legacy asin READ-fallback only (never written).
+      mp_prodid = mpCol('marketplace_product_id'), mp_asin = mpCol('asin');
   var mpKeyToRow = {};
   var mpIdToRow = {};
-  var mpAsinByComposite = {}; // company|country|marketplace|sku -> non-empty asin
-  var mpAsinByIdSku = {};     // marketplace_id||sku -> non-empty asin
+  var mpAsinByComposite = {}; // company|country|marketplace|sku -> non-empty product id
+  var mpAsinByIdSku = {};     // marketplace_id||sku -> non-empty product id
   for (var i = 1; i < mpData.length; i++) {
     var rowSku = mp_sku !== -1 ? String(mpData[i][mp_sku] || '').trim() : '';
     var ck = [
@@ -94,8 +95,9 @@ function handleImportMarketplaceSkusBatch_(body) {
     var existingId = mp_id !== -1 ? String(mpData[i][mp_id] || '').trim() : '';
     mpKeyToRow[ck] = { row: i + 1, id: existingId };
     if (existingId) mpIdToRow[existingId] = { row: i + 1, key: ck };
-    // Capture existing non-empty ASINs for auto-resolution.
-    var existingAsin = mp_asin !== -1 ? String(mpData[i][mp_asin] || '').trim() : '';
+    // Capture existing non-empty product ids (marketplace_product_id first, legacy asin fallback).
+    var existingAsin = (mp_prodid !== -1 ? String(mpData[i][mp_prodid] || '').trim() : '') ||
+                       (mp_asin !== -1 ? String(mpData[i][mp_asin] || '').trim() : '');
     if (existingAsin) {
       if (mpAsinByComposite[ck] === undefined) mpAsinByComposite[ck] = existingAsin;
       if (existingId && rowSku) mpAsinByIdSku[existingId + '||' + rowSku] = existingAsin;
@@ -107,6 +109,8 @@ function handleImportMarketplaceSkusBatch_(body) {
   var prHeaders = prData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var prCol = function(n) { return prHeaders.indexOf(n); };
   var pr_mpid = prCol('marketplace_sku_id');
+  // SKU Domain v2.0: write canonical marketplace_product_id; legacy asin READ-fallback only.
+  var pr_prodid = prCol('marketplace_product_id');
   var pr_asin = prCol('asin');
   var pricingMpIds = {};
   var pricingByMpId = {}; // marketplace_sku_id -> { row, asin } for existing-row ASIN sync
@@ -116,7 +120,7 @@ function handleImportMarketplaceSkusBatch_(body) {
       if (pv) {
         pricingMpIds[pv] = true;
         if (pricingByMpId[pv] === undefined) {
-          pricingByMpId[pv] = { row: i + 1, asin: pr_asin !== -1 ? String(prData[i][pr_asin] || '').trim() : '' };
+          pricingByMpId[pv] = { row: i + 1, asin: (pr_prodid !== -1 ? String(prData[i][pr_prodid] || '').trim() : '') || (pr_asin !== -1 ? String(prData[i][pr_asin] || '').trim() : '') };
         }
       }
     }
@@ -144,8 +148,8 @@ function handleImportMarketplaceSkusBatch_(body) {
   // Header existence only; cell values (e.g. asin) may still be blank.
   var requiredHeaders = {
     sku_details: ['sku', 'category', 'series', 'selling_price', 'minimum_price', 'msrp'],
-    marketplace_skus: ['marketplace_sku_id', 'marketplace_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'asin', 'currency', 'marketplace_sku_status', 'replenishment_model', 'launch_date', 'created_at', 'updated_at'],
-    pricing_list: ['pricing_id', 'marketplace_sku_id', 'sku', 'country', 'marketplace', 'site_sku', 'asin', 'currency', 'base_currency', 'base_regular_price', 'base_minimum_price', 'base_msrp', 'fx_rate', 'fx_rate_date', 'auto_regular_price', 'auto_minimum_price', 'auto_msrp', 'regular_price', 'minimum_price', 'msrp', 'price_source', 'price_status', 'created_by', 'created_at', 'updated_by', 'updated_at', 'note'],
+    marketplace_skus: ['marketplace_sku_id', 'marketplace_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'marketplace_product_id', 'currency', 'marketplace_sku_status', 'replenishment_model', 'launch_date', 'created_at', 'updated_at'],
+    pricing_list: ['pricing_id', 'marketplace_sku_id', 'sku', 'country', 'marketplace', 'site_sku', 'marketplace_product_id', 'currency', 'base_currency', 'base_regular_price', 'base_minimum_price', 'base_msrp', 'fx_rate', 'fx_rate_date', 'auto_regular_price', 'auto_minimum_price', 'auto_msrp', 'regular_price', 'minimum_price', 'msrp', 'price_source', 'price_status', 'created_by', 'created_at', 'updated_by', 'updated_at', 'note'],
     fc_regular_forecast: ['forecast_id', 'year', 'company', 'country', 'marketplace', 'sku', 'category', 'series', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'total_fc', 'fc_share', 'forecast_status', 'source', 'created_at', 'updated_at']
   };
   var headerSets = {
@@ -237,10 +241,19 @@ function handleImportMarketplaceSkusBatch_(body) {
     //   A) row.asin if provided (back-compat), B) existing by marketplace_id+sku,
     //   C) existing by company+country+marketplace+sku, D) sku_details.asin, E) blank.
     var rowMpIdForAsin = String(row.marketplace_id || '').trim() || mpRegistryMap[[company, country, marketplace].join('|')] || '';
-    var resolvedAsin = String(row.asin || '').trim();
+    // Canonical input = marketplace_product_id; accept legacy `asin` field for back-compat input only.
+    var resolvedAsin = String(row.marketplace_product_id || row.asin || '').trim();
     if (!resolvedAsin && rowMpIdForAsin && mpAsinByIdSku[rowMpIdForAsin + '||' + sku]) resolvedAsin = mpAsinByIdSku[rowMpIdForAsin + '||' + sku];
     if (!resolvedAsin && mpAsinByComposite[compositeKey]) resolvedAsin = mpAsinByComposite[compositeKey];
     if (!resolvedAsin && skuMap[sku] && skuMap[sku].asin) resolvedAsin = skuMap[sku].asin;
+
+    // SKU Domain v2.0 — Flow B: sku_regional_details is the HIGHER-PRIORITY source for site_sku /
+    // marketplace_product_id. If a regional row already exists, its values override the operational input.
+    var reg = skuRegionalLookup_(ss, sku, company, country, marketplace);
+    if (reg) {
+      if (reg.siteSku) siteSku = reg.siteSku;
+      if (reg.marketplaceProductId) resolvedAsin = reg.marketplaceProductId;
+    }
 
     // Determine existing marketplace_skus row
     var providedId = String(row.marketplace_sku_id || '').trim();
@@ -256,8 +269,8 @@ function handleImportMarketplaceSkusBatch_(body) {
       }
       var trow = existing.row;
       if (mpCol('site_sku') !== -1) mpSheet.getRange(trow, mpCol('site_sku') + 1).setValue(siteSku);
-      // ASIN: only write when we resolved a non-empty value — never clear an existing ASIN with blank.
-      if (resolvedAsin && mpCol('asin') !== -1) mpSheet.getRange(trow, mpCol('asin') + 1).setValue(resolvedAsin);
+      // Product id: write to canonical marketplace_product_id only (NEVER asin). Only when non-empty.
+      if (resolvedAsin && mp_prodid !== -1) mpSheet.getRange(trow, mp_prodid + 1).setValue(resolvedAsin);
       if (mpCol('currency') !== -1) mpSheet.getRange(trow, mpCol('currency') + 1).setValue(currency);
       if (row.marketplace_sku_status !== undefined && mpCol('marketplace_sku_status') !== -1) mpSheet.getRange(trow, mpCol('marketplace_sku_status') + 1).setValue(String(row.marketplace_sku_status).trim());
       if (row.replenishment_model !== undefined && mpCol('replenishment_model') !== -1) mpSheet.getRange(trow, mpCol('replenishment_model') + 1).setValue(String(row.replenishment_model).trim());
@@ -270,10 +283,10 @@ function handleImportMarketplaceSkusBatch_(body) {
       // Only touches asin (+ metadata); never clears, never touches prices.
       var existingMpSkuId = existing.id || providedId;
       var asinSynced = false;
-      if (resolvedAsin && existingMpSkuId && pricingByMpId[existingMpSkuId] && pr_asin !== -1) {
+      if (resolvedAsin && existingMpSkuId && pricingByMpId[existingMpSkuId] && pr_prodid !== -1) {
         var prRef = pricingByMpId[existingMpSkuId];
         if (prRef.asin !== resolvedAsin) {
-          prSheet.getRange(prRef.row, pr_asin + 1).setValue(resolvedAsin);
+          prSheet.getRange(prRef.row, pr_prodid + 1).setValue(resolvedAsin);   // canonical marketplace_product_id (never asin)
           if (prCol('updated_at') !== -1) prSheet.getRange(prRef.row, prCol('updated_at') + 1).setValue(now);
           if (prCol('updated_by') !== -1) prSheet.getRange(prRef.row, prCol('updated_by') + 1).setValue(createdBy);
           prRef.asin = resolvedAsin;
@@ -281,7 +294,11 @@ function handleImportMarketplaceSkusBatch_(body) {
         }
       }
 
-      results.push({ rowIndex: rowIndex, sku: sku, status: 'updated', message: 'marketplace_skus updated' + (asinSynced ? ' + pricing_list ASIN synced' : '') + ' (prices untouched)', marketplace_sku_id: existingMpSkuId, pricing_id: '', forecast_id: '' });
+      // SKU Domain v2.0 — operational edit → regional: keep sku_regional_details identity in sync
+      // (creates the regional row if absent). Regional stays the higher-priority source.
+      try { skuRegionalSyncIdentity_(ss, sku, company, country, marketplace, siteSku, resolvedAsin); } catch (e) {}
+
+      results.push({ rowIndex: rowIndex, sku: sku, status: 'updated', message: 'marketplace_skus updated' + (asinSynced ? ' + pricing_list product id synced' : '') + ' (prices untouched)', marketplace_sku_id: existingMpSkuId, pricing_id: '', forecast_id: '' });
       continue;
     }
 
@@ -299,7 +316,7 @@ function handleImportMarketplaceSkusBatch_(body) {
     if (mpCol('country') !== -1) newMp[mpCol('country')] = country;
     if (mpCol('marketplace') !== -1) newMp[mpCol('marketplace')] = marketplace;
     if (mpCol('site_sku') !== -1) newMp[mpCol('site_sku')] = siteSku;
-    if (mpCol('asin') !== -1) newMp[mpCol('asin')] = resolvedAsin;
+    if (mp_prodid !== -1) newMp[mp_prodid] = resolvedAsin;   // canonical marketplace_product_id (never asin)
     if (mpCol('currency') !== -1) newMp[mpCol('currency')] = currency;
     if (mpCol('marketplace_sku_status') !== -1) newMp[mpCol('marketplace_sku_status')] = String(row.marketplace_sku_status || 'active').trim();
     if (mpCol('replenishment_model') !== -1) newMp[mpCol('replenishment_model')] = String(row.replenishment_model || 'sales_driven').trim();
@@ -311,6 +328,10 @@ function handleImportMarketplaceSkusBatch_(body) {
     mpSheet.appendRow(newMp);
     mpKeyToRow[compositeKey] = { row: -1, id: mpId };
     mpIdToRow[mpId] = { row: -1, key: compositeKey };
+
+    // SKU Domain v2.0 — Flow A: ensure a matching sku_regional_details row (copy identity; no overwrite
+    // if it already exists). Compliance-document fields stay blank until filled on the Regional page.
+    try { skuRegionalEnsure_(ss, { sku: sku, company: company, country: country, marketplace: marketplace, site_sku: siteSku, marketplace_product_id: resolvedAsin }); } catch (e) {}
 
     // pricing_list (create if missing; never overwrite existing)
     var pricingId = '';
@@ -372,7 +393,7 @@ function handleImportMarketplaceSkusBatch_(body) {
       if (prCol('country') !== -1) newPr[prCol('country')] = country;
       if (prCol('marketplace') !== -1) newPr[prCol('marketplace')] = marketplace;
       if (prCol('site_sku') !== -1) newPr[prCol('site_sku')] = siteSku;
-      if (prCol('asin') !== -1) newPr[prCol('asin')] = resolvedAsin;
+      if (pr_prodid !== -1) newPr[pr_prodid] = resolvedAsin;   // canonical marketplace_product_id (never asin)
       if (prCol('currency') !== -1) newPr[prCol('currency')] = currency;
       if (prCol('base_currency') !== -1) newPr[prCol('base_currency')] = baseCurrency;
       if (prCol('base_regular_price') !== -1) newPr[prCol('base_regular_price')] = baseRegular;

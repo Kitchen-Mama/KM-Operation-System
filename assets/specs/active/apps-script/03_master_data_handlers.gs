@@ -11,7 +11,7 @@
 // ========================================
 
 function handleGetOperationDb_() {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'request_orders', 'request_order_lines', 'purchase_orders', 'purchase_order_lines', 'request_order_allocation_drafts', 'request_order_allocation_draft_lines', 'request_order_site_confirmations', 'request_order_line_sources'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'request_orders', 'request_order_lines', 'purchase_orders', 'purchase_order_lines', 'request_order_allocation_drafts', 'request_order_allocation_draft_lines', 'request_order_site_confirmations', 'request_order_line_sources', 'carriers', 'carrier_rate_cards', 'carrier_lead_times', 'sku_regional_details', 'tax_referral_rates'];
   var data = {};
 
   validTabs.forEach(function(tabName) {
@@ -28,7 +28,7 @@ function handleGetOperationDb_() {
 }
 
 function handleGetTable_(tableName) {
-  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'request_orders', 'request_order_lines', 'purchase_orders', 'purchase_order_lines', 'request_order_allocation_drafts', 'request_order_allocation_draft_lines', 'request_order_site_confirmations', 'request_order_line_sources'];
+  var validTabs = ['sku_details', 'product_features', 'sku_handbook_summaries', 'campaigns', 'campaign_sku_lines', 'marketplaces', 'marketplace_skus', 'pricing_list', 'pricing_change_log', 'fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'factory_stock_movements', 'warehouses', 'overseas_inventory_snapshot', 'overseas_inventory_movements', 'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot', 'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot', 'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'request_orders', 'request_order_lines', 'purchase_orders', 'purchase_order_lines', 'request_order_allocation_drafts', 'request_order_allocation_draft_lines', 'request_order_site_confirmations', 'request_order_line_sources', 'carriers', 'carrier_rate_cards', 'carrier_lead_times', 'sku_regional_details', 'tax_referral_rates'];
 
   if (!tableName || validTabs.indexOf(tableName) === -1) {
     return jsonResponse_({ success: false, error: 'Invalid table name. Valid tables: ' + validTabs.join(', ') });
@@ -145,12 +145,24 @@ function handleUpsertMarketplaceSku_(body) {
   // Generate ID
   var id = 'MPSKU-' + country + '-' + marketplace.substring(0, 3).toUpperCase() + '-' + sku + '-' + Date.now();
 
+  // SKU Domain v2.0: Flow B — regional is higher-priority. If a matching sku_regional_details row exists,
+  // adopt its site_sku / marketplace_product_id.
+  var company = String(body.company || '').trim();
+  var siteSkuVal = String(body.site_sku || '').trim();
+  var productIdVal = String(body.marketplace_product_id || body.asin || '').trim();   // accept legacy input; never write asin
+  try {
+    var regLk = (typeof skuRegionalLookup_ === 'function') ? skuRegionalLookup_(ss, sku, company, country, marketplace) : null;
+    if (regLk) { if (regLk.siteSku) siteSkuVal = regLk.siteSku; if (regLk.marketplaceProductId) productIdVal = regLk.marketplaceProductId; }
+  } catch (e) {}
+
   if (col('marketplace_sku_id') !== -1) newRow[col('marketplace_sku_id')] = id;
   if (skuCol !== -1) newRow[skuCol] = sku;
+  if (col('company') !== -1) newRow[col('company')] = company;
   if (countryCol !== -1) newRow[countryCol] = country;
   if (mpCol !== -1) newRow[mpCol] = marketplace;
-  if (col('site_sku') !== -1) newRow[col('site_sku')] = String(body.site_sku || '').trim();
-  if (col('asin') !== -1) newRow[col('asin')] = String(body.asin || '').trim();
+  if (col('site_sku') !== -1) newRow[col('site_sku')] = siteSkuVal;
+  // Canonical marketplace_product_id (never write legacy asin).
+  if (col('marketplace_product_id') !== -1) newRow[col('marketplace_product_id')] = productIdVal;
   if (col('currency') !== -1) newRow[col('currency')] = String(body.currency || 'USD').trim();
   if (col('regular_price') !== -1) newRow[col('regular_price')] = body.regular_price || '';
   if (col('minimum_price') !== -1) newRow[col('minimum_price')] = body.minimum_price || '';
@@ -164,6 +176,13 @@ function handleUpsertMarketplaceSku_(body) {
   if (col('updated_at') !== -1) newRow[col('updated_at')] = now;
 
   sheet.appendRow(newRow);
+
+  // SKU Domain v2.0 — Flow A: ensure a matching sku_regional_details row (copy identity; no overwrite).
+  try {
+    if (typeof skuRegionalEnsure_ === 'function') {
+      skuRegionalEnsure_(ss, { sku: sku, company: company, country: country, marketplace: marketplace, site_sku: siteSkuVal, marketplace_product_id: productIdVal });
+    }
+  } catch (e) {}
 
   return jsonResponse_({
     success: true,

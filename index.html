@@ -23,6 +23,8 @@
     <link rel="stylesheet" href="assets/css/pages/sku-handbook.css">
     <link rel="stylesheet" href="assets/css/pages/campaign-risk.css">
     <link rel="stylesheet" href="assets/css/pages/procurement.css">
+    <link rel="stylesheet" href="assets/css/pages/carrier-rate-card.css">
+    <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -88,8 +90,23 @@
                 </div>
             </div>
             
-            <div class="menu-item" onclick="showSection('skuDetails')" title="SKU Details">
-                <span class="menu-icon">📝</span><span class="menu-label">SKU Details</span>
+            <!-- SKU Management 父子選單 — SKU master + regional + tax reference (SKU Domain v2.0 layers) -->
+            <div class="menu-parent"
+                 data-menu-id="sku-management"
+                 onclick="toggleMenu('sku-management')" title="SKU Management">
+                <span class="menu-icon">📝</span><span class="menu-label">SKU Management</span>
+            </div>
+            <div class="menu-children" data-parent="sku-management">
+                <div class="menu-item" onclick="showSection('skuDetails')" title="SKU Details">
+                    <span class="menu-label">SKU Details</span>
+                </div>
+                <div class="menu-item" onclick="showSection('sku-regional-details')" title="SKU Regional Details">
+                    <span class="menu-label">SKU Regional Details</span>
+                </div>
+                <div class="menu-item menu-item--disabled" style="position: relative;" title="Tax & Referral Rates (planned)">
+                    <span class="menu-label">Tax &amp; Referral Rates</span>
+                    <span class="stage-badge">Soon</span>
+                </div>
             </div>
             <!-- Shipment Center 父子選單 (Decision + Execution Layers) -->
             <div class="menu-parent"
@@ -123,6 +140,17 @@
                 </div>
                 <div class="menu-item" onclick="showSection('purchase-order-list')" title="Purchase Order List">
                     <span class="menu-label">Purchase Order List</span>
+                </div>
+            </div>
+            <!-- Carrier / Route 父子選單 — Carrier / Route master layer (Carrier Rate Card v1) -->
+            <div class="menu-parent"
+                 data-menu-id="carrier"
+                 onclick="toggleMenu('carrier')" title="Carrier / Route">
+                <span class="menu-icon">🚚</span><span class="menu-label">Carrier / Route</span>
+            </div>
+            <div class="menu-children" data-parent="carrier">
+                <div class="menu-item" onclick="showSection('carrier-rate-card')" title="Carrier Rate Card">
+                    <span class="menu-label">Carrier Rate Card</span>
                 </div>
             </div>
             <div class="menu-item menu-item--disabled" style="position: relative;" title="Shipping Management">
@@ -291,6 +319,14 @@
             <div id="request-order-draft-mount"></div>
             <div id="purchase-order-overview-mount"></div>
             <div id="purchase-order-list-mount"></div>
+
+            <!-- Carrier Rate Card (Carrier & Route Spec v1.4) — Carrier/Route master layer.
+                 KM.partialLoader injects #carrier-rate-card-section into this mount point on lifecycle mount. -->
+            <div id="carrier-rate-card-mount"></div>
+
+            <!-- SKU Regional Details (SKU Domain v2.0 Layer 2 — sku_regional_details).
+                 KM.partialLoader injects #sku-regional-details-section into this mount point on lifecycle mount. -->
+            <div id="sku-regional-details-mount"></div>
             </main>
         </div>
     </div>
@@ -333,6 +369,10 @@
     <script src="assets/js/pages/request-order-draft.js"></script>
     <script src="assets/js/pages/purchase-order-overview.js"></script>
     <script src="assets/js/pages/purchase-order-list.js"></script>
+    <!-- Carrier / Route master (Carrier Rate Card v1) -->
+    <script src="assets/js/pages/carrier-rate-card.js"></script>
+    <!-- SKU Regional Details (SKU Domain v2.0) -->
+    <script src="assets/js/pages/sku-regional-details.js"></script>
 
     <!-- App (Global) -->
     <script src="assets/js/app.js"></script>

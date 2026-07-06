@@ -480,6 +480,18 @@ This chapter is the **official Supply Planning allocation rule**. The calculatio
 - If the marketplace is **Self** → the SKU Fulfillment Model field is **locked** (to `self_fulfilled`).
 - If the marketplace is **Hybrid** → the **PM must select** the SKU Fulfillment Model.
 
+### 17.3A Add SKU / Add Marketplace SKU ↔ `sku_regional_details` + Tax source (planned — `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` v2.0 §6)
+
+**SKU Domain v2.0:** `sku_regional_details` is the **higher-level source**; `marketplace_skus` is the **operational synchronized copy**. Match grain for the pair: **`sku + company + country + marketplace`**.
+
+- **Two creation flows:**
+  - **Flow A** — Add Marketplace SKU → creates `marketplace_skus` → **ensure** the matching `sku_regional_details` row (copy `sku` / `company` / `country` / `marketplace` / `site_sku` / `marketplace_product_id`; compliance-document fields blank).
+  - **Flow B** — Regional Details created first → later, when `marketplace_skus` is created it **copies `site_sku` / `marketplace_product_id` FROM `sku_regional_details`**.
+- **Sync (both ways, no silent divergence):** editing `site_sku` / `marketplace_product_id` in Inventory Replenishment updates the paired `sku_regional_details` row, and vice-versa. **`sku_regional_details` is the higher-priority source** on conflict; save surfaces a warning / repair-sync.
+- **`asin → marketplace_product_id`:** the operational platform id column on `marketplace_skus` is **`marketplace_product_id`** (platform-neutral); Amazon's ASIN is stored there (UI may label it "ASIN"). Legacy `asin` is read-fallback only during migration.
+- **Tax / Duty source (REPLACES duty synchronization):** there is **NO duty/HS-code/declared-value sync into `sku_regional_details` or `marketplace_skus`**. **Tax information (HS Code / Duty / VAT / Referral / Declared Value) comes from `tax_referral_rates` through `series`** (`sku_details.series → tax_referral_rates.series`, filtered by `duty_country` + effective date) — see [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md). Those values are **never copied** onto SKU / regional / marketplace rows.
+- **Spec only — not implemented; no DB migration yet.**
+
 ### 17.4 Inventory UI behavior
 
 - **Platform** → display the Platform Inventory layout.

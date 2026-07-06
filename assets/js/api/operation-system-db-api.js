@@ -114,12 +114,23 @@ function normalizeSkuDetailsRecord(raw) {
         cartonWeightUnit: s(r.carton_weight_unit),
         unitsPerCarton: parseInt(r.units_per_carton) || 0,
 
-        // --- Customs / price (value + unit) ---
+        // --- Product attributes (SKU Domain v2.0) ---
+        material: s(r.material),
+        batteryType: s(r.battery_type),
+        magnetType: s(r.magnet_type),
+
+        // --- Brand baseline price (v2.0: single base_currency for all three) ---
+        minimumPrice: s(r.minimum_price),
+        msrp: s(r.msrp),
+        sellingPrice: s(r.selling_price),
+        // base_currency is canonical; fall back to legacy *_unit only when blank (read-only migration aid).
+        baseCurrency: s(r.base_currency) || s(r.minimum_price_unit) || s(r.msrp_unit) || s(r.selling_unit),
+
+        // --- DEPRECATED (read-fallback only; moved to tax_referral_rates / replaced by base_currency).
+        //     Still surfaced for back-compat readers; SKU Details no longer displays or writes these. ---
         hsCode: s(r.hscode),
         declaredValue: s(r.declared_value), declaredValueUnit: s(r.declared_value_unit),
-        minimumPrice: s(r.minimum_price), minimumPriceUnit: s(r.minimum_price_unit),
-        msrp: s(r.msrp), msrpUnit: s(r.msrp_unit),
-        sellingPrice: s(r.selling_price), sellingUnit: s(r.selling_unit),
+        minimumPriceUnit: s(r.minimum_price_unit), msrpUnit: s(r.msrp_unit), sellingUnit: s(r.selling_unit),
 
         pm: String(r.pm || ''),
         createdAt: s(r.created_at),
@@ -238,7 +249,10 @@ function normalizeMarketplaceSkuRecord(raw) {
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
         siteSku: String(r.site_sku || '').trim(),
-        asin: String(r.asin || '').trim(),
+        // Canonical platform-neutral product id (SKU Domain v2.0). Amazon ASIN stored here; UI may label
+        // it "ASIN". Legacy `asin` is READ-fallback only during migration — never written.
+        marketplaceProductId: String(r.marketplace_product_id || r.asin || '').trim(),
+        asin: String(r.asin || '').trim(),   // legacy read-only alias (do not write)
         currency: String(r.currency || 'USD').trim(),
         regularPrice: parseFloat(r.regular_price) || 0,
         minimumPrice: parseFloat(r.minimum_price) || 0,
@@ -332,7 +346,9 @@ function normalizePricingListRecord(raw) {
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
         siteSku: String(r.site_sku || '').trim(),
-        asin: String(r.asin || '').trim(),
+        // Canonical platform-neutral product id (SKU Domain v2.0); legacy `asin` READ-fallback only.
+        marketplaceProductId: String(r.marketplace_product_id || r.asin || '').trim(),
+        asin: String(r.asin || '').trim(),   // legacy read-only alias (do not write)
         currency: String(r.currency || '').trim(),
         baseCurrency: String(r.base_currency || '').trim(),
         baseRegularPrice: parseFloat(r.base_regular_price) || 0,
@@ -773,7 +789,10 @@ function normalizeRequestOrderRecord(raw) {
         supplierName: String(r.supplier_name || '').trim(),
         factoryId: String(r.factory_id || '').trim(),
         warehouseId: String(r.warehouse_id || '').trim(),
-        status: String(r.status || '').trim(),
+        // Canonical status = request_status; fall back to legacy `status` for back-compat only.
+        requestStatus: String(r.request_status || r.status || '').trim(),
+        status: String(r.request_status || r.status || '').trim(),
+        tierGroup: String(r.tier_group || '').trim(),
         totalSku: parseFloat(r.total_sku) || 0,
         totalQty: parseFloat(r.total_qty) || 0,
         totalCartons: parseFloat(r.total_cartons) || 0,
@@ -808,25 +827,22 @@ function normalizeRequestOrderLineRecord(raw) {
         requestOrderLineId: String(r.request_order_line_id || '').trim(),
         requestOrderId: String(r.request_order_id || '').trim(),
         sku: String(r.sku || '').trim(),
-        productName: String(r.product_name || '').trim(),
         series: String(r.series || '').trim(),
         company: String(r.company || '').trim(),
-        requestBucket: String(r.request_bucket || '').trim(),
+        requestBucket: String(r.request_bucket || '').trim(),   // canonical T1/T2/T3 (tier_type deprecated)
         requestMonth: String(r.request_month || '').trim(),
         inspectionDate: String(r.inspection_date || '').trim(),
         expectedReadyDate: String(r.expected_ready_date || '').trim(),
         expectedShipDate: String(r.expected_ship_date || '').trim(),
         requestedQty: parseFloat(r.requested_qty) || 0,
         approvedQty: parseFloat(r.approved_qty) || 0,
-        finalOrderQty: (r.final_order_qty === '' || r.final_order_qty == null) ? '' : (parseFloat(r.final_order_qty) || 0),
+        // Per-company allocation (primary). matched company = qty, others 0.
+        kmQty: parseFloat(r.km_qty) || 0,
+        resusQty: parseFloat(r.resus_qty) || 0,
+        restwQty: parseFloat(r.restw_qty) || 0,
         unitsPerCarton: parseFloat(r.units_per_carton) || 0,
         cartonQty: parseFloat(r.carton_qty) || 0,
-        forecastQty: (r.forecast_qty === '' || r.forecast_qty == null) ? '' : (parseFloat(r.forecast_qty) || 0),
-        currentStock: (r.current_stock === '' || r.current_stock == null) ? '' : (parseFloat(r.current_stock) || 0),
-        onTheWayQty: (r.on_the_way_qty === '' || r.on_the_way_qty == null) ? '' : (parseFloat(r.on_the_way_qty) || 0),
-        factoryAllocatedQty: (r.factory_allocated_qty === '' || r.factory_allocated_qty == null) ? '' : (parseFloat(r.factory_allocated_qty) || 0),
         shortageQty: (r.shortage_qty === '' || r.shortage_qty == null) ? '' : (parseFloat(r.shortage_qty) || 0),
-        reallocationQty: (r.reallocation_qty === '' || r.reallocation_qty == null) ? '' : (parseFloat(r.reallocation_qty) || 0),
         calculationMethod: String(r.calculation_method || '').trim(),
         lineStatus: String(r.line_status || '').trim(),
         linkedPurchaseOrderLineId: String(r.linked_purchase_order_line_id || '').trim(),
@@ -836,12 +852,12 @@ function normalizeRequestOrderLineRecord(raw) {
         unitCost: (r.unit_cost === '' || r.unit_cost == null) ? '' : (parseFloat(r.unit_cost) || 0),
         estimatedAmount: (r.estimated_amount === '' || r.estimated_amount == null) ? '' : (parseFloat(r.estimated_amount) || 0),
         currency: String(r.currency || '').trim(),
-        needReason: String(r.need_reason || '').trim(),
-        relatedEntityType: String(r.related_entity_type || '').trim(),
-        relatedEntityId: String(r.related_entity_id || '').trim(),
         note: String(r.note || '').trim(),
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
+        // Deprecated columns (read-only back-compat; no longer written / primary).
+        productName: String(r.product_name || '').trim(),
+        finalOrderQty: (r.final_order_qty === '' || r.final_order_qty == null) ? '' : (parseFloat(r.final_order_qty) || 0),
         raw: r
     };
 }
@@ -984,28 +1000,187 @@ function normalizeOperationDb(rawDb) {
         requestOrderSiteConfirmations: (db.request_order_site_confirmations || []).map(normalizeRequestOrderSiteConfirmationRecord).filter(function(r) { return r.siteConfirmationId; }),
         // Request Order line SOURCES — source of truth for company/site/month allocation detail (read-only
         // here; write handler is spec-only / pending). [] when the tab is absent (missing-header safe).
-        requestOrderLineSources: (db.request_order_line_sources || []).map(normalizeRequestOrderLineSourceRecord)
+        requestOrderLineSources: (db.request_order_line_sources || []).map(normalizeRequestOrderLineSourceRecord),
+        // Carrier / Route master layer (Carrier Rate Card v1 — read-only display + append-only import).
+        // [] when the tab is absent (missing-header safe). carrier_rate_cards NEVER stores Lead Time.
+        carriers: (db.carriers || []).map(normalizeCarrierRecord).filter(function(r) { return r.carrierId || r.carrierName; }),
+        carrierRateCards: (db.carrier_rate_cards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; }),
+        carrierLeadTimes: (db.carrier_lead_times || []).map(normalizeCarrierLeadTimeRecord).filter(function(r) { return r.leadTimeId || r.carrierId; }),
+        // SKU Domain v2.0 — Regional/Compliance Master (Layer 2) + Tax/Referral Reference Master (Layer 4).
+        // [] when the tab is absent (missing-header safe). Tax reference is READ-ONLY (no engine).
+        skuRegionalDetails: (db.sku_regional_details || []).map(normalizeSkuRegionalDetailRecord).filter(function(r) { return r.regionalDetailId || r.sku; }),
+        taxReferralRates: (db.tax_referral_rates || []).map(normalizeTaxReferralRateRecord).filter(function(r) { return r.taxRateId || r.series; })
+    };
+}
+
+// SKU Regional Details (SKU Domain v2.0 Layer 2). Regional identity + compliance-document fields ONLY.
+// NO tax/duty/hscode/declared-value here (those live in tax_referral_rates). Match grain: sku+company+country+marketplace.
+function normalizeSkuRegionalDetailRecord(raw) {
+    var r = raw || {};
+    function s(v) { return String(v == null ? '' : v).trim(); }
+    return {
+        regionalDetailId: s(r.regional_detail_id),
+        sku: s(r.sku),
+        company: s(r.company),
+        country: s(r.country),
+        marketplace: s(r.marketplace),
+        siteSku: s(r.site_sku),
+        // Canonical platform-neutral id; legacy asin READ-fallback only.
+        marketplaceProductId: s(r.marketplace_product_id) || s(r.asin),
+        packagingRegulation: s(r.packaging_regulation),
+        regulationUrl: s(r.regulation_url),
+        language: s(r.language) || s(r.manual_language),   // v1 manual_language read-fallback
+        manualVersion: s(r.manual_version),
+        labelVersion: s(r.label_version),
+        batteryRegulation: s(r.battery_regulation),
+        createdAt: s(r.created_at),
+        updatedAt: s(r.updated_at),
+        raw: r
+    };
+}
+
+// Tax & Referral Rates (SKU Domain v2.0 Layer 4 — Reference Master). READ-ONLY here; no calculation.
+// Single source of truth for HS Code / Duty / VAT / Referral / Declared Value. Keyed by series (+ duty_country).
+function normalizeTaxReferralRateRecord(raw) {
+    var r = raw || {};
+    function s(v) { return String(v == null ? '' : v).trim(); }
+    function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
+    return {
+        taxRateId: s(r.tax_rate_id),
+        series: s(r.series),
+        countryOfOrigin: s(r.country_of_origin),
+        dutyCountry: s(r.duty_country),
+        hsCode: s(r.hscode),
+        dutyRate: n(r.duty_rate),
+        extraTaxRate: n(r.extra_tax_rate),
+        vatRate: n(r.vat_rate) !== '' ? n(r.vat_rate) : n(r.vat),          // accept vat_rate or legacy vat
+        portTaxRate: n(r.port_tax_rate) !== '' ? n(r.port_tax_rate) : n(r.port_tax),
+        referralFeeRate: n(r.referral_fee_rate),
+        declaredValue: n(r.declared_value),
+        declaredCurrency: s(r.declared_currency),
+        effectiveFrom: s(r.effective_from),
+        effectiveTo: s(r.effective_to),
+        note: s(r.note),
+        createdAt: s(r.created_at),
+        updatedAt: s(r.updated_at),
+        raw: r
+    };
+}
+
+// Carrier master (logistics provider). Reference/master data only — not a Decision Layer.
+function normalizeCarrierRecord(raw) {
+    var r = raw || {};
+    return {
+        carrierId: String(r.carrier_id || '').trim(),
+        carrierCode: String(r.carrier_code || '').trim(),
+        carrierName: String(r.carrier_name || '').trim(),
+        carrierType: String(r.carrier_type || '').trim(),
+        contactName: String(r.contact_name || '').trim(),
+        contactEmail: String(r.contact_email || '').trim(),
+        contactPhone: String(r.contact_phone || '').trim(),
+        isActive: (function(v){ var s = String(v == null ? '' : v).trim().toLowerCase(); return s === 'true' || s === 'yes' || s === '1' || s === 'active'; })(r.is_active),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// Carrier rate card (rate + validity ONLY). NO lead time / transit_days here (v1.4 — single source of
+// truth for Lead Time is carrier_lead_times). Numbers coerced; blank stays '' where meaningful.
+function normalizeCarrierRateCardRecord(raw) {
+    var r = raw || {};
+    function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
+    return {
+        rateCardId: String(r.rate_card_id || '').trim(),
+        carrierId: String(r.carrier_id || '').trim(),
+        originCountry: String(r.origin_country || '').trim(),
+        originCity: String(r.origin_city || '').trim(),
+        destinationCountry: String(r.destination_country || '').trim(),
+        destinationCity: String(r.destination_city || '').trim(),
+        destinationPostalCodeStart: String(r.destination_postal_code_start || '').trim(),
+        destinationPostalCodeEnd: String(r.destination_postal_code_end || '').trim(),
+        destinationWarehouseCode: String(r.destination_warehouse_code || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        shippingMethod: String(r.shipping_method || '').trim(),
+        lastMileDelivery: String(r.last_mile_delivery || '').trim(),
+        chargeType: String(r.charge_type || '').trim(),
+        chargeUnit: String(r.charge_unit || '').trim(),
+        dimDivisor: n(r.dim_divisor),
+        minBoxWeight: n(r.min_box_weight),
+        minBoxWeightUnit: String(r.min_box_weight_unit || '').trim(),
+        weightTier: n(r.weight_tier),
+        weightTierUnit: String(r.weight_tier_unit || '').trim(),
+        currency: String(r.currency || '').trim(),
+        unitRate: n(r.unit_rate),
+        minCharge: n(r.min_charge),
+        fuelSurcharge: n(r.fuel_surcharge),
+        customsFee: n(r.customs_fee),
+        docFee: n(r.doc_fee),
+        transitType: String(r.transit_type || '').trim(),
+        batteryType: String(r.battery_type || '').trim(),
+        customsType: String(r.customs_type || '').trim(),
+        note: String(r.note || '').trim(),
+        effectiveFrom: String(r.effective_from || '').trim(),
+        effectiveTo: String(r.effective_to || '').trim(),
+        status: String(r.status || '').trim(),
+        sourceFileName: String(r.source_file_name || '').trim(),
+        importBatchId: String(r.import_batch_id || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// Carrier lead time — the SINGLE SOURCE OF TRUTH for Lead Time (display-only join on the Rate Card page).
+function normalizeCarrierLeadTimeRecord(raw) {
+    var r = raw || {};
+    function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
+    return {
+        leadTimeId: String(r.lead_time_id || '').trim(),
+        carrierId: String(r.carrier_id || '').trim(),
+        originCountry: String(r.origin_country || '').trim(),
+        destinationCountry: String(r.destination_country || '').trim(),
+        shippingMethod: String(r.shipping_method || '').trim(),
+        lastMileDelivery: String(r.last_mile_delivery || '').trim(),
+        minDays: n(r.min_days),
+        maxDays: n(r.max_days),
+        avgDays: n(r.avg_days),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
     };
 }
 
 // Request Order line source — the append-only company/site/month allocation detail behind each request
-// line. Source of truth for the Company Allocation popup. Write path is spec-only (pending); this
-// normalizer only READS whatever the tab contains (numbers coerced). tier_type = T1/T2/T3; source_month = YYYY-MM.
+// line. Source of truth for the Company Allocation popup. Written at request creation (13_ createRequestOrderDraft).
+// Reads whatever the tab contains (numbers coerced). PK = request_order_line_source_id (legacy line_source_id
+// read as fallback). tier_type / source_bucket = T1/T2/T3; source_month = YYYY-MM.
 function normalizeRequestOrderLineSourceRecord(raw) {
     var r = raw || {};
+    function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
     return {
-        lineSourceId: String(r.line_source_id || r.request_order_line_source_id || '').trim(),
+        lineSourceId: String(r.request_order_line_source_id || r.line_source_id || '').trim(),
         requestOrderLineId: String(r.request_order_line_id || '').trim(),
         requestOrderId: String(r.request_order_id || '').trim(),
         sku: String(r.sku || '').trim(),
         company: String(r.company || '').trim(),
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
+        siteSku: String(r.site_sku || '').trim(),
+        marketplaceProductId: String(r.marketplace_product_id || r.asin || '').trim(),
         tierType: String(r.tier_type || r.request_bucket || '').trim(),
         sourceMonth: String(r.source_month || r.request_month || '').trim(),
+        forecastQty: n(r.forecast_qty),
+        currentStock: n(r.current_stock),
+        onTheWayQty: n(r.on_the_way_qty),
+        shortageQty: n(r.shortage_qty),
+        reallocationQty: n(r.reallocation_qty),
+        recommendedQty: n(r.recommended_qty),
         requestedQty: parseFloat(r.requested_qty) || 0,
         approvedQty: parseFloat(r.approved_qty) || 0,
-        shortageQty: parseFloat(r.shortage_qty) || 0,
+        allocationMethod: String(r.allocation_method || '').trim(),
+        sourceBucket: String(r.source_bucket || r.tier_type || '').trim(),
+        sourcePriority: n(r.source_priority),
         sourceType: String(r.source_type || '').trim(),
         note: String(r.note || '').trim(),
         raw: r
@@ -1483,6 +1658,30 @@ window.KM.DB.getRequestOrderLineSources = function() {
     return window._opDbCache.requestOrderLineSources || [];
 };
 
+// ---- Carrier / Route master (Carrier Rate Card v1) — all missing-tab/header safe (return []). ----
+window.KM.DB.getCarriers = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.carriers || [];
+};
+window.KM.DB.getCarrierRateCards = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.carrierRateCards || [];
+};
+window.KM.DB.getCarrierLeadTimes = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.carrierLeadTimes || [];
+};
+
+// ---- SKU Domain v2.0 — Regional Details (read+write) + Tax/Referral (read-only). Missing-tab safe. ----
+window.KM.DB.getSkuRegionalDetails = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.skuRegionalDetails || [];
+};
+window.KM.DB.getTaxReferralRates = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.taxReferralRates || [];
+};
+
 window.KM.DB.getPurchaseOrderLines = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.purchaseOrderLines || [];
@@ -1593,6 +1792,51 @@ window.KM.DB.updateMarketplaceSkuModel = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// SKU Domain v2.0 — upsert a sku_regional_details row (create/update by
+// sku+company+country+marketplace). Payload = { sku, company, country, marketplace, site_sku?,
+// marketplace_product_id?, packaging_regulation?, regulation_url?, language?, manual_version?,
+// label_version?, battery_regulation?, sync_marketplace_sku? }. When sync_marketplace_sku is truthy the
+// handler also propagates site_sku / marketplace_product_id INTO the matching marketplace_skus row.
+window.KM.DB.upsertSkuRegionalDetail = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertSkuRegionalDetail skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertSkuRegionalDetail' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert regional detail failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Backfill / migration: scan ALL existing marketplace_skus rows and create/update sku_regional_details.
+// Creates missing regional rows and updates only site_sku + marketplace_product_id on existing rows;
+// never touches compliance-document fields. Returns
+// { created_count, updated_count, skipped_count, warning_count, errors, warnings }.
+window.KM.DB.syncMarketplaceSkusToSkuRegionalDetails = async function() {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, syncMarketplaceSkusToSkuRegionalDetails skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'syncMarketplaceSkusToSkuRegionalDetails' })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Sync regional details failed');
     await loadOperationDb({ force: true });
     return json.data;
 };
@@ -1814,6 +2058,115 @@ window.KM.DB.upsertRequestOrderSiteConfirmations = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert site confirmations failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// ---- Carrier Rate Card v1 — Template Export (client-side) + Import (append-only server write) ----
+
+// Fixed columns the carrier must NOT edit (route/method/charge structure identity).
+window.KM.DB.CARRIER_RATE_TEMPLATE_FIXED_COLS = [
+    'carrier_id', 'carrier_name', 'origin_country', 'origin_city', 'destination_country', 'destination_city',
+    'destination_postal_code_start', 'destination_postal_code_end', 'destination_warehouse_code',
+    'marketplace', 'shipping_method', 'last_mile_delivery', 'charge_type', 'charge_unit', 'dim_divisor',
+    'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit', 'currency',
+    'transit_type', 'battery_type', 'customs_type'
+];
+// Carrier-editable columns on EXISTING rows (Update Template §4C.3A). Server (17_) enforces this set;
+// min_charge is LOCKED on existing rows (kept off this list on purpose).
+window.KM.DB.CARRIER_RATE_TEMPLATE_EDITABLE_COLS = [
+    'unit_rate', 'effective_from', 'effective_to', 'fuel_surcharge', 'customs_fee', 'doc_fee', 'status', 'note'
+];
+// Full template column order. `row_type` + `rate_card_id` first (helpers/identity). rate_card_id present =
+// existing row (update); blank = new row (create). `row_type` is NOT persisted. NO Lead Time / transit_days.
+window.KM.DB.CARRIER_RATE_TEMPLATE_COLS = ['row_type', 'rate_card_id'].concat(
+    window.KM.DB.CARRIER_RATE_TEMPLATE_FIXED_COLS.slice(0, 20),   // through currency (structure; incl. last_mile_delivery)
+    ['unit_rate', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee'],
+    ['transit_type', 'battery_type', 'customs_type', 'note', 'effective_from', 'effective_to', 'status']
+);
+
+// Build + download a Carrier Rate Template CSV from already-loaded rate-card rows (normalized).
+// Two modes (opts.mode):
+//   'update' (default) — weekly/monthly rate update: fixed route/method fields kept; the editable
+//                        pricing/date fields unit_rate / effective_from / effective_to are CLEARED so the
+//                        carrier only fills the new numbers.
+//   'master'           — one-time full import / new-route setup: ALL columns exported WITH their current
+//                        values (nothing cleared) so the user can edit any field and add new
+//                        carrier / shipping_method / last_mile_delivery / warehouse / city / zip / country rows.
+// Both modes include last_mile_delivery and NEVER include Lead Time / transit_days (those live in carrier_lead_times).
+// Returns { rows, filename, mode }.
+window.KM.DB.exportCarrierRateTemplate = function(rows, opts) {
+    opts = opts || {};
+    var mode = (opts.mode === 'master') ? 'master' : 'update';
+    var cols = window.KM.DB.CARRIER_RATE_TEMPLATE_COLS;
+    var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
+    var nameById = {};
+    carriers.forEach(function(c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName; });
+    function esc(v) {
+        var s = String(v == null ? '' : v);
+        return (/[",\n]/.test(s)) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+    // One example row (ignored on import). Master mode notes it is fully editable / new rows allowed.
+    var example = {
+        row_type: 'example', rate_card_id: '', carrier_id: 'CARRIER-EXAMPLE', carrier_name: 'Example Forwarder',
+        origin_country: 'CN', origin_city: 'Shenzhen', destination_country: 'US', destination_city: 'Los Angeles',
+        destination_postal_code_start: '', destination_postal_code_end: '', destination_warehouse_code: 'ONT8',
+        marketplace: 'Amazon', shipping_method: 'Sea', last_mile_delivery: 'Parcel', charge_type: 'weight', charge_unit: 'kg',
+        dim_divisor: '6000', min_box_weight: '', min_box_weight_unit: 'kg', weight_tier: '100', weight_tier_unit: 'kg',
+        currency: 'USD', unit_rate: '3.50', min_charge: '150', fuel_surcharge: '', customs_fee: '', doc_fee: '',
+        transit_type: 'door_to_door', battery_type: 'no_battery', customs_type: 'tax_refund_export',
+        note: (mode === 'master'
+            ? 'EXAMPLE ROW — ignored on import. MASTER template: every field is editable; add new carrier / shipping_method / last_mile_delivery / warehouse / city / zip / country rows below.'
+            : 'EXAMPLE ROW — ignored on import'),
+        effective_from: '2026-08-01', effective_to: '2026-12-31', status: 'active'
+    };
+    var master = (mode === 'master');
+    var dataRows = (rows || []).map(function(r) {
+        return {
+            row_type: 'data',
+            rate_card_id: r.rateCardId || '',   // present → existing row (update); blank → new row (create)
+            carrier_id: r.carrierId, carrier_name: nameById[r.carrierId] || r.carrierName || '',
+            origin_country: r.originCountry, origin_city: r.originCity,
+            destination_country: r.destinationCountry, destination_city: r.destinationCity,
+            destination_postal_code_start: r.destinationPostalCodeStart, destination_postal_code_end: r.destinationPostalCodeEnd,
+            destination_warehouse_code: r.destinationWarehouseCode, marketplace: r.marketplace,
+            shipping_method: r.shippingMethod, last_mile_delivery: r.lastMileDelivery, charge_type: r.chargeType, charge_unit: r.chargeUnit,
+            dim_divisor: r.dimDivisor, min_box_weight: r.minBoxWeight, min_box_weight_unit: r.minBoxWeightUnit,
+            weight_tier: r.weightTier, weight_tier_unit: r.weightTierUnit, currency: r.currency,
+            // Update mode CLEARS the editable rate/date fields; master mode KEEPS existing values.
+            unit_rate: master ? (r.unitRate != null ? r.unitRate : '') : '',
+            min_charge: r.minCharge, fuel_surcharge: r.fuelSurcharge, customs_fee: r.customsFee, doc_fee: r.docFee,
+            transit_type: r.transitType, battery_type: r.batteryType, customs_type: r.customsType,
+            note: r.note,
+            effective_from: master ? (r.effectiveFrom || '') : '',
+            effective_to: master ? (r.effectiveTo || '') : '',
+            status: r.status || 'active'
+        };
+    });
+    var all = [example].concat(dataRows);
+    var lines = [cols.join(',')].concat(all.map(function(row) { return cols.map(function(c) { return esc(row[c]); }).join(','); }));
+    var csv = lines.join('\r\n');
+    var filename = opts.filename || ('carrier_rate_' + mode + '_template_' + new Date().toISOString().slice(0, 10) + '.csv');
+    try {
+        var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e) { console.warn('[KM.DB] exportCarrierRateTemplate download failed:', e); }
+    return { rows: all.length, filename: filename, mode: mode };
+};
+
+// Append-only import of parsed template rows → carrier_rate_cards (server-side validation).
+// payload = { rows: [ {row_type, carrier_id, ...} ], columns?: [headers], source_file_name? }.
+// Returns { imported, skipped_examples, rejected, batch_id, errors:[{row,message}] }; reloads DB.
+window.KM.DB.importCarrierRateTemplate = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, importCarrierRateTemplate skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'importCarrierRateCards' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Import carrier rate cards failed');
     await loadOperationDb({ force: true });
     return json.data;
 };

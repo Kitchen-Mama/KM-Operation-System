@@ -71,7 +71,9 @@ function showSection(section) {
             'campaign-risk': 'campaign-risk-section',
             'request-order-draft': 'request-order-draft-section',
             'purchase-order-overview': 'purchase-order-overview-section',
-            'purchase-order-list': 'purchase-order-list-section'
+            'purchase-order-list': 'purchase-order-list-section',
+            'carrier-rate-card': 'carrier-rate-card-section',
+            'sku-regional-details': 'sku-regional-details-section'
         };
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
@@ -97,9 +99,11 @@ function showSection(section) {
         'campaign-risk': 'campaign-risk-section',
         'request-order-draft': 'request-order-draft-section',
         'purchase-order-overview': 'purchase-order-overview-section',
-        'purchase-order-list': 'purchase-order-list-section'
+        'purchase-order-list': 'purchase-order-list-section',
+        'carrier-rate-card': 'carrier-rate-card-section',
+        'sku-regional-details': 'sku-regional-details-section'
     };
-    
+
     const targetSectionId = sectionMap[section];
     if (targetSectionId) {
         const targetSection = document.getElementById(targetSectionId);

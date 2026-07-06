@@ -35,7 +35,7 @@ It is a **relationship map**, not a schema definition and not an implementation 
 | Layer | Tables (incl. future) |
 |-------|------------------------|
 | **Master Data Layer** | `sku_details`, `sku_handbook_summaries`, `product_features` |
-| **Marketplace / Pricing Layer** | `marketplaces`, `marketplace_skus`, `pricing_list`, `pricing_change_log` |
+| **Marketplace / Pricing Layer** | `marketplaces`, `marketplace_skus`, `sku_regional_details` *(new — planned)*, `tax_referral_rates` *(new — planned; Tax/Referral Reference Master)*, `pricing_list`, `pricing_change_log` |
 | **Forecast Layer** | `fc_regular_forecast`, `fc_special_events`, `fc_target_rules` |
 | **Inventory Layer** | `factory_stock`, `factory_stock_movements`, `warehouses`, `overseas_inventory_snapshot`, `overseas_inventory_movements`, *future* marketplace inventory snapshots (e.g. `amazon_inventory_snapshot`) |
 | **Factory / Procurement Layer** | `request_orders`, `request_order_lines`, `purchase_orders`, `purchase_order_lines`, `production_schedule` |
@@ -53,13 +53,15 @@ It is a **relationship map**, not a schema definition and not an implementation 
 - `sku_details` is the **product master** and the source for `category` / `series` / logistics dimensions + weights / carton info / **base price references** (selling_price, minimum_price, msrp).
 - `sku_handbook_summaries` and `product_features` are knowledge/content tables keyed by SKU (or scope), used by SKU Handbook — not part of supply calculation.
 
-> **`sku_details` columns (current live headers; authoritative logistics definition in [`SKU_DETAILS_LOGISTICS_SPEC.md`](./SKU_DETAILS_LOGISTICS_SPEC.md)):**
+> **`sku_details` columns (current live headers; authoritative logistics definition in [`SKU_DETAILS_LOGISTICS_SPEC.md`](./SKU_DETAILS_LOGISTICS_SPEC.md); Product-Master cleanup in [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md)):**
 > `sku`, `product_name`, `category`, `series`, `lifecycle`, `image_url`, `gs1_code`, `gs1_type`, `amz_asin`,
 > **item:** `item_length`, `item_width`, `item_height`, `item_length_2`, `item_width_2`, `item_height_2`, `item_dimension_unit`, `item_weight`, `item_weight_unit`,
 > **package:** `package_length`, `package_width`, `package_height`, `package_dimension_unit`, `package_weight`, `package_weight_unit`,
 > **carton:** `carton_length`, `carton_width`, `carton_height`, `carton_dimension_unit`, `carton_weight`, `carton_weight_unit`, `units_per_carton`,
-> **customs / price:** `hscode`, `declared_value`, `declared_value_unit`, `minimum_price`, `minimum_price_unit`, `msrp`, `msrp_unit`, `selling_price`, `selling_unit`,
+> **attributes (NEW — planned, `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` §2.3):** `material` (multi-value underscore e.g. `Stainless_Steel_ABS`), `battery_type` (`none`/`built_in`/`removable`/`lithium`/`unknown`), `magnet_type` (`none`/`magnetic`/`unknown`),
+> **baseline price (brand reference, NOT live price):** `minimum_price`, `msrp`, `selling_price`, **`base_currency`** (NEW — the single currency for all three),
 > `pm`, `created_at`, `updated_at`.
+> - **DEPRECATED on `sku_details` (stop writing; read-fallback only during migration — `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`):** `minimum_price_unit` / `msrp_unit` / `selling_unit` (replaced by **`base_currency`**); **`hscode` / `declared_value` / `declared_value_unit` → MOVED to the `tax_referral_rates` Reference Master (§4B), keyed by `series` (SKU Domain v2.0). NOT stored on `sku_regional_details`.** Spec only — no live column added/renamed/removed yet.
 > - **Dimensions are split into `*_length` / `*_width` / `*_height` + `*_dimension_unit`** (superseding the legacy single `item_dimensions` / `package_dimensions` / `carton_dimensions` columns; the API normalizer still reads the legacy columns as a fallback).
 > - **`item_length_2` / `item_width_2` / `item_height_2`** = optional **secondary item size** (e.g. a large+small combo). **Display only — NOT used in carton CBM** (`SKU_DETAILS_LOGISTICS_SPEC.md` §2).
 > - **Logistics CBM / weight uses `carton_*` (and `item_weight` for net weight)** — see `SHIPMENT_CENTER_SPEC.md` §15.3.
@@ -90,8 +92,9 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 | `marketplace_skus` → `pricing_list` | `marketplace_sku_id` | 1 → 1 |
 | `pricing_list` → `pricing_change_log` | `pricing_id` | 1 → many |
 
-- `marketplace_skus` stores **site identity and operational settings** (site_sku, asin, status, replenishment_model, launch_date, `fulfillment_model`).
-- `pricing_list` is the **pricing source of truth** (Regular / Minimum / MSRP / Currency, base + FX + effective).
+- `marketplace_skus` stores **site identity and operational settings**. **Canonical columns (target — `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` §5):** `marketplace_sku_id`, `marketplace_id`, `sku`, `company`, `country`, `marketplace`, `site_sku`, **`marketplace_product_id`** (platform-neutral; **replaces `asin`**), `currency`, `marketplace_sku_status`, `replenishment_model`, `fulfillment_model`, `launch_date`, `created_at`, `updated_at`.
+  - **`asin → marketplace_product_id` migration:** ASIN is Amazon-specific; the DB column is **`marketplace_product_id`** and Amazon's ASIN is stored there. The **UI may show the label "ASIN"** when `marketplace = Amazon`. Legacy `asin` is **read-fallback only during migration** — not canonical, no new writes.
+- `pricing_list` is the **pricing source of truth** (Regular / Minimum / MSRP / Currency, base + FX + effective). **Independent — NOT moved into `sku_regional_details`.**
 - **`marketplace_skus` must NOT be treated as the final pricing source.**
 
 **Fulfillment model:**
@@ -104,6 +107,47 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 - `company` on `marketplace_skus` is **required**.
 - **`company + country + marketplace`** distinguishes operational ownership.
 - **`country` alone is not enough** — e.g. US can include both `KM` and `ResUS`.
+
+---
+
+## 4A. `sku_regional_details` — Regional / Marketplace Compliance Master (SKU Domain v2 — planned)
+
+**Layer 2** of the SKU Master Domain (authoritative: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md) v2.0). Holds SKU-level **regional product info** and is the **higher-level source of truth for marketplace identifiers** (`site_sku`, `marketplace_product_id`). **Tax/duty/HS-code/declared-value fields were REMOVED in v2** and relocated to `tax_referral_rates` (§4B). **Spec only — not yet created in the live DB.**
+
+> **Columns (v2):** `regional_detail_id` (PK), `sku` (→ `sku_details.sku`), `company`, `country`, `marketplace`, `site_sku`, `marketplace_product_id`, `packaging_regulation`, `regulation_url`, `language`, `manual_version`, `label_version`, `battery_regulation`, `created_at`, `updated_at`.
+> - **Match grain:** `sku + company + country + marketplace` (one row per company/country/marketplace site).
+> - **REMOVED in v2 (→ `tax_referral_rates`):** `hscode`, `duty_rate`, `extra_duty_rate`, `vat`, `port_tax`, `referral_fee_rate`, `declared_value`, `declared_currency`. Also removed: `marketplace_sku_id`, `status`, `note`, `warning_label`; `manual_language` → `language`.
+> - **Higher-level source:** `sku_regional_details` is the source; `marketplace_skus` is the operational synchronized copy. **Pricing / tax NOT here.**
+
+| Relationship | Key | Cardinality |
+|--------------|-----|-------------|
+| `sku_details` → `sku_regional_details` | `sku` | 1 → many (per company/country/marketplace) |
+| `sku_regional_details` ↔ `marketplace_skus` | `sku + company + country + marketplace` | 1 → 1 (paired; regional = higher priority) |
+
+- **Creation (two flows):** (A) Add Marketplace SKU → `marketplace_skus` → **ensure** `sku_regional_details`; (B) Regional Details created first → later `marketplace_skus` **copies** `site_sku` / `marketplace_product_id` FROM regional. See `INVENTORY_TABLE_MAPPING_SPEC.md` §17.3A.
+- **Sync (avoid silent divergence):** `site_sku` / `marketplace_product_id` propagate **both ways**; **`sku_regional_details` is the higher-priority source** on conflict; save surfaces a warning / repair-sync.
+
+---
+
+## 4B. `tax_referral_rates` — Tax / Referral / Duty Reference Master (SKU Domain v2 Layer 4 — planned)
+
+**Reference Master** (Layer 4). Authoritative: [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md). **Single source of truth** for HS Code / Duty / VAT / Referral / Declared Value; future source for Cost Engine / Duty Engine / Shipment Cost / Export / Compliance. **Spec only — not yet created in the live DB.**
+
+> **Columns:** `tax_rate_id` (PK), `series` (join from `sku_details.series`), `duty_country`, `country_of_origin` (**kept here for now — NOT in `sku_details`**), `hscode`, `duty_rate`, `extra_tax_rate`, `vat`, `port_tax`, `referral_fee_rate`, `declared_value`, `declared_currency`, `effective_from`, `effective_to`, `note`, `created_at`, `updated_at`.
+> - **Match grain:** `series + duty_country` (+ effective-date window; new period = new row; overlaps allowed).
+> - **Source-of-truth rule:** HS Code / Duty / VAT / Referral / Declared Value exist **ONLY** here — never duplicated in `sku_details` / `sku_regional_details` / `marketplace_skus`.
+
+| Relationship | Key | Cardinality |
+|--------------|-----|-------------|
+| `sku_details` → `tax_referral_rates` | `series` | 1 → many (per `duty_country` × effective period) |
+
+**SKU Master Domain relationship diagram (v2):**
+
+```
+sku_details ──(sku)──▶ sku_regional_details ──(sku+company+country+marketplace, synced)──▶ marketplace_skus
+     │
+     └──(series)──▶ tax_referral_rates ──▶ Duty / Referral / VAT / Declared Value / Cost Engine / Shipment Cost / Export / future AI cost
+```
 
 ---
 
@@ -201,8 +245,10 @@ Examples:
 
 ### 7.1 `request_orders` (Procurement Planning Draft)
 
-> **Columns:** `request_order_id` (PK), `request_order_no`, `request_order_version`, `parent_request_order_id`, `company`, `supplier_id`, `supplier_name`, `factory_id`, `warehouse_id`, `status`, `total_sku`, `total_qty`, `total_cartons`, `estimated_amount`, `currency`, `source`, `source_ref_type`, `source_ref_id`, `created_by`, `created_at`, `submitted_by`, `submitted_at`, `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `rejected_reason`, `cancelled_by`, `cancelled_at`, `completed_by`, `completed_at`, `note`, `updated_by`, `updated_at`.
-> - **`status`** enum: `draft / pending_approval / approved / converted_to_po / cancelled`.
+> **Columns:** `request_order_id` (PK), `request_order_no`, `request_order_version`, `parent_request_order_id`, `company`, `supplier_id`, `supplier_name`, `factory_id`, **`warehouse_id`**, **`request_status`**, **`tier_group`**, `total_sku`, `total_qty`, `total_cartons`, `estimated_amount`, `currency`, `source`, `source_ref_type`, `source_ref_id`, `created_by`, `created_at`, `submitted_by`, `submitted_at`, `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `rejected_reason`, `cancelled_by`, `cancelled_at`, `completed_by`, `completed_at`, `note`, `updated_by`, `updated_at`.
+> - **`request_status`** (canonical) enum: `draft / pending_approval / approved / converted_to_po / cancelled`. The legacy **`status`** column is **deprecated — no longer written or ensured** (read-fallback only for old rows).
+> - **`tier_group`**: only T1 → `T1`; only T2/T3 → `T2_T3`; both → `mixed`; none → blank.
+> - **`warehouse_id`**: default preferred factory warehouse **`WH-TW-CN-FACTORY-YOUXIN`** (CN Youxin) when none supplied. Header-level `inspection_date`/`expected_ready_date`/`expected_ship_date` are **NOT written** — dates are line-level.
 > - **`source`** enum: `manual / inventory_shortage / factory_stock_shortage / shipment_allocation_shortage / approved_shipment_demand / ai_recommendation` (Phase 1 writes `manual`; the others are reserved placeholders — no auto engine).
 > - **`source_ref_type` / `source_ref_id`** — optional upstream reference (e.g. `shipment` / `shipping_plan` / `inventory_snapshot`) copied for traceability; **never written back**.
 > - **`request_order_version`** — bumped +1 on resubmit after a reject (MVP reuses the same `request_order_id` row; `parent_request_order_id` = self).
@@ -211,12 +257,12 @@ Examples:
 
 ### 7.2 `request_order_lines`
 
-> **Columns:** `request_order_line_id` (PK), `request_order_id` (FK), `sku`, `product_name`, `series`, **`company`**, **`request_bucket`**, **`request_month`**, **`inspection_date`**, **`expected_ready_date`**, **`expected_ship_date`**, `requested_qty`, `approved_qty`, **`final_order_qty`**, `units_per_carton`, `carton_qty`, **`forecast_qty`**, **`current_stock`**, **`on_the_way_qty`**, **`factory_allocated_qty`**, **`shortage_qty`**, **`reallocation_qty`**, `supplier_id`, `supplier_name`, `supplier_sku`, `unit_cost`, `estimated_amount`, `currency`, `need_reason`, **`calculation_method`**, **`line_status`**, **`linked_purchase_order_line_id`**, `related_entity_type`, `related_entity_id`, `note`, `created_at`, `updated_at`.
-> - **`company`** — the site owner (KM / ResUS / ResTW …). **One line = one company;** the Draft's KM/ResUS/ResTW split is the set of per-company lines for a `(sku, bucket)`. **No separate company-split table** (a structured `request_order_line_sources` company split is spec-only, not implemented).
-> - **`inspection_date` / `expected_ready_date` / `expected_ship_date`** — decision-layer schedule, written to all lines of a tier at Save.
-> - **`request_bucket`** (`T1`/`T2`/`T3`) + **`request_month`** — demand bucket **preserved on every line**; Request Layer keeps T1/T2/T3 separated, PO Layer may merge later via `request_order_po_links`.
-> - **`line_status`** = draft/submitted/approved/**cancelled** — a Draft tier can be soft-cancelled (`cancelRequestOrderTier`); when a request has no active line left its header goes `cancelled`. Totals exclude cancelled lines.
-> - **PRIMARY columns:** `company`, `request_bucket`, `request_month`, `series`, `requested_qty`, `approved_qty`, `shortage_qty`, `carton_qty`, `units_per_carton`, `inspection_date`, `expected_ready_date`, `expected_ship_date`, `calculation_method`, `line_status` (+ reserved `km_qty`/`resus_qty`/`restw_qty`/`recommended_qty`). **DEPRECATED / not source of truth** (kept for back-compat, not deleted): `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `reallocation_qty`, `source_company_count`, `source_site_count`, `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`. Company/site/month allocation detail is owned by **`request_order_line_sources`**.
+> **Columns:** `request_order_line_id` (PK), `request_order_id` (FK), `sku`, `series`, **`company`**, **`request_bucket`**, **`request_month`**, **`inspection_date`**, **`expected_ready_date`**, **`expected_ship_date`**, `requested_qty`, `approved_qty`, **`km_qty`**, **`resus_qty`**, **`restw_qty`**, `units_per_carton`, `carton_qty`, **`shortage_qty`**, `supplier_id`, `supplier_name`, `supplier_sku`, `unit_cost`, `estimated_amount`, `currency`, **`calculation_method`**, **`line_status`**, **`linked_purchase_order_line_id`**, `note`, `created_at`, `updated_at`.
+> - **`company`** — the site owner (KM / ResUS / ResTW …). **One line = one company.** **`km_qty`/`resus_qty`/`restw_qty`** = per-company allocation for the line (matched company = `approved_qty`, others `0`; never blank). Recomputed on approved edit.
+> - **`request_bucket`** (`T1`/`T2`/`T3`, **canonical — no `tier_type` here**) + **`request_month`** — bucket preserved on every line; PO Layer may merge later via `request_order_po_links`.
+> - **`inspection_date` / `expected_ready_date` / `expected_ship_date`** — line-level schedule, written to all lines of a tier at Save.
+> - **`line_status`** = draft/submitted/approved/**cancelled** — a Draft tier can be soft-cancelled (`cancelRequestOrderTier`); when a request has no active line left its header goes `cancelled` (via `request_status`). Totals exclude cancelled lines.
+> - **DEPRECATED — no longer written / ensured** (missing-header-safe; not re-created): `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`, `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `reallocation_qty`, `source_company_count`, `source_site_count`, `tier_type`. Company/site/month allocation detail is owned by **`request_order_line_sources`** (written at request creation).
 > - **`requested_qty`** (from draft) → **`approved_qty`** (editable in Draft) → **`final_order_qty`** (locked = approved at Submit/Approve; cleared on Reject). **`carton_qty`** recomputed from `units_per_carton`.
 > - Snapshots from the allocation draft: **`forecast_qty`** ← `fc_qty_snapshot`, **`current_stock`** ← `site_stock_snapshot`. **`on_the_way_qty`** / **`factory_allocated_qty`** / **`shortage_qty`** / **`reallocation_qty`** blank in Phase 1 (no shipment join / allocation engine / formula yet).
 > - **`calculation_method`** = source label (`manual_order_allocation` …); **`line_status`** = draft/submitted/approved/cancelled; **`linked_purchase_order_line_id`** blank until PO line created (traceability → `request_order_po_links`, future). All added columns are **additive** (missing-header safe).
@@ -294,7 +340,7 @@ request_order_po_links                     (Request ↔ PO join: 1→N, N→1, s
 
 - **`request_order_allocation_drafts` → `request_order_allocation_draft_lines`** — `request_allocation_draft_id`, 1 → many.
 - **`request_orders` → `request_order_lines`** — `request_order_id`, 1 → many.
-- **`request_order_lines` → `request_order_line_sources`** — `request_order_line_id`, 1 → many; **append-only, never deleted**. **Source of truth for company / site / month allocation.** Columns: `line_source_id` (PK), `request_order_line_id`, `request_order_id`, `sku`, `company`, `country`, `marketplace`, **`tier_type`** (T1/T2/T3), **`source_month`** (YYYY-MM), `requested_qty`, `approved_qty`, `shortage_qty`, `source_type` (FC / Inventory / Lead Time / Target Rules / Manual …), `note`. **Read path implemented** (`validTabs` + adapter `getRequestOrderLineSources()` + normalizer exposing `tierType`/`sourceMonth`); **write path pending** → the Company Allocation popup falls back to `request_order_lines` grouped by company ("Site-level source pending").
+- **`request_order_lines` → `request_order_line_sources`** — `request_order_line_id`, 1 → many; **append-only, never deleted**. **Source of truth for company / site / month allocation.** Columns: `line_source_id` (PK), `request_order_line_id`, `request_order_id`, `sku`, `company`, `country`, `marketplace`, **`tier_type`** (T1/T2/T3), **`source_month`** (YYYY-MM), `requested_qty`, `approved_qty`, `shortage_qty`, `source_type`, `note`, `created_at`, `updated_at`. **Write + read implemented:** `handleCreateRequestOrderDraft_` appends one source row per line at request creation; adapter `getRequestOrderLineSources()` + normalizer (`tierType`/`sourceMonth`). The Company Allocation popup shows real source rows (legacy pre-write requests fall back to `request_order_lines` grouped by company). **Deprecated columns NOT created:** `ownership_company`, `warehouse_id`, `site_sku`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `reallocation_qty`, `recommended_qty`, `allocation_method`, `source_bucket`, `source_priority`.
 - **`purchase_order_lines` company snapshot** *(spec only — future)* — should add `km_qty` / `resus_qty` / `restw_qty` captured at PO creation so the commitment layer never recomputes the Request source.
 - **`request_orders` ↔ `purchase_orders` via `request_order_po_links`** *(new — spec only)* — many-to-many (`request_order_id` × `purchase_order_id`); supports **one Request → many PO**, **many Requests → one PO**, **supplier split**, **factory split**. Legacy 1→1 traceability (copied `purchase_orders.request_order_id` + one-time `request_orders.status = converted_to_po`) remains valid.
 - **Purchase Order Export Template** — always from `purchase_orders` / `purchase_order_lines` (never a Draft).
@@ -400,17 +446,31 @@ shipments ──1:many──▶ shipment_lines
 
 > **Authoritative column definitions for `carriers` / `carrier_rate_cards` / `shipping_route_rules` / `replenishment_route_rules` / `carrier_lead_times` live in [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md)** (foundation tables; planned design, not yet migrated; **no pricing engine**).
 > - **`carriers`:** `carrier_id`, `carrier_code`, `carrier_name`, `carrier_type` (`forwarder`/`courier`/`trucker`/`warehouse_partner`/`customs_broker`/`other`), `scac_code`, `default_currency`, `contact_name`, `contact_email`, `contact_phone`, `website`, `is_active`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`.
-> - **`carrier_rate_cards`** (authoritative import schema, `CARRIER_AND_ROUTE_SPEC.md` §4)**:** `rate_card_id`, `carrier_id` (FK), `origin_country`, `origin_city`, `destination_country`, `destination_city`, `destination_postal_code_start`, `destination_postal_code_end`, `destination_warehouse_code`, `marketplace`, `shipping_method`, `charge_type` (`actual_weight`/`dim_weight`/`chargeable_weight`/`cbm`/`carton`/`shipment`), `charge_unit` (`kg`/`cbm`/`carton`/`shipment`), `dim_divisor`, `min_box_weight`, `min_box_weight_unit`, `weight_tier`, `weight_tier_unit`, `currency`, `unit_rate`, `min_charge`, `fuel_surcharge`, `customs_fee`, `doc_fee`, `transit_days`, `effective_from`, `effective_to`, `status`, `source_file_name`, `import_batch_id`, `created_at`, `updated_at`. **Matching by destination_warehouse_code → postal-code range → city → country + marketplace + method + weight_tier; `route_code` is optional/deprecated (NOT the match key).** Price + validity source for the future Carrier Price Engine only — **no calculation defined**.
+> - **`carrier_rate_cards`** (authoritative import schema, `CARRIER_AND_ROUTE_SPEC.md` §4 + Carrier Rate Card v1 §4C)**:** `rate_card_id`, `carrier_id` (FK), `origin_country`, `origin_city`, `destination_country`, `destination_city`, `destination_postal_code_start`, `destination_postal_code_end`, `destination_warehouse_code`, `marketplace`, `shipping_method` (main transportation mode: `Sea`/`Sea Express`/`Air`/`Courier`), **`last_mile_delivery`** (final delivery mode: `Parcel`/`Truck` — **separate column, never combined with `shipping_method`, never `Sea/P`/`P`/`T`**), `charge_type` (pricing model: `weight`/`volume`/`container`/`shipment`/`carton`), `charge_unit` (`kg`/`lb`/`cbm`/`20GP`/`40HQ`/`shipment`/`carton`), `dim_divisor`, `min_box_weight`, `min_box_weight_unit`, `weight_tier`, `weight_tier_unit`, `currency`, `unit_rate`, `min_charge`, `fuel_surcharge`, `customs_fee`, `doc_fee`, **`transit_type`** (`port_to_port`/`door_to_port`/`port_to_door`/`door_to_door`), **`battery_type`** (`no_battery`/`built_in_battery`/`removable_battery`/`lithium_battery`/`unknown`), **`customs_type`** (`buy_export_license`/`tax_refund_export`/`not_applicable`/`unknown`), **`note`**, `effective_from`, `effective_to`, `status`, `source_file_name`, `import_batch_id`, `created_at`, `updated_at`. **No `transit_days` — Lead Time is NOT stored on rate cards (removed v1.4); `carrier_lead_times` is the single source of truth.** **Matching by destination_warehouse_code → postal-code range → city → country + marketplace + method + weight_tier; `route_code` is optional/deprecated (NOT the match key).** **Reference/Master-like data — NOT a Decision Layer; does not auto-decide carrier.** Price + validity source for the future Carrier Price Engine only — **no calculation defined**.
 > - **`shipping_route_rules`:** `route_rule_id`, `company`, `country`, `marketplace`, `shipping_method`, `route_code`, `default_ship_from`, `default_destination`, `default_carrier_id` (FK), `priority`, `is_active`, `note`, `created_by`, `created_at`, `updated_by`, `updated_at`. **Drives the default `ship_from` / `destination` / `route_code` pre-filled on a Weekly Shipping Plan; the plan may OVERRIDE `ship_from` / `destination`.**
 > - **`replenishment_route_rules`:** `route_rule_id`, `company`, `country`, `marketplace`, `shipping_method`, `ship_from`, `destination`, `origin_country`, `origin_city`, `destination_country`, `destination_city`, `route_code`, `default_carrier_id` (FK), `priority`, `is_active`, `created_by`, `created_at`, `updated_by`, `updated_at`, `note`. **Route defaults for Inventory Replenishment → Recommendation Summary (Suggested Route) + Execution Plan (`ship_from`/`destination`/`shipping_method` per route). DISTINCT from `shipment_routes` (Shipment/World Map/in-transit only) — do NOT conflate.**
-> - **`carrier_lead_times`:** `lead_time_id`, `carrier_id` (FK), `origin_country`, `destination_country`, `shipping_method`, `min_days`, `max_days`, `avg_days`, `created_at`, `updated_at`. ETA-planning master; no ETA engine yet.
+> - **`carrier_lead_times`:** `lead_time_id`, `carrier_id` (FK), `origin_country`, `destination_country`, `shipping_method` (main transportation mode), **`last_mile_delivery`** (final delivery mode; part of the join key — blank allowed for legacy fallback), `min_days`, `max_days`, `avg_days`, `created_at`, `updated_at`. ETA-planning master; no ETA engine yet. **Single source of truth for Lead Time** — independent lifecycle from rate cards (Kitchen-Mama-maintained; never touched by the Carrier Rate Template).
+
+**Carrier master tables — independent (v1.4):**
+
+```
+carriers
+      │
+      ├──────────────►  carrier_rate_cards      (rate + validity; NO lead time)
+      │
+      └──────────────►  carrier_lead_times      (single source of truth for Lead Time)
+```
+
+- The **Carrier Rate Card page** reads **`carrier_rate_cards` + `carrier_lead_times` together for display only** (Lead Time via join). **Neither table writes to the other** — they are independent master data with independent lifecycles.
 
 | Relationship | Key | Cardinality |
 |--------------|-----|-------------|
 | `carriers` → `carrier_rate_cards` | `carrier_id` | 1 → many |
+| `carrier_rate_cards` → `carrier_rate_breakdowns` | `rate_card_id` | 1 → many — **FUTURE / deferred (not v1)**; FCL/container itemized cost breakdown (`CARRIER_AND_ROUTE_SPEC.md` §4C.6) |
 | `carriers` → `shipping_route_rules` | `default_carrier_id` | 1 → many (optional) |
 | `carriers` → `replenishment_route_rules` | `default_carrier_id` | 1 → many (optional) |
 | `carriers` → `carrier_lead_times` | `carrier_id` | 1 → many |
+| `carrier_lead_times` → Carrier Rate Card page | `carrier_id + origin_country + destination_country + shipping_method + last_mile_delivery` (blank `last_mile_delivery` → fall back to `… + shipping_method`) | **read for Lead Time display only** (`CARRIER_AND_ROUTE_SPEC.md` §4C.2) |
 | `shipping_route_rules` → `shipping_plans` | `company + country + marketplace + shipping_method` → default `ship_from` / `destination` / `route_code` | reference (overridable) |
 | `replenishment_route_rules` → Inventory Replenishment (Recommendation Summary / Execution Plan) | `company + country + marketplace + shipping_method` → default `ship_from` / `destination` / `shipping_method` | reference (overridable by PM) |
 | `carrier_rate_cards` ↔ `shipping_route_rules` | `route_code` | legacy shared identifier — **deprecated for MVP matching** |
@@ -418,13 +478,16 @@ shipments ──1:many──▶ shipment_lines
 | `shipments` → `carriers` | `carrier_id` | reference |
 | `shipments` → `carrier_rate_cards` | `rate_card_id` | reference |
 
-- `carrier_rate_cards` match by **`destination_warehouse_code` → postal-code range → city → country + `marketplace` + `shipping_method` + `weight_tier`**; **`route_code` is optional/deprecated (NOT the match key)**. `charge_type` / `charge_unit` / `dim_divisor` / `min_box_weight` / `weight_tier` define the billable basis (future engine).
-- **`carrier_rate_cards.transit_days` = the quoted reference time on the rate card; `carrier_lead_times.min_days`/`max_days`/`avg_days` = actual/observed time. Future AI recommendation prefers `carrier_lead_times.avg_days`** (`CARRIER_AND_ROUTE_SPEC.md` §4A).
+- `carrier_rate_cards` **destination matching priority (FINALIZED, Carrier v1.1): `destination_warehouse_code` → `destination_city` → `destination_postal_code_start`~`destination_postal_code_end` → `destination_country`** — **stop at the first (most specific) level that matches**; a higher-priority match wins and lower levels are ignored (e.g. a matching warehouse-code rate is used even if city/zip/country rows also match). Then narrow by `marketplace` + `shipping_method` + `last_mile_delivery` + `weight_tier`. **`route_code` is optional/deprecated (NOT the match key)**. `charge_type` / `charge_unit` / `dim_divisor` / `min_box_weight` / `weight_tier` define the billable basis (future engine — priority order fixed here, engine NOT implemented).
+- **`shipping_method` (main transportation mode) and `last_mile_delivery` (final delivery mode) are two SEPARATE columns** on both `carrier_rate_cards` and `carrier_lead_times` — never combined, never `Sea/P` / `P` / `T`. The Lead Time join uses both, with a blank-`last_mile_delivery` fallback to method-only.
+- **Lead Time single source of truth = `carrier_lead_times`** (`min_days`/`max_days`/`avg_days`). **`carrier_rate_cards` does NOT store Lead Time** (`transit_days` removed v1.4) and must never duplicate it. The two are **independent master tables** — neither writes to the other. Future AI recommendation reads `carrier_lead_times.avg_days` (`CARRIER_AND_ROUTE_SPEC.md` §4A).
 - **Cost lifecycle (`CARRIER_AND_ROUTE_SPEC.md` §4B):** Shipping Plan produces a **coarse estimate** (country+marketplace+method+weight_tier) → Shipment Draft **refines** it when warehouse_code/postal/city are known → **actuals** filled after carrier invoice. Estimated fields never overwrite actuals.
 - `shipping_route_rules` provides routing **defaults only** — the Weekly Shipping Plan's chosen `ship_from` / `destination` win and are persisted on `shipping_plans` (part of the six-value group key, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1).
 - `ship_from` / `destination` are **logical warehouse / location ids** resolved via `warehouses` (consistent with `shipments.warehouse_id`).
 - Until the future **Carrier Price Engine** exists, the Weekly Shipping Plan **Cost Breakdown stays a placeholder** (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §11).
 - `carrier_lead_times` supports **ETA planning** (used by On The Way ETA buckets and shipment planning; defined later).
+- **Carrier Rate Card v1.1 (`CARRIER_AND_ROUTE_SPEC.md` §4C):** a **Carrier Rate Card page** (filters Date / Country-Ship To / Method / Last Mile / Carrier + Search; no data before Search) browses `carrier_rate_cards` and reads `carrier_lead_times` for the Lead Time column only. **Two export templates**, both carrying `row_type` (not persisted) + **`rate_card_id`** (present ⇒ update; blank ⇒ create): **Update Template** is **carrier-scoped** (a carrier must be selected; exports that carrier's active rows; route/method/structure locked; clears `unit_rate`/`effective_from`/`effective_to`) and **Master Template** (all carriers, all fields editable). **Import** classifies each row by `rate_card_id`: existing → **update** (Update mode edits only `unit_rate`/`effective_from`/`effective_to`/`fuel_surcharge`/`customs_fee`/`doc_fee`/`status`/`note`, **locked-field edits ignored + reported**; Master mode edits any field); blank + required values → **create** new row (carrier-scope default; may add new method/last-mile/warehouse/city/zip/country); blank + empty → **skip**. **Field locking is enforced by the importer, not the CSV.** Summary: `updated_existing_count`/`created_new_count`/`blank_skipped_count`/`rejected_count`/`locked_fields_ignored_count`/warnings/errors. Overlapping effective dates coexist as separate rows (future engine tie-break: latest `effective_from` → latest `import_batch_id`/`updated_at` → conflict warning). **Future (documented only, §4C.7):** Export Center emails a carrier-scoped Update Template → carrier replies with the filled attachment → a future importer applies the same rules. **NO email automation / Gmail parser / Export Center implemented.**
+- **`carrier_fee_types` / `carrier_rate_breakdowns` are deferred (NOT v1)** — FCL/container itemized cost breakdown later; v1 keeps all rate rows flat in `carrier_rate_cards`.
 
 **`shipment_routes` (planned nodes) vs `shipment_events` (actual events) — Execution layer, do NOT conflate:**
 - **`shipment_routes`** = the **planned** leg-by-leg path (e.g. 東莞工廠 → 深圳出口海關 → 太平洋航段 → 洛杉磯港 → Amazon ONT8). Used by On-The-Way / World Map for the route line.
@@ -480,7 +543,9 @@ Customer
 ## 12. Key Relationship Flow Diagram
 
 ```
-sku_details
+sku_details ──(series)──▶ tax_referral_rates   (HS Code / Duty / VAT / Referral / Declared Value — source of truth)
+   │
+   └──(sku)──▶ sku_regional_details ──(synced: site_sku / marketplace_product_id)──▶ marketplace_skus
    ▼
 marketplaces ──▶ marketplace_skus
                       ▼

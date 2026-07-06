@@ -20,8 +20,11 @@
 | **Item size** | `item_length`, `item_width`, `item_height`, `item_length_2`, `item_width_2`, `item_height_2`, `item_dimension_unit`, `item_weight`, `item_weight_unit` |
 | **Package size** | `package_length`, `package_width`, `package_height`, `package_dimension_unit`, `package_weight`, `package_weight_unit` |
 | **Carton size** | `carton_length`, `carton_width`, `carton_height`, `carton_dimension_unit`, `carton_weight`, `carton_weight_unit`, `units_per_carton` |
-| **Customs / price** | `hscode`, `declared_value`, `declared_value_unit`, `minimum_price`, `minimum_price_unit`, `msrp`, `msrp_unit`, `selling_price`, `selling_unit` |
+| **Attributes** *(v1.1)* | `material`, `battery_type`, `magnet_type` |
+| **Baseline price** | `minimum_price`, `msrp`, `selling_price`, `base_currency` |
 | **Meta** | `pm`, `created_at`, `updated_at` |
+
+> **Cleanup (SKU Domain v2.0 — `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` / `TAX_AND_REFERRAL_RATES_SPEC.md`, spec only — no DB migration):** `hscode` / `declared_value` / `declared_value_unit` **moved OUT of `sku_details`** into the **`tax_referral_rates` Reference Master** (keyed by `series`; single source of truth for HS Code / Duty / VAT / Referral / Declared Value). `minimum_price_unit` / `msrp_unit` / `selling_unit` **replaced by** a single `base_currency`. Legacy columns are read-fallback only during migration.
 
 - **Dimensions are split** into `*_length` / `*_width` / `*_height` plus a per-group `*_dimension_unit`. This supersedes the legacy single `item_dimensions` / `package_dimensions` / `carton_dimensions` text columns. **The API normalizer still reads the legacy columns as a fallback** when the split columns are empty (backward compatibility).
 - **Units are never hard-coded.** Each group carries its own unit: `*_dimension_unit` (default `cm`), `*_weight_unit` (default `kg`), and each price carries `*_unit` / `selling_unit`. Defaults are applied only when the column is blank; stored unit values are authoritative.
@@ -58,11 +61,12 @@ The SKU Details page is a table with a global **CM/KG ↔ IN/LB** unit toggle. D
 
 **Weight:** `item_weight` / `package_weight` / `carton_weight` (each with its `*_weight_unit`; the table conveys unit via header / toggle).
 
-**Price (unit shown inline):**
-- Declared Value: `{declared_value} {declared_value_unit}`
-- Minimum Price: `{minimum_price} {minimum_price_unit}`
-- MSRP: `{msrp} {msrp_unit}`
-- Selling Price: `{selling_price} {selling_unit}`
+**Baseline price (single `base_currency` shown inline):**
+- Minimum Price: `{minimum_price} {base_currency}`
+- MSRP: `{msrp} {base_currency}`
+- Selling Price: `{selling_price} {base_currency}`
+
+> **Moved out (SKU Domain v2.0):** *Declared Value* (`{declared_value} {declared_currency}`) and `hscode` now live in the **`tax_referral_rates`** Reference Master (keyed by `series`; `TAX_AND_REFERRAL_RATES_SPEC.md`), not on SKU Details or SKU Regional Details. Per-price `*_unit` columns are replaced by the single `base_currency`.
 
 > **Toggle compatibility:** each dimension line is rendered as a numeric span so the existing CM/IN conversion still works per line. The secondary line converts independently of the primary.
 
