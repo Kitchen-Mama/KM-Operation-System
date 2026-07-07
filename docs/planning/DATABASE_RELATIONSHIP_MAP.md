@@ -41,6 +41,7 @@ It is a **relationship map**, not a schema definition and not an implementation 
 | **Factory / Procurement Layer** | `request_orders`, `request_order_lines`, `purchase_orders`, `purchase_order_lines`, `production_schedule` |
 | **Shipping / Logistics Layer** | `shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_events`, `shipment_routes` |
 | **Carrier / Route Layer** | `carriers`, `carrier_rate_cards`, `shipping_route_rules`, `carrier_lead_times` |
+| **Import Job Framework Layer** *(new — planned, platform)* | `import_jobs`, `import_job_details` — generic, review-gated staging for **every** import (Carrier first adopter); see `IMPORT_JOB_FRAMEWORK_SPEC.md` / `IMPORT_JOB_DATABASE_SPEC.md`. (Distinct from `import_sync_runs`, the unattended Amazon-sync audit log.) |
 | **Document / Export Layer** | `document_templates`, `generated_documents` |
 | **Future ERP / Ownership Layer** | `sales_orders` *(future)*, `sales_order_lines` *(future)*, AR/AP/accounting *(future)* |
 
@@ -514,6 +515,26 @@ carriers
   - `sales_order` *(future)*
   - `report` *(future)*
 - **Export Center / Document Center** is the future UI; **Template Management is a sub-tab, not the whole module.**
+
+---
+
+## 10A. Import Job Framework Layer *(new — platform; planned, SPEC ONLY)*
+
+**Tables:** `import_jobs`, `import_job_details` (generic, module-agnostic). Full definitions in [`IMPORT_JOB_DATABASE_SPEC.md`](./IMPORT_JOB_DATABASE_SPEC.md); flow in [`IMPORT_JOB_FRAMEWORK_SPEC.md`](./IMPORT_JOB_FRAMEWORK_SPEC.md).
+
+> **Platform layer, not a module.** Every import flows through here: **External Data → Import Job → Validation → Review → Apply → History → Business Tables.** Import **never** writes a business table directly — Apply (from an **Approved** job) is the only write. Human review is required (Task Card → Review Page → Apply; popup = summary only).
+
+| Relationship | Key | Cardinality |
+|--------------|-----|-------------|
+| `import_jobs` → `import_job_details` | `import_job_id` | 1 → many |
+| `import_job_details` → *any business table* | `table_name` + `record_key` | **logical** reference, resolved on Apply (NOT a stored FK) |
+
+- **Status lifecycle:** Draft → Uploading → Validating → Waiting Review → Approved → Applying → Completed; plus terminal **Cancelled** / **Failed**. Only **Applying** writes business tables.
+- **Row classification (per `import_job_details.action`):** `create` (no key), `update` (existing key), `ignore` (blank). Existing-row **locked-field changes** raise a `locked_field_change` **warning** (default `keep_original`; user may `override`) — never silently discarded.
+- **First adopter = Carrier Rate Card** (`module = carrier_rate`, `table_name = carrier_rate_cards`, `record_key = rate_card_id`; `CARRIER_AND_ROUTE_SPEC.md` §4C.8 / `IMPORT_JOB_DATABASE_SPEC.md` §10.1).
+- **Future adopters:** Warehouse Rate, Container Rate, Forecast, Amazon Inventory, Amazon Sales, Promotion, Factory, Warehouse, Template Import, Future AI Import — all reuse these two tables (no new import tables per module).
+- **vs `import_sync_runs`:** `import_sync_runs` is the **unattended** Amazon scheduled/rolling-sync audit log (writes destination directly, no human review); the Import Job Framework is the **review-gated** path. Complementary; this layer does **not** change `import_sync_runs`.
+- **Future email / API sources:** an emailed template reply (§`IMPORT_JOB_FRAMEWORK_SPEC.md` §10) or a warehouse/factory/marketplace API (§11) may create an Import Job (`source = 'email' | 'api'`) — still landing at **Waiting Review** for human approval. Documentation only; not implemented.
 
 ---
 

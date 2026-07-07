@@ -139,6 +139,13 @@ Phase 1 is the operational MVP: the pages and data that run the weekly supply cy
 - **Data / future DB:** `warehouses`, company/site/marketplace masters, people/department masters (see §12).
 - **Connections:** referenced by inventory, shipment, PO, replenishment, portals.
 
+### 3.12A Import Job Framework *(platform — sequenced BEFORE Export Center)*
+- **Purpose:** a **reusable, review-gated platform layer** every import flows through — External Data → Import Job → Validation → Review → Apply → History → Business Tables. Import **never** writes a business table directly; users review + approve, the system applies, history remains.
+- **Target users:** operators (upload), reviewers/approvers (review + apply), admins (history/audit).
+- **Core functions:** Task Card (pending import) → **Review Page** (Top Summary counts + row-level warnings showing *Original → Imported → Recommended Action*; locked-field change defaults to Keep Original with Override) → Apply → searchable Import History. Popup = quick summary only, never the main workflow.
+- **Data / future DB:** `import_jobs`, `import_job_details` (generic, all modules). See `IMPORT_JOB_FRAMEWORK_SPEC.md` + `IMPORT_JOB_DATABASE_SPEC.md`.
+- **Connections:** **Carrier Rate Card is the first adopter**; future adopters include Warehouse Rate, Container Rate, Forecast, Amazon Inventory/Sales, Promotion, Factory, Warehouse, Template Import, Future AI Import. **Sequenced before Export Center** because Export Center's future carrier-email round-trip (send template → carrier reply → attachment) **lands on** this framework. Future Gmail / API automation only *creates + validates* jobs (up to Waiting Review); human review still applies.
+
 ### 3.13 Export Center
 - **Purpose:** document generation (PO, invoice, packing list, shipment sheet, carrier booking, customs).
 - **Target users:** operations / logistics / finance.

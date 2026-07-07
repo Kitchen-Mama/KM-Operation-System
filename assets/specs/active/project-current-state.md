@@ -1813,3 +1813,20 @@ Part A (CSS only, builder-scoped): Builder Mode pills forced one-line (`white-sp
 **Specs:** `CARRIER_AND_ROUTE_SPEC.md` → v1.7 (§4C.3 two modes + carrier scope + `rate_card_id`, new **§4C.3A** row semantics & importer-enforced locking, **§4C.4** update/create import + full summary, new **§4C.7 future Export Center → carrier-email round-trip — documentation only**). `DATABASE_RELATIONSHIP_MAP.md` §9 carrier import note updated.
 
 **Deploy note:** `17_carrier_handlers.gs` is a source mirror — copy to the live project + **redeploy**. No DB migration (columns unchanged; `rate_card_id` already exists). **Out of scope / NOT implemented:** email automation, Gmail/Inbox parser, Export Center, Carrier Price Engine, Shipment Cost Engine — the carrier round-trip is manual export → manual import; email return is documented as future only.
+
+## 2026-07-07 — Import Job Framework architecture finalized (SPEC ONLY; Carrier = first adopter)
+
+**Platform-level architecture** introduced. Import Job is a **shared platform layer, NOT a Carrier feature** — every import flows through it: **External Data → Import Job → Validation → Review → Apply → History → Business Tables.** Import **never** writes a business table directly; users review + approve, the system applies (Apply is the only write, from an Approved job), history remains.
+
+**New specs created:**
+- `docs/planning/IMPORT_JOB_FRAMEWORK_SPEC.md` — Purpose, Architecture, Import Flow, Review Flow, Apply Flow, History, Retry, Cancel, Permissions, Future Gmail automation, Future API automation; **Import Review UI** = **Task Card → Review Page → Apply** (popup = quick summary only, never the main workflow); row rules (existing = update w/ locked-field **Warning + default Keep Original + Override**; new = create; blank = ignore); 9-state status lifecycle (Draft → Uploading → Validating → Waiting Review → Approved → Applying → Completed; + Cancelled / Failed).
+- `docs/planning/IMPORT_JOB_DATABASE_SPEC.md` — two generic tables **`import_jobs`** (header: module/job_type/status/source/counts/actors) + **`import_job_details`** (per-row: action/warning_type/changed_fields_json/old_value_json/new_value_json/user_action/apply_result), 1→N; value sets for status/action/warning_type/user_action/apply_result; module-mapping guidance with Carrier as §10.1 first adopter; relationship to existing `import_sync_runs` (complementary — that stays the unattended Amazon-sync audit log).
+
+**Updated:**
+- `CARRIER_AND_ROUTE_SPEC.md` → v1.8: new **§4C.8** — Carrier Rate is the **first adopter**; canonical workflow is the Import Job Framework (Task Card → Review Page → Apply → History), not a Carrier-specific popup; locked-field change becomes a reviewable Warning (Keep Original default / Override) rather than silently ignored; summary counts map to Import Job header counts. Related/Status/changelog updated.
+- `DATABASE_RELATIONSHIP_MAP.md` → new **Import Job Framework Layer** in §2 + new **§10A** (tables, 1→N, logical `table_name`+`record_key` link, status lifecycle, first adopter, future adopters, vs `import_sync_runs`).
+- `KITCHEN_MAMA_OPERATION_SYSTEM_BLUEPRINT.md` (the actual roadmap; **no `SYSTEM_ROADMAP.md` exists**) → new **§3.12A Import Job Framework**, sequenced **before §3.13 Export Center**.
+
+**Future modules that will reuse the framework:** Carrier Rate (first), Warehouse Rate, Container Rate, Forecast, Amazon Inventory, Amazon Sales, Promotion, Factory, Warehouse, Template Import, Future AI Import.
+
+**Out of scope / NOT implemented:** all runtime code, DB migration, Gmail/Inbox reading/parsing, attachment extraction, API ingestion, Export Center, auto-apply. **SPEC ONLY.** Future Gmail + API automation documented as creating/validating jobs up to Waiting Review — human review still required.
