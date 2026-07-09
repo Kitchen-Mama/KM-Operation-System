@@ -1,9 +1,10 @@
-<!-- Purchase Order List (PO operational list / history) — Procurement Layer Phase 1.
+<!-- Purchase Order Overview / PO Remaining Overview (history · remaining · Shipment allocation source).
+     (Section/mount ID stays `purchase-order-list*` for stability; display name = "Purchase Order Overview".)
      Injected into #purchase-order-list-mount by KM.partialLoader on the page lifecycle mount.
      See docs/planning/REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md. -->
 <section id="purchase-order-list-section" class="module-section procurement-page">
     <div class="page-header procurement-page__header">
-        <h2 class="page-title">Purchase Order List</h2>
+        <h2 class="page-title">Purchase Order Overview</h2>
     </div>
 
     <div class="procurement-page__note" id="pol-mode-note"></div>
@@ -29,25 +30,52 @@
                 <option value="cancelled">Cancelled</option>
             </select>
         </div>
-        <div class="procurement-filter"><label>Supplier</label><input type="text" id="pol-f-supplier" class="pc-input" placeholder="All"></div>
-        <div class="procurement-filter"><label>Category</label><input type="text" id="pol-f-category" class="pc-input" placeholder="All"></div>
-        <div class="procurement-filter"><label>Series</label><input type="text" id="pol-f-series" class="pc-input" placeholder="All"></div>
+        <div class="procurement-filter"><label>Supplier</label>
+            <select id="pol-f-supplier" class="pc-input"><option value="">All</option></select>
+        </div>
+        <div class="procurement-filter"><label>Category</label>
+            <select id="pol-f-category" class="pc-input"><option value="">All</option></select>
+        </div>
+        <div class="procurement-filter"><label>Series</label>
+            <select id="pol-f-series" class="pc-input"><option value="">All</option></select>
+        </div>
         <div class="procurement-filter"><label>SKU</label><input type="text" id="pol-f-sku" class="pc-input" placeholder="All"></div>
         <button type="button" class="pc-btn pc-btn--primary" onclick="polSearch()">Search</button>
         <button type="button" class="pc-btn pc-btn--default" onclick="polReset()">Reset</button>
     </div>
 
+    <!-- Tabs: In Production (active production) vs Ready / Completed (cancelled lives here too). -->
+    <div class="pol-tabs" id="pol-tabs">
+        <button type="button" class="pol-tab is-active" data-tab="in_production" onclick="polSetTab('in_production')">
+            In Production <span class="pol-tab-count" id="pol-tab-count-in_production"></span>
+        </button>
+        <button type="button" class="pol-tab" data-tab="ready" onclick="polSetTab('ready')">
+            Ready / Completed <span class="pol-tab-count" id="pol-tab-count-ready"></span>
+        </button>
+    </div>
+
+    <!-- Collapsible Order Gantt (between filters and table). Default collapsed. -->
+    <div class="pol-gantt" id="pol-gantt">
+        <button type="button" class="pol-gantt-toggle" onclick="polToggleGantt()">
+            <span class="pol-gantt-caret" id="pol-gantt-caret">▸</span> Order Gantt (production timeline)
+        </button>
+        <div class="pol-gantt-body" id="pol-gantt-body"></div>
+    </div>
+
+    <div class="pol-result-meta" id="pol-result-meta"></div>
+
     <div class="procurement-table-wrap">
-        <table class="procurement-table procurement-table--list">
+        <table class="procurement-table pol-grouped-table">
             <thead><tr>
-                <th>SKU</th><th>Category</th><th>Series</th><th>Supplier</th><th>Factory</th>
-                <th>PO No</th><th>Status</th>
-                <th class="pc-num">Ordered</th><th class="pc-num">Completed</th>
-                <th class="pc-num">Shipped</th><th class="pc-num">Remaining</th><th>Updated</th>
+                <th>PO</th><th>Supplier / Factory</th><th>Category</th><th>Series</th><th>SKU</th>
+                <th class="pc-num">Completed</th><th class="pc-num">Shipped</th><th class="pc-num">Remaining</th><th>Note</th>
             </tr></thead>
             <tbody id="pol-tbody">
-                <tr><td colspan="12" class="procurement-empty">Loading purchase orders…</td></tr>
+                <tr><td colspan="9" class="procurement-empty">Loading purchase orders…</td></tr>
             </tbody>
         </table>
     </div>
+
+    <!-- Pagination (25 rows per page). -->
+    <div class="pol-pagination" id="pol-pagination" style="display:none;"></div>
 </section>

@@ -5,9 +5,14 @@
     <div class="page-header crc-page__header">
         <h2 class="page-title">Carrier Rate Card</h2>
         <div class="crc-page__header-actions">
-            <button type="button" class="crc-btn crc-btn--ghost" id="crcExportUpdateBtn" onclick="crcExportUpdateTemplate()" title="Weekly/monthly rate update — route/method locked; unit_rate + effective dates cleared for re-fill">Export Update Template</button>
-            <button type="button" class="crc-btn crc-btn--ghost" id="crcExportMasterBtn" onclick="crcExportMasterTemplate()" title="One-time full import / new-route setup — all fields editable; add new carrier/method/last-mile/warehouse/city/zip/country rows">Export Master Template</button>
-            <button type="button" class="crc-btn crc-btn--ghost" id="crcImportBtn" onclick="crcOpenImport()">Import Template</button>
+            <!-- Primary user-facing actions -->
+            <button type="button" class="crc-btn crc-btn--primary" id="crcUpdateRateCardBtn" onclick="crcOpenUpdateModal()" title="Download the carrier-scoped Update Template, fill it, and import it back">Update Rate Card</button>
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcMasterTemplateBtn" onclick="crcOpenMasterModal()" title="Download / upload the full editable Master Template (XLSX): yellow=required, dropdowns, hidden _SYSTEM sheet">Master Template</button>
+            <!-- Dev-only fallbacks (hidden from the main workflow; backend unchanged) -->
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcExportUpdateXlsxBtn" onclick="crcExportUpdateTemplateXlsx()" style="display:none;">Export Update (XLSX)</button>
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcExportUpdateBtn" onclick="crcExportUpdateTemplate()" style="display:none;">Export Update (CSV)</button>
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcExportMasterBtn" onclick="crcExportMasterTemplate()" style="display:none;">Export Master (CSV)</button>
+            <button type="button" class="crc-btn crc-btn--ghost" id="crcImportBtn" onclick="crcOpenImport()" style="display:none;">Import Template</button>
             <input type="file" id="crcImportFile" accept=".csv,text/csv" style="display:none;" onchange="crcImportTemplate(this)">
         </div>
     </div>
@@ -46,5 +51,68 @@
     <!-- Results (empty until Search). Sticky header pins at the top of this scroll container. -->
     <div class="crc-table-wrap" id="crc-table-wrap">
         <div class="crc-empty" id="crc-empty">Set filters and click <strong>Search</strong> to view carrier rate cards.</div>
+    </div>
+
+    <!-- Update Rate Card modal (unified: carrier → download XLSX → fill → upload → import).
+         Reuses the globally-loaded pc-modal styles (procurement.css). -->
+    <div class="pc-modal-overlay" id="crc-update-modal" style="display:none;">
+        <div class="pc-modal">
+            <div class="pc-modal__head">
+                <h3>Update Rate Card</h3>
+                <button type="button" class="pc-modal__close" onclick="crcCloseUpdateModal()">×</button>
+            </div>
+            <div class="pc-modal__body">
+                <div class="crc-filter" style="margin-bottom:10px;">
+                    <label>Carrier</label>
+                    <select id="crcUpdCarrier" class="crc-input"><option value="">Select carrier…</option></select>
+                </div>
+                <p class="crc-note" style="margin:0 0 10px;">
+                    1) <strong>Download Update Template</strong> (XLSX, scoped to the selected carrier). &nbsp;
+                    2) Fill new prices / effective dates; add new routes in the blank rows (leave <code>rate_card_id</code> blank). &nbsp;
+                    3) <strong>Upload</strong> the file and <strong>Import</strong>.
+                </p>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+                    <button type="button" class="crc-btn crc-btn--ghost" onclick="crcModalDownloadUpdate()">Download Update Template</button>
+                </div>
+                <div class="crc-filter">
+                    <label>Upload file (.xlsx / .csv)</label>
+                    <input type="file" id="crcUpdFile" class="crc-input" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv">
+                </div>
+            </div>
+            <div class="pc-modal__foot">
+                <button type="button" class="pc-btn pc-btn--default" onclick="crcCloseUpdateModal()">Close</button>
+                <button type="button" class="pc-btn pc-btn--primary" onclick="crcModalImport()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Master Template modal (unified: download full editable XLSX → fill → upload → import).
+         Uses the EXISTING direct importer (master mode). Import Job runtime is NOT wired here. -->
+    <div class="pc-modal-overlay" id="crc-master-modal" style="display:none;">
+        <div class="pc-modal">
+            <div class="pc-modal__head">
+                <h3>Master Template</h3>
+                <button type="button" class="pc-modal__close" onclick="crcCloseMasterModal()">×</button>
+            </div>
+            <div class="pc-modal__body">
+                <p class="crc-note" style="margin:0 0 10px;">
+                    Full editable setup / import template for carrier rate cards (all carriers). &nbsp;
+                    1) <strong>Download Master Template</strong> (XLSX). &nbsp;
+                    2) Fill routes &amp; rates (yellow = required; leave <code>rate_card_id</code> blank for new rows). &nbsp;
+                    3) <strong>Upload</strong> the file and <strong>Import</strong>.
+                </p>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+                    <button type="button" class="crc-btn crc-btn--ghost" onclick="crcModalDownloadMaster()">Download Master Template</button>
+                </div>
+                <div class="crc-filter">
+                    <label>Upload file (.xlsx / .csv)</label>
+                    <input type="file" id="crcMasterFile" class="crc-input" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv">
+                </div>
+            </div>
+            <div class="pc-modal__foot">
+                <button type="button" class="pc-btn pc-btn--default" onclick="crcCloseMasterModal()">Close</button>
+                <button type="button" class="pc-btn pc-btn--primary" onclick="crcModalImportMaster()">Import</button>
+            </div>
+        </div>
     </div>
 </section>

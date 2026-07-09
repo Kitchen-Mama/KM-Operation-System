@@ -353,3 +353,202 @@
 .ro-alloc-modal .ro-alloc-pending { background: #FEF9C3; color: #854D0E; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; font-size: 12px; margin-bottom: 10px; }
 .ro-alloc-modal .procurement-table-wrap { overflow-x: auto; max-width: 100%; }
 .ro-alloc-modal .ro-alloc-foot { font-size: 11px; color: #94A3B8; margin-top: 10px; }
+
+/* ============================================================
+   Purchase Order Overview v2 — Card architecture (scoped to
+   #purchase-order-overview-section so Shipment / Request pages are unaffected).
+   Reuses the Request Order Draft .sp-card visual language, re-declared under this
+   section's scope (both pages style .sp-* independently).
+   ============================================================ */
+/* Top toolbar: factory tabs (left) + Series / PO selectors (right). */
+#purchase-order-overview-section .po-toolbar {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+}
+#purchase-order-overview-section .po-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+#purchase-order-overview-section .po-tab {
+    padding: 8px 16px; border: 1px solid #CBD5E1; background: #fff; color: #475569;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s;
+}
+#purchase-order-overview-section .po-tab:hover { background: #F1F5F9; }
+#purchase-order-overview-section .po-tab.is-active { background: var(--soft-green, #7CB342); border-color: var(--soft-green, #7CB342); color: #fff; }
+#purchase-order-overview-section .po-selectors { display: flex; gap: 12px; flex-wrap: wrap; }
+#purchase-order-overview-section .po-selector { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #64748B; font-weight: 500; }
+#purchase-order-overview-section .po-selector select { padding: 6px 10px; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 13px; min-width: 150px; }
+
+/* Card (mirrors Request Order Draft .sp-card, scoped to this section). */
+#purchase-order-overview-section .sp-card {
+    background: #fff; border: 1px solid var(--border-light, #E2E8F0); border-radius: var(--radius-md, 10px);
+    margin-bottom: 16px; box-shadow: var(--shadow-soft, 0 1px 3px rgba(0,0,0,0.06));
+}
+#purchase-order-overview-section .sp-card-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 16px; border-bottom: 1px solid var(--border-light, #E2E8F0);
+}
+#purchase-order-overview-section .sp-card-summary {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; flex: 1; min-width: 0;
+}
+#purchase-order-overview-section .sp-summary-item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#purchase-order-overview-section .sp-summary-label { font-size: 12px; color: #64748B; font-weight: 500; }
+#purchase-order-overview-section .sp-summary-value { font-size: 14px; color: #1E293B; font-weight: 600; word-break: break-word; }
+/* PO No is an identifier, not a headline — same size/weight as other summary values (not bold-emphasized). */
+#purchase-order-overview-section .po-no { font-size: 14px; font-weight: 600; }
+/* Second stacked label inside the combined "Series + Total Qty" header cell. */
+#purchase-order-overview-section .sp-summary-label--stacked { margin-top: 6px; }
+#purchase-order-overview-section .sp-card-actions { display: flex; gap: 8px; margin-left: 16px; flex-wrap: wrap; align-content: flex-start; }
+#purchase-order-overview-section .sp-btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .2s; background: #E2E8F0; color: #334155; }
+#purchase-order-overview-section .sp-btn-expand { background: var(--soft-green, #7CB342); color: #fff; }
+#purchase-order-overview-section .sp-btn-expand:hover { background: #6FA055; }
+#purchase-order-overview-section .sp-btn-submit { background: #3B82F6; color: #fff; }
+#purchase-order-overview-section .sp-btn-submit:hover { background: #2563EB; }
+#purchase-order-overview-section .sp-btn-cancel { background: #EF4444; color: #fff; }
+#purchase-order-overview-section .sp-btn-cancel:hover { background: #DC2626; }
+#purchase-order-overview-section .sp-card-details { display: none; padding: 16px; }
+#purchase-order-overview-section .sp-card.is-expanded .sp-card-details { display: block; }
+#purchase-order-overview-section .sp-section { background: #F8FAFC; padding: 12px; border-radius: 6px; min-width: 0; }
+#purchase-order-overview-section .sp-section-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #1E293B; }
+#purchase-order-overview-section .sp-sku-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#purchase-order-overview-section .sp-sku-table th { background: #F1F5F9; padding: 6px; text-align: left; font-weight: 500; border-bottom: 1px solid #E2E8F0; }
+#purchase-order-overview-section .sp-sku-table td { padding: 6px; border-bottom: 1px solid #E2E8F0; }
+#purchase-order-overview-section .sp-sku-table th.pc-num, #purchase-order-overview-section .sp-sku-table td.pc-num { text-align: right; }
+#purchase-order-overview-section .ro-total-hint { font-size: 11px; color: #94A3B8; margin-top: 6px; }
+
+/* Display-only rows (Production Timeline / Factory Payment) + Factory Notes. */
+#purchase-order-overview-section .po-field-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid #EEF2F7; }
+#purchase-order-overview-section .po-field-row:last-child { border-bottom: none; }
+#purchase-order-overview-section .po-field-label { font-size: 12px; color: #64748B; }
+#purchase-order-overview-section .po-field-value { font-size: 13px; color: #1E293B; font-weight: 500; text-align: right; word-break: break-word; }
+#purchase-order-overview-section .po-field-row--future .po-field-value { color: #94A3B8; font-weight: 400; }
+#purchase-order-overview-section .po-note-display { font-size: 13px; color: #334155; white-space: pre-wrap; word-break: break-word; }
+#purchase-order-overview-section .po-note-placeholder { color: #94A3B8; }
+
+/* Receive / Edit modal (reuses .pc-modal). */
+#po-modal .po-modal-sub { font-size: 12px; color: #64748B; margin: 0 0 12px; }
+#po-modal .po-rcv-table td, #po-modal .po-rcv-table th { padding: 6px 8px; }
+#po-modal .po-rcv-completed { color: #94A3B8; }
+#po-modal .po-rcv-done { color: #94A3B8; }
+#po-modal .po-edit-group { font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .02em; margin: 14px 0 6px; }
+#po-modal .po-edit-group:first-child { margin-top: 0; }
+#po-modal .po-field-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; }
+#po-modal .po-field-label { font-size: 12px; color: #475569; }
+#po-modal textarea.po-edit { width: 100%; }
+
+/* Status badge. */
+#purchase-order-overview-section .po-status-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; background: #E2E8F0; color: #475569; }
+#purchase-order-overview-section .po-status-badge--draft { background: #FEF3C7; color: #92400E; }
+#purchase-order-overview-section .po-status-badge--issued { background: #DBEAFE; color: #1E40AF; }
+#purchase-order-overview-section .po-status-badge--confirmed { background: #E0E7FF; color: #3730A3; }
+#purchase-order-overview-section .po-status-badge--in_production { background: #CCFBF1; color: #0F766E; }
+#purchase-order-overview-section .po-status-badge--partial_completed,
+#purchase-order-overview-section .po-status-badge--partial_shipped { background: #FEF9C3; color: #854D0E; }
+#purchase-order-overview-section .po-status-badge--completed,
+#purchase-order-overview-section .po-status-badge--shipped { background: #D1FAE5; color: #065F46; }
+#purchase-order-overview-section .po-status-badge--closure { background: #E0F2FE; color: #075985; }
+#purchase-order-overview-section .po-status-badge--cancelled { background: #FEE2E2; color: #991B1B; }
+
+/* Four blocks: horizontal on desktop, equal height, stack + scroll-inside on small screens. */
+#purchase-order-overview-section .po-blocks-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch;
+}
+#purchase-order-overview-section .po-blocks-grid > .po-block { margin-bottom: 0; min-width: 0; display: flex; flex-direction: column; }
+#purchase-order-overview-section .po-blocks-grid .procurement-table-wrap { overflow-x: auto; max-width: 100%; }
+
+/* Pagination. */
+#purchase-order-overview-section .po-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 8px; }
+#purchase-order-overview-section .po-page-info { font-size: 13px; color: #475569; }
+#purchase-order-overview-section .pc-btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+@media (max-width: 1100px) {
+    #purchase-order-overview-section .po-blocks-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+    #purchase-order-overview-section .sp-card-summary { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ============================================================
+   Purchase Order List v2 — grouped operational line list (scoped to
+   #purchase-order-list-section; no global .procurement-table change).
+   ============================================================ */
+/* Tabs — In Production vs Ready / Completed. */
+#purchase-order-list-section .pol-tabs { display: flex; gap: 6px; margin: 8px 0 4px; border-bottom: 2px solid #E2E8F0; }
+#purchase-order-list-section .pol-tab {
+    background: transparent; border: none; padding: 8px 16px; font-size: 14px; font-weight: 600;
+    color: #64748B; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px;
+}
+#purchase-order-list-section .pol-tab:hover { color: #334155; }
+#purchase-order-list-section .pol-tab.is-active { color: #2563EB; border-bottom-color: #2563EB; }
+#purchase-order-list-section .pol-tab-count { font-size: 12px; font-weight: 500; color: #94A3B8; }
+#purchase-order-list-section .pol-tab.is-active .pol-tab-count { color: #2563EB; }
+
+#purchase-order-list-section .pol-result-meta { font-size: 13px; color: #475569; margin: 8px 0 10px; }
+#purchase-order-list-section .pol-result-meta strong { color: #1E293B; }
+#purchase-order-list-section .pol-grouped-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#purchase-order-list-section .pol-grouped-table thead th {
+    background: #F1F5F9; padding: 10px 12px; text-align: left; font-weight: 600; color: #334155;
+    border-bottom: 2px solid #CBD5E1; font-size: 12px; text-transform: uppercase; letter-spacing: .02em;
+}
+#purchase-order-list-section .pol-grouped-table thead th.pc-num { text-align: right; }
+#purchase-order-list-section .pol-grouped-table tbody tr { border-bottom: 1px solid #E2E8F0; }
+#purchase-order-list-section .pol-grouped-table tbody tr:hover { background: #F8FAFC; }
+/* Each grouped cell stacks its fields vertically. */
+#purchase-order-list-section .pol-cell { padding: 10px 12px; vertical-align: top; }
+#purchase-order-list-section .pol-cell > span { display: block; }
+#purchase-order-list-section .pol-primary { font-size: 14px; font-weight: 600; color: #1E293B; word-break: break-word; }
+#purchase-order-list-section .pol-secondary { font-size: 12px; color: #64748B; margin-top: 2px; word-break: break-word; }
+#purchase-order-list-section .pol-po-link { color: #2563EB; text-decoration: none; font-weight: 600; }
+#purchase-order-list-section .pol-po-link:hover { text-decoration: underline; }
+#purchase-order-list-section .pol-grouped-table td.pc-num { text-align: right; }
+#purchase-order-list-section .pol-rem { display: inline-block; font-weight: 700; padding: 0 8px; border-radius: 8px; font-size: 13px; }
+#purchase-order-list-section .pol-rem--active { background: #FEF3C7; color: #92400E; }   /* remaining > 0 = pending */
+#purchase-order-list-section .pol-rem--done { background: #D1FAE5; color: #065F46; }     /* remaining = 0 = completed */
+
+/* Merged (row-spanned) cells: PO / Supplier·Factory / Category / Series. */
+#purchase-order-list-section .pol-cell--po { min-width: 150px; }
+#purchase-order-list-section .pol-cell--po > * { display: block; }
+#purchase-order-list-section .pol-po-badge { margin-top: 4px; }
+#purchase-order-list-section .pol-po-badge + .pol-secondary { margin-top: 4px; }
+#purchase-order-list-section .pol-merge { background: #FCFDFE; color: #334155; font-weight: 500; }
+/* A new PO group starts with a heavier top border so groups read as blocks. */
+#purchase-order-list-section .pol-grouped-table tbody tr { border-bottom: 1px solid #EEF2F7; }
+#purchase-order-list-section .pol-group-start > td { border-top: 2px solid #CBD5E1; }
+#purchase-order-list-section .pol-sku-row:hover { background: #F8FAFC; }
+
+/* ── Order Gantt (collapsible) ── */
+#purchase-order-list-section .pol-gantt { border: 1px solid #E2E8F0; border-radius: 8px; margin: 8px 0 4px; background: #fff; }
+#purchase-order-list-section .pol-gantt-toggle {
+    width: 100%; text-align: left; background: #F8FAFC; border: none; border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer;
+}
+#purchase-order-list-section .pol-gantt-caret { display: inline-block; width: 14px; color: #64748B; }
+#purchase-order-list-section .pol-gantt-body { display: none; padding: 12px 14px 16px; }
+#purchase-order-list-section .pol-gantt.is-open .pol-gantt-body { display: block; }
+#purchase-order-list-section .pol-gantt.is-open .pol-gantt-toggle { border-bottom: 1px solid #E2E8F0; border-radius: 8px 8px 0 0; }
+#purchase-order-list-section .pol-gantt-empty { color: #94A3B8; font-size: 13px; padding: 8px 0; }
+#purchase-order-list-section .pol-gantt-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 11px; color: #64748B; margin-bottom: 10px; align-items: center; }
+#purchase-order-list-section .pol-gantt-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+#purchase-order-list-section .pol-gantt-note { color: #94A3B8; font-style: italic; }
+#purchase-order-list-section .pol-gantt-axis { position: relative; height: 16px; margin-left: 160px; border-bottom: 1px dashed #E2E8F0; margin-bottom: 6px; }
+#purchase-order-list-section .pol-gantt-axis span { position: absolute; transform: translateX(-50%); font-size: 10px; color: #94A3B8; white-space: nowrap; }
+#purchase-order-list-section .pol-gantt-axis span:first-child { transform: none; }
+#purchase-order-list-section .pol-gantt-axis span:last-child { transform: translateX(-100%); }
+#purchase-order-list-section .pol-gantt-lanes { max-height: 320px; overflow-y: auto; }
+#purchase-order-list-section .pol-gantt-lane { display: flex; align-items: center; height: 24px; }
+#purchase-order-list-section .pol-gantt-label { width: 160px; flex: 0 0 160px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
+#purchase-order-list-section .pol-gantt-track { position: relative; flex: 1; height: 18px; background: #F1F5F9; border-radius: 4px; }
+#purchase-order-list-section .pol-gantt-bar { position: absolute; top: 4px; height: 10px; background: #93C5FD; border-radius: 5px; min-width: 4px; }
+#purchase-order-list-section .pol-gantt-bar--completed, #purchase-order-list-section .pol-gantt-bar--closure { background: #6EE7B7; }
+#purchase-order-list-section .pol-gantt-bar--cancelled { background: #FCA5A5; }
+#purchase-order-list-section .pol-gantt-tick { position: absolute; top: 1px; width: 8px; height: 16px; margin-left: -4px; border-radius: 2px; }
+#purchase-order-list-section .pol-gantt-tick.tick-ins, #purchase-order-list-section .pol-gantt-legend i.tick-ins { background: #3B82F6; }
+#purchase-order-list-section .pol-gantt-tick.tick-comp, #purchase-order-list-section .pol-gantt-legend i.tick-comp { background: #F59E0B; }
+#purchase-order-list-section .pol-gantt-tick.tick-ship, #purchase-order-list-section .pol-gantt-legend i.tick-ship { background: #10B981; }
+
+/* Pagination. */
+#purchase-order-list-section .pol-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 12px; }
+#purchase-order-list-section .pol-page-info { font-size: 13px; color: #475569; }
+#purchase-order-list-section .pol-pagination .pc-btn[disabled] { opacity: .5; cursor: not-allowed; }
+@media (max-width: 640px) {
+    #purchase-order-list-section .pol-grouped-table thead th { padding: 8px; }
+    #purchase-order-list-section .pol-cell { padding: 8px; }
+    #purchase-order-list-section .pol-gantt-axis, #purchase-order-list-section .pol-gantt-label { margin-left: 0; width: 90px; flex-basis: 90px; }
+}

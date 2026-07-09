@@ -26,6 +26,8 @@
     <link rel="stylesheet" href="assets/css/pages/carrier-rate-card.css">
     <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- ExcelJS — client-side XLSX generation for formatted export templates (TEMPLATE_UI_STANDARD_SPEC). -->
+    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
 </head>
 <body>
     <!-- 新 Header 列 - Stage 1 結構宣告 -->
@@ -135,11 +137,11 @@
                 <div class="menu-item" onclick="showSection('request-order-draft')" title="Request Order Draft">
                     <span class="menu-label">Request Order Draft</span>
                 </div>
-                <div class="menu-item" onclick="showSection('purchase-order-overview')" title="Purchase Order Overview">
-                    <span class="menu-label">Purchase Order Overview</span>
+                <div class="menu-item" onclick="showSection('purchase-order-overview')" title="Purchase Order Workspace">
+                    <span class="menu-label">Purchase Order Workspace</span>
                 </div>
-                <div class="menu-item" onclick="showSection('purchase-order-list')" title="Purchase Order List">
-                    <span class="menu-label">Purchase Order List</span>
+                <div class="menu-item" onclick="showSection('purchase-order-list')" title="Purchase Order Overview">
+                    <span class="menu-label">Purchase Order Overview</span>
                 </div>
             </div>
             <!-- Carrier / Route 父子選單 — Carrier / Route master layer (Carrier Rate Card v1) -->
@@ -314,7 +316,9 @@
                  KM.partialLoader injects #supplychain-section into this mount point on the page lifecycle mount. -->
             <div id="supplychain-mount"></div>
 
-            <!-- Procurement Layer (Phase 1) — Request Order Draft / Purchase Order Overview / Purchase Order List.
+            <!-- Procurement Layer — Request Order Draft / Purchase Order Workspace / Purchase Order Overview.
+                 (Internal section/mount IDs keep their original names: `purchase-order-overview*` = the Workspace
+                 card page; `purchase-order-list*` = the Overview/Remaining page. Display labels renamed only.)
                  KM.partialLoader injects each section into its mount point on the page lifecycle mount. -->
             <div id="request-order-draft-mount"></div>
             <div id="purchase-order-overview-mount"></div>
@@ -346,6 +350,7 @@
     <script src="assets/js/utils/data.js"></script>
     <script src="assets/js/utils/demo-shared-data.js"></script>
     <script src="assets/js/utils/scroll-sync.js"></script>
+    <script src="assets/js/utils/template-export.js"></script>
     
     <!-- API Adapter -->
     <script src="assets/js/api/operation-system-db-api.js"></script>

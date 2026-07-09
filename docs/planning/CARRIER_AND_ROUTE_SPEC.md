@@ -1,13 +1,16 @@
 # Carrier & Route Foundation Spec
 
-**Status:** 🟢 Draft v1.8 — Foundation DB definition + **Carrier Rate Card v1.1** (two template modes + carrier-scoped Update Template with `rate_card_id` update/create + importer-enforced field locking + finalized destination matching priority + `last_mile_delivery`, all implemented) + **first adopter of the Import Job Framework** (§4C.8) + **future carrier-email round-trip documented** (Spec + matching runtime/UI mapping; NO email automation, NO Export Center, NO pricing/cost engine, NO DB migration by this spec)
+**Status:** 🟢 Draft v2.1 — Foundation DB + **Carrier Rate Card v1.1** + **Global Logistics Enums finalized** (§4.5) + **Carrier Rate Resolution Rules** (§4.6: Open End / latest-`effective_from` / overlap-warning) + **matching priority extended to logistics attributes** (§4) + shipment-level battery/magnet aggregation drives matching (`SHIPMENT_CENTER_SPEC.md` §21) + **templates adopt the Template UI Standard** (§4C.3 → `TEMPLATE_UI_STANDARD_SPEC.md`) (SPEC — NO runtime code, NO email/Export Center, NO pricing/cost engine, NO DB migration by this spec)
 **Last Updated:** 2026-07-07
 **Maintained By:** Development Team
-**Authority / context (read, not overridden):** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md), [`IMPORT_JOB_FRAMEWORK_SPEC.md`](./IMPORT_JOB_FRAMEWORK_SPEC.md) (**canonical import review/apply workflow — Carrier is the first adopter**), [`IMPORT_JOB_DATABASE_SPEC.md`](./IMPORT_JOB_DATABASE_SPEC.md), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md).
+**Authority / context (read, not overridden):** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md), [`IMPORT_JOB_FRAMEWORK_SPEC.md`](./IMPORT_JOB_FRAMEWORK_SPEC.md) (**canonical import review/apply workflow — Carrier is the first adopter**), [`IMPORT_JOB_DATABASE_SPEC.md`](./IMPORT_JOB_DATABASE_SPEC.md), [`TEMPLATE_UI_STANDARD_SPEC.md`](./TEMPLATE_UI_STANDARD_SPEC.md) (**spreadsheet template formatting standard — Carrier templates are the first adopter**), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md).
 
 > **Purpose.** This document defines the **foundation tables** for Carrier master data, Carrier rate cards (price + validity), and Shipping Route rules (default `ship_from` / `destination` / `route_code`). It is a **schema/relationship definition only**. It introduces **NO** Carrier Price Engine, **NO** calculation logic, **NO** code, frontend, Apps Script, API, DB migration, or BigQuery change. Until the future **Carrier Price Engine** is built, the Weekly Shipping Plan **Cost Breakdown remains a placeholder** (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §11).
 
 > **Changelog:**
+> - **Draft v2.1 (2026-07-07) — Carrier templates adopt the Template UI Standard (spec only).** §4C.3 now points to **[`TEMPLATE_UI_STANDARD_SPEC.md`](./TEMPLATE_UI_STANDARD_SPEC.md)** for formatting: XLSX preferred (frozen header, bold header + auto-filter, editable=white / locked=gray / required=yellow, sheet protection unlocking only editable cells, enum dropdowns sourced from §4.5, example row `row_type = example`, auto-width, hidden `_SYSTEM` sheet carrying `template_id`/`template_version`/`module`/`export_mode` + carrier scope). CSV remains a valid unformatted fallback. Formatting is UX guidance only — the Import Job importer stays the validation authority. No column/behavior change to the carrier import itself.
+> - **Draft v2.0 (2026-07-07) — Global Logistics Enums + Carrier Rate Resolution Rules + extended matching priority (SPEC ONLY).** **(1) §4.5 Global Logistics Enums finalized** (canonical UI↔DB maps): `battery_type` = `no_battery`/`alkaline_battery`/`lithium_battery`/`rechargeable_lithium`; `magnet_type` = `no_magnet`/`magnetic`; `customs_type` = `third_party_customs`/`tax_refund_customs`/`formal_customs`; `last_mile_delivery` = `parcel`/`truck`; **`transit_type` = `air`/`sea`/`sea_express`/`rail`/`truck` (now the canonical main transportation mode — retires the old leg-coverage values; `shipping_method` demoted to a legacy display alias, matching uses `transit_type`).** DB/API store English enums; UI/reports/templates may localize; **importer maps localized labels → English enum**. **(2) §4 matching priority extended:** destination stop-ladder (warehouse_code → city → postal_code → country) → `battery_type` → `customs_type` → `transit_type` → `last_mile_delivery` → weight_tier. **(3) §4.6 Carrier Rate Resolution Rules:** valid when `effective_from ≤ shipment_date ≤ effective_to`; **blank `effective_to` = Open End**; multiple Open End → **latest `effective_from`** is active; explicit-`effective_to` overlap → **Import Job Warning / Require Review (no silent guess)**; **data-hygiene rule** = one Open End per route (second not blocked, but a notice is shown). **(4)** Carrier battery/customs matching uses the **shipment-level aggregate** (`SHIPMENT_CENTER_SPEC.md` §21), not per-SKU. §4C.5 aligned to §4.6 + Review Page (Keep Existing default / Override / Cancel Import). No runtime code, no DB migration.
+> - **Draft v1.9 (2026-07-07) — Master Template import: auto-generated `rate_card_id` + `carrier_name` resolution (implemented).** New **§4C.3B**: on Master Template import, a **blank `rate_card_id` ⇒ CREATE** with an auto-generated **`CRC-<10-char UUID>`** (stamped with `source_file_name`/`import_batch_id`/`created_at`/`updated_at`); a present `rate_card_id` ⇒ UPDATE (unknown id → rejected). **Carrier resolution:** blank `carrier_id` resolves by **`carrier_name`** against `carriers.carrier_name` (case/trim-normalized — unique = use; none = *"carrier_name not found. Please create carrier first."*; multiple = *"carrier_name is ambiguous. Please provide carrier_id."*); present `carrier_id` is **authoritative** and a mismatched `carrier_name` yields a **warning** (*"carrier_name does not match carrier_id; carrier_id was used."*), never a silent overwrite. **Rate-card import NEVER auto-creates a `carriers` row** — unknown carriers are rejected (avoids polluting the carrier master). Update Template rules unchanged. Runtime: `17_carrier_handlers.gs` (`handleImportCarrierRateCards_` — new-row carrier resolver + carrier_name/id maps); no client change (carrier_name already round-trips in the template). No DB migration.
 > - **Draft v1.8 (2026-07-07) — Carrier Rate import adopts the Import Job Framework (spec only).** Added **§4C.8**: Carrier Rate is the **first adopter** of the new platform [`IMPORT_JOB_FRAMEWORK_SPEC.md`](./IMPORT_JOB_FRAMEWORK_SPEC.md) — the canonical import workflow is **Task Card → Review Page → Apply → History** (popup = summary only), not a Carrier-specific popup. Row rules map 1:1 (existing = update / new = create / blank = ignore), and **locked-field changes become a reviewable Warning (default Keep Original, user may Override)** instead of being silently ignored. Import summary counts map onto `import_jobs` header counts (`IMPORT_JOB_DATABASE_SPEC.md` §10.1). No implementation; the current direct import + alert (§4C.4) is interim.
 > - **Draft v1.7 (2026-07-06) — Carrier Rate Template update/create semantics + carrier scope + importer-enforced locking (implemented); future email round-trip documented.** Both templates now carry **`rate_card_id`** (present ⇒ update that row; blank ⇒ create). **Update Template is carrier-scoped** — a carrier must be selected (else export is blocked: *"Please select a carrier before exporting Update Template."*), and it exports only that carrier's active rows. **Importer rewritten** (`17_carrier_handlers.gs` `handleImportCarrierRateCards_`): existing rows update by `rate_card_id`; in Update mode only `unit_rate`/`effective_from`/`effective_to`/`fuel_surcharge`/`customs_fee`/`doc_fee`/`status`/`note` are editable and **locked-field edits are ignored + reported** (`locked_fields_ignored_count` + row warnings); new rows (blank `rate_card_id` + required values) are validated and created under the carrier scope (may add new `shipping_method`/`last_mile_delivery`/`destination_warehouse_code`/city/zip/country); blank rows skipped. New import summary: `updated_existing_count` / `created_new_count` / `blank_skipped_count` / `rejected_count` / `locked_fields_ignored_count` / `warnings` / `errors`. **Master mode** may update any field on existing rows and create new ones (admin full-edit). **CSV cannot protect cells → locking enforced by the importer** (documented §4C.3A). Added **§4C.7 future Export Center → carrier-email round-trip (documentation only; NOT implemented — no email/Gmail/parser/Export Center)**. Client: `exportCarrierRateTemplate` adds `rate_card_id`; `importCarrierRateTemplate` passes `mode` + `carrier_scope`. No pricing/cost engine, no DB migration.
 > - **Draft v1.6 (2026-07-06) — Carrier v1.1 finalized (implemented).** **(1) Two export template modes** (§4C.3): **Export Update Template** (weekly/monthly — route/method/structure locked; `unit_rate` / `effective_from` / `effective_to` cleared for re-fill; uses current Search result) and **Export Master Template** (one-time full import / new-route setup — all `carrier_rate_cards` columns, all fields editable, nothing cleared, supports adding new `shipping_method` / `last_mile_delivery` / `destination_warehouse_code` / city / zip / country rows; exports all loaded rows). Neither exports Lead Time. **(2) Destination matching priority FINALIZED** (§4 matching): `destination_warehouse_code` → `destination_city` → `destination_postal_code_start~end` → `destination_country`, **stop at the first (most specific) level that matches** — higher-priority match wins and lower levels are ignored (engine still not implemented). **(3) `last_mile_delivery`** confirmed as a separate column on `carrier_rate_cards` + `carrier_lead_times`, displayed as its own UI column (never `Sea/P` / `Sea/T`). Client-side: `exportCarrierRateTemplate(rows, {mode})`, two page buttons/handlers. No pricing/cost engine, no DB migration by this spec.
@@ -99,8 +102,8 @@ One row per (carrier × origin × destination × method × charge basis × weigh
 | `destination_postal_code_end` | string | destination postal-code range end |
 | `destination_warehouse_code` | string | destination **warehouse code** match (e.g. `ONT8`); most specific destination key |
 | `marketplace` | string | match key (e.g. `Amazon`) |
-| `shipping_method` | string | **main transportation mode** — `Sea` / `Sea Express` / `Air` / `Courier` / … (matches plan/shipment `shipping_method`) |
-| `last_mile_delivery` | string | **final delivery mode** — `Parcel` / `Truck` / … . **Separate concept from `shipping_method`.** Do NOT encode Parcel/Truck into `shipping_method`, and do NOT use `P` / `T` abbreviations or combined labels like `Sea/P`. Blank allowed (legacy rows). |
+| `shipping_method` | string | **LEGACY display alias of `transit_type`** (main transportation mode). Since v2.0 the **canonical main-mode enum is `transit_type`** (`air`/`sea`/`sea_express`/`rail`/`truck`, §4.5); `shipping_method` is retained for display / back-compat and may still carry human labels (`Sea` / `Sea Express` / `Air` / `Courier` …). **Carrier matching uses `transit_type`, not `shipping_method`.** |
+| `last_mile_delivery` | enum | **final delivery mode** — DB enum `parcel` / `truck` (§4.5). **Separate concept from `transit_type`.** Do NOT encode the final-delivery mode into `transit_type`/`shipping_method`, and do NOT use `P` / `T` abbreviations or combined labels like `Sea/P`. Blank allowed (legacy rows). |
 | `charge_type` | enum | **pricing model** — `weight` / `volume` / `container` / `shipment` / `carton`. (Weight rows further derive billable qty as actual / dim / chargeable — see semantics.) |
 | `charge_unit` | enum | the unit `unit_rate` is priced per — `kg` / `lb` / `cbm` / `20GP` / `40HQ` / `shipment` / `carton` |
 | `dim_divisor` | number | dimensional-weight divisor (e.g. `5000` or `6000`); used with `charge_type = dim_weight` / `chargeable_weight` |
@@ -114,9 +117,9 @@ One row per (carrier × origin × destination × method × charge basis × weigh
 | `fuel_surcharge` | number | optional surcharge (reference; not applied here) |
 | `customs_fee` | number | optional customs fee (reference; not applied here) |
 | `doc_fee` | number | optional documentation fee (reference; not applied here) |
-| `transit_type` | enum | `port_to_port` / `door_to_port` / `port_to_door` / `door_to_door` |
-| `battery_type` | enum | `no_battery` / `built_in_battery` / `removable_battery` / `lithium_battery` / `unknown` |
-| `customs_type` | enum | `buy_export_license` / `tax_refund_export` / `not_applicable` / `unknown` |
+| `transit_type` | enum | **main transportation mode** — `air` / `sea` / `sea_express` / `rail` / `truck` (Global Logistics Enums §4.5). *(v2.0: `transit_type` now holds the transport mode; the retired leg-coverage values `port_to_port`/`door_to_door` are no longer used.)* |
+| `battery_type` | enum | `no_battery` / `alkaline_battery` / `lithium_battery` / `rechargeable_lithium` (Global Logistics Enums §4.5) |
+| `customs_type` | enum | `third_party_customs` / `tax_refund_customs` / `formal_customs` (Global Logistics Enums §4.5) |
 | `note` | string | free text (rate-row remarks) |
 | `effective_from` | date | effective start (inclusive) |
 | `effective_to` | date | effective end (inclusive; blank = open-ended) |
@@ -131,28 +134,95 @@ One row per (carrier × origin × destination × method × charge basis × weigh
 - **`charge_type` = the pricing model** of the row: `weight` / `volume` / `container` / `shipment` / `carton`. For `weight`, the billable quantity is further derived as **actual** (gross), **dim** (L×W×H ÷ `dim_divisor`), or **chargeable** (max of actual vs dim) — the mode follows the carrier file / `dim_divisor` presence. `volume` → priced by `cbm`; `container` → priced per container unit (`20GP` / `40HQ`); `shipment` → flat per shipment; `carton` → per carton.
 - **`charge_unit` = the unit `unit_rate` is quoted per**: `kg` / `lb` / `cbm` / `20GP` / `40HQ` / `shipment` / `carton`. Must be consistent with `charge_type` (e.g. `container` → `20GP`/`40HQ`; `weight` → `kg`/`lb`).
 - **`min_charge` = the minimum billable amount for this rate row** (a per-row / per-shipment floor, in `currency`). `min_box_weight` is a separate **per-carton** minimum chargeable weight floor.
-- **`transit_type`** = leg coverage of the quote: `port_to_port` / `door_to_port` / `port_to_door` / `door_to_door`.
-- **`battery_type`** = battery classification the rate applies to: `no_battery` / `built_in_battery` / `removable_battery` / `lithium_battery` / `unknown`.
-- **`customs_type`** = customs handling the rate assumes: `buy_export_license` / `tax_refund_export` / `not_applicable` / `unknown`.
+- **`transit_type`** = **main transportation mode** the rate applies to: `air` / `sea` / `sea_express` / `rail` / `truck` (§4.5). *(v2.0 change: this replaces the retired leg-coverage meaning; it is the canonical mode enum used in matching.)*
+- **`battery_type`** = battery classification the rate applies to: `no_battery` / `alkaline_battery` / `lithium_battery` / `rechargeable_lithium` (§4.5).
+- **`customs_type`** = customs handling the rate assumes: `third_party_customs` (買單報關) / `tax_refund_customs` (退稅報關) / `formal_customs` (正式報關) (§4.5).
 - `dim_divisor` = dimensional-weight divisor, e.g. `5000` or `6000`.
 - `weight_tier` = the tier's **starting value** (e.g. rows for `20` / `50` / `100` kg breakpoints); the applicable row is the highest tier ≤ the shipment's chargeable weight.
 - `unit_rate` = rate **per `charge_unit`**.
 - `destination_warehouse_code` = match by warehouse code (most specific); `destination_postal_code_start/end` = match by postal-code range; `destination_city` / `destination_country` = coarser geo match.
 
-**Destination matching priority (FINALIZED — Carrier v1.1).** Match the destination at the **most specific level that has a matching rate row, then STOP** — do not fall through to lower-priority levels once a higher one matches:
+**Carrier matching priority (FINALIZED — Carrier v2.0).** Match in this strict order. The **destination block is a stop-ladder**: use the most specific destination level that has a matching rate row, then **STOP descending destination levels**. After the destination level is fixed, narrow by the logistics attributes in order:
 
 1. **`destination_warehouse_code`** (most specific)
 2. **`destination_city`**
-3. **`destination_postal_code_start` ~ `destination_postal_code_end`** (postal-code range)
+3. **`destination_postal_code`** (`destination_postal_code_start` ~ `destination_postal_code_end` range)
 4. **`destination_country`** (coarsest)
+5. **`battery_type`** *(shipment-level aggregate — §Shipment Logistics Attributes)*
+6. **`customs_type`**
+7. **`transit_type`** (main transportation mode)
+8. **`last_mile_delivery`**
 
-**Stop rule:** if a higher-priority level matches, use that level's rate **even if** lower-priority (city / zip / country) rows also match. Example: when `destination_warehouse_code` matches, use the warehouse-code rate and ignore any city / zip / country rows for the same route.
+**Destination stop rule:** if a higher-priority destination level matches, use that level's rate **even if** lower-priority (city / zip / country) rows also match. Example: when `destination_warehouse_code` matches, use the warehouse-code rate and ignore any city / zip / country rows for the same route.
 
-After the destination level is fixed, further narrow by `marketplace` + `shipping_method` + `last_mile_delivery`, then the `weight_tier` band; validity by `status = active` and reference date within `[effective_from, effective_to]`. **The engine that consumes this priority (and any tie-break within a level) is the future Carrier Price Engine and is intentionally NOT implemented here** — this section fixes only the priority order + stop rule.
+After destination + the four logistics attributes, narrow by the `weight_tier` band; validity by `status = active` and reference date within `[effective_from, effective_to]` (Carrier Rate Resolution Rules §4.6). **Carrier matching uses `transit_type`, not the legacy `shipping_method`.** **The engine that consumes this priority (and any tie-break within a level) is the future Carrier Price Engine and is intentionally NOT implemented here** — this section fixes only the priority order + stop rule.
+
+> **Battery/Customs matching uses the SHIPMENT-LEVEL aggregate, not per-SKU values** — see the Shipment Logistics Attribute rules (`SHIPMENT_CENTER_SPEC.md` §21). The rate is matched against the shipment's aggregated `battery_type` (highest logistics level present) and `magnet_flag`.
 
 - **`route_code` is OPTIONAL / DEPRECATED for MVP.** It may still exist for legacy joins but **must NOT be used as the primary matching key** — matching is by origin/destination + marketplace + method + weight tier (above). New rate cards need not populate `route_code`.
 - **No math is implemented.** The Weekly Shipping Plan Cost Breakdown stays a placeholder (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §11) until the engine exists.
 - `shipping_plans` carries `carrier_id` / `carrier_unit_rate` / `carrier_rate_type` and `shipments` carries `carrier_id` / `rate_card_id`; those are populated **from** a chosen rate card by the future engine, not by this spec.
+
+### 4.5 Global Logistics Enums (canonical — DB stores English)
+
+> **These are platform-wide logistics enums** used by `carrier_rate_cards`, `sku_details` (battery/magnet), and the shipment-level aggregates. **DB and API ALWAYS store the English enum value.** UI, reports, and templates MAY display localized (zh-TW) text. The **Import Job importer must support localized-value mapping** — accept either the English enum or the localized label (case/trim-normalized) and store the English enum; an unmappable value is a row **error**.
+
+**Battery Type** (`battery_type`)
+
+| UI (zh-TW) | DB enum | Logistics level |
+|---|---|---|
+| 不帶電 | `no_battery` | 0 (lowest) |
+| 鹼性電池 | `alkaline_battery` | 1 |
+| 鋰電池 | `lithium_battery` | 2 |
+| 可充電鋰電池 | `rechargeable_lithium` | 3 (highest) |
+
+**Magnet Type** (`magnet_type`)
+
+| UI (zh-TW) | DB enum |
+|---|---|
+| 不帶磁 | `no_magnet` |
+| 帶磁 | `magnetic` |
+
+**Customs Type** (`customs_type`)
+
+| UI (zh-TW) | DB enum |
+|---|---|
+| 買單報關 | `third_party_customs` |
+| 退稅報關 | `tax_refund_customs` |
+| 正式報關 | `formal_customs` |
+
+**Last Mile Delivery** (`last_mile_delivery`)
+
+| UI | DB enum |
+|---|---|
+| Parcel | `parcel` |
+| Truck | `truck` |
+
+**Transit Type** (`transit_type` — main transportation mode)
+
+| UI | DB enum |
+|---|---|
+| Air | `air` |
+| Sea | `sea` |
+| Sea Express | `sea_express` |
+| Rail | `rail` |
+| Truck | `truck` |
+
+- **Storage rule:** DB/API store the English enum only; never store localized text or ad-hoc labels. `shipping_method` (legacy) may still carry human labels for display but is **not** the canonical mode key — `transit_type` is.
+- **Localization mapping (importer):** the Carrier Rate importer (and every future Import Job) maps a localized label back to its English enum before validating/writing; an unknown value → row error (`invalid enum`), never a silent guess.
+- **`battery_type` logistics level** (0–3 above) drives the shipment battery aggregation (`SHIPMENT_CENTER_SPEC.md` §21): highest level present wins.
+- **`magnet_type`** is a SKU/shipment attribute (`sku_details.magnet_type`); it aggregates to a shipment **magnet flag** (§21). It is not a `carrier_rate_cards` column but is a global enum.
+
+### 4.6 Carrier Rate Resolution Rules (effective dates — FINALIZED v2.0)
+
+Applied **after** the matching priority (§4 matching) narrows candidate rows for a carrier/route + logistics-attribute combination. **No engine is implemented here** — these rules fix the resolution semantics the future Carrier Price Engine will follow.
+
+1. **Validity window.** A row is valid for a shipment when `effective_from <= shipment_date <= effective_to`.
+2. **Blank `effective_to` = Open End** (no expiration) — the row stays valid indefinitely from `effective_from`.
+3. **Multiple Open End rows** for the same carrier/route (+ logistics-attribute) combination → the **active quotation is the row with the latest `effective_from`**.
+4. **Multiple rows overlap with explicit `effective_to`** → the importer must raise an **Import Job Warning** (`warning_type = overlap`); default action = **Require Review**. **Do NOT silently guess** a winner.
+
+> **Data-hygiene rule (one Open End per route).** In normal operation a given carrier/route (same Carrier + Route Key) should have **only one** Open End row. Import does **not forbid** a second Open End (updates legitimately create one), **but the Import Job must surface a notice:** *"偵測到同一路線存在多筆 Open End，系統將以最新 effective_from 作為目前有效版本。"* ("Multiple Open End rows detected for the same route; the system will use the latest `effective_from` as the currently-active version.") This keeps the system working even if someone forgets to set `effective_to`, while signalling that the data needs tidying — an explicit, traceable rule rather than a hidden one (0-bug / auditable design intent).
 
 ### 4A. `carrier_lead_times` — Carrier Transit-Day Ranges
 
@@ -268,6 +338,8 @@ This section makes the `carrier_rate_cards` table (§4) **implementation-ready a
 
 ### 4C.3 Template Export — two modes (Carrier v1.1)
 
+> **Formatting standard:** the Carrier Rate Templates follow the platform **[`TEMPLATE_UI_STANDARD_SPEC.md`](./TEMPLATE_UI_STANDARD_SPEC.md)** — XLSX preferred (frozen header, bold header + auto-filter, editable=white / locked=gray / required=yellow, enum dropdowns from §4.5 Global Logistics Enums, `_SYSTEM` metadata sheet with `template_id`/`template_version` + carrier scope, example row marked `row_type = example`, auto-width). CSV remains a valid unformatted fallback. Formatting is UX guidance only — the importer is the validation authority.
+
 The Carrier Rate Card page offers **two** export buttons. **Neither** includes Lead Time / `transit_days` — those live only in `carrier_lead_times` (§4A / §4C.1) and are never exported or imported through any rate template. Both include `last_mile_delivery`. Both templates carry two identity/helper columns first: **`row_type`** = `example` / `data` (**not persisted**) and **`rate_card_id`** (the row's PK — **present ⇒ existing row (update); blank ⇒ new row (create)**). Neither template carries `import_batch_id` / `created_at` / `updated_at` (system-assigned on import).
 
 **Mode 1 — "Export Update Template"** *(routine carrier quotation update — CARRIER-SCOPED)*
@@ -286,45 +358,75 @@ The Carrier Rate Card page offers **two** export buttons. **Neither** includes L
 - **Export source:** **all** loaded `carrier_rate_cards` rows across **all carriers** (does not require a prior Search; exports the example row alone if none exist). Existing rows include `rate_card_id`.
 - **Behavior:**
   - Exports the **full `carrier_rate_cards` schema** (same column set as the Update Template — still **no** Lead Time / `transit_days`).
-  - **All fields editable; nothing is cleared.** On import, a row **with** `rate_card_id` **updates** that row (any field); a row **without** `rate_card_id` **creates** a new row.
+  - **All fields editable; nothing is cleared.** On import, a row **with** `rate_card_id` **updates** that row (any field); a row **without** `rate_card_id` **creates** a new row (auto-generated id — see §4C.3B).
   - **Supports adding new rows:** new `shipping_method`, new `last_mile_delivery`, new `destination_warehouse_code`, and new city / zip / country-level rates.
 
-### 4C.3A Update Template — row semantics & field locking (importer-enforced)
+### 4C.3B Master Template import — ID & carrier resolution (importer-enforced)
 
-The importer classifies each data row by `rate_card_id`:
+Master Template import classifies each row by `rate_card_id` exactly like §4C.3A, with these ID / carrier rules:
+
+**`rate_card_id`**
+- **Blank ⇒ CREATE.** The importer **auto-generates** a new `rate_card_id` in the form **`CRC-<10-char UUID>`** and writes it to the new `carrier_rate_cards` row (along with `source_file_name` / `import_batch_id` / `created_at` / `updated_at`). All fields are editable on a create row; required fields are still validated.
+- **Present ⇒ UPDATE** the existing `carrier_rate_cards` row per Master rules (any field). **If the `rate_card_id` does not exist → the row is rejected** with a clear error (`rate_card_id "…" not found in carrier_rate_cards`).
+
+**`carrier_id`** (never auto-creates a carrier — see below)
+- **Blank ⇒ resolve by `carrier_name`** against `carriers.carrier_name` (case/trim-normalized):
+  - **exactly one** carrier matches → use that `carrier_id`;
+  - **no** carrier matches → **reject**: *"carrier_name not found. Please create carrier first."*;
+  - **multiple** carriers match → **reject**: *"carrier_name is ambiguous. Please provide carrier_id."*
+  - (If `carrier_name` is also blank, a create row falls back to the Update-Template carrier scope when present, else is rejected — carrier is required.)
+- **Present ⇒ authoritative.** Validate it exists in `carriers`. If `carrier_name` is **also** provided and does **not** match that `carrier_id`'s name, **keep `carrier_id`** and emit a **warning** (not a silent overwrite): *"carrier_name does not match carrier_id; carrier_id was used."*
+
+**No carrier auto-create (item 3).** Rate-card import **never** inserts a `carriers` row. The carrier master is maintained separately; an unknown `carrier_name` / `carrier_id` is **rejected**, not created — this avoids polluting the carrier master with typos or inconsistent names.
+
+### 4C.3A Import policy — Master = Upsert, Update = Update-Only (importer-enforced, finalized current stage)
+
+**Two import modes, one classifier by `rate_card_id`:**
+
+| Mode | `rate_card_id` present | `rate_card_id` blank + meaningful | blank + empty |
+|---|---|---|---|
+| **Master Template** (`mode = master`) — **UPSERT** | **UPDATE** that row (any field) | **CREATE** new row (auto-gen `CRC-<10-char UUID>`) | skip (counted) |
+| **Update Template** (`mode = update`) — **UPDATE ONLY** | **UPDATE** that row (allowed fields only) | **REJECTED** — clear error (never creates) | skip (counted) |
+
+- **Master Template import = UPSERT.** Re-uploading the same Master Template does **not** duplicate rows — every existing row carries its `rate_card_id` → update in place; only blank-`rate_card_id` rows create.
+- **Update Template import = UPDATE ONLY.** `rate_card_id` is **required**. A meaningful row **without** `rate_card_id` is **rejected** with: *"Update Template requires rate_card_id (update-only) — new rate cards must be added via the Master Template. Row skipped."* **Update Template never creates a new rate card.**
+- **`rate_card_id` present but not found in `carrier_rate_cards` → rejected** (both modes): *"rate_card_id … not found"* (never fabricates a row at a caller-supplied id).
 
 **A. Existing row** — `rate_card_id` is present (and must exist in `carrier_rate_cards`; otherwise **rejected**).
-- **Editable fields:** `unit_rate`, `effective_from`, `effective_to`, `fuel_surcharge`, `customs_fee`, `doc_fee`, `status`, `note`.
-- **Locked fields:** everything else, including `carrier_id`, `origin_country`, `origin_city`, `destination_country`, `destination_city`, `destination_postal_code_start`, `destination_postal_code_end`, `destination_warehouse_code`, `marketplace`, `shipping_method`, `last_mile_delivery`, `charge_type`, `charge_unit`, `dim_divisor`, `min_box_weight`, `min_box_weight_unit`, `weight_tier`, `weight_tier_unit`, `currency`, `min_charge`, `transit_type`, `battery_type`, `customs_type`.
-- **If a locked field is changed on an existing row:** the change is **ignored** (the original DB value is kept), counted in `locked_fields_ignored_count`, and a **row-level warning** is emitted. *(Master-mode import is exempt — it may update any field.)*
+- **Update mode — editable fields:** `unit_rate`, `effective_from`, `effective_to`, `fuel_surcharge`, `customs_fee`, `doc_fee`, `status`, `note`. **Locked fields:** everything else (`carrier_id`, route keys, `shipping_method`, `last_mile_delivery`, `charge_type`, `charge_unit`, `currency`, `min_charge`, `transit_type`, `battery_type`, `customs_type`, dims/weights). A changed locked field is **ignored** (DB value kept), counted in `locked_fields_ignored_count`, with a **row-level warning**.
+- **Master mode — any field is writable** (locked-field rule exempt).
 
-**B. New row** — `rate_card_id` is **blank** but the row carries required route/rate values.
-- Treated as a **new `carrier_rate_cards` row**; **all fields editable**; a new `rate_card_id` is generated.
-- `carrier_id` defaults to the **template carrier scope** when blank (Update Template import derives the scope from the file's existing rows or an explicit `carrier_scope`).
-- May introduce new `shipping_method`, `last_mile_delivery`, `destination_warehouse_code`, `destination_city`, `destination_postal_code_start`/`end`, `destination_country`, `weight_tier`, `charge_type`/`charge_unit`.
-- **Required fields (new row):** `carrier_id` (or template carrier scope), `origin_country`, `destination_country`, `shipping_method`, `last_mile_delivery`, `charge_type`, `charge_unit`, `currency`, `unit_rate`, `effective_from`, `effective_to`. Destination may be specified at any level (`destination_warehouse_code` / `destination_city` / `destination_postal_code_start`+`end` / `destination_country` only). Invalid rows are **rejected + reported**; valid rows are **appended** (never overwrite an existing row unless `rate_card_id` is present).
+**B. New row (Master Template only)** — `rate_card_id` is **blank** but the row carries required route/rate values.
+- **Only `mode = master` creates.** A new `carrier_rate_cards` row is inserted with a generated `rate_card_id` (`CRC-<10-char UUID>`); **all fields editable**.
+- **Carrier resolution:** explicit `carrier_id` authoritative; if blank, resolve by `carrier_name` (§4C.3B); **no carrier is ever auto-created**.
+- **Required fields (new row):** `carrier_id` (or resolvable `carrier_name`), `origin_country`, `destination_country`, `shipping_method`, `last_mile_delivery`, `charge_type`, `charge_unit`, `currency`, `unit_rate`, **`effective_from`** (required, valid date). **`effective_to` is OPTIONAL — blank = open-ended** (only a non-blank invalid value errors; blank writes as blank). Invalid rows are **rejected + reported**.
+- In **`mode = update`** a meaningful blank-`rate_card_id` row is **rejected** (see policy above) — never appended.
 
 **C. Blank row** — no `rate_card_id` and no meaningful required values → **skipped silently** (counted as `blank_skipped_count`).
 
 ### 4C.4 Template Import v1.1
 
-- **Update vs create by `rate_card_id`** (§4C.3A): present ⇒ update that row; blank + meaningful ⇒ create new; blank + empty ⇒ skip.
-- **Mode** is derived from the file name (`master` ⇒ Master rules, else Update rules); the client passes it explicitly. **Field locking is enforced by the importer, not the CSV.**
-- New rows are stamped with a new `rate_card_id`, `source_file_name`, `import_batch_id`, `created_at`, `updated_at`; updates set `updated_at`.
+- **Update vs create by `rate_card_id` + mode** (§4C.3A): present ⇒ **update** that row; blank + meaningful ⇒ **create ONLY in `mode = master`** (in `mode = update` it is **rejected** — update-only); blank + empty ⇒ skip.
+- **Mode** is derived from the file name (`master` ⇒ Master Upsert rules, else Update-Only rules); the client passes it explicitly (`forceMode`). **Field locking + create-permission are enforced by the importer, not the CSV.**
+- New rows (Master only) are stamped with a new `rate_card_id`, `source_file_name`, `import_batch_id`, `created_at`, `updated_at`; updates set `updated_at`.
 - **`row_type = example` rows are skipped.** Lead Time / `transit_days` columns → **whole import rejected**.
 
-**Required import validation (new rows — rejected / reported on failure):** `carrier_id` exists in `carriers`; `origin_country` / `destination_country` / `shipping_method` / `last_mile_delivery` present; `charge_type` / `charge_unit` valid enums; `currency` present; `unit_rate` numeric; `effective_from` / `effective_to` valid dates with `effective_from ≤ effective_to`; `status` defaults `active`. For **existing-row updates**, only the edited allowed fields are validated (date validity, `status` enum, `unit_rate` numeric).
+**Required import validation (new rows, Master only — rejected / reported on failure):** carrier **resolved** (explicit `carrier_id` exists in `carriers`, or blank `carrier_id` + `carrier_name` resolves to exactly one carrier — §4C.3B; never auto-created); `origin_country` / `destination_country` / `shipping_method` / `last_mile_delivery` present; `charge_type` / `charge_unit` valid enums; `currency` present; `unit_rate` numeric; **`effective_from` required + valid date**; **`effective_to` OPTIONAL — blank = open-ended (written blank); only a non-blank invalid value errors**; when both present, `effective_from ≤ effective_to`; `status` defaults `active`. For **existing-row updates** (both modes), an existing `rate_card_id` must be found (else rejected) and only the edited allowed fields are validated (date validity — blank `effective_to` allowed, `status` enum, `unit_rate` numeric).
+
+**Current-stage versioning behavior (finalized):** the importer does **NOT** auto-close a previous row's `effective_to` when a newer rate is imported. **Multiple rows with blank `effective_to` for the same route are NOT rejected.** Read-time / display **rate resolution picks the latest `effective_from`** among matching active rows (blank `effective_to` = still valid). **Auto-close of superseded rows by route key is DEFERRED** to a future versioned-rate-card phase.
 
 **Import summary (returned + shown):** `updated_existing_count`, `created_new_count`, `blank_skipped_count`, `rejected_count`, `locked_fields_ignored_count`, plus `warnings` (locked-field-ignored, row-level) and `errors` (row-level), and `batch_id`.
 
-### 4C.5 Effective-date overlap rule
+### 4C.5 Effective-date overlap rule (aligns with the Resolution Rules §4.6)
 
 - **DB import rule:** when a new row's date window **overlaps** an existing row for the same route / method, **do NOT delete or overwrite** the old row — **append it as a new rate version** (both rows coexist, distinguished by `effective_from` / `import_batch_id`).
-- **Future pricing engine rule** (NOT implemented here) — when multiple rows match the same route / method / date:
-  1. choose the row whose **`effective_from` is latest**;
-  2. if tied, choose the **latest `import_batch_id` / `updated_at`**;
-  3. if still tied, **show a conflict warning**.
-- **v1 page behavior:** if overlapping rows exist, the page **shows both rows** (no auto-selection) until a future comparison / pricing engine is built.
+- **Import Job overlap warning (Part 5 / §4.6.4).** When the importer detects an **explicit-`effective_to` overlap** for the same carrier/route (+ logistics-attribute) combination, it raises an **Import Job Warning** (`warning_type = overlap`), default action **Require Review** — the import does **not** silently guess a winner. The **Review Page** shows, per overlapping pair:
+  - **Existing Version** (the current DB row: `effective_from`~`effective_to`, `unit_rate`, key fields)
+  - **Imported Version** (the incoming row)
+  - **Recommended Action** — **Keep Existing** *(default)* / **Override** / **Cancel Import**
+- **Multiple Open End rows** (blank `effective_to`) for the same route are **not blocked** but surface the data-hygiene notice (§4.6): the active quotation resolves to the **latest `effective_from`**.
+- **Resolution at read time (future engine, §4.6):** latest `effective_from` wins; blank `effective_to` = Open End; explicit overlap requires review.
+- **v1 page behavior:** if overlapping rows exist, the page **shows both rows** (no auto-selection) until the future Carrier Price Engine is built.
 
 ### 4C.6 Deferred: `carrier_fee_types` / `carrier_rate_breakdowns` (NOT v1)
 

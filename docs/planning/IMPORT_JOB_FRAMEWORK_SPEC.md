@@ -1,15 +1,17 @@
 # Import Job Framework Spec
 
-**Status:** 🟢 Draft v1.0 — Platform architecture (SPEC ONLY — NO code, NO frontend, NO Apps Script, NO DB migration, NO Gmail/API automation)
+**Status:** 🟢 Draft v1.2 — Platform architecture (SPEC ONLY — NO code, NO frontend, NO Apps Script, NO DB migration, NO Gmail/API automation)
 **Last Updated:** 2026-07-07
 **Maintained By:** Development Team
-**Related:** [`IMPORT_JOB_DATABASE_SPEC.md`](./IMPORT_JOB_DATABASE_SPEC.md) (table definitions), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (Import Job Framework Layer), [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) (first adopter), [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (Immutable Flow / layer language).
+**Related:** [`IMPORT_JOB_DATABASE_SPEC.md`](./IMPORT_JOB_DATABASE_SPEC.md) (table definitions), [`TEMPLATE_UI_STANDARD_SPEC.md`](./TEMPLATE_UI_STANDARD_SPEC.md) (**the formatting standard for the spreadsheet templates that feed imports**), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (Import Job Framework Layer), [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) (first adopter), [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (Immutable Flow / layer language).
 
 > **Purpose (one line).** Define a **reusable, platform-level Import Job Framework** that every import in Kitchen Mama Operation System flows through — external data becomes a reviewable, approvable, auditable **Import Job** *before* it ever touches a business table. This is **SPEC ONLY**: no runtime code, no schema migration, no email/API automation is implemented here.
 
 > **Scope note.** Import Job is **NOT a Carrier feature.** It is a shared platform layer. **Carrier Rate Card is only the first module to adopt it.** All future imports (Warehouse Rate, Container Rate, Forecast, Amazon Inventory, Amazon Sales, Promotion, Factory, Warehouse, Template Import, Future AI Import) reuse the same framework, tables, and flow.
 
 > **Changelog:**
+> - **Draft v1.2 (2026-07-07)** — Linked the **Template UI Standard** ([`TEMPLATE_UI_STANDARD_SPEC.md`](./TEMPLATE_UI_STANDARD_SPEC.md)) as the formatting standard for the spreadsheet templates that feed imports: XLSX freeze/header/color/dropdown/protection, `row_type = example` example rows, and a hidden `_SYSTEM` sheet the importer may read for `module` / `export_mode` / scope + `template_version` warnings (unknown / outdated / incompatible → warn, don't block unless structurally incompatible). Formatting is UX guidance only; the Import Job remains the validation authority.
+> - **Draft v1.1 (2026-07-07)** — Added the **effective-period overlap** warning to the Review Page (**Existing Version → Imported Version → Recommended Action** with **Keep Existing (default) / Override / Cancel Import**; default Require Review, no silent guess) and to Existing Row Rules (`warning_type = 'overlap'`; Open-End data-hygiene notice → latest `effective_from`). Added the **localized value mapping** rule (importer maps zh-TW / localized enum labels → English enums; unmappable = row error) — first consumer is the Carrier Global Logistics Enums (`CARRIER_AND_ROUTE_SPEC.md` §4.5).
 > - **Draft v1.0 (2026-07-07)** — Created. Introduces the Import Job platform layer, the 9-state job lifecycle, the Task Card → Review Page → Apply workflow (popup = summary only), existing/new/blank row rules (locked-field = Warning + Keep-Original default + user override), Import History, Retry, Cancel, Permissions, and the future Gmail / API automation flows (documentation only). Carrier Rate Card designated the first adopter.
 
 ---
@@ -83,6 +85,8 @@ The producing side — how a job is created and validated. Applies identically r
 4. **Waiting Review.** The job now appears as a **Task Card** (§ Import Review UI). No business table has been touched.
 
 > Validation is **read-only** with respect to business tables. It may read existing rows to compute diffs, but writes only to `import_job_details`.
+
+> **Template input surface.** The spreadsheet templates feeding imports follow **[`TEMPLATE_UI_STANDARD_SPEC.md`](./TEMPLATE_UI_STANDARD_SPEC.md)** (XLSX freeze/header/color/dropdown/protection, `row_type = example` example rows, hidden `_SYSTEM` sheet carrying `template_id` / `template_version` / `module` / `export_mode` / scope). During **Create/Validating** the importer **may read `_SYSTEM`** to set `module` / `export_mode` / scope and to **warn** on unknown / outdated / incompatible `template_version` (do not block unless structurally incompatible). Formatting is UX guidance only — a well-formatted template never overrides validation, and an unformatted CSV with the right columns imports identically.
 
 ---
 
@@ -251,8 +255,11 @@ Original Value   →   Imported Value   →   Recommended Action
 ```
 
 - For a locked-field change on an existing row: **Original Value** (current DB value) → **Imported Value** (what the file contains) → **Recommended Action** (default **Keep Original**, with a one-click **Override**).
+- For an **effective-period overlap** warning (e.g. Carrier Update Template — two rows for the same carrier/route with overlapping explicit `effective_to`): **Existing Version** → **Imported Version** → **Recommended Action** with **Keep Existing** *(default)* / **Override** / **Cancel Import**. The importer **does not silently guess** a winner — default is **Require Review** (`CARRIER_AND_ROUTE_SPEC.md` §4.6 / §4C.5).
 - Error rows are listed and are **excluded from Apply** until fixed (fix = re-import; the framework does not silently apply error rows).
 - New/blank rows appear in the summary counts; new rows may be inspected; blank rows are auto-ignored.
+
+**Localized value mapping (importer).** Enum columns may arrive as **English enums or localized (e.g. zh-TW) labels**. During Validation the importer maps a recognized localized label back to its **English enum** (case/trim-normalized) and stores the English value; an unmappable value is a **row error** (`invalid enum`), never a silent guess. (Enum ↔ label maps live with the owning module — e.g. Carrier Global Logistics Enums, `CARRIER_AND_ROUTE_SPEC.md` §4.5.)
 
 ---
 
@@ -273,6 +280,8 @@ User decides    (Keep Original  or  Override)
 - **Default action for locked-field changes: Keep Original.** The user may manually **Override** per field/row.
 - Allowed (non-locked) editable fields update normally without a warning.
 - The module defines which fields are editable vs locked (e.g. Carrier Update Template: editable = `unit_rate` / `effective_from` / `effective_to` / `fuel_surcharge` / `customs_fee` / `doc_fee` / `status` / `note`; everything else locked — see `CARRIER_AND_ROUTE_SPEC.md` §4C.3A).
+
+**Effective-period overlap** (`warning_type = 'overlap'`) — when an incoming row's validity window overlaps an existing row for the same key (e.g. Carrier same carrier/route with explicit `effective_to`), the importer raises a warning; default **Require Review** with per-pair **Keep Existing (default) / Override / Cancel Import**. Multiple **Open End** rows (blank `effective_to`) are not blocked but surface a data-hygiene notice; the active version resolves to the latest `effective_from` (`CARRIER_AND_ROUTE_SPEC.md` §4.6).
 
 ## New Rows
 

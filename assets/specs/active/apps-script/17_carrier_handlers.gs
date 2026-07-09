@@ -38,14 +38,16 @@ var CRC_STATUSES_ = { active: 1, inactive: 1 };
 // Columns that MUST NOT appear in a Carrier Rate Template (Lead Time is maintained separately).
 var CRC_FORBIDDEN_COLS_ = ['transit_days', 'min_days', 'max_days', 'avg_days', 'lead_time_id'];
 
-// Update-Template EDITABLE fields on EXISTING rows (everything else stored is LOCKED — §4C.3A).
-var CRC_UPDATE_EDITABLE_ = { unit_rate: 1, effective_from: 1, effective_to: 1, fuel_surcharge: 1, customs_fee: 1, doc_fee: 1, status: 1, note: 1 };
+// Update-Template EDITABLE fields on EXISTING rows (everything else stored is LOCKED).
+// NOTE: min_charge is editable per the Carrier Update UI task (Part C/D) — extends §4C.3A (which had it
+// locked); keep the Update template's editable set and this list in sync.
+var CRC_UPDATE_EDITABLE_ = { unit_rate: 1, min_charge: 1, effective_from: 1, effective_to: 1, fuel_surcharge: 1, customs_fee: 1, doc_fee: 1, status: 1, note: 1 };
 // Stored data columns that are LOCKED on existing rows in 'update' mode (identity / route / method / structure).
 var CRC_LOCKED_COLS_ = [
   'carrier_id', 'origin_country', 'origin_city', 'destination_country', 'destination_city',
   'destination_postal_code_start', 'destination_postal_code_end', 'destination_warehouse_code',
   'marketplace', 'shipping_method', 'last_mile_delivery', 'charge_type', 'charge_unit', 'dim_divisor',
-  'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit', 'currency', 'min_charge',
+  'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit', 'currency',
   'transit_type', 'battery_type', 'customs_type'
 ];
 // System columns never taken from the template.
@@ -107,14 +109,31 @@ function handleImportCarrierRateCards_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'carrier_rate_cards', CARRIER_RATE_CARDS_HEADERS_);
 
-  // Known carrier_id set (validation).
-  var carrierIds = {};
+  // Known carriers (validation + carrier_name → carrier_id resolution). We NEVER create carriers here —
+  // the carrier master is maintained separately (avoid polluting it with typos / inconsistent names).
+  var carrierIds = {};                 // carrier_id -> 1
+  var carrierNameById = {};            // carrier_id -> carrier_name (for mismatch warnings)
+  var carrierIdsByNameKey = {};        // normalized(carrier_name) -> [carrier_id, ...] (ambiguity detection)
   var cSheet = ss.getSheetByName('carriers');
   if (cSheet) {
     var cData = cSheet.getDataRange().getValues();
     if (cData.length >= 1) {
-      var cIdCol = cData[0].map(function (h) { return crcNorm_(h); }).indexOf('carrier_id');
-      if (cIdCol !== -1) for (var i = 1; i < cData.length; i++) { var cid = crcNorm_(cData[i][cIdCol]); if (cid) carrierIds[cid] = 1; }
+      var cHead = cData[0].map(function (h) { return crcNorm_(h); });
+      var cIdCol = cHead.indexOf('carrier_id');
+      var cNameCol = cHead.indexOf('carrier_name');
+      if (cIdCol !== -1) {
+        for (var i = 1; i < cData.length; i++) {
+          var cid = crcNorm_(cData[i][cIdCol]);
+          if (!cid) continue;
+          carrierIds[cid] = 1;
+          var cname = cNameCol !== -1 ? crcNorm_(cData[i][cNameCol]) : '';
+          carrierNameById[cid] = cname;
+          if (cname) {
+            var nk = cname.toLowerCase();
+            (carrierIdsByNameKey[nk] = carrierIdsByNameKey[nk] || []).push(cid);
+          }
+        }
+      }
     }
   }
 
@@ -141,6 +160,32 @@ function handleImportCarrierRateCards_(body) {
     });
     var distinct = Object.keys(seen);
     if (distinct.length === 1) scopeCarrierId = distinct[0];
+  }
+
+  // Resolve a NEW row's carrier from carrier_id (authoritative) or carrier_name (Master Template).
+  // Returns { carrier_id, error, warning }. NEVER creates a carrier (item 3).
+  //   - carrier_id present  → must exist in carriers; if carrier_name also given & mismatched → warning (id wins).
+  //   - carrier_id blank + carrier_name given → resolve by name (unique = use; none = reject; multiple = reject).
+  //   - carrier_id blank + carrier_name blank → fall back to the Update-Template carrier scope (if any).
+  function crcResolveNewRowCarrier_(row) {
+    var explicitId = crcNorm_(row.carrier_id);
+    var name = crcNorm_(row.carrier_name);
+    if (explicitId) {
+      if (!carrierIds[explicitId]) return { error: 'carrier_id "' + explicitId + '" does not exist in carriers.' };
+      var warn = '';
+      if (name && crcValsDiffer_(name.toLowerCase(), String(carrierNameById[explicitId] || '').toLowerCase())) {
+        warn = 'carrier_name does not match carrier_id; carrier_id was used.';
+      }
+      return { carrier_id: explicitId, warning: warn };
+    }
+    if (name) {
+      var ids = carrierIdsByNameKey[name.toLowerCase()] || [];
+      if (ids.length === 1) return { carrier_id: ids[0] };
+      if (ids.length === 0) return { error: 'carrier_name not found. Please create carrier first.' };
+      return { error: 'carrier_name is ambiguous. Please provide carrier_id.' };
+    }
+    if (scopeCarrierId) return { carrier_id: scopeCarrierId };   // Update-Template carrier scope fallback
+    return { error: 'carrier_id is required (blank carrier_id and carrier_name, and no carrier scope could be resolved).' };
   }
 
   var now = procurementTimestamp_();
@@ -229,8 +274,18 @@ function handleImportCarrierRateCards_(body) {
     for (var mi = 0; mi < MEANINGFUL_.length; mi++) { if (crcNorm_(row[MEANINGFUL_[mi]]) !== '') { meaningful = true; break; } }
     if (!meaningful) { blankSkipped++; continue; }   // (C) blank row → skip silently (counted)
 
-    // (B) NEW ROW — all fields editable; carrier scope default when carrier_id blank.
-    var carrierId = crcNorm_(row.carrier_id) || scopeCarrierId;
+    // Update Template = UPDATE ONLY — it must NEVER create new rate cards. A meaningful row without
+    // rate_card_id is rejected with a clear message (new rate cards are added via the Master Template).
+    // Only Master Template import (mode='master') inserts new rows (upsert: blank rate_card_id → create).
+    if (mode !== 'master') {
+      rejected++;
+      errors.push({ row: rowNo, message: 'Update Template requires rate_card_id (update-only) — new rate cards must be added via the Master Template. Row skipped.' });
+      continue;
+    }
+
+    // (B) NEW ROW (Master upsert only) — all fields editable; resolve carrier from carrier_id (authoritative) or carrier_name.
+    var carrierRes = crcResolveNewRowCarrier_(row);
+    var carrierId = carrierRes.carrier_id || '';
     var method = crcNorm_(row.shipping_method);
     var lastMile = crcNorm_(row.last_mile_delivery);
     var chargeType = crcLower_(row.charge_type);
@@ -242,8 +297,7 @@ function handleImportCarrierRateCards_(body) {
     var destCountry = crcNorm_(row.destination_country);
 
     var rowErrors = [];
-    if (!carrierId) rowErrors.push('carrier_id is required (blank, and no carrier scope could be resolved)');
-    else if (!carrierIds[carrierId]) rowErrors.push('carrier_id "' + carrierId + '" does not exist in carriers');
+    if (carrierRes.error) rowErrors.push(carrierRes.error);   // carrier not found / ambiguous / missing (never auto-created)
     if (!originCountry) rowErrors.push('origin_country is required');
     if (!destCountry) rowErrors.push('destination_country is required');
     if (!method) rowErrors.push('shipping_method is required');
@@ -254,10 +308,13 @@ function handleImportCarrierRateCards_(body) {
     if (!crcIsNum_(unitRate)) rowErrors.push('unit_rate is not numeric');
     if (status && !CRC_STATUSES_[status]) rowErrors.push('status invalid (active/inactive)');
 
+    // effective_from is REQUIRED (blank '' or invalid null → error).
+    // effective_to is OPTIONAL: blank ('') = open-ended / active until replaced (allowed);
+    // only a present-but-invalid value (null) is rejected. crcParseDate_ → '' for blank, null for invalid.
     var ef = crcParseDate_(row.effective_from);
     var et = crcParseDate_(row.effective_to);
     if (ef === null || ef === '') rowErrors.push('effective_from is not a valid date');
-    if (et === null || et === '') rowErrors.push('effective_to is not a valid date');
+    if (et === null) rowErrors.push('effective_to is not a valid date');   // '' (blank) is allowed — open-ended
     if (ef && et && ef > et) rowErrors.push('effective_from > effective_to');
 
     if (rowErrors.length) { rejected++; errors.push({ row: rowNo, message: rowErrors.join('; ') }); continue; }
@@ -301,6 +358,8 @@ function handleImportCarrierRateCards_(body) {
       updated_at: now
     });
     createdNew++;
+    // carrier_id authoritative over carrier_name — surface a warning (not a silent overwrite) on mismatch.
+    if (carrierRes.warning) warnings.push({ row: rowNo, carrier_id: carrierId, message: carrierRes.warning });
   }
 
   return jsonResponse_({

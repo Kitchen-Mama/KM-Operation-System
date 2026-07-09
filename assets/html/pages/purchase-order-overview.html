@@ -1,14 +1,34 @@
-<!-- Purchase Order Overview (Procurement Commitment dashboard) — Procurement Layer Phase 1.
+<!-- Purchase Order Workspace (Procurement Commitment / Execution dashboard) — Card architecture.
+     (Section/mount ID stays `purchase-order-overview*` for stability; display name = "Purchase Order Workspace".)
      Injected into #purchase-order-overview-mount by KM.partialLoader on the page lifecycle mount.
-     See docs/planning/REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md. -->
+     Factory tabs · Series/PO selectors · Draft/In Production/Completed groups · 25 cards/page · 4-block expand.
+     See docs/planning/PURCHASE_ORDER_SPEC.md. -->
 <section id="purchase-order-overview-section" class="module-section procurement-page">
     <div class="page-header procurement-page__header">
-        <h2 class="page-title">Purchase Order Overview</h2>
+        <h2 class="page-title">Purchase Order Workspace</h2>
     </div>
 
     <div class="procurement-page__note" id="po-mode-note"></div>
 
+    <!-- Top controls: factory tabs (left) + Series / PO selectors (right). -->
+    <div class="po-toolbar" id="po-toolbar" style="display:none;">
+        <div class="po-tabs" id="po-tabs"></div>
+        <div class="po-selectors">
+            <label class="po-selector">
+                <span>Series</span>
+                <select id="po-series-select" class="crc-input" onchange="poSetSeries(this.value)"><option value="all">All</option></select>
+            </label>
+            <label class="po-selector">
+                <span>PO No</span>
+                <select id="po-po-select" class="crc-input" onchange="poSetPo(this.value)"><option value="all">All</option></select>
+            </label>
+        </div>
+    </div>
+
     <div class="procurement-groups" id="po-groups">
         <div class="procurement-empty" id="po-empty">Loading purchase orders…</div>
     </div>
+
+    <!-- Pagination (25 cards per page). -->
+    <div class="po-pagination" id="po-pagination" style="display:none;"></div>
 </section>

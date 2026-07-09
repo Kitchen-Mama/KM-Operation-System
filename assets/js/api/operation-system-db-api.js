@@ -845,7 +845,8 @@ function normalizeRequestOrderLineRecord(raw) {
         shortageQty: (r.shortage_qty === '' || r.shortage_qty == null) ? '' : (parseFloat(r.shortage_qty) || 0),
         calculationMethod: String(r.calculation_method || '').trim(),
         lineStatus: String(r.line_status || '').trim(),
-        linkedPurchaseOrderLineId: String(r.linked_purchase_order_line_id || '').trim(),
+        // Canonical purchase_order_line_id (traceability); falls back to legacy linked_purchase_order_line_id for old rows.
+        purchaseOrderLineId: String(r.purchase_order_line_id || r.linked_purchase_order_line_id || '').trim(),
         supplierId: String(r.supplier_id || '').trim(),
         supplierName: String(r.supplier_name || '').trim(),
         supplierSku: String(r.supplier_sku || '').trim(),
@@ -865,24 +866,50 @@ function normalizeRequestOrderLineRecord(raw) {
 // Purchase Order (Procurement Commitment) header.
 function normalizePurchaseOrderRecord(raw) {
     var r = raw || {};
+    // Canonical order_status (falls back to legacy `status` for old rows).
+    var orderStatus = String(r.order_status || r.status || '').trim();
+    // Canonical supplier timeline (falls back to legacy expected_ready_date / confirmed_ready_date).
+    var supplierExpectedReady = String(r.supplier_expected_ready_date || r.expected_ready_date || '').trim();
+    var supplierConfirmedReady = String(r.supplier_confirmed_ready_date || r.confirmed_ready_date || '').trim();
+    var expectedCompletion = String(r.expected_completion_date || supplierExpectedReady || '').trim();
+    var poNo = String(r.po_no || r.purchase_order_no || '').trim();
     return {
         purchaseOrderId: String(r.purchase_order_id || '').trim(),
-        purchaseOrderNo: String(r.purchase_order_no || '').trim(),
+        poNo: poNo,
+        kmPoNo: String(r.km_po_no || '').trim(),
+        purchaseOrderNo: String(r.purchase_order_no || r.po_no || '').trim(),
         poVersion: parseFloat(r.po_version) || 1,
         parentPurchaseOrderId: String(r.parent_purchase_order_id || '').trim(),
         requestOrderId: String(r.request_order_id || '').trim(),
+        requestBucket: String(r.request_bucket || '').trim(),   // T1 or T2_T3
         company: String(r.company || '').trim(),
         supplierId: String(r.supplier_id || '').trim(),
         supplierName: String(r.supplier_name || '').trim(),
         factoryId: String(r.factory_id || '').trim(),
         warehouseId: String(r.warehouse_id || '').trim(),
-        status: String(r.status || '').trim(),
+        // order_status is canonical; `status` kept as a back-compat alias (same value) for existing UI.
+        orderStatus: orderStatus,
+        status: orderStatus,
+        orderDate: String(r.order_date || '').trim(),
         currency: String(r.currency || '').trim(),
         totalSku: parseFloat(r.total_sku) || 0,
         totalQty: parseFloat(r.total_qty) || 0,
         totalAmount: (r.total_amount === '' || r.total_amount == null) ? '' : (parseFloat(r.total_amount) || 0),
-        expectedReadyDate: String(r.expected_ready_date || '').trim(),
-        confirmedReadyDate: String(r.confirmed_ready_date || '').trim(),
+        subtotalAmount: (r.subtotal_amount === '' || r.subtotal_amount == null) ? '' : (parseFloat(r.subtotal_amount) || 0),
+        depositAmount: (r.deposit_amount === '' || r.deposit_amount == null) ? '' : (parseFloat(r.deposit_amount) || 0),
+        balanceAmount: (r.balance_amount === '' || r.balance_amount == null) ? '' : (parseFloat(r.balance_amount) || 0),
+        paidAmount: (r.paid_amount === '' || r.paid_amount == null) ? '' : (parseFloat(r.paid_amount) || 0),
+        paymentStatus: String(r.payment_status || '').trim(),
+        paymentTermId: String(r.payment_term_id || '').trim(),
+        inspectionDate: String(r.inspection_date || '').trim(),
+        expectedCompletionDate: expectedCompletion,
+        expectedShipDate: String(r.expected_ship_date || '').trim(),
+        depositDueDate: String(r.deposit_due_date || '').trim(),   // = order_date + 5 business days (stamped at Send PO)
+        supplierExpectedReadyDate: supplierExpectedReady,
+        supplierConfirmedReadyDate: supplierConfirmedReady,
+        // Back-compat alias for existing UI (Expected Ready) — mirrors supplier_expected_ready_date.
+        expectedReadyDate: supplierExpectedReady,
+        confirmedReadyDate: supplierConfirmedReady,
         issuedBy: String(r.issued_by || '').trim(),
         issuedAt: String(r.issued_at || '').trim(),
         confirmedBy: String(r.confirmed_by || '').trim(),
@@ -910,9 +937,23 @@ function normalizePurchaseOrderLineRecord(raw) {
         purchaseOrderLineId: String(r.purchase_order_line_id || '').trim(),
         purchaseOrderId: String(r.purchase_order_id || '').trim(),
         requestOrderLineId: String(r.request_order_line_id || '').trim(),
+        requestOrderId: String(r.request_order_id || '').trim(),
+        requestBucket: String(r.request_bucket || '').trim(),   // original T1 / T2 / T3
         sku: String(r.sku || '').trim(),
+        company: String(r.company || '').trim(),
+        // product_name is DEPRECATED on purchase_order_lines; kept as a back-compat alias (blank for v2 lines;
+        // product display should join sku_details for labels). Runtime must not depend on it.
         productName: String(r.product_name || '').trim(),
         series: String(r.series || '').trim(),
+        factoryItemNo: String(r.factory_item_no || '').trim(),
+        factoryItemName: String(r.factory_item_name || '').trim(),
+        // Company allocation snapshot (mandatory in PO v2).
+        kmQty: parseFloat(r.km_qty) || 0,
+        resusQty: parseFloat(r.resus_qty) || 0,
+        restwQty: parseFloat(r.restw_qty) || 0,
+        recommendedQty: (r.recommended_qty === '' || r.recommended_qty == null) ? '' : (parseFloat(r.recommended_qty) || 0),
+        requestedQty: parseFloat(r.requested_qty) || 0,
+        approvedQty: parseFloat(r.approved_qty) || 0,
         orderedQty: parseFloat(r.ordered_qty) || 0,
         completedQty: parseFloat(r.completed_qty) || 0,
         shippedQty: parseFloat(r.shipped_qty) || 0,
@@ -920,10 +961,16 @@ function normalizePurchaseOrderLineRecord(raw) {
         unitsPerCarton: parseFloat(r.units_per_carton) || 0,
         cartonQty: parseFloat(r.carton_qty) || 0,
         supplierId: String(r.supplier_id || '').trim(),
+        supplierName: String(r.supplier_name || '').trim(),
         supplierSku: String(r.supplier_sku || '').trim(),
+        supplierWarehouseId: String(r.supplier_warehouse_id || '').trim(),
         unitCost: (r.unit_cost === '' || r.unit_cost == null) ? '' : (parseFloat(r.unit_cost) || 0),
         lineAmount: (r.line_amount === '' || r.line_amount == null) ? '' : (parseFloat(r.line_amount) || 0),
         currency: String(r.currency || '').trim(),
+        lineStatus: String(r.line_status || '').trim(),
+        inspectionDate: String(r.inspection_date || '').trim(),
+        expectedCompletionDate: String(r.expected_completion_date || '').trim(),
+        expectedShipDate: String(r.expected_ship_date || '').trim(),
         relatedShipmentId: String(r.related_shipment_id || '').trim(),
         note: String(r.note || '').trim(),
         createdAt: String(r.created_at || '').trim(),
@@ -2286,6 +2333,52 @@ window.KM.DB.updatePurchaseOrderLine = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update purchase order line failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Edit PO Overview execution HEADER fields on purchase_orders (by purchase_order_id):
+//   { purchase_order_id, inspection_date?, expected_completion_date?, expected_ship_date?, deposit_due_date?, note?,
+//     deposit_amount?, balance_amount?, paid_amount?, payment_status?, actor? }.
+// Writes purchase_orders only (never request_orders / lines). Dates saved date-only. supplier_*_ready_date
+// are NOT touched here.
+window.KM.DB.updatePurchaseOrderHeader = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updatePurchaseOrderHeader skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'updatePurchaseOrderHeader' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Update purchase order header failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// PO Workspace Receive flow: receive produced/received qty against purchase_order_lines.
+//   { purchase_order_id, lines: [ { purchase_order_line_id, receive_qty } ], actor? }.
+// Per line completed_qty += receive_qty (clamped to remaining), remaining_qty = ordered − completed;
+// PO order_status recomputed to completed / partial_completed. Writes purchase_orders /
+// purchase_order_lines ONLY (never request orders / shipments / inventory / factory stock).
+window.KM.DB.receivePurchaseOrderLines = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, receivePurchaseOrderLines skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'receivePurchaseOrderLines' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Receive purchase order lines failed');
     await loadOperationDb({ force: true });
     return json.data;
 };

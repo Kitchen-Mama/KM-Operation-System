@@ -60,27 +60,62 @@ Purchase Order        (purchase_orders + purchase_order_lines)    [Procurement C
 - **`tier_group`** summarizes the buckets across the request's lines: **only T1 → `T1`; only T2/T3 → `T2_T3`; both → `mixed`; none → blank**.
 - **Header-level dates are NOT written** — `inspection_date` / `expected_ready_date` / `expected_ship_date` are **line-level** (T1 and T2/T3 can differ); canonical source is `request_order_lines`.
 
-### 3.2 `request_order_lines`
-`request_order_line_id` (PK), `request_order_id` (FK), `sku`, `series`, **`company`**, **`request_bucket`**, **`request_month`**, **`inspection_date`**, **`expected_ready_date`**, **`expected_ship_date`**, `requested_qty`, `approved_qty`, **`km_qty`**, **`resus_qty`**, **`restw_qty`**, `units_per_carton`, `carton_qty`, **`shortage_qty`**, `supplier_id`, `supplier_name`, `supplier_sku`, `unit_cost`, `estimated_amount`, `currency`, **`calculation_method`**, **`line_status`**, **`linked_purchase_order_line_id`**, `note`, `created_at`, `updated_at`.
+### 3.2 `request_order_lines` — **FINAL schema (PO v2 mapping)**
 
-**Field mapping:**
-- **`company`** = the site owner (KM / ResUS / ResTW …) this line's demand belongs to. **One company per line.**
-- **`km_qty` / `resus_qty` / `restw_qty`** = the per-company allocation for this line — the matched company column carries the qty (= `approved_qty`), the others are `0` (never blank). Recomputed when `approved_qty` is edited.
-- **`request_bucket`** = **canonical `T1` / `T2` / `T3`** (there is **no `tier_type` on this table** — deprecated; do not re-add). `request_month` = `YYYY-MM`.
-- **`inspection_date` / `expected_ready_date` / `expected_ship_date`** — line-level schedule; per tier, written to every line of the tier on Save.
-- **`requested_qty`** = requested from the Order Allocation draft. **`approved_qty`** = editable approval qty. **`shortage_qty`** kept as primary (blank when no formula). **`calculation_method`** = `manual_order_allocation`. **`line_status`** = `draft` / `submitted` / `approved` / `cancelled`. **`linked_purchase_order_line_id`** = blank until a PO line is created.
+**Final column order (canonical):**
+`request_order_line_id` (PK) · `request_order_id` (FK) · `sku` · **`company`** · **`request_bucket`** · **`request_month`** · `series` · `supplier_id` · `supplier_name` · `supplier_sku` · **`factory_item_no`** · **`factory_item_name`** · **`supplier_warehouse_id`** · **`km_qty`** · **`resus_qty`** · **`restw_qty`** · **`recommended_qty`** · `requested_qty` · `approved_qty` · **`shortage_qty`** · **`reallocation_qty`** · `carton_qty` · `units_per_carton` · `unit_cost` · `estimated_amount` · `currency` · **`calculation_method`** · **`line_status`** · **`inspection_date`** · **`expected_ready_date`** · **`expected_ship_date`** · **`purchase_order_line_id`** · `note` · **`cancelled_by`** · **`cancelled_at`** · **`cancel_reason`** · `created_at` · `updated_at`.
+
+**Line identity & rules:**
+- **Line identity = `company` + `sku` + `request_bucket`.** **One company = one `request_order_line`** (one company = one `request_order_line_source`, §3.8).
+- **`request_bucket`** = **canonical `T1` / `T2` / `T3`** — **`tier_type` MUST NOT be used on this table** (deprecated; never re-add). `request_month` = `YYYY-MM`.
+- **`km_qty` / `resus_qty` / `restw_qty`** = per-company allocation — the matched company column carries the qty (= `approved_qty`), others `0` (never blank). Recomputed on `approved_qty` edit; validated so the row Approved = `km_qty + resus_qty + restw_qty` (Manual Allocation Mode, §13).
+- **`recommended_qty`** = engine/allocation-draft recommendation snapshot (blank when no formula). **`requested_qty`** = requested from the Order Allocation draft. **`approved_qty`** = editable approval qty (decision). **`shortage_qty` / `reallocation_qty`** = allocation snapshots (blank when no formula).
+- **`factory_item_no` / `factory_item_name`** = factory's own item number/name (from supplier/factory master when available; blank otherwise). **`supplier_warehouse_id`** = supplier/factory warehouse reference.
+- **`inspection_date` / `expected_ready_date` / `expected_ship_date`** — line-level schedule; per tier, written to every line of the tier on Save. **`expected_ready_date` is the source of the PO `expected_completion_date` / `supplier_expected_ready_date`** at conversion (§C mapping / §3.3).
+- **`line_status`** = `draft` / `submitted` / `approved` / `cancelled` — **must always be populated**. **`cancelled` is terminal + immutable** (§13.4 / §G): `cancelled_by` / `cancelled_at` / `cancel_reason` record the soft-cancel; the row is never reactivated or deleted.
+- **`purchase_order_line_id`** = the created PO line (traceability) — **replaces the deprecated `linked_purchase_order_line_id`**; blank until Convert to PO.
+- **`calculation_method`** = source label (`manual_order_allocation` …).
 
 > All columns are **additive** — `sheetEnsureColumns_` appends any missing header; existing columns are never altered, and **deleted headers are missing-header-safe** (code never re-creates removed columns).
 
-**DEPRECATED — no longer written or ensured** (kept only if physically present; NOT source of truth, code must not re-create): on `request_order_lines` → `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`, `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `reallocation_qty`, `source_company_count`, `source_site_count`, `tier_type`; on `request_orders` → `status` (replaced by `request_status`), header `inspection_date`/`expected_ready_date`/`expected_ship_date` (line-level only). Company/site/month allocation detail is owned by **`request_order_line_sources`** (§3.8).
+**DEPRECATED — no longer written or ensured** (kept only if physically present; NOT source of truth; code must **not** re-create): on `request_order_lines` → `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `source_company_count`, `source_site_count`, **`tier_type`**, `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`, **`linked_purchase_order_line_id`** (replaced by `purchase_order_line_id`); on `request_orders` → `status` (replaced by `request_status`), header `inspection_date`/`expected_ready_date`/`expected_ship_date` (line-level only). Forecast / stock / on-the-way snapshot detail is owned by **`request_order_line_sources`** (§3.8) and **must NOT be re-added to `request_order_lines`**.
 
-### 3.3 `purchase_orders`
-`purchase_order_id` (PK), `purchase_order_no`, `po_version`, `parent_purchase_order_id`, `request_order_id` (FK, copied), `company`, `supplier_id`, `supplier_name`, **`factory_id`**, **`warehouse_id`** (copied from the source Request Order at conversion — for the PO List Factory column), `status`, `currency`, `total_sku`, `total_qty`, `total_amount`, `expected_ready_date`, `confirmed_ready_date`, `issued_by`, `issued_at`, `confirmed_by`, `confirmed_at`, `cancelled_by`, `cancelled_at`, `completed_by`, `completed_at`, **`closure_reason`**, **`closed_by`**, **`closed_at`** (Closure §6.1), `note`, `created_by`, `created_at`, `updated_by`, `updated_at`.
+### 3.3 `purchase_orders` — **FINAL schema (PO v2 mapping)**
 
-### 3.4 `purchase_order_lines`
-`purchase_order_line_id` (PK), `purchase_order_id` (FK), `request_order_line_id` (copied), `sku`, `product_name`, `series`, `ordered_qty`, **`completed_qty`** (production-completed qty; drives `partial_completed`/`completed`; `available_to_ship = completed_qty − shipped_qty`), `shipped_qty`, `remaining_qty`, `units_per_carton`, `carton_qty`, `supplier_id`, `supplier_sku`, `unit_cost`, `line_amount`, `currency`, `related_shipment_id`, `note`, `created_at`, `updated_at`.
+**Final columns (canonical):**
+`purchase_order_id` (PK) · **`po_no`** · **`km_po_no`** · **`warehouse_id`** · `supplier_name` · **`order_status`** · **`order_date`** · **`deposit_due_date`** · `inspection_date` · **`expected_completion_date`** · `expected_ship_date` · **`subtotal_amount`** · **`deposit_amount`** · **`balance_amount`** · **`paid_amount`** · **`payment_status`** · **`payment_term_id`** · `currency` · `note` · `purchase_order_no` · `po_version` · `parent_purchase_order_id` · `request_order_id` (FK, copied) · `company` · `supplier_id` · **`factory_id`** · `total_sku` · `total_qty` · **`total_cartons`** · `total_amount` · **`supplier_expected_ready_date`** · **`supplier_confirmed_ready_date`** · **`request_bucket`** · `created_by` · `created_at` · `updated_by` · `updated_at` · `issued_by` · `issued_at` · `confirmed_by` · `confirmed_at` · `cancelled_by` · `cancelled_at` · `completed_by` · `completed_at` · **`closure_reason`** · **`closed_by`** · **`closed_at`**.
 
-> **Future company-summary snapshot (SPEC ONLY — not implemented in this task):** `purchase_order_lines` should gain **`km_qty` / `resus_qty` / `restw_qty`** as a company-split **snapshot** captured at PO creation. Reason: the PO is a **commitment layer** and must not recalculate the Request source every time. No PO logic is added now (documentation only).
+**Field rules & mapping:**
+- **`order_status`** is the **canonical** status (enum §6: `draft` / `issued` / `in_production` / `partial_completed` / `completed` / `partial_shipped` / `shipped` / `closure` / `cancelled`). The legacy **`status`** column is **DEPRECATED — never written or ensured** (read-fallback only for old rows).
+- **PO numbers:** **`po_no`** = the canonical PO number assigned at **Send PO**. **`km_po_no`** = the KM-facing / internal PO number. **`purchase_order_no`** = retained full/legacy PO number (may equal `po_no`); kept for back-compat, not the canonical key.
+- **`order_date` = the Send PO date** (when the PO is issued to the supplier) — **NOT** the create date. **`created_at`** = system row-creation time. (`issued_at` is also stamped at Send; `order_date` is the business-facing order date.)
+- **`deposit_due_date` = `order_date` + 5 BUSINESS days** (Mon–Fri; Sat/Sun excluded; **holiday calendar deferred**). Stamped **at Send PO** together with `order_date`; **blank at Convert** (order_date blank). **Never computed from `created_at`.** Stored **date-only `yyyy-MM-dd`**. Editable in the PO Workspace header edit modal; a manual-override flag / auto-recalc-on-order_date-change is **deferred**.
+- **Supplier timeline fields (supplier-specific, not globally required):** **`supplier_expected_ready_date`** = supplier-side expected ready date; **`supplier_confirmed_ready_date`** = supplier confirmed ready/completion date. Some suppliers/factories populate them, others leave blank — **do not force required**. The Workspace Production Timeline **may display `supplier_expected_ready_date`** when populated; document generation may later map **`SUPPLIER_DATE_FULL` ← `supplier_expected_ready_date`**.
+- **`request_bucket`** on the PO **header** stores **`T1`** for a T1 PO or **`T2_T3`** for the combined T2+T3 PO (§F split rule). Each PO **line** keeps its original `T1`/`T2`/`T3` (§3.4).
+- **`factory_id`** is **resolved from `request_orders.warehouse_id`** via the warehouse master at conversion; **`warehouse_id`** remains the source ID; **factory display = `warehouses.warehouse_name`**.
+- **Ready/completion date mapping (finalized):** at conversion, `purchase_orders.expected_completion_date` ← the matching `request_order_lines.expected_ready_date` (by `request_order_id` + `request_bucket`; the tier's representative value). **`supplier_expected_ready_date` MIRRORS `expected_completion_date`** (same value) and is the canonical cross-doc "supplier timeline" name. **`supplier_confirmed_ready_date`** = blank at creation; set/updated on supplier confirmation or delay Update (append timeline history, §7.2). `inspection_date` / `expected_ship_date` are copied from the matching `request_order_lines` (same key).
+- **Payment:** `subtotal_amount` = Σ line_amount; `deposit_amount` = `subtotal_amount × deposit ratio` when known (else blank); `balance_amount` = `subtotal_amount − deposit_amount` when deposit known (else blank); `paid_amount` / `payment_status` / `payment_term_id` track factory payment (Block 4).
+- **`total_sku` = `COUNT(DISTINCT sku)`** (never row count — §7.4 Total SKU Rule). `total_qty` = Σ `ordered_qty`; **`total_cartons` = Σ `purchase_order_lines.carton_qty`**; `total_amount` = Σ `line_amount`. All are written at Convert to PO and kept in sync by any PO totals recalculation.
+
+**DEPRECATED on `purchase_orders` — never written/recreated:** **`status`** (→ `order_status`), **`expected_ready_date`**, **`confirmed_ready_date`** (→ `supplier_expected_ready_date` / `supplier_confirmed_ready_date`; no mixed naming anywhere). Distinct from the Request Order line schedule `request_order_lines.expected_ready_date` (§3.2), which keeps its name and is the mapping source.
+
+### 3.4 `purchase_order_lines` — **FINAL schema (PO v2 mapping)**
+
+**Final columns (canonical):**
+`purchase_order_line_id` (PK) · `purchase_order_id` (FK) · `request_order_line_id` (copied) · **`request_order_id`** (copied) · **`request_bucket`** · `sku` · **`company`** · `series` · **`factory_item_no`** · **`factory_item_name`** · `supplier_id` · `supplier_name` · `supplier_sku` · **`supplier_warehouse_id`** · **`km_qty`** · **`resus_qty`** · **`restw_qty`** · **`recommended_qty`** · **`requested_qty`** · **`approved_qty`** · `ordered_qty` · **`completed_qty`** · `shipped_qty` · `remaining_qty` · `carton_qty` · `units_per_carton` · `unit_cost` · `line_amount` · `currency` · **`line_status`** · `inspection_date` · **`expected_completion_date`** · `expected_ship_date` · `related_shipment_id` · `note` · `created_at` · `updated_at`.
+
+**Field rules & mapping (snapshot — copied at Convert to PO):**
+- **`product_name` is REMOVED** (not on `purchase_order_lines`). Product display joins `sku_details` by `sku` (display-label only).
+- **Company allocation snapshot is MANDATORY:** **`km_qty` / `resus_qty` / `restw_qty`** copied from `request_order_lines` (one company = one line, so exactly one is non-zero per line). **`request_bucket`** (original `T1`/`T2`/`T3`) is **mandatory**. **`line_status`** is **mandatory**.
+- **`ordered_qty` = `request_order_lines.approved_qty`** (the committed **execution** quantity). **`km_qty + resus_qty + restw_qty` must equal `ordered_qty`** (company allocation snapshot).
+- **`requested_qty` / `approved_qty` / `recommended_qty` on `purchase_order_lines` are AUDIT SNAPSHOT fields only** — copied from the Request line at Convert for lineage/traceability. They are **NOT used for execution, receiving, remaining, or shipment allocation** (those all key off `ordered_qty` / `completed_qty` / `shipped_qty` / `remaining_qty`). Runtime currently does **not** read them (PO Workspace / PO Remaining Overview never reference `requested_qty` / `approved_qty`). Columns are **retained** (do not remove without an explicit later decision).
+- **`completed_qty` starts `0`** (received / production-completed qty; drives `partial_completed`/`completed`; `+= receive_qty` on each Receive). **`shipped_qty` starts `0`**. **`remaining_qty` = `completed_qty − shipped_qty`** = **available-to-ship** (clamp ≥ 0), **= `0` at creation** (NOT `ordered_qty` — no completed goods means nothing available to ship). **`unreceived_qty` = `ordered_qty − completed_qty`** is production-outstanding, **derived only in the Receive modal — never stored** (see `PURCHASE_ORDER_SPEC.md` §4A/§4C).
+- **`line_amount` = `ordered_qty × unit_cost`.**
+- **Dates:** **`expected_completion_date` ← `request_order_lines.expected_ready_date`**; **`inspection_date` ← `request_order_lines.inspection_date`**; **`expected_ship_date` ← `request_order_lines.expected_ship_date`**.
+- **`factory_item_no` / `factory_item_name` / `supplier_warehouse_id`** copied from `request_order_lines`.
+- Header **`total_sku` uses `COUNT(DISTINCT sku)`** over these lines (§7.4).
+
+> **Snapshot ownership:** after creation the PO line **owns** these fields. It must **not** live-read `request_order_lines`; later Request edits never mutate an existing PO line (§8A / §14 / §H Snapshot Completeness). `request_order_line_id` / `request_order_id` are lineage only.
 
 ---
 
@@ -100,12 +135,31 @@ Phase 1 supports two sources:
 
 ## 5. Request Order Status Flow
 
+### 5.0 Official Request Order Lifecycle (finalized)
+
+```
+Draft ─▶ Saved ─▶ Submitted ─▶ Approved ─▶ Converted to PO ─▶ Completed
+                                                                    
+Cancelled  =  TERMINAL state
+```
+
+- **Draft → Saved** — `Save` persists edits without changing status (still `draft`; "Saved" is the persisted-Draft state, not a separate DB value). **Saved → Submitted** = `submit` (`draft → pending_approval`). **Submitted → Approved** = `approve`. **Approved → Converted to PO** = `convert` (creates the Purchase Order snapshot — `PURCHASE_ORDER_SPEC.md` §8A PO Snapshot Rule; sets `request_orders.status = converted_to_po`). **Converted to PO → Completed** = `done` (`completed_at`/`completed_by`; leaves the default view, row never deleted).
+- **Status-value mapping:** the canonical `request_status` DB values are `draft` / `pending_approval` / `approved` / `converted_to_po` / `cancelled`; "Saved", "Submitted", "Completed" are lifecycle stages over those values (Saved = persisted draft; Submitted = `pending_approval`; Completed = `converted_to_po`/`approved` with `completed_at` set).
+
+**Cancelled = terminal-state rules (finalized — see §13.4):**
+- Cancelled `request_order_lines` are **immutable**.
+- Cancelled lines **cannot** return to `draft` / `submitted` / `approved`.
+- **Submit must ignore cancelled lines** (never reactivated).
+- **Convert to PO must exclude cancelled lines** (never copied into the PO snapshot).
+- Cancelled rows are **never deleted** (soft state; kept for audit).
+- **Restore**, if ever needed, must be a **future explicit, audited action** — never automatic.
+
 ```
 draft ──submit──▶ pending_approval ──approve──▶ approved ──convert──▶ converted_to_po
   ▲                    │
   └──── reject ────────┘   (rejected_reason required; version +1 on resubmit)
 
-draft / pending_approval ──cancel──▶ cancelled   (soft; row + lines preserved)
+draft / pending_approval ──cancel──▶ cancelled   (soft; row + lines preserved; TERMINAL)
 ```
 
 - **`draft`**: `approved_qty` editable; supplier selectable/defaulted; unit cost from supplier price list; **Save** persists without submitting; **Submit** → `pending_approval`; **Cancel** → `cancelled` (soft hide, DB kept).
@@ -116,6 +170,25 @@ draft / pending_approval ──cancel──▶ cancelled   (soft; row + lines pr
 
 ## 6. Purchase Order Status Flow
 
+### 6.0 Official Purchase Order Lifecycle (finalized)
+
+```
+Draft ─▶ Issued / Sent PO ─▶ Supplier Confirmed ─▶ In Production
+      ─▶ Partial Completed ─▶ Completed ─▶ Partial Shipped ─▶ Shipped ─▶ Closure
+
+Cancelled  =  TERMINAL state
+```
+
+- **Draft** — a PO can be **saved** or **sent** (Save persists execution edits; Send issues it).
+- **Issued / Sent PO** — becomes the **official supplier-facing commitment**.
+- **Supplier Confirmed** — records the supplier's confirmation (sets `supplier_confirmed_ready_date`, §2 naming).
+- **In Production** — tracks production execution.
+- **Partial Completed / Completed** — driven by **`completed_qty`** via the **Receive flow** (`PURCHASE_ORDER_SPEC.md` §4A/§4B): each Receive does `completed_qty += receive_qty`, `remaining_qty = ordered_qty − completed_qty`. `Σ completed_qty` between 0 and `Σ ordered_qty` → `partial_completed` (stays In Production); **all lines `completed_qty ≥ ordered_qty` → `completed`** (+ `completed_at`/`completed_by` if available; PO leaves the active Workspace list). **Receive updates the PO only** — never the Request Order or a Shipment.
+- **Partial Shipped / Shipped** — driven by **`shipped_qty`**.
+- **Closure** — **auto** (all lines fully shipped: `shipped_qty ≥ ordered_qty`) or **manual** (required `closure_reason` + `closed_by`/`closed_at`), see §6.1.
+- **Cancelled = terminal:** a cancelled PO **cannot be updated by the normal execution flow**; any future **restore must be explicit and audited** (never automatic). Row is never deleted.
+- **Status-value mapping:** DB enum values below (`issued` = Issued/Sent PO; supplier confirmation is recorded on the PO record and the legacy `confirmed` state maps to "Supplier Confirmed").
+
 **PO `status` enum (target — authoritative):**
 `draft` · `issued` · `in_production` · `partial_completed` · `completed` · `partial_shipped` · `shipped` · `closure` · `cancelled`.
 
@@ -124,7 +197,7 @@ draft ──issue──▶ issued ──▶ in_production ──▶ partial_comp
                                                                         │
                                                      ──▶ partial_shipped ──▶ shipped
                                                                         │
-                                       (all lines remaining_qty = 0)    ▼
+                                    (all lines shipped_qty ≥ ordered_qty) ▼
                                                                     closure
 any (non-completed/closure) ──cancel──▶ cancelled
 ```
@@ -141,7 +214,7 @@ any (non-completed/closure) ──cancel──▶ cancelled
 
 `closure` has **two** sources:
 
-1. **Auto Closure** — when **every** PO line has `remaining_qty = 0`, the system **may** auto-transition the PO `status → closure` (target behavior; not an auto-procurement algorithm — a simple completion check).
+1. **Auto Closure** — when **every** PO line is **fully shipped** (`shipped_qty ≥ ordered_qty`), the system **may** auto-transition the PO `status → closure` (target behavior; not an auto-procurement algorithm — a simple completion check). *(Note: `remaining_qty = completed_qty − shipped_qty = 0` alone is NOT a closure signal — it is also true for a brand-new PO with nothing completed.)*
 2. **Manual Closure** — a user closes / writes off a PO for a special reason. **`closure_reason` is required**; the system records `closed_by` and `closed_at`.
 
 **Suggested DB columns on `purchase_orders`:** `closure_reason`, `closed_by`, `closed_at` (added to the header schema; auto-created by `13_procurement_handlers.gs`). **`completed_qty` is added to `purchase_order_lines`** (production-completed quantity; drives `partial_completed` / `completed` and, with `shipped_qty`, `available_to_ship = completed_qty − shipped_qty`).
@@ -167,31 +240,70 @@ Three sections: **Draft / Pending Approval / Approved**. **Card/expand structure
 - **Layout:** the three blocks render **horizontally, side by side, equal height** (`.ro-decision-grid`, 3 equal columns; stacks to one column ≤1100px). Each block's table scrolls inside its own wrapper — no page horizontal overflow.
 - **Company Allocation popup (read-only):** in **SKU In Total**, KM/ResUS/ResTW values are **clickable when > 0**. Click opens a compact popover **"Company Allocation Detail"** — fields **Company · SKU · Tier · Month · Country · Marketplace · Requested · Approved · Shortage · Note**. Source = **`request_order_line_sources`** (§3.8) filtered to this request's lines for the SKU+company; when empty it **falls back** to `request_order_lines` grouped by company and shows **"Site-level source pending."** No fake site rows are invented. Clicking `0` / `--` does nothing (or "No allocation detail."). The popup is **read-only**, closes on ✕ / overlay / Esc, and never stacks (a new open closes the previous). Matches the KM modal style (`.pc-modal`).
 
-### 7.2 Purchase Order Overview
-Status-grouped PO cards: **Draft PO / Issued-Sent / Confirmed / In Production / Ready to Ship / Partially Shipped / Completed / Cancelled**.
-- **Header:** PO No · Status · Supplier · Company · Currency · Total SKU · Total Qty · Total Amount · Expected Ready Date · Created Date.
-- **Expanded PO Lines:** SKU · Product Name · Ordered Qty · Shipped Qty · Remaining Qty · Unit Cost · Line Amount · Cartons · Related Request Order · Related Shipment · Note.
+### 7.2 Purchase Order Workspace — **Execution Layer, Card architecture (PO v2 — finalized; runtime NOT built)**
 
-### 7.3 Purchase Order List
-**Filters (left→right):** **Date · Status · Supplier · Category · Series · SKU · Search.** (Company and PO No are **not** primary filters; PO No is reserved for a future search-keyword / advanced filter.)
-**Table (line-level — one row per `purchase_order_line`), columns left→right:**
+> **Page-role rename (conceptual — files NOT renamed):** the page previously titled **Purchase Order Overview** is now the **Purchase Order Workspace** (active management / execution / **receive**); the page previously titled **Purchase Order List** is now the **Purchase Order Overview / PO Remaining Overview** (read-oriented remaining/completed view — §7.3). Runtime files keep their names (`purchase-order-overview.*`, `purchase-order-list.*`) until a later rename task. Full authoritative page spec: [`PURCHASE_ORDER_SPEC.md`](./PURCHASE_ORDER_SPEC.md) §1.1.
 
-| Column | Source |
-|--------|--------|
-| SKU | `purchase_order_lines.sku` |
-| Category | `sku_details.category` (join by sku) |
-| Series | `purchase_order_lines.series` → fallback `sku_details.series` |
-| Supplier | `purchase_orders.supplier_name` (→ `supplier_id`) |
-| Factory | `purchase_orders.factory_id` → fallback `warehouse_id` → `warehouses.warehouse_name` |
-| PO No | `purchase_orders.purchase_order_no` (links to PO Overview) |
-| Status | `purchase_orders.status` |
-| Ordered | `purchase_order_lines.ordered_qty` |
-| Completed | `purchase_order_lines.completed_qty` |
-| Shipped | `purchase_order_lines.shipped_qty` |
-| Remaining | `purchase_order_lines.remaining_qty` (fallback `ordered − shipped`) |
-| Updated | `purchase_order_lines.updated_at` → fallback `purchase_orders.updated_at` |
+Purchase Order Workspace adopts the **same Card architecture as Request Order Draft** (`.sp-card`; `.sp-card-details` shown via `.is-expanded`; one expandable Card per Purchase Order). It is the **execution layer** — it inherits the approved request result and does **not** re-decide split/merge (§12.14).
 
-> **Date** = single **Date Range** filter (shared `#frDateModal` / `.fr-*` picker, same as Forecast Review / Shipment Overview) matched against `purchase_orders.created_at`; **Reset** clears the range to "All". Presets: Today / Yesterday / Last 7 / 30 / 60 / 90 days / Last month / Custom range. **Status** filter options = the target PO enum (§6). Category / Series / Supplier / SKU are contains-match. **Factory** requires `purchase_orders.factory_id` / `warehouse_id` (copied from the source Request Order at conversion).
+**Factory tab + selectors (top) — linked:**
+- **Top Tabs = Factory:** **CN侑鑫** · **TW勝一** (each tab scopes the cards to that factory via `purchase_orders.factory_id` → fallback `warehouse_id` → `warehouses.warehouse_name`).
+- **Top-right selectors:** **Series** · **PO No** (`purchase_orders.po_no`).
+- **Linked rule:** the factory tab and the Series / PO selectors are **dependent** — CN tab lists only CN Series / CN POs; TW tab lists only TW Series / TW POs. **Changing the factory tab re-derives (narrows) the selectors and resets any now-invalid selection to "All"** (never silently keep a selection absent from the new factory). Options always come from the current factory-scoped set, never a global list.
+
+**Card groups (below the selector):** **Draft** · **In Production** · **Completed** (three lifecycle groups). **Completed cards do NOT stay in the Workspace active list by default** (they are viewed from the PO Overview / Remaining Overview — §7.3). Each Purchase Order = one expandable Card.
+
+**Card Header (display):**
+- **PO No** (**lighter / normal weight — not heavy-bold**) · **Order Date** (`order_date` = Send PO date; `created_at` fallback) · **Series** · **Supplier Expected Ready** (`supplier_expected_ready_date`).
+- **Parent PO No is REMOVED from the header display** (lineage kept in DB via `parent_purchase_order_id`; not surfaced).
+- **Right actions by group:** **Draft →** Expand · Save · Send PO · Cancel. **In Production →** Expand · **Update** · **Receive**. **Completed →** not in active list by default (read / Update when surfaced).
+
+**Update** — records supplier / production execution changes and **appends timeline history instead of silently overwriting**:
+- **Supplier delay** · **Inspection update** · **Ready date update** (`supplier_expected_ready_date` / `supplier_confirmed_ready_date`) · **Ship date update** · **Production Timeline edits** (`inspection_date` / `expected_completion_date` / `expected_ship_date`, only via Update with reason/note).
+- Each Update **appends** a timeline-history entry (prior value preserved); the system never blind-overwrites a confirmed supplier date. (History persistence table = future; the append-not-overwrite rule is the finalized behavior.)
+
+**Expanded Card — exactly FOUR blocks:**
+
+- **Block 1 — SKU Summary (aggregated by SKU):** **one row per distinct SKU** (company/bucket lines merged). Columns **SKU · KM · ResUS · ResTW · Ordered · Completed · Carton** = per-SKU sums (`km_qty`/`resus_qty`/`restw_qty`/`ordered_qty`/`completed_qty`/`carton_qty`). Footer: **Total SKU · Total Qty · Total Carton**; **Total SKU = `COUNT(DISTINCT sku)`** (§7.4). **Ordered qty is READ-ONLY once the PO exists — a PO does not allow order-qty edits after creation** (quantity is a Decision-Layer decision).
+- **Block 2 — Production Timeline:** **Inspection Date · Expected Completion Date · Expected Ship Date · Outer Carton Lot (future) · Nameplate Version (future).** Prefilled from the PO snapshot; **changeable only via Update with reason/note — no silent overwrite.**
+- **Block 3 — Factory Notes:** future attachment area (placeholder).
+- **Block 4 — Factory Payment:** **Supplier · Deposit · Balance · Total · Payment Status.**
+
+**Receive flow (In Production cards):** **Receive** opens a modal scoped to one PO with line columns **SKU · Ordered Qty · Completed Qty (read-only/gray) · Remaining Qty (`ordered − completed`) · Receive Qty (defaults to Remaining)**. Partial receive allowed (`Receive Qty ≤ Remaining`); cannot exceed remaining or re-receive completed. On confirm: `completed_qty += receive_qty`, `remaining_qty = ordered_qty − completed_qty`. **All lines completed → `order_status = completed`** (+ `completed_at`/`completed_by` if available; PO leaves the active Workspace list). **Partial → `order_status = partial_completed`** (stays In Production). **Receive updates the PO ONLY — never the Request Order, never a Shipment;** Shipment allocation later *consumes* PO remaining/completed (read-only). Full rules: `PURCHASE_ORDER_SPEC.md` §4A / §4B.
+
+**Pagination:** **25 Cards per page**, identical behavior to Request Order Draft (filter/tab/linked-selectors apply before pagination; page resets to 1 on tab / selector / lifecycle-group / filter change).
+
+### 7.3 Purchase Order Overview / PO Remaining Overview — **PO remaining / production-status table** (the page formerly "Purchase Order List")
+
+> **Role (renamed — §7.2):** the **human-readable** view of **PO remaining quantity, production status, and future shipment-allocation readiness**; the primary place to view **completed / historical** POs. **Shipment allocation** will later read PO remaining/completed state here. Full authoritative page spec: [`PURCHASE_ORDER_SPEC.md`](./PURCHASE_ORDER_SPEC.md) §7. File stays `purchase-order-list.*` until a later rename task.
+
+**Main table — SKU rows VISIBLE, no expand required.** The main dimension is the **PO**, but each PO's **SKU rows show directly underneath**. **Final columns (9):**
+
+| # | Column | Source (per SKU within a PO) |
+|---|---|---|
+| 1 | **PO** | `purchase_orders.po_no` (link to Workspace / PO card) + status badge + Ready Date (`expected_completion_date`) underneath |
+| 2 | **Supplier / Factory** | `supplier_name` · `factory_id` → fallback `warehouse_id` → `warehouses.warehouse_name` |
+| 3 | **Category** | `sku_details.category` (join by sku) |
+| 4 | **Series** | `purchase_order_lines.series` → fallback `sku_details.series` |
+| 5 | **SKU** | `purchase_order_lines.sku` |
+| 6 | **Completed** | `SUM(completed_qty)` per SKU |
+| 7 | **Shipped** | `SUM(shipped_qty)` per SKU |
+| 8 | **Remaining** | `SUM(remaining_qty)` per SKU = **available-to-ship** (fallback `completed_qty − shipped_qty`, clamp ≥ 0) |
+| 9 | **Note** | `purchase_order_lines.note` (fallback `--`) |
+
+**Rules:** **PO / Supplier·Factory / Category / Series are visually merged (row-spanned)** when repeated within a PO group; **the same SKU within the same PO is aggregated into one row** (qty columns summed). **Company split (KM / ResUS / ResTW) is NOT shown here** — it is meaningful at creation / Receive / allocation snapshot, but becomes misleading once shipments begin. `remaining = 0` → done (green); `remaining > 0` → active/pending.
+
+**Filters:** **Date · Status · Supplier (dropdown) · Category (dropdown) · Series (dropdown) · SKU (free text) · Search / Reset.** Supplier / Category / Series options are **derived from current PO data**; filters apply **before** tabs + pagination; page resets to 1 on filter/tab change. **Tabs:** In Production (issued / supplier_confirmed / in_production / **partial_completed**) vs Ready / Completed (completed / partial_shipped / shipped / closure). **`draft` POs are NEVER shown here** — this is the PO Remaining / historical overview; Draft POs belong only to the **Purchase Order Workspace**. **Cancelled hidden by default** unless the Status filter explicitly selects `cancelled`. **Pagination = 25 PO groups/page** (not SKU rows). The **PO column is rendered ~25% narrower** than the earlier layout (compact identifier column).
+
+**Order Gantt panel (collapsible, between filters and table):** X = timeline (from visible POs' dates); Y = PO No; one bar/marker per PO across `inspection_date` → `expected_completion_date` → `expected_ship_date`; hover tooltip = PO No · SKU list · per-SKU qty · `expected_completion_date` · `order_status`. Uses the **same filtered PO set** as the table. Default **collapsed / collapsible**. Runtime MVP = simple HTML/CSS timeline (no external library unless already present); ship collapsible panel + data assembly even if bar rendering stays MVP — never fake a completed Gantt.
+
+### 7.4 Total SKU Rule (official — global)
+
+**`Total SKU = COUNT(DISTINCT sku)`, NEVER `COUNT(rows)`.**
+
+- Applies **globally**: Request Order, Purchase Order (Overview + List), Weekly Shipping Plan, Shipment Overview, and any DB field named **`total_sku`** (`request_orders.total_sku`, `purchase_orders.total_sku`, `shipments.total_sku`, …).
+- Because one SKU may appear on multiple lines (per company / per bucket / per tier / per route), row count over-counts. Distinct-SKU counting is the single source of truth for every "Total SKU" figure, card footer, and stored `total_sku` column.
+- `Total Qty` / `Total Carton` remain **summations** over the (non-cancelled) lines; only the **SKU count** is distinct.
 
 ---
 
@@ -390,7 +502,7 @@ Procurement calculation engine · Remaining / Risk / Suggested Order formula · 
 - **Request Order Draft = Decision Layer.** All ordering decisions finish here: **Approved qty, KM/ResUS/ResTW company split, T1 vs T2+T3, schedule dates, tier cancel**. See §7.1.
 - **Purchase Order Overview = Execution Layer.** It **inherits the approved request result** and handles execution info only (supplier / factory / payment / delivery dates). **PO Overview split/merge logic is PAUSED** — it must not re-decide T1/T2/T3 split/merge until an explicit future design. Request↔PO traceability → `request_order_po_links` (future).
 - **Factory display** = `warehouses.warehouse_name`; **`warehouse_id` remains the source of truth** (shown only when no name exists; default Tier 1 = `WH-TW-CN-FACTORY-YOUXIN`).
-- **Company-split storage:** the KM/ResUS/ResTW split is stored **two ways** — (1) denormalized per-line `km_qty` / `resus_qty` / `restw_qty` on `request_order_lines` (matched company = approved, others 0), and (2) the append-only **`request_order_line_sources`** rows written at request creation (source of truth for company/site/month). Each `request_order_line` still maps to **one company**; re-allocating Approved to a company that has **no existing line** for a `(sku, bucket)` is **not supported** (would require creating a new company line = follow-up).
+- **Company-split storage:** the KM/ResUS/ResTW split is stored **two ways** — (1) denormalized per-line `km_qty` / `resus_qty` / `restw_qty` on `request_order_lines` (matched company = approved, others 0), and (2) the append-only **`request_order_line_sources`** rows (source of truth for company/site/month). Each `request_order_line` maps to **one company**. **Manual Allocation Mode (finalized):** re-allocating Approved to a company that has **no existing line** for a `(sku, bucket)` **automatically creates that company's `request_order_line`** (and its `request_order_line_sources` row) — one company = one line = one source, **no ratio allocation**, each company owns its own `approved_qty`. Full rule: **§13 Allocation Persistence Rules**.
 
 ### 3.5 `request_order_site_confirmations` (IMPLEMENTED — Fix 1)
 
@@ -492,27 +604,219 @@ Records per-site confirmation before Series aggregation (site-level review → c
 
 **Wiring (this task):** Apps Script `getRequestOrderAllocationDrafts` (read via `getOperationDb`), `upsertRequestOrderAllocationDraft`, `upsertRequestOrderAllocationDraftLines`, `submitRequestOrderAllocationDrafts`; adapter `KM.DB.getRequestOrderAllocationDrafts()` / `getRequestOrderAllocationDraftLines()` / `upsertRequestOrderAllocationDraft()` / `upsertRequestOrderAllocationDraftLines()` / `submitRequestOrderAllocationDrafts()`. **Send Request** reads eligible (`draft` / `site_confirmed`) lines with `order_qty > 0`, creates `request_orders` / `request_order_lines` via the existing `createRequestOrderDraft` handler (grouped by series + supplier/factory when available; else series with supplier/factory = `--`/pending), then marks the allocation drafts `submitted`. **Demo Mode:** in-memory only (no DB writes; clearly labelled).
 
-## 3.8 `request_order_line_sources` (source of truth for company/site/month allocation — write path pending)
+## 3.8 `request_order_line_sources` — **FINAL schema (company/site/month source breakdown)**
 
-**Purpose:** the **append-only** detail behind each request line — **the source of truth for company / site / month allocation**. Read by the **Company Allocation popup** (Request Order Draft → SKU In Total → click a KM/ResUS/ResTW value).
+**Purpose:** the **append-only** company / site / month **source-of-truth breakdown** behind each request line. Read by the **Company Allocation popup** (Request Order Draft → SKU In Total → click a KM/ResUS/ResTW value). **This is the source-detail table — it MAY keep snapshot fields (forecast / stock / on-the-way / etc.); those must NOT be re-added to `request_order_lines` (§3.2).**
+
+**PK standardized to `request_order_line_source_id`** (the legacy name `line_source_id` is retired; a physical legacy column may be dual-read, never the canonical key).
+
+**Final columns (canonical):**
 
 | Column | Note |
 |---|---|
-| `line_source_id` | PK |
+| `request_order_line_source_id` | **PK** (standard; replaces `line_source_id`) |
 | `request_order_line_id` | FK → `request_order_lines` |
 | `request_order_id` | FK (denormalized, for lookup) |
-| `sku` | |
+| **`tier_type`** | **`T1` / `T2` / `T3`** — the source bucket (mirrors `source_bucket`) |
 | `company` | KM / ResUS / ResTW … |
 | `country` · `marketplace` | site grain |
-| **`tier_type`** | **`T1` / `T2` / `T3`** (added by this spec) |
-| **`source_month`** | **`YYYY-MM`** the demand belongs to (added by this spec) |
-| `requested_qty` · `approved_qty` · `shortage_qty` | per-source quantities |
-| `source_type` | `fc` / `inventory` / `lead_time` / `target_rules` / `manual` … |
-| `note` | free text |
+| `ownership_company` | owning company when it differs from the routing `company` |
+| `warehouse_id` | site/warehouse reference |
+| `site_sku` | **populated when available from `marketplace_skus` / `sku_regional_details`** |
+| `forecast_qty` · `current_stock` · `on_the_way_qty` · `factory_allocated_qty` | snapshot inputs (blank when no source) |
+| `shortage_qty` · `reallocation_qty` · `recommended_qty` | allocation snapshots |
+| `requested_qty` · `approved_qty` | per-source quantities |
+| `allocation_method` | e.g. `manual_order_allocation` |
+| `source_bucket` | **`T1` / `T2` / `T3`** (mirrors `tier_type`) |
+| `source_month` | **`YYYY-MM`** the demand belongs to |
+| `source_priority` | T1=1 / T2=2 / T3=3 |
+| `note` · `created_at` · `updated_at` | audit + note |
 
-**Status (IMPLEMENTED — write + read):**
-- **Write path implemented:** `handleCreateRequestOrderDraft_` (Send Request → official Request Order) appends **one `request_order_line_sources` row per request line** at creation, with finalized header `line_source_id`, `request_order_line_id`, `request_order_id`, `sku`, `company`, `country`, `marketplace`, `tier_type`, `source_month`, `requested_qty`, `approved_qty`, `shortage_qty`, `source_type`, `note`, `created_at`, `updated_at`. `tier_type` ← `request_bucket`; `source_month` ← `request_month`; `country`/`marketplace` flow from the 下單系統 row. Table auto-creates (missing-header safe). **Deprecated columns are NOT created:** `ownership_company`, `warehouse_id`, `site_sku`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `reallocation_qty`, `recommended_qty`, `allocation_method`, `source_bucket`, `source_priority`.
-- **Read path implemented:** `validTabs` includes `request_order_line_sources`; adapter `KM.DB.getRequestOrderLineSources()` + `normalizeRequestOrderLineSourceRecord` (exposes `tierType`, `sourceMonth`; `requestedQty`/`approvedQty`/`shortageQty` as numbers). The **Company Allocation popup** now shows **real source rows**; it still **falls back** to `request_order_lines` grouped by company (**"Site-level source pending."**) for legacy requests created before this write path existed.
+**Rules (finalized):**
+- **One company = one `request_order_line_source`** for each `request_order_line` (mirrors the one-company-per-line rule, §3.2 / §13).
+- **`approved_qty` MUST equal** the matching `request_order_lines.approved_qty` for the **same company + sku + bucket** — **no ratio allocation**.
+- **Sync on Save / Submit / Convert to PO** (same decision qty; snapshot fields never overwritten by sync).
+- **Cancelled request lines must NOT update source rows** (§13.4 / §G).
+- **`tier_type` / `source_bucket`** both store the `T1`/`T2`/`T3` source bucket (kept in sync). `site_sku` is populated from `marketplace_skus` / `sku_regional_details` when resolvable.
+
+**Status:** write + read implemented (`handleCreateRequestOrderDraft_` appends one row per line; adapter `KM.DB.getRequestOrderLineSources()` + `normalizeRequestOrderLineSourceRecord`). The Company Allocation popup shows real source rows and falls back to `request_order_lines` grouped by company (**"Site-level source pending."**) for legacy requests. *(Doc standardizes the PK + full column set; runtime header reconciliation is a runtime-phase follow-up — no code change in this task.)*
+
+---
+
+## 13. Allocation Persistence Rules (official architecture rule)
+
+This is a **foundational architecture rule** for the whole procurement/supply chain layer. It governs how company allocation is persisted and synchronized, and is the basis for **Shipment Allocation**, **Purchase Orders**, and **Factory Allocation**.
+
+### 13.1 Company-based persistence
+
+Request Order persistence is **Company-based**. Primary identity:
+
+```
+request_order_id + company + sku + tier   (tier = request_bucket: T1 / T2 / T3)
+```
+
+- **One Company = one `request_order_line`.**
+- **One Company = one `request_order_line_source`.**
+- Each `request_order_line` carries exactly **one** `company`; its `km_qty` / `resus_qty` / `restw_qty` place `approved_qty` on the matched company column (others `0`, never blank).
+
+### 13.2 Manual Allocation Mode
+
+- When a company row **does not exist** for a `(request_order_id, sku, tier)`, the system **automatically creates it** (both the `request_order_line` and its `request_order_line_source`).
+- **No ratio allocation.** Quantities are never split proportionally.
+- **Each company owns its own `approved_qty`** — the row total (Approved) must equal the sum of the per-company allocations (`km_qty + resus_qty + restw_qty`), validated before Save/Submit.
+
+### 13.3 Synchronization rule
+
+```
+request_order_line_sources.approved_qty  MUST ALWAYS EQUAL  request_order_lines.approved_qty
+        for the same  Company + SKU + Tier
+```
+
+- Synchronization runs the **same decision quantity** into both tables in parallel — **no ratio, no proportional distribution**.
+- Only `approved_qty` (+ `updated_at`) is synchronized; **snapshot fields on `request_order_line_sources`** (forecast_qty / current_stock / on_the_way_qty / shortage_qty / reallocation_qty / recommended_qty / requested_qty / source_month / source_bucket / source_priority / site_sku / marketplace_product_id) are **never** overwritten by sync.
+- **Synchronization occurs on:** **Save** · **Submit** · **Convert to PO**.
+
+### 13.4 Cancelled-line immutability (terminal — official)
+
+**`request_order_lines.line_status = cancelled` is TERMINAL and immutable.** Once cancelled (records `cancelled_by` / `cancelled_at` / `cancel_reason`, §3.2):
+- **Save must NOT overwrite** cancelled lines (no qty / date / status / company-split change).
+- **Submit must NOT reactivate** cancelled lines — Submit **ignores** them (no re-status, no re-stamp).
+- **Approve must NOT approve** cancelled lines — they are skipped.
+- **Convert to PO EXCLUDES** cancelled lines (never copied into the PO snapshot, §15).
+- **`request_order_line_sources` sync IGNORES** cancelled lines (their source rows are not updated).
+- Excluded from company-split validation and from `total_sku` / `total_qty` / `total_cartons` totals.
+- **Rows remain in the DB for audit** — never deleted.
+- **Restore** (if ever needed) must be a **future explicit, audited action** — never automatic.
+
+### 13.5 Downstream foundation
+
+This rule is the **foundation** for:
+- **Shipment Allocation** — company-owned quantities flow to shipment allocation without ratio splitting.
+- **Purchase Orders** — the PO company-split snapshot (`purchase_order_lines.km_qty / resus_qty / restw_qty`, §3.4) is captured per company from the synchronized request source.
+- **Factory Allocation** — factory-side allocation reads company-owned quantities, never a re-derived ratio.
+
+---
+
+## 14. Global Snapshot Architecture Principle (official)
+
+**Each layer copies upstream data into its own snapshot when it commits.**
+
+```
+Forecast / Planning
+        ↓  (copy at commit)
+Request Snapshot        (request_orders / request_order_lines / request_order_line_sources)
+        ↓  (copy at Convert to PO)
+PO Snapshot             (purchase_orders / purchase_order_lines)          — see PURCHASE_ORDER_SPEC.md §8A
+        ↓  (copy at execution commit)
+Shipment Snapshot       (shipments / shipment_lines)
+        ↓
+History
+```
+
+**Rules:**
+- **Downstream layers do NOT live-join upstream data for historical execution truth.** Each committed layer stands on its own stored snapshot.
+- **Joins to master data are allowed only for display labels** — when the stored snapshot value is blank, or when the master label is intentionally display-only (e.g. `warehouse_id → warehouses.warehouse_name`, `sku → sku_details.category/series`). They must **never** replace a stored quantity / date / cost / allocation.
+- **At commit, the downstream layer copies:** quantities, dates, costs, company allocation, supplier / factory decisions, and (for Shipment) execution data. After commit the downstream layer **owns** those fields.
+- **Historical records remain stable** even if upstream planning data changes later — an edit to a Request never mutates an existing PO; an edit to a PO never mutates an existing Shipment.
+- This principle supports **audit, export, BI, API, and future AI explanation** (every layer is independently reproducible from its own row).
+- **Traceability keys** (`request_order_id`, `request_order_line_id`, `purchase_order_line_id`, …) are kept **for lineage only**, not for live recomputation.
+
+### 14.1 Snapshot Completeness Principle (official)
+
+**Every downstream snapshot must contain ALL data required to execute independently.** A downstream module must **never** depend on live upstream planning tables to reconstruct execution data.
+
+- **PO must be executable without live-reading the Request Order** — every field it needs (qty, company split, dates, cost, supplier/factory, bucket) is copied at Convert to PO (§15).
+- **Shipment must be executable without live-reading the Request Order** — it copies from **PO / Shipping Plan** execution snapshots, never recalculating from the Request.
+- **History must remain stable** even if upstream data changes later.
+- A downstream row that is missing a needed value **fills it at commit** (copy), not by a later live join; master-data joins remain display-label only.
+
+---
+
+## 15. Convert to PO — Field Mapping Table & Split Rule (finalized)
+
+### 15.1 T1 vs T2+T3 PO Split Rule
+
+When converting an **Approved** Request Order to PO:
+
+- **Cancelled `request_order_lines` are EXCLUDED** (§13.4).
+- Active **T1** lines create **one independent PO card** (`purchase_orders.request_bucket = T1`).
+- Active **T2 and T3** lines create **one independent combined PO card** (`purchase_orders.request_bucket = T2_T3`).
+- If only T1 exists → create only the **T1 PO**. If only T2/T3 exists → create only the **T2_T3 PO**. If both exist → create **two PO records** (`T1` and `T2_T3`).
+- **Never merge T1 with T2/T3.**
+- Each PO **header** stores `request_bucket` (`T1` or `T2_T3`); each PO **line** stores its **original** `request_bucket` (`T1` / `T2` / `T3`).
+
+### 15.2 Request Order Header → Purchase Order Header
+
+| Request Order (source) | Purchase Order (target) |
+|---|---|
+| `request_orders.request_order_id` | `purchase_orders.request_order_id` |
+| `request_orders.request_order_no` | lineage / `note` only if needed |
+| `request_orders.company` | `purchase_orders.company` |
+| `request_orders.supplier_id` | `purchase_orders.supplier_id` |
+| `request_orders.supplier_name` | `purchase_orders.supplier_name` |
+| `request_orders.warehouse_id` | `purchase_orders.warehouse_id` |
+| `request_orders.warehouse_id` + `warehouses` | `purchase_orders.factory_id` / factory display (`warehouse_name`) |
+| `request_orders.currency` | `purchase_orders.currency` |
+| `request_orders.note` | `purchase_orders.note` |
+| `request_bucket` group (`T1` / `T2_T3`) | `purchase_orders.request_bucket` |
+| matching request-bucket line dates | `purchase_orders.inspection_date` / `expected_completion_date` / `expected_ship_date` |
+| created actor | `purchase_orders.created_by` |
+| system timestamp | `purchase_orders.created_at` (and `order_date` = Send PO date) |
+
+### 15.3 Request Order Line → Purchase Order Line
+
+| Request Order Line (source) | Purchase Order Line (target) |
+|---|---|
+| `request_order_lines.request_order_line_id` | `purchase_order_lines.request_order_line_id` |
+| `request_order_lines.request_order_id` | `purchase_order_lines.request_order_id` |
+| `request_order_lines.request_bucket` | `purchase_order_lines.request_bucket` (original `T1`/`T2`/`T3`) |
+| `request_order_lines.company` | `purchase_order_lines.company` |
+| `request_order_lines.sku` | `purchase_order_lines.sku` |
+| `request_order_lines.series` | `purchase_order_lines.series` |
+| `request_order_lines.factory_item_no` | `purchase_order_lines.factory_item_no` |
+| `request_order_lines.factory_item_name` | `purchase_order_lines.factory_item_name` |
+| `request_order_lines.supplier_id` | `purchase_order_lines.supplier_id` |
+| `request_order_lines.supplier_name` | `purchase_order_lines.supplier_name` |
+| `request_order_lines.supplier_sku` | `purchase_order_lines.supplier_sku` |
+| `request_order_lines.supplier_warehouse_id` | `purchase_order_lines.supplier_warehouse_id` |
+| `request_order_lines.km_qty` | `purchase_order_lines.km_qty` |
+| `request_order_lines.resus_qty` | `purchase_order_lines.resus_qty` |
+| `request_order_lines.restw_qty` | `purchase_order_lines.restw_qty` |
+| `request_order_lines.recommended_qty` | `purchase_order_lines.recommended_qty` |
+| `request_order_lines.requested_qty` | `purchase_order_lines.requested_qty` |
+| `request_order_lines.approved_qty` | `purchase_order_lines.approved_qty` (audit) |
+| `request_order_lines.approved_qty` | `purchase_order_lines.ordered_qty` |
+| `request_order_lines.shortage_qty` | audit only (no target column) |
+| `request_order_lines.reallocation_qty` | audit only (no target column) |
+| `request_order_lines.carton_qty` | `purchase_order_lines.carton_qty` |
+| `request_order_lines.units_per_carton` | `purchase_order_lines.units_per_carton` |
+| `request_order_lines.unit_cost` | `purchase_order_lines.unit_cost` |
+| `request_order_lines.currency` | `purchase_order_lines.currency` |
+| `request_order_lines.line_status` | `purchase_order_lines.line_status` |
+| `request_order_lines.inspection_date` | `purchase_order_lines.inspection_date` |
+| `request_order_lines.expected_ready_date` | `purchase_order_lines.expected_completion_date` |
+| `request_order_lines.expected_ship_date` | `purchase_order_lines.expected_ship_date` |
+| `request_order_lines.note` | `purchase_order_lines.note` |
+
+### 15.4 Derived fields (computed at conversion)
+
+| Field | Rule |
+|---|---|
+| `purchase_order_lines.completed_qty` | `0` |
+| `purchase_order_lines.shipped_qty` | `0` |
+| `purchase_order_lines.remaining_qty` | `0` (= `completed_qty − shipped_qty`; available-to-ship, both `0` at creation — NOT `ordered_qty`) |
+| `purchase_order_lines.line_amount` | `ordered_qty × unit_cost` |
+| `purchase_orders.total_sku` | `COUNT(DISTINCT purchase_order_lines.sku)` |
+| `purchase_orders.total_qty` | `SUM(ordered_qty)` |
+| `purchase_orders.total_cartons` | `SUM(purchase_order_lines.carton_qty)` |
+| `purchase_orders.total_amount` | `SUM(line_amount)` |
+| `purchase_orders.subtotal_amount` | `SUM(line_amount)` |
+| `purchase_orders.deposit_amount` | `subtotal_amount × deposit ratio` if known, else blank |
+| `purchase_orders.balance_amount` | `subtotal_amount − deposit_amount` if deposit known, else blank |
+| `purchase_orders.supplier_expected_ready_date` | mirrors `expected_completion_date` (← `request_order_lines.expected_ready_date`) |
+| `purchase_orders.supplier_confirmed_ready_date` | blank at creation; set on supplier confirmation / delay Update |
+| `purchase_orders.order_date` | **blank** at Convert (stamped at Send PO) |
+| `purchase_orders.deposit_due_date` | **blank** at Convert (= `order_date` + 5 business days; stamped at Send PO) |
 
 ---
 

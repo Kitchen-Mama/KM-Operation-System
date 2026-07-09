@@ -33,6 +33,10 @@
         converted_to_po: 'Converted to PO', cancelled: 'Cancelled'
     };
 
+    // Canonical company list. In Manual Allocation Mode a Draft row ALWAYS renders these three editable
+    // inputs (missing company = 0), independent of which request_order_lines / _sources already exist.
+    var RO_CANON_COMPANIES = ['KM', 'ResUS', 'ResTW'];
+
     // Per-card request_order_lines cache (id -> lines), used as the Company Allocation popup fallback
     // when request_order_line_sources has no rows for a SKU/company.
     var roLinesCache = {};
@@ -174,7 +178,16 @@
         // Cancelled lines are hidden (X = soft cancel). If the whole request is cancelled it is filtered upstream.
         var active = roLines.filter(function (l) { return l.lineStatus !== 'cancelled'; });
         var model = buildRowModel(active);
-        var companies = model.companies;
+        var companies = model.companies;   // companies actually present on lines (drives the header summary)
+
+        // A2 — Manual Allocation Mode: DRAFT cards always expose KM / ResUS / ResTW so any company can be
+        // (re)allocated even if it had no original line. Companies without a line render as editable 0-cells
+        // and, when given a qty, create a new request_order_line on Save (line-per-company model).
+        var tableCompanies = companies;
+        if (isDraft) {
+            tableCompanies = RO_CANON_COMPANIES.slice();
+            companies.forEach(function (c) { if (tableCompanies.indexOf(c) === -1) tableCompanies.push(c); });
+        }
 
         // Company summary from the real per-line company column (KM / ResUS / ResTW …).
         var companyList = companies.filter(function (c) { return c !== '—'; });
@@ -212,9 +225,9 @@
             '<div class="sp-card-details">' +
                 rejectedBanner +
                 '<div class="ro-decision-grid">' +
-                    renderTotalBlock(id, companies) +
-                    renderTierBlock(o, 'T1', 'T1 Request', t1Rows, companies, isDraft, active) +
-                    renderTierBlock(o, 'T2T3', 'T2 + T3 Request', t23Rows, companies, isDraft, active) +
+                    renderTotalBlock(id, tableCompanies) +
+                    renderTierBlock(o, 'T1', 'T1 Request', t1Rows, tableCompanies, isDraft, active) +
+                    renderTierBlock(o, 'T2T3', 'T2 + T3 Request', t23Rows, tableCompanies, isDraft, active) +
                 '</div>' +
             '</div>' +
         '</div>';
@@ -257,12 +270,30 @@
             var rk = safeKey(id) + '_' + tier + '_' + i;
             var rowReq = r.requested;
             var upc = r.upc || 0;
-            // Row total from the per-company approved values; lock the split when it still equals Requested.
+            // Row total from the per-company approved values.
             var rowApproved = companies.reduce(function (s, co) { return s + (r.cells[co] ? num(r.cells[co].approved) : 0); }, 0);
-            var locked = !isDraft || (rowApproved === rowReq);
+            // Company allocation total across the canonical KM / ResUS / ResTW (Allocation Persistence basis).
+            var companyTotal = RO_CANON_COMPANIES.reduce(function (s, co) { return s + (r.cells[co] ? num(r.cells[co].approved) : 0); }, 0);
+            // A2 — Manual Allocation Mode determined at ROW RENDER TIME: active when the row's Approved qty
+            // (rowApproved) does NOT equal the KM+ResUS+ResTW company allocation total. When active, ALL three
+            // canonical company inputs are editable and any missing company defaults to 0 — independent of which
+            // request_order_lines / _sources already exist. It also turns on live the moment the user makes
+            // Approved diverge from the company sum (roOnApprovedInput, sticky via data-manual).
+            var manualAllocationMode = isDraft && (rowApproved !== companyTotal);
+            var locked = !isDraft || !manualAllocationMode;   // company inputs are editable only in Manual Allocation Mode
             var coCells = companies.map(function (co) {
                 var cell = r.cells[co];
-                if (!cell) return '<td class="pc-num">--</td>';
+                if (!cell) {
+                    // Non-draft: no line for this company → static placeholder.
+                    if (!isDraft) return '<td class="pc-num">--</td>';
+                    // A2 — Manual Allocation phantom cell: no line yet. Editable when the row is unlocked;
+                    // on Save (qty > 0) a NEW request_order_line is created for this company (data-new-line).
+                    return '<td class="pc-num"><input type="number" min="0" step="1" class="ro-co-input pc-input pc-input--qty' + (locked ? '' : ' ro-co-editable') + '" ' +
+                        'data-card="' + esc(id) + '" data-rk="' + rk + '" data-company="' + esc(co) + '" data-req="0" ' +
+                        'data-new-line="1" data-sku="' + esc(r.sku) + '" data-bucket="' + esc(r.bucket) + '" data-upc="' + upc + '" ' +
+                        (locked ? 'readonly ' : '') + 'value="0" ' +
+                        'oninput="roOnCompanyInput(this)" style="text-align:right;width:80px;"></td>';
+                }
                 var val = num(cell.approved);
                 return '<td class="pc-num"><input type="number" min="0" step="1" class="ro-co-input pc-input pc-input--qty' + (locked ? '' : ' ro-co-editable') + '" ' +
                     'data-line-id="' + esc(cell.lineId) + '" data-card="' + esc(id) + '" data-rk="' + rk + '" ' +
@@ -274,6 +305,7 @@
             var apprInput = isDraft
                 ? '<input type="number" min="0" step="1" class="ro-appr-input pc-input pc-input--qty" ' +
                     'data-card="' + esc(id) + '" data-rk="' + rk + '" data-tier="' + tier + '" data-req="' + rowReq + '" data-upc="' + upc + '" ' +
+                    'data-manual="' + (manualAllocationMode ? '1' : '') + '" ' +
                     'value="' + rowApproved + '" oninput="roOnApprovedInput(this)" style="text-align:right;width:90px;">'
                 : rowApproved.toLocaleString();
             var bucketTag = ' <span class="ro-bucket-tag">' + esc(r.bucket) + '</span>';
@@ -364,23 +396,36 @@
     function rowCompanyInputs(card, rk) {
         return Array.prototype.slice.call(card.querySelectorAll('.ro-co-input[data-rk="' + rk + '"]'));
     }
-    // Edit Approved: lock company split when Approved == Requested (reset to requested split); unlock otherwise.
+    // Toggle editability of all company inputs of a row (KM / ResUS / ResTW, including phantom cells).
+    function setRowCompaniesEditable_(card, rk, editable) {
+        rowCompanyInputs(card, rk).forEach(function (ci) {
+            ci.readOnly = !editable;
+            ci.classList.toggle('ro-co-editable', editable);
+        });
+    }
+    // Edit Approved: enter Manual Allocation Mode the moment Approved != the company allocation total
+    // (KM + ResUS + ResTW). Manual mode is STICKY (data-manual on the Approved input) so once entered the
+    // user can freely redistribute across all three companies — including a company that had no line (its
+    // phantom input becomes editable, default 0, and creates a new request_order_line on Save). No auto-reset.
     function onApprovedInput(input) {
         var card = document.getElementById('ro-card-' + input.getAttribute('data-card'));
         if (!card) return;
         var rk = input.getAttribute('data-rk');
-        var req = num(input.getAttribute('data-req'));
         var approved = parseInt(input.value, 10) || 0;
-        var coInputs = rowCompanyInputs(card, rk);
-        if (approved === req) {
-            coInputs.forEach(function (ci) { ci.value = num(ci.getAttribute('data-req')); ci.readOnly = true; ci.classList.remove('ro-co-editable'); });
-        } else {
-            coInputs.forEach(function (ci) { ci.readOnly = false; ci.classList.add('ro-co-editable'); });
+        var coSum = rowCompanyInputs(card, rk).reduce(function (s, ci) { return s + (parseInt(ci.value, 10) || 0); }, 0);
+        if (approved !== coSum) input.setAttribute('data-manual', '1');   // sticky: stays manual once diverged
+        setRowCompaniesEditable_(card, rk, input.getAttribute('data-manual') === '1');
+        recomputeCard(input.getAttribute('data-card'));
+    }
+    // Edit a company cell → keep Manual Allocation Mode active (sticky) and recompute + validate live.
+    function onCompanyInput(input) {
+        var card = document.getElementById('ro-card-' + input.getAttribute('data-card'));
+        if (card) {
+            var appr = card.querySelector('.ro-appr-input[data-rk="' + input.getAttribute('data-rk') + '"]');
+            if (appr) appr.setAttribute('data-manual', '1');
         }
         recomputeCard(input.getAttribute('data-card'));
     }
-    // Edit a company cell → recompute (Approved input stays the target; validated on Save/Submit).
-    function onCompanyInput(input) { recomputeCard(input.getAttribute('data-card')); }
 
     // Rebuild the read-only SKU In Total block + header totals from the tier inputs (company sums).
     function recomputeCard(id) {
@@ -498,26 +543,50 @@
     // ---- actions (all API-ready via KM.DB.*) ----
     // Collect per-line edits: each company cell = one request_order_line's approved_qty; schedule fields
     // (per tier) are applied to every line in that tier; optional tier note likewise.
+    // Stable payload key per company cell: existing line → its line id; A2 phantom cell (no line, qty > 0)
+    // → a NEW:: key that the backend turns into a new request_order_line (line-per-company). Phantom cells
+    // with qty 0 are ignored (no empty line created). Returns null when the cell should be skipped.
+    function cellPayloadKey(ci) {
+        var lid = ci.getAttribute('data-line-id');
+        if (lid) return { key: lid, isNew: false };
+        if (ci.getAttribute('data-new-line') === '1') {
+            var qty = parseInt(ci.value, 10) || 0;
+            if (qty <= 0) return null;   // nothing to allocate → no new line
+            return { key: 'NEW::' + ci.getAttribute('data-rk') + '::' + ci.getAttribute('data-company'), isNew: true };
+        }
+        return null;
+    }
+
     function collectDraftLineEdits(id) {
         var card = document.getElementById('ro-card-' + id);
         if (!card) return [];
         var byLine = {};
         card.querySelectorAll('.ro-co-input').forEach(function (ci) {
-            var lid = ci.getAttribute('data-line-id'); if (!lid) return;
-            byLine[lid] = byLine[lid] || { request_order_line_id: lid };
-            byLine[lid].approved_qty = parseInt(ci.value, 10) || 0;
+            var k = cellPayloadKey(ci); if (!k) return;
+            if (k.isNew) {
+                byLine[k.key] = byLine[k.key] || {
+                    new_line: true,
+                    request_order_id: id,
+                    sku: ci.getAttribute('data-sku') || '',
+                    company: ci.getAttribute('data-company') || '',
+                    request_bucket: ci.getAttribute('data-bucket') || '',
+                    units_per_carton: parseFloat(ci.getAttribute('data-upc')) || 0
+                };
+            } else {
+                byLine[k.key] = byLine[k.key] || { request_order_line_id: k.key };
+            }
+            byLine[k.key].approved_qty = parseInt(ci.value, 10) || 0;
         });
-        // Schedule per tier → map onto that tier's line ids.
+        // Schedule per tier → map onto that tier's line ids AND any new lines being created in that tier.
         card.querySelectorAll('.ro-tier').forEach(function (tierEl) {
             var sched = {};
             tierEl.querySelectorAll('.ro-sched').forEach(function (s) { sched[s.getAttribute('data-field')] = String(s.value || '').trim(); });
             if (!Object.keys(sched).length) return;
             tierEl.querySelectorAll('.ro-co-input').forEach(function (ci) {
-                var lid = ci.getAttribute('data-line-id'); if (!lid) return;
-                byLine[lid] = byLine[lid] || { request_order_line_id: lid };
-                if (sched.inspection_date !== undefined) byLine[lid].inspection_date = sched.inspection_date;
-                if (sched.expected_ready_date !== undefined) byLine[lid].expected_ready_date = sched.expected_ready_date;
-                if (sched.expected_ship_date !== undefined) byLine[lid].expected_ship_date = sched.expected_ship_date;
+                var k = cellPayloadKey(ci); if (!k || !byLine[k.key]) return;   // only attach to rows we are sending
+                if (sched.inspection_date !== undefined) byLine[k.key].inspection_date = sched.inspection_date;
+                if (sched.expected_ready_date !== undefined) byLine[k.key].expected_ready_date = sched.expected_ready_date;
+                if (sched.expected_ship_date !== undefined) byLine[k.key].expected_ship_date = sched.expected_ship_date;
             });
         });
         return Object.keys(byLine).map(function (k) { return byLine[k]; });
@@ -528,8 +597,11 @@
         if (bad.length) { alert('Cannot save — fix these first:\n\n' + bad.join('\n')); return; }
         var lines = collectDraftLineEdits(id);
         if (!lines.length) { alert('Nothing to save.'); return; }
-        window.KM.DB.updateRequestOrderLineQty({ lines: lines }).then(function () {
-            alert('Draft saved.'); loadAndRender();
+        window.KM.DB.updateRequestOrderLineQty({ lines: lines }).then(function (data) {
+            // Surface any source-sync warnings (e.g. missing request_order_line_sources row) — non-blocking.
+            var warns = (data && data.warnings) || [];
+            alert(warns.length ? ('Draft saved with warnings:\n\n' + warns.join('\n')) : 'Draft saved.');
+            loadAndRender();
         }).catch(function (e) { alert('Save failed: ' + (e && e.message ? e.message : e)); });
     }
 
@@ -696,10 +768,19 @@
     }
 
     function convertToPo(id) {
-        if (!confirm('Convert this approved request into a Purchase Order (Draft PO)?')) return;
+        if (!confirm('Convert this approved request into Purchase Order(s)?\n\nActive T1 → one PO; active T2+T3 → one combined PO. Cancelled lines are excluded.')) return;
         window.KM.DB.createPurchaseOrderFromRequest({ request_order_id: id, actor: 'operation-system' })
             .then(function (data) {
-                alert('Purchase Order created: ' + ((data && data.purchase_order_no) || 'OK') + '\n\nOpen Purchase Order Overview to continue.');
+                // PO v2 may create up to two POs (T1 and T2_T3). Support the array; fall back to the single-PO shape.
+                var pos = (data && data.purchase_orders) || [];
+                var msg;
+                if (pos.length) {
+                    msg = pos.length + ' Purchase Order' + (pos.length > 1 ? 's' : '') + ' created:\n\n' +
+                        pos.map(function (p) { return '• ' + (p.request_bucket || '') + ': ' + (p.po_no || p.purchase_order_no || p.purchase_order_id); }).join('\n');
+                } else {
+                    msg = 'Purchase Order created: ' + ((data && data.purchase_order_no) || 'OK');
+                }
+                alert(msg + '\n\nOpen Purchase Order Workspace to continue.');
                 loadAndRender();
             })
             .catch(function (e) { alert('Convert failed: ' + (e && e.message ? e.message : e)); });

@@ -19,10 +19,27 @@
         return (cur ? esc(cur) + ' ' : '') + Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
     }
     function dash(v) { var s = String(v == null ? '' : v).trim(); return s ? esc(s) : '--'; }
+    // Date-only display (strip any time/timezone the cell might carry).
+    function dateOnly(v) {
+        var s = String(v == null ? '' : v).trim();
+        if (!s) return '--';
+        var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return m ? (m[1] + '-' + m[2] + '-' + m[3]) : esc(s);
+    }
+    // Canonical order_status (falls back to legacy status for old rows).
+    function poStatus(o) { return String(o.orderStatus || o.status || '').trim().toLowerCase(); }
     function useDb() {
         return !!(window.KM && window.KM.DB && window.KM.DB.isCloudWriteEnabled &&
             window.KM.DB.isCloudWriteEnabled() && window.KM.DB.getPurchaseOrders);
     }
+
+    // Pagination (25 PO rows / page). Reset to 1 on filter / search / reset / date-apply / tab-switch.
+    var POL_PAGE_SIZE = 25;
+    var polPage = 1;
+    // Active tab: 'in_production' (default) | 'ready'.
+    var polTab = 'in_production';
+    // Order Gantt panel — default COLLAPSED.
+    var polGanttOpen = false;
 
     // PO status labels (target enum per REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md §6). Legacy
     // Phase-1 values (confirmed / ready_to_ship / partially_shipped) still displayed if present.
@@ -42,7 +59,9 @@
         if (!tbody) return;
         if (!useDb()) {
             if (note) note.innerHTML = '<span class="procurement-page__note--demo">Demo mode — connect the Operation DB (Google Sheet) to query Purchase Orders. No live data is shown.</span>';
-            tbody.innerHTML = '<tr><td colspan="12" class="procurement-empty">Purchase Orders are stored in the Operation DB. Enable the cloud DB to use this page.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty">Purchase Orders are stored in the Operation DB. Enable the cloud DB to use this page.</td></tr>';
+            var meta0 = document.getElementById('pol-result-meta'); if (meta0) meta0.innerHTML = '';
+            var pg0 = document.getElementById('pol-pagination'); if (pg0) pg0.style.display = 'none';
             return;
         }
         if (note) note.innerHTML = '';
@@ -53,83 +72,397 @@
         }
     }
 
-    // Line-level PO List (one row per purchase_order_line). Columns: SKU / Category / Series /
-    // Supplier / Factory / PO No / Status / Ordered / Completed / Shipped / Remaining / Updated.
-    // Category & Series joined from sku_details by sku; Factory from PO factory_id / warehouse name.
-    function renderRows() {
-        var tbody = document.getElementById('pol-tbody');
-        if (!tbody) return;
+    // ── Tab classification (In Production vs Ready / Completed) ─────────────────
+    // Cancelled is classified into Ready/Completed (with a cancelled badge) so it never
+    // pollutes active production; it also surfaces when the Status filter picks cancelled.
+    // NOTE: `draft` is intentionally NOT in either tab — this page is the PO Remaining /
+    // historical overview; Draft POs live only in the Purchase Order Workspace and are
+    // excluded entirely in applyFilters().
+    var IN_PRODUCTION_STATUS = {
+        issued: 1, supplier_confirmed: 1, confirmed: 1,
+        in_production: 1, partial_completed: 1
+    };
+    var READY_STATUS = {
+        completed: 1, partial_shipped: 1, partially_shipped: 1, shipped: 1,
+        ready_to_ship: 1, closure: 1, cancelled: 1
+    };
+    function tabOf(status) {
+        if (READY_STATUS[status]) return 'ready';
+        if (IN_PRODUCTION_STATUS[status]) return 'in_production';
+        return 'in_production';   // unknown/legacy → active production by default
+    }
+
+    // Build one model per PURCHASE ORDER (not per line): header + aggregated line detail.
+    // buildModels() joins sku_details (category/series) and warehouses (factory name), groups
+    // purchase_order_lines by purchase_order_id, and computes PO-level qty + distinct-SKU totals.
+    function buildModels() {
         var orders = window.KM.DB.getPurchaseOrders() || [];
         var lines = window.KM.DB.getPurchaseOrderLines() || [];
-        var poById = {};
-        orders.forEach(function (o) { poById[o.purchaseOrderId] = o; });
 
-        // sku_details → category / series; warehouses → name (Factory display fallback).
         var skuInfo = {};
         ((window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).forEach(function (s) {
             skuInfo[String(s.sku || '').toLowerCase()] = { category: s.category || '', series: s.series || '' };
         });
         var whName = {};
         ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || []).forEach(function (w) {
-            if (w.warehouseId) whName[w.warehouseId] = w.warehouseName || w.warehouseId;
+            if (w.warehouseId) whName[String(w.warehouseId).trim().toUpperCase()] = w.warehouseName || '';
+        });
+        // Factory display, fallback order: (1) warehouse_name by warehouse_id, (2) warehouse_name by
+        // factory_id, (3) raw factory_id, (4) raw warehouse_id, (5) '' → dash() renders '--'.
+        // warehouse_id resolves to a name FIRST — never show a raw factory_id when warehouse_id maps.
+        function factoryLabel(o) {
+            var fid = String(o.factoryId || '').trim(), wid = String(o.warehouseId || '').trim();
+            return (wid && whName[wid.toUpperCase()]) || (fid && whName[fid.toUpperCase()]) || fid || wid || '';
+        }
+
+        var linesByPo = {};
+        lines.forEach(function (l) {
+            var id = l.purchaseOrderId;
+            if (!id) return;
+            (linesByPo[id] = linesByPo[id] || []).push(l);
         });
 
+        return orders.map(function (o) {
+            var poLines = linesByPo[o.purchaseOrderId] || [];
+            var distinct = {}, seriesSet = {}, catSet = {};
+            var ordered = 0, completed = 0, shipped = 0, remaining = 0;
+            var detail = poLines.map(function (l) {
+                var info = skuInfo[String(l.sku || '').toLowerCase()] || { category: '', series: '' };
+                var category = info.category || '';
+                var series = l.series || info.series || '';
+                // remaining_qty = available-to-ship = completed_qty − shipped_qty (clamp ≥ 0).
+                var rem = (l.remainingQty === '' || l.remainingQty == null)
+                    ? Math.max(0, num(l.completedQty) - num(l.shippedQty)) : num(l.remainingQty);
+                var sku = String(l.sku || '').trim();
+                if (sku) distinct[sku.toLowerCase()] = sku;
+                if (series) seriesSet[series] = 1;
+                if (category) catSet[category] = 1;
+                ordered += num(l.orderedQty);
+                completed += num(l.completedQty);
+                shipped += num(l.shippedQty);
+                remaining += num(rem);
+                return { l: l, category: category, series: series, remaining: rem };
+            });
+            var skuList = Object.keys(distinct).map(function (k) { return distinct[k]; });
+
+            // Aggregate the SAME SKU within this PO into ONE row (qty columns summed).
+            // Company split (km/resus/restw) is intentionally NOT carried here (§7.1).
+            var bySku = {};
+            detail.forEach(function (d) {
+                var sku = String(d.l.sku || '').trim();
+                var key = sku.toLowerCase() || '(blank)';
+                if (!bySku[key]) bySku[key] = { sku: sku, category: d.category, series: d.series, completed: 0, shipped: 0, remaining: 0, note: '' };
+                var row = bySku[key];
+                row.completed += num(d.l.completedQty);
+                row.shipped += num(d.l.shippedQty);
+                row.remaining += num(d.remaining);
+                if (!row.category && d.category) row.category = d.category;
+                if (!row.series && d.series) row.series = d.series;
+                if (!row.note && d.l.note) row.note = String(d.l.note).trim();
+            });
+            var skuRows = Object.keys(bySku).map(function (k) { return bySku[k]; });
+            // Sort by Category → Series → SKU so repeated Category/Series are contiguous (row-span merge).
+            skuRows.sort(function (a, b) {
+                return String(a.category).localeCompare(String(b.category)) ||
+                    String(a.series).localeCompare(String(b.series)) ||
+                    String(a.sku).localeCompare(String(b.sku));
+            });
+
+            return {
+                o: o,
+                lines: detail,
+                skuRows: skuRows,
+                factory: factoryLabel(o),
+                status: poStatus(o),
+                skuList: skuList,
+                skuCount: skuList.length,
+                seriesList: Object.keys(seriesSet),
+                categoryList: Object.keys(catSet),
+                ordered: ordered, completed: completed, shipped: shipped, remaining: remaining
+            };
+        });
+    }
+
+    // Populate Supplier / Category / Series dropdowns from the current PO List data
+    // (option values are the raw strings; selection is preserved across reloads).
+    function populateFilterOptions(models) {
+        var suppliers = {}, categories = {}, series = {};
+        models.forEach(function (m) {
+            var sup = String(m.o.supplierName || m.o.supplierId || '').trim();
+            if (sup) suppliers[sup] = 1;
+            m.categoryList.forEach(function (c) { if (c) categories[c] = 1; });
+            m.seriesList.forEach(function (s) { if (s) series[s] = 1; });
+        });
+        function fill(id, map) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var current = el.value;
+            var opts = Object.keys(map).sort(function (a, b) { return a.localeCompare(b); });
+            el.innerHTML = '<option value="">All</option>' + opts.map(function (v) {
+                return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+            }).join('');
+            if (current && map[current]) el.value = current; else el.value = '';
+        }
+        fill('pol-f-supplier', suppliers);
+        fill('pol-f-category', categories);
+        fill('pol-f-series', series);
+    }
+
+    // Apply header + line filters (dropdowns exact-match; SKU is free-text contains).
+    // Tab filtering is applied separately by the active tab.
+    function applyFilters(models) {
         var fStatus = val('pol-f-status');
-        var fSupplier = val('pol-f-supplier').toLowerCase();
-        var fCategory = val('pol-f-category').toLowerCase();
-        var fSeries = val('pol-f-series').toLowerCase();
+        var fSupplier = val('pol-f-supplier');
+        var fCategory = val('pol-f-category');
+        var fSeries = val('pol-f-series');
         var fSku = val('pol-f-sku').toLowerCase();
         var fFrom = polDateState.createdFrom, fTo = polDateState.createdTo;
-
-        var rows = [];
-        lines.forEach(function (l) {
-            var o = poById[l.purchaseOrderId];
-            if (!o) return;
-            // Header-level filters (Status / Supplier / Date range on PO created_at).
-            if (fStatus && o.status !== fStatus) return;
-            if (fSupplier && (String(o.supplierName || '') + ' ' + String(o.supplierId || '')).toLowerCase().indexOf(fSupplier) === -1) return;
+        return models.filter(function (m) {
+            var o = m.o;
+            // Draft POs never appear here (Remaining/historical overview) — they belong to the Workspace.
+            if (m.status === 'draft') return false;
+            if (fStatus && m.status !== fStatus) return false;
+            if (fSupplier && String(o.supplierName || o.supplierId || '').trim() !== fSupplier) return false;
+            if (fCategory && m.categoryList.indexOf(fCategory) === -1) return false;
+            if (fSeries && m.seriesList.indexOf(fSeries) === -1) return false;
+            if (fSku && m.skuList.join(' ').toLowerCase().indexOf(fSku) === -1) return false;
             var created = String(o.createdAt || '').slice(0, 10);
-            if (fFrom && created && created < fFrom) return;
-            if (fTo && created && created > fTo) return;
-            // Line-level: Category / Series (join sku_details), SKU.
-            var info = skuInfo[String(l.sku || '').toLowerCase()] || { category: '', series: '' };
-            var category = info.category || '';
-            var series = l.series || info.series || '';
-            if (fSku && String(l.sku || '').toLowerCase().indexOf(fSku) === -1) return;
-            if (fCategory && String(category).toLowerCase().indexOf(fCategory) === -1) return;
-            if (fSeries && String(series).toLowerCase().indexOf(fSeries) === -1) return;
-            rows.push({ o: o, l: l, category: category, series: series });
+            if (fFrom && created && created < fFrom) return false;
+            if (fTo && created && created > fTo) return false;
+            return true;
         });
+    }
 
+    // PO Remaining Overview — PO groups with SKU rows VISIBLE (no expand). Repeated
+    // PO / Supplier·Factory / Category / Series cells are row-span merged; same SKU inside
+    // a PO is aggregated into one row (§7). Company split (KM/ResUS/ResTW) is NOT shown.
+    function renderRows() {
+        var tbody = document.getElementById('pol-tbody');
+        if (!tbody) return;
+
+        var models = buildModels();
+        populateFilterOptions(models);
+
+        // Filter first, then split by tab (pagination is per-tab PO groups).
+        var filtered = applyFilters(models);
+        var inProd = filtered.filter(function (m) { return tabOf(m.status) === 'in_production'; });
+        var ready = filtered.filter(function (m) { return tabOf(m.status) === 'ready'; });
+        renderTabCounts(inProd.length, ready.length);
+
+        var rows = (polTab === 'ready' ? ready : inProd).slice();
         // Newest first by PO created_at.
         rows.sort(function (a, b) { return String(b.o.createdAt || '').localeCompare(String(a.o.createdAt || '')); });
 
+        var meta = document.getElementById('pol-result-meta');
+        var pg = document.getElementById('pol-pagination');
+
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="12" class="procurement-empty">No purchase order lines match the filters.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty">No purchase orders match the filters.</td></tr>';
+            if (meta) meta.innerHTML = '';
+            if (pg) pg.style.display = 'none';
+            renderGantt([]);
             return;
         }
 
-        tbody.innerHTML = rows.map(function (r) {
-            var o = r.o, l = r.l;
-            var factory = String(o.factoryId || '').trim() || (o.warehouseId && whName[o.warehouseId]) || o.warehouseId || '';
-            var remaining = (l.remainingQty === '' || l.remainingQty == null) ? (num(l.orderedQty) - num(l.shippedQty)) : num(l.remainingQty);
-            var updated = l.updatedAt || o.updatedAt || '';
-            return '<tr>' +
-                '<td>' + dash(l.sku) + '</td>' +
-                '<td>' + dash(r.category) + '</td>' +
-                '<td>' + dash(r.series) + '</td>' +
-                '<td>' + dash(o.supplierName || o.supplierId) + '</td>' +
-                '<td>' + dash(factory) + '</td>' +
-                '<td><a href="#" class="pol-po-link" onclick="polOpenOverview(\'' + esc(o.purchaseOrderId) + '\');return false;">' + dash(o.purchaseOrderNo || o.purchaseOrderId) + '</a></td>' +
-                '<td><span class="procurement-badge procurement-badge--' + esc(o.status) + '">' + esc(PO_STATUS_LABEL[o.status] || o.status) + '</span></td>' +
-                '<td class="pc-num">' + num(l.orderedQty).toLocaleString() + '</td>' +
-                '<td class="pc-num">' + num(l.completedQty).toLocaleString() + '</td>' +
-                '<td class="pc-num">' + num(l.shippedQty).toLocaleString() + '</td>' +
-                '<td class="pc-num">' + num(remaining).toLocaleString() + '</td>' +
-                '<td>' + dash(updated) + '</td>' +
-            '</tr>';
+        // List meta: PO count + distinct SKU + total remaining (across the active tab).
+        var distinct = {}, totalRemaining = 0;
+        rows.forEach(function (m) {
+            m.skuList.forEach(function (s) { distinct[s.toLowerCase()] = 1; });
+            totalRemaining += num(m.remaining);
+        });
+        if (meta) {
+            meta.innerHTML = '<strong>' + rows.length + '</strong> PO' + (rows.length === 1 ? '' : 's') +
+                ' · <strong>' + Object.keys(distinct).length + '</strong> SKU' + (Object.keys(distinct).length === 1 ? '' : 's') + ' (distinct)' +
+                ' · <strong>' + totalRemaining.toLocaleString() + '</strong> remaining';
+        }
+
+        // Gantt renders the SAME filtered + tab set (all groups, not just the current page).
+        renderGantt(rows);
+
+        // Pagination — 25 PO GROUPS / page.
+        var totalPages = Math.max(1, Math.ceil(rows.length / POL_PAGE_SIZE));
+        if (polPage > totalPages) polPage = totalPages;
+        var start = (polPage - 1) * POL_PAGE_SIZE;
+        var pageRows = rows.slice(start, start + POL_PAGE_SIZE);
+
+        tbody.innerHTML = pageRows.map(renderPoGroup).join('');
+
+        if (pg) {
+            if (rows.length <= POL_PAGE_SIZE) { pg.style.display = 'none'; pg.innerHTML = ''; }
+            else {
+                pg.style.display = '';
+                var from = start + 1, to = Math.min(polPage * POL_PAGE_SIZE, rows.length);
+                pg.innerHTML =
+                    '<button class="pc-btn pc-btn--default" ' + (polPage <= 1 ? 'disabled' : '') + ' onclick="polGoPage(' + (polPage - 1) + ')">‹ Previous</button>' +
+                    '<span class="pol-page-info">Page ' + polPage + ' of ' + totalPages + ' · showing ' + from + '–' + to + ' of ' + rows.length + ' POs</span>' +
+                    '<button class="pc-btn pc-btn--default" ' + (polPage >= totalPages ? 'disabled' : '') + ' onclick="polGoPage(' + (polPage + 1) + ')">Next ›</button>';
+            }
+        }
+    }
+
+    // Render one PO group = a block of <tr> (one per aggregated SKU) with row-span merged
+    // PO / Supplier·Factory (whole group) and Category / Series (consecutive-equal runs).
+    function renderPoGroup(m) {
+        var o = m.o;
+        var id = o.purchaseOrderId;
+        var poNo = o.poNo || o.purchaseOrderNo || id;
+        var status = m.status;
+        var skuRows = m.skuRows.length ? m.skuRows
+            : [{ sku: '', category: '', series: '', completed: 0, shipped: 0, remaining: 0, note: '' }];
+        var span = skuRows.length;
+
+        // Category / Series run-lengths (rows are pre-sorted by category → series → sku).
+        function runStart(i, key) {
+            return i === 0 || skuRows[i][key] !== skuRows[i - 1][key] ||
+                (key === 'series' && skuRows[i].category !== skuRows[i - 1].category);
+        }
+        function runLen(i, key) {
+            var n = 1;
+            while (i + n < skuRows.length && skuRows[i + n][key] === skuRows[i][key] &&
+                (key !== 'series' || skuRows[i + n].category === skuRows[i].category)) n++;
+            return n;
+        }
+
+        // PO cell (rowspan whole group): PO No link + status badge + ready date.
+        // Inline min-width overrides .pol-cell--po (150px) → 112px, i.e. 25% narrower PO column.
+        var poCell = '<td class="pol-cell pol-cell--po" rowspan="' + span + '" style="min-width:112px;">' +
+            '<a href="#" class="pol-po-link" onclick="polOpenOverview(\'' + esc(id) + '\');return false;">' + dash(poNo) + '</a>' +
+            '<span class="pol-po-badge procurement-badge procurement-badge--' + esc(status) + '">' + esc(PO_STATUS_LABEL[status] || status || '--') + '</span>' +
+            '<span class="pol-secondary">Ready: ' + dateOnly(o.expectedCompletionDate) + '</span></td>';
+        // Supplier / Factory cell (rowspan whole group).
+        var supCell = '<td class="pol-cell" rowspan="' + span + '">' +
+            '<span class="pol-primary">' + dash(o.supplierName || o.supplierId) + '</span>' +
+            '<span class="pol-secondary">' + dash(m.factory) + '</span></td>';
+
+        return skuRows.map(function (r, i) {
+            var cells = '';
+            if (i === 0) cells += poCell + supCell;
+            if (runStart(i, 'category')) cells += '<td class="pol-cell pol-merge" rowspan="' + runLen(i, 'category') + '">' + dash(r.category) + '</td>';
+            if (runStart(i, 'series')) cells += '<td class="pol-cell pol-merge" rowspan="' + runLen(i, 'series') + '">' + dash(r.series) + '</td>';
+            var remCls = (num(r.remaining) <= 0) ? 'pol-rem--done' : 'pol-rem--active';
+            cells += '<td class="pol-cell">' + dash(r.sku) + '</td>' +
+                '<td class="pol-cell pc-num">' + num(r.completed).toLocaleString() + '</td>' +
+                '<td class="pol-cell pc-num">' + num(r.shipped).toLocaleString() + '</td>' +
+                '<td class="pol-cell pc-num"><span class="pol-rem ' + remCls + '">' + num(r.remaining).toLocaleString() + '</span></td>' +
+                '<td class="pol-cell">' + dash(r.note) + '</td>';
+            var cls = 'pol-sku-row' + (i === 0 ? ' pol-group-start' : '');
+            return '<tr class="' + cls + '">' + cells + '</tr>';
         }).join('');
     }
+
+    // ── Order Gantt (collapsible MVP) ──────────────────────────────────────────
+    // X = timeline (min→max of visible POs' schedule dates); Y = PO No; one bar per PO
+    // spanning inspection → expected_completion → expected_ship, with per-date ticks.
+    function toMs(v) {
+        var s = String(v == null ? '' : v).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+        var d = new Date(s + 'T00:00:00');
+        return isNaN(d.getTime()) ? null : d.getTime();
+    }
+    function msToDate(ms) {
+        var d = new Date(ms);
+        var mm = String(d.getMonth() + 1).padStart(2, '0');
+        var dd = String(d.getDate()).padStart(2, '0');
+        return d.getFullYear() + '-' + mm + '-' + dd;
+    }
+    function renderGantt(models) {
+        var body = document.getElementById('pol-gantt-body');
+        if (!body) return;
+        if (!polGanttOpen) { return; }   // collapsed → skip render work until opened
+
+        // Assemble lanes: each PO with ≥1 schedule date.
+        var lanes = [], noSchedule = 0, gMin = null, gMax = null;
+        models.forEach(function (m) {
+            var o = m.o;
+            var dIns = toMs(o.inspectionDate), dComp = toMs(o.expectedCompletionDate), dShip = toMs(o.expectedShipDate);
+            var pts = [dIns, dComp, dShip].filter(function (x) { return x != null; });
+            if (!pts.length) { noSchedule++; return; }
+            var lo = Math.min.apply(null, pts), hi = Math.max.apply(null, pts);
+            if (gMin === null || lo < gMin) gMin = lo;
+            if (gMax === null || hi > gMax) gMax = hi;
+            lanes.push({ m: m, lo: lo, hi: hi, ins: dIns, comp: dComp, ship: dShip });
+        });
+
+        if (!lanes.length) {
+            body.innerHTML = '<div class="pol-gantt-empty">No PO schedule dates (inspection / expected completion / expected ship) in the current filter' +
+                (noSchedule ? ' — ' + noSchedule + ' PO' + (noSchedule === 1 ? '' : 's') + ' without dates' : '') + '.</div>';
+            return;
+        }
+        var range = Math.max(1, gMax - gMin);
+        function pct(ms) { return ((ms - gMin) / range) * 100; }
+
+        // X-axis ticks: start · mid · end.
+        var mid = gMin + range / 2;
+        var axis = '<div class="pol-gantt-axis">' +
+            '<span style="left:0%">' + msToDate(gMin) + '</span>' +
+            '<span style="left:50%">' + msToDate(mid) + '</span>' +
+            '<span style="left:100%">' + msToDate(gMax) + '</span></div>';
+
+        var lanesHtml = lanes.map(function (ln) {
+            var m = ln.m, o = m.o;
+            var poNo = o.poNo || o.purchaseOrderNo || o.purchaseOrderId;
+            var left = pct(ln.lo), width = Math.max(1.5, pct(ln.hi) - pct(ln.lo));
+            // Tooltip: PO No · SKU list + per-SKU qty · expected completion · status.
+            var skuLines = m.skuRows.map(function (r) {
+                return '  ' + (r.sku || '(blank)') + ': C' + num(r.completed) + '/S' + num(r.shipped) + '/R' + num(r.remaining);
+            }).join('\n');
+            var tip = poNo + '\nSKUs:\n' + (skuLines || '  --') +
+                '\nExpected Completion: ' + dateOnly(o.expectedCompletionDate) +
+                '\nStatus: ' + (PO_STATUS_LABEL[m.status] || m.status || '--');
+            function tick(ms, cls, label) {
+                if (ms == null) return '';
+                return '<span class="pol-gantt-tick ' + cls + '" style="left:' + pct(ms) + '%" title="' + esc(label) + '"></span>';
+            }
+            return '<div class="pol-gantt-lane" title="' + esc(tip) + '">' +
+                '<div class="pol-gantt-label"><a href="#" class="pol-po-link" onclick="polOpenOverview(\'' + esc(o.purchaseOrderId) + '\');return false;">' + dash(poNo) + '</a></div>' +
+                '<div class="pol-gantt-track">' +
+                    '<div class="pol-gantt-bar pol-gantt-bar--' + esc(m.status) + '" style="left:' + left + '%;width:' + width + '%"></div>' +
+                    tick(ln.ins, 'tick-ins', 'Inspection: ' + dateOnly(o.inspectionDate)) +
+                    tick(ln.comp, 'tick-comp', 'Expected Completion: ' + dateOnly(o.expectedCompletionDate)) +
+                    tick(ln.ship, 'tick-ship', 'Expected Ship: ' + dateOnly(o.expectedShipDate)) +
+                '</div></div>';
+        }).join('');
+
+        var legend = '<div class="pol-gantt-legend">' +
+            '<span><i class="tick-ins"></i>Inspection</span>' +
+            '<span><i class="tick-comp"></i>Expected Completion</span>' +
+            '<span><i class="tick-ship"></i>Expected Ship</span>' +
+            (noSchedule ? '<span class="pol-gantt-note">' + noSchedule + ' PO' + (noSchedule === 1 ? '' : 's') + ' hidden (no dates)</span>' : '') +
+            '</div>';
+        body.innerHTML = legend + axis + '<div class="pol-gantt-lanes">' + lanesHtml + '</div>';
+    }
+
+    // Toggle the collapsible Gantt panel.
+    function toggleGantt() {
+        polGanttOpen = !polGanttOpen;
+        var panel = document.getElementById('pol-gantt');
+        var caret = document.getElementById('pol-gantt-caret');
+        if (panel) panel.classList.toggle('is-open', polGanttOpen);
+        if (caret) caret.textContent = polGanttOpen ? '▾' : '▸';
+        if (polGanttOpen) renderRows();   // build lanes on first open / refresh
+    }
+
+    // Tab count badges.
+    function renderTabCounts(inProd, ready) {
+        var a = document.getElementById('pol-tab-count-in_production');
+        var b = document.getElementById('pol-tab-count-ready');
+        if (a) a.textContent = '(' + inProd + ')';
+        if (b) b.textContent = '(' + ready + ')';
+    }
+
+    // Switch tab (resets to page 1).
+    function setTab(tab) {
+        polTab = (tab === 'ready') ? 'ready' : 'in_production';
+        document.querySelectorAll('#pol-tabs .pol-tab').forEach(function (el) {
+            el.classList.toggle('is-active', el.dataset.tab === polTab);
+        });
+        polPage = 1;
+        renderRows();
+    }
+
+    // Search resets to page 1 (filters apply before pagination); pagination buttons keep the page.
+    function search() { polPage = 1; renderRows(); }
+    function goPage(p) { polPage = Math.max(1, p); renderRows(); }
 
     // View → lightweight modal listing the PO lines.
     function view(id) {
@@ -178,14 +511,13 @@
     function closeView() { var m = document.getElementById('pol-view-modal'); if (m) m.remove(); }
 
     function openOverview(id) {
-        // Navigate to the PO Overview page (same-DB cards). Deep-link/scroll is future work.
+        // Navigate to the PO Overview v2 page (same-DB cards). Deep-link/scroll is best-effort:
+        // the card may be on another page of the Overview's own pagination.
         if (typeof showSection === 'function') showSection('purchase-order-overview');
-        // Give the lifecycle mount a beat, then expand the matching card if present.
         setTimeout(function () {
             var card = document.getElementById('po-card-' + id);
             if (card && typeof window.poToggleCard === 'function') {
-                var details = card.querySelector('.procurement-card__details');
-                if (details && details.style.display === 'none') window.poToggleCard(id);
+                if (!card.classList.contains('is-expanded')) window.poToggleCard(id);   // v2 uses .is-expanded
                 card.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }, 200);
@@ -200,6 +532,7 @@
         polDateState.createdFrom = '';
         polDateState.createdTo = '';
         polUpdateDateTriggerText();
+        polPage = 1;   // filters changed → back to page 1
         renderRows();
     }
 
@@ -298,6 +631,7 @@
         polDateState.createdTo = polDateState.dateRange.end ? polFormatDate(polDateState.dateRange.end) : '';
         polUpdateDateTriggerText();
         polCloseDateModal();
+        polPage = 1;   // date filter changed → back to page 1
         renderRows();
     }
 
@@ -404,7 +738,10 @@
         return Promise.resolve(false);
     }
 
-    window.polSearch = renderRows;
+    window.polSearch = search;
+    window.polGoPage = goPage;
+    window.polSetTab = setTab;
+    window.polToggleGantt = toggleGantt;
     window.polReset = reset;
     window.polView = view;
     window.polCloseView = closeView;

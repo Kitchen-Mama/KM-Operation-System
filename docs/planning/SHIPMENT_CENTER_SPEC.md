@@ -1,9 +1,9 @@
 # Shipment Center / Shipment Draft / Shipment Overview — Specification
 
-**Status:** 🟡 Draft v2.3 — Architecture / Spec only (NO code, NO DB, NO implementation)
-**Last Updated:** 2026-06-17
+**Status:** 🟡 Draft v2.4 — Architecture / Spec only (NO code, NO DB, NO implementation) — adds §21 Shipment Logistics Attribute Aggregation (battery/magnet auto-aggregate; carrier matching uses shipment-level)
+**Last Updated:** 2026-07-07
 **Maintained By:** Development Team
-**Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), `assets/specs/active/SYSTEM_ROADMAP.md`
+**Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) (Global Logistics Enums §4.5 / matching §4 / resolution §4.6), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md)
 
 > **Spec only.** This document defines architecture, flow, UI, and data relationships for the Shipment layer. It does **not** introduce code, Apps Script, API, UI, DB migration, or runtime changes. New tables/fields described here are *planned* design, not implemented.
 >
@@ -72,7 +72,8 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 - No `factory_name`. Use `warehouse_id` → `warehouses`.
 - **Upstream production-readiness data.** Shipment Center MVP must **not** depend on it for shipment execution; shipment allocation primarily uses `purchase_order_lines.remaining_qty` / `completed_qty`. `production_schedule` may later estimate future available stock / expected completion.
 
-**`shipments`** — `shipment_id, shipment_no, external_shipment_id, shipping_plan_id, reference_id, warehouse_id, warehouse_code, company, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, status, sales_order_id, booking_no, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, total_qty, total_cartons, total_cbm, total_gross_weight, total_net_weight, freight_cost_actual, duty_actual, currency, shipped_at, shipped_by, hidden_from_draft_at, hidden_from_draft_by, note, created_by, created_at, updated_by, updated_at`
+**`shipments`** — `shipment_id, shipment_no, external_shipment_id, shipping_plan_id, reference_id, warehouse_id, warehouse_code, company, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, transit_type, last_mile_delivery, customs_type, battery_flag, battery_type, magnet_flag, status, sales_order_id, booking_no, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, total_qty, total_cartons, total_cbm, total_gross_weight, total_net_weight, freight_cost_actual, duty_actual, currency, shipped_at, shipped_by, hidden_from_draft_at, hidden_from_draft_by, note, created_by, created_at, updated_by, updated_at`
+- **Aggregated logistics attributes** (`battery_flag`, `battery_type`, `magnet_flag`) are **auto-calculated from `shipment_lines`, never user-editable** — see **§21 Shipment Logistics Attribute Aggregation**. `transit_type` / `last_mile_delivery` / `customs_type` use the Global Logistics Enums (`CARRIER_AND_ROUTE_SPEC.md` §4.5) and are the shipment-level keys used for carrier matching (with the aggregated battery/magnet). *(These header columns are **planned** additions — spec only; not yet migrated.)*
 - **`shipment_id` = internal DB primary key** (e.g. `SH-2A9E06E1-A`) — **system-generated, never user-editable**. `shipment_lines.shipment_id` is the FK to it and is never changed by the UI.
 - **`external_shipment_id` = the user-facing / carrier shipment number** — **editable** (≠ internal `shipment_id` PK, which is never editable). Auto-generated at Execution Commit as **`COMPANY-MKT-YYMMDD-##`** where:
   - **COMPANY** = `company` uppercased with non-alphanumerics removed (e.g. `Res US` → `RESUS`, `KM`, `RESTW`);
@@ -239,6 +240,7 @@ Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Re
 > - **Filter:** a compact top-right **Country + Status** filter (Status = All / Draft / Ready to Ship / Shipped). **No Marketplace, no Date / SKU / Shipping Method / Search** — the full filter bar belongs to Shipment Overview only.
 > - **Card header (left):** Shipment No · Status · Plan id. **(right):** **Marketplace · Company · Country · Destination (`--` if blank) · Method · Pcs · ETD · ETA**.
 > - **SKU Lines** (clean title, no long caption): SKU · Qty · Cartons · **Carton CBM · Gross Wt · Net Wt · Carton No. Start · Carton No. End** (no standalone CBM column), plus a **totals row** (Total SKU / Qty / Ctn. / **Total Carton CBM = Σ(carton_cbm × carton_qty)** / Gross Wt / Net Wt). **`carton_no_start` / `carton_no_end` are editable numeric inputs** (Draft / Ready to Ship); saved to `shipment_lines`.
+>   - **Total SKU Rule (official — global):** the **Total SKU** figure (and any `shipments.total_sku` field) = **`COUNT(DISTINCT sku)`, NEVER `COUNT(rows)`**. Qty / Ctn. / CBM / weights remain summations; only the SKU **count** is distinct. Same rule across Request Order, Purchase Order, Weekly Shipping Plan, Shipment Overview — see `DATABASE_RELATIONSHIP_MAP.md` §7.5A.
 > - **Execution Fields (clean 2-column form):** **Shipment ID (external, editable = `external_shipment_id`)**, Carrier (**read-only**), Reference ID, Warehouse Code, Tracking No, Booking No, Container No, BL No, Invoice No, ETD, ETA, **Remark**. The **internal `shipment_id` is shown read-only and never editable**. **Never editable:** the six-key context, `qty` / `carton_qty`, copied logistics + Decision Snapshot. **Remark mapping: the UI "Remark" field maps to `shipments.note`.**
 > - **Carton No. validation (§12):** integers only; `start ≤ end`; **ranges must not overlap within the same shipment**. On error the offending inputs get a red border + message, and **Save / Ready to Ship / Ship are blocked** (frontend + server-side in `updateShipment`).
 > - **Save vs Ship (FINAL):** **Save** only updates execution fields — no history, no Overview, not a shipment. **Ship** requires status `shipped`, sets **`shipped_at` = now**, **`shipped_by` = `system_user`** placeholder, and only then does the shipment enter **Shipment Overview**.
@@ -279,6 +281,15 @@ Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Re
 ---
 
 ## 6. FIFO PO Allocation Design
+
+> **Allocation Persistence foundation.** Shipment allocation inherits the **Allocation Persistence Rules** (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §13 / `DATABASE_RELATIONSHIP_MAP.md` §7.5B): company-owned quantities are **company-based** (one company = one line/source), flow downstream **without ratio splitting**, and cancelled source rows are immutable. FIFO consumes company-owned committed quantities; it does **not** re-derive a proportional split.
+
+> **Shipment = Execution Snapshot (reference only).** Per the **Global Snapshot Architecture Principle** + **Snapshot Completeness Principle** (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §14 / §14.1 · `DATABASE_RELATIONSHIP_MAP.md` §7.5C):
+> - Shipment **never reads the Request Order directly** for execution truth.
+> - Shipment **never recalculates allocation**.
+> - Shipment **copies from PO / Shipping Plan execution snapshots** at execution commit and thereafter owns its own snapshot.
+> - The PO **`request_bucket`** + **company allocation snapshot** (`purchase_order_lines.km_qty` / `resus_qty` / `restw_qty`, RO&PO §3.4) support **future shipment allocation**.
+> - Master-data joins are **display-label only**. *(Reference note — Shipment spec is not otherwise changed by this task.)*
 
 **When:** runs by default at **Confirm Shipment / Ready to Ship**.
 
@@ -584,43 +595,13 @@ shipment_lines.net_weight   = qty * item_weight
 
 > **Generated documents are derived outputs, not source-of-truth records.** They are assembled from the authoritative shipment/PO/SKU/warehouse data; regenerating a document must not change underlying records.
 
-**MVP document DB (unchanged):**
+> **Authoritative architecture: [`DOCUMENT_GENERATION_SYSTEM_SPEC.md`](./DOCUMENT_GENERATION_SYSTEM_SPEC.md).** The earlier MVP two-table sketch is **superseded** by the shared three-table system — **`document_templates`** (registry), **`document_template_fields`** (placeholder mapping layer), **`generated_documents`** (output log). Do **not** maintain a separate shipment-only schema here; field/token definitions live in `document_template_fields`.
+>
+> - **Shipment Document Dataset → many templates → `generated_documents`** (§20): one shared dataset per shipment renders multiple document templates.
+> - **Token-to-field mapping lives in `document_template_fields`** (per template, per placeholder — scalar vs collection per the Document Generation spec §E/§F).
+> - Shipment documents use the **Shipment Snapshot only** — never live-read the Request Order, never recalculate allocation (Document Generation spec §I).
 
-**`document_templates`** —
-```
-template_id
-template_name
-document_type
-carrier_id
-country
-marketplace
-language
-template_file_type
-template_file_id
-template_drive_url
-template_version
-is_active
-created_at
-updated_at
-```
-
-**`generated_documents`** —
-```
-document_id
-template_id
-related_entity_type
-related_entity_id
-document_type
-file_name
-file_id
-file_url
-generated_by
-generated_at
-status
-note
-```
-
-**Document-type catalog** (`document_type`): `PURCHASE_ORDER`, `SHIPMENT_DETAIL_SHEET`, `CARRIER_BOOKING_FORM`, `COMMERCIAL_INVOICE`, `PACKING_LIST`, `COMMERCIAL_INVOICE_PACKING_COMBINED`, `CUSTOMS_DECLARATION`, `CERTIFICATE_OF_ORIGIN`, `MSDS`, `OTHER`.
+**Document-type catalog** (`document_type`): `PURCHASE_ORDER`, `SHIPMENT_DETAIL_SHEET`, `CARRIER_BOOKING_FORM`, `COMMERCIAL_INVOICE`, `PACKING_LIST`, `COMMERCIAL_INVOICE_PACKING_COMBINED`, `CUSTOMS_DECLARATION`, `CERTIFICATE_OF_ORIGIN`, `MSDS`, `OTHER`. (Canonical enum: Document Generation spec §G.)
 
 **Shipment-focused document types (this spec):** `SHIPMENT_DETAIL_SHEET`, `CARRIER_BOOKING_FORM`, `COMMERCIAL_INVOICE`, `PACKING_LIST`, `COMMERCIAL_INVOICE_PACKING_COMBINED`.
 
@@ -841,6 +822,35 @@ Save generated_documents
 
 ---
 
-**Draft v2.3 — Spec only. No code, DB, or implementation changes are implied by this document.**
+## 21. Shipment Logistics Attribute Aggregation (FINALIZED — SPEC ONLY)
+
+Shipment-level logistics attributes are **automatically calculated from the shipment's lines and are NOT user-overridable.** They are the values the future Carrier Price Engine matches on (`CARRIER_AND_ROUTE_SPEC.md` §4 matching / §4.5 enums) — **carrier matching always uses the shipment-level aggregate, never an individual SKU's value.**
+
+Each `shipment_lines.sku` resolves its per-SKU logistics attributes from `sku_details` (`battery_type`, `magnet_type` — Global Logistics Enums, `CARRIER_AND_ROUTE_SPEC.md` §4.5). The shipment header then aggregates:
+
+### 21.1 Battery Rule
+
+- **`shipments.battery_flag` = TRUE** if **ANY** line's SKU has `battery_type != no_battery`; otherwise FALSE.
+- **`shipments.battery_type` = the highest logistics level present** across all lines, by priority:
+
+  `rechargeable_lithium` (3) > `lithium_battery` (2) > `alkaline_battery` (1) > `no_battery` (0)
+
+  (When `battery_flag` is FALSE — every line is `no_battery` — `battery_type` = `no_battery`.)
+
+### 21.2 Magnet Rule
+
+- **`shipments.magnet_flag` = TRUE** if **ANY** line's SKU has `magnet_type = magnetic`; otherwise FALSE.
+
+### 21.3 Rules & Provenance
+
+- **Auto-calculated, read-only.** The UI never lets a user set `battery_flag` / `battery_type` / `magnet_flag` directly — they derive from the lines. (Consistent with the Execution-Snapshot principle: the shipment records what its lines contain.)
+- **Recompute basis:** derived from the shipment's lines at Execution Commit (and re-derived if lines change while still editable). No manual override path exists.
+- **Carrier matching** consumes `shipments.battery_type` (highest level) and `shipments.magnet_flag` — **not** per-SKU values (`CARRIER_AND_ROUTE_SPEC.md` §4: destination → `battery_type` → `customs_type` → `transit_type` → `last_mile_delivery`). `customs_type` / `transit_type` / `last_mile_delivery` are shipment-level route/handling attributes (from the plan / routing), also stored on the header.
+- **Enum source of truth:** `battery_type` / `magnet_type` values follow the Global Logistics Enums (`CARRIER_AND_ROUTE_SPEC.md` §4.5). DB stores English enums; UI may localize.
+- **No engine, no code, no migration in this spec** — the header columns (§0) are **planned** additions; aggregation is defined here for the future Carrier Price Engine + Shipment execution layer.
+
+---
+
+**Draft v2.4 — Spec only. No code, DB, or implementation changes are implied by this document.** (v2.4: added §21 Shipment Logistics Attribute Aggregation + planned `battery_flag`/`battery_type`/`magnet_flag`/`transit_type`/`last_mile_delivery`/`customs_type` header fields.)
 
 **End of Document**
