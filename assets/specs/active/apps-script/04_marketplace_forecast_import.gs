@@ -246,6 +246,8 @@ function handleImportMarketplaceSkusBatch_(body) {
     if (!resolvedAsin && rowMpIdForAsin && mpAsinByIdSku[rowMpIdForAsin + '||' + sku]) resolvedAsin = mpAsinByIdSku[rowMpIdForAsin + '||' + sku];
     if (!resolvedAsin && mpAsinByComposite[compositeKey]) resolvedAsin = mpAsinByComposite[compositeKey];
     if (!resolvedAsin && skuMap[sku] && skuMap[sku].asin) resolvedAsin = skuMap[sku].asin;
+    // product_url — regional-only identity field. Taken from the Add SKU input (blank when not supplied).
+    var resolvedProductUrl = String(row.product_url || '').trim();
 
     // SKU Domain v2.0 — Flow B: sku_regional_details is the HIGHER-PRIORITY source for site_sku /
     // marketplace_product_id. If a regional row already exists, its values override the operational input.
@@ -296,7 +298,7 @@ function handleImportMarketplaceSkusBatch_(body) {
 
       // SKU Domain v2.0 — operational edit → regional: keep sku_regional_details identity in sync
       // (creates the regional row if absent). Regional stays the higher-priority source.
-      try { skuRegionalSyncIdentity_(ss, sku, company, country, marketplace, siteSku, resolvedAsin); } catch (e) {}
+      try { skuRegionalSyncIdentity_(ss, sku, company, country, marketplace, siteSku, resolvedAsin, resolvedProductUrl); } catch (e) {}
 
       results.push({ rowIndex: rowIndex, sku: sku, status: 'updated', message: 'marketplace_skus updated' + (asinSynced ? ' + pricing_list product id synced' : '') + ' (prices untouched)', marketplace_sku_id: existingMpSkuId, pricing_id: '', forecast_id: '' });
       continue;
@@ -329,9 +331,10 @@ function handleImportMarketplaceSkusBatch_(body) {
     mpKeyToRow[compositeKey] = { row: -1, id: mpId };
     mpIdToRow[mpId] = { row: -1, key: compositeKey };
 
-    // SKU Domain v2.0 — Flow A: ensure a matching sku_regional_details row (copy identity; no overwrite
-    // if it already exists). Compliance-document fields stay blank until filled on the Regional page.
-    try { skuRegionalEnsure_(ss, { sku: sku, company: company, country: country, marketplace: marketplace, site_sku: siteSku, marketplace_product_id: resolvedAsin }); } catch (e) {}
+    // SKU Domain v2.0 — Flow A: ensure/update the matching sku_regional_details row. Syncs identity
+    // (site_sku / marketplace_product_id / product_url) creating the row if absent; NEVER overwrites
+    // compliance-document fields. Regional stays the higher-priority source.
+    try { skuRegionalSyncIdentity_(ss, sku, company, country, marketplace, siteSku, resolvedAsin, resolvedProductUrl); } catch (e) {}
 
     // pricing_list (create if missing; never overwrite existing)
     var pricingId = '';

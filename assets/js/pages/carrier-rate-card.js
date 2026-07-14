@@ -314,7 +314,7 @@
     // Everything NOT in these two lists is written but HIDDEN (preserved for import traceability, incl. rate_card_id).
     var CRC_UPDATE_VISIBLE_REF = ['carrier_name', 'origin_country', 'destination_country', 'destination_warehouse_code',
         'destination_city', 'destination_postal_code_start', 'destination_postal_code_end', 'shipping_method',
-        'last_mile_delivery', 'battery_type', 'weight_tier', 'weight_tier_unit', 'currency', 'charge_unit'];
+        'last_mile_delivery', 'shipping_method_label', 'battery_type', 'weight_tier', 'weight_tier_unit', 'currency', 'charge_unit'];
     var CRC_UPDATE_VISIBLE_EDIT = ['unit_rate', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee',
         'effective_from', 'effective_to', 'status', 'note'];
     // Hidden-but-preserved columns (Part C). row_type + all fields not in the visible lists.
@@ -336,14 +336,15 @@
         effective_from: 'yyyy-mm-dd',
         effective_to: 'blank = open-ended (no expiration)',
         rate_card_id: 'blank creates a NEW row; filled UPDATES the existing row',
-        carrier_id: 'blank can be resolved from carrier_name (must match an existing carrier; unknown = rejected)'
+        carrier_id: 'blank can be resolved from carrier_name (must match an existing carrier; unknown = rejected)',
+        shipping_method_label: 'Localized display name (e.g. 美森海派 / 空派). Admin-editable in Master; locked in Update.'
     };
     var CRC_COLS_FALLBACK = ['row_type', 'rate_card_id', 'carrier_id', 'carrier_name', 'origin_country', 'origin_city',
         'destination_country', 'destination_city', 'destination_postal_code_start', 'destination_postal_code_end',
         'destination_warehouse_code', 'marketplace', 'shipping_method', 'last_mile_delivery', 'charge_type', 'charge_unit',
         'dim_divisor', 'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit', 'currency',
         'unit_rate', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee', 'transit_type', 'battery_type',
-        'customs_type', 'note', 'effective_from', 'effective_to', 'status'];
+        'customs_type', 'shipping_method_label', 'note', 'effective_from', 'effective_to', 'status'];
 
     function crcXlsxReady() {
         if (!window.KM || !window.KM.templateExport || !window.KM.templateExport.isReady()) {

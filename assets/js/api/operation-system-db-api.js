@@ -81,6 +81,8 @@ function normalizeSkuDetailsRecord(raw) {
     return {
         sku: s(r.sku),
         productName: String(r.product_name || ''),
+        productNameCn: String(r.product_name_cn || ''),   // Chinese customs/product name (nullable)
+        productUse: s(r.product_use),                     // customs-facing product usage description (nullable)
         category: category,
         productLine: category,
         series: String(r.series || ''),
@@ -655,7 +657,9 @@ function normalizeShippingPlanLineRecord(raw) {
         sku: String(r.sku || '').trim(),
         requestedQty: parseFloat(r.requested_qty) || 0,
         approvedQty: parseFloat(r.approved_qty) || 0,
-        cartonQty: parseFloat(r.carton_qty) || 0,
+        // CANONICAL plan_carton_qty with legacy carton_qty read-fallback. cartonQty kept as UI alias.
+        planCartonQty: parseFloat((r.plan_carton_qty === '' || r.plan_carton_qty == null) ? r.carton_qty : r.plan_carton_qty) || 0,
+        cartonQty: parseFloat((r.plan_carton_qty === '' || r.plan_carton_qty == null) ? r.carton_qty : r.plan_carton_qty) || 0,
         unitsPerCarton: parseFloat(r.units_per_carton) || 0,
         sourcePage: String(r.source_page || '').trim(),
         sourceReason: String(r.source_reason || '').trim(),
@@ -699,6 +703,13 @@ function normalizeShipmentRecord(raw) {
         carrierId: String(r.carrier_id || '').trim(),
         rateCardId: String(r.rate_card_id || '').trim(),
         shippingMethod: String(r.shipping_method || '').trim(),
+        lastMileDelivery: String(r.last_mile_delivery || '').trim(),
+        // Localized display-name SNAPSHOT (copied from carrier_rate_cards at creation). Fallback for
+        // legacy rows without it: shipping_method + '_' + last_mile_delivery.
+        shippingMethodLabel: String(r.shipping_method_label || '').trim() ||
+            [String(r.shipping_method || '').trim(), String(r.last_mile_delivery || '').trim()].filter(Boolean).join('_'),
+        // Customs method SNAPSHOT (copied from carrier_rate_cards.customs_type; confirmable while Draft).
+        customsType: String(r.customs_type || '').trim(),
         status: String(r.status || '').trim(),
         salesOrderId: String(r.sales_order_id || '').trim(),
         bookingNo: String(r.booking_no || '').trim(),
@@ -712,11 +723,19 @@ function normalizeShipmentRecord(raw) {
         actualArrivalDate: String(r.actual_arrival_date || '').trim(),
         customsClearanceDate: String(r.customs_clearance_date || '').trim(),
         deliveredDate: String(r.delivered_date || '').trim(),
-        totalQty: parseFloat(r.total_qty) || 0,
-        totalCartons: parseFloat(r.total_cartons) || 0,
-        totalCbm: (r.total_cbm === '' || r.total_cbm == null) ? '' : (parseFloat(r.total_cbm) || 0),
-        totalGrossWeight: (r.total_gross_weight === '' || r.total_gross_weight == null) ? '' : (parseFloat(r.total_gross_weight) || 0),
-        totalNetWeight: (r.total_net_weight === '' || r.total_net_weight == null) ? '' : (parseFloat(r.total_net_weight) || 0),
+        // CANONICAL renamed columns (shipment_total_*) with legacy (total_*) read-fallback for old rows.
+        // camelCase shipmentTotal* are canonical; totalQty/totalCartons/totalCbm remain as UI read aliases.
+        shipmentTotalQty: parseFloat((r.shipment_total_qty === '' || r.shipment_total_qty == null) ? r.total_qty : r.shipment_total_qty) || 0,
+        shipmentTotalCartons: parseFloat((r.shipment_total_cartons === '' || r.shipment_total_cartons == null) ? r.total_cartons : r.shipment_total_cartons) || 0,
+        shipmentTotalCbm: (function () { var v = (r.shipment_total_cbm === '' || r.shipment_total_cbm == null) ? r.total_cbm : r.shipment_total_cbm; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        totalQty: parseFloat((r.shipment_total_qty === '' || r.shipment_total_qty == null) ? r.total_qty : r.shipment_total_qty) || 0,
+        totalCartons: parseFloat((r.shipment_total_cartons === '' || r.shipment_total_cartons == null) ? r.total_cartons : r.shipment_total_cartons) || 0,
+        totalCbm: (function () { var v = (r.shipment_total_cbm === '' || r.shipment_total_cbm == null) ? r.total_cbm : r.shipment_total_cbm; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        // CANONICAL shipment_total_gross/net_weight with legacy total_* read-fallback; totalGross/NetWeight kept as UI aliases.
+        shipmentTotalGrossWeight: (function () { var v = (r.shipment_total_gross_weight === '' || r.shipment_total_gross_weight == null) ? r.total_gross_weight : r.shipment_total_gross_weight; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        shipmentTotalNetWeight: (function () { var v = (r.shipment_total_net_weight === '' || r.shipment_total_net_weight == null) ? r.total_net_weight : r.shipment_total_net_weight; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        totalGrossWeight: (function () { var v = (r.shipment_total_gross_weight === '' || r.shipment_total_gross_weight == null) ? r.total_gross_weight : r.shipment_total_gross_weight; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        totalNetWeight: (function () { var v = (r.shipment_total_net_weight === '' || r.shipment_total_net_weight == null) ? r.total_net_weight : r.shipment_total_net_weight; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
         freightCostActual: (r.freight_cost_actual === '' || r.freight_cost_actual == null) ? '' : (parseFloat(r.freight_cost_actual) || 0),
         dutyActual: (r.duty_actual === '' || r.duty_actual == null) ? '' : (parseFloat(r.duty_actual) || 0),
         currency: String(r.currency || '').trim(),
@@ -742,14 +761,22 @@ function normalizeShipmentLineRecord(raw) {
         shipmentLineId: String(r.shipment_line_id || '').trim(),
         shipmentId: String(r.shipment_id || '').trim(),
         sku: String(r.sku || '').trim(),
-        qty: parseFloat(r.qty) || 0,
+        // CANONICAL shipment_qty with legacy qty read-fallback. qty kept as UI alias.
+        shipmentQty: parseFloat((r.shipment_qty === '' || r.shipment_qty == null) ? r.qty : r.shipment_qty) || 0,
+        qty: parseFloat((r.shipment_qty === '' || r.shipment_qty == null) ? r.qty : r.shipment_qty) || 0,
         factoryStockAllocationQty: (r.factory_stock_allocation_qty === '' || r.factory_stock_allocation_qty == null) ? '' : (parseFloat(r.factory_stock_allocation_qty) || 0),
-        cartonQty: parseFloat(r.carton_qty) || 0,
+        // CANONICAL shipment_carton_qty with legacy carton_qty read-fallback. cartonQty kept as UI alias.
+        shipmentCartonQty: parseFloat((r.shipment_carton_qty === '' || r.shipment_carton_qty == null) ? r.carton_qty : r.shipment_carton_qty) || 0,
+        cartonQty: parseFloat((r.shipment_carton_qty === '' || r.shipment_carton_qty == null) ? r.carton_qty : r.shipment_carton_qty) || 0,
         cartonNoStart: String(r.carton_no_start || '').trim(),
         cartonNoEnd: String(r.carton_no_end || '').trim(),
         unitsPerCarton: parseFloat(r.units_per_carton) || 0,
-        cartonCbm: (r.carton_cbm === '' || r.carton_cbm == null) ? '' : (parseFloat(r.carton_cbm) || 0),
-        cbm: (r.cbm === '' || r.cbm == null) ? '' : (parseFloat(r.cbm) || 0),
+        // LINE-TOTAL CBM. Canonical shipment_carton_cbm; legacy per-carton carton_cbm read-fallback
+        // (historical rows only). cartonCbm / cbm are frontend read-compat aliases = the same line-total
+        // value; outbound writes must use shipment_carton_cbm. NEVER multiplied by cartons in the frontend.
+        shipmentCartonCbm: (function () { var v = (r.shipment_carton_cbm === '' || r.shipment_carton_cbm == null) ? r.carton_cbm : r.shipment_carton_cbm; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        cartonCbm: (function () { var v = (r.shipment_carton_cbm === '' || r.shipment_carton_cbm == null) ? r.carton_cbm : r.shipment_carton_cbm; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        cbm: (function () { var v = (r.shipment_carton_cbm === '' || r.shipment_carton_cbm == null) ? r.carton_cbm : r.shipment_carton_cbm; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
         grossWeight: (r.gross_weight === '' || r.gross_weight == null) ? '' : (parseFloat(r.gross_weight) || 0),
         netWeight: (r.net_weight === '' || r.net_weight == null) ? '' : (parseFloat(r.net_weight) || 0),
         purchaseOrderLineId: String(r.purchase_order_line_id || '').trim(),
@@ -1074,6 +1101,7 @@ function normalizeSkuRegionalDetailRecord(raw) {
         siteSku: s(r.site_sku),
         // Canonical platform-neutral id; legacy asin READ-fallback only.
         marketplaceProductId: s(r.marketplace_product_id) || s(r.asin),
+        productUrl: s(r.product_url),   // country/marketplace-specific product listing URL (nullable)
         packagingRegulation: s(r.packaging_regulation),
         regulationUrl: s(r.regulation_url),
         language: s(r.language) || s(r.manual_language),   // v1 manual_language read-fallback
@@ -1100,6 +1128,8 @@ function normalizeTaxReferralRateRecord(raw) {
         hsCode: s(r.hscode),
         dutyRate: n(r.duty_rate),
         extraTaxRate: n(r.extra_tax_rate),
+        vatNo: s(r.vat_no),                                               // VAT / tax registration number (nullable)
+        eoriNo: s(r.eori_no),                                             // EORI registration number for EU/UK customs (nullable)
         vatRate: n(r.vat_rate) !== '' ? n(r.vat_rate) : n(r.vat),          // accept vat_rate or legacy vat
         portTaxRate: n(r.port_tax_rate) !== '' ? n(r.port_tax_rate) : n(r.port_tax),
         referralFeeRate: n(r.referral_fee_rate),
@@ -1150,6 +1180,8 @@ function normalizeCarrierRateCardRecord(raw) {
         marketplace: String(r.marketplace || '').trim(),
         shippingMethod: String(r.shipping_method || '').trim(),
         lastMileDelivery: String(r.last_mile_delivery || '').trim(),
+        // Localized display label for the service combination (display metadata; canonical fields above stay authoritative).
+        shippingMethodLabel: String(r.shipping_method_label || '').trim(),
         chargeType: String(r.charge_type || '').trim(),
         chargeUnit: String(r.charge_unit || '').trim(),
         dimDivisor: n(r.dim_divisor),
@@ -1843,9 +1875,30 @@ window.KM.DB.updateMarketplaceSkuModel = async function(payload) {
     return json.data;
 };
 
+// Upsert a sku_details row (create/update by sku). Currently writes the customs-facing fields
+// product_name_cn / product_use (and any other allowlisted sku_details columns the handler accepts).
+// Payload = { sku, product_name_cn?, product_use?, ... }.
+window.KM.DB.upsertSkuDetail = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertSkuDetail skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action: 'upsertSkuDetail' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
 // SKU Domain v2.0 — upsert a sku_regional_details row (create/update by
 // sku+company+country+marketplace). Payload = { sku, company, country, marketplace, site_sku?,
-// marketplace_product_id?, packaging_regulation?, regulation_url?, language?, manual_version?,
+// marketplace_product_id?, product_url?, packaging_regulation?, regulation_url?, language?, manual_version?,
 // label_version?, battery_regulation?, sync_marketplace_sku? }. When sync_marketplace_sku is truthy the
 // handler also propagates site_sku / marketplace_product_id INTO the matching marketplace_skus row.
 window.KM.DB.upsertSkuRegionalDetail = async function(payload) {
@@ -2129,7 +2182,7 @@ window.KM.DB.CARRIER_RATE_TEMPLATE_EDITABLE_COLS = [
 window.KM.DB.CARRIER_RATE_TEMPLATE_COLS = ['row_type', 'rate_card_id'].concat(
     window.KM.DB.CARRIER_RATE_TEMPLATE_FIXED_COLS.slice(0, 20),   // through currency (structure; incl. last_mile_delivery)
     ['unit_rate', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee'],
-    ['transit_type', 'battery_type', 'customs_type', 'note', 'effective_from', 'effective_to', 'status']
+    ['transit_type', 'battery_type', 'customs_type', 'shipping_method_label', 'note', 'effective_from', 'effective_to', 'status']
 );
 
 // Build + download a Carrier Rate Template CSV from already-loaded rate-card rows (normalized).

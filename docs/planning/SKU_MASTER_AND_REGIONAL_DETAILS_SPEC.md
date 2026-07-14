@@ -90,6 +90,7 @@ Deprecated (present for back-compat, not written): `hscode`, `declared_value`, `
 | `marketplace` | site marketplace |
 | `site_sku` | **source of truth** for the site SKU (synced INTO `marketplace_skus`, §6) |
 | `marketplace_product_id` | **source of truth** for the platform-neutral product id (Amazon ASIN stored here; UI may label "ASIN"). Synced INTO `marketplace_skus` (§5/§6) |
+| `product_url` | **NEW (2026-07)** — country/marketplace-specific product listing URL. Identity field (follows `sku + company + country + marketplace`), nullable. **Belongs here, NOT on `marketplace_skus`.** Required on Add SKU (§6.1); no mass backfill — legacy rows left blank until filled. |
 | `packaging_regulation` | free text / code |
 | `regulation_url` | reference link |
 | `language` | required manual / label language(s) |
@@ -125,14 +126,16 @@ Deprecated (present for back-compat, not written): `hscode`, `declared_value`, `
 ### 6.1 Two valid creation flows
 
 **Flow A — Inventory Replenishment first:**
-Inventory Replenishment → **Add Marketplace SKU** → creates `marketplace_skus` → **ensure `sku_regional_details`** (create the matching regional row if absent; copy `sku` / `company` / `country` / `marketplace` / `site_sku` / `marketplace_product_id`; compliance-document fields left blank).
+Inventory Replenishment → **Add Marketplace SKU** → creates `marketplace_skus` → **ensure/update `sku_regional_details`** (create the matching regional row if absent, else update identity; copy `sku` / `company` / `country` / `marketplace` / `site_sku` / `marketplace_product_id` / **`product_url`**; compliance-document fields left blank and **never overwritten**).
+
+> **Add SKU required fields (2026-07):** the Add SKU modal now requires **ASIN** (UI label; DB = `marketplace_skus.marketplace_product_id`, also synced into `sku_regional_details.marketplace_product_id`) and **Product URL** (DB = `sku_regional_details.product_url`). `site_sku` stays required. Validation: `product_url` trimmed + must be `http(s)://` (no fixed marketplace domain — future marketplaces differ); `marketplace_product_id` trimmed, case-preserved, **no fixed length** (non-Amazon IDs differ). The regional row is **ensure-created or identity-updated** by `sku + company + country + marketplace`, updating only `site_sku` / `marketplace_product_id` / `product_url` — compliance fields (packaging regulation / labels / manuals / battery, etc.) are never touched, and no duplicate regional rows are created.
 
 **Flow B — Regional Details first:**
 SKU Regional Details → create the regional information first (`site_sku`, `marketplace_product_id`, compliance docs) → later, Inventory Replenishment → when the `marketplace_skus` row is created it **automatically copies `site_sku` / `marketplace_product_id` FROM `sku_regional_details`**.
 
 ### 6.2 Sync rule (Regional Details = higher priority)
 - If `site_sku` or `marketplace_product_id` **changes inside SKU Regional Details** → `marketplace_skus` **must synchronize** (regional → operational).
-- If **Inventory Replenishment** updates `site_sku` / `marketplace_product_id` → `sku_regional_details` **must synchronize** (operational → regional).
+- If **Inventory Replenishment** updates `site_sku` / `marketplace_product_id` / `product_url` → `sku_regional_details` **must synchronize** (operational → regional). *(`product_url` is regional-only — it does NOT propagate to `marketplace_skus`.)*
 - **Avoid silent divergence** — a save that changes an identity field propagates to the paired row.
 
 ### 6.3 Conflict resolution
@@ -143,8 +146,13 @@ SKU Regional Details → create the regional information first (`site_sku`, `mar
 
 ## 7. UI model
 
-### 7.1 SKU Details page (mostly as-is)
+### 7.1 SKU Details page (product / master / customs-facing base attributes)
+**SKU Details is the product master** — identity, logistics, baseline prices, and customs-facing base attributes. Marketplace identity (`marketplace_product_id` / ASIN, `site_sku`, `product_url`) does **NOT** belong on this page — it lives on **Marketplace SKU / `sku_regional_details`** (§5/§6). `product_url` stays in `sku_regional_details`.
 - **ADD fields:** `material`, `battery_type`, `magnet_type`, `base_currency`.
+- **ADD customs fields (2026-07):** **`product_name_cn`** (Chinese customs/product name — column shown immediately right of Product Name) and **`product_use`** (customs-facing product usage/purpose — column shown immediately left of Material). Both **nullable** — optional for legacy rows and must not break existing SKU flows. Stored on `sku_details` (NOT `sku_regional_details`). API exposes `productNameCn` / `productUse`. Table renders `--` when blank.
+- **REMOVE from the SKU Details table (2026-07):** **AMZ ASIN** — ASIN / `marketplace_product_id` is Marketplace-SKU / Regional identity, not a master attribute. (The DB column `marketplace_skus.marketplace_product_id` / `sku_regional_details.marketplace_product_id` is **kept** — only the SKU Details page column is removed.)
+- **Editing (2026-07):** all editing is via the **top action-bar `Edit SKU` button** — select one SKU row, then Edit SKU opens the full `sku_details` editor (SKU read-only; `status`=`lifecycle`, product/customs/logistics/price fields). Saved through **`upsertSkuDetail`** (update by `sku`; omitted columns preserved; **no** marketplace / pricing / FC / factory-stock side effects). **Row-level status-only editing is RETIRED** — Status renders as a normal display column and is edited only through the full modal. A `canEditSkuDetails()` hook is the future permission gate.
+- **Boolean display:** `battery_type` / `magnet_type` render **No** (false/none/blank), **Yes** (true), or the **original text** for any other value (e.g. `Lithium-Ion`) — the master field types stay extensible, never permanently boolean.
 - **REMOVE / HIDE fields:** `hscode`, `declared_value`, `declared_value_unit`, `minimum_price_unit`, `msrp_unit`, `selling_unit`.
 - Keep everything else (identity, logistics, baseline prices) as today.
 

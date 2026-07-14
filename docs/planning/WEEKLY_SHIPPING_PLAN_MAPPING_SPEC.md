@@ -386,7 +386,7 @@ net_weight   = approved_qty × item_weight
 - **Header totals are RUNTIME, not stored** — see §6 (Total CBM / Gross / Net = Σ of the line values).
 - **Units are read from `sku_details`, never hard-coded** (`*_dimension_unit` default `cm`, `*_weight_unit` default `kg`). The non-cm dimension branch is reserved (Phase 1 contributes 0 cbm for non-cm).
 - **`item_*_2` secondary size is NOT used** in any logistics calc.
-- At Execution Commit **`carton_cbm` / `cbm` / `gross_weight` / `net_weight` are copied** into `shipment_lines` as the Execution Snapshot (`SHIPMENT_CENTER_SPEC.md` §15.3) — never recalculated.
+- At Execution Commit the plan logistics are copied into `shipment_lines` as the Execution Snapshot (`SHIPMENT_CENTER_SPEC.md` §15.3) — never recalculated. **CBM mapping (2026-07):** the plan's **line-total** `cbm` is copied into **`shipment_lines.shipment_carton_cbm`** (LINE-TOTAL — the per-carton × carton-qty multiplication already happened here at §5.4, and must **not** be applied again downstream). `gross_weight` / `net_weight` (line totals) copy directly. Per-carton `carton_cbm` is only a fallback source (× `shipment_carton_qty`, once) when the plan line-total `cbm` is blank. The shipment header `shipment_total_cbm = Σ shipment_carton_cbm`.
 
 ---
 
@@ -616,8 +616,8 @@ The Decision Layer lifecycle is **Draft → Pending Approval → Approved → Ex
 | `shipping_plan_id` | → | `shipments.shipping_plan_id` (provenance) |
 | `company` | → | **`shipments.company`** (copied at Execution Commit; **not** live-joined from `marketplaces`) |
 | line `sku` | → | `shipment_lines.sku` |
-| line `approved_qty` | → | `shipment_lines.qty` |
-| line `carton_qty` / `units_per_carton` | → | `shipment_lines.carton_qty` / `units_per_carton` |
+| line `approved_qty` | → | `shipment_lines.shipment_qty` *(canonical; legacy `qty` read-fallback only)* |
+| line `plan_carton_qty` / `units_per_carton` | → | `shipment_lines.shipment_carton_qty` / `units_per_carton` *(canonical; legacy `carton_qty` read-fallback only)* |
 | line `snapshot_*` (§5.2) | → | inherited as the line's decision basis (carried, **not recalculated**) |
 
 > **Shipment inherits the line snapshots without recalculation.** The per-SKU `snapshot_current_stock` / `snapshot_avg_sales_per_day` / `snapshot_days_of_supply` / `snapshot_suggested_qty` / `snapshot_target_days` / `snapshot_fc_context` / `snapshot_event_context` travel with the line into the Shipment Draft as the frozen decision basis. Shipment never re-derives planning values.

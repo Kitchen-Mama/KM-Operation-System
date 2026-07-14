@@ -37,6 +37,8 @@
 | `duty_rate` | base import duty rate |
 | `extra_tax_rate` | additional / anti-dumping / special tax rate |
 | `vat` | value-added tax rate |
+| `vat_no` | **(2026-07)** VAT / tax registration number for destination-country customs docs. Nullable. Resolved by `duty_country` + effective date (latest `effective_from` wins; blank `effective_to` = open-ended); **never matched by currency alone**. |
+| `eori_no` | **(2026-07)** EORI registration number for **EU/UK** customs documentation. Nullable. Same `duty_country` + effective-date lookup as `vat_no`; **never by currency alone**. A missing EORI must **NOT** block a document whose `document_template_fields.required = FALSE`. |
 | `port_tax` | port / harbor / handling tax |
 | `referral_fee_rate` | marketplace referral fee rate |
 | `declared_value` | customs declared value |

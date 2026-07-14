@@ -417,6 +417,8 @@ function saveReplenSku() {
   // for Amazon). We send marketplace_product_id and never write the legacy `asin` column.
   const asinEl = document.getElementById('replen-add-asin');
   const marketplaceProductId = asinEl ? asinEl.value.trim() : '';
+  // product_url is a regional identity field (sku_regional_details.product_url). Required on Add SKU.
+  const productUrl = (document.getElementById('replen-add-product-url')?.value || '').trim();
 
   // Company / country / marketplace / currency / marketplace_id come from the selected
   // marketplaces-registry option (authoritative), so they stay consistent.
@@ -435,6 +437,11 @@ function saveReplenSku() {
     return;
   }
   if (!currency) { alert('The selected marketplace has no currency configured.'); return; }
+  // ASIN / marketplace_product_id required (case preserved; no fixed length — marketplaces differ).
+  if (!marketplaceProductId) { alert('ASIN (Marketplace Product ID) is required.'); return; }
+  // Product URL required. Accept any http(s) URL (do not force a specific marketplace domain).
+  if (!productUrl) { alert('Product URL is required.'); return; }
+  if (!/^https?:\/\/\S+/i.test(productUrl)) { alert('Product URL must be a valid http:// or https:// link.'); return; }
 
   // Primary path: shared import backend chain
   // (creates marketplace_skus + pricing_list + fc_regular_forecast).
@@ -448,6 +455,7 @@ function saveReplenSku() {
       site_sku: siteSku,
       currency: currency,
       marketplace_product_id: marketplaceProductId,
+      product_url: productUrl,
       marketplace_sku_status: status,
       replenishment_model: model,
       fulfillment_model: fulfillmentModel,

@@ -16,7 +16,7 @@
 // v2.0 canonical header (NO hscode/duty/declared-value; NO status/note/marketplace_sku_id).
 var SKU_REGIONAL_DETAILS_HEADERS_ = [
   'regional_detail_id', 'sku', 'company', 'country', 'marketplace',
-  'site_sku', 'marketplace_product_id',
+  'site_sku', 'marketplace_product_id', 'product_url',
   'packaging_regulation', 'regulation_url', 'language', 'manual_version', 'label_version', 'battery_regulation',
   'created_at', 'updated_at'
 ];
@@ -58,11 +58,13 @@ function skuRegionalLookup_(ss, sku, company, country, marketplace) {
 }
 
 // Flow A — create the regional row from marketplace identity when absent (no-op if it already exists).
+// Copies identity fields only (site_sku / marketplace_product_id / product_url) — never compliance data.
 function skuRegionalEnsure_(ss, obj) {
   obj = obj || {};
   var existing = skuRegionalFind_(ss, obj.sku, obj.company, obj.country, obj.marketplace);
   if (existing) return existing.row;   // already present — do not overwrite
   var sh = procurementEnsureSheet_(ss, 'sku_regional_details', SKU_REGIONAL_DETAILS_HEADERS_);
+  sheetEnsureColumns_(sh, ['product_url']);   // additive: old tabs get the new identity column
   var now = procurementTimestamp_();
   procurementAppendByHeader_(sh, {
     regional_detail_id: 'SRD-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
@@ -72,23 +74,29 @@ function skuRegionalEnsure_(ss, obj) {
     marketplace: skuRegionalNorm_(obj.marketplace),
     site_sku: skuRegionalNorm_(obj.site_sku),
     marketplace_product_id: skuRegionalNorm_(obj.marketplace_product_id),
+    product_url: skuRegionalNorm_(obj.product_url),
     created_at: now, updated_at: now
   });
   return -1;
 }
 
-// Operational edit → regional. Update site_sku / marketplace_product_id on the regional row (create if
-// absent). Only writes fields that are provided (non-undefined).
-function skuRegionalSyncIdentity_(ss, sku, company, country, marketplace, siteSku, productId) {
+// Operational edit → regional. Update site_sku / marketplace_product_id / product_url on the regional
+// row (create if absent). Only writes fields that are provided (non-undefined & non-blank). Never
+// touches compliance fields (packaging_regulation / regulation_url / language / ... / battery_regulation).
+function skuRegionalSyncIdentity_(ss, sku, company, country, marketplace, siteSku, productId, productUrl) {
   var f = skuRegionalFind_(ss, sku, company, country, marketplace);
   if (!f) {
-    skuRegionalEnsure_(ss, { sku: sku, company: company, country: country, marketplace: marketplace, site_sku: siteSku, marketplace_product_id: productId });
+    skuRegionalEnsure_(ss, { sku: sku, company: company, country: country, marketplace: marketplace, site_sku: siteSku, marketplace_product_id: productId, product_url: productUrl });
     return;
   }
+  sheetEnsureColumns_(f.sheet, ['product_url']);
   var now = procurementTimestamp_();
-  var cSite = f.col('site_sku'), cPid = f.col('marketplace_product_id'), cU = f.col('updated_at');
+  var cSite = f.col('site_sku'), cPid = f.col('marketplace_product_id'), cUrl = f.col('product_url'), cU = f.col('updated_at');
+  // f.col() indices predate the ensure above; re-resolve product_url from the live header if needed.
+  if (cUrl === -1) { var hh = f.sheet.getRange(1, 1, 1, f.sheet.getLastColumn()).getValues()[0].map(function (x) { return String(x).trim().toLowerCase(); }); cUrl = hh.indexOf('product_url'); }
   if (siteSku !== undefined && siteSku !== '' && cSite !== -1) f.sheet.getRange(f.row, cSite + 1).setValue(skuRegionalNorm_(siteSku));
   if (productId !== undefined && productId !== '' && cPid !== -1) f.sheet.getRange(f.row, cPid + 1).setValue(skuRegionalNorm_(productId));
+  if (productUrl !== undefined && productUrl !== '' && cUrl !== -1) f.sheet.getRange(f.row, cUrl + 1).setValue(skuRegionalNorm_(productUrl));
   if (cU !== -1) f.sheet.getRange(f.row, cU + 1).setValue(now);
 }
 
@@ -112,9 +120,10 @@ function handleUpsertSkuRegionalDetail_(body) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'sku_regional_details', SKU_REGIONAL_DETAILS_HEADERS_);
+  sheetEnsureColumns_(sh, ['product_url']);   // additive: old tabs get the new identity column
   var now = procurementTimestamp_();
 
-  var fields = ['site_sku', 'marketplace_product_id', 'packaging_regulation', 'regulation_url', 'language', 'manual_version', 'label_version', 'battery_regulation'];
+  var fields = ['site_sku', 'marketplace_product_id', 'product_url', 'packaging_regulation', 'regulation_url', 'language', 'manual_version', 'label_version', 'battery_regulation'];
   var found = skuRegionalFind_(ss, sku, company, country, marketplace);
   var regionalId;
 

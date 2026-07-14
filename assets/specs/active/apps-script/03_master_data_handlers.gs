@@ -96,6 +96,76 @@ function handleUpdateSkuLifecycle_(body) {
 }
 
 
+// Allowlist of sku_details columns writable via handleUpsertSkuDetail_. Identity (sku) is the match
+// key and is NEVER changed here. The writer only touches columns that are BOTH in this list AND
+// supplied (non-undefined) in the body — omitted fields are preserved, never blanked. This is the
+// full SKU Details editor field set (2026-07); `lifecycle` = the Status field edited via the modal.
+// NOTE: this endpoint edits ONLY sku_details — it does NOT create marketplace_skus / pricing_list /
+// FC / factory_stock rows (those side effects belong to the Inventory Replenishment Add SKU flow).
+var SKU_DETAILS_UPSERT_FIELDS_ = [
+  'lifecycle', 'product_name', 'product_name_cn', 'series', 'category', 'gs1_code', 'gs1_type',
+  'item_length', 'item_width', 'item_height', 'item_dimension_unit', 'item_weight', 'item_weight_unit',
+  'package_length', 'package_width', 'package_height', 'package_dimension_unit', 'package_weight', 'package_weight_unit',
+  'carton_length', 'carton_width', 'carton_height', 'carton_dimension_unit', 'carton_weight', 'carton_weight_unit',
+  'units_per_carton', 'product_use', 'material', 'battery_type', 'magnet_type',
+  'minimum_price', 'msrp', 'selling_price', 'base_currency', 'pm', 'image_url'
+];
+
+/**
+ * Upsert a sku_details row by sku. Updates the allowlisted fields when the SKU exists (preserving any
+ * field NOT supplied in the body); creates a minimal row (sku + supplied fields) when it does not.
+ * Additive: ensures the allowlisted columns exist. Never touches columns outside the allowlist, and
+ * never creates marketplace / pricing / FC / factory_stock rows. Body: { sku, <allowlisted field>?, ... }.
+ */
+function handleUpsertSkuDetail_(body) {
+  var sku = String((body && body.sku) || '').trim();
+  if (!sku) return jsonResponse_({ success: false, error: 'Missing sku' });
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('sku_details');
+  if (!sheet) return jsonResponse_({ success: false, error: 'sku_details sheet not found' });
+
+  // Ensure the customs columns exist on tabs that predate them (additive; never removes columns).
+  if (typeof sheetEnsureColumns_ === 'function') sheetEnsureColumns_(sheet, SKU_DETAILS_UPSERT_FIELDS_);
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 1) return jsonResponse_({ success: false, error: 'sku_details has no header row' });
+  var headers = data[0].map(function (h) { return String(h).trim(); });
+  var col = function (n) { return headers.indexOf(n); };
+  var skuCol = col('sku');
+  if (skuCol === -1) return jsonResponse_({ success: false, error: 'sku column not found in sku_details header' });
+  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+
+  // Find existing row by sku.
+  var targetRow = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][skuCol]).trim() === sku) { targetRow = i + 1; break; }
+  }
+
+  if (targetRow !== -1) {
+    SKU_DETAILS_UPSERT_FIELDS_.forEach(function (f) {
+      if (body[f] === undefined) return;
+      var c = col(f);
+      if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(String(body[f] == null ? '' : body[f]));
+    });
+    if (col('updated_at') !== -1) sheet.getRange(targetRow, col('updated_at') + 1).setValue(now);
+    return jsonResponse_({ success: true, data: { sku: sku, updated: true } });
+  }
+
+  // Create a minimal row (sku + supplied allowlisted fields).
+  var newRow = new Array(headers.length).fill('');
+  newRow[skuCol] = sku;
+  SKU_DETAILS_UPSERT_FIELDS_.forEach(function (f) {
+    if (body[f] === undefined) return;
+    var c = col(f);
+    if (c !== -1) newRow[c] = String(body[f] == null ? '' : body[f]);
+  });
+  if (col('created_at') !== -1) newRow[col('created_at')] = now;
+  if (col('updated_at') !== -1) newRow[col('updated_at')] = now;
+  sheet.appendRow(newRow);
+  return jsonResponse_({ success: true, data: { sku: sku, updated: false, created: true } });
+}
+
 /**
  * Upsert a marketplace_skus row.
  * Required: sku, country, marketplace

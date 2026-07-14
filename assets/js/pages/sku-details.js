@@ -122,7 +122,10 @@ function renderSkuLifecycleTable(section, data) {
         return;
     }
     fixedBody.innerHTML = data.map(function(item) {
-        return '<div class="fixed-row">' + item.sku + '</div>';
+        // Plain SKU cell. Row is SELECTABLE (click) — editing happens via the top "Edit SKU" action.
+        var skuEsc = String(item.sku).replace(/'/g, "\\'");
+        var sel = (_selectedSku && String(item.sku) === String(_selectedSku)) ? ' sku-row-selected' : '';
+        return '<div class="fixed-row' + sel + '" data-sku="' + _skuAttr(item.sku) + '" onclick="selectSkuRow(\'' + skuEsc + '\')">' + item.sku + '</div>';
     }).join('');
 
     scrollBody.innerHTML = data.map(function(item) {
@@ -130,21 +133,22 @@ function renderSkuLifecycleTable(section, data) {
         var imgHtml = img
             ? '<img src="' + img + '" style="max-width:36px;max-height:36px;object-fit:contain;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline\'"><span style="display:none;color:#94a3b8">IMG</span>'
             : '<span style="color:#94a3b8">IMG</span>';
+        // Status = normal DISPLAY field (edited only via the full Edit SKU modal — no inline dropdown).
         var currentLc = window.getNormalizedSkuStatus ? getNormalizedSkuStatus(item) : (item.status || '');
-        var validLc = window.VALID_LIFECYCLES || ['Upcoming SKU','Running in the Market','Phasing Out','Closure'];
-        var lcOptions = validLc.map(function(lc) {
-            return '<option value="' + lc + '"' + (lc === currentLc ? ' selected' : '') + '>' + lc + '</option>';
-        }).join('');
+        var skuEsc = String(item.sku).replace(/'/g, "\\'");
+        var sel = (_selectedSku && String(item.sku) === String(_selectedSku)) ? ' sku-row-selected' : '';
 
-        return '<div class="scroll-row">' +
+        // Column order (2026-07): Product Name CN after Product Name; AMZ ASIN removed; Product Use
+        // before Material. Battery/Magnet render via _skuBoolDisplay (No / Yes / original enum text).
+        return '<div class="scroll-row' + sel + '" data-sku="' + _skuAttr(item.sku) + '" onclick="selectSkuRow(\'' + skuEsc + '\')">' +
             '<div class="scroll-cell" data-col="1"><div class="image-placeholder">' + imgHtml + '</div></div>' +
-            '<div class="scroll-cell" data-col="2"><select class="sku-status-dropdown" onchange="handleSkuStatusChange(\'' + item.sku + '\', this.value)" onclick="event.stopPropagation()">' + lcOptions + '</select></div>' +
-            '<div class="scroll-cell" data-col="3">' + item.productName + '</div>' +
-            '<div class="scroll-cell" data-col="4">' + item.series + '</div>' +
-            '<div class="scroll-cell" data-col="5">' + item.category + '</div>' +
-            '<div class="scroll-cell" data-col="6">' + (item.gs1Code || item.gs1_code || '') + '</div>' +
-            '<div class="scroll-cell" data-col="7">' + (item.gs1Type || item.gs1_type || '') + '</div>' +
-            '<div class="scroll-cell" data-col="8">' + (item.amzAsin || item.amz_asin || '') + '</div>' +
+            '<div class="scroll-cell" data-col="2">' + _skuDash(currentLc) + '</div>' +
+            '<div class="scroll-cell" data-col="3">' + _skuDash(item.productName) + '</div>' +
+            '<div class="scroll-cell" data-col="4">' + _skuDash(item.productNameCn) + '</div>' +
+            '<div class="scroll-cell" data-col="5">' + _skuDash(item.series) + '</div>' +
+            '<div class="scroll-cell" data-col="6">' + _skuDash(item.category) + '</div>' +
+            '<div class="scroll-cell" data-col="7">' + _skuDash(item.gs1Code || item.gs1_code) + '</div>' +
+            '<div class="scroll-cell" data-col="8">' + _skuDash(item.gs1Type || item.gs1_type) + '</div>' +
             '<div class="scroll-cell" data-col="9" data-unit="dim">' + _skuItemDimCell(item) + '</div>' +
             '<div class="scroll-cell" data-col="10" data-unit="wt">' + (item.itemWeight || item.item_weight || '') + '</div>' +
             '<div class="scroll-cell" data-col="11" data-unit="dim">' + (item.packageDimensions || item.package || item.package_dimensions || '') + '</div>' +
@@ -152,18 +156,33 @@ function renderSkuLifecycleTable(section, data) {
             '<div class="scroll-cell" data-col="13" data-unit="dim">' + (item.cartonDimensions || item.carton_dimensions || '') + '</div>' +
             '<div class="scroll-cell" data-col="14" data-unit="wt">' + (item.cartonWeight || item.carton_weight || '') + '</div>' +
             '<div class="scroll-cell" data-col="15">' + (item.unitsPerCarton || item.units_per_carton || '') + '</div>' +
-            // SKU Domain v2.0: cols 16/17/18 = Material / Battery Type / Magnet Type (two INDEPENDENT
-            // attributes, 1:1 with sku_details.battery_type / magnet_type). HS Code + Declared Value
-            // moved to tax_referral_rates. Prices use the single base_currency.
-            '<div class="scroll-cell" data-col="16">' + (item.material || '') + '</div>' +
-            '<div class="scroll-cell" data-col="17">' + (item.batteryType || '') + '</div>' +
-            '<div class="scroll-cell" data-col="18">' + (item.magnetType || '') + '</div>' +
-            '<div class="scroll-cell" data-col="19">' + _skuPrice(item.minimumPrice || item.minimum_price, item.baseCurrency) + '</div>' +
-            '<div class="scroll-cell" data-col="20">' + _skuPrice(item.msrp, item.baseCurrency) + '</div>' +
-            '<div class="scroll-cell" data-col="21">' + _skuPrice(item.sellingPrice || item.selling_price, item.baseCurrency) + '</div>' +
-            '<div class="scroll-cell" data-col="22">' + item.pm + '</div>' +
+            // Product Use (customs-facing) sits immediately LEFT of Material. HS Code / Declared Value
+            // live in tax_referral_rates. Prices use the single base_currency.
+            '<div class="scroll-cell" data-col="16">' + _skuDash(item.productUse) + '</div>' +
+            '<div class="scroll-cell" data-col="17">' + _skuDash(item.material) + '</div>' +
+            '<div class="scroll-cell" data-col="18">' + _skuBoolDisplay(item.batteryType) + '</div>' +
+            '<div class="scroll-cell" data-col="19">' + _skuBoolDisplay(item.magnetType) + '</div>' +
+            '<div class="scroll-cell" data-col="20">' + _skuPrice(item.minimumPrice || item.minimum_price, item.baseCurrency) + '</div>' +
+            '<div class="scroll-cell" data-col="21">' + _skuPrice(item.msrp, item.baseCurrency) + '</div>' +
+            '<div class="scroll-cell" data-col="22">' + _skuPrice(item.sellingPrice || item.selling_price, item.baseCurrency) + '</div>' +
+            '<div class="scroll-cell" data-col="23">' + _skuDash(item.pm) + '</div>' +
         '</div>';
     }).join('');
+    // Re-apply selection highlight after a re-render (both fixed + scroll rows).
+    if (_selectedSku) selectSkuRow(_selectedSku, true);
+}
+
+// Display helpers.
+function _skuAttr(v) { return String(v == null ? '' : v).replace(/"/g, '&quot;'); }
+function _skuDash(v) { var s = String(v == null ? '' : v).trim(); return s === '' ? '--' : s; }
+// Battery/Magnet display: false/none/blank → No; true → Yes; any other value (e.g. Lithium-Ion,
+// magnetic) → the original text (extensibility preserved — never permanently boolean).
+function _skuBoolDisplay(v) {
+    var s = String(v == null ? '' : v).trim();
+    var low = s.toLowerCase();
+    if (s === '' || low === 'false' || low === 'none' || low === 'no' || low === 'n' || low === '0') return 'No';
+    if (low === 'true' || low === 'yes' || low === 'y' || low === '1') return 'Yes';
+    return s;
 }
 
 function handleSkuStatusChange(sku, newLifecycle) {
@@ -268,6 +287,168 @@ function handleAddSku() {
     alert('Add SKU cloud write-back is not enabled yet. This will be implemented in the next phase.');
 }
 
+// ========================================
+// SKU Details — row selection + central "Edit SKU" editor
+// A row is selected first (click), then the top "Edit SKU" action opens the full sku_details editor.
+// Loads from KM.DB.getSkuDetails() and persists via KM.DB.upsertSkuDetail (sku_details upsert by sku;
+// omitted fields preserved). SKU identity is read-only. No marketplace / factory-stock side effects.
+// ========================================
+var _selectedSku = null;
+
+function _skuFindRecord(sku) {
+    var list = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? (window.KM.DB.getSkuDetails() || []) : [];
+    for (var i = 0; i < list.length; i++) { if (String(list[i].sku) === String(sku)) return list[i]; }
+    return null;
+}
+
+// Integration point for the future Role/Permission system. For now always true.
+function canEditSkuDetails() { return true; }
+
+// Select a SKU row (highlights the matching fixed + scroll rows across all lifecycle sections).
+// quiet = true when called during a re-render (do not scroll / re-store).
+function selectSkuRow(sku, quiet) {
+    _selectedSku = sku;
+    var rows = document.querySelectorAll('#sku-section [data-sku]');
+    rows.forEach(function(r) {
+        if (String(r.getAttribute('data-sku')) === String(sku)) r.classList.add('sku-row-selected');
+        else r.classList.remove('sku-row-selected');
+    });
+}
+
+// Full editable field set (snake_case DB columns). type: readonly | lifecycle | text | textarea | number.
+var SKU_EDIT_FIELDS_ = [
+    { key: 'sku', label: 'SKU', type: 'readonly' },
+    { key: 'lifecycle', label: 'Status', type: 'lifecycle' },
+    { key: 'product_name', label: 'Product Name', type: 'text' },
+    { key: 'product_name_cn', label: 'Product Name CN (中文品名)', type: 'text' },
+    { key: 'series', label: 'Series', type: 'text' },
+    { key: 'category', label: 'Category', type: 'text' },
+    { key: 'gs1_code', label: 'GS1 Code', type: 'text' },
+    { key: 'gs1_type', label: 'GS1 Type', type: 'text' },
+    { key: 'material', label: 'Material', type: 'text' },
+    { key: 'battery_type', label: 'Battery Type (false/none or e.g. Lithium-Ion)', type: 'text' },
+    { key: 'magnet_type', label: 'Magnet Type (false/none/true)', type: 'text' },
+    { key: 'product_use', label: 'Product Use (用途 / 報關用途)', type: 'textarea' },
+    { key: 'units_per_carton', label: 'Units / Carton', type: 'number' },
+    { key: 'item_length', label: 'Item L', type: 'number' },
+    { key: 'item_width', label: 'Item W', type: 'number' },
+    { key: 'item_height', label: 'Item H', type: 'number' },
+    { key: 'item_dimension_unit', label: 'Item Dim Unit', type: 'text' },
+    { key: 'item_weight', label: 'Item Weight', type: 'number' },
+    { key: 'item_weight_unit', label: 'Item Weight Unit', type: 'text' },
+    { key: 'package_length', label: 'Package L', type: 'number' },
+    { key: 'package_width', label: 'Package W', type: 'number' },
+    { key: 'package_height', label: 'Package H', type: 'number' },
+    { key: 'package_dimension_unit', label: 'Package Dim Unit', type: 'text' },
+    { key: 'package_weight', label: 'Package Weight', type: 'number' },
+    { key: 'package_weight_unit', label: 'Package Weight Unit', type: 'text' },
+    { key: 'carton_length', label: 'Carton L', type: 'number' },
+    { key: 'carton_width', label: 'Carton W', type: 'number' },
+    { key: 'carton_height', label: 'Carton H', type: 'number' },
+    { key: 'carton_dimension_unit', label: 'Carton Dim Unit', type: 'text' },
+    { key: 'carton_weight', label: 'Carton Weight', type: 'number' },
+    { key: 'carton_weight_unit', label: 'Carton Weight Unit', type: 'text' },
+    { key: 'minimum_price', label: 'Minimum Price', type: 'number' },
+    { key: 'msrp', label: 'MSRP', type: 'number' },
+    { key: 'selling_price', label: 'Selling Price', type: 'number' },
+    { key: 'base_currency', label: 'Base Currency', type: 'text' },
+    { key: 'pm', label: '負責PM', type: 'text' }
+];
+
+function _skuEditLoadValue(rec, f) {
+    if (!rec) return '';
+    if (f.key === 'sku') return rec.sku || '';
+    if (f.key === 'lifecycle') {
+        return (window.getNormalizedSkuStatus ? getNormalizedSkuStatus(rec) : '') ||
+            (rec.raw && rec.raw.lifecycle) || rec.lifecycle || '';
+    }
+    return (rec.raw && rec.raw[f.key] != null) ? rec.raw[f.key] : '';
+}
+
+function _buildSkuEditModal() {
+    var overlay = document.createElement('div');
+    overlay.id = 'sku-edit-modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:10000;display:none;align-items:center;justify-content:center;';
+    overlay.innerHTML =
+        '<div style="background:#fff;border-radius:10px;width:min(720px,94vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.2);overflow:hidden;">' +
+            '<div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;font-weight:600;font-size:15px;color:#1E293B;" id="sku-edit-title">Edit SKU</div>' +
+            '<div id="sku-edit-body" style="padding:18px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;"></div>' +
+            '<div style="padding:14px 18px;border-top:1px solid #E2E8F0;display:flex;justify-content:flex-end;gap:10px;">' +
+                '<button type="button" onclick="closeSkuEdit()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
+                '<button type="button" onclick="saveSkuEdit()" style="padding:8px 16px;border:none;background:#3B82F6;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Save</button>' +
+            '</div>' +
+        '</div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeSkuEdit(); });
+    return overlay;
+}
+
+function handleEditSku() {
+    if (!canEditSkuDetails()) { alert('You do not have permission to edit SKU Details.'); return; }
+    if (!_selectedSku) { alert('Select a SKU row first, then click Edit SKU.'); return; }
+    var rec = _skuFindRecord(_selectedSku);
+    var overlay = document.getElementById('sku-edit-modal-overlay');
+    if (!overlay) { overlay = _buildSkuEditModal(); document.body.appendChild(overlay); }
+    overlay.querySelector('#sku-edit-title').textContent = 'Edit SKU — ' + _selectedSku;
+    var validLc = window.VALID_LIFECYCLES || ['Upcoming SKU', 'Running in the Market', 'Phasing Out', 'Closure'];
+    var esc = function(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+    var body = overlay.querySelector('#sku-edit-body');
+    body.innerHTML = SKU_EDIT_FIELDS_.map(function(f) {
+        var val = _skuEditLoadValue(rec, f);
+        var id = 'sku-edit-f-' + f.key;
+        var wide = (f.type === 'textarea') ? 'grid-column:1 / -1;' : '';
+        var control;
+        if (f.type === 'readonly') {
+            control = '<input id="' + id + '" type="text" value="' + esc(val) + '" readonly ' +
+                'style="padding:7px 9px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px;background:#F1F5F9;color:#64748B;">';
+        } else if (f.type === 'lifecycle') {
+            var opts = validLc.map(function(lc) { return '<option value="' + esc(lc) + '"' + (String(lc) === String(val) ? ' selected' : '') + '>' + esc(lc) + '</option>'; }).join('');
+            control = '<select id="' + id + '" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;">' + opts + '</select>';
+        } else if (f.type === 'textarea') {
+            control = '<textarea id="' + id + '" rows="2" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;resize:vertical;">' + esc(val) + '</textarea>';
+        } else {
+            control = '<input id="' + id + '" type="' + (f.type === 'number' ? 'number' : 'text') + '" value="' + esc(val) + '" ' +
+                'style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;">';
+        }
+        return '<div style="display:flex;flex-direction:column;gap:3px;' + wide + '">' +
+            '<label style="font-size:11px;color:#64748B;">' + esc(f.label) + '</label>' + control + '</div>';
+    }).join('');
+    overlay.style.display = 'flex';
+}
+
+function closeSkuEdit() {
+    var o = document.getElementById('sku-edit-modal-overlay');
+    if (o) o.style.display = 'none';
+}
+
+function saveSkuEdit() {
+    var o = document.getElementById('sku-edit-modal-overlay');
+    if (!o) return;
+    var sku = _selectedSku;
+    if (!sku) { alert('No SKU selected.'); return; }
+    // Collect every editable field (SKU is read-only / the match key). Fields rendered here are always
+    // sent (blank = intentional clear); columns NOT in this editor are preserved by the backend.
+    var payload = { sku: sku };
+    SKU_EDIT_FIELDS_.forEach(function(f) {
+        if (f.type === 'readonly') return;
+        var el = o.querySelector('#sku-edit-f-' + f.key);
+        if (!el) return;
+        payload[f.key] = (el.value == null ? '' : String(el.value)).trim();
+    });
+    if (!(window.KM && window.KM.DB && window.KM.DB.upsertSkuDetail)) {
+        alert('Save unavailable (KM.DB.upsertSkuDetail not configured).');
+        return;
+    }
+    showSkuStatusToast('Saving...');
+    window.KM.DB.upsertSkuDetail(payload).then(function() {
+        showSkuStatusToast('Saved.');
+        closeSkuEdit();
+        renderSkuDetailsTable();
+        if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
+    }).catch(function(err) {
+        showSkuStatusToast('Error: ' + (err && err.message ? err.message : err));
+    });
+}
+
 function handleSkuSearch() {
     var searchTerm = document.getElementById('skuSearchInput').value.toLowerCase();
     var fixedBodies = document.querySelectorAll('#sku-section .fixed-body');
@@ -354,6 +535,11 @@ window.handleSkuSearch = handleSkuSearch;
 window.toggleDisplayPanel = toggleDisplayPanel;
 window.toggleColumn = toggleColumn;
 window.toggleAllColumns = toggleAllColumns;
+window.selectSkuRow = selectSkuRow;
+window.canEditSkuDetails = canEditSkuDetails;
+window.handleEditSku = handleEditSku;
+window.closeSkuEdit = closeSkuEdit;
+window.saveSkuEdit = saveSkuEdit;
 
 // Ensure the SKU Details markup is present before rendering / scroll init runs.
 // Idempotent: if #sku-section already exists, resolves immediately (no re-fetch, no

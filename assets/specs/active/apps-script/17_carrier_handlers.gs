@@ -23,7 +23,7 @@
 var CARRIER_RATE_CARDS_HEADERS_ = [
   'rate_card_id', 'carrier_id', 'origin_country', 'origin_city', 'destination_country', 'destination_city',
   'destination_postal_code_start', 'destination_postal_code_end', 'destination_warehouse_code',
-  'marketplace', 'shipping_method', 'last_mile_delivery', 'charge_type', 'charge_unit', 'dim_divisor',
+  'marketplace', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'charge_type', 'charge_unit', 'dim_divisor',
   'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit',
   'currency', 'unit_rate', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee',
   'transit_type', 'battery_type', 'customs_type', 'note',
@@ -46,7 +46,7 @@ var CRC_UPDATE_EDITABLE_ = { unit_rate: 1, min_charge: 1, effective_from: 1, eff
 var CRC_LOCKED_COLS_ = [
   'carrier_id', 'origin_country', 'origin_city', 'destination_country', 'destination_city',
   'destination_postal_code_start', 'destination_postal_code_end', 'destination_warehouse_code',
-  'marketplace', 'shipping_method', 'last_mile_delivery', 'charge_type', 'charge_unit', 'dim_divisor',
+  'marketplace', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'charge_type', 'charge_unit', 'dim_divisor',
   'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit', 'currency',
   'transit_type', 'battery_type', 'customs_type'
 ];
@@ -332,6 +332,7 @@ function handleImportCarrierRateCards_(body) {
       marketplace: crcNorm_(row.marketplace),
       shipping_method: method,
       last_mile_delivery: lastMile,
+      shipping_method_label: crcNorm_(row.shipping_method_label),   // display metadata (admin-set; blank allowed; Master only)
       charge_type: chargeType,
       charge_unit: crcNorm_(row.charge_unit),   // preserve original casing for display (20GP/40HQ)
       dim_divisor: crcIsNum_(row.dim_divisor) ? parseFloat(row.dim_divisor) : '',

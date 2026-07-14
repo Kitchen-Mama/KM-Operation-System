@@ -28,7 +28,8 @@ var SHIPPING_PLANS_HEADERS_ = [
 
 var SHIPPING_PLAN_LINES_HEADERS_ = [
   'shipping_plan_line_id', 'shipping_plan_id', 'sku',
-  'requested_qty', 'approved_qty', 'carton_qty', 'units_per_carton',
+  // plan_carton_qty = CANONICAL renamed column (was carton_qty; legacy read-fallback only).
+  'requested_qty', 'approved_qty', 'plan_carton_qty', 'units_per_carton',
   'source_page', 'source_reason', 'inventory_snapshot_date', 'note',
   'created_at', 'updated_at',
   'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
@@ -249,6 +250,8 @@ function handleCreateShippingPlansBatch_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var planSheet = shippingPlanEnsureSheet_(ss, 'shipping_plans', SHIPPING_PLANS_HEADERS_);
   var lineSheet = shippingPlanEnsureSheet_(ss, 'shipping_plan_lines', SHIPPING_PLAN_LINES_HEADERS_);
+  // Ensure the CANONICAL renamed column on tabs that predate it (legacy carton_qty is NOT re-created).
+  sheetEnsureColumns_(lineSheet, ['plan_carton_qty']);
   var upcMap = shippingPlanUpcMap_(ss);
   var companyMaps = shippingPlanCompanyMaps_(ss);
   var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
@@ -325,7 +328,7 @@ function handleCreateShippingPlansBatch_(body) {
         sku: sku2,
         requested_qty: requested,
         approved_qty: approved,
-        carton_qty: carton,
+        plan_carton_qty: carton,
         units_per_carton: upc,
         source_page: String(l.source_page || 'inventory_replenishment').trim(),
         source_reason: String(l.source_reason || 'manual_submit').trim(),
@@ -483,6 +486,8 @@ function handleUpdateShippingPlanLineQty_(body) {
   var planSheet = ss.getSheetByName('shipping_plans');
   if (!lineSheet) return jsonResponse_({ success: false, error: 'shipping_plan_lines sheet not found' });
   if (!planSheet) return jsonResponse_({ success: false, error: 'shipping_plans sheet not found' });
+  // Ensure the CANONICAL renamed carton column so the qty edit writes plan_carton_qty (not legacy).
+  sheetEnsureColumns_(lineSheet, ['plan_carton_qty']);
 
   // plan_id -> status
   var planData = planSheet.getDataRange().getValues();
@@ -502,7 +507,9 @@ function handleUpdateShippingPlanLineQty_(body) {
   var planIdCol = col('shipping_plan_id');
   var skuCol = col('sku');
   var approvedCol = col('approved_qty');
-  var cartonCol = col('carton_qty');
+  // Write the CANONICAL plan_carton_qty; fall back to the legacy carton_qty column only on old tabs.
+  var cartonCol = col('plan_carton_qty');
+  if (cartonCol === -1) cartonCol = col('carton_qty');
   var upcCol = col('units_per_carton');
   var cartonCbmCol = col('carton_cbm');
   var cbmCol = col('cbm');

@@ -1,11 +1,14 @@
 # Shipment Center / Shipment Draft / Shipment Overview — Specification
 
-**Status:** 🟡 Draft v2.4 — Architecture / Spec only (NO code, NO DB, NO implementation) — adds §21 Shipment Logistics Attribute Aggregation (battery/magnet auto-aggregate; carrier matching uses shipment-level)
+**Status:** 🟢🟡 v2.5 — **PARTIALLY IMPLEMENTED.** Core Shipment execution is live and runtime-aligned; several sections remain spec-only (see the status legend below). This is no longer a whole-module "spec only" document.
 **Last Updated:** 2026-07-07
 **Maintained By:** Development Team
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) (Global Logistics Enums §4.5 / matching §4 / resolution §4.6), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md)
 
-> **Spec only.** This document defines architecture, flow, UI, and data relationships for the Shipment layer. It does **not** introduce code, Apps Script, API, UI, DB migration, or runtime changes. New tables/fields described here are *planned* design, not implemented.
+> **Document status legend (2026-07 reconciliation).** This document is a **mix of implemented runtime and planned design** — do NOT read it as "entire module unimplemented."
+> - **🟢 IMPLEMENTED / runtime-aligned:** Shipment Draft + Shipment Overview (two status-filtered views over `shipments` / `shipment_lines`, `shipping-history.js`); Execution Commit (`createShipmentFromApprovedPlan_`) copying the plan snapshot; `updateShipment` editable-field whitelist + Ship gate + carton-range validation; **central `shipmentRecalcTotals_`** header totals; the **2026-07 canonical field renames** (`shipment_total_*`; `shipment_lines.shipment_qty` / `shipment_carton_qty` / `shipment_carton_cbm` with line-total CBM semantics); `shipping_method_label` + `customs_type` snapshots. These reflect live Apps Script + API + UI.
+> - **🟡 PLANNED / spec-only (NOT implemented):** `shipment_line_allocations` multi-PO table + writer (§16/Doc Gen §I.1 allocation grain); `factory_stock` reservation lifecycle + `factory_stock_allocation_plans` (§15.1); `shipment_events` / `shipment_routes` enrichment (§18); Document Engine runtime + most document mappings (§16/§20); cross-site borrowing (§19.3). New tables/fields marked *planned* here are design, not live.
+> - Individual sections should be read with this legend; where a section says "planned/future," it is spec-only. Legacy DB names appear in this document **only** inside explicit read-fallback / migration notes.
 >
 > **Changelog v1 → v2:** Added `warehouses` full schema, `factory_stock.reserved_stock` + `available_stock = current_stock − reserved_stock` rule, reservation lifecycle (reserve on plan approval, release on cancel, deduct on ship), expanded `factory_stock_movements` (separate before/after for current vs reserved + reservation movement types), planned `factory_stock_allocation_plans` planning-layer table, production_schedule positioned as upstream readiness (not an MVP shipment dependency), and multi-PO display via `shipment_line_allocations`.
 >
@@ -34,7 +37,7 @@
 >
 > **Changelog v2.3 → v2.4 (2026-07-01) — Shipment Draft refinement (implemented):**
 > - **external_shipment_id default reformatted** to **`COMPANY-MKT-YYMMDD-##`** (marketplace short codes; 2-digit daily serial; e.g. `RESUS-AMZ-260701-01`) and shown as the **first Shipment Draft card-header field** (fallback `shipment_no` → internal `shipment_id`); §2.
-> - **`shipment_lines.cbm` renamed to `carton_cbm`** (single-carton CBM = the only stored CBM column). Line/header total CBM is **runtime** = `Σ(carton_cbm × carton_qty)`; SKU Lines show **Carton CBM only** (no CBM column), totals row shows **Total Carton CBM**; §2, §15.3.
+> - **`shipment_lines.carton_cbm` renamed to `shipment_carton_cbm`** and its meaning corrected to **LINE-TOTAL CBM** (total for the whole line/SKU qty — NOT per-carton). Header total CBM = **`Σ shipment_carton_cbm`** (direct sum, never re-multiplied). SKU Lines show **CBM** (line total), totals row shows **Total CBM**; §2, §15.3. Legacy `carton_cbm` (per-carton) = read-fallback only.
 > - **Carton No. validation** (§12): integers, `start ≤ end`, non-overlapping within a shipment; blocks Save / Ready to Ship / Ship (frontend + `updateShipment`).
 > - **§5B Required fields before Ship** changed to: `external_shipment_id`, Carton No. Start/End (all lines), `reference_id`, `warehouse_code`, `etd`, `eta` (tracking/booking no longer required).
 > - **Remark maps to `shipments.note`** (§4).
@@ -72,7 +75,7 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 - No `factory_name`. Use `warehouse_id` → `warehouses`.
 - **Upstream production-readiness data.** Shipment Center MVP must **not** depend on it for shipment execution; shipment allocation primarily uses `purchase_order_lines.remaining_qty` / `completed_qty`. `production_schedule` may later estimate future available stock / expected completion.
 
-**`shipments`** — `shipment_id, shipment_no, external_shipment_id, shipping_plan_id, reference_id, warehouse_id, warehouse_code, company, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, transit_type, last_mile_delivery, customs_type, battery_flag, battery_type, magnet_flag, status, sales_order_id, booking_no, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, total_qty, total_cartons, total_cbm, total_gross_weight, total_net_weight, freight_cost_actual, duty_actual, currency, shipped_at, shipped_by, hidden_from_draft_at, hidden_from_draft_by, note, created_by, created_at, updated_by, updated_at`
+**`shipments`** — `shipment_id, shipment_no, external_shipment_id, shipping_plan_id, reference_id, warehouse_id, warehouse_code, company, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, transit_type, last_mile_delivery, customs_type, battery_flag, battery_type, magnet_flag, status, sales_order_id, booking_no, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, shipment_total_qty, shipment_total_cartons, shipment_total_cbm, shipment_total_gross_weight, shipment_total_net_weight, freight_cost_actual, duty_actual, currency, shipped_at, shipped_by, hidden_from_draft_at, hidden_from_draft_by, note, created_by, created_at, updated_by, updated_at` *(canonical `shipment_total_*`; legacy `total_qty` / `total_cartons` / `total_cbm` / `total_gross_weight` / `total_net_weight` read-fallback only)*
 - **Aggregated logistics attributes** (`battery_flag`, `battery_type`, `magnet_flag`) are **auto-calculated from `shipment_lines`, never user-editable** — see **§21 Shipment Logistics Attribute Aggregation**. `transit_type` / `last_mile_delivery` / `customs_type` use the Global Logistics Enums (`CARRIER_AND_ROUTE_SPEC.md` §4.5) and are the shipment-level keys used for carrier matching (with the aggregated battery/magnet). *(These header columns are **planned** additions — spec only; not yet migrated.)*
 - **`shipment_id` = internal DB primary key** (e.g. `SH-2A9E06E1-A`) — **system-generated, never user-editable**. `shipment_lines.shipment_id` is the FK to it and is never changed by the UI.
 - **`external_shipment_id` = the user-facing / carrier shipment number** — **editable** (≠ internal `shipment_id` PK, which is never editable). Auto-generated at Execution Commit as **`COMPANY-MKT-YYMMDD-##`** where:
@@ -88,13 +91,19 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 - **`company`** = **copied from `shipping_plans.company` at Execution Commit** (when the Shipment Draft is created). It is a **persisted execution snapshot of company ownership** — the Shipment must **NOT** live-join `marketplaces` to recover company for historical records. Company lives on the **header only**; `shipment_lines` do **not** carry company (they inherit it via `shipment_id`).
 - **`booking_no` / `note` / `updated_by`** added for the Execution Layer: `booking_no` = carrier/forwarder booking reference; `note` = shipment remark; `updated_by` = placeholder actor of the last execution edit (Role & Permission integration is future, like the plan-layer actors).
 - **`marketplace`** is **copied from `shipping_plans.marketplace` at Execution Commit** (part of the six-key header copy) and is **displayed on the Shipment Overview card header** (Marketplace / Company / Country / Method / Total Pcs / Cartons). It is not live-joined. *(`destination` is intentionally NOT shown on the card yet — destination routing is finalized in `CARRIER_AND_ROUTE_SPEC.md` / future Shipping Allocation.)*
-- The header six-key context (`company` / `country` / `marketplace` / `ship_from` / `destination` / `shipping_method`) and `total_qty` / `total_cartons` are **copied from the approved plan at Execution Commit and are NOT recalculated**. Editable execution-layer fields: `carrier_id`, `rate_card_id`, `shipping_method`, `booking_no`, `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `actual_*_date`, `customs_clearance_date`, `delivered_date`, `total_cbm` / weights, `freight_cost_actual`, `duty_actual`, `currency`, `warehouse_code`, `reference_id`, `note`, and `status`.
+- The header six-key context (`company` / `country` / `marketplace` / `ship_from` / `destination` / `shipping_method`) and `shipment_total_qty` / `shipment_total_cartons` are **copied from the approved plan at Execution Commit and are NOT recalculated**. Editable execution-layer fields: `carrier_id`, `rate_card_id`, `shipping_method`, `customs_type`, `booking_no`, `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `actual_*_date`, `customs_clearance_date`, `delivered_date`, `shipment_total_cbm` / `shipment_total_gross_weight` / `shipment_total_net_weight`, `freight_cost_actual`, `duty_actual`, `currency`, `warehouse_code`, `reference_id`, `note`, and `status`.
 
-**`shipment_lines`** — `shipment_line_id, shipment_id, sku, qty, factory_stock_allocation_qty, carton_qty, carton_no_start, carton_no_end, units_per_carton, carton_cbm, gross_weight, net_weight, purchase_order_line_id, note, created_at, updated_at, snapshot_current_stock, snapshot_avg_sales_per_day, snapshot_days_of_supply, snapshot_suggested_qty, snapshot_target_days, snapshot_fc_context, snapshot_event_context, snapshot_avg_sales_source, snapshot_avg_sales_warning`
-- **`carton_cbm` = single-carton CBM (m³)** — copied from `shipping_plan_lines.carton_cbm` at Execution Commit (fallback: computed from `sku_details` carton dims when the plan line has none). **There is no stored line `cbm` column** (the former `shipment_lines.cbm` was renamed to `carton_cbm`). Line/shipment total CBM is **RUNTIME**: line total = `carton_cbm × carton_qty`; header `total_cbm` = `Σ(carton_cbm × carton_qty)`. The SKU Lines table shows **Carton CBM only** (no CBM column); the totals row shows **Total Carton CBM = Σ(carton_cbm × carton_qty)**.
-- **`snapshot_*` = the Execution Snapshot** — a **verbatim copy of the line's Decision Snapshot** taken at Execution Commit (ARCHITECTURE §4A). These are **frozen and never recalculated** in the Execution Layer (Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event are all copied, not re-derived). `qty` = the plan line's `approved_qty`; `carton_qty` / `units_per_carton` are copied from the plan line.
-- `qty` = **final shipment quantity** and the source for on-the-way / arrival quantity.
-- `factory_stock_allocation_qty` = factory stock reserved/allocated for this line; usually equals `qty`, but may differ during partial preparation.
+> **CANONICAL FIELD RENAME (2026-07 DB rename).** The quantity totals on `shipments` were renamed to `shipment_total_qty` / `shipment_total_cartons` / `shipment_total_cbm`; the **weight totals** to `shipment_total_gross_weight` / `shipment_total_net_weight`; `shipment_lines.qty` → **`shipment_qty`**; `shipment_lines.carton_qty` → `shipment_carton_qty`; **`shipment_lines.carton_cbm` → `shipment_carton_cbm` (now LINE-TOTAL, not per-carton)**; `shipping_plan_lines.carton_qty` → `plan_carton_qty`; `shipping_allocation_draft_lines.qty` → `shipment_draft_qty`. The old names (`total_qty` / `total_cartons` / `total_cbm` / `total_gross_weight` / `total_net_weight` / `carton_qty` / `qty` / `carton_cbm`) are **RETIRED** — new writes use the canonical names only, they are **never re-ensured/recreated**, and legacy columns remain solely for **read-fallback** on old rows.
+>
+> **Central totals recalculation (`shipmentRecalcTotals_`).** Header snapshot totals are re-derived from the shipment's OWN `shipment_lines`: `shipment_total_qty = Σ shipment_qty`, `shipment_total_cartons = Σ shipment_carton_qty`, `shipment_total_gross_weight = Σ gross_weight`, `shipment_total_net_weight = Σ net_weight`, **`shipment_total_cbm = Σ shipment_carton_cbm`** (LINE-TOTAL summed DIRECTLY — never re-multiplied by cartons). Runs at Execution Commit (from the plan) and whenever **shipment lines change** in `updateShipment` (a header-only edit does not trigger it, so manual actuals overrides stick). `shipment_carton_cbm` / `gross_weight` / `net_weight` are **line totals** read as stored and summed directly; only a legacy per-carton `carton_cbm` fallback is converted once (× `shipment_carton_qty`) for historical rows. Legacy shipments keep blank weight totals until next recalculated.
+>
+> **`shipments.customs_type`** (added 2026-07) = shipment-level customs-method **snapshot**, prefilled from the selected `carrier_rate_cards.customs_type` at creation and confirmable while Draft. Documents/Overview read the **stored snapshot** — never live-resolve it from the current rate card. Nullable for legacy rows; new formal shipments should populate it before external customs/carrier document generation.
+
+**`shipment_lines`** — `shipment_line_id, shipment_id, sku, shipment_qty, factory_stock_allocation_qty, shipment_carton_qty, carton_no_start, carton_no_end, units_per_carton, shipment_carton_cbm, gross_weight, net_weight, purchase_order_line_id, note, created_at, updated_at, snapshot_current_stock, snapshot_avg_sales_per_day, snapshot_days_of_supply, snapshot_suggested_qty, snapshot_target_days, snapshot_fc_context, snapshot_event_context, snapshot_avg_sales_source, snapshot_avg_sales_warning` *(canonical `shipment_qty` / `shipment_carton_qty` / `shipment_carton_cbm`; legacy `qty` / `carton_qty` / `carton_cbm` read-fallback only)*
+- **`shipment_carton_cbm` (canonical 2026-07 rename of `carton_cbm`) = LINE-TOTAL CBM (m³)** for the whole line/SKU quantity — **NOT per-carton**. Copied at Execution Commit from the plan's **line-total** `shipping_plan_lines.cbm` (fallback: per-carton `carton_cbm` — plan value or computed from `sku_details` carton dims — **× `shipment_carton_qty`, multiplied exactly once here**). `gross_weight` / `net_weight` are likewise **line totals**. Header total CBM = **`Σ shipment_carton_cbm`** (summed directly — the line already holds its total; never re-multiplied by cartons). Legacy per-carton `carton_cbm` is read-fallback only (converted once for historical rows). The SKU Lines table shows **CBM** (line total); the totals row shows **Total CBM = Σ shipment_carton_cbm**.
+- **`snapshot_*` = the Execution Snapshot** — a **verbatim copy of the line's Decision Snapshot** taken at Execution Commit (ARCHITECTURE §4A). These are **frozen and never recalculated** in the Execution Layer (Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event are all copied, not re-derived). `shipment_qty` = the plan line's `approved_qty`; `shipment_carton_qty` / `units_per_carton` are copied from the plan line.
+- **`shipment_qty`** (canonical; legacy `qty` read-fallback) = **final shipment quantity** and the source for on-the-way / arrival quantity.
+- `factory_stock_allocation_qty` = factory stock reserved/allocated for this line; usually equals `shipment_qty`, but may differ during partial preparation.
 - **`carton_no_start` / `carton_no_end` are user-editable (numeric)** on the Shipment Draft SKU Lines (Draft / Ready to Ship); saved via `updateShipment` `{ lines: [{shipment_line_id, carton_no_start, carton_no_end}] }`. All other line fields (qty / carton_qty / logistics / snapshot) are read-only.
 
 **`shipment_line_allocations`** *(planned new table)* — `shipment_line_allocation_id, shipment_line_id, purchase_order_line_id, sku, allocated_qty, allocation_method, created_by, created_at, note`
@@ -222,7 +231,7 @@ Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Re
 **Actions per card:** Edit · Save · Cancel · Confirm Shipment / Ready to Ship.
 
 **Required fields before `ready_to_ship`:**
-`shipment_no` or `shipment_id`, `reference_id`, `warehouse_id`, `warehouse_code`, `carrier_id`, `shipping_method`, `etd`, `eta`, `carton_no_start`, `carton_no_end`, `qty`, `carton_qty`, `units_per_carton`.
+`shipment_no` or `shipment_id`, `reference_id`, `warehouse_id`, `warehouse_code`, `carrier_id`, `shipping_method`, `etd`, `eta`, `carton_no_start`, `carton_no_end`, `shipment_qty`, `shipment_carton_qty`, `units_per_carton`.
 
 **Optional / later fields:**
 `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `actual_departure_date`, `actual_arrival_date`, `customs_clearance_date`, `delivered_date`, `freight_cost_actual`, `duty_actual`.
@@ -239,12 +248,12 @@ Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Re
 > - **Shipped** (`status = shipped`) — officially shipped; fields read-only; **Done** button.
 > - **Filter:** a compact top-right **Country + Status** filter (Status = All / Draft / Ready to Ship / Shipped). **No Marketplace, no Date / SKU / Shipping Method / Search** — the full filter bar belongs to Shipment Overview only.
 > - **Card header (left):** Shipment No · Status · Plan id. **(right):** **Marketplace · Company · Country · Destination (`--` if blank) · Method · Pcs · ETD · ETA**.
-> - **SKU Lines** (clean title, no long caption): SKU · Qty · Cartons · **Carton CBM · Gross Wt · Net Wt · Carton No. Start · Carton No. End** (no standalone CBM column), plus a **totals row** (Total SKU / Qty / Ctn. / **Total Carton CBM = Σ(carton_cbm × carton_qty)** / Gross Wt / Net Wt). **`carton_no_start` / `carton_no_end` are editable numeric inputs** (Draft / Ready to Ship); saved to `shipment_lines`.
+> - **SKU Lines** (clean title, no long caption): SKU · Qty · Cartons · **CBM · Gross Wt · Net Wt · Carton No. Start · Carton No. End** (the CBM column is the **line total** `shipment_carton_cbm`), plus a **totals row** (Total SKU / Qty / Ctn. / **Total CBM = Σ shipment_carton_cbm** / Gross Wt / Net Wt). The frontend **never multiplies** the line CBM by cartons. **`carton_no_start` / `carton_no_end` are editable numeric inputs** (Draft / Ready to Ship); saved to `shipment_lines`.
 >   - **Total SKU Rule (official — global):** the **Total SKU** figure (and any `shipments.total_sku` field) = **`COUNT(DISTINCT sku)`, NEVER `COUNT(rows)`**. Qty / Ctn. / CBM / weights remain summations; only the SKU **count** is distinct. Same rule across Request Order, Purchase Order, Weekly Shipping Plan, Shipment Overview — see `DATABASE_RELATIONSHIP_MAP.md` §7.5A.
-> - **Execution Fields (clean 2-column form):** **Shipment ID (external, editable = `external_shipment_id`)**, Carrier (**read-only**), Reference ID, Warehouse Code, Tracking No, Booking No, Container No, BL No, Invoice No, ETD, ETA, **Remark**. The **internal `shipment_id` is shown read-only and never editable**. **Never editable:** the six-key context, `qty` / `carton_qty`, copied logistics + Decision Snapshot. **Remark mapping: the UI "Remark" field maps to `shipments.note`.**
+> - **Execution Fields (clean 2-column form):** **Shipment ID (external, editable = `external_shipment_id`)**, Carrier (**read-only**), Reference ID, Warehouse Code, Tracking No, Booking No, Container No, BL No, Invoice No, ETD, ETA, **Remark**. The **internal `shipment_id` is shown read-only and never editable**. **Never editable:** the six-key context, `shipment_qty` / `shipment_carton_qty`, copied logistics + Decision Snapshot. **Remark mapping: the UI "Remark" field maps to `shipments.note`.**
 > - **Carton No. validation (§12):** integers only; `start ≤ end`; **ranges must not overlap within the same shipment**. On error the offending inputs get a red border + message, and **Save / Ready to Ship / Ship are blocked** (frontend + server-side in `updateShipment`).
 > - **Save vs Ship (FINAL):** **Save** only updates execution fields — no history, no Overview, not a shipment. **Ship** requires status `shipped`, sets **`shipped_at` = now**, **`shipped_by` = `system_user`** placeholder, and only then does the shipment enter **Shipment Overview**.
-> - **§5B — Required fields before Ship** (validated on the frontend AND server-side in `updateShipment`): **`external_shipment_id`, Carton No. Start, Carton No. End (every line), `reference_id`, `warehouse_code`, `etd`, `eta`** (and `total_qty > 0`). `tracking_number` / `booking_no` are **not** required at this phase. Missing → error, Ship blocked.
+> - **§5B — Required fields before Ship** (validated on the frontend AND server-side in `updateShipment`): **`external_shipment_id`, Carton No. Start, Carton No. End (every line), `reference_id`, `warehouse_code`, `etd`, `eta`** (and `shipment_total_qty > 0`). `tracking_number` / `booking_no` are **not** required at this phase. Missing → error, Ship blocked.
 > - **Done (Shipped card):** writes **`hidden_from_draft_at` / `hidden_from_draft_by`** → the card leaves the **Shipment Draft** default view. It stays in **Shipment Overview**; status is unchanged; **no row is deleted**.
 > - **Return to Draft (Phase-2 placeholder, no permissions yet):** a **Ready to Ship** card has a **← Return to Draft** button. It prompts for a **required reason** (appended to `shipments.note` history) and sets `status = draft` so core data can be re-edited, then re-submitted. See §12A for the standard revision flow and the future `shipment_revision_log` table.
 
@@ -362,7 +371,7 @@ available_to_ship = 5000 − 0 = 5000
 ## 8. Factory Stock Deduction Design
 
 **When shipment is confirmed / `ready_to_ship`:**
-- `factory_stock.current_stock` decreases by `shipment_lines.factory_stock_allocation_qty`, or by `qty` if allocation qty is blank.
+- `factory_stock.current_stock` decreases by `shipment_lines.factory_stock_allocation_qty`, or by `shipment_qty` (legacy `qty` fallback) if allocation qty is blank.
 - `factory_stock.reserved_stock` decreases by the same reserved amount.
 - Write `factory_stock_movements` with:
   - `movement_type = stock_shipped`
@@ -421,7 +430,7 @@ Shipment Overview and the future On The Way view read from `shipments` + `shipme
 
 - Only statuses **`ready_to_ship` / `in_transit` / `partial_received`** are active shipment candidates (may count as on-the-way).
 - **`completed` and `cancelled` must NOT count as on-the-way.**
-- On-the-way quantity source = `shipment_lines.qty`.
+- On-the-way quantity source = `shipment_lines.shipment_qty` *(canonical; legacy `qty` read-fallback only)*.
 
 ---
 
@@ -572,22 +581,35 @@ This makes the reservation/deduction timing in §7/§8 **unambiguous across the 
 When CBM / weight is computed for `shipment_lines`, it uses the **carton** dimensions from `sku_details` (per `SKU_DETAILS_LOGISTICS_SPEC.md`) — **never the item `*_2` secondary size**:
 
 ```
-carton_cbm = carton_length * carton_width * carton_height / 1,000,000      (when carton_dimension_unit = cm)
-shipment_lines.carton_cbm   = carton_cbm            (single-carton CBM — the ONLY stored CBM column)
-line total CBM (runtime)    = carton_qty * shipment_lines.carton_cbm
-shipment_lines.gross_weight = carton_qty * carton_weight
-shipment_lines.net_weight   = qty * item_weight
+per_carton_cbm = carton_length * carton_width * carton_height / 1,000,000   (when carton_dimension_unit = cm)
+line_total_cbm  = per_carton_cbm * carton_qty          (the ONE multiplication — done upstream / at Commit)
+shipping_plan_lines.carton_cbm = per_carton_cbm        (PLAN per-carton logistics input)
+shipping_plan_lines.cbm        = line_total_cbm         (PLAN line-total Decision Snapshot)
+shipment_lines.shipment_carton_cbm = line_total_cbm     (LINE-TOTAL — copied from plan `cbm`)
+shipment_lines.gross_weight = carton_qty * carton_weight   (line total)
+shipment_lines.net_weight   = qty * item_weight            (line total)
 ```
 
-- **`shipment_lines` stores only `carton_cbm` (single-carton CBM).** There is **no** stored line `cbm` column (the former `cbm` was renamed to `carton_cbm`). Line/header total CBM is **derived at runtime** from `carton_cbm × carton_qty`.
+- **`shipment_lines.shipment_carton_cbm` = LINE-TOTAL CBM** (canonical; the former `carton_cbm` is retired to read-fallback). It is **NOT per-carton**. Header total CBM = **`Σ shipment_carton_cbm`** (summed directly — never re-multiplied by cartons).
 - **CBM is based on carton dimensions only.** `item_length_2` / `item_width_2` / `item_height_2` do **not** participate in any logistics calculation (they are product-content display only).
 - **Units are read, never hard-coded:** dimension unit from `carton_dimension_unit` (default `cm`); weight unit from `carton_weight_unit` / `item_weight_unit` (default `kg`). Non-cm / non-kg values require conversion (handled by the future engine).
-- **Execution Commit COPIES, never recalculates.** The Execution Commit **copies** `shipping_plan_lines.carton_cbm` verbatim into `shipment_lines.carton_cbm` (fallback: compute from `sku_details` carton dims when the plan line has none), and copies `gross_weight` / `net_weight`. The shipment header totals are summed:
-  - `shipments.total_cbm = Σ(shipment_lines.carton_cbm × shipment_lines.carton_qty)`
-  - `shipments.total_gross_weight = Σ shipment_lines.gross_weight`
-  - `shipments.total_net_weight = Σ shipment_lines.net_weight`
+- **Execution Commit COPIES, never recalculates.** The Execution Commit copies the plan's **line-total** `shipping_plan_lines.cbm` into `shipment_lines.shipment_carton_cbm` (fallback: per-carton `carton_cbm` — plan value or `sku_details` carton dims — **× `shipment_carton_qty`, multiplied exactly once**), and copies `gross_weight` / `net_weight` (line totals). The multiplication happens **once** upstream/at Commit — never again. The shipment header totals are summed:
+  - `shipments.shipment_total_cbm = Σ shipment_lines.shipment_carton_cbm` *(direct sum; legacy per-carton `carton_cbm` converted once for historical rows only)*
+  - `shipments.shipment_total_gross_weight = Σ shipment_lines.gross_weight` *(canonical; legacy `total_gross_weight` read-fallback only)*
+  - `shipments.shipment_total_net_weight = Σ shipment_lines.net_weight` *(canonical; legacy `total_net_weight` read-fallback only)*
   The **Shipment header may store** these totals (unlike the Shipping Plan header, which keeps them Runtime). The formula above is the **definition** of how the plan values were produced; the Execution Layer **does not re-run it**.
 - If a plan line has no logistics value (blank — e.g. `sku_details` missing carton dims), the copied value stays blank; no fabrication.
+
+### 15A. `shipping_method_label` — display-name snapshot (FINALIZED)
+
+`shipments.shipping_method_label` is the **localized display name of the shipping service** for a Shipment (e.g. `美森海派` / `美森海卡` / `空派` / `空卡` / `海運快遞派送`) — the value shown on every generated shipment document. It is a **historical snapshot**, alongside the canonical `shipping_method` / `last_mile_delivery` (which are **kept, not replaced**).
+
+- **Snapshot at creation (copy).** At Shipment creation, copy **`carrier_rate_cards.shipping_method_label`** → `shipments.shipping_method_label` (resolved via the shipment's `rate_card_id`). `rate_card_id` and `last_mile_delivery` are also copied onto the shipment at creation.
+- **Re-copy only before confirmation.** If the Carrier / Rate Card is changed **while the Shipment is still Draft** (pre-confirmation), the label is re-copied from the new rate card. **Once past Draft it is frozen and NEVER auto-resynced** — historical shipment documents keep the copied value even if the Carrier Rate Card changes later.
+- **Fallback (compatibility only).** When no label is available (blank / legacy shipment), generate `shipping_method + '_' + last_mile_delivery` (e.g. `Sea + Parcel → Sea_Parcel`). **New shipments should always populate `shipping_method_label`.**
+- **Documents read the snapshot.** Shipment Detail (and all shipment documents) read `shipments.shipping_method_label` — they do **not** reconstruct the service name from `shipping_method` / `last_mile_delivery` at generation (§20). Doc placeholder mapping lives in `document_template_fields` (`DOCUMENT_GENERATION_SYSTEM_SPEC.md`).
+- **DB / API:** `shipping_method_label` is **TEXT, nullable** (legacy rows) but **expected NOT NULL for newly created shipments**; the API exposes it as **`shippingMethodLabel`** (snake_case in DB, camelCase in frontend). **Copy source = `carrier_rate_cards.shipping_method_label`** (admin-set on the rate card — `CARRIER_AND_ROUTE_SPEC.md` §A / §4C; Master-editable, Update-locked). The shipment resolver reads it defensively (blank rate-card label → fallback).
+- **Formal-document readiness (rule only — validation runtime deferred; DOC GEN §I.1.7):** a **Draft** Shipment MAY use the fallback `shipping_method + "_" + last_mile_delivery`; **internal Shipment Detail** MAY render that fallback for legacy compatibility; **external carrier / customs documents** (Carrier Booking / Commercial Invoice / Packing List) **SHOULD require a committed Carrier Rate Card and a non-blank `shipping_method_label`** before generation. Enforcement is documented, not yet coded.
 
 ---
 
@@ -600,6 +622,8 @@ shipment_lines.net_weight   = qty * item_weight
 > - **Shipment Document Dataset → many templates → `generated_documents`** (§20): one shared dataset per shipment renders multiple document templates.
 > - **Token-to-field mapping lives in `document_template_fields`** (per template, per placeholder — scalar vs collection per the Document Generation spec §E/§F).
 > - Shipment documents use the **Shipment Snapshot only** — never live-read the Request Order, never recalculate allocation (Document Generation spec §I).
+> - **Shipment Detail finalized mapping = Document Generation spec §I.1.** Output grain = **one row per shipment-line PO allocation** (`shipments → shipment_lines → shipment_line_allocations → purchase_order_lines → purchase_orders`); **a formal Shipment MUST have ≥ 1 valid PO allocation — no-allocation Shipment cannot be finalized / exported** (`PO_NO` required; `QTY` = `shipment_line_allocations.allocated_qty`, no `shipment_lines.shipment_qty` fallback). Header fields merge by `shipment_id`; SKU/carton physical fields merge by `shipment_line_id`; **`QTY` / `PO_NO` never merge** (one row per PO allocation). `{{SHIPPING_METHOD}}` reads the `shipments.shipping_method_label` snapshot (§15A). Collection controller `{{SHIPMENT_LINES}}` on template row 2, hidden column A.
+> - **⚠ `shipment_line_allocations` = ENTIRELY PLANNED** (audited: no table headers / getter / writer / tab registration in `12_shipment_handlers.gs` or the adapter). The **current** model links a shipment line to ONE PO via **`shipment_lines.purchase_order_line_id`** (single link, existing column). The multi-PO allocation table + writer must be built before §I.1's per-allocation grain / `allocated_qty` is runnable; until then Shipment Detail is not generatable at the allocation grain.
 
 **Document-type catalog** (`document_type`): `PURCHASE_ORDER`, `SHIPMENT_DETAIL_SHEET`, `CARRIER_BOOKING_FORM`, `COMMERCIAL_INVOICE`, `PACKING_LIST`, `COMMERCIAL_INVOICE_PACKING_COMBINED`, `CUSTOMS_DECLARATION`, `CERTIFICATE_OF_ORIGIN`, `MSDS`, `OTHER`. (Canonical enum: Document Generation spec §G.)
 
@@ -628,7 +652,9 @@ Likely sources: `shipments`, `shipment_lines`, `shipment_line_allocations`, `pur
 **SKU / customs section:**
 - cargo item number (e.g. `shipment_no` + six-digit sequence) · PO number · cargo weight KG · carton length / width / height CM · English product name · Chinese product name · declared unit value · per-carton declared quantity · HS / HTS code · model · material · product usage · sales link · battery flag · magnetic flag.
 
-Likely sources: `shipments`, `shipment_lines`, `sku_details`, `marketplace_skus`, `purchase_orders`, `warehouses`, carrier / shipping method, future template mapping.
+Likely sources: `shipments`, `shipment_lines`, `sku_details`, `marketplace_skus`, `purchase_orders`, `warehouses`, `tax_referral_rates`, `sku_regional_details`, carrier / shipping method, future template mapping.
+
+> **Invoice tab = CONFIRMED MAPPING DRAFT (`DOCUMENT_GENERATION_SYSTEM_SPEC.md` §I.2).** The `carrier_booking_form` workbook is **ONE `document_templates` row with two tabs** (Invoice Import + Packing List Import). The **Invoice tab** header + line placeholder mappings and lookup rules are now recorded in DOC GEN §I.2 (warehouse recipient lookup by `shipments.warehouse_code`; tax row by `shipments.country → tax_referral_rates.duty_country` + effective date, latest `effective_from` wins; declared value / HS code by `series + duty_country + declared_currency? + effective date`, never by currency alone; `PRODUCT_URL` from `sku_regional_details` by `sku + company + country + marketplace`; `HAS_BATTERY`/`HAS_MAGNET` → `是`/`否`). Uses canonical `shipment_total_cartons` / `shipment_carton_qty`. **Packing List tab + full workbook are NOT finalized.** New `warehouses` columns (address / city / state / postal_code / contact_phone / contact_email / warehouse_code) are required before generation — see DOC GEN §I.2.7.
 
 ### 16.3 Commercial Invoice / Packing List / Amazon AGL Combined — fields
 
@@ -806,13 +832,15 @@ Save generated_documents
 **Dataset may include:**
 
 **Header fields:**
-`shipment_id`, `shipment_no`, `reference_id`, `fba_shipment_id`, `invoice_no`, `invoice_date`, `carrier_id`, `shipping_method`, `etd`, `eta`, `warehouse_code`, `destination_warehouse`, `ship_to`, `ship_from`, `currency`.
+`shipment_id`, `shipment_no`, `reference_id`, `fba_shipment_id`, `invoice_no`, `invoice_date`, `carrier_id`, `shipping_method`, `last_mile_delivery`, **`shipping_method_label`**, **`customs_type`**, `etd`, `eta`, `warehouse_code`, `destination_warehouse`, `ship_to`, `ship_from`, `currency`.
+
+> **Shipping service display name = `shipments.shipping_method_label` (snapshot).** Shipment Detail (and every shipment document) MUST read the localized service name from **`shipments.shipping_method_label`** — do **NOT** reconstruct it from `shipping_method` / `last_mile_delivery` at generation time. The label was copied from the Carrier Rate Card at Shipment creation and frozen (§15A); documents therefore stay historically correct even if the rate card later changes. Only when `shipping_method_label` is blank (legacy shipments) does the runtime fall back to `shipping_method + '_' + last_mile_delivery`.
 
 **Line fields:**
-`sku`, `product_name_en`, `product_name_cn`, `qty`, `carton_qty`, `carton_no_start`, `carton_no_end`, `gross_weight`, `net_weight`, `cbm`, `carton_length`, `carton_width`, `carton_height`, `declared_unit_value`, `amount`, `hs_code` / `hts_code`, `material`, `usage`, `model`, `country_of_origin`, `sales_link`, `battery_flag`, `magnetic_flag`, `po_no`.
+`sku`, `product_name_en`, `product_name_cn`, `shipment_qty`, `shipment_carton_qty`, `carton_no_start`, `carton_no_end`, `gross_weight`, `net_weight`, `cbm`, `carton_length`, `carton_width`, `carton_height`, `declared_unit_value`, `amount`, `hs_code` / `hts_code`, `material`, `usage`, `model`, `country_of_origin`, `sales_link`, `battery_flag`, `magnetic_flag`, `po_no`. *(`shipment_qty` / `shipment_carton_qty` are the canonical line quantity columns — legacy `qty` / `carton_qty` read-fallback only. **Shipment-line-grain docs (e.g. carrier packing-list tab) use `shipment_qty`; the finalized Shipment Detail allocation grain still uses `shipment_line_allocations.allocated_qty`** once that table exists — DOC GEN §I.1.3.) `product_name_cn` sourced from `sku_details.product_name_cn`; `usage` from `sku_details.product_use`; `sales_link` from `sku_regional_details.product_url`.*
 
 **Total fields:**
-`total_qty`, `total_cartons`, `total_gross_weight`, `total_net_weight`, `total_cbm`, `total_amount`.
+`shipment_total_qty`, `shipment_total_cartons`, `shipment_total_gross_weight`, `shipment_total_net_weight`, `shipment_total_cbm`, `total_amount`. *(canonical renamed totals — legacy `total_qty` / `total_cartons` / `total_cbm` / `total_gross_weight` / `total_net_weight` read-fallback only. Packing-list footer: `TOTAL_QTY→shipment_total_qty`, `TOTAL_GROSS_WEIGHT→shipment_total_gross_weight`, `TOTAL_NET_WEIGHT→shipment_total_net_weight`.)*
 
 **Notes:**
 - **Exact token-to-dataset mapping belongs to the future Export Center / Mapping Spec.**

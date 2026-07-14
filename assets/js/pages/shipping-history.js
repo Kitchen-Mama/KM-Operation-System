@@ -954,7 +954,7 @@ function _shRenderDbCard(s, planLines, mode) {
     var fieldsEditable = (mode === 'draft') && (status === 'draft' || status === 'ready_to_ship');
 
     // SKU Lines — logistics copied (read-only) + editable carton number range.
-    // Columns: SKU / Qty / Cartons / Carton CBM (single carton) / Gross Wt / Net Wt / Carton No. Start / End.
+    // Columns: SKU / Qty / Cartons / CBM (line total) / Gross Wt / Net Wt / Carton No. Start / End.
     var rows = planLines.map(function(l) {
         function n(v) { return (v === '' || v == null) ? '--' : v; }
         function cartonCell(which, val) {
@@ -965,17 +965,18 @@ function _shRenderDbCard(s, planLines, mode) {
             '<td>' + _shEsc(l.sku) + '</td>' +
             '<td style="text-align:right;">' + _shNum(l.qty) + '</td>' +
             '<td style="text-align:right;">' + _shNum(l.cartonQty) + '</td>' +
-            '<td style="text-align:right;">' + n(l.cartonCbm) + '</td>' +
+            '<td style="text-align:right;">' + n(l.shipmentCartonCbm) + '</td>' +
             '<td style="text-align:right;">' + n(l.grossWeight) + '</td>' +
             '<td style="text-align:right;">' + n(l.netWeight) + '</td>' +
             cartonCell('start', l.cartonNoStart) +
             cartonCell('end', l.cartonNoEnd) +
             '</tr>';
     }).join('');
-    // Totals row. Total Carton CBM = Σ(carton_cbm × carton_qty) — total shipment volume.
+    // Totals row. Total CBM = Σ(shipment_carton_cbm) — each line already holds its LINE-TOTAL CBM, so
+    // sum directly (NEVER multiply by cartons in the frontend). Matches shipments.shipment_total_cbm.
     var tQty = planLines.reduce(function(a, l) { return a + _shNum(l.qty); }, 0);
     var tCtn = planLines.reduce(function(a, l) { return a + _shNum(l.cartonQty); }, 0);
-    var tCartonCbm = planLines.reduce(function(a, l) { return a + _shNum(l.cartonCbm) * _shNum(l.cartonQty); }, 0);
+    var tCartonCbm = planLines.reduce(function(a, l) { return a + _shNum(l.shipmentCartonCbm); }, 0);
     var tGross = planLines.reduce(function(a, l) { return a + _shNum(l.grossWeight); }, 0);
     var tNet = planLines.reduce(function(a, l) { return a + _shNum(l.netWeight); }, 0);
     var footRow = '<tr style="font-weight:600;border-top:2px solid #CBD5E1;">' +
@@ -1003,11 +1004,37 @@ function _shRenderDbCard(s, planLines, mode) {
             '<label style="font-size:11px;color:#64748B;">' + label + '</label>' +
             '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(val) || '--') + '</div></div>';
     }
+    // Customs Type SNAPSHOT (shipments.customs_type). Editable while Draft; read-only otherwise. Options =
+    // distinct nonblank carrier_rate_cards.customs_type (never invented). Prefill = the shipment's stored
+    // value, else the selected Rate Card's customs_type. Read from the stored snapshot in Overview (never
+    // live-resolved), so a later rate-card change cannot silently mutate a confirmed shipment.
+    var _rateCards = (window.KM && KM.DB && typeof KM.DB.getCarrierRateCards === 'function') ? (KM.DB.getCarrierRateCards() || []) : [];
+    var _customsVal = String(s.customsType || '').trim();
+    if (!_customsVal && s.rateCardId) {
+        var _rc = _rateCards.filter(function(c) { return String(c.rateCardId || '').trim() === String(s.rateCardId).trim(); })[0];
+        if (_rc && _rc.customsType) _customsVal = String(_rc.customsType).trim();
+    }
+    var _customsOpts = [];
+    _rateCards.forEach(function(c) { var v = String(c.customsType || '').trim(); if (v && _customsOpts.indexOf(v) === -1) _customsOpts.push(v); });
+    if (_customsVal && _customsOpts.indexOf(_customsVal) === -1) _customsOpts.push(_customsVal);
+    function customsFld() {
+        var label = '<label style="font-size:11px;color:#64748B;">Customs Type</label>';
+        if (!fieldsEditable) {
+            return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
+                '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(_customsVal) || '--') + '</div></div>';
+        }
+        var opts = '<option value="">-- Select --</option>' + _customsOpts.map(function(v) {
+            return '<option value="' + _shEsc(v) + '"' + (v === _customsVal ? ' selected' : '') + '>' + _shEsc(v) + '</option>';
+        }).join('');
+        return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
+            '<select class="sh-exec-input" data-field="customs_type" style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' + opts + '</select></div>';
+    }
     var execGrid =
         '<div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">Internal ID: ' + _shEsc(sid) + ' <span style="color:#CBD5E1;">(system, not editable)</span></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;">' +
             fld('Shipment ID (external)', 'external_shipment_id', s.externalShipmentId) +
             roField('Carrier (from plan)', s.carrierId) +
+            customsFld() +
             fld('Reference ID', 'reference_id', s.referenceId) +
             fld('Warehouse Code', 'warehouse_code', s.warehouseCode) +
             fld('Tracking No', 'tracking_number', s.trackingNumber) +
@@ -1055,6 +1082,7 @@ function _shRenderDbCard(s, planLines, mode) {
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +
                 '<span><strong>Destination:</strong> ' + _shEsc(s.destination || '--') + '</span>' +
                 '<span><strong>Method:</strong> ' + _shEsc(s.shippingMethod || '--') + '</span>' +
+                '<span><strong>Customs Type:</strong> ' + _shEsc(_customsVal || '--') + '</span>' +
                 '<span><strong>Pcs:</strong> ' + _shNum(s.totalQty) + '</span>' +
                 '<span><strong>ETD:</strong> ' + _shEsc(s.etd || '--') + '</span>' +
                 '<span><strong>ETA:</strong> ' + _shEsc(s.eta || '--') + '</span>' +
@@ -1069,7 +1097,7 @@ function _shRenderDbCard(s, planLines, mode) {
                         '<th class="sh-sku-table__th sh-sku-table__th--sku">SKU</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Qty</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Cartons</th>' +
-                        '<th class="sh-sku-table__th sh-sku-table__th--num">Carton CBM</th>' +
+                        '<th class="sh-sku-table__th sh-sku-table__th--num">CBM</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Gross Wt</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Net Wt</th>' +
                         '<th class="sh-sku-table__th sh-sku-table__th--num">Carton No. Start</th>' +
@@ -1163,7 +1191,8 @@ function _shCollectExec(shipmentId) {
     var box = document.getElementById('sh-exec-' + shipmentId);
     var payload = { shipment_id: shipmentId, actor: 'operation-system' };
     if (box) {
-        box.querySelectorAll('input[data-field]').forEach(function(inp) {
+        // Collect <input> AND <select> (Customs Type) execution fields.
+        box.querySelectorAll('input[data-field], select[data-field]').forEach(function(inp) {
             payload[inp.getAttribute('data-field')] = inp.value;
         });
     }
