@@ -24,7 +24,7 @@ var SHIPMENTS_HEADERS_ = [
   'shipment_id', 'shipment_no', 'external_shipment_id', 'shipping_plan_id', 'reference_id',
   'warehouse_id', 'warehouse_code',
   'company', 'country', 'marketplace', 'ship_from', 'destination',
-  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'customs_type', 'status', 'sales_order_id',
+  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'shipments_customs_type', 'shipments_customs_type_label', 'status', 'sales_order_id',
   'booking_no', 'tracking_number', 'container_no', 'bl_no', 'invoice_no',
   'etd', 'eta', 'actual_departure_date', 'actual_arrival_date',
   'customs_clearance_date', 'delivered_date',
@@ -60,7 +60,7 @@ var SHIPMENT_LINES_HEADERS_ = [
 // context, totals, and the whole Execution Snapshot — is immutable here).
 var SHIPMENT_EDITABLE_FIELDS_ = [
   'external_shipment_id',
-  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'customs_type',
+  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'shipments_customs_type',
   'booking_no', 'tracking_number', 'container_no', 'bl_no', 'invoice_no',
   'etd', 'eta', 'actual_departure_date', 'actual_arrival_date',
   'customs_clearance_date', 'delivered_date',
@@ -103,12 +103,25 @@ function shipmentRateCardField_(ss, rateCardId, fieldName) {
   return '';
 }
 
-// Resolve the Shipment customs_type SNAPSHOT. Priority: (1) a value already on the plan/body,
-// (2) carrier_rate_cards.customs_type by rate_card_id. Blank when nothing is available (nullable).
+// Resolve the Shipment shipments_customs_type SNAPSHOT value. Priority: (1) a value already on the
+// plan/body, (2) carrier_rate_cards.customs_type by rate_card_id (the Rate Card SOURCE field — its name
+// is unchanged). Blank when nothing is available (nullable). Result is stored on shipments.shipments_customs_type.
 function shipmentCustomsType_(ss, rateCardId, presetCustomsType) {
   var v = String(presetCustomsType || '').trim();
   if (v) return v;
   return shipmentRateCardField_(ss, rateCardId, 'customs_type');
+}
+
+// Resolve the Shipment shipments_customs_type_label SNAPSHOT — the localized (中文) display Label frozen
+// at creation. Mirrors shipmentMethodLabel_ EXACTLY. Priority: (1) a label already on the plan/body,
+// (2) carrier_rate_cards.customs_type_label by rate_card_id (the Carrier module populates it), (3) FALLBACK
+// = the canonical enum→Label map for the resolved customs_type. Blank when nothing is available (nullable).
+// Documents read ONLY this label; they must never translate the enum themselves.
+function shipmentCustomsTypeLabel_(ss, rateCardId, presetLabel, customsType) {
+  var lbl = String(presetLabel || '').trim();
+  if (!lbl) lbl = shipmentRateCardField_(ss, rateCardId, 'customs_type_label');
+  if (lbl) return lbl;
+  return customsTypeLabel_(customsType);   // canonical enum→Label fallback (shared global; see 17_carrier_handlers.gs)
 }
 
 // Resolve the Shipment display label (SNAPSHOT). Priority: (1) a label already on the plan/body,
@@ -280,10 +293,10 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   var shipmentSheet = shipmentEnsureSheet_(ss, 'shipments', SHIPMENTS_HEADERS_);
   var shipmentLineSheet = shipmentEnsureSheet_(ss, 'shipment_lines', SHIPMENT_LINES_HEADERS_);
   // Auto-add columns on tabs that predate them (no manual migration). Includes the CANONICAL renamed
-  // quantity totals + customs_type snapshot so appendByHeader can write them. Retired legacy columns
+  // quantity totals + shipments_customs_type snapshot so appendByHeader can write them. Retired legacy columns
   // (total_qty / total_cartons / total_cbm / carton_qty) are intentionally NOT ensured here.
   sheetEnsureColumns_(shipmentSheet, ['external_shipment_id', 'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by',
-    'last_mile_delivery', 'shipping_method_label', 'customs_type',
+    'last_mile_delivery', 'shipping_method_label', 'shipments_customs_type', 'shipments_customs_type_label', 'booking_no', 'note',
     'shipment_total_qty', 'shipment_total_cartons', 'shipment_total_cbm',
     'shipment_total_gross_weight', 'shipment_total_net_weight']);
   sheetEnsureColumns_(shipmentLineSheet, ['carton_no_start', 'carton_no_end', 'shipment_carton_qty', 'shipment_qty', 'shipment_carton_cbm']);
@@ -385,6 +398,9 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   // Customs type SNAPSHOT: prefill from the plan's Carrier Rate Card at creation (user-confirmable
   // while Draft via updateShipment). Blank/nullable when no rate card / value is available.
   var pCustomsType = shipmentCustomsType_(ss, pRateCardId, pv('customs_type'));
+  // Customs type LABEL SNAPSHOT — mirrors shipping_method_label. Source: carrier_rate_cards.customs_type_label
+  // (fallback = canonical enum→Label map for pCustomsType). Frozen after creation; documents read this only.
+  var pCustomsTypeLabel = shipmentCustomsTypeLabel_(ss, pRateCardId, pv('customs_type_label'), pCustomsType);
 
   // Header: copy the six-key context + carrier from the plan (WEEKLY §12).
   shipmentAppendByHeader_(shipmentSheet, {
@@ -400,7 +416,8 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     shipping_method: pShipMethod,
     last_mile_delivery: pLastMile,
     shipping_method_label: pMethodLabel,   // localized display SNAPSHOT (frozen after creation)
-    customs_type: pCustomsType,            // customs method SNAPSHOT (prefilled; editable while Draft)
+    shipments_customs_type: pCustomsType,  // customs method SNAPSHOT (prefilled; editable while Draft)
+    shipments_customs_type_label: pCustomsTypeLabel,  // customs Label SNAPSHOT (中文; frozen; documents read this)
     carrier_id: pv('carrier_id'),
     rate_card_id: pRateCardId,
     currency: pv('currency'),
@@ -562,7 +579,7 @@ function handleUpdateShipment_(body) {
 
   // Auto-add columns on tabs that predate them.
   sheetEnsureColumns_(sheet, ['external_shipment_id', 'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by',
-    'last_mile_delivery', 'shipping_method_label', 'customs_type',
+    'last_mile_delivery', 'shipping_method_label', 'shipments_customs_type', 'shipments_customs_type_label', 'booking_no', 'note',
     'shipment_total_gross_weight', 'shipment_total_net_weight']);
 
   var s = shipmentReadSheet_(sheet);
@@ -606,6 +623,18 @@ function handleUpdateShipment_(body) {
     var uShipMethod = body.hasOwnProperty('shipping_method') ? String(body.shipping_method || '').trim() : curVal_('shipping_method');
     var uLastMile = body.hasOwnProperty('last_mile_delivery') ? String(body.last_mile_delivery || '').trim() : curVal_('last_mile_delivery');
     setCell('shipping_method_label', shipmentMethodLabel_(ss, uRateCardId, '', uShipMethod, uLastMile));
+    changed++;
+  }
+
+  // B (customs) — re-derive the customs Label SNAPSHOT ONLY while still Draft, when the customs enum or the
+  // Rate Card changes. Mirrors shipping_method_label: the label is derived, never directly editable. After
+  // Draft it is frozen and never auto-resynced. Documents read shipments_customs_type_label only.
+  if (curStatus === 'draft' &&
+      (body.hasOwnProperty('rate_card_id') || body.hasOwnProperty('shipments_customs_type'))) {
+    function curVal2_(name) { var c = s.col(name); return c === -1 ? '' : String(rowVals[c] == null ? '' : rowVals[c]).trim(); }
+    var uRateCardId2 = body.hasOwnProperty('rate_card_id') ? String(body.rate_card_id || '').trim() : curVal2_('rate_card_id');
+    var uCustomsType = body.hasOwnProperty('shipments_customs_type') ? String(body.shipments_customs_type || '').trim() : curVal2_('shipments_customs_type');
+    setCell('shipments_customs_type_label', shipmentCustomsTypeLabel_(ss, uRateCardId2, '', uCustomsType));
     changed++;
   }
 

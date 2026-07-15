@@ -121,6 +121,7 @@ One row per (carrier × origin × destination × method × charge basis × weigh
 | `transit_type` | enum | **main transportation mode** — `air` / `sea` / `sea_express` / `rail` / `truck` (Global Logistics Enums §4.5). *(v2.0: `transit_type` now holds the transport mode; the retired leg-coverage values `port_to_port`/`door_to_door` are no longer used.)* |
 | `battery_type` | enum | `no_battery` / `alkaline_battery` / `lithium_battery` / `rechargeable_lithium` (Global Logistics Enums §4.5) |
 | `customs_type` | enum | `third_party_customs` / `tax_refund_customs` / `formal_customs` (Global Logistics Enums §4.5) |
+| `customs_type_label` | string | localized (中文) display Label for `customs_type`, **derived from the canonical enum→Label map** (`third_party_customs`=買單報關 / `formal_customs`=正式報關 / `tax_refund_customs`=退稅報關) at import (row override honored). Display metadata (like `shipping_method_label`); Master editable / Update locked. **Snapshotted → `shipments.shipments_customs_type_label`** at shipment creation; documents' `{{CUSTOMS_TYPE}}` reads that Label. |
 | `note` | string | free text (rate-row remarks) |
 | `effective_from` | date | effective start (inclusive) |
 | `effective_to` | date | effective end (inclusive; blank = open-ended) |

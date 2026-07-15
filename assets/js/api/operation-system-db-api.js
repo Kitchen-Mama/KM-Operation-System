@@ -684,6 +684,19 @@ function normalizeShippingPlanLineRecord(raw) {
     };
 }
 
+// Canonical customs_type enum → localized (中文) Label. Mirror of CUSTOMS_TYPE_LABELS_ in
+// 17_carrier_handlers.gs (backend is the source of truth). Used ONLY as a read-side fallback when a
+// stored *_label snapshot is blank (legacy rows). Enum names are frozen; only Labels live here.
+var CUSTOMS_TYPE_LABELS_ = {
+    third_party_customs: '買單報關',
+    formal_customs: '正式報關',
+    tax_refund_customs: '退稅報關'
+};
+function customsTypeLabelFallback_(code) {
+    var key = String(code == null ? '' : code).trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(CUSTOMS_TYPE_LABELS_, key) ? CUSTOMS_TYPE_LABELS_[key] : '';
+}
+
 // Shipment (Execution Layer) header. Execution Snapshot lives on the lines (see below).
 function normalizeShipmentRecord(raw) {
     var r = raw || {};
@@ -708,8 +721,14 @@ function normalizeShipmentRecord(raw) {
         // legacy rows without it: shipping_method + '_' + last_mile_delivery.
         shippingMethodLabel: String(r.shipping_method_label || '').trim() ||
             [String(r.shipping_method || '').trim(), String(r.last_mile_delivery || '').trim()].filter(Boolean).join('_'),
-        // Customs method SNAPSHOT (copied from carrier_rate_cards.customs_type; confirmable while Draft).
-        customsType: String(r.customs_type || '').trim(),
+        // Customs method SNAPSHOT. Canonical shipments_customs_type; legacy customs_type read-fallback
+        // (historical rows). customsType kept as a temporary read-compat alias = shipmentsCustomsType.
+        shipmentsCustomsType: String((r.shipments_customs_type === '' || r.shipments_customs_type == null) ? (r.customs_type || '') : r.shipments_customs_type).trim(),
+        customsType: String((r.shipments_customs_type === '' || r.shipments_customs_type == null) ? (r.customs_type || '') : r.shipments_customs_type).trim(),
+        // Customs Label SNAPSHOT (中文). Canonical shipments_customs_type_label; blank legacy rows fall back
+        // to the canonical enum→Label map. Documents read THIS — never translate the enum at render time.
+        shipmentsCustomsTypeLabel: String(r.shipments_customs_type_label || '').trim() ||
+            customsTypeLabelFallback_((r.shipments_customs_type === '' || r.shipments_customs_type == null) ? r.customs_type : r.shipments_customs_type),
         status: String(r.status || '').trim(),
         salesOrderId: String(r.sales_order_id || '').trim(),
         bookingNo: String(r.booking_no || '').trim(),
@@ -1198,6 +1217,8 @@ function normalizeCarrierRateCardRecord(raw) {
         transitType: String(r.transit_type || '').trim(),
         batteryType: String(r.battery_type || '').trim(),
         customsType: String(r.customs_type || '').trim(),
+        // Localized customs Label (display metadata; enum stays authoritative). Blank rows derive from the map.
+        customsTypeLabel: String(r.customs_type_label || '').trim() || customsTypeLabelFallback_(r.customs_type),
         note: String(r.note || '').trim(),
         effectiveFrom: String(r.effective_from || '').trim(),
         effectiveTo: String(r.effective_to || '').trim(),

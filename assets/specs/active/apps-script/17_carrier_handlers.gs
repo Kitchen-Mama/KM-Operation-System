@@ -26,7 +26,7 @@ var CARRIER_RATE_CARDS_HEADERS_ = [
   'marketplace', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'charge_type', 'charge_unit', 'dim_divisor',
   'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit',
   'currency', 'unit_rate', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee',
-  'transit_type', 'battery_type', 'customs_type', 'note',
+  'transit_type', 'battery_type', 'customs_type', 'customs_type_label', 'note',
   'effective_from', 'effective_to', 'status', 'source_file_name', 'import_batch_id',
   'created_at', 'updated_at'
 ];
@@ -48,10 +48,25 @@ var CRC_LOCKED_COLS_ = [
   'destination_postal_code_start', 'destination_postal_code_end', 'destination_warehouse_code',
   'marketplace', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'charge_type', 'charge_unit', 'dim_divisor',
   'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit', 'currency',
-  'transit_type', 'battery_type', 'customs_type'
+  'transit_type', 'battery_type', 'customs_type', 'customs_type_label'
 ];
 // System columns never taken from the template.
 var CRC_SYSTEM_COLS_ = { rate_card_id: 1, source_file_name: 1, import_batch_id: 1, created_at: 1, updated_at: 1, carrier_name: 1, row_type: 1 };
+
+// Canonical customs_type enum → localized (中文) Label. SINGLE SOURCE OF TRUTH for the customs Label
+// (shared global scope; also used by 12_shipment_handlers.gs shipmentCustomsTypeLabel_). Enum names are
+// FROZEN; only the display Labels live here. If a Label ever changes, only this map changes and NO document
+// or downstream code changes — the shipments_customs_type_label snapshot re-derives on the next write.
+var CUSTOMS_TYPE_LABELS_ = {
+  third_party_customs: '買單報關',
+  formal_customs: '正式報關',
+  tax_refund_customs: '退稅報關'
+};
+// Resolve the canonical Label for a customs_type enum. Unknown/blank → '' (nullable; never invents text).
+function customsTypeLabel_(code) {
+  var key = String(code == null ? '' : code).trim().toLowerCase();
+  return CUSTOMS_TYPE_LABELS_.hasOwnProperty(key) ? CUSTOMS_TYPE_LABELS_[key] : '';
+}
 
 function crcNorm_(v) { return String(v == null ? '' : v).trim(); }
 function crcLower_(v) { return crcNorm_(v).toLowerCase(); }
@@ -349,6 +364,9 @@ function handleImportCarrierRateCards_(body) {
       transit_type: crcNorm_(row.transit_type),
       battery_type: crcNorm_(row.battery_type),
       customs_type: crcNorm_(row.customs_type),
+      // Localized customs Label — canonical enum→Label derivation (row override honored if present). Mirrors
+      // shipping_method_label as display metadata; shipments snapshot copies this at Execution Commit.
+      customs_type_label: crcNorm_(row.customs_type_label) || customsTypeLabel_(row.customs_type),
       note: crcNorm_(row.note),
       effective_from: ef,
       effective_to: et,

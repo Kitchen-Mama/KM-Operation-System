@@ -1004,12 +1004,12 @@ function _shRenderDbCard(s, planLines, mode) {
             '<label style="font-size:11px;color:#64748B;">' + label + '</label>' +
             '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(val) || '--') + '</div></div>';
     }
-    // Customs Type SNAPSHOT (shipments.customs_type). Editable while Draft; read-only otherwise. Options =
+    // Customs Type SNAPSHOT (shipments.shipments_customs_type; legacy customs_type read-fallback). Editable while Draft; read-only otherwise. Options =
     // distinct nonblank carrier_rate_cards.customs_type (never invented). Prefill = the shipment's stored
     // value, else the selected Rate Card's customs_type. Read from the stored snapshot in Overview (never
     // live-resolved), so a later rate-card change cannot silently mutate a confirmed shipment.
     var _rateCards = (window.KM && KM.DB && typeof KM.DB.getCarrierRateCards === 'function') ? (KM.DB.getCarrierRateCards() || []) : [];
-    var _customsVal = String(s.customsType || '').trim();
+    var _customsVal = String(s.shipmentsCustomsType || s.customsType || '').trim();
     if (!_customsVal && s.rateCardId) {
         var _rc = _rateCards.filter(function(c) { return String(c.rateCardId || '').trim() === String(s.rateCardId).trim(); })[0];
         if (_rc && _rc.customsType) _customsVal = String(_rc.customsType).trim();
@@ -1027,7 +1027,7 @@ function _shRenderDbCard(s, planLines, mode) {
             return '<option value="' + _shEsc(v) + '"' + (v === _customsVal ? ' selected' : '') + '>' + _shEsc(v) + '</option>';
         }).join('');
         return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
-            '<select class="sh-exec-input" data-field="customs_type" style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' + opts + '</select></div>';
+            '<select class="sh-exec-input" data-field="shipments_customs_type" style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' + opts + '</select></div>';
     }
     var execGrid =
         '<div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">Internal ID: ' + _shEsc(sid) + ' <span style="color:#CBD5E1;">(system, not editable)</span></div>' +

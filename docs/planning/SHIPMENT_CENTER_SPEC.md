@@ -6,7 +6,7 @@
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) (Global Logistics Enums §4.5 / matching §4 / resolution §4.6), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md)
 
 > **Document status legend (2026-07 reconciliation).** This document is a **mix of implemented runtime and planned design** — do NOT read it as "entire module unimplemented."
-> - **🟢 IMPLEMENTED / runtime-aligned:** Shipment Draft + Shipment Overview (two status-filtered views over `shipments` / `shipment_lines`, `shipping-history.js`); Execution Commit (`createShipmentFromApprovedPlan_`) copying the plan snapshot; `updateShipment` editable-field whitelist + Ship gate + carton-range validation; **central `shipmentRecalcTotals_`** header totals; the **2026-07 canonical field renames** (`shipment_total_*`; `shipment_lines.shipment_qty` / `shipment_carton_qty` / `shipment_carton_cbm` with line-total CBM semantics); `shipping_method_label` + `customs_type` snapshots. These reflect live Apps Script + API + UI.
+> - **🟢 IMPLEMENTED / runtime-aligned:** Shipment Draft + Shipment Overview (two status-filtered views over `shipments` / `shipment_lines`, `shipping-history.js`); Execution Commit (`createShipmentFromApprovedPlan_`) copying the plan snapshot; `updateShipment` editable-field whitelist + Ship gate + carton-range validation; **central `shipmentRecalcTotals_`** header totals; the **2026-07 canonical field renames** (`shipment_total_*`; `shipment_lines.shipment_qty` / `shipment_carton_qty` / `shipment_carton_cbm` with line-total CBM semantics; `shipments.shipments_customs_type`); `shipping_method_label` + `shipments_customs_type` snapshots. These reflect live Apps Script + API + UI.
 > - **🟡 PLANNED / spec-only (NOT implemented):** `shipment_line_allocations` multi-PO table + writer (§16/Doc Gen §I.1 allocation grain); `factory_stock` reservation lifecycle + `factory_stock_allocation_plans` (§15.1); `shipment_events` / `shipment_routes` enrichment (§18); Document Engine runtime + most document mappings (§16/§20); cross-site borrowing (§19.3). New tables/fields marked *planned* here are design, not live.
 > - Individual sections should be read with this legend; where a section says "planned/future," it is spec-only. Legacy DB names appear in this document **only** inside explicit read-fallback / migration notes.
 >
@@ -54,6 +54,7 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 `warehouse_id, warehouse_code, warehouse_name, warehouse_type, company, country, marketplace, warehouse_owner, is_factory_warehouse, is_active, address, city, state, postal_code, contact_name, contact_email, contact_phone, created_by, created_at, updated_by, updated_at, note`
 - `warehouse_id` = system master id (e.g. `WH-RESUS-US-FBA-AMAZON`); `warehouse_code` = external/receiving code (e.g. `ONT8`).
 - `is_factory_warehouse` distinguishes factory (production-side) warehouses from destination/3PL/FBA warehouses.
+- **PROPOSED / PLANNED additive field — `is_selectable_for_shipment` (BOOLEAN):** shipment-destination eligibility flag. **NOT yet present in the live schema** — do not treat as implemented. Default `TRUE` for legitimate destination warehouses; `FALSE` for factory-only / virtual / testing / deprecated / transit-only / internal non-destination warehouses. Until adopted, the Shipment Draft warehouse eligibility filter (§22) falls back to `is_active` (and `is_factory_warehouse = FALSE`) only. See §22.G. **No DB column is added by this spec.**
 
 **`factory_stock`** — `factory_stock_id, warehouse_id, sku, current_stock, reserved_stock, created_at, updated_at, last_transaction_at`
 - **No `company`, no `factory_name`.** Company = `warehouses.company`; Factory name = `warehouses.warehouse_name` (join by `warehouse_id`).
@@ -75,8 +76,8 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 - No `factory_name`. Use `warehouse_id` → `warehouses`.
 - **Upstream production-readiness data.** Shipment Center MVP must **not** depend on it for shipment execution; shipment allocation primarily uses `purchase_order_lines.remaining_qty` / `completed_qty`. `production_schedule` may later estimate future available stock / expected completion.
 
-**`shipments`** — `shipment_id, shipment_no, external_shipment_id, shipping_plan_id, reference_id, warehouse_id, warehouse_code, company, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, transit_type, last_mile_delivery, customs_type, battery_flag, battery_type, magnet_flag, status, sales_order_id, booking_no, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, shipment_total_qty, shipment_total_cartons, shipment_total_cbm, shipment_total_gross_weight, shipment_total_net_weight, freight_cost_actual, duty_actual, currency, shipped_at, shipped_by, hidden_from_draft_at, hidden_from_draft_by, note, created_by, created_at, updated_by, updated_at` *(canonical `shipment_total_*`; legacy `total_qty` / `total_cartons` / `total_cbm` / `total_gross_weight` / `total_net_weight` read-fallback only)*
-- **Aggregated logistics attributes** (`battery_flag`, `battery_type`, `magnet_flag`) are **auto-calculated from `shipment_lines`, never user-editable** — see **§21 Shipment Logistics Attribute Aggregation**. `transit_type` / `last_mile_delivery` / `customs_type` use the Global Logistics Enums (`CARRIER_AND_ROUTE_SPEC.md` §4.5) and are the shipment-level keys used for carrier matching (with the aggregated battery/magnet). *(These header columns are **planned** additions — spec only; not yet migrated.)*
+**`shipments`** — `shipment_id, shipment_no, external_shipment_id, shipping_plan_id, reference_id, warehouse_id, warehouse_code, company, country, marketplace, ship_from, destination, carrier_id, rate_card_id, shipping_method, transit_type, last_mile_delivery, shipments_customs_type, shipments_customs_type_label, battery_flag, battery_type, magnet_flag, status, sales_order_id, booking_no, tracking_number, container_no, bl_no, invoice_no, etd, eta, actual_departure_date, actual_arrival_date, customs_clearance_date, delivered_date, shipment_total_qty, shipment_total_cartons, shipment_total_cbm, shipment_total_gross_weight, shipment_total_net_weight, freight_cost_actual, duty_actual, currency, shipped_at, shipped_by, hidden_from_draft_at, hidden_from_draft_by, note, created_by, created_at, updated_by, updated_at` *(canonical `shipment_total_*` and `shipments_customs_type`; legacy `total_qty` / `total_cartons` / `total_cbm` / `total_gross_weight` / `total_net_weight` / `customs_type` read-fallback only)*
+- **Aggregated logistics attributes** (`battery_flag`, `battery_type`, `magnet_flag`) are **auto-calculated from `shipment_lines`, never user-editable** — see **§21 Shipment Logistics Attribute Aggregation**. `transit_type` / `last_mile_delivery` / `shipments_customs_type` use the Global Logistics Enums (`CARRIER_AND_ROUTE_SPEC.md` §4.5) and are the shipment-level keys used for carrier matching (with the aggregated battery/magnet). *(`transit_type` / battery/magnet header columns are **planned** additions — spec only; `shipments_customs_type` is the canonical customs field, legacy `customs_type` read-fallback only.)*
 - **`shipment_id` = internal DB primary key** (e.g. `SH-2A9E06E1-A`) — **system-generated, never user-editable**. `shipment_lines.shipment_id` is the FK to it and is never changed by the UI.
 - **`external_shipment_id` = the user-facing / carrier shipment number** — **editable** (≠ internal `shipment_id` PK, which is never editable). Auto-generated at Execution Commit as **`COMPANY-MKT-YYMMDD-##`** where:
   - **COMPANY** = `company` uppercased with non-alphanumerics removed (e.g. `Res US` → `RESUS`, `KM`, `RESTW`);
@@ -91,13 +92,15 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 - **`company`** = **copied from `shipping_plans.company` at Execution Commit** (when the Shipment Draft is created). It is a **persisted execution snapshot of company ownership** — the Shipment must **NOT** live-join `marketplaces` to recover company for historical records. Company lives on the **header only**; `shipment_lines` do **not** carry company (they inherit it via `shipment_id`).
 - **`booking_no` / `note` / `updated_by`** added for the Execution Layer: `booking_no` = carrier/forwarder booking reference; `note` = shipment remark; `updated_by` = placeholder actor of the last execution edit (Role & Permission integration is future, like the plan-layer actors).
 - **`marketplace`** is **copied from `shipping_plans.marketplace` at Execution Commit** (part of the six-key header copy) and is **displayed on the Shipment Overview card header** (Marketplace / Company / Country / Method / Total Pcs / Cartons). It is not live-joined. *(`destination` is intentionally NOT shown on the card yet — destination routing is finalized in `CARRIER_AND_ROUTE_SPEC.md` / future Shipping Allocation.)*
-- The header six-key context (`company` / `country` / `marketplace` / `ship_from` / `destination` / `shipping_method`) and `shipment_total_qty` / `shipment_total_cartons` are **copied from the approved plan at Execution Commit and are NOT recalculated**. Editable execution-layer fields: `carrier_id`, `rate_card_id`, `shipping_method`, `customs_type`, `booking_no`, `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `actual_*_date`, `customs_clearance_date`, `delivered_date`, `shipment_total_cbm` / `shipment_total_gross_weight` / `shipment_total_net_weight`, `freight_cost_actual`, `duty_actual`, `currency`, `warehouse_code`, `reference_id`, `note`, and `status`.
+- The header six-key context (`company` / `country` / `marketplace` / `ship_from` / `destination` / `shipping_method`) and `shipment_total_qty` / `shipment_total_cartons` are **copied from the approved plan at Execution Commit and are NOT recalculated**. Editable execution-layer fields: `carrier_id`, `rate_card_id`, `shipping_method`, `shipments_customs_type`, `booking_no`, `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `etd`, `eta`, `actual_*_date`, `customs_clearance_date`, `delivered_date`, `shipment_total_cbm` / `shipment_total_gross_weight` / `shipment_total_net_weight`, `freight_cost_actual`, `duty_actual`, `currency`, `warehouse_code`, `reference_id`, `note`, and `status`.
 
-> **CANONICAL FIELD RENAME (2026-07 DB rename).** The quantity totals on `shipments` were renamed to `shipment_total_qty` / `shipment_total_cartons` / `shipment_total_cbm`; the **weight totals** to `shipment_total_gross_weight` / `shipment_total_net_weight`; `shipment_lines.qty` → **`shipment_qty`**; `shipment_lines.carton_qty` → `shipment_carton_qty`; **`shipment_lines.carton_cbm` → `shipment_carton_cbm` (now LINE-TOTAL, not per-carton)**; `shipping_plan_lines.carton_qty` → `plan_carton_qty`; `shipping_allocation_draft_lines.qty` → `shipment_draft_qty`. The old names (`total_qty` / `total_cartons` / `total_cbm` / `total_gross_weight` / `total_net_weight` / `carton_qty` / `qty` / `carton_cbm`) are **RETIRED** — new writes use the canonical names only, they are **never re-ensured/recreated**, and legacy columns remain solely for **read-fallback** on old rows.
+> **CANONICAL FIELD RENAME (2026-07 DB rename).** The quantity totals on `shipments` were renamed to `shipment_total_qty` / `shipment_total_cartons` / `shipment_total_cbm`; the **weight totals** to `shipment_total_gross_weight` / `shipment_total_net_weight`; `shipment_lines.qty` → **`shipment_qty`**; `shipment_lines.carton_qty` → `shipment_carton_qty`; **`shipment_lines.carton_cbm` → `shipment_carton_cbm` (now LINE-TOTAL, not per-carton)**; `shipping_plan_lines.carton_qty` → `plan_carton_qty`; `shipping_allocation_draft_lines.qty` → `shipment_draft_qty`; **`shipments.customs_type` → `shipments_customs_type`** (Rate Card source `carrier_rate_cards.customs_type` is **NOT** renamed). The old names (`total_qty` / `total_cartons` / `total_cbm` / `total_gross_weight` / `total_net_weight` / `carton_qty` / `qty` / `carton_cbm` / `customs_type`) are **RETIRED** — new writes use the canonical names only, they are **never re-ensured/recreated**, and legacy columns remain solely for **read-fallback** on old rows.
 >
 > **Central totals recalculation (`shipmentRecalcTotals_`).** Header snapshot totals are re-derived from the shipment's OWN `shipment_lines`: `shipment_total_qty = Σ shipment_qty`, `shipment_total_cartons = Σ shipment_carton_qty`, `shipment_total_gross_weight = Σ gross_weight`, `shipment_total_net_weight = Σ net_weight`, **`shipment_total_cbm = Σ shipment_carton_cbm`** (LINE-TOTAL summed DIRECTLY — never re-multiplied by cartons). Runs at Execution Commit (from the plan) and whenever **shipment lines change** in `updateShipment` (a header-only edit does not trigger it, so manual actuals overrides stick). `shipment_carton_cbm` / `gross_weight` / `net_weight` are **line totals** read as stored and summed directly; only a legacy per-carton `carton_cbm` fallback is converted once (× `shipment_carton_qty`) for historical rows. Legacy shipments keep blank weight totals until next recalculated.
 >
-> **`shipments.customs_type`** (added 2026-07) = shipment-level customs-method **snapshot**, prefilled from the selected `carrier_rate_cards.customs_type` at creation and confirmable while Draft. Documents/Overview read the **stored snapshot** — never live-resolve it from the current rate card. Nullable for legacy rows; new formal shipments should populate it before external customs/carrier document generation.
+> **`shipments.shipments_customs_type`** (canonical 2026-07 rename of `customs_type`; legacy `customs_type` read-fallback only) = shipment-level customs-method **snapshot**, prefilled from the selected `carrier_rate_cards.customs_type` at creation and confirmable while Draft. Enum: `third_party_customs` (買單報關) / `formal_customs` (正式報關) / `tax_refund_customs` (退稅報關). Documents/Overview read the **stored snapshot** — never live-resolve it from the current rate card. Nullable for legacy rows; new formal shipments should populate it before external customs/carrier document generation. **`carrier_rate_cards.customs_type` (the Rate Card source) is unchanged.**
+>
+> **`shipments.shipments_customs_type_label`** = the localized (中文) customs-method **Label SNAPSHOT**, architected **identically to `shipping_method_label`**. **Source:** `carrier_rate_cards.customs_type_label` (the Carrier module derives it from the canonical enum→Label map at import). **Snapshot time:** Shipment creation (Execution Commit); re-derived only while still Draft when the customs enum or Rate Card changes; frozen thereafter. **Fallback:** the canonical enum→Label map (`third_party_customs`=買單報關 / `formal_customs`=正式報關 / `tax_refund_customs`=退稅報關) for legacy rows with a blank label. **Used by:** all Shipment Documents — `{{CUSTOMS_TYPE}}` reads this Label, never the enum, never a runtime translation. If a Label ever changes, only the enum→Label map (`CUSTOMS_TYPE_LABELS_` in `17_carrier_handlers.gs`) changes; the next shipment write re-derives and **no document changes**. The enum (`shipments_customs_type`) remains the canonical machine value and the sole source for the 「是否出口退税」 yes/no derivation.
 
 **`shipment_lines`** — `shipment_line_id, shipment_id, sku, shipment_qty, factory_stock_allocation_qty, shipment_carton_qty, carton_no_start, carton_no_end, units_per_carton, shipment_carton_cbm, gross_weight, net_weight, purchase_order_line_id, note, created_at, updated_at, snapshot_current_stock, snapshot_avg_sales_per_day, snapshot_days_of_supply, snapshot_suggested_qty, snapshot_target_days, snapshot_fc_context, snapshot_event_context, snapshot_avg_sales_source, snapshot_avg_sales_warning` *(canonical `shipment_qty` / `shipment_carton_qty` / `shipment_carton_cbm`; legacy `qty` / `carton_qty` / `carton_cbm` read-fallback only)*
 - **`shipment_carton_cbm` (canonical 2026-07 rename of `carton_cbm`) = LINE-TOTAL CBM (m³)** for the whole line/SKU quantity — **NOT per-carton**. Copied at Execution Commit from the plan's **line-total** `shipping_plan_lines.cbm` (fallback: per-carton `carton_cbm` — plan value or computed from `sku_details` carton dims — **× `shipment_carton_qty`, multiplied exactly once here**). `gross_weight` / `net_weight` are likewise **line totals**. Header total CBM = **`Σ shipment_carton_cbm`** (summed directly — the line already holds its total; never re-multiplied by cartons). Legacy per-carton `carton_cbm` is read-fallback only (converted once for historical rows). The SKU Lines table shows **CBM** (line total); the totals row shows **Total CBM = Σ shipment_carton_cbm**.
@@ -250,7 +253,7 @@ Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Re
 > - **Card header (left):** Shipment No · Status · Plan id. **(right):** **Marketplace · Company · Country · Destination (`--` if blank) · Method · Pcs · ETD · ETA**.
 > - **SKU Lines** (clean title, no long caption): SKU · Qty · Cartons · **CBM · Gross Wt · Net Wt · Carton No. Start · Carton No. End** (the CBM column is the **line total** `shipment_carton_cbm`), plus a **totals row** (Total SKU / Qty / Ctn. / **Total CBM = Σ shipment_carton_cbm** / Gross Wt / Net Wt). The frontend **never multiplies** the line CBM by cartons. **`carton_no_start` / `carton_no_end` are editable numeric inputs** (Draft / Ready to Ship); saved to `shipment_lines`.
 >   - **Total SKU Rule (official — global):** the **Total SKU** figure (and any `shipments.total_sku` field) = **`COUNT(DISTINCT sku)`, NEVER `COUNT(rows)`**. Qty / Ctn. / CBM / weights remain summations; only the SKU **count** is distinct. Same rule across Request Order, Purchase Order, Weekly Shipping Plan, Shipment Overview — see `DATABASE_RELATIONSHIP_MAP.md` §7.5A.
-> - **Execution Fields (clean 2-column form):** **Shipment ID (external, editable = `external_shipment_id`)**, Carrier (**read-only**), Reference ID, Warehouse Code, Tracking No, Booking No, Container No, BL No, Invoice No, ETD, ETA, **Remark**. The **internal `shipment_id` is shown read-only and never editable**. **Never editable:** the six-key context, `shipment_qty` / `shipment_carton_qty`, copied logistics + Decision Snapshot. **Remark mapping: the UI "Remark" field maps to `shipments.note`.**
+> - **Execution Fields (clean 2-column form):** **Shipment ID (external, editable = `external_shipment_id`)**, Carrier (**read-only**), Reference ID, **Warehouse Code (country-filtered searchable dropdown — a master reference, NOT free text; see §22)**, Tracking No, Booking No, Container No, BL No, Invoice No, ETD, ETA, **Remark**. The **internal `shipment_id` is shown read-only and never editable**. **Never editable:** the six-key context, `shipment_qty` / `shipment_carton_qty`, copied logistics + Decision Snapshot. **Remark mapping: the UI "Remark" field maps to `shipments.note`.**
 > - **Carton No. validation (§12):** integers only; `start ≤ end`; **ranges must not overlap within the same shipment**. On error the offending inputs get a red border + message, and **Save / Ready to Ship / Ship are blocked** (frontend + server-side in `updateShipment`).
 > - **Save vs Ship (FINAL):** **Save** only updates execution fields — no history, no Overview, not a shipment. **Ship** requires status `shipped`, sets **`shipped_at` = now**, **`shipped_by` = `system_user`** placeholder, and only then does the shipment enter **Shipment Overview**.
 > - **§5B — Required fields before Ship** (validated on the frontend AND server-side in `updateShipment`): **`external_shipment_id`, Carton No. Start, Carton No. End (every line), `reference_id`, `warehouse_code`, `etd`, `eta`** (and `shipment_total_qty > 0`). `tracking_number` / `booking_no` are **not** required at this phase. Missing → error, Ship blocked.
@@ -439,6 +442,11 @@ Shipment Overview and the future On The Way view read from `shipments` + `shipme
 - `shipments.warehouse_id` = **destination logical warehouse** = system warehouse master id, e.g. `WH-RESUS-US-FBA-AMAZON`.
 - `shipments.warehouse_code` = **external / receiving code** (FC / receiving), e.g. `ONT8`, `LGB8`.
 - **Do not confuse the two.** Factory/source warehouse and all factory metadata come from `warehouse_id` → `warehouses` relationships, **not** `factory_name`.
+- **Warehouse Master is independent shared master data — NOT owned by Shipment.** `warehouses` is the authoritative source for all warehouse address / contact / country / status details; a Shipment stores only the **selected reference** (`warehouse_code`) and must **not** duplicate warehouse address/contact fields into separate Shipment columns in this version.
+- **Cardinality:** `warehouses` **1 → many** `shipments` (many shipments reference the same warehouse). The relationship key for the document/detail lookup is **`shipments.warehouse_code → warehouses.warehouse_code`**.
+- **Two distinct uses of the relationship (do not conflate):**
+  - **Operational selection (Shipment Draft):** `shipments.country` **filters** the eligible `warehouses` options by country; the user picks one and only `shipments.warehouse_code` is written. See **§22**.
+  - **Document lookup (dataset build):** `shipments.warehouse_code` **resolves** the Warehouse Master row to populate recipient/warehouse document fields. This is a **reference lookup at document-dataset build time, NOT a Shipment snapshot** — the values are never copied onto `shipments`. See **§22.J** and `DOCUMENT_GENERATION_SYSTEM_SPEC.md` §I.2.3.
 
 ---
 
@@ -647,10 +655,10 @@ Likely sources: `shipments`, `shipment_lines`, `shipment_line_allocations`, `pur
 ### 16.2 Carrier Booking Form / 托單 — fields
 
 **Header / recipient:**
-- customer order number (usually `shipment_id` or `shipment_no`) · service / `shipping_method` · recipient name · recipient company · recipient address · recipient city · recipient postal code · recipient country code · PO number · carton count · battery flag · magnetic flag · customs declaration type · declaration currency.
+- customer order number (canonical `SHIPMENT_NO` = **`shipments.external_shipment_id`** → fallback `shipment_no` → `shipment_id`; §D of DOC GEN) · service / `shipping_method_label` · booking no (`shipments.booking_no`) · recipient name · recipient company · recipient address · recipient city · recipient postal code · recipient country code · PO number · carton count · battery flag · magnetic flag · customs declaration type (`shipments.shipments_customs_type`) · declaration currency · note (`shipments.note`).
 
 **SKU / customs section:**
-- cargo item number (e.g. `shipment_no` + six-digit sequence) · PO number · cargo weight KG · carton length / width / height CM · English product name · Chinese product name · declared unit value · per-carton declared quantity · HS / HTS code · model · material · product usage · sales link · battery flag · magnetic flag.
+- cargo item number (e.g. external Shipment ID `SHIPMENT_NO` + six-digit sequence) · PO number · cargo weight KG · carton length / width / height CM · English product name · Chinese product name · declared unit value · per-carton declared quantity · HS / HTS code · model · material · product usage · sales link · battery flag · magnetic flag.
 
 Likely sources: `shipments`, `shipment_lines`, `sku_details`, `marketplace_skus`, `purchase_orders`, `warehouses`, `tax_referral_rates`, `sku_regional_details`, carrier / shipping method, future template mapping.
 
@@ -832,7 +840,7 @@ Save generated_documents
 **Dataset may include:**
 
 **Header fields:**
-`shipment_id`, `shipment_no`, `reference_id`, `fba_shipment_id`, `invoice_no`, `invoice_date`, `carrier_id`, `shipping_method`, `last_mile_delivery`, **`shipping_method_label`**, **`customs_type`**, `etd`, `eta`, `warehouse_code`, `destination_warehouse`, `ship_to`, `ship_from`, `currency`.
+`shipment_id`, `shipment_no`, `reference_id`, `fba_shipment_id`, `invoice_no`, `invoice_date`, `carrier_id`, `shipping_method`, `last_mile_delivery`, **`shipping_method_label`**, **`shipments_customs_type`**, **`shipments_customs_type_label`**, `etd`, `eta`, `warehouse_code`, `destination_warehouse`, `ship_to`, `ship_from`, `currency`.
 
 > **Shipping service display name = `shipments.shipping_method_label` (snapshot).** Shipment Detail (and every shipment document) MUST read the localized service name from **`shipments.shipping_method_label`** — do **NOT** reconstruct it from `shipping_method` / `last_mile_delivery` at generation time. The label was copied from the Carrier Rate Card at Shipment creation and frozen (§15A); documents therefore stay historically correct even if the rate card later changes. Only when `shipping_method_label` is blank (legacy shipments) does the runtime fall back to `shipping_method + '_' + last_mile_delivery`.
 
@@ -873,12 +881,153 @@ Each `shipment_lines.sku` resolves its per-SKU logistics attributes from `sku_de
 
 - **Auto-calculated, read-only.** The UI never lets a user set `battery_flag` / `battery_type` / `magnet_flag` directly — they derive from the lines. (Consistent with the Execution-Snapshot principle: the shipment records what its lines contain.)
 - **Recompute basis:** derived from the shipment's lines at Execution Commit (and re-derived if lines change while still editable). No manual override path exists.
-- **Carrier matching** consumes `shipments.battery_type` (highest level) and `shipments.magnet_flag` — **not** per-SKU values (`CARRIER_AND_ROUTE_SPEC.md` §4: destination → `battery_type` → `customs_type` → `transit_type` → `last_mile_delivery`). `customs_type` / `transit_type` / `last_mile_delivery` are shipment-level route/handling attributes (from the plan / routing), also stored on the header.
+- **Carrier matching** consumes `shipments.battery_type` (highest level) and `shipments.magnet_flag` — **not** per-SKU values (`CARRIER_AND_ROUTE_SPEC.md` §4: destination → `battery_type` → `customs_type` → `transit_type` → `last_mile_delivery`). The shipment-level customs attribute is stored on the header as **`shipments_customs_type`** (canonical; legacy `customs_type` read-fallback); `transit_type` / `last_mile_delivery` are the other shipment-level route/handling attributes (from the plan / routing).
 - **Enum source of truth:** `battery_type` / `magnet_type` values follow the Global Logistics Enums (`CARRIER_AND_ROUTE_SPEC.md` §4.5). DB stores English enums; UI may localize.
 - **No engine, no code, no migration in this spec** — the header columns (§0) are **planned** additions; aggregation is defined here for the future Carrier Price Engine + Shipment execution layer.
 
 ---
 
-**Draft v2.4 — Spec only. No code, DB, or implementation changes are implied by this document.** (v2.4: added §21 Shipment Logistics Attribute Aggregation + planned `battery_flag`/`battery_type`/`magnet_flag`/`transit_type`/`last_mile_delivery`/`customs_type` header fields.)
+## 22. Shipment Draft → Warehouse Selection Flow (FINALIZED — SPEC ONLY)
+
+**Status: architecture finalized; runtime NOT implemented.** No JS / Apps Script / API / DB / UI change is implied by this section. Warehouse Master (`warehouses`, §2) is the authoritative operational master; the Shipment stores only `shipments.warehouse_code` (§11). This section defines how the Shipment Draft **selects** that reference and how documents **resolve** it.
+
+### 22.A Architecture Position
+
+- **Warehouse Master (`warehouses`) is the single source of truth** for: `warehouse_code`, `warehouse_name`, `country`, `state`, `city`, `address`, `postal_code`, `contact_phone`, `contact_email`, and warehouse status / availability (`is_active`, `is_factory_warehouse`, proposed `is_selectable_for_shipment`).
+- **Shipment stores only the reference:** `shipments.warehouse_code`. It does **NOT** duplicate warehouse address/contact fields into separate Shipment columns in this version.
+- **Document Dataset resolves warehouse details by reference lookup at build time** (`shipments.warehouse_code → warehouses.warehouse_code → Warehouse Master fields`) — **not** a Shipment snapshot (§22.J).
+
+### 22.B Shipment Draft Warehouse Selection Flow
+
+1. The Shipment already has (or the user sets) `shipments.country`.
+2. Shipment Draft loads eligible Warehouse Master records for that country. Conceptual filter:
+   ```
+   warehouses.country matches shipments.country (normalized, §22.D)
+   AND warehouse is active
+   AND warehouse is selectable for shipment (§22.G)
+   ```
+3. **Warehouse Code is a searchable dropdown/select control — NOT unrestricted free text.**
+4. The dropdown lists **only** warehouses relevant to the Shipment country (never the full global list).
+5. **Recommended option display:** `{warehouse_code} — {warehouse_name} — {city/state}`
+   e.g. `PSC2 — Amazon Fulfillment Center — Pasco, WA`.
+6. Selecting a warehouse writes **`shipments.warehouse_code`** (only the code; details are not copied).
+7. Warehouse details shown elsewhere in the Shipment UI are **resolved from Warehouse Master and are not independently editable inside Shipment Draft.**
+
+### 22.C UI / UX Specification
+
+| Aspect | Behavior |
+|---|---|
+| Label | **Warehouse Code** |
+| Control | searchable dropdown / select |
+| Option source | eligible Warehouse Master records for `shipments.country` (§22.D, §22.G) |
+| Dropdown footer / action | **+ Add New Warehouse** (§22.F) |
+| Loading state | `Loading warehouses…` |
+| No country selected | disabled, or `Select a country first.` — **do not load the full global list** |
+| No eligible match | `No active warehouse is available for this country.` + **+ Add New Warehouse** |
+| After a new warehouse is saved | refresh country-filtered options → auto-select the new record → show its name/address summary → mark the Draft as changed/unsaved per current page behavior |
+
+This does **not** redesign the whole Shipment Draft page — only the Warehouse Code field behavior.
+
+### 22.D Country Matching Rule
+
+- Filtering uses **canonical country comparison:** `normalize_country(shipments.country) = normalize_country(warehouses.country)`.
+- If both tables already store ISO alpha-2 codes, **direct comparison is allowed** (`US = US`, `GB = GB`, `JP = JP`).
+- If legacy Warehouse rows store full names / aliases, `normalize_country` maps them through the controlled dictionary (`United States / USA / US → US`; `United Kingdom / UK / GB → GB`; `Japan / JP → JP`). This shares the alias dictionary with `country_to_iso2` (§22.L).
+- **No partial-string matching.** **Never** show all warehouses when a country-specific match is available.
+
+### 22.E Empty-State Behavior
+
+- **Shipment country blank:** the Warehouse selector is disabled / shows `Select a country first.`; the full global Warehouse list is **not** loaded.
+- **Country populated but no eligible warehouse:** show the explicit empty state `No active warehouse is available for this country.` with a **+ Add New Warehouse** action. **Never** silently permit arbitrary warehouse-code entry.
+
+### 22.F Add New Warehouse Flow
+
+The Warehouse selector includes a visible **+ Add New Warehouse** action that opens the Warehouse Master create flow/modal (runtime deferred — §22 non-goals).
+
+**Minimum fields:** `warehouse_code`, `warehouse_name`, `country`, `state`, `city`, `address`, `postal_code`, `contact_phone`, `contact_email`, `status` / `is_active`, and the shipment-selection eligibility field (§22.G) if adopted.
+
+**Flow rules:**
+1. **Prefill Country** from the current Shipment country.
+2. Country stays editable **only if** the Warehouse Master design permits it.
+3. Validate `warehouse_code` **uniqueness**.
+4. Save creates a Warehouse Master record.
+5. Close the create flow.
+6. Refresh **only** the current country-filtered Warehouse options.
+7. **Automatically select** the newly created Warehouse.
+8. Write the selected `warehouse_code` into the Shipment Draft.
+9. Do **not** force a manual page refresh.
+
+**Canceling** the create flow leaves the previous Shipment warehouse selection unchanged.
+
+### 22.G Warehouse Eligibility Rule (future-ready)
+
+**Recommended canonical rule** — a warehouse is selectable when:
+```
+is_active = TRUE
+AND is_selectable_for_shipment = TRUE
+```
+
+- **`is_selectable_for_shipment` is PROPOSED / PLANNED, not implemented** (§2). Recommended definition: `warehouses.is_selectable_for_shipment` BOOLEAN, default `TRUE` for existing legitimate destination warehouses.
+- **v1 fallback** (until the field exists): use `is_active` / `status` only (and exclude `is_factory_warehouse = TRUE`).
+- Eventual `FALSE` cases to exclude: factory-only, virtual, testing record, deprecated, transit-only, internal non-destination warehouses.
+- **No DB column is added by this spec.**
+
+### 22.H Shipment Country Change Behavior
+
+When `shipments.country` changes:
+1. Rebuild the Warehouse dropdown for the new country.
+2. Validate the currently selected `warehouse_code`.
+3. If the selected warehouse belongs to the new country **and** remains eligible → **keep it selected**.
+4. Otherwise → **clear `shipments.warehouse_code`** and require the user to choose a valid warehouse for the new country.
+5. **Never** retain a cross-country warehouse reference silently.
+
+No Shipment may proceed to the formal / external-document stage with a warehouse that conflicts with the Shipment country.
+
+### 22.I Validation / Readiness Rules
+
+- **Draft:** `warehouse_code` may be temporarily blank while editing; warnings are allowed.
+- **Before formal Shipment confirmation / external carrier-customs document generation:**
+  - `warehouse_code` must be present;
+  - the Warehouse Master row must exist;
+  - it must be active;
+  - it must match the Shipment country after normalization (§22.D);
+  - required warehouse address/contact fields depend on the target `document_template_fields.required` rules.
+- The Shipment is **not** blocked merely because *optional* Warehouse fields are blank. Example: `contact_email` required = FALSE → a missing email does not block; `postal_code` required = TRUE for a carrier template → a missing postal code blocks **that document only**.
+
+### 22.J Document Dataset Warehouse Lookup
+
+- Reference lookup: `shipments.warehouse_code → warehouses.warehouse_code`.
+- Canonical document fields resolved from the matched Warehouse Master row: `WAREHOUSE_CODE`, `WAREHOUSE_NAME`, `WAREHOUSE_ADDRESS`, `WAREHOUSE_CITY`, `WAREHOUSE_STATE`, `WAREHOUSE_POSTAL_CODE`, `WAREHOUSE_COUNTRY_CODE`, `WAREHOUSE_PHONE`, `WAREHOUSE_EMAIL`.
+- These values are **not stored redundantly on `shipments` in v1**. The **template never performs the lookup** — the **Document Dataset Builder resolves it before rendering**. Full placeholder semantics live in `DOCUMENT_GENERATION_SYSTEM_SPEC.md` §I.2.3 / §I.2.9.
+
+### 22.K Warehouse Country Code Fallback (`WAREHOUSE_COUNTRY_CODE`)
+
+- **Primary source:** `warehouses.country`; **fallback source:** `shipments.country`; **transform:** `country_to_iso2` (§22.L).
+- **Resolution flow:**
+  1. Resolve the Warehouse by `shipments.warehouse_code`.
+  2. If `warehouses.country` is nonblank → `country_to_iso2(warehouses.country)`.
+  3. Else → `country_to_iso2(shipments.country)`.
+  4. If neither resolves → return **blank** and apply `document_template_fields.required` validation.
+- **Never** fall back to an unrelated warehouse; **never** guess a country code from `warehouse_code` text.
+
+### 22.L `country_to_iso2` — canonical transform rule
+
+- **Purpose:** normalize country names, aliases, ISO alpha-2 codes, or recognized ISO alpha-3 codes into **ISO 3166-1 alpha-2** output.
+- **Examples:** `United States / USA / US → US`; `United Kingdom / UK / GBR / GB → GB`; `Japan / JPN / JP → JP`; `Germany / DEU / DE → DE`; `Canada / CAN / CA → CA`; `Australia / AUS / AU → AU`.
+- **Rules:** already-valid ISO alpha-2 values pass through unchanged and uppercased; recognized aliases map through a **controlled country dictionary**; **do NOT** generate codes by taking the first letters of a country name; unknown values return **blank/error** (for validation); this is a **transform_rule, not a DB column**; the source fallback is documented separately as the `fallback_rule` (§22.K).
+- **Recommended `document_template_fields` semantics for `WAREHOUSE_COUNTRY_CODE`:**
+
+  | key | value |
+  |---|---|
+  | `placeholder` | `WAREHOUSE_COUNTRY_CODE` |
+  | `data_source_table` | `warehouses` |
+  | `data_source_field` | `country` |
+  | `data_source_path` | `shipments.warehouse_code → warehouses.warehouse_code → warehouses.country` |
+  | `transform_rule` | `country_to_iso2` |
+  | `fallback_rule` | `shipments.country \| country_to_iso2` |
+
+---
+
+**Draft v2.5 — Spec only. No code, DB, or implementation changes are implied by this document.** (v2.5: added §22 Shipment Draft Warehouse Selection Flow — country-filtered dropdown, Add New Warehouse flow, country-change invalidation, document warehouse lookup + `WAREHOUSE_COUNTRY_CODE` fallback + `country_to_iso2` transform; proposed `is_selectable_for_shipment` field. v2.4: added §21 Shipment Logistics Attribute Aggregation + planned `battery_flag`/`battery_type`/`magnet_flag`/`transit_type`/`last_mile_delivery`/`shipments_customs_type` header fields.)
 
 **End of Document**

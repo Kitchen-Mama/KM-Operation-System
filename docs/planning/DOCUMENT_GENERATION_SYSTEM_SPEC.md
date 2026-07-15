@@ -430,7 +430,7 @@ Required (generation blocked if missing): **`SHIPMENT_NO`, `SKU`, `QTY`, `CARTON
 | placeholder (stored) | field_type | data_scope | format_rule | source (path) |
 |---|---|---|---|---|
 | `SHIPMENT_LINES` | collection | line | — | controller — `shipment_lines` ⋈ `shipment_line_allocations` (grain = allocation row) |
-| `SHIPMENT_NO` | scalar | header | text | `shipments.shipment_no` |
+| `SHIPMENT_NO` | scalar | header | text | `shipments.external_shipment_id` → fallback `shipments.shipment_no` → fallback `shipments.shipment_id` (2026-07: canonical SHIPMENT_NO = the **external/carrier-facing** ID; internal `shipment_no` reserved for `INTERNAL_SHIPMENT_NO`) |
 | `REFERENCE_ID` | scalar | header | text | `shipments.reference_id` |
 | `WAREHOUSE_CODE` | scalar | header | text | `shipments.warehouse_code` |
 | `DESTINATION` | scalar | header | text | `shipments.destination` |
@@ -447,7 +447,7 @@ Required (generation blocked if missing): **`SHIPMENT_NO`, `SKU`, `QTY`, `CARTON
 | `CARTON_NO_RANGE` | formula | line | text | derived from `shipment_lines.carton_no_start` / `carton_no_end` (§I.1.5) |
 | `PO_NO` | collection_item | allocation | text | `purchase_orders.po_no` (via allocation → PO line → PO — §I.1.2) |
 
-> **Canonical shipment field names (2026-07 DB rename).** Shipment quantity columns are canonically `shipments.shipment_total_qty` / `shipment_total_cartons` / `shipment_total_cbm` and `shipment_lines.shipment_carton_qty`; the legacy `total_qty` / `total_cartons` / `total_cbm` / `carton_qty` are retired (read-fallback only). Any shipment total placeholder added later MUST read the canonical column. **`shipments.customs_type`** (customs-method snapshot) is available as a header-scope source for customs/carrier documents (customs docs should read the stored snapshot, never the live rate card). Customs-facing product text sources: `sku_details.product_name_cn`, `sku_details.product_use`, and `sku_regional_details.product_url`. This note only redirects field names — the finalized collection controller / grain / merge architecture (§I.1.1–§I.1.5) is unchanged.
+> **Canonical shipment field names (2026-07 DB rename).** Shipment quantity columns are canonically `shipments.shipment_total_qty` / `shipment_total_cartons` / `shipment_total_cbm` and `shipment_lines.shipment_carton_qty`; the legacy `total_qty` / `total_cartons` / `total_cbm` / `carton_qty` are retired (read-fallback only). Any shipment total placeholder added later MUST read the canonical column. **`shipments.shipments_customs_type`** (canonical 2026-07 rename of `customs_type`; legacy read-fallback only — customs-method enum snapshot) plus its localized Label snapshot **`shipments.shipments_customs_type_label`** (中文; copied at Execution Commit from `carrier_rate_cards.customs_type_label`, exactly like `shipping_method_label`) are both header-scope sources for customs/carrier documents (read the stored snapshot, never the live rate card). **`{{CUSTOMS_TYPE}}` maps to the Label snapshot, not the enum** — the runtime never translates the enum to 中文. Customs-facing product text sources: `sku_details.product_name_cn`, `sku_details.product_use`, and `sku_regional_details.product_url`. **Canonical `SHIPMENT_NO` (2026-07) = `shipments.external_shipment_id`** (the external/carrier-facing ID) → fallback `shipment_no` → `shipment_id`; this applies to Shipment Detail, Carrier Invoice/Packing tabs, file-name rules, and any label whose business value is the external Shipment ID (`Customer Order No`, `FBA ID No`, `FBA No`, `Outer Carton Mark`, …). The internal system number `shipments.shipment_no` is **not** exposed as `SHIPMENT_NO`; it is reserved for a distinct **`INTERNAL_SHIPMENT_NO`** placeholder (not added to current templates). New header scalars: **`BOOKING_NO` → `shipments.booking_no`** (carrier/forwarder booking ref; not derived from carrier_id/BL/tracking) and **`NOTE` → `shipments.note`** (shipment remark; Draft "Remark"). `ETD`/`ETA` unchanged (`shipments.etd`/`eta`). This note only redirects field names / placeholder sources — the finalized collection controller / grain / merge architecture (§I.1.1–§I.1.5) is unchanged.
 
 ### I.1.4 Merge rules (D, E)
 
@@ -507,7 +507,7 @@ Header (scalar) placeholders — one value per shipment. `field_type = scalar`, 
 
 | placeholder (stored) | source (path) | notes |
 |---|---|---|
-| `CUSTOMER_ORDER_NO` | `shipments.shipment_no` | |
+| `CUSTOMER_ORDER_NO` | `shipments.external_shipment_id` → fallback `shipment_no` → `shipment_id` | caption alias of canonical `SHIPMENT_NO` (external Shipment ID) — §D |
 | `SERVICE` | `shipments.shipping_method_label` | snapshot (§I.1.6); fallback `concat(shipping_method,"_",last_mile_delivery)` |
 | `WAREHOUSE_CODE` | `shipments.warehouse_code` | also the recipient lookup key (§I.2.3) |
 | `RECIPIENT_NAME` | `warehouses.warehouse_name` | via `warehouse_code` lookup |
@@ -516,20 +516,20 @@ Header (scalar) placeholders — one value per shipment. `field_type = scalar`, 
 | `RECIPIENT_CITY` | `warehouses.city` | **new DB dependency** |
 | `RECIPIENT_STATE` | `warehouses.state` | **new DB dependency** |
 | `RECIPIENT_POSTAL_CODE` | `warehouses.postal_code` | **new DB dependency** |
-| `RECIPIENT_COUNTRY_CODE` | `warehouses.country` | provisional — may need a country **code**, not name |
+| `RECIPIENT_COUNTRY_CODE` | `warehouses.country` → `country_to_iso2` (fallback `shipments.country`) | ISO alpha-2 output via the `country_to_iso2` transform (§I.2.9); alias of `WAREHOUSE_COUNTRY_CODE` |
 | `RECIPIENT_PHONE` | `warehouses.contact_phone` | **new DB dependency** |
 | `RECIPIENT_EMAIL` | `warehouses.contact_email` | **new DB dependency** |
 | `REFERENCE_ID` | `shipments.reference_id` | |
 | `TOTAL_CARTONS` | `shipments.shipment_total_cartons` | **canonical renamed field** (§H) — never `shipments.total_cartons` |
 | `HAS_BATTERY` | derived from all shipment SKUs (§I.2.6) | any line `sku_details.battery_type` not blank/false/none → `"是"`, else `"否"` |
 | `HAS_MAGNET` | derived from all shipment SKUs (§I.2.6) | any line `sku_details.magnet_type` true/non-false → `"是"`, else `"否"` |
-| `CUSTOMS_TYPE` | `shipments.customs_type` | shipment snapshot (read stored value, not live rate card) |
+| `CUSTOMS_TYPE` | `shipments.shipments_customs_type_label` *(localized 中文 Label SNAPSHOT)* | shipment snapshot (read the stored **Label**, not the enum, not the live rate card). Documents MUST NOT translate the enum — the Label is frozen at creation and mirrors `SHIPPING_METHOD_LABEL`. Legacy rows with a blank label fall back to the canonical enum→Label map in the API normalizer. |
 | `VAT_NO` | `tax_referral_rates.vat_no` | resolved tax row (§I.2.3) |
 | `DECLARED_CURRENCY` | `tax_referral_rates.declared_currency` | resolved tax row (§I.2.3) |
 
 ### I.2.3 Header lookup rules (C)
 
-- **Warehouse (recipient block):** `shipments.warehouse_code` → `warehouses.warehouse_code` → warehouse contact/address fields. (Recipient name/company/address/city/state/postal/country/phone/email all come from the matched `warehouses` row.)
+- **Warehouse (recipient block):** `shipments.warehouse_code` → `warehouses.warehouse_code` → warehouse contact/address fields. (Recipient name/company/address/city/state/postal/country/phone/email all come from the matched `warehouses` row.) This is a **reference lookup at dataset-build time, NOT a Shipment snapshot** — the Warehouse Master is authoritative shared master data and the Shipment stores only `warehouse_code` (`SHIPMENT_CENTER_SPEC.md` §11 / §22). The **canonical `WAREHOUSE_*` placeholder set** (§I.2.9) resolves through this same lookup; `RECIPIENT_*` are the Carrier-Invoice recipient-block aliases of it. **The template never performs the lookup — the Document Dataset Builder resolves it before rendering.** The Warehouse country code uses the `country_to_iso2` transform with a `shipments.country` fallback (§I.2.9).
 - **Tax row lookup (VAT_NO / DECLARED_CURRENCY):** match **`shipments.country` → `tax_referral_rates.duty_country`**, apply **effective-date rules** (blank `effective_to` = open-ended); if **multiple applicable rows** exist, **latest `effective_from` wins**. **Do NOT select tax rows by currency alone.** `VAT_NO` = the resolved row's `vat_no`; `DECLARED_CURRENCY` = the resolved row's `declared_currency`.
 
 ### I.2.4 Invoice Tab — line collection (D) — PROVISIONAL
@@ -539,7 +539,7 @@ Header (scalar) placeholders — one value per shipment. `field_type = scalar`, 
 
 | placeholder (stored) | source (path) | notes |
 |---|---|---|
-| `CARTON_REFERENCE` | `shipments.shipment_no` + padded carton range | formula; **6-digit zero-padded** sequence, e.g. `SHIPMENT123-000001-000004`, `SHIPMENT123-000009-000015`; **exact delimiter/format PROVISIONAL** — confirm against the carrier import requirement |
+| `CARTON_REFERENCE` | `shipments.external_shipment_id` (→ fallback `shipment_no` → `shipment_id`) + padded carton range | formula; prefix = the external Shipment ID (canonical `SHIPMENT_NO`); **6-digit zero-padded** sequence, e.g. `SHIPMENT123-000001-000004`, `SHIPMENT123-000009-000015`; **exact delimiter/format PROVISIONAL** — confirm against the carrier import requirement |
 | `LINE_REFERENCE_ID` | `shipments.reference_id` | |
 | `CARTON_WEIGHT_KG` | `sku_details.carton_weight` | |
 | `CARTON_LENGTH_CM` | `sku_details.carton_length` | |
@@ -582,9 +582,42 @@ The `warehouses` master currently exposes `warehouse_id` / `company` / `country`
 - `warehouses.warehouse_code` (recipient match key from `shipments.warehouse_code`)
 - `warehouses.address`, `warehouses.city`, `warehouses.state`, `warehouses.postal_code`
 - `warehouses.contact_phone`, `warehouses.contact_email`
-- `warehouses.country` exists but may need a **country-code** representation for `RECIPIENT_COUNTRY_CODE` (provisional).
+- `warehouses.country` exists; the **country-code** representation for `RECIPIENT_COUNTRY_CODE` / `WAREHOUSE_COUNTRY_CODE` is produced by the **`country_to_iso2` transform** (§I.2.7A), **not** a new DB column.
+- **`warehouses.is_selectable_for_shipment` (BOOLEAN) — PROPOSED / PLANNED, not implemented.** Drives Shipment Draft warehouse eligibility (`SHIPMENT_CENTER_SPEC.md` §22.G); not required for document generation. No DB column is added here.
 
-Already-available dependencies (no new column): `shipments.shipment_no` / `shipping_method_label` / `warehouse_code` / `reference_id` / `shipment_total_cartons` / `customs_type` / `country`; `tax_referral_rates.vat_no` / `declared_currency` / `declared_value` / `hscode` / `duty_country` / `series` / `effective_from` / `effective_to`; `sku_details.product_name` / `product_name_cn` / `product_use` / `material` / `units_per_carton` / `carton_weight` / `carton_length` / `carton_width` / `carton_height` / `battery_type` / `magnet_type`; `sku_regional_details.product_url`; `shipment_lines.sku`.
+Already-available dependencies (no new column): `shipments.external_shipment_id` (canonical `SHIPMENT_NO` source) / `shipment_no` (fallback + `INTERNAL_SHIPMENT_NO`) / `shipping_method_label` / `warehouse_code` / `reference_id` / `booking_no` / `note` / `shipment_total_cartons` / `shipments_customs_type` / `shipments_customs_type_label` / `country`; `tax_referral_rates.vat_no` / `declared_currency` / `declared_value` / `hscode` / `duty_country` / `series` / `effective_from` / `effective_to`; `sku_details.product_name` / `product_name_cn` / `product_use` / `material` / `units_per_carton` / `carton_weight` / `carton_length` / `carton_width` / `carton_height` / `battery_type` / `magnet_type`; `sku_regional_details.product_url`; `shipment_lines.sku`.
+
+### I.2.7A Canonical Warehouse placeholder set + `country_to_iso2` transform (FINALIZED)
+
+**Canonical `WAREHOUSE_*` placeholders** — all resolved by the reference lookup `shipments.warehouse_code → warehouses.warehouse_code` (the template never performs the lookup; the Document Dataset Builder resolves it before rendering; values are **not** stored redundantly on `shipments` in v1):
+
+| placeholder | source (`warehouses` field) | notes |
+|---|---|---|
+| `WAREHOUSE_CODE` | `warehouse_code` | also the lookup key (= `shipments.warehouse_code`) |
+| `WAREHOUSE_NAME` | `warehouse_name` | |
+| `WAREHOUSE_ADDRESS` | `address` | |
+| `WAREHOUSE_CITY` | `city` | |
+| `WAREHOUSE_STATE` | `state` | |
+| `WAREHOUSE_POSTAL_CODE` | `postal_code` | |
+| `WAREHOUSE_COUNTRY_CODE` | `country` → `country_to_iso2` | fallback `shipments.country` → `country_to_iso2` (see resolution flow below) |
+| `WAREHOUSE_PHONE` | `contact_phone` | |
+| `WAREHOUSE_EMAIL` | `contact_email` | |
+
+The Carrier-Invoice `RECIPIENT_*` block (§I.2.2) resolves through this **same** lookup — `RECIPIENT_*` are recipient-block aliases of the `WAREHOUSE_*` set.
+
+**`WAREHOUSE_COUNTRY_CODE` fallback rule:**
+1. Resolve the Warehouse by `shipments.warehouse_code`.
+2. If `warehouses.country` is nonblank → `country_to_iso2(warehouses.country)`.
+3. Else → `country_to_iso2(shipments.country)`.
+4. If neither resolves → return **blank** and apply `document_template_fields.required` validation.
+- **Never** fall back to an unrelated warehouse; **never** guess a country code from `warehouse_code` text.
+
+**`country_to_iso2` — canonical transform rule** (a `transform_rule`, **NOT** a DB column):
+- **Purpose:** normalize country names, aliases, ISO alpha-2 codes, or recognized ISO alpha-3 codes into **ISO 3166-1 alpha-2** output.
+- **Examples:** `United States / USA / US → US`; `United Kingdom / UK / GBR / GB → GB`; `Japan / JPN / JP → JP`; `Germany / DEU / DE → DE`; `Canada / CAN / CA → CA`; `Australia / AUS / AU → AU`.
+- **Rules:** already-valid ISO alpha-2 values pass through unchanged and uppercased; recognized aliases map through a **controlled country dictionary**; **do NOT** generate codes from the first letters of a country name; unknown values return **blank/error** for validation; the source fallback is documented separately as `fallback_rule`.
+- **Recommended `document_template_fields` semantics for `WAREHOUSE_COUNTRY_CODE`:** `data_source_table = warehouses`; `data_source_field = country`; `data_source_path = shipments.warehouse_code → warehouses.warehouse_code → warehouses.country`; `transform_rule = country_to_iso2`; `fallback_rule = shipments.country | country_to_iso2`.
+- The same `country_to_iso2` alias dictionary backs the Shipment Draft warehouse country filter's `normalize_country` (`SHIPMENT_CENTER_SPEC.md` §22.D / §22.L).
 
 ### I.2.8 Naming / total fields (H)
 
@@ -607,8 +640,9 @@ These **field-level rules are confirmed** even though the Packing List tab **lay
   - `TOTAL_NET_WEIGHT` → `shipments.shipment_total_net_weight`
   - `TOTAL_GROSS_WEIGHT` → `shipments.shipment_total_gross_weight`
   - (all recomputed by `shipmentRecalcTotals_`, `SHIPMENT_CENTER_SPEC.md` §15/§20 — never computed at generation time)
-- **Customs type enum (canonical, D):** `third_party_customs` = 買單報關 · `formal_customs` = 正式報關 · `tax_refund_customs` = 退稅報關. **`tax_refund_customs` is NOT renamed.**
-- **Packing-list field 「是否出口退税」** derived from `shipments.customs_type`:
+- **Customs type enum (canonical, D):** `third_party_customs` = 買單報關 · `formal_customs` = 正式報關 · `tax_refund_customs` = 退稅報關. **`tax_refund_customs` is NOT renamed.** The enum→Label map is owned by the backend (`CUSTOMS_TYPE_LABELS_` in `17_carrier_handlers.gs`, mirrored read-side in the API normalizer). The Label is **snapshotted** into `carrier_rate_cards.customs_type_label` → `shipments.shipments_customs_type_label` — exactly like `shipping_method_label`. If a Label ever changes, only the map changes; documents never change.
+- **`{{CUSTOMS_TYPE}}` reads the Label snapshot (`shipments.shipments_customs_type_label`), NOT the enum.** The Document runtime is forbidden from performing any `if (customs_type == …)` translation to produce the display Label.
+- **Packing-list field 「是否出口退税」** is a *separate* boolean placeholder derived from the **enum** `shipments.shipments_customs_type` (this is an intended enum consumer — a yes/no derivation, not a Label translation):
   - `tax_refund_customs` → **是**
   - `third_party_customs` → **否**
   - `formal_customs` → **否** *(do NOT infer `formal_customs` as a tax refund)*
@@ -649,6 +683,8 @@ Shipment root  (output_folder_id)
 ```
 Shipment/{COUNTRY}/{SHIP_DATE}/{SHIPMENT_NO}_{COUNTRY}/
 ```
+
+> **`{SHIPMENT_NO}` in folder/file-name rules resolves the canonical `SHIPMENT_NO`** = `shipments.external_shipment_id` (fallback `shipment_no` → `shipment_id`), per §D. File-name / `file_name_rule` values using `{{SHIPMENT_NO}}` therefore render the external/carrier-facing Shipment ID, not the internal `shipment_no`.
 
 **Rules:**
 - **All documents for the SAME shipment go into the SAME shipment folder** — Shipment Detail · Packing List · Commercial Invoice · Carrier Booking · any other shipment docs.
