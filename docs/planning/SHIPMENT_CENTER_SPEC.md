@@ -51,8 +51,9 @@
 These reflect the **current** Google Sheet schema and supersede older docs. **Factory / source location and company come from `warehouses` via `warehouse_id`** — inventory/PO/production tables no longer store `factory_name` or `company`.
 
 **`warehouses`** (warehouse master) —
-`warehouse_id, warehouse_code, warehouse_name, warehouse_type, company, country, marketplace, warehouse_owner, is_factory_warehouse, is_active, address, city, state, postal_code, contact_name, contact_email, contact_phone, created_by, created_at, updated_by, updated_at, note`
+`warehouse_id, warehouse_code, warehouse_name, warehouse_type, company, country, marketplace, warehouse_owner, is_factory_warehouse, is_active, logistics_region, address, city, state, postal_code, contact_name, contact_email, contact_phone, created_by, created_at, updated_by, updated_at, note`
 - `warehouse_id` = system master id (e.g. `WH-RESUS-US-FBA-AMAZON`); `warehouse_code` = external/receiving code (e.g. `ONT8`).
+- **`logistics_region` (EXISTING canonical field)** — coarse logistics region (e.g. `US_WEST` / `US_CENTRAL` / `US_EAST`) used by **Shipment Route Template resolution** (`shipments.warehouse_code`/`warehouse_id` → `warehouses.logistics_region` → `shipment_route_templates.destination_region`; [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md) §3). FBA warehouses in the same region (e.g. `ONT8` / `LGB8` → `US_WEST`) share a Route Template. Not a duplicate region table.
 - `is_factory_warehouse` distinguishes factory (production-side) warehouses from destination/3PL/FBA warehouses.
 - **PROPOSED / PLANNED additive field — `is_selectable_for_shipment` (BOOLEAN):** shipment-destination eligibility flag. **NOT yet present in the live schema** — do not treat as implemented. Default `TRUE` for legitimate destination warehouses; `FALSE` for factory-only / virtual / testing / deprecated / transit-only / internal non-destination warehouses. Until adopted, the Shipment Draft warehouse eligibility filter (§22) falls back to `is_active` (and `is_factory_warehouse = FALSE`) only. See §22.G. **No DB column is added by this spec.**
 
@@ -342,13 +343,14 @@ purchase_order_lines update:
    B: shipped_qty +2000, remaining_qty 3000 → 1000
 ```
 
-**Eligibility example (uncompleted PO — must NOT over-allocate):**
+**Eligibility example (uncompleted PO — must NOT over-allocate). NOTE: this row shows a LEGACY / STALE `remaining_qty` value (10000) that does NOT match the Canonical formula `remaining_qty = MAX(completed_qty − shipped_qty, 0) = 5000`.** FIFO **must ignore the stale stored `remaining_qty`** and recompute `available_to_ship = completed_qty − shipped_qty`:
 ```
-PO line:  ordered_qty 10000 | completed_qty 5000 | shipped_qty 0 | remaining_qty 10000
-available_to_ship = 5000 − 0 = 5000
+PO line:  ordered_qty 10000 | completed_qty 5000 | shipped_qty 0 | remaining_qty 10000 (STALE — canonical value is 5000)
+available_to_ship = completed_qty − shipped_qty = 5000 − 0 = 5000
 → System may allocate at most 5000 from this line, NOT 10000,
-  even though remaining_qty = 10000.
+  even though the stale stored remaining_qty reads 10000.
 ```
+*(Canonical: `remaining_qty = MAX(completed_qty − shipped_qty, 0)` = available-to-ship. A row where `remaining_qty ≠ completed_qty − shipped_qty` is stale data — FIFO recomputes from `completed_qty − shipped_qty` and never trusts the stored value.)*
 
 ---
 
@@ -608,6 +610,15 @@ shipment_lines.net_weight   = qty * item_weight            (line total)
   The **Shipment header may store** these totals (unlike the Shipping Plan header, which keeps them Runtime). The formula above is the **definition** of how the plan values were produced; the Execution Layer **does not re-run it**.
 - If a plan line has no logistics value (blank — e.g. `sku_details` missing carton dims), the copied value stays blank; no fabrication.
 
+### 15.4 Shipment Estimated Duty / Tax (FUTURE — source + lookup defined, formula NOT invented)
+
+Estimated duty/tax will source from the **Tax & Referral Rate Master** ([`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md) — SSOT). **No landed-cost formula, FX conversion, or engine is defined here** (the Cost Analysis spec finalizes formulas later). Only the **inputs + lookup** are fixed:
+
+- **Per shipment line:** (1) resolve SKU Series `shipment_lines.sku → sku_details.sku → sku_details.series`; (2) duty jurisdiction `shipments.country → tax_referral_rates.duty_country`; (3) resolve `country_of_origin` from the tax record's stored value + SKU/origin context (**do not assume permanent CN**; a controlled CN default only where an existing spec permits, documented); (4) choose the effective **parent** row for the calculation date; (5) load child `tax_rate_components` valid for the **same** date; (6) compute from `declared_value` × shipment quantity per the future costing formula; (7) aggregate line → shipment totals.
+- **Calculation date priority (explicit):** (1) Shipment **ETD** if present; (2) Shipment creation/order calc date; (3) current date only as a last-resort **Draft** estimate. **Never** use the document-generation date as the historical tax date of an existing shipment.
+- **Effective-date rule (from the SSOT):** `effective_from ≤ target AND (effective_to blank OR ≥ target)`; **blank `effective_to` = open-ended**; latest `effective_from` wins; ambiguous duplicates → conflict warning. Cost Analysis must preserve the matched `tax_rate_id` + component IDs + calculation date + currency + source values for historical audit (never re-query only the latest row without the transaction date).
+- `shipments.duty_actual` (§0 header) remains the **post-invoice actual** — estimated tax never overwrites it.
+
 ### 15A. `shipping_method_label` — display-name snapshot (FINALIZED)
 
 `shipments.shipping_method_label` is the **localized display name of the shipping service** for a Shipment (e.g. `美森海派` / `美森海卡` / `空派` / `空卡` / `海運快遞派送`) — the value shown on every generated shipment document. It is a **historical snapshot**, alongside the canonical `shipping_method` / `last_mile_delivery` (which are **kept, not replaced**).
@@ -691,6 +702,8 @@ Likely sources: `shipments`, `shipment_lines`, `sku_details`, `marketplace_skus`
 
 ## 18. Future `shipment_events` / `shipment_routes`
 
+> **Field-level SSOT:** [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md) — the authoritative Domain Spec for `shipment_route_templates` (route header), `shipment_route_template_nodes` (ordered stages), `shipment_routes` (per-shipment planned-node snapshot), and `shipment_events` (append-only actual ledger), including matching, generation flow, event flow, and progress projection. This section keeps only the **Phase-1 authority / non-blocking** rules; **field schemas live in that spec** (not duplicated here).
+
 - **Shipment Overview, On The Way, and World Map still read `shipments` + `shipment_lines` as the authoritative shipment records.**
 - **`shipment_events` and `shipment_routes` are future detail / enrichment tables** — they **must NOT replace** `shipments` / `shipment_lines`.
 - **`shipment_routes`** may support: `origin`, `destination`, route points, carrier route, map visualization. **`shipment_routes` = planned route nodes** (the intended path, e.g. Factory → export customs → ocean leg → destination port → FC).
@@ -725,26 +738,7 @@ Likely sources: `shipments`, `shipment_lines`, `sku_details`, `marketplace_skus`
 - **This event is convenience/enrichment only — it does NOT gate or block the Ship main flow.** Ship succeeds whether or not this event row is written; if event creation fails, the shipment is still `shipped`. `shipments` + `shipment_lines` remain authoritative.
 - All later events (in transit, arrived, customs, delivered, received, exception) may be written by `manual` / `carrier API` / `tracking API` / `import`.
 
-**Preserved field list (future schema, spec-only — no migration now):**
-
-| Column | Note |
-|---|---|
-| `shipment_event_id` | PK |
-| `shipment_id` | FK → `shipments` |
-| `event_time` | when the event actually occurred |
-| `event_type` | e.g. `picked_up` / `customs_cleared` / `vessel_departed` / `arrived_port` / `delivered` |
-| `event_status` | status of the event |
-| `location_name` | human-readable location |
-| `country` | |
-| `city` | |
-| `latitude` | for map visualization |
-| `longitude` | for map visualization |
-| `source` | `manual` / `carrier API` / `tracking API` / `import` |
-| `note` | free text |
-| `created_at` | |
-| `updated_at` | |
-
-- **Exact schema is future work** (see Open Items); the fields above are the reserved definition.
+**Field-level schema (all four tables — route templates, template nodes, `shipment_routes`, `shipment_events`): [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md) §5.** `shipment_events` is an **append-only** ledger; current position/progress is **derived from the latest valid events** (not a stored current-state row). Route Templates resolve `destination_region` from the existing **`warehouses.logistics_region`** field. Exact schema is future work — the Domain Spec is the reserved definition.
 
 ---
 

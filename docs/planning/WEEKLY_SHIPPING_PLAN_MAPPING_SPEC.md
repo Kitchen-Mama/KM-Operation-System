@@ -1,7 +1,7 @@
 # Weekly Shipping Plan — Mapping Spec (Decision Layer)
 
-**Status:** 🟡 Draft v1.10 — Mapping + Submit-Plan write contract (mapping spec; the v1.6–v1.10 UI/mapping fixes are implemented in the frontend/API/Apps Script — see project-current-state)
-**Last Updated:** 2026-06-30
+**Status:** 🟡 Draft v1.12 — Mapping + Submit-Plan write contract (mapping spec; the v1.6–v1.12 UI/mapping fixes are recorded as implemented in the frontend/API/Apps Script per the changelog + project-current-state; any item not confirmed there requires runtime verification)
+**Last Updated:** 2026-07-01
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (**authoritative architecture language — Decision Commit / Decision Snapshot / Immutable Flow / layer source-of-truth**), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md).
 
@@ -59,7 +59,7 @@ It becomes the **single source of truth for Shipment execution** and **must neve
 |-------|--------|---------|------|
 | **Analysis Layer** | Inventory Replenishment (貨物庫存表) | What the data says / what is suggested | snapshots, AI suggestion, Days of Supply |
 | **Decision Layer** | **Weekly Shipping Plan** | What we decide to ship, by which method, at what cost, with approval | `shipping_plans`, `shipping_plan_lines` |
-| **Execution Layer** | Shipment Draft / Shipment Overview | Physically shipping, tracking, documents | `shipments`, `shipment_lines`, `shipment_line_allocations` |
+| **Execution Layer** | Shipment Draft / Shipment Overview | Physically shipping, tracking, documents | `shipments`, `shipment_lines`, `shipment_line_allocations` *(PLANNED — not implemented; current runtime uses the single link `shipment_lines.purchase_order_line_id`)* |
 
 - **Inventory Replenishment analyzes; Weekly Shipping Plan decides; Shipment executes.**
 - The Decision Layer is the **system of record for the shipping decision**: it must preserve the data basis used at decision time (see §5 Snapshot Rule) and must **not** be re-derived from live inventory after creation.
@@ -665,6 +665,6 @@ The following actor fields are **reserved now but not yet wired to a real user/p
 
 ---
 
-**Draft v1.7 — Weekly Shipping Plan Mapping Spec. Decision Layer between Inventory Analysis and Shipment Execution. The v1.6/v1.7 UI/mapping fixes (company resolution, carton validation, card/footer layout, snapshot-first display, Add Note, Cost Breakdown placeholder, Save/Submit/Cancel semantics + soft cancel, placeholder actor fields) are implemented in the frontend/API/Apps Script; the only new `shipping_plans` columns are `cancelled_by` / `cancelled_at` / `updated_by`. Formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; execution owned by `SHIPMENT_CENTER_SPEC.md`.**
+**Draft v1.12 — Weekly Shipping Plan Mapping Spec. Decision Layer between Inventory Analysis and Shipment Execution.** Cumulative through v1.12: the v1.6/v1.7 UI/mapping fixes (company resolution, carton validation, card/footer layout, snapshot-first display, Add Note, Cost Breakdown placeholder, Save/Submit/Cancel semantics + soft cancel, placeholder actor fields), the v1.11 Done/transfer robustness backfill (`11_shipping_plan_handlers.gs` + `shipmentFindForPlan_`), and the v1.12 Execution Plan Working Draft terminology are recorded as implemented in the frontend/API/Apps Script per the changelog above + project-current-state; **implementation status of anything not confirmed there requires runtime verification.** New `shipping_plans` columns across these versions: `cancelled_by` / `cancelled_at` / `updated_by` (+ handoff metadata `transferred_shipment_id` / `transferred_to_shipment_at` and completion `completed_at` / `completed_by`). Formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; execution owned by `SHIPMENT_CENTER_SPEC.md`. Handoff = explicit **Execution Commit** (Approved → Create Shipment Draft), idempotent (§12.1); Approval alone does not create a Shipment.**
 
 **End of Document**

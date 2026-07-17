@@ -350,6 +350,7 @@ Shipping Export Template                  (ALWAYS from shipments / shipment_line
 - Reads `shipments` + `shipment_lines` + `shipment_events` + `shipment_routes`.
 - Shows active in-transit status and **ETA buckets**.
 - **On The Way is operational visualization, not a separate shipment DB.**
+- **Read-model ownership (field-level SSOT: [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md)):** shipment header/status = `shipments`; **planned map line = `shipment_routes`** (per-shipment snapshot copied from `shipment_route_templates` + nodes, resolved via `warehouses.logistics_region`); **actual timeline = `shipment_events`** (append-only); **current position = latest valid event**; **next planned node = first pending route node**. Routes/events are non-blocking enrichment — `shipments`/`shipment_lines` remain Execution Truth; Event → Shipment-status mapping is an Open Decision. Planned + all four tables are **documented, not implemented**.
 
 ### Step 6 — Shipping History
 - Reads `shipments` + `shipment_lines`.

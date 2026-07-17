@@ -10,7 +10,7 @@
 - [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) — operational weekly flow + persistence rules.
 - [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) — **authoritative for all calculation formulas** (runtime must not duplicate them).
 - [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) — shipment lifecycle, reservation/deduction timing.
-- [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md) — three-layer request, PO draft/issued, `available_to_ship`.
+- [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) — **CURRENT** Procurement Phase 1 (implemented schema, Request/PO status lifecycle, Convert-to-PO, `available_to_ship`); [`PURCHASE_ORDER_SPEC.md`](./PURCHASE_ORDER_SPEC.md) — PO v2 Workspace / Receive. [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md) is the **EXTENDED / FUTURE** three-layer reference only (not current authority).
 - [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md) — import framework, snapshot governance, freshness, quality, write-protection.
 
 > **Rule-driven, not feature-driven.** Every design follows: **Business Rule → Database → Data Lifecycle → Runtime Mapping → Implementation.** This document is the *Runtime Mapping* layer. It is **not** an Apps Script design, **not** an API specification, and **not** an implementation document. Where this document and a domain spec differ, the **domain spec is authoritative**.

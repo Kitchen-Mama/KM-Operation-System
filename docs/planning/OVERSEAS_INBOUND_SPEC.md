@@ -26,6 +26,8 @@ An Inbound Draft captures "we intend to bring these SKUs into this overseas ware
 
 This mirrors the four-layer architecture in [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md): each layer copies upstream truth into its own records and never mutates upstream (Immutable Flow).
 
+> **Planning input only — NOT Warehouse Receiving (CANONICAL SCOPE NOTE).** The current Overseas Inbound Spec defines **pre-shipment planning input only. It does not define the final Warehouse Receiving transaction or Inventory Movement reconciliation.** Actual Warehouse Receiving remains a **separate future domain** (PLANNED — NOT IMPLEMENTED). Overseas Inbound **must NOT**: directly create a Shipment Draft · directly deduct Factory Stock · directly increase `overseas_inventory_snapshot` · define actual received quantity · define damaged / missing / over-received quantities · close a Shipment · bypass Weekly Shipping Plan approval. The flow is: **Overseas Stock → Create Inbound Draft → Submit to Weekly Shipping Plan → Decision approval → explicit Execution Commit (Shipment) → later receiving.** Stock changes only on receipt, in the future receiving domain.
+
 ---
 
 ## 2. Flow (end-to-end)
@@ -38,7 +40,8 @@ Overseas Stock
         ↓  creates
    Weekly Shipping Plan + shipping_plan_lines   (Decision Layer; status = draft/pending_approval)
         ↓  Pending Approval → Approved (Decision Layer approval — UNCHANGED)
-   Shipment Draft + shipment_lines     (Execution Layer; created on plan approval, per SHIPMENT_CENTER_SPEC)
+        ↓  explicit Execution Commit (Approved → Create Shipment Draft; NOT automatic on approval)
+   Shipment Draft + shipment_lines     (Execution Layer; created by the explicit Execution Commit, per SHIPMENT_CENTER_SPEC / WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §12.1)
         ↓  Ship
    Shipment Overview                   (shipped → in_transit → arrived → received)
         ↓  received

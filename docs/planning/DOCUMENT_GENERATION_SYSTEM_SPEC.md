@@ -347,7 +347,7 @@ carrier
 - carrier / method
 - customs values (from future tax / reference data — `TAX_AND_REFERRAL_RATES_SPEC.md`)
 
-> **Shipment-focused document types (v1 canonical — §G.1):** `shipment_detail`, `carrier_booking_form`, `commercial_invoice`, `packing_list` (combined invoice+packing is a reserved future type). Token-to-field mapping lives in **`document_template_fields`** — **`shipment_detail` mapping is FINALIZED (§I.1)**; `carrier_booking_form` / `commercial_invoice` / `packing_list` mappings are still to be defined. Output routing → **§L**.
+> **Shipment-focused document types (v1 canonical — §G.1):** `shipment_detail`, `carrier_booking_form`, `commercial_invoice`, `packing_list` (combined invoice+packing is a reserved future type). Token-to-field mapping lives in **`document_template_fields`** — **`shipment_detail` mapping is FINALIZED (§I.1)**; **`carrier_booking_form` per-carrier mappings are FINALIZED for TOP SEALAND + AGL in [`CARRIER_BOOKING_MAPPING_SPEC.md`](./CARRIER_BOOKING_MAPPING_SPEC.md)** (SINOTRANS next); `commercial_invoice` / `packing_list` general mappings still to be defined. Output routing → **§L**; shared Sheet runtime rules → **§O**.
 
 ---
 
@@ -361,10 +361,11 @@ carrier
    - Placeholder mapping finalized
    - Collection grain finalized
    - Merge rules finalized
-2. 🟡 **Carrier Booking Form** *(in progress — see §I.2)*
-   - **Invoice Tab — CONFIRMED MAPPING DRAFT** (§I.2; header + line mappings + lookup rules recorded)
-   - **Packing List Tab — PENDING user definition**
-   - **Full workbook — NOT finalized** (grain, controllers, multi-tab duplication, totals, readiness gate all deferred — §I.2.9)
+2. 🟢 **Carrier Booking Form** *(carrier-specific workbook mappings live in [`CARRIER_BOOKING_MAPPING_SPEC.md`](./CARRIER_BOOKING_MAPPING_SPEC.md))*
+   - **TOP SEALAND — Invoice + Packing List templates COMPLETED** (Invoice-tab shared draft recorded here in §I.2)
+   - **AGL — Carrier Invoice / Customs workbook mapping COMPLETED / FINALIZED V1** (single `Template` worksheet, `AGL_INVOICE_LINES` controller — `CARRIER_BOOKING_MAPPING_SPEC.md` §AGL)
+   - **SINOTRANS — NEXT mapping target** (not started)
+   - Shared Google-Sheet runtime behavior (immutable template, copy-before-render, reserved rows, dynamic expansion, footer formulas) = **§O** (this spec)
 3. 🟡 **Packing List**
 4. 🟡 **Commercial Invoice**
 5. 🔵 **Future Documents**
@@ -402,7 +403,7 @@ D2 = {{QTY}}
 ```
 
 - **`{{SHIPMENT_LINES}}` is the collection controller** — it identifies the row to duplicate. It is a **scalar-looking token used as a grouping marker**, not a rendered value.
-- **Column A is a hidden control column** and stays hidden in the generated file.
+- **Column A is a hidden control column** and stays hidden in the generated file. *(This is the Shipment Detail template's specific layout; the general, non-hardcoded hidden-control-column rule is §O.2 — other templates declare their own control column.)*
 - Runtime **duplicates row 2 once per expanded output row** (§I.1.2 grain), then **clears/removes the `{{SHIPMENT_LINES}}` controller token** from generated output.
 - **No `LINE_NO` field** is required or added.
 - `document_template_fields`: `{{SHIPMENT_LINES}}` is stored as the **collection** field (`field_type = collection`, `collection_key = SHIPMENT_LINES`); every per-row placeholder (SKU/QTY/…) shares `collection_key = SHIPMENT_LINES` (one row per placeholder — §F.1).
@@ -492,7 +493,9 @@ Tiered requirement on `shipping_method_label` by document audience:
 
 ## I.2 Carrier Booking Form — Invoice Tab (CONFIRMED MAPPING DRAFT — SPEC ONLY)
 
-> **Status.** The Invoice Import tab is a **confirmed mapping draft**. The **Packing List Import tab is pending user definition**, and the **whole `carrier_booking_form` workbook is NOT finalized**. No Document Engine runtime is implemented in this task. This section records only what is currently confirmed for the Invoice tab so the mapping is not lost; anything not listed as "confirmed" stays provisional (§I.2.9).
+> **Status.** The Invoice Import tab is a **confirmed mapping draft** for a two-tab (Invoice + Packing List) workbook shape. No Document Engine runtime is implemented. This section records the shared Invoice-tab draft so the mapping is not lost; anything not listed as "confirmed" stays provisional (§I.2.9).
+>
+> **Carrier-specific workbook mappings now live in [`CARRIER_BOOKING_MAPPING_SPEC.md`](./CARRIER_BOOKING_MAPPING_SPEC.md)** — the authoritative home for per-carrier Carrier Booking mappings. **AGL** (single `Template` worksheet, `AGL_INVOICE_LINES` controller) is **FINALIZED V1** there; **TOP SEALAND** Invoice + Packing List are completed. Shared Google-Sheet runtime behavior (immutable template, copy-before-render, reserved rows, dynamic row expansion, footer-formula preservation + range validation) = **§O**.
 
 ### I.2.1 Workbook architecture (A)
 
@@ -558,12 +561,13 @@ Header (scalar) placeholders — one value per shipment. `field_type = scalar`, 
 | `LINE_HAS_BATTERY` | `sku_details.battery_type` (per line) | not blank/false/none → `"是"`, else `"否"` (§I.2.6) |
 | `LINE_HAS_MAGNET` | `sku_details.magnet_type` (per line) | true/non-false → `"是"`, else `"否"` (§I.2.6) |
 
-### I.2.5 Tax / customs line lookup (F)
+### I.2.5 Tax / customs line lookup (F) — V2 canonical (authoritative: [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md))
 
-- **Declared value** (`DECLARED_UNIT_VALUE`) lookup uses: **`series` + `duty_country` + `declared_currency` + effective date**.
-- **HS code** (`HS_CODE`) lookup uses: **`series` + `duty_country` + effective date**.
-- **Do NOT match declared value or HS code by currency alone.**
-- If `tax_referral_rates` contains multiple SKU/series-level variants, **preserve the existing most-specific matching rule** (series-level row wins over a broader row for the same `duty_country` + effective window); document it rather than inventing a new precedence.
+- **Canonical parent business key (V2): `series` + `country_of_origin` + `duty_country` + effective date.** Resolve per shipment line: `shipment_lines.sku → sku_details.series`; `shipments.country → tax_referral_rates.duty_country`; `country_of_origin` from the tax record + SKU/origin context (do not assume permanent CN). Then `HS_CODE → hscode`, `DECLARED_UNIT_VALUE → declared_value`, `DECLARED_CURRENCY → declared_currency`, `VAT_NO → vat_no`, `EORI_NO → eori_no` are **returned attributes of the matched row.**
+- **`declared_currency` is a RETURNED value, NOT a lookup key.** Do NOT match declared value / HS code by currency (or by currency alone). Do NOT use `referral_fee_rate` as a declared value.
+- **Effective-date rule:** `effective_from ≤ target AND (effective_to blank OR ≥ target)`; **blank `effective_to` = open-ended** (never "invalid"); latest `effective_from` wins; same `effective_from` → highest `V{NN}` / latest `updated_at`; ambiguous duplicates → conflict warning. Calculation/target date per the consumer (documents use the shipment's effective context, **not** the generation date).
+- **Do NOT query `tax_rate_components`** unless a document explicitly needs a component.
+- **Blocking:** a missing **required** `HS_CODE` or `DECLARED_UNIT_VALUE` blocks that external document with a clear message; a missing **optional** `VAT_NO` / `EORI_NO` (per `document_template_fields.required = FALSE`) must **NOT** block unrelated-country documents.
 
 ### I.2.5A Regional product URL resolution (E)
 
@@ -585,7 +589,7 @@ The `warehouses` master currently exposes `warehouse_id` / `company` / `country`
 - `warehouses.country` exists; the **country-code** representation for `RECIPIENT_COUNTRY_CODE` / `WAREHOUSE_COUNTRY_CODE` is produced by the **`country_to_iso2` transform** (§I.2.7A), **not** a new DB column.
 - **`warehouses.is_selectable_for_shipment` (BOOLEAN) — PROPOSED / PLANNED, not implemented.** Drives Shipment Draft warehouse eligibility (`SHIPMENT_CENTER_SPEC.md` §22.G); not required for document generation. No DB column is added here.
 
-Already-available dependencies (no new column): `shipments.external_shipment_id` (canonical `SHIPMENT_NO` source) / `shipment_no` (fallback + `INTERNAL_SHIPMENT_NO`) / `shipping_method_label` / `warehouse_code` / `reference_id` / `booking_no` / `note` / `shipment_total_cartons` / `shipments_customs_type` / `shipments_customs_type_label` / `country`; `tax_referral_rates.vat_no` / `declared_currency` / `declared_value` / `hscode` / `duty_country` / `series` / `effective_from` / `effective_to`; `sku_details.product_name` / `product_name_cn` / `product_use` / `material` / `units_per_carton` / `carton_weight` / `carton_length` / `carton_width` / `carton_height` / `battery_type` / `magnet_type`; `sku_regional_details.product_url`; `shipment_lines.sku`.
+Already-available dependencies (no new column): `shipments.external_shipment_id` (canonical `SHIPMENT_NO` source) / `shipment_no` (fallback + `INTERNAL_SHIPMENT_NO`) / `shipping_method_label` / `warehouse_code` / `reference_id` / `booking_no` / `note` / `shipment_total_cartons` / `shipments_customs_type` / `shipments_customs_type_label` / `country`; `tax_referral_rates` (V2) `vat_no` / `vat_rate` / `eori_no` / `declared_currency` / `declared_value` / `hscode` / `duty_rate` / `series` / `country_of_origin` / `duty_country` / `effective_from` / `effective_to` (+ child `tax_rate_components`; SSOT = [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md)); `sku_details.product_name` / `product_name_cn` / `product_use` / `material` / `units_per_carton` / `carton_weight` / `carton_length` / `carton_width` / `carton_height` / `battery_type` / `magnet_type`; `sku_regional_details.product_url`; `shipment_lines.sku`.
 
 ### I.2.7A Canonical Warehouse placeholder set + `country_to_iso2` transform (FINALIZED)
 
@@ -701,6 +705,142 @@ Shipment/{COUNTRY}/{SHIP_DATE}/{SHIPMENT_NO}_{COUNTRY}/
 - **Service variations are DATA placeholders, not separate templates** — e.g. `{{SHIPPING_METHOD}}` / `{{SERVICE_TYPE}}` / `{{LAST_MILE_DELIVERY}}` are filled at generation from shipment/carrier data.
 
 **Example:** carrier `TOP_SEALAND` uses a single booking template `BOOKING_TOP_SEALAND` (`template_id = TPL-BOOKING-TOP-SEALAND-V1`); its sea/land/last-mile service differences are rendered through placeholders, not additional template rows.
+
+---
+
+## O. Google Sheet Document Runtime Rules (SPEC ONLY — shared Document Engine)
+
+Shared, carrier-agnostic runtime rules for **`template_file_type = google_sheet`** documents. Carrier-specific mappings that consume these rules live in [`CARRIER_BOOKING_MAPPING_SPEC.md`](./CARRIER_BOOKING_MAPPING_SPEC.md) (TOP SEALAND, AGL, future SINOTRANS). **No runtime is implemented here** — this defines the required behavior for the future Document Engine.
+
+### O.1 Template immutability + copy-before-render workflow (global)
+
+**Original document templates are IMMUTABLE.** Every generation operates on a COPY. Canonical order:
+
+1. Read the template registry (`document_templates`).
+2. **Create a copy** of the original template file.
+3. Replace scalar placeholders **on the copy**.
+4. Expand collections **on the copy**.
+5. Insert / hide rows **on the copy**.
+6. Update formulas **on the copy**.
+7. Export / deliver the generated document.
+8. Record the result in `generated_documents`.
+
+**Forbidden on the ORIGINAL template** (permitted only on the generated copy): replacing placeholders · inserting/deleting rows · changing formulas · clearing cells · writing generated values · hiding/unhiding operational rows · changing worksheet names · updating formatting. The template stays reusable and version-controlled; **all modifications happen on the copy only.**
+
+### O.2 Collection-controller row (hidden control column — general rule)
+
+- A collection controller token (e.g. `{{SHIPMENT_LINES}}`, `{{AGL_INVOICE_LINES}}`) lives in a **hidden control column on the actual line-template row** — it marks the row the runtime duplicates once per output-grain record, then the token is cleared/removed from output.
+- **Do NOT hardcode the controller to a specific column (e.g. column A) in the shared architecture.** Each template records its own hidden control column + line-template row in its carrier mapping. The hidden control column is **structural metadata** and must **never appear in the final visible document**.
+- In `document_template_fields` the controller is one `field_type = collection` row (`collection_key = <NAME>`); every per-row placeholder shares that `collection_key` (§F.1).
+
+### O.3 `worksheet_name` semantics
+
+- **`template_file_type = google_sheet` → `worksheet_name` MUST be the EXACT target tab name** (e.g. `Template`). Placeholder replacement + collection expansion + footer updates apply to that tab only.
+- **Non-Sheet templates → `worksheet_name` blank.**
+- **Unmapped worksheets** (e.g. an `Instructions` tab) receive **no `document_template_fields` rows**, are **preserved as-is** in the generated copy (unless a future output rule removes them), and **never receive line expansion**.
+
+### O.4 Reserved line capacity (initial capacity, NOT a hard maximum)
+
+A Sheet template's preformatted line region (line-template row → footer) is **initial capacity**, not a maximum line count.
+
+- **Case 1 — generated lines ≤ reserved capacity:** fill the first *N* line rows; **preserve remaining rows blank**; do not modify the original; the generated copy **may keep unused blank rows visible in v1**. Optional future enhancement `hide_unused_template_rows = TRUE` is **deferred**.
+- **Case 2 — generated lines > reserved capacity (on the COPY):** (1) compute additional rows required; (2) **insert the missing rows immediately before the footer**; (3) copy the line-template row **formatting** into each new row — borders, row height, number formats, text wrapping, alignment, line-row formulas, data validation, merged-cell behavior where supported; (4) fill all line values; (5) the footer **moves down naturally**; (6) update footer formula ranges to the actual generated line range (§O.5). **Never overwrite or merge multiple shipment lines into one row.**
+
+### O.5 Footer formula preservation + explicit range validation
+
+- **Footer total formulas remain FORMULAS** on the generated copy — do **NOT** replace them with document placeholders in v1.
+- Runtime computes `line_start_row = the line-template/controller row` and `line_end_row = line_start_row + generated_line_count − 1`, then **explicitly validates or rewrites** each footer formula so its `SUM(...)` range covers `line_start_row : line_end_row`. **Do NOT assume Google Sheets auto-adjusts every formula correctly** after row insertion — the runtime must verify.
+- Footer formulas exist **only on the generated copy**.
+
+### O.6 Formula totals vs Shipment snapshot totals (validation — planned, not implemented)
+
+- Footer totals are computed from the **rendered line values**; **persisted Shipment totals are NOT written into footer cells.**
+- The engine MAY compare computed footer totals against the Shipment snapshot as a validation step: `SUM(QTY)` vs `shipments.shipment_total_qty`; `SUM(CARTON_QTY)` vs `shipment_total_cartons`; `SUM(GROSS_WEIGHT)` vs `shipment_total_gross_weight`; `SUM(NET_WEIGHT)` vs `shipment_total_net_weight`; `SUM(CARTON_CBM)` vs `shipment_total_cbm`.
+- On mismatch: return a warning / generation validation error per future readiness rules; **never silently alter Shipment DB values; never silently force the formula result to match the header.** This validation is **planned, not implemented.**
+
+---
+
+## P. Document Generation Runtime — Canonical Finalization (SPEC ONLY)
+
+Canonical runtime contract that **every future carrier / document template MUST follow** (AGL, SINOTRANS, Taiwan Export, US Import, and future FedEx / UPS / DHL / Expeditors / Flexport). This section formalizes the shared runtime; the mechanics of immutable-template / copy / reserved-rows / dynamic-expansion / footer-formulas are defined in **§O** and are **not** re-duplicated here. Per-carrier behavior lives in [`CARRIER_DOCUMENT_MAPPING_SPEC.md`](./CARRIER_DOCUMENT_MAPPING_SPEC.md).
+
+> **DB remains the SSOT for field-level mappings.** This markdown describes runtime **architecture** only. The authoritative token → data-source mapping lives in **`document_template_fields`** (§E). Markdown must **never** duplicate `document_template_fields` rows.
+
+### P.1 Runtime Architecture (canonical pipeline)
+
+```
+Template (read-only)
+  ↓ Copy Template            (§O.1 — never edit the original)
+  ↓ Resolve Placeholder      (scalar tokens — §F)
+  ↓ Resolve Collection       (collection controller → collection_item rows — §P.3)
+  ↓ Dynamic Row Expansion    (§O.4 — insert before footer when actual > reserved)
+  ↓ Formula Recalculation    (§O.5 template formulas + §P.5 runtime formulas)
+  ↓ Generate Output
+  ↓ Generated Document        (immutable snapshot — §P.7; logged in generated_documents)
+```
+
+**Rule:** templates are immutable; runtime always copies; generated documents are **independent snapshots**.
+
+### P.2 Template Immutable Rule (canonical)
+
+Templates are **never edited**. Every generated document is produced from a **copied** template (`Template → Copy → Fill Runtime Data → Generated Document`), so the template always remains reusable. Full workflow + forbidden-on-original list: **§O.1**.
+
+### P.3 Collection Runtime + `collection_key` Convention
+
+- A **collection** placeholder is the controller (one `field_type = collection` row in `document_template_fields`); each repeating field is a **`collection_item`** that **MUST reference exactly one `collection_key`** (§O.2 / §F.1). Each collection owns **one** dynamic runtime section on its worksheet.
+- **`collection_key` naming convention (canonical):** `{SCOPE}_{DOCTYPE}_LINES`, UPPERCASE snake, one per worksheet section. Registered keys:
+
+  | collection_key | Document / worksheet |
+  |---|---|
+  | `AGL_INVOICE_LINES` | AGL Carrier Booking — Invoice/Template |
+  | `SINOTRANS_INVOICE_LINES` | SINOTRANS Commercial Invoice |
+  | `SINOTRANS_PACKING_LINES` | SINOTRANS Packing List |
+  | `EXPORT_INVOICE_LINES` | Taiwan Export Commercial Invoice |
+  | `EXPORT_PACKING_LINES` | Taiwan Export Packing List |
+  | `US_IMPORT_INVOICE_LINES` | US Import Commercial Invoice |
+  | `US_IMPORT_PACKING_LINES` | US Import Packing List |
+
+  Future documents add their own `{SCOPE}_{DOCTYPE}_LINES` key following the same pattern.
+
+### P.4 Dynamic Row Runtime
+
+Standard behavior for every template (defined in **§O.4**): if actual rows ≤ placeholder rows → **overwrite placeholder rows only**; if actual rows > placeholder rows → **insert new rows immediately before the Total/Footer**, preserving footer + formulas (§O.5). This is the canonical expansion rule for all future templates.
+
+### P.5 Formula Runtime (two distinct types)
+
+- **Template Formula** — lives **inside the template** and stays there (recalculated by the Sheet): `SUM()`, `AVERAGE()`, `COUNT()`, footer totals, cell formulas. Runtime only validates/rewrites their **ranges** after row expansion (§O.5); it does not replace them with values.
+- **Runtime Formula** — computed **by the runtime before writing** the cell value: `AMOUNT = QTY × UNIT_PRICE`, Invoice Number, PO Number, Material Summary, Carton Reference, any Collection Summary. These are written as resolved values (or as a template-form formula only where a carrier template explicitly requires it — recorded per-carrier).
+
+### P.6 Canonical Lookup Priority
+
+Resolution order the runtime MUST use (field-level sources remain in `document_template_fields`; effective-date rule = `effective_from ≤ target_date AND (effective_to blank OR ≥ target_date)`, latest `effective_from` wins — Tax SSOT [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md) §4/§5):
+
+| Value | Lookup chain |
+|---|---|
+| **HS Code** | shipment line → SKU → `sku_details.series` → `tax_referral_rates` → effective date → `hscode` |
+| **Declared Value / Currency** | shipment country → `tax_referral_rates.duty_country` (+ series + origin) → effective date → `declared_value` / `declared_currency` |
+| **Warehouse (recipient)** | `shipments.warehouse_code` → `warehouses.warehouse_code` → warehouse fields (§I.2.7A; `WAREHOUSE_COUNTRY_CODE` via `country_to_iso2`) |
+| **Regional Product** | SKU + company + marketplace + country → `sku_regional_details` |
+| **Pricing** | SKU + marketplace + country → `pricing_list` |
+
+Document lookup/target date: `shipments.etd` → shipment creation date → current date (Draft fallback only); **never** the document-generation date for a historical shipment.
+
+### P.7 Generated Document Snapshot Rule
+
+A generated document is an **immutable snapshot** at generation time. Subsequent edits to **Pricing / Tax / SKU / Warehouse / Carrier / Regional** master data **MUST NOT** alter historical generated documents, and **MUST NOT** mutate the existing `generated_documents` record; they may affect only a **new regeneration**, which creates a **new** `generated_documents` record/version (append-only log — §D).
+
+**Two distinct source categories (resolves the §P.6 ↔ §P.7 relationship):**
+
+- **A. Transaction Snapshot sources (committed truth).** Generation reads the committed **PO / Shipment snapshots** for transaction and execution truth — quantities, carton quantities, weight / CBM, shipping-method label, customs-type label, committed carrier / rate-card selection, PO allocation, execution dates, and shipment identifiers. The Document Engine **must NOT recalculate** planning, allocation, shipment totals, or committed execution values from current upstream state.
+- **B. Reference Master lookups at generation time.** When a required value is **not persisted in the transaction snapshot**, the Dataset Builder **MAY** resolve it from the authoritative Reference Master per **§P.6** and `document_template_fields` — `tax_referral_rates`, `warehouses`, `sku_regional_details`, `pricing_list`. Effective-dated (tax) lookups use the **transaction target date** (`shipments.etd` → shipment creation date → current date only for a Draft fallback); the **generation timestamp must not replace the historical transaction date**.
+
+> **Canonical (supersedes the earlier "never live master data" phrasing):** *Documents read committed transaction snapshots first. Where a document field is not stored in the transaction snapshot, the Dataset Builder may perform the Canonical generation-time Reference Master lookup defined in §P.6 and `document_template_fields`. Once generated, the output is an immutable snapshot; later master-data changes never alter the historical generated document.* This is consistent with the Global Snapshot Architecture (§A / RO&PO §14): the engine never recomputes committed planning/allocation/execution values — reference lookups fill only non-snapshotted fields.
+
+### P.8 Runtime vs Template Calculation Responsibility
+
+| Runtime calculates (before writing) | Template calculates (stays in the sheet) |
+|---|---|
+| Invoice Number · PO Number · Amount · Material Summary · Carton Reference · Collection Summary | `SUM()` · `COUNT()` · Totals · cell formulas |
 
 ---
 

@@ -373,9 +373,12 @@ function _buildSkuEditModal() {
         '<div style="background:#fff;border-radius:10px;width:min(720px,94vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.2);overflow:hidden;">' +
             '<div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;font-weight:600;font-size:15px;color:#1E293B;" id="sku-edit-title">Edit SKU</div>' +
             '<div id="sku-edit-body" style="padding:18px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;"></div>' +
-            '<div style="padding:14px 18px;border-top:1px solid #E2E8F0;display:flex;justify-content:flex-end;gap:10px;">' +
-                '<button type="button" onclick="closeSkuEdit()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
-                '<button type="button" onclick="saveSkuEdit()" style="padding:8px 16px;border:none;background:#3B82F6;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Save</button>' +
+            '<div style="padding:14px 18px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;gap:10px;">' +
+                '<button type="button" onclick="handleSkuTaxRates()" title="Maintain Series-level HS Code & tax records (tax_referral_rates)" style="padding:8px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;color:#0F766E;">HS Code &amp; Tax Rates</button>' +
+                '<div style="display:flex;gap:10px;">' +
+                    '<button type="button" onclick="closeSkuEdit()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
+                    '<button type="button" onclick="saveSkuEdit()" style="padding:8px 16px;border:none;background:#3B82F6;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Save</button>' +
+                '</div>' +
             '</div>' +
         '</div>';
     overlay.addEventListener('click', function(e) { if (e.target === overlay) closeSkuEdit(); });
@@ -444,6 +447,245 @@ function saveSkuEdit() {
         closeSkuEdit();
         renderSkuDetailsTable();
         if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
+    }).catch(function(err) {
+        showSkuStatusToast('Error: ' + (err && err.message ? err.message : err));
+    });
+}
+
+// ========================================
+// SKU Details — HS Code & Tax Rates subpage (Tax & Referral Rate Master V2)
+// Maintains Series-level tax_referral_rates rows WITHOUT opening the raw sheet. Writes go to
+// tax_referral_rates via KM.DB.upsertTaxReferralRate (NEVER into sku_details). Parent-rate CRUD +
+// versioning is live; the component editor is DEFERRED — components render READ-ONLY. No fake saves.
+// See TAX_AND_REFERRAL_RATES_SPEC.md §9.
+// ========================================
+var _taxSeries = null;   // the Series whose rates the tax modal is showing
+
+function _taxEsc(v) {
+    return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function _taxDash(v) { var s = String(v == null ? '' : v).trim(); return s === '' ? '--' : _taxEsc(s); }
+
+// Parent-rate fields for the add/edit/version form (snake_case DB columns). type: text | number | date.
+var TAX_RATE_FORM_FIELDS_ = [
+    { key: 'country_of_origin', label: 'Country of Origin (ISO-2, e.g. CN)', type: 'text' },
+    { key: 'duty_country', label: 'Duty Country (ISO-2, e.g. US)', type: 'text' },
+    { key: 'hscode', label: 'HS Code', type: 'text' },
+    { key: 'duty_rate', label: 'Duty Rate (% e.g. 25)', type: 'number' },
+    { key: 'vat_no', label: 'VAT No', type: 'text' },
+    { key: 'vat_rate', label: 'VAT Rate (%)', type: 'number' },
+    { key: 'eori_no', label: 'EORI No', type: 'text' },
+    { key: 'port_tax_rate', label: 'Port Tax Rate (%)', type: 'number' },
+    { key: 'referral_fee_rate', label: 'Referral Fee Rate (%)', type: 'number' },
+    { key: 'declared_value', label: 'Declared Value (unit)', type: 'number' },
+    { key: 'declared_currency', label: 'Declared Currency (ISO, e.g. USD)', type: 'text' },
+    { key: 'effective_from', label: 'Effective From', type: 'date' },
+    { key: 'effective_to', label: 'Effective To (blank = open-ended)', type: 'date' },
+    { key: 'note', label: 'Note', type: 'text' }
+];
+
+// Open the tax modal for the currently-selected SKU's Series (inherited; read-only in tax rows).
+function handleSkuTaxRates() {
+    if (!canEditSkuDetails()) { alert('You do not have permission to edit tax records.'); return; }
+    var rec = _selectedSku ? _skuFindRecord(_selectedSku) : null;
+    var series = rec ? String((rec.raw && rec.raw.series) || rec.series || '').trim() : '';
+    if (!series) { alert('Select a SKU with a Series first. Tax records are maintained per Series.'); return; }
+    _taxSeries = series;
+    var overlay = document.getElementById('sku-tax-modal-overlay');
+    if (!overlay) { overlay = _buildSkuTaxModal(); document.body.appendChild(overlay); }
+    overlay.querySelector('#sku-tax-title').textContent = 'HS Code & Tax Rates — Series ' + series;
+    _renderSkuTaxList();
+    overlay.style.display = 'flex';
+}
+
+function _buildSkuTaxModal() {
+    var overlay = document.createElement('div');
+    overlay.id = 'sku-tax-modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:10001;display:none;align-items:center;justify-content:center;';
+    overlay.innerHTML =
+        '<div style="background:#fff;border-radius:10px;width:min(900px,96vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.22);overflow:hidden;">' +
+            '<div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;font-weight:600;font-size:15px;color:#1E293B;display:flex;justify-content:space-between;align-items:center;">' +
+                '<span id="sku-tax-title">HS Code & Tax Rates</span>' +
+                '<button type="button" onclick="closeSkuTax()" style="border:none;background:none;font-size:18px;cursor:pointer;color:#64748B;">&times;</button>' +
+            '</div>' +
+            '<div id="sku-tax-body" style="padding:16px 18px;overflow-y:auto;"></div>' +
+        '</div>';
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) closeSkuTax(); });
+    return overlay;
+}
+
+function closeSkuTax() { var o = document.getElementById('sku-tax-modal-overlay'); if (o) o.style.display = 'none'; }
+
+// List all tax_referral_rates rows for the current Series (all countries + versions) + read-only components.
+function _renderSkuTaxList() {
+    var body = document.getElementById('sku-tax-body');
+    if (!body) return;
+    var rates = (window.KM && KM.DB && KM.DB.getTaxReferralRates) ? (KM.DB.getTaxReferralRates() || []) : [];
+    var comps = (window.KM && KM.DB && KM.DB.getTaxRateComponents) ? (KM.DB.getTaxRateComponents() || []) : [];
+    var rows = rates.filter(function(r) { return String(r.series || '').trim().toUpperCase() === String(_taxSeries).toUpperCase(); });
+    // Sort: duty country, then origin, then effective_from descending (newest first).
+    rows.sort(function(a, b) {
+        var k = String(a.dutyCountry).localeCompare(String(b.dutyCountry)); if (k) return k;
+        var o = String(a.countryOfOrigin).localeCompare(String(b.countryOfOrigin)); if (o) return o;
+        return String(b.effectiveFrom).localeCompare(String(a.effectiveFrom));
+    });
+
+    var head =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+            '<div style="font-size:12px;color:#64748B;">Series-level tax master (parent = one row per Origin × Duty Country × effective period). Writes to <code>tax_referral_rates</code> — never <code>sku_details</code>.</div>' +
+            '<button type="button" onclick="openSkuTaxForm(\'add\')" style="padding:7px 14px;border:none;background:#0F766E;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">+ Add Country Rate</button>' +
+        '</div>';
+
+    if (!rows.length) {
+        body.innerHTML = head + '<div style="padding:24px;text-align:center;color:#94A3B8;font-style:italic;border:1px dashed #E2E8F0;border-radius:8px;">No tax records for this Series yet. Click “+ Add Country Rate”.</div>';
+        return;
+    }
+
+    var cards = rows.map(function(r) {
+        var rid = _taxEsc(r.taxRateId);
+        var ridJs = String(r.taxRateId).replace(/'/g, "\\'");
+        var myComps = comps.filter(function(c) { return String(c.taxRateId) === String(r.taxRateId); });
+        var openEnded = String(r.effectiveTo || '').trim() === '';
+        var period = _taxDash(r.effectiveFrom) + ' → ' + (openEnded ? '<span style="color:#0F766E;">open-ended</span>' : _taxDash(r.effectiveTo));
+        var compHtml;
+        if (myComps.length) {
+            compHtml = '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;">' +
+                '<thead><tr style="color:#64748B;text-align:left;">' +
+                    '<th style="padding:3px 6px;">Code</th><th style="padding:3px 6px;">Type</th><th style="padding:3px 6px;">Rate Type</th><th style="padding:3px 6px;">Value</th><th style="padding:3px 6px;">Per-Unit</th><th style="padding:3px 6px;">Effective</th></tr></thead>' +
+                '<tbody>' + myComps.map(function(c) {
+                    return '<tr style="border-top:1px solid #F1F5F9;">' +
+                        '<td style="padding:3px 6px;">' + _taxDash(c.componentCode) + '</td>' +
+                        '<td style="padding:3px 6px;">' + _taxDash(c.componentType) + '</td>' +
+                        '<td style="padding:3px 6px;">' + _taxDash(c.rateType) + '</td>' +
+                        '<td style="padding:3px 6px;">' + _taxDash(c.rateValue) + '</td>' +
+                        '<td style="padding:3px 6px;">' + (c.amountPerUnit === '' || c.amountPerUnit == null ? '--' : _taxEsc(c.amountPerUnit + ' ' + (c.amountCurrency || '') + '/' + (c.quantityUnit || ''))) + '</td>' +
+                        '<td style="padding:3px 6px;">' + _taxDash(c.effectiveFrom) + '→' + (String(c.effectiveTo||'').trim()===''?'∞':_taxEsc(c.effectiveTo)) + '</td>' +
+                    '</tr>';
+                }).join('') + '</tbody></table>';
+        } else {
+            compHtml = '<div style="font-size:11px;color:#94A3B8;font-style:italic;margin-top:4px;">No components.</div>';
+        }
+
+        return '<div style="border:1px solid #E2E8F0;border-radius:8px;padding:12px 14px;margin-bottom:10px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                '<div>' +
+                    '<div style="font-weight:600;font-size:13px;color:#1E293B;">' + _taxDash(r.dutyCountry) + ' &larr; ' + _taxDash(r.countryOfOrigin) +
+                        '<span style="font-size:11px;color:#64748B;font-weight:400;margin-left:8px;">HS ' + _taxDash(r.hscode) + '</span></div>' +
+                    '<div style="font-size:11px;color:#64748B;margin-top:3px;">' + rid + '</div>' +
+                    '<div style="font-size:11px;color:#475569;margin-top:4px;">Duty ' + _taxDash(r.dutyRate) + '% · VAT ' + _taxDash(r.vatRate) + '% · Port ' + _taxDash(r.portTaxRate) + '% · Referral ' + _taxDash(r.referralFeeRate) + '% · Declared ' + _taxDash(r.declaredValue) + ' ' + _taxDash(r.declaredCurrency) + '</div>' +
+                    '<div style="font-size:11px;color:#475569;margin-top:2px;">VAT No ' + _taxDash(r.vatNo) + ' · EORI ' + _taxDash(r.eoriNo) + '</div>' +
+                    '<div style="font-size:11px;color:#475569;margin-top:2px;">Effective: ' + period + '</div>' +
+                '</div>' +
+                '<div style="display:flex;flex-direction:column;gap:6px;white-space:nowrap;">' +
+                    '<button type="button" onclick="openSkuTaxForm(\'edit\',\'' + ridJs + '\')" style="padding:5px 10px;border:1px solid #CBD5E1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px;">Edit</button>' +
+                    '<button type="button" onclick="openSkuTaxForm(\'version\',\'' + ridJs + '\')" style="padding:5px 10px;border:1px solid #CBD5E1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px;">New Version</button>' +
+                '</div>' +
+            '</div>' +
+            '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #E2E8F0;">' +
+                '<div style="font-size:11px;color:#64748B;font-weight:600;">Components <span style="font-weight:400;font-style:italic;">(read-only — editor deferred)</span></div>' +
+                compHtml +
+            '</div>' +
+        '</div>';
+    }).join('');
+
+    body.innerHTML = head + cards;
+}
+
+// Open the parent-rate form. mode: 'add' | 'edit' | 'version'. On edit/version, prefill from taxRateId.
+function openSkuTaxForm(mode, taxRateId) {
+    var rates = (window.KM && KM.DB && KM.DB.getTaxReferralRates) ? (KM.DB.getTaxReferralRates() || []) : [];
+    var src = null;
+    if (taxRateId) { for (var i = 0; i < rates.length; i++) { if (String(rates[i].taxRateId) === String(taxRateId)) { src = rates[i]; break; } } }
+    var body = document.getElementById('sku-tax-body');
+    if (!body) return;
+
+    var titleMap = { add: 'Add Country Rate', edit: 'Edit Rate (correct current version)', version: 'New Effective Version' };
+    function val(k) {
+        if (!src) return '';
+        if (mode === 'version' && (k === 'effective_from')) return '';   // force a new start date
+        if (mode === 'version' && (k === 'effective_to')) return '';
+        return (src.raw && src.raw[k] != null && src.raw[k] !== '') ? src.raw[k] : _taxFormFallback(src, k);
+    }
+
+    var fieldsHtml = TAX_RATE_FORM_FIELDS_.map(function(f) {
+        var v = val(f.key);
+        var id = 'sku-tax-f-' + f.key;
+        var t = (f.type === 'number') ? 'number' : (f.type === 'date' ? 'date' : 'text');
+        return '<div style="display:flex;flex-direction:column;gap:3px;">' +
+            '<label style="font-size:11px;color:#64748B;">' + _taxEsc(f.label) + '</label>' +
+            '<input id="' + id + '" type="' + t + '" value="' + _taxEsc(v) + '" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;">' +
+        '</div>';
+    }).join('');
+
+    var versionExtra = (mode === 'version')
+        ? '<label style="grid-column:1 / -1;display:flex;align-items:center;gap:8px;font-size:12px;color:#475569;"><input type="checkbox" id="sku-tax-close-prev" checked> Close the previous open-ended version (set its Effective To = new Effective From − 1 day)</label>'
+        : '';
+
+    var hiddenId = (mode === 'edit' && src) ? src.taxRateId : '';
+
+    body.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+            '<div style="font-weight:600;font-size:14px;color:#1E293B;">' + _taxEsc(titleMap[mode] || 'Rate') + ' — Series ' + _taxEsc(_taxSeries) + '</div>' +
+            '<button type="button" onclick="_renderSkuTaxList()" style="padding:6px 12px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:12px;">&larr; Back to list</button>' +
+        '</div>' +
+        (mode === 'version' ? '<div style="font-size:11px;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;margin-bottom:10px;">A new version creates a NEW row + new tax_rate_id and preserves the prior row (history). Set a new Effective From.</div>' : '') +
+        '<input type="hidden" id="sku-tax-edit-id" value="' + _taxEsc(hiddenId) + '">' +
+        '<input type="hidden" id="sku-tax-mode" value="' + _taxEsc(mode) + '">' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;">' +
+            '<div style="display:flex;flex-direction:column;gap:3px;"><label style="font-size:11px;color:#64748B;">Series (inherited — edit via SKU editor)</label>' +
+                '<input type="text" value="' + _taxEsc(_taxSeries) + '" readonly style="padding:7px 9px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px;background:#F1F5F9;color:#64748B;"></div>' +
+            fieldsHtml +
+            versionExtra +
+        '</div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">' +
+            '<button type="button" onclick="_renderSkuTaxList()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
+            '<button type="button" onclick="saveSkuTaxRate()" style="padding:8px 16px;border:none;background:#0F766E;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Save Rate</button>' +
+        '</div>';
+}
+
+// Fallback reader when normalizeTaxReferralRateRecord exposes a camelCase value but raw is sparse.
+function _taxFormFallback(src, k) {
+    var map = { country_of_origin: 'countryOfOrigin', duty_country: 'dutyCountry', hscode: 'hscode',
+        duty_rate: 'dutyRate', vat_no: 'vatNo', vat_rate: 'vatRate', eori_no: 'eoriNo',
+        port_tax_rate: 'portTaxRate', referral_fee_rate: 'referralFeeRate', declared_value: 'declaredValue',
+        declared_currency: 'declaredCurrency', effective_from: 'effectiveFrom', effective_to: 'effectiveTo', note: 'note' };
+    var cc = map[k];
+    return (cc && src[cc] != null) ? src[cc] : '';
+}
+
+function saveSkuTaxRate() {
+    var body = document.getElementById('sku-tax-body');
+    if (!body) return;
+    var mode = (document.getElementById('sku-tax-mode') || {}).value || 'add';
+    var editId = (document.getElementById('sku-tax-edit-id') || {}).value || '';
+    var payload = { series: _taxSeries };
+    TAX_RATE_FORM_FIELDS_.forEach(function(f) {
+        var el = document.getElementById('sku-tax-f-' + f.key);
+        if (!el) return;
+        payload[f.key] = (el.value == null ? '' : String(el.value)).trim();
+    });
+    // Required business-key fields for a new row (correction/edit reuses the stored key).
+    if (mode !== 'edit') {
+        if (!payload.country_of_origin) { alert('Country of Origin is required.'); return; }
+        if (!payload.duty_country) { alert('Duty Country is required.'); return; }
+        if (!payload.effective_from) { alert('Effective From is required.'); return; }
+    }
+    if (mode === 'edit') { payload.tax_rate_id = editId; }
+    if (mode === 'version') {
+        payload.create_version = true;
+        var cp = document.getElementById('sku-tax-close-prev');
+        payload.close_previous = !!(cp && cp.checked);
+    }
+    if (!(window.KM && window.KM.DB && window.KM.DB.upsertTaxReferralRate)) {
+        alert('Save unavailable (KM.DB.upsertTaxReferralRate not configured).');
+        return;
+    }
+    showSkuStatusToast('Saving tax rate...');
+    window.KM.DB.upsertTaxReferralRate(payload).then(function(data) {
+        var warn = (data && data.warnings && data.warnings.length) ? ('\n\nWarning:\n' + data.warnings.join('\n')) : '';
+        showSkuStatusToast('Tax rate saved.');
+        if (warn) alert('Saved: ' + ((data && data.tax_rate_id) || '') + warn);
+        _renderSkuTaxList();
     }).catch(function(err) {
         showSkuStatusToast('Error: ' + (err && err.message ? err.message : err));
     });
@@ -540,6 +782,11 @@ window.canEditSkuDetails = canEditSkuDetails;
 window.handleEditSku = handleEditSku;
 window.closeSkuEdit = closeSkuEdit;
 window.saveSkuEdit = saveSkuEdit;
+window.handleSkuTaxRates = handleSkuTaxRates;
+window.closeSkuTax = closeSkuTax;
+window.openSkuTaxForm = openSkuTaxForm;
+window.saveSkuTaxRate = saveSkuTaxRate;
+window._renderSkuTaxList = _renderSkuTaxList;
 
 // Ensure the SKU Details markup is present before rendering / scroll init runs.
 // Idempotent: if #sku-section already exists, resolves immediately (no re-fetch, no

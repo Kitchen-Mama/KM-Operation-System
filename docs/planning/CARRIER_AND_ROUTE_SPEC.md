@@ -462,6 +462,8 @@ Planned future flow, reusing the **same Update Template rules** (§4C.3 / §4C.3
 
 ---
 
+> **Distinct from Shipment Route Templates (`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`).** `shipping_route_rules` (planning-side) pre-fill `ship_from` / `destination` on a Weekly Shipping Plan. **`shipment_route_templates` (Execution-layer, separate spec)** define the physical leg-by-leg path snapshotted onto a shipment (`shipment_routes`) for On-The-Way / World Map. Route-template matching resolves `destination_region` from the **existing `warehouses.logistics_region`** field (`US_WEST` / `US_CENTRAL` / `US_EAST`), is **carrier-agnostic by default** (`carrier_id` nullable = generic template shared across carriers), and is **NOT** the same as carrier rate-card matching (§4, which is priced by origin/destination + marketplace + method + weight tier). Field-level SSOT: [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md).
+
 ## 5. `shipping_route_rules` — Route Defaults (ship_from / destination / route_code)
 
 One row per (Company × Country × Marketplace × Shipping Method) routing default. **Drives the pre-filled `ship_from` / `destination` / `route_code` on a Weekly Shipping Plan.**

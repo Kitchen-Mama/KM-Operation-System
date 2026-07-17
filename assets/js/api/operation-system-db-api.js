@@ -1102,7 +1102,8 @@ function normalizeOperationDb(rawDb) {
         // SKU Domain v2.0 — Regional/Compliance Master (Layer 2) + Tax/Referral Reference Master (Layer 4).
         // [] when the tab is absent (missing-header safe). Tax reference is READ-ONLY (no engine).
         skuRegionalDetails: (db.sku_regional_details || []).map(normalizeSkuRegionalDetailRecord).filter(function(r) { return r.regionalDetailId || r.sku; }),
-        taxReferralRates: (db.tax_referral_rates || []).map(normalizeTaxReferralRateRecord).filter(function(r) { return r.taxRateId || r.series; })
+        taxReferralRates: (db.tax_referral_rates || []).map(normalizeTaxReferralRateRecord).filter(function(r) { return r.taxRateId || r.series; }),
+        taxRateComponents: (db.tax_rate_components || []).map(normalizeTaxRateComponentRecord).filter(function(r) { return r.taxComponentId || r.taxRateId; })
     };
 }
 
@@ -1144,18 +1145,46 @@ function normalizeTaxReferralRateRecord(raw) {
         series: s(r.series),
         countryOfOrigin: s(r.country_of_origin),
         dutyCountry: s(r.duty_country),
-        hsCode: s(r.hscode),
+        hscode: s(r.hscode),                                              // canonical (spec §I camelCase = hscode)
+        hsCode: s(r.hscode),                                              // existing-consumer alias (sku-handbook / overrides)
         dutyRate: n(r.duty_rate),
-        extraTaxRate: n(r.extra_tax_rate),
         vatNo: s(r.vat_no),                                               // VAT / tax registration number (nullable)
         eoriNo: s(r.eori_no),                                             // EORI registration number for EU/UK customs (nullable)
-        vatRate: n(r.vat_rate) !== '' ? n(r.vat_rate) : n(r.vat),          // accept vat_rate or legacy vat
-        portTaxRate: n(r.port_tax_rate) !== '' ? n(r.port_tax_rate) : n(r.port_tax),
+        vatRate: n(r.vat_rate) !== '' ? n(r.vat_rate) : n(r.vat),          // canonical vat_rate; legacy `vat` READ-fallback only
+        portTaxRate: n(r.port_tax_rate) !== '' ? n(r.port_tax_rate) : n(r.port_tax),   // canonical port_tax_rate; legacy `port_tax` READ-fallback only
         referralFeeRate: n(r.referral_fee_rate),
         declaredValue: n(r.declared_value),
         declaredCurrency: s(r.declared_currency),
         effectiveFrom: s(r.effective_from),
+        effectiveTo: s(r.effective_to),                                   // blank = open-ended (never invalid)
+        note: s(r.note),
+        createdAt: s(r.created_at),
+        updatedAt: s(r.updated_at),
+        raw: r
+    };
+    // NOTE (v2): retired v1 column `extra_tax_rate` is intentionally NOT exposed as a canonical property.
+}
+
+// Tax rate COMPONENT (child of tax_referral_rates). Optional additional/compound tax element.
+// See TAX_AND_REFERRAL_RATES_SPEC.md §2.2/§6. Rate convention = whole-number percent (§7).
+function normalizeTaxRateComponentRecord(raw) {
+    var r = raw || {};
+    function s(v) { return String(v == null ? '' : v).trim(); }
+    function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
+    return {
+        taxComponentId: s(r.tax_component_id),
+        taxRateId: s(r.tax_rate_id),                                      // FK → tax_referral_rates.tax_rate_id
+        componentType: s(r.component_type),
+        componentCode: s(r.component_code),
+        componentName: s(r.component_name),
+        rateType: s(r.rate_type),                                         // percentage | amount_per_unit | fixed_amount
+        rateValue: n(r.rate_value),                                       // used when rate_type = percentage
+        amountPerUnit: n(r.amount_per_unit),
+        amountCurrency: s(r.amount_currency),
+        quantityUnit: s(r.quantity_unit),
+        effectiveFrom: s(r.effective_from),
         effectiveTo: s(r.effective_to),
+        sourceUrl: s(r.source_url),
         note: s(r.note),
         createdAt: s(r.created_at),
         updatedAt: s(r.updated_at),
@@ -1781,6 +1810,10 @@ window.KM.DB.getTaxReferralRates = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.taxReferralRates || [];
 };
+window.KM.DB.getTaxRateComponents = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.taxRateComponents || [];
+};
 
 window.KM.DB.getPurchaseOrderLines = function() {
     if (!window._opDbCache) return [];
@@ -1936,6 +1969,54 @@ window.KM.DB.upsertSkuRegionalDetail = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert regional detail failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Tax & Referral Rate Master V2 — upsert ONE tax_referral_rates row (PARENT).
+// Payload (snake_case): { tax_rate_id?, series, country_of_origin, duty_country, hscode?, duty_rate?,
+//   vat_no?, vat_rate?, eori_no?, port_tax_rate?, referral_fee_rate?, declared_value?, declared_currency?,
+//   effective_from, effective_to?, note?, create_version?, close_previous? }.
+// tax_rate_id present + no create_version → correction (update in place). Otherwise → new version (new id).
+// Returns { tax_rate_id, updated, created, version?, previous_closed?, warnings }. NO fake success —
+// resolves only when the handler reports success (real DB write). See TAX_AND_REFERRAL_RATES_SPEC.md §9/§12.
+window.KM.DB.upsertTaxReferralRate = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertTaxReferralRate skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action: 'upsertTaxReferralRate' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert tax referral rate failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Tax & Referral Rate Master V2 — upsert ONE tax_rate_components row (CHILD).
+// Payload (snake_case): { tax_component_id?, tax_rate_id, component_type, component_code, component_name?,
+//   rate_type, rate_value?, amount_per_unit?, amount_currency?, quantity_unit?, effective_from?,
+//   effective_to?, source_url?, note? }. The parent tax_rate_id MUST exist (handler rejects orphans).
+// Returns { tax_component_id, updated, created, warnings }.
+window.KM.DB.upsertTaxRateComponent = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertTaxRateComponent skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action: 'upsertTaxRateComponent' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert tax rate component failed');
     await loadOperationDb({ force: true });
     return json.data;
 };

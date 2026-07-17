@@ -18,7 +18,7 @@
 | **1** | **`sku_details`** | **Product Master** | globally shared product facts: identity · classification · lifecycle · image · logistics dims/weights · material · battery/magnet type · **brand baseline price** (`base_currency`) |
 | **2** | **`sku_regional_details`** | **Regional / Marketplace Compliance Master** | regional product info + **source of truth for marketplace identifiers** (`site_sku`, `marketplace_product_id`): packaging regulation · regulation url · language · manual/label version · battery regulation |
 | **3** | **`marketplace_skus`** | **Operational Marketplace Layer** | used by Inventory Replenishment / Forecast / Inventory / Shipment; **operational copy synchronized from `sku_regional_details`** |
-| **4** | **`tax_referral_rates`** | **Reference Master** | country-level **HS Code · Duty · Extra Tax · VAT · Port Tax · Referral Fee · Declared Value · country_of_origin**; future Cost / Duty / Shipment-cost / Compliance engines |
+| **4** | **`tax_referral_rates`** (+ child **`tax_rate_components`**) | **Reference Master (V2)** | Series/country **HS Code · Duty · VAT · EORI · Port Tax · Referral Fee · Declared Value · country_of_origin**; optional component breakdown; future Shipment-tax / Cost Analysis / customs-document consumers |
 
 **Layer flow (identity):** `sku_details` → `sku_regional_details` → `marketplace_skus`.
 **Reference flow (tax):** `sku_details` → `series` → `tax_referral_rates` → Duty / Referral / VAT / Declared Value / Cost Engine / Shipment Cost / Export / future AI cost recommendation.
@@ -48,8 +48,8 @@
 - **ADD:** `material`, `battery_type`, `magnet_type`.
 - **Suggested value rules (implementation-defined; may stay loose if not already standardized):**
   - `material` — may be **multi-value using underscore format**, e.g. `Stainless_Steel_ABS`.
-  - `battery_type` — controlled values, e.g. `none` / `built_in` / `removable` / `lithium` / `unknown`.
-  - `magnet_type` — controlled values, e.g. `none` / `magnetic` / `unknown`.
+  - `battery_type` — **Global Logistics Enums (authoritative: [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) §4.5):** `no_battery` / `alkaline_battery` / `lithium_battery` / `rechargeable_lithium`. *(Earlier example values `none` / `built_in` / `removable` / `lithium` / `unknown` are RETIRED — not canonical.)*
+  - `magnet_type` — **Global Logistics Enums:** `no_magnet` / `magnetic`. *(Earlier `none` / `unknown` retired.)*
 
 ### 2.4 Regional / compliance columns — MOVE OUT of `sku_details`
 - **DEPRECATE / stop writing from `sku_details`:** `hscode`, `declared_value`, `declared_value_unit`.
@@ -154,6 +154,7 @@ SKU Regional Details → create the regional information first (`site_sku`, `mar
 - **Editing (2026-07):** all editing is via the **top action-bar `Edit SKU` button** — select one SKU row, then Edit SKU opens the full `sku_details` editor (SKU read-only; `status`=`lifecycle`, product/customs/logistics/price fields). Saved through **`upsertSkuDetail`** (update by `sku`; omitted columns preserved; **no** marketplace / pricing / FC / factory-stock side effects). **Row-level status-only editing is RETIRED** — Status renders as a normal display column and is edited only through the full modal. A `canEditSkuDetails()` hook is the future permission gate.
 - **Boolean display:** `battery_type` / `magnet_type` render **No** (false/none/blank), **Yes** (true), or the **original text** for any other value (e.g. `Lithium-Ion`) — the master field types stay extensible, never permanently boolean.
 - **REMOVE / HIDE fields:** `hscode`, `declared_value`, `declared_value_unit`, `minimum_price_unit`, `msrp_unit`, `selling_unit`.
+- **HS Code & Tax Rates subpage (2026-07, V2 — IMPLEMENTED for parent rates):** the Edit SKU modal has an **`HS Code & Tax Rates`** action opening a Series-scoped tax subpage. It lists/creates/edits **`tax_referral_rates`** rows for the selected SKU's Series (per Origin × Duty Country × effective version) and supports **new-version** creation (history preserved). It **writes ONLY to `tax_referral_rates`** via `upsertTaxReferralRate` — **never** into `sku_details`. Series is inherited (read-only in the tax row; changed only via the main SKU editor). `tax_rate_components` render **read-only** (component editor deferred — no fake saves). Authoritative: [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md) §9.
 - Keep everything else (identity, logistics, baseline prices) as today.
 
 ### 7.2 SKU Regional Details page / tab (simple management UI)
@@ -164,12 +165,12 @@ Manages **`sku_regional_details`** (v2 schema). Shows and edits:
 
 ---
 
-## 8. Layer 4 — `tax_referral_rates` (Reference Master)
+## 8. Layer 4 — `tax_referral_rates` (+ `tax_rate_components`) Reference Master — V2 (DB FINALIZED)
 
-- **HS Code / Duty / Extra Tax / VAT / Port Tax / Referral Fee / Declared Value / `country_of_origin`** live **ONLY** in `tax_referral_rates` — **do not duplicate these values in `sku_details`, `sku_regional_details`, or `marketplace_skus`.**
-- Keyed by **`series`** (+ `duty_country`), joined from `sku_details.series`. Full schema, purpose, and effective-date rules: [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md).
+- **HS Code / Duty / VAT / EORI / Port Tax / Referral Fee / Declared Value / `country_of_origin`** are **Series/country master data** that live **ONLY** in `tax_referral_rates` — **NOT stored in `sku_details`, `sku_regional_details`, or `marketplace_skus`, and NOT one row per SKU.** SKUs in a Series share the rows.
+- **Parent business key = `series + country_of_origin + duty_country` (+ effective date)**, joined from `sku_details.series`. `tax_rate_components` is the child breakdown (FK `tax_rate_id`). **V2 dropped `extra_tax_rate`; `vat`→`vat_rate`, `port_tax`→`port_tax_rate`.** Full schema / IDs / effective-date + versioning rules / rate convention: **[`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md) (SSOT)**.
 - **`country_of_origin` intentionally stays in `tax_referral_rates` for now** — it is **NOT** moved into `sku_details` in this version.
-- Future consumers: Cost Engine · Duty Engine · Shipment Cost · Export · Compliance · future AI cost recommendation (none implemented here).
+- Maintained from the SKU Details **HS Code & Tax Rates** subpage (§7.1). Future consumers (source rules in the SSOT): Shipment estimated tax · Cost Analysis · carrier/customs documents · future AI cost recommendation (calculation not implemented here).
 
 ---
 

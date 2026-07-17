@@ -1,10 +1,12 @@
 # Request Order / 下單系統 & Purchase Order System — Specification
 
-**Status:** 🟡 Draft v1.3 — Architecture / Spec only (NO code, NO DB, NO implementation)
+**Status:** 🔵 **EXTENDED / FUTURE PROCUREMENT ARCHITECTURE REFERENCE** — Draft v1.3, SPEC ONLY (NO code, NO DB, NO implementation). **NOT the current Runtime/DB authority.**
 **Last Updated:** 2026-06-16
 **Maintained By:** Development Team
-**Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md`](./FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md)
+**Related:** [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) (**CURRENT IMPLEMENTED authority — Procurement Phase 1: schema, status lifecycle, Convert-to-PO, allocation persistence, snapshot completeness**), [`PURCHASE_ORDER_SPEC.md`](./PURCHASE_ORDER_SPEC.md) (PO v2 Workspace / Receive), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md)
 
+> **⚠️ AUTHORITY (2026-07 documentation sync).** This is the **EXTENDED / FUTURE** procurement architecture reference. The **CURRENT IMPLEMENTED Procurement Phase 1** design — `request_orders` / `request_order_lines` / `request_order_line_sources` / `request_order_site_confirmations` / `request_order_allocation_drafts`, the Convert-to-PO mapping, the T1 vs T2+T3 split, company-based persistence, and the Request/PO **status lifecycle** — is owned by **[`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)**. This document **must NOT be treated as the current Runtime/DB authority**, and it **does not override** the Phase-1 schema or status enum. It retains valid future concepts — multi-layer source structure, `supplier_price_list`, `payment_terms`, `request_order_po_links`, multi-PO architecture, extended factory communication — as design to migrate toward (additively). Where the two disagree about *what is implemented today*, the Phase-1 spec wins.
+>
 > **Spec only.** This document defines architecture, flow, UI, and data relationships for the Request Order → Purchase Order layer. It introduces **no** code, Apps Script, API, UI, DB migration, BigQuery, or runtime changes. New tables/fields described here are *planned* design, not implemented. It deliberately does **not** re-define calculation formulas — those live in [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md).
 >
 > **Changelog v1 → v1.1:**

@@ -3,7 +3,9 @@
 **Status:** 🟡 Draft v1.0 — `sku_details` logistics columns + SKU Details display rules (Spec + frontend/API mapping; NO DB migration script — sheet headers already updated; NO calculation engine)
 **Last Updated:** 2026-06-30
 **Maintained By:** Development Team
-**Authority / context (read, not overridden):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) (where CBM / weight will be computed).
+**Authority / context (read, not overridden):** [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md) (**parent SKU Master authority — SSOT for the SKU domain**), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) (where CBM / weight will be computed).
+
+> **Authority boundary (SUPPORTING DOMAIN SPEC).** This is a **supporting SKU logistics spec, subordinate to [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md)** (the SKU Master SSOT). It **may** define logistics dimensions, secondary item dimensions (`item_*_2`), weight fields, display rules, and the CBM / weight input basis. It **must NOT** become a separate SKU Master source of truth or redefine SKU identity / master attributes owned by the parent spec.
 
 > **Purpose.** Documents the **`sku_details` logistics columns** (split item / package / carton dimensions + units, weights + units, customs/price + units), the **secondary item-size rule** (`item_*_2`), and the **SKU Details UI display rules**. It also records **which columns the future Shipment CBM / weight calculation will use**. No DB migration is required (the Google Sheet headers are already updated); no calculation engine is implemented here.
 

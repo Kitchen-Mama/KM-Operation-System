@@ -227,7 +227,7 @@ Each arrow is a **forward data hand-off**, honoring Principle #6 (preview not pe
 
 ## 7. Request Order / Purchase Order Architecture
 
-> Authority: [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md) (Draft v1.3).
+> **Current authority:** [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) (Procurement Phase 1 — implemented schema + Request/PO status lifecycle + Convert-to-PO + allocation persistence). **PO Workspace / Remaining Overview / Receive / Production Timeline** detail: [`PURCHASE_ORDER_SPEC.md`](./PURCHASE_ORDER_SPEC.md) (PO v2). [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md) is the **EXTENDED / FUTURE** reference only (three-layer sources, `supplier_price_list` / `payment_terms`, `request_order_po_links`) and does **not** govern the current runtime. This summary points to those specs — it does not redefine the schema.
 
 - **下單系統 is the calculation / recommendation page** — it computes recommended order quantities across all companies / sites / marketplaces.
 - **One push creates one combined Request** → writes the three-layer structure in a single action.
@@ -241,7 +241,7 @@ Each arrow is a **forward data hand-off**, honoring Principle #6 (preview not pe
 - **Purchase Order List shows raw line status** — ordered / completed / shipped / remaining (a read/view over `purchase_orders` + `purchase_order_lines`, not a separate DB).
 - **Production completion updates `purchase_order_lines.completed_qty`.**
 - **`available_to_ship = completed_qty − shipped_qty`** — only produced-but-not-yet-shipped units may ship.
-- **`shipment_line_allocations` consumes PO lines during shipment** (FIFO default; one shipment line ← many PO lines; one PO line → many shipment lines).
+- **`shipment_line_allocations` (PLANNED — NOT IMPLEMENTED)** will consume PO lines during shipment (FIFO default; one shipment line ← many PO lines; one PO line → many shipment lines). **Current runtime uses the single-link `shipment_lines.purchase_order_line_id`**; the multi-PO allocation table + writer are planned (`SHIPMENT_CENTER_SPEC.md` §16 / §6).
 
 ---
 

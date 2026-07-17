@@ -59,7 +59,7 @@ It is a **relationship map**, not a schema definition and not an implementation 
 > **item:** `item_length`, `item_width`, `item_height`, `item_length_2`, `item_width_2`, `item_height_2`, `item_dimension_unit`, `item_weight`, `item_weight_unit`,
 > **package:** `package_length`, `package_width`, `package_height`, `package_dimension_unit`, `package_weight`, `package_weight_unit`,
 > **carton:** `carton_length`, `carton_width`, `carton_height`, `carton_dimension_unit`, `carton_weight`, `carton_weight_unit`, `units_per_carton`,
-> **attributes (NEW — planned, `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` §2.3):** `material` (multi-value underscore e.g. `Stainless_Steel_ABS`), `battery_type` (`none`/`built_in`/`removable`/`lithium`/`unknown`), `magnet_type` (`none`/`magnetic`/`unknown`),
+> **attributes (NEW — planned, `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md` §2.3):** `material` (multi-value underscore e.g. `Stainless_Steel_ABS`), `battery_type` (Global Logistics Enums — `no_battery` / `alkaline_battery` / `lithium_battery` / `rechargeable_lithium`; `CARRIER_AND_ROUTE_SPEC.md` §4.5 is authoritative), `magnet_type` (`no_magnet` / `magnetic`), *(RETIRED example values `none` / `built_in` / `removable` / `lithium` / `unknown` are no longer canonical)*,
 > **baseline price (brand reference, NOT live price):** `minimum_price`, `msrp`, `selling_price`, **`base_currency`** (NEW — the single currency for all three),
 > `pm`, `created_at`, `updated_at`.
 > - **Customs fields (NEW 2026-07):** **`product_name_cn`** (Chinese customs/product name) and **`product_use`** (customs-facing product usage/purpose). Both **nullable** (optional for legacy rows; missing values must not break existing SKU flows). Editable in **SKU Details** via the top **`Edit SKU`** action (persisted by `upsertSkuDetail`, which updates `sku_details` by `sku`, preserves omitted columns, and has **no** marketplace / pricing / FC / factory-stock side effects). API exposes `productNameCn` / `productUse`. Kept on `sku_details` (NOT on `sku_regional_details`).
@@ -132,25 +132,33 @@ marketplaces ──1:many──▶ marketplace_skus ──1:1──▶ pricing_l
 
 ---
 
-## 4B. `tax_referral_rates` — Tax / Referral / Duty Reference Master (SKU Domain v2 Layer 4 — planned)
+## 4B. `tax_referral_rates` (+ `tax_rate_components`) — Tax / Referral / Duty Reference Master (SKU Domain v2 Layer 4 — DB FINALIZED)
 
-**Reference Master** (Layer 4). Authoritative: [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md). **Single source of truth** for HS Code / Duty / VAT / Referral / Declared Value; future source for Cost Engine / Duty Engine / Shipment Cost / Export / Compliance. **Spec only — not yet created in the live DB.**
+**Reference Master** (Layer 4). **Authoritative SSOT = [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md)** — this section is a concise pointer, not a duplicate schema. **DB finalized by user (V2); runtime aligned** (parent-rate CRUD via the SKU Details HS Code & Tax Rates subpage; `19_tax_handlers.gs`). Single source of truth for HS Code / Duty / VAT / EORI / Referral / Declared Value; future source for Shipment estimated tax, Cost Analysis, and carrier/customs documents.
 
-> **Columns:** `tax_rate_id` (PK), `series` (join from `sku_details.series`), `duty_country`, `country_of_origin` (**kept here for now — NOT in `sku_details`**), `hscode`, `duty_rate`, `extra_tax_rate`, `vat`, **`vat_no`** *(new 2026-07 — VAT / tax registration number for destination-country customs docs; nullable; looked up by applicable duty country + effective-date row — never derived from currency)*, **`eori_no`** *(new 2026-07 — EORI registration number for EU/UK customs; nullable; same duty_country + effective-date lookup — latest `effective_from` wins, blank `effective_to` = open-ended; never matched by currency; a missing EORI must NOT block a document whose `document_template_fields.required = FALSE`)*, `port_tax`, `referral_fee_rate`, `declared_value`, `declared_currency`, `effective_from`, `effective_to`, `note`, `created_at`, `updated_at`.
-> - **Match grain:** `series + duty_country` (+ effective-date window; new period = new row; overlaps allowed).
-> - **Source-of-truth rule:** HS Code / Duty / VAT / Referral / Declared Value exist **ONLY** here — never duplicated in `sku_details` / `sku_regional_details` / `marketplace_skus`.
+> **`tax_referral_rates` (PARENT) V2 columns:** `tax_rate_id` (PK), `series`, `country_of_origin` (**kept here — NOT in `sku_details`**), `duty_country`, `hscode`, `duty_rate`, `vat_no`, `vat_rate`, `eori_no`, `port_tax_rate`, `referral_fee_rate`, `declared_value`, `declared_currency`, `effective_from`, `effective_to`, `note`, `created_at`, `updated_at`.
+> **`tax_rate_components` (CHILD) V2 columns:** `tax_component_id` (PK), `tax_rate_id` (**FK → parent**), `component_type`, `component_code`, `component_name`, `rate_type` (`percentage`/`amount_per_unit`/`fixed_amount`), `rate_value`, `amount_per_unit`, `amount_currency`, `quantity_unit`, `effective_from`, `effective_to`, `source_url`, `note`, `created_at`, `updated_at`.
+> - **RETIRED v1→v2:** `extra_tax_rate` (dropped); `vat`→`vat_rate`; `port_tax`→`port_tax_rate`. Do NOT reintroduce `status`/`is_active`/`country`/`marketplace`/`sku`. Legacy `vat`/`port_tax` kept as **API read-fallback only**.
+> - **IDs:** `TRR-{SERIES}-{DUTY}-{ORIGIN}-{YYYYMMDD}-V{NN}` · `TRC-{…}-{COMPONENT_CODE}-V{NN}` — immutable; lookups use the columns, never parse the ID.
+> - **Parent business key:** `series + country_of_origin + duty_country` (+ effective-date window). Effective-date rule: `from ≤ target AND (to blank OR to ≥ target)`; **blank `effective_to` = open-ended** (never invalid); latest `effective_from` wins; a new period = **new row/version** (history preserved, never overwritten).
+> - **Rate convention:** whole-number percent (`25` = 25%) for `duty_rate`/`vat_rate`/`port_tax_rate`/`referral_fee_rate` + percentage components.
+> - **Source-of-truth rule:** HS Code / Duty / VAT / EORI / Referral / Declared Value exist **ONLY** here — never duplicated in `sku_details` / `sku_regional_details` / `marketplace_skus`. **NOT one row per SKU** — series-level; SKUs in a series share the rows.
 
 | Relationship | Key | Cardinality |
 |--------------|-----|-------------|
-| `sku_details` → `tax_referral_rates` | `series` | 1 → many (per `duty_country` × effective period) |
+| `sku_details` → `tax_referral_rates` | `series` | 1 → many (per origin × duty_country × effective period) |
+| `tax_referral_rates` → `tax_rate_components` | `tax_rate_id` | 1 → many (parent → components; a component never exists without a valid parent) |
+| `shipments` → `tax_referral_rates` | `shipments.country` → `duty_country` (+ series + origin + effective date) | resolution (estimated tax / documents) |
 
 **SKU Master Domain relationship diagram (v2):**
 
 ```
 sku_details ──(sku)──▶ sku_regional_details ──(sku+company+country+marketplace, synced)──▶ marketplace_skus
      │
-     └──(series)──▶ tax_referral_rates ──▶ Duty / Referral / VAT / Declared Value / Cost Engine / Shipment Cost / Export / future AI cost
+     └──(series)──▶ tax_referral_rates ──(tax_rate_id)──▶ tax_rate_components
+                         └──▶ Shipment estimated tax / Cost Analysis / carrier-customs docs (HS_CODE / DECLARED_* / VAT_NO / EORI_NO)
 ```
+Shipment-line lookup path: `shipment_lines.sku → sku_details.sku → sku_details.series → tax_referral_rates` (matched by series + country_of_origin + duty_country + effective date).
 
 ---
 
@@ -436,7 +444,7 @@ The **sensitive factory cost / sourcing master**: which factory/supplier produce
 
 ## 8. Shipping / Logistics Layer
 
-**Tables:** `shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_events`, `shipment_routes`
+**Tables:** `shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_events`, `shipment_routes`, `shipment_route_templates` *(Master — planned)*, `shipment_route_template_nodes` *(Master — planned)*
 
 > **`shipping_plans` / `shipping_plan_lines` columns (authoritative definition in [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md); planned design, not yet migrated):**
 > - **`shipping_plans`:** `shipping_plan_id`, `shipping_plan_no`, `plan_name`, `company`, `country`, `marketplace`, `ship_from`, `destination`, `shipping_method`, **`plan_version`**, **`parent_shipping_plan_id`**, **`submit_batch_id`**, **`batch_status`**, `carrier_id`, `carrier_unit_rate`, `carrier_rate_type`, `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `currency`, `status`, `created_by`, `created_at`, `submitted_by`, `submitted_at`, `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `rejected_reason`, **`cancelled_by`**, **`cancelled_at`**, **`transferred_to_shipment_at`**, **`transferred_shipment_id`**, **`completed_at`**, **`completed_by`**, `note`, `source`, **`updated_by`**, `updated_at`.
@@ -554,10 +562,13 @@ carriers
 - **`carrier_fee_types` / `carrier_rate_breakdowns` are deferred (NOT v1)** — FCL/container itemized cost breakdown later; v1 keeps all rate rows flat in `carrier_rate_cards`.
 - **Carrier v2.0 — Global Logistics Enums + matching + resolution (`CARRIER_AND_ROUTE_SPEC.md` §4.5 / §4 / §4.6):** DB/API store **English enums** (UI may localize; importer maps localized→English): `battery_type` = `no_battery`/`alkaline_battery`/`lithium_battery`/`rechargeable_lithium`; `magnet_type` = `no_magnet`/`magnetic`; `customs_type` = `third_party_customs`/`tax_refund_customs`/`formal_customs`; `last_mile_delivery` = `parcel`/`truck`; **`transit_type` = `air`/`sea`/`sea_express`/`rail`/`truck` (canonical main mode; `shipping_method` demoted to a legacy display alias)**. **Matching priority:** `destination_warehouse_code` → `destination_city` → `destination_postal_code` → `destination_country` (destination stop-ladder) → `battery_type` → `customs_type` → `transit_type` → `last_mile_delivery` → weight_tier. **Resolution:** valid when `effective_from ≤ shipment_date ≤ effective_to`; **blank `effective_to` = Open End**; multiple Open End → **latest `effective_from`** active (data-hygiene: should be one per route; extra ones surface a notice); explicit-`effective_to` overlap → **Import Job Warning / Require Review** (Keep Existing default / Override / Cancel Import). **Battery/magnet matching uses the SHIPMENT-LEVEL aggregate, not per-SKU** (§8 shipments).
 
-**`shipment_routes` (planned nodes) vs `shipment_events` (actual events) — Execution layer, do NOT conflate:**
-- **`shipment_routes`** = the **planned** leg-by-leg path (e.g. 東莞工廠 → 深圳出口海關 → 太平洋航段 → 洛杉磯港 → Amazon ONT8). Used by On-The-Way / World Map for the route line.
-- **`shipment_events`** = the **actual** timestamped events (`picked_up` / `customs_cleared` / `vessel_departed` / `arrived_port` / `delivered`). Used for progress along the route.
-- Both are **Execution-layer** (Shipment) tables — **distinct** from the planning-side `replenishment_route_rules` / `shipping_route_rules`. Neither is implemented yet (`SHIPMENT_CENTER_SPEC.md` §18).
+**Shipment Route & Event tables — Execution-layer enrichment, do NOT conflate. Field-level SSOT: [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md) §5** (schemas not duplicated here):
+- **`shipment_route_templates`** (Master) = standard-route header + matching conditions; **`shipment_route_template_nodes`** (Master) = ordered standard stages of a template. Together = the standard route definition. `carrier_id` nullable = generic template shared across carriers; historical versions retained (blank `effective_to` = open-ended).
+- **`shipment_routes`** = **per-Shipment planned-node SNAPSHOT** (one row per planned node, copied from template nodes; template lineage retained via `route_template_id` / `route_template_node_id`). After Confirm/Ship it is immutable except progress fields (`status` / `actual_arrival_date` / `actual_departure_date` / `updated_at`). Template edits never rewrite existing `shipment_routes`.
+- **`shipment_events`** = **append-only actual** timestamped ledger; current position/progress is **derived from the latest valid events** (not a stored current-state row). `shipment_route_id` nullable (unmatched events preserved); `source_event_id` gives idempotency.
+- **Template resolution uses the EXISTING `warehouses.logistics_region`** (`US_WEST` / `US_CENTRAL` / `US_EAST`): `shipments.warehouse_code`/`warehouse_id` → `warehouses.logistics_region` → `shipment_route_templates.destination_region`. ONT8/LGB8 → `US_WEST` share a template. **No duplicate region table.**
+- Relationships: `shipment_route_templates` 1→many `shipment_route_template_nodes`; `shipments` 1→many `shipment_routes`; `shipment_route_templates` →(lineage) `shipment_routes`; `shipments` 1→many `shipment_events`; `shipment_events` →(nullable match) `shipment_routes`.
+- All are **Execution-layer** (Shipment) tables — **distinct** from the planning-side `replenishment_route_rules` / `shipping_route_rules`, and from carrier rate-card matching (`CARRIER_AND_ROUTE_SPEC.md` §4). **None implemented yet** (`SHIPMENT_CENTER_SPEC.md` §18); `shipments` / `shipment_lines` remain Execution Truth and lifecycle authority.
 
 **Cost columns needed (future — planned schema, no writer/engine yet):**
 - `shipping_plans`: `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `estimated_unit_cost`.
@@ -589,7 +600,7 @@ carriers
 - **Carrier template rule (DOC GEN SPEC §M):** one template per carrier when layout differs; same-layout services share one row; service variation via placeholders (`{{SHIPPING_METHOD}}` / `{{SERVICE_TYPE}}` / `{{LAST_MILE_DELIVERY}}`).
 - **Generated documents are DERIVED OUTPUTS** — generating / regenerating a document **never mutates** `purchase_orders` / `shipments` / inventory / master data (Snapshot Completeness, §7.5C). PO documents use the **PO snapshot only**; Shipment documents use the **Shipment snapshot only** (no live Request read, no allocation recalculation).
 - **`document_template_fields` is the mapping layer**; **`document_templates` is the template registry**; **`generated_documents` is the append-only output log**.
-- **Carrier Booking Form workbook (DOC GEN §I.2 — Invoice tab = confirmed draft):** the `carrier_booking_form` workbook is **ONE `document_templates` row** with **two mapped tabs** (Invoice Import + Packing List Import) — a second row is created only if the physical template files are actually separate. Shared scalar header dataset; tab-specific collection controllers (deferred). **Invoice tab mapping confirmed; Packing List tab + full workbook NOT finalized.** Multi-tab runtime deferred.
+- **Carrier Booking Form workbook (DOC GEN §I.2 + [`CARRIER_BOOKING_MAPPING_SPEC.md`](./CARRIER_BOOKING_MAPPING_SPEC.md)):** the `carrier_booking_form` workbook is **ONE `document_templates` row** per carrier with **its mapped tab(s)** — a second row is created only if the physical template files are actually separate. Per-carrier mappings live in `CARRIER_BOOKING_MAPPING_SPEC.md`: **TOP SEALAND** (Invoice + Packing List) completed; **AGL** (`TPL-BOOKING-AGL-V1`, single `Template` worksheet, `AGL_INVOICE_LINES` controller, line grain = `shipment_lines`) **FINALIZED V1**; **SINOTRANS** = next. Shared Google-Sheet runtime rules (immutable template, copy-before-render, reserved rows, dynamic expansion, footer formulas) = DOC GEN §O. Tax/HS/declared-value lookup = `shipment_lines.sku → sku_details.series → tax_referral_rates` + `shipments.country → duty_country` (§4B).
 - **Invoice tab DB dependencies (new — not yet present on `warehouses`):** `warehouses.warehouse_code`, `warehouses.address`, `warehouses.city`, `warehouses.state`, `warehouses.postal_code`, `warehouses.contact_phone`, `warehouses.contact_email` (recipient block, looked up by `shipments.warehouse_code`). Nullable; must be added before the Carrier Booking Form can generate. Existing deps: `shipments` (`shipment_no` / `shipping_method_label` / `warehouse_code` / `reference_id` / `shipment_total_cartons` / `shipments_customs_type` / `shipments_customs_type_label` *(`{{CUSTOMS_TYPE}}` Label source)* / `country`), `tax_referral_rates` (`vat_no` / `declared_currency` / `declared_value` / `hscode` / `duty_country` / `series` / effective dates), `sku_details` (`product_name` / `product_name_cn` / `product_use` / `material` / `units_per_carton` / carton dims+weight / `battery_type` / `magnet_type`), `sku_regional_details.product_url`, `shipment_lines.sku`.
 - **Export Center / Document Center** is the future UI; **Template Management (Template Center) is a sub-tab, not the whole module.** Runtime not implemented.
 
