@@ -66,7 +66,12 @@ var SHIPMENT_EDITABLE_FIELDS_ = [
   'customs_clearance_date', 'delivered_date',
   'shipment_total_cbm', 'shipment_total_gross_weight', 'shipment_total_net_weight',
   'freight_cost_actual', 'duty_actual', 'currency',
-  'warehouse_code', 'reference_id', 'note'
+  // Warehouse Picker (SHIPMENT_CENTER_SPEC §22.0): warehouse_id is the DESTINATION warehouse identity
+  // chosen from the Warehouse Master; warehouse_code is the code SNAPSHOT copied from that same row by
+  // the frontend picker (never free-typed, never inferred from destination text). Both persist together.
+  // TEMPORARY SEMANTIC (inbound-first, task item 9): these = the destination warehouse. Explicit
+  // origin_warehouse_id / destination_warehouse_id arrive with Warehouse Outbound via a planned migration.
+  'warehouse_id', 'warehouse_code', 'reference_id', 'note'
 ];
 
 function shipmentTimestamp_() {

@@ -164,13 +164,16 @@ window.IRMap = (function () {
     return d.getFullYear() + '-' + m + '-' + day;
   }
 
-  // Pick the row with the latest snapshotDate matching country + sku (marketplace optional).
+  // Pick the row with the latest snapshotDate matching company + country + sku (marketplace optional).
+  // company is enforced only when the row carries one (Amazon snapshot tables have no company column;
+  // isolation is guaranteed upstream by the company-scoped SKU universe — see _getCloudReplenishmentData).
   function latestSnapshot(rows, scope) {
     if (!rows || !rows.length) return null;
     var best = null;
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (!eq(r.sku, scope.sku)) continue;
+      if (scope.company && r.company && !eq(r.company, scope.company)) continue;
       if (scope.country && r.country && !eq(r.country, scope.country)) continue;
       if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) continue;
       if (!best || ymd(r.snapshotDate) > ymd(best.snapshotDate)) best = r;
@@ -205,23 +208,36 @@ window.IRMap = (function () {
     return { over90: over90, over180: over180 };
   }
 
-  // Sales Trend — past 7 completed days, EXCLUDING today. Returns only days that exist in
-  // the data (no fabrication). Aggregates sales_units by date across channels.
+  // Sales Trend — exactly SEVEN calendar dates ending on the LATEST available sales date in the
+  // scoped DB result (NOT browser-today, NOT the last N returned rows). Range = latest_db_date − 6
+  // … latest_db_date, sorted chronologically. A date within the window with no row is still rendered
+  // (its `units` is null = explicit no-data GAP, never a fabricated 0 — see DO-NOT rule). Returns []
+  // only when the scope has zero daily rows (honest empty chart). (INVENTORY_TABLE_MAPPING_SPEC §6.)
   function salesTrend7d(dailyRows, scope) {
-    var start = ymdNDaysAgo(7);   // today-7
-    var end = ymdNDaysAgo(1);     // yesterday (exclude today)
-    var byDate = {};
+    var byDate = {}, latest = '';
     (dailyRows || []).forEach(function (r) {
       if (!eq(r.sku, scope.sku)) return;
+      if (scope.company && r.company && !eq(r.company, scope.company)) return;
       if (scope.country && r.country && !eq(r.country, scope.country)) return;
       if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) return;
       var d = ymd(r.snapshotDate);
-      if (d < start || d > end) return;
+      if (!d) return;
       byDate[d] = (byDate[d] || 0) + num(r.salesUnits);
+      if (d > latest) latest = d;   // latest DB date in the SCOPED result
     });
-    return Object.keys(byDate).sort().map(function (d) {
-      return { date: d, label: d.slice(5).replace('-', '/'), units: byDate[d] };
-    });
+    if (!latest) return [];   // no scoped sales data → honest empty (never fabricated)
+    // Build the 7 calendar dates ending on `latest`, oldest → newest.
+    var parts = latest.split('-');
+    var end = new Date(Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)));
+    var out = [];
+    for (var i = 6; i >= 0; i--) {
+      var dt = new Date(end.getTime());
+      dt.setUTCDate(end.getUTCDate() - i);
+      var key = dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dt.getUTCDate()).padStart(2, '0');
+      var has = byDate.hasOwnProperty(key);
+      out.push({ date: key, label: key.slice(5).replace('-', '/'), units: has ? byDate[key] : null, hasData: has });
+    }
+    return out;   // always 7 entries when any scoped data exists
   }
 
   // Avg Sales / Day ← amazon_weekly_sales_snapshot.sales_units_7d / 7 (1 decimal).
@@ -230,6 +246,7 @@ window.IRMap = (function () {
     var best = null;
     weeklyRows.forEach(function (r) {
       if (!eq(r.sku, scope.sku)) return;
+      if (scope.company && r.company && !eq(r.company, scope.company)) return;
       if (scope.country && r.country && !eq(r.country, scope.country)) return;
       if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) return;
       var key = r.weekEndDate || r.snapshotWeek || '';
@@ -265,6 +282,7 @@ window.IRMap = (function () {
     if (!fcRows || !fcRows.length) return 0;
     var fc = fcRows.find(function (r) {
       return eq(r.sku, scope.sku)
+        && (!scope.company || !r.company || eq(r.company, scope.company))
         && (!scope.country || !r.country || eq(r.country, scope.country))
         && (!scope.marketplace || !r.marketplace || eq(r.marketplace, scope.marketplace));
     });
@@ -286,28 +304,68 @@ window.IRMap = (function () {
     return null;
   }
 
-  // Upcoming Event = sum of fc_qty for events in the next 3 months (scope-matched).
-  // If an event's month cannot be parsed, it is INCLUDED (never silently dropped).
-  function upcomingEventQty(events, scope) {
-    if (!events || !events.length) return 0;
-    var cm = new Date().getMonth();
-    var next3 = [((cm + 1) % 12) + 1, ((cm + 2) % 12) + 1, ((cm + 3) % 12) + 1];
-    var total = 0, matched = 0;
+  // Parse an ISO-ish yyyy-mm-dd (or yyyy/mm/dd) date string → Date (local midnight), else null.
+  function _irParseDate(d) {
+    var s = String(d == null ? '' : d).trim(); if (!s) return null;
+    var m = s.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); if (!m) return null;
+    return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  }
+  // First day of the month, addMonths from `date`.
+  function _irFirstOfMonthPlus(date, addMonths) { return new Date(date.getFullYear(), date.getMonth() + addMonths, 1); }
+  // Event is active unless explicitly inactive/cancelled/archived/closed (blank status = active, since
+  // the live schema has no status column yet — never silently drop a blank-status event).
+  function _irEventActive(ev) {
+    var st = String(ev.status == null ? '' : ev.status).trim().toLowerCase();
+    return !(st === 'inactive' || st === 'cancelled' || st === 'canceled' || st === 'archived' || st === 'closed' || st === 'draft');
+  }
+  function _irEventScopeMatch(ev, scope) {
+    if (ev.country && scope.country && !eq(ev.country, scope.country)) return false;
+    if (ev.marketplace && scope.marketplace && !eq(ev.marketplace, scope.marketplace)) return false;
+    return (ev.sku && eq(ev.sku, scope.sku)) ||
+      (ev.scopeType === 'sku' && eq(ev.scopeId, scope.sku)) ||
+      (ev.scopeType === 'series' && eq(ev.scopeId, scope.series)) ||
+      (ev.scopeType === 'category' && eq(ev.scopeId, scope.category)) ||
+      (!ev.sku && !ev.scopeId);
+  }
+
+  // Dynamic Upcoming Events (scope-matched, active) from today through the next three calendar months.
+  // Eligibility: event_end_date >= today AND event_start_date < first_day_of_month(today + 4 months).
+  // Legacy rows without parseable start/end dates fall back to a month-window check (never dropped).
+  // Returns the matched events (NOT merged) sorted nearest-first — the caller may total them, but the
+  // underlying records stay separate.
+  function upcomingEvents(events, scope) {
+    if (!events || !events.length) return [];
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var windowEnd = _irFirstOfMonthPlus(today, 4);   // exclusive upper bound (start < windowEnd)
+    var out = [];
     events.forEach(function (ev) {
-      if (ev.country && scope.country && !eq(ev.country, scope.country)) return;
-      if (ev.marketplace && scope.marketplace && !eq(ev.marketplace, scope.marketplace)) return;
-      var scopeMatch =
-        (ev.sku && eq(ev.sku, scope.sku)) ||
-        (ev.scopeType === 'sku' && eq(ev.scopeId, scope.sku)) ||
-        (ev.scopeType === 'series' && eq(ev.scopeId, scope.series)) ||
-        (ev.scopeType === 'category' && eq(ev.scopeId, scope.category)) ||
-        (!ev.sku && !ev.scopeId);
-      if (!scopeMatch) return;
-      var mo = parseEventMonth(ev);
-      if (mo !== null && next3.indexOf(mo) === -1) return;
-      matched++; total += num(ev.fcQty);
+      if (!_irEventActive(ev)) return;
+      if (!_irEventScopeMatch(ev, scope)) return;
+      var start = _irParseDate(ev.eventStartDate);
+      var end = _irParseDate(ev.eventEndDate);
+      if (start && end) {
+        if (!(end >= today && start < windowEnd)) return;
+      } else {
+        // Legacy fallback: month-based window (current month + next 3). Unparseable month → included.
+        var mo = parseEventMonth(ev);
+        if (mo !== null) {
+          var allowed = [today.getMonth() + 1, ((today.getMonth() + 1) % 12) + 1, ((today.getMonth() + 2) % 12) + 1, ((today.getMonth() + 3) % 12) + 1];
+          if (allowed.indexOf(mo) === -1) return;
+        }
+      }
+      out.push(ev);
     });
-    return matched > 0 ? total : 0;
+    out.sort(function (a, b) {
+      var sa = _irParseDate(a.eventStartDate), sb = _irParseDate(b.eventStartDate);
+      if (sa && sb) return sa - sb; if (sa) return -1; if (sb) return 1; return 0;
+    });
+    return out;
+  }
+
+  // Upcoming Event total = sum of fc_qty across the matched events (count-once; records stay separate).
+  function upcomingEventQty(events, scope) {
+    var list = upcomingEvents(events, scope);
+    return list.reduce(function (s, ev) { return s + num(ev.fcQty); }, 0);
   }
 
   // 3rd Party Stock = Σ available_stock across eligible overseas warehouses (same country).
@@ -328,6 +386,170 @@ window.IRMap = (function () {
       total += num(r.availableStock);
     });
     return total;
+  }
+
+  // ===== 3PL shared-pool 18-day virtual planning allocation (SUPPLY_PLANNING_CALCULATION_RULES §20/§23/§24) =====
+  // Analysis/display only — moves no inventory, reserves nothing, writes nothing, creates no movement.
+
+  // Eligible 3PL warehouses for a company+country scope: warehouse_type='3PL', is_active TRUE,
+  // company AND country match. Never matched by warehouse_name / display text (identity is warehouse_id).
+  function eligible3plWarehouses(warehouses, scope) {
+    return (warehouses || []).filter(function (w) {
+      if (!w || !w.warehouseId) return false;
+      if (scope.company) { if (!w.company || !eq(w.company, scope.company)) return false; }
+      if (scope.country) { if (!w.country || !eq(w.country, scope.country)) return false; }
+      if (String(w.warehouseType || '').trim().toUpperCase() !== '3PL') return false;
+      if (w.isActive !== true) return false;   // tri-state _whBool: require explicit TRUE (blank/unknown excluded)
+      return true;
+    });
+  }
+
+  // Shared physical pool for company+country+Master SKU. Joins overseas_inventory_snapshot to eligible
+  // 3PL warehouses by warehouse_id + sku, retains warehouse-level detail, dedups by warehouse_id
+  // (never by marketplace). Returns eligibility + snapshot presence so callers can show honest states.
+  function sharedPhysicalPool(overseasRows, warehouses, scope) {
+    var eligible = eligible3plWarehouses(warehouses, scope);
+    var eligById = {}; eligible.forEach(function (w) { eligById[w.warehouseId] = w; });
+    var byWh = {}; var snapshotAt = ''; var matchedAny = false;
+    (overseasRows || []).forEach(function (r) {
+      if (!eq(r.sku, scope.sku)) return;
+      if (!eligById[r.warehouseId]) return;   // join strictly on eligible warehouse_id + sku
+      matchedAny = true;
+      byWh[r.warehouseId] = (byWh[r.warehouseId] || 0) + (num(r.availableStock) || 0);
+      var ts = r.snapshotDate || r.lastMovementAt || r.updatedAt || r.createdAt || '';
+      if (String(ts) > String(snapshotAt)) snapshotAt = String(ts);
+    });
+    var contributions = eligible.map(function (w) {
+      return { warehouseId: w.warehouseId, warehouseName: w.warehouseName || w.warehouseId,
+        qty: byWh[w.warehouseId] || 0, hasRow: Object.prototype.hasOwnProperty.call(byWh, w.warehouseId) };
+    });
+    var poolQty = contributions.reduce(function (s, c) { return s + c.qty; }, 0);
+    return { eligibleCount: eligible.length, hasEligibleWarehouse: eligible.length > 0,
+      hasSnapshot: matchedAny, poolQty: poolQty, contributions: contributions, snapshotAt: snapshotAt };
+  }
+
+  function _findMktReg(reg, scope) {
+    return (reg || []).filter(function (m) {
+      return (scope.marketplaceId && m.marketplaceId && m.marketplaceId === scope.marketplaceId) ||
+        (eq(m.country, scope.country) && eq(m.marketplace, scope.marketplace) && (!scope.company || eq(m.company, scope.company)));
+    })[0] || null;
+  }
+
+  // Allocate the shared pool across eligible self-fulfilled sites (§24). PHASE-1 SCOPE:
+  //  - NORMAL (pool >= Σ 18-day need): each site protected to its 18-day need; the remainder stays
+  //    UNALLOCATED. The §24.5-step-3 / Mode-B distribution of surplus BEYOND the 18-day floor requires
+  //    the site's "applicable calculated Need" (Suggested-Qty engine), which is NOT implemented and which
+  //    this task must not enable — so no surplus is distributed (reported as a known gap).
+  //  - SHORTAGE (pool < Σ 18-day need): §24.7 weighted largest-remainder, deterministic tie-break
+  //    (higher allocation_priority → larger unmet 18-day need → stable marketplace key). Caps at need.
+  // Invariant: Σ allocations ≤ pool; each ≤ its 18-day need; non-negative integers; deterministic.
+  function _allocateShared(pool, sites) {
+    var byKey = {}; sites.forEach(function (s) { byKey[s.key] = 0; });
+    var sumNeed = sites.reduce(function (a, s) { return a + Math.max(s.minNeed, 0); }, 0);
+    if (!sites.length || sumNeed <= 0) {
+      return { mode: 'NO_DEMAND', byKey: byKey, coverageRate: null,
+        basis: 'No 18-day demand for any eligible site', warn: '' };
+    }
+    if (pool >= sumNeed) {
+      sites.forEach(function (s) { byKey[s.key] = Math.max(s.minNeed, 0); });
+      return { mode: 'NORMAL_ALLOCATION', byKey: byKey, coverageRate: 1,
+        basis: '18-day protected need — each eligible site fully protected; surplus unallocated', warn: '' };
+    }
+    // SHORTAGE (§24.7)
+    var rows = sites.map(function (s) {
+      var w = Math.max(s.minNeed, 0) * Math.max(s.allocationPriority, 1);
+      return { s: s, w: w };
+    });
+    var sumW = rows.reduce(function (a, x) { return a + x.w; }, 0);
+    rows.forEach(function (x) {
+      var raw = sumW > 0 ? (pool * x.w / sumW) : 0;
+      var fl = Math.floor(raw);
+      if (fl > x.s.minNeed) fl = x.s.minNeed;
+      x.raw = raw; x.frac = raw - Math.floor(raw); x.qty = fl;
+    });
+    var assigned = rows.reduce(function (a, x) { return a + x.qty; }, 0);
+    var remainder = pool - assigned;
+    var order = rows.slice().sort(function (a, b) {
+      if (b.frac !== a.frac) return b.frac - a.frac;                                  // largest remainder
+      if (b.s.allocationPriority !== a.s.allocationPriority) return b.s.allocationPriority - a.s.allocationPriority; // (1)
+      var ua = a.s.minNeed - a.qty, ub = b.s.minNeed - b.qty;
+      if (ub !== ua) return ub - ua;                                                  // (2) larger unmet 18-day need
+      return String(a.s.key) < String(b.s.key) ? -1 : (String(a.s.key) > String(b.s.key) ? 1 : 0); // (3) stable key
+    });
+    while (remainder > 0) {
+      var placed = false;
+      for (var i = 0; i < order.length && remainder > 0; i++) {
+        if (order[i].qty < order[i].s.minNeed) { order[i].qty += 1; remainder -= 1; placed = true; }
+      }
+      if (!placed) break;   // every site capped at its 18-day need
+    }
+    rows.forEach(function (x) { byKey[x.s.key] = x.qty; });
+    var warn = rows.some(function (x) { return x.qty === 0 && x.s.minNeed > 0; })
+      ? 'Shortage: a site is allocated 0 vs its 18-day need — review allocation_priority.' : '';
+    return { mode: 'SHORTAGE_ALLOCATION', byKey: byKey, coverageRate: pool / sumNeed,
+      basis: 'Weighted shortage (18-day need × priority), deterministic largest-remainder', warn: warn };
+  }
+
+  // Orchestrator: build the pool + eligible self-fulfilled sibling sites (same company+country+Master
+  // SKU), run the §24 engine, and return the CURRENT site's planning allocation + full display detail.
+  // ctx = { scope, overseasRows, warehouses, mpSkus, marketplacesReg, weeklyRows, fcRows, targetRules }
+  function sitePlanningAllocation(ctx) {
+    var scope = ctx.scope;
+    var pool = sharedPhysicalPool(ctx.overseasRows, ctx.warehouses, scope);
+
+    // 3PL reserve is REPLENISHMENT RESERVE for the whole company+country scope. Fulfillment type does
+    // NOT gate participation (fix 2026-07-22): a platform-fulfilled marketplace can still own/use the
+    // overseas 3PL reserve as future platform-warehouse replenishment. Eligibility is warehouse-side
+    // only (company + country + warehouse_type='3PL' + is_active), never marketplace fulfillment model.
+    var participates = true;
+
+    // Sibling sites sharing this pool = every scoped marketplace_sku (company + country + Master SKU),
+    // regardless of fulfillment model. Each contributes its 18-day need to the shared allocation.
+    var siteRows = (ctx.mpSkus || []).filter(function (m) {
+      return eq(m.sku, scope.sku) && eq(m.country, scope.country) && (!scope.company || eq(m.company, scope.company)); });
+    var sites = [];
+    siteRows.forEach(function (m) {
+      var reg = _findMktReg(ctx.marketplacesReg, { company: m.company, country: m.country, marketplace: m.marketplace, marketplaceId: m.marketplaceId });
+      var siteScope = { company: m.company, country: m.country, marketplace: m.marketplace, sku: m.sku, series: '', category: '' };
+      var demandMode = (m.replenishmentModel || 'sales_driven');
+      var daily;
+      if (demandMode === 'forecast_driven') {
+        var fc60 = forecast60d(ctx.fcRows, ctx.targetRules, siteScope);   // next 2 months (60 days), target-adjusted
+        daily = fc60 > 0 ? (fc60 / 60) : 0;
+      } else {
+        daily = avgSalesPerDay(ctx.weeklyRows, siteScope);               // §22 canonical Avg Sales/Day
+      }
+      sites.push({
+        key: m.marketplaceId || (m.company + '|' + m.country + '|' + m.marketplace),
+        marketplace: m.marketplace, company: m.company, country: m.country,
+        demandMode: demandMode, dailyDemand: daily,
+        minNeed: Math.ceil(daily * 18),                                  // §24.4 CEILING(daily × 18)
+        allocationPriority: (reg && reg.allocationPriority) || 0,
+        isCurrent: eq(m.marketplace, scope.marketplace)
+      });
+    });
+
+    var alloc = _allocateShared(pool.poolQty, sites);
+    var cur = sites.filter(function (s) { return s.isCurrent; })[0];
+    var curAlloc = cur ? (alloc.byKey[cur.key] || 0) : 0;
+    var allocatedTotal = Object.keys(alloc.byKey).reduce(function (s, k) { return s + alloc.byKey[k]; }, 0);
+
+    var state = 'OK';
+    if (!pool.hasEligibleWarehouse) state = 'NO_ELIGIBLE_3PL';
+    else if (!pool.hasSnapshot) state = 'MISSING_SNAPSHOT';
+    // (No NOT_SELF_FULFILLED state — platform-fulfilled sites participate in the shared 3PL reserve.)
+
+    return {
+      state: state, participates: participates,
+      sitePlanningAvailable: (state === 'OK') ? curAlloc : null,
+      physicalPool: pool.poolQty, minNeed: cur ? cur.minNeed : 0,
+      allocationMode: alloc.mode, allocationBasis: alloc.basis,
+      allocatedToCurrent: curAlloc, allocatedToOthers: Math.max(allocatedTotal - curAlloc, 0),
+      unallocatedPool: Math.max(pool.poolQty - allocatedTotal, 0),
+      contributions: pool.contributions, eligibleCount: pool.eligibleCount,
+      snapshotAt: pool.snapshotAt, coverageRate: alloc.coverageRate, warn: alloc.warn || '',
+      siteCount: sites.length
+    };
   }
 
   // Factory CN / TW = Σ factory_stock.current_stock joined to warehouses by warehouse_id,
@@ -383,12 +605,104 @@ window.IRMap = (function () {
   return {
     num: num, latestSnapshot: latestSnapshot, stockCard: stockCard,
     longTermStorage: longTermStorage, salesTrend7d: salesTrend7d, avgSalesPerDay: avgSalesPerDay,
-    targetPct: targetPct, forecast60d: forecast60d, upcomingEventQty: upcomingEventQty,
+    targetPct: targetPct, forecast60d: forecast60d, upcomingEventQty: upcomingEventQty, upcomingEvents: upcomingEvents,
     thirdPartyStock: thirdPartyStock, factoryByCountry: factoryByCountry,
+    eligible3plWarehouses: eligible3plWarehouses, sharedPhysicalPool: sharedPhysicalPool,
+    sitePlanningAllocation: sitePlanningAllocation,
     daysOfSupply: daysOfSupply, dosColorClass: dosColorClass,
     resolveFulfillment: resolveFulfillment, needBuckets: needBuckets
   };
 })();
+
+// Render the Upcoming Event card body from a matched, nearest-first event list (IRMap.upcomingEvents):
+// nearest event (name + start/end + fc_qty) shown first, remaining events in an expandable "+N more"
+// (native <details> — keyboard accessible). Events are displayed separately (never merged into one row).
+function _irRenderUpcoming(list) {
+  function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function qty(v){ return (window.IRMap && IRMap.num) ? IRMap.num(v) : (parseFloat(v) || 0); }
+  if (!list || !list.length) {
+    return '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>';
+  }
+  function line(ev){
+    var dates = (ev.eventStartDate && ev.eventEndDate) ? (ev.eventStartDate + ' ~ ' + ev.eventEndDate) : (ev.eventPeriod || '');
+    return '<div class="replen-card__row"><span class="replen-card__label">' + esc(ev.event || ev.scopeId || 'Event') +
+      (dates ? (' <span class="replen-evt-dates">(' + esc(dates) + ')</span>') : '') +
+      '</span><span class="replen-card__value">' + qty(ev.fcQty) + '</span></div>';
+  }
+  var html = line(list[0]);
+  if (list.length > 1) {
+    html += '<details class="replen-evt-more"><summary>+' + (list.length - 1) + ' more</summary>' +
+      list.slice(1).map(line).join('') + '</details>';
+  }
+  return html;
+}
+
+// Render the 3rd Party Stock (Site Planning Available) detail body from a sitePlanningAllocation() result.
+// Honest missing-data states — never a fabricated zero. Labels the number "Planning Available" (a
+// distribution of the shared pool), never implying the site owns the whole pool.
+function _irRenderThirdPartyDetail(plan) {
+  function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function n(v){ return (window.IRMap && IRMap.num) ? IRMap.num(v) : (parseFloat(v) || 0); }
+  function row(label, val){ return '<div class="replen-card__row"><span class="replen-card__label">' + esc(label) + '</span><span class="replen-card__value">' + val + '</span></div>'; }
+  if (!plan) return row('3rd Party Stock', '—');
+  if (plan.state === 'NO_ELIGIBLE_3PL') {
+    return '<div class="replen-tp-state replen-tp-state--none">No Eligible 3PL Warehouse</div>' +
+      '<div class="replen-card__hint">No active 3PL warehouse matches this company + country. (Not a confirmed zero.)</div>';
+  }
+  if (plan.state === 'MISSING_SNAPSHOT') {
+    return '<div class="replen-tp-state replen-tp-state--missing">Missing Snapshot / Data Unavailable</div>' +
+      '<div class="replen-card__hint">' + n(plan.eligibleCount) + ' eligible 3PL warehouse(s) exist but no overseas snapshot row for this SKU. (Not treated as zero.)</div>';
+  }
+  // OK — platform-fulfilled sites are NOT excluded; they participate in the shared 3PL reserve.
+  var html = row('Site Planning Available', '<strong>' + n(plan.sitePlanningAvailable) + '</strong>');
+  html += row('Physical 3PL Pool', n(plan.physicalPool));
+  html += row('18-Day Protected Need', n(plan.minNeed));
+  html += row('Allocation Basis', esc(plan.allocationMode) + (plan.allocationBasis ? (' — ' + esc(plan.allocationBasis)) : ''));
+  html += row('Allocated to Other Sites', n(plan.allocatedToOthers));
+  html += row('Unallocated Pool', n(plan.unallocatedPool));
+  if (plan.coverageRate != null && plan.allocationMode === 'SHORTAGE_ALLOCATION') {
+    html += row('Coverage Rate', Math.round(plan.coverageRate * 1000) / 10 + '%');
+  }
+  html += row('Snapshot As Of', plan.snapshotAt ? esc(plan.snapshotAt) : '—');
+  var contribs = (plan.contributions || []).filter(function (c) { return c.qty > 0 || c.hasRow; });
+  if (contribs.length) {
+    html += '<div class="replen-card__subhead">Contributing 3PL Warehouses</div>' +
+      contribs.map(function (c) { return row(c.warehouseName + (c.hasRow ? '' : ' (no snapshot)'), n(c.qty)); }).join('');
+  }
+  if (plan.warn) html += '<div class="replen-card__hint replen-card__hint--warn">' + esc(plan.warn) + '</div>';
+  return html;
+}
+
+// Persisted Recommendation Summary snapshot for a scope + SKU. Reads the active shipping_allocation_draft
+// (SSOT) matching company+country+marketplace whose status is not cancelled, returns its RAW draft-line
+// rows for this SKU (snake_case, as the Recommendation Summary reads them). Empty [] → honest empty state
+// (no recommendation generated / backend not deployed). The engine that fills these is NOT activated here.
+function _shippingDraftLinesFor(scope, drafts, lines) {
+    if (!scope || !drafts || !drafts.length || !lines || !lines.length) return [];
+    function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    var draft = drafts.filter(function (d) {
+        return lo(d.country) === lo(scope.country) && lo(d.marketplace) === lo(scope.marketplace) &&
+            (!scope.company || !d.company || lo(d.company) === lo(scope.company)) &&
+            lo(d.status) !== 'cancelled';
+    }).sort(function (a, b) { return String(b.updatedAt || '') < String(a.updatedAt || '') ? -1 : 1; })[0];
+    if (!draft) return [];
+    return lines.filter(function (l) {
+        return l.allocationDraftId === draft.allocationDraftId && lo(l.sku) === lo(scope.sku);
+    }).map(function (l) { return l.raw || l; });   // raw snake_case rows for the Recommendation Summary
+}
+
+// Plain-text tooltip for the results-table 3rd Party Stock cell (hover). Detail lives in the expand card.
+function _irThirdPartyTitle(plan) {
+  if (!plan) return '';
+  if (plan.state === 'NO_ELIGIBLE_3PL') return 'No eligible 3PL warehouse for this company + country (not a confirmed zero).';
+  if (plan.state === 'MISSING_SNAPSHOT') return 'Eligible 3PL warehouse(s) exist but no overseas snapshot for this SKU (data unavailable, not zero).';
+  return 'Site Planning Available (18-day virtual allocation)\n' +
+    'Physical 3PL Pool: ' + Math.round(plan.physicalPool) + '\n' +
+    '18-Day Protected Need: ' + Math.round(plan.minNeed) + '\n' +
+    'Allocation: ' + plan.allocationMode + '\n' +
+    'Allocated to others: ' + Math.round(plan.allocatedToOthers) + ' · Unallocated: ' + Math.round(plan.unallocatedPool) + '\n' +
+    'Snapshot as of: ' + (plan.snapshotAt || '—');
+}
 
 function closeReplenModal() {
   const modal = document.getElementById('replen-add-sku-modal');
@@ -1164,7 +1478,7 @@ function renderReplenishment() {
             <div class="scroll-cell">${_replenMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
             <div class="scroll-cell">${item.currentInventory}</div>
             <div class="scroll-cell">${item.onTheWay}</div>
-            <div class="scroll-cell">${item.thirdPartyStock}</div>
+            <div class="scroll-cell" title="${(item.thirdPartyTitle || '').replace(/"/g, '&quot;')}">${item.thirdPartyStock}</div>
             <div class="scroll-cell">${item.avgDailySales}</div>
             <div class="scroll-cell">${item.forecast60d}</div>
             <div class="scroll-cell">${item.upcomingEventQty !== null ? item.upcomingEventQty : '-'}</div>
@@ -1222,32 +1536,60 @@ function initReplenHeaderSync() {
 // First version: Qty from the need-bucket data; Route is a placeholder ('--') until
 // replenishment_route_rules is implemented; Reason is a placeholder from the allowed set
 // (AI Pending / Stock Sufficient). See INVENTORY_TABLE_MAPPING_SPEC §11.
+// Recommendation Summary body — FINAL 5 columns: Window / Calculated Gap / Recommended Qty / Route /
+// Reason (§11.2). Read-only. Displays the persisted system recommendation snapshot when one exists
+// (skuData._recDraftLines); otherwise renders an HONEST empty/not-generated state — never fabricates
+// recommended quantities (the formal engine is NOT active; needBuckets returns 0 pre-engine).
 function _recSummaryRows(skuData) {
     function num(v) { return (typeof v === 'number') ? v : (parseInt(v, 10) || 0); }
-    var windows = [
-        ['0–18d', num(skuData && skuData.need0_18)],
-        ['19–30d', num(skuData && skuData.need19_30)],
-        ['31–45d', num(skuData && skuData.need31_45)],
-        ['46–90d', num(skuData && skuData.need46_90)]
-    ];
-    var total = num(skuData && skuData.suggestedQty);
-    function reasonFor(qty) { return qty > 0 ? 'AI Pending' : 'Stock Sufficient'; }
-    function row(label, qty, isTotal) {
-        var style = isTotal
-            ? 'border-top: 1px solid var(--border-light); font-weight: 600;'
-            : '';
-        // Total row shows only Total + Qty; Route + Reason are intentionally blank.
-        var route = isTotal ? '' : '--';
-        var reason = isTotal ? '' : reasonFor(qty);
+    var draftLines = skuData && skuData._recDraftLines;   // persisted snapshot (Draft), when hydrated
+    var windows;
+    if (draftLines && draftLines.length) {
+        var byWin = {}; draftLines.forEach(function (l) { byWin[l.window_code || l.windowCode] = l; });
+        windows = ['0–18d', '19–30d', '31–45d', '46–90d'].map(function (w, i) {
+            var code = ['0-18', '19-30', '31-45', '46-90'][i];
+            var l = byWin[code] || byWin[w] || {};
+            // Route is DERIVED from recommended transport fields (a route display string is never persisted, §C).
+            var routeTxt = [l.recommended_shipping_method, l.recommended_last_mile_delivery].filter(Boolean).join(' / ') || '--';
+            return { label: w, gap: num(l.calculated_gap_qty), rec: num(l.recommended_qty),
+                route: routeTxt, reason: l.recommendation_reason || '' };
+        });
+    } else {
+        // No persisted snapshot + engine inactive → honest empty state.
+        var total0 = num(skuData && skuData.suggestedQty);
+        var anyGap = total0 > 0 || num(skuData && skuData.need0_18) > 0 || num(skuData && skuData.need19_30) > 0 ||
+            num(skuData && skuData.need31_45) > 0 || num(skuData && skuData.need46_90) > 0;
+        if (!anyGap) {
+            return '<tr><td colspan="5" class="replen-recsum-empty">No recommendation generated — the recommendation engine is not active. Build routes in the Execution Plan below.</td></tr>';
+        }
+        // Pre-engine placeholder: Calculated Gap and Recommended Qty share the bucket value (source-
+        // availability / carton / route-feasibility adjustment is applied by the engine, which is off).
+        windows = [
+            { label: '0–18d', gap: num(skuData.need0_18), rec: num(skuData.need0_18), route: '--', reason: 'AI Pending' },
+            { label: '19–30d', gap: num(skuData.need19_30), rec: num(skuData.need19_30), route: '--', reason: 'AI Pending' },
+            { label: '31–45d', gap: num(skuData.need31_45), rec: num(skuData.need31_45), route: '--', reason: 'AI Pending' },
+            { label: '46–90d', gap: num(skuData.need46_90), rec: num(skuData.need46_90), route: '--', reason: 'AI Pending' }
+        ];
+    }
+    function evBadge(w) {
+        // Special-event badge on affected Window rows (event qty is shown in Reason, not a wide column §11.2).
+        return (skuData && skuData.upcomingEventQty && (w.label === '0–18d' || w.label === '19–30d'))
+            ? ' <span class="replen-recsum-evt" title="Special event in window">EVENT</span>' : '';
+    }
+    function row(w, isTotal) {
+        var style = isTotal ? 'border-top: 1px solid var(--border-light); font-weight: 600;' : '';
         return '<tr style="' + style + '">' +
-            '<td>' + label + '</td>' +
-            '<td class="replen-recsum-table__num">' + qty + '</td>' +
-            '<td style="color: #94A3B8;">' + route + '</td>' +
-            '<td style="color: #64748B;">' + reason + '</td>' +
+            '<td>' + w.label + (isTotal ? '' : evBadge(w)) + '</td>' +
+            '<td class="replen-recsum-table__num">' + w.gap + '</td>' +
+            '<td class="replen-recsum-table__num">' + w.rec + '</td>' +
+            '<td style="color: #94A3B8;">' + (isTotal ? '' : (w.route || '--')) + '</td>' +
+            '<td style="color: #64748B;">' + (isTotal ? '' : (w.reason || '')) + '</td>' +
             '</tr>';
     }
-    var html = windows.map(function (w) { return row(w[0], w[1], false); }).join('');
-    html += row('Total', total, true);
+    var html = windows.map(function (w) { return row(w, false); }).join('');
+    var totGap = windows.reduce(function (s, w) { return s + w.gap; }, 0);
+    var totRec = windows.reduce(function (s, w) { return s + w.rec; }, 0);
+    html += row({ label: 'Total', gap: totGap, rec: totRec, route: '', reason: '' }, true);
     return html;
 }
 
@@ -1325,9 +1667,8 @@ function toggleReplenRow(sku) {
                                 <div class="replen-card__row"><span class="replen-card__label">Within 45 days</span><span class="replen-card__value">${skuData?.within45days || 0}</span></div>
                             </article>
                             <article class="replen-card replen-card--third-party">
-                                <h4 class="replen-card__title">3rd Party Stock</h4>
-                                <div class="replen-card__row"><span class="replen-card__label">Winit</span><span class="replen-card__value">${skuData?.winitStock || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">ONUS</span><span class="replen-card__value">${skuData?.onusStock || 0}</span></div>
+                                <h4 class="replen-card__title">3rd Party Stock <span class="replen-card__subtitle">(Site Planning Available)</span></h4>
+                                ${skuData?.thirdPartyDetailHtml || ('<div class="replen-card__row"><span class="replen-card__label">Winit</span><span class="replen-card__value">' + (skuData?.winitStock || 0) + '</span></div><div class="replen-card__row"><span class="replen-card__label">ONUS</span><span class="replen-card__value">' + (skuData?.onusStock || 0) + '</span></div>')}
                             </article>
                         </div>
                     </section>
@@ -1346,18 +1687,28 @@ function toggleReplenRow(sku) {
                         ${skuData?.upcomingEventsText || '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>'}
                     </article>
                 </div>
+                <!-- Analysis area (insight column): Sales Trend + Monthly Achievement Rate directly below it (§11.5). -->
                 <div class="ir-panel-column ir-panel-column--insight">
                     <article class="ir-panel replen-card replen-card--sales-trend">
                         <h4 class="replen-card__title">Sales Trend (Past Week)</h4>
                         <canvas id="sales-trend-chart-${sku}" style="max-height: 100px;"></canvas>
                     </article>
+                    <article class="ir-panel replen-card replen-card--achievement">
+                        <h4 class="replen-card__title">Monthly Achievement Rate</h4>
+                        <canvas id="achievement-chart-${sku}" style="max-height: 100px;"></canvas>
+                    </article>
+                </div>
+                <!-- Decision area (action column): Recommendation Summary directly ABOVE Execution Plan,
+                     stacked, same width, technically separate (§11.5). -->
+                <div class="ir-panel-column ir-panel-column--action ir-decision-area">
                     <article class="replen-card replen-card--recommendation-summary" id="recommendation-summary-${sku}">
                         <h4 class="replen-card__title">Recommendation Summary</h4>
                         <table class="replen-recsum-table">
                             <thead>
                                 <tr>
                                     <th>Window</th>
-                                    <th class="replen-recsum-table__num">Qty</th>
+                                    <th class="replen-recsum-table__num">Calculated Gap</th>
+                                    <th class="replen-recsum-table__num">Recommended Qty</th>
                                     <th>Route</th>
                                     <th>Reason</th>
                                 </tr>
@@ -1365,19 +1716,13 @@ function toggleReplenRow(sku) {
                             <tbody>${_recSummaryRows(skuData)}</tbody>
                         </table>
                     </article>
-                </div>
-                <div class="ir-panel-column ir-panel-column--action">
-                    <article class="ir-panel replen-card replen-card--achievement">
-                        <h4 class="replen-card__title">Achievement Rate (Past 3 Months)</h4>
-                        <canvas id="achievement-chart-${sku}" style="max-height: 100px;"></canvas>
-                    </article>
                     <article class="replen-card replen-card--execution-plan" id="execution-plan-${sku}">
                         <div class="replen-card__title-row">
                             <h4 class="replen-card__title" style="margin: 0;">Execution Plan</h4>
                             <button class="replen-card__add-route-btn" onclick="addExecutionRoute(event, '${sku}')" onmousedown="event.stopPropagation()">+ Add Route</button>
                         </div>
                         <div class="ir-exec-plan__grid ir-exec-plan__grid--head">
-                            <span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span></span>
+                            <span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span>Expected Arrival</span><span>Action</span>
                         </div>
                         <div id="shipping-methods-${sku}" class="exec-routes-list"></div>
                         <div class="replen-card__summary" style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: 600;">
@@ -1663,18 +2008,19 @@ function openAISuggestion(event, sku) {
 //     WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md (Shipping Allocation Working Draft).
 // ============================================================================
 var REPLEN_ALLOC_DRAFT_KEY = 'km_replen_alloc_draft_v1';
-var replenAllocationDraft = { context: { country: '', marketplace: '' }, targetDays: '', bySku: {} };
+var replenAllocationDraft = { context: { company: '', country: '', marketplace: '' }, targetDays: '', bySku: {} };
 if (!window.KM) window.KM = {};
 window.KM.shippingAllocationDraft = replenAllocationDraft;
 
 function _replenCtx() {
     return {
+        company: (document.getElementById('replenCompany') || {}).value || '',
         country: (document.getElementById('replenCountry') || {}).value || '',
         marketplace: (document.getElementById('replenMarketplace') || {}).value || ''
     };
 }
 function _replenCtxEq(a, b) {
-    return !!a && !!b && a.country === b.country && a.marketplace === b.marketplace;
+    return !!a && !!b && a.company === b.company && a.country === b.country && a.marketplace === b.marketplace;
 }
 function _persistAllocationDraft() {
     try { sessionStorage.setItem(REPLEN_ALLOC_DRAFT_KEY, JSON.stringify(replenAllocationDraft)); } catch (e) {}
@@ -1731,13 +2077,19 @@ function _saveAllocationDraftFromDom(sku) {
         var qty = parseInt(fieldVal('qty')) || 0;
         var shipFrom = fieldVal('ship_from');
         var destination = fieldVal('destination');
+        var etaEl = rowEl.querySelector('[data-field="expected_arrival"]');
+        var expectedArrival = etaEl ? String(etaEl.textContent || '').trim() : '';
         // Keep a row if it carries ANY user intent (method / qty / ship_from / destination).
+        // `qty` is the user Execution quantity (canonical planned_qty). `recommended_qty` (immutable
+        // system snapshot) is preserved separately and never overwritten by a user edit.
         if (method || qty > 0 || shipFrom || destination) {
             rows.push({
                 shipping_method: method,
-                qty: qty,
+                qty: qty,                              // = planned_qty (canonical)
+                planned_qty: qty,
                 ship_from: shipFrom,
                 destination: destination,
+                expected_arrival: expectedArrival,
                 source_reason: 'pm_adjustment'
             });
         }
@@ -1751,6 +2103,7 @@ function _saveAllocationDraftFromDom(sku) {
 // (Pure render must NOT call this.)
 function onExecutionRouteEdit(sku) {
     updateShippingAllocationTotal(sku);
+    _irUpdateRouteEtas(sku);        // recompute Expected Arrival on From/To/Method change (§11.3)
     _saveAllocationDraftFromDom(sku);
 }
 // Back-compat alias (older callers).
@@ -1846,7 +2199,56 @@ function _execEsc(v) {
 // defaulted from replenishment_route_rules and may be permission-locked (see CARRIER_AND_ROUTE_SPEC).
 var EXEC_PLAN_METHODS = ['Air Freight', 'Sea Freight', 'Express', 'Rail Freight'];
 
-// Render one Execution Plan route row: Ship From / Destination / Suggested Qty / Shipping Method / Delete.
+// Map an Execution Plan method label to a carrier_lead_times.shipping_method value.
+function _irMethodToLeadKey(method) {
+    var m = String(method || '').trim().toLowerCase();
+    if (m.indexOf('air') === 0) return 'Air';
+    if (m.indexOf('sea express') === 0) return 'Sea Express';
+    if (m.indexOf('sea') === 0) return 'Sea';
+    if (m.indexOf('express') === 0 || m.indexOf('courier') === 0) return 'Courier';
+    return '';   // Rail / unknown → no lead-time mapping
+}
+
+// Expected Arrival for an Execution Plan route (§11.3). ETA priority: runtime actual ETA → formal
+// planned ETA → carrier_lead_times estimate. In Inventory Replenishment (planning) there is no
+// runtime/formal shipment yet, so the estimate is the carrier_lead_times avg_days from today's ship
+// date. If lead-time data is incomplete → explicit unavailable state (never a fabricated ETA).
+// Route-template node offsets are NEVER used as a lead-time source.
+function _irComputeRouteEta(destCountry, route) {
+    var method = route && route.shipping_method;
+    if (!method) return { text: '—', available: false };
+    var key = _irMethodToLeadKey(method);
+    if (!key) return { text: 'Lead time unavailable', available: false };
+    var rows = (window.KM && window.KM.DB && window.KM.DB.getCarrierLeadTimes) ? window.KM.DB.getCarrierLeadTimes() : [];
+    function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    var matches = rows.filter(function (r) {
+        return lo(r.shippingMethod) === lo(key) &&
+            (!destCountry || !r.destinationCountry || lo(r.destinationCountry) === lo(destCountry));
+    });
+    // Prefer a row that actually carries avg_days.
+    var withAvg = matches.filter(function (r) { return r.avgDays !== '' && r.avgDays != null && !isNaN(r.avgDays); })[0];
+    if (!withAvg) return { text: 'Lead time unavailable', available: false };
+    var days = Math.round(parseFloat(withAvg.avgDays));
+    var d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + days);
+    var iso = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    return { text: iso + ' (est. ' + days + 'd)', available: true };
+}
+
+// Recompute + write every route row's Expected Arrival cell for a SKU (called on any route edit).
+function _irUpdateRouteEtas(sku) {
+    var list = document.getElementById('shipping-methods-' + sku);
+    if (!list) return;
+    var destCountry = '';
+    try { var data = getReplenishmentData(); var sd = data && data.find(function (d) { return d.sku === sku; }); destCountry = sd ? sd.country : ''; } catch (e) {}
+    list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
+        var method = (rowEl.querySelector('[data-field="shipping_method"]') || {}).value || '';
+        var eta = _irComputeRouteEta(destCountry, { shipping_method: method });
+        var cell = rowEl.querySelector('[data-field="expected_arrival"]');
+        if (cell) { cell.textContent = eta.text; cell.classList.toggle('replen-card__eta--na', !eta.available); }
+    });
+}
+
+// Render one Execution Plan route row: From / To / Qty / Method / Expected Arrival / Action (§11.3).
 function _renderExecutionRoute(sku, route) {
     route = route || {};
     var methodOpts = '<option value="">Method…</option>' + EXEC_PLAN_METHODS.map(function (m) {
@@ -1854,6 +2256,9 @@ function _renderExecutionRoute(sku, route) {
         return '<option value="' + _execEsc(m) + '"' + sel + '>' + _execEsc(m) + '</option>';
     }).join('');
     var qty = parseInt(route.qty) || 0;
+    var destCountry = '';
+    try { var data = getReplenishmentData(); var sd = data && data.find(function (d) { return d.sku === sku; }); destCountry = sd ? sd.country : ''; } catch (e) {}
+    var eta = _irComputeRouteEta(destCountry, route);
     var row = document.createElement('div');
     row.className = 'exec-route-row ir-exec-plan__grid';
     row.innerHTML =
@@ -1861,6 +2266,7 @@ function _renderExecutionRoute(sku, route) {
         '<input class="replen-card__input" type="text" data-field="destination" value="' + _execEsc(route.destination) + '" placeholder="To" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
         '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
         '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' + methodOpts + '</select>' +
+        '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival">' + _execEsc(eta.text) + '</span>' +
         '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" title="Delete">×</button>';
     var list = document.getElementById('shipping-methods-' + sku);
     if (list) list.appendChild(row);
@@ -1958,8 +2364,9 @@ function initSalesTrendChart(sku, skuData) {
 
     const realTrend = skuData && Array.isArray(skuData.salesTrend7d) ? skuData.salesTrend7d : null;
     if (realTrend && realTrend.length) {
-        // Cloud mapping: real past-7-completed-days data (excludes today). Show only days that exist.
-        realTrend.forEach(function(pt) { labels.push(pt.label); data.push(pt.units); });
+        // Cloud mapping: SEVEN calendar dates ending on the latest DB date (#2). Every date is shown on
+        // the x-axis; a day with no row has units === null → rendered as a GAP (never a fabricated 0).
+        realTrend.forEach(function(pt) { labels.push(pt.label); data.push(pt.units == null ? null : pt.units); });
     } else if (skuData && skuData._source === 'cloud-mapping') {
         // Cloud mapping with no daily-sales data — show empty (never fabricate sales).
     } else {
@@ -1986,6 +2393,7 @@ function initSalesTrendChart(sku, skuData) {
                 borderWidth: 2,
                 tension: 0.3,
                 fill: true,
+                spanGaps: false,      // missing days stay as gaps (no fabricated bridge / no 0)
                 pointRadius: 3,
                 pointHoverRadius: 5
             }]
@@ -2334,8 +2742,14 @@ function searchReplenishment() {
 }
 
 function _doReplenSearch() {
+    var company = (document.getElementById('replenCompany') || {}).value || '';
     var country = document.getElementById('replenCountry').value;
     var marketplace = document.getElementById('replenMarketplace').value;
+    // Demo mode has no company selector (static demo scope) — only enforce Company on live.
+    if (!_replenDemoOn() && !company) {
+        alert('Please select a Company (KM and ResUS are separate scopes).');
+        return;
+    }
     if (!country && !marketplace) {
         alert('Please select Country and Marketplace before searching.');
         return;
@@ -2358,16 +2772,20 @@ window.searchReplenishment = searchReplenishment;
 function _getCloudReplenishmentData() {
     var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
     var IR = window.IRMap;
+    var company = document.getElementById('replenCompany') ? document.getElementById('replenCompany').value : '';
     var country = document.getElementById('replenCountry') ? document.getElementById('replenCountry').value : '';
     var marketplace = document.getElementById('replenMarketplace') ? document.getElementById('replenMarketplace').value : '';
     var ltsFilter = document.getElementById('replenLTSFilter') ? document.getElementById('replenLTSFilter').value : '';
-    if (!country || !marketplace || !DB || !DB.getMarketplaceSkus || !IR) return [];
+    if (!company || !country || !marketplace || !DB || !DB.getMarketplaceSkus || !IR) return [];
 
     function eqv(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
     function get(name) { return (DB[name]) ? (DB[name]() || []) : []; }
 
     var mpSkus = get('getMarketplaceSkus');
-    var filtered = mpSkus.filter(function (mp) { return eqv(mp.country, country) && eqv(mp.marketplace, marketplace); });
+    // STRICT SCOPE: company + country + marketplace. KM/US/Amazon and ResUS/US/Amazon are separate
+    // scopes — a company mismatch is never merged (fixes the KM↔ResUS bleed). This company-scoped SKU
+    // universe is also what keeps the company-less Amazon stock/sales tables correctly partitioned.
+    var filtered = mpSkus.filter(function (mp) { return eqv(mp.company, company) && eqv(mp.country, country) && eqv(mp.marketplace, marketplace); });
     if (filtered.length === 0) return [];
 
     // Source tables — all safe [] when not yet exposed to the frontend.
@@ -2390,8 +2808,14 @@ function _getCloudReplenishmentData() {
 
     var rows = filtered.map(function (mp) {
         var det = skuDetails.find(function (d) { return eqv(d.sku, mp.sku); }) || {};
+        // Resolve the canonical marketplace_id (id-first joins) for this company+country+marketplace.
+        var scopeMktReg = marketplacesReg.find(function (m) {
+            return (mp.marketplaceId && m.marketplaceId === mp.marketplaceId) ||
+                (eqv(m.company, mp.company) && eqv(m.country, mp.country) && eqv(m.marketplace, mp.marketplace));
+        });
         var scope = {
             company: mp.company, country: mp.country, marketplace: mp.marketplace, sku: mp.sku,
+            marketplaceId: mp.marketplaceId || (scopeMktReg ? scopeMktReg.marketplaceId : ''),
             series: det.series || '', category: det.category || det.productLine || ''
         };
 
@@ -2403,7 +2827,20 @@ function _getCloudReplenishmentData() {
         var avg = IR.avgSalesPerDay(weeklyRows, scope);
         var fc60 = IR.forecast60d(fcRows, targetRules, scope);
         var eventQty = IR.upcomingEventQty(events, scope);
-        var thirdParty = IR.thirdPartyStock(overseas, warehouses, scope);
+        // 3rd Party Stock = Site Planning Available (18-day virtual planning allocation of the shared
+        // 3PL pool; §20/§23/§24). Display-only — no movement, no reserve, no snapshot write.
+        var thirdPartyPlan = IR.sitePlanningAllocation({
+          scope: scope, overseasRows: overseas, warehouses: warehouses, mpSkus: mpSkus,
+          marketplacesReg: marketplacesReg, weeklyRows: weeklyRows, fcRows: fcRows, targetRules: targetRules
+        });
+        // Recommendation Summary snapshot: hydrate the read-only system recommendation from the persisted
+        // shipping_allocation_draft (the SSOT, §11.4) when one exists for this scope + SKU; otherwise the
+        // Recommendation Summary renders its honest "not generated" empty state (engine is inactive).
+        var recDraftLines = _shippingDraftLinesFor(scope, get('getShippingAllocationDrafts'), get('getShippingAllocationDraftLines'));
+        var thirdPartyDisplay = (thirdPartyPlan.state === 'OK') ? String(Math.round(thirdPartyPlan.sitePlanningAvailable).toLocaleString())
+          : (thirdPartyPlan.state === 'NO_ELIGIBLE_3PL') ? 'No 3PL'
+          : (thirdPartyPlan.state === 'MISSING_SNAPSHOT') ? 'No Data'
+          : '—';
         var cnStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'CN');
         var twStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'TW');
         var need = IR.needBuckets();
@@ -2413,41 +2850,20 @@ function _getCloudReplenishmentData() {
 
         // Forecast breakdown (next 3 months, Target Rule applied)
         var fcRow = fcRows.find(function (r) {
-            return eqv(r.sku, mp.sku) && (!r.country || eqv(r.country, mp.country)) && (!r.marketplace || eqv(r.marketplace, mp.marketplace));
+            return eqv(r.sku, mp.sku) && (!r.company || eqv(r.company, mp.company)) &&
+                (!r.country || eqv(r.country, mp.country)) && (!r.marketplace || eqv(r.marketplace, mp.marketplace));
         });
         var pct = IR.targetPct(targetRules, scope) / 100;
         function fcMonth(off) { return fcRow ? Math.round((parseFloat(fcRow[MK[(cm + off) % 12]]) || 0) * pct) : 0; }
 
-        // Fulfillment model resolution
-        var mpReg = marketplacesReg.find(function (m) {
-            return (mp.marketplaceId && m.marketplaceId === mp.marketplaceId) || (eqv(m.country, mp.country) && eqv(m.marketplace, mp.marketplace));
-        });
-        var ff = IR.resolveFulfillment(mpReg, mp);
+        // Fulfillment model resolution — reuse the company-safe registry match resolved above.
+        var ff = IR.resolveFulfillment(scopeMktReg, mp);
 
-        // Upcoming event display rows (next 3 months, scope-matched)
-        var next3 = [((cm + 1) % 12) + 1, ((cm + 2) % 12) + 1, ((cm + 3) % 12) + 1];
-        function evMatch(ev) {
-            if (ev.country && !eqv(ev.country, scope.country)) return false;
-            if (ev.marketplace && !eqv(ev.marketplace, scope.marketplace)) return false;
-            var sm = (ev.sku && eqv(ev.sku, scope.sku)) ||
-                (ev.scopeType === 'sku' && eqv(ev.scopeId, scope.sku)) ||
-                (ev.scopeType === 'series' && eqv(ev.scopeId, scope.series)) ||
-                (ev.scopeType === 'category' && eqv(ev.scopeId, scope.category)) ||
-                (!ev.sku && !ev.scopeId);
-            if (!sm) return false;
-            var mm = null;
-            if (ev.eventMonth) { var em = parseInt(ev.eventMonth, 10); if (em >= 1 && em <= 12) mm = em; }
-            if (mm === null) { var x = String(ev.eventPeriod || '').match(/(\d{1,2})\s*[\/\-]/); if (x) mm = parseInt(x[1], 10); }
-            return mm === null ? true : next3.indexOf(mm) !== -1;
-        }
-        var evRows = events.filter(evMatch);
-        var upcomingEventsText = evRows.length > 0
-            ? evRows.map(function (ev) {
-                return '<div class="replen-card__row"><span class="replen-card__label">' +
-                    (ev.event || ev.scopeId || 'Event') + (ev.eventPeriod ? (' (' + ev.eventPeriod + ')') : '') +
-                    '</span><span class="replen-card__value">' + IR.num(ev.fcQty) + '</span></div>';
-            }).join('')
-            : '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>';
+        // Upcoming event display: dynamic, date-eligible (today .. first day of month(today+4mo)),
+        // scope-matched, active. Shows the nearest event (name + start/end + fc_qty), then "+N more"
+        // in an expandable list. Multiple events are NOT merged — each record stays separate.
+        var evRows = IR.upcomingEvents(events, scope);
+        var upcomingEventsText = _irRenderUpcoming(evRows);
 
         return {
             sku: mp.sku,
@@ -2460,7 +2876,11 @@ function _getCloudReplenishmentData() {
             // First Layer Summary
             currentInventory: currentStock,
             onTheWay: 0,                       // Shipping Shipment — pending mapping (spec §9)
-            thirdPartyStock: thirdParty,
+            _recDraftLines: recDraftLines,               // persisted Recommendation Summary snapshot (raw draft lines) or []
+            thirdPartyStock: thirdPartyDisplay,          // Site Planning Available (or state label)
+            thirdPartyPlan: thirdPartyPlan,              // full allocation detail (tooltip/expand)
+            thirdPartyDetailHtml: _irRenderThirdPartyDetail(thirdPartyPlan),
+            thirdPartyTitle: _irThirdPartyTitle(thirdPartyPlan),
             avgDailySales: avg.toFixed(1),     // spec: 1 decimal
             forecast60d: fc60,
             upcomingEventQty: eventQty > 0 ? eventQty : null,
@@ -2634,12 +3054,19 @@ function openEditSkuModal() {
 
     // Also try to get marketplace_skus record for current values
     var mpSkus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+    var _selCompany = item.company || _replenSelectedCompany();
+    function _eqLo(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
     var mpRecord = mpSkus.find(function(mp) {
-        return mp.sku === selectedSku && mp.country === (item.country || document.getElementById('replenCountry')?.value) && mp.marketplace === (item.marketplace || document.getElementById('replenMarketplace')?.value);
+        // Company-safe: never match a different company's row for the same SKU + country + marketplace.
+        return mp.sku === selectedSku &&
+            (!_selCompany || _eqLo(mp.company, _selCompany)) &&
+            mp.country === (item.country || document.getElementById('replenCountry')?.value) &&
+            mp.marketplace === (item.marketplace || document.getElementById('replenMarketplace')?.value);
     });
 
     _editSkuTarget = {
         sku: selectedSku,
+        company: _selCompany || '',
         country: item.country || document.getElementById('replenCountry')?.value || '',
         marketplace: item.marketplace || document.getElementById('replenMarketplace')?.value || '',
         marketplaceSkuId: mpRecord ? mpRecord.marketplaceSkuId : '',
@@ -3065,8 +3492,29 @@ function _replenActiveMarketplaces() {
     return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
 }
 
-// Rebuild Country options from active marketplaces, constrained by the currently selected marketplace.
-// Demo OFF only. Resets the current country selection if it is no longer valid.
+// Selected replenishment company ('' = none). Top of the scope key.
+function _replenSelectedCompany() {
+    var el = document.getElementById('replenCompany');
+    return el ? (el.value || '') : '';
+}
+window._replenSelectedCompany = _replenSelectedCompany;
+
+// Rebuild Company options from active marketplaces. Demo OFF only. Resets an invalid selection.
+function refreshReplenCompanyOptions() {
+    if (_replenDemoOn()) return;
+    var sel = document.getElementById('replenCompany');
+    if (!sel) return;
+    var active = _replenActiveMarketplaces();
+    var selCompany = sel.value;
+    var companies = [];
+    active.forEach(function(m) { if (m.company && companies.indexOf(m.company) === -1) companies.push(m.company); });
+    companies.sort();
+    sel.innerHTML = '<option value="">Select Company</option>' +
+        companies.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+    sel.value = (selCompany && companies.indexOf(selCompany) !== -1) ? selCompany : '';
+}
+
+// Rebuild Country options, constrained by the selected Company + Marketplace. Demo OFF only.
 function refreshReplenCountryOptions() {
     if (_replenDemoOn()) return;
     var countrySel = document.getElementById('replenCountry');
@@ -3074,12 +3522,14 @@ function refreshReplenCountryOptions() {
     if (!countrySel) return;
 
     var active = _replenActiveMarketplaces();
+    var selCompany = _replenSelectedCompany();
     var selMarketplace = mpSel ? mpSel.value : '';
     var selCountry = countrySel.value;
 
     var countries = [];
     active.forEach(function(m) {
         if (!m.country) return;
+        if (selCompany && m.company !== selCompany) return;
         if (selMarketplace && m.marketplace !== selMarketplace) return;
         if (countries.indexOf(m.country) === -1) countries.push(m.country);
     });
@@ -3090,8 +3540,7 @@ function refreshReplenCountryOptions() {
     countrySel.value = (selCountry && countries.indexOf(selCountry) !== -1) ? selCountry : '';
 }
 
-// Rebuild Marketplace options from active marketplaces, constrained by the currently selected country.
-// Demo OFF only. Resets the current marketplace selection if it is no longer valid.
+// Rebuild Marketplace options, constrained by the selected Company + Country. Demo OFF only.
 function refreshReplenMarketplaceOptions() {
     if (_replenDemoOn()) return;
     var countrySel = document.getElementById('replenCountry');
@@ -3099,6 +3548,7 @@ function refreshReplenMarketplaceOptions() {
     if (!mpSel) return;
 
     var active = _replenActiveMarketplaces();
+    var selCompany = _replenSelectedCompany();
     var selCountry = countrySel ? countrySel.value : '';
     var selMarketplace = mpSel.value;
 
@@ -3107,6 +3557,7 @@ function refreshReplenMarketplaceOptions() {
     var opts = [], seenPair = {}, keys = [];
     active.forEach(function(m) {
         if (!m.marketplace) return;
+        if (selCompany && m.company !== selCompany) return;
         if (selCountry && m.country !== selCountry) return;
         var value = m.marketplace;
         var label = m.marketplaceDisplayName || m.marketplace;
@@ -3143,14 +3594,26 @@ window._replenMarketplaceLabel = _replenMarketplaceLabel;
 // in Demo mode this is a no-op so the static demo options/behavior are preserved.
 function populateReplenFiltersFromRegistry() {
     if (_replenDemoOn()) return;
+    refreshReplenCompanyOptions();
     refreshReplenCountryOptions();
     refreshReplenMarketplaceOptions();
 }
 
-// Bind bidirectional dependency handlers. Idempotent (onchange property assignment).
+// Bind dependency handlers. Idempotent (onchange property assignment). Canonical scope:
+// Company → Country ↔ Marketplace. Changing Company clears invalid downstream selections.
 function bindReplenFilterDependencies() {
+    var companySel = document.getElementById('replenCompany');
     var countrySel = document.getElementById('replenCountry');
     var mpSel = document.getElementById('replenMarketplace');
+    if (companySel) {
+        companySel.onchange = function() {
+            _clearAllocationDraft();
+            if (_replenDemoOn()) return;
+            // Company changed → re-scope Country + Marketplace (clears now-invalid selections).
+            refreshReplenCountryOptions();
+            refreshReplenMarketplaceOptions();
+        };
+    }
     if (countrySel) {
         countrySel.onchange = function() {
             // Context (Country) changed → discard the Shipping Allocation Working Draft (both modes).
@@ -3172,6 +3635,7 @@ function bindReplenFilterDependencies() {
 }
 
 window.populateReplenFiltersFromRegistry = populateReplenFiltersFromRegistry;
+window.refreshReplenCompanyOptions = refreshReplenCompanyOptions;
 window.refreshReplenCountryOptions = refreshReplenCountryOptions;
 window.refreshReplenMarketplaceOptions = refreshReplenMarketplaceOptions;
 window.bindReplenFilterDependencies = bindReplenFilterDependencies;

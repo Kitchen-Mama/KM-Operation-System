@@ -11,6 +11,15 @@
 >
 > **Guardrails honored:** no Factory Stock deduction · no Factory Allocation Engine · no Carrier Rate Engine · no Export/Template Center · no payment/invoice settlement · no full auto-procurement algorithm · no Role & Permission implementation. Actor fields are placeholder identities.
 
+> **Phase 1 P1-B — Order + Allocation + Quantity Reconciliation (CANONICAL 2026-07-22).** Consolidated so Replenishment, Request/PO, Shipment and Inventory share **one** quantity/status vocabulary:
+> - **Flow:** `Net Replenishment Need (SUPPLY_PLANNING §2A) → allocate qualified existing supply → residual uncovered gap → consolidate by SKU + Factory + required date → apply MOQ / carton / production lead time → Order Recommendation → user approval → Request Order / PO`.
+> - **Source tracking:** `request_order_line_sources` records *why/where* a request line came from (demand-source traceability); it is the audit trail, not a second quantity authority.
+> - **Company Allocation lifecycle:** allocation is a **recommendation** until explicitly approved/committed; only then is it a **locked** commitment. `shipment_line_allocations` (planned table) links a **Shipment Line ↔ PO Line** (the supply-source axis) — see `DATABASE_RELATIONSHIP_MAP.md` §8B.
+> - **Canonical quantity fields (one definition everywhere):** `allocated_qty` (committed to a shipment line), `shipped_qty` (physically shipped), `completed_qty` (production completed / received-to-factory), `ordered_qty` (PO ordered). Derived (never stored):
+>   - `remaining_qty  = MAX(completed_qty − shipped_qty, 0)`  (available-to-ship; **NOT** `ordered − completed`, **NOT** `ordered − shipped`)
+>   - `unreceived_qty = MAX(ordered_qty − completed_qty, 0)`  (production still outstanding; Receive-modal / progress display only)
+> - **Stock-movement timing (shared with `SHIPMENT_CENTER_SPEC.md` §15.1):** Shipment **Draft does NOT deduct `current_stock`**; pre-locking uses **`reserved_stock`**; **Confirm & Ship** is the single physical deduction + movement-ledger trigger. Cancel / partial ship / quantity adjustment / reversal movements must **never double-deduct** (each qty change appends a ledger row; balances are never blind-overwritten).
+
 ---
 
 ## 1. Purpose & Scope
@@ -491,6 +500,8 @@ Procurement calculation engine · Remaining / Risk / Suggested Order formula · 
 
 **Send Request data integrity (下單系統):**
 1. Send Request first creates/updates `request_order_allocation_drafts` + `_lines` (planning scratchpad), then creates the official `request_orders` + `request_order_lines`. **Draft suggestion data is never treated as official until Send Request runs.**
+
+> **Monthly Order Recommendation cadence (canonical, `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A).** The order recommendation runs **once per month — the 5th at 15:00 Asia/Taipei** (trigger window day-5 15:00–16:00; after the 12:00 Daily Report Pipeline, and in a separate non-overlapping window from the Monday 14:00–15:00 shipping job so a Monday-the-5th does not collide; gated on source-data readiness — no partial/stale/empty-success Draft), producing `request_order_allocation_drafts` → `_lines`. Its scheduler entry point **requires Runtime verification — not claimed implemented**. `recommended_qty` (system snapshot) **initializes** `order_qty` (user-editable); **daily reports never recalculate or overwrite the Draft or the user quantity.** **Do not create a new order recommendation every day.** Idempotent per **Year + Month + Scope** (retries never duplicate/reset). NOT IMPLEMENTED.
 2. **Full-carton gate:** every selected line's `order_qty` must be an exact multiple of `units_per_carton` (when known) — otherwise Send is **blocked** with a per-SKU message.
 3. **Site-confirmation gate (bucket-aware):** Send T1/T2/T3 requires confirmation for that bucket; **All Request** requires T1 ∧ T2 ∧ T3 (Confirm All treats all visible scopes as confirmed) — see §12.10.
 4. Each request line keeps `request_bucket` = `T1/T2/T3`; allocation-draft lines carry snapshots (`factory_stock_snapshot`, `site_stock_snapshot`, `third_party_stock_snapshot`, `fc_qty_snapshot`, `target_pct_snapshot`), and request lines carry `forecast_qty` / `current_stock` from the same sources.
@@ -532,38 +543,53 @@ Records per-site confirmation before Series aggregation (site-level review → c
 
 ---
 
-## 3.6 `shipping_allocation_drafts` / `shipping_allocation_draft_lines` (draft layer — spec only)
+## 3.6 `shipping_allocation_drafts` / `shipping_allocation_draft_lines` — FINALIZED canonical Draft model (spec + DB design only)
 
-**Purpose:** persist the **Inventory Replenishment second-layer** Shipping Allocation / Execution Plan (user input **or** AI suggestions) so a page reload does not lose the working draft. **This table does NOT reserve stock and does NOT deduct stock.** Only **Submit Plan** creates formal `shipping_plans` / `shipping_plan_lines` (Decision Layer). It is a *planning scratchpad*, not an execution record.
+**Purpose:** persist the **Inventory Replenishment second-layer** recommendation cycle + its editable Execution Plan. The **system recommendation snapshot** and the **user execution value** are **separate columns on the same Draft Line** — there is **NO separate `shipping_allocation_suggestions` table** (do not create one). **This table does NOT reserve or deduct stock; a Draft is NOT Qualified Incoming.** Only **Submit Plan** creates formal `shipping_plans` / `shipping_plan_lines`. Spec + DB design only — **not implemented in code.**
 
-**`shipping_allocation_drafts` (header):**
+### `shipping_allocation_drafts` (header — CANONICAL)
 
 | Column | Note |
 |---|---|
 | `allocation_draft_id` | PK |
+| `planning_cycle` | planning cycle key (e.g. ISO `YYYY-Www` for weekly; the cycle the Draft belongs to) |
 | `source_page` | origin (e.g. `inventory_replenishment`) |
-| `company` · `country` · `marketplace` · `sku` | scope grain |
-| `plan_month` | planning month `YYYY-MM` |
-| `target_window` | target-days / window label (display only) |
-| `source_type` | `manual` / `ai_suggested` |
+| `company` · `country` · `marketplace` | scope grain |
 | `status` | `draft` / `site_confirmed` / `submitted` / `cancelled` |
-| `created_by` · `created_at` · `updated_by` · `updated_at` · `note` | audit + note |
+| `generation_type` | **`scheduled` / `manual_refresh` / `user_created`** (replaces the old `source_type` generator indicator) |
+| `calculation_run_id` | the calculation run that produced this Draft (idempotency / audit) |
+| `calculated_at` | when the recommendation was computed |
+| `source_data_as_of` | as-of timestamp of the analysis inputs used |
+| `draft_version` | version counter (only if versioning is required; see uniqueness below) |
+| `created_by` · `created_at` · `updated_by` · `updated_at` | audit |
+| `submitted_by` · `submitted_at` | Submit-Plan handoff |
+| `cancelled_by` · `cancelled_at` · `cancel_reason` | soft cancel |
+| `note` | free note |
 
-**`shipping_allocation_draft_lines`:**
+- **REMOVED from the header (canonical):** `sku` (grain moved to lines — a Draft covers many SKUs), `target_window` (per-line, not header), `source_type` (replaced by `generation_type`).
+- **Cycle/scope uniqueness:** `planning_cycle + company + country + marketplace + draft_version` is unique. **A retry of the same `calculation_run_id` must be idempotent** (resume/upsert the existing Draft, never duplicate).
 
-| Column | Note |
-|---|---|
-| `allocation_line_id` | PK |
-| `allocation_draft_id` | FK → header |
-| `route_no` | route sequence within the draft |
-| `ship_from` · `destination` | route endpoints |
-| `qty` | allocated qty (planning only — no movement) |
-| `allocation_method` | how the qty was derived (tag; no formula in this task) |
-| `source_factory_warehouse_id` | factory pool reference |
-| `available_stock_snapshot` | available stock at draft time (snapshot, not a live reservation) |
-| `note` · `created_at` · `updated_at` | audit + note |
+### `shipping_allocation_draft_lines` (CANONICAL)
 
-**Status enum:** `draft` / `site_confirmed` / `submitted` / `cancelled`. **Not implemented in this task (spec only).**
+**Identity:** `allocation_draft_line_id` (PK) · `allocation_draft_id` (FK) · `sku` · `site_sku` · `route_no` · `line_status`.
+**Window:** `window_code` · `window_start_date` · `window_end_date` · `required_by_date`.
+**Recommendation input snapshots:** `regular_demand_snapshot` · `special_event_demand_snapshot` · `destination_stock_snapshot` · `qualified_incoming_snapshot` · `approved_supply_snapshot` · `calculated_gap_qty` · `source_warehouse_id` · `source_available_qty_snapshot` · `units_per_carton`.
+**System recommendation snapshot (immutable per generation):** `recommended_qty` · `recommended_route_rule_id` · `recommended_rate_card_id` · `recommended_lead_time_id` · `recommended_carrier_id` · `recommended_shipping_method` · `recommended_last_mile_delivery` · `recommended_expected_arrival` · `recommended_estimated_cost` · `recommendation_reason` · `recommendation_flags`.
+**User Execution Plan (editable):** `planned_qty` · `ship_from` · `destination` · `selected_rate_card_id` · `selected_lead_time_id` · `selected_carrier_id` · `selected_shipping_method` · `selected_last_mile_delivery` · `expected_arrival` · `override_reason`.
+**Audit:** `note` · `created_at` · `updated_at`.
+
+**Canonical quantity names:**
+- **`recommended_qty`** = the immutable **system suggestion snapshot** for that Draft generation. *(Legacy read/migration alias: `recommand_shipment_draft_qty` — the misspelling is a LEGACY ALIAS only, never the new canonical column name.)*
+- **`planned_qty`** = the user-editable Execution Plan quantity. *(Legacy read/migration alias: `shipment_draft_qty` / `qty`.)*
+- **On initial generation:** `planned_qty = recommended_qty`.
+- After the user edits `planned_qty`: the weekly/daily refresh **must never overwrite it**; live analysis **must never silently change `recommended_qty`** in that Draft; a deliberate **Regenerate** action creates/updates per the versioning rule and preserves auditability (§8/§9 of the round instruction).
+
+**Submit Plan reads ONLY:** `planned_qty` + the selected execution route fields (`ship_from` / `destination` / `selected_*` / `expected_arrival`).
+**Recommendation Summary reads ONLY:** `calculated_gap_qty` + `recommended_qty` + the `recommended_*` route fields + `recommendation_reason`.
+
+**MUST NOT store** (derive at Runtime): `uncovered_qty` · `coverage_status` · `window_label` (use `window_code`) · route display string · source display name. **`required_by_date` IS a DB/calc field** (kept on the line) even though hidden from the compact Recommendation Summary table.
+
+**Status enum:** `draft` / `site_confirmed` / `submitted` / `cancelled`. **Spec + DB design only — not implemented in code.**
 
 ## 3.7 `request_order_allocation_drafts` / `request_order_allocation_draft_lines` (draft layer — implemented)
 

@@ -155,6 +155,32 @@ function amazonApplyDailyWindow_(ctx, config, destObjs, isFallback) {
   ctx.dataAgeDays = (runMax ? amazonDateAgeDays_(runMax, syncDate) : '');
 }
 
+// Add `delta` calendar days to a 'yyyy-MM-dd' string, returning 'yyyy-MM-dd'. Anchored at UTC noon so
+// pure date arithmetic never drifts across DST / timezone boundaries.
+function amazonAddDaysStr_(ymd, delta) {
+  var m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12, 0, 0));
+  d.setUTCDate(d.getUTCDate() + (delta || 0));
+  return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+}
+
+// Canonical rolling retention window: the latest `retentionDays` COMPLETED calendar days in `tz`.
+// today (tz) is excluded (may be partial). end = today − 1 (yesterday); start = today − retentionDays
+// (= end − (retentionDays−1)); the range is INCLUSIVE → exactly `retentionDays` completed dates.
+// Example (tz=Asia/Taipei, today=2026-07-21, retentionDays=90): start=2026-04-22, end=2026-07-20.
+// Returns { today, start, end, dates: [ ...inclusive yyyy-MM-dd... ] }.
+function amazonRetentionWindow_(retentionDays, tz) {
+  tz = tz || 'Asia/Taipei';
+  var n = (retentionDays != null && retentionDays > 0) ? Math.floor(retentionDays) : 90;
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var end = amazonAddDaysStr_(today, -1);        // yesterday (last completed day)
+  var start = amazonAddDaysStr_(today, -n);      // inclusive start (= end − (n−1))
+  var dates = [];
+  for (var i = 0; i < n; i++) dates.push(amazonAddDaysStr_(start, i));
+  return { today: today, start: start, end: end, dates: dates };
+}
+
 function amazonParseYmd_(s) { var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; }
 function amazonDateAgeDays_(ymdLatest, ymdSync) {
   var a = amazonParseYmd_(ymdLatest), b = amazonParseYmd_(ymdSync);

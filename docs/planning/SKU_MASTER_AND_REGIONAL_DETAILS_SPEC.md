@@ -27,6 +27,8 @@
 
 `sku_details` stays the **primary SKU master**. `sku_regional_details` is the **higher-level source** for marketplace identifiers; `marketplace_skus` is the **operational synchronized copy**.
 
+> **Inventory-domain boundary (CANONICAL 2026-07-21 — authority `DATABASE_RELATIONSHIP_MAP.md` §6.0).** The Master SKU lifecycle initializes the **Factory Inventory** baseline **only** — the `factory_stock` baseline row per the existing Factory Stock contract (on lifecycle → `Running in the Market`; see `SHIPMENT_CENTER_SPEC.md` / `SYSTEM_RUNTIME_ARCHITECTURE.md`). It **never** creates or modifies **Overseas Inventory** (`overseas_inventory_snapshot` / `overseas_inventory_movements`). Likewise, **Inventory Replenishment marketplace-SKU creation does NOT create/modify Overseas Inventory.** Factory Inventory and Overseas Inventory are separate domains and separate tables.
+
 ---
 
 ## 2. `sku_details` — Product Master (cleanup)
@@ -49,7 +51,7 @@
 - **Suggested value rules (implementation-defined; may stay loose if not already standardized):**
   - `material` — may be **multi-value using underscore format**, e.g. `Stainless_Steel_ABS`.
   - `battery_type` — **Global Logistics Enums (authoritative: [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) §4.5):** `no_battery` / `alkaline_battery` / `lithium_battery` / `rechargeable_lithium`. *(Earlier example values `none` / `built_in` / `removable` / `lithium` / `unknown` are RETIRED — not canonical.)*
-  - `magnet_type` — **Global Logistics Enums:** `no_magnet` / `magnetic`. *(Earlier `none` / `unknown` retired.)*
+  - `magnet_type` — **REAL Boolean (finalized 2026-07-21):** Yes→`true` / No→`false`. Legacy `no_magnet` / `magnetic` (and `none`/`unknown`) are **read-compatibility inputs only**, canonicalized to Boolean on the next update. *(This supersedes the earlier `no_magnet`/`magnetic` enum.)* `battery_type` remains a semantic enum.
 
 ### 2.4 Regional / compliance columns — MOVE OUT of `sku_details`
 - **DEPRECATE / stop writing from `sku_details`:** `hscode`, `declared_value`, `declared_value_unit`.
@@ -128,6 +130,11 @@ Deprecated (present for back-compat, not written): `hscode`, `declared_value`, `
 **Flow A — Inventory Replenishment first:**
 Inventory Replenishment → **Add Marketplace SKU** → creates `marketplace_skus` → **ensure/update `sku_regional_details`** (create the matching regional row if absent, else update identity; copy `sku` / `company` / `country` / `marketplace` / `site_sku` / `marketplace_product_id` / **`product_url`**; compliance-document fields left blank and **never overwritten**).
 
+> **Baseline triggers (canonical, 2026-07-20 v2 — two DISTINCT triggers):**
+> - **Factory Stock baseline** is ensured by the **`sku_details.lifecycle` transition into `Running in the Market`** — **NOT** by Master SKU creation and **NOT** by Marketplace SKU creation (both prior rules superseded). Keyed by **`warehouse_id + Master sku`** (never `site_sku`/company/country/marketplace); idempotent; `current_stock = 0`, `reserved_stock = 0` where supported. Authoritative: [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md); UI note in [`SKU_DETAILS_ADD_EDIT_SPEC.md`](./SKU_DETAILS_ADD_EDIT_SPEC.md) §15.
+> - **Overseas Inventory baseline/context** is what a **successful Marketplace SKU add to the Inventory/Replenishment scope** ensures — physical overseas stock uses **Master SKU** at grain **`company + warehouse_id + Master sku`**; `company/country/marketplace` are preserved as **planning-demand context only**. **Marketplace is NOT part of the physical shared-3PL stock grain** — multiple Marketplace SKUs for one Master SKU must NOT create duplicate physical inventory (`INVENTORY_TABLE_MAPPING_SPEC.md`). Amazon FBA / `platform_fulfilled` stock stays separate from the shared self-fulfilled 3PL pool.
+> - **Runtime status: NOT IMPLEMENTED / Runtime Mapping Required** (exact ensure-write flow not yet designed).
+
 > **Add SKU required fields (2026-07):** the Add SKU modal now requires **ASIN** (UI label; DB = `marketplace_skus.marketplace_product_id`, also synced into `sku_regional_details.marketplace_product_id`) and **Product URL** (DB = `sku_regional_details.product_url`). `site_sku` stays required. Validation: `product_url` trimmed + must be `http(s)://` (no fixed marketplace domain — future marketplaces differ); `marketplace_product_id` trimmed, case-preserved, **no fixed length** (non-Amazon IDs differ). The regional row is **ensure-created or identity-updated** by `sku + company + country + marketplace`, updating only `site_sku` / `marketplace_product_id` / `product_url` — compliance fields (packaging regulation / labels / manuals / battery, etc.) are never touched, and no duplicate regional rows are created.
 
 **Flow B — Regional Details first:**
@@ -147,12 +154,14 @@ SKU Regional Details → create the regional information first (`site_sku`, `mar
 ## 7. UI model
 
 ### 7.1 SKU Details page (product / master / customs-facing base attributes)
-**SKU Details is the product master** — identity, logistics, baseline prices, and customs-facing base attributes. Marketplace identity (`marketplace_product_id` / ASIN, `site_sku`, `product_url`) does **NOT** belong on this page — it lives on **Marketplace SKU / `sku_regional_details`** (§5/§6). `product_url` stays in `sku_regional_details`.
+**SKU Details is the product master** — identity, logistics, baseline prices, and customs-facing base attributes.
+
+> **PM Workspace + Add/Edit authority.** SKU Details is the **Product Management (PM)-controlled Product Master Workspace** — it owns product-intrinsic data only and does **not** own Company/Country/Marketplace data (that belongs to **SKU Regional Details** / `sku_regional_details`, §4/§7.2). The **Add/Edit SKU UI, validation, and Runtime Mapping** are defined by [`SKU_DETAILS_ADD_EDIT_SPEC.md`](./SKU_DETAILS_ADD_EDIT_SPEC.md) (unified four-tab `SkuMasterForm`: Basic / Sales / Supplier / Logs). That spec is **subordinate to this canonical data spec** — it introduces no new canonical fields, business meanings, or Tax/Pricing/Regional ownership; this document remains the SSOT for the underlying business data. Marketplace identity (`marketplace_product_id` / ASIN, `site_sku`, `product_url`) does **NOT** belong on this page — it lives on **Marketplace SKU / `sku_regional_details`** (§5/§6). `product_url` stays in `sku_regional_details`.
 - **ADD fields:** `material`, `battery_type`, `magnet_type`, `base_currency`.
 - **ADD customs fields (2026-07):** **`product_name_cn`** (Chinese customs/product name — column shown immediately right of Product Name) and **`product_use`** (customs-facing product usage/purpose — column shown immediately left of Material). Both **nullable** — optional for legacy rows and must not break existing SKU flows. Stored on `sku_details` (NOT `sku_regional_details`). API exposes `productNameCn` / `productUse`. Table renders `--` when blank.
 - **REMOVE from the SKU Details table (2026-07):** **AMZ ASIN** — ASIN / `marketplace_product_id` is Marketplace-SKU / Regional identity, not a master attribute. (The DB column `marketplace_skus.marketplace_product_id` / `sku_regional_details.marketplace_product_id` is **kept** — only the SKU Details page column is removed.)
 - **Editing (2026-07):** all editing is via the **top action-bar `Edit SKU` button** — select one SKU row, then Edit SKU opens the full `sku_details` editor (SKU read-only; `status`=`lifecycle`, product/customs/logistics/price fields). Saved through **`upsertSkuDetail`** (update by `sku`; omitted columns preserved; **no** marketplace / pricing / FC / factory-stock side effects). **Row-level status-only editing is RETIRED** — Status renders as a normal display column and is edited only through the full modal. A `canEditSkuDetails()` hook is the future permission gate.
-- **Boolean display:** `battery_type` / `magnet_type` render **No** (false/none/blank), **Yes** (true), or the **original text** for any other value (e.g. `Lithium-Ion`) — the master field types stay extensible, never permanently boolean.
+- **Display:** `battery_type` (semantic enum) renders friendly bilingual labels (No Battery / Alkaline / Lithium; legacy shown as-is + "(Legacy)"). **`magnet_type` is a REAL Boolean (finalized 2026-07-21)** — renders **Yes / 含磁性** (`true`) or **No / 無磁性** (`false`); blank/unknown → `--`. Legacy `magnetic`/`no_magnet`/`TRUE`/`FALSE` normalize on read (explicit tokens, never `Boolean(value)`) and are rewritten to Boolean on next update.
 - **REMOVE / HIDE fields:** `hscode`, `declared_value`, `declared_value_unit`, `minimum_price_unit`, `msrp_unit`, `selling_unit`.
 - **HS Code & Tax Rates subpage (2026-07, V2 — IMPLEMENTED for parent rates):** the Edit SKU modal has an **`HS Code & Tax Rates`** action opening a Series-scoped tax subpage. It lists/creates/edits **`tax_referral_rates`** rows for the selected SKU's Series (per Origin × Duty Country × effective version) and supports **new-version** creation (history preserved). It **writes ONLY to `tax_referral_rates`** via `upsertTaxReferralRate` — **never** into `sku_details`. Series is inherited (read-only in the tax row; changed only via the main SKU editor). `tax_rate_components` render **read-only** (component editor deferred — no fake saves). Authoritative: [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md) §9.
 - Keep everything else (identity, logistics, baseline prices) as today.
@@ -160,6 +169,8 @@ SKU Regional Details → create the regional information first (`site_sku`, `mar
 ### 7.2 SKU Regional Details page / tab (simple management UI)
 Manages **`sku_regional_details`** (v2 schema). Shows and edits:
 `sku`, `company`, `country`, `marketplace`, `site_sku`, `marketplace_product_id`, `packaging_regulation`, `regulation_url`, `language`, `manual_version`, `label_version`, `battery_regulation`.
+
+> **Visual / UX authority:** the Regional Details page **layout, visual hierarchy, interaction states and navigation** are defined by [`SKU_REGIONAL_DETAILS_UI_UX_SPEC.md`](./SKU_REGIONAL_DETAILS_UI_UX_SPEC.md) (Filterable Master–Detail Workspace). That UI spec is **subordinate to this SKU Master canonical data spec** — it may decide only *how* canonical data is arranged on screen, never *what* a field means or which table owns it. This document remains the SSOT for Regional Detail business data; the UI spec introduces no new canonical fields, business meanings, or Tax/Pricing rules.
 - **No pricing editing** and **no tax/duty editing** in SKU Regional Details — HS Code / Duty / VAT / Referral / Declared Value live in `tax_referral_rates` (§8).
 - Editing `site_sku` / `marketplace_product_id` here propagates to `marketplace_skus` (§6.2); Regional Details is the higher-priority source.
 

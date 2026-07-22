@@ -1,198 +1,181 @@
 # Shipment Route Template / Route Snapshot / Event Ledger — Domain Spec
 
-**Status:** 🟡 SPEC + DB MAPPING ONLY — planned design. **No runtime, no UI, no DB migration.** Field-level SSOT for Route Templates, Template Nodes, per-Shipment Route Snapshots, and the Shipment Event Ledger.
-**Last Updated:** 2026-07-17
+**Status:** 🟡 MIXED — **Reference DB (Templates) manually completed by the user; Runtime (Routes/Events) SPEC + DB-MAPPING ONLY.** Field-level SSOT for Route Templates, Template Nodes, per-Shipment Route Snapshots, and the Shipment Event Ledger.
+**Last Updated:** 2026-07-22
 **Maintained By:** Development Team
 **Related:** [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) (§18 — points here; execution truth), [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) (carrier rate-card matching — distinct from route-template matching), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) §8 (relationships), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md).
 
-> **This is the field-level Domain SSOT** for `shipment_route_templates`, `shipment_route_template_nodes`, `shipment_routes`, and `shipment_events`. Architecture specs point here rather than duplicating these schemas. **Nothing here is implemented** — no resolver, generator, event writer, matcher, World Map, polling, status projection, receiving, or close is built by this task.
+> **This is the field-level Domain SSOT** for `shipment_route_templates`, `shipment_route_template_nodes`, `shipment_routes`, `shipment_route_nodes`, and `shipment_events`. Architecture specs point here rather than duplicating these schemas.
+>
+> **Implementation status (2026-07-22):**
+> - **`shipment_route_templates` — Reference DB MANUALLY COMPLETED by the user.** Do NOT recreate, re-import, clear, or overwrite. This spec is now **read-only synced** to the live table; where doc and live DB disagree, the **live DB + this instruction win** and the conflict is recorded, never silently overwritten.
+> - **`shipment_route_template_nodes` — Reference DB MANUALLY COMPLETED by the user.** Same read-only rule.
+> - **`shipment_routes` / `shipment_route_nodes` / `shipment_events` — SPEC + DB-MAPPING ONLY, NOT implemented.** No resolver, generator, event writer, matcher, World Map, polling, projection, receiving, or close is built yet (confirmed: zero references in any `.gs` or `assets/js`). Their build is later Shipment-Runtime scope (Phase 1 P1-E).
 
 ---
 
-## 1. Canonical Concepts
+## 1. Canonical Concepts & Four-Table Authority Split
 
-| Object | Role |
-|--------|------|
-| **`shipment_route_templates`** | Standard-route **header** + matching conditions (Master Data) |
-| **`shipment_route_template_nodes`** | Ordered standard **stages** belonging to a template (Master Data) |
-| **`shipment_routes`** | Per-Shipment **planned-route node snapshot** — copied from template nodes; one row per planned node |
-| **`shipment_events`** | Append-only **actual event ledger** for one shipment |
+| Object | Role | Status |
+|--------|------|--------|
+| **`shipment_route_templates`** | Reusable standard-route **header** + matching conditions (Master / Reference) | ✅ manually completed |
+| **`shipment_route_template_nodes`** | Ordered standard **stages** of a template, with cumulative planned offsets (Master / Reference) | ✅ manually completed |
+| **`shipment_routes`** | Per-Shipment **route-version execution snapshot** copied from a template at Confirm — one row per route **version** (immutable except projection fields) | 🟡 spec only |
+| **`shipment_route_nodes`** | *(optional)* per-Shipment **runtime node snapshot** — the template nodes snapshotted onto the shipment's route version | 🟡 spec only |
+| **`shipment_events`** | Append-only **actual event ledger** for one shipment | 🟡 spec only |
 
 ```
-Template Header + Template Nodes  → standard route definition (Master)
-Shipment Routes                   → per-shipment planned-route snapshot
-Shipment Events                   → actual event history (append-only)
-World Map                         → planned route (routes) + actual events (events)
+Template Header + Template Nodes  → standard route blueprint (Reference — COMPLETED)
+Shipment Route (version snapshot) → per-shipment execution snapshot of the chosen template
+Shipment Route Nodes (optional)   → per-shipment snapshot of the template's nodes
+Shipment Events (append-only)     → actual event history
+Current status / node / ETA / map → PROJECTION derived from events — never a rewritten current-state row
 ```
 
-Current position and progress are **derived from the latest valid events** — never stored as a single current-state row that replaces event history.
+**Authority rules:**
+- **`shipments` / `shipment_lines` remain the Execution Truth** and shipment-lifecycle authority. Route/Event records are **enrichment**, never a replacement for `shipments`.
+- A **Route Template is a reusable blueprint** — it is **NEVER the live current state of a specific shipment.** The live state of a shipment is `shipments` + its `shipment_routes` snapshot + projected `shipment_events`.
+- **Template edits NEVER retroactively rewrite an existing `shipment_routes` snapshot.** A completed shipment keeps the template version it was snapshotted from.
+- **Route/Event write failure must not corrupt Shipment execution** — non-blocking enrichment. No Route or Event is required to complete the core Ship action in Phase 1.
 
----
-
-## 2. Authority & Layer Rules
-
-- **`shipments` / `shipment_lines` remain the Execution Truth** and the shipment lifecycle authority.
-- `shipment_routes` = planned-route enrichment / snapshot; `shipment_events` = actual tracking enrichment.
-- **Route/Event records must NOT replace `shipments`** as lifecycle authority.
-- **No Route or Event may be required to complete the core Ship action in Phase 1** (a shipment can be created, shipped, and settled with zero route/event rows — `SHIPMENT_CENTER_SPEC.md` §18).
-- **Route/Event write failure must not silently corrupt Shipment execution** — it is non-blocking enrichment.
-- **Exact Ship / Receive / Close orchestration remains an OPEN DECISION** until the future full closed-loop spec (§14).
-
----
-
-## 3. Warehouse Region Rule (uses EXISTING field)
-
-**`warehouses.logistics_region` ALREADY EXISTS** as a canonical Warehouse Master field — **this spec does not add it.** Canonical example values: `US_WEST` · `US_CENTRAL` · `US_EAST`.
-
-**Resolution path:**
+**Relationships:**
 ```
-shipments.warehouse_code / warehouse_id
-  → warehouses
-  → warehouses.logistics_region
-  → shipment_route_templates.destination_region
+shipment_route_templates 1 ─── N shipment_route_template_nodes
+shipment_route_templates 1 ─── N shipment_routes
+shipments                1 ─── N shipment_routes          (route versions; exactly one is_current = TRUE)
+shipment_routes          1 ─── N shipment_route_nodes     (optional runtime node snapshot)
+shipment_routes          1 ─── N shipment_events
+shipments                1 ─── N shipment_events
 ```
-- **Do NOT create a second Region table** or duplicate the region on warehouse records under another field name.
-- Amazon FBA warehouses such as **ONT8** and **LGB8** may share `US_WEST` and therefore **share the same Route Template**. **Do NOT create one Route Template per Amazon warehouse** unless that warehouse has a genuinely different physical route.
-- `shipment_route_templates.destination_region` reads the **same enum family** as `warehouses.logistics_region`.
 
 ---
 
-## 4. Route Template Matching
+## 2. Warehouse Region Rule (uses EXISTING field)
 
-A Route Template is selected using: `origin_country` · `destination_country` · `destination_region` · `transit_type` · `last_mile_delivery` · `customs_type` · effective date · `priority`. Optional specificity fields: `destination_warehouse_id` · `origin_warehouse_id` · `carrier_id`.
+**`warehouses.logistics_region` ALREADY EXISTS** — this spec does not add it. Canonical values: `US_WEST` · `US_CENTRAL` · `US_EAST`.
 
-**Specificity priority (destination):** (1) `destination_warehouse_id` exact match → (2) `destination_region` match → (3) `destination_country` match.
-**Carrier priority:** (1) carrier-specific match → (2) `carrier_id` blank = generic template.
-**Then:** effective-date validity → highest `priority` → latest `effective_from` as the final version tie-break.
-
-- **`carrier_id` is NOT required.** Most carriers using the same physical transport flow should **share the generic template**.
-- **Effective-date rule:** `effective_from ≤ target_date AND (effective_to blank OR ≥ target_date)`; **blank `effective_to` = open-ended**; historical versions retained.
-- This is **distinct from carrier rate-card matching** (`CARRIER_AND_ROUTE_SPEC.md` §4) — route templates describe the physical path, rate cards describe pricing.
+**Resolution path:** `shipments.warehouse_id → warehouses → warehouses.logistics_region → shipment_route_templates.destination_region`.
+- **Do NOT create a second Region table** or duplicate the region field.
+- Amazon FBA warehouses sharing a region (e.g. ONT8 + LGB8 = `US_WEST`) **share the same Route Template** — do not create one template per warehouse unless the physical route genuinely differs.
 
 ---
 
-## 5. Table Schemas (planned — DB mapping only)
+## 3. Route Template Matching
 
-### 5.A `shipment_route_templates` (header — Master Data)
+Selected by: `origin_country` · `destination_country` · `destination_region` · `transit_type` · `last_mile_delivery` · `customs_type` · effective date · `priority`. Optional specificity: `destination_warehouse_id` · `origin_warehouse_id` · `carrier_id`.
+
+**Specificity (destination):** `destination_warehouse_id` exact → `destination_region` → `destination_country`. **Carrier:** carrier-specific → blank (generic). **Then:** effective-date validity → highest `priority` → latest `effective_from` tie-break.
+- `carrier_id` NOT required (carriers on the same physical flow share the generic template).
+- Effective-date: `effective_from ≤ target AND (effective_to blank OR ≥ target)`; blank `effective_to` = open-ended.
+- **Distinct from carrier rate-card matching** (`CARRIER_AND_ROUTE_SPEC.md` §4) — templates = physical path, rate cards = pricing.
+
+---
+
+## 4. Table Schemas
+
+### 4.A `shipment_route_templates` (Reference DB — MANUALLY COMPLETED; read-only synced)
 `route_template_id` (PK) · `route_template_name` · `route_version` · `origin_country` · `origin_warehouse_id` · `destination_country` · `destination_region` · `destination_warehouse_id` · `carrier_id` · `transit_type` · `last_mile_delivery` · `customs_type` · `priority` · `is_active` · `effective_from` · `effective_to` · `note` · `created_at` · `updated_at`.
-- `carrier_id` **nullable = generic route**. `destination_warehouse_id` **nullable = regional/country route**.
-- `destination_region` reads the same enum family as `warehouses.logistics_region` (§3).
-- Historical versions retained; blank `effective_to` = open-ended.
+- `carrier_id` nullable = generic route; `destination_warehouse_id` nullable = regional/country route.
+- `destination_region` uses the same enum family as `warehouses.logistics_region` (§2).
+- **Live table exists (user-maintained).** Any field-name/enum conflict between this doc and the live table is recorded for the owner — **never auto-overwritten.**
 
-### 5.B `shipment_route_template_nodes` (ordered nodes — Master Data)
+### 4.B `shipment_route_template_nodes` (Reference DB — MANUALLY COMPLETED; read-only synced)
 `route_template_node_id` (PK) · `route_template_id` (FK) · `node_sequence` · `node_type` · `node_code` · `node_name` · `country` · `region` · `city` · `latitude` · `longitude` · `planned_event_type` · `default_offset_days` · `transport_mode_to_next` · `is_destination_placeholder` · `is_required` · `note` · `created_at` · `updated_at`.
-- One template has many **ordered** nodes; `node_sequence` is **unique within a template**.
-- The final destination node may use `is_destination_placeholder = TRUE` (replaced with the actual warehouse snapshot at generation — §6).
-- Template Nodes are **Master Data**, not Shipment records.
+- One template → many **ordered** nodes; `node_sequence` unique within a template.
+- **`default_offset_days` — CANONICAL DEFINITION (2026-07-22): CUMULATIVE planned days measured from the Route start (ETD), NOT the interval from the previous node.** e.g. node offsets `0, 2, 5, 20` mean day-0, day-2, day-5, day-20 relative to departure. Planned node dates = `ETD + default_offset_days`. (Inter-node gap, if ever needed, is the difference between consecutive cumulative offsets — it is derived, not stored.)
+- Final destination node may set `is_destination_placeholder = TRUE` (resolved to the actual warehouse at generation, §5).
 
-### 5.C `shipment_routes` (per-Shipment planned-node snapshot)
-`shipment_route_id` (PK) · `shipment_id` (FK) · `route_template_id` · `route_template_node_id` · `sequence_no` · `node_type` · `node_code` · `location_ref_type` · `location_ref_id` · `location_name` · `country` · `region` · `city` · `latitude` · `longitude` · `transport_mode` · `planned_event_type` · `planned_arrival_date` · `planned_departure_date` · `actual_arrival_date` · `actual_departure_date` · `status` · `created_at` · `updated_at`.
-- **One row per Shipment per planned Route Node**, generated by copying template nodes; **template lineage retained** (`route_template_id` / `route_template_node_id`).
-- The destination placeholder is **replaced with the actual Warehouse snapshot**.
-- **After Shipment Confirm/Ship the planned Route Snapshot is IMMUTABLE except for progress-projection fields:** `actual_arrival_date`, `actual_departure_date`, `status`, `updated_at`.
+### 4.C `shipment_routes` (per-Shipment route-VERSION execution snapshot — CANONICAL, richer model)
+> **SUPERSEDED:** an earlier draft modeled `shipment_routes` as *one row per planned node*. **Canonical model (2026-07-22):** `shipment_routes` is a per-Shipment **route-version header** (one row per route version; per-node detail lives in optional `shipment_route_nodes` §4.D and/or `route_snapshot_json`).
+
+`shipment_route_id` (PK) · `shipment_id` (FK) · `route_template_id` · `route_template_version` · `route_version` · `route_status` · `is_current` · `supersedes_shipment_route_id` · `origin_country` · `origin_warehouse_id` · `destination_country` · `destination_region` · `destination_warehouse_id` · `carrier_id` · `transit_type` · `last_mile_delivery` · `customs_type` · `planned_departure_at` · `actual_departure_at` · `planned_arrival_at` · `current_eta` · `actual_arrival_at` · `current_node_sequence` · `current_node_code` · `current_event_type` · `route_progress_pct` · `route_snapshot_json` · `change_reason` · `note` · `created_by` · `created_at` · `updated_by` · `updated_at`.
+- **One row per Shipment per route VERSION.** Template version + key fields are **copied** at Confirm; template lineage retained (`route_template_id` / `route_template_version`).
+- **Exactly one `is_current = TRUE` route per shipment** (enforced constraint). A reroute creates a new version and sets `supersedes_shipment_route_id` to the prior one, which becomes `is_current = FALSE` / `route_status = superseded`.
+- The destination placeholder is resolved to the **actual `destination_warehouse_id`** at generation.
+- **After Confirm/Ship the snapshot is IMMUTABLE except projection fields:** `route_status`, `current_eta`, `actual_departure_at`, `actual_arrival_at`, `current_node_sequence`, `current_node_code`, `current_event_type`, `route_progress_pct`, `updated_*`. Planned fields, template lineage, and `route_snapshot_json` are never rewritten.
 - **Template edits NEVER rewrite existing `shipment_routes`.**
 
-### 5.D `shipment_events` (append-only actual ledger)
-`shipment_event_id` (PK) · `shipment_id` (FK) · `shipment_route_id` (nullable) · `event_sequence` · `event_time` · `event_type` · `event_status` · `location_name` · `country` · `city` · `latitude` · `longitude` · `source` · `source_event_id` · `raw_status` · `note` · `created_by` · `created_at` · `updated_by` · `updated_at`.
-- **Append-only actual event ledger.** `source` ∈ `system` / `manual` / `carrier_api` / `tracking_api` / `import`.
-- `shipment_route_id` nullable — events unmatched to a planned node are **preserved** (never fabricate a planned node).
-- `source_event_id` supports **idempotency** for external imports.
-- **Current location is derived from the latest valid actual event** — not stored as a replacement for event history.
-- **Do NOT delete or overwrite historical events silently.**
+### 4.D `shipment_route_nodes` (OPTIONAL per-Shipment runtime node snapshot)
+*(Adopted only if per-node rows are needed beyond `route_snapshot_json`.)*
+`shipment_route_node_id` (PK) · `shipment_route_id` (FK) · `shipment_id` · `route_template_node_id` · `node_sequence` · `node_type` · `node_code` · `node_name` · `location_ref_type` · `location_ref_id` · `country` · `region` · `city` · `latitude` · `longitude` · `transport_mode` · `planned_event_type` · `planned_arrival_at` · `planned_departure_at` · `actual_arrival_at` · `actual_departure_at` · `node_status` · `created_at` · `updated_at`.
+- Snapshotted from `shipment_route_template_nodes` at generation; planned dates from `ETD + default_offset_days` (cumulative). Template lineage retained.
+- Same immutability rule: planned fields locked after Ship; only `actual_*` / `node_status` project from events.
+
+### 4.E `shipment_events` (append-only actual ledger — CANONICAL, richer model)
+`shipment_event_id` (PK) · `shipment_id` (FK) · `shipment_route_id` · `shipment_route_node_id` · `event_sequence` · `event_type` · `event_status` · `event_time` · `reported_at` · `timezone` · `node_sequence` · `node_type` · `node_code` · `node_name` · `country` · `region` · `city` · `latitude` · `longitude` · `previous_eta` · `new_eta` · `delay_days` · `exception_code` · `exception_severity` · `source_type` · `source_reference` · `source_event_id` · `is_manual` · `is_current_status_event` · `payload_json` · `note` · `created_by` · `created_at`.
+- **Append-only.** `source_type` ∈ `system` / `manual` / `carrier_api` / `tracking_api` / `import`.
+- **Constraints:** `(source_type, source_event_id)` **UNIQUE** (prevents duplicate API writes); a used Template version is never physically rewritten; corrections/reversals are **new correction/reversal events**, never edits/deletes of prior events.
+- `shipment_route_id` / `shipment_route_node_id` nullable — an event unmatched to a planned node is **preserved** (never fabricate a node).
+- **Current status/node/ETA/map position are PROJECTED from the latest valid events** — not stored as a row that replaces history. `is_current_status_event` marks the event currently projected as "now".
 
 ---
 
-## 6. Route Generation Flow (planned)
+## 5. Route Runtime Lifecycle (planned — P1-E)
 
+### 5.1 Create (at Shipment Confirm)
 ```
-Shipment Draft
-  → resolve Destination Warehouse
-  → read warehouses.logistics_region
-  → resolve matching Route Template (§4)
-  → copy shipment_route_template_nodes
-  → replace Destination Placeholder with actual Warehouse data
-  → calculate planned dates from ETD + default_offset_days
-  → create shipment_routes rows
-  → show Route Preview
+Filter Active Template (§3) → user confirms Route → create shipment_routes version snapshot
+  → resolve actual destination_warehouse_id → (optional) snapshot shipment_route_nodes
+  → planned timeline = ETD + cumulative default_offset_days → route preview
 ```
-- **Draft behavior:** the route MAY be regenerated before Shipment Confirm/Ship if route-driving fields change. Regeneration **must not create duplicate active route rows.** Exact revision/version strategy is an **Open Decision** (§14).
-- **After Shipment Confirm/Ship:** the planned Route Snapshot is **locked**; later route deviations are captured by `shipment_events`; **do not silently rewrite the planned route.**
+- Draft MAY regenerate before Confirm if route-driving fields change (no duplicate active rows). After Confirm the snapshot is locked.
+
+### 5.2 Execute
+```
+Carrier API / manual update → append shipment_event (validate order + (source_type,source_event_id) idempotency)
+  → project current status / node / ETA → update map + risk flags → notify delay/exception
+  → recalculate Qualified-Incoming timing (feeds replenishment)
+```
+
+### 5.3 Reroute
+```
+mark current route SUPERSEDED (is_current=FALSE) → create new route version
+  → link supersedes_shipment_route_id → append ROUTE_CHANGED event → continue events on the new route
+```
+Never overwrite the old route, delete events, or mutate the template.
+
+### 5.4 Delivered ≠ Received (authoritative)
+```
+DELIVERED (carrier event)  ≠  RECEIVED (warehouse receipt)
+Warehouse Receipt Confirmed → RECEIVED event → Inbound Receipt Lines
+  → Overseas Inventory Movement → shipment received_qty → Allocation / PO reconciliation
+```
+**Carrier `delivered` NEVER by itself increases inventory.** Warehouse Receipt is the inventory-increase authority (`OVERSEAS_INBOUND_SPEC.md`, `WAREHOUSE_OPERATIONS_SPEC.md`, `DATABASE_RELATIONSHIP_MAP.md` §6.0). This preserves the Factory/Overseas inventory-domain separation.
 
 ---
 
-## 7. Event Flow (planned)
+## 6. World Map Read Model
 
-Events may be created by: system action · manual update · carrier API · tracking API · import.
-
-**Future shared writer flow:** receive event → normalize external status into a canonical `event_type` → idempotency check (`source` + `source_event_id`) → insert `shipment_events` → attempt planned-node match → update Route Progress Projection → optionally request a **valid** Shipment status transition.
-
-**Event-to-route matching priority:** (1) explicit `shipment_route_id` → (2) `planned_event_type` → (3) country/city/location → (4) node sequence and first not-yet-passed matching node.
-**If no Route Node matches:** keep `shipment_route_id` blank, **preserve the Event**, do **not** fabricate a planned node.
-
----
-
-## 8. Route Progress Projection
-
-`shipment_events` may project progress onto `shipment_routes`: prior matched nodes → `passed`; matched node → `current` or `passed`; later nodes → `pending`; exception event → exception display.
-
-- **Projection may update ONLY:** `shipment_routes.status`, `actual_arrival_date`, `actual_departure_date`, `updated_at`.
-- **It must NOT overwrite:** planned location, planned coordinates, planned dates, node sequence, or template lineage.
-
----
-
-## 9. Shipment On The Way / World Map Read Model
-
-Reads `shipments` + `shipment_routes` + `shipment_events`. Ownership:
+Reads `shipments` + `shipment_routes` (+ optional `shipment_route_nodes`) + `shipment_events`.
 
 | Aspect | Source |
 |--------|--------|
 | Shipment header / status | `shipments` |
-| Planned map line | `shipment_routes` |
+| Planned map line | current `shipment_routes` version (+ `shipment_route_nodes` / `route_snapshot_json`) |
 | Actual timeline | `shipment_events` |
-| Current position | latest valid Event |
-| Next planned node | first pending Route Node |
+| Current position / node / ETA | PROJECTION from latest valid events |
 
-- **Do NOT define `shipment_events` as the sole Shipment lifecycle authority.**
-- **Event → Shipment Status mapping remains an OPEN DECISION** for the later closed-loop orchestration spec.
-
----
-
-## 10. Example Route Templates (illustrative — placeholders, not verified master data)
-
-Six generic templates (all `origin_country = CN`, `destination_country = US`, `transit_type = sea_express`, `customs_type` per shipment):
-
-| route_template_name | destination_region | last_mile_delivery |
-|---------------------|--------------------|--------------------|
-| `CN-US-FBA-SEAEXP-PARCEL-WEST` | `US_WEST` | `parcel` |
-| `CN-US-FBA-SEAEXP-TRUCK-WEST` | `US_WEST` | `truck` |
-| `CN-US-FBA-SEAEXP-PARCEL-CENTRAL` | `US_CENTRAL` | `parcel` |
-| `CN-US-FBA-SEAEXP-TRUCK-CENTRAL` | `US_CENTRAL` | `truck` |
-| `CN-US-FBA-SEAEXP-PARCEL-EAST` | `US_EAST` | `parcel` |
-| `CN-US-FBA-SEAEXP-TRUCK-EAST` | `US_EAST` | `truck` |
-
-**ONT8 and LGB8 both resolve through `warehouses.logistics_region = US_WEST`** and share the `…-WEST` templates. **Do not invent official Amazon addresses or coordinates** — use placeholders unless verified master data is available.
-
-**Generic Sea Express nodes** (only stages the business actually uses; do not invent operational stages):
-1. Origin Factory · 2. Export Customs · 3. Origin Port · 4. Ocean Transit · 5. Destination Port · 6. Import Customs · 7. Last Mile / Transload (only if actually applicable) · 8. Destination FBA Placeholder (`is_destination_placeholder = TRUE`).
+- The map reads **Runtime** (Header + current `shipment_route` + latest valid `shipment_event` + node snapshot) — it must **NOT** treat a Route Template as a specific shipment's live truth.
+- Event → Shipment Status mapping remains an **Open Decision** (§8).
 
 ---
 
-## 11. Open Decisions (preserved — not decided here)
+## 7. Illustrative Templates (reference only — the live Reference DB is user-maintained)
 
-- Exact canonical `event_type` enum
-- Event → Shipment Status mapping
-- Route revision strategy after Ship
-- Progress projection synchronous vs async
-- Manual event correction / void strategy
-- Carrier API provider
-- Polling schedule
-- Receiving / Close status behavior
-- Exact Ship transaction relationship
-- Exact geographic coordinates
-- Delay calculation & exception thresholds
+The user's live `shipment_route_templates` / `_nodes` are authoritative. The examples below are **illustrative understanding aids only** — not a migration script and not to be written to the live DB. Generic CN→US sea-express templates keyed by `destination_region` (`US_WEST` / `US_CENTRAL` / `US_EAST`) × `last_mile_delivery` (`parcel` / `truck`); nodes: Origin Factory → Export Customs → Origin Port → Ocean Transit → Destination Port → Import Customs → (Last Mile/Transload if applicable) → Destination FBA placeholder. **Do not invent official Amazon addresses/coordinates.**
 
 ---
 
-**Shipment Route & Event Domain Spec — SPEC + DB MAPPING ONLY. Field-level SSOT for route templates / template nodes / route snapshots / event ledger. No runtime, no UI, no DB migration.**
+## 8. Open Decisions (not decided here)
+Canonical `event_type` enum · Event → Shipment Status mapping · route revision strategy after Ship · projection sync vs async · manual event correction/void strategy · carrier API provider · polling schedule · receiving/close status behavior · exact Ship transaction relationship · exact coordinates · delay/exception thresholds.
+
+---
+
+## 9. Decision Log
+- **2026-07-22 (this sync):** (1) `shipment_route_templates` + `shipment_route_template_nodes` recorded as **Reference DB manually completed by the user** (read-only synced; not recreated). (2) `default_offset_days` defined as **cumulative days from route start** (not inter-node interval). (3) `shipment_routes` canonicalized as a **per-shipment route-VERSION header** (richer schema: `route_version`/`route_status`/`is_current`/`supersedes_shipment_route_id`/projection fields/`route_snapshot_json`) — supersedes the earlier one-row-per-node model; per-node detail moved to optional `shipment_route_nodes`. (4) `shipment_events` enriched with the fuller field list + `(source_type, source_event_id)` uniqueness, single-`is_current`-route rule, and append-only correction/reversal. (5) `shipment_routes` / `shipment_route_nodes` / `shipment_events` remain **spec-only / NOT implemented** (confirmed absent from all code); build = Phase-1 P1-E. (6) **Delivered ≠ Received** reaffirmed.
+
+---
+
+**Shipment Route & Event Domain Spec — Templates = Reference DB manually completed (read-only synced); Route/Event Runtime = SPEC + DB-MAPPING ONLY. No runtime, no UI, no DB migration, no live-DB overwrite by this task.**
 
 **End of Document**

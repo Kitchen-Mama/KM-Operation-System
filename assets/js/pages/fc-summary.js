@@ -1199,6 +1199,8 @@ function showFcModal(modalId) {
 function closeFcModal() {
   document.getElementById('fc-modal-overlay').classList.remove('is-open');
   document.querySelectorAll('.fc-modal').forEach(m => m.classList.remove('is-open'));
+  // Clear any open in-modal multi-select panels so reopening a modal never restores a stale-open dropdown.
+  if (typeof _evtCloseAllMs === 'function') _evtCloseAllMs();
 }
 
 // Close modal on overlay click — bound once in _fcSummaryStaticInit() after the
@@ -1430,25 +1432,43 @@ function proceedToFcMode() {
   }
 }
 
-// Open Regular FC Update Modal
+// Open Regular Forecast Builder modal.
 function openRegularUpdateModal() {
+  var now = new Date();
   document.getElementById('regular-target-year').value = fcTargetYear;
   document.getElementById('regular-base-year').value = fcTargetYear - 1;
+  var tm = document.getElementById('regular-target-month'); if (tm) tm.value = String(now.getMonth());
+  var bm = document.getElementById('regular-base-month'); if (bm) bm.value = String(now.getMonth());
   document.getElementById('regular-update-method').value = 'actual';
   var skuEl = document.getElementById('regular-sku'); if (skuEl) skuEl.value = '';
+  var single = document.querySelector('input[name="regular-mode"][value="single"]'); if (single) single.checked = true;
   _populateRegularScopeSelects();
-  // Reset manual month inputs.
-  ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].forEach(function(m){
-    var el = document.getElementById('reg-' + m); if (el) el.value = 0;
-  });
+  _regularSwitchMode();
+  _regularClearPreview();
   toggleRegularMethodFields();
   showFcModal('fc-regular-update-modal');
 }
 
-// SKU / Country / Marketplace changed — if in Manual mode, (re)prefill Jan–Dec from existing FC.
-function onRegularScopeChange() {
-  if (document.getElementById('regular-update-method').value === 'manual') _regularPrefillManual();
+// Builder Mode (single | batch). Batch = Category/Series bulk over the in-scope SKUs.
+function _regularMode() {
+  var el = document.querySelector('input[name="regular-mode"]:checked');
+  return el ? el.value : 'single';
 }
+function _regularSwitchMode() {
+  var mode = _regularMode();
+  var s = document.getElementById('regular-single-scope');
+  var b = document.getElementById('regular-batch-scope');
+  if (s) s.style.display = mode === 'single' ? '' : 'none';
+  if (b) b.style.display = mode === 'batch' ? '' : 'none';
+  Array.prototype.slice.call(document.querySelectorAll('#regular-builder-mode .fc-mode-pill')).forEach(function(p){
+    var input = p.querySelector('input[type="radio"]');
+    p.classList.toggle('is-active', !!(input && input.checked));
+  });
+  _regularClearPreview();
+}
+
+// Scope changed → refresh the scoped SKU datalist and invalidate any built preview (Preview again).
+function onRegularScopeChange() { _regularPopulateSkuDatalist(); _regularClearPreview(); }
 // Back-compat alias (SKU field still calls this).
 function onRegularSkuChange() { onRegularScopeChange(); }
 
@@ -1599,6 +1619,104 @@ function _populateRegularScopeSelects() {
   if (cSel) cSel.innerHTML = countries.map(function(c){ return '<option value="' + c + '"' + (c === defCountry ? ' selected' : '') + '>' + c + '</option>'; }).join('');
   // Marketplace select carries the full SITE identity (company|country|marketplace) — see below.
   _regularRebuildSites();
+  // Category / Series MULTI-selects (batch mode) from sku_details distinct values (All = none checked).
+  var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+  _regularFillMsOptions('category', distinct(details.map(function(d){ return d.category; })));
+  _regularFillMsOptions('series', distinct(details.map(function(d){ return d.series; })));
+  _regularBindMsGlobalClose();
+  _regularCloseAllMs();
+  _regularPopulateSkuDatalist();
+}
+
+// ---- Regular FC in-modal multiselect (Category / Series) — mirrors the Special Event pattern ----
+function _regularFillMsOptions(which, values) {
+  var box = document.getElementById('regular-' + which + '-options');
+  if (box) box.innerHTML = values.map(function(v){
+    var safe = String(v).replace(/"/g, '&quot;');
+    return '<label class="fc-ms-item"><input type="checkbox" value="' + safe + '" onchange="_regularMsChanged(\'' + which + '\')"><span>' + v + '</span></label>';
+  }).join('');
+  var allCb = document.getElementById('regular-' + which + '-all'); if (allCb) allCb.checked = true;
+  var panel = document.getElementById('regular-' + which + '-panel'); if (panel) panel.style.display = 'none';
+  _regularMsUpdateText(which);
+}
+function _regularToggleMsPanel(which) {
+  if (window.event) { try { window.event.stopPropagation(); } catch (e) {} }
+  var panel = document.getElementById('regular-' + which + '-panel');
+  if (!panel) return;
+  var show = (panel.style.display === 'none' || !panel.style.display);
+  ['category','series'].forEach(function(w){ var p = document.getElementById('regular-' + w + '-panel'); if (p) p.style.display = 'none'; });
+  panel.style.display = show ? '' : 'none';
+}
+function _regularCloseAllMs() {
+  ['category','series'].forEach(function(w){ var p = document.getElementById('regular-' + w + '-panel'); if (p) p.style.display = 'none'; });
+}
+var _regularMsGlobalBound = false;
+function _regularBindMsGlobalClose() {
+  if (_regularMsGlobalBound) return;
+  document.addEventListener('click', function(e) {
+    var modal = document.getElementById('fc-regular-update-modal');
+    if (!modal || !modal.classList.contains('is-open')) return;
+    if (e.target && e.target.closest && e.target.closest('#fc-regular-update-modal .fc-ms')) return;
+    _regularCloseAllMs();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    var modal = document.getElementById('fc-regular-update-modal');
+    if (!modal || !modal.classList.contains('is-open')) return;
+    _regularCloseAllMs();
+  });
+  _regularMsGlobalBound = true;
+}
+function _regularMsAll(which, cb) {
+  if (cb.checked) {
+    Array.prototype.slice.call(document.querySelectorAll('#regular-' + which + '-options input[type="checkbox"]'))
+      .forEach(function(o){ o.checked = false; });
+  }
+  _regularMsSyncAll(which);
+}
+function _regularMsChanged(which) { _regularMsSyncAll(which); }
+function _regularMsSyncAll(which) {
+  var opts = Array.prototype.slice.call(document.querySelectorAll('#regular-' + which + '-options input[type="checkbox"]'));
+  var anyChecked = opts.some(function(o){ return o.checked; });
+  var allCb = document.getElementById('regular-' + which + '-all');
+  if (allCb) allCb.checked = !anyChecked;
+  _regularMsUpdateText(which);
+  _regularClearPreview();   // scope changed → must Preview again before Save
+}
+function _regularMsValues(which) {
+  var allCb = document.getElementById('regular-' + which + '-all');
+  var opts = Array.prototype.slice.call(document.querySelectorAll('#regular-' + which + '-options input[type="checkbox"]:checked'));
+  if ((allCb && allCb.checked) || !opts.length) return null;   // null = All
+  return opts.map(function(o){ return o.value; });
+}
+function _regularMsUpdateText(which) {
+  var label = which === 'category' ? 'Category' : 'Series';
+  var vals = _regularMsValues(which);
+  var el = document.getElementById('regular-' + which + '-text');
+  if (!el) return;
+  if (!vals) el.textContent = 'All ' + label;
+  else if (vals.length <= 2) el.textContent = vals.join(', ');
+  else el.textContent = vals.length + ' ' + label + ' selected';
+}
+// Scoped SKU datalist for the Single-SKU searchable input (company + country + marketplace).
+function _regularPopulateSkuDatalist() {
+  var list = document.getElementById('regular-sku-datalist');
+  if (!list) return;
+  var site = _regularSelectedSite();
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+  var seen = {}, opts = [];
+  mskus.forEach(function(m){
+    if (site.company && up(m.company) !== up(site.company)) return;
+    if (site.country && up(m.country) !== up(site.country)) return;
+    if (mkey && lo(m.marketplace) !== lo(mkey)) return;
+    var s = String(m.sku || '').trim();
+    if (s && !seen[s]) { seen[s] = 1; opts.push(s); }
+  });
+  opts.sort();
+  list.innerHTML = opts.map(function(s){ return '<option value="' + String(s).replace(/"/g, '&quot;') + '"></option>'; }).join('');
 }
 
 // Distinct forecast SITES (company + country + marketplace) for a country, for the Regular modal's
@@ -1675,28 +1793,24 @@ function onRegularCountryChange() {
 //   manual    → Country/Marketplace/Target Year/Jan–Dec                  (hide Base Year + Growth + Month)
 function toggleRegularMethodFields() {
   const method = document.getElementById('regular-update-method').value;
-  const monthRow = document.getElementById('regular-month-row');
+  const baseRow = document.getElementById('regular-base-row');
   const basedRow = document.getElementById('regular-based-row');
-  const manualGrid = document.getElementById('regular-manual-months');
-  const baseYearGroup = document.getElementById('regular-base-year-group');
   const growthGroup = document.getElementById('regular-growth-group');
   const methodDesc = document.getElementById('method-description');
   function show(el, on) { if (el) el.style.display = on ? '' : 'none'; }
 
   if (method === 'actual') {
-    show(baseYearGroup, true); show(growthGroup, true); show(monthRow, false); show(basedRow, false); show(manualGrid, false);
-    methodDesc.innerHTML = '<strong>Apply Growth Rate (Based on Actual Sales):</strong> use Base Year actual sales (from BQ) for the selected Country / Marketplace / SKU, then apply Growth Rate. Growth Rate must be &gt; 0.';
-    _setRegularManualHelp('', ''); _setRegularSaveEnabled(true);   // manual-only guards don't apply
+    show(baseRow, true); show(basedRow, false); show(growthGroup, true);
+    methodDesc.innerHTML = '<strong>Apply Growth Rate:</strong> take each in-scope SKU’s existing forecast for the <em>Base Year + Base Month</em>, apply the Growth Rate, and write the result into the <em>Target Year + Target Month</em>. Only that one month is updated.';
   } else if (method === 'prevMonth') {
-    show(baseYearGroup, false); show(growthGroup, true); show(monthRow, true); show(basedRow, true); show(manualGrid, false);
+    show(baseRow, false); show(basedRow, true); show(growthGroup, true);
     _regularSyncBasedFromTarget();   // default Based Year/Month = the month before Target (editable)
-    methodDesc.innerHTML = '<strong>Adjust From Previous Month Forecast:</strong> select the Target Year + Month and the source Based Year + Month explicitly (e.g. Target 2027 Jan → Based 2026 Dec), then apply the rate. The source month is never silently inferred.';
-    _setRegularManualHelp('', ''); _setRegularSaveEnabled(true);
-  } else if (method === 'manual') {
-    show(baseYearGroup, false); show(growthGroup, false); show(monthRow, false); show(basedRow, false); show(manualGrid, true);
-    methodDesc.innerHTML = '<strong>Manual Monthly Forecast:</strong> enter the forecast for each month (Jan–Dec) directly. Existing values for the selected SKU / Country / Marketplace / Target Year are prefilled — a blank stored month stays blank (never forced to 0).';
-    _regularPrefillManual();   // fills months + sets helper text + toggles Save
+    methodDesc.innerHTML = '<strong>Adjust From Previous Month Forecast:</strong> take each SKU’s forecast for the explicit <em>Based Year + Based Month</em> (default = the month before Target), apply the rate, and write it into the <em>Target Month</em>. The source is never silently inferred.';
+  } else { // manual
+    show(baseRow, false); show(basedRow, false); show(growthGroup, false);
+    methodDesc.innerHTML = '<strong>Manual Entry:</strong> Preview lists every in-scope SKU with an editable New value for the Target Month. <strong>Blank = Skip</strong> (row not written); enter <strong>0</strong> to set an explicit zero.';
   }
+  _regularClearPreview();
 }
 
 // Default the Based Year / Based Month to the month immediately before the selected Target Month
@@ -1714,6 +1828,182 @@ function _regularSyncBasedFromTarget() {
   basedYearEl.value = basedYear;
 }
 
+// ===== Regular Forecast Builder — preview + bulk single-month save =====
+var REG_MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+var _regularPreview = null;   // { targetYear, targetMonth, method, rows:[...] }
+
+function _regularClearPreview() {
+  _regularPreview = null;
+  var box = document.getElementById('regular-preview'); if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  var cnt = document.getElementById('regular-affected-count'); if (cnt) cnt.textContent = '';
+  _setRegularSaveEnabled(false);
+  _setRegularManualHelp('', '');
+}
+
+// fc_regular_forecast rows (Demo → in-memory mock mapped to the same shape; DB → live).
+function _regularFcRows() {
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  if (demoOn) {
+    return (fcRegularMock || []).map(function(r){
+      var o = { company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku, year: r.year, raw: {} };
+      REG_MONTH_KEYS.forEach(function(m, i){ o[m] = (r.months && r.months[i] != null) ? r.months[i] : 0; o.raw[m] = o[m]; });
+      return o;
+    });
+  }
+  return (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+}
+
+// Find the fc row for a full site identity + SKU + year (case-insensitive).
+function _regularFindFc(rows, company, country, marketplace, sku, year) {
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  return rows.filter(function(r){
+    return up(r.sku) === up(sku) && String(r.year) === String(year) &&
+      up(r.company) === up(company) && up(r.country) === up(country) && lo(r.marketplace) === lo(marketplace);
+  })[0] || null;
+}
+
+// Existing 12-month values (raw where available so a blank stays blank on write). Missing row → all blank.
+function _regularExistingMonths(row) {
+  var out = {};
+  REG_MONTH_KEYS.forEach(function(m){
+    if (!row) { out[m] = ''; return; }
+    var raw = row.raw ? row.raw[m] : undefined;
+    out[m] = (raw === undefined || raw === null) ? (row[m] != null ? row[m] : '') : raw;
+  });
+  return out;
+}
+
+// In-scope SKUs for the Regular Builder. Single → the typed SKU; Batch → marketplace_skus for the
+// site scope joined to sku_details, filtered by the selected Category / Series ('' = All).
+function _regularCandidateSkus(site) {
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+  var detBySku = {}; details.forEach(function(d){ detBySku[up(d.sku)] = d; });
+  if (_regularMode() === 'single') {
+    var sku = ((document.getElementById('regular-sku') || {}).value || '').trim();
+    if (!sku) return [];
+    var d = detBySku[up(sku)] || {};
+    return [{ sku: sku, category: d.category || '', series: d.series || '', company: site.company }];
+  }
+  var cats = _regularMsValues('category');   // null = All Category
+  var series = _regularMsValues('series');   // null = All Series
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+  var seen = {}, out = [];
+  mskus.filter(function(m){
+    return (!site.country || up(m.country) === up(site.country)) && (!mkey || lo(m.marketplace) === lo(mkey)) &&
+      (!site.company || up(m.company) === up(site.company));
+  }).forEach(function(m){
+    var d = detBySku[up(m.sku)] || {};
+    if (cats && cats.indexOf(d.category || '') < 0) return;
+    if (series && series.indexOf(d.series || '') < 0) return;
+    var k = up(m.sku); if (seen[k]) return; seen[k] = 1;
+    out.push({ sku: m.sku, category: d.category || '', series: d.series || '', company: m.company || site.company });
+  });
+  return out;
+}
+
+// Build the Preview (affected SKUs, Old → New → Difference for the single Target Month).
+function _regularBuildPreview() {
+  _regularCloseAllMs();   // Preview closes the multiselect panels
+  var site = _regularSelectedSite();
+  var company = site.company, country = site.country, marketplace = site.marketplace;
+  var targetYear = parseInt(document.getElementById('regular-target-year').value);
+  var targetMonth = parseInt((document.getElementById('regular-target-month') || {}).value || '0');
+  var method = document.getElementById('regular-update-method').value;
+  var rate = parseFloat((document.getElementById('regular-growth-rate') || {}).value) || 0;
+
+  if (!country || !marketplace) { _setRegularManualHelp('Country and Marketplace are required.', '#b45309'); return; }
+  if (isNaN(targetYear)) { _setRegularManualHelp('Target Year is required.', '#b45309'); return; }
+  if (isNaN(targetMonth)) { _setRegularManualHelp('Target Month is required.', '#b45309'); return; }
+
+  var candidates = _regularCandidateSkus(site);
+  if (!candidates.length) {
+    _setRegularManualHelp(_regularMode() === 'single' ? 'Enter a SKU to preview.' : 'No SKUs match the selected Category / Series in this scope.', '#b45309');
+    _regularClearPreview(); return;
+  }
+
+  var rows = _regularFcRows();
+  var baseYear, baseMonth;
+  if (method === 'actual') { baseYear = parseInt(document.getElementById('regular-base-year').value); baseMonth = parseInt((document.getElementById('regular-base-month') || {}).value || '0'); }
+  else if (method === 'prevMonth') { baseYear = parseInt((document.getElementById('regular-based-year') || {}).value); baseMonth = parseInt((document.getElementById('regular-based-month') || {}).value || '0'); }
+
+  var previewRows = candidates.map(function(c){
+    var targetRow = _regularFindFc(rows, company, country, marketplace, c.sku, targetYear);
+    var existing = _regularExistingMonths(targetRow);
+    var oldRaw = existing[REG_MONTH_KEYS[targetMonth]];
+    var oldQty = (oldRaw === '' || oldRaw == null) ? null : (Math.round(Number(oldRaw)) || 0);
+    var newQty = null;
+    if (method === 'actual' || method === 'prevMonth') {
+      var baseRow = _regularFindFc(rows, company, country, marketplace, c.sku, baseYear);
+      var baseVal = baseRow ? (Number(baseRow[REG_MONTH_KEYS[baseMonth]]) || 0) : 0;
+      newQty = Math.max(0, Math.round(baseVal * (1 + rate / 100)));
+    } // manual → newQty stays null (user types it in the preview)
+    return { sku: c.sku, company: c.company || company, country: country, marketplace: marketplace,
+      category: c.category, series: c.series, existing: existing, oldQty: oldQty, newQty: newQty };
+  });
+
+  _regularPreview = { targetYear: targetYear, targetMonth: targetMonth, method: method, rows: previewRows };
+  _regularRenderPreview();
+  _setRegularSaveEnabled(true);
+}
+
+function _regularRenderPreview() {
+  var box = document.getElementById('regular-preview');
+  var cnt = document.getElementById('regular-affected-count');
+  if (!box || !_regularPreview) return;
+  var monthLbl = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][_regularPreview.targetMonth];
+  var manual = _regularPreview.method === 'manual';
+  var affected = 0;
+  var body = _regularPreview.rows.map(function(r, i){
+    var oldDisp = (r.oldQty == null) ? '—' : r.oldQty.toLocaleString();
+    var newCell, diffCell;
+    if (manual) {
+      newCell = '<input type="number" min="0" class="reg-prev-new" data-idx="' + i + '" value="' + (r.newQty == null ? '' : r.newQty) + '" placeholder="Skip" style="width:90px;" oninput="_regularOnManualInput()">';
+      diffCell = '<span class="reg-prev-diff" data-idx="' + i + '"></span>';
+    } else {
+      var diff = (r.newQty || 0) - (r.oldQty || 0);
+      if (diff !== 0) affected++;
+      var sign = diff > 0 ? '+' : ''; var color = diff > 0 ? '#0f766e' : (diff < 0 ? '#dc2626' : '#64748b');
+      newCell = (r.newQty == null ? '—' : r.newQty.toLocaleString());
+      diffCell = '<span style="color:' + color + '">' + sign + diff.toLocaleString() + '</span>';
+    }
+    return '<tr><td>' + _fmvEscapeHtml(r.sku) + '</td><td>' + _fmvEscapeHtml((r.category || '—') + ' / ' + (r.series || '—')) +
+      '</td><td>' + oldDisp + '</td><td>' + newCell + '</td><td>' + diffCell + '</td></tr>';
+  }).join('');
+  box.innerHTML = '<table class="fc-assist-preview-table"><thead><tr><th>SKU</th><th>Category / Series</th>' +
+    '<th>Old (' + monthLbl + ' ' + _regularPreview.targetYear + ')</th><th>New</th><th>Difference</th></tr></thead><tbody>' +
+    body + '</tbody></table>';
+  box.style.display = '';
+  if (cnt) {
+    if (manual) { _regularOnManualInput(); }
+    else { cnt.textContent = affected + ' of ' + _regularPreview.rows.length + ' SKU(s) will change'; }
+  }
+}
+
+// Manual mode: recompute per-row diff + affected count live as the user types (blank = Skip).
+function _regularOnManualInput() {
+  if (!_regularPreview) return;
+  var box = document.getElementById('regular-preview'); if (!box) return;
+  var affected = 0;
+  box.querySelectorAll('.reg-prev-new').forEach(function(inp){
+    var idx = parseInt(inp.dataset.idx, 10);
+    var r = _regularPreview.rows[idx]; if (!r) return;
+    var raw = String(inp.value).trim();
+    var diffEl = box.querySelector('.reg-prev-diff[data-idx="' + idx + '"]');
+    if (raw === '') { if (diffEl) { diffEl.textContent = 'Skip'; diffEl.style.color = '#94a3b8'; } return; }
+    var nv = Math.max(0, Math.round(Number(raw) || 0));
+    var diff = nv - (r.oldQty || 0);
+    if (diff !== 0 || r.oldQty == null) affected++;
+    if (diffEl) { var sign = diff > 0 ? '+' : ''; diffEl.textContent = sign + diff.toLocaleString();
+      diffEl.style.color = diff > 0 ? '#0f766e' : (diff < 0 ? '#dc2626' : '#64748b'); }
+  });
+  var cnt = document.getElementById('regular-affected-count');
+  if (cnt) cnt.textContent = affected + ' of ' + _regularPreview.rows.length + ' SKU(s) will be written';
+}
+
 // ===== Special Event Builder v2 (Single SKU rows / Category-Series group cards) =====
 var EVT_MAX_ROWS = 8;
 var _evtGroups = [];   // batch-mode group cards: { category, series, regularPrice, skus[], dealPrice, fcQty }
@@ -1722,32 +2012,77 @@ var _evtGroups = [];   // batch-mode group cards: { category, series, regularPri
 function openEventModal() {
   document.getElementById('event-target-year').value = fcTargetYear;
   var flagEl = document.getElementById('event-name-input'); if (flagEl) flagEl.value = 'Normal';
-  var periodEl = document.getElementById('event-period-input'); if (periodEl) periodEl.value = '';
+  var sdEl = document.getElementById('event-start-date'); if (sdEl) sdEl.value = '';
+  var edEl = document.getElementById('event-end-date'); if (edEl) edEl.value = '';
+  _evtClearPeriodError();
   // reset mode → single
   var single = document.querySelector('input[name="event-mode"][value="single"]'); if (single) single.checked = true;
   // reset batch controls (Category / Series multi-selects reset inside _populateEventBatchSelects)
   var dp = document.getElementById('event-discount-pct'); if (dp) dp.value = '';
   var by = document.getElementById('event-assist-base-year'); if (by) by.value = '';
   var gr = document.getElementById('event-assist-growth'); if (gr) gr.value = '';
+  var am = document.getElementById('event-assist-method'); if (am) am.value = 'growth';
+  var av = document.getElementById('event-assist-adjust-value'); if (av) av.value = '';
+  var ap = document.getElementById('event-assist-preview'); if (ap) { ap.style.display = 'none'; ap.innerHTML = ''; }
+  _evtToggleAssistFields();
   _evtGroups = [];
   var cards = document.getElementById('event-group-cards'); if (cards) cards.innerHTML = '';
   _evtSetAssistHelp('', '');
+  _evtSetPreviewEnabled(false);   // Preview & Pre-fill disabled until cards are built (#5)
   _populateEventScopeSelects();
   _populateEventBatchSelects();
-  _evtPopulateBaseCampaigns();
   // Single-SKU rows: start with one empty row.
   var rows = document.getElementById('event-sku-rows'); if (rows) rows.innerHTML = '';
   _evtAddSingleRow();
   _evtSwitchMode();
   toggleEventFlagFields();
+  _evtBindMsGlobalClose();   // outside-click / Escape closers (bound once)
+  _evtCloseAllMs();          // never reopen a stale-open panel
   showFcModal('fc-add-event-modal');
 }
 
-// Scope (country / marketplace) changed → regular prices depend on it; refresh single-row prices
-// and rebuild group cards if already built.
+// Scope (country / marketplace) changed → regular prices depend on it; refresh the scoped SKU
+// datalist, single-row prices, and rebuild group cards if already built.
 function _evtOnScopeChange() {
+  _evtPopulateSkuDatalist();
   _evtRefreshSingleRowPrices();
   if (_evtGroups.length) _evtBuildGroups();
+}
+// Country changed → rebuild the Marketplace(site) options for that country, then re-scope.
+function _evtOnCountryChange() {
+  _evtRebuildSites();
+  _evtOnScopeChange();
+}
+// Resolve the selected Special Event site → { company, country, marketplace } (full identity).
+// Marketplace value is "company|country|marketplace"; legacy/blank falls back to canonical marketplace.
+function _evtSelectedSite() {
+  var v = String((document.getElementById('event-marketplace') || {}).value || '');
+  var parts = v.split('|');
+  if (parts.length === 3) return { company: parts[0], country: parts[1], marketplace: parts[2] };
+  var country = (document.getElementById('event-country') || {}).value || '';
+  return { company: '', country: country, marketplace: _fcResolveMarketplaceKey(v) };
+}
+// Rebuild the Marketplace(site) options for the selected country (KM Amazon vs ResUS Amazon distinct).
+function _evtRebuildSites() {
+  var cSel = document.getElementById('event-country');
+  var mSel = document.getElementById('event-marketplace');
+  if (!mSel) return;
+  var country = cSel ? cSel.value : '';
+  var prev = mSel.value;
+  var sites = _fcRegularSiteOptions(country);   // shared with Regular FC — full site identity
+  mSel.innerHTML = sites.map(function(s){ return '<option value="' + s.value + '">' + s.label + '</option>'; }).join('');
+  if (prev && sites.some(function(s){ return s.value === prev; })) mSel.value = prev;
+}
+// Populate the scoped SKU <datalist> (searchable Single-SKU input) from marketplace_skus matching the
+// selected Company + Country + Marketplace (+ active). Out-of-scope SKUs are simply not offered.
+function _evtPopulateSkuDatalist() {
+  var list = document.getElementById('event-sku-datalist');
+  if (!list) return;
+  var rows = _evtScopedMskus();
+  var seen = {}, opts = [];
+  rows.forEach(function(m){ var s = String(m.sku || '').trim(); if (s && !seen[s]) { seen[s] = 1; opts.push(s); } });
+  opts.sort();
+  list.innerHTML = opts.map(function(s){ return '<option value="' + String(s).replace(/"/g, '&quot;') + '"></option>'; }).join('');
 }
 
 // Switch builder mode (single | batch).
@@ -1768,23 +2103,25 @@ function _evtMode() {
   return el ? el.value : 'single';
 }
 
-// Populate Special Event Country / Marketplace selects (same source as Regular).
+// Populate Special Event Country / Marketplace selects. Marketplace carries the FULL site identity
+// (company|country|marketplace) — same source & pattern as the Regular FC builder — so KM Amazon and
+// ResUS Amazon are separate scopes. Company is derived from the selected site, never guessed.
 function _populateEventScopeSelects() {
-  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
-  var fcRows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  var mkts = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
   function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
-  var countries = distinct(mkts.map(function(m){return m.country;}).concat(fcRows.map(function(r){return r.country;})));
-  var marketplaces = distinct(mkts.map(function(m){return m.marketplace;}).concat(fcRows.map(function(r){return r.marketplace;})));
+  var srcCountries = demoOn
+    ? (fcRegularMock || []).map(function(r){ return r.country; })
+    : mkts.map(function(m){return m.country;}).concat(fcRows.map(function(r){return r.country;}));
+  var countries = distinct(srcCountries);
   if (!countries.length) countries = ['US', 'UK', 'DE', 'CA', 'JP', 'AU'];
-  if (!marketplaces.length) marketplaces = ['Amazon', 'Walmart', 'Shopify', 'Target'];
   var filters = (typeof getFcFilters === 'function') ? getFcFilters() : { countries: [], marketplaces: [] };
-  var defCountry = (filters.countries && filters.countries.length === 1) ? filters.countries[0] : '';
-  var defMarketplace = (filters.marketplaces && filters.marketplaces.length === 1) ? filters.marketplaces[0] : '';
+  var defCountry = (filters.countries && filters.countries.length === 1) ? filters.countries[0] : (countries[0] || '');
   var cSel = document.getElementById('event-country');
-  var mSel = document.getElementById('event-marketplace');
   if (cSel) cSel.innerHTML = countries.map(function(c){ return '<option value="' + c + '"' + (c === defCountry ? ' selected' : '') + '>' + c + '</option>'; }).join('');
-  // Marketplace: label = display name, value = canonical key.
-  if (mSel) mSel.innerHTML = _fcMarketplaceOptions().map(function(o){ return '<option value="' + o.value + '"' + (o.value === defMarketplace ? ' selected' : '') + '>' + o.label + '</option>'; }).join('');
+  _evtRebuildSites();            // marketplace = full site identity for the selected country
+  _evtPopulateSkuDatalist();     // scoped SKU list for the Single-SKU searchable input
 }
 
 // Populate Category / Series dropdown multi-selects for Batch mode from sku_details (distinct values).
@@ -1809,12 +2146,45 @@ function _populateEventBatchSelects() {
 
 // ---- In-modal dropdown multi-select (Category / Series), compact like the FC filter multiselect ----
 // which = 'category' | 'series'. Selected values drive Build / Refresh Group Cards; "All" = null.
+// Close behavior (fixed): toggling one panel closes the other; a checkbox change does NOT close the
+// panel (multi-select stays open); clicking outside, pressing Escape, Build/Refresh, and closing the
+// modal all close it; reopening the modal never restores a stale-open panel (reset on open + on close).
 function _evtToggleMsPanel(which) {
+  // stopPropagation so the just-fired click doesn't reach the outside-click closer and immediately
+  // re-close the panel we are opening (the inline onclick has no event, so guard the current event).
+  if (window.event) { try { window.event.stopPropagation(); } catch (e) {} }
   var panel = document.getElementById('event-' + which + '-panel');
   if (!panel) return;
   var show = (panel.style.display === 'none' || !panel.style.display);
   ['category','series'].forEach(function(w){ var p = document.getElementById('event-' + w + '-panel'); if (p) p.style.display = 'none'; });
   panel.style.display = show ? '' : 'none';
+}
+
+// Close BOTH in-modal multi-select panels (Category / Series).
+function _evtCloseAllMs() {
+  ['category','series'].forEach(function(w){ var p = document.getElementById('event-' + w + '-panel'); if (p) p.style.display = 'none'; });
+}
+
+// Bind the outside-click + Escape closers for the in-modal multi-selects EXACTLY once. A click that
+// is not inside a `.fc-ms` closes any open panel; Escape closes them too. Checkbox changes happen
+// inside `.fc-ms`, so they never trigger a close (the multi-select stays open across selections).
+var _evtMsGlobalBound = false;
+function _evtBindMsGlobalClose() {
+  if (_evtMsGlobalBound) return;
+  document.addEventListener('click', function(e) {
+    // Only act while the event modal is open.
+    var modal = document.getElementById('fc-add-event-modal');
+    if (!modal || !modal.classList.contains('is-open')) return;
+    if (e.target && e.target.closest && e.target.closest('#fc-add-event-modal .fc-ms')) return; // click inside a multi-select
+    _evtCloseAllMs();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    var modal = document.getElementById('fc-add-event-modal');
+    if (!modal || !modal.classList.contains('is-open')) return;
+    _evtCloseAllMs();
+  });
+  _evtMsGlobalBound = true;
 }
 // "All" checkbox toggled → checking it clears individual options (= all); then resync state/text.
 function _evtMsAll(which, cb) {
@@ -1875,27 +2245,165 @@ function toggleEventFlagFields() {
   }
 }
 
-// ---- Regular price lookup (marketplace_skus for the selected country + marketplace) ----
-function _evtRegularPrice(sku, country, marketplace) {
+// ---- Event Period (Start / End date) helpers (#3) ----
+function _evtClearPeriodError() {
+  var row = document.getElementById('event-period-error-row');
+  var el = document.getElementById('event-period-error');
+  if (el) el.textContent = '';
+  if (row) row.style.display = 'none';
+}
+function _evtShowPeriodError(msg) {
+  var row = document.getElementById('event-period-error-row');
+  var el = document.getElementById('event-period-error');
+  if (el) el.textContent = msg || '';
+  if (row) row.style.display = msg ? '' : 'none';
+}
+// Validate the Event Start/End range and keep Target Year derived from the Start date's year.
+// Returns true when the range is valid (or not yet required). Shows an inline message + returns false
+// when start > end. Empty dates are allowed here (Save enforces "required" for non-Normal events).
+function _evtValidatePeriod() {
+  var start = (document.getElementById('event-start-date') || {}).value || '';
+  var end = (document.getElementById('event-end-date') || {}).value || '';
+  // Derive Target Year consistently from the Start date (fallback: End date). Keeps year in sync.
+  var yearSrc = start || end;
+  if (yearSrc) {
+    var y = parseInt(yearSrc.slice(0, 4), 10);
+    var ty = document.getElementById('event-target-year');
+    if (ty && y) ty.value = y;
+  }
+  if (start && end && start > end) {   // ISO yyyy-mm-dd compares lexicographically
+    _evtShowPeriodError('Event Start Date must be on or before Event End Date.');
+    return false;
+  }
+  _evtClearPeriodError();
+  return true;
+}
+// Compose the legacy free-text event_period string from the two dates (kept for back-compat display).
+function _evtComposePeriod(start, end) {
+  if (start && end) return start + '~' + end;
+  return start || end || '';
+}
+
+// Enable/disable the "Preview & Pre-fill" button (disabled until group cards are built — #5).
+function _evtSetPreviewEnabled(on) {
+  var btn = document.getElementById('event-assist-btn');
+  if (btn) { btn.disabled = !on; btn.style.opacity = on ? '' : '0.5'; btn.style.pointerEvents = on ? '' : 'none'; }
+}
+
+// ---- Scoped marketplace_skus for the selected site (Company + Country + Marketplace, active only) ----
+// Company is part of the scope key, so KM Amazon SKUs never leak into a ResUS Amazon scope.
+var _EVT_INACTIVE_STATUS = { inactive: 1, discontinued: 1, closed: 1, archived: 1, delisted: 1, inactive_sku: 1 };
+function _evtScopedMskus() {
+  var site = _evtSelectedSite();
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
-  var mkey = _fcResolveMarketplaceKey(marketplace);
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
   var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
-  var m = mskus.filter(function(x){ return up(x.sku) === up(sku) &&
-    (!country || up(x.country) === up(country)) && (!mkey || lo(x.marketplace) === lo(mkey)); })[0];
-  return m ? (parseFloat(m.regularPrice) || 0) : 0;
+  return mskus.filter(function(m){
+    if (site.company && up(m.company) !== up(site.company)) return false;
+    if (site.country && up(m.country) !== up(site.country)) return false;
+    if (mkey && lo(m.marketplace) !== lo(mkey)) return false;
+    var st = lo(m.marketplaceSkuStatus);
+    if (st && _EVT_INACTIVE_STATUS[st]) return false;    // exclude only explicitly-inactive rows
+    return true;
+  });
+}
+
+// Decimal precision for a currency (JPY/KRW have no minor unit). Used for Deal Price rounding.
+function _evtDealPrecision(currency) {
+  var c = String(currency || 'USD').trim().toUpperCase();
+  return (c === 'JPY' || c === 'KRW' || c === 'VND' || c === 'CLP') ? 0 : 2;
+}
+function _evtRoundMoney(value, currency) {
+  var p = _evtDealPrecision(currency), f = Math.pow(10, p);
+  return Math.round(Number(value) * f) / f;
+}
+
+// Resolve regular price + canonical identity for a SKU in the selected scope. Regular price is
+// resolved by marketplace_sku_id against pricing_list (canonical), then marketplace_skus. Returns
+// { inScope, marketplaceSkuId, regularPrice(number|null — null = MISSING, never fabricated 0), currency }.
+function _evtSkuPricing(sku) {
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  var m = _evtScopedMskus().filter(function(x){ return up(x.sku) === up(sku); })[0];
+  var out = { inScope: !!m, marketplaceSkuId: m ? m.marketplaceSkuId : '', regularPrice: null, currency: (m && m.currency) || 'USD' };
+  if (!m) return out;
+  var pl = (window.KM && window.KM.DB && window.KM.DB.getPricingList) ? window.KM.DB.getPricingList() : [];
+  var p = m.marketplaceSkuId ? pl.filter(function(x){ return up(x.marketplaceSkuId) === up(m.marketplaceSkuId); })[0] : null;
+  // pricing_list normalizer coerces a missing regular_price to 0 — read raw to tell "missing" from "0".
+  var rawPrice;
+  if (p) { rawPrice = p.raw ? p.raw.regular_price : p.regularPrice; if (p.currency) out.currency = p.currency; }
+  else { rawPrice = (m.raw ? m.raw.regular_price : undefined); if (rawPrice === undefined) rawPrice = m.regularPrice; }
+  var num = parseFloat(rawPrice);
+  out.regularPrice = (rawPrice === '' || rawPrice == null || isNaN(num) || num <= 0) ? null : num;
+  return out;
+}
+// Back-compat: legacy callers expect a bare number (0 when missing).
+function _evtRegularPrice(sku) {
+  var r = _evtSkuPricing(sku);
+  return r.regularPrice == null ? 0 : r.regularPrice;
+}
+
+// Resolve the canonical marketplace_id for the selected site (company + country + marketplace).
+function _evtResolveMarketplaceId(site) {
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var m = mkts.filter(function(x){
+    return (!site.company || up(x.company) === up(site.company)) &&
+      (!site.country || up(x.country) === up(site.country)) &&
+      (!mkey || lo(x.marketplace) === lo(mkey));
+  })[0];
+  return m ? m.marketplaceId : '';
+}
+
+// Base FC for a SKU = fc_regular_forecast[baseYear][eventMonth] in the selected scope (company-safe).
+// baseYear from the Base Year field (fallback targetYear−1); eventMonth from the event Start Date.
+// Returns a number, or null when there is no scoped regular-forecast row/month (never fabricated 0).
+function _evtBaseFcForSku(sku, monthIdx) {
+  var site = _evtSelectedSite();
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
+  if (!baseYear) { var ty = parseInt((document.getElementById('event-target-year') || {}).value, 10); baseYear = ty ? ty - 1 : 0; }
+  if (monthIdx == null || monthIdx < 0) return null;
+  var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var row = rows.filter(function(r){
+    return up(r.sku) === up(sku) && (!baseYear || String(r.year) === String(baseYear)) &&
+      (!site.company || up(r.company) === up(site.company)) &&
+      (!site.country || up(r.country) === up(site.country)) &&
+      (!mkey || lo(r.marketplace) === lo(mkey));
+  })[0];
+  if (!row) return null;
+  var key = REG_MONTH_KEYS[monthIdx];
+  var raw = row[key];
+  if (raw === '' || raw == null) return null;
+  var n = Number(raw);
+  return isNaN(n) ? null : Math.round(n);
+}
+// Month index (0–11) of the event Start Date; null when not set.
+function _evtEventMonthIdx() {
+  var sd = ((document.getElementById('event-start-date') || {}).value || '').trim();
+  if (!sd || sd.length < 7) return null;
+  var m = parseInt(sd.slice(5, 7), 10);
+  return (m >= 1 && m <= 12) ? (m - 1) : null;
 }
 
 // ================= Single SKU mode =================
+// Row layout (6 cols): SKU (scoped datalist) · Regular Price (readonly) · Discount % · Deal Price ·
+// Forecast Qty · remove. Regular Price + marketplace_sku_id resolve from the scoped pricing; a SKU
+// outside the selected Company/Country/Marketplace scope is flagged and blocked at Save.
 function _evtAddSingleRow() {
   var wrap = document.getElementById('event-sku-rows');
   if (!wrap) return;
   if (wrap.children.length >= EVT_MAX_ROWS) { alert('Maximum ' + EVT_MAX_ROWS + ' SKU rows.'); return; }
   var row = document.createElement('div');
-  row.className = 'fc-evt-row';
+  row.className = 'fc-evt-row fc-evt-row--single';
   row.innerHTML =
-    '<input type="text" class="evt-sku" placeholder="SKU" onchange="_evtSingleRowSkuChange(this)">' +
+    '<input type="text" class="evt-sku" list="event-sku-datalist" placeholder="Search SKU…" onchange="_evtSingleRowSkuChange(this)">' +
     '<input type="number" class="evt-reg" placeholder="Regular" step="0.01" readonly>' +
+    '<input type="number" class="evt-disc" placeholder="%" min="0" max="100" step="0.1" onchange="_evtSingleRowDiscChange(this)">' +
     '<input type="number" class="evt-deal" placeholder="Deal" step="0.01">' +
     '<input type="number" class="evt-fc" placeholder="Qty" min="0">' +
     '<button type="button" class="fc-evt-row-remove" title="Remove" onclick="_evtRemoveSingleRow(this)">×</button>';
@@ -1914,217 +2422,336 @@ function _evtUpdateAddRowBtn() {
   var btn = document.getElementById('event-add-row-btn');
   if (wrap && btn) { var full = wrap.children.length >= EVT_MAX_ROWS; btn.disabled = full; btn.style.opacity = full ? '0.5' : ''; }
 }
-// SKU entered in a single row → auto-fill Regular Price from marketplace_skus.
+// Apply a row's Regular Price + scope/missing-price state from the scoped pricing lookup.
+function _evtApplyRowPricing(row) {
+  var sku = ((row.querySelector('.evt-sku') || {}).value || '').trim();
+  var regEl = row.querySelector('.evt-reg');
+  var skuEl = row.querySelector('.evt-sku');
+  row.dataset.marketplaceSkuId = '';
+  row.dataset.priceState = '';
+  if (!sku) { if (regEl) regEl.value = ''; if (skuEl) skuEl.classList.remove('is-invalid'); return; }
+  var pr = _evtSkuPricing(sku);
+  row.dataset.marketplaceSkuId = pr.marketplaceSkuId || '';
+  if (!pr.inScope) {
+    if (regEl) { regEl.value = ''; regEl.placeholder = 'Out of scope'; }
+    if (skuEl) skuEl.classList.add('is-invalid');
+    row.dataset.priceState = 'out_of_scope';
+    return;
+  }
+  if (skuEl) skuEl.classList.remove('is-invalid');
+  if (pr.regularPrice == null) {
+    if (regEl) { regEl.value = ''; regEl.placeholder = 'Missing Regular Price'; }
+    row.dataset.priceState = 'missing_price';
+    return;
+  }
+  if (regEl) regEl.value = pr.regularPrice;
+  row.dataset.priceState = 'ok';
+  row.dataset.currency = pr.currency || 'USD';
+  _evtRecalcRowDeal(row);
+}
+// Recompute a row's Deal Price from its Discount % (deal = regular × (1 − disc/100)); blank disc leaves deal.
+function _evtRecalcRowDeal(row) {
+  var reg = parseFloat((row.querySelector('.evt-reg') || {}).value);
+  var disc = parseFloat((row.querySelector('.evt-disc') || {}).value);
+  if (isNaN(reg) || isNaN(disc)) return;
+  var dealEl = row.querySelector('.evt-deal');
+  if (dealEl) dealEl.value = _evtRoundMoney(reg * (1 - disc / 100), row.dataset.currency || 'USD');
+}
 function _evtSingleRowSkuChange(input) {
   var row = input.closest('.fc-evt-row'); if (!row) return;
-  var country = (document.getElementById('event-country') || {}).value || '';
-  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
-  var reg = _evtRegularPrice((input.value || '').trim(), country, marketplace);
-  var regEl = row.querySelector('.evt-reg'); if (regEl) regEl.value = reg || '';
+  _evtApplyRowPricing(row);
+}
+function _evtSingleRowDiscChange(input) {
+  var row = input.closest('.fc-evt-row'); if (!row) return;
+  _evtRecalcRowDeal(row);
 }
 function _evtRefreshSingleRowPrices() {
-  var country = (document.getElementById('event-country') || {}).value || '';
-  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
   var wrap = document.getElementById('event-sku-rows'); if (!wrap) return;
-  Array.prototype.slice.call(wrap.querySelectorAll('.fc-evt-row')).forEach(function(row){
-    var sku = ((row.querySelector('.evt-sku') || {}).value || '').trim();
-    if (!sku) return;
-    var regEl = row.querySelector('.evt-reg'); if (regEl) regEl.value = _evtRegularPrice(sku, country, marketplace) || '';
-  });
+  Array.prototype.slice.call(wrap.querySelectorAll('.fc-evt-row')).forEach(function(row){ _evtApplyRowPricing(row); });
 }
-// Read the single-SKU rows into objects.
+// Read the single-SKU rows into objects (carrying scope/price state + marketplace_sku_id).
 function _evtReadSingleRows() {
   var wrap = document.getElementById('event-sku-rows'); if (!wrap) return [];
   return Array.prototype.slice.call(wrap.querySelectorAll('.fc-evt-row')).map(function(row){
+    var regRaw = (row.querySelector('.evt-reg') || {}).value;
     return {
       sku: ((row.querySelector('.evt-sku') || {}).value || '').trim(),
-      regularPrice: parseFloat((row.querySelector('.evt-reg') || {}).value) || 0,
+      marketplaceSkuId: row.dataset.marketplaceSkuId || '',
+      priceState: row.dataset.priceState || '',
+      regularPrice: (regRaw === '' || regRaw == null) ? null : (parseFloat(regRaw) || 0),
+      discountPercent: parseFloat((row.querySelector('.evt-disc') || {}).value),
       dealPrice: parseFloat((row.querySelector('.evt-deal') || {}).value),
-      fcQty: parseInt((row.querySelector('.evt-fc') || {}).value)
+      fcQty: parseInt((row.querySelector('.evt-fc') || {}).value, 10)
     };
   }).filter(function(r){ return r.sku; });
 }
 
-// Derive category / series / company for a SKU from sku_details / marketplace_skus (company is
-// never entered in the FC Summary UI — it comes from the marketplace relation).
-function _fcDeriveSkuMeta(sku, country, marketplace) {
+// Derive category / series for a SKU from sku_details. Company is NOT first-matched from
+// marketplace_skus anymore — it comes from the selected site (company|country|marketplace).
+function _fcDeriveSkuMeta(sku) {
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
-  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
-  var meta = { category: '', series: '', company: '' };
+  var meta = { category: '', series: '', company: _evtSelectedSite().company || '' };
   var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
   var d = details.filter(function(x){ return up(x.sku) === up(sku); })[0];
   if (d) { meta.category = d.category || ''; meta.series = d.series || ''; }
-  var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
-  var m = mskus.filter(function(x){ return up(x.sku) === up(sku) &&
-    (!country || up(x.country) === up(country)) && (!marketplace || lo(x.marketplace) === lo(marketplace)); })[0];
-  if (m) meta.company = m.company || '';
   return meta;
 }
 
 // ================= Category / Series mode =================
-// Candidate {sku, category, series, company, regularPrice} rows for the selected scope + category/series.
+// Candidate {sku, category, series, marketplaceSkuId, regularPrice} rows for the selected SITE scope
+// (company + country + marketplace, active) filtered by the Category / Series multiselect.
 function _evtCandidateRows() {
-  var country = (document.getElementById('event-country') || {}).value || '';
-  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
-  var mkey = _fcResolveMarketplaceKey(marketplace);
   var cats = _evtMsValues('category');   // null = All Category
   var series = _evtMsValues('series');   // null = All Series
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
-  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
-
   var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
-  var mskus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
   var detBySku = {}; details.forEach(function(d){ detBySku[up(d.sku)] = d; });
-
-  // Base on marketplace_skus for the selected scope (that is where regular price + company live).
-  var rows = mskus.filter(function(m){
-    return (!country || up(m.country) === up(country)) && (!mkey || lo(m.marketplace) === lo(mkey));
-  }).map(function(m){
+  var seen = {};
+  return _evtScopedMskus().map(function(m){
     var d = detBySku[up(m.sku)] || {};
-    return { sku: m.sku, company: m.company || '', category: d.category || '', series: d.series || '',
-      regularPrice: parseFloat(m.regularPrice) || 0 };
+    var pr = _evtSkuPricing(m.sku);
+    return { sku: m.sku, category: d.category || '', series: d.series || '',
+      marketplaceSkuId: pr.marketplaceSkuId || m.marketplaceSkuId || '', regularPrice: pr.regularPrice };
   }).filter(function(r){
+    if (!r.sku || seen[up(r.sku)]) return false;
     var cOk = !cats || cats.indexOf(r.category) >= 0;
     var sOk = !series || series.indexOf(r.series) >= 0;
-    return r.sku && cOk && sOk;
+    if (cOk && sOk) { seen[up(r.sku)] = 1; return true; }
+    return false;
   });
-  return rows;
 }
 
-// Build group cards keyed by category + series + regular_price (same series, different price ⇒ split).
+// Build group cards keyed by category + series ONLY (SKUs with different regular prices stay in the
+// same card as separate rows — never split by price). Each row: {sku, marketplaceSkuId, regularPrice,
+// discountPct, dealPrice, baseFc, newFc}. Preserves any values the user already typed for the same
+// (category||series, sku).
 function _evtBuildGroups() {
+  _evtCloseAllMs();
   var rows = _evtCandidateRows();
-  var groupsByKey = {};
+  // Preserve prior per-row user entries keyed by category||series::sku.
+  var prev = {};
+  _evtGroups.forEach(function(g){ (g.rows || []).forEach(function(r){ prev[g.category+'||'+g.series+'::'+String(r.sku).toUpperCase()] = r; }); });
+  var byKey = {};
   rows.forEach(function(r){
-    var key = r.category + '||' + r.series + '||' + r.regularPrice;
-    if (!groupsByKey[key]) groupsByKey[key] = { category: r.category, series: r.series, regularPrice: r.regularPrice, skus: [], dealPrice: NaN, fcQty: NaN };
-    if (groupsByKey[key].skus.indexOf(r.sku) === -1) groupsByKey[key].skus.push(r.sku);
+    var key = r.category + '||' + r.series;
+    if (!byKey[key]) byKey[key] = { category: r.category, series: r.series, discountPct: NaN, rows: [] };
+    if (byKey[key].rows.some(function(x){ return String(x.sku).toUpperCase() === String(r.sku).toUpperCase(); })) return;
+    var p = prev[key + '::' + String(r.sku).toUpperCase()];
+    byKey[key].rows.push({
+      sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, regularPrice: r.regularPrice,
+      discountPct: p ? p.discountPct : NaN,
+      dealPrice: p ? p.dealPrice : NaN,
+      baseFc: p ? p.baseFc : null,
+      newFc: p ? p.newFc : NaN
+    });
   });
-  // Preserve any deal/fc the user already typed for a matching key.
-  var prev = {}; _evtGroups.forEach(function(g){ prev[g.category+'||'+g.series+'||'+g.regularPrice] = g; });
-  _evtGroups = Object.keys(groupsByKey).map(function(k){
-    var g = groupsByKey[k], p = prev[k];
-    if (p) { g.dealPrice = p.dealPrice; g.fcQty = p.fcQty; }
-    return g;
-  }).sort(function(a,b){ return (a.category+a.series).localeCompare(b.category+b.series) || a.regularPrice - b.regularPrice; });
+  _evtGroups = Object.keys(byKey).map(function(k){ return byKey[k]; })
+    .sort(function(a,b){ return (a.category+a.series).localeCompare(b.category+b.series); });
   _evtRenderGroupCards();
+  _evtSetPreviewEnabled(_evtGroups.length > 0);   // #5: Preview enabled only after cards exist
 }
 
+// Render group cards — one ROW per scoped SKU (SKU · Regular · Discount% · Deal · Base FC ·
+// New Event FC · Diff · state). Forecast editability is method-aware: Manual = editable New Event FC
+// input; Growth/Adjust = read-only computed value.
 function _evtRenderGroupCards() {
   var wrap = document.getElementById('event-group-cards');
   if (!wrap) return;
   if (!_evtGroups.length) { wrap.innerHTML = '<p class="fc-hint">No matching SKUs for the selected scope + category/series. Adjust the selection and click Build.</p>'; return; }
+  var method = _evtAssistMethod();
+  var editable = (method === 'manual');
   wrap.innerHTML = _evtGroups.map(function(g, i){
-    return '<div class="fc-evt-card">' +
+    var head =
       '<div class="fc-evt-card-head">' +
         '<span class="fc-evt-tag">' + (g.category || '—') + '</span>' +
         '<span class="fc-evt-tag">' + (g.series || '—') + '</span>' +
-        '<span class="fc-evt-tag fc-evt-tag--price">Regular ' + (g.regularPrice || 0) + '</span>' +
+        '<label class="fc-evt-card-disc">Discount % <input type="number" min="0" max="100" step="0.1" value="' + (isNaN(g.discountPct) ? '' : g.discountPct) + '" onchange="_evtCardDiscount(' + i + ',this.value)"></label>' +
         '<button type="button" class="fc-evt-row-remove" title="Remove group" onclick="_evtRemoveGroup(' + i + ')">×</button>' +
-      '</div>' +
-      '<div class="fc-evt-card-skus">' + g.skus.map(function(s){
-        return '<span class="fc-evt-sku-chip">' + s + ' <a onclick="_evtRemoveGroupSku(' + i + ',\'' + s.replace(/'/g,"\\'") + '\')">×</a></span>'; }).join('') + '</div>' +
-      '<div class="fc-evt-card-fields">' +
-        '<label>Deal Price <input type="number" step="0.01" value="' + (isNaN(g.dealPrice) ? '' : g.dealPrice) + '" onchange="_evtGroupField(' + i + ',\'dealPrice\',this.value)"></label>' +
-        '<label>Forecast Qty <input type="number" min="0" value="' + (isNaN(g.fcQty) ? '' : g.fcQty) + '" onchange="_evtGroupField(' + i + ',\'fcQty\',this.value)"></label>' +
-      '</div>' +
-    '</div>';
+      '</div>';
+    var colHead = '<div class="fc-evt-line fc-evt-line--head"><span>SKU</span><span>Regular</span><span>Disc %</span><span>Deal</span><span>Base FC</span><span>New Event FC</span><span>Diff</span><span></span></div>';
+    var body = g.rows.map(function(r, ri){
+      var regTxt = (r.regularPrice == null) ? '<span class="fc-evt-warn">Missing</span>' : r.regularPrice;
+      var base = (r.baseFc == null) ? null : r.baseFc;
+      var diff = (!isNaN(r.newFc) && base != null) ? (r.newFc - base) : null;
+      var diffTxt = (diff == null) ? '—' : ((diff > 0 ? '+' : '') + diff.toLocaleString());
+      var diffColor = (diff == null) ? '#94a3b8' : (diff > 0 ? '#0f766e' : (diff < 0 ? '#dc2626' : '#64748b'));
+      var newCell = editable
+        ? '<input type="number" min="0" class="evt-line-fc" value="' + (isNaN(r.newFc) ? '' : r.newFc) + '" onchange="_evtLineField(' + i + ',' + ri + ',\'newFc\',this.value)">'
+        : '<span class="evt-line-ro">' + (isNaN(r.newFc) ? '—' : r.newFc.toLocaleString()) + '</span>';
+      return '<div class="fc-evt-line">' +
+        '<span class="fc-evt-line-sku" title="' + r.sku + '">' + r.sku + ' <a onclick="_evtRemoveGroupSku(' + i + ',\'' + String(r.sku).replace(/'/g,"\\'") + '\')">×</a></span>' +
+        '<span>' + regTxt + '</span>' +
+        '<input type="number" min="0" max="100" step="0.1" class="evt-line-disc" value="' + (isNaN(r.discountPct) ? '' : r.discountPct) + '" onchange="_evtLineField(' + i + ',' + ri + ',\'discountPct\',this.value)">' +
+        '<input type="number" step="0.01" class="evt-line-deal" value="' + (isNaN(r.dealPrice) ? '' : r.dealPrice) + '" onchange="_evtLineField(' + i + ',' + ri + ',\'dealPrice\',this.value)">' +
+        '<span>' + (base == null ? '—' : base.toLocaleString()) + '</span>' +
+        newCell +
+        '<span style="color:' + diffColor + '">' + diffTxt + '</span>' +
+        '<span></span>' +
+      '</div>';
+    }).join('');
+    return '<div class="fc-evt-card"><div class="fc-evt-card-lines">' + head + colHead + body + '</div></div>';
   }).join('');
 }
-function _evtGroupField(i, field, val) { if (_evtGroups[i]) _evtGroups[i][field] = (val === '' ? NaN : parseFloat(val)); }
-function _evtRemoveGroup(i) { _evtGroups.splice(i, 1); _evtRenderGroupCards(); }
-function _evtRemoveGroupSku(i, sku) {
+// A card's Discount % (group-level) → set every row's discount + recompute its deal price.
+function _evtCardDiscount(i, val) {
   var g = _evtGroups[i]; if (!g) return;
-  g.skus = g.skus.filter(function(s){ return s !== sku; });
-  if (!g.skus.length) _evtGroups.splice(i, 1);
+  var pct = (val === '' ? NaN : parseFloat(val));
+  g.discountPct = pct;
+  var site = _evtSelectedSite();
+  g.rows.forEach(function(r){
+    r.discountPct = pct;
+    if (!isNaN(pct) && r.regularPrice != null) r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - pct / 100), site.currency);
+  });
   _evtRenderGroupCards();
 }
+// Edit one row field (discountPct → recompute deal; dealPrice / newFc direct).
+function _evtLineField(gi, ri, field, val) {
+  var g = _evtGroups[gi]; if (!g || !g.rows[ri]) return;
+  var r = g.rows[ri];
+  var num = (val === '' ? NaN : parseFloat(val));
+  r[field] = num;
+  if (field === 'discountPct' && !isNaN(num) && r.regularPrice != null) {
+    r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - num / 100), _evtSelectedSite().currency);
+  }
+  _evtRenderGroupCards();
+}
+function _evtRemoveGroup(i) { _evtGroups.splice(i, 1); _evtRenderGroupCards(); _evtSetPreviewEnabled(_evtGroups.length > 0); }
+function _evtRemoveGroupSku(i, sku) {
+  var g = _evtGroups[i]; if (!g) return;
+  g.rows = g.rows.filter(function(r){ return String(r.sku).toUpperCase() !== String(sku).toUpperCase(); });
+  if (!g.rows.length) _evtGroups.splice(i, 1);
+  _evtRenderGroupCards();
+  _evtSetPreviewEnabled(_evtGroups.length > 0);
+}
 
-// Discount %: deal_price = regular_price × (1 − discount/100), pre-filled per card (user may override).
+// Discount %: apply the top-level Discount % to every row in every card (deal = regular×(1−d/100)).
 function _evtApplyDiscount() {
   var pct = parseFloat((document.getElementById('event-discount-pct') || {}).value);
   if (isNaN(pct) || pct < 0 || pct > 100) { alert('Enter a Discount % between 0 and 100.'); return; }
   if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
-  _evtGroups.forEach(function(g){ g.dealPrice = Math.round((g.regularPrice * (1 - pct / 100)) * 100) / 100; });
+  var site = _evtSelectedSite();
+  _evtGroups.forEach(function(g){
+    g.discountPct = pct;
+    g.rows.forEach(function(r){ r.discountPct = pct; if (r.regularPrice != null) r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - pct / 100), site.currency); });
+  });
   _evtRenderGroupCards();
 }
 
-// ---- Forecast Assist (Category/Series only): pre-fill Forecast Qty; NEVER auto-writes to DB ----
-function _evtPopulateBaseCampaigns() {
-  var sel = document.getElementById('event-assist-base-campaign');
-  if (!sel) return;
-  var campaigns = (window.KM && window.KM.DB && window.KM.DB.getCampaigns) ? window.KM.DB.getCampaigns() : [];
-  if (campaigns && campaigns.length) {
-    sel.disabled = false;
-    sel.innerHTML = '<option value="">(none)</option>' + campaigns.map(function(c){
-      var id = c.campaignId || c.campaign_id || '';
-      var name = c.campaignName || c.campaign_name || id || 'Campaign';
-      return '<option value="' + id + '">' + name + '</option>';
-    }).join('');
-  } else {
-    // No campaign records available → disabled/pending state (reported, not faked).
-    sel.disabled = true;
-    sel.innerHTML = '<option value="">(no campaign records — pending)</option>';
-  }
-}
+// ---- Forecast method helpers ----
 function _evtSetAssistHelp(msg, color) {
   var el = document.getElementById('event-assist-help');
   if (el) { el.textContent = msg || ''; el.style.color = color || '#64748B'; el.style.display = msg ? '' : 'none'; }
 }
-// Simple growth pre-fill (NOT AI): if a Base Campaign is chosen, use its linked fc_special_events qty
-// per group as the base; otherwise use the group's current Forecast Qty. base × (1 + growth%).
+// Active method: 'growth' | 'adjust' | 'manual'.
+function _evtAssistMethod() {
+  return (document.getElementById('event-assist-method') || {}).value || 'growth';
+}
+// Show/hide method-specific inputs; re-render cards so forecast editability matches the method.
+function _evtToggleAssistFields() {
+  var method = _evtAssistMethod();
+  var growthRow = document.getElementById('event-assist-growth-row');
+  var adjustRow = document.getElementById('event-assist-adjust-row');
+  var baseYearGrp = document.getElementById('event-assist-base-year-group');
+  if (growthRow) growthRow.style.display = (method === 'growth') ? '' : 'none';
+  if (adjustRow) adjustRow.style.display = (method === 'adjust') ? '' : 'none';
+  if (baseYearGrp) baseYearGrp.style.display = (method === 'manual') ? 'none' : '';   // Base Year only for growth/adjust
+  var lbl = document.getElementById('event-assist-adjust-label');
+  var type = (document.getElementById('event-assist-adjust-type') || {}).value || 'percent';
+  if (lbl) lbl.textContent = (type === 'fixed') ? 'Adjustment (± units)' : 'Adjustment %';
+  if (_evtGroups.length) _evtRenderGroupCards();   // toggle read-only vs editable New Event FC
+}
+// Render the per-SKU preview table (SKU · Base FC · New Event FC · Difference). PREVIEW ONLY.
+function _evtRenderAssistPreview(rows) {
+  var box = document.getElementById('event-assist-preview');
+  if (!box) return;
+  if (!rows || !rows.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  var html = '<table class="fc-assist-preview-table"><thead><tr>' +
+    '<th>Category</th><th>Series</th><th>SKU</th><th>Base FC</th><th>New Event FC</th><th>Difference</th></tr></thead><tbody>' +
+    rows.map(function(r){
+      var hasBase = (r.base != null);
+      var diff = (hasBase && r.newQty != null) ? (r.newQty - r.base) : null;
+      var sign = (diff != null && diff > 0) ? '+' : '';
+      var color = (diff == null) ? '#94a3b8' : (diff > 0 ? '#0f766e' : (diff < 0 ? '#dc2626' : '#64748b'));
+      return '<tr><td>' + (r.category || '—') + '</td><td>' + (r.series || '—') + '</td><td>' + r.sku + '</td>' +
+        '<td>' + (hasBase ? r.base.toLocaleString() : '—') + '</td>' +
+        '<td>' + (r.newQty == null ? '—' : r.newQty.toLocaleString()) + '</td>' +
+        '<td style="color:' + color + '">' + (diff == null ? '—' : sign + diff.toLocaleString()) + '</td></tr>';
+    }).join('') + '</tbody></table>';
+  box.innerHTML = html;
+  box.style.display = '';
+}
+// Preview & Pre-fill (validation stage, PREVIEW-ONLY — never writes DB).
+//   growth : newFc = round(baseFc × (1 + growthRate%))    (baseFc from fc_regular_forecast)
+//   adjust : percent → baseFc × (1 + value%) ; fixed → baseFc + value (clamped ≥ 0)
+//   manual : no calculation — user edits New Event FC per SKU; preview echoes current values
 function _evtApplyForecastAssist() {
-  if (_evtMode() !== 'batch') return;
+  if (_evtMode() !== 'batch') { alert('Preview applies to Category / Series (Group Cards) mode.'); return; }
   if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
-  var growth = parseFloat((document.getElementById('event-assist-growth') || {}).value);
-  if (isNaN(growth)) { alert('Enter a Forecast Growth Rate %.'); return; }
-  var baseCampaignId = (document.getElementById('event-assist-base-campaign') || {}).value || '';
-  var baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value);
-
-  // Base-campaign qty by (category||series||price) group, from linked fc_special_events (read-only).
-  var baseByKey = {};
-  if (baseCampaignId) {
-    var events = (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
-    var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
-    function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
-    var detBySku = {}; details.forEach(function(d){ detBySku[up(d.sku)] = d; });
-    events.filter(function(e){ return String(e.campaignId || e.campaign_id || '') === baseCampaignId &&
-        (!baseYear || String(e.year) === String(baseYear)); })
-      .forEach(function(e){
-        var d = detBySku[up(e.sku)] || {};
-        var reg = _evtRegularPrice(e.sku, e.country, e.marketplace);
-        var key = (e.category || d.category || '') + '||' + (e.series || d.series || '') + '||' + reg;
-        baseByKey[key] = (baseByKey[key] || 0) + (parseFloat(e.fcQty || e.fc_qty) || 0);
-      });
+  var method = _evtAssistMethod();
+  var monthIdx = _evtEventMonthIdx();
+  if (method !== 'manual' && monthIdx == null) {
+    _evtSetAssistHelp('Set the Event Start Date first — Base FC is read from the regular forecast for the event month.', '#b45309');
+    return;
   }
-  var filled = 0;
+
+  var compute;
+  if (method === 'growth') {
+    var growth = parseFloat((document.getElementById('event-assist-growth') || {}).value);
+    if (isNaN(growth)) { alert('Enter a Growth Rate %.'); return; }
+    compute = function(b){ return Math.round(b * (1 + growth / 100)); };
+  } else if (method === 'adjust') {
+    var type = (document.getElementById('event-assist-adjust-type') || {}).value || 'percent';
+    var val = parseFloat((document.getElementById('event-assist-adjust-value') || {}).value);
+    if (isNaN(val)) { alert('Enter an Adjustment value.'); return; }
+    compute = (type === 'fixed')
+      ? function(b){ return Math.max(0, Math.round(b + val)); }
+      : function(b){ return Math.max(0, Math.round(b * (1 + val / 100))); };
+  } else { compute = null; }   // manual
+
+  var preview = [], filled = 0, missingBase = 0;
   _evtGroups.forEach(function(g){
-    var key = g.category + '||' + g.series + '||' + g.regularPrice;
-    var base = baseCampaignId ? (baseByKey[key] || 0) : (isNaN(g.fcQty) ? 0 : g.fcQty);
-    var suggested = Math.round(base * (1 + growth / 100));
-    if (suggested > 0) { g.fcQty = suggested; filled++; }
+    g.rows.forEach(function(r){
+      var base = (method === 'manual') ? null : _evtBaseFcForSku(r.sku, monthIdx);
+      r.baseFc = base;
+      var newQty;
+      if (compute) {
+        if (base == null) { missingBase++; newQty = null; r.newFc = NaN; }
+        else { newQty = compute(base); r.newFc = newQty; filled++; }
+      } else {
+        newQty = isNaN(r.newFc) ? null : r.newFc;   // manual echoes the current editable value
+      }
+      preview.push({ category: g.category, series: g.series, sku: r.sku, base: base, newQty: newQty });
+    });
   });
+  _evtRenderAssistPreview(preview);
   _evtRenderGroupCards();
-  if (baseCampaignId && !Object.keys(baseByKey).length) {
-    _evtSetAssistHelp('Base Campaign has no linked fc_special_events to base on — nothing pre-filled. Enter Forecast Qty manually.', '#b45309');
+
+  if (method === 'manual') {
+    _evtSetAssistHelp('Manual Entry: edit New Event FC per SKU below. Blank = skip that SKU. Nothing is written until you click Save.', '#0f766e');
+  } else if (missingBase) {
+    _evtSetAssistHelp('Pre-filled ' + filled + ' SKU(s). ' + missingBase + ' SKU(s) have no regular forecast for the Base Year + event month — enter New Event FC manually (never fabricated). Nothing is written until Save.', '#b45309');
   } else {
-    _evtSetAssistHelp('Pre-filled Forecast Qty for ' + filled + ' group(s) (base × (1 + ' + growth + '%)). Review before Save — nothing is written until you click Save.', '#0f766e');
+    _evtSetAssistHelp('Previewed & pre-filled New Event FC for ' + filled + ' SKU(s). Review Base FC → New → Difference before Save — nothing is written until you click Save.', '#0f766e');
   }
 }
 
 // ================= Save (campaigns → campaign_sku_lines → fc_special_events) =================
-// Writers for campaigns / campaign_sku_lines do NOT exist yet → report PENDING, write nothing (no
-// fake success). Demo ON → illustrative in-memory rows only.
-function saveEventUpdate() {
-  var country = (document.getElementById('event-country') || {}).value || '';
-  var marketplace = (document.getElementById('event-marketplace') || {}).value || '';
-  var mkey = _fcResolveMarketplaceKey(marketplace);
-  var targetYear = parseInt(document.getElementById('event-target-year').value);
+// Complete idempotent 3-layer transaction. On live: writes campaigns → campaign_sku_lines →
+// fc_special_events in order; if any step fails, stops and reports the real error (never fake
+// success, never fc_special_events without a parent campaign line). Demo ON → in-memory illustration.
+async function saveEventUpdate() {
+  var site = _evtSelectedSite();
+  var country = site.country || (document.getElementById('event-country') || {}).value || '';
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var company = site.company || '';
   var eventFlag = (document.getElementById('event-name-input') || {}).value || 'Normal';
-  var eventPeriod = ((document.getElementById('event-period-input') || {}).value || '').trim();
+  var eventStartDate = ((document.getElementById('event-start-date') || {}).value || '').trim();
+  var eventEndDate = ((document.getElementById('event-end-date') || {}).value || '').trim();
+  var eventPeriod = _evtComposePeriod(eventStartDate, eventEndDate);
+  var monthIdx = _evtEventMonthIdx();
   var mode = _evtMode();
 
-  if (!country || !marketplace) { alert('Country and Marketplace are required.'); return; }
+  if (!country || !site.marketplace) { alert('Country and Marketplace are required.'); return; }
 
   if (eventFlag === 'Normal') {
     alert('Event Flag is "Normal" — no campaign / special-event forecast is created.\n\n' +
@@ -2132,11 +2759,16 @@ function saveEventUpdate() {
     closeFcModal();
     return;
   }
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  if (!demoOn && !company) { alert('Select a Marketplace (company scope) — company could not be resolved. KM and ResUS are separate scopes.'); return; }
+  if (!eventStartDate || !eventEndDate) { alert('Event Start Date and Event End Date are required for a non-Normal event.'); _evtShowPeriodError('Event Start Date and Event End Date are required.'); return; }
+  if (!_evtValidatePeriod()) { alert('Event Start Date must be on or before Event End Date.'); return; }
+  var targetYear = parseInt(eventStartDate.slice(0, 4), 10) || parseInt((document.getElementById('event-target-year') || {}).value, 10);
   if (!targetYear) { alert('Target Year is required.'); return; }
-  if (!eventPeriod) { alert('Event Period is required for a non-Normal event.'); return; }
 
-  // ---- Collect SKU lines from the active mode ----
-  var lines = [];   // { sku, company, category, series, regularPrice, dealPrice, fcQty }
+  // ---- Collect + validate SKU lines from the active mode ----
+  // line: { sku, marketplaceSkuId, category, series, regularPrice, dealPrice, discountPercent, fcQty }
+  var lines = [];
   if (mode === 'single') {
     var rows = _evtReadSingleRows();
     if (!rows.length) { alert('Add at least one SKU row.'); return; }
@@ -2144,77 +2776,107 @@ function saveEventUpdate() {
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (!r.sku) { alert('Row ' + (i + 1) + ': SKU is required.'); return; }
+      if (r.priceState === 'out_of_scope' || !r.marketplaceSkuId) { alert('Row ' + (i + 1) + ' (' + r.sku + '): SKU is not in the selected Company / Country / Marketplace scope (marketplace_sku_id unresolved).'); return; }
+      if (r.priceState === 'missing_price' || r.regularPrice == null) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Missing Regular Price — set the price in pricing_list before saving (not substituted with 0).'); return; }
       if (isNaN(r.dealPrice)) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Deal Price is required.'); return; }
-      if (isNaN(r.fcQty) || r.fcQty <= 0) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Forecast Qty is required (> 0) for a non-Normal event.'); return; }
-      var meta = _fcDeriveSkuMeta(r.sku, country, mkey);
-      lines.push({ sku: r.sku, company: meta.company, category: meta.category, series: meta.series,
-        regularPrice: r.regularPrice, dealPrice: r.dealPrice, fcQty: r.fcQty });
+      if (isNaN(r.fcQty) || r.fcQty <= 0) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Forecast Qty is required (> 0).'); return; }
+      var meta = _fcDeriveSkuMeta(r.sku);
+      var disc = isNaN(r.discountPercent) ? (r.regularPrice > 0 ? Math.round((1 - r.dealPrice / r.regularPrice) * 1000) / 10 : 0) : r.discountPercent;
+      lines.push({ sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, category: meta.category, series: meta.series,
+        regularPrice: r.regularPrice, dealPrice: r.dealPrice, discountPercent: disc, fcQty: r.fcQty });
     }
   } else {
     if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
     for (var gi = 0; gi < _evtGroups.length; gi++) {
       var g = _evtGroups[gi];
-      if (isNaN(g.dealPrice)) { alert('Group ' + (g.category || '—') + ' / ' + (g.series || '—') + ': Deal Price is required.'); return; }
-      if (isNaN(g.fcQty) || g.fcQty <= 0) { alert('Group ' + (g.category || '—') + ' / ' + (g.series || '—') + ': Forecast Qty is required (> 0).'); return; }
-      g.skus.forEach(function(sku){
-        var meta = _fcDeriveSkuMeta(sku, country, mkey);
-        lines.push({ sku: sku, company: meta.company || '', category: g.category, series: g.series,
-          regularPrice: g.regularPrice, dealPrice: g.dealPrice, fcQty: g.fcQty });
-      });
+      for (var ri = 0; ri < g.rows.length; ri++) {
+        var gr = g.rows[ri];
+        var tag = (g.category || '—') + ' / ' + (g.series || '—') + ' / ' + gr.sku;
+        if (!gr.marketplaceSkuId) { alert(tag + ': marketplace_sku_id unresolved (out of scope).'); return; }
+        if (gr.regularPrice == null) { alert(tag + ': Missing Regular Price — set it in pricing_list (not substituted with 0).'); return; }
+        if (isNaN(gr.dealPrice)) { alert(tag + ': Deal Price is required.'); return; }
+        if (isNaN(gr.newFc) || gr.newFc <= 0) { alert(tag + ': New Event FC is required (> 0). Use Preview & Pre-fill (Growth/Adjust) or enter it (Manual).'); return; }
+        var meta2 = _fcDeriveSkuMeta(gr.sku);
+        var disc2 = isNaN(gr.discountPct) ? (gr.regularPrice > 0 ? Math.round((1 - gr.dealPrice / gr.regularPrice) * 1000) / 10 : 0) : gr.discountPct;
+        lines.push({ sku: gr.sku, marketplaceSkuId: gr.marketplaceSkuId, category: meta2.category, series: meta2.series,
+          regularPrice: gr.regularPrice, dealPrice: gr.dealPrice, discountPercent: disc2, fcQty: gr.newFc });
+      }
     }
     if (!lines.length) { alert('No SKU lines to save.'); return; }
   }
 
-  var discountPct = parseFloat((document.getElementById('event-discount-pct') || {}).value);
-  var company = (lines[0] && lines[0].company) || '';
-  var campaignPayload = { campaign_name: eventFlag + ' ' + targetYear, country: country, marketplace: mkey,
-    promotion_type: eventFlag, event_flag: eventFlag, year: targetYear, event_period: eventPeriod,
-    status: 'active', source: 'fc_summary_builder' };
-  var linePayloads = lines.map(function(l){
-    var disc = (!isNaN(discountPct)) ? discountPct
-      : (l.regularPrice > 0 ? Math.round((1 - l.dealPrice / l.regularPrice) * 1000) / 10 : 0);
-    return { sku: l.sku, regular_price: l.regularPrice, deal_price: l.dealPrice, discount_percent: disc,
-      line_status: 'active', source: 'fc_summary_builder' };
-  });
-  var fcPayloads = lines.map(function(l){
-    return { sku: l.sku, company: l.company, marketplace: mkey, country: country, category: l.category,
-      series: l.series, event_name: eventFlag, event_period: eventPeriod, year: targetYear, fc_qty: l.fcQty,
-      source: 'campaign_sync', status: 'active', note: 'FC Summary Special Event Builder' };
-  });
+  var marketplaceId = _evtResolveMarketplaceId(site);
+  var eventMonth = (monthIdx == null) ? '' : (monthIdx + 1);   // fc_special_events.event_month (1–12)
 
-  // ---- Backend writers ----
-  // campaigns / campaign_sku_lines writers are NOT implemented. To avoid orphan fc_special_events
-  // (rows with a blank campaign_id) and fake completeness, we write NOTHING on live and report pending.
-  var haveCampaignWriter = !!(window.KM && window.KM.DB && window.KM.DB.upsertCampaign);
-  var haveLineWriter = !!(window.KM && window.KM.DB && window.KM.DB.upsertCampaignSkuLine);
+  var campaignPayload = {
+    campaign_name: eventFlag + ' ' + targetYear, company: company, marketplace_id: marketplaceId,
+    country: country, marketplace: mkey, promotion_type: eventFlag, event_flag: eventFlag,
+    major_event_flag: eventFlag, year: targetYear, start_date: eventStartDate, end_date: eventEndDate,
+    event_period: eventPeriod, status: 'active', source: 'fc_summary_builder'
+  };
 
-  if (_fcUseDb()) {
-    if (!haveCampaignWriter || !haveLineWriter) {
-      alert('Save is PENDING — backend not complete (no data written).\n\n' +
-        'Would create/update:\n' +
-        '• campaigns: 1 (' + campaignPayload.campaign_name + ', ' + country + ' / ' + mkey + ')\n' +
-        '• campaign_sku_lines: ' + linePayloads.length + '\n' +
-        '• fc_special_events: ' + fcPayloads.length + ' (source=campaign_sync, linked by campaign_id / campaign_sku_line_id)\n\n' +
-        'Missing writers: ' + (!haveCampaignWriter ? 'upsertCampaign ' : '') + (!haveLineWriter ? 'upsertCampaignSkuLine' : '') +
-        '.\nfc_special_events is intentionally NOT written alone (would create rows with no parent campaign). ' +
-        'See FC_SUMMARY_SPEC §12.');
-      return;
-    }
-    // (Future) real 3-table write path goes here once writers exist.
-    alert('Campaign/FC writers present but the 3-table transaction path is not wired in this build.');
+  // ---- Demo ON → in-memory illustration only ----
+  if (demoOn) {
+    lines.forEach(function(l){
+      fcEventMock.push({ sku: l.sku, year: targetYear, company: company, marketplace: mkey,
+        country: country, category: l.category, series: l.series, event: eventFlag,
+        eventPeriod: eventPeriod, fcQty: l.fcQty });
+    });
+    renderFcEventTable();
+    closeFcModal();
+    alert('DEMO (in-memory only): ' + lines.length + ' fc_special_events row(s) illustrated. campaigns (1) + campaign_sku_lines (' + lines.length + ') would be written in live mode.');
     return;
   }
 
-  // Demo ON → illustrative in-memory rows (clearly labelled).
-  fcPayloads.forEach(function(p){
-    fcEventMock.push({ sku: p.sku, year: p.year, company: p.company, marketplace: p.marketplace,
-      country: p.country, category: p.category, series: p.series, event: p.event_name,
-      eventPeriod: p.event_period, fcQty: p.fc_qty });
-  });
-  renderFcEventTable();
-  closeFcModal();
-  alert('DEMO (in-memory only): ' + fcPayloads.length + ' fc_special_events row(s) illustrated. ' +
-    'campaigns (1) + campaign_sku_lines (' + linePayloads.length + ') would be created in live mode.');
+  // ---- Live → complete idempotent 3-layer write. Any failure stops + reports honestly. ----
+  var DB = window.KM && window.KM.DB;
+  if (!DB || !DB.upsertCampaign || !DB.upsertCampaignSkuLines || !DB.upsertFcSpecialEvent) {
+    alert('Save failed: campaign writers are not available in this build (upsertCampaign / upsertCampaignSkuLines / upsertFcSpecialEvent). Nothing was written.');
+    return;
+  }
+  var saveBtn = document.querySelector('#fc-add-event-modal .fc-btn--primary');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  try {
+    // 1) campaign header (idempotent by campaign_id, else business key).
+    var camp = await DB.upsertCampaign(campaignPayload);
+    var campaignId = (camp && camp.campaign_id) || '';
+    if (!campaignId) throw new Error('campaign_id was not returned by the campaigns writer.');
+
+    // 2) campaign_sku_lines (idempotent per line).
+    var linePayloads = lines.map(function(l){
+      return { marketplace_sku_id: l.marketplaceSkuId, sku: l.sku, regular_price: l.regularPrice,
+        deal_price: l.dealPrice, discount_percent: l.discountPercent, line_status: 'active', source: 'fc_summary_builder' };
+    });
+    var lineRes = await DB.upsertCampaignSkuLines({ campaign_id: campaignId, lines: linePayloads });
+    var lineIdBySku = {};
+    ((lineRes && lineRes.lines) || []).forEach(function(x){ if (x && x.sku) lineIdBySku[String(x.sku).toUpperCase()] = x.campaign_sku_line_id; });
+
+    // 3) fc_special_events per line, linked by campaign_id + campaign_sku_line_id (idempotent by
+    //    a deterministic event_id so repeated Save updates the same rows).
+    var written = 0;
+    for (var k = 0; k < lines.length; k++) {
+      var l = lines[k];
+      var lineId = lineIdBySku[String(l.sku).toUpperCase()] || '';
+      var eventId = 'EVT-' + campaignId + '-' + String(l.marketplaceSkuId || l.sku).replace(/[^A-Za-z0-9_-]/g, '').toUpperCase();
+      await DB.upsertFcSpecialEvent({
+        event_id: eventId, campaign_id: campaignId, campaign_sku_line_id: lineId,
+        company: company, country: country, marketplace: mkey, marketplace_id: marketplaceId,
+        scope_type: 'sku', scope_id: l.sku, sku: l.sku, series: l.series, category: l.category,
+        event_name: eventFlag, event_period: eventPeriod, event_start_date: eventStartDate,
+        event_end_date: eventEndDate, event_month: eventMonth, year: targetYear, fc_qty: l.fcQty,
+        source: 'campaign_sync', note: 'FC Summary Special Event Builder'
+      });
+      written++;
+    }
+    if (typeof renderFcEventTable === 'function') renderFcEventTable();
+    closeFcModal();
+    alert('Saved. campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
+  } catch (e) {
+    alert('Special Event Save failed — nothing further was written after the error:\n\n' + (e && e.message ? e.message : e) +
+      '\n\nIf the campaign writer actions are not deployed yet, redeploy the Apps Script Web App (source ready in 20_campaign_write_handlers.gs). No fake success is reported.');
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+  }
 }
 
 // Check if data already exists
@@ -2230,101 +2892,74 @@ function checkDataExists(sku, year, monthIndex = null) {
 }
 
 // Save Regular Update
+// Save the previewed Regular Forecast changes. Writes ONLY the Target Month of each affected SKU's
+// fc_regular_forecast row (all other months preserved from the existing row). Blank Manual = Skip.
+// Live: idempotent bulk upsert via importFcRegularForecastBatch (business key year|company|country|
+// marketplace|sku; preserves forecast_id). Demo: in-memory only, clearly labeled.
 function saveRegularUpdate() {
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  // Full site identity from the selected marketplace(site) option (KM Amazon ≠ ResUS Amazon).
-  const _site = _regularSelectedSite();
-  const company = _site.company;
-  const country = _site.country;
-  const marketplace = _site.marketplace;
-  const sku = ((document.getElementById('regular-sku') || {}).value || '').trim();
-  const targetYear = parseInt(document.getElementById('regular-target-year').value);
-  const baseYear = parseInt(document.getElementById('regular-base-year').value);
-  const method = document.getElementById('regular-update-method').value;
-  const growthRate = parseFloat(document.getElementById('regular-growth-rate').value) || 0;
-  const targetMonth = parseInt((document.getElementById('regular-target-month') || {}).value || '0');
-  const basedYear = parseInt((document.getElementById('regular-based-year') || {}).value);
-  const basedMonth = parseInt((document.getElementById('regular-based-month') || {}).value || '0');
-  const monthNamesFull = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const methodName = method === 'actual' ? 'Apply Growth Rate (Based on Actual Sales)'
-    : method === 'prevMonth' ? 'Adjust From Previous Month Forecast'
-    : 'Manual Monthly Forecast';
-
-  // ---- Validation (Part 3) ----
-  if (!country || !marketplace) { alert('Country and Marketplace are required.'); return; }
-  if (!sku) { alert('SKU is required.'); return; }
-  if (method === 'actual' && !(growthRate > 0)) {
-    alert('Growth Rate must be greater than 0 for "Apply Growth Rate (Based on Actual Sales)".');
-    return;
-  }
-  if (method === 'prevMonth') {
-    if (isNaN(targetYear)) { alert('Target Year is required.'); return; }
-    if (isNaN(targetMonth)) { alert('Target Month is required.'); return; }
-    if (isNaN(basedYear)) { alert('Based Year is required.'); return; }
-    if (isNaN(basedMonth)) { alert('Based Month is required.'); return; }
-  }
-  let manualMonths = null;
-  if (method === 'manual') {
-    manualMonths = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
-      .map(m => parseInt((document.getElementById('reg-' + m) || {}).value) || 0);
-  }
-
-  // ---- Live DB (Demo OFF): PENDING. No single-row fc_regular_forecast writer / no BQ actual-sales
-  // source exists yet — do NOT fake success and do NOT write (guardrail). ----
-  if (typeof _fcUseDb === 'function' && _fcUseDb()) {
-    let detail = 'Method: ' + methodName + '\nSKU: ' + sku + '\nCompany / Country / Marketplace: ' +
-      (company || '—') + ' / ' + country + ' / ' + marketplace + '\nTarget Year: ' + targetYear;
-    if (method === 'actual') detail += '\nBase Year: ' + baseYear + '\nGrowth Rate: ' + growthRate + '%';
-    if (method === 'prevMonth') detail += '\nTarget: ' + monthNamesFull[targetMonth] + ' ' + targetYear +
-      '\nBased (source): ' + monthNamesFull[basedMonth] + ' ' + basedYear + '\nRate: ' + growthRate + '%';
-    alert('Regular Forecast update is NOT yet written to the Operation DB.\n\n' + detail +
-      '\n\nUpsert target: fc_regular_forecast (key company + country + marketplace + sku + year). ' +
-      'The single-row writer (and the BQ actual-sales source for "Apply Growth Rate") ' +
-      'are PENDING — see FC_SUMMARY_SPEC (Phase 2 / Pending Backend). No data was written.');
-    closeFcModal();
-    return;
-  }
-
-  // ---- Demo mode (in-memory only) — illustrative; clearly labeled, never claims a DB write. ----
-  // Match by the FULL site identity (company + country + marketplace + sku + year) — only the
-  // selected site's row is created/updated (KM Amazon never touches ResUS Amazon).
+  if (!_regularPreview || !_regularPreview.rows.length) { alert('Click Preview first to review changes before saving.'); return; }
+  var P = _regularPreview;
+  var monthKey = REG_MONTH_KEYS[P.targetMonth];
+  var monthLbl = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][P.targetMonth];
+  var manual = P.method === 'manual';
+  var box = document.getElementById('regular-preview');
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
-  function sameSite(i, yr) { return up(i.sku) === up(sku) && i.year === yr && up(i.company) === up(company) && up(i.country) === up(country) && up(i.marketplace) === up(marketplace); }
-  const findTarget = () => fcRegularMock.find(i => sameSite(i, targetYear));
-  const baseItem = fcRegularMock.find(i => sameSite(i, baseYear));
-  let touched = 0;
 
-  if (method === 'manual') {
-    // Upsert the entered Jan–Dec into the specific site's target-year row (create if missing).
-    let t = findTarget();
-    if (!t) {
-      t = { sku: sku, year: targetYear, company: company, marketplace: marketplace, country: country, category: (baseItem && baseItem.category) || '', series: (baseItem && baseItem.series) || '', months: [0,0,0,0,0,0,0,0,0,0,0,0] };
-      fcRegularMock.push(t);
-    }
-    t.months = manualMonths.slice();
-    touched = 1;
-  } else if (method === 'actual') {
-    const b = baseItem;
-    if (!b) { alert('Demo: no Base Year ' + baseYear + ' row for ' + sku + ' (' + (company || '—') + ' / ' + country + ' / ' + marketplace + '). (In-memory demo only.)'); return; }
-    let t = findTarget();
-    if (!t) { t = { sku: sku, year: targetYear, company: company, marketplace: marketplace, country: country, category: b.category, series: b.series, months: [0,0,0,0,0,0,0,0,0,0,0,0] }; fcRegularMock.push(t); }
-    t.months = b.months.map(m => Math.round(m * (1 + growthRate / 100)));
-    touched = 1;
-  } else { // prevMonth: source = the explicit Based Year + Based Month value × (1 + rate) → Target Month
-    const src = fcRegularMock.find(i => sameSite(i, basedYear));
-    const srcVal = src ? (src.months[basedMonth] || 0) : 0;
-    let t = findTarget();
-    if (!t) { t = { sku: sku, year: targetYear, company: company, marketplace: marketplace, country: country, category: (src && src.category) || '', series: (src && src.series) || '', months: [0,0,0,0,0,0,0,0,0,0,0,0] }; fcRegularMock.push(t); }
-    t.months[targetMonth] = Math.round(srcVal * (1 + growthRate / 100));
-    touched = 1;
+  // Manual: read the current New inputs (blank = Skip; 0 = explicit zero).
+  var manualVals = {};
+  if (manual && box) {
+    box.querySelectorAll('.reg-prev-new').forEach(function(inp){
+      var idx = parseInt(inp.dataset.idx, 10);
+      var raw = String(inp.value).trim();
+      manualVals[idx] = (raw === '') ? null : Math.max(0, Math.round(Number(raw) || 0));
+    });
   }
 
-  alert('Regular FC Update — DEMO (in-memory only, NOT written to DB).\n\n' +
-    'Method: ' + methodName + '\nCompany / Country / Marketplace: ' + (company || '—') + ' / ' + country + ' / ' + marketplace +
-    '\nTarget Year: ' + targetYear + (method === 'prevMonth' ? ' / ' + monthNames[targetMonth] : '') +
-    '\nRows touched: ' + touched);
+  // Scope guard — every row must still match the selected site (defends against a stale preview).
+  var site = _regularSelectedSite();
+  var toWrite = [];
+  P.rows.forEach(function(r, i){
+    if (up(r.country) !== up(site.country)) return;
+    var newQty = manual ? manualVals[i] : r.newQty;
+    if (newQty == null) return;   // blank Manual / no computed value → Skip
+    var row = { sku: r.sku, year: P.targetYear, company: r.company, country: r.country, marketplace: r.marketplace };
+    // Preserve every OTHER month from the existing row; replace ONLY the target month.
+    REG_MONTH_KEYS.forEach(function(m){ row[m] = (r.existing[m] === '' || r.existing[m] == null) ? '' : r.existing[m]; });
+    row[monthKey] = newQty;
+    toWrite.push(row);
+  });
+
+  if (!toWrite.length) { alert('Nothing to save — every row is blank (Skip) or out of scope.'); return; }
+
+  // ---- Live (Demo OFF): idempotent bulk upsert. ----
+  if (typeof _fcUseDb === 'function' && _fcUseDb()) {
+    if (!(window.KM && window.KM.DB && window.KM.DB.importFcRegularForecastBatch)) { alert('Regular forecast write API is not available.'); return; }
+    _setRegularSaveEnabled(false);
+    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_builder' })
+      .then(function(res){
+        if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _setRegularSaveEnabled(true); return; }
+        var s = (res && res.summary) || {};
+        renderFcRegularTable();
+        closeFcModal();
+        alert('Regular Forecast saved — ' + monthLbl + ' ' + P.targetYear + ' (only this month updated).\n' +
+          'Rows written: ' + toWrite.length +
+          (s.created != null ? ('\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : ''));
+      })
+      .catch(function(err){ alert('Save failed: ' + (err && err.message ? err.message : err)); _setRegularSaveEnabled(true); });
+    return;
+  }
+
+  // ---- Demo (in-memory only) — updates ONLY the target month, preserving others. ----
+  toWrite.forEach(function(w){
+    var t = fcRegularMock.find(function(i){ return up(i.sku)===up(w.sku) && String(i.year)===String(w.year) &&
+      up(i.company)===up(w.company) && up(i.country)===up(w.country) && up(i.marketplace)===up(w.marketplace); });
+    if (!t) { t = { sku: w.sku, year: w.year, company: w.company, country: w.country, marketplace: w.marketplace, category: '', series: '', months: [0,0,0,0,0,0,0,0,0,0,0,0] }; fcRegularMock.push(t); }
+    t.months[P.targetMonth] = Number(w[monthKey]) || 0;
+  });
   renderFcRegularTable();
   closeFcModal();
+  alert('Regular Forecast — DEMO (in-memory only, NOT written to DB).\n' +
+    monthLbl + ' ' + P.targetYear + ' updated for ' + toWrite.length + ' SKU(s) (only this month).');
 }
 
 // (Removed dead saveNewEvent — superseded by the Special Event Builder v2 saveEventUpdate;

@@ -258,9 +258,64 @@
     color: #374151;
 }
 
-/* Numeric columns (Stock + Orders): right-align */
-#factory-stock-section .scroll-cell:nth-child(n+5) {
+/* Numeric columns: explicit opt-in via --num (Current / Reserved / Available / In Production / Pending Shipout).
+   Text columns (Warehouse / Category-Series / Last Movement) stay left-aligned. */
+#factory-stock-section .scroll-cell--num,
+#factory-stock-section .header-cell--num {
     justify-content: flex-end;
+    text-align: right;
+}
+
+/* ========================================
+   Factory Inventory KPI cards (fi-kpi-*) — scoped, responsive, keyboard/AT friendly
+======================================== */
+#factory-stock-section .fi-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+}
+#factory-stock-section .fi-kpi-card {
+    background: var(--bg-surface, #ffffff);
+    border: 1px solid #e5e7eb;
+    border-radius: var(--radius-md, 8px);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+#factory-stock-section .fi-kpi-card--accent { border-color: var(--km-brand-teal, #3abfb6); }
+#factory-stock-section .fi-kpi-card--muted { background: #f8fafc; }
+#factory-stock-section .fi-kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#factory-stock-section .fi-kpi-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1f2937;
+    line-height: 1.2;
+}
+#factory-stock-section .fi-kpi-card--accent .fi-kpi-value { color: var(--km-brand-teal, #2fa79f); }
+#factory-stock-section .fi-kpi-card--muted .fi-kpi-value { color: #94a3b8; }
+#factory-stock-section .fi-kpi-note {
+    font-size: 11px;
+    color: #94a3b8;
+    font-style: italic;
+}
+#factory-stock-section .fi-na { color: #cbd5e1; }
+
+/* KPI cards reflow on narrow viewports */
+@media (max-width: 1100px) {
+    #factory-stock-section .fi-kpi-row { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 680px) {
+    #factory-stock-section .fi-kpi-row { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ========================================

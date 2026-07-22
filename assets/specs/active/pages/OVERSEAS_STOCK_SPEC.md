@@ -7,6 +7,8 @@
 
 > Overseas Stock is a **warehouse-side inventory snapshot page** (3PL / FBA / Marketplace warehouse). It mirrors the Factory Stock UI exactly (header, filter bar, dual-layer table, dropdown filters, button style). **It does NOT implement replenishment calculation, projection formulas, or Request Order integration** — MVP reads existing data and supports CSV import + manual adjustment + a movement log.
 
+> **CANONICAL NAMING & SCOPE (2026-07-21).** The **user-facing page name is "Overseas Inventory"** (this page, historically labeled "Overseas Stock", is that page). It represents **overseas warehouse inventory** — `overseas_inventory_snapshot` + `overseas_inventory_movements`, warehouse-level balances, company/warehouse/SKU filters, and inventory history/adjustments. **It EXCLUDES Factory Inventory** (`factory_stock` / `factory_stock_movements` / factory balances) — Factory and Overseas inventory must **not** be mixed in one default dataset (Factory Stock is a separate page). **Overseas Inventory is one of three separate Warehouse pages** — Overseas Inventory / **Overseas Inbound** / **Overseas Outbound** (`WAREHOUSE_OPERATIONS_SPEC.md`). **Relationship to operations:** overseas balances change from **confirmed Overseas Inbound receipts** and **confirmed Overseas Outbound ship confirmations** (movement posting owned by the inventory / inbound specs); this page **displays** balances + movements and supports manual adjustment + import. **In-transit shipment goods are NOT counted here** until a confirmed receipt. Factory Inventory vs Overseas Inventory are separate domains — authority `DATABASE_RELATIONSHIP_MAP.md` §6.0.
+
 ---
 
 ## 1. Page Positioning
@@ -101,16 +103,18 @@ Multiple groups combine with AND; within a group, checked values are OR. Options
 
 **UX:** mirrors Import FC / Import SKU (template download link, file picker, result summary, Done button on clean success).
 
-**CSV columns (template):**
+> **Inventory namespace (finalized 2026-07-21):** overseas snapshot/movement columns are canonical `wh_*` (`wh_available_stock` / `wh_reserved_stock` / `wh_damaged_stock` / `wh_on_the_way_qty` / `wh_on_the_way_eta` / `wh_physical_stock` / `wh_on_the_way_bucket`; movements `wh_quantity` / `wh_quantity_before` / `wh_quantity_after`). The import handler accepts **both** the canonical and the legacy CSV keys (server dual-accept); the frontend template header switch to `wh_*` is **pending the live header migration**. See `DATABASE_RELATIONSHIP_MAP.md` Inventory Field Namespace Rule.
+
+**CSV columns (template — legacy names until live migration; server also accepts `wh_*`):**
 ```
 warehouse_id, sku, available_stock, reserved_stock, damaged_stock, on_the_way_qty, on_the_way_eta, note
 ```
 
 **Rules:**
 - `company / country / warehouse_name / warehouse_type` are **forbidden** in the CSV — resolved from `warehouse_id`.
-- Quantity fields (`available_stock`, `reserved_stock`, `damaged_stock`, `on_the_way_qty`) must be **numeric and ≥ 0**; decimals are **rounded UP** (ceiling); non-numeric → row error (not written). Blank → 0.
+- Quantity fields (canonical `wh_available_stock`, `wh_reserved_stock`, `wh_damaged_stock`, `wh_on_the_way_qty`; legacy names accepted) must be **numeric and ≥ 0**; decimals are **rounded UP** (ceiling); non-numeric → row error (not written). Blank → 0.
 - `warehouse_id` must exist in `warehouses` (else row error).
-- Business key = `warehouse_id + sku`. Existing → update stock fields / on_the_way_eta / note / updated_at (preserve `snapshot_id`, `site_sku`). New → create with `snapshot_id = OISN-{8hex}`.
+- Business key = `warehouse_id + sku`. Existing → update stock fields / `wh_on_the_way_eta` / note / updated_at (preserve `snapshot_id`, `site_sku`). New → create with `snapshot_id = OISN-{8hex}`.
 - **Import is a snapshot refresh and does NOT write movement rows.**
 
 **Path:** `runOverseasImport()` → `KM.DB.importOverseasInventorySnapshotBatch(rows, opts)` → Apps Script `importOverseasInventorySnapshotBatch` → `handleImportOverseasInventorySnapshotBatch_`.
@@ -122,10 +126,10 @@ warehouse_id, sku, available_stock, reserved_stock, damaged_stock, on_the_way_qt
 **Inputs (MVP):** `warehouse_id` (select), `sku`, `adjustment_qty` (whole number, may be negative, ≠ 0), `reason` (required), `note` (optional).
 
 **Write behavior:**
-- Targets the **`available_stock`** bucket (MVP).
-- `quantity_before = current available_stock`; `quantity_after = before + adjustment_qty`; result must be ≥ 0 (else error, no write).
-- Updates `overseas_inventory_snapshot`: `available_stock`, `last_movement_at`, `updated_at`.
-- Inserts `overseas_inventory_movements` row: `movement_type = 'manual_adjustment'`, `quantity`, `quantity_before`, `quantity_after`, `reference_type = 'manual'`, `reference_id = ''`, `source_module = 'overseas_stock'`, `created_by`, `created_at`, `movement_date`. `reason` → `reason` column if present, else prefixed into `note` as `[reason] note`.
+- Targets the **`wh_available_stock`** bucket (MVP).
+- `wh_quantity_before = current wh_available_stock`; `wh_quantity_after = before + adjustment_qty`; result must be ≥ 0 (else error, no write). *(⚠ `wh_quantity_before`/`wh_quantity_after` general semantics UNRESOLVED — here they are the `wh_available_stock` bucket; see `INVENTORY_TABLE_MAPPING_SPEC.md` §3.2.)*
+- Updates `overseas_inventory_snapshot`: `wh_available_stock`, `last_movement_at`, `updated_at`.
+- Inserts `overseas_inventory_movements` row: `movement_type = 'manual_adjustment'`, `wh_quantity`, `wh_quantity_before`, `wh_quantity_after`, `reference_type = 'manual'`, `reference_id = ''`, `source_module = 'overseas_stock'`, `created_by`, `created_at`, `movement_date`. `reason` → `reason` column if present, else prefixed into `note` as `[reason] note`. *(Handler resolves canonical `wh_*` headers, legacy fallback until live rename.)*
 - The snapshot row must already exist (import first); otherwise error.
 
 **Path:** `runOverseasAdjust()` → `KM.DB.adjustOverseasInventory(payload)` → Apps Script `adjustOverseasInventory` → `handleAdjustOverseasInventory_`.

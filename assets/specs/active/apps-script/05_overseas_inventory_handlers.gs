@@ -40,21 +40,32 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
   if (!snapSheet) return jsonResponse_({ success: false, error: 'overseas_inventory_snapshot sheet not found' });
   if (!whSheet) return jsonResponse_({ success: false, error: 'warehouses sheet not found' });
 
-  var qtyFields = ['available_stock', 'reserved_stock', 'damaged_stock', 'on_the_way_qty'];
+  // Inventory namespace migration (2026-07-21): overseas snapshot columns are canonical `wh_*`. qtyFields
+  // hold canonical names; WH_LEGACY_ maps each to its pre-migration name for TEMPORARY fallback (removed
+  // once live overseas_inventory_snapshot headers are renamed + verified).
+  var WH_LEGACY_ = {
+    wh_available_stock: 'available_stock', wh_reserved_stock: 'reserved_stock',
+    wh_damaged_stock: 'damaged_stock', wh_on_the_way_qty: 'on_the_way_qty', wh_on_the_way_eta: 'on_the_way_eta'
+  };
+  var qtyFields = ['wh_available_stock', 'wh_reserved_stock', 'wh_damaged_stock', 'wh_on_the_way_qty'];
 
   var snapData = snapSheet.getDataRange().getValues();
   var snapHeaders = snapData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var snCol = function(n) { return snapHeaders.indexOf(n); };
+  // Prefer the canonical wh_ header; fall back to the legacy header until the live sheet is renamed.
+  var snPref = function(canon) { var i = snapHeaders.indexOf(canon); return i !== -1 ? i : snapHeaders.indexOf(WH_LEGACY_[canon] || canon); };
+  var snHas = function(canon) { return snPref(canon) !== -1; };
+  var rowVal = function(row, canon) { var v = row[canon]; if (v === undefined || v === null || v === '') v = row[WH_LEGACY_[canon]]; return v; };
 
   var whData = whSheet.getDataRange().getValues();
   var whHeaders = whData[0].map(function(h) { return String(h).trim().toLowerCase(); });
 
-  // --- Required-header validation (before any writes) ---
-  var requiredSnap = ['snapshot_id', 'warehouse_id', 'sku', 'site_sku']
-    .concat(qtyFields)
-    .concat(['on_the_way_eta', 'note', 'created_at', 'updated_at']);
+  // --- Required-header validation (before any writes). wh_* accept canonical OR legacy header. ---
+  var plainReq = ['snapshot_id', 'warehouse_id', 'sku', 'site_sku', 'note', 'created_at', 'updated_at'];
+  var whReq = qtyFields.concat(['wh_on_the_way_eta']);
   var missingHeaders = [];
-  requiredSnap.forEach(function(h) { if (snapHeaders.indexOf(h) === -1) missingHeaders.push('overseas_inventory_snapshot.' + h); });
+  plainReq.forEach(function(h) { if (snapHeaders.indexOf(h) === -1) missingHeaders.push('overseas_inventory_snapshot.' + h); });
+  whReq.forEach(function(h) { if (!snHas(h)) missingHeaders.push('overseas_inventory_snapshot.' + h + ' (or legacy ' + WH_LEGACY_[h] + ')'); });
   if (whHeaders.indexOf('warehouse_id') === -1) missingHeaders.push('warehouses.warehouse_id');
   if (missingHeaders.length) {
     return jsonResponse_({ success: false, error: 'Missing required header(s): ' + missingHeaders.join(', ') });
@@ -110,7 +121,7 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     var badQty = null;
     for (var qi = 0; qi < qtyFields.length; qi++) {
       var f = qtyFields[qi];
-      var rawVal = row[f];
+      var rawVal = rowVal(row, f);   // accept canonical wh_ or legacy input key
       var sv = String(rawVal == null ? '' : rawVal).trim();
       if (sv === '') { qtyVals[f] = 0; continue; }
       if (!/^\d+(\.\d+)?$/.test(sv)) { badQty = { field: f, val: sv }; break; }
@@ -128,14 +139,15 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     }
     batchSeen[key] = true;
 
-    var etaVal = String(row.on_the_way_eta || '').trim();
+    var etaVal = String((rowVal(row, 'wh_on_the_way_eta')) || '').trim();
     var noteVal = row.note !== undefined ? String(row.note).trim() : '';
+    var etaCi = snPref('wh_on_the_way_eta');
 
     var existing = bkToRow[key];
     if (existing && existing.row !== -1) {
       var tr = existing.row;
-      qtyFields.forEach(function(f) { if (snCol(f) !== -1) snapSheet.getRange(tr, snCol(f) + 1).setValue(qtyVals[f]); });
-      if (snCol('on_the_way_eta') !== -1) snapSheet.getRange(tr, snCol('on_the_way_eta') + 1).setValue(etaVal);
+      qtyFields.forEach(function(f) { var ci = snPref(f); if (ci !== -1) snapSheet.getRange(tr, ci + 1).setValue(qtyVals[f]); });
+      if (etaCi !== -1) snapSheet.getRange(tr, etaCi + 1).setValue(etaVal);
       if (row.note !== undefined && snCol('note') !== -1) snapSheet.getRange(tr, snCol('note') + 1).setValue(noteVal);
       if (snCol('updated_at') !== -1) snapSheet.getRange(tr, snCol('updated_at') + 1).setValue(now);
       results.push(Object.assign({}, baseResult, { status: 'updated', message: 'Snapshot updated', snapshot_id: existing.snapshotId }));
@@ -145,8 +157,8 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
       if (snCol('snapshot_id') !== -1) newRow[snCol('snapshot_id')] = sid;
       if (snCol('warehouse_id') !== -1) newRow[snCol('warehouse_id')] = warehouseId;
       if (snCol('sku') !== -1) newRow[snCol('sku')] = sku;
-      qtyFields.forEach(function(f) { if (snCol(f) !== -1) newRow[snCol(f)] = qtyVals[f]; });
-      if (snCol('on_the_way_eta') !== -1) newRow[snCol('on_the_way_eta')] = etaVal;
+      qtyFields.forEach(function(f) { var ci = snPref(f); if (ci !== -1) newRow[ci] = qtyVals[f]; });
+      if (etaCi !== -1) newRow[etaCi] = etaVal;
       if (snCol('note') !== -1) newRow[snCol('note')] = noteVal;
       if (snCol('created_at') !== -1) newRow[snCol('created_at')] = now;
       if (snCol('updated_at') !== -1) newRow[snCol('updated_at')] = now;
@@ -216,8 +228,10 @@ function handleAdjustOverseasInventory_(body) {
   var snapData = snapSheet.getDataRange().getValues();
   var snapHeaders = snapData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var snCol = function(n) { return snapHeaders.indexOf(n); };
-  if (snCol('warehouse_id') === -1 || snCol('sku') === -1 || snCol('available_stock') === -1) {
-    return jsonResponse_({ success: false, error: 'overseas_inventory_snapshot missing required columns (warehouse_id, sku, available_stock)' });
+  // Canonical wh_available_stock; legacy fallback until the live sheet is renamed (temporary).
+  var snAvail = snapHeaders.indexOf('wh_available_stock'); if (snAvail === -1) snAvail = snapHeaders.indexOf('available_stock');
+  if (snCol('warehouse_id') === -1 || snCol('sku') === -1 || snAvail === -1) {
+    return jsonResponse_({ success: false, error: 'overseas_inventory_snapshot missing required columns (warehouse_id, sku, wh_available_stock/available_stock)' });
   }
 
   var targetRow = -1, siteSku = '', snapshotId = '';
@@ -234,16 +248,16 @@ function handleAdjustOverseasInventory_(body) {
     return jsonResponse_({ success: false, error: 'No snapshot row found for warehouse_id + sku. Import the snapshot first.' });
   }
 
-  var quantityBefore = Math.round(parseFloat(snapData[targetRow - 1][snCol('available_stock')]) || 0);
+  var quantityBefore = Math.round(parseFloat(snapData[targetRow - 1][snAvail]) || 0);   // wh_available_stock bucket
   var quantityAfter = quantityBefore + adjustmentQty;
   if (quantityAfter < 0) {
-    return jsonResponse_({ success: false, error: 'Resulting available_stock would be negative (' + quantityBefore + ' + ' + adjustmentQty + ' = ' + quantityAfter + ')' });
+    return jsonResponse_({ success: false, error: 'Resulting wh_available_stock would be negative (' + quantityBefore + ' + ' + adjustmentQty + ' = ' + quantityAfter + ')' });
   }
 
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
 
   // Update snapshot.
-  snapSheet.getRange(targetRow, snCol('available_stock') + 1).setValue(quantityAfter);
+  snapSheet.getRange(targetRow, snAvail + 1).setValue(quantityAfter);
   if (snCol('last_movement_at') !== -1) snapSheet.getRange(targetRow, snCol('last_movement_at') + 1).setValue(now);
   if (snCol('updated_at') !== -1) snapSheet.getRange(targetRow, snCol('updated_at') + 1).setValue(now);
 
@@ -251,6 +265,10 @@ function handleAdjustOverseasInventory_(body) {
   var movData = movSheet.getDataRange().getValues();
   var movHeaders = movData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var mvCol = function(n) { return movHeaders.indexOf(n); };
+  // Canonical wh_ movement quantity columns; legacy fallback until the live sheet is renamed (temporary).
+  var mvQty = movHeaders.indexOf('wh_quantity'); if (mvQty === -1) mvQty = movHeaders.indexOf('quantity');
+  var mvQtyB = movHeaders.indexOf('wh_quantity_before'); if (mvQtyB === -1) mvQtyB = movHeaders.indexOf('quantity_before');
+  var mvQtyA = movHeaders.indexOf('wh_quantity_after'); if (mvQtyA === -1) mvQtyA = movHeaders.indexOf('quantity_after');
   var movementId = 'OVMV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
   var movRow = new Array(movHeaders.length).fill('');
   if (mvCol('movement_id') !== -1) movRow[mvCol('movement_id')] = movementId;
@@ -262,9 +280,9 @@ function handleAdjustOverseasInventory_(body) {
   // Stock-direction (MVP: manual adjustment targets the available bucket). Written only if columns exist.
   if (mvCol('from_stock_type') !== -1) movRow[mvCol('from_stock_type')] = 'none';
   if (mvCol('to_stock_type') !== -1) movRow[mvCol('to_stock_type')] = 'available';
-  if (mvCol('quantity') !== -1) movRow[mvCol('quantity')] = adjustmentQty;
-  if (mvCol('quantity_before') !== -1) movRow[mvCol('quantity_before')] = quantityBefore;
-  if (mvCol('quantity_after') !== -1) movRow[mvCol('quantity_after')] = quantityAfter;
+  if (mvQty !== -1) movRow[mvQty] = adjustmentQty;
+  if (mvQtyB !== -1) movRow[mvQtyB] = quantityBefore;
+  if (mvQtyA !== -1) movRow[mvQtyA] = quantityAfter;
   if (mvCol('reference_type') !== -1) movRow[mvCol('reference_type')] = 'manual';
   if (mvCol('reference_id') !== -1) movRow[mvCol('reference_id')] = '';
   if (mvCol('source_module') !== -1) movRow[mvCol('source_module')] = 'overseas_stock';

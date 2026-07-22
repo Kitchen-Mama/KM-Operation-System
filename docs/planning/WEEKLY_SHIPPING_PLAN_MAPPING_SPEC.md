@@ -205,8 +205,8 @@ Every Execution Plan route qty submitted must be an **integer multiple of `sku_d
 | `company` | **persisted snapshot** copied from marketplace master data at Submit Plan (**group key 1**, §3.1; resolution priority §3.3). Not display-only. |
 | `country` | current selected Inventory Replenishment **country** (**group key 2**) |
 | `marketplace` | current selected Inventory Replenishment **marketplace** (**group key 3**) |
-| `ship_from` | from the **Execution Plan** route (future default: `replenishment_route_rules`) (**group key 4**) |
-| `destination` | from the **Execution Plan** route (future default: `replenishment_route_rules`) (**group key 5**) |
+| `ship_from` | from the **Execution Plan** route **From** selector (active Factory Warehouses — §4A) (future default: `replenishment_route_rules`) (**group key 4**) |
+| `destination` | from the **Execution Plan** route **To** selector (site-filtered warehouse candidates — §4A) (future default: `replenishment_route_rules`) (**group key 5**) |
 | `shipping_method` | the **Execution Plan** route's selected method (**group key 6**, §3.1) |
 | `plan_version` | decision-revision counter (§4.1); default `1` |
 | `parent_shipping_plan_id` | version-lineage anchor (§4.3); **MVP = `shipping_plan_id`** |
@@ -239,6 +239,26 @@ Every Execution Plan route qty submitted must be an **integer multiple of `sku_d
 | `source` | `inventory_replenishment_submit_plan` |
 | `updated_by` | placeholder actor of the last write (§13A) |
 | `updated_at` | system timestamp |
+
+### 4A. Execution Plan Site + Warehouse Selection (CANONICAL target — 2026-07-20; NOT IMPLEMENTED)
+
+The Inventory Replenishment page already carries the current **company + country + marketplace** context, so the Execution Plan From/To are **warehouse-driven selectors**, never free text (this supersedes the interim "whatever the PM entered / blank/manual" wording in §3.1 / §14 for the target design).
+
+**Ship To Site** (read-only) — the **current page context** (e.g. `UK / Amazon`). Do **not** offer unrelated marketplace choices; another marketplace is **never** selectable as a Ship To Site.
+
+**From** — load **active Factory Warehouses:** `is_active = TRUE AND is_factory_warehouse = TRUE`. A shared Factory source may be available to **all** site/company planning contexts per the finalized supply rule; **do NOT filter a shared Factory out solely because `warehouses.company` differs from the destination company.**
+
+**To** — filter candidates by the **current site context:**
+- **FBA candidates:** `is_active = TRUE` ∧ `warehouse_type = FBA` ∧ `company = current company` ∧ `country ∈ current country scope` ∧ `marketplace = current marketplace` (normally `Amazon`).
+- **3PL exception:** `is_active = TRUE` ∧ `warehouse_type = 3PL` ∧ `company = current company` ∧ `country ∈ current country scope` ∧ `marketplace` may be **blank/shared**. A shared 3PL may appear for Amazon, Walmart and Shopify contexts, **but the Plan retains its original marketplace snapshot**.
+
+**Persistence:** when a physical warehouse is selected, **persist `warehouse_id`** (canonical identity); **display** `warehouse_code + warehouse_name + location`. (`warehouse_id` is canonical per `SHIPMENT_CENTER_SPEC.md` §22.0; `warehouse_code` is not globally unique.)
+
+### 4B. Planning Destination Scope vs Physical Warehouse (transitional)
+
+The existing country-level aggregate destination rows — **AMZ FBA US · KM AMZ FBA US · AMZ FBA CA · AMZ FBA JP · AMZ FBA UK · AMZ FBA EU · AMZ FBA AU · AMZ FBA SG** — are classified as **LEGACY / TRANSITIONAL PLANNING DESTINATION SCOPE**. They are **not physical receiving warehouses** and MUST NOT be used for: Warehouse Receiving · physical-address documents · Shipment Route final nodes · FC-level inventory · final Shipment warehouse identity once the exact FC is known. Planning may use them **temporarily** only when the physical Amazon FC is unknown.
+
+**Target future separation:** `Execution Plan.destination_scope → Shipment Draft.warehouse_id`. A **Destination Scope Master** is recorded as a **future design decision** — its DB is **NOT created** in this task.
 
 ### 4.1 `plan_version` (decision-revision counter) + reject/resubmit rule (FINAL MVP)
 
@@ -329,6 +349,8 @@ SP-001 | plan_version = 2 | status = pending_approval
 ### 5.2 Snapshot Rule (FINAL — snapshots live on `shipping_plan_lines` only)
 
 **Submit Plan must preserve the decision context.** Inventory data changes daily, so the Weekly Shipping Plan must **not** depend only on live Inventory data after creation — it must store the basis the PM saw when deciding.
+
+> **Weekly Shipping Recommendation cadence (canonical, `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A).** The shipping recommendation runs **once per week — Monday 14:00 Asia/Taipei** (trigger window Mon 14:00–15:00; after the 12:00 Daily Report Pipeline and the 13:00–14:00 validation buffer; gated on pipeline success — no partial/stale/empty-success Draft), producing `shipping_allocation_drafts` → `_lines` for the ISO-week Scope. Its scheduler entry point **requires Runtime verification — not claimed implemented**. **`recommended_qty`** (system snapshot; canonical 2026-07-22, legacy alias `recommand_shipment_draft_qty`) **initializes** **`planned_qty`** (user-editable; legacy alias `shipment_draft_qty`); **daily report updates never recalculate or overwrite the Draft or the user quantity** — the two remain independently visible. **No daily Draft versioning.** Idempotent per **ISO Year + ISO Week + Scope** (retries never duplicate/reset). NOT IMPLEMENTED.
 
 **Snapshot values are per-SKU and are stored ONLY on `shipping_plan_lines`. Do NOT store planning snapshots on `shipping_plans`.**
 

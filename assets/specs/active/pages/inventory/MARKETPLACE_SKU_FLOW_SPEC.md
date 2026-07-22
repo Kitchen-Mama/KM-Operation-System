@@ -4,6 +4,8 @@
 **Status:** Audit & Plan only — no code changes made  
 **Purpose:** Document current Add SKU / Add Marketplace behavior, propose marketplace_skus integration, and define implementation phases.
 
+> **SUPERSEDED (persistence, 2026-07-22):** any "Submit Plan → sessionStorage `allShippingPlans` / session-only / no DB" wording below is a historical MVP snapshot and is **NOT current authority.** Canonical rule: the scheduled/manual recommendation cycle persists `shipping_allocation_drafts` / `_draft_lines` (SSOT); Execution Plan edits persist into `planned_qty`; `sessionStorage` is transient UI recovery only; Submit Plan reads the persisted Execution Plan and writes `shipping_plans` via `KM.DB`. See `INVENTORY_TABLE_MAPPING_SPEC.md` §11.4 + `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6.
+
 ---
 
 ## 1. Current State

@@ -86,6 +86,10 @@ function renderSkuDetailsTable() {
         renderSkuLifecycleTable('running', window.runningSkuData || []);
         renderSkuLifecycleTable('phasing', window.phasingOutSkuData || []);
     }
+    // Rebuild filter options from the freshly-rendered rows (new Series/Category values appear here),
+    // then re-apply the active Search/Series/Category filters so a re-render never resets them.
+    populateSkuFilters();
+    applySkuFilters();
     setTimeout(() => { syncSkuHeaderScroll(); }, 100);
 }
 
@@ -122,10 +126,12 @@ function renderSkuLifecycleTable(section, data) {
         return;
     }
     fixedBody.innerHTML = data.map(function(item) {
-        // Plain SKU cell. Row is SELECTABLE (click) — editing happens via the top "Edit SKU" action.
+        // SKU cell. Single click SELECTS the row; double-click SELECTS + opens the SAME Edit SKU editor
+        // used by the top "Edit SKU" action (no second modal, no extra data load). Only this cell edits.
         var skuEsc = String(item.sku).replace(/'/g, "\\'");
         var sel = (_selectedSku && String(item.sku) === String(_selectedSku)) ? ' sku-row-selected' : '';
-        return '<div class="fixed-row' + sel + '" data-sku="' + _skuAttr(item.sku) + '" onclick="selectSkuRow(\'' + skuEsc + '\')">' + item.sku + '</div>';
+        return '<div class="fixed-row' + sel + '" data-sku="' + _skuAttr(item.sku) + '" data-series="' + _skuAttr(item.series) + '" data-category="' + _skuAttr(item.category) + '" title="Double-click to edit SKU"' +
+            ' onclick="selectSkuRow(\'' + skuEsc + '\')" ondblclick="skuRowDblEdit(\'' + skuEsc + '\', event)">' + item.sku + '</div>';
     }).join('');
 
     scrollBody.innerHTML = data.map(function(item) {
@@ -140,7 +146,7 @@ function renderSkuLifecycleTable(section, data) {
 
         // Column order (2026-07): Product Name CN after Product Name; AMZ ASIN removed; Product Use
         // before Material. Battery/Magnet render via _skuBoolDisplay (No / Yes / original enum text).
-        return '<div class="scroll-row' + sel + '" data-sku="' + _skuAttr(item.sku) + '" onclick="selectSkuRow(\'' + skuEsc + '\')">' +
+        return '<div class="scroll-row' + sel + '" data-sku="' + _skuAttr(item.sku) + '" data-series="' + _skuAttr(item.series) + '" data-category="' + _skuAttr(item.category) + '" onclick="selectSkuRow(\'' + skuEsc + '\')">' +
             '<div class="scroll-cell" data-col="1"><div class="image-placeholder">' + imgHtml + '</div></div>' +
             '<div class="scroll-cell" data-col="2">' + _skuDash(currentLc) + '</div>' +
             '<div class="scroll-cell" data-col="3">' + _skuDash(item.productName) + '</div>' +
@@ -160,8 +166,8 @@ function renderSkuLifecycleTable(section, data) {
             // live in tax_referral_rates. Prices use the single base_currency.
             '<div class="scroll-cell" data-col="16">' + _skuDash(item.productUse) + '</div>' +
             '<div class="scroll-cell" data-col="17">' + _skuDash(item.material) + '</div>' +
-            '<div class="scroll-cell" data-col="18">' + _skuBoolDisplay(item.batteryType) + '</div>' +
-            '<div class="scroll-cell" data-col="19">' + _skuBoolDisplay(item.magnetType) + '</div>' +
+            '<div class="scroll-cell" data-col="18">' + _skuEnumDisplay(item.batteryType, SKU_BATTERY_LABELS_) + '</div>' +
+            '<div class="scroll-cell" data-col="19">' + _skuMagnetDisplay(item.magnetType) + '</div>' +
             '<div class="scroll-cell" data-col="20">' + _skuPrice(item.minimumPrice || item.minimum_price, item.baseCurrency) + '</div>' +
             '<div class="scroll-cell" data-col="21">' + _skuPrice(item.msrp, item.baseCurrency) + '</div>' +
             '<div class="scroll-cell" data-col="22">' + _skuPrice(item.sellingPrice || item.selling_price, item.baseCurrency) + '</div>' +
@@ -183,6 +189,15 @@ function _skuBoolDisplay(v) {
     if (s === '' || low === 'false' || low === 'none' || low === 'no' || low === 'n' || low === '0') return 'No';
     if (low === 'true' || low === 'yes' || low === 'y' || low === '1') return 'Yes';
     return s;
+}
+// Friendly enum display for the SKU table (Battery / Magnet). Canonical codes → friendly bilingual label;
+// blank → '--'; any other (legacy/unrecognized) value → shown verbatim + "(Legacy)" so it is never a raw
+// silent code but is also never destroyed/reinterpreted. The stored DB value is unchanged.
+function _skuEnumDisplay(v, labels) {
+    var s = String(v == null ? '' : v).trim();
+    if (s === '') return '--';
+    if (labels && labels[s]) return _skuEsc(labels[s]);
+    return _skuEsc(s) + ' (Legacy)';
 }
 
 function handleSkuStatusChange(sku, newLifecycle) {
@@ -284,7 +299,8 @@ function toggleSection(sectionId) {
 }
 
 function handleAddSku() {
-    alert('Add SKU cloud write-back is not enabled yet. This will be implemented in the next phase.');
+    // Unified SkuMasterForm in ADD mode (same component as Edit; SKU editable until create).
+    openSkuMasterForm('add');
 }
 
 // ========================================
@@ -315,69 +331,539 @@ function selectSkuRow(sku, quiet) {
     });
 }
 
-// Full editable field set (snake_case DB columns). type: readonly | lifecycle | text | textarea | number.
-var SKU_EDIT_FIELDS_ = [
-    { key: 'sku', label: 'SKU', type: 'readonly' },
-    { key: 'lifecycle', label: 'Status', type: 'lifecycle' },
-    { key: 'product_name', label: 'Product Name', type: 'text' },
-    { key: 'product_name_cn', label: 'Product Name CN (中文品名)', type: 'text' },
-    { key: 'series', label: 'Series', type: 'text' },
-    { key: 'category', label: 'Category', type: 'text' },
-    { key: 'gs1_code', label: 'GS1 Code', type: 'text' },
-    { key: 'gs1_type', label: 'GS1 Type', type: 'text' },
-    { key: 'material', label: 'Material', type: 'text' },
-    { key: 'battery_type', label: 'Battery Type (false/none or e.g. Lithium-Ion)', type: 'text' },
-    { key: 'magnet_type', label: 'Magnet Type (false/none/true)', type: 'text' },
-    { key: 'product_use', label: 'Product Use (用途 / 報關用途)', type: 'textarea' },
-    { key: 'units_per_carton', label: 'Units / Carton', type: 'number' },
-    { key: 'item_length', label: 'Item L', type: 'number' },
-    { key: 'item_width', label: 'Item W', type: 'number' },
-    { key: 'item_height', label: 'Item H', type: 'number' },
-    { key: 'item_dimension_unit', label: 'Item Dim Unit', type: 'text' },
-    { key: 'item_weight', label: 'Item Weight', type: 'number' },
-    { key: 'item_weight_unit', label: 'Item Weight Unit', type: 'text' },
-    { key: 'package_length', label: 'Package L', type: 'number' },
-    { key: 'package_width', label: 'Package W', type: 'number' },
-    { key: 'package_height', label: 'Package H', type: 'number' },
-    { key: 'package_dimension_unit', label: 'Package Dim Unit', type: 'text' },
-    { key: 'package_weight', label: 'Package Weight', type: 'number' },
-    { key: 'package_weight_unit', label: 'Package Weight Unit', type: 'text' },
-    { key: 'carton_length', label: 'Carton L', type: 'number' },
-    { key: 'carton_width', label: 'Carton W', type: 'number' },
-    { key: 'carton_height', label: 'Carton H', type: 'number' },
-    { key: 'carton_dimension_unit', label: 'Carton Dim Unit', type: 'text' },
-    { key: 'carton_weight', label: 'Carton Weight', type: 'number' },
-    { key: 'carton_weight_unit', label: 'Carton Weight Unit', type: 'text' },
-    { key: 'minimum_price', label: 'Minimum Price', type: 'number' },
-    { key: 'msrp', label: 'MSRP', type: 'number' },
-    { key: 'selling_price', label: 'Selling Price', type: 'number' },
-    { key: 'base_currency', label: 'Base Currency', type: 'text' },
-    { key: 'pm', label: '負責PM', type: 'text' }
-];
-
-function _skuEditLoadValue(rec, f) {
-    if (!rec) return '';
-    if (f.key === 'sku') return rec.sku || '';
-    if (f.key === 'lifecycle') {
-        return (window.getNormalizedSkuStatus ? getNormalizedSkuStatus(rec) : '') ||
-            (rec.raw && rec.raw.lifecycle) || rec.lifecycle || '';
-    }
-    return (rec.raw && rec.raw[f.key] != null) ? rec.raw[f.key] : '';
+// Double-click the SKU cell → select that exact SKU and open the SAME editor as the toolbar button.
+// Reuses selectSkuRow + handleEditSku (which loads the record); it never builds a second modal or a
+// second data path. The SKU comes from the row's canonical value (not scraped from visible text).
+function skuRowDblEdit(sku, ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    // A double-click incidentally word-selects the cell text; clear it so the SKU is not left highlighted.
+    if (window.getSelection) { var s = window.getSelection(); if (s && s.removeAllRanges) s.removeAllRanges(); }
+    var resolved = String(sku == null ? '' : sku).trim();
+    if (!resolved) { showSkuStatusToast('Unable to open SKU details. Please select the SKU again.'); return; }
+    selectSkuRow(resolved);   // apply the normal row selection first
+    handleEditSku();          // reuse the existing Edit SKU opener + loader
 }
 
-function _buildSkuEditModal() {
+// ── Canonical enums (Global Logistics Enums — CARRIER_AND_ROUTE_SPEC §4.5; retired legacy values excluded) ──
+// Selectable canonical battery types (§E). rechargeable_lithium is RETIRED from selection but remains a
+// readable Legacy value (preserved on save unless the user explicitly changes Battery Type).
+var SKU_BATTERY_ENUM_ = ['no_battery', 'alkaline_battery', 'lithium_battery'];
+// magnet_type is a REAL Boolean (finalized 2026-07-21) — NOT an enum. Yes → true, No → false.
+// See _skuMagnetBool (normalization) / _skuMagnetControl (UI) / _skuMagnetDisplay (table).
+var SKU_GS1_ENUM_ = ['UPC', 'EAN', 'GTIN'];
+var SKU_CURRENCY_ENUM_ = ['USD', 'TWD', 'RMB', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD'];
+var SKU_DIM_UNIT_ENUM_ = ['cm', 'in'];
+var SKU_WT_UNIT_ENUM_ = ['kg', 'lb'];
+
+// Friendly display labels for canonical enum codes. The <option value> ALWAYS stays the canonical DB
+// code (no_battery / magnetic / …) — only the visible text is friendly. Unknown/legacy stored codes are
+// never silently mapped (see _skuEnumControl). GS1/Currency have no friendly map (label === value).
+var SKU_BATTERY_LABELS_ = {
+    no_battery: 'No Battery / 無電池',
+    alkaline_battery: 'Alkaline Battery / 鹼性電池',
+    lithium_battery: 'Lithium Battery / 鋰電池',
+    rechargeable_lithium: 'Rechargeable Lithium Battery (Legacy)'   // retired canonical — display only, not selectable (§E)
+};
+// Magnet Boolean normalization (shared by table display + Add/Edit control). Mirrors the backend
+// skuMagnetToBool_: explicit token classification, NEVER JS truthiness (Boolean("false") === true is wrong).
+// Returns true / false / null (blank or unknown — never guessed).
+function _skuMagnetBool(v) {
+    if (v === true) return true;
+    if (v === false) return false;
+    var s = String(v == null ? '' : v).trim().toLowerCase();
+    if (s === '') return null;
+    if (s === 'true' || s === 'yes' || s === 'y' || s === '1' || s === 'magnetic') return true;
+    if (s === 'false' || s === 'no' || s === 'n' || s === '0' || s === 'no_magnet') return false;
+    return null;
+}
+// Friendly Yes/No for the SKU table (true → Yes / 含磁性; false → No / 無磁性; blank/unknown → --).
+function _skuMagnetDisplay(v) {
+    var b = _skuMagnetBool(v);
+    if (b === true) return 'Yes / 含磁性';
+    if (b === false) return 'No / 無磁性';
+    return '--';
+}
+
+// Preset options for the Material / Product Use tag selectors. These are UI DEFAULTS ONLY — they are NOT
+// a separate DB truth and are never inserted as rows anywhere. Users may select any subset AND add custom
+// values; only sku_details.material / sku_details.product_use are written (see _skuTagSerialize).
+var SKU_MATERIAL_PRESETS_ = ['ABS Plastic', 'Stainless Steel', 'Aluminum', 'Silicone', 'PP', 'PC', 'TPR', 'Rubber', 'Glass', 'Ceramic', 'Wood', 'Paper / Cardboard', 'Other'];
+var SKU_PRODUCT_USE_PRESETS_ = ['Home Kitchen', 'Restaurant', 'Commercial Use', 'Outdoor', 'Travel', 'Gift', 'Office / Pantry', 'Hospitality', 'Other'];
+
+// Unified SkuMasterForm field set. tab: basic | sales. type: sku | select | enum | text | textarea | number.
+// group headings render inside a tab. dim rows (L×W×H + unit) render via SKU_DIM_GROUPS_.
+var SKU_FORM_FIELDS_ = [
+    // Basic — Identity & lifecycle
+    { key: 'sku', label: 'SKU', tab: 'basic', group: 'Identity & Status', type: 'sku', required: true },
+    { key: 'lifecycle', label: 'Status', tab: 'basic', group: 'Identity & Status', type: 'select', options: null, required: true },
+    { key: 'product_name', label: 'Product Name', tab: 'basic', group: 'Identity & Status', type: 'text' },
+    { key: 'product_name_cn', label: 'Product Name CN (中文品名)', tab: 'basic', group: 'Identity & Status', type: 'text' },
+    { key: 'series', label: 'Series', tab: 'basic', group: 'Identity & Status', type: 'combo', source: 'series' },
+    { key: 'category', label: 'Category', tab: 'basic', group: 'Identity & Status', type: 'combo', source: 'category' },
+    // Basic — Product attributes
+    { key: 'gs1_code', label: 'GS1 Code', tab: 'basic', group: 'Product Attributes', type: 'text' },
+    { key: 'gs1_type', label: 'GS1 Type', tab: 'basic', group: 'Product Attributes', type: 'enum', options: SKU_GS1_ENUM_ },
+    { key: 'material', label: 'Material', tab: 'basic', group: 'Product Attributes', type: 'tags', presets: SKU_MATERIAL_PRESETS_, help: 'Pick presets or type a custom value (Enter / comma). Stored as " + "-joined text (e.g. ABS Plastic + Stainless Steel).' },
+    { key: 'product_use', label: 'Product Use (用途 / 報關用途)', tab: 'basic', group: 'Product Attributes', type: 'tags', presets: SKU_PRODUCT_USE_PRESETS_, help: 'Pick presets or type a custom value (Enter / comma). Customs-facing.' },
+    { key: 'battery_type', label: 'Battery Type', tab: 'basic', group: 'Product Attributes', type: 'enum', options: SKU_BATTERY_ENUM_, labels: SKU_BATTERY_LABELS_, help: 'Battery Type refers to the battery built into or supplied with the product, not a battery type the customer must purchase separately. A product requiring AAA batteries but shipped without batteries is No Battery.' },
+    { key: 'magnet_type', label: 'Contains Magnet', tab: 'basic', group: 'Product Attributes', type: 'magnet' },
+    // Basic — carton count (dims rendered separately)
+    { key: 'units_per_carton', label: 'Units / Carton', tab: 'basic', group: 'Carton / Master Packaging', type: 'number' },
+    // Sales — Master baseline commercial
+    { key: 'minimum_price', label: 'Minimum Price', tab: 'sales', group: 'Baseline Commercial', type: 'number' },
+    { key: 'msrp', label: 'MSRP', tab: 'sales', group: 'Baseline Commercial', type: 'number' },
+    { key: 'selling_price', label: 'Selling Price', tab: 'sales', group: 'Baseline Commercial', type: 'number' },
+    { key: 'base_currency', label: 'Base Currency', tab: 'sales', group: 'Baseline Commercial', type: 'enum', options: SKU_CURRENCY_ENUM_ },
+    // 負責PM — kept as-is (OPEN DECISION on meaning); product-intrinsic column already in sku_details
+    { key: 'pm', label: '負責 PM', tab: 'basic', group: 'Identity & Status', type: 'text' }
+];
+
+// Dimension groups: three numeric L×W×H + one unit select. Presentation only — maps to separate DB columns.
+var SKU_DIM_GROUPS_ = [
+    { tab: 'basic', group: 'Item Dimensions', title: 'Item Dimensions (L × W × H)', l: 'item_length', w: 'item_width', h: 'item_height', unit: 'item_dimension_unit', unitOptions: SKU_DIM_UNIT_ENUM_, wt: 'item_weight', wtUnit: 'item_weight_unit', wtUnitOptions: SKU_WT_UNIT_ENUM_ },
+    { tab: 'basic', group: 'Package Dimensions', title: 'Package Dimensions (L × W × H)', l: 'package_length', w: 'package_width', h: 'package_height', unit: 'package_dimension_unit', unitOptions: SKU_DIM_UNIT_ENUM_, wt: 'package_weight', wtUnit: 'package_weight_unit', wtUnitOptions: SKU_WT_UNIT_ENUM_ },
+    { tab: 'basic', group: 'Carton / Master Packaging', title: 'Carton Dimensions (L × W × H)', l: 'carton_length', w: 'carton_width', h: 'carton_height', unit: 'carton_dimension_unit', unitOptions: SKU_DIM_UNIT_ENUM_, wt: 'carton_weight', wtUnit: 'carton_weight_unit', wtUnitOptions: SKU_WT_UNIT_ENUM_ }
+];
+// All persisted keys (for payload build + preservation reasoning).
+var SKU_DIM_KEYS_ = ['item_length','item_width','item_height','item_dimension_unit','item_weight','item_weight_unit','package_length','package_width','package_height','package_dimension_unit','package_weight','package_weight_unit','carton_length','carton_width','carton_height','carton_dimension_unit','carton_weight','carton_weight_unit'];
+
+var _skuFormMode = 'edit';   // 'add' | 'edit'
+var _skuFormSaving = false;
+
+// Per-open registries for the creatable combobox + tag inputs. Keyed by the control's DOM id
+// (combo) or the field key (tags). Rebuilt every time the form is opened (values read live from the
+// cache so a Series/Category saved earlier appears the next time the form is opened).
+var _skuComboData = {};   // id -> { opts:[...], kind:'series'|'category', active:-1 }
+var _skuTagData = {};     // key -> { tags:[...], original:'<raw>', dirty:false }
+
+function _skuEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+// ── Multi-value tag serialization (Material / Product Use) ────────────────────────────────────────
+// Canonical decision (2026-07): safe reversible " + " delimiter. A stored value already using " + "
+// splits into clean tags; ANY other non-empty value (including a bare-underscore legacy string such as
+// "Stainless_Steel_ABS") loads as ONE preserved chip and is written back verbatim unless the user edits
+// it. This never mis-splits ambiguous data and round-trips losslessly. Shared by both Add and Edit.
+function _skuTagParse(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (s === '') return [];
+    var parts = (s.indexOf('+') !== -1) ? s.split(/\s*\+\s*/) : [s];
+    var seen = {}, out = [];
+    parts.forEach(function (p) {
+        var t = String(p).trim();
+        if (t && !seen[t.toLowerCase()]) { seen[t.toLowerCase()] = 1; out.push(t); }
+    });
+    return out;
+}
+function _skuTagSerialize(tags) {
+    var seen = {}, out = [];
+    (tags || []).forEach(function (t) {
+        var v = String(t == null ? '' : t).trim();
+        if (v && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = 1; out.push(v); }
+    });
+    return out.join(' + ');
+}
+
+// Distinct, trimmed, non-empty existing values for a sku_details column (Series / Category options).
+// Read live from KM.DB so newly-saved values become available after the next cache refresh. Case is
+// preserved; duplicates that differ only by case are collapsed. Natural sort.
+function _skuDistinctValues(field) {
+    var list = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? (window.KM.DB.getSkuDetails() || []) : [];
+    var seen = {}, out = [];
+    list.forEach(function (r) {
+        var v = (r && r.raw && r.raw[field] != null) ? r.raw[field] : (r ? r[field] : '');
+        v = String(v == null ? '' : v).trim();
+        if (v && !seen[v.toLowerCase()]) { seen[v.toLowerCase()] = 1; out.push(v); }
+    });
+    out.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); });
+    return out;
+}
+
+// ── Creatable combobox (Series / Category) ──────────────────────────────────────────────────────────
+// The committed value is `_skuComboData[id].value` — NOT the raw input text. Typing only FILTERS; a value
+// is committed only by selecting an existing option or confirming the small "Add New" dialog. Newly added
+// values are TEMPORARY form state (`.temp`): they show in THIS form's list only, never touch the DB or the
+// page-level filters, and are discarded on reopen/close (the whole registry is rebuilt each form open).
+// A temp value becomes a global option solely via a successful sku_details Save (no master table, no
+// secondary write) — the next form open rebuilds DISTINCT persisted values.
+function _skuComboControl(key, value, source, label) {
+    var id = 'sku-f-' + key;
+    var persisted = _skuDistinctValues(source);
+    var v = String(value == null ? '' : value).trim();
+    var temp = [];
+    if (v && persisted.map(function (o) { return o.toLowerCase(); }).indexOf(v.toLowerCase()) === -1) temp.push(v);   // show a loaded value not yet in persisted
+    _skuComboData[id] = { persisted: persisted, temp: temp, value: v, kind: source, active: -1 };
+    return '<div class="skuf-combo">' +
+        '<input id="' + id + '" class="skuf-combo-input" type="text" autocomplete="off" value="' + _skuEsc(v) + '"' +
+            ' role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="' + id + '-list" aria-label="' + _skuEsc(label) + '"' +
+            ' oninput="skuComboFilter(\'' + id + '\')" onfocus="skuComboFilter(\'' + id + '\')" onblur="skuComboBlur(\'' + id + '\')" onkeydown="skuComboKey(\'' + id + '\', event)">' +
+        '<ul id="' + id + '-list" class="skuf-combo-list" role="listbox" hidden></ul>' +
+    '</div>';
+}
+function _skuComboOptions(d) { return d.persisted.concat(d.temp); }
+
+function skuComboFilter(id) {
+    var input = document.getElementById(id), listEl = document.getElementById(id + '-list'), d = _skuComboData[id];
+    if (!input || !listEl || !d) return;
+    var q = String(input.value || '').trim(), ql = q.toLowerCase();
+    var all = _skuComboOptions(d);
+    var matches = (q === '') ? all.slice(0, 50) : all.filter(function (o) { return o.toLowerCase().indexOf(ql) !== -1; }).slice(0, 50);
+    var html = matches.map(function (o) {
+        return '<li class="skuf-combo-opt" role="option" data-val="' + _skuEsc(o) + '" onmousedown="event.preventDefault()" onclick="skuComboPick(\'' + id + '\', this)">' + _skuEsc(o) + '</li>';
+    }).join('');
+    if (!html) html = '<li class="skuf-combo-empty">No matching ' + _skuEsc(d.kind) + '.</li>';
+    // Final action row ALWAYS opens the small Add-New dialog (typed text is never auto-committed).
+    html += '<li class="skuf-combo-opt skuf-combo-opt--new" role="option" data-action="add" onmousedown="event.preventDefault()" onclick="skuComboPick(\'' + id + '\', this)">＋ Add new ' + _skuEsc(d.kind) + '…</li>';
+    listEl.innerHTML = html;
+    listEl.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    d.active = -1;
+}
+
+function _skuComboHi(opts, idx) {
+    opts.forEach(function (o, i) { if (i === idx) o.classList.add('is-active'); else o.classList.remove('is-active'); });
+    if (opts[idx] && opts[idx].scrollIntoView) opts[idx].scrollIntoView({ block: 'nearest' });
+}
+function _skuComboClose(id) {
+    var input = document.getElementById(id), listEl = document.getElementById(id + '-list');
+    if (listEl) listEl.hidden = true;
+    if (input) input.setAttribute('aria-expanded', 'false');
+}
+// Restore the input display to the committed value (discards ephemeral filter text — never commits it).
+function _skuComboRestore(id) { var input = document.getElementById(id), d = _skuComboData[id]; if (input && d) input.value = d.value || ''; }
+function skuComboBlur(id) {
+    setTimeout(function () {
+        if (_skuComboAddTarget === id) return;   // Add-New dialog open for this combo — keep the input state
+        _skuComboRestore(id); _skuComboClose(id);
+    }, 150);
+}
+function skuComboKey(id, ev) {
+    var listEl = document.getElementById(id + '-list'), d = _skuComboData[id];
+    if (!listEl || !d) return;
+    var opts = Array.prototype.slice.call(listEl.querySelectorAll('.skuf-combo-opt'));
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); if (listEl.hidden) { skuComboFilter(id); return; } d.active = Math.min(opts.length - 1, d.active + 1); _skuComboHi(opts, d.active); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); if (listEl.hidden) return; d.active = Math.max(0, d.active - 1); _skuComboHi(opts, d.active); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); if (!listEl.hidden && d.active >= 0 && opts[d.active]) skuComboPick(id, opts[d.active]); else _skuComboClose(id); }
+    else if (ev.key === 'Escape') { if (!listEl.hidden) { ev.stopPropagation(); _skuComboRestore(id); _skuComboClose(id); } }
+}
+function skuComboPick(id, li) {
+    if (!li) return;
+    if (li.getAttribute('data-action') === 'add') { skuComboAddNewOpen(id); return; }   // → small dialog, never auto-commit
+    var d = _skuComboData[id], input = document.getElementById(id);
+    var val = li.getAttribute('data-val') || '';
+    if (!d || !val) return;
+    d.value = val;                     // commit the selected existing/temp option
+    if (input) input.value = val;
+    _skuComboClose(id);
+}
+
+// ── Series/Category "Add New" small dialog (explicit confirm; temporary until SKU save) ───────────────
+var _skuComboAddTarget = null;   // combo input id the dialog is currently adding to
+function _skuBuildComboAddDialog() {
+    var ov = document.createElement('div');
+    ov.id = 'sku-combo-addnew-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:10002;display:none;align-items:flex-start;justify-content:center;padding:clamp(60px,15vh,160px) 16px;';
+    ov.innerHTML =
+        '<div style="background:#fff;border-radius:10px;width:min(380px,94vw);box-shadow:0 12px 40px rgba(0,0,0,0.25);overflow:hidden;" onclick="event.stopPropagation()">' +
+            '<div id="sku-combo-addnew-title" style="padding:14px 16px;border-bottom:1px solid #E2E8F0;font-weight:600;font-size:14px;color:#1E293B;">Add New</div>' +
+            '<div style="padding:16px;">' +
+                '<input id="sku-combo-addnew-input" type="text" autocomplete="off" placeholder="Enter a value" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;color:#1E293B;" onkeydown="skuComboAddNewKey(event)">' +
+                '<div id="sku-combo-addnew-err" style="display:none;color:#DC2626;font-size:11px;margin-top:6px;"></div>' +
+            '</div>' +
+            '<div style="padding:12px 16px;border-top:1px solid #E2E8F0;display:flex;justify-content:flex-end;gap:8px;">' +
+                '<button type="button" onclick="skuComboAddNewCancel()" style="padding:7px 14px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
+                '<button type="button" onclick="skuComboAddNewConfirm()" style="padding:7px 14px;border:none;background:#7DAB63;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Add</button>' +
+            '</div>' +
+        '</div>';
+    ov.addEventListener('click', function (e) { if (e.target === ov) skuComboAddNewCancel(); });
+    document.body.appendChild(ov);
+    return ov;
+}
+function skuComboAddNewOpen(id) {
+    var d = _skuComboData[id]; if (!d) return;
+    _skuComboAddTarget = id;
+    var ov = document.getElementById('sku-combo-addnew-overlay') || _skuBuildComboAddDialog();
+    ov.querySelector('#sku-combo-addnew-title').textContent = (d.kind === 'series') ? 'Add New Series' : (d.kind === 'category' ? 'Add New Category' : 'Add New');
+    var inp = ov.querySelector('#sku-combo-addnew-input'); inp.value = '';
+    var err = ov.querySelector('#sku-combo-addnew-err'); err.style.display = 'none';
+    _skuComboClose(id);
+    ov.style.display = 'flex';
+    setTimeout(function () { inp.focus(); }, 0);
+}
+function skuComboAddNewCancel() {
+    var ov = document.getElementById('sku-combo-addnew-overlay'); if (ov) ov.style.display = 'none';
+    _skuComboAddTarget = null;
+}
+function skuComboAddNewConfirm() {
+    var id = _skuComboAddTarget, d = id && _skuComboData[id];
+    if (!d) { skuComboAddNewCancel(); return; }
+    var ov = document.getElementById('sku-combo-addnew-overlay');
+    var inp = ov.querySelector('#sku-combo-addnew-input'), err = ov.querySelector('#sku-combo-addnew-err');
+    var v = String(inp.value || '').trim();
+    if (!v) { err.textContent = 'Enter a value.'; err.style.display = ''; return; }
+    // Case-insensitive de-dup vs persisted + temp → select the existing value rather than duplicate it.
+    var existing = _skuComboOptions(d).filter(function (o) { return o.toLowerCase() === v.toLowerCase(); })[0];
+    if (existing) { d.value = existing; }
+    else { d.temp.push(v); d.value = v; }   // temporary form-only option (never a DB write here)
+    var input = document.getElementById(id); if (input) input.value = d.value;
+    skuComboAddNewCancel();
+}
+function skuComboAddNewKey(ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); skuComboAddNewConfirm(); }
+    else if (ev.key === 'Escape') { ev.stopPropagation(); skuComboAddNewCancel(); }
+}
+
+// ── Tag / chip input with preset multi-select + creatable custom values ───────────────────────────
+// ONE shared control for Material and Product Use. Presets are UI defaults (never a DB truth). There is
+// NO #sku-f-<key> single input; the value is collected from _skuTagData in _skuCollectAndValidate. The
+// inner text field is #sku-f-<key>-input (residual text is flushed on Save). A suggestion dropdown shows
+// presets not yet selected (type to filter) + a "＋ Add new …: {typed}" custom row.
+function _skuTagControl(key, raw, placeholder, presets) {
+    var tags = _skuTagParse(raw);
+    _skuTagData[key] = { tags: tags.slice(), original: String(raw == null ? '' : raw), dirty: false, presets: presets || [], active: -1 };
+    return '<div class="skuf-tagwrap">' +
+        '<div class="skuf-tags" id="sku-f-' + key + '-tags" onclick="var i=document.getElementById(\'sku-f-' + key + '-input\'); if(i) i.focus();">' +
+            '<span class="skuf-chips" id="sku-f-' + key + '-chips">' + _skuTagChipsHtml(key) + '</span>' +
+            '<input id="sku-f-' + key + '-input" class="skuf-tags-input" type="text" autocomplete="off" placeholder="' + _skuEsc(placeholder || 'Add…') + '"' +
+                ' role="combobox" aria-expanded="false" aria-controls="sku-f-' + key + '-list" aria-label="Add ' + _skuEsc(key.replace(/_/g, ' ')) + '"' +
+                ' onfocus="skuTagSuggest(\'' + key + '\')" oninput="skuTagSuggest(\'' + key + '\')" onkeydown="skuTagKey(\'' + key + '\', event)">' +
+        '</div>' +
+        '<ul id="sku-f-' + key + '-list" class="skuf-combo-list" role="listbox" hidden></ul>' +
+    '</div>';
+}
+function _skuTagChipsHtml(key) {
+    var d = _skuTagData[key];
+    if (!d || !d.tags.length) return '';
+    return d.tags.map(function (t, i) {
+        return '<span class="skuf-chip"><span>' + _skuEsc(t) + '</span>' +
+            '<button type="button" class="skuf-chip-x" title="Remove" aria-label="Remove ' + _skuEsc(t) + '" onclick="event.stopPropagation(); skuTagRemove(\'' + key + '\', ' + i + ')">×</button></span>';
+    }).join('');
+}
+function _skuTagRerender(key) {
+    var el = document.getElementById('sku-f-' + key + '-chips');
+    if (el) el.innerHTML = _skuTagChipsHtml(key);
+    var input = document.getElementById('sku-f-' + key + '-input');
+    if (input) input.focus();
+}
+// Add one value as a chip (exact-duplicate + empty guarded). Returns true if it changed the set.
+function _skuTagAddValue(key, value) {
+    var d = _skuTagData[key];
+    var v = String(value == null ? '' : value).trim();
+    if (!d || !v) return false;
+    if (d.tags.some(function (t) { return t.toLowerCase() === v.toLowerCase(); })) return false;
+    d.tags.push(v); d.dirty = true;
+    return true;
+}
+// Commit the residual typed text as a tag (used on Enter/comma and flushed on Save).
+function _skuTagCommit(key) {
+    var input = document.getElementById('sku-f-' + key + '-input');
+    if (!input) return false;
+    var changed = _skuTagAddValue(key, input.value);
+    input.value = '';
+    _skuTagRerender(key);
+    return changed;
+}
+function skuTagRemove(key, idx) {
+    var d = _skuTagData[key];
+    if (!d || idx < 0 || idx >= d.tags.length) return;
+    d.tags.splice(idx, 1); d.dirty = true; _skuTagRerender(key);
+    skuTagSuggest(key);   // a removed preset returns to the suggestion list
+}
+// Render the preset/custom suggestion dropdown for the current typed text.
+function skuTagSuggest(key) {
+    var input = document.getElementById('sku-f-' + key + '-input'), listEl = document.getElementById('sku-f-' + key + '-list'), d = _skuTagData[key];
+    if (!input || !listEl || !d) return;
+    var q = String(input.value || '').trim(), ql = q.toLowerCase();
+    var chosen = {}; d.tags.forEach(function (t) { chosen[t.toLowerCase()] = 1; });
+    var presets = (d.presets || []).filter(function (p) { return !chosen[p.toLowerCase()] && (ql === '' || p.toLowerCase().indexOf(ql) !== -1); });
+    var exactPreset = (d.presets || []).some(function (p) { return p.toLowerCase() === ql; });
+    var noun = key.replace(/_/g, ' ');
+    var html = presets.map(function (p) {
+        return '<li class="skuf-combo-opt" role="option" data-val="' + _skuEsc(p) + '" onmousedown="event.preventDefault()" onclick="skuTagPick(\'' + key + '\', this)">' + _skuEsc(p) + '</li>';
+    }).join('');
+    if (q !== '' && !exactPreset && !chosen[ql]) {
+        html += '<li class="skuf-combo-opt skuf-combo-opt--new" role="option" data-val="' + _skuEsc(q) + '" onmousedown="event.preventDefault()" onclick="skuTagPick(\'' + key + '\', this)">＋ Add new ' + _skuEsc(noun) + ': ' + _skuEsc(q) + '</li>';
+    }
+    if (!html) html = '<li class="skuf-combo-empty">All preset options selected — type to add a custom value.</li>';
+    listEl.innerHTML = html;
+    listEl.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    d.active = -1;
+}
+function skuTagPick(key, li) {
+    var val = li ? (li.getAttribute('data-val') || '') : '';
+    if (!val) return;
+    _skuTagAddValue(key, val);
+    var input = document.getElementById('sku-f-' + key + '-input');
+    if (input) input.value = '';
+    _skuTagRerender(key);
+    skuTagSuggest(key);   // keep the dropdown open for further multi-select
+}
+function skuTagKey(key, ev) {
+    var listEl = document.getElementById('sku-f-' + key + '-list'), d = _skuTagData[key];
+    var opts = (listEl && !listEl.hidden) ? Array.prototype.slice.call(listEl.querySelectorAll('.skuf-combo-opt')) : [];
+    if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (opts.length && d && d.active >= 0 && opts[d.active]) skuTagPick(key, opts[d.active]);
+        else _skuTagCommit(key);
+        return;
+    }
+    if (ev.key === ',') { ev.preventDefault(); _skuTagCommit(key); return; }
+    if (ev.key === 'ArrowDown') { if (listEl && listEl.hidden) { skuTagSuggest(key); return; } ev.preventDefault(); if (d) { d.active = Math.min(opts.length - 1, d.active + 1); _skuComboHi(opts, d.active); } return; }
+    if (ev.key === 'ArrowUp') { if (!opts.length) return; ev.preventDefault(); if (d) { d.active = Math.max(0, d.active - 1); _skuComboHi(opts, d.active); } return; }
+    if (ev.key === 'Escape') { if (listEl && !listEl.hidden) { ev.stopPropagation(); listEl.hidden = true; if (this && this.setAttribute) this.setAttribute('aria-expanded', 'false'); } return; }
+    if (ev.key === 'Backspace') {
+        var input = document.getElementById('sku-f-' + key + '-input');
+        if (input && d && input.value === '' && d.tags.length) { ev.preventDefault(); d.tags.pop(); d.dirty = true; _skuTagRerender(key); skuTagSuggest(key); }
+    }
+}
+
+function _skuLoadValue(rec, key) {
+    if (!rec) return '';
+    if (key === 'sku') return rec.sku || '';
+    if (key === 'lifecycle') {
+        return (window.getNormalizedSkuStatus ? getNormalizedSkuStatus(rec) : '') || (rec.raw && rec.raw.lifecycle) || rec.lifecycle || '';
+    }
+    return (rec.raw && rec.raw[key] != null) ? rec.raw[key] : '';
+}
+
+function _skuValidLifecycles() { return window.VALID_LIFECYCLES || ['Upcoming SKU', 'Running in the Market', 'Phasing Out', 'Closure', 'Other']; }
+
+// Render an enum <select>. If the stored value is not a canonical option (legacy/unrecognized), it is
+// shown as a disabled "legacy" option and NOT auto-selected — the user must explicitly pick a canonical
+// value before it can be saved (no silent coercion; the record is never destroyed on load).
+function _skuEnumControl(id, value, options, labels) {
+    var v = String(value == null ? '' : value).trim();
+    var known = options.indexOf(v) !== -1;
+    var legacy = (v !== '' && !known);
+    var lbl = function (o) { return (labels && labels[o]) ? labels[o] : o; };   // friendly text; value stays canonical
+    var html = '<select id="' + id + '" data-enum="1" class="skuf-enum' + (legacy ? ' is-legacy' : '') + '"' + (legacy ? ' data-legacy="' + _skuEsc(v) + '"' : '') + '>';
+    html += '<option value=""' + (v === '' ? ' selected' : '') + '>— Select —</option>';
+    if (legacy) { var lv = (labels && labels[v]) ? labels[v] : (v + ' (legacy)'); html += '<option value="__legacy__" selected disabled>⚠ ' + _skuEsc(lv) + ' — choose a current value</option>'; }
+    html += options.map(function (o) { return '<option value="' + _skuEsc(o) + '"' + (known && o === v ? ' selected' : '') + '>' + _skuEsc(lbl(o)) + '</option>'; }).join('');
+    html += '</select>';
+    return html;
+}
+
+// Magnet Boolean control (Yes/No). The <option value> is the string "true"/"false"; collect converts it to
+// a REAL Boolean. A blank placeholder means "not set" (omitted from the payload → existing value preserved).
+// A legacy value (magnetic/no_magnet/TRUE/FALSE) preselects Yes/No, so saving canonicalizes it to Boolean.
+function _skuMagnetControl(id, value) {
+    var b = _skuMagnetBool(value);
+    return '<select id="' + id + '" data-magnet="1" class="skuf-enum">' +
+        '<option value=""' + (b === null ? ' selected' : '') + '>— Select —</option>' +
+        '<option value="true"' + (b === true ? ' selected' : '') + '>Yes / 含磁性</option>' +
+        '<option value="false"' + (b === false ? ' selected' : '') + '>No / 無磁性</option>' +
+    '</select>';
+}
+
+function _skuFieldControl(f, rec) {
+    var id = 'sku-f-' + f.key;
+    var val = _skuLoadValue(rec, f.key);
+    if (f.type === 'sku') {
+        var ro = (_skuFormMode === 'edit');
+        return '<input id="' + id + '" type="text" value="' + _skuEsc(val) + '"' + (ro ? ' readonly' : '') +
+            ' style="padding:7px 9px;border:1px solid ' + (ro ? '#E2E8F0' : '#CBD5E1') + ';border-radius:6px;font-size:13px;background:' + (ro ? '#F1F5F9' : '#fff') + ';color:' + (ro ? '#64748B' : '#1E293B') + ';">';
+    }
+    if (f.type === 'select') { // lifecycle
+        var lcs = _skuValidLifecycles();
+        return '<select id="' + id + '" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;background:#fff;color:#1E293B;">' +
+            lcs.map(function (lc) { return '<option value="' + _skuEsc(lc) + '"' + (String(lc) === String(val) ? ' selected' : '') + '>' + _skuEsc(lc) + '</option>'; }).join('') + '</select>';
+    }
+    if (f.type === 'enum') return _skuEnumControl(id, val, f.options, f.labels);
+    if (f.type === 'magnet') return _skuMagnetControl(id, val);
+    if (f.type === 'combo') return _skuComboControl(f.key, val, f.source, f.label);
+    if (f.type === 'tags') return _skuTagControl(f.key, val, f.placeholder, f.presets);
+    if (f.type === 'textarea') return '<textarea id="' + id + '" rows="2" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;resize:vertical;color:#1E293B;">' + _skuEsc(val) + '</textarea>';
+    return '<input id="' + id + '" type="' + (f.type === 'number' ? 'number' : 'text') + '" value="' + _skuEsc(val) + '" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;color:#1E293B;">';
+}
+
+function _skuFieldBlock(f, rec) {
+    var wide = (f.type === 'textarea' || f.type === 'tags') ? 'grid-column:1 / -1;' : '';
+    var req = f.required ? ' <span style="color:#DC2626;">*</span>' : '';
+    var help = f.help ? '<div class="skuf-help">' + _skuEsc(f.help) + '</div>' : '';
+    return '<div style="display:flex;flex-direction:column;gap:3px;' + wide + '"><label style="font-size:11px;color:#64748B;">' + _skuEsc(f.label) + req + '</label>' + _skuFieldControl(f, rec) + help + '</div>';
+}
+
+function _skuDimBlock(d, rec) {
+    var mk = function (key, ph) { return '<input id="sku-f-' + key + '" class="skuf-num" type="number" placeholder="' + ph + '" value="' + _skuEsc(_skuLoadValue(rec, key)) + '">'; };
+    var unitSel = function (key, opts) {
+        var v = String(_skuLoadValue(rec, key) || '').trim();
+        return '<select id="sku-f-' + key + '" class="skuf-unit-sel"><option value="">—</option>' +
+            opts.map(function (o) { return '<option value="' + _skuEsc(o) + '"' + (o === v ? ' selected' : '') + '>' + _skuEsc(o) + '</option>'; }).join('') + '</select>';
+    };
+    var cell = function (lab, ctrl) { return '<div><label style="font-size:10px;color:#94A3B8;display:block;margin-bottom:2px;">' + lab + '</label>' + ctrl + '</div>'; };
+    return '<div style="grid-column:1 / -1;border:1px solid #EEF2F7;border-radius:8px;padding:10px 12px;">' +
+        '<div style="font-size:11px;color:#475569;font-weight:600;margin-bottom:6px;">' + _skuEsc(d.title) + '</div>' +
+        '<div class="skuf-dim-grid">' +
+            cell('L', mk(d.l, 'L')) + cell('W', mk(d.w, 'W')) + cell('H', mk(d.h, 'H')) + cell('Unit', unitSel(d.unit, d.unitOptions)) +
+        '</div>' +
+        '<div class="skuf-wt-grid">' +
+            cell('Weight', mk(d.wt, 'Weight')) + cell('Wt Unit', unitSel(d.wtUnit, d.wtUnitOptions)) +
+        '</div>' +
+    '</div>';
+}
+
+// Render one tab panel (basic|sales) by grouping fields + dim groups under their group headings.
+function _skuRenderTab(tab, rec) {
+    // Ordered group names as they first appear for this tab.
+    var order = [];
+    SKU_FORM_FIELDS_.forEach(function (f) { if (f.tab === tab && order.indexOf(f.group) === -1) order.push(f.group); });
+    SKU_DIM_GROUPS_.forEach(function (d) { if (d.tab === tab && order.indexOf(d.group) === -1) order.push(d.group); });
+    return order.map(function (grp) {
+        var blocks = '';
+        SKU_FORM_FIELDS_.forEach(function (f) { if (f.tab === tab && f.group === grp) blocks += _skuFieldBlock(f, rec); });
+        SKU_DIM_GROUPS_.forEach(function (d) { if (d.tab === tab && d.group === grp) blocks += _skuDimBlock(d, rec); });
+        return '<div style="margin-bottom:14px;"><div style="font-size:12px;font-weight:700;color:#0F172A;margin:4px 0 8px;border-bottom:1px solid #E2E8F0;padding-bottom:4px;">' + _skuEsc(grp) + '</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">' + blocks + '</div></div>';
+    }).join('');
+}
+
+function _skuTabButton(key, label) {
+    return '<button type="button" role="tab" data-tab="' + key + '" aria-selected="false" onclick="skuSwitchTab(\'' + key + '\')" ' +
+        'style="padding:8px 12px;border:none;border-bottom:2px solid transparent;background:none;cursor:pointer;font-size:13px;color:#475569;">' + label +
+        '<span class="sku-tab-err" data-tab-err="' + key + '" style="display:none;color:#DC2626;margin-left:5px;font-weight:700;">!</span></button>';
+}
+
+function skuSwitchTab(tab) {
+    var overlay = document.getElementById('sku-edit-modal-overlay');
+    if (!overlay) return;
+    overlay.querySelectorAll('[role="tab"]').forEach(function (b) {
+        var on = b.getAttribute('data-tab') === tab;
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+        b.style.borderBottomColor = on ? '#7DAB63' : 'transparent';
+        b.style.color = on ? '#0F172A' : '#475569';
+        b.style.fontWeight = on ? '700' : '400';
+    });
+    overlay.querySelectorAll('[role="tabpanel"]').forEach(function (p) { p.style.display = (p.getAttribute('data-panel') === tab) ? 'block' : 'none'; });
+}
+
+function _buildSkuMasterFormModal() {
     var overlay = document.createElement('div');
     overlay.id = 'sku-edit-modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:10000;display:none;align-items:center;justify-content:center;';
+    // Top-anchored: the dialog aligns to a stable top offset (never vertically re-centered), so switching
+    // tabs never moves the header / tab bar. Only the body height adapts (short tab → shorter dialog; long
+    // tab → capped at max-height with the body scrolling). The overlay itself scrolls on very small screens.
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:10000;display:none;align-items:flex-start;justify-content:center;padding:clamp(24px,8vh,96px) 16px 24px;overflow-y:auto;';
     overlay.innerHTML =
-        '<div style="background:#fff;border-radius:10px;width:min(720px,94vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.2);overflow:hidden;">' +
-            '<div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;font-weight:600;font-size:15px;color:#1E293B;" id="sku-edit-title">Edit SKU</div>' +
-            '<div id="sku-edit-body" style="padding:18px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;"></div>' +
-            '<div style="padding:14px 18px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;gap:10px;">' +
-                '<button type="button" onclick="handleSkuTaxRates()" title="Maintain Series-level HS Code & tax records (tax_referral_rates)" style="padding:8px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;color:#0F766E;">HS Code &amp; Tax Rates</button>' +
+        '<div style="background:#fff;border-radius:10px;width:min(760px,95vw);max-height:calc(100vh - clamp(24px,8vh,96px) - 24px);display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.2);overflow:hidden;">' +
+            '<div style="padding:14px 18px;border-bottom:1px solid #E2E8F0;font-weight:600;font-size:15px;color:#1E293B;flex-shrink:0;" id="sku-edit-title">SKU</div>' +
+            '<div role="tablist" style="display:flex;gap:4px;padding:0 12px;border-bottom:1px solid #E2E8F0;flex-wrap:wrap;flex-shrink:0;">' +
+                _skuTabButton('basic', '基礎資訊 / Basic') +
+                _skuTabButton('sales', '銷售資訊 / Sales') +
+                _skuTabButton('supplier', '供應商資訊 / Supplier') +
+                _skuTabButton('logs', '日誌 / Logs') +
+            '</div>' +
+            '<div id="sku-edit-body" style="padding:16px 18px;overflow-y:auto;flex:1;min-height:0;">' +
+                '<div role="tabpanel" data-panel="basic"></div>' +
+                '<div role="tabpanel" data-panel="sales" style="display:none;"></div>' +
+                '<div role="tabpanel" data-panel="supplier" style="display:none;"></div>' +
+                '<div role="tabpanel" data-panel="logs" style="display:none;"></div>' +
+            '</div>' +
+            '<div style="padding:14px 18px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;">' +
+                '<button type="button" id="sku-tax-btn" onclick="handleSkuTaxRates()" title="Maintain Series-level HS Code & tax records (tax_referral_rates)" style="padding:8px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;color:#0F766E;">HS Code &amp; Tax Rates</button>' +
                 '<div style="display:flex;gap:10px;">' +
-                    '<button type="button" onclick="closeSkuEdit()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
-                    '<button type="button" onclick="saveSkuEdit()" style="padding:8px 16px;border:none;background:#3B82F6;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Save</button>' +
+                    '<button type="button" onclick="closeSkuEdit()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
+                    '<button type="button" id="sku-save-btn" onclick="saveSkuMasterForm()" style="padding:8px 16px;border:none;background:#7DAB63;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>' +
                 '</div>' +
             '</div>' +
         '</div>';
@@ -385,70 +871,205 @@ function _buildSkuEditModal() {
     return overlay;
 }
 
-function handleEditSku() {
+function _skuSalesNotice() {
+    return '<div style="grid-column:1 / -1;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:8px 10px;font-size:12px;color:#166534;">' +
+        'These are Product Master baseline values. Marketplace-, country-, and effective-date pricing is managed in Pricing List / Regional Details.</div>';
+}
+
+function _skuRegionalTaxNav(rec) {
+    if (_skuFormMode !== 'edit' || !rec) {
+        return '<div style="grid-column:1 / -1;font-size:12px;color:#94A3B8;font-style:italic;">Regional marketplace information and Series/Country tax rates can be added after the Master SKU is created.</div>';
+    }
+    var series = String((rec.raw && rec.raw.series) || rec.series || '').trim();
+    return '<div style="grid-column:1 / -1;border-top:1px dashed #E2E8F0;margin-top:8px;padding-top:10px;">' +
+        '<div style="font-size:11px;color:#64748B;font-weight:600;margin-bottom:6px;">Regional &amp; Tax (navigation — no Regional/Tax data is written from here)</div>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+            '<button type="button" onclick="skuViewRegionalDetails()" style="padding:6px 12px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:12px;">View Regional Details</button>' +
+            '<button type="button" onclick="handleSkuTaxRates()" style="padding:6px 12px;border:1px solid #CBD5E1;background:#fff;color:#0F766E;border-radius:6px;cursor:pointer;font-size:12px;">HS Code &amp; Tax Rates' + (series ? ' — Series ' + _skuEsc(series) : '') + '</button>' +
+        '</div></div>';
+}
+
+function _skuSupplierPanel() {
+    return '<div style="padding:18px;text-align:center;color:#64748B;background:#F8FAFC;border:1px dashed #E2E8F0;border-radius:8px;">' +
+        '<div style="font-size:13px;font-weight:600;color:#475569;">Supplier Information</div>' +
+        '<div style="font-size:12px;margin-top:6px;">Supplier management is not implemented yet. It will be managed through Supplier Master and SKU–Supplier relationships.</div></div>';
+}
+
+function _skuLogsPanel(rec) {
+    if (_skuFormMode === 'add') {
+        return '<div style="padding:18px;color:#64748B;background:#F8FAFC;border:1px dashed #E2E8F0;border-radius:8px;font-size:12px;">This SKU has not been created yet. Metadata (created/updated) will appear after creation.</div>';
+    }
+    var createdAt = (rec && rec.raw && rec.raw.created_at) || (rec && rec.createdAt) || '';
+    var updatedAt = (rec && rec.raw && rec.raw.updated_at) || (rec && rec.updatedAt) || '';
+    var row = function (k, v) { return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #F1F5F9;"><span style="color:#64748B;font-size:12px;">' + k + '</span><span style="color:#1E293B;font-size:12px;">' + _skuEsc(v || '—') + '</span></div>'; };
+    return '<div style="font-size:12px;">' +
+        row('Created At', createdAt) + row('Updated At', updatedAt) +
+        '<div style="margin-top:10px;color:#94A3B8;font-style:italic;">Change author is not tracked yet.</div>' +
+        '<div style="margin-top:4px;color:#94A3B8;font-style:italic;">Detailed change history is not available yet.</div>' +
+    '</div>';
+}
+
+function skuViewRegionalDetails() {
+    // Navigation only — never writes Regional data through this form.
+    if (window.showSection) { try { showSection('sku-regional-details'); } catch (e) {} }
+    else { showSkuStatusToast('Open SKU Regional Details from the sidebar.'); }
+}
+
+// Open the unified form. mode 'add' → blank + editable SKU + Create; 'edit' → load record + read-only SKU + Save.
+function openSkuMasterForm(mode) {
     if (!canEditSkuDetails()) { alert('You do not have permission to edit SKU Details.'); return; }
-    if (!_selectedSku) { alert('Select a SKU row first, then click Edit SKU.'); return; }
-    var rec = _skuFindRecord(_selectedSku);
+    _skuFormMode = (mode === 'add') ? 'add' : 'edit';
+    var rec = null;
+    if (_skuFormMode === 'edit') {
+        if (!_selectedSku) { alert('Select a SKU row first, then click Edit SKU.'); return; }
+        rec = _skuFindRecord(_selectedSku);
+        if (!rec) { showSkuStatusToast('Unable to open SKU details. Please select the SKU again.'); return; }
+    }
     var overlay = document.getElementById('sku-edit-modal-overlay');
-    if (!overlay) { overlay = _buildSkuEditModal(); document.body.appendChild(overlay); }
-    overlay.querySelector('#sku-edit-title').textContent = 'Edit SKU — ' + _selectedSku;
-    var validLc = window.VALID_LIFECYCLES || ['Upcoming SKU', 'Running in the Market', 'Phasing Out', 'Closure'];
-    var esc = function(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
-    var body = overlay.querySelector('#sku-edit-body');
-    body.innerHTML = SKU_EDIT_FIELDS_.map(function(f) {
-        var val = _skuEditLoadValue(rec, f);
-        var id = 'sku-edit-f-' + f.key;
-        var wide = (f.type === 'textarea') ? 'grid-column:1 / -1;' : '';
-        var control;
-        if (f.type === 'readonly') {
-            control = '<input id="' + id + '" type="text" value="' + esc(val) + '" readonly ' +
-                'style="padding:7px 9px;border:1px solid #E2E8F0;border-radius:6px;font-size:13px;background:#F1F5F9;color:#64748B;">';
-        } else if (f.type === 'lifecycle') {
-            var opts = validLc.map(function(lc) { return '<option value="' + esc(lc) + '"' + (String(lc) === String(val) ? ' selected' : '') + '>' + esc(lc) + '</option>'; }).join('');
-            control = '<select id="' + id + '" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;">' + opts + '</select>';
-        } else if (f.type === 'textarea') {
-            control = '<textarea id="' + id + '" rows="2" style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;resize:vertical;">' + esc(val) + '</textarea>';
-        } else {
-            control = '<input id="' + id + '" type="' + (f.type === 'number' ? 'number' : 'text') + '" value="' + esc(val) + '" ' +
-                'style="padding:7px 9px;border:1px solid #CBD5E1;border-radius:6px;font-size:13px;">';
-        }
-        return '<div style="display:flex;flex-direction:column;gap:3px;' + wide + '">' +
-            '<label style="font-size:11px;color:#64748B;">' + esc(f.label) + '</label>' + control + '</div>';
-    }).join('');
+    if (!overlay) { overlay = _buildSkuMasterFormModal(); document.body.appendChild(overlay); }
+    _skuFormSaving = false;
+    overlay.querySelector('#sku-edit-title').textContent = (_skuFormMode === 'add') ? 'Add SKU' : ('Edit SKU — ' + _selectedSku);
+    var saveBtn = overlay.querySelector('#sku-save-btn'); if (saveBtn) { saveBtn.textContent = (_skuFormMode === 'add') ? 'Create SKU' : 'Save Changes'; saveBtn.disabled = false; }
+    var taxBtn = overlay.querySelector('#sku-tax-btn'); if (taxBtn) taxBtn.style.display = (_skuFormMode === 'add') ? 'none' : '';   // tax subpage needs a created SKU/Series
+    // Panels
+    overlay.querySelector('[data-panel="basic"]').innerHTML = _skuRenderTab('basic', rec);
+    overlay.querySelector('[data-panel="sales"]').innerHTML =
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">' + _skuSalesNotice() +
+        SKU_FORM_FIELDS_.filter(function (f) { return f.tab === 'sales'; }).map(function (f) { return _skuFieldBlock(f, rec); }).join('') +
+        _skuRegionalTaxNav(rec) + '</div>';
+    overlay.querySelector('[data-panel="supplier"]').innerHTML = _skuSupplierPanel();
+    overlay.querySelector('[data-panel="logs"]').innerHTML = _skuLogsPanel(rec);
+    skuSwitchTab('basic');
     overlay.style.display = 'flex';
 }
+
+function handleEditSku() { openSkuMasterForm('edit'); }
 
 function closeSkuEdit() {
     var o = document.getElementById('sku-edit-modal-overlay');
     if (o) o.style.display = 'none';
 }
 
-function saveSkuEdit() {
-    var o = document.getElementById('sku-edit-modal-overlay');
-    if (!o) return;
-    var sku = _selectedSku;
-    if (!sku) { alert('No SKU selected.'); return; }
-    // Collect every editable field (SKU is read-only / the match key). Fields rendered here are always
-    // sent (blank = intentional clear); columns NOT in this editor are preserved by the backend.
-    var payload = { sku: sku };
-    SKU_EDIT_FIELDS_.forEach(function(f) {
-        if (f.type === 'readonly') return;
-        var el = o.querySelector('#sku-edit-f-' + f.key);
+// Validate + collect the payload. Returns { payload, firstErrorTab, firstErrorId, errors:[] }.
+function _skuCollectAndValidate(overlay) {
+    var errors = [], firstErrorTab = null, firstErrorId = null;
+    var mark = function (tab, id, msg) { errors.push(msg); if (!firstErrorId) { firstErrorTab = tab; firstErrorId = id; } };
+    var get = function (key) { var el = overlay.querySelector('#sku-f-' + key); return el ? String(el.value == null ? '' : el.value).trim() : undefined; };
+    var payload = {};
+
+    // SKU
+    var sku = get('sku');
+    if (_skuFormMode === 'add') { if (!sku) mark('basic', 'sku-f-sku', 'SKU is required.'); payload.sku = sku; }
+    else { payload.sku = _selectedSku; }   // immutable in edit
+
+    // Enumerated scalar + text + combo + tag fields
+    SKU_FORM_FIELDS_.forEach(function (f) {
+        if (f.key === 'sku') return;
+        if (f.type === 'tags') {
+            _skuTagCommit(f.key);   // flush any residual typed text into a tag before serializing
+            var td = _skuTagData[f.key] || { tags: [], original: '', dirty: false };
+            // Untouched → write the original stored value verbatim (never rewrite a value the user did not edit).
+            payload[f.key] = td.dirty ? _skuTagSerialize(td.tags) : td.original;
+            return;
+        }
+        if (f.type === 'magnet') {
+            var mel = overlay.querySelector('#sku-f-' + f.key);
+            var mv = mel ? String(mel.value || '') : '';
+            if (mv === 'true') payload[f.key] = true;        // REAL Boolean, not a string
+            else if (mv === 'false') payload[f.key] = false;
+            // '' (— Select —) → omit → backend preserves the existing value (never blanks silently)
+            return;
+        }
+        if (f.type === 'combo') {
+            // The committed value is authoritative (arbitrary typing in the field is NOT auto-committed).
+            var cd = _skuComboData['sku-f-' + f.key];
+            payload[f.key] = cd ? String(cd.value || '') : '';
+            return;
+        }
+        var el = overlay.querySelector('#sku-f-' + f.key);
         if (!el) return;
-        payload[f.key] = (el.value == null ? '' : String(el.value)).trim();
+        var v = String(el.value == null ? '' : el.value).trim();
+        if (f.key === 'lifecycle') {
+            if (_skuValidLifecycles().indexOf(v) === -1) mark('basic', 'sku-f-lifecycle', 'Select a valid Status.');
+        }
+        if (f.type === 'enum') {
+            var legacyRaw = el.getAttribute('data-legacy');
+            if (legacyRaw && v === '__legacy__') { payload[f.key] = legacyRaw; return; }   // untouched legacy → PRESERVE verbatim (no bulk migration; §E/§K)
+            if (legacyRaw && v === '') { mark(f.tab, 'sku-f-' + f.key, f.label + ': choose a current value to replace the legacy value.'); }   // explicitly edited away from legacy → must pick a canonical value
+        }
+        if (v === '__legacy__') v = '';
+        if (f.type === 'number' && v !== '') {
+            var n = Number(v);
+            if (isNaN(n) || n < 0) mark(f.tab, 'sku-f-' + f.key, f.label + ' must be a non-negative number.');
+            if (f.key === 'units_per_carton' && v !== '' && (!Number.isInteger(n) || n < 1)) mark(f.tab, 'sku-f-' + f.key, 'Units / Carton must be a positive integer.');
+        }
+        payload[f.key] = v;
     });
-    if (!(window.KM && window.KM.DB && window.KM.DB.upsertSkuDetail)) {
-        alert('Save unavailable (KM.DB.upsertSkuDetail not configured).');
+
+    // Dimension groups (numeric ≥ 0)
+    SKU_DIM_KEYS_.forEach(function (key) {
+        var el = overlay.querySelector('#sku-f-' + key);
+        if (!el) return;
+        var v = String(el.value == null ? '' : el.value).trim();
+        var isNum = /_length$|_width$|_height$|_weight$/.test(key);
+        if (isNum && v !== '') { var n = Number(v); if (isNaN(n) || n < 0) mark('basic', 'sku-f-' + key, key + ' must be a non-negative number.'); }
+        payload[key] = v;
+    });
+
+    return { payload: payload, firstErrorTab: firstErrorTab, firstErrorId: firstErrorId, errors: errors };
+}
+
+function _skuSetSaving(overlay, on) {
+    _skuFormSaving = on;
+    var btn = overlay.querySelector('#sku-save-btn');
+    if (btn) { btn.disabled = on; btn.textContent = on ? 'Saving…' : (_skuFormMode === 'add' ? 'Create SKU' : 'Save Changes'); }
+}
+
+function saveSkuMasterForm() {
+    var overlay = document.getElementById('sku-edit-modal-overlay');
+    if (!overlay || _skuFormSaving) return;
+    // reset tab error markers
+    overlay.querySelectorAll('.sku-tab-err').forEach(function (s) { s.style.display = 'none'; });
+
+    var vr = _skuCollectAndValidate(overlay);
+    if (vr.errors.length) {
+        var errTabSpan = overlay.querySelector('.sku-tab-err[data-tab-err="' + vr.firstErrorTab + '"]');
+        if (errTabSpan) errTabSpan.style.display = 'inline';
+        if (vr.firstErrorTab) skuSwitchTab(vr.firstErrorTab);
+        var firstEl = vr.firstErrorId && overlay.querySelector('#' + vr.firstErrorId);
+        if (firstEl && firstEl.focus) firstEl.focus();
+        showSkuStatusToast(vr.errors[0]);
         return;
     }
-    showSkuStatusToast('Saving...');
-    window.KM.DB.upsertSkuDetail(payload).then(function() {
-        showSkuStatusToast('Saved.');
+    if (!(window.KM && window.KM.DB && window.KM.DB.upsertSkuDetail)) { alert('Save unavailable (KM.DB.upsertSkuDetail not configured).'); return; }
+
+    var payload = vr.payload;
+    payload.mode = _skuFormMode;   // backend enforces duplicate (add) / not-found (edit)
+    _skuSetSaving(overlay, true);
+    showSkuStatusToast(_skuFormMode === 'add' ? 'Creating…' : 'Saving…');
+    window.KM.DB.upsertSkuDetail(payload).then(function (data) {
+        var savedSku = payload.sku;
+        var baseline = data && data.factory_baseline;
         closeSkuEdit();
         renderSkuDetailsTable();
-        if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
-    }).catch(function(err) {
-        showSkuStatusToast('Error: ' + (err && err.message ? err.message : err));
+        if (window.renderSkuHandbook) setTimeout(function () { renderSkuHandbook(); }, 50);
+        selectSkuRow(savedSku);
+        var msg = (_skuFormMode === 'add') ? 'SKU created.' : 'Saved.';
+        if (baseline && baseline.triggered) {
+            if (baseline.status === 'ok') msg += ' Factory baseline ensured (' + (baseline.created ? baseline.created.length : 0) + ' new, ' + (baseline.skipped ? baseline.skipped.length : 0) + ' existing).';
+            else if (baseline.status === 'db_mapping_gap') msg += ' ⚠ Factory baseline skipped (DB mapping gap): ' + (baseline.warnings || []).join('; ');
+            else if (baseline.status === 'partial' || baseline.status === 'error') msg += ' ⚠ Factory baseline INCOMPLETE: ' + (baseline.warnings || []).join('; ') + ' — safe to retry by saving again.';
+        }
+        showSkuStatusToast(msg);
+        if (baseline && (baseline.status === 'partial' || baseline.status === 'error' || baseline.status === 'db_mapping_gap')) {
+            alert(msg + '\n\n(The SKU itself was saved; the factory baseline step reported an issue and is idempotent — re-saving into Running retries only the missing rows.)');
+        }
+    }).catch(function (err) {
+        _skuSetSaving(overlay, false);
+        var code = err && err.error_code, m = err && err.message ? err.message : String(err);
+        if (code === 'duplicate_sku' || /already exists/i.test(m)) showSkuStatusToast('That SKU already exists — pick a different SKU.');
+        else if (code === 'not_found' || /not found/i.test(m)) showSkuStatusToast('This SKU no longer exists; refresh and try again.');
+        else showSkuStatusToast('Error: ' + m);
     });
 }
 
@@ -465,6 +1086,16 @@ function _taxEsc(v) {
     return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function _taxDash(v) { var s = String(v == null ? '' : v).trim(); return s === '' ? '--' : _taxEsc(s); }
+
+// DISPLAY ONLY — country route in logistics/import direction: Country of Origin → Duty Country.
+// Does NOT touch tax_referral_rates fields, the business key, lookup, or payloads (TAX spec §…).
+// Uses the Unicode right arrow "→"; em dash "—" for a missing side; a single "—" when both are missing.
+function formatTaxCountryRoute(countryOfOrigin, dutyCountry) {
+    var o = String(countryOfOrigin == null ? '' : countryOfOrigin).trim();
+    var d = String(dutyCountry == null ? '' : dutyCountry).trim();
+    if (!o && !d) return '—';   // both missing → single em dash
+    return (o ? _taxEsc(o) : '—') + ' → ' + (d ? _taxEsc(d) : '—');
+}
 
 // Parent-rate fields for the add/edit/version form (snake_case DB columns). type: text | number | date.
 var TAX_RATE_FORM_FIELDS_ = [
@@ -569,7 +1200,7 @@ function _renderSkuTaxList() {
         return '<div style="border:1px solid #E2E8F0;border-radius:8px;padding:12px 14px;margin-bottom:10px;">' +
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
                 '<div>' +
-                    '<div style="font-weight:600;font-size:13px;color:#1E293B;">' + _taxDash(r.dutyCountry) + ' &larr; ' + _taxDash(r.countryOfOrigin) +
+                    '<div style="font-weight:600;font-size:13px;color:#1E293B;">' + formatTaxCountryRoute(r.countryOfOrigin, r.dutyCountry) +
                         '<span style="font-size:11px;color:#64748B;font-weight:400;margin-left:8px;">HS ' + _taxDash(r.hscode) + '</span></div>' +
                     '<div style="font-size:11px;color:#64748B;margin-top:3px;">' + rid + '</div>' +
                     '<div style="font-size:11px;color:#475569;margin-top:4px;">Duty ' + _taxDash(r.dutyRate) + '% · VAT ' + _taxDash(r.vatRate) + '% · Port ' + _taxDash(r.portTaxRate) + '% · Referral ' + _taxDash(r.referralFeeRate) + '% · Declared ' + _taxDash(r.declaredValue) + ' ' + _taxDash(r.declaredCurrency) + '</div>' +
@@ -577,8 +1208,8 @@ function _renderSkuTaxList() {
                     '<div style="font-size:11px;color:#475569;margin-top:2px;">Effective: ' + period + '</div>' +
                 '</div>' +
                 '<div style="display:flex;flex-direction:column;gap:6px;white-space:nowrap;">' +
-                    '<button type="button" onclick="openSkuTaxForm(\'edit\',\'' + ridJs + '\')" style="padding:5px 10px;border:1px solid #CBD5E1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px;">Edit</button>' +
-                    '<button type="button" onclick="openSkuTaxForm(\'version\',\'' + ridJs + '\')" style="padding:5px 10px;border:1px solid #CBD5E1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px;">New Version</button>' +
+                    '<button type="button" onclick="openSkuTaxForm(\'edit\',\'' + ridJs + '\')" style="padding:5px 10px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:5px;cursor:pointer;font-size:12px;">Edit</button>' +
+                    '<button type="button" onclick="openSkuTaxForm(\'version\',\'' + ridJs + '\')" style="padding:5px 10px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:5px;cursor:pointer;font-size:12px;">New Version</button>' +
                 '</div>' +
             '</div>' +
             '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #E2E8F0;">' +
@@ -626,7 +1257,7 @@ function openSkuTaxForm(mode, taxRateId) {
     body.innerHTML =
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
             '<div style="font-weight:600;font-size:14px;color:#1E293B;">' + _taxEsc(titleMap[mode] || 'Rate') + ' — Series ' + _taxEsc(_taxSeries) + '</div>' +
-            '<button type="button" onclick="_renderSkuTaxList()" style="padding:6px 12px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:12px;">&larr; Back to list</button>' +
+            '<button type="button" onclick="_renderSkuTaxList()" style="padding:6px 12px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:12px;">&larr; Back to list</button>' +
         '</div>' +
         (mode === 'version' ? '<div style="font-size:11px;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:8px 10px;margin-bottom:10px;">A new version creates a NEW row + new tax_rate_id and preserves the prior row (history). Set a new Effective From.</div>' : '') +
         '<input type="hidden" id="sku-tax-edit-id" value="' + _taxEsc(hiddenId) + '">' +
@@ -638,7 +1269,7 @@ function openSkuTaxForm(mode, taxRateId) {
             versionExtra +
         '</div>' +
         '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">' +
-            '<button type="button" onclick="_renderSkuTaxList()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
+            '<button type="button" onclick="_renderSkuTaxList()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
             '<button type="button" onclick="saveSkuTaxRate()" style="padding:8px 16px;border:none;background:#0F766E;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Save Rate</button>' +
         '</div>';
 }
@@ -691,21 +1322,105 @@ function saveSkuTaxRate() {
     });
 }
 
-function handleSkuSearch() {
-    var searchTerm = document.getElementById('skuSearchInput').value.toLowerCase();
-    var fixedBodies = document.querySelectorAll('#sku-section .fixed-body');
-    var scrollBodies = document.querySelectorAll('#sku-section .scroll-body');
-    fixedBodies.forEach(function(fixedBody, index) {
-        var fixedRows = fixedBody.querySelectorAll('.fixed-row');
-        var scrollBody = scrollBodies[index];
-        var scrollRows = scrollBody ? scrollBody.querySelectorAll('.scroll-row') : [];
-        fixedRows.forEach(function(fixedRow, rowIndex) {
-            var skuText = fixedRow.textContent.toLowerCase();
-            var shouldShow = skuText.includes(searchTerm);
-            fixedRow.style.display = shouldShow ? '' : 'none';
-            if (scrollRows[rowIndex]) scrollRows[rowIndex].style.display = shouldShow ? '' : 'none';
-        });
+// Search now delegates to the combined filter (Search AND Series AND Category). SKU-text search behavior
+// is preserved exactly (case-insensitive substring over the SKU value).
+function handleSkuSearch() { applySkuFilters(); }
+
+// ── Toolbar list filters (Series / Category) + combined AND filtering ─────────────────────────────
+// Options = DISTINCT non-empty values across ALL lifecycle groups, read live from the rendered rows'
+// data-series / data-category (so options always match what is on screen and pick up new values after a
+// save + refresh). Filtering is show/hide only — it never mutates data. Each lifecycle group keeps its
+// heading and shows a concise zero-result note when every one of its rows is filtered out.
+function _skuFilterEls() {
+    return {
+        search: document.getElementById('skuSearchInput'),
+        series: document.getElementById('skuSeriesFilter'),
+        category: document.getElementById('skuCategoryFilter')
+    };
+}
+
+function populateSkuFilters() {
+    var els = _skuFilterEls();
+    if (!els.series || !els.category) return;
+    var rows = document.querySelectorAll('#sku-section .fixed-body .fixed-row[data-sku]');
+    var seriesMap = {}, catMap = {};
+    rows.forEach(function (r) {
+        var s = String(r.getAttribute('data-series') || '').trim();
+        var c = String(r.getAttribute('data-category') || '').trim();
+        if (s && !seriesMap[s.toLowerCase()]) seriesMap[s.toLowerCase()] = s;
+        if (c && !catMap[c.toLowerCase()]) catMap[c.toLowerCase()] = c;
     });
+    _skuFillFilter(els.series, seriesMap, 'All Series');
+    _skuFillFilter(els.category, catMap, 'All Categories');
+}
+
+function _skuFillFilter(sel, map, allLabel) {
+    var prev = sel.value;   // preserve the current selection across repopulation (e.g. after a save)
+    var vals = Object.keys(map).map(function (k) { return map[k]; });
+    vals.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); });
+    sel.innerHTML = '<option value="">' + allLabel + '</option>' +
+        vals.map(function (v) { return '<option value="' + _skuEsc(v) + '">' + _skuEsc(v) + '</option>'; }).join('');
+    sel.value = (prev && vals.indexOf(prev) !== -1) ? prev : '';
+}
+
+function handleSkuFilterChange() { applySkuFilters(); }
+
+function applySkuFilters() {
+    var els = _skuFilterEls();
+    var q = els.search ? String(els.search.value || '').toLowerCase().trim() : '';
+    var series = els.series ? els.series.value : '';
+    var cat = els.category ? els.category.value : '';
+    var sections = document.querySelectorAll('#sku-section .sku-lifecycle-section');
+    sections.forEach(function (section) {
+        var fixedRows = section.querySelectorAll('.fixed-body .fixed-row');
+        var scrollRows = section.querySelectorAll('.scroll-body .scroll-row');
+        var visible = 0, dataRows = 0;
+        fixedRows.forEach(function (fr, i) {
+            if (!fr.hasAttribute('data-sku')) return;   // skip the "No SKUs" placeholder row
+            dataRows++;
+            var sku = String(fr.getAttribute('data-sku') || '');
+            var rowSeries = String(fr.getAttribute('data-series') || '');
+            var rowCat = String(fr.getAttribute('data-category') || '');
+            var show = (q === '' || sku.toLowerCase().indexOf(q) !== -1) &&
+                (series === '' || rowSeries === series) &&
+                (cat === '' || rowCat === cat);
+            fr.style.display = show ? '' : 'none';
+            if (scrollRows[i]) scrollRows[i].style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+        _skuToggleGroupEmpty(section, dataRows > 0 && visible === 0);
+    });
+}
+
+function _skuToggleGroupEmpty(section, showEmpty) {
+    var table = section.querySelector('.dual-layer-table');
+    if (!table) return;
+    var note = section.querySelector('.sku-filter-empty');
+    if (showEmpty) {
+        if (!note) {
+            note = document.createElement('div');
+            note.className = 'sku-filter-empty';
+            note.textContent = 'No SKUs match the current filters.';
+            table.parentNode.insertBefore(note, table.nextSibling);
+        }
+        note.style.display = '';
+    } else if (note) {
+        note.style.display = 'none';
+    }
+}
+
+// ── More Options menu (Export / Import / Refresh DB) ──────────────────────────────────────────────
+function toggleMoreOptions(ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    var panel = document.getElementById('moreOptionsPanel'), btn = document.getElementById('moreOptionsBtn');
+    if (!panel) return;
+    var open = panel.classList.toggle('show');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function closeMoreOptions() {
+    var panel = document.getElementById('moreOptionsPanel'), btn = document.getElementById('moreOptionsBtn');
+    if (panel) panel.classList.remove('show');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
 function toggleDisplayPanel() {
@@ -756,13 +1471,18 @@ function updateAllCheckbox() {
     checkAll.checked = Array.from(colCheckboxes).every(function(cb) { return cb.checked; });
 }
 
-// Display panel close on outside click
+// Display panel + More Options menu close on outside click / Escape.
 document.addEventListener('click', function(event) {
     var displayDropdown = document.querySelector('.display-dropdown');
     var panel = document.getElementById('displayPanel');
     if (displayDropdown && panel && !displayDropdown.contains(event.target)) {
         panel.classList.remove('show');
     }
+    var moreDropdown = document.querySelector('#sku-section .more-options-dropdown');
+    if (moreDropdown && !moreDropdown.contains(event.target)) closeMoreOptions();
+});
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') closeMoreOptions();
 });
 
 // Expose
@@ -774,19 +1494,52 @@ window.initSkuUnifiedScroll = initSkuUnifiedScroll;
 window.toggleSection = toggleSection;
 window.handleAddSku = handleAddSku;
 window.handleSkuSearch = handleSkuSearch;
+window.handleSkuFilterChange = handleSkuFilterChange;
+window.populateSkuFilters = populateSkuFilters;
+window.applySkuFilters = applySkuFilters;
+window.toggleMoreOptions = toggleMoreOptions;
+window.closeMoreOptions = closeMoreOptions;
 window.toggleDisplayPanel = toggleDisplayPanel;
 window.toggleColumn = toggleColumn;
 window.toggleAllColumns = toggleAllColumns;
 window.selectSkuRow = selectSkuRow;
+window.skuRowDblEdit = skuRowDblEdit;
 window.canEditSkuDetails = canEditSkuDetails;
 window.handleEditSku = handleEditSku;
+window.openSkuMasterForm = openSkuMasterForm;
+window.skuSwitchTab = skuSwitchTab;
+window.skuViewRegionalDetails = skuViewRegionalDetails;
 window.closeSkuEdit = closeSkuEdit;
-window.saveSkuEdit = saveSkuEdit;
+window.saveSkuMasterForm = saveSkuMasterForm;
+// Creatable combobox + tag input handlers (referenced by inline handlers in the JS-built modal).
+window.skuComboFilter = skuComboFilter;
+window.skuComboKey = skuComboKey;
+window.skuComboPick = skuComboPick;
+window.skuComboBlur = skuComboBlur;
+window.skuComboAddNewOpen = skuComboAddNewOpen;
+window.skuComboAddNewConfirm = skuComboAddNewConfirm;
+window.skuComboAddNewCancel = skuComboAddNewCancel;
+window.skuComboAddNewKey = skuComboAddNewKey;
+window.skuTagKey = skuTagKey;
+window.skuTagRemove = skuTagRemove;
+window.skuTagSuggest = skuTagSuggest;
+window.skuTagPick = skuTagPick;
+
+// Close any open combobox / tag dropdown whose container does not contain the click (once, at module
+// load). Keeps the clicked control's own list open so tag multi-select keeps working.
+document.addEventListener('click', function (e) {
+    var lists = document.querySelectorAll('.skuf-combo-list');
+    for (var i = 0; i < lists.length; i++) {
+        var wrap = lists[i].closest('.skuf-combo') || lists[i].closest('.skuf-tagwrap');
+        if (!wrap || !(e.target && wrap.contains(e.target))) lists[i].hidden = true;
+    }
+});
 window.handleSkuTaxRates = handleSkuTaxRates;
 window.closeSkuTax = closeSkuTax;
 window.openSkuTaxForm = openSkuTaxForm;
 window.saveSkuTaxRate = saveSkuTaxRate;
 window._renderSkuTaxList = _renderSkuTaxList;
+window.formatTaxCountryRoute = formatTaxCountryRoute;
 
 // Ensure the SKU Details markup is present before rendering / scroll init runs.
 // Idempotent: if #sku-section already exists, resolves immediately (no re-fetch, no

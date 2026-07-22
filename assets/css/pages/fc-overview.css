@@ -1141,13 +1141,17 @@
     max-width: 700px;
 }
 
-/* Special Event Builder needs more room than the 500px base .fc-modal — widen the WRAPPER (the base
-   max-width was clipping the builder) and let the content fill it. No inner horizontal scrollbar. */
-#fc-add-event-modal.fc-modal {
-    width: 92%;
-    max-width: 900px;
+/* Special Event + Regular Forecast Builders need more room than the 500px base .fc-modal — widen the
+   WRAPPER (the base max-width was clipping the builder) and let the content fill it. Responsive:
+   min(96vw, 960px) so multi-column preview tables fit without a horizontal scrollbar at desktop
+   widths, while narrow screens fall back to 96vw (#12). */
+#fc-add-event-modal.fc-modal,
+#fc-regular-update-modal.fc-modal {
+    width: 96%;
+    max-width: min(96vw, 960px);
 }
-#fc-add-event-modal .fc-modal-content--large {
+#fc-add-event-modal .fc-modal-content--large,
+#fc-regular-update-modal .fc-modal-content--large {
     max-width: none;
 }
 
@@ -1317,10 +1321,24 @@
 .fc-mode-pill:hover { border-color: #93C5FD; }
 .fc-mode-pill.is-active { border-color: #3B82F6; background: #EFF6FF; color: #1D4ED8; box-shadow: inset 0 0 0 1px #3B82F6; }
 
-/* Single-SKU rows */
+/* Forecast Assist / Regular Builder preview table (Base FC → New → Difference). Wider modal (#12)
+   means the table fits without a horizontal scrollbar at desktop widths; only vertical scroll for
+   long lists. Text columns wrap; numeric columns stay compact. */
+.fc-assist-preview { margin-top: 10px; max-height: 320px; overflow-y: auto; overflow-x: auto; border: 1px solid #E2E8F0; border-radius: 8px; }
+.fc-assist-preview-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto; }
+.fc-assist-preview-table th, .fc-assist-preview-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #F1F5F9; word-break: break-word; }
+.fc-assist-preview-table thead th { position: sticky; top: 0; background: #F8FAFC; color: #475569; font-weight: 700; z-index: 1; white-space: nowrap; }
+.fc-assist-preview-table td:last-child, .fc-assist-preview-table th:last-child,
+.fc-assist-preview-table td:nth-last-child(2), .fc-assist-preview-table th:nth-last-child(2) { text-align: right; white-space: nowrap; }
+.fc-assist-preview-table input { width: 84px; padding: 3px 6px; border: 1px solid #CBD5E1; border-radius: 4px; box-sizing: border-box; text-align: right; }
+
+/* Single-SKU rows (6 cols: SKU · Regular · Discount% · Deal · Qty · remove) */
 .fc-evt-rows-head, .fc-evt-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 28px; gap: 8px; align-items: center; box-sizing: border-box; }
+.fc-evt-rows-head--single, .fc-evt-row--single { grid-template-columns: 2fr 1fr 0.8fr 1fr 1fr 28px; }
 .fc-evt-rows-head { font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em; margin: 6px 0 4px; }
 .fc-evt-row { margin-bottom: 6px; }
+/* Out-of-scope SKU input marker (searchable datalist may still accept free text; we flag + block). */
+.fc-evt-row .evt-sku.is-invalid { border-color: #dc2626; background: #fef2f2; }
 /* min-width:0 stops number inputs' intrinsic min-width from expanding the grid tracks and pushing
    the last (X) column past the modal edge — the delete button then stays fully inside the row. */
 .fc-evt-row > * { min-width: 0; }
@@ -1342,6 +1360,21 @@
 .fc-evt-card-fields { display: flex; gap: 16px; }
 .fc-evt-card-fields label { font-size: 12px; color: #475569; display: flex; flex-direction: column; gap: 4px; }
 .fc-evt-card-fields input { padding: 6px 8px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px; width: 120px; }
+
+/* ===== Method-aware group card: one ROW per scoped SKU (v3) ===== */
+.fc-evt-card-disc { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; }
+.fc-evt-card-disc input { width: 70px; padding: 4px 6px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
+.fc-evt-card-lines { display: flex; flex-direction: column; gap: 2px; }
+/* SKU · Regular · Disc% · Deal · Base FC · New Event FC · Diff · spacer */
+.fc-evt-line { display: grid; grid-template-columns: minmax(90px,1.6fr) 0.8fr 0.7fr 0.9fr 0.9fr 1fr 0.8fr 12px; gap: 8px; align-items: center; box-sizing: border-box; padding: 3px 0; }
+.fc-evt-line > * { min-width: 0; }
+.fc-evt-line--head { font-size: 10px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #E2E8F0; padding-bottom: 4px; }
+.fc-evt-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #334155; }
+.fc-evt-line input { width: 100%; padding: 4px 6px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
+.fc-evt-line .evt-line-ro { font-weight: 600; color: #1E293B; }
+.fc-evt-line-sku { font-weight: 600; }
+.fc-evt-line-sku a { color: #DC2626; cursor: pointer; margin-left: 2px; font-weight: 700; }
+.fc-evt-warn { color: #dc2626; font-weight: 600; }
 .fc-form-group select[multiple] {
     height: auto;
     min-height: 96px;

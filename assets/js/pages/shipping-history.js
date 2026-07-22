@@ -1029,6 +1029,87 @@ function _shRenderDbCard(s, planLines, mode) {
         return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
             '<select class="sh-exec-input" data-field="shipments_customs_type" style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' + opts + '</select></div>';
     }
+    // Warehouse Picker (SHIPMENT_CENTER_SPEC §22.0). Replaces the legacy free-text Warehouse Code input.
+    // The user selects exactly ONE warehouse: shipments.warehouse_id is the identity, and warehouse_code
+    // is COPIED from the chosen warehouses row (never typed, never inferred from destination text). Both
+    // persist on Save/Ship (via _shCollectExec) and restore on reload from the stored warehouse_id.
+    // TEMPORARY SEMANTIC (inbound-first, §22.0(L)/task item 9): warehouse_id/warehouse_code = the
+    // DESTINATION warehouse. When Warehouse Outbound is implemented, explicit origin_warehouse_id /
+    // destination_warehouse_id arrive through a planned migration.
+    function warehouseFld() {
+        var label = '<label style="font-size:11px;color:#64748B;">Destination Warehouse</label>';
+        var curId = String(s.warehouseId || '').trim();
+        var curCode = String(s.warehouseCode || '').trim();
+        if (!fieldsEditable) {
+            var disp = curCode ? (curCode + (curId ? ' (' + curId + ')' : '')) : (curId || '');
+            return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
+                '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(disp) || '--') + '</div></div>';
+        }
+        var all = (window.KM && KM.DB && typeof KM.DB.getWarehouses === 'function') ? (KM.DB.getWarehouses() || []) : [];
+        var company = String(s.company || '').trim();
+        var country = String(s.country || '').trim();
+        function eq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
+        // Eligibility (§22.G v1 fallback): exclude explicitly inactive + factory warehouses. A null flag
+        // (column absent from the sheet) is NOT treated as inactive — don't hide rows a sheet never flags.
+        var eligible = all.filter(function(w) {
+            if (w.isActive === false) return false;
+            if (w.isFactoryWarehouse === true) return false;
+            return true;
+        });
+        // Company + country scoping — applied only when BOTH sides carry the value, so a sheet missing a
+        // column never silently drops every candidate. Never widen scope to another company/country (§22.0K).
+        function scoped(w) {
+            if (company && w.company && !eq(w.company, company)) return false;
+            if (country && w.country && !eq(w.country, country)) return false;
+            return true;
+        }
+        // §22.0(F) FBA: warehouse_type=FBA AND warehouse marketplace='Amazon' (the operator marketplace,
+        // spec-mandated — NOT literal equality to the shipment's marketplace account) within company/country.
+        var fba = eligible.filter(function(w) { return eq(w.warehouseType, 'FBA') && eq(w.marketplace, 'Amazon') && scoped(w); });
+        // §22.0(G) 3PL: warehouse_type=3PL within company/country scope; marketplace MAY be blank (not required).
+        var tpl = eligible.filter(function(w) { return eq(w.warehouseType, '3PL') && scoped(w); });
+        // §22.0(H) deterministic order within each group: logistics_region -> warehouse_code.
+        function ordr(a, b) {
+            var r = String(a.logisticsRegion || '').localeCompare(String(b.logisticsRegion || ''));
+            return r !== 0 ? r : String(a.warehouseCode || '').localeCompare(String(b.warehouseCode || ''));
+        }
+        fba.sort(ordr); tpl.sort(ordr);
+        function optOf(w) {
+            var disp = [w.warehouseCode, w.warehouseName, [w.city, w.state].filter(Boolean).join('/')].filter(Boolean).join(' — ');
+            return '<option value="' + _shEsc(w.warehouseId) + '" data-code="' + _shEsc(w.warehouseCode) + '"' +
+                (eq(w.warehouseId, curId) ? ' selected' : '') + '>' + _shEsc(disp || w.warehouseId) + '</option>';
+        }
+        var inList = {};
+        fba.concat(tpl).forEach(function(w) { if (w.warehouseId) inList[w.warehouseId] = true; });
+        var groups = '';
+        if (fba.length) groups += '<optgroup label="FBA">' + fba.map(optOf).join('') + '</optgroup>';
+        if (tpl.length) groups += '<optgroup label="3PL">' + tpl.map(optOf).join('') + '</optgroup>';
+        // Preserve a selection that falls outside the current candidate scope (legacy row / scope changed)
+        // so Save never silently discards it. Shown but clearly flagged.
+        var curExtra = '';
+        if (curId && !inList[curId]) {
+            var cw = all.filter(function(w) { return eq(w.warehouseId, curId); })[0];
+            var cdisp = cw ? [cw.warehouseCode, cw.warehouseName].filter(Boolean).join(' — ') : (curCode ? (curCode + ' (' + curId + ')') : curId);
+            curExtra = '<optgroup label="Current selection (outside current filter)"><option value="' + _shEsc(curId) +
+                '" data-code="' + _shEsc(cw ? cw.warehouseCode : curCode) + '" selected>' + _shEsc(cdisp) + '</option></optgroup>';
+        } else if (!curId && curCode) {
+            // Legacy row: warehouse_code present, no warehouse_id. Preserve as a visible selected option
+            // (empty value). Picking a real candidate replaces it and fills warehouse_id.
+            curExtra = '<optgroup label="Current (legacy, no warehouse_id)"><option value="" data-code="' + _shEsc(curCode) +
+                '" selected>' + _shEsc(curCode) + '</option></optgroup>';
+        }
+        var hasCandidates = (fba.length + tpl.length) > 0;
+        var phLabel = hasCandidates ? '-- Select warehouse --' : ((curId || curCode) ? '-- Clear selection --' : 'No eligible warehouse found');
+        var placeholder = '<option value="" data-code="">' + _shEsc(phLabel) + '</option>';
+        var sel = '<select class="sh-exec-input" data-field="warehouse_id" onchange="shWarehousePick(\'' + _shEsc(sid) + '\')" ' +
+            'style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' +
+            placeholder + curExtra + groups + '</select>';
+        // Hidden mirror — warehouse_code is COPIED from the chosen option so _shCollectExec persists BOTH
+        // warehouse_id and warehouse_code (identity + snapshot).
+        var hidden = '<input type="hidden" data-field="warehouse_code" id="sh-whcode-' + _shEsc(sid) + '" value="' + _shEsc(curCode) + '">';
+        var help = hasCandidates ? '' : '<div style="font-size:11px;color:#DC2626;margin-top:3px;">No active warehouse for this company / country. Set the shipment context, or add a warehouse in Warehouse Master.</div>';
+        return '<div style="display:flex;flex-direction:column;gap:2px;">' + label + sel + hidden + help + '</div>';
+    }
     var execGrid =
         '<div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">Internal ID: ' + _shEsc(sid) + ' <span style="color:#CBD5E1;">(system, not editable)</span></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;">' +
@@ -1036,7 +1117,7 @@ function _shRenderDbCard(s, planLines, mode) {
             roField('Carrier (from plan)', s.carrierId) +
             customsFld() +
             fld('Reference ID', 'reference_id', s.referenceId) +
-            fld('Warehouse Code', 'warehouse_code', s.warehouseCode) +
+            warehouseFld() +
             fld('Tracking No', 'tracking_number', s.trackingNumber) +
             fld('Booking No', 'booking_no', s.bookingNo) +
             fld('Container No', 'container_no', s.containerNo) +
@@ -1280,6 +1361,19 @@ function shShipmentDone(shipmentId) {
         .catch(function(err) { alert('Done failed: ' + (err && err.message ? err.message : err)); });
 }
 
+// Warehouse Picker onchange: copy the selected warehouse's code (data-code) into the hidden
+// warehouse_code mirror so _shCollectExec persists BOTH warehouse_id (identity) and warehouse_code
+// (snapshot). warehouse_code is never independently typed. Selecting the blank placeholder clears both.
+function shWarehousePick(shipmentId) {
+    var box = document.getElementById('sh-exec-' + shipmentId);
+    if (!box) return;
+    var sel = box.querySelector('select[data-field="warehouse_id"]');
+    var hidden = document.getElementById('sh-whcode-' + shipmentId);
+    if (!sel || !hidden) return;
+    var opt = sel.options[sel.selectedIndex];
+    hidden.value = opt ? (opt.getAttribute('data-code') || '') : '';
+}
+
 // Status-advance placeholder (Overview post-ship lifecycle). No factory-stock side effects.
 function shAdvanceStatus(shipmentId, nextStatus) {
     if (!nextStatus) return;
@@ -1305,6 +1399,7 @@ window.shReadyToShip = shReadyToShip;
 window.shShip = shShip;
 window.shReturnToDraft = shReturnToDraft;
 window.shShipmentDone = shShipmentDone;
+window.shWarehousePick = shWarehousePick;
 window.shAdvanceStatus = shAdvanceStatus;
 window.showShipmentDraft = showShipmentDraft;
 window.showShipmentOverview = showShipmentOverview;

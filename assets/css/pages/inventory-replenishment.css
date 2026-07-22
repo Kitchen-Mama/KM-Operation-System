@@ -762,6 +762,30 @@
     line-height: 1.4;
 }
 
+/* 3rd Party Stock (Site Planning Available) detail states + sub-rows. */
+#ops-section .replen-card__subtitle { font-size: 11px; font-weight: 400; color: var(--text-secondary); }
+#ops-section .replen-card__subhead { margin-top: 6px; font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; }
+#ops-section .replen-card__hint { margin-top: 4px; font-size: 11px; color: var(--text-secondary); line-height: 1.35; }
+#ops-section .replen-card__hint--warn { color: #b45309; }
+#ops-section .replen-tp-state { font-size: 13px; font-weight: 700; padding: 6px 0; }
+#ops-section .replen-tp-state--none { color: #64748b; }
+#ops-section .replen-tp-state--missing { color: #b45309; }
+#ops-section .replen-tp-state--na { color: #94a3b8; }
+
+/* Upcoming Event card: start/end dates + expandable "+N more" list. */
+#ops-section .replen-evt-dates { color: var(--text-secondary); font-size: 11px; }
+#ops-section .replen-evt-more { margin-top: 2px; }
+#ops-section .replen-evt-more > summary {
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--km-brand-teal, #3abfb6);
+    list-style: none;
+    user-select: none;
+}
+#ops-section .replen-evt-more > summary::-webkit-details-marker { display: none; }
+#ops-section .replen-evt-more[open] > summary { margin-bottom: 2px; }
+
 #ops-section .replen-card__label {
     color: var(--text-secondary);
 }
@@ -876,11 +900,14 @@
     min-width: 490px;
 }
 
-/* Recommendation Summary / Execution Plan cards size to content — never scroll internally. */
+/* Recommendation Summary / Execution Plan cards size to content — height GROWS with wrapped content,
+   never an internal scrollbar and never `overflow:hidden` (which would conceal required rows/values,
+   the reported bug). Content wraps and stays inside the card; the card grows instead of clipping. */
 #ops-section .replen-card--recommendation-summary,
 #ops-section .replen-card--execution-plan {
-    overflow: hidden;          /* clip stray child overflow at the card boundary (safety) */
+    overflow: visible;
     min-height: auto;
+    height: auto;
     flex: 0 0 auto;
 }
 
@@ -932,17 +959,27 @@
 #ops-section .replen-recsum-table td {
     padding: 4px 8px;
     text-align: left;
-    white-space: nowrap;       /* single line — e.g. "Stock Sufficient" never wraps, never ellipsis */
+    /* Wrap long values/Reason inside the card boundary (card grows) rather than overflowing it.
+       Numeric column stays compact via the --num rule below. */
+    white-space: normal;
+    word-break: break-word;
     overflow: visible;
     vertical-align: middle;
 }
-/* Header: light gray background (Part 2), dark readable text — Recommendation Summary ONLY. */
+#ops-section .replen-recsum-table th { white-space: nowrap; }   /* headers stay on one line */
+/* Header: light warm background (§11.5), dark readable text — Recommendation Summary ONLY. */
 #ops-section .replen-recsum-table thead th {
-    background: #F1F5F9;
+    background: rgb(255, 248, 240);
     color: #1f2937;
     font-weight: 600;
 }
 #ops-section .replen-recsum-table .replen-recsum-table__num { text-align: right; }
+/* Honest empty / not-generated state + special-event badge (Reason carries the event qty). */
+#ops-section .replen-recsum-empty { text-align: center; color: #94A3B8; padding: 8px; white-space: normal; }
+#ops-section .replen-recsum-evt {
+    display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+    background: #fef3c7; color: #b45309; border-radius: 3px; padding: 1px 4px; margin-left: 4px; vertical-align: middle;
+}
 
 /* Execution Plan — shared grid for header + every route row so columns align. Flexible tracks use
    minmax(100/130px, 1fr) so From/To/Method stay readable; Qty is 60px; the Delete button sits in a
@@ -950,11 +987,19 @@
    header's last cell (Delete column) has no text (Part 4). */
 #ops-section .ir-exec-plan__grid {
     display: grid;
-    grid-template-columns: minmax(100px, 1fr) minmax(100px, 1fr) 60px minmax(130px, 1fr) 36px;
+    /* From · To · Qty · Method · Expected Arrival · Action (§11.3/§11.5). min-width:0 on items so the
+       Method select, ETA, and the delete button never overlap or touch the card edge. */
+    grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr) 56px minmax(120px, 1fr) minmax(110px, auto) 36px;
     column-gap: 8px;
     row-gap: 6px;
     align-items: center;
 }
+#ops-section .ir-exec-plan__grid > * { min-width: 0; }
+/* Expected Arrival read-only cell (right of Method). Unavailable/lead-time-missing state is muted. */
+#ops-section .replen-card__eta { font-size: 11px; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ops-section .replen-card__eta--na { color: #94A3B8; font-style: italic; }
+/* Decision area — Recommendation Summary stacked directly above Execution Plan, same width. */
+#ops-section .ir-decision-area { display: flex; flex-direction: column; gap: 12px; }
 #ops-section .ir-exec-plan__grid--head {
     font-size: 11px;
     color: #64748B;
@@ -1013,10 +1058,29 @@
     line-height: 1;
 }
 
-/* Layout v3: NO responsive reflow. On small screens the four groups stay horizontal (fixed width)
-   and the whole expanded row scrolls with the main table (.scroll-col) — the groups never wrap to a
-   new line and never overlap the following SKU rows. (The former @media max-width:900px single-
-   column rule was intentionally removed.) */
+/* Layout v3: at wide widths the four groups stay horizontal (fixed width) and the whole expanded row
+   scrolls with the main table (.scroll-col). Layout v4 (2026-07-22) RE-ADDS a responsive reflow at
+   narrower widths so the decision area (Group D) drops BELOW the analysis area (Group C) instead of
+   forcing horizontal scroll to reach the Execution Plan — headers, inputs, ETA and Action stay
+   visible and nothing is clipped (task #1). */
+@media (max-width: 1400px) {
+    #ops-section .replen-expand-scroll { flex-wrap: wrap; }
+    /* Analysis (insight) + Decision (action) each take a full row → Decision stacks below Analysis. */
+    #ops-section .ir-panel-column--insight,
+    #ops-section .ir-panel-column--action {
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+    }
+    /* Inventory + context groups share the first wrapped row and may shrink. */
+    #ops-section .ir-panel--inventory-group,
+    #ops-section .ir-panel-column--context {
+        flex: 1 1 280px;
+        min-width: 0;
+    }
+    /* Execution Plan grid keeps all six columns readable when full-width. */
+    #ops-section .ir-exec-plan__grid { grid-template-columns: minmax(96px,1fr) minmax(96px,1fr) 56px minmax(130px,1.2fr) minmax(120px,auto) 36px; }
+}
 
 /* Top-row cards across ALL groups share one min-height and do not grow, so their bottoms (the
    divider before the second-row card) line up: Stock / Long Term Storage (Group A grid row 1),

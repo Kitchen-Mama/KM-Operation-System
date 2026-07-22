@@ -7,6 +7,14 @@
                     <div class="replen-control-panel">
                         <div class="replen-filters">
                             <div class="replen-filter-group">
+                                <label>Company</label>
+                                <!-- Company is the top of the scope key. KM and ResUS are SEPARATE scopes even on the
+                                     same Country + Marketplace (e.g. KM/US/Amazon ≠ ResUS/US/Amazon). -->
+                                <select id="replenCompany">
+                                    <option value="">Select Company</option>
+                                </select>
+                            </div>
+                            <div class="replen-filter-group">
                                 <label>Country</label>
                                 <select id="replenCountry">
                                     <option value="">Select Country</option>

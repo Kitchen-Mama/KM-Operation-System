@@ -81,10 +81,21 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
     issues: [], rowsRead: 0, rowsWritten: 0, rowsError: 0, rowsDuplicate: 0, rowsPruned: 0,
     // Phase 3A: placeholder + data-window governance (daily sales / capping)
     placeholderCount: 0, isFallback: false, fallbackGroupCount: 0,
-    runLatestDate: '', runWindowStart: '', runWindowEnd: '', dataAgeDays: ''
+    runLatestDate: '', runWindowStart: '', runWindowEnd: '', dataAgeDays: '',
+    // Gap-aware rolling sync (Daily Sales) — 2026-07-21
+    rollingMeta: null, rowsInserted: 0, rowsUpdated: 0, rowsUnchanged: 0, rowsDuplicateKeys: 0
   };
 
+  // Concurrency guard (rolling_upsert only): a script lock so two triggers cannot inspect/prune/upsert
+  // Daily Sales simultaneously. Acquired before the source read; released in finalize() on every exit.
+  var lock = null;
+  function releaseLock_() { if (lock) { try { lock.releaseLock(); } catch (_e) {} lock = null; } }
+
   function finalize(status, errorSummary) {
+    releaseLock_();
+    var rm = ctx.rollingMeta;
+    function j_(v) { try { return JSON.stringify(v); } catch (_) { return ''; } }
+    function n_(a) { return (a && a.length != null) ? a.length : 0; }
     var rowsSkipped = ctx.rowsError + ctx.rowsDuplicate;
     var run = {
       sync_run_id: syncRunId,
@@ -116,9 +127,33 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
       fallback_group_count: ctx.fallbackGroupCount,
       normalized_placeholder_count: ctx.placeholderCount,
       data_age_days: ctx.dataAgeDays,
+      // Gap-aware rolling-sync run fields (written only if the header exists in import_sync_runs;
+      // otherwise a compact summary is folded into quality_note below so nothing is lost).
+      retention_start_date: rm ? rm.retentionStart : '',
+      retention_end_date: rm ? rm.retentionEnd : '',
+      source_available_dates: rm ? j_(rm.sourceAvailableDates) : '',
+      destination_existing_dates: rm ? j_(rm.destExistingDates) : '',
+      missing_dates_detected: rm ? j_(rm.missingDates) : '',
+      incomplete_dates_detected: rm ? j_(rm.incompleteDates) : '',
+      recent_dates_reconciled: rm ? j_(rm.recentReconciled) : '',
+      dates_imported: rm ? j_(rm.datesToFetch) : '',
+      source_unavailable_dates: rm ? j_(rm.sourceUnavailableDates) : '',
+      dates_pruned: ctx.rowsPruned,
+      rows_inserted: ctx.rowsInserted,
+      rows_updated: ctx.rowsUpdated,
+      rows_unchanged: ctx.rowsUnchanged,
+      duplicate_keys_detected: ctx.rowsDuplicateKeys,
+      completed_at: amazonTimestamp_(),
       quality_note: 'quality_score=' + amazonQualityScore_(ctx.rowsRead, ctx.rowsWritten, ctx.rowsError, ctx.rowsDuplicate) +
         '; placeholders=' + ctx.placeholderCount +
-        (config.writeMode === 'rolling_upsert' ? ('; write_mode=rolling_upsert; rows_pruned=' + ctx.rowsPruned) : '') +
+        (config.writeMode === 'rolling_upsert'
+          ? ('; write_mode=rolling_upsert; rows_pruned=' + ctx.rowsPruned +
+             '; ins=' + ctx.rowsInserted + '; upd=' + ctx.rowsUpdated + '; unch=' + ctx.rowsUnchanged +
+             '; dupkeys=' + ctx.rowsDuplicateKeys +
+             (rm ? ('; window=' + rm.retentionStart + '..' + rm.retentionEnd +
+                    '; missing=' + n_(rm.missingDates) + '; incomplete=' + n_(rm.incompleteDates) +
+                    '; imported=' + n_(rm.datesToFetch) + '; src_unavail=' + n_(rm.sourceUnavailableDates)) : ''))
+          : '') +
         (ctx.isFallback ? ('; fallback=' + ctx.fallbackGroupCount + ' groups (rolling_window_empty)') : '')
     };
     amazonLogRun_(config.destinationSpreadsheetId, run);
@@ -131,7 +166,24 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
     };
   }
 
-  // 1) Read source
+  // 0) Concurrency lock (rolling_upsert only). Covers coverage-inspection + prune/upsert so two runs
+  //    cannot write Daily Sales at once. Fail safe: if the lock can't be taken, do NOT touch the data.
+  if (config.writeMode === 'rolling_upsert') {
+    try {
+      lock = LockService.getScriptLock();
+      if (!lock.tryLock(30000)) {
+        lock = null;
+        amazonAddIssue_(ctx, 'lock_unavailable', 'warning', '', '', 'another import holds the lock', 'stopped_import', '', 'Could not acquire script lock within 30s');
+        return finalize('failed', 'lock_unavailable: another Daily Sales import is running');
+      }
+    } catch (le) {
+      lock = null;
+      return finalize('failed', 'lock_error: ' + (le && le.message ? le.message : le));
+    }
+  }
+
+  // 1) Read source (rolling_upsert: gap-aware — computes the 90-day window, inspects source+destination
+  //    coverage, and fetches ONLY missing/incomplete/recent dates; attaches src.rollingMeta).
   var src;
   try {
     src = (config.sourceType === 'bigquery') ? amazonReadBigQuerySource_(config, options) : amazonReadSheetSource_(config);
@@ -139,6 +191,7 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
     amazonAddIssue_(ctx, 'source_read_error', 'critical', '', '', 'source must be readable', 'stopped_import', '', String(e && e.message ? e.message : e));
     return finalize('failed', 'source_read_error: ' + (e && e.message ? e.message : e));
   }
+  if (src && src.rollingMeta) ctx.rollingMeta = src.rollingMeta;
 
   // 2) Header validation — every fieldMap (REQUIRED) source header must exist.
   //    optionalFieldMap headers are intentionally EXCLUDED here: a missing optional header
@@ -291,11 +344,16 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
       var up = amazonUpsertRollingSnapshot_(
         config.destinationSpreadsheetId, config.destinationSheetName, destObjs,
         config.naturalKey, (config.dateFields && config.dateFields[0]) || 'snapshot_date',
-        (config.retentionDays != null ? config.retentionDays : 30),
-        config.scheduleTimezone
+        (config.retentionDays != null ? config.retentionDays : 90),
+        config.scheduleTimezone,
+        (ctx.rollingMeta && ctx.rollingMeta.retentionStart) ? ctx.rollingMeta.retentionStart : ''
       );
       ctx.rowsWritten = up.rowsWritten;
       ctx.rowsPruned = up.pruned;
+      ctx.rowsInserted = up.appended || 0;
+      ctx.rowsUpdated = up.updated || 0;
+      ctx.rowsUnchanged = up.unchanged || 0;
+      ctx.rowsDuplicateKeys = up.duplicatesRemoved || 0;
     } else {
       ctx.rowsWritten = amazonWriteSnapshot_(config.destinationSpreadsheetId, config.destinationSheetName, destObjs);
     }

@@ -524,15 +524,15 @@ Header (scalar) placeholders — one value per shipment. `field_type = scalar`, 
 | `RECIPIENT_EMAIL` | `warehouses.contact_email` | **new DB dependency** |
 | `REFERENCE_ID` | `shipments.reference_id` | |
 | `TOTAL_CARTONS` | `shipments.shipment_total_cartons` | **canonical renamed field** (§H) — never `shipments.total_cartons` |
-| `HAS_BATTERY` | derived from all shipment SKUs (§I.2.6) | any line `sku_details.battery_type` not blank/false/none → `"是"`, else `"否"` |
-| `HAS_MAGNET` | derived from all shipment SKUs (§I.2.6) | any line `sku_details.magnet_type` true/non-false → `"是"`, else `"否"` |
+| `HAS_BATTERY` | derived: OR of `hasBattery(sku_details.battery_type)` across all shipment lines (§I.2.6) | `no_battery`/false/blank ⇒ FALSE; `alkaline_battery`/`lithium_battery`/`rechargeable_lithium`/legacy-battery ⇒ TRUE; unknown ⇒ unresolved. Formatter renders `是`/`否` |
+| `HAS_MAGNET` | derived: OR of `hasMagnet(sku_details.magnet_type)` across all shipment lines (§I.2.6) | `no_magnet`/false/blank ⇒ FALSE; `magnetic`/true ⇒ TRUE; unknown ⇒ unresolved. Formatter renders `是`/`否` |
 | `CUSTOMS_TYPE` | `shipments.shipments_customs_type_label` *(localized 中文 Label SNAPSHOT)* | shipment snapshot (read the stored **Label**, not the enum, not the live rate card). Documents MUST NOT translate the enum — the Label is frozen at creation and mirrors `SHIPPING_METHOD_LABEL`. Legacy rows with a blank label fall back to the canonical enum→Label map in the API normalizer. |
 | `VAT_NO` | `tax_referral_rates.vat_no` | resolved tax row (§I.2.3) |
 | `DECLARED_CURRENCY` | `tax_referral_rates.declared_currency` | resolved tax row (§I.2.3) |
 
 ### I.2.3 Header lookup rules (C)
 
-- **Warehouse (recipient block):** `shipments.warehouse_code` → `warehouses.warehouse_code` → warehouse contact/address fields. (Recipient name/company/address/city/state/postal/country/phone/email all come from the matched `warehouses` row.) This is a **reference lookup at dataset-build time, NOT a Shipment snapshot** — the Warehouse Master is authoritative shared master data and the Shipment stores only `warehouse_code` (`SHIPMENT_CENTER_SPEC.md` §11 / §22). The **canonical `WAREHOUSE_*` placeholder set** (§I.2.9) resolves through this same lookup; `RECIPIENT_*` are the Carrier-Invoice recipient-block aliases of it. **The template never performs the lookup — the Document Dataset Builder resolves it before rendering.** The Warehouse country code uses the `country_to_iso2` transform with a `shipments.country` fallback (§I.2.9).
+- **Warehouse (recipient block):** resolve the Warehouse Master row **primary by `shipments.warehouse_id → warehouses.warehouse_id`**; **legacy fallback only** the composite `shipments.company + resolved physical country/scope + shipments.marketplace + shipments.warehouse_code` → **exactly one** `warehouses` row. **Never join by `warehouse_code` alone; no first-row fallback; never cross company; zero matches → validation error; >1 match → ambiguity error.** 3PL rows may have blank `marketplace` (resolve per the canonical 3PL exception — `SHIPMENT_CENTER_SPEC.md` §22.0(G)). (Recipient name/company/address/city/state/postal/country/phone/email all come from the matched row.) This is a **reference lookup at dataset-build time, NOT a Shipment snapshot** — Warehouse Master is authoritative shared master data; the Shipment commits only the **identity** (`warehouse_id` canonical; `warehouse_code` display snapshot — `SHIPMENT_CENTER_SPEC.md` §11 / §22.0). No Shipment warehouse-address snapshot fields exist. The **canonical `WAREHOUSE_*` placeholder set** (§I.2.7A) resolves through this same lookup; `RECIPIENT_*` are its Carrier-Invoice recipient-block aliases. **The template never performs the lookup — the Document Dataset Builder resolves it before rendering; the generated document is the immutable snapshot (§P.7).** The Warehouse country code uses `country_to_iso2` with a `shipments.country` fallback (§I.2.7A).
 - **Tax row lookup (VAT_NO / DECLARED_CURRENCY):** match **`shipments.country` → `tax_referral_rates.duty_country`**, apply **effective-date rules** (blank `effective_to` = open-ended); if **multiple applicable rows** exist, **latest `effective_from` wins**. **Do NOT select tax rows by currency alone.** `VAT_NO` = the resolved row's `vat_no`; `DECLARED_CURRENCY` = the resolved row's `declared_currency`.
 
 ### I.2.4 Invoice Tab — line collection (D) — PROVISIONAL
@@ -558,8 +558,8 @@ Header (scalar) placeholders — one value per shipment. `field_type = scalar`, 
 | `MATERIAL` | `sku_details.material` | |
 | `PRODUCT_USE` | `sku_details.product_use` | 2026-07 customs field |
 | `PRODUCT_URL` | `sku_regional_details.product_url` | regional lookup (§I.2.5A); **never** from `sku_details` |
-| `LINE_HAS_BATTERY` | `sku_details.battery_type` (per line) | not blank/false/none → `"是"`, else `"否"` (§I.2.6) |
-| `LINE_HAS_MAGNET` | `sku_details.magnet_type` (per line) | true/non-false → `"是"`, else `"否"` (§I.2.6) |
+| `LINE_HAS_BATTERY` | `hasBattery(sku_details.battery_type)` for THIS line's SKU (§I.2.6) | `no_battery`/false/blank ⇒ FALSE; battery enums/legacy ⇒ TRUE; unknown ⇒ unresolved. No first-line fallback. Formatter renders `是`/`否` |
+| `LINE_HAS_MAGNET` | `hasMagnet(sku_details.magnet_type)` for THIS line's SKU (§I.2.6) | `no_magnet`/false/blank ⇒ FALSE; `magnetic`/true ⇒ TRUE; unknown ⇒ unresolved. Formatter renders `是`/`否` |
 
 ### I.2.5 Tax / customs line lookup (F) — V2 canonical (authoritative: [`TAX_AND_REFERRAL_RATES_SPEC.md`](./TAX_AND_REFERRAL_RATES_SPEC.md))
 
@@ -574,11 +574,35 @@ Header (scalar) placeholders — one value per shipment. `field_type = scalar`, 
 - `PRODUCT_URL` resolves from **`sku_regional_details`** — recommended key **`sku` + `company` + shipment destination `country` + `marketplace`**, using the **shipment's committed company/country/marketplace context**. **Do NOT read `product_url` from `sku_details`.**
 - If more than one regional row matches: **exact `country` + `marketplace` match wins**; do **not** select arbitrarily. A **missing product URL** must be surfaced as a **document-readiness validation issue later** (not a silent blank).
 
-### I.2.6 Battery / magnet output rules (G)
+### I.2.6 Battery / magnet output rules (G) — canonical derivation (corrected 2026-07-21)
 
-- **`battery_type`** stays an **extensible field** (not permanently boolean). v1 may hold `false`/`none` or a specific battery type. **Output:** any value other than `false`/`none`/blank → `"是"`; `false`/`none`/blank → `"否"`.
-- **`magnet_type`** v1 canonical values may be boolean `TRUE`/`FALSE`. **Output:** `TRUE`/non-false → `"是"`; `FALSE`/blank → `"否"`.
-- **Header `HAS_BATTERY`/`HAS_MAGNET`** = OR across **all** shipment SKUs; **line `LINE_HAS_BATTERY`/`LINE_HAS_MAGNET`** = per-SKU. **These master-field types are NOT changed in this spec task.**
+> **Runtime status: NOT IMPLEMENTED.** There is no document field resolver / Document Dataset Builder in code today (verified 2026-07-21: `HAS_BATTERY`/`HAS_MAGNET`/`LINE_HAS_BATTERY`/`LINE_HAS_MAGNET` appear only in specs — no `.gs`/`.js`/`.json` resolves them; no `document_template_fields` reader; no doc endpoint in `01_router.gs`). The rules below are the **authoritative derivation the future resolver MUST implement**. **`battery_type` remains a semantic enum column.** **`magnet_type` is now a REAL Boolean** (finalized 2026-07-21 — new writes are `true`/`false`; the enum values `magnetic`/`no_magnet` and legacy `TRUE`/`FALSE` strings remain **read-compatibility inputs only**). `HAS_MAGNET`/`LINE_HAS_MAGNET` derive from the normalized Boolean (`true → TRUE`, `false → FALSE`); the `hasMagnet` token rules below already accept both the Boolean and the legacy strings, so no resolver change is required.
+
+**Correction (why this section changed):** the previous rule *"any value other than `false`/`none`/blank → 是"* pre-dated the canonical Global Logistics Enums and would **wrongly classify `no_battery`/`no_magnet` as TRUE** (they are not `false`/`none`/blank). The derivation is now an explicit **normalized-token classification**, never generic JavaScript truthiness.
+
+**Normalize first:** `norm = trim(lowercase(value))`.
+
+**`hasBattery(value)` → boolean business value:**
+- **FALSE** when `norm` ∈ { `""`/null, `no_battery`, `false`, `no`, `n`, `0` }.
+- **TRUE** when `norm` ∈ { `alkaline_battery`, `lithium_battery`, `rechargeable_lithium`, `true`, `yes`, `y`, `1` } **or** a verified legacy battery-type label (e.g. `lithium-ion`, `lithium battery`, `li-ion`).
+- **UNRESOLVED** for any other non-empty value → emit the resolver's mapping warning / unresolved result per the existing document-resolver contract. **Never** default an unknown non-empty value to TRUE.
+
+**`hasMagnet(value)` → boolean business value:**
+- **FALSE** when `norm` ∈ { `""`/null, `no_magnet`, `false`, `no`, `n`, `0` }.
+- **TRUE** when `norm` ∈ { `magnetic`, `true`, `yes`, `y`, `1` }.
+- **UNRESOLVED** for any other non-empty value → warning/unresolved per contract; never first-guess.
+
+**Forbidden:** `Boolean(value)` / `!!value` / any generic truthiness — `Boolean("FALSE") === true`, which is wrong here. Classification is by normalized token only.
+
+**Business value vs display text are separate (J):** `hasBattery`/`hasMagnet` return a **boolean**. The **formatter** renders it per the template field's format (`是`/`否`, `Yes`/`No`, `TRUE`/`FALSE`, or a check mark). Do **not** hardcode `是` inside the business resolver.
+
+**Header vs line (I):**
+- **Line** `LINE_HAS_BATTERY`/`LINE_HAS_MAGNET` = the classification of **that document/shipment line's** SKU `battery_type`/`magnet_type`. Resolve per line — never evaluate only the first line, never raw-join child tables and duplicate lines. Preserve the generated-document snapshot/reference-lookup rules.
+- **Header** `HAS_BATTERY`/`HAS_MAGNET` = **OR across all applicable shipment lines**: **TRUE** if ≥1 applicable line is TRUE; **FALSE** only if **every** applicable resolved line is FALSE; **UNRESOLVED** if one or more required lines cannot be classified and no line already resolves TRUE. No first-row fallback; no allocation/quantity behavior change.
+
+**Actual battery type (K):** to print the *type* (e.g. "Lithium Battery"), use a **separate** field (`BATTERY_TYPE` / `LINE_BATTERY_TYPE`). **These type placeholders do NOT exist in the mapping today → documented mapping gap; not added in this task.** Do **not** overload `HAS_BATTERY` (a boolean) with the type string.
+
+**Legacy compatibility (K):** verified legacy stored values (`FALSE`/`TRUE`/`Lithium-Ion`, etc.) classify per the token rules above. No bulk migration; existing generated-document records are immutable; choosing a new canonical option in the SKU editor updates only the edited SKU. `battery_type` master-field **type is unchanged (enum)**; **`magnet_type` type IS changed — it is now Boolean** (§ correction 2026-07-21) and new writes are `true`/`false`.
 
 ### I.2.7 New DB dependencies (Invoice tab)
 
@@ -593,7 +617,7 @@ Already-available dependencies (no new column): `shipments.external_shipment_id`
 
 ### I.2.7A Canonical Warehouse placeholder set + `country_to_iso2` transform (FINALIZED)
 
-**Canonical `WAREHOUSE_*` placeholders** — all resolved by the reference lookup `shipments.warehouse_code → warehouses.warehouse_code` (the template never performs the lookup; the Document Dataset Builder resolves it before rendering; values are **not** stored redundantly on `shipments` in v1):
+**Canonical `WAREHOUSE_*` placeholders** — all resolved by the reference lookup **primary `shipments.warehouse_id → warehouses.warehouse_id`**, legacy fallback the composite `company + country/scope + marketplace + warehouse_code` → exactly one row (never `warehouse_code` alone; no first-row/cross-company fallback; zero → error, >1 → ambiguity error — §I.2.3). The template never performs the lookup; the Document Dataset Builder resolves it before rendering; values are **not** stored redundantly on `shipments`:
 
 | placeholder | source (`warehouses` field) | notes |
 |---|---|---|
@@ -620,7 +644,7 @@ The Carrier-Invoice `RECIPIENT_*` block (§I.2.2) resolves through this **same**
 - **Purpose:** normalize country names, aliases, ISO alpha-2 codes, or recognized ISO alpha-3 codes into **ISO 3166-1 alpha-2** output.
 - **Examples:** `United States / USA / US → US`; `United Kingdom / UK / GBR / GB → GB`; `Japan / JPN / JP → JP`; `Germany / DEU / DE → DE`; `Canada / CAN / CA → CA`; `Australia / AUS / AU → AU`.
 - **Rules:** already-valid ISO alpha-2 values pass through unchanged and uppercased; recognized aliases map through a **controlled country dictionary**; **do NOT** generate codes from the first letters of a country name; unknown values return **blank/error** for validation; the source fallback is documented separately as `fallback_rule`.
-- **Recommended `document_template_fields` semantics for `WAREHOUSE_COUNTRY_CODE`:** `data_source_table = warehouses`; `data_source_field = country`; `data_source_path = shipments.warehouse_code → warehouses.warehouse_code → warehouses.country`; `transform_rule = country_to_iso2`; `fallback_rule = shipments.country | country_to_iso2`.
+- **Recommended `document_template_fields` semantics for `WAREHOUSE_COUNTRY_CODE`:** `data_source_table = warehouses`; `data_source_field = country`; `data_source_path = shipments.warehouse_id → warehouses.warehouse_id → warehouses.country` (legacy fallback: `company + country/scope + marketplace + warehouse_code → warehouses.country`, exactly one row); `transform_rule = country_to_iso2`; `fallback_rule = shipments.country | country_to_iso2`.
 - The same `country_to_iso2` alias dictionary backs the Shipment Draft warehouse country filter's `normalize_country` (`SHIPMENT_CENTER_SPEC.md` §22.D / §22.L).
 
 ### I.2.8 Naming / total fields (H)
@@ -819,7 +843,7 @@ Resolution order the runtime MUST use (field-level sources remain in `document_t
 |---|---|
 | **HS Code** | shipment line → SKU → `sku_details.series` → `tax_referral_rates` → effective date → `hscode` |
 | **Declared Value / Currency** | shipment country → `tax_referral_rates.duty_country` (+ series + origin) → effective date → `declared_value` / `declared_currency` |
-| **Warehouse (recipient)** | `shipments.warehouse_code` → `warehouses.warehouse_code` → warehouse fields (§I.2.7A; `WAREHOUSE_COUNTRY_CODE` via `country_to_iso2`) |
+| **Warehouse (recipient)** | primary `shipments.warehouse_id → warehouses.warehouse_id`; legacy fallback composite `company + country/scope + marketplace + warehouse_code` → exactly one row (never `warehouse_code` alone; no first-row/cross-company; zero → error, >1 → ambiguity error) → warehouse fields (§I.2.3 / §I.2.7A; `WAREHOUSE_COUNTRY_CODE` via `country_to_iso2`) |
 | **Regional Product** | SKU + company + marketplace + country → `sku_regional_details` |
 | **Pricing** | SKU + marketplace + country → `pricing_list` |
 

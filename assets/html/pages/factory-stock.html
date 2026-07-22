@@ -2,7 +2,18 @@
      Markup is identical to the original inline section; injected into #factory-stock-mount by KM.partialLoader.
      NOTE: route key (factory-stock) and section id (factory-stock-section) intentionally unchanged. -->
             <section id="factory-stock-section" class="module-section">
-                <h2 class="module-title">Factory Stock</h2>
+                <h2 class="module-title">Factory Inventory</h2>
+
+                <!-- KPI cards (Snapshot tab): Current / Reserved / Available / In Production / Pending Shipout.
+                     available_factory_stock = MAX(current - reserved, 0). In Production & Pending Shipout have no
+                     authoritative wired source yet → rendered as an explicit "—" (not tracked) state, never fabricated. -->
+                <div class="fi-kpi-row" id="factory-kpi-row" role="group" aria-label="Factory Inventory summary">
+                    <div class="fi-kpi-card"><div class="fi-kpi-label">Current Stock</div><div class="fi-kpi-value" id="fi-kpi-current">—</div></div>
+                    <div class="fi-kpi-card"><div class="fi-kpi-label">Reserved Stock</div><div class="fi-kpi-value" id="fi-kpi-reserved">—</div></div>
+                    <div class="fi-kpi-card fi-kpi-card--accent"><div class="fi-kpi-label">Available Stock</div><div class="fi-kpi-value" id="fi-kpi-available">—</div></div>
+                    <div class="fi-kpi-card fi-kpi-card--muted"><div class="fi-kpi-label">In Production</div><div class="fi-kpi-value" id="fi-kpi-inproduction">—</div><div class="fi-kpi-note">Not tracked yet</div></div>
+                    <div class="fi-kpi-card fi-kpi-card--muted"><div class="fi-kpi-label">Pending Shipout</div><div class="fi-kpi-value" id="fi-kpi-pendingshipout">—</div><div class="fi-kpi-note">Not tracked yet</div></div>
+                </div>
 
                 <!-- Tabs: Stock Snapshot / Movement Log -->
                 <div class="fs-tabs">
@@ -41,6 +52,16 @@
                         </div>
                     </div>
                     <div class="filter-group filter-group--dropdown">
+                        <label>Country</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="country">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="country">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                        </div>
+                    </div>
+                    <div class="filter-group filter-group--dropdown">
                         <label>Category</label>
                         <button type="button" class="fc-dropdown-trigger" data-filter="category">
                             <span class="fc-dropdown-text">All</span>
@@ -68,13 +89,25 @@
                             <label class="fc-checkbox-item"><input type="checkbox" value="MO5600" checked> MO5600</label>
                         </div>
                     </div>
+                    <div class="filter-group filter-group--dropdown">
+                        <label>Stock Status</label>
+                        <button type="button" class="fc-dropdown-trigger" data-filter="stockStatus">
+                            <span class="fc-dropdown-text">All</span>
+                            <span class="fc-dropdown-icon">▼</span>
+                        </button>
+                        <div class="fc-dropdown-panel" data-filter="stockStatus">
+                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="In Stock" checked> In Stock</label>
+                            <label class="fc-checkbox-item"><input type="checkbox" value="Out of Stock" checked> Out of Stock</label>
+                        </div>
+                    </div>
                     <div class="filter-group filter-group--sku">
                         <label>SKU</label>
                         <input id="factory-sku-input" type="text" placeholder="Search SKU..." />
                     </div>
                     </div>
-                    
-                    <!-- Edit Button (Admin Only) -->
+
+                    <!-- Edit Button (Admin Only) — existing control, preserved as-is (no second adjustment workflow added). -->
                     <button class="btn btn-secondary" id="factory-stock-edit-btn" onclick="toggleFactoryStockEdit()">Edit</button>
                 </div>
                 
@@ -87,14 +120,14 @@
                         </div>
                         <div class="scroll-header-viewport">
                             <div class="scroll-header" id="factory-stock-scroll-header">
-                                <div class="header-cell">Company</div>
-                                <div class="header-cell">Category</div>
-                                <div class="header-cell">Series</div>
-                                <div class="header-cell">Factory</div>
-                                <div class="header-cell">Stock</div>
-                                <div class="header-cell" id="factory-month-0">Jan</div>
-                                <div class="header-cell" id="factory-month-1">Feb</div>
-                                <div class="header-cell" id="factory-month-2">Mar</div>
+                                <div class="header-cell">Warehouse</div>
+                                <div class="header-cell">Category / Series</div>
+                                <div class="header-cell header-cell--num">Current</div>
+                                <div class="header-cell header-cell--num">Reserved</div>
+                                <div class="header-cell header-cell--num">Available</div>
+                                <div class="header-cell header-cell--num">In Production</div>
+                                <div class="header-cell header-cell--num">Pending Shipout</div>
+                                <div class="header-cell">Last Movement</div>
                             </div>
                         </div>
                     </div>

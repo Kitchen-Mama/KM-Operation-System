@@ -14,9 +14,18 @@
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
+// 2026-07-22 (ADDITIVE): campaign_id / campaign_sku_line_id link each event forecast back to its
+//   parent campaign + campaign line (Special Event Builder writes campaigns → campaign_sku_lines →
+//   fc_special_events); marketplace_id is the canonical marketplace identity (company-safe, since the
+//   same marketplace NAME can belong to two companies); event_start_date / event_end_date are the
+//   linked event-period snapshot (event_period kept as legacy/display; event_month = allocation month).
+//   New columns are appended to an EXISTING sheet's header row by fcWriteEnsureColumns_ — never
+//   renaming or dropping a live column (migration-safe, no redeploy assumption baked in).
 var FC_SPECIAL_EVENTS_HEADERS_ = [
-  'event_id', 'company', 'country', 'marketplace', 'scope_type', 'scope_id',
-  'sku', 'series', 'category', 'event_name', 'event_period', 'event_month', 'year', 'fc_qty',
+  'event_id', 'campaign_id', 'campaign_sku_line_id',
+  'company', 'country', 'marketplace', 'marketplace_id', 'scope_type', 'scope_id',
+  'sku', 'series', 'category', 'event_name',
+  'event_period', 'event_start_date', 'event_end_date', 'event_month', 'year', 'fc_qty',
   'note', 'created_by', 'created_at', 'updated_by', 'updated_at'
 ];
 
@@ -47,6 +56,23 @@ function fcWriteEnsureSheet_(ss, name, headers) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sh;
+}
+
+/**
+ * ADDITIVE column migration: ensure every header in `headers` exists in the live sheet's header row.
+ * Missing headers are APPENDED to the end of row 1 (existing columns keep their position and data).
+ * Never renames, reorders, or drops a live column. Safe to call on every write. Returns the count
+ * of columns added. This is what lets new fields (campaign_id, marketplace_id, event_start_date, …)
+ * persist on a sheet that predates them without a manual migration.
+ */
+function fcWriteEnsureColumns_(sheet, headers) {
+  var lastCol = Math.max(1, sheet.getLastColumn());
+  var live = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
+  var missing = [];
+  headers.forEach(function (h) { if (h && live.indexOf(h) === -1 && missing.indexOf(h) === -1) missing.push(h); });
+  if (!missing.length) return 0;
+  sheet.getRange(1, live.length + 1, 1, missing.length).setValues([missing]);
+  return missing.length;
 }
 
 /** Read a sheet as { headers, rows(values), col(name) }. */
@@ -80,6 +106,7 @@ function fcWriteAppendByHeader_(sheet, obj) {
  */
 function fcWriteUpsert_(ss, sheetName, headers, idCol, idValue, body, actor) {
   var sheet = fcWriteEnsureSheet_(ss, sheetName, headers);
+  fcWriteEnsureColumns_(sheet, headers);   // ADDITIVE: back-fill any new columns onto a pre-existing sheet
   var s = fcWriteReadSheet_(sheet);
   var now = fcWriteTimestamp_();
   var idColIdx = s.col(idCol);
@@ -139,8 +166,11 @@ function fcWriteDelete_(ss, sheetName, idCol, idValue) {
 // ---- fc_special_events ----
 
 /**
- * Create/update a special event. Body: { event_id?, company, country, marketplace, scope_type?,
- * scope_id?, sku, series?, category?, event_name, event_period?, event_month?, year?, fc_qty, note?, actor? }
+ * Create/update a special event. Body: { event_id?, campaign_id?, campaign_sku_line_id?,
+ * company, country, marketplace, marketplace_id?, scope_type?, scope_id?, sku, series?, category?,
+ * event_name, event_period?, event_start_date?, event_end_date?, event_month?, year?, fc_qty, note?, actor? }
+ * campaign_id / campaign_sku_line_id link the forecast to its parent campaign line (written first by
+ * handleUpsertCampaign_ / handleUpsertCampaignSkuLines_). Idempotent by event_id.
  */
 function handleUpsertFcSpecialEvent_(body) {
   body = body || {};

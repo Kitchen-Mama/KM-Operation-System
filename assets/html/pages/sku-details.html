@@ -3,14 +3,16 @@
     <div id="skuDetailsSection">
         <h2>SKU Details</h2>
         
-        <!-- Toolbar -->
+        <!-- Toolbar: filter group (Category → Series → Search) left, action group right -->
         <div class="sku-toolbar">
+          <div class="sku-toolbar__filters">
+            <select id="skuCategoryFilter" class="sku-filter" aria-label="Filter by category" onchange="handleSkuFilterChange()"><option value="">All Categories</option></select>
+            <select id="skuSeriesFilter" class="sku-filter" aria-label="Filter by series" onchange="handleSkuFilterChange()"><option value="">All Series</option></select>
+            <input type="text" id="skuSearchInput" class="sku-search" placeholder="Search SKU..." oninput="handleSkuSearch()">
+          </div>
+          <div class="sku-toolbar__actions">
             <button class="btn-add-sku" onclick="handleAddSku()">+ Add SKU</button>
             <button class="btn-add-sku btn-edit-sku" onclick="handleEditSku()" style="background:#f59e0b;">Edit SKU</button>
-            <input type="text" id="skuSearchInput" class="sku-search" placeholder="Search SKU..." oninput="handleSkuSearch()">
-            <button class="btn-add-sku" onclick="handleExportStatusTemplate()" style="background:#3b82f6;">Export Template</button>
-            <button class="btn-add-sku" onclick="handleImportStatusTemplate()" style="background:#8b5cf6;">Import Template</button>
-            <button class="btn-add-sku" onclick="handleRefreshDb()" style="background:#0891b2;">Refresh DB</button>
             <button class="btn-add-sku sku-unit-toggle" onclick="toggleSkuUnits()" style="background:#0891b2;">CM/KG ↔ IN/LB</button>
             <div class="display-dropdown">
                 <button class="btn-display" onclick="toggleDisplayPanel()">Display ▼</button>
@@ -42,8 +44,19 @@
                     <label><input type="checkbox" class="col-checkbox" data-col="23" checked onchange="toggleColumn(23)"> 負責PM</label>
                 </div>
             </div>
+            <!-- Secondary actions (Export / Import / Refresh) collapsed into a menu. -->
+            <div class="more-options-dropdown">
+                <button type="button" class="btn-more-options" id="moreOptionsBtn" onclick="toggleMoreOptions(event)" aria-haspopup="true" aria-expanded="false" aria-controls="moreOptionsPanel">⋯ More Options</button>
+                <div class="more-options-panel" id="moreOptionsPanel" role="menu" aria-label="More options">
+                    <button type="button" class="more-options-item" role="menuitem" onclick="handleExportStatusTemplate(); closeMoreOptions();">⬇ Export Template</button>
+                    <button type="button" class="more-options-item more-options-item--data" role="menuitem" onclick="handleImportStatusTemplate(); closeMoreOptions();">⬆ Import Template <span class="more-options-tag">changes data</span></button>
+                    <div class="more-options-sep"></div>
+                    <button type="button" class="more-options-item" role="menuitem" onclick="handleRefreshDb(); closeMoreOptions();">⟳ Refresh DB</button>
+                </div>
+            </div>
+          </div>
         </div>
-        
+
         <!-- Upcoming SKU -->
         <div class="sku-lifecycle-section" data-section="upcoming">
             <h3 class="sku-section-header" onclick="toggleSection('upcoming')">

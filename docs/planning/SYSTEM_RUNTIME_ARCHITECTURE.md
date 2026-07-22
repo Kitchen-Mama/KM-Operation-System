@@ -164,6 +164,12 @@ Each module owns one responsibility; **no module duplicates another's**.
 
 **Boundary rule:** when two modules seem to need the same write, the **lower-layer / owning module writes**, and the other module **reads**. Planning reads inventory; it does not write it. Shipment reads the plan; it does not rewrite it.
 
+**Inventory-domain separation (CANONICAL 2026-07-21 — authority `DATABASE_RELATIONSHIP_MAP.md` §6.0).** The Inventory Module owns **two separate domains** with separate ledgers, never merged: **Factory Inventory** (`factory_stock` / `factory_stock_movements`) and **Overseas Inventory** (`overseas_inventory_snapshot` / `overseas_inventory_movements`). Factory reservation/deduction writes **only** factory tables; overseas receipt/outbound writes **only** overseas tables. A Shipment is **in-transit transportation state** (`shipments` / `shipment_events`), not an inventory balance — **formal Shipment creation adds no Overseas Inventory**; overseas balances change only on **confirmed Overseas Inbound receipt** (increase) / **confirmed Overseas Outbound ship-out** (decrease). **In-transit goods are never double-counted at both endpoints.** No runtime path may redirect factory writes into overseas ledgers (or vice-versa), and Warehouse Master never implies one universal ledger.
+
+**Overseas Warehouse Operation module boundary (2026-07-22 — SPEC ONLY; canonical: `OVERSEAS_INBOUND_SPEC.md` §10 / `OVERSEAS_OUTBOUND_SPEC.md` / `SHIPMENT_CENTER_SPEC.md` §23).** The **Overseas Inbound (Receiving)** and **Overseas Outbound (Fulfillment)** operations are **two separate modules / pages** under the Warehouse group — never one combined operation — and are distinct from **Factory Inventory** and **Overseas Inventory** pages (four pages total; Warehouse Master lives under Admin → Master Data). They are **auto-created/linked from a Formal Shipment** (idempotent; operation uniqueness `shipment_id + warehouse_id + operation_type`; direction runtime-derived). **Inbound Planning Request (planning layer) ≠ Warehouse Receiving Operation (this module)** — separate records/lifecycles. Runtime event flow: **auto-create ≠ auto-submit**; **Lock reserves** overseas stock (`available → reserved`); the **Outbound Instruction Push (KM → WMS)** at Submit moves **no** physical stock; the **Shipout Confirmation Push (WMS → KM)** posts the deduction of **actual shipped qty only** (partial = `shipped_qty_this_confirmation`); confirmed **Inbound receipt** posts the increase (good qty only, damaged never sellable); **Delivered ≠ Received**. These modules **read** `shipments` / `warehouses` and **write** only their own operation/receipt/confirmation tables + (via the Inventory Module) `overseas_inventory_movements` — **never `factory_stock`**. Separate idempotency keys per action. **NOT IMPLEMENTED — spec only.**
+
+**Warehouse Reference Master boundary (2026-07 — SPEC ONLY; canonical: `SHIPMENT_CENTER_SPEC.md` §22.0).** `warehouses` is a **passive Reference Master** — modules **read** it (Shipment Draft destination selection, Warehouse Lookup, Route/Shipment-Route init, map points, Document address lookup, Overseas Inbound / Receiving destination). Reading or creating warehouse rows **must NOT** trigger any side effect: no inventory create/split/move/allocate, no `overseas_inventory_snapshot`/`overseas_inventory_movements` write, no Shipment Events/Routes, no Warehouse Receipts. **Inventory source separation:** Amazon FBA inventory stays **report-driven** (`company + marketplace/site + country + SKU`); **FC-level inventory is never inferred from physical FBA warehouse rows.** Identity: `warehouse_id` is canonical; `warehouse_code` is **not globally unique**; `company` (business context) ≠ `warehouse_owner` (physical operator). **Warehouse Picker Runtime + Shipment Draft selector wiring: NOT IMPLEMENTED; legacy aggregate migration: NOT EXECUTED; Inventory & Overseas Inbound runtime: unchanged.**
+
 ---
 
 ## 6. Runtime Dependency
@@ -213,12 +219,55 @@ What events cause the runtime to react. (Conceptual — actual scheduling/eventi
 | **Forecast updated** (base/event/target edit) | forecast inputs change | projection, shortage/surplus, request order need |
 | **Replenishment override set** | a planning input is manually adjusted | replenishment suggestion, shipping plan |
 | **Shipping plan approved** | plan becomes convertible; factory stock **reserved** | factory stock available, shipment creation readiness |
-| **Shipment confirmed (Confirm & Ship)** | `factory_stock.current_stock` **deducted**; reserved released | inventory projection, available_to_ship, on-the-way |
+| **Execution Commit / Create Shipment Draft** | one physical `shipments` row created; may consolidate **multiple approved plans** via `shipment_plan_links` (human-confirmed, §SHIPMENT_CENTER §2.A/Ready-to-Create); persists plan-source + PO allocations; increases `factory_stock.fac_reserved_stock` | consolidated shipment, plan/marketplace traceability, PO allocation |
+| **Lifecycle → `Running in the Market`** (transition) | ensures `factory_stock` baseline (idempotent by `warehouse_id + Master sku`; `fac_current_stock=0`, `fac_reserved_stock=0`) — **NOT** on Master- or Marketplace-SKU create | factory stock rows exist for planning |
+| **Marketplace SKU added to planning scope** | ensures **Overseas Inventory** baseline/context (physical grain `company + warehouse_id + Master sku`; marketplace = demand context, not physical grain) — shared 3PL counted once | overseas shared-pool planning |
+| **Shipment confirmed (Confirm & Ship)** | `factory_stock.fac_current_stock` **deducted**; `fac_reserved_stock` released | inventory projection, available_to_ship, on-the-way |
 | **PO completed** (production) | `completed_qty` increases | `available_to_ship`, shipment allocation |
 | **Factory stock changed** (movement) | physical supply changes | projection, replenishment, request order |
 | **Receiving recorded** | destination inventory increases | next-cycle snapshot / projection |
 
 **Trigger principle:** a trigger fires a **recompute of derived data only**. It never rewrites the source that triggered it.
+
+---
+
+## 7A. Recommendation Scheduler & Cadence (CANONICAL 2026-07-20)
+
+Authoritative schedule for the recommendation pipeline. **Spec only — no Apps Script trigger, Runtime, or DB is created here.** Implementation contract (entry points, source-readiness, cycle idempotency, Draft persistence, trigger-install boundary): [`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md`](./RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md). **Verified runtime status:** only `runAmazonSnapshotImports()` exists; `runWeeklyShippingRecommendation()` and `runMonthlyOrderRecommendation()` **DO NOT EXIST** and the shipping-recommendation calc/writer layer is **NOT IMPLEMENTED**.
+
+**Timezone (canonical):** **Asia/Taipei (Taiwan Time, UTC+08:00)** for ALL scheduling below. The Runtime must **not** rely on the executing user's browser timezone; both the **Google Spreadsheet timezone and the Apps Script project timezone must be Asia/Taipei.**
+
+| Job | Cadence (Asia/Taipei) | Trigger window | Layer | Creates / Modifies |
+|---|---|---|---|---|
+| **Daily Report Pipeline** | every day **12:00** | **12:00–13:00** | **Analysis only** | updates snapshots/analysis; **creates/modifies NO Draft** |
+| *(Report validation / buffer)* | daily | **13:00–14:00** | — | validation/settling window before recommendations |
+| **Weekly Shipping Recommendation** | every **Monday 14:00** | **Mon 14:00–15:00** | Recommendation snapshot | `shipping_allocation_drafts` → `_lines` (one cycle / ISO week / Scope) |
+| **Monthly Order Recommendation** | every month on the **5th, 15:00** | **day 5, 15:00–16:00** | Recommendation snapshot | `request_order_allocation_drafts` → `_lines` (one cycle / Year+Month / Scope) |
+
+> **Trigger-window note (why times, not exact minutes):** Google Apps Script time-driven triggers fire **within the selected hour window**, not guaranteed at the first minute. The four windows above (Daily 12:00–13:00 · validation/buffer 13:00–14:00 · Weekly Mon 14:00–15:00 · Monthly day-5 15:00–16:00) are staged so each stage settles before the next. **When the 5th falls on a Monday, the Weekly (14:00–15:00) and Monthly (15:00–16:00) recommendations remain in separate, non-overlapping windows.**
+
+**Daily Report Pipeline (12:00):** import/update platform inventory reports, daily sales reports, forecast/source snapshots, qualified on-the-way; recalc FBA confirmed/estimated status; recalc Shared FBM Planning Allocation; refresh Analysis-Layer Days of Supply & Suggested Qty. It **does NOT** create `shipping_allocation_drafts`/`_lines` or `request_order_allocation_drafts`/`_lines`, modify an existing Draft, overwrite user-entered quantities, submit a Weekly Shipping Plan, or create a Request Order / Shipment / PO. **Daily refresh is Analysis Layer only.**
+> **16:00 reconciliation (RESOLVED as canonical schedule; operational move pending).** §4/§11 and `06_amazon_import_config.gs:184` reference `scheduleTime: '16:00'` for the BQ daily-sales import. This is **LEGACY / SUPERSEDED as a schedule** — `scheduleTime` is **config metadata never consumed by Runtime** (only `scheduleTimezone` is read); 16:00 is **too late** for the Monday 14:00 recommendation. Canonical: the **single** daily trigger on `runAmazonSnapshotImports` runs in the **12:00–13:00** window. **Do NOT add a duplicate same-day daily-sales import.** Moving the installed trigger is an **operational step** (`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §A/§11/§J-Phase 1); no config value is changed by spec.
+
+**Source-readiness gate (both recommendation jobs):** the latest required Daily Report Pipeline batch for that cycle **must have completed successfully** first. If the required batch is incomplete/failed: **do not** generate a partial/stale recommendation silently, **do not** create an empty-success Draft; report a clear **source-readiness error**; allow safe **manual retry** after the pipeline succeeds. (Weekly 14:00 and Monthly 15:00 both run after the 12:00 pipeline + 13:00–14:00 validation buffer; the two recommendation windows never overlap, so a Monday-the-5th does not collide.)
+
+**Runtime entry points (truthful status):**
+- **Daily Report Pipeline — `runAmazonSnapshotImports()`:** **EXISTING** in the Apps Script source (`07_amazon_import_runner.gs`) and **explicitly safe for a time-based trigger** (no required arguments).
+- **Weekly Shipping Recommendation entry point:** **REQUIRES RUNTIME VERIFICATION — not claimed to exist.** A trigger must **not** be configured against an empty or parameterized handler.
+- **Monthly Order Recommendation entry point:** **REQUIRES RUNTIME VERIFICATION — not claimed to exist.** Same rule.
+- **A recommendation scheduler entry point MUST:** accept no required arguments; enforce source-data readiness; be idempotent by recommendation cycle (Cycle Key below); never overwrite user quantity; never report success after a partial failure.
+
+**Recommendation vs user quantity (both layers):** the system recommendation is captured **once** at Draft generation; the user-operational quantity is **initialized from it** on new-line creation and thereafter **independently editable and independently visible**. Automated reports/schedulers **never overwrite the user quantity**, and **never silently refresh** a Draft's recommended quantity from live Analysis.
+- **Shipping:** **`recommended_qty`** (system snapshot; canonical 2026-07-22, legacy alias `recommand_shipment_draft_qty`) → initializes **`planned_qty`** (user qty; legacy alias `shipment_draft_qty`). Schema owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6.
+- **Order:** `recommended_qty` (system snapshot) → initializes `order_qty` (user qty).
+
+**Snapshot boundary:** Daily Analysis stays live/recalculable; a Recommendation Draft is a **point-in-time working snapshot** created only by the Monday Shipping job, the monthly-5th Order job, or a future manually-initiated Exception action. **No** "latest live recommendation / daily difference / Compare Changes / automatic version replacement" requirement is introduced. **No daily Draft versioning.**
+
+**Duplicate-run protection (idempotent):** conceptual **Shipping Cycle Key = ISO Year + ISO Week + Scope**; **Order Cycle Key = Year + Month + Scope**. One active recommendation batch per Cycle Key + Scope; repeated/retried execution for the same cycle is **idempotent** (no duplicate Draft headers/lines, no reset of user-edited fields); a failed partial run **must not report success**. Precise persistence fields remain **Runtime/DB Mapping Required** if not already present. **No DB column is added here.**
+
+**Legacy naming:** the canonical shipping-draft quantities are **`recommended_qty`** (system snapshot) + **`planned_qty`** (user) — schema owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6. The misspelled **`recommand_shipment_draft_qty`** and **`shipment_draft_qty`** are **LEGACY READ/MIGRATION ALIASES only** (for `recommended_qty` / `planned_qty` respectively) — do NOT introduce them as new canonical columns. Persistence remains spec/DB-design only (no writer in code).
+
+**Risk / Danger Alerts:** **FUTURE ADD-ON / NOT IMPLEMENTED.** Future scope may include Homepage risk display, notification dedup, severity changes, unresolved reminders, resolved state, Exception Shipping Draft, Exception Order Draft. **No notification table/workflow/permission/trigger is defined now.**
 
 ---
 
@@ -375,6 +424,33 @@ BigQuery                (analytics / raw daily sales / future warehouse)
 - The frontend talks to the **API**, the API talks to **services**, services talk to the **database / BigQuery**.
 - Clients must **not** bypass services to touch the database directly.
 - Today's Apps Script bridge is the **interim** stand-in for the API layer; the migration target is a formal backend API + cloud DB (per `project-current-state.md` positioning).
+
+---
+
+## 14A. Overseas Warehouse Operation — Runtime Classification (CANONICAL 2026-07-21 — NOT implemented)
+
+High level only — no implementation is created here. Authority: `SHIPMENT_CENTER_SPEC.md` §23, `WAREHOUSE_OPERATIONS_SPEC.md`.
+
+- **Endpoint-based classification (not text-based).** The runtime classifies a shipment's warehouse operation from its **structured endpoint identities** — `origin_warehouse_id` / `destination_warehouse_id` resolved against the `warehouses` Master. **Warehouse identity is NEVER inferred from `ship_from` / `destination` display text, `warehouse_code`, `warehouse_name`, or address.** `warehouse_id` is the authoritative key; `warehouse_code` is a display/snapshot value only.
+- **Warehouse Master capability checks.** An endpoint qualifies as a managed overseas warehouse only when its `warehouse_id` resolves to an **active** record, `is_factory_warehouse` is **not TRUE**, the relevant capability is enabled (`is_receiving_enabled` for inbound / `is_shipping_enabled` for outbound), and the warehouse is supported by the applicable integration config. Do **not** classify solely by `warehouse_type = 3PL`.
+- **Runtime-derived direction.** destination qualifies → Inbound; origin qualifies → Outbound; both → Transfer (one of each); neither → none. **Never a user-entered `shipment_direction` / `warehouse_operation_type`.**
+- **Company-scoped routing.** `company + warehouse_id + operation_type → correct external account`. KM and ResUS AMZLGS records are distinct identities and never cross-route; the runtime validates company ownership against the selected `warehouse_id` before routing.
+- **Idempotent operation creation.** On the canonical trigger (shipment becomes formal), create-or-link the required Inbound/Outbound Draft keyed by **shipment + warehouse + direction**; repeated runs never duplicate. `shipment_id` is preserved as the authoritative linkage.
+- **Dual-direction orchestration (future; Phase-1 manual — canonical `SHIPMENT_CENTER_SPEC.md` §23.11).** The **Formal Shipment orchestrator** is the single record that creates/links **both** the destination Inbound **and** the origin Shipout Instruction. The **Overseas Inbound Receiving module never creates the origin Shipout** and is not the planning SSOT (intent SSOT = Inbound Planning Request; execution SSOT = Formal Shipment). Destination Inbound may be submitted externally to retrieve inbound references/labels; those + the shipout instruction form the **Factory Shipping Package** handed to the factory. **8 separate idempotency scopes** (never one shared key); label/document binaries reference the **Document Engine** (`generated_documents`), never the operation header. **Phase-1 fully manual; none of the automation is implemented.**
+- **API submit / query / webhook / retry flow (future).** Each operation carries operation-status and a **separate** API-status; the WMS/integration flow is submit → acknowledge/query → webhook/poll result → retry-on-error, with an idempotency key, external order id, push status, `pushed_at` / `last_synced_at`, `last_api_attempt_at` / `last_api_error`, and retry/error state. Provider-required-field validation gates submission (not Draft save). Secrets are never stored in Sheets (pointer/`credential_reference` only).
+
+---
+
+## 14B. Route Runtime & Event Projection (CANONICAL 2026-07-22 — spec only, NOT implemented)
+
+Authority: `SHIPMENT_ROUTE_AND_EVENT_SPEC.md`. Phase-1 P1-E.
+
+- **Reference vs Runtime split:** `shipment_route_templates` + `shipment_route_template_nodes` are **Reference DBs manually completed by the user** (blueprints). `shipment_routes` (per-shipment route-version snapshot), optional `shipment_route_nodes`, and `shipment_events` (append-only) are the **Runtime** layer — **not implemented** (absent from all code).
+- **A Template is never a shipment's live state.** At Shipment Confirm the chosen template version is **copied** into a `shipment_routes` version snapshot (planned dates = `ETD + cumulative default_offset_days`); template edits never rewrite existing snapshots.
+- **Projection, not rewrite:** current status / current node / ETA / map position / progress% are **PROJECTED from the latest valid `shipment_events`** — never stored as a current-state row that replaces event history. Events are **append-only**; `(source_type, source_event_id)` is unique (idempotent API writes); corrections/reversals are new events.
+- **Reroute** creates a new `shipment_routes` version (`is_current=TRUE`), links `supersedes_shipment_route_id`, appends a `ROUTE_CHANGED` event; the old version is retained (`superseded`). Exactly one `is_current` route per shipment.
+- **Delivered ≠ Received:** a carrier `delivered` event never increases inventory; the Warehouse Receipt (`RECEIVED`) is the inventory-increase authority. Route/Event write failure is **non-blocking** — it must not corrupt Shipment execution; no route/event is required to Ship in Phase 1.
+- **World Map** reads Runtime only (Shipment header + current `shipment_route` + latest valid `shipment_event` + node snapshot) — never a Template as live truth.
 
 ---
 

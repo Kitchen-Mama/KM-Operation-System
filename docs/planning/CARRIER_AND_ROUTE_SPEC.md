@@ -232,17 +232,25 @@ One row per (carrier × origin country × destination country × method). ETA-pl
 
 | Field | Type | Source / Rule |
 |-------|------|---------------|
-| `lead_time_id` | string (PK) | system generated |
+| `lead_time_id` | string (PK) | **`CLT-` + six-digit global sequence** (`CLT-000001`, `CLT-000002`, …) — see ID contract below |
 | `carrier_id` | string (FK) | → `carriers.carrier_id` |
 | `origin_country` | string | match key |
 | `destination_country` | string | match key |
-| `shipping_method` | string | **main transportation mode** — `Sea` / `Sea Express` / `Air` / `Courier` / … (match key) |
-| `last_mile_delivery` | string | **final delivery mode** — `Parcel` / `Truck` / … (match key). Blank allowed → legacy fallback (see join rule below). |
+| `shipping_method` | string | **main transportation mode** — `Sea` / `Sea Express` / `Air` / `Courier` (match key) |
+| `last_mile_delivery` | string | **final delivery mode** — `Parcel` / `Truck` (match key). Blank allowed → legacy fallback (see join rule below). |
 | `min_days` | number | fastest transit estimate |
 | `max_days` | number | slowest transit estimate |
-| `avg_days` | number | typical transit estimate |
+| `avg_days` | number | typical transit estimate — **initial (no history) = `ROUND((min_days + max_days) / 2)`** |
 | `created_at` | timestamp | system |
 | `updated_at` | timestamp | system |
+
+**`lead_time_id` ID contract (CANONICAL 2026-07-22):** prefix **`CLT`** + **six-digit global sequence**, immutable, globally unique, **never reuse retired IDs**, system-generated on create (a manual seed/backfill may assign the same sequential format). **Do NOT encode carrier / country / route / method / last-mile into the PK** — those live in their own columns as the business match key.
+
+**Business match key (canonical):** `carrier_id + origin_country + destination_country + shipping_method + last_mile_delivery`.
+- `shipping_method` ∈ `Sea` / `Sea Express` / `Air` / `Courier`; `last_mile_delivery` ∈ `Parcel` / `Truck`.
+- **NEVER combine the two into one token** (`Sea/P`, `Sea/T`, bare `P`, bare `T` are forbidden) — they are two separate columns. Blank `last_mile_delivery` → legacy fallback to method-only match.
+
+**Lead Time measurement (canonical):** **start = Ship Confirm / Carrier Handover**; **end = Destination Delivered**; **calendar days**. Receiving / inspection / putaway time is a **separate Receiving Buffer**, NOT part of Lead Time. Future observed `avg_days` is calculated from **qualified shipment history** (start→end) — **not implemented this round**; until then use the initial `ROUND((min+max)/2)`.
 
 **`carrier_lead_times` is the SINGLE SOURCE OF TRUTH for Lead Time (v1.4):**
 - **Lead Time lives ONLY in `carrier_lead_times`.** `carrier_rate_cards` **must NEVER store or duplicate** transit / lead-time data — the former `carrier_rate_cards.transit_days` column has been **removed** (v1.4).
@@ -462,7 +470,7 @@ Planned future flow, reusing the **same Update Template rules** (§4C.3 / §4C.3
 
 ---
 
-> **Distinct from Shipment Route Templates (`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`).** `shipping_route_rules` (planning-side) pre-fill `ship_from` / `destination` on a Weekly Shipping Plan. **`shipment_route_templates` (Execution-layer, separate spec)** define the physical leg-by-leg path snapshotted onto a shipment (`shipment_routes`) for On-The-Way / World Map. Route-template matching resolves `destination_region` from the **existing `warehouses.logistics_region`** field (`US_WEST` / `US_CENTRAL` / `US_EAST`), is **carrier-agnostic by default** (`carrier_id` nullable = generic template shared across carriers), and is **NOT** the same as carrier rate-card matching (§4, which is priced by origin/destination + marketplace + method + weight tier). Field-level SSOT: [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md).
+> **Distinct from Shipment Route Templates (`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`).** `shipping_route_rules` (planning-side) pre-fill `ship_from` / `destination` on a Weekly Shipping Plan. **`shipment_route_templates` (Execution-layer, separate spec)** define the physical leg-by-leg path snapshotted onto a shipment (`shipment_routes`) for On-The-Way / World Map. Route-template matching resolves `destination_region` from the **existing `warehouses.logistics_region`** field (`US_WEST` / `US_CENTRAL` / `US_EAST`), is **carrier-agnostic by default** (`carrier_id` nullable = generic template shared across carriers), and is **NOT** the same as carrier rate-card matching (§4, which is priced by origin/destination + marketplace + method + weight tier). Field-level SSOT: [`SHIPMENT_ROUTE_AND_EVENT_SPEC.md`](./SHIPMENT_ROUTE_AND_EVENT_SPEC.md). **Status (2026-07-22):** `shipment_route_templates` + `shipment_route_template_nodes` are **Reference DBs manually completed by the user**; `shipment_routes` / `shipment_events` remain **spec-only** (Phase-1 P1-E). `default_offset_days` on template nodes = **cumulative days from route start**, not inter-node interval.
 
 ## 5. `shipping_route_rules` — Route Defaults (ship_from / destination / route_code)
 
@@ -538,6 +546,32 @@ One row per routing default consumed by **Inventory Replenishment** — specific
 
 - **`replenishment_route_rules` MUST NOT be conflated with `shipment_routes`.** The former is a **planning-side defaults master**; the latter is **execution-side in-transit geography**. They share no rows and serve different layers.
 - `replenishment_route_rules` and `shipping_route_rules` are both **planning route-defaults**; `replenishment_route_rules` is the Inventory-Replenishment-facing name (Recommendation Summary + Execution Plan), while `shipping_route_rules` is the Weekly-Shipping-Plan-group-facing name. They may be **merged into one physical table** in implementation, but the Execution Plan reads its defaults from `replenishment_route_rules` semantics.
+
+---
+
+## 5B. Route Recommendation Engine (SPEC ONLY — CANONICAL 2026-07-22; NOT implemented)
+
+Produces the recommended route for a Recommendation Summary / Execution Plan line. **Spec only** — no runtime engine exists (the future Carrier Price Engine, §4.6, is not built). Sources: `replenishment_route_rules` (eligible routes), **`carrier_lead_times` = Lead Time SSOT**, **currently-effective `carrier_rate_cards` = Cost SSOT**, and SKU/carton dimensions + weight + battery type + route restrictions. **Never duplicate transit days into `carrier_rate_cards`** (§4A).
+
+### Step A — Eligibility Filter
+Match at minimum: `origin` · `destination` · `carrier` · `shipping_method` · `last_mile_delivery` · `battery_type` · `customs_type` · `transit_type` · destination warehouse/city/postal/country · `effective_from ≤ planning/ship date` · (`effective_to` blank OR `≥ planning/ship date`) · `status = active`. Destination match priority (existing, §4): **`warehouse_code` → city/postal (range) → country**.
+
+### Step B — Conservative Arrival Test
+```
+Conservative Transit Days = carrier_lead_times.max_days
+Expected Arrival = Planned Ship Date + max_days + Receiving Buffer
+When production is required:
+Expected Arrival = Planning Date + Production Lead Time + Handover Buffer + max_days + Receiving Buffer
+```
+A route is **on-time only when `Expected Arrival ≤ Required-By Date`**. Use **`max_days` for conservative feasibility**, **`avg_days` for normal/reference ETA + tie-breaking**, **`min_days` for optimistic display only**. (Receiving Buffer is separate from Lead Time — §4A.)
+
+### Step C — Estimated Cost
+Apply the complete effective rate-card model where applicable: `charge_type` · `charge_unit` · `unit_rate` · `min_charge` · `weight_tier` · dimensional weight / `dim_divisor` · `min_box_weight` · `fuel_surcharge` · `customs_fee` · `doc_fee` · shipment carton/weight/volume inputs. **If required pricing inputs are missing:** add flag **`quote_data_incomplete`**, do **not** claim the route is cheapest/best CP, do **not** fabricate a zero cost.
+
+### Step D — Ranking (canonical principle: **Feasibility First → Cost Second → Speed Third → Reliability Fourth**)
+1. can meet Required-By using `max_days`; 2. lowest valid Estimated Cost; 3. shorter `avg_days`; 4. smaller uncertainty `max_days − min_days`; 5. route-rule `priority`; 6. deterministic ID tie-break.
+
+**If no route can conservatively arrive on time:** show the fastest eligible **risk** option, add flag **`late_risk`**, the Reason must state *no route meets Required-By under `max_days`*, and **do NOT mark the demand as covered.** Recommendation flags (`quote_data_incomplete`, `late_risk`) persist to the Draft line `recommendation_flags`.
 
 ---
 

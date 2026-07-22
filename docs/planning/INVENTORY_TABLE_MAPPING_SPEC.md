@@ -84,39 +84,54 @@
 
 These tables have **already been updated in the DB**. Documented for mapping reference. **No schema change is proposed by this spec.**
 
+### 3.0 Inventory Field Namespace Rule (canonical — finalized 2026-07-21)
+
+- **`fac_*`** fields belong **exclusively** to the Factory Stock domain (`factory_stock`): `fac_current_stock`, `fac_reserved_stock` (derived `fac_available_stock`).
+- **`wh_*`** fields belong **exclusively** to the Overseas Warehouse Inventory domain (`overseas_inventory_snapshot` / `overseas_inventory_movements`): `wh_physical_stock`, `wh_available_stock`, `wh_reserved_stock`, `wh_damaged_stock`, `wh_on_the_way_qty`, `wh_on_the_way_eta`, `wh_on_the_way_bucket`, `wh_quantity`, `wh_quantity_before`, `wh_quantity_after`, `wh_before/after_physical_stock`, `wh_before/after_reserved_stock`, `wh_before/after_available_stock`.
+- `fac_*` must **never** hold an overseas balance; `wh_*` must **never** hold a Factory Stock balance; `wh_quantity` applies **only** to `overseas_inventory_movements`.
+- **Generic unprefixed** stock/movement field names must **not** be introduced into these two domains without explicit specification approval.
+- **Entity-specific quantities outside these inventory tables** (PO lines, shipment lines, allocation lines, receiving lines, marketplace snapshots, etc.) **retain their existing names** — they are NOT renamed.
+
 ### 3.1 `overseas_inventory_snapshot` (current columns)
 
 ```
 overseas_inventory_id, snapshot_date, warehouse_id, sku, site_sku,
-physical_stock, available_stock, reserved_stock, damaged_stock,
-on_the_way_qty, on_the_way_eta, on_the_way_bucket,
+wh_physical_stock, wh_available_stock, wh_reserved_stock, wh_damaged_stock,
+wh_on_the_way_qty, wh_on_the_way_eta, wh_on_the_way_bucket,
 last_movement_at, updated_by, created_at, updated_at, note
 ```
 
+> **Inventory namespace (finalized 2026-07-21):** Overseas Warehouse Inventory columns are `wh_*`. `wh_physical_stock` / `wh_available_stock` / `wh_reserved_stock` / `wh_damaged_stock` / `wh_on_the_way_qty` / `wh_on_the_way_eta` / `wh_on_the_way_bucket` **supersede** the earlier unprefixed names (same fields, renamed to disambiguate from the Factory `fac_*` domain). See the Inventory Field Namespace Rule (§3.0 / `DATABASE_RELATIONSHIP_MAP.md`).
+
 **Stock definitions (authoritative for warehouse-side inventory):**
-- `physical_stock` = physical warehouse inventory (on-hand).
-- `reserved_stock` = reserved by planning / allocation.
-- `damaged_stock` = unsellable / damaged at the warehouse.
-- `available_stock` = `physical_stock − reserved_stock − damaged_stock`.
-- `on_the_way_qty` / `on_the_way_eta` / `on_the_way_bucket` = inbound-to-warehouse quantity, its ETA, and the ETA bucket — the **warehouse-side On-the-Way source** used by the Sales Driven shipment deduction (§14).
+- `wh_physical_stock` = physical warehouse inventory (on-hand).
+- `wh_reserved_stock` = reserved by planning / allocation.
+- `wh_damaged_stock` = unsellable / damaged at the warehouse.
+- `wh_available_stock` = `wh_physical_stock − wh_reserved_stock − wh_damaged_stock` **where the source reports a reconstructable value; the snapshot may also carry a source-reported `wh_available_stock` that is not reconstructable from the other columns — preserve the source value (this rename does not change the source/calculation contract).**
+- `wh_on_the_way_qty` / `wh_on_the_way_eta` / `wh_on_the_way_bucket` = inbound-to-warehouse quantity, its ETA, and the ETA bucket — the **warehouse-side On-the-Way source** used by the Sales Driven shipment deduction (§14).
 
 > `overseas_inventory_snapshot` is **warehouse-side** inventory (3PL / overseas warehouse), **not** Amazon FBA stock and **not** factory stock. Amazon FBA stock comes from `amazon_inventory_snapshot` (§4); factory stock from `factory_stock` (§13).
+
+> **Daily Report Pipeline (canonical cadence, `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A).** The daily import/refresh of platform inventory, daily sales, forecast/source snapshots, and qualified on-the-way runs **12:00 Asia/Taipei** and updates the **Analysis Layer only** — it **creates/modifies no recommendation Draft** (`shipping_allocation_drafts` / `request_order_allocation_drafts`), never overwrites user-entered quantities, and never submits a plan or creates a Shipment/PO. *(Note: an existing BQ daily-sales importer at 16:00 Asia/Taipei is flagged for reconciliation against the 12:00 pipeline — Runtime Mapping Required, §7A.)*
 
 ### 3.2 `overseas_inventory_movements` (movement ledger — future reservation control)
 
 ```
 movement_id, movement_date, warehouse_id, sku, site_sku,
 movement_type, movement_scope, from_stock_type, to_stock_type,
-quantity, quantity_before, quantity_after,
-before_physical_stock, after_physical_stock,
-before_reserved_stock, after_reserved_stock,
-before_available_stock, after_available_stock,
+wh_quantity, wh_quantity_before, wh_quantity_after,
+wh_before_physical_stock, wh_after_physical_stock,
+wh_before_reserved_stock, wh_after_reserved_stock,
+wh_before_available_stock, wh_after_available_stock,
 reference_type, reference_id, source_module, created_by, created_at, note
 ```
 
-- Records each movement and the **before/after balances per stock type** (physical / reserved / available); `movement_scope` classifies the movement domain.
+> **Inventory namespace (finalized 2026-07-21):** Overseas movement quantity/balance columns are `wh_*` (supersede the earlier unprefixed names). `wh_quantity` preserves the existing movement-type sign contract.
+> **⚠ Unresolved semantics (reported to product owner):** `wh_quantity_before` / `wh_quantity_after` are **not precisely defined by the current authority**. In the only implemented writer (`handleAdjustOverseasInventory_`, manual adjustment) they record the **`wh_available_stock` bucket** balance before/after (the bucket named by `to_stock_type`, which is always `available` today); the general contract for other movement types is undefined. **Do not assume they mean physical stock.** Definition pending owner confirmation.
+
+- Records each movement and the **before/after balances per stock type** (`wh_before/after_physical_stock` / `_reserved_stock` / `_available_stock`); `movement_scope` classifies the movement domain.
 - `from_stock_type → to_stock_type` models transitions such as `available → reserved` (allocation hold) and `reserved → available` (release).
-- **Future reservation control:** this ledger is the intended mechanism to make `reserved_stock` auditable so allocation/planning can place and release holds. **No reservation logic / write path / UI is implemented or implied here.**
+- **Future reservation control:** this ledger is the intended mechanism to make `wh_reserved_stock` auditable so allocation/planning can place and release holds. **No reservation logic / write path / UI is implemented or implied here.**
 
 ---
 
@@ -172,6 +187,14 @@ Over 180+ = inv_age_181_to_270_days
 - **Source:** `amazon_daily_sales_snapshot.sales_units`.
 - **Filter:** Company + Country + Marketplace + SKU.
 
+> **CLARIFICATION (2026-07-22) — anchor on the latest DB date, not browser-today.** The 7 days are the
+> **calendar range `latest_db_date − 6 … latest_db_date`**, where `latest_db_date` is the most recent
+> `snapshot_date` present **in the scoped result** (Company+Country+Marketplace+SKU). The chart renders
+> **exactly seven x-axis dates / seven data points**, sorted chronologically. Browser "today" is never the
+> end date (the snapshot excludes today and may lag). A date inside the window with no row is still shown
+> on the axis as an explicit **no-data GAP** — never a fabricated 0 (per the no-fabrication rule). An empty
+> scoped result renders an honest empty chart (no synthetic points).
+
 **Apps Script note:** the Daily Sales snapshot now imports the **previous 30 complete days, excluding today** (`06_amazon_import_config.gs`: `lookbackDays: 30`, `excludeToday: true`). This single snapshot serves **two** purposes:
 - **Sales Trend display = the most recent 7 complete days** (unchanged — show each of the last 7 completed `snapshot_date` rows, excluding today).
 - **Avg Sales/Day calculation may use the full 30 completed days** for event/promotion normalization (§13; `SUPPLY_PLANNING_CALCULATION_RULES.md` §22).
@@ -218,6 +241,14 @@ Preparation Date = Event Start Date − 30 days
 
 > Example: an event starting **Aug 15** has Preparation Date **Jul 16**. If today is **Jul 1**, the Preparation Date is 15 days out → it lands in the **0–18d** bucket (not by the Aug 15 event date).
 
+### 8.2 Special Event Display Contract (CANONICAL 2026-07-22)
+
+Special Event stays visible in **three** places (and stays part of the formula even after a Draft / Plan / Shipment is created — only timely eligible supply offsets its remaining gap):
+
+1. **Upcoming Event Card** — event name · event period · Preparation Date · Event FC.
+2. **Recommendation Summary** — a small **Special Event badge** on affected Window rows + the Event quantity included in **Reason**. **Do NOT add a separate wide Event column** (the 5-column contract §11.2 is fixed).
+3. **Sales Trend** — optional event marker / background band. **Do NOT mix it into Monthly Achievement Rate.**
+
 ---
 
 ## 9. Shipping Shipment
@@ -248,89 +279,78 @@ The expanded SKU row's **right panel** is split into two blocks (top → bottom)
 - **`Shipping Plan Suggestions` (Stage 2 placeholder) is removed.**
 - **Submit Plan uses the Execution Plan only — never the Recommendation Summary.**
 
-### 11.2 Recommendation Summary (top block, read-only)
+### 11.2 Recommendation Summary (read-only) — FINAL 5-column small spec (CANONICAL 2026-07-22)
 
-A 4-column table over the incremental, non-overlapping need windows:
+**Recommendation Summary is system-generated, read-only, and NEVER directly submitted** (only the Execution Plan is submitted — §11.3/§11.4). Rows are the incremental, non-overlapping windows (`0–18d` / `19–30d` / `31–45d` / `46–90d`) + a **Total** row. The compact table contains **exactly five columns**:
 
 | Column | Meaning |
 |--------|---------|
-| **Target Window** | `0–18d`, `19–30d`, `31–45d`, `46–90d`, and a **Total** row |
-| **Suggested Qty** | net incremental qty for that window (`Need 0–18d` / `Need 19–30d` / `Need 31–45d` / `Need 46–90d`); **Total = Suggested Qty** (§14.3). Each floored at 0. |
-| **Suggested Route** | e.g. `CN → Amazon FBA / Sea`, `Overseas WH → Amazon FBA / Truck`, `CN → Overseas WH / Sea`. **First version: placeholder `--`** (future source: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md`). |
-| **Reason** | one of `Stock Sufficient` / `Normal Replenishment` / `Upcoming Event` / `Promotion` / `Safety Stock` / `Manual Override` / `AI Pending`. **First version: placeholder** (`AI Pending` when qty > 0, `Stock Sufficient` when 0) — no AI engine is introduced. |
+| **Window** | `0–18d` / `19–30d` / `31–45d` / `46–90d` / **Total**. |
+| **Calculated Gap** | destination demand remaining **after** destination stock + timely supply — `= max(0, Regular Demand + Special Event Demand − Remaining Destination Stock − Timely Qualified Incoming − Timely Approved Supply)` (`SUPPLY_PLANNING_CALCULATION_RULES.md` §2C). Maps to DB `calculated_gap_qty`. |
+| **Recommended Qty** | the actual system shipping recommendation **after source availability, carton rules, and route timing feasibility** (`= carton-adjusted min(Calculated Gap, Eligible Source Available)`, §2C). Maps to DB `recommended_qty`. |
+| **Route** | recommended carrier / method / last-mile display (from the Route Recommendation Engine, `CARRIER_AND_ROUTE_SPEC.md`; placeholder `--` until wired). |
+| **Reason** | compact explanation exposing: **Sales or Forecast** basis · **Platform or Overseas** stock basis · **Special Event** when applicable · stock/incoming shortage · timing constraint · route-selection reason. |
 
-- Which engine fills the need windows depends on the SKU's `replenishment_model`: **Sales Driven** (§14) or **Forecast Driven** (§15). First version reuses the existing need-bucket data (engine not changed).
-- Recommendation Summary is a **pure display** of the system suggestion; editing happens only in the Execution Plan.
-- **Total row shows only `Total` + `Qty`** — its **Route and Reason cells are blank** (a total has no single route/reason).
-- **Cost is an estimated quote at this (planning) stage.** Any cost shown at Shipping Plan is a **coarse estimate** from `country + marketplace + shipping_method + weight_tier` (not final actual cost); it is refined at Shipment Draft and reconciled to actuals after the carrier invoice — see `CARRIER_AND_ROUTE_SPEC.md` §4B.
+**REMOVED from the visible Recommendation Summary table (2026-07-22):** `Required By`, `Suggested Source`, `Expected Arrival`, `Coverage Status`, `Uncovered Qty`.
+- **`Required By` remains a calculation/DB field** (`required_by_date` on the Draft line) — just hidden from the compact table.
+- **Do NOT persist `Uncovered Qty`** (nor `Coverage Status`). Instead derive at Runtime under the Execution Plan totals if useful: `Remaining Gap = max(Calculated Gap − Σ(Execution Plan planned_qty), 0)`.
+- Which engine fills the windows depends on the four modes (`SUPPLY_PLANNING_CALCULATION_RULES.md` §2B: Sales/Forecast × Platform/Overseas).
+- **Total row shows only `Window=Total` + `Calculated Gap` + `Recommended Qty`** — Route/Reason blank.
+- **Read-only / never submitted:** the Recommendation Summary alone never commits; **Submit Plan reads only the Execution Plan** (§11.4). Recommendation Summary and Execution Plan are **separate cards, stacked** (Recommendation Summary directly above Execution Plan — §11.5).
 
 ### 11.3 Execution Plan (bottom block, submitted)
 
-A route list the PM builds. Each **route** row:
+A route list the PM builds. Canonical columns — **From / To / Qty / Method / Expected Arrival / Action** (`Expected Arrival` sits **immediately to the right of Method**):
 
 | Column | Meaning |
 |--------|---------|
-| **Ship From** | origin (logical warehouse / location). **First version: manual input.** Future: defaulted from `replenishment_route_rules`, permission-lockable. |
-| **Destination** | destination (logical warehouse / location). First version: manual input; future: route-rule default. |
-| **Suggested Qty** | route quantity (integer; must be a full-carton multiple, §carton rule below). |
-| **Shipping Method** | `Air Freight` / `Sea Freight` / `Express` / `Rail Freight` (first version). Future: from `replenishment_route_rules`. |
-| **Delete** | remove the route. |
+| **From** | origin (`ship_from`). First version manual; future default from `replenishment_route_rules`, permission-lockable. |
+| **To** | destination (`destination`). First version manual; future route-rule default. |
+| **Qty** | route quantity (`planned_qty`; integer; full-carton multiple, §carton rule below). |
+| **Method** | `shipping_method` (`Sea` / `Sea Express` / `Air` / `Courier`; future from `replenishment_route_rules`). |
+| **Expected Arrival** | `expected_arrival` — projected arrival for the selected route/rate/lead-time (Route Recommendation Engine, `CARRIER_AND_ROUTE_SPEC.md`). **Recalculates when From / To / Method / planned ship date / the selected route/rate/lead-time record changes.** |
+| **Action** | add / delete the route. |
 
 - **`+ Add Route`** button adds a blank route.
 - **Submit Plan** reads the Execution Plan **state** (see §11.4) and emits one Weekly Shipping Plan line per route: `company / country / marketplace / ship_from / destination / shipping_method / sku / requested_qty` + the frozen Decision Snapshot (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`). A route with **qty > 0 AND a shipping_method** is submittable; blank-method routes are ignored.
 - **Carton gate (unchanged):** every submitted route qty must be an integer multiple of the SKU's `units_per_carton`; a missing UPC blocks Submit.
 - **Factory-stock hint** is display-only (no deduction; no allocation engine).
 
-### 11.4 API-ready state rule (Execution Plan)
+### 11.4 Persistence rule (Recommendation Summary + Execution Plan) — CANONICAL 2026-07-22
 
-- The Execution Plan lives in a **centralized JS state** (`window.KM.shippingAllocationDraft` — the Execution Plan Working Draft), **not** the DOM. The DOM is a view.
-- **Submit Plan reads ONLY the Execution Plan state** — never the Recommendation Summary, never the raw DOM.
-- **`sessionStorage` is recovery-only** (working-draft restore); it is never the authoritative record and never writes `shipping_plans`.
+> **SUPERSEDES** any "Recommendation Summary / Execution Plan require NO DB and exist only in JS State / sessionStorage" statement. Final rule:
+- **Live analysis / calculation preview** may remain **non-persisted** (transient).
+- The **scheduled / manual generated recommendation cycle persists** a `shipping_allocation_drafts` header + `_draft_lines` (canonical schema: `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6). **The persisted Draft is the SSOT** for the active cycle.
+- **Recommendation Summary** displays the persisted **system snapshot** (`recommended_qty` / `calculated_gap_qty` / `recommended_*` / `recommendation_reason`) for the active Draft when one exists (read-only).
+- **Execution Plan** edits persist into **`planned_qty`** + the selected route fields on the same Draft line.
+- **`sessionStorage` is transient UI recovery ONLY** (`km_replen_alloc_draft_v1`) — **never the SSOT**; the DB Draft is authoritative.
+- **Submit Plan reads ONLY the Execution Plan** (`planned_qty` + selected route fields) and creates `shipping_plans` / `shipping_plan_lines`; it never submits the Recommendation Summary and never reads the raw DOM.
 - All persistence goes through **`KM.DB` / Apps Script handlers** (`createShippingPlansBatch` = Decision Commit). No direct DOM-to-DB writes.
-- A SKU whose Execution Plan the PM never customized (no state row) is **not** submitted (the Recommendation Summary alone never commits).
+- A line the PM never customized still carries `planned_qty = recommended_qty` (initialized at generation); the Recommendation Summary alone never commits.
 
-### 11.5 Expanded-row layout rule v3 — stable fixed-width horizontal (UI — authoritative)
+### 11.5 Expanded-row layout — REVISED (Analysis area + Decision area, CANONICAL 2026-07-22)
 
-The expanded row is organized into **four fixed-width horizontal groups**, each **stacking its cards vertically**:
+> **SUPERSEDES the earlier v3 four-group A/B/C/D split** where "Recommendation Summary sat under Sales Trend (Group C) and Execution Plan under Achievement Rate (Group D)." The expanded row is now organized as an **Analysis area** and a **Decision area**; **Recommendation Summary sits directly ABOVE Execution Plan** (stacked, same width), and **Monthly Achievement Rate sits directly below Sales Trend** (in the Analysis area — no longer paired with Execution Plan).
 
-| Group | Name | Cards (top → bottom) |
-|-------|------|----------------------|
-| **A** | Inventory state | Stock · Long Term Storage · Shipping Shipment · 3rd Party Stock |
-| **B** | Planning context | Forecast Breakdown · Upcoming Event |
-| **C** | Recommendation insight | Sales Trend · **Recommendation Summary** |
-| **D** | Decision action | Achievement Rate · **Execution Plan** |
+**Analysis area (cards):** Stock · Long Term Storage · Forecast Breakdown · Upcoming Event · Sales Trend · **Monthly Achievement Rate directly below Sales Trend**.
 
-- Groups are arranged **horizontally A → B → C → D**; each group stacks its cards **vertically**.
-- **Recommendation Summary sits under Sales Trend (Group C); Execution Plan sits under Achievement Rate (Group D).** They must **NOT** share one narrow vertical stack.
-- **Group B (Forecast / Event) is narrow** — close to a single small-card width (≈190px), not a wide panel.
-- **Both Recommendation Summary and Execution Plan reuse the left detail-card styling** (`.replen-card`: white background, border, border-radius, padding, compact title/table).
+**Decision area (stacked, in order):**
+1. **Recommendation Summary** — read-only (§11.2, 5 columns).
+2. **Execution Plan** — editable, the **only** source Submit Plan reads (§11.3/§11.4).
 
-**Group widths (fixed, Layout v3):** Group A ≈ 320px · Group B ≈ 240px · Group C ≈ 400px (Sales Trend needs 7 days; Recommendation Summary needs full columns) · Group D ≈ 420px (Execution Plan has more columns). The four groups **never shrink, grow, or wrap**.
+- **Recommendation Summary is directly above Execution Plan**, **same card width + alignment**, **vertically stacked**, but **remain logically and technically separate** (never merged into one table/state).
+- Both reuse the detail-card styling (`.replen-card`: white bg, border, radius, padding, compact title/table).
 
-**Overflow strategy (single, shared with the main table):**
+**Recommendation Summary rendering:** columns **`Window` · `Calculated Gap` · `Recommended Qty` · `Route` · `Reason`** (title "Recommendation Summary"). `Reason` stays single-line, no ellipsis (`table-layout: auto` + `white-space: nowrap`, card wide enough). Header background `rgb(255, 248, 240)` (light warm), text `#1f2937` — this table only.
 
-- **Fixed-width horizontal groups — NO responsive reflow.** The four groups always sit in **one horizontal row**. On small screens they do **NOT** reflow to a vertical single column; the whole expanded row simply extends past the viewport and is viewed via the **main table's horizontal scroll** (`.scroll-col`) — exactly like the first layer. (The former `@media (max-width: 900px)` single-column rule and any `flex-wrap` on the expanded row are **removed**.)
-- **No expanded content may overlap the following SKU rows.** The expanded-row container is sized by its **content height** (no `position: absolute`, no `transform` overlay, no child positioning that collapses the parent to height 0); its bottom always sits **above** the next SKU row.
-- **Main table:** horizontal scroll is the **only** overflow strategy; the two-row header (`Current Stock / On the Way / Avg. Sales/day / …`) stays **sticky / top-aligned** (`.table-header-bar` sticky) and its column widths are **not** affected by expanded-row content.
-- **No nested scrollbars** anywhere in the expanded row (no `overflow-y` / `max-height` / inner `overflow-x: auto`).
-- **No content exceeds its card / container boundary:** all grid/flex items + inputs/selects set `min-width: 0`; the Execution Plan Delete button is fixed within its track and never touches the card edge.
+**Execution Plan rendering:** columns **`From` · `To` · `Qty` · `Method` · `Expected Arrival` · `Action`** (Expected Arrival immediately right of Method; Action = add/delete). `Expected Arrival` recalculates on change of From / To / Method / planned ship date / selected route-rate-lead-time record. `column-gap: 8px`; Method select, Expected Arrival, and the Action button never overlap and never touch the card edge (`min-width: 0` on all grid/flex items + inputs/selects).
 
-**Group widths (v3 fixed):** A ≈ 320px · B ≈ 240px · **C ≈ 420px** · **D ≈ 440px** (C/D widened so Recommendation Summary Reason stays single-line and Execution Plan Method + Delete never overlap). Overflow past the viewport is handled by the main table's horizontal scroll — never wrap, never squeeze the lower cards.
-
-**Top-row visual alignment (Part 1):**
-
-- The **top-row cards align visually** across groups: **Stock · Long Term Storage** (Group A grid row 1), **Forecast Breakdown** (B), **Sales Trend** (C), **Achievement Rate** (D) share a `min-height` (≈150px) and do **not** flex-grow — so their bottom divider lines up. Second-row cards (Shipping / 3rd Party / Upcoming Event / Recommendation Summary / Execution Plan) flow naturally below. **Forecast Breakdown and Achievement Rate no longer stretch tall.** Charts keep their 100px canvas — **not squeezed**.
-
-**Recommendation Summary (Parts 2–3):**
-
-- Columns `Window` · `Qty` · `Route` · `Reason`. Title is just **"Recommendation Summary"**; `margin-bottom: 6px`.
-- **`Reason` must stay on a single line** (e.g. `Stock Sufficient` never wraps to `Stock` / `Sufficient`); **no ellipsis** — the table is `table-layout: auto` + `white-space: nowrap` and Group C is wide enough (≈420px).
-- **Header background = `rgb(255, 248, 240)`** (light warm), text `#1f2937` — **Recommendation Summary table ONLY** (not green, not other tables).
-
-**Execution Plan (Part 4):**
-
-- Columns `From` · `To` · `Qty` · `Method` · *(delete)* — the **delete column header shows no text** (the red `×` button alone).
-- Grid `minmax(90px,1fr) minmax(90px,1fr) 56px minmax(110px,1fr) 32px`, **`column-gap: 8px`**; the **Method select and the red `×` button never overlap** and `×` does not touch the card edge (32px track, 20px centered button).
+**Overflow strategy (unchanged, shared with the main table):**
+- **NO responsive reflow to a single column** — the expanded row extends past the viewport and is viewed via the **main table's horizontal scroll** (`.scroll-col`).
+- **No expanded content overlaps the following SKU rows** — the container is sized by content height (no absolute/transform overlay collapsing the parent).
+- Main table two-row header stays **sticky**; its column widths are unaffected by expanded content.
+- **No nested scrollbars** anywhere in the expanded row (no inner `overflow-y`/`max-height`/`overflow-x`).
+- **No content exceeds its card boundary.**
 
 ---
 
@@ -452,6 +472,8 @@ This chapter is the **official Supply Planning allocation rule**. The calculatio
 
 **Rule 2 — Platform Fulfilled.** **No shared allocation.** Inventory belongs to the platform (e.g. Amazon FBA). It is not pooled into shared overseas allocation.
 
+> **FBA inventory source precedence (canonical 2026-07-20; `SUPPLY_PLANNING_CALCULATION_RULES.md` §24.2).** **Mode 1 — Platform Snapshot (preferred):** FBA Current Stock = latest valid `amazon_inventory_snapshot` value (the platform SSOT), at the existing grain `company + country/site + marketplace + SKU`. **Do NOT subtract Sales Report quantities again from an imported snapshot** (double-deduct). **Mode 2 — Estimated Ledger (fallback only, when no current snapshot):** opening confirmed stock ± confirmed inbound/returns/adjustments − sales/removals/disposals/loss-damage; label the result **"Estimated Inventory"**; a newer snapshot replaces/reconciles it; never apply both modes to the same interval. Missing adjustment sources → verified-only + stale warning, no fabrication → **Runtime Mapping Required.** FBA is **never** virtually redistributed into the shared FBM pool and Warehouse Reference rows never infer FBA quantity.
+
 **Rule 3 — Self Fulfilled.** Uses **shared overseas inventory**; allocation is **required**.
 
 **Rule 4 — Hybrid.** Display **Platform Inventory** and **3rd Party Inventory** — **both sections remain visible**. The **Marketplace SKU's fulfillment model decides** the final fulfillment behavior.
@@ -487,6 +509,40 @@ This chapter is the **official Supply Planning allocation rule**. The calculatio
 - **Two creation flows:**
   - **Flow A** — Add Marketplace SKU → creates `marketplace_skus` → **ensure/update** the matching `sku_regional_details` row (copy `sku` / `company` / `country` / `marketplace` / `site_sku` / `marketplace_product_id` / **`product_url`**; compliance-document fields blank and never overwritten).
   - **Flow B** — Regional Details created first → later, when `marketplace_skus` is created it **copies `site_sku` / `marketplace_product_id` FROM `sku_regional_details`**.
+
+#### 17.3A.1 Baseline triggers — TWO DISTINCT triggers (CANONICAL — 2026-07-20 v2, authoritative here)
+
+**These are two separate baselines with two separate triggers. Neither is triggered by Master SKU creation, and Factory Stock is NOT triggered by Marketplace SKU creation** (both prior statements are **superseded**).
+
+**(a) Factory Stock baseline — trigger = lifecycle transition into `Running in the Market`.**
+```
+Create sku_details                                   → NO factory_stock mutation
+Save edits without entering Running in the Market    → NO factory_stock mutation
+sku_details.lifecycle: non-running → "Running in the Market"
+  → ensure factory_stock baseline (eligible Factory Warehouses)
+  → idempotent by warehouse_id + MASTER sku   (never site_sku / company / country / marketplace)
+  → current_stock = 0 ; reserved_stock = 0 (where the schema/default supports it)
+```
+- Exact stored value from `VALID_LIFECYCLES_` = `['Upcoming SKU','Running in the Market','Phasing Out','Closure','Other']` (do not invent a second value).
+- **Keyed by `warehouse_id + Master sku`** — never `site_sku`/company/country/marketplace. Editing a SKU already Running must not reset stock; leaving Running must not delete stock/history; returning to Running repeats only the idempotent ensure.
+- **Display join:** `marketplace_skus` filtered by `company + country + marketplace` → DISTINCT **Master sku** → join `sku_details` → join `factory_stock` **by Master sku**. **Never join Factory Stock by `site_sku`.**
+- **Eligible Factory Warehouse rule:** OPEN MAPPING (a default preferred factory `WH-TW-CN-FACTORY-YOUXIN` exists; no canonical "for-these-warehouses" set). Do not invent it.
+
+**(b) Overseas Inventory baseline/context — trigger = successful Marketplace SKU add to the Inventory/Replenishment scope.**
+```
+Add Marketplace SKU (into planning scope)
+  → ensure the relevant Overseas Inventory baseline/context
+  → physical overseas grain = company + warehouse_id + MASTER sku
+  → company / country / marketplace preserved as planning-DEMAND context (not physical grain)
+```
+- **Marketplace is NOT part of the physical shared-3PL stock grain.** Shared self-fulfilled marketplaces (Shopify / Target / Walmart / Wayfair / …) may **share one physical warehouse inventory**; adding multiple Marketplace SKUs for one Master SKU must **not** create multiple copies of the same physical 3PL inventory (see §17.3A.2).
+- **Amazon FBA / `platform_fulfilled`** inventory stays **separate** from the shared self-fulfilled 3PL pool.
+- `overseas_inventory_snapshot` / `_movements` are keyed by `warehouse_id + sku` (Master sku); `company`/`country` resolved via `warehouses` at read time — not stored on the rows.
+
+**Runtime status (updated 2026-07-21):**
+- **(a) Factory Stock baseline on lifecycle → `Running in the Market`: IMPLEMENTED IN SOURCE (Apps Script — pending redeploy + live verification).** `handleUpsertSkuDetail_` now captures previous lifecycle, and on a non-running → Running transition calls `ensureFactoryStockBaseline_` (`03_master_data_handlers.gs`): eligibility `is_active ∧ is_factory_warehouse`, idempotent by `warehouse_id + Master sku`, `current_stock=0`/`reserved_stock=0` where the column exists, **fail-closed to `db_mapping_gap`** if the `warehouses`/`factory_stock` sheet or columns are absent (never invents). Logic unit-tested (5 cases). Requires redeploy + a live `factory_stock` sheet with the documented columns.
+- **(b) Overseas Inventory baseline on Marketplace-SKU add: NOT IMPLEMENTED / Runtime Mapping Required** — the ensure-write flow is not yet designed.
+Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md) §6.1, [`SKU_DETAILS_ADD_EDIT_SPEC.md`](./SKU_DETAILS_ADD_EDIT_SPEC.md) §15/§23.
 - **Add SKU required fields (2026-07):** the Add SKU modal requires **ASIN** (UI label → `marketplace_skus.marketplace_product_id`, also synced into `sku_regional_details.marketplace_product_id`) and **Product URL** (→ `sku_regional_details.product_url`). Validation: `product_url` trimmed + `http(s)://` (no fixed domain); `marketplace_product_id` trimmed, case-preserved, no fixed length. `site_sku` stays required. No separate `asin` column is created.
 - **Sync (both ways, no silent divergence):** editing `site_sku` / `marketplace_product_id` in Inventory Replenishment updates the paired `sku_regional_details` row, and vice-versa. `product_url` syncs operational → regional (regional-only; not propagated to `marketplace_skus`). **`sku_regional_details` is the higher-priority source** on conflict; save surfaces a warning / repair-sync.
 - **`asin → marketplace_product_id`:** the operational platform id column on `marketplace_skus` is **`marketplace_product_id`** (platform-neutral); Amazon's ASIN is stored there (UI may label it "ASIN"). Legacy `asin` is read-fallback only during migration.

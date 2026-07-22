@@ -2,6 +2,8 @@
 
 此文件定義各國站點的出貨計算規範與運輸方式配置。在 AI 精準計算建議數量實作之前，所有出貨計算將依據此規範執行。
 
+> **SUPERSEDED (persistence + terminology, 2026-07-22):** the "資料來源: 目前使用 sessionStorage 暫存" statement and the legacy "Shipping Allocation" naming below are **NOT current authority.** Canonical: the recommendation cycle persists `shipping_allocation_drafts`/`_draft_lines` (SSOT); the editable layer is the **Execution Plan** (`planned_qty`); `sessionStorage` is transient recovery only; Submit Plan reads the persisted Execution Plan → `shipping_plans`. See `INVENTORY_TABLE_MAPPING_SPEC.md` §11.4 + `SUPPLY_PLANNING_CALCULATION_RULES.md`.
+
 ---
 
 ## 📋 目錄

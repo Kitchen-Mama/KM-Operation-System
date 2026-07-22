@@ -186,8 +186,14 @@ function normalizeCampaignRecord(raw) {
     return {
         campaignId: String(r.campaign_id || ''),
         campaignName: String(r.campaign_name || ''),
+        // Additive identity (2026-07-22): a campaign is NOT uniquely scoped by country+marketplace
+        // alone — the same marketplace name can belong to two companies (KM vs ResUS). company +
+        // marketplaceId are the company-safe identity; country/marketplace remain display snapshots.
+        company: String(r.company || ''),
+        marketplaceId: String(r.marketplace_id || ''),
         country: String(r.country || ''),
         marketplace: String(r.marketplace || ''),
+        eventFlag: String(r.event_flag || r.major_event_flag || ''),
         promotionType: String(r.promotion_type || ''),
         majorEventFlag: String(r.major_event_flag || ''),
         year: String(r.year || ''),
@@ -215,6 +221,8 @@ function normalizeCampaignSkuLineRecord(raw) {
     return {
         campaignSkuLineId: String(r.campaign_sku_line_id || ''),
         campaignId: String(r.campaign_id || ''),
+        // Additive canonical marketplace-SKU identity (2026-07-22); sku kept as Master-SKU snapshot.
+        marketplaceSkuId: String(r.marketplace_sku_id || ''),
         sku: String(r.sku || '').trim(),
         promoPrice: String(r.promo_price || ''),
         regularPrice: String(r.regular_price || ''),
@@ -271,6 +279,15 @@ function normalizeMarketplaceSkuRecord(raw) {
     };
 }
 
+// Inventory namespace migration (2026-07-21): Factory Stock balance columns are `fac_*`, Overseas
+// Warehouse Inventory columns are `wh_*`. TEMPORARY dual-read prefers the new canonical header and falls
+// back to the pre-migration name only while the header is absent. REMOVAL CONDITION: delete the old-key
+// fallback once the live sheets are renamed and verified (see project-current-state migration entry).
+function _invPick(r, canonicalKey, legacyKey) {
+    var v = r ? r[canonicalKey] : undefined;
+    return (v === undefined || v === null || v === '') ? (r ? r[legacyKey] : undefined) : v;
+}
+
 function normalizeFactoryStockRecord(raw) {
     var r = raw || {};
     return {
@@ -281,7 +298,8 @@ function normalizeFactoryStockRecord(raw) {
         warehouseId: String(r.warehouse_id || '').trim(),
         company: String(r.company || '').trim(),
         factoryName: String(r.factory_name || '').trim(),
-        currentStock: parseFloat(r.current_stock) || 0,
+        currentStock: parseFloat(_invPick(r, 'fac_current_stock', 'current_stock')) || 0,   // canonical fac_current_stock
+        reservedStock: parseFloat(_invPick(r, 'fac_reserved_stock', 'reserved_stock')) || 0, // canonical fac_reserved_stock
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
         lastTransactionAt: String(r.last_transaction_at || '').trim(),
@@ -423,16 +441,40 @@ function normalizeFcRegularForecastRecord(raw) {
     };
 }
 
+// Interpret a Sheet boolean-ish cell as a real tri-state: true / false / null (blank/unknown).
+// Never Boolean(value) — an "N"/"No"/"0"/"FALSE" string is truthy and would flip the flag.
+function _whBool(v) {
+    if (v === true) return true;
+    if (v === false) return false;
+    var s = String(v == null ? '' : v).trim().toLowerCase();
+    if (s === '') return null;
+    if (s === 'true' || s === 'yes' || s === 'y' || s === '1') return true;
+    if (s === 'false' || s === 'no' || s === 'n' || s === '0') return false;
+    return null;
+}
+
 function normalizeWarehouseRecord(raw) {
     var r = raw || {};
     return {
         warehouseId: String(r.warehouse_id || '').trim(),
+        // System-derived snapshot source for the Shipment Draft Warehouse Picker: the picker copies
+        // this into shipments.warehouse_code (never free-typed). Empty if the sheet has no such column.
+        warehouseCode: String(r.warehouse_code || '').trim(),
         company: String(r.company || '').trim(),
         country: String(r.country || '').trim(),
         warehouseName: String(r.warehouse_name || '').trim(),
         warehouseType: String(r.warehouse_type || '').trim(),
         // Optional: surfaced for Movement Log marketplace filter. Empty if the sheet has no such column.
         marketplace: String(r.marketplace || '').trim(),
+        // Picker filtering/eligibility inputs (§22.0 F/G/H). warehouseOwner = physical operator (Amazon/WINIT/...).
+        // isActive / isFactoryWarehouse are tri-state (true/false/null) — see _whBool. logisticsRegion + city/state
+        // drive candidate ordering and option display. All empty/null when the sheet lacks the column.
+        warehouseOwner: String(r.warehouse_owner || '').trim(),
+        isActive: _whBool(r.is_active),
+        isFactoryWarehouse: _whBool(r.is_factory_warehouse),
+        logisticsRegion: String(r.logistics_region || '').trim(),
+        city: String(r.city || '').trim(),
+        state: String(r.state || '').trim(),
         status: String(r.status || '').trim(),
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
@@ -445,16 +487,17 @@ function normalizeOverseasInventorySnapshotRecord(raw) {
     var r = raw || {};
     return {
         snapshotId: String(r.snapshot_id || '').trim(),
+        snapshotDate: String(r.snapshot_date || '').trim(),
         warehouseId: String(r.warehouse_id || '').trim(),
         sku: String(r.sku || '').trim(),
         siteSku: String(r.site_sku || '').trim(),
-        physicalStock: parseFloat(r.physical_stock) || 0,
-        availableStock: parseFloat(r.available_stock) || 0,
-        reservedStock: parseFloat(r.reserved_stock) || 0,
-        damagedStock: parseFloat(r.damaged_stock) || 0,
-        onTheWayQty: parseFloat(r.on_the_way_qty) || 0,
-        onTheWayEta: String(r.on_the_way_eta || '').trim(),
-        onTheWayBucket: String(r.on_the_way_bucket || '').trim(),
+        physicalStock: parseFloat(_invPick(r, 'wh_physical_stock', 'physical_stock')) || 0,
+        availableStock: parseFloat(_invPick(r, 'wh_available_stock', 'available_stock')) || 0,
+        reservedStock: parseFloat(_invPick(r, 'wh_reserved_stock', 'reserved_stock')) || 0,
+        damagedStock: parseFloat(_invPick(r, 'wh_damaged_stock', 'damaged_stock')) || 0,
+        onTheWayQty: parseFloat(_invPick(r, 'wh_on_the_way_qty', 'on_the_way_qty')) || 0,
+        onTheWayEta: String(_invPick(r, 'wh_on_the_way_eta', 'on_the_way_eta') || '').trim(),
+        onTheWayBucket: String(_invPick(r, 'wh_on_the_way_bucket', 'on_the_way_bucket') || '').trim(),
         eventStatus: String(r.event_status || '').trim(),
         // Optional warning-threshold columns (read-only; absent -> 0). Used by MVP display warning only.
         reorderPoint: parseFloat(r.reorder_point) || 0,
@@ -480,9 +523,9 @@ function normalizeOverseasInventoryMovementRecord(raw) {
         // Allowed values: available | reserved | damaged | on_the_way | none
         fromStockType: String(r.from_stock_type || '').trim(),
         toStockType: String(r.to_stock_type || '').trim(),
-        quantity: parseFloat(r.quantity) || 0,
-        quantityBefore: parseFloat(r.quantity_before) || 0,
-        quantityAfter: parseFloat(r.quantity_after) || 0,
+        quantity: parseFloat(_invPick(r, 'wh_quantity', 'quantity')) || 0,
+        quantityBefore: parseFloat(_invPick(r, 'wh_quantity_before', 'quantity_before')) || 0,
+        quantityAfter: parseFloat(_invPick(r, 'wh_quantity_after', 'quantity_after')) || 0,
         referenceType: String(r.reference_type || '').trim(),
         referenceId: String(r.reference_id || '').trim(),
         sourceModule: String(r.source_module || '').trim(),
@@ -563,8 +606,32 @@ function normalizeAmazonWeeklySalesSnapshotRecord(raw) {
     };
 }
 
+// Parse a free-text event_period ("2026/07/15-2026/07/16", "2026-07-15 ~ 2026-07-16", etc.) into
+// { start, end } ISO yyyy-mm-dd strings. Returns blanks when it cannot confidently parse two dates.
+// Used only as a FALLBACK for legacy rows that predate the event_start_date / event_end_date columns.
+function _fcParseEventPeriodDates(period) {
+    var out = { start: '', end: '' };
+    var s = String(period == null ? '' : period).trim();
+    if (!s) return out;
+    // Find all yyyy[/-.]mm[/-.]dd tokens (order-preserving).
+    var re = /(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/g, m, found = [];
+    while ((m = re.exec(s)) !== null) {
+        var iso = m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+        found.push(iso);
+    }
+    if (found.length >= 1) out.start = found[0];
+    if (found.length >= 2) out.end = found[found.length - 1];
+    else if (found.length === 1) out.end = found[0];   // single date → same-day event
+    return out;
+}
+
 function normalizeFcSpecialEventRecord(raw) {
     var r = raw || {};
+    var period = String(r.event_period || r.period || '').trim();
+    // Canonical start/end dates: prefer explicit columns; fall back to parsing the legacy free-text period.
+    var startCol = String(r.event_start_date || r.start_date || '').trim();
+    var endCol = String(r.event_end_date || r.end_date || '').trim();
+    var parsed = (!startCol || !endCol) ? _fcParseEventPeriodDates(period) : { start: '', end: '' };
     return {
         eventId: String(r.event_id || r.special_event_id || '').trim(),
         company: String(r.company || '').trim(),
@@ -576,8 +643,12 @@ function normalizeFcSpecialEventRecord(raw) {
         series: String(r.series || '').trim(),
         category: String(r.category || '').trim(),
         event: String(r.event || r.event_name || '').trim(),
-        eventPeriod: String(r.event_period || r.period || '').trim(),
+        eventPeriod: period,
+        eventStartDate: startCol || parsed.start,
+        eventEndDate: endCol || parsed.end,
         eventMonth: String(r.event_month || r.month || '').trim(),
+        year: String(r.year || '').trim(),
+        status: String(r.status || '').trim(),
         fcQty: parseFloat(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty) || 0,
         raw: r
     };
@@ -1089,6 +1160,9 @@ function normalizeOperationDb(rawDb) {
         // Request Order second-layer allocation drafts (planning scratchpads — no stock movement).
         requestOrderAllocationDrafts: (db.request_order_allocation_drafts || []).map(normalizeRequestOrderAllocationDraftRecord).filter(function(r) { return r.requestAllocationDraftId; }),
         requestOrderAllocationDraftLines: (db.request_order_allocation_draft_lines || []).map(normalizeRequestOrderAllocationDraftLineRecord).filter(function(r) { return r.requestAllocationLineId || r.requestAllocationDraftId; }),
+        // Inventory Replenishment shipping-allocation drafts (Recommendation/Execution Plan Draft = SSOT).
+        shippingAllocationDrafts: (db.shipping_allocation_drafts || []).map(normalizeShippingAllocationDraftRecord).filter(function(r) { return r.allocationDraftId; }),
+        shippingAllocationDraftLines: (db.shipping_allocation_draft_lines || []).map(normalizeShippingAllocationDraftLineRecord).filter(function(r) { return r.allocationDraftLineId || r.allocationDraftId; }),
         // Request Order site confirmations (site-level approval state — no stock movement, no request_orders).
         requestOrderSiteConfirmations: (db.request_order_site_confirmations || []).map(normalizeRequestOrderSiteConfirmationRecord).filter(function(r) { return r.siteConfirmationId; }),
         // Request Order line SOURCES — source of truth for company/site/month allocation detail (read-only
@@ -1382,6 +1456,74 @@ function normalizeRequestOrderAllocationDraftLineRecord(raw) {
         targetPctSnapshot: parseFloat(r.target_pct_snapshot) || 0,
         allocationMethod: String(r.allocation_method || '').trim(),
         note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        raw: r
+    };
+}
+
+// Inventory Replenishment shipping-allocation draft (header). Persisted Draft = SSOT for the cycle
+// (INVENTORY_TABLE_MAPPING_SPEC §11.4). Planning only — no stock effect. generation_type replaces
+// the legacy source_type. `raw` is preserved so the Recommendation Summary can read snapshot columns.
+function normalizeShippingAllocationDraftRecord(raw) {
+    var r = raw || {};
+    return {
+        allocationDraftId: String(r.allocation_draft_id || '').trim(),
+        planningCycle: String(r.planning_cycle || '').trim(),
+        sourcePage: String(r.source_page || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        status: String(r.status || '').trim(),
+        generationType: String(r.generation_type || r.source_type || '').trim(),   // source_type = legacy read-fallback
+        calculationRunId: String(r.calculation_run_id || '').trim(),
+        calculatedAt: String(r.calculated_at || '').trim(),
+        sourceDataAsOf: String(r.source_data_as_of || '').trim(),
+        draftVersion: String(r.draft_version || '').trim(),
+        createdBy: String(r.created_by || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        submittedBy: String(r.submitted_by || '').trim(),
+        submittedAt: String(r.submitted_at || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+// Inventory Replenishment shipping-allocation draft (line). recommended_qty = immutable system
+// snapshot (legacy alias recommand_shipment_draft_qty); planned_qty = user execution qty (legacy
+// aliases shipment_draft_qty / qty). MUST-NOT-store display fields are never read as canonical.
+function normalizeShippingAllocationDraftLineRecord(raw) {
+    var r = raw || {};
+    function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
+    return {
+        allocationDraftLineId: String(r.allocation_draft_line_id || '').trim(),
+        allocationDraftId: String(r.allocation_draft_id || '').trim(),
+        sku: String(r.sku || '').trim(),
+        siteSku: String(r.site_sku || '').trim(),
+        routeNo: String(r.route_no || '').trim(),
+        lineStatus: String(r.line_status || '').trim(),
+        windowCode: String(r.window_code || '').trim(),
+        requiredByDate: String(r.required_by_date || '').trim(),
+        calculatedGapQty: n(r.calculated_gap_qty),
+        // recommended_qty canonical; recommand_shipment_draft_qty = legacy read/migration alias only.
+        recommendedQty: n(r.recommended_qty != null && r.recommended_qty !== '' ? r.recommended_qty : r.recommand_shipment_draft_qty),
+        recommendedShippingMethod: String(r.recommended_shipping_method || '').trim(),
+        recommendedCarrierId: String(r.recommended_carrier_id || '').trim(),
+        recommendedLastMileDelivery: String(r.recommended_last_mile_delivery || '').trim(),
+        recommendedExpectedArrival: String(r.recommended_expected_arrival || '').trim(),
+        recommendationReason: String(r.recommendation_reason || '').trim(),
+        // planned_qty canonical; shipment_draft_qty / qty = legacy read/migration aliases only.
+        plannedQty: n(r.planned_qty != null && r.planned_qty !== '' ? r.planned_qty : (r.shipment_draft_qty != null && r.shipment_draft_qty !== '' ? r.shipment_draft_qty : r.qty)),
+        shipFrom: String(r.ship_from || '').trim(),
+        destination: String(r.destination || '').trim(),
+        selectedShippingMethod: String(r.selected_shipping_method || '').trim(),
+        selectedLeadTimeId: String(r.selected_lead_time_id || '').trim(),
+        selectedCarrierId: String(r.selected_carrier_id || '').trim(),
+        expectedArrival: String(r.expected_arrival || '').trim(),
+        overrideReason: String(r.override_reason || '').trim(),
+        unitsPerCarton: n(r.units_per_carton),
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
         raw: r
@@ -1777,6 +1919,16 @@ window.KM.DB.getRequestOrderAllocationDraftLines = function() {
     return window._opDbCache.requestOrderAllocationDraftLines || [];
 };
 
+// Inventory Replenishment shipping-allocation drafts (Recommendation Summary + Execution Plan SSOT).
+window.KM.DB.getShippingAllocationDrafts = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shippingAllocationDrafts || [];
+};
+window.KM.DB.getShippingAllocationDraftLines = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shippingAllocationDraftLines || [];
+};
+
 window.KM.DB.getRequestOrderSiteConfirmations = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.requestOrderSiteConfirmations || [];
@@ -1945,7 +2097,12 @@ window.KM.DB.upsertSkuDetail = async function(payload) {
     });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Upsert failed');
+    if (!json.success) {
+        // Preserve the backend's structured error_code (e.g. duplicate_sku / not_found) on the thrown Error.
+        var e = new Error(json.error || 'Upsert failed');
+        if (json.error_code) e.error_code = json.error_code;
+        throw e;
+    }
     await loadOperationDb({ force: true });
     return json.data;
 };
@@ -2250,6 +2407,42 @@ window.KM.DB.submitRequestOrderAllocationDrafts = async function(payload) {
     return json.data;
 };
 
+// --- Inventory Replenishment second-layer Recommendation / Execution Plan drafts (16_ handlers).
+// Backend handler/table = source-complete (assets/specs/active/apps-script/16_shipping_allocation_handlers.gs);
+// LIVE persistence activates on an authorized redeploy. Until then these return {success:false} when the
+// API is unconfigured and the UI falls back to transient sessionStorage recovery (never SSOT).
+window.KM.DB.upsertShippingAllocationDraft = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertShippingAllocationDraft skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertShippingAllocationDraft' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert shipping allocation draft failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+// UPSERT lines by allocation_draft_line_id (protects recommended_qty; §D). { allocation_draft_id, lines }.
+window.KM.DB.upsertShippingAllocationDraftLines = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertShippingAllocationDraftLines skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertShippingAllocationDraftLines' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert shipping allocation draft lines failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+window.KM.DB.submitShippingAllocationDrafts = async function(payload) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, submitShippingAllocationDrafts skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'submitShippingAllocationDrafts' }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Submit shipping allocation drafts failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
 // Batch upsert Site Confirmations. { confirmations: [ { planning_cycle, company, country,
 //   marketplace, series, bucket, status?, note? } ], confirmed_by? } → { upserted, created, updated }.
 // Records site-level approval only — does NOT create request_orders (Confirm Site ≠ Send Request).
@@ -2546,6 +2739,44 @@ window.KM.DB.receivePurchaseOrderLines = async function(payload) {
 
 // { event_id?, company, country, marketplace, scope_type?, scope_id?, sku, series?, category?,
 //   event_name, event_period?, event_month?, year?, fc_qty, note?, actor? }
+// Campaign header upsert (Special Event Builder step 1). Idempotent by campaign_id, else by
+// company|country|marketplace|campaign_name|year. Returns { campaign_id, created }.
+// { campaign_id?, company, marketplace_id?, campaign_name, country, marketplace, promotion_type?,
+//   event_flag?, year?, start_date?, end_date?, status?, source? }
+window.KM.DB.upsertCampaign = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertCampaign skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertCampaign' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert campaign failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
+// Campaign SKU lines batch upsert (step 2). Idempotent per line by campaign_sku_line_id, else
+// campaign_id + marketplace_sku_id (or + sku). { campaign_id, lines:[...] } → { lines:[{campaign_sku_line_id,sku,created}] }.
+window.KM.DB.upsertCampaignSkuLines = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertCampaignSkuLines skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'upsertCampaignSkuLines' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Upsert campaign_sku_lines failed');
+    await loadOperationDb({ force: true });
+    return json.data;
+};
+
 window.KM.DB.upsertFcSpecialEvent = async function(payload) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, upsertFcSpecialEvent skipped');

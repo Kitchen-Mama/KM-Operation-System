@@ -167,6 +167,15 @@ function doPost(e) {
       return handleDeleteFcTargetRule_(body);
     }
 
+    // Campaign write path (Special Event Builder: campaigns → campaign_sku_lines → fc_special_events).
+    if (action === 'upsertCampaign') {
+      return handleUpsertCampaign_(body);
+    }
+
+    if (action === 'upsertCampaignSkuLines') {
+      return handleUpsertCampaignSkuLines_(body);
+    }
+
     if (action === 'upsertRequestOrderAllocationDraft') {
       return handleUpsertRequestOrderAllocationDraft_(body);
     }
@@ -177,6 +186,19 @@ function doPost(e) {
 
     if (action === 'submitRequestOrderAllocationDrafts') {
       return handleSubmitRequestOrderAllocationDrafts_(body);
+    }
+
+    // Inventory Replenishment second-layer Recommendation / Execution Plan drafts (16_).
+    if (action === 'upsertShippingAllocationDraft') {
+      return handleUpsertShippingAllocationDraft_(body);
+    }
+
+    if (action === 'upsertShippingAllocationDraftLines') {
+      return handleUpsertShippingAllocationDraftLines_(body);
+    }
+
+    if (action === 'submitShippingAllocationDrafts') {
+      return handleSubmitShippingAllocationDrafts_(body);
     }
 
     if (action === 'upsertRequestOrderSiteConfirmations') {

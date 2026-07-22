@@ -6,7 +6,7 @@
 /* SKU Toolbar */
 #sku-section .sku-toolbar {
     display: flex;
-    gap: var(--space-md);
+    gap: var(--space-lg);
     align-items: center;
     margin-bottom: var(--space-lg);
     padding: var(--space-md);
@@ -14,6 +14,21 @@
     border-radius: var(--radius-md);
     position: relative;
     z-index: 130;
+    flex-wrap: wrap;
+}
+/* Filter group (left) and action group (right), separated by a clear gap. */
+#sku-section .sku-toolbar__filters {
+    display: flex;
+    gap: var(--space-md);
+    align-items: center;
+    flex-wrap: wrap;
+}
+#sku-section .sku-toolbar__actions {
+    display: flex;
+    gap: var(--space-md);
+    align-items: center;
+    margin-left: auto;   /* push actions to the right, creating the gap from filters */
+    flex-wrap: wrap;
 }
 
 #sku-section .btn-add-sku {
@@ -39,8 +54,99 @@
     font-size: var(--font-size-body);
 }
 
+/* Toolbar Series / Category list filters */
+#sku-section .sku-filter {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body);
+    background: white;
+    color: var(--text-primary);
+    cursor: pointer;
+    max-width: 170px;
+}
+#sku-section .sku-filter:focus {
+    outline: 2px solid var(--soft-green, #7DAB63);
+    outline-offset: -1px;
+}
+
+/* Per-lifecycle-group zero-result state under the active filters */
+#sku-section .sku-filter-empty {
+    padding: 14px 16px;
+    color: #94a3b8;
+    font-style: italic;
+    font-size: 13px;
+    border-top: 1px solid #f1f5f9;
+}
+
 #sku-section .display-dropdown {
     position: relative;
+}
+
+/* More Options menu (secondary actions: Export / Import / Refresh) */
+#sku-section .more-options-dropdown { position: relative; }
+#sku-section .btn-more-options {
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid var(--border-light);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+}
+#sku-section .btn-more-options:hover { background: #e2e8f0; }
+#sku-section .btn-more-options[aria-expanded="true"] { background: #e2e8f0; }
+#sku-section .more-options-panel {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + var(--space-xs));
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft, 0 8px 24px rgba(15,23,42,0.14));
+    padding: var(--space-xs);
+    min-width: 240px;
+    width: max-content;
+    max-width: 340px;
+    z-index: 1000;
+}
+#sku-section .more-options-panel.show { display: block; }
+#sku-section .more-options-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 9px 10px;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: nowrap;   /* keep icon + label + badge on ONE row; panel widens instead of wrapping */
+}
+#sku-section .more-options-item:hover,
+#sku-section .more-options-item:focus {
+    background: var(--bg-surface, #f1f5f9);
+    outline: none;
+}
+#sku-section .more-options-item--data { color: #6d28d9; font-weight: var(--weight-medium); }
+#sku-section .more-options-tag {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    color: #6d28d9;
+    background: #ede9fe;
+    border-radius: 10px;
+    padding: 2px 7px;
+}
+#sku-section .more-options-sep {
+    height: 1px;
+    background: var(--border-light);
+    margin: var(--space-xs) 4px;
 }
 
 #sku-section .btn-display {
@@ -417,4 +523,109 @@
     color: #64748b;
     margin-left: 2px;
     white-space: nowrap;
+}
+
+
+/* ============================================================
+   Add / Edit SKU unified form — scoped controls (.skuf-*)
+   Used only inside the JS-built SKU Master modal. These classes
+   are deliberately NOT bound to native `select`/`input` globally
+   so the rest of the app is untouched.
+============================================================ */
+
+/* Creatable combobox (Series / Category) */
+.skuf-combo { position: relative; }
+.skuf-combo-input {
+    width: 100%; box-sizing: border-box;
+    padding: 7px 9px; border: 1px solid #CBD5E1; border-radius: 6px;
+    font-size: 13px; color: #1E293B; background: #fff;
+}
+.skuf-combo-input:focus {
+    outline: none; border-color: #7DAB63;
+    box-shadow: 0 0 0 2px rgba(125,171,99,0.25);
+}
+.skuf-combo-list {
+    position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 2px);
+    margin: 0; padding: 4px; list-style: none; background: #fff;
+    border: 1px solid #CBD5E1; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15,23,42,0.14);
+    max-height: 200px; overflow-y: auto;
+}
+.skuf-combo-list[hidden] { display: none; }
+.skuf-combo-opt {
+    padding: 6px 8px; border-radius: 5px; font-size: 13px; color: #1E293B;
+    cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skuf-combo-opt:hover,
+.skuf-combo-opt.is-active { background: #EEF6E9; }
+.skuf-combo-opt--new { color: #0F766E; font-weight: 600; }
+.skuf-combo-empty { padding: 6px 8px; font-size: 12px; color: #94A3B8; font-style: italic; }
+
+/* Tag / chip input (Material / Product Use) — preset multi-select + creatable */
+.skuf-tagwrap { position: relative; }
+.skuf-tags {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 6px 8px; border: 1px solid #CBD5E1; border-radius: 6px;
+    background: #fff; min-height: 38px; box-sizing: border-box; cursor: text;
+}
+.skuf-tags:focus-within {
+    border-color: #7DAB63; box-shadow: 0 0 0 2px rgba(125,171,99,0.25);
+}
+.skuf-chips { display: contents; }
+.skuf-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #EEF6E9; color: #365314; border: 1px solid #CBE3B8;
+    border-radius: 14px; padding: 3px 8px; font-size: 12px; line-height: 1.4;
+    max-width: 100%;
+}
+.skuf-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skuf-chip-x {
+    border: none; background: none; color: #5C7A46; cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0; flex-shrink: 0;
+}
+.skuf-chip-x:hover { color: #DC2626; }
+.skuf-tags-input {
+    flex: 1 1 90px; min-width: 90px; border: none; outline: none;
+    font-size: 13px; color: #1E293B; padding: 3px 2px; background: transparent;
+}
+.skuf-help { font-size: 10px; color: #94A3B8; margin-top: 2px; }
+
+/* Enum select with friendly labels (Battery / Magnet / GS1 / Currency) */
+.skuf-enum {
+    width: 100%; box-sizing: border-box;
+    padding: 7px 9px; border: 1px solid #CBD5E1; border-radius: 6px;
+    font-size: 13px; background: #fff; color: #1E293B; min-height: 34px;
+}
+.skuf-enum:focus {
+    outline: none; border-color: #7DAB63;
+    box-shadow: 0 0 0 2px rgba(125,171,99,0.25);
+}
+.skuf-enum.is-legacy { border-color: #F59E0B; background: #FFFBEB; }
+
+/* Dimension / weight grids — visible spacing between number and unit (Part H) */
+.skuf-dim-grid {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(84px,auto);
+    gap: 10px 14px; align-items: end;
+}
+.skuf-wt-grid {
+    display: grid;
+    grid-template-columns: minmax(0,1fr) minmax(84px,auto);
+    gap: 10px 14px; align-items: end; margin-top: 10px;
+}
+.skuf-dim-grid > div,
+.skuf-wt-grid > div { min-width: 0; }
+.skuf-num {
+    width: 100%; box-sizing: border-box;
+    padding: 7px 9px; border: 1px solid #CBD5E1; border-radius: 6px;
+    font-size: 13px; color: #1E293B; background: #fff;
+}
+.skuf-unit-sel {
+    width: 100%; min-width: 84px; box-sizing: border-box;
+    padding: 7px 9px; border: 1px solid #CBD5E1; border-radius: 6px;
+    font-size: 13px; background: #fff; color: #1E293B;
+}
+@media (max-width: 640px) {
+    .skuf-dim-grid { grid-template-columns: 1fr 1fr; }
+    .skuf-wt-grid { grid-template-columns: 1fr; }
 }

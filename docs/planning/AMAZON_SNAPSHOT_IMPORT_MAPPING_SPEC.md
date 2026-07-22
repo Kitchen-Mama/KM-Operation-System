@@ -1,6 +1,6 @@
 # Amazon Snapshot Import — Mapping Reference Spec
 
-**Status:** 🟡 Draft v1.7 — Mapping + import-governance reference spec (Daily Sales now uses incremental rolling upsert; NO DB migration, NO BigQuery schema change, NO API, NO frontend, NO routes)
+**Status:** 🟡 Draft v1.8 — Mapping + import-governance reference spec (Daily Sales now uses a **gap-aware rolling 90-completed-day upsert** with missing/incomplete-date recovery + recent reconciliation + locking; supersedes the earlier "import yesterday only / 30-day retention / latest-per-group fallback"; NO DB migration, NO BigQuery schema change, NO API, NO frontend, NO routes)
 **Last Updated:** 2026-07-01
 **Maintained By:** Development Team
 **Audience:** developers building the config-driven importer · OP / data stakeholders
@@ -86,7 +86,7 @@ These apply to **all four** sources unless a config note overrides them.
 11. **`synced_at` / `created_at` / `updated_at` are generated at sync time** (§5).
 12. **Dates are normalized to `yyyy-MM-dd`** (§4).
 13. **Weekly date ranges** (e.g. `2026-06-15~2026-06-21`) are parsed into `snapshot_week`, `snapshot_month`, `week_start_date`, `week_end_date` (§4, §7.3).
-14. **BigQuery** fetches only the needed fields and the recent rolling 30 completed-day window, excluding today (§4, §7.4).
+14. **BigQuery** fetches only the needed fields and **only the dates needing recovery** inside the rolling **90 completed-day** window (gap-aware: missing + incomplete + recent-3), excluding today (§4, §7.4).
 
 ---
 
@@ -109,24 +109,27 @@ The source `Week` column is formatted as a range: **`2026-06-15~2026-06-21`** (s
 
 > `snapshot_week` is the **mapped** raw range; `snapshot_month`, `week_start_date`, and `week_end_date` are **derived** (config 3 `derivedFields`).
 
-### BigQuery incremental rolling upsert (config 4 — Amazon Daily Sales)
-- **Write mode `rolling_upsert` (§7.4):** the daily query reads **only the incremental completed-day window** — **default 1 completed day (yesterday)** via `incrementalDefaultDays: 1`, `excludeToday: true`. A POST `backfill_days: N` widens the read to the last **N** completed days (capped at `lookbackDays: 30`). Example: today **2026-07-01** (Asia/Taipei) → default reads **2026-06-30**; `backfill_days: 30` reads **2026-06-01 → 2026-06-30**.
-- Read rows are **UPSERTed** into `amazon_daily_sales_snapshot` by natural key (`snapshot_date + country + marketplace + channel + sku`) — **no full-table rewrite** — then rows older than **`retentionDays: 30`** are **pruned** so the Google Sheet keeps a rolling 30 completed days. **BigQuery keeps full history and is never pruned.**
-- The retained 30 days feed both the **Sales Trend 7-day display** (latest 7 completed days) and the **Normalized Avg Sales 30-day calculation** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.**
-- This handles **timezone differences and Amazon reporting delay**; late-arriving rows for recent days are picked up (and their prior value updated in place, not duplicated) on subsequent syncs.
-- **Daily sync schedule target: 16:00 `Asia/Taipei`** (`scheduleTime: "16:00"`, `scheduleTimezone: "Asia/Taipei"`).
-- The query must **only fetch the needed fields** (those in `fieldMap`) **and only the incremental window** (filter on `dateField: "Date"`) — never a full-table scan.
+### BigQuery gap-aware rolling upsert (config 4 — Amazon Daily Sales) — CANONICAL 2026-07-21
 
-#### Daily Sales fallback rule (no rows in the rolling window)
+> **SUPERSEDED:** the earlier rule — *"the scheduled process imports only yesterday (`incrementalDefaultDays: 1`) with a 30-day retention and a latest-per-group fallback when the window is empty"* — is **superseded**. It did **not** recover dates missed when a trigger was disabled/failed or when BigQuery arrived late, leaving gaps (e.g. 2026-07-06, then 2026-07-17/18, with 07-07…07-16 missing). The canonical behavior is now a **gap-aware rolling 90-completed-day sync**.
 
-The rolling 30 completed-day window is the **default**. It must not silently produce an empty snapshot when Amazon is late or a market simply had no recent reporting.
+- **Rolling retention = latest 90 COMPLETED calendar days** (`retentionDays: 90`), `Asia/Taipei`, **today excluded** (`excludeToday: true`): end = yesterday, start = yesterday − 89 (inclusive → exactly 90 dates). Boundary computed explicitly by `amazonRetentionWindow_` (10) — not an ambiguous `DATE_SUB(today, 90)`.
+- **Every run is gap-aware** (`amazonReadDailyGapAware_`, 08): (1) compute the 90-day window; (2) inspect **BigQuery source** coverage per date (row + distinct-natural-key counts); (3) inspect **destination** coverage per date (row + distinct-key counts + duplicates); (4) identify **missing** dates (in source, not in destination) and **incomplete** dates (destination distinct-key count < source, or destination has duplicate keys); (5) fetch **only** the dates needing recovery (plus a small recent-reconciliation window); (6) **UPSERT by natural key** (`snapshot_date + country + marketplace + channel + sku`) — no full-table rewrite, no unconditional 90-day re-read; (7) **prune** rows with `snapshot_date < retention_start`; (8) log verification results.
+- **Completeness ≠ existence:** a date is NOT skipped just because ≥1 destination row exists — it is compared by source vs destination **row count and distinct-natural-key count**, and destination duplicate keys mark it incomplete (repaired by the keyed upsert, which collapses duplicates last-wins).
+- **Recent late-arrival reconciliation:** the most recent **`reconcileRecentDays: 3`** source-available dates are **always** re-fetched and reconciled by `source_row_hash` (changed rows → updated; identical → counted unchanged; no rewrite churn) — this absorbs late/revised Amazon data without rewriting the whole 90-day history.
+- **Initial recovery / missed-trigger:** on the first run after this change, **all** available missing/incomplete dates inside the 90-day window are recovered automatically — **without** deleting valid existing data and **without** requiring a one-time manual `backfill_days` for ordinary in-window gaps.
+- **No `1 → 90` shortcut:** the daily read is **not** "read 90 days every day". Only gap + recent-reconciliation dates are fetched. `incrementalDefaultDays: 1` is **legacy metadata, not used** by the gap-aware path.
+- **Idempotent + failure-safe:** guarded by a `LockService` script lock (two triggers can't prune/upsert at once); a failed BigQuery read aborts **before** any prune/write (valid retained data is never destroyed); running twice the same day yields identical data and no duplicate keys.
+- The retained 90 days feed the **Sales Trend 7-day display** and the **Normalized Avg Sales 30-day calculation** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.** BigQuery keeps full history and is never pruned.
+- **Daily sync schedule (RECONCILED 2026-07-20):** canonical Daily Report Pipeline runs in the 12:00–13:00 `Asia/Taipei` trigger window on `runAmazonSnapshotImports`. `scheduleTime: "16:00"` is **LEGACY metadata not consumed by Runtime** (only `scheduleTimezone` is read). The trigger is created **manually** in the Apps Script UI (no trigger-creation code in the project). **Do NOT add a second duplicate same-day Daily Sales import.**
 
-- **Default:** rolling 30 completed-day window, excluding today (above).
-- **Fallback:** if the rolling window returns **no rows**, fall back to the **latest available data** instead of writing an empty snapshot.
-- **Group-level evaluation:** the fallback is evaluated **per `country` / `marketplace` / `channel` / `sku` group** where applicable — **not** a single global latest date. Different groups may legitimately resolve to **different latest dates** (one market may be a day behind another); do **not** force every country/site onto one global latest date when group-level data differs.
-- **Transparency:** the runtime / UI must **expose the actual data date range used** (per group where relevant), so a reader always knows whether they are looking at fresh rolling-window data or fallback latest-available data, and from which date(s).
-- **No fabrication:** fallback returns **real rows that exist** for the latest available date(s) per group; it never invents a date or carries a stale row forward as if current.
-- **Freshness interaction:** a snapshot served from fallback is still subject to the freshness model (§19) — it should read as `delayed`/`stale` rather than `fresh` if its latest date is older than the expected cadence.
+#### Daily Sales source-unavailable rule (a date has no source rows)
+
+> **SUPERSEDED:** the earlier *"latest-per-group fallback when the rolling window is empty"* is **removed** for the gap-aware path. Gap detection + recent reconciliation recover real missing/incomplete dates; a truly source-less date is reported, not back-filled with older data.
+
+- A calendar date inside the window with **no rows in BigQuery** is recorded as **`source_unavailable`** — **never fabricated**, never marked imported, and **re-checked automatically** on later runs while it remains inside the window. If the source later provides it, ordinary gap recovery imports it.
+- A missing **destination** date and a missing **source** date are different problems: only source-available dates are ever fetched.
+- Fallback data must **preserve its real `snapshot_date`** and must **never** cause a missing calendar date to be considered complete. The old latest-per-group fallback is not invoked in the rolling path.
 
 ---
 
@@ -401,30 +404,34 @@ Each config classifies destination fields into four kinds:
 
 ---
 
-### 7.4 `amazon_daily_sales_snapshot` (BigQuery, **incremental rolling upsert** + prune, excludes today)
+### 7.4 `amazon_daily_sales_snapshot` (BigQuery, **gap-aware rolling upsert** + prune, excludes today)
 
-**Write mode = `rolling_upsert` (Daily Sales ONLY).** The destination Google Sheet keeps a **rolling 30 completed days**; **BigQuery keeps full history and is never pruned**. Each daily run reads **only new completed-day data (default = yesterday / 1 completed day)**, **UPSERTs** it into `amazon_daily_sales_snapshot` by natural key (**no full-table rewrite**), then **prunes** destination rows older than `retentionDays` (30). This replaces the previous behaviour of re-reading and rewriting the whole 30-day window every day. Configs 1–3 are **unchanged** (full snapshot rewrite).
+**Write mode = `rolling_upsert` (Daily Sales ONLY).** The destination Google Sheet keeps a **rolling 90 completed days**; **BigQuery keeps full history and is never pruned**. Each run is **gap-aware**: it computes the 90-completed-day window, inspects **source and destination coverage per date**, fetches **only** missing/incomplete dates (plus a 3-day recent-reconciliation window), **UPSERTs** them by natural key (**no full-table rewrite, no unconditional 90-day re-read**), then **prunes** destination rows older than `retention_start`. Configs 1–3 are **unchanged** (full snapshot rewrite).
 
-The 30 retained completed days still serve **two** purposes: (a) the **Sales Trend 7-day display** (most recent 7 completed days) and (b) the **Normalized Avg Sales 30-day calculation** (event/promotion-day exclusion, `SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.**
+> **SUPERSEDED:** the previous behaviour — read **only yesterday** (`incrementalDefaultDays: 1`), 30-day retention, latest-per-group fallback — is superseded because it never recovered dates missed by a disabled/failed trigger or late BigQuery arrival. See the canonical gap-aware rule in "BigQuery gap-aware rolling upsert" above.
 
-**Plain language:** Unlike configs 1–3, this source is **BigQuery**, not a Google Sheet. The importer queries `amazon-database-489810.AmazonSales.Raw Daily Sales`, fetching **only the mapped fields** and **only the incremental completed-day window** (default the single prior completed day; `backfill_days` widens it) filtered on the `Date` field — to absorb timezone and Amazon reporting delay. The daily sync runs at **16:00 `Asia/Taipei`**. Sales/traffic metrics are **direct source mappings** (`country` from `Marketplace`; note BQ source headers use underscores, e.g. `Sales_Units`, and `sales_amount_usd`←`Sales_Amount_`). `marketplace` is **fixed** (`Amazon`); metadata/hash/batch/timestamps are **importer-generated**. **Both `site_sku` and `asin` are blank in MVP.** For metadata, `source_file_id` is the fully qualified BQ table reference and `source_sheet_name` is the BQ table name (or blank) — **not** a Google Sheet tab.
+The 90 retained completed days serve: (a) the **Sales Trend 7-day display** (most recent 7 completed days) and (b) the **Normalized Avg Sales 30-day calculation** (event/promotion-day exclusion, `SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change.**
 
-**Write mode — incremental rolling upsert + prune (authoritative):**
+**Plain language:** this source is **BigQuery**, not a Google Sheet. The importer queries `amazon-database-489810.AmazonSales.Raw Daily Sales`, fetching **only the mapped fields** and **only the dates that need recovery** inside the 90-day window (filtered on the `Date` field). Sales/traffic metrics are **direct source mappings** (`country` from `Marketplace`; BQ headers use underscores, e.g. `Sales_Units`, and `sales_amount_usd`←`Sales_Amount_`). `marketplace` is **fixed** (`Amazon`); metadata/hash/batch/timestamps are **importer-generated**. **Both `site_sku` and `asin` are blank in MVP.** `source_file_id` is the fully qualified BQ table reference and `source_sheet_name` is the BQ table name (or blank).
 
-1. **Read window:** default `incrementalDefaultDays: 1` completed day (yesterday, `excludeToday`). A POST `backfill_days: N` reads the last **N** completed days instead (capped at `lookbackDays: 30`).
-2. **Upsert by natural key** `snapshot_date + country + marketplace + channel + sku`: an existing destination row with the same key is **updated**; a new key is **appended**. **No full-table clear.**
-3. **Prune** destination rows where `snapshot_date < today − retentionDays` (30) — Google Sheet keeps only the most recent ~30 completed days. **BigQuery is never pruned** (full history preserved).
-4. The **header row is always preserved**; existing rows **not** in the current batch are preserved (only stale-by-date rows are pruned).
-5. `backfill_days = 30` re-reads the last 30 completed days but still **upserts** (no wipe) — safe to re-run for correction/backfill.
-6. `import_sync_runs` records `rows_read` / `rows_written` (updated + appended) / `status` as usual; `quality_note` adds `write_mode=rolling_upsert; rows_pruned=<n>`.
-7. Implemented by `amazonUpsertRollingSnapshot_()` (09) + the `rolling_upsert` branch in `runAmazonSnapshotImport_` (07) + the incremental window in `amazonReadBigQuerySource_` (08). The **fallback rule below still applies** to the read window (if the incremental window is empty, fall back to latest-available per group).
+**Write mode — gap-aware rolling upsert + prune (authoritative):**
+
+1. **Window:** `amazonRetentionWindow_(90)` → start = today−90, end = today−1 (`Asia/Taipei`, inclusive 90 completed days). Not `DATE_SUB(today, 90)` used ambiguously.
+2. **Coverage inspection:** per-date **source** counts (`amazonQuerySourceDateCoverage_`, row + distinct-natural-key) and **destination** counts (`amazonReadDestDateCoverage_`, row + distinct-key + duplicates).
+3. **Detect:** **missing** = source-has / destination-lacks; **incomplete** = destination distinct-key count < source, or destination has duplicate keys or a prior failed/incomplete log.
+4. **Fetch only** the union of missing + incomplete + recent-3 (+ optional manual `backfill_days`, capped at `lookbackDays: 90`) that are source-available. **Upsert by natural key** `snapshot_date + country + marketplace + channel + sku` (update on hash change; unchanged when `source_row_hash` matches; append new; collapse destination duplicates last-wins). **No full-table clear.**
+5. **Prune** destination rows where `snapshot_date < retention_start` (today−90). Header + all in-window rows preserved. **BigQuery is never pruned.**
+6. **Source-unavailable** dates (in-window, no source rows) are recorded, never fabricated, re-checked on later runs.
+7. **Idempotent + failure-safe:** `LockService` script lock serializes runs; a failed BigQuery read aborts before any prune/write.
+8. `import_sync_runs` records the window, missing/incomplete/imported/source-unavailable/pruned date sets + `rows_inserted`/`rows_updated`/`rows_unchanged`/`duplicate_keys_detected` (new columns; also summarized in `quality_note`).
+9. Implemented by `amazonReadDailyGapAware_` (08) + `amazonUpsertRollingSnapshot_()` (09) + the `rolling_upsert` branch in `runAmazonSnapshotImport_` (07) + `amazonRetentionWindow_`/`amazonAddDaysStr_` (10). **The latest-per-group fallback is NOT used in this path.**
 
 | Kind | Fields |
 |------|--------|
 | Direct source mappings | `snapshot_date`←Date, `country`←Marketplace, `channel`←Channel, `sku`←SKU, `currency`←Currency, `sales_units`←Sales_Units, `sales_amount`←Sales_Amount, `sales_amount_usd`←Sales_Amount_, `return_units`←Return_Units, `total_orders`←Total_Orders, `session`←Session, `page_view`←Page_View, `unit_session_percentage`←Unit_Session_Percentage, `buy_box_percentage`←Buy_Box_Percentage, `browser_session`←browser_session, `browser_page_views`←browser_page_views, `app_session`←app_session, `app_page_view`←app_page_view |
 | Fixed values | `marketplace` = `Amazon` |
 | Derived fields | — (none) |
-| Query / write control (not destination fields) | `queryMode: rolling_window`, `dateField: Date`, **`writeMode: rolling_upsert`**, **`retentionDays: 30`**, **`incrementalDefaultDays: 1`**, `lookbackDays: 30` (backfill ceiling), `excludeToday: true` (window ends yesterday), `scheduleTime: 16:00`, `scheduleTimezone: Asia/Taipei` |
+| Query / write control (not destination fields) | `queryMode: rolling_window`, `dateField: Date`, **`writeMode: rolling_upsert`**, **`retentionDays: 90`** (rolling 90 completed days), **`reconcileRecentDays: 3`** (recent late-arrival reconciliation), `incrementalDefaultDays: 1` (legacy — NOT used by the gap-aware path), `lookbackDays: 90` (manual backfill ceiling), `excludeToday: true` (window ends yesterday), `scheduleTime: 16:00` (legacy metadata), `scheduleTimezone: Asia/Taipei` |
 | Importer-generated | `source_system`, `source_report`, `source_file_id` (= `amazon-database-489810.AmazonSales.Raw Daily Sales`), `source_sheet_name` (`Raw Daily Sales` or blank), `source_row_hash`, `sync_batch_id`, `synced_at`, `created_at`, `updated_at` |
 | Blank in MVP | `site_sku`, `asin` |
 

@@ -9,7 +9,7 @@
 
 > **Update (2026-06-29):** Added the **Core Architecture Philosophy — Three-Layer Separation** (§2A: Analysis recalculates · Decision preserves planning · Execution preserves records · never mixed), the **Immutable Flow Principle** (downstream inherits/copies upstream, never mutates it), the **Single Source of Truth by layer** table, and the explicit **Decision Layer chain** (§5.1) — Inventory Replenishment → Submit Plan → Weekly Shipping Plan (Draft → Pending Approval → Approved) → Shipment Draft → Shipment Overview. Inventory Replenishment = **Analysis Layer**, Weekly Shipping Plan = **Decision Layer**, Shipment Draft/Overview = **Execution Layer**. The `shipping_plans` / `shipping_plan_lines` write contract (incl. six-value group key, `plan_version`, `submit_batch_id`, line-level snapshots) is defined in [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md).
 
-> **Update (2026-07-03):** Finalized the **Factory Stock Allocation → Shipping workflow** (§5.2), the **Allocation Rule** (§5.3 — existing inventory = shared pool; allocation recalculated weekly by FC Share; never permanently bound to a company), and the **Reserved Stock lifecycle** (§5.4 — Submit Plan moves nothing; Shipment Draft raises `reserved_stock`; Ship lowers `current_stock` and `reserved_stock`). `factory_stock_allocation_plans` is a **weekly planning snapshot only** — it does **not** move, reserve, or change ownership of inventory. Column purposes for `factory_stock_allocation_plans` are documented in [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) §6.
+> **Update (2026-07-03):** Finalized the **Factory Stock Allocation → Shipping workflow** (§5.2), the **Allocation Rule** (§5.3 — existing inventory = shared pool; allocation recalculated weekly by FC Share; never permanently bound to a company), and the **Reserved Stock lifecycle** (§5.4 — Submit Plan moves nothing; Shipment Draft raises `fac_reserved_stock`; Ship lowers `fac_current_stock` and `fac_reserved_stock`). `factory_stock_allocation_plans` is a **weekly planning snapshot only** — it does **not** move, reserve, or change ownership of inventory. Column purposes for `factory_stock_allocation_plans` are documented in [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) §6.
 
 ---
 
@@ -24,6 +24,41 @@ It defines:
 - The **persistence and document rules** that govern what becomes a saved record.
 
 It intentionally does **not** define calculation formulas (see the calculation rules doc) or accounting/ERP behavior (future scope).
+
+---
+
+## 1A. Phase 1 Authoritative Implementation Order (CANONICAL — corrected 2026-07-22)
+
+Principle: **Spec First / Database First / Mapping First / Runtime Last.** Phase 1 first closes the **most basic, verifiable, auditable, traceable** supply-chain loop (P1-A), then completes the remaining Phase-1 scope **including the full 90-Day Rule-Based Supply Planning engine (P1-G), which IS required before Phase-1 Go-Live.** Only **learning-based** features (AI, automatic statistical correction, dynamic optimization, BigQuery intelligence) are Post-Phase-1.
+
+> **CORRECTION (2026-07-22):** the earlier ordering that placed *full 90-Day planning* in Post-Phase-1 / "NOT a blocker" is **SUPERSEDED.** 90-Day Rule-Based Supply Planning is **P1-G** — a Phase-1 requirement. P1-A must not be *blocked by* the complete 90-Day engine, but the 90-Day engine must be complete before Go-Live.
+
+| Step | Scope | Status anchor |
+|------|-------|---------------|
+| **P1-A** | Basic **Net Replenishment Need** formula (`SUPPLY_PLANNING_CALCULATION_RULES.md` §2A): demand window − sellable stock − qualified incoming − approved/committed supply. Draft ≠ confirmed supply; event demand not deleted by creating a shipment. **First; not blocked by the full 90-Day engine.** | formula defined |
+| **P1-B** | Existing Supply Allocation + Order Deduction + PO/Shipment quantity contract (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` P1-B): `remaining_qty=MAX(completed−shipped,0)`, `unreceived_qty=MAX(ordered−completed,0)`; reserve@lock, deduct@Ship Confirm; no double-deduct. | consolidated |
+| **P1-C** | Warehouse Menu (4 pages) + Overseas Inbound + Overseas Outbound: Warehouse Master (Admin → Master Data → Warehouses, outside the group); **Factory Inventory / Overseas Inventory / Overseas Inbound / Overseas Outbound** separate pages (Factory vs Overseas = separate domains, never merged balances); **Inbound Planning Request ≠** Warehouse **Receiving Operation** (separate records/lifecycles); Outbound: auto-create ≠ auto-submit, Lock reserves, Ship Confirm deducts actual shipped qty, instruction push KM→WMS precedes shipout confirmation WMS→KM (`WAREHOUSE_OPERATIONS_SPEC.md`, `OVERSEAS_INBOUND_SPEC.md`, `OVERSEAS_OUTBOUND_SPEC.md`). | separate pages + operation contracts defined |
+| **P1-D** | Factory / Shipment / Overseas Inventory movement closed loop (§5.8) — every stock change writes a movement ledger row; never a blind balance overwrite. | flow defined |
+| **P1-E** | Shipment Route Runtime + Events + ETA + Tracking foundation: Template selection → `shipment_routes` version snapshot → (optional) `shipment_route_nodes` → append-only `shipment_events` → status/ETA/map projection → reroute versions. Built **only after** the (already-completed) Template Reference DB. | spec only |
+| **P1-F** | Full module API-ization — unified contract; frontend independent of Sheet column positions; GET/POST/PATCH/domain-action split; idempotency/validation/error-codes/audit; status transitions only via domain action; API versioning. | future |
+| **P1-G** | **90-Day Rule-Based Supply Planning** — the complete rule-based engine (four modes §2B, exact-date buckets, target rules, 30-day safety, special-event lifecycle, shared-overseas allocation). **REQUIRED before Go-Live** (rule-based, not learning-based). | formula defined; engine pending |
+| **P1-H** | Login + Google/Gmail identity + People + Roles/Permissions + Notifications + Admin UI + **Shipment On the Way World Map UI**. | future |
+| **P1-I** | Go-Live Integration Test and Acceptance Gate. | future |
+| **Post-P1** | **Learning-based only:** AI demand forecast + explainable recommendation, automatic statistical correction, dynamic Safety Stock / dynamic optimization, forecast accuracy (bias/WAPE/MAPE), route actual lead-time calibration, cross-company borrowing, BigQuery historical/analytics/semantic layer. | deferred |
+
+**Route DB reality (2026-07-22):** `shipment_route_templates` + `shipment_route_template_nodes` are **Reference DBs manually completed by the user** (read-only synced; not recreated). `shipment_routes` / `shipment_route_nodes` / `shipment_events` are **spec-only / NOT implemented** (Phase-1 P1-E). Authority: `SHIPMENT_ROUTE_AND_EVENT_SPEC.md`.
+
+### 5.8 Phase-1 full inventory closed loop (P1-D)
+```
+Demand Calculation → Replenishment Recommendation → Supply Allocation → Request Order / PO
+  → Production Completion → Factory Stock → Shipment Allocation → Reserve
+  → Ship Confirm → Factory Stock Deduction (movement ledger) → Shipment In Transit
+  → Destination Inbound Receive → Overseas Inventory Increase (movement ledger)
+  → PO / Shipment / Allocation balance update → Recalculation
+```
+- **Every inventory change writes a `*_movements` ledger row** — never only overwrite a current balance.
+- **Delivered ≠ Received:** carrier `delivered` never increases inventory; the **Warehouse Receipt** (`RECEIVED`) is the inventory-increase authority.
+- **In-transit goods are never double-counted** as available at both the factory and the overseas warehouse (`DATABASE_RELATIONSHIP_MAP.md` §6.0).
 
 ---
 
@@ -49,6 +84,14 @@ Document / Export Flow     →  produces the paperwork
 ```
 
 These layers are **separate**: a physical shipment can occur independently of how ownership/billing is recorded, and documents are generated from execution records, not from plans.
+
+> **Recommendation cadence (canonical 2026-07-20; `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A).** Three distinct cadences in **Asia/Taipei** (Apps Script triggers fire within the hour window, staged so each settles first): **Daily Report Pipeline 12:00** (window 12:00–13:00) refreshes **Analysis only** (creates/modifies no Draft, never overwrites user quantities); **Weekly Shipping Recommendation Monday 14:00** (window 14:00–15:00) creates `shipping_allocation_drafts`; **Monthly Order Recommendation the 5th at 15:00** (window 15:00–16:00) creates `request_order_allocation_drafts`. Both recommendation jobs are gated on Daily-Pipeline success (with a 13:00–14:00 validation buffer), sit in separate non-overlapping windows (Monday-the-5th does not collide), are idempotent per cycle key, and their recommended quantities never silently refresh from live Analysis; user quantities are never auto-overwritten. Risk/Danger alerts are a **FUTURE ADD-ON / NOT IMPLEMENTED**. All NOT IMPLEMENTED.
+
+> **FBA vs shared FBM inventory (canonical 2026-07-20).** **Amazon FBA / `platform_fulfilled`** is exclusive platform stock (Current Stock = latest platform snapshot SSOT, or a labelled Estimated Ledger fallback — no re-deducting Sales against a snapshot) and is **excluded** from the shared FBM pool. **Shared self-fulfilled FBM** stock is one physical pool (`company + warehouse_id + Master SKU`) distributed to marketplaces by three Analysis-Layer modes — **NORMAL_ALLOCATION / PROTECTED_REALLOCATION / SHORTAGE_ALLOCATION** — protecting an 18-day floor where the pool allows; allocation never moves inventory. Air vs Sea replenishment is a separate routing layer (Air only for a net 18-day shortage; Sea subtracts confirmed Air). All **NOT IMPLEMENTED**. See [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) §24.
+
+> **Baseline triggers (canonical 2026-07-20 v2 — two distinct triggers).** **Factory Stock** baseline is ensured by the `sku_details.lifecycle` transition into **`Running in the Market`** (idempotent by `warehouse_id + Master sku`) — NOT by Master-SKU or Marketplace-SKU creation. **Overseas Inventory** baseline/context is ensured when a **Marketplace SKU is added to planning scope** (physical shared-3PL grain `company + warehouse_id + Master sku`; marketplace = demand context only; shared pool counted once). Both **NOT IMPLEMENTED**. See [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) §17.3A.1 and [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) §23.
+
+> **Shipment consolidation (canonical 2026-07-20).** Because `marketplace` is part of the Weekly Plan six-key group, one Submit produces **separate marketplace-specific plans** (e.g. Shopify and Walmart). At the Execution Layer, multiple approved plans sharing a compatible physical route/destination may be **consolidated by explicit human confirmation** ("Ready to Create") into **one physical `shipments` row**, linked via **`shipment_plan_links`** (many plans → one shipment). Per-plan/marketplace source stays traceable (Demand-source allocation axis); PO/FIFO supply stays on the separate Supply-source axis. See [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) §2.A. Consolidation is **NOT IMPLEMENTED**.
 
 ---
 
@@ -221,15 +264,16 @@ Weekly Shipping Plan
 Approval
         ↓
 Shipment Draft
-   (reserved_stock += shipment qty)
-   (current_stock unchanged)
+   (fac_reserved_stock += shipment qty)
+   (fac_current_stock unchanged)
         ↓
 Ship
-   (current_stock -= shipment qty)
-   (reserved_stock -= shipment qty)
+   (fac_current_stock -= shipment qty)
+   (fac_reserved_stock -= shipment qty)
         ↓
 Shipment Overview
 ```
+> Canonical Factory Stock balance names (2026-07-21): `fac_current_stock` / `fac_reserved_stock` (see `DATABASE_RELATIONSHIP_MAP.md` Inventory Field Namespace Rule). Timing unchanged.
 
 > **`factory_stock_allocation_plans` is ONLY a planning snapshot.** It does **NOT**:
 > - move inventory
@@ -249,7 +293,7 @@ Shipment Overview
 
 Inventory quantities change **only** at the Execution Layer — never at planning:
 
-| Action | `current_stock` | `reserved_stock` |
+| Action | `fac_current_stock` | `fac_reserved_stock` |
 |--------|-----------------|------------------|
 | **Submit Plan** | unchanged | unchanged — **no inventory movement** |
 | **Shipment Draft created** | unchanged | **+= shipment qty** (soft hold) |
@@ -319,6 +363,66 @@ Shipping Export Template                  (ALWAYS from shipments / shipment_line
 5. **Shipping Export Template** — **always generated from `shipments` / `shipment_lines`**, **never from a Draft** (shipping-allocation draft / shipping plan draft).
 
 > These two lifecycles are the **finalized** architecture for future implementation. `request_order_line_sources`, `request_order_po_links`, and `shipment_events` (as a full lifecycle log) are **documented, not yet implemented** — no schema/code change is made by this sync. Existing table names are unchanged; the Shipment Center execution behavior (`SHIPMENT_CENTER_SPEC.md`) is unchanged.
+
+### 5.7 Overseas Warehouse Operation branch (CANONICAL 2026-07-21 — runtime NOT implemented)
+
+After a shipment becomes formal, the system evaluates its **origin / destination warehouse identities** and idempotently auto-creates/links the required **overseas warehouse operation**. Authority: `SHIPMENT_CENTER_SPEC.md` §23; pages: `WAREHOUSE_OPERATIONS_SPEC.md`.
+
+```
+Weekly Shipping Plan
+        ↓  Execution Commit
+Shipment Draft            (common transportation data completed; endpoints carried from the plan)
+        ↓  Ship / formalize
+Formal Shipment
+        ↓
+Shipment Overview / Shipment Events
+        ↓  auto-create / link Overseas Warehouse Operation (idempotent; direction runtime-derived)
+        ├─ destination = qualifying overseas WH (+ is_receiving_enabled)  →  Overseas Inbound  branch
+        └─ origin      = qualifying overseas WH (+ is_shipping_enabled)   →  Overseas Outbound branch
+        ↓  WMS / API execution (pre-advice / outbound order → submit → monitor → result)
+Confirmed receipt (Inbound)  |  Confirmed ship-out (Outbound)
+        ↓
+Overseas Inventory Movement   (overseas_inventory_movements; balances change only on confirmed execution)
+```
+
+- **Overseas Inbound and Overseas Outbound are SEPARATE operational branches and SEPARATE pages** — never one combined operation. An overseas-to-overseas **Transfer** produces **one Outbound (origin) + one Inbound (destination)**; a factory or non-qualifying endpoint produces neither. Contracts: `OVERSEAS_INBOUND_SPEC.md` §10 (receiving: `overseas_inbound_operations` / `_operation_lines` / `_receipts` / `_receipt_lines`), `OVERSEAS_OUTBOUND_SPEC.md` §3–§6 (fulfillment: `overseas_outbound_operations` / `_operation_lines` / `_confirmations` / `_confirmation_lines`). **All planned design — not implemented.**
+- **Direction is runtime-derived** from origin/destination identity — never a user-entered field. **Operation uniqueness = `shipment_id + warehouse_id + operation_type`**; `shipment_id` is the authoritative linkage. **Separate idempotency keys** per action (create/link · WMS submission · receipt confirmation · shipout confirmation · reversal). **Auto-create ≠ auto-submit; Submit ≠ deduct.**
+- **Shipout push direction:** **Outbound Instruction Push = KM → WMS** (at Submit, after Lock reserves); **Shipout Confirmation Push = WMS → KM** (actual shipped). Ship Confirm deducts **only actual shipped qty** (partial = `shipped_qty_this_confirmation`). **Never "shipout first, then push."**
+- **Overseas Inventory** (`overseas_inventory_snapshot` / `_movements`) updates **only** on confirmed receipt (increase, good qty only) / confirmed ship-out (decrease, actual shipped qty) and **excludes** Factory Inventory. **Delivered ≠ Received.**
+
+**Dual-direction fulfillment orchestration (FUTURE; Phase-1 MANUAL — canonical owner `SHIPMENT_CENTER_SPEC.md` §23.11).** One execution event drives **both** a destination Inbound **and** an origin Shipout Instruction; the destination-side external references/labels are packaged with the shipout instruction for the origin party (e.g. factory) to execute. The **Formal Shipment orchestrator** creates both — the Overseas Inbound Receiving Operation never creates the origin Shipout and is not the planning SSOT:
+
+```
+Inbound Planning Request                       (planning intent SSOT)
+   → Formal Shipment / Orchestrator            (execution SSOT)
+        ├─→ Destination Inbound  →  external submission  →  external reference / label retrieval
+        └─→ Origin Shipout Instruction          (parallel; created by the orchestrator, NOT the Inbound)
+
+Destination Inbound reference/labels  +  Origin Shipout Instruction
+   → Factory Shipping Package
+   → Factory shipment (departure / shipping events)
+   → Overseas Inbound Receiving
+   → Receipt confirmation (confirmed good qty only)
+   → Overseas Inventory
+```
+- **Phase-1 is fully MANUAL** (create/record inbound; maintain transit qty+status; upload/register retrieved labels/docs; assemble + hand the Factory Shipping Package to the factory; update departure/transit/arrival; confirm receipt). **NOT implemented:** automatic destination-inbound submission · shipping-label retrieval · origin-shipout creation · factory API delivery · WMS/API sync · automatic reservation/deduction · automatic Formal Shipment orchestration.
+- Labels/carton-labels/appointment docs reference the **Document Engine** (`generated_documents`) — never binary in the operation header. **8 separate idempotency scopes** (§23.11) — never one shared key.
+
+**Inventory-domain separation (CANONICAL 2026-07-21 — authority `DATABASE_RELATIONSHIP_MAP.md` §6.0).** Factory Inventory and Overseas Inventory are **separate domains** — a factory→overseas shipment never merges the two into one shared balance:
+
+```
+Factory dispatch confirmed
+   → Factory Stock deduction (factory_stock_movements)          [Factory Inventory domain]
+   → Shipment in transit (shipments / shipment_events)          [transportation state — NOT inventory]
+   → (no Overseas Inventory increase while merely in transit)
+   → Overseas Inbound receipt confirmed
+   → Overseas Inventory increase (overseas_inventory_movements → overseas_inventory_snapshot)   [Overseas domain]
+
+Overseas Outbound confirmed shipped
+   → Overseas Inventory decrease (overseas_inventory_movements → overseas_inventory_snapshot)   [Overseas domain only]
+   → transportation lifecycle continues (shipments / shipment_events)
+```
+- **In-transit goods are never simultaneously counted as both Factory Inventory and Overseas Inventory.** A confirmed factory dispatch consumes Factory Inventory per the finalized reservation/deduction lifecycle (§5.4/§5.6); a confirmed overseas receipt creates the Overseas Inventory balance. **Overseas Outbound never affects Factory Inventory.**
 
 ### Step 1 — Inventory Replenishment
 - User selects **Country, Marketplace, Target Days**.

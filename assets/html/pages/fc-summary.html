@@ -432,8 +432,10 @@
                      from marketplaces / marketplace_skus). Fields show/hide by Update Method. -->
                 <div class="fc-modal" id="fc-regular-update-modal">
                     <div class="fc-modal-content fc-modal-content--large">
-                        <h3>Regular FC Update</h3>
+                        <h3>Regular Forecast Builder</h3>
                         <div class="fc-modal-body">
+                            <!-- Scope -->
+                            <div class="fc-form-section-label">Scope</div>
                             <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Country *</label>
@@ -444,59 +446,99 @@
                                     <select id="regular-marketplace" onchange="onRegularScopeChange()"></select>
                                 </div>
                             </div>
+                            <!-- Builder Mode -->
                             <div class="fc-form-row">
-                                <div class="fc-form-group">
-                                    <label>SKU *</label>
-                                    <input type="text" id="regular-sku" placeholder="Enter SKU..." onchange="onRegularSkuChange()">
+                                <div class="fc-form-group fc-form-group--wide">
+                                    <div class="fc-mode-toggle" id="regular-builder-mode">
+                                        <label class="fc-mode-pill"><input type="radio" name="regular-mode" value="single" checked onchange="_regularSwitchMode()"> Single SKU</label>
+                                        <label class="fc-mode-pill"><input type="radio" name="regular-mode" value="batch" onchange="_regularSwitchMode()"> Category / Series</label>
+                                    </div>
                                 </div>
+                            </div>
+                            <div class="fc-form-row" id="regular-single-scope">
+                                <div class="fc-form-group fc-form-group--wide">
+                                    <label>SKU * <span class="fc-hint">(scoped to the selected Company / Country / Marketplace)</span></label>
+                                    <input type="text" id="regular-sku" list="regular-sku-datalist" placeholder="Search SKU…" onchange="onRegularSkuChange()">
+                                    <datalist id="regular-sku-datalist"></datalist>
+                                </div>
+                            </div>
+                            <div class="fc-form-row" id="regular-batch-scope" style="display:none;">
+                                <div class="fc-form-group">
+                                    <label>Category</label>
+                                    <div class="fc-ms" id="regular-category-ms">
+                                        <button type="button" class="fc-ms-trigger" onclick="_regularToggleMsPanel('category')">
+                                            <span class="fc-ms-text" id="regular-category-text">All Category</span>
+                                            <span class="fc-ms-caret">▾</span>
+                                        </button>
+                                        <div class="fc-ms-panel" id="regular-category-panel" style="display:none;">
+                                            <label class="fc-ms-item"><input type="checkbox" id="regular-category-all" onchange="_regularMsAll('category', this)" checked> <strong>All Category</strong></label>
+                                            <div class="fc-ms-options" id="regular-category-options"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Series</label>
+                                    <div class="fc-ms" id="regular-series-ms">
+                                        <button type="button" class="fc-ms-trigger" onclick="_regularToggleMsPanel('series')">
+                                            <span class="fc-ms-text" id="regular-series-text">All Series</span>
+                                            <span class="fc-ms-caret">▾</span>
+                                        </button>
+                                        <div class="fc-ms-panel" id="regular-series-panel" style="display:none;">
+                                            <label class="fc-ms-item"><input type="checkbox" id="regular-series-all" onchange="_regularMsAll('series', this)" checked> <strong>All Series</strong></label>
+                                            <div class="fc-ms-options" id="regular-series-options"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Target -->
+                            <div class="fc-form-section-label">Target</div>
+                            <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Target Year *</label>
                                     <input type="number" id="regular-target-year">
                                 </div>
-                            </div>
-                            <div class="fc-form-row" id="regular-base-year-group">
-                                <div class="fc-form-group">
-                                    <label>Base Year *</label>
-                                    <input type="number" id="regular-base-year" readonly>
-                                </div>
-                            </div>
-                            <div class="fc-form-row">
-                                <div class="fc-form-group fc-form-group--wide">
-                                    <label>Update Method *</label>
-                                    <select id="regular-update-method" onchange="toggleRegularMethodFields()">
-                                        <option value="actual">Apply Growth Rate (Based on Actual Sales)</option>
-                                        <option value="prevMonth">Adjust From Previous Month Forecast</option>
-                                        <option value="manual">Manual Monthly Forecast</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="fc-form-row" id="regular-growth-group">
-                                <div class="fc-form-group">
-                                    <label>Growth Rate (%)</label>
-                                    <input type="number" id="regular-growth-rate" placeholder="e.g. 10" value="10">
-                                </div>
-                            </div>
-                            <!-- Previous Month method (Part 3): explicit Target Year/Month + Based Year/Month.
-                                 Source is NOT silently inferred — the user selects the source year + month. -->
-                            <div class="fc-form-row" id="regular-month-row" style="display:none;">
                                 <div class="fc-form-group">
                                     <label>Target Month *</label>
                                     <select id="regular-target-month" onchange="_regularSyncBasedFromTarget()">
-                                        <option value="0">January</option>
-                                        <option value="1">February</option>
-                                        <option value="2">March</option>
-                                        <option value="3">April</option>
-                                        <option value="4">May</option>
-                                        <option value="5">June</option>
-                                        <option value="6">July</option>
-                                        <option value="7">August</option>
-                                        <option value="8">September</option>
-                                        <option value="9">October</option>
-                                        <option value="10">November</option>
-                                        <option value="11">December</option>
+                                        <option value="0">January</option><option value="1">February</option>
+                                        <option value="2">March</option><option value="3">April</option>
+                                        <option value="4">May</option><option value="5">June</option>
+                                        <option value="6">July</option><option value="7">August</option>
+                                        <option value="8">September</option><option value="9">October</option>
+                                        <option value="10">November</option><option value="11">December</option>
                                     </select>
                                 </div>
                             </div>
+                            <!-- Method -->
+                            <div class="fc-form-section-label">Update Method</div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group fc-form-group--wide">
+                                    <select id="regular-update-method" onchange="toggleRegularMethodFields()">
+                                        <option value="actual">Apply Growth Rate</option>
+                                        <option value="prevMonth">Adjust From Previous Month Forecast</option>
+                                        <option value="manual">Manual Entry</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Base Year/Month (Apply Growth Rate) -->
+                            <div class="fc-form-row" id="regular-base-row" style="display:none;">
+                                <div class="fc-form-group">
+                                    <label>Base Year *</label>
+                                    <input type="number" id="regular-base-year">
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Base Month *</label>
+                                    <select id="regular-base-month">
+                                        <option value="0">January</option><option value="1">February</option>
+                                        <option value="2">March</option><option value="3">April</option>
+                                        <option value="4">May</option><option value="5">June</option>
+                                        <option value="6">July</option><option value="7">August</option>
+                                        <option value="8">September</option><option value="9">October</option>
+                                        <option value="10">November</option><option value="11">December</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Based Year/Month (Adjust From Previous Month) -->
                             <div class="fc-form-row" id="regular-based-row" style="display:none;">
                                 <div class="fc-form-group">
                                     <label>Based Year *</label>
@@ -505,45 +547,38 @@
                                 <div class="fc-form-group">
                                     <label>Based Month *</label>
                                     <select id="regular-based-month">
-                                        <option value="0">January</option>
-                                        <option value="1">February</option>
-                                        <option value="2">March</option>
-                                        <option value="3">April</option>
-                                        <option value="4">May</option>
-                                        <option value="5">June</option>
-                                        <option value="6">July</option>
-                                        <option value="7">August</option>
-                                        <option value="8">September</option>
-                                        <option value="9">October</option>
-                                        <option value="10">November</option>
-                                        <option value="11">December</option>
+                                        <option value="0">January</option><option value="1">February</option>
+                                        <option value="2">March</option><option value="3">April</option>
+                                        <option value="4">May</option><option value="5">June</option>
+                                        <option value="6">July</option><option value="7">August</option>
+                                        <option value="8">September</option><option value="9">October</option>
+                                        <option value="10">November</option><option value="11">December</option>
                                     </select>
                                 </div>
                             </div>
-                            <div class="fc-months-grid" id="regular-manual-months" style="display:none;">
-                                <div class="fc-form-group"><label>Jan</label><input type="number" id="reg-jan" value="0"></div>
-                                <div class="fc-form-group"><label>Feb</label><input type="number" id="reg-feb" value="0"></div>
-                                <div class="fc-form-group"><label>Mar</label><input type="number" id="reg-mar" value="0"></div>
-                                <div class="fc-form-group"><label>Apr</label><input type="number" id="reg-apr" value="0"></div>
-                                <div class="fc-form-group"><label>May</label><input type="number" id="reg-may" value="0"></div>
-                                <div class="fc-form-group"><label>Jun</label><input type="number" id="reg-jun" value="0"></div>
-                                <div class="fc-form-group"><label>Jul</label><input type="number" id="reg-jul" value="0"></div>
-                                <div class="fc-form-group"><label>Aug</label><input type="number" id="reg-aug" value="0"></div>
-                                <div class="fc-form-group"><label>Sep</label><input type="number" id="reg-sep" value="0"></div>
-                                <div class="fc-form-group"><label>Oct</label><input type="number" id="reg-oct" value="0"></div>
-                                <div class="fc-form-group"><label>Nov</label><input type="number" id="reg-nov" value="0"></div>
-                                <div class="fc-form-group"><label>Dec</label><input type="number" id="reg-dec" value="0"></div>
+                            <div class="fc-form-row" id="regular-growth-group" style="display:none;">
+                                <div class="fc-form-group">
+                                    <label>Growth / Adjustment Rate (%)</label>
+                                    <input type="number" id="regular-growth-rate" placeholder="e.g. 10" value="10">
+                                </div>
                             </div>
-                            <!-- Manual prefill status: "loaded existing" / "will create new row" / "loading". -->
-                            <p id="regular-manual-help" class="fc-manual-help" style="display:none;"></p>
                             <div class="fc-form-note">
                                 <p id="method-description"></p>
-                                <p><strong>Company</strong> is derived from the marketplaces / marketplace_skus relation — not entered here.</p>
+                                <p><strong>Company</strong> is derived from the marketplaces / marketplace_skus relation — not entered here. Only the selected <strong>Target Year + Target Month</strong> is updated; other months are preserved. Blank Manual value = <strong>Skip</strong>; use the Set Zero checkbox to write an explicit 0.</p>
                             </div>
+                            <!-- Preview: affected SKU count + Old / New / Difference (single target month) -->
+                            <div class="fc-form-row">
+                                <div class="fc-form-group fc-form-group--wide">
+                                    <button type="button" class="fc-btn fc-btn--secondary" onclick="_regularBuildPreview()">Preview</button>
+                                    <span id="regular-affected-count" class="fc-hint" style="margin-left:10px;"></span>
+                                    <p class="fc-manual-help" id="regular-manual-help" style="display:none;"></p>
+                                </div>
+                            </div>
+                            <div id="regular-preview" class="fc-assist-preview" style="display:none;"></div>
                         </div>
                         <div class="fc-modal-actions">
                             <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
-                            <button class="fc-btn fc-btn--primary" id="regular-save-btn" onclick="saveRegularUpdate()">Update</button>
+                            <button class="fc-btn fc-btn--primary" id="regular-save-btn" onclick="saveRegularUpdate()" disabled>Save</button>
                         </div>
                     </div>
                 </div>
@@ -563,10 +598,12 @@
                             <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Country *</label>
-                                    <select id="event-country" onchange="_evtOnScopeChange()"></select>
+                                    <select id="event-country" onchange="_evtOnCountryChange()"></select>
                                 </div>
                                 <div class="fc-form-group">
                                     <label>Marketplace *</label>
+                                    <!-- value = "company|country|marketplace" full site identity so KM Amazon and
+                                         ResUS Amazon are strictly separate scopes (never merged). -->
                                     <select id="event-marketplace" onchange="_evtOnScopeChange()"></select>
                                 </div>
                             </div>
@@ -591,10 +628,17 @@
                                 </div>
                             </div>
                             <div class="fc-form-row" id="event-period-row">
-                                <div class="fc-form-group fc-form-group--wide">
-                                    <label>Event Period *</label>
-                                    <input type="text" id="event-period-input" placeholder="e.g. 2026/07/15-2026/07/16">
+                                <div class="fc-form-group">
+                                    <label>Event Start Date *</label>
+                                    <input type="date" id="event-start-date" onchange="_evtValidatePeriod()" aria-describedby="event-period-error">
                                 </div>
+                                <div class="fc-form-group">
+                                    <label>Event End Date *</label>
+                                    <input type="date" id="event-end-date" onchange="_evtValidatePeriod()" aria-describedby="event-period-error">
+                                </div>
+                            </div>
+                            <div class="fc-form-row" id="event-period-error-row" style="display:none;">
+                                <p class="fc-manual-help" id="event-period-error" role="alert" style="color:#dc2626;"></p>
                             </div>
 
                             <!-- 3. Mode selector -->
@@ -610,11 +654,14 @@
 
                             <!-- 3a. Single SKU mode -->
                             <div id="event-mode-single">
-                                <div class="fc-form-section-label">SKU Rows <span class="fc-hint">(max 8)</span></div>
-                                <div class="fc-evt-rows-head">
-                                    <span>SKU</span><span>Regular Price</span><span>Deal Price</span><span>Forecast Qty</span><span></span>
+                                <div class="fc-form-section-label">SKU Rows <span class="fc-hint">(max 8 — SKU list is scoped to the selected Company / Country / Marketplace)</span></div>
+                                <div class="fc-evt-rows-head fc-evt-rows-head--single">
+                                    <span>SKU</span><span>Regular Price</span><span>Discount %</span><span>Deal Price</span><span>Forecast Qty</span><span></span>
                                 </div>
                                 <div id="event-sku-rows"></div>
+                                <!-- Scoped SKU datalist (searchable). Populated on open / scope change from
+                                     marketplace_skus matching Company + Country + Marketplace + active. -->
+                                <datalist id="event-sku-datalist"></datalist>
                                 <button type="button" class="fc-btn fc-btn--ghost" id="event-add-row-btn" onclick="_evtAddSingleRow()">+ Add SKU Row</button>
                             </div>
 
@@ -660,41 +707,67 @@
                                     </div>
                                 </div>
 
-                                <!-- Forecast Assist (Category/Series only; pre-fill, never auto-write) -->
-                                <div class="fc-form-section-label">Forecast Assist <span class="fc-hint">(optional — pre-fills Forecast Qty, never saves automatically)</span></div>
+                                <!-- Forecast method inputs (define BEFORE building cards). Growth / Adjust read
+                                     the per-SKU Base FC from fc_regular_forecast (Base Year + event month);
+                                     Manual = editable New Event FC per SKU. No Base Campaign selector. -->
+                                <div class="fc-form-section-label">Forecast Method <span class="fc-hint">(Growth / Adjust compute a read-only forecast; Manual is editable per SKU)</span></div>
                                 <div class="fc-form-row">
                                     <div class="fc-form-group">
-                                        <label>Base Year</label>
+                                        <label>Assist Method</label>
+                                        <select id="event-assist-method" onchange="_evtToggleAssistFields()">
+                                            <option value="growth">Apply Growth Rate</option>
+                                            <option value="adjust">Adjust from Base Forecast</option>
+                                            <option value="manual">Manual Entry</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group" id="event-assist-base-year-group">
+                                        <label>Base Year <span class="fc-hint">(regular FC source)</span></label>
                                         <input type="number" id="event-assist-base-year" placeholder="e.g. 2025">
                                     </div>
-                                    <div class="fc-form-group">
-                                        <label>Base Campaign</label>
-                                        <select id="event-assist-base-campaign"></select>
-                                    </div>
+                                </div>
+                                <div class="fc-form-row" id="event-assist-growth-row">
                                     <div class="fc-form-group">
                                         <label>Growth Rate %</label>
                                         <input type="number" id="event-assist-growth" placeholder="e.g. 10">
                                     </div>
                                 </div>
-                                <div class="fc-form-row">
-                                    <div class="fc-form-group fc-form-group--wide">
-                                        <button type="button" class="fc-btn fc-btn--ghost" id="event-assist-btn" onclick="_evtApplyForecastAssist()">Apply Forecast Assist (pre-fill)</button>
-                                        <p class="fc-manual-help" id="event-assist-help" style="display:none;"></p>
+                                <div class="fc-form-row" id="event-assist-adjust-row" style="display:none;">
+                                    <div class="fc-form-group">
+                                        <label>Adjustment Type</label>
+                                        <select id="event-assist-adjust-type" onchange="_evtToggleAssistFields()">
+                                            <option value="percent">Percentage (%)</option>
+                                            <option value="fixed">Fixed Quantity (±)</option>
+                                        </select>
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label id="event-assist-adjust-label">Adjustment %</label>
+                                        <input type="number" id="event-assist-adjust-value" placeholder="e.g. -15 or 200">
                                     </div>
                                 </div>
 
+                                <!-- STEP 1: Build the group cards (grouped by category + series). -->
                                 <div class="fc-form-row">
                                     <div class="fc-form-group fc-form-group--wide">
                                         <button type="button" class="fc-btn fc-btn--secondary" onclick="_evtBuildGroups()">Build / Refresh Group Cards</button>
                                     </div>
                                 </div>
-                                <div class="fc-form-section-label">Group Cards</div>
+                                <div class="fc-form-section-label">Group Cards <span class="fc-hint">(one row per scoped SKU)</span></div>
                                 <div id="event-group-cards" class="fc-evt-cards"></div>
+
+                                <!-- STEP 2: Preview &amp; Pre-fill validates the built cards (disabled until built). -->
+                                <div class="fc-form-row">
+                                    <div class="fc-form-group fc-form-group--wide">
+                                        <button type="button" class="fc-btn fc-btn--ghost" id="event-assist-btn" onclick="_evtApplyForecastAssist()" disabled>Preview &amp; Pre-fill</button>
+                                        <p class="fc-manual-help" id="event-assist-help" style="display:none;"></p>
+                                    </div>
+                                </div>
+                                <!-- Preview table: Base FC → New Event FC → Difference (per SKU). -->
+                                <div id="event-assist-preview" class="fc-assist-preview" style="display:none;"></div>
                             </div>
 
                             <div class="fc-form-note">
                                 <p id="event-method-description"></p>
-                                <p><strong>Group key</strong> = category + series + regular_price (same series, different regular price ⇒ separate cards). <strong>Company</strong> / <strong>Regular Price</strong> are derived from marketplaces / marketplace_skus. Category / Series joined from sku_details. On Save: <strong>campaigns → campaign_sku_lines → fc_special_events</strong> (linked by campaign_id / campaign_sku_line_id).</p>
+                                <p><strong>Group key</strong> = category + series (SKUs with different regular prices stay in the same card as separate rows). <strong>Company</strong> / <strong>Regular Price</strong> are derived from marketplaces / marketplace_skus for the selected site; Category / Series joined from sku_details. <strong>Base FC</strong> reads fc_regular_forecast (Base Year + event month). On Save: <strong>campaigns → campaign_sku_lines → fc_special_events</strong> (linked by campaign_id / campaign_sku_line_id).</p>
                             </div>
                         </div>
                         <div class="fc-modal-actions">

@@ -1,8 +1,40 @@
 ﻿# Kitchen Mama Operation System - System Roadmap
 
-**Last Updated:** 2025-01-22
+**Last Updated:** 2026-07-22
 **Maintained By:** Development Team
 **Document Purpose:** Development roadmap, priority order, and status tracking.
+
+---
+
+## Supply Chain Phase 1 — Authoritative Implementation Order (CANONICAL — corrected 2026-07-22)
+
+Principle: **Spec First / Database First / Mapping First / Runtime Last.** Close the most basic verifiable/auditable/traceable loop first (P1-A), then complete the rest of Phase 1 **including the full 90-Day Rule-Based Supply Planning engine (P1-G), which IS required before Go-Live.** Only **learning-based** features (AI, automatic statistical correction, dynamic optimization, BigQuery intelligence) are Post-Phase-1. Authority: `docs/planning/SUPPLY_CHAIN_SYSTEM_FLOW.md` §1A.
+
+> **CORRECTION (2026-07-22):** the prior placement of *full 90-Day planning* in Post-Phase-1 / "NOT a blocker" is **SUPERSEDED** — 90-Day Rule-Based Supply Planning is now **P1-G** (Phase-1, pre-Go-Live).
+
+| Step | Scope | Status |
+|------|-------|--------|
+| **P1-A** | Basic **Net Replenishment Need** formula (`SUPPLY_PLANNING_CALCULATION_RULES.md` §2A) — first; not blocked by the full 90-Day engine | formula defined; runtime pending |
+| **P1-B** | Existing Supply Allocation + Order Deduction + PO/Shipment quantity contract (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` P1-B) | consolidated; runtime partial |
+| **P1-C** | Warehouse Menu (4 pages: Factory Inventory / Overseas Inventory / Overseas Inbound / Overseas Outbound; Warehouse Master under Admin → Master Data) + Overseas Inbound/Outbound operation contracts (Inbound Planning Request ≠ Warehouse Receiving; auto-create ≠ auto-submit; Lock reserves, Ship Confirm deducts actual shipped) | Overseas Inventory + Factory Stock pages live; Factory Inventory page layout + Inbound/Outbound operations spec only |
+| **P1-D** | Factory / Shipment / Overseas Inventory movement closed loop — every stock change writes a movement ledger | flow defined |
+| **P1-E** | Shipment Route Runtime + Events + ETA + Tracking foundation | **spec only** (Templates Reference DB done; runtime not built) |
+| **P1-F** | Full module API-ization (unified contract; GET/POST/PATCH/domain-action; idempotency/versioning) | future |
+| **P1-G** | **90-Day Rule-Based Supply Planning** (four modes, exact-date buckets, target rules, 30-day safety, special-event lifecycle, shared-overseas allocation) — **REQUIRED before Go-Live** | formula defined; engine pending |
+| **P1-H** | Login + Google/Gmail identity + People + Roles/Permissions + Notifications + Admin UI + **Shipment On the Way World Map UI** | future |
+| **P1-I** | Go-Live Integration Test and Acceptance Gate | future |
+
+**Route DB reality (2026-07-22):** `shipment_route_templates` + `shipment_route_template_nodes` = **Reference DBs manually completed by the user** (not recreated). `shipment_routes` / `shipment_route_nodes` / `shipment_events` = **spec-only / NOT implemented** (P1-E). Authority: `docs/planning/SHIPMENT_ROUTE_AND_EVENT_SPEC.md`.
+
+### Post-Phase-1 (deferred — LEARNING-BASED features only)
+AI demand forecast + explainable recommendation · automatic statistical correction · **dynamic** Safety Stock / dynamic optimization · forecast accuracy (bias / WAPE / MAPE) · route actual lead-time calibration · cross-company borrowing / return / approval / cost · BigQuery historical / analytics / semantic layer. **The rule-based 90-Day engine is NOT here — it is P1-G.** Phase 1 must still retain dates / snapshots / decisions / overrides / audit to feed these later.
+
+### Additional Roadmap backlog (listed, NOT expanded this round unless already in spec phase)
+- **Overseas warehouse price-list import** — inbound / outbound / storage / labeling / picking / packing / surcharges.
+- **FCL / container quote import** — container, origin/destination port, ocean freight, surcharges, validity, Route mapping.
+- **Review / monitoring center + site overview** — pending approvals, exceptions, missing data, delays, API errors, inventory risk, site health.
+- **External factory portal** — scoped view/update of PO, production progress, completion, lead time, factory stock, ship-prep, with strict company/field scope.
+- **Promotion Risk Tracker / Campaign Tracking · New-product monitoring center · Inventory Overview deepening · Export Center / Document Engine deepening.**
 
 ---
 
@@ -42,11 +74,14 @@
 | SKU Details | ✅ Completed | N/A | ✅ Completed | ✅ Lifecycle only | Google Sheet DB connected |
 | SKU Handbook | ✅ Completed | N/A | ✅ Completed | Not Started | product_features fallback, no AI |
 | Inventory Replenishment | ✅ Completed | ✅ Connected | Not Started | Not Started | DemoData only for demo |
-| Factory Stock | ✅ Completed | ✅ Connected | Not Started | Not Started | DemoData only for demo |
+| Factory Stock | ✅ Completed | ✅ Connected | Not Started | Not Started | **Factory Inventory** domain (`factory_stock`/`_movements`) — separate from Overseas |
+| Overseas Inventory (Overseas Stock) | ✅ Completed | ✅ Connected | Not Started | Not Started | **Overseas Inventory** domain (`overseas_inventory_snapshot`/`_movements`); excludes Factory |
+| Overseas Inbound | Not Started | Not Started | Not Started | Not Started | Spec only (`OVERSEAS_INBOUND_SPEC.md` §9) — separate page |
+| Overseas Outbound | Not Started | Not Started | Not Started | Not Started | Spec only (`WAREHOUSE_OPERATIONS_SPEC.md` §5) — separate page |
 | Forecast Review | ✅ Completed | ✅ Connected | Not Started | Not Started | DemoData only for demo |
 | Request Order | ✅ Completed | ✅ Connected | Not Started | Not Started | DemoData only for demo |
 | FC Summary | ✅ Completed | ✅ Connected | Not Started | Not Started | DemoData only for demo |
-| Shipping Plan | ✅ Completed | Not Started | Not Started | Not Started | sessionStorage data |
+| Shipping Plan | ✅ Completed | Not Started | Not Started | Not Started | sessionStorage = transient UI recovery only (NOT SSOT); canonical SSOT = persisted `shipping_allocation_drafts` (INVENTORY §11.4) |
 | Shipment Overview | ✅ Completed | Not Started | Not Started | Not Started | Placeholder |
 | Supply Chain Canvas | ✅ Completed | N/A | N/A | N/A | Standalone canvas tool |
 | Promotion Risk Tracker | ✅ Completed | Needs Audit | Needs Audit | Not Started | localStorage mock, DB migration pending |
@@ -259,7 +294,7 @@ margin_history
 - marketplace_skus cloud table
 - Inventory data cloud source
 - Factory stock cloud source
-  - On SKU creation, Factory Stock may optionally create an initialization row with current_stock default = 0. Initialization is optional, not mandatory.
+  - On SKU creation, Factory Stock may optionally create an initialization row with current_stock default = 0. Initialization is optional, not mandatory. **This initializes the Factory Inventory domain (`factory_stock`) ONLY — never Overseas Inventory (`overseas_inventory_snapshot`); the two are separate domains (`DATABASE_RELATIONSHIP_MAP.md` §6.0).**
 - Forecast data cloud source
 - Request order data cloud source
   - Request Order uses dynamic SKU sourcing — no placeholder rows. SKU universe is read at runtime from marketplace_skus, joined with forecast and inventory data. Records are created only when an actual order/request is generated.

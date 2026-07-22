@@ -149,6 +149,8 @@ Active v1
 - `estimated_freight_cost` / `estimated_duty` / `estimated_total_cost` 是計畫審核當下的預估 snapshot。
 - `country` / `marketplace` / `ship_from` / `destination` / `shipping_method` / `carrier_id` 屬於 plan-level，不應在 shipping_plan_lines 重複維護。
 
+> **Endpoint identity semantics (canonical, 2026-07-21).** `ship_from` / `destination` are **human-readable snapshots**. The **structured** endpoint identities are `ship_from_warehouse_id` / `destination_warehouse_id` (→ `warehouses.warehouse_id`), each qualified by `ship_from_type` / `destination_type`. A `*_warehouse_id` may be blank when that endpoint is not a Warehouse Master record (subject to the `*_type` contract). **Warehouse identity must NEVER be inferred from `ship_from` / `destination` display text.** Do **NOT** add `warehouse_operation_type` here; direction is runtime-derived from origin/destination identities (see WAREHOUSE_OPERATIONS_SPEC.md / SYSTEM_RUNTIME_ARCHITECTURE.md). Full canonical column list = task Section C / DATABASE_RELATIONSHIP_MAP.md; the columns below add the endpoint fields (older revisions of this table omitted them).
+
 #### Columns
 
 | Column | Type | Required | Description | Notes |
@@ -158,8 +160,12 @@ Active v1
 | plan_name | string | | 計畫名稱 | |
 | country | string | Yes | 目的國 | |
 | marketplace | string | | 平台 | |
-| ship_from | string | Yes | 出貨來源 | factory name / warehouse |
-| destination | string | | 目的地 | FBA warehouse / 3rd WH |
+| ship_from | string | Yes | 出貨來源 snapshot | human-readable; NOT identity |
+| ship_from_warehouse_id | string | | 出貨來源倉庫 identity | → warehouses.warehouse_id; blank if origin not a WH Master record |
+| ship_from_type | string | | 出貨來源端點類型 | origin endpoint type |
+| destination | string | | 目的地 snapshot | human-readable; NOT identity |
+| destination_warehouse_id | string | | 目的倉庫 identity | → warehouses.warehouse_id when destination is a WH Master record |
+| destination_type | string | | 目的地端點類型 | destination endpoint type |
 | shipping_method | string | Yes | 運輸方式 | air, sea, truck, express |
 | carrier_id | string | | 物流商 | → carriers.carrier_id |
 | carrier_unit_rate | number | | 物流單價 | |
@@ -245,6 +251,14 @@ Active v1
 - `shipment_no` 是人類可讀出貨編號。
 - `shipment_id` 是系統關聯 ID。
 
+> **Endpoint identity semantics (canonical, 2026-07-21).**
+> - **Canonical structured identities:** `origin_warehouse_id` (structured origin) and `destination_warehouse_id` (structured destination), each → `warehouses.warehouse_id`, qualified by `origin_type` / `destination_type`. `ship_from` / `destination` remain **human-readable snapshots** and are **never** the authoritative identity.
+> - **Transitional compatibility fields (do NOT delete in this task):** `warehouse_id` = **destination** warehouse identity; `warehouse_code` = **destination** `warehouse_code` **snapshot** derived from the selected `warehouses` record (never freely entered by the user).
+> - **Dual-write consistency rule:** when `destination_warehouse_id` is populated, `shipments.warehouse_id` **MUST equal** `shipments.destination_warehouse_id`, and `warehouse_code` **MUST** be resolved by `destination_warehouse_id → warehouses.warehouse_id → warehouses.warehouse_code`.
+> - **Identity resolution:** never use `warehouse_code`, `warehouse_name`, `destination` text, or address as the authoritative warehouse identity — always resolve via `warehouse_id` and validate company ownership (company-scoped identity — KM vs ResUS records are distinct even for the same physical AMZLGS facility).
+> - **`shipment_direction` is NOT a user-entered column.** Direction (Inbound / Outbound / Transfer) is runtime-derived from origin/destination warehouse identities. Do not add `shipment_direction`, `warehouse_operation_type`, `expected_ship_date`, or `expected_arrival_date` — `shipments.etd` / `shipments.eta` are the canonical estimated departure / arrival.
+> - Full canonical column list = task Section C / DATABASE_RELATIONSHIP_MAP.md; the rows below add the endpoint fields (older revisions of this table omitted them).
+
 #### Columns
 
 | Column | Type | Required | Description | Notes |
@@ -253,7 +267,14 @@ Active v1
 | shipment_no | string | Yes | 人類可讀編號 | |
 | shipping_plan_id | string | Yes | FK | → shipping_plans |
 | reference_id | string | | 外部參考號 | |
-| warehouse_id | string | | 目的倉庫 | |
+| ship_from | string | | 出貨來源 snapshot | human-readable; NOT identity |
+| origin_warehouse_id | string | | 出貨來源倉庫 identity (canonical) | → warehouses.warehouse_id |
+| origin_type | string | | 來源端點類型 | origin endpoint type |
+| destination | string | | 目的地 snapshot | human-readable; NOT identity |
+| destination_warehouse_id | string | | 目的倉庫 identity (canonical) | → warehouses.warehouse_id |
+| destination_type | string | | 目的地端點類型 | destination endpoint type |
+| warehouse_id | string | | 目的倉庫 identity (transitional compat) | = destination_warehouse_id when populated |
+| warehouse_code | string | | 目的倉庫 code snapshot (transitional compat) | derived from selected warehouses record; never free-typed |
 | status | enum | Yes | 狀態 | planned, booking_requested, booked, factory_preparing, picked_up, departed, in_transit, customs_clearance, arrived, delivered, closed, delayed, cancelled |
 | tracking_number | string | | 追蹤號 | |
 | container_no | string | | 櫃號 | |
@@ -523,7 +544,8 @@ Active v1
 
 #### Important Notes
 - 不存 category / series，使用 sku join sku_details。
-- `current_stock` 是目前值。
+- **Inventory namespace (finalized 2026-07-21):** Factory balance columns are `fac_*` — `fac_current_stock` / `fac_reserved_stock` supersede `current_stock` / `reserved_stock` (see `DATABASE_RELATIONSHIP_MAP.md` Inventory Field Namespace Rule). Live header rename pending.
+- `fac_current_stock` 是目前值。
 - 所有增減原因都應寫入 `factory_stock_movements`。
 - `factory_stock` 是 current state，`factory_stock_movements` 是 history ledger。
 
@@ -535,7 +557,8 @@ Active v1
 | sku | string | Yes | SKU | → sku_details.sku |
 | company | string | | 公司 | |
 | factory_name | string | Yes | 工廠名稱 | 侑鑫, 勝一... |
-| current_stock | number | Yes | 目前庫存 | |
+| fac_current_stock | number | Yes | 目前庫存 | canonical (was `current_stock`) |
+| fac_reserved_stock | number | | 已保留庫存 | canonical (was `reserved_stock`) |
 | created_at | datetime | | | |
 | updated_at | datetime | | | |
 | last_transaction_at | datetime | | 最後異動時間 | |

@@ -48,7 +48,15 @@ function amazonWriteSnapshot_(spreadsheetId, sheetName, destObjs) {
 //   3. PRUNES rows whose dateField is older than (today - retentionDays),
 //   4. preserves the header row and every existing row NOT in this batch (never a full-table wipe).
 // Returns { rowsWritten, updated, appended, pruned, total }.
-function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, naturalKey, dateField, retentionDays, tz) {
+// Incremental keyed upsert + calendar-inclusive prune. Preserves the header AND every existing
+// in-window row not in this batch (never a full-table rewrite). Enhancements (2026-07-21):
+//   - explicit `cutoffDate` (retention_start 'yyyy-MM-dd'): prune rows with snapshot_date < cutoffDate
+//     (blank dates kept). Falls back to a calendar today−retentionDays if cutoffDate is omitted.
+//   - collapses pre-existing DUPLICATE natural keys (last wins) so incomplete/duplicated dates self-repair.
+//   - hash-based change detection: a key match with an identical source_row_hash counts as `unchanged`
+//     (not rewritten in effect); a differing hash counts as `updated`.
+// Returns { rowsWritten, updated, appended, unchanged, pruned, duplicatesRemoved, total }.
+function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, naturalKey, dateField, retentionDays, tz, cutoffDate) {
   var ss = SpreadsheetApp.openById(spreadsheetId);
   if (!ss) throw new Error('destination spreadsheet not found: ' + spreadsheetId);
   var sh = ss.getSheetByName(sheetName);
@@ -95,53 +103,76 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
     return line;
   }
 
-  // 1) existing rows
+  var hashCol = (colIndex['source_row_hash'] != null) ? colIndex['source_row_hash'] : -1;
+
+  // 1) existing rows — collapse pre-existing DUPLICATE natural keys (last wins). Earlier duplicates
+  //    are dropped from the output (self-repair for destination duplicates), counted separately.
   var existing = (lastRow > 1) ? sh.getRange(2, 1, lastRow - 1, lastCol).getValues() : [];
   var merged = [];
   var rowByKey = {};
+  var duplicatesRemoved = 0;
   for (var r = 0; r < existing.length; r++) {
     var kr = keyOfRowArr(existing[r]);
-    // last existing row for a key wins its slot; earlier duplicates are kept but shadowed on upsert
-    rowByKey[kr] = merged.length;
-    merged.push(existing[r]);
+    if (rowByKey[kr] !== undefined) { merged[rowByKey[kr]] = existing[r]; duplicatesRemoved++; } // collapse to last
+    else { rowByKey[kr] = merged.length; merged.push(existing[r]); }
   }
 
-  // 2) upsert batch
-  var updated = 0, appended = 0;
+  // 2) upsert batch — keyed update (change-detected via source_row_hash) or append.
+  var updated = 0, appended = 0, unchanged = 0;
   for (var d = 0; d < destObjs.length; d++) {
     var o = destObjs[d];
     var ko = keyOfObj(o);
     var newRow = objToRow(o);
-    if (rowByKey[ko] !== undefined) { merged[rowByKey[ko]] = newRow; updated++; }
-    else { rowByKey[ko] = merged.length; merged.push(newRow); appended++; }
+    if (rowByKey[ko] !== undefined) {
+      var idx = rowByKey[ko];
+      var same = false;
+      if (hashCol >= 0) {
+        var oldHash = String(merged[idx][hashCol] == null ? '' : merged[idx][hashCol]).trim();
+        var newHash = String(newRow[hashCol] == null ? '' : newRow[hashCol]).trim();
+        same = (oldHash !== '' && oldHash === newHash);
+      }
+      merged[idx] = newRow;             // idempotent either way (identical when unchanged)
+      if (same) unchanged++; else updated++;
+    } else {
+      rowByKey[ko] = merged.length; merged.push(newRow); appended++;
+    }
   }
 
-  // 3) prune rows older than (today - retentionDays) by dateField (yyyy-MM-dd lexical compare)
+  // 3) prune rows OLDER than the retention start (snapshot_date < cutoff). Calendar-inclusive cutoff =
+  //    retention_start ('yyyy-MM-dd'); blank dates are kept (cannot judge). Lexical compare is valid for yyyy-MM-dd.
   var pruned = 0;
-  if (dateCol >= 0 && retentionDays > 0) {
-    var cutoff = amazonRollingCutoffDate_(retentionDays, tz); // 'yyyy-MM-dd'
+  var cutoff = (cutoffDate && /^\d{4}-\d{2}-\d{2}$/.test(String(cutoffDate)))
+    ? String(cutoffDate)
+    : (retentionDays > 0 ? amazonRollingCutoffDate_(retentionDays, tz) : '');
+  if (dateCol >= 0 && cutoff) {
     var kept = [];
     for (var m = 0; m < merged.length; m++) {
       var dval = String(merged[m][dateCol] == null ? '' : merged[m][dateCol]).trim().slice(0, 10);
-      if (!dval || dval >= cutoff) kept.push(merged[m]); // blank date kept (cannot judge); >= cutoff kept
+      if (!dval || dval >= cutoff) kept.push(merged[m]); // blank kept; >= cutoff kept
       else pruned++;
     }
     merged = kept;
   }
 
-  // 4) rewrite the DATA region only (header row 1 preserved). merged already contains the
-  //    preserved non-batch rows, so this is an upsert result — not a source-only overwrite.
+  // 4) rewrite the DATA region only (header row 1 preserved). merged contains the preserved non-batch
+  //    rows + upserts, deduped and pruned — an upsert result, not a source-only overwrite.
   if (lastRow > 1) sh.getRange(2, 1, lastRow - 1, lastCol).clearContent();
   if (merged.length) sh.getRange(2, 1, merged.length, lastCol).setValues(merged);
 
-  return { rowsWritten: updated + appended, updated: updated, appended: appended, pruned: pruned, total: merged.length };
+  return {
+    rowsWritten: updated + appended, updated: updated, appended: appended, unchanged: unchanged,
+    pruned: pruned, duplicatesRemoved: duplicatesRemoved, total: merged.length
+  };
 }
 
 /** yyyy-MM-dd of (today - retentionDays) in the given timezone (default Asia/Taipei). */
+// Calendar-inclusive retention-start ('yyyy-MM-dd' in tz) = today(tz) − retentionDays. Rows with
+// snapshot_date < this are expired. Equals amazonRetentionWindow_(retentionDays, tz).start. Used only
+// as a fallback when the caller does not pass an explicit cutoffDate.
 function amazonRollingCutoffDate_(retentionDays, tz) {
   tz = tz || 'Asia/Taipei';
-  var cutoff = new Date(new Date().getTime() - retentionDays * 24 * 60 * 60 * 1000);
-  return Utilities.formatDate(cutoff, tz, 'yyyy-MM-dd');
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  return amazonAddDaysStr_(today, -(retentionDays || 90));
 }
 
 // ---- logging (best-effort; header-based) --------------------------

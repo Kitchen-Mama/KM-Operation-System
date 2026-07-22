@@ -51,19 +51,28 @@
             <div class="menu-item" onclick="showSection('ops')" title="貨物庫存表">
                 <span class="menu-icon">📦</span><span class="menu-label">貨物庫存表</span>
             </div>
-            <!-- Warehouse Stock 父子選單 -->
+            <!-- Warehouse 父子選單 (Factory Inventory / Overseas Inventory / Overseas Inbound / Overseas Outbound).
+                 Warehouse Master remains under Admin / Master Data (out of this group). -->
             <div class="menu-parent"
                  data-menu-id="warehouse-stock"
-                 onclick="toggleMenu('warehouse-stock')" title="Warehouse Stock">
-                <span class="menu-icon">🏭</span><span class="menu-label">Warehouse Stock</span>
+                 onclick="toggleMenu('warehouse-stock')" title="Warehouse">
+                <span class="menu-icon">🏭</span><span class="menu-label">Warehouse</span>
             </div>
             <div class="menu-children"
                  data-parent="warehouse-stock">
-                <div class="menu-item" onclick="showSection('factory-stock')" title="Factory Stock">
-                    <span class="menu-label">Factory Stock</span>
+                <div class="menu-item" onclick="showSection('factory-stock')" title="Factory Inventory">
+                    <span class="menu-label">Factory Inventory</span>
                 </div>
-                <div class="menu-item" onclick="showSection('overseas-stock')" title="Overseas Stock">
-                    <span class="menu-label">Overseas Stock</span>
+                <div class="menu-item" onclick="showSection('overseas-stock')" title="Overseas Inventory">
+                    <span class="menu-label">Overseas Inventory</span>
+                </div>
+                <div class="menu-item menu-item--disabled" style="position: relative;" title="Overseas Inbound — destination receiving operation (planned; spec only)">
+                    <span class="menu-label">Overseas Inbound</span>
+                    <span class="stage-badge">Soon</span>
+                </div>
+                <div class="menu-item menu-item--disabled" style="position: relative;" title="Overseas Outbound — origin fulfillment operation (planned; spec only)">
+                    <span class="menu-label">Overseas Outbound</span>
+                    <span class="stage-badge">Soon</span>
                 </div>
             </div>
 

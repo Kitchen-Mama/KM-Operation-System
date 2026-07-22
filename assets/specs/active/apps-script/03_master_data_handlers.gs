@@ -111,59 +111,199 @@ var SKU_DETAILS_UPSERT_FIELDS_ = [
   'minimum_price', 'msrp', 'selling_price', 'base_currency', 'pm', 'image_url'
 ];
 
+// Canonical lifecycle value that triggers the Factory Stock baseline ensure (SKU_DETAILS_ADD_EDIT_SPEC §15).
+var SKU_RUNNING_LIFECYCLE_ = 'Running in the Market';
+
+// Interpret a warehouses flag cell as boolean (TRUE/true/1/yes/y → true; blank/false/0/no → false).
+function skuFlagTrue_(v) {
+  if (v === true) return true;
+  var s = String(v == null ? '' : v).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes' || s === 'y';
+}
+
+// Normalize an incoming magnet_type value to a REAL Boolean (finalized: magnet_type is Boolean, NOT enum).
+// Accepts the canonical Boolean from the UI plus legacy compatibility strings on read. Returns:
+//   true  ← true / "true" / "yes" / "y" / "1" / "magnetic"
+//   false ← false / "false" / "no" / "n" / "0" / "no_magnet"
+//   null  ← blank / unknown (never guessed — the caller decides how to persist an unknown)
+// Explicit token classification only — never JS truthiness (Boolean("false") === true is wrong here).
+function skuMagnetToBool_(v) {
+  if (v === true) return true;
+  if (v === false) return false;
+  var s = String(v == null ? '' : v).trim().toLowerCase();
+  if (s === '') return null;
+  if (s === 'true' || s === 'yes' || s === 'y' || s === '1' || s === 'magnetic') return true;
+  if (s === 'false' || s === 'no' || s === 'n' || s === '0' || s === 'no_magnet') return false;
+  return null;   // unknown value — do not coerce/guess
+}
+
 /**
- * Upsert a sku_details row by sku. Updates the allowlisted fields when the SKU exists (preserving any
- * field NOT supplied in the body); creates a minimal row (sku + supplied fields) when it does not.
- * Additive: ensures the allowlisted columns exist. Never touches columns outside the allowlist, and
- * never creates marketplace / pricing / FC / factory_stock rows. Body: { sku, <allowlisted field>?, ... }.
+ * Ensure a Factory Stock baseline for a Master SKU across eligible active Factory Warehouses.
+ * Canonical (SKU_DETAILS_ADD_EDIT_SPEC §15; INVENTORY_TABLE_MAPPING_SPEC §17.3A.1):
+ *   - eligibility: warehouses.is_active = TRUE AND warehouses.is_factory_warehouse = TRUE
+ *   - identity: warehouse_id + Master sku (NEVER site_sku / company / marketplace / warehouse_code alone)
+ *   - idempotent: create only a MISSING row; never reset/overwrite an existing stock row; no duplicates
+ *   - current_stock = 0, reserved_stock = 0 (only where the column exists); no movement row for a 0 baseline
+ * Fail-closed: if the warehouses/factory_stock sheets or required columns are absent, returns a
+ * structured db_mapping_gap (never invents columns/tabs). Returns a structured summary; never throws.
+ */
+function ensureFactoryStockBaseline_(ss, sku) {
+  var result = { triggered: true, status: 'ok', created: [], skipped: [], failed: [], eligible_count: 0, warnings: [] };
+  try {
+    var wh = ss.getSheetByName('warehouses');
+    if (!wh) { result.status = 'db_mapping_gap'; result.warnings.push('warehouses sheet not found'); return result; }
+    var whData = wh.getDataRange().getValues();
+    if (whData.length < 1) { result.status = 'db_mapping_gap'; result.warnings.push('warehouses has no header row'); return result; }
+    var whH = whData[0].map(function (h) { return String(h).trim(); });
+    var whId = whH.indexOf('warehouse_id'), whActive = whH.indexOf('is_active'), whFactory = whH.indexOf('is_factory_warehouse');
+    if (whId === -1 || whActive === -1 || whFactory === -1) {
+      result.status = 'db_mapping_gap';
+      result.warnings.push('warehouses missing required column(s): ' +
+        [whId === -1 ? 'warehouse_id' : null, whActive === -1 ? 'is_active' : null, whFactory === -1 ? 'is_factory_warehouse' : null].filter(String).join(', '));
+      return result;
+    }
+    var eligible = [];
+    for (var r = 1; r < whData.length; r++) {
+      var wid = String(whData[r][whId] || '').trim();
+      if (wid && skuFlagTrue_(whData[r][whActive]) && skuFlagTrue_(whData[r][whFactory])) eligible.push(wid);
+    }
+    result.eligible_count = eligible.length;
+    if (!eligible.length) { result.warnings.push('no eligible active factory warehouses'); return result; }
+
+    var fs = ss.getSheetByName('factory_stock');
+    if (!fs) { result.status = 'db_mapping_gap'; result.warnings.push('factory_stock sheet not found'); return result; }
+    var fsData = fs.getDataRange().getValues();
+    if (fsData.length < 1) { result.status = 'db_mapping_gap'; result.warnings.push('factory_stock has no header row'); return result; }
+    var fsH = fsData[0].map(function (h) { return String(h).trim(); });
+    var fsWid = fsH.indexOf('warehouse_id'), fsSku = fsH.indexOf('sku');
+    if (fsWid === -1 || fsSku === -1) {
+      result.status = 'db_mapping_gap';
+      result.warnings.push('factory_stock missing required column(s): ' +
+        [fsWid === -1 ? 'warehouse_id' : null, fsSku === -1 ? 'sku' : null].filter(String).join(', '));
+      return result;
+    }
+    // Canonical fac_* headers (inventory namespace migration 2026-07-21); prefer the new header, fall back
+    // to the pre-migration name until the live sheet is renamed. TEMPORARY fallback — remove the legacy
+    // indexOf once live factory_stock headers are renamed + verified.
+    var fsCur = fsH.indexOf('fac_current_stock'); if (fsCur === -1) fsCur = fsH.indexOf('current_stock');
+    var fsRes = fsH.indexOf('fac_reserved_stock'); if (fsRes === -1) fsRes = fsH.indexOf('reserved_stock');
+    var fsId = fsH.indexOf('factory_stock_id'), fsCreated = fsH.indexOf('created_at'), fsUpdated = fsH.indexOf('updated_at');
+
+    // Existing warehouse_id+sku pairs (idempotency guard — never overwrite an existing row).
+    var existing = {};
+    for (var e = 1; e < fsData.length; e++) {
+      existing[String(fsData[e][fsWid] || '').trim() + '|' + String(fsData[e][fsSku] || '').trim()] = true;
+    }
+    var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+    for (var g = 0; g < eligible.length; g++) {
+      var w = eligible[g];
+      if (existing[w + '|' + sku]) { result.skipped.push(w); continue; }
+      try {
+        var row = new Array(fsH.length).fill('');
+        row[fsWid] = w; row[fsSku] = sku;
+        if (fsCur !== -1) row[fsCur] = 0;
+        if (fsRes !== -1) row[fsRes] = 0;
+        if (fsId !== -1) row[fsId] = 'FS-' + w + '-' + sku;
+        if (fsCreated !== -1) row[fsCreated] = now;
+        if (fsUpdated !== -1) row[fsUpdated] = now;
+        fs.appendRow(row);
+        existing[w + '|' + sku] = true;   // guard against duplicate append within this run
+        result.created.push(w);
+      } catch (rowErr) {
+        result.failed.push({ warehouse_id: w, sku: sku, error: String(rowErr && rowErr.message ? rowErr.message : rowErr) });
+      }
+    }
+    if (result.failed.length) { result.status = 'partial'; result.warnings.push(result.failed.length + ' warehouse baseline row(s) failed'); }
+  } catch (err) {
+    result.status = 'error';
+    result.warnings.push('factory baseline ensure error: ' + String(err && err.message ? err.message : err));
+  }
+  return result;
+}
+
+/**
+ * Upsert a sku_details row by sku (case-sensitive, trimmed — the existing DB convention).
+ * mode: 'add' rejects an existing SKU (duplicate); 'edit' rejects a missing SKU (not_found); when omitted
+ * the legacy upsert behavior is preserved for backward-compatible callers. Updates only the allowlisted
+ * fields supplied in the body (omitted columns preserved), sets updated_at (created_at on create).
+ * Factory Stock baseline is ensured ONLY when lifecycle transitions from non-running → 'Running in the
+ * Market' (§15) — never on ordinary edits, marketplace/regional creation, or leaving/returning-with-rows.
+ * Never creates marketplace / pricing / FC / regional rows. Body: { sku, mode?, <allowlisted field>?, ... }.
  */
 function handleUpsertSkuDetail_(body) {
   var sku = String((body && body.sku) || '').trim();
-  if (!sku) return jsonResponse_({ success: false, error: 'Missing sku' });
+  if (!sku) return jsonResponse_({ success: false, error_code: 'missing_sku', error: 'Missing sku' });
+  var mode = String((body && body.mode) || '').trim().toLowerCase();  // 'add' | 'edit' | ''
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('sku_details');
-  if (!sheet) return jsonResponse_({ success: false, error: 'sku_details sheet not found' });
+  if (!sheet) return jsonResponse_({ success: false, error_code: 'sheet_missing', error: 'sku_details sheet not found' });
 
   // Ensure the customs columns exist on tabs that predate them (additive; never removes columns).
   if (typeof sheetEnsureColumns_ === 'function') sheetEnsureColumns_(sheet, SKU_DETAILS_UPSERT_FIELDS_);
 
   var data = sheet.getDataRange().getValues();
-  if (data.length < 1) return jsonResponse_({ success: false, error: 'sku_details has no header row' });
+  if (data.length < 1) return jsonResponse_({ success: false, error_code: 'no_header', error: 'sku_details has no header row' });
   var headers = data[0].map(function (h) { return String(h).trim(); });
   var col = function (n) { return headers.indexOf(n); };
   var skuCol = col('sku');
-  if (skuCol === -1) return jsonResponse_({ success: false, error: 'sku column not found in sku_details header' });
+  if (skuCol === -1) return jsonResponse_({ success: false, error_code: 'no_sku_column', error: 'sku column not found in sku_details header' });
+  var lcCol = col('lifecycle');
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
 
-  // Find existing row by sku.
+  // Find existing row by sku (trim + case-sensitive — preserve the existing convention; no case-folding).
   var targetRow = -1;
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][skuCol]).trim() === sku) { targetRow = i + 1; break; }
   }
 
+  // Mode gating (duplicate / not-found protection). Both layers required by spec §F.
+  if (mode === 'add' && targetRow !== -1) {
+    return jsonResponse_({ success: false, error_code: 'duplicate_sku', error: 'SKU already exists: ' + sku });
+  }
+  if (mode === 'edit' && targetRow === -1) {
+    return jsonResponse_({ success: false, error_code: 'not_found', error: 'SKU not found (may have been removed): ' + sku });
+  }
+
+  var running = SKU_RUNNING_LIFECYCLE_;
+  var savedLc;
+
   if (targetRow !== -1) {
+    // Capture previous lifecycle BEFORE mutation for the transition test.
+    var prevLc = (lcCol !== -1) ? String(data[targetRow - 1][lcCol] || '').trim() : '';
     SKU_DETAILS_UPSERT_FIELDS_.forEach(function (f) {
       if (body[f] === undefined) return;
       var c = col(f);
-      if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(String(body[f] == null ? '' : body[f]));
+      if (c === -1) return;
+      // magnet_type is a REAL Boolean cell (finalized). Normalize legacy inputs; write true/false, never a string.
+      if (f === 'magnet_type') { var mb = skuMagnetToBool_(body[f]); sheet.getRange(targetRow, c + 1).setValue(mb === null ? '' : mb); return; }
+      sheet.getRange(targetRow, c + 1).setValue(String(body[f] == null ? '' : body[f]));
     });
     if (col('updated_at') !== -1) sheet.getRange(targetRow, col('updated_at') + 1).setValue(now);
-    return jsonResponse_({ success: true, data: { sku: sku, updated: true } });
+    savedLc = (body.lifecycle !== undefined) ? String(body.lifecycle == null ? '' : body.lifecycle).trim() : prevLc;
+    var out = { sku: sku, updated: true };
+    if (prevLc !== running && savedLc === running) out.factory_baseline = ensureFactoryStockBaseline_(ss, sku);
+    return jsonResponse_({ success: true, data: out });
   }
 
-  // Create a minimal row (sku + supplied allowlisted fields).
+  // Create a minimal row (sku + supplied allowlisted fields). prevLc = '' (non-running).
   var newRow = new Array(headers.length).fill('');
   newRow[skuCol] = sku;
   SKU_DETAILS_UPSERT_FIELDS_.forEach(function (f) {
     if (body[f] === undefined) return;
     var c = col(f);
-    if (c !== -1) newRow[c] = String(body[f] == null ? '' : body[f]);
+    if (c === -1) return;
+    if (f === 'magnet_type') { var mb = skuMagnetToBool_(body[f]); newRow[c] = (mb === null ? '' : mb); return; }   // real Boolean cell
+    newRow[c] = String(body[f] == null ? '' : body[f]);
   });
   if (col('created_at') !== -1) newRow[col('created_at')] = now;
   if (col('updated_at') !== -1) newRow[col('updated_at')] = now;
   sheet.appendRow(newRow);
-  return jsonResponse_({ success: true, data: { sku: sku, updated: false, created: true } });
+  savedLc = (body.lifecycle !== undefined) ? String(body.lifecycle == null ? '' : body.lifecycle).trim() : '';
+  var created = { sku: sku, updated: false, created: true };
+  // Trigger only if this create itself validly enters Running (§15).
+  if (savedLc === running) created.factory_baseline = ensureFactoryStockBaseline_(ss, sku);
+  return jsonResponse_({ success: true, data: created });
 }
 
 /**

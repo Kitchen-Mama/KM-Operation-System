@@ -103,7 +103,7 @@ function initFactoryStockPage() {
     document.addEventListener('click', handleOutsideClick);
     
     // 初始化所有篩選器的顯示文字
-    ['factory', 'company', 'category', 'series'].forEach(type => {
+    ['factory', 'company', 'country', 'category', 'series', 'stockStatus'].forEach(type => {
         updateFilterText(type, root);
     });
     
@@ -199,50 +199,72 @@ function renderFactoryStockTable(root) {
     const filters = {
         factory: getFilters('factory'),
         company: getFilters('company'),
+        country: getFilters('country'),
         category: getFilters('category'),
         series: getFilters('series'),
+        stockStatus: getFilters('stockStatus'),
         sku: root.querySelector('#factory-sku-input')?.value.toLowerCase() || ''
     };
-    
+
     let data = _factoryData.filter(item => {
         if (filters.factory.length > 0 && !filters.factory.includes(item.factory)) return false;
         if (filters.company.length > 0 && !filters.company.includes(item.company)) return false;
+        if (filters.country.length > 0 && !filters.country.includes(item.country)) return false;
         if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
         if (filters.series.length > 0 && !filters.series.includes(item.series)) return false;
+        if (filters.stockStatus.length > 0 && !filters.stockStatus.includes(item.stockStatus)) return false;
         if (filters.sku && !item.sku.toLowerCase().includes(filters.sku)) return false;
         return true;
     });
-    
-    console.log(`✅ factory stock initial render rows = ${data.length}`);
-    
-    const today = new Date();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const m = today.getMonth();
-    
-    ['factory-month-0', 'factory-month-1', 'factory-month-2'].forEach((id, i) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = `${months[(m + i) % 12]} Orders`;
-    });
-    
+
+    console.log(`✅ factory inventory render rows = ${data.length}`);
+
+    // KPIs are computed from the FILTERED rows so they always reflect what the table shows.
+    // available = MAX(current - reserved, 0). In Production / Pending Shipout have no authoritative
+    // wired source → shown as "—" (not tracked), never fabricated.
+    _renderFactoryKpis(data);
+
     if (data.length === 0) {
         fixedBody.innerHTML = '';
         scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">No data found</div>';
         return;
     }
-    
-    fixedBody.innerHTML = data.map(item => `<div class="fixed-row">${item.sku}</div>`).join('');
+
+    var na = '<span class="fi-na" title="Not tracked yet">—</span>';
+    fixedBody.innerHTML = data.map(item => `<div class="fixed-row">${_fmvEscapeHtml(item.sku)}</div>`).join('');
     scrollBody.innerHTML = data.map(item => `
         <div class="scroll-row">
-            <div class="scroll-cell">${item.company}</div>
-            <div class="scroll-cell">${item.category}</div>
-            <div class="scroll-cell">${item.series}</div>
-            <div class="scroll-cell">${item.factory}</div>
-            <div class="scroll-cell">${item.stock.toLocaleString()}</div>
-            <div class="scroll-cell">${item.completedOrderMonth0.toLocaleString()}</div>
-            <div class="scroll-cell">${item.completedOrderMonth1.toLocaleString()}</div>
-            <div class="scroll-cell">${item.completedOrderMonth2.toLocaleString()}</div>
+            <div class="scroll-cell">${_fmvEscapeHtml(item.factory)}</div>
+            <div class="scroll-cell">${_fmvEscapeHtml(item.categorySeries)}</div>
+            <div class="scroll-cell scroll-cell--num">${item.currentStock.toLocaleString()}</div>
+            <div class="scroll-cell scroll-cell--num">${item.reservedStock.toLocaleString()}</div>
+            <div class="scroll-cell scroll-cell--num">${item.availableStock.toLocaleString()}</div>
+            <div class="scroll-cell scroll-cell--num">${na}</div>
+            <div class="scroll-cell scroll-cell--num">${na}</div>
+            <div class="scroll-cell">${_fmvEscapeHtml(item.lastMovement) || na}</div>
         </div>
     `).join('');
+}
+
+// Compute + render the Factory Inventory KPI cards from the given (filtered) rows.
+// Current / Reserved / Available are real sums; In Production / Pending Shipout stay "—" (no source).
+function _renderFactoryKpis(rows) {
+    var totals = (rows || []).reduce(function(acc, r) {
+        acc.current += Number(r.currentStock) || 0;
+        acc.reserved += Number(r.reservedStock) || 0;
+        acc.available += Number(r.availableStock) || 0;
+        return acc;
+    }, { current: 0, reserved: 0, available: 0 });
+    var set = function(id, val) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = (val == null) ? '—' : Number(val).toLocaleString();
+    };
+    set('fi-kpi-current', totals.current);
+    set('fi-kpi-reserved', totals.reserved);
+    set('fi-kpi-available', totals.available);
+    // In Production / Pending Shipout: no authoritative wired source (see _getDbFactoryStockData). Keep "—".
+    set('fi-kpi-inproduction', null);
+    set('fi-kpi-pendingshipout', null);
 }
 
 window.initFactoryStockPage = initFactoryStockPage;
@@ -257,17 +279,29 @@ window.renderFactoryStockTable = renderFactoryStockTable;
 function _getDemoFactoryStockData() {
     var rows = window.KM.DemoData.getFactoryStockRows({});
     return rows.map(function(r) {
+        var current = Number(r.factory_stock) || 0;
+        var reserved = Number(r.reserved_qty) || 0;
+        var available = Math.max(current - reserved, 0);
+        var cat = r.category || '';
+        var ser = r.series || '';
+        var catSer = (cat && ser) ? (cat + ' / ' + ser) : (cat || ser || '');
         return {
             sku: r.sku,
             company: 'Kitchen Mama',
+            country: r.country || 'CN',
             marketplace: 'US',
-            category: r.category,
-            series: r.series,
-            factory: r.factory_name,
-            stock: r.factory_stock,
-            completedOrderMonth0: r.reserved_qty,
-            completedOrderMonth1: Math.round(r.factory_stock * 0.3),
-            completedOrderMonth2: Math.round(r.factory_stock * 0.2)
+            category: cat,
+            series: ser,
+            categorySeries: catSer,
+            factory: r.factory_name || '',
+            warehouseId: r.warehouse_id || '',
+            currentStock: current,
+            reservedStock: reserved,
+            availableStock: available,
+            stockStatus: available > 0 ? 'In Stock' : 'Out of Stock',
+            lastMovement: r.next_production_date || '',
+            inProduction: null,
+            pendingShipout: null
         };
     });
 }
@@ -287,10 +321,15 @@ function _getDemoFactoryStockData() {
 //     FSTK-SP3210-R-RESUS-CN_YOUXIN
 // ----------------------------------------------------------------------------
 function _getDbFactoryStockData() {
-    // Source of truth = factory_stock ONLY. Rows with current_stock = 0 are kept.
-    // Company & Factory are joined from warehouses via warehouse_id (factory_stock no longer
-    // stores company / factory_name): company = warehouses.company, factory = warehouses.warehouse_name.
+    // Source of truth = factory_stock ONLY (Factory Inventory domain). Rows with current_stock = 0 are kept.
+    // Overseas inventory (overseas_inventory_snapshot) is NEVER read here — the two domains stay separate.
+    // Company / Factory name / Country are joined from warehouses via warehouse_id
+    //   (company = warehouses.company, factory = warehouses.warehouse_name, country = warehouses.country).
     // sku_details is used solely to join category/series metadata (NOT as a row universe).
+    // available_factory_stock = MAX(currentStock - reservedStock, 0).
+    // In Production / Pending Shipout: NO authoritative wired source on factory_stock (only fac_current_stock /
+    //   fac_reserved_stock exist). They are intentionally left null → rendered "—" (not fabricated / not derived
+    //   from unrelated statuses). Documented gap: WAREHOUSE_OPERATIONS_SPEC §6A read-only joins not implemented.
     var rows = (window.KM && window.KM.DB && window.KM.DB.getFactoryStock) ? window.KM.DB.getFactoryStock() : [];
     var whMap = _factoryWarehouseMap();
     var skuMeta = {};
@@ -299,17 +338,30 @@ function _getDbFactoryStockData() {
     return rows.map(function(r) {
         var meta = skuMeta[r.sku] || { category: '', series: '' };
         var wh = whMap[r.warehouseId] || {};
+        var current = Number(r.currentStock) || 0;
+        var reserved = Number(r.reservedStock) || 0;
+        var available = Math.max(current - reserved, 0);
+        var cat = meta.category || '';
+        var ser = meta.series || '';
+        var catSer = (cat && ser) ? (cat + ' / ' + ser) : (cat || ser || '');
         return {
             sku: r.sku,
             company: wh.company || r.company || '',
+            country: wh.country || '',
             marketplace: '',
-            category: meta.category,
-            series: meta.series,
-            factory: wh.warehouseName || r.factoryName || '',
-            stock: Number(r.currentStock) || 0,
-            completedOrderMonth0: 0,
-            completedOrderMonth1: 0,
-            completedOrderMonth2: 0
+            category: cat,
+            series: ser,
+            categorySeries: catSer,
+            factory: wh.warehouseName || r.factoryName || (r.warehouseId ? 'Unknown' : ''),
+            warehouseId: r.warehouseId || '',
+            currentStock: current,
+            reservedStock: reserved,
+            availableStock: available,
+            stockStatus: available > 0 ? 'In Stock' : 'Out of Stock',
+            lastMovement: r.lastTransactionAt || '',
+            // No authoritative source — kept null; rendered as "—" (not tracked).
+            inProduction: null,
+            pendingShipout: null
         };
     });
 }
@@ -339,8 +391,10 @@ function _populateFactoryFiltersFromDb(root) {
     };
     rebuild('factory', distinct('factory'));
     rebuild('company', distinct('company'));
+    rebuild('country', distinct('country'));
     rebuild('category', distinct('category'));
     rebuild('series', distinct('series'));
+    // Stock Status is a fixed set (In Stock / Out of Stock) — not rebuilt from data.
 }
 
 function _showFactoryDemoBadge() {

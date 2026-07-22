@@ -175,11 +175,16 @@ var IMPORT_CONFIGS = [
     sourceTable: 'Raw Daily Sales',
     queryMode: 'rolling_window',
     dateField: 'Date',
-    // Incremental rolling upsert (daily sales only). Other configs keep full snapshot rewrite.
+    // GAP-AWARE incremental rolling upsert (daily sales only). Other configs keep full snapshot rewrite.
+    // Canonical behavior (2026-07-21): retain a rolling window of the latest 90 COMPLETED calendar days
+    // (Asia/Taipei; today excluded; end = yesterday; start = yesterday − 89, inclusive = exactly 90 days).
+    // Each run detects missing / incomplete dates in that window and fetches ONLY those (plus a small
+    // recent-reconciliation window), never an unconditional full 90-day rewrite. See 08_/09_ for the flow.
     writeMode: 'rolling_upsert',
-    retentionDays: 30,             // destination keeps this many completed days; older rows pruned
-    incrementalDefaultDays: 1,     // default daily read = 1 completed day (yesterday)
-    lookbackDays: 30,              // legacy/back-compat window cap (used as backfill ceiling)
+    retentionDays: 90,             // rolling retention = latest 90 completed calendar days; older rows pruned
+    reconcileRecentDays: 3,        // always reconcile the most recent N source-available dates (late/revised data)
+    incrementalDefaultDays: 1,     // legacy — NOT used by the gap-aware path; kept for back-compat only
+    lookbackDays: 90,              // backfill ceiling = retention window (manual backfill_days is capped here)
     excludeToday: true,            // window ends yesterday (avoid partial same-day Amazon data)
     scheduleTime: '16:00',
     scheduleTimezone: 'Asia/Taipei',
