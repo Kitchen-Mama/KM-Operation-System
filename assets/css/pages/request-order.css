@@ -40,15 +40,23 @@
     flex: 0 0 250px;
 }
 
-/* Search action column — sizes to the button (not a fixed 160px filter) and bottom-aligns it. */
-.ro-filter--search {
+/* Search + Clear action columns — size to their button (not a fixed 160px filter) and bottom-align. */
+.ro-filter--search,
+.ro-filter--clear {
     min-width: auto;
     flex: 0 0 auto;
 }
-.ro-filter--search .ro-btn {
+/* Search AND Clear Filters share the row's medium control-height contract (--filter-height) with
+   border-box + centred text, so Clear Filters is exactly as tall as Search and aligns with the
+   dropdown triggers / selects / action group on the same row. */
+.ro-filter--search .ro-btn,
+.ro-filter--clear .ro-btn {
     height: var(--filter-height);
+    min-height: var(--filter-height);
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
 }
 
 .ro-date-trigger {
@@ -422,14 +430,21 @@
     top: var(--km-sticky-top-base, 0px);
     z-index: var(--km-sticky-z-header-1, 120);
     display: flex;
-    background: #f5f5f5;
+    background: #f8f9fa;   /* neutral gray rail — matches Factory Inventory table */
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
+
+/* Header "rail": the shared .scroll-header defaults to the green --table-header-bg; the group cells
+   only cover their own colspan, so any un-covered width (narrower-than-viewport, or right of the last
+   column) showed a large green block. Override the scroll-header + its viewport to the SAME neutral
+   gray as the Factory Inventory table so the empty rail is gray, not green. No fake column is added. */
+.ro-table .scroll-header-viewport { background: #f8f9fa; }
+.ro-table .scroll-header { background: #f8f9fa; }
 
 .ro-table .fixed-header {
     width: 143px;
     height: var(--km-sticky-header-total, 96px);
-    background: #f5f5f5;
+    background: #f8f9fa;
     border-right: 2px solid var(--border-medium);
     box-shadow: 4px 0 8px rgba(0,0,0,0.06);
     flex-shrink: 0;
@@ -904,11 +919,17 @@
     background: #ffffff;
     border-radius: 8px;
     margin: 0;
-    padding: 16px 20px;
+    /* Intrinsic-width detail surface: consistent 16px inner padding both sides; grows to its content
+       (width:max-content) but never narrower than the row (min-width:100%). Overflow beyond the viewport
+       is carried by the MAIN table's existing horizontal scroll — no nested scrollbar, no clipping. */
+    box-sizing: border-box;
+    padding: 16px;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
     border: 1px solid #e5e7eb;
     border-top: none;
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
+    overflow: visible;
 }
 
 #request-order-section .ro-sku-expand-panel.is-open {
@@ -1459,34 +1480,17 @@
 }
 
 /* ========================================
-   BLOCK SEPARATION (Vertical Dividers)
+   BLOCK SEPARATION (Vertical Dividers) — CLASS-BASED
    ======================================== */
-
-/* Upcoming FC Block Start */
-.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(1),
-.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(1),
-.ro-table .scroll-row .scroll-cell:nth-child(4) {
-    border-left: 2px solid #cbd5e1;
-}
-
-/* Inventory & Ongoing Block Start */
-.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(2),
-.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(3),
-.ro-table .scroll-row .scroll-cell:nth-child(6) {
-    border-left: 2px solid #cbd5e1;
-}
-
-/* Coverage & Time Block Start */
-.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(3),
-.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(7),
-.ro-table .scroll-row .scroll-cell:nth-child(10) {
-    border-left: 2px solid #cbd5e1;
-}
-
-/* Decision Block Start */
-.ro-table .km-table__header-row--level1 .km-table__header-cell:nth-child(5),
-.ro-table .km-table__header-row--level2 .km-table__header-cell:nth-child(10),
-.ro-table .scroll-row .scroll-cell:nth-child(15) {
+/* Group boundaries are marked with a shared `--group-start` (header) / `.ro-group-start` (body) class
+   on the FIRST cell of each group, NOT by nth-child position. nth-child was fragile: the hidden
+   Shortage (M1/M2/M3) columns still count toward nth-child, so the old level-2 "Decision" rule landed
+   on the hidden M2 cell instead of Suggest Order — the Lead Time | Suggest Order divider broke on the
+   2nd header row. The class travels with the real cell through horizontal scroll and hidden columns, so
+   header level-1, header level-2, and body rows stay continuous and aligned. Groups: Upcoming FC,
+   Inventory & Ongoing, Coverage & Time (Remaining…Lead Time), Decision (Suggest Order). */
+.ro-table .km-table__header-cell--group-start,
+.ro-table .scroll-row .scroll-cell.ro-group-start {
     border-left: 2px solid #cbd5e1;
 }
 
@@ -1888,3 +1892,107 @@
     color: #475569;
     cursor: not-allowed;
 }
+
+/* ---- Second-layer editor modals (Edit Target % / FC Update) — 2026-07-23 data-connection ----
+   Modals are appended to document.body, so these use the page's .ro-* namespace (not #section-scoped). */
+.ro-edit-table { margin-top: 8px; width: 100%; }
+.ro-edit-table th, .ro-edit-table td { padding: 6px 10px; text-align: left; }
+.ro-edit-table td:nth-child(2), .ro-edit-table th:nth-child(2) { text-align: right; }
+.ro-edit-input { width: 92px; border: 1px solid #CBD5E1; border-radius: 6px; padding: 5px 8px; font-size: 13px; text-align: right; }
+.ro-edit-input:focus { outline: 2px solid #0080bb; outline-offset: 1px; }
+.ro-modal-status { min-height: 18px; margin: 8px 0 4px; font-size: 12.5px; line-height: 1.4; }
+.ro-modal-status.is-info { color: #0369a1; }
+.ro-modal-status.is-success { color: #166534; }
+.ro-modal-status.is-error { color: #b91c1c; }
+.ro-modal .ro-date-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.ro-modal .ro-date-actions .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+/* Upcoming Events table gained Event Date + Prep Date columns — keep it compact and scrollable. */
+.ro-expand-table--events th, .ro-expand-table--events td { padding: 4px 6px; font-size: 11.5px; white-space: nowrap; }
+
+/* ============================================================================================
+   Supply-planning UI (2026-07-24): first-level aging + Day-of-Supply · second-level 3-block layout
+   · manual partial-carton. Scoped to #request-order-section. No canonical formula/color reused as-is.
+   ============================================================================================ */
+
+/* (2026-07-24 cleanup) First-level Site Stock Aging/DOS chips & badges were REMOVED from Request Order.
+   Aging/DOS styling now lives ONLY on the Inventory Replenishment / 貨物庫存表 page. */
+
+/* ---- Second-level v6 — THREE decision blocks. INTRINSIC-WIDTH layout: each track has a real min-width
+   and grows to its content (max-content) instead of collapsing to minmax(0,fr) — so a wide child table
+   (e.g. Special FC) grows its OWN card/track rather than overflowing into the neighbour. The whole grid
+   grows with content and is carried by the main table's horizontal scroll. ---- */
+#request-order-section .ro-sku-expand-grid--v6 {
+  display: grid;
+  /* B1 (2026-07-24): Achievement & Forecast (block 1) base width +15% → 300px → 345px; the extra ~45px is
+     taken from Factory Supply (block 2, 260px → 215px). Recommendation / Order Allocation (block 3) stays
+     360px so it remains readable + operable. Tracks still grow to max-content, carried by the main scroll. */
+  grid-template-columns: minmax(345px, max-content) minmax(215px, max-content) minmax(360px, max-content);
+  gap: 12px; align-items: start;
+  width: max-content; min-width: 100%; box-sizing: border-box;
+}
+#request-order-section .ro-sku-expand-grid--v6 .ro-block {
+  background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px;
+  box-sizing: border-box; min-width: 0; overflow: visible;   /* card border wraps all content; never clips */
+}
+#request-order-section .ro-block--recommend { border-color: #BFDBFE; box-shadow: 0 0 0 1px #DBEAFE inset; }
+#request-order-section .ro-block-sub { margin-top: 10px; }
+#request-order-section .ro-block-sub:first-of-type { margin-top: 6px; }
+#request-order-section .ro-subtitle { font-size: 11.5px; font-weight: 700; color: #334155; margin: 8px 0 5px; padding-bottom: 3px; border-bottom: 1px dashed #E2E8F0; }
+#request-order-section .ro-sku-expand-grid--v6 .ro-expand-table { width: 100%; font-size: 11px; box-sizing: border-box; }
+#request-order-section .ro-sku-expand-grid--v6 .ro-expand-table th,
+#request-order-section .ro-sku-expand-grid--v6 .ro-expand-table td { padding: 3px 6px; }
+#request-order-section .ro-fc-metric { font-size: 11.5px; color: #1E293B; margin: 4px 0 6px; }
+#request-order-section .ro-block-empty { padding: 10px; text-align: center; color: #94A3B8; font-size: 12px; background: #F8FAFC; border-radius: 6px; }
+
+/* Forward Forecast matrix (B2, 2026-07-24): ONE table, Base FC vs Special FC grouped headers with a clear
+   visual divider between the two groups. It grows with its content and is carried by the main table's
+   horizontal scroll — NO nested scrollbar (no overflow:auto here). */
+#request-order-section .ro-sku-expand-grid--v6 .ro-forward-fc-table { border-collapse: collapse; }
+#request-order-section .ro-sku-expand-grid--v6 .ro-forward-fc-table th,
+#request-order-section .ro-sku-expand-grid--v6 .ro-forward-fc-table td { white-space: nowrap; text-align: center; border: 1px solid #EEF2F7; }
+#request-order-section .ro-forward-fc-table .ff-group-base { background: #EFF6FF; color: #1E40AF; font-weight: 700; }
+#request-order-section .ro-forward-fc-table .ff-group-special { background: #F5F3FF; color: #6D28D9; font-weight: 700; }
+#request-order-section .ro-forward-fc-table .ff-month { text-align: left; font-weight: 600; background: #F8FAFC; }
+#request-order-section .ro-forward-fc-table .ff-base { background: #F8FBFF; }
+#request-order-section .ro-forward-fc-table td.ff-special-start,
+#request-order-section .ro-forward-fc-table th.ff-special-start { border-left: 2px solid #C7D2FE; }
+#request-order-section .ro-forward-fc-table td.ff-base-end,
+#request-order-section .ro-forward-fc-table th.ff-base-end { border-right: 2px solid #C7D2FE; }
+
+/* Demand Summary table (T1–T4, two columns) + First Shortage compact badge + single empty state. */
+#request-order-section .ro-demand-table td:last-child, #request-order-section .ro-demand-table th:last-child { text-align: right; }
+#request-order-section .ro-first-shortage-badge { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; vertical-align: middle; }
+#request-order-section .ro-rec-empty { padding: 8px 10px; color: #94A3B8; font-size: 11.5px; background: #F8FAFC; border-radius: 6px; margin: 2px 0 6px; }
+
+/* Tablet: blocks 1–2 side by side, block 3 spans a full row */
+@media (max-width: 1200px) {
+  #request-order-section .ro-sku-expand-grid--v6 { grid-template-columns: minmax(345px, max-content) minmax(300px, max-content); }
+  #request-order-section .ro-block--recommend { grid-column: 1 / -1; }
+}
+/* Mobile: single column; the main table's scroll boundary reveals wide inner tables (no nested scrollbar). */
+@media (max-width: 720px) {
+  #request-order-section .ro-sku-expand-grid--v6 { grid-template-columns: minmax(280px, max-content); }
+  #request-order-section .ro-block--recommend { grid-column: auto; }
+}
+
+/* ---- Recommendation Summary: first-shortage banner + supply evidence + tier/monthly tables ---- */
+#request-order-section .ro-first-shortage { font-size: 12px; font-weight: 700; color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 5px 9px; margin: 4px 0 6px; }
+#request-order-section .ro-first-shortage--ok { color: #166534; background: #DCFCE7; border-color: #BBF7D0; }
+#request-order-section .ro-first-shortage--pending { color: #475569; background: #F1F5F9; border-color: #E2E8F0; }
+#request-order-section .ro-supply-evidence { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: #334155; margin: 4px 0 6px; }
+#request-order-section .ro-supply-evidence span { white-space: nowrap; }
+#request-order-section .ro-tier-table tr.ro-tier-first { background: #FEF9C3; }
+#request-order-section .ro-risk-chip { font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+#request-order-section .ro-risk-chip--short { background: #FEE2E2; color: #B91C1C; }
+#request-order-section .ro-risk-chip--ok { background: #DCFCE7; color: #166534; }
+#request-order-section .ro-first-tag { font-size: 9px; font-weight: 700; color: #B45309; }
+#request-order-section .ro-muted { color: #94A3B8; }
+
+/* Monthly Recommendation editable row + carton breakdown + partial badge/warning */
+#request-order-section .ro-rec-table .ro-alloc-qty { width: 74px; border: 1px solid #CBD5E1; border-radius: 6px; padding: 3px 6px; font-size: 11.5px; text-align: right; }
+#request-order-section .ro-rec-table .ro-alloc-qty.is-invalid { border-color: #DC2626; background: #FEF2F2; outline: 1px solid #FCA5A5; }
+#request-order-section .ro-rec-table .ro-alloc-note { width: 100%; min-width: 90px; border: 1px solid #CBD5E1; border-radius: 6px; padding: 3px 6px; font-size: 11px; }
+#request-order-section .ro-carton-cell { white-space: nowrap; }
+#request-order-section .ro-partial-badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 999px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+#request-order-section .ro-invalid-tag { font-size: 9.5px; font-weight: 700; color: #B91C1C; }
+#request-order-section .ro-partial-warn { display: block; margin-top: 2px; font-size: 10px; font-weight: 700; color: #B45309; white-space: nowrap; }

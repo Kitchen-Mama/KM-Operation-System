@@ -1,0 +1,257 @@
+/* Global Logistics Map — scoped to #global-logistics-map-section (.glm). No global selectors. */
+
+#global-logistics-map-section { padding: 20px 24px; }
+.glm-head { margin-bottom: 12px; }
+.glm-head__title { font-size: 20px; font-weight: 700; color: #0F172A; margin: 0; }
+.glm-head__sub { font-size: 13px; color: #64748B; margin: 4px 0 0; }
+.glm-head__meta { font-size: 12px; color: #94A3B8; margin-top: 4px; }
+
+/* Mode toolbar */
+.glm-modebar { display: inline-flex; gap: 4px; background: #F1F5F9; border-radius: 8px; padding: 4px; margin: 8px 0 14px; }
+.glm-mode { border: 0; background: transparent; color: #475569; font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 6px; cursor: pointer; }
+.glm-mode:hover { color: #0F172A; }
+.glm-mode.is-active { background: #fff; color: #0080bb; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
+/* Summary cards */
+.glm-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.glm-card { border: 1px solid #E2E8F0; border-radius: 10px; padding: 11px 13px; background: #fff; }
+.glm-card__value { font-size: 20px; font-weight: 700; color: #0F172A; line-height: 1.1; }
+.glm-card__label { font-size: 11.5px; color: #64748B; margin-top: 3px; }
+.glm-card--pending .glm-card__value { color: #B45309; }
+
+/* Layout — Compact Filters (~20% narrower: 320→258px) + Large Globe (task C) */
+#global-logistics-map-section { overflow-x: hidden; }         /* drawer never causes page horizontal scroll (F.15) */
+.glm-main { display: grid; grid-template-columns: 258px minmax(0, 1fr); gap: 14px; align-items: stretch; }
+@media (max-width: 1100px) { .glm-main { grid-template-columns: 1fr; } }
+.glm-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.glm-panel { border: 1px solid #E2E8F0; border-radius: 10px; background: #fff; padding: 12px 14px; }
+.glm-panel__title { font-size: 13px; font-weight: 700; color: #1E293B; margin: 0 0 10px; }
+
+/* Filters — compact vertical rhythm; long labels wrap rather than widen the column (C.4/C.6) */
+.glm-field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 7px; font-size: 11.5px; color: #475569; font-weight: 600; }
+.glm-field > span { line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
+.glm-field select, .glm-field input { width: 100%; box-sizing: border-box; max-width: 100%; }
+.glm-field select, .glm-field input[type="text"], .glm-field input[type="date"] { border: 1px solid #CBD5E1; border-radius: 6px; padding: 5px 8px; font-size: 12.5px; color: #1E293B; background: #fff; }
+.glm-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; font-weight: 600; }
+.glm-filter-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+/* Buttons */
+.glm-btn { border: 1px solid #CBD5E1; background: #fff; color: #334155; border-radius: 6px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.glm-btn:hover { background: #F1F5F9; }
+.glm-btn--primary { background: #0080bb; border-color: #0080bb; color: #fff; }
+.glm-btn--primary:hover { background: #026a9a; }
+
+/* Map — real 3D WebGL Earth globe (larger, primary visual region: task C) */
+.glm-mapwrap { border: 1px solid #0b1626; border-radius: 10px; background: #0b0e18; position: relative; overflow: hidden; min-height: 620px; height: clamp(620px, 70vh, 860px); }
+.glm-globe-slot { position: absolute; inset: 0; }
+.glm-globe-host { position: absolute; inset: 0; width: 100%; height: 100%; }
+.glm-globe-host .km-globe-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; outline: none; }
+.glm-globe-host .km-globe-canvas:focus-visible { box-shadow: inset 0 0 0 2px #38bdf8; }
+/* honest globe error state — never a flat blue grid (B.14/H.4) */
+.glm-globe-err { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; color: #E2E8F0; background: radial-gradient(circle at 50% 40%, #1e293b, #0b0e18); padding: 24px; }
+.glm-globe-err__icon { font-size: 34px; opacity: 0.8; }
+.glm-globe-err__title { font-size: 15px; font-weight: 700; margin: 0; }
+.glm-globe-err__msg { font-size: 12.5px; color: #94A3B8; max-width: 460px; line-height: 1.5; margin: 0; }
+.glm-globe-err .glm-btn { background: #1e293b; border-color: #334155; color: #E2E8F0; }
+
+.glm-map-controls { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 4; }
+.glm-map-controls .glm-btn { width: 40px; height: 40px; padding: 0; text-align: center; font-size: 18px; background: rgba(15,23,42,0.82); border-color: rgba(148,163,184,0.35); color: #E2E8F0; }
+.glm-map-controls .glm-btn:hover { background: rgba(30,41,59,0.95); }
+
+/* Legend — compact/collapsible, does not cover the globe (C.7) */
+.glm-legend { position: absolute; left: 12px; bottom: 12px; background: rgba(11,14,24,0.82); border: 1px solid rgba(148,163,184,0.3); border-radius: 8px; padding: 6px 10px; font-size: 11px; color: #CBD5E1; z-index: 4; max-width: 46%; }
+.glm-legend > summary { cursor: pointer; font-weight: 700; list-style: none; }
+.glm-legend > summary::-webkit-details-marker { display: none; }
+.glm-legend[open] { padding-bottom: 8px; }
+.glm-legend__row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.glm-legend__dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.4); }
+
+/* Hover tooltip over the globe */
+.glm-tip { position: absolute; z-index: 6; pointer-events: none; background: rgba(11,14,24,0.94); color: #E2E8F0; border: 1px solid rgba(148,163,184,0.35); border-radius: 6px; padding: 6px 9px; font-size: 11.5px; line-height: 1.45; max-width: 240px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.glm-tip[aria-hidden="true"] { display: none; }
+
+/* Coordinate Pending tray — shipments with no drawable position, INSIDE the globe canvas (task D.4) */
+.glm-tray { position: absolute; right: 12px; bottom: 12px; z-index: 5; width: 250px; max-width: 60%; background: rgba(11,14,24,0.9); border: 1px solid rgba(148,163,184,0.35); border-radius: 8px; padding: 8px; color: #E2E8F0; }
+.glm-tray__hd { font-size: 11.5px; font-weight: 700; color: #FCD34D; margin-bottom: 6px; }
+.glm-tray__list { display: flex; flex-direction: column; gap: 5px; max-height: 190px; overflow-y: auto; }
+.glm-tray__item { display: grid; grid-template-columns: 16px 1fr; grid-template-rows: auto auto; column-gap: 6px; align-items: center; text-align: left; border: 1px solid rgba(148,163,184,0.25); background: rgba(30,41,59,0.6); color: #E2E8F0; border-radius: 6px; padding: 5px 7px; cursor: pointer; font: inherit; }
+.glm-tray__item:hover { background: rgba(51,65,85,0.85); }
+.glm-tray__item.is-selected { box-shadow: 0 0 0 2px #FCD34D inset; }
+.glm-tray__ico { grid-row: 1 / span 2; font-size: 15px; color: #FCD34D; }
+.glm-tray__no { font-weight: 700; font-size: 12px; }
+.glm-tray__meta { grid-column: 2; font-size: 10.5px; color: #94A3B8; }
+
+/* SVG marker + route styling (applied via classes on SVG elements) */
+.glm-grid { stroke: #b8d3e6; stroke-width: 0.5; fill: none; }
+.glm-grid--major { stroke: #9fc0d8; stroke-width: 0.8; }
+.glm-route { fill: none; stroke: #0080bb; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.glm-route--tpl { stroke-dasharray: 6 4; }
+.glm-pin { cursor: pointer; }
+.glm-pin__hit { cursor: pointer; }
+/* verified facility = solid; approximate/centroid = hollow dashed; candidate = amber dashed */
+.glm-pin--verified { }
+.glm-pin--approx circle, .glm-pin--gateway circle { stroke-dasharray: 2.5 2; }
+.glm-pin--candidate circle { stroke-dasharray: 2.5 2; }
+
+/* Route Step Panel */
+.glm-steps { max-height: 46vh; overflow-y: auto; }
+.glm-step { border-left: 3px solid #CBD5E1; padding: 7px 10px; margin-bottom: 6px; background: #F8FAFC; border-radius: 0 6px 6px 0; cursor: pointer; }
+.glm-step:hover { background: #EFF6FF; }
+.glm-step.is-selected { border-left-color: #0080bb; background: #EFF6FF; }
+.glm-step--unresolved { border-left-color: #F59E0B; }
+.glm-step--virtual { border-left-color: #94A3B8; border-left-style: dashed; }
+.glm-step__seq { font-size: 11px; color: #94A3B8; font-weight: 700; }
+.glm-step__name { font-size: 13px; font-weight: 600; color: #1E293B; }
+.glm-step__meta { font-size: 11px; color: #64748B; margin-top: 2px; }
+.glm-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-left: 4px; }
+.glm-tag--fixed { background: #DCFCE7; color: #166534; }
+.glm-tag--candidate { background: #FEF3C7; color: #92400E; }
+.glm-tag--dynamic { background: #E0E7FF; color: #3730A3; }
+.glm-tag--virtual { background: #E2E8F0; color: #475569; }
+.glm-tag--unresolved { background: #FEE2E2; color: #991B1B; }
+.glm-tag--fallback { background: #FEF9C3; color: #854D0E; }
+
+/* Shipment Detail Drawer — right-side OVERLAY inspector (non-modal): overlays the globe, never re-flows
+   the page grid / compresses the globe (task G). Closes via X (≥40x40), Escape, or selecting another. */
+.glm-drawer { position: fixed; top: 0; right: 0; width: 400px; max-width: 92vw; height: 100vh; background: #fff; border-left: 1px solid #E2E8F0; box-shadow: -10px 0 28px rgba(0,0,0,0.18); z-index: 1200; transform: translateX(100%); transition: transform 0.22s ease; overflow-y: auto; overflow-x: hidden; }
+.glm-drawer.is-open { transform: translateX(0); }
+.glm-drawer__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px 10px 16px; border-bottom: 1px solid #E2E8F0; position: sticky; top: 0; background: #fff; z-index: 1; }
+.glm-drawer__title { font-size: 15px; font-weight: 700; color: #0F172A; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glm-drawer__close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 auto; border: 1px solid #E2E8F0; background: #F8FAFC; border-radius: 8px; font-size: 24px; line-height: 1; cursor: pointer; color: #475569; }
+.glm-drawer__close:hover { background: #EEF2F7; color: #0F172A; }
+.glm-drawer__close:focus-visible { outline: 2px solid #0080bb; outline-offset: 2px; }
+.glm-drawer__body { padding: 14px 16px; }
+.glm-kv { display: flex; flex-direction: column; gap: 1px; margin-bottom: 10px; }
+.glm-kv__k { font-size: 11px; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.03em; }
+.glm-kv__v { font-size: 13px; color: #1E293B; font-weight: 500; word-break: break-word; }
+
+/* Badges for accuracy / verification / coordinate source */
+.glm-badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.glm-badge--verified { background: #DCFCE7; color: #166534; }
+.glm-badge--pending { background: #FEF3C7; color: #92400E; }
+.glm-badge--approx { background: #FEF9C3; color: #854D0E; }
+.glm-badge--unresolved { background: #FEE2E2; color: #991B1B; }
+.glm-badge--neutral { background: #F1F5F9; color: #475569; }
+
+/* States */
+.glm-state { text-align: center; padding: 40px 20px; color: #64748B; }
+.glm-state__title { font-size: 15px; font-weight: 700; color: #334155; margin: 0 0 6px; }
+.glm-state__msg { font-size: 13px; max-width: 520px; margin: 0 auto; line-height: 1.6; }
+.glm-state--error .glm-state__title { color: #B91C1C; }
+.glm-spinner { width: 26px; height: 26px; border: 3px solid #E2E8F0; border-top-color: #0080bb; border-radius: 50%; margin: 0 auto 12px; animation: glm-spin 0.8s linear infinite; }
+@keyframes glm-spin { to { transform: rotate(360deg); } }
+.glm-warn { background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-bottom: 12px; line-height: 1.5; }
+.glm-muted { color: #94A3B8; }
+.glm-locrow { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid #F1F5F9; font-size: 12px; cursor: pointer; }
+.glm-locrow:hover { color: #0080bb; }
+.glm-locrow__name { font-weight: 600; color: #334155; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glm-locrow__meta { color: #94A3B8; flex: 0 0 auto; }
+
+/* ===== On-the-Way / Shipment Runtime (2026-07-24) ===== */
+.glm-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 12px; }
+.glm-topbar__title { font-size: 16px; font-weight: 700; color: #0F172A; }
+.glm-btn--ghost { background: transparent; border-color: transparent; color: #64748B; }
+.glm-btn--ghost:hover { background: #F1F5F9; color: #0F172A; }
+.glm-btn--small { padding: 4px 10px; font-size: 12px; }
+
+/* KPI strip (shipment-grain, clickable) */
+.glm-kpis { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; align-items: stretch; }
+.glm-kpi { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px 14px; background: #fff; cursor: pointer; min-width: 120px; border-top: 3px solid #CBD5E1; }
+.glm-kpi:hover { background: #F8FAFC; }
+.glm-kpi.is-active { box-shadow: 0 0 0 2px #0080bb inset; }
+.glm-kpi__value { font-size: 22px; font-weight: 700; color: #0F172A; line-height: 1.1; }
+.glm-kpi__label { font-size: 11.5px; color: #64748B; margin-top: 3px; }
+.glm-kpi--info { border-top-color: #3B82F6; } .glm-kpi--warn { border-top-color: #D97706; }
+.glm-kpi--good { border-top-color: #16A34A; } .glm-kpi--danger { border-top-color: #DC2626; }
+.glm-kpi--done { border-top-color: #64748B; }
+
+.glm-field-row { display: flex; gap: 8px; }
+.glm-field-row .glm-field { flex: 1; min-width: 0; }
+.glm-check--map { background: rgba(255,255,255,0.92); border: 1px solid #E2E8F0; border-radius: 6px; padding: 3px 8px; font-size: 11.5px; }
+
+/* Shipment list cards */
+.glm-shiplist { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.glm-ship { border: 1px solid #E2E8F0; border-left: 3px solid #CBD5E1; border-radius: 0 8px 8px 0; padding: 8px 11px; cursor: pointer; background: #fff; }
+.glm-ship:hover { background: #F8FAFC; }
+.glm-ship.is-selected { border-left-color: #0080bb; background: #EFF6FF; }
+.glm-ship__hd { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.glm-ship__no { font-weight: 700; font-size: 13px; color: #0F172A; }
+.glm-ship__route { font-size: 13px; color: #334155; margin-top: 2px; }
+.glm-ship__meta { font-size: 11.5px; color: #64748B; margin-top: 2px; }
+
+/* Map fallback banner + toggles */
+.glm-fallback-banner { position: absolute; top: 8px; left: 8px; right: 92px; z-index: 4; background: #FEF3C7; border: 1px solid #FCD34D; color: #92400E; border-radius: 6px; padding: 6px 10px; font-size: 11.5px; line-height: 1.4; }
+.glm-map-toggles { position: absolute; left: 12px; top: 12px; z-index: 4; display: flex; flex-direction: column; gap: 5px; }
+.glm-check--map { background: rgba(11,14,24,0.82); border: 1px solid rgba(148,163,184,0.35); color: #E2E8F0; border-radius: 6px; padding: 4px 9px; font-size: 11.5px; }
+
+/* Route segment styles */
+.glm-route { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.glm-route--done { stroke: #0080bb; }
+.glm-route--cur { stroke: #0080bb; stroke-width: 3.5; }
+.glm-route--upcoming { stroke: #94A3B8; stroke-dasharray: 6 4; }
+.glm-route--exc { stroke: #DC2626; stroke-width: 3; }
+
+/* Marker layers (SVG <g class="glm-mk glm-mk--X">) */
+.glm-mk { cursor: pointer; }
+.glm-mk circle, .glm-mk path, .glm-mk rect { stroke-width: 1.6; }
+.glm-mk--pos path { fill: #0080bb; stroke: #fff; }
+.glm-mk--pos .glm-mk__pulse { fill: rgba(0,128,187,0.28); animation: glm-pulse 1.7s ease-out infinite; }
+.glm-mk--done circle { fill: #16A34A; stroke: #fff; }
+.glm-mk--cur circle { fill: #0080bb; stroke: #fff; }
+.glm-mk--upcoming circle { fill: #fff; stroke: #94A3B8; stroke-dasharray: 2.5 2; }
+.glm-mk--origin circle { fill: #0F172A; stroke: #fff; }
+.glm-mk--dest circle { fill: #0080bb; stroke: #fff; }
+.glm-mk--customs rect { fill: #EDE9FE; stroke: #7c3aed; }
+.glm-mk--exc path { fill: #DC2626; stroke: #fff; }
+.glm-mk--ref circle { fill: #cbd5e1; stroke: #94a3b8; opacity: 0.55; }
+@keyframes glm-pulse { 0% { r: 5; opacity: 0.7; } 100% { r: 13; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .glm-mk--pos .glm-mk__pulse { animation: none; opacity: 0.25; } }
+
+/* legend dots per marker class */
+.glm-legend__dot.glm-mk--pos { background: #0080bb; } .glm-legend__dot.glm-mk--done { background: #16A34A; }
+.glm-legend__dot.glm-mk--cur { background: #0080bb; } .glm-legend__dot.glm-mk--upcoming { background: #94A3B8; }
+.glm-legend__dot.glm-mk--customs { background: #7c3aed; } .glm-legend__dot.glm-mk--exc { background: #DC2626; }
+.glm-legend__dot.glm-mk--endpoint { background: #64748B; } .glm-legend__dot.glm-mk--ref { background: #94A3B8; opacity: 0.7; }
+
+/* Compact collapsible runtime-data note + danger source banner (task H) */
+.glm-note { background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; border-radius: 6px; padding: 6px 10px; font-size: 11.5px; margin-bottom: 12px; }
+.glm-note > summary { cursor: pointer; font-weight: 700; }
+.glm-note > p { margin: 6px 0 0; line-height: 1.5; }
+.glm-warn--danger { border-color: #FCA5A5; background: #FEF2F2; color: #B91C1C; }
+@media (prefers-reduced-motion: reduce) { .glm-drawer { transition: none; } }
+
+/* Responsive: below 1100px filters become a collapsible band above a full-width globe (task C responsive) */
+@media (max-width: 1100px) {
+  .glm-side { flex-direction: row; flex-wrap: wrap; }
+  .glm-side .glm-panel { flex: 1 1 260px; }
+  .glm-mapwrap { min-height: 70vh; }
+}
+@media (max-width: 640px) {
+  .glm-drawer { width: 100vw; max-width: 100vw; }
+  .glm-tray { width: auto; left: 12px; right: 12px; max-width: none; }
+  .glm-side { flex-direction: column; }
+}
+
+/* Drawer sections + tags + badges */
+.glm-dsec { margin-bottom: 16px; }
+.glm-dsec h4 { font-size: 13px; font-weight: 700; color: #1E293B; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid #E2E8F0; }
+/* Identity-title-row close X (closes the Shipment Detail drawer) */
+.glm-dsec__h--close { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.glm-dsec__close { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid #E2E8F0; background: #F8FAFC; border-radius: 8px; font-size: 22px; line-height: 1; cursor: pointer; color: #475569; }
+.glm-dsec__close:hover { background: #EEF2F7; color: #0F172A; }
+.glm-dsec__close:focus-visible { outline: 2px solid #0080bb; outline-offset: 2px; }
+.glm-tag--completed { background: #DCFCE7; color: #166534; } .glm-tag--current { background: #DBEAFE; color: #1E40AF; }
+.glm-tag--planned { background: #F1F5F9; color: #475569; } .glm-tag--exception { background: #FEE2E2; color: #991B1B; }
+.glm-step--completed { border-left-color: #16A34A; } .glm-step--current { border-left-color: #0080bb; }
+.glm-step--exception { border-left-color: #DC2626; } .glm-step--planned { border-left-color: #CBD5E1; }
+.glm-badge--danger { background: #FEE2E2; color: #991B1B; } .glm-badge--good { background: #DCFCE7; color: #166534; }
+
+/* ===== Data-chain diagnostics panel + Global Reference restore (2026-07-24) ===== */
+.glm-table-wrap { overflow-x: auto; border: 1px solid #E2E8F0; border-radius: 8px; }
+.glm-table { border-collapse: collapse; }
+.glm-table th, .glm-table td { padding: 5px 9px; text-align: left; border-bottom: 1px solid #F1F5F9; }
+.glm-table thead th { background: #F8FAFC; color: #475569; font-weight: 700; white-space: nowrap; }
+.glm-table .glm-num { text-align: right; }
+.glm-num { text-align: right; }
+.glm-hint { font-size: 11.5px; color: #64748B; margin: 8px 0 0; line-height: 1.5; }
+.glm-topbar__admin { display: flex; gap: 8px; }

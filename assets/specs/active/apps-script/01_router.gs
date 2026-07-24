@@ -113,6 +113,13 @@ function doPost(e) {
       return handleUpdateShipment_(body);
     }
 
+    // Confirm Shipment & Dispatch — single orchestration command (2026-07-24): finalize Formal Shipment
+    // (in_transit) + snapshot shipment_routes + create initial shipment_event + deduct factory_stock,
+    // atomically (lock + staged-write + rollback) and idempotently. See 22_shipment_dispatch_handlers.gs.
+    if (action === 'confirmShipmentAndDispatch') {
+      return handleConfirmShipmentAndDispatch_(body);
+    }
+
     // Procurement Layer (Phase 1) — Request Order / Purchase Order.
     if (action === 'createRequestOrderDraft') {
       return handleCreateRequestOrderDraft_(body);
@@ -157,6 +164,15 @@ function doPost(e) {
 
     if (action === 'deleteFcSpecialEvent') {
       return handleDeleteFcSpecialEvent_(body);
+    }
+
+    // event_fc_id maintenance — read-only audit + one-time manual backfill (never auto-run).
+    if (action === 'auditFcSpecialEventIds') {
+      return handleAuditFcSpecialEventIds_(body);
+    }
+
+    if (action === 'backfillFcSpecialEventIds') {
+      return handleBackfillFcSpecialEventIds_(body);
     }
 
     if (action === 'upsertFcTargetRule') {
@@ -209,6 +225,11 @@ function doPost(e) {
       return handleImportCarrierRateCards_(body);
     }
 
+    // One-time manual carrier provisioning — 中外運 Sinotrans (CAR_SINOTRANS) CN→JP Air+Parcel. Idempotent.
+    if (action === 'seedSinotransCarrier') {
+      return handleSeedSinotransCarrier_(body);
+    }
+
     if (action === 'upsertSkuRegionalDetail') {
       return handleUpsertSkuRegionalDetail_(body);
     }
@@ -225,7 +246,11 @@ function doPost(e) {
       return handleUpsertTaxRateComponent_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, upsertTaxReferralRate, upsertTaxRateComponent' });
+    if (action === 'adjustFactoryInventory') {
+      return handleAdjustFactoryInventory_(body);
+    }
+
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, upsertTaxReferralRate, upsertTaxRateComponent' });
 
   } catch (err) {
     Logger.log(err.stack);

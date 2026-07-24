@@ -309,17 +309,42 @@ function normalizeFactoryStockRecord(raw) {
 
 function normalizeFactoryStockMovementRecord(raw) {
     var r = raw || {};
-    // Actual factory_stock_movements schema:
-    //   factory_stock_movement_id, sku, warehouse_id, movement_type, qty,
-    //   related_entity_type, related_entity_id, before_qty, after_qty, note, created_by, created_at
-    // Read those exact columns; older alias names kept only as defensive fallbacks.
+    // Canonical factory_stock_movements schema (SHIPMENT_CENTER_SPEC §, finalized):
+    //   factory_stock_movement_id, movement_date, sku, warehouse_id, movement_type, qty,
+    //   related_entity_type, related_entity_id, before_current_stock, after_current_stock,
+    //   before_reserved_stock, after_reserved_stock, note, created_by, created_at
+    // The manual Inventory Adjustment writer (handleAdjustFactoryInventory_) fills the 4-way
+    // before/after audit columns. Legacy before_qty/after_qty are kept only as defensive fallbacks.
+    var num = function(v) { return (v == null || v === '') ? null : (parseFloat(v)); };
+    var beforeCurrent = num(r.before_current_stock);
+    var afterCurrent = num(r.after_current_stock);
+    var beforeReserved = num(r.before_reserved_stock);
+    var afterReserved = num(r.after_reserved_stock);
+    // Derived available before/after (current - reserved) when the 4-way columns are present;
+    // otherwise fall back to legacy before_qty/after_qty (which already carried the tracked balance).
+    var availBefore = (beforeCurrent != null && beforeReserved != null)
+        ? (beforeCurrent - beforeReserved)
+        : (parseFloat(r.before_qty != null && r.before_qty !== '' ? r.before_qty : r.quantity_before) || 0);
+    var availAfter = (afterCurrent != null && afterReserved != null)
+        ? (afterCurrent - afterReserved)
+        : (parseFloat(r.after_qty != null && r.after_qty !== '' ? r.after_qty : r.quantity_after) || 0);
     return {
         movementId: String(r.factory_stock_movement_id || r.movement_id || '').trim(),
+        movementDate: String(r.movement_date || '').trim(),
         warehouseId: String(r.warehouse_id || '').trim(),
         factoryName: String(r.factory_name || '').trim(),
         sku: String(r.sku || '').trim(),
         movementType: String(r.movement_type || '').trim(),
         quantity: parseFloat(r.qty != null && r.qty !== '' ? r.qty : r.quantity) || 0,
+        // Available before/after (primary "before → after" for the movement log).
+        availableBefore: availBefore,
+        availableAfter: availAfter,
+        // Full 4-way audit (null when absent — never fabricated as 0).
+        beforeCurrentStock: beforeCurrent,
+        afterCurrentStock: afterCurrent,
+        beforeReservedStock: beforeReserved,
+        afterReservedStock: afterReserved,
+        // Legacy generic before/after kept for backward-compatible display.
         quantityBefore: parseFloat(r.before_qty != null && r.before_qty !== '' ? r.before_qty : r.quantity_before) || 0,
         quantityAfter: parseFloat(r.after_qty != null && r.after_qty !== '' ? r.after_qty : r.quantity_after) || 0,
         relatedEntityType: String(r.related_entity_type || r.reference_type || '').trim(),
@@ -633,7 +658,13 @@ function normalizeFcSpecialEventRecord(raw) {
     var endCol = String(r.event_end_date || r.end_date || '').trim();
     var parsed = (!startCol || !endCol) ? _fcParseEventPeriodDates(period) : { start: '', end: '' };
     return {
-        eventId: String(r.event_id || r.special_event_id || '').trim(),
+        // Canonical PK is `event_fc_id` (FC_SUMMARY_SPEC §3.1); fall back to legacy `event_id`/`special_event_id`.
+        eventFcId: String(r.event_fc_id || r.event_id || r.special_event_id || '').trim(),
+        eventId: String(r.event_fc_id || r.event_id || r.special_event_id || '').trim(),
+        // Campaign linkage (2026-07-22 additive) — lets the Growth-Rate assist read a base campaign's FC.
+        campaignId: String(r.campaign_id || '').trim(),
+        campaignSkuLineId: String(r.campaign_sku_line_id || '').trim(),
+        marketplaceId: String(r.marketplace_id || '').trim(),
         company: String(r.company || '').trim(),
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
@@ -1121,6 +1152,178 @@ function normalizeSupplierPriceListRecord(raw) {
     };
 }
 
+// ========================================
+// Global Logistics Map read models (READ-ONLY; additive 2026-07-23).
+// logistics_locations = physical-place master (canonical coordinates); shipment_route_templates +
+// _nodes = owner-maintained route reference; shipment_events = runtime evidence. All normalize to []
+// when the payload lacks the tab (missing-tab safe). No writer / no mutation is added here.
+// ========================================
+
+// Parse a coordinate cell to a Number ONLY when it is a real, in-range value; otherwise null.
+// Blank / non-numeric / out-of-range → null (never coerced to 0 — 0,0 is treated as not-a-coordinate).
+function _geoNum(v, kind) {
+    if (v === '' || v == null) return null;
+    var n = parseFloat(v);
+    if (!isFinite(n)) return null;
+    if (kind === 'lat' && (n < -90 || n > 90)) return null;
+    if (kind === 'lng' && (n < -180 || n > 180)) return null;
+    return n;
+}
+
+function normalizeLogisticsLocationRecord(raw) {
+    var r = raw || {};
+    return {
+        logisticsLocationId: String(r.logistics_location_id || '').trim(),
+        locationCode: String(r.location_code || '').trim(),
+        locationName: String(r.location_name || '').trim(),
+        localName: String(r.local_name || '').trim(),
+        locationType: String(r.location_type || '').trim(),
+        country: String(r.country || '').trim(),
+        subdivisionCode: String(r.subdivision_code || '').trim(),
+        region: String(r.region || '').trim(),
+        city: String(r.city || '').trim(),
+        district: String(r.district || '').trim(),
+        addressLine1: String(r.address_line_1 || '').trim(),
+        addressLine2: String(r.address_line_2 || '').trim(),
+        postalCode: String(r.postal_code || '').trim(),
+        latitude: _geoNum(r.latitude, 'lat'),
+        longitude: _geoNum(r.longitude, 'lng'),
+        coordinateAccuracy: String(r.coordinate_accuracy || '').trim(),
+        coordinateSourceType: String(r.coordinate_source_type || '').trim(),
+        coordinateSourceReference: String(r.coordinate_source_reference || '').trim(),
+        coordinateVerifiedAt: String(r.coordinate_verified_at || '').trim(),
+        coordinateVerifiedBy: String(r.coordinate_verified_by || '').trim(),
+        verificationStatus: String(r.verification_status || '').trim(),
+        recordStatus: String(r.record_status || r.coordinate_status || '').trim(),
+        unLocode: String(r.un_locode || '').trim(),
+        iataCode: String(r.iata_code || '').trim(),
+        icaoCode: String(r.icao_code || '').trim(),
+        portCode: String(r.port_code || '').trim(),
+        railTerminalCode: String(r.rail_terminal_code || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),
+        factoryId: String(r.factory_id || '').trim(),
+        timezone: String(r.timezone || '').trim(),
+        mapLabelPriority: parseInt(r.map_label_priority, 10) || 0,
+        isActive: _whBool(r.is_active),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+// shipment_route_templates — owner-maintained; READ-ONLY (never modified by this page).
+function normalizeShipmentRouteTemplateRecord(raw) {
+    var r = raw || {};
+    return {
+        routeTemplateId: String(r.route_template_id || '').trim(),
+        routeTemplateName: String(r.route_template_name || '').trim(),
+        routeVersion: String(r.route_version || '').trim(),
+        originCountry: String(r.origin_country || '').trim(),
+        originWarehouseId: String(r.origin_warehouse_id || '').trim(),
+        destinationCountry: String(r.destination_country || '').trim(),
+        destinationRegion: String(r.destination_region || '').trim(),
+        destinationWarehouseId: String(r.destination_warehouse_id || '').trim(),
+        carrierId: String(r.carrier_id || '').trim(),
+        transitType: String(r.transit_type || '').trim(),
+        lastMileDelivery: String(r.last_mile_delivery || '').trim(),
+        customsType: String(r.customs_type || '').trim(),
+        priority: parseInt(r.priority, 10) || 0,
+        isActive: _whBool(r.is_active),
+        effectiveFrom: String(r.effective_from || '').trim(),
+        effectiveTo: String(r.effective_to || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+// shipment_route_template_nodes — owner-maintained; READ-ONLY. logistics_location_id /
+// location_resolution_type / location_ref_* are read DEFENSIVELY (present only after the additive
+// Runtime-Mapping-Sync columns are applied; blank until then).
+function normalizeShipmentRouteTemplateNodeRecord(raw) {
+    var r = raw || {};
+    return {
+        routeTemplateNodeId: String(r.route_template_node_id || '').trim(),
+        routeTemplateId: String(r.route_template_id || '').trim(),
+        nodeSequence: parseInt(r.node_sequence, 10) || 0,
+        nodeType: String(r.node_type || '').trim(),
+        nodeCode: String(r.node_code || '').trim(),
+        nodeName: String(r.node_name || '').trim(),
+        country: String(r.country || '').trim(),
+        region: String(r.region || '').trim(),
+        city: String(r.city || '').trim(),
+        latitude: _geoNum(r.latitude, 'lat'),
+        longitude: _geoNum(r.longitude, 'lng'),
+        plannedEventType: String(r.planned_event_type || '').trim(),
+        defaultOffsetDays: (r.default_offset_days === '' || r.default_offset_days == null) ? null : (parseFloat(r.default_offset_days) || 0),
+        transportModeToNext: String(r.transport_mode_to_next || '').trim(),
+        isDestinationPlaceholder: _whBool(r.is_destination_placeholder),
+        isRequired: _whBool(r.is_required),
+        logisticsLocationId: String(r.logistics_location_id || '').trim(),
+        locationResolutionType: String(r.location_resolution_type || '').trim(),
+        locationRefType: String(r.location_ref_type || '').trim(),
+        locationRefId: String(r.location_ref_id || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
+// shipment_events — runtime evidence (append-only ledger). READ-ONLY here; spec-only runtime.
+function normalizeShipmentEventRecord(raw) {
+    var r = raw || {};
+    return {
+        shipmentEventId: String(r.shipment_event_id || '').trim(),
+        shipmentId: String(r.shipment_id || '').trim(),
+        shipmentRouteId: String(r.shipment_route_id || '').trim(),
+        eventSequence: parseInt(r.event_sequence, 10) || 0,
+        eventTime: String(r.event_time || '').trim(),
+        eventType: String(r.event_type || '').trim(),
+        eventStatus: String(r.event_status || '').trim(),
+        locationName: String(r.location_name || '').trim(),
+        country: String(r.country || '').trim(),
+        city: String(r.city || '').trim(),
+        latitude: _geoNum(r.latitude, 'lat'),
+        longitude: _geoNum(r.longitude, 'lng'),
+        source: String(r.source || '').trim(),
+        sourceEventId: String(r.source_event_id || '').trim(),
+        rawStatus: String(r.raw_status || '').trim(),
+        logisticsLocationId: String(r.logistics_location_id || '').trim(),
+        note: String(r.note || '').trim(),
+        createdAt: String(r.created_at || '').trim(),
+        raw: r
+    };
+}
+
+// shipment_routes (RUNTIME) — one row per Shipment Route NODE (canonical live schema; there is NO
+// separate route-header table and NO shipment_route_node_id — see the 2026-07-24 schema audit). Grouped
+// by shipment_id + ordered by sequence_no. READ-ONLY; spec-only runtime (no writer here).
+function normalizeShipmentRouteRecord(raw) {
+    var r = raw || {};
+    return {
+        shipmentRouteId: String(r.shipment_route_id || '').trim(),
+        shipmentId: String(r.shipment_id || '').trim(),
+        routeTemplateId: String(r.route_template_id || '').trim(),
+        routeTemplateNodeId: String(r.route_template_node_id || '').trim(),
+        sequenceNo: parseInt(r.sequence_no, 10) || 0,
+        nodeType: String(r.node_type || '').trim(),
+        nodeCode: String(r.node_code || '').trim(),
+        locationRefType: String(r.location_ref_type || '').trim(),
+        locationRefId: String(r.location_ref_id || '').trim(),
+        locationName: String(r.location_name || '').trim(),
+        country: String(r.country || '').trim(),
+        region: String(r.region || '').trim(),
+        city: String(r.city || '').trim(),
+        latitude: _geoNum(r.latitude, 'lat'),
+        longitude: _geoNum(r.longitude, 'lng'),
+        transportMode: String(r.transport_mode || '').trim(),
+        plannedEventType: String(r.planned_event_type || '').trim(),
+        plannedArrivalDate: String(r.planned_arrival_date || '').trim(),
+        plannedDepartureDate: String(r.planned_departure_date || '').trim(),
+        actualArrivalDate: String(r.actual_arrival_date || '').trim(),
+        actualDepartureDate: String(r.actual_departure_date || '').trim(),
+        status: String(r.status || '').trim(),
+        raw: r
+    };
+}
+
 function normalizeOperationDb(rawDb) {
     var db = rawDb || {};
     return {
@@ -1152,6 +1355,15 @@ function normalizeOperationDb(rawDb) {
         shippingPlanLines: (db.shipping_plan_lines || []).map(normalizeShippingPlanLineRecord).filter(function(r) { return r.shippingPlanLineId || r.shippingPlanId; }),
         shipments: (db.shipments || []).map(normalizeShipmentRecord).filter(function(r) { return r.shipmentId; }),
         shipmentLines: (db.shipment_lines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; }),
+        // Global Logistics Map read models (READ-ONLY; [] when the payload lacks the tab). Filters are
+        // LENIENT — keep any row carrying an identifying / name / coordinate field so a single mismatched
+        // PK column name cannot silently drop the whole dataset. window._opDbDiag records raw-vs-kept counts
+        // + the raw column keys so a full column-name mismatch is diagnosable from runtime evidence.
+        logisticsLocations: (db.logistics_locations || []).map(normalizeLogisticsLocationRecord).filter(function(r) { return r.logisticsLocationId || r.locationCode || r.locationName || r.warehouseId || r.factoryId || r.latitude !== null; }),
+        shipmentRouteTemplates: (db.shipment_route_templates || []).map(normalizeShipmentRouteTemplateRecord).filter(function(r) { return r.routeTemplateId || r.routeTemplateName || r.destinationCountry || r.originCountry; }),
+        shipmentRouteTemplateNodes: (db.shipment_route_template_nodes || []).map(normalizeShipmentRouteTemplateNodeRecord).filter(function(r) { return r.routeTemplateNodeId || r.routeTemplateId || r.nodeName || r.nodeCode || r.latitude !== null; }),
+        shipmentRoutes: (db.shipment_routes || []).map(normalizeShipmentRouteRecord).filter(function(r) { return r.shipmentRouteId || r.shipmentId || r.locationName || r.latitude !== null; }),
+        shipmentEvents: (db.shipment_events || []).map(normalizeShipmentEventRecord).filter(function(r) { return r.shipmentEventId || r.shipmentId || r.eventType; }),
         // Procurement Layer (Phase 1) — [] when the payload lacks the table (missing-header safe).
         requestOrders: (db.request_orders || []).map(normalizeRequestOrderRecord).filter(function(r) { return r.requestOrderId; }),
         requestOrderLines: (db.request_order_lines || []).map(normalizeRequestOrderLineRecord).filter(function(r) { return r.requestOrderLineId || r.requestOrderId; }),
@@ -1693,6 +1905,26 @@ function _buildMockFallbackDb() {
     };
 }
 
+// Scoped runtime diagnostics for the data chain (Global Logistics Map repair, 2026-07-24). Records, per
+// key table, the RAW row count from the Web App response vs the KEPT (normalized+filtered) count, plus the
+// raw column keys of the first row — so a break can be located from runtime evidence (raw 0 = getter/sheet/
+// router; raw N & kept 0 = normalizer/column-name filter; sampleKeys shows the real column names). Read via
+// window._opDbDiag or KM.DB.getDataDiagnostics(). No sensitive full payload is stored (keys + counts only).
+function _computeOpDbDiag(rawDb, normalized, sourceMode) {
+    var map = {
+        logistics_locations: 'logisticsLocations', shipment_route_templates: 'shipmentRouteTemplates',
+        shipment_route_template_nodes: 'shipmentRouteTemplateNodes', shipment_routes: 'shipmentRoutes',
+        shipment_events: 'shipmentEvents', shipments: 'shipments', warehouses: 'warehouses'
+    };
+    var diag = { sourceMode: sourceMode || 'unknown', at: new Date().toISOString(), tables: {} };
+    Object.keys(map).forEach(function (t) {
+        var raw = (rawDb && rawDb[t]) || [];
+        var kept = (normalized && normalized[map[t]]) || [];
+        diag.tables[t] = { raw: raw.length, kept: kept.length, sampleKeys: raw.length ? Object.keys(raw[0] || {}) : [] };
+    });
+    return diag;
+}
+
 async function loadOperationDb(options) {
     var force = (options && options.force) || false;
     if (!force && window._opDbCache && window._opDbCache._sourceMode === 'google-sheet') {
@@ -1703,6 +1935,7 @@ async function loadOperationDb(options) {
             var rawDb = await getOperationDbFromSheet();
             var normalized = normalizeOperationDb(rawDb);
             normalized._sourceMode = 'google-sheet';
+            try { window._opDbDiag = _computeOpDbDiag(rawDb, normalized, 'google-sheet'); } catch (dErr) {}
             window._opDbCache = normalized;
             OperationDbState.data = normalized;
             OperationDbState.dataSourceMode = 'google-sheet';
@@ -1725,7 +1958,10 @@ async function loadOperationDb(options) {
             }
             console.warn('[OP DB] Google Sheet API failed:', e.message, '- falling back to mock data.');
             window._opDbCache = _buildMockFallbackDb();
+            window._opDbCache._sourceMode = 'mock';   // explicit: NEVER mistaken for production google-sheet data
             window._opDbCache._apiFailed = true;
+            window._opDbCache._apiError = e.message;
+            window._opDbDiag = { sourceMode: 'mock', at: new Date().toISOString(), apiError: e.message, tables: {} };
             OperationDbState.dataSourceMode = 'mock';
             OperationDbState.lastLoadedAt = new Date().toISOString();
             return window._opDbCache;
@@ -1890,6 +2126,34 @@ window.KM.DB.getShipments = function() {
 window.KM.DB.getShipmentLines = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.shipmentLines || [];
+};
+
+// Global Logistics Map getters (READ-ONLY). Return [] when the cache is unloaded or the payload
+// does not include the tab (e.g. logistics_locations not yet created, or Apps Script not redeployed).
+window.KM.DB.getLogisticsLocations = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.logisticsLocations || [];
+};
+window.KM.DB.getShipmentRouteTemplates = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shipmentRouteTemplates || [];
+};
+window.KM.DB.getShipmentRouteTemplateNodes = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shipmentRouteTemplateNodes || [];
+};
+window.KM.DB.getShipmentRoutes = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shipmentRoutes || [];
+};
+// Runtime data-chain diagnostics (raw vs kept counts + sample column keys per key table + source mode).
+// Used by the Global Logistics Map debug panel to locate a break from runtime evidence.
+window.KM.DB.getDataDiagnostics = function() { return window._opDbDiag || null; };
+// Current data source: 'google-sheet' (production) | 'mock' (API failed/unconfigured fallback) | 'not-loaded'.
+window.KM.DB.getDataSourceMode = function() { return window._opDbCache ? (window._opDbCache._sourceMode || 'mock') : 'not-loaded'; };
+window.KM.DB.getShipmentEvents = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.shipmentEvents || [];
 };
 
 // Procurement Layer (Phase 1) getters. Return [] when the cache is unloaded or the payload
@@ -2176,6 +2440,34 @@ window.KM.DB.upsertTaxRateComponent = async function(payload) {
     if (!json.success) throw new Error(json.error || 'Upsert tax rate component failed');
     await loadOperationDb({ force: true });
     return json.data;
+};
+
+// Confirm Shipment & Dispatch — the single orchestration command (2026-07-24). Finalizes the Formal
+// Shipment (in_transit) + snapshots shipment_routes + creates the initial shipment_event + deducts
+// factory_stock, atomically + idempotently on the backend. Payload (snake_case): { shipment_id (required),
+// route_template_id? (explicit override), actor? }. Returns the FULL backend response { success, data?,
+// error?, stage?, already_confirmed? } WITHOUT throwing, so the UI can show the failed stage + shipment_id
+// and preserve input. Reloads the DB cache ONLY on success so On-the-Way immediately sees the new data.
+window.KM.DB.confirmShipmentAndDispatch = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, confirmShipmentAndDispatch skipped');
+        return { success: false, error: 'API not configured', stage: 'config' };
+    }
+    var json;
+    try {
+        var resp = await fetch(OP_DB_API_BASE_URL, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(Object.assign({ action: 'confirmShipmentAndDispatch' }, payload))
+        });
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, stage: 'network' };
+        json = await resp.json();
+    } catch (e) {
+        return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' };
+    }
+    if (json && json.success) { await loadOperationDb({ force: true }); }   // refresh cache so On-the-Way sees it
+    return json;
 };
 
 // Backfill / migration: scan ALL existing marketplace_skus rows and create/update sku_regional_details.
@@ -2939,6 +3231,29 @@ window.KM.DB.adjustOverseasInventory = async function(payload) {
         cache: 'no-store',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(Object.assign({ action: 'adjustOverseasInventory' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (json && json.success) {
+        await loadOperationDb({ force: true });
+    }
+    return json;
+};
+
+// Factory Inventory Adjustment (2026-07-23). Writes factory_stock (fac_current_stock only) + one
+// factory_stock_movements row atomically on the backend. Frontend sends the NEW available only;
+// the backend computes qty and generates all ids/timestamps. On success the DB cache is reloaded
+// so the snapshot + movement log re-render from the real tables (never a front-end-only patch).
+window.KM.DB.adjustFactoryInventory = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, adjustFactoryInventory skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'adjustFactoryInventory' }, payload))
     });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();

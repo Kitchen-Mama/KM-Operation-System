@@ -50,32 +50,34 @@ function _roFmt(v) {
 
 // ---- Runtime month helper (Mapping v2) ----
 var RO_MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-// Next N calendar months after the current month → [{ key, year, idx, label }]. Handles year wrap.
-function _roNextMonths(n) {
-  var d = new Date();
-  var y = d.getFullYear(), m = d.getMonth(); // 0-based current month
-  var out = [];
-  for (var i = 1; i <= n; i++) {
-    var mm = m + i;
+// Current wall-clock date in Asia/Taipei (canonical timezone for month windows — spec Shared rule F.1).
+// Falls back to browser-local time only if Intl/timeZone is unavailable.
+function _roTpeNow() {
+  try {
+    var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
+    var y, m, d;
+    parts.forEach(function(p) { if (p.type === 'year') y = parseInt(p.value, 10); else if (p.type === 'month') m = parseInt(p.value, 10); else if (p.type === 'day') d = parseInt(p.value, 10); });
+    if (y && m) return { year: y, monthIdx: m - 1, day: d || 1 };
+  } catch (e) { /* fall through */ }
+  var dd = new Date();
+  return { year: dd.getFullYear(), monthIdx: dd.getMonth(), day: dd.getDate() };
+}
+// `count` consecutive months starting `startOffset` months from the current Asia/Taipei month
+// (0 = current month, 1 = next month, -1 = last month). Handles year wrap. → [{ key, year, idx, label }].
+function _roMonthWindow(startOffset, count) {
+  var now = _roTpeNow(), y = now.year, m = now.monthIdx, out = [];
+  for (var i = 0; i < count; i++) {
+    var mm = m + startOffset + i;
     var yy = y + Math.floor(mm / 12);
     var idx = ((mm % 12) + 12) % 12;
     out.push({ key: RO_MONTH_KEYS[idx], year: yy, idx: idx, label: (idx + 1) + '/' + yy });
   }
   return out;
 }
-// Past N calendar months before (and including offset) the current month → [{ key, year, idx, label }].
-function _roPastMonths(n) {
-  var d = new Date();
-  var y = d.getFullYear(), m = d.getMonth();
-  var out = [];
-  for (var i = n; i >= 1; i--) {
-    var mm = m - i;
-    var yy = y + Math.floor(mm / 12);
-    var idx = ((mm % 12) + 12) % 12;
-    out.push({ key: RO_MONTH_KEYS[idx], year: yy, idx: idx, label: (idx + 1) + '/' + yy });
-  }
-  return out;
-}
+// Next N calendar months AFTER the current month (N+1..N+N) → [{ key, year, idx, label }].
+function _roNextMonths(n) { return _roMonthWindow(1, n); }
+// Past N calendar months BEFORE the current month → [{ key, year, idx, label }].
+function _roPastMonths(n) { return _roMonthWindow(-n, n); }
 function _roUpper(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
 function _roLower(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
 // Composite row identity — sku + company + country + marketplace (company may be '' → still unique per
@@ -83,13 +85,156 @@ function _roLower(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
 function _roRowKey(item) {
   return [item.sku || '', item.company != null ? item.company : '', item.country || '', item.marketplace || ''].join('|');
 }
+// Stable DOM id for a row's second-layer panel (aria-controls target). Row keys carry '|' and free text,
+// so sanitize to id-safe characters.
+function _roPanelId(rowKey) { return 'ro-expand-' + String(rowKey == null ? '' : rowKey).replace(/[^A-Za-z0-9_-]/g, '-'); }
 // Escape a value for embedding inside a single-quoted JS string in an inline onclick handler.
 function _roJs(v) { return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 function _roIsActiveFlag(v) { var s = _roLower(v); return s === 'active' || s === 'true' || s === 'yes' || s === '1'; }
 
+// ===== Recommendation display helpers (2026-07-24) — DISPLAY ONLY. These do NOT compute any canonical
+// forecast/T1–T3/FC-Share/Recommended value; they format carton breakdowns and READ the per-tier gap the
+// canonical engine (KM.utils.forecastEngine) already produced. No new formula.
+// NOTE (2026-07-24 cleanup): Aging / Day-of-Supply display was REMOVED from Request Order — that concern
+// lives on the Inventory Replenishment / 貨物庫存表 page (its canonical helpers). Request Order no longer
+// renders DOS/90+/180+ nor fetches amazon_inventory_health_snapshot for UI. =====
+
+// Carton breakdown for a manual Order Qty. isPartial = not an exact carton multiple (non-blocking).
+// isValid=false only for negative / non-numeric (blocking). box=0 ⇒ carton unknown (treat as valid, no split).
+function _roCartonBreak(orderQty, box) {
+  var q = (orderQty === '' || orderQty == null) ? NaN : Number(orderQty);
+  var b = parseFloat(box) || 0;
+  if (isNaN(q)) return { isNumeric: false, isValid: false, isPartial: false, full: 0, loose: 0 };
+  if (q < 0) return { isNumeric: true, isValid: false, isPartial: false, full: 0, loose: 0, qty: q };
+  if (b <= 0) return { isNumeric: true, isValid: true, isPartial: false, full: null, loose: null, qty: q, boxUnknown: true };
+  var full = Math.floor(q / b), loose = q - full * b;
+  return { isNumeric: true, isValid: true, isPartial: loose !== 0, full: full, loose: loose, qty: q, box: b };
+}
+// Per-tier canonical gap (Recommended Qty) — reads the engine's per-tier balance; NEVER sums tiers.
+// idx 0/1/2 = T1/T2/T3. Returns null when the canonical calc is absent (live-DB placeholder rows) → "--".
+function _roTierBalance(item, idx) {
+  var arr = [item.shortageM1, item.shortageM2, item.shortageM3];
+  var s = arr[idx];
+  return (typeof s === 'number' && isFinite(s)) ? s : null;
+}
+function _roTierRecommended(item, idx) { var s = _roTierBalance(item, idx); if (s == null) return null; return s < 0 ? Math.abs(s) : 0; }
+// Suggested Qty = Recommended Qty rounded UP to a full carton multiple (canonical rounding; unchanged).
+function _roTierSuggested(item, idx) {
+  var rec = _roTierRecommended(item, idx); if (rec == null) return null;
+  var box = parseFloat(item.boxSize) || 0;
+  return (box > 0 && rec > 0) ? Math.ceil(rec / box) * box : rec;
+}
+// Effective Order Qty = explicit user edit if present, else default to Suggested Qty (G/J.4).
+function _roEffectiveOrderQty(item, idx, edit) {
+  if (edit && edit.orderQty != null && edit.orderQty !== '') return Number(edit.orderQty);
+  var sug = _roTierSuggested(item, idx);
+  return (sug == null) ? null : sug;
+}
+// First Shortage Tier = the FIRST tier whose projected balance is negative (Risk driver). null = none.
+function _roFirstShortageTier(item) {
+  for (var i = 0; i < 3; i++) { var s = _roTierBalance(item, i); if (s != null && s < 0) return i; }
+  return null;
+}
+var RO_TIER_LABELS = ['T1', 'T2', 'T3'];
+
 // Open PO statuses that still contribute to Ongoing Orders (Part 5). Excludes draft / completed /
 // closure / cancelled / (fully) shipped. `confirmed` / `ready_to_ship` are legacy-open.
 var RO_OPEN_PO_STATUS = { issued: 1, in_production: 1, partial_completed: 1, partial_shipped: 1, ready_to_ship: 1, confirmed: 1 };
+
+// ---- Shared second-layer data helpers (2026-07-23 data-connection) ----
+// Internal YYYY-MM key from a month descriptor {year, idx(0-based)}.
+function _roYmKey(mo) { return mo.year + '-' + String(mo.idx + 1).padStart(2, '0'); }
+// Parse a date string to a UTC Date (handles YYYY-MM-DD / YYYY/MM/DD and any Date-parseable string). null if invalid.
+function _roParseDate(s) {
+  s = String(s == null ? '' : s).trim(); if (!s) return null;
+  var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)));
+  var t = Date.parse(s); return isNaN(t) ? null : new Date(t);
+}
+// Resolve the full Request Order row (incl. company/series/category) for a scope triple.
+function _roFindItem(sku, country, marketplace) {
+  var rows = (typeof requestOrderState !== 'undefined' && requestOrderState.data) || [];
+  return rows.filter(function(it) {
+    return _roUpper(it.sku) === _roUpper(sku) && _roUpper(it.country || '') === _roUpper(country || '') && _roLower(it.marketplace || '') === _roLower(marketplace || '');
+  })[0] || { sku: sku, country: country || '', marketplace: marketplace || '', company: '', series: '', category: '' };
+}
+
+// Special-event scope + status filter (blank status → treated as ACTIVE, since the live fc_special_events
+// header may not yet carry `status` — FC_SUMMARY_SPEC §pending). Canonical: SUPPLY_PLANNING_CALCULATION_RULES.
+var _RO_EVT_DEAD_SET = { inactive: 1, deleted: 1, archived: 1, cancelled: 1, void: 1 };
+function _roEventScopeMatch(e, scope) {
+  var skuMatch = _roUpper(e.sku) === _roUpper(scope.sku) || (e.scopeType === 'sku' && _roUpper(e.scopeId) === _roUpper(scope.sku));
+  if (!skuMatch) return false;
+  if (e.company && scope.company && _roUpper(e.company) !== _roUpper(scope.company)) return false;
+  if (e.country && scope.country && _roUpper(e.country) !== _roUpper(scope.country)) return false;
+  if (e.marketplace && scope.marketplace && _roLower(e.marketplace) !== _roLower(scope.marketplace)) return false;
+  var st = _roLower(e.status);
+  if (st && _RO_EVT_DEAD_SET[st]) return false;
+  return true;
+}
+function _roScopedActiveEvents(scope) {
+  var DB = (window.KM && window.KM.DB) || {};
+  return ((DB.getFcSpecialEvents && DB.getFcSpecialEvents()) || []).filter(function(e) { return _roEventScopeMatch(e, scope); });
+}
+// Canonical: Event Preparation Date = Event Start Date − 30 calendar days; the event is bucketed into the
+// month CONTAINING the preparation date (SUPPLY_PLANNING_CALCULATION_RULES §canonical). null if no start date.
+function _roEventPrepMonth(e) {
+  var dt = _roParseDate(e.eventStartDate);
+  if (!dt) return null;
+  var prep = new Date(dt.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { year: prep.getUTCFullYear(), idx: prep.getUTCMonth(), prepDate: prep.toISOString().slice(0, 10) };
+}
+function _roEventsForPrepMonth(events, mo) {
+  var list = [];
+  events.forEach(function(e) {
+    var pm = _roEventPrepMonth(e); if (!pm || pm.year !== mo.year || pm.idx !== mo.idx) return;
+    list.push({ name: String(e.event || e.eventName || 'Event'), qty: (parseFloat(e.fcQty) || 0), start: e.eventStartDate || '', prep: pm.prepDate, status: e.status || '', source: (e.raw && e.raw.source) || '' });
+  });
+  list.sort(function(a, b) { return String(a.name).localeCompare(String(b.name)); });
+  return list;
+}
+// First-layer 3-month total = Σ FC Qty of scoped active events whose PREPARATION-DATE month is in N+1..N+3.
+// Special events are ALWAYS 100% (never multiplied by Target%), each event counted once. Returns null when
+// the SKU has no scoped events at all, 0 when it has events but none fall in the window.
+function _roSpecialEventsTotal(scope) {
+  var events = _roScopedActiveEvents(scope);
+  if (!events.length) return null;
+  var keys = {}; _roNextMonths(3).forEach(function(mo) { keys[_roYmKey(mo)] = 1; });
+  var total = 0;
+  events.forEach(function(e) {
+    var pm = _roEventPrepMonth(e); if (!pm) return;
+    if (!keys[pm.year + '-' + String(pm.idx + 1).padStart(2, '0')]) return;
+    total += (parseFloat(e.fcQty) || 0);
+  });
+  return total;
+}
+
+// Factory Orders / In-Production from PO header ⋈ line. Bucket by LINE expected_completion_date, else
+// HEADER expected_completion_date (never created_at/order_date). Exclude cancelled/closure headers.
+// Returns { 'YYYY-MM': { scheduled, completed } } where scheduled = MAX(ordered_qty − completed_qty, 0)
+// (production still outstanding — NOT the stored remaining_qty which is available-to-ship). Each line once.
+function _roFactoryOrdersBySku(sku) {
+  var DB = (window.KM && window.KM.DB) || {};
+  var lines = (DB.getPurchaseOrderLines && DB.getPurchaseOrderLines()) || [];
+  var pos = (DB.getPurchaseOrders && DB.getPurchaseOrders()) || [];
+  var poById = {}; pos.forEach(function(p) { poById[p.purchaseOrderId] = p; });
+  var byKey = {};
+  lines.forEach(function(l) {
+    if (_roUpper(l.sku) !== _roUpper(sku)) return;
+    var po = poById[l.purchaseOrderId];
+    var st = po ? _roLower(po.status) : '';
+    if (st === 'cancelled' || st === 'closure' || st === 'closed') return; // not valid future supply
+    var dstr = l.expectedCompletionDate || (po ? po.expectedCompletionDate : '') || '';
+    var dt = _roParseDate(dstr);
+    if (!dt) return; // no completion date → cannot bucket to a month
+    var key = dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0');
+    var ordered = parseFloat(l.orderedQty) || 0, completed = parseFloat(l.completedQty) || 0;
+    if (!byKey[key]) byKey[key] = { scheduled: 0, completed: 0 };
+    byKey[key].scheduled += Math.max(0, ordered - completed);
+    byKey[key].completed += completed;
+  });
+  return byKey;
+}
 
 // Build Request Order rows from NORMALIZED DB data (Mapping v2). Row identity = SKU + Country +
 // Marketplace (marketplace_skus). Category / Series ← sku_details. REAL source mapping for:
@@ -164,8 +309,12 @@ function _buildRequestOrderRowsFromDb() {
     if (!rows || !rows.length) return null;
     var best = null;
     rows.forEach(function(r) {
-      if (r.country && country && _roUpper(r.country) !== _roUpper(country)) return;
-      if (r.marketplace && marketplace && _roLower(r.marketplace) !== _roLower(marketplace)) return;
+      // Strict site scoping (E): when a country/marketplace is requested, a snapshot row must actually
+      // match it. A blank snapshot country/marketplace must NOT wildcard-match — that was the mechanism
+      // by which a US (or blank) snapshot bled into a CA/Amazon row. Missing → no match → "--", never a
+      // wrong-site number.
+      if (country && _roUpper(r.country || '') !== _roUpper(country)) return;
+      if (marketplace && _roLower(r.marketplace || '') !== _roLower(marketplace)) return;
       if (!best || String(r.snapshotDate) > String(best.snapshotDate)) best = r;
     });
     if (!best) return null;
@@ -178,9 +327,13 @@ function _buildRequestOrderRowsFromDb() {
       if (_roUpper(r.sku) !== _roUpper(sku)) return;
       var wh = whById[r.warehouseId];
       if (wh) {
-        if (country && wh.country && _roUpper(wh.country) !== _roUpper(country)) return;
+        // Strict country scoping (E): a requested country requires a real warehouse-country match; a
+        // blank warehouse country must not wildcard into another site.
+        if (country && _roUpper(wh.country || '') !== _roUpper(country)) return;
         var isFactory = _roLower((wh.raw && wh.raw.is_factory_warehouse) || '');
         if (isFactory === 'true' || isFactory === '1' || isFactory === 'yes') return;
+      } else if (country) {
+        return; // no warehouse record → cannot confirm the country → do not leak into this site
       }
       total += (r.availableStock || 0); matched = true;
     });
@@ -218,12 +371,15 @@ function _buildRequestOrderRowsFromDb() {
       sku: m.sku,
       country: m.country || '',
       marketplace: m.marketplace || '',
+      // Canonical site identity — marketplace_id (C). Filtering/scoping keys on this, never the display
+      // string "Amazon" (which collides across US/CA). Falls back to '' only for demo rows (no master).
+      marketplaceId: m.marketplaceId || '',
       category: d.category || '',
       series: d.series || '',
       company: m.company || '',
       // --- Mapped from real DB sources (null → "--" when the source is missing) ---
       basicFcT3: basicT3(m.sku, m.country, m.marketplace),          // fc_regular_forecast next 3 months
-      specialEventsFc: null,                                        // fc_special_events (2nd-layer only for v2)
+      specialEventsFc: _roSpecialEventsTotal({ sku: m.sku, company: m.company || '', country: m.country || '', marketplace: m.marketplace || '' }), // fc_special_events prep-month Σ (N+1..N+3)
       siteStock: siteStock(m.sku, m.country, m.marketplace),        // amazon_inventory_snapshot
       thirdPartyStock: thirdParty(m.sku, m.country),                // overseas_inventory_snapshot
       factoryStock: factoryBySku[_roUpper(m.sku)] || 0,             // factory_stock (REAL)
@@ -265,17 +421,93 @@ function _roRenderAll() {
   _populateRequestOrderFilterOptions();
   _populateRequestOrderCategoryTabs();
   renderRequestOrderTable();
+  _roBindRowExpandDelegation();   // whole-row expand — bound once per body container (survives re-render)
   syncRequestOrderScroll();
   initRequestOrderDropdowns();
   _roUpdateConfirmStatus();
 }
 
-// Rebuild Country / Marketplace dropdown options from the live data (distinct values). When there
-// is no data the existing (demo) options are left untouched. Risk options stay static (placeholder).
+// Canonical marketplace key for a row: marketplace_id when present (live), else the display string (demo).
+function _roMarketplaceKey(item) {
+  return (item && item.marketplaceId != null && item.marketplaceId !== '') ? String(item.marketplaceId) : String(item.marketplace || '');
+}
+// Active marketplaces from the master (`marketplaces`). Blank/active/enabled statuses count as active.
+function _roActiveMarketplaces() {
+  var DB = (window.KM && window.KM.DB) || {};
+  return ((DB.getMarketplaces && DB.getMarketplaces()) || []).filter(function(m) {
+    if (!m.marketplaceId) return false;
+    var st = _roLower(m.status);
+    return st === '' || st === 'active' || st === 'true' || st === 'enabled' || st === '1' || st === 'yes';
+  });
+}
+
+// Rebuild Country / Marketplace dropdown options from the live data. When there is no data the existing
+// (demo) options are left untouched. Risk options stay static (placeholder).
 function _populateRequestOrderFilterOptions() {
   if (!(requestOrderState.data && requestOrderState.data.length)) return;
   _roRebuildDropdown('country', _roDistinct(requestOrderState.data.map(function(i) { return i.country; })));
-  _roRebuildDropdown('marketplace', _roDistinct(requestOrderState.data.map(function(i) { return i.marketplace; })));
+  _roRebuildMarketplaceDropdown();
+}
+
+// Marketplace dropdown (B3 / Canonical Decision 2): the visible option is the CHANNEL display name only
+// (`marketplace_display_name`, e.g. "Amazon" / "KM Walmart") — NO country suffix. Country already scopes
+// geography, so one visible "Amazon" option may stand for ONE OR MORE `marketplace_id`s in the active
+// Country scope (e.g. US Amazon under KM and ResUS). The option VALUE is the display-group key; selection
+// resolves back to the underlying marketplace_id SET (`requestOrderState.marketplaceGroups`). Identity /
+// filter / payload always use marketplace_id — the display string is never a relational key. Falls back
+// to the legacy distinct-string dropdown for demo rows that carry no marketplace_id / no master.
+function _roRebuildMarketplaceDropdown() {
+  var root = document.querySelector('.page-request-order');
+  if (!root) return;
+  var panel = root.querySelector('.ro-dropdown-panel[data-filter="marketplace"]');
+  if (!panel) return;
+
+  var idsInData = {};
+  (requestOrderState.data || []).forEach(function(i) { if (i.marketplaceId) idsInData[String(i.marketplaceId)] = 1; });
+  var masters = _roActiveMarketplaces().filter(function(m) { return idsInData[String(m.marketplaceId)]; });
+
+  // Demo / no-master fallback → legacy distinct display-string dropdown (still filters by string key).
+  if (!masters.length) {
+    requestOrderState.marketplaceGroups = {};
+    _roRebuildDropdown('marketplace', _roDistinct(requestOrderState.data.map(function(i) { return i.marketplace; })));
+    return;
+  }
+
+  var cf = requestOrderState.filters.country || [];
+  var scoped = masters.filter(function(m) { return !cf.length || cf.indexOf(m.country) !== -1; });
+
+  // Group the scoped marketplaces by display name → the set of underlying marketplace_ids (across
+  // country/company). Company stays derivable from each master record; we keep ALL ids per group (never
+  // collapse to the first match, never drop a same-named site under a different Company).
+  var groups = {};   // displayName → [marketplace_id, ...]
+  scoped.forEach(function(m) {
+    var name = String(m.marketplaceDisplayName || m.marketplace || '').trim();
+    if (!name) return;
+    (groups[name] = groups[name] || []).push(String(m.marketplaceId));
+  });
+  requestOrderState.marketplaceGroups = groups;
+
+  var names = Object.keys(groups).sort(function(a, b) { return a.localeCompare(b); });
+  panel.innerHTML = '<label class="ro-checkbox-item"><input type="checkbox" value="" checked onchange="toggleRequestOrderAll(this, \'marketplace\')"> <strong>All</strong></label>' +
+    names.map(function(name) {
+      return '<label class="ro-checkbox-item"><input type="checkbox" value="' + _roEsc(name) + '" checked onchange="updateRequestOrderFilter(\'marketplace\')"> ' + _roEsc(name) + '</label>';
+    }).join('');
+
+  // Prune any previously-selected display group that no longer exists under the current Country scope.
+  requestOrderState.filters.marketplace = (requestOrderState.filters.marketplace || []).filter(function(name) { return groups[name]; });
+  var text = root.querySelector('.ro-dropdown-trigger[data-filter="marketplace"] .ro-dropdown-text');
+  if (text) text.textContent = requestOrderState.filters.marketplace.length ? (requestOrderState.filters.marketplace.length + ' selected') : 'All';
+}
+
+// Resolve the selected marketplace display groups → a Set of underlying marketplace_ids (live path).
+// Returns null when there are no groups (demo path — caller falls back to display-string matching).
+function _roSelectedMarketplaceIdSet() {
+  var groups = requestOrderState.marketplaceGroups;
+  if (!groups || !Object.keys(groups).length) return null;
+  var sel = requestOrderState.filters.marketplace || [];
+  var set = {};
+  sel.forEach(function(name) { (groups[name] || []).forEach(function(id) { set[String(id)] = 1; }); });
+  return set;
 }
 function _roRebuildDropdown(filterType, vals) {
   var root = document.querySelector('.page-request-order');
@@ -558,14 +790,45 @@ function updateRequestOrderFilter(filterType) {
     }
     
     allCheckbox.checked = checkboxes.length === totalCheckboxes.length;
-    
+
     const text = trigger.querySelector('.ro-dropdown-text');
     text.textContent = checkboxes.length === totalCheckboxes.length ? 'All' : `${checkboxes.length} selected`;
+  }
+
+  // Country → Marketplace dependency (E/E16): when the Country selection changes, rebuild the
+  // marketplace options scoped to the new country and drop any now-incompatible marketplace_id
+  // selection (no US/first-match fallback). _roRebuildMarketplaceDropdown prunes invalid selections.
+  if (filterType === 'country') {
+    _roRebuildMarketplaceDropdown();
   }
 
   requestOrderState.page = 1;   // filter change → back to page 1 (Part 1)
   renderRequestOrderTable();
 }
+
+// Clear All filters: reset filter state + Category/Series dependency + dropdowns + Show mode + SKU
+// input, then re-render the FULL dataset. Does NOT re-fetch DB tabs (pure client re-filter).
+function clearRequestOrderFilters() {
+  const root = document.querySelector('.page-request-order') || document;
+  requestOrderState.filters = { country: [], marketplace: [], risk: [], sku: '' };
+  requestOrderState.categoryTab = 'All';
+  requestOrderState.showMode = 'all';
+  requestOrderState.page = 1;
+  ['country', 'marketplace', 'risk'].forEach(function (ft) {
+    const panel = root.querySelector(`.ro-dropdown-panel[data-filter="${ft}"]`);
+    if (panel) panel.querySelectorAll('input[type="checkbox"]').forEach(function (cb) { cb.checked = true; });
+    const text = root.querySelector(`.ro-dropdown-trigger[data-filter="${ft}"] .ro-dropdown-text`);
+    if (text) text.textContent = 'All';
+  });
+  const skuInput = root.querySelector('.ro-filter-sku'); if (skuInput) skuInput.value = '';
+  const showSel = document.getElementById('ro-show-mode'); if (showSel) showSel.value = 'all';
+  const tabs = document.getElementById('ro-category-tabs');
+  if (tabs) tabs.querySelectorAll('.ro-tab').forEach(function (t) {
+    t.classList.toggle('ro-tab--active', t.getAttribute('data-category') === 'All');
+  });
+  renderRequestOrderTable();
+}
+window.clearRequestOrderFilters = clearRequestOrderFilters;
 
 // 靜態種子數據生成器
 function seededRandom(seed) {
@@ -672,6 +935,7 @@ function generateMockRequestOrderData() {
     const fcNextMonth = fcItem.months[(currentMonth + 1) % 12] || rand(500, 1500, 8);
     const fcMonth2 = fcItem.months[(currentMonth + 2) % 12] || rand(600, 1600, 9);
     const fcMonth3 = fcItem.months[(currentMonth + 3) % 12] || rand(700, 1700, 10);
+    const fcMonth4 = fcItem.months[(currentMonth + 4) % 12] || rand(700, 1700, 19); // Month +4 (T4 demand projection only)
     
     // 計算本月日均 FC
     const fcThisMonthDaily = fcThisMonth / daysInCurrentMonth;
@@ -680,6 +944,7 @@ function generateMockRequestOrderData() {
     const campaignNextMonth = seededRandom(seed + 11) > 0.6 ? rand(100, 300, 11) : 0;
     const campaignMonth2 = seededRandom(seed + 12) > 0.7 ? rand(150, 400, 12) : 0;
     const campaignMonth3 = seededRandom(seed + 13) > 0.8 ? rand(200, 500, 13) : 0;
+    const campaignMonth4 = seededRandom(seed + 20) > 0.8 ? rand(200, 500, 20) : 0;
     
     // 從 SKU Details 獲取單箱數量
     const allSkuDetails = [...window.upcomingSkuData || [], ...window.runningSkuData || [], ...window.phasingOutSkuData || []];
@@ -703,9 +968,11 @@ function generateMockRequestOrderData() {
           fcNextMonth,
           fcMonth2,
           fcMonth3,
+          fcMonth4,
           campaignNextMonth,
           campaignMonth2,
           campaignMonth3,
+          campaignMonth4,
           tfThisMonth: 1.0,
           tfNextMonth: 1.0,
           tfMonth2: 1.0,
@@ -798,6 +1065,13 @@ function generateMockRequestOrderData() {
       shortageM1: shortageResult.shortageMonth1,
       shortageM2: shortageResult.shortageMonth2,
       shortageM3: shortageResult.shortageMonth3,
+      // Full canonical engine result stashed for the second-level Tier Projection evidence (DISPLAY only —
+      // this is the engine's OWN output, not a new formula). Live-DB rows have no _engine → evidence "--".
+      _engine: {
+        totalSiteStock: shortageResult.totalSiteStock, factoryStockTotal: shortageResult.factoryStockTotal,
+        fcThisMonth: shortageResult.fcThisMonth, t1Fc: shortageResult.t1Fc, t2Fc: shortageResult.t2Fc,
+        t3Fc: shortageResult.t3Fc, t4Fc: shortageResult.t4Fc, supplyBase: shortageResult.supplyBase
+      },
       // 保留 FC Summary 來源資訊（Stage 3 使用）
       _fcSource: {
         year: fcItem.year,
@@ -886,22 +1160,27 @@ function _applyRequestOrderFilters(data) {
     out = out.filter(item => item.category === requestOrderState.categoryTab);
   }
 
-  const cf = f.country || [], mf = f.marketplace || [];
-  if (cf.length || mf.length) {
-    out = out.filter(item => {
-      const cMatch = cf.length > 0 && cf.includes(item.country);
-      const mMatch = mf.length > 0 && mf.includes(item.marketplace);
-      return cMatch || mMatch;   // OR — never AND
-    });
+  // AND across dimensions (2026-07-22 fix — was OR): a row must satisfy EVERY active filter.
+  // An empty selection ("All" / blank) means that dimension is unconstrained.
+  const cf = f.country || [];
+  if (cf.length) out = out.filter(item => cf.includes(item.country));
+
+  // Marketplace filter (B3): the selection holds display-group keys; resolve them to the underlying
+  // marketplace_id SET and keep rows whose marketplace_id is in that set (canonical identity — the
+  // "Amazon" display string is never the relational key). Demo rows (no id / no groups) fall back to
+  // matching the display string.
+  const mf = f.marketplace || [];
+  if (mf.length) {
+    const idset = _roSelectedMarketplaceIdSet();
+    if (idset) out = out.filter(item => idset[_roMarketplaceKey(item)]);
+    else out = out.filter(item => mf.includes(item.marketplace));
   }
 
   const rf = f.risk || [];
-  if (rf.length > 0) {
-    out = out.filter(item => rf.includes(item.risk));
-  }
+  if (rf.length) out = out.filter(item => rf.includes(item.risk));
 
   if (f.sku) {
-    const kw = f.sku.toLowerCase();
+    const kw = String(f.sku).toLowerCase();
     out = out.filter(item => String(item.sku || '').toLowerCase().includes(kw));
   }
   return out;
@@ -935,6 +1214,21 @@ function renderRequestOrderTable() {
 
   if (!fixedBody || !scrollBody) return;
 
+  // Expanded-row reconciliation (2026-07-22): if the expanded SKU is no longer in the filtered
+  // result, close it so a stale detail card from a previous SKU can never linger.
+  if (requestOrderState.expandedRowKey &&
+      !filteredData.some(function (it) { return _roRowKey(it) === requestOrderState.expandedRowKey; })) {
+    requestOrderState.expandedRowKey = null;
+  }
+
+  // Filtered-empty state: source data exists but the active filters exclude every row.
+  if (!filteredData.length) {
+    fixedBody.innerHTML = '';
+    scrollBody.innerHTML = '<div class="ro-empty-state">No matching SKUs</div>';
+    _roRenderPagination(0, 1, 0, 0);
+    return;
+  }
+
   // ---- Pagination (Part 1): slice AFTER all filtering. Never render every row at once. ----
   const totalRows = filteredData.length;
   const pageSize = requestOrderState.pageSize || 25;
@@ -949,11 +1243,16 @@ function renderRequestOrderTable() {
     const rowKey = _roRowKey(item);
     const isExpanded = requestOrderState.expandedRowKey === rowKey;
     const toggleCall = `toggleRequestOrderSkuExpand('${_roJs(item.sku)}','${_roJs(item.country)}','${_roJs(item.marketplace)}','${_roJs(item.company)}')`;
+    const panelId = _roPanelId(rowKey);
     return `
     <div class="ro-fixed-wrapper" data-rowkey="${_roEsc(rowKey)}">
-      <div class="fixed-row ${isExpanded ? 'is-expanded' : ''}" data-rowkey="${_roEsc(rowKey)}">
+      <div class="fixed-row ${isExpanded ? 'is-expanded' : ''}" data-rowkey="${_roEsc(rowKey)}" role="row">
         <span class="ro-sku-expand-toggle ${isExpanded ? 'is-expanded' : ''}"
-              onclick="${toggleCall}">
+              role="button" tabindex="0"
+              aria-expanded="${isExpanded ? 'true' : 'false'}" aria-controls="${panelId}"
+              aria-label="Toggle detail for ${_roAttr(item.sku)}"
+              onclick="${toggleCall}"
+              onkeydown="if(event.key==='Enter'||event.key===' '||event.key==='Spacebar'){event.preventDefault();${toggleCall};}">
           ${isExpanded ? '▼' : '▸'}
         </span>
         ${item.sku}
@@ -987,36 +1286,37 @@ function renderRequestOrderTable() {
     const riskVal = item.risk == null ? '' : item.risk;
     const rowKey = _roRowKey(item);
     const isExpanded = requestOrderState.expandedRowKey === rowKey;
-    const toggleCall = `toggleRequestOrderSkuExpand('${_roJs(item.sku)}','${_roJs(item.country)}','${_roJs(item.marketplace)}','${_roJs(item.company)}')`;
 
     return `
       <div class="ro-row-wrapper" data-rowkey="${_roEsc(rowKey)}">
-        <div class="scroll-row">
+        <div class="scroll-row" role="row">
           <!-- Risk 欄位 (placeholder until risk engine) -->
           <div class="scroll-cell scroll-cell--risk" data-risk="${riskVal}">${_roFmt(item.risk)}</div>
           <!-- Country 欄位 -->
           <div class="scroll-cell scroll-cell--country">${_roFmt(item.country)}</div>
           <!-- Marketplace 欄位 -->
           <div class="scroll-cell scroll-cell--marketplace">${_roFmt(item.marketplace)}</div>
-          <!-- Upcoming FC 欄位 (2個) -->
-          <div class="scroll-cell">${_roFmt(item.basicFcT3)}</div>
+          <!-- Upcoming FC 欄位 (2個) — Basic(T3) 起始群組邊界 -->
+          <div class="scroll-cell ro-group-start">${_roFmt(item.basicFcT3)}</div>
           <div class="scroll-cell">${item.specialEventsFc == null ? '--' : (item.specialEventsFc > 0 ? item.specialEventsFc.toLocaleString() : '-')}</div>
-          <!-- Inventory & Ongoing 欄位 (4個) — Site Stock 與 3rd Party 永遠分開顯示 -->
-          <div class="scroll-cell">${_roFmt(item.siteStock)}</div>
+          <!-- Inventory & Ongoing 欄位 (4個) — Site Stock 起始群組邊界；Site Stock 與 3rd Party 永遠分開顯示.
+               (2026-07-24 cleanup) Site Stock shows the canonical quantity ONLY — Aging/DOS removed from
+               Request Order; that concern lives on the Inventory Replenishment / 貨物庫存表 page. -->
+          <div class="scroll-cell ro-group-start">${_roFmt(item.siteStock)}</div>
           <div class="scroll-cell">${_roFmt(item.thirdPartyStock)}</div>
           <div class="scroll-cell">${_roFmt(item.factoryStock)}</div>
           <div class="scroll-cell">${_roFmt(item.totalOngoingOrders)}</div>
-          <!-- Coverage & Time 欄位 (2個): Remaining (placeholder) / Lead Time (supplier_price_list) -->
-          <div class="scroll-cell">${_roFmt(item.remaining)}</div>
+          <!-- Coverage & Time 欄位 (2個): Remaining 起始群組邊界 (placeholder) / Lead Time (supplier_price_list) -->
+          <div class="scroll-cell ro-group-start">${_roFmt(item.remaining)}</div>
           <div class="scroll-cell">${_roFmt(item.leadTime)}</div>
           <!-- Shortage 欄位 (3個) - 隱藏但保有篩選功能 -->
           <div class="scroll-cell" style="display:none;">${item.shortageM1 < 0 ? Math.abs(item.shortageM1).toFixed(0) : '0'}</div>
           <div class="scroll-cell" style="display:none;">${item.shortageM2 < 0 ? Math.abs(item.shortageM2).toFixed(0) : '0'}</div>
           <div class="scroll-cell" style="display:none;">${item.shortageM3 < 0 ? Math.abs(item.shortageM3).toFixed(0) : '0'}</div>
-          <!-- Decision 欄位 (1個): Suggest Order (calc placeholder) -->
-          <div class="scroll-cell ro-request-order-cell">
+          <!-- Decision 欄位 (1個): Suggest Order 起始群組邊界 (Lead Time | Suggest Order); calc placeholder -->
+          <div class="scroll-cell ro-request-order-cell ro-group-start">
             <span class="ro-request-order-value">${suggestDisplay}</span>
-            <span class="ro-request-order-icon" onclick="${toggleCall}" title="Edit details">⚙</span>
+            <span class="ro-request-order-icon" title="Toggle detail" aria-hidden="true">⚙</span>
           </div>
         </div>
         ${isExpanded ? renderExpandPanel(item) : ''}
@@ -1047,44 +1347,51 @@ function renderExpandPanel(item) {
     return isNaN(v) ? null : v;
   }
 
-  // fc_special_events for this SKU (best-effort scope + country/marketplace match).
-  var evRows = ((DB.getFcSpecialEvents && DB.getFcSpecialEvents()) || []).filter(function(e) {
-    var skuMatch = _roUpper(e.sku) === _roUpper(sku) || (e.scopeType === 'sku' && _roUpper(e.scopeId) === _roUpper(sku));
-    if (!skuMatch) return false;
-    if (e.country && country && _roUpper(e.country) !== _roUpper(country)) return false;
-    if (e.marketplace && marketplace && _roLower(e.marketplace) !== _roLower(marketplace)) return false;
-    return true;
-  });
-  function eventMonthIdx(e) {
-    var s = _roLower(e.eventMonth);
-    if (!s) return null;
-    var mIdx = RO_MONTH_KEYS.indexOf(s.slice(0, 3));
-    if (mIdx !== -1) return mIdx;
-    var m = s.match(/(\d{4})[-/](\d{1,2})/); if (m) return parseInt(m[2], 10) - 1;
-    var n = parseInt(s, 10); if (!isNaN(n) && n >= 1 && n <= 12) return n - 1;
-    return null;
-  }
-  function eventsForMonth(mo) {
-    var total = 0, any = false;
-    evRows.forEach(function(e) { if (eventMonthIdx(e) === mo.idx) { total += (e.fcQty || 0); any = true; } });
-    return any ? total : null;
-  }
+  // Upcoming Events ← fc_special_events (canonical Special FC). Scope = COMPANY + country + marketplace
+  // + sku (company added 2026-07-22 so KM never reads ResUS events for a shared SKU). Only valid,
+  // non-deleted events. NO campaigns duplicate table, no regular-FC substitute, no fabricated 0.
+  var company = item.company || '';
+  // Scoped, active special events for this row. Bucketing is by PREPARATION-DATE month (Event Start − 30
+  // days), the canonical monthly rule (SUPPLY_PLANNING_CALCULATION_RULES) — NOT the stored event_month.
+  var scopedEvents = _roScopedActiveEvents({ sku: sku, company: company, country: country, marketplace: marketplace });
 
   var past3 = _roPastMonths(3);
   var next3 = _roNextMonths(3);
-  var next2 = _roNextMonths(2);
-  var next4 = _roNextMonths(4);
 
   // Block 1 — Past Achievement (FC Qty real when available; Actual/Sessions/USP/Rate not sourced → "--").
   var p1Rows = past3.map(function(mo) {
     return '<tr><td>' + mo.label + '</td><td>--</td><td>' + _roFmt(fcForMonth(mo)) + '</td><td>--</td><td>--</td><td>--</td></tr>';
   }).join('');
 
-  // Block 2 — Future Basic / Special FC. Basic FC gains a Target % column (fc_target_rules → % else 100%).
-  var basicRows = next3.map(function(mo) {
-    return '<tr><td>' + mo.label + '</td><td>' + _roFmt(fcForMonth(mo)) + '</td><td>' + _roTargetPct(item, mo) + '%</td></tr>';
+  // Block 2 — Forward Forecast MATRIX (B2, 2026-07-24): ONE table with grouped headers (Base FC vs
+  // Special FC). Same month shown once (Month + Base cells span the month's event rows via rowspan, so
+  // demand is never duplicated). Base FC = FC Qty + Target %; Special FC = Event / Event Date / Prep Date
+  // / FC Qty and is ALWAYS 100% (never × Target%, never summed into Base). No special event that month →
+  // the Special region shows "--". Multiple events in a month → one row each (name never lost). Underlying
+  // Regular-FC / Special-FC mapping is unchanged; this is display grouping only.
+  var ffRows = next3.map(function (mo) {
+    var fcQty = fcForMonth(mo);
+    var baseDisp = (fcQty == null) ? '--' : _roFmt(fcQty);
+    var tgtDisp = (fcQty == null) ? '--' : (_roTargetPct(item, mo) + '%');
+    var evs = _roEventsForPrepMonth(scopedEvents, mo);
+    var span = Math.max(1, evs.length);
+    var lead = '<td class="ff-month" rowspan="' + span + '">' + _roEsc(mo.label) + '</td>' +
+               '<td class="ff-base" rowspan="' + span + '">' + baseDisp + '</td>' +
+               '<td class="ff-base ff-base-end" rowspan="' + span + '">' + tgtDisp + '</td>';
+    if (!evs.length) {
+      return '<tr>' + lead +
+        '<td class="ff-special ff-special-start">--</td><td class="ff-special">--</td>' +
+        '<td class="ff-special">--</td><td class="ff-special">--</td></tr>';
+    }
+    return evs.map(function (ev, i) {
+      var qtyDisp = (ev.qty > 0) ? ev.qty.toLocaleString() : '—';
+      return '<tr>' + (i === 0 ? lead : '') +
+        '<td class="ff-special ff-special-start">' + _roEsc(ev.name) + '</td>' +
+        '<td class="ff-special">' + _roEsc(ev.start || '—') + '</td>' +
+        '<td class="ff-special">' + _roEsc(ev.prep || '—') + '</td>' +
+        '<td class="ff-special">' + qtyDisp + '</td></tr>';
+    }).join('');
   }).join('');
-  var eventRows = next3.map(function(mo) { return '<tr><td>' + mo.label + '</td><td>' + _roFmt(eventsForMonth(mo)) + '</td></tr>'; }).join('');
 
   // Block 3a — Factory Stock (Factory / Current / Reserved / Available). No Warehouse column (Fix 4):
   // Factory display = warehouses.warehouse_name (join by warehouse_id); fallback warehouse_id, then "--".
@@ -1105,80 +1412,134 @@ function renderExpandPanel(item) {
       _roFmt(r.currentStock) + '</td><td>' + _roFmt(reserved) + '</td><td>' + _roFmt(available) + '</td></tr>';
   }).join('') : '<tr><td colspan="4" class="ro-expand-empty">No factory stock</td></tr>';
 
-  // Block 3b — Factory Orders (Future 2 Months) — no reliable per-month source yet → placeholder.
-  var factoryOrderRows = next2.map(function(mo) { return '<tr><td>' + mo.label + '</td><td>--</td><td>--</td></tr>'; }).join('');
-
-  // Block 4a — Recommendation Summary (future 4 months; structure only, NO formula).
-  var recRows = next4.map(function(mo) { return '<tr><td>' + mo.label + '</td><td>--</td><td>--</td></tr>'; }).join('');
-
-  // Block 4b — Order Allocation (T1/T2/T3). Order Qty editable → local state (persisted on Send Request).
-  function _roYm(mo) { return mo.year + '-' + String(mo.idx + 1).padStart(2, '0'); }
-  var buckets = [{ b: 'T1', mo: next3[0] }, { b: 'T2', mo: next3[1] }, { b: 'T3', mo: next3[2] }];
-  var edits = requestOrderState.allocEdits[_roAllocKey(item)] || {};
-  var allocRows = buckets.map(function(x) {
-    var e = edits[x.b] || {};
-    var qty = (e.orderQty != null) ? e.orderQty : 0;
-    var note = e.note != null ? String(e.note).replace(/"/g, '&quot;') : '';
-    return '<tr><td>' + x.mo.label + '</td><td>' + x.b + '</td><td>--</td>' +
-      '<td><input type="number" min="0" class="ro-alloc-qty" value="' + qty + '" ' +
-        'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
-        'data-bucket="' + x.b + '" data-month="' + _roYm(x.mo) + '" onchange="_roAllocEdit(this)"></td>' +
-      '<td>--</td>' +
-      '<td><input type="text" class="ro-alloc-note" value="' + note + '" ' +
-        'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
-        'data-bucket="' + x.b + '" onchange="_roAllocEditNote(this)"></td></tr>';
+  // Block 3b — Factory Orders / In Production (Future 3 Months) — REAL purchase_orders ⋈ purchase_order_lines,
+  // bucketed by line expected_completion_date (header fallback), cancelled/closure excluded. Current / Next /
+  // Month-After-Next completion months. Scheduled = MAX(ordered − completed, 0); Completed = completed_qty.
+  var foBySku = _roFactoryOrdersBySku(sku);
+  var foMonths = _roMonthWindow(0, 3);
+  var factoryOrderRows = foMonths.map(function(mo) {
+    var rec = foBySku[_roYmKey(mo)];
+    return '<tr><td>' + mo.label + '</td><td>' + (rec ? rec.scheduled.toLocaleString() : '--') + '</td><td>' + (rec ? rec.completed.toLocaleString() : '--') + '</td></tr>';
   }).join('');
 
-  // Second-layer v5 — a true 3-column × 2-row grid. Each block is its OWN card (independent spacing;
-  // Factory Stock ≠ Factory Orders card; Recommendation ≠ Order Allocation card). Cards are direct grid
-  // children so each grid ROW auto-stretches to equal height → top row (Past Achievement / Factory Stock
-  // / Recommendation) aligns and bottom row (Future FC / Factory Orders / Order Allocation) aligns.
-  // Column A (34%) = Achievement / FC · Column B (24%) = Factory · Column C (42%) = Decision.
-  // DOM order is column-major (A1,A2,B1,B2,C1,C2) so on small screens columns stack grouped & clean.
+  // ===== Block 3 — Recommendation Summary: Demand Summary (T1–T4) + Order Allocation (T1–T3) =====
+  function _roYm(mo) { return mo.year + '-' + String(mo.idx + 1).padStart(2, '0'); }
+  var edits = requestOrderState.allocEdits[_roAllocKey(item)] || {};
+  var box = parseFloat(item.boxSize) || 0;
+  var ev = item._engine || null;                 // canonical engine result (demo) — used only for the CMR line
+  var firstShort = _roFirstShortageTier(item);
+  var next4b = _roNextMonths(4);
+
+  // A — Demand Summary (T1–T4). Demand = canonical monthly demand: Adjusted Basic FC(month) + Special
+  // Event demand assigned to that month. T1=Month+1 … T4=Month+4 (T4 = planning visibility only, never a
+  // Request Bucket). Missing month source → "--" (never a copied T3 value, never a fake 0).
+  function _roDemandForMonth(mo) {
+    var fc = fcForMonth(mo);
+    var basic = (fc == null) ? null : Math.round(fc * (_roTargetPct(item, mo) / 100));
+    var evs = _roEventsForPrepMonth(scopedEvents, mo);
+    var special = evs.reduce(function (s, e) { return s + (e.qty > 0 ? e.qty : 0); }, 0);
+    if (basic == null && !special) return null;
+    return (basic || 0) + special;
+  }
+  var demandRows = ['T1', 'T2', 'T3', 'T4'].map(function (t, i) {
+    var mo = next4b[i];
+    var d = _roDemandForMonth(mo);
+    return '<tr><td>' + t + ' · ' + mo.label + '</td><td>' + (d == null ? '--' : d.toLocaleString()) + '</td></tr>';
+  }).join('');
+
+  // B — Order Allocation (T1–T3 ONLY). Columns exactly: Tier/Month · Suggested · Order Qty · Carton · Note.
+  // No visible Recommended column (the engine gap remains in runtime/audit). Order Qty defaults to Suggested;
+  // manual partial carton is non-blocking; editing Order Qty never rewrites Suggested.
+  var anySuggested = false;
+  var allocRows = ['T1', 'T2', 'T3'].map(function (t, i) {
+    var mo = next3[i];
+    var sug = _roTierSuggested(item, i);
+    if (sug != null) anySuggested = true;
+    var e = edits[t] || {};
+    var eff = _roEffectiveOrderQty(item, i, e);
+    var cb = _roCartonBreak(eff == null ? '' : eff, box);
+    var note = e.note != null ? String(e.note).replace(/"/g, '&quot;') : '';
+    var qtyVal = (eff == null) ? '' : eff;
+    return '<tr><td>' + t + ' · ' + mo.label + '</td>' +
+      '<td>' + (sug == null ? '--' : sug.toLocaleString()) + '</td>' +
+      '<td><input type="number" min="0" step="1" class="ro-alloc-qty" value="' + qtyVal + '" ' +
+        'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
+        'data-bucket="' + t + '" data-idx="' + i + '" data-box="' + box + '" data-month="' + _roYm(mo) + '" onchange="_roAllocEdit(this)" oninput="_roRecomputeAllocRow(this)"></td>' +
+      '<td class="ro-carton-cell" data-cell="carton">' + _roCartonCellHtml(cb, box) + '</td>' +
+      '<td><input type="text" class="ro-alloc-note" value="' + note + '" ' +
+        'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" ' +
+        'data-marketplace="' + _roAttr(marketplace) + '" data-bucket="' + t + '" onchange="_roAllocEditNote(this)"></td></tr>';
+  }).join('');
+  var firstShortBadge = (firstShort != null)
+    ? '<span class="ro-first-shortage-badge">First Shortage: ' + RO_TIER_LABELS[firstShort] + ' · ' + next3[firstShort].label + '</span>'
+    : '';
+  var allocEmpty = anySuggested ? '' : '<div class="ro-rec-empty">No recommendation available.</div>';
+
+  // Incoming-supply empty state (F.6): no scheduled/completed across the next 3 months.
+  var foHasData = foMonths.some(function (mo) { var rec = foBySku[_roYmKey(mo)]; return rec && (rec.scheduled > 0 || rec.completed > 0); });
+
+  // Second-layer v6 — THREE decision blocks (D): (1) Achievement & Forecast · (2) Factory Supply ·
+  // (3) Recommendation Summary. Each block is ONE card with clear internal subsections. Desktop widths
+  // 34% / 30% / 36%; tablet: blocks 1–2 side-by-side, block 3 full row; mobile: single column.
   return `
-    <div class="ro-sku-expand-panel is-open" data-rowkey="${_roEsc(_roRowKey(item))}">
-      <div class="ro-sku-expand-grid ro-sku-expand-grid--v5">
-        <!-- Column A · row 1 -->
-        <div class="ro-sku-expand-card ro-expand-card--compact ro-v5-a1">
-          <div class="ro-expand-card-title">Past Achievement Rate (Past 3 Months)</div>
-          <table class="ro-expand-table"><thead><tr><th>Month</th><th>Achv %</th><th>FC Qty</th><th>Actual</th><th>Sessions</th><th>USP</th></tr></thead><tbody>${p1Rows}</tbody></table>
-        </div>
-        <!-- Column A · row 2 -->
-        <div class="ro-sku-expand-card ro-expand-card--compact ro-v5-a2">
-          <div class="ro-expand-card-title">Future Basic / Special FC</div>
-          <div class="ro-expand-fc-split">
-            <div class="ro-expand-fc-col">
-              <div class="ro-expand-subtitle">Basic FC</div>
-              <table class="ro-expand-table"><thead><tr><th>Month</th><th>FC Qty</th><th>Target %</th></tr></thead><tbody>${basicRows}</tbody></table>
-            </div>
-            <div class="ro-expand-fc-col">
-              <div class="ro-expand-subtitle">Upcoming Events</div>
-              <table class="ro-expand-table"><thead><tr><th>Month</th><th>FC Qty</th></tr></thead><tbody>${eventRows}</tbody></table>
-            </div>
+    <div class="ro-sku-expand-panel is-open" id="${_roPanelId(_roRowKey(item))}" role="region" aria-label="Detail for ${_roAttr(item.sku)}" data-rowkey="${_roEsc(_roRowKey(item))}">
+      <div class="ro-sku-expand-grid ro-sku-expand-grid--v6">
+
+        <!-- Block 1 · Achievement & Forecast — Historical, then Current-Month Remaining Demand, then Basic FC
+             and Special FC STACKED (full card width; no side-by-side subgrid). -->
+        <div class="ro-sku-expand-card ro-block ro-block--forecast">
+          <div class="ro-expand-card-title">Achievement &amp; Forecast</div>
+          <div class="ro-block-sub">
+            <div class="ro-subtitle">Historical Performance (Past 3 Months)</div>
+            <table class="ro-expand-table"><thead><tr><th>Month</th><th>Achv %</th><th>FC Qty</th><th>Actual</th><th>Sessions</th><th>USP</th></tr></thead><tbody>${p1Rows}</tbody></table>
+          </div>
+          <div class="ro-block-sub">
+            <div class="ro-fc-metric">Current Month Remaining Demand: <strong>${ev ? Math.round(ev.fcThisMonth).toLocaleString() : '--'}</strong></div>
+            <div class="ro-subtitle">Forward Forecast · Base FC &amp; Special FC (Next 3 Months)</div>
+            <table class="ro-expand-table ro-forward-fc-table">
+              <thead>
+                <tr>
+                  <th rowspan="2" class="ff-month">Month</th>
+                  <th colspan="2" class="ff-group ff-group-base">Base FC</th>
+                  <th colspan="4" class="ff-group ff-group-special">Special FC</th>
+                </tr>
+                <tr>
+                  <th>FC Qty</th><th class="ff-base-end">Target %</th>
+                  <th class="ff-special-start">Event</th><th>Event Date</th><th>Prep Date</th><th>FC Qty</th>
+                </tr>
+              </thead>
+              <tbody>${ffRows}</tbody>
+            </table>
           </div>
         </div>
 
-        <!-- Column B · row 1 -->
-        <div class="ro-sku-expand-card ro-v5-b1">
-          <div class="ro-expand-card-title">Factory Stock</div>
-          <table class="ro-expand-table"><thead><tr><th>Factory</th><th>Current Stock</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${factoryStockRows}</tbody></table>
-        </div>
-        <!-- Column B · row 2 -->
-        <div class="ro-sku-expand-card ro-v5-b2">
-          <div class="ro-expand-card-title">Factory Orders (Future 2 Months)</div>
-          <table class="ro-expand-table"><thead><tr><th>Month</th><th>Qty</th><th>Expected Delivery Date</th></tr></thead><tbody>${factoryOrderRows}</tbody></table>
+        <!-- Block 2 · Factory Supply -->
+        <div class="ro-sku-expand-card ro-block ro-block--supply">
+          <div class="ro-expand-card-title">Factory Supply</div>
+          <div class="ro-block-sub">
+            <div class="ro-subtitle">Factory Inventory</div>
+            <table class="ro-expand-table"><thead><tr><th>Factory</th><th>Current Stock</th><th>Reserved</th><th>Available</th></tr></thead><tbody>${factoryStockRows}</tbody></table>
+          </div>
+          <div class="ro-block-sub">
+            <div class="ro-subtitle">Incoming Supply — Next 3 Months</div>
+            ${foHasData
+              ? `<table class="ro-expand-table"><thead><tr><th>Completion Month</th><th>Incoming (Scheduled)</th><th>Completed</th></tr></thead><tbody>${factoryOrderRows}</tbody></table>`
+              : `<div class="ro-expand-empty ro-block-empty">No incoming supply in the next 3 months.</div>`}
+          </div>
         </div>
 
-        <!-- Column C (Decision) · row 1 -->
-        <div class="ro-sku-expand-card ro-v5-c1">
-          <div class="ro-expand-card-title">Recommendation Summary</div>
-          <table class="ro-expand-table"><thead><tr><th>Month</th><th>Recommended Qty</th><th>Reason</th></tr></thead><tbody>${recRows}</tbody></table>
-        </div>
-        <!-- Column C (Decision) · row 2 -->
-        <div class="ro-sku-expand-card ro-v5-c2">
-          <div class="ro-expand-card-title">Order Allocation</div>
-          <table class="ro-expand-table"><thead><tr><th>Month</th><th>Bucket</th><th>Suggested</th><th>Order Qty</th><th>Carton</th><th>Note</th></tr></thead><tbody>${allocRows}</tbody></table>
-          <div class="ro-expand-note">Suggested/Recommended are placeholders — no formula yet. Order Qty is editable and saved on Send Request.</div>
+        <!-- Block 3 · Recommendation Summary — Demand Summary (T1–T4) + Order Allocation (T1–T3) -->
+        <div class="ro-sku-expand-card ro-block ro-block--recommend">
+          <div class="ro-expand-card-title">Recommendation Summary ${firstShortBadge}</div>
+          <div class="ro-block-sub">
+            <div class="ro-subtitle">Demand Summary</div>
+            <table class="ro-expand-table ro-demand-table"><thead><tr><th>Tier · Month</th><th>Demand</th></tr></thead><tbody>${demandRows}</tbody></table>
+          </div>
+          <div class="ro-block-sub">
+            <div class="ro-subtitle">Order Allocation</div>
+            ${allocEmpty}
+            <table class="ro-expand-table ro-rec-table"><thead><tr><th>Tier · Month</th><th>Suggested</th><th>Order Qty</th><th>Carton</th><th>Note</th></tr></thead><tbody>${allocRows}</tbody></table>
+          </div>
         </div>
       </div>
     </div>
@@ -1222,10 +1583,48 @@ function _roAllocEdit(input) {
   var bucket = input.dataset.bucket;
   var rec = _roAllocEnsure(key);
   if (!rec[bucket]) rec[bucket] = {};
-  var q = parseInt(input.value, 10);
-  rec[bucket].orderQty = isNaN(q) || q < 0 ? 0 : q;
-  rec[bucket].month = input.dataset.month || '';
+  var v = String(input.value);
+  if (v === '') {
+    rec[bucket].orderQty = '';                       // cleared → falls back to Suggested default
+    input.classList.remove('is-invalid'); input.title = '';
+  } else {
+    var q = Number(v);
+    if (isNaN(q) || q < 0) {                          // BLOCKING validation: negative / non-numeric
+      input.classList.add('is-invalid');
+      input.title = 'Order Qty must be a number ≥ 0.';
+      // do NOT store an invalid value — the previous valid value is retained on Send
+    } else {
+      input.classList.remove('is-invalid'); input.title = '';
+      rec[bucket].orderQty = q;                        // partial-carton (non-multiple) is allowed here
+    }
+  }
+  rec[bucket].month = input.dataset.month || rec[bucket].month || '';
+  _roRecomputeAllocRow(input);
 }
+// Live in-place refresh of the carton breakdown + partial warning for one Order-Qty row (no full
+// re-render → never clears other unsaved edits; J.7). NON-blocking for partial cartons.
+function _roRecomputeAllocRow(input) {
+  var box = parseFloat(input.dataset.box) || 0;
+  var cb = _roCartonBreak(input.value === '' ? '' : input.value, box);
+  input.classList.toggle('is-invalid', input.value !== '' && !cb.isValid);
+  var tr = (input.closest && input.closest('tr')) || null;
+  if (!tr) return;
+  var cartonCell = tr.querySelector('[data-cell="carton"]');
+  if (cartonCell) cartonCell.innerHTML = _roCartonCellHtml(cb, box);   // partial warning now lives INSIDE the cell
+}
+// Carton-cell HTML for a computed breakdown (shared by render + live update). Shows Full Cartons + Loose
+// Units + a Partial badge and the non-blocking warning INLINE (no separate per-row technical prose row).
+function _roCartonCellHtml(cb, box) {
+  if (!cb.isNumeric) return '<span class="ro-muted">--</span>';
+  if (!cb.isValid) return '<span class="ro-invalid-tag">Invalid</span>';
+  if (cb.boxUnknown || cb.full == null) return '<span class="ro-muted">carton size --</span>';
+  var s = cb.full.toLocaleString() + ' ctn';
+  if (cb.loose) s += ' + ' + cb.loose.toLocaleString() + ' loose';
+  if (cb.isPartial) s += ' <span class="ro-partial-badge">Partial</span><span class="ro-partial-warn">⚠ Not a full-carton multiple</span>';
+  return s;
+}
+// (2026-07-24) The per-row Reason prose was removed from the UI — the panel now shows only labels, values,
+// carton breakdown, a compact partial warning, and a single First-Shortage badge. No _roBuildReason.
 function _roAllocEditNote(input) {
   var key = (input.dataset.sku || '') + '|' + (input.dataset.country || '') + '|' + (input.dataset.marketplace || '');
   var bucket = input.dataset.bucket;
@@ -1235,17 +1634,62 @@ function _roAllocEditNote(input) {
 }
 
 function toggleRequestOrderSkuExpand(sku, country, marketplace, company) {
-  var key = _roRowKey({ sku: sku, country: country, marketplace: marketplace, company: company });
-  requestOrderState.expandedRowKey = (requestOrderState.expandedRowKey === key) ? null : key;
+  _roToggleRowByKey(_roRowKey({ sku: sku, country: country, marketplace: marketplace, company: company }));
+}
+
+// Toggle a row's second layer by its composite row key, then re-sync the expand-panel heights.
+function _roToggleRowByKey(rowKey) {
+  if (rowKey == null) return;
+  requestOrderState.expandedRowKey = (requestOrderState.expandedRowKey === rowKey) ? null : rowKey;
   renderRequestOrderTable();
-  
   // Sync heights after render with multiple attempts
-  requestAnimationFrame(() => {
+  requestAnimationFrame(function () {
     syncExpandPanelHeights();
-    // Double check after a short delay
-    setTimeout(() => {
-      syncExpandPanelHeights();
-    }, 100);
+    setTimeout(syncExpandPanelHeights, 100);
+  });
+}
+
+// ---- Whole-row expand (B1, 2026-07-24) ------------------------------------------------------------
+// A single DELEGATED click/keydown listener per body container (they persist across re-render, so this
+// is bound once — never per row). Clicking any NON-interactive part of a primary row toggles its second
+// layer; native + ARIA controls, inputs and the row toolbar act on their own and never toggle. The
+// disclosure arrow (role="button") keeps its own click + Enter/Space handler, so it is excluded here to
+// avoid a double toggle. Clicks inside the expanded panel never collapse the row (the panel is a sibling
+// of the primary row, so closest('.scroll-row'/'.fixed-row') is null there). Unsaved Order Qty / Note are
+// kept in requestOrderState.allocEdits, so re-render restores them.
+var RO_INTERACTIVE_TAGS = { BUTTON: 1, A: 1, INPUT: 1, SELECT: 1, TEXTAREA: 1, LABEL: 1, OPTION: 1 };
+function _roIsInteractiveTarget(el, stopAt) {
+  while (el && el !== stopAt && el.nodeType === 1) {
+    if (RO_INTERACTIVE_TAGS[el.tagName]) return true;
+    if (el.isContentEditable) return true;
+    var role = el.getAttribute && el.getAttribute('role');
+    if (role === 'button' || role === 'link' || role === 'checkbox' || role === 'radio' || role === 'textbox' || role === 'switch') return true;
+    if (el.hasAttribute && el.hasAttribute('data-no-row-toggle')) return true;
+    el = el.parentNode;
+  }
+  return false;
+}
+function _roBindRowExpandDelegation() {
+  [['ro-fixed-body', '.fixed-row'], ['ro-scroll-body', '.scroll-row']].forEach(function (pair) {
+    var container = document.getElementById(pair[0]);
+    if (!container || container._roExpandBound) return;
+    container._roExpandBound = true;
+    var rowSel = pair[1];
+    container.addEventListener('click', function (e) {
+      if (_roIsInteractiveTarget(e.target, container)) return;          // controls/toolbar handle themselves
+      var row = e.target.closest && e.target.closest(rowSel);           // only the PRIMARY row, never the panel
+      if (!row || !container.contains(row)) return;
+      var host = e.target.closest('[data-rowkey]');
+      if (host) _roToggleRowByKey(host.getAttribute('data-rowkey'));
+    });
+    container.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      var row = e.target.closest && e.target.closest(rowSel);
+      if (!row || e.target !== row) return;                             // only when the row itself holds focus
+      e.preventDefault();
+      var host = row.closest('[data-rowkey]');
+      if (host) _roToggleRowByKey(host.getAttribute('data-rowkey'));
+    });
   });
 }
 
@@ -1264,8 +1708,9 @@ function syncExpandPanelHeights() {
   }
 }
 
-// ---- Second-layer modals (Part 9). READ-ONLY in v1: they load current DB values but DO NOT save,
-// because no write handler exists yet (updateFcTargetRule / updateFcRegularForecast are future). ----
+// ---- Second-layer modals (Part 9). Editable (2026-07-23): Edit Target % → canonical upsertFcTargetRule;
+// FC Update → canonical importFcRegularForecastBatch. Both reuse the SAME write path as FC Summary
+// (no Request-Order-only table, no localStorage). N+1..N+3 only; loading/empty/error/success states. ----
 function _roOpenModal(title, bodyHtml, opts) {
   _roCloseModal();
   var overlay = document.createElement('div');
@@ -1292,46 +1737,159 @@ function _roCloseModal() {
   var o = document.querySelector('.ro-modal-overlay'); if (o) o.remove();
 }
 
-// Edit Target % — loads the current fc_target_rules target for SKU+country+marketplace (read-only).
-// Future write target: fc_target_rules (no handler yet → read-only + notice).
-function handleEditTargetPct(sku, country, marketplace) {
+// Re-read the fresh cache (adapter force-reloads it before its write promise resolves) and re-render the
+// table, keeping the currently expanded row open.
+function _roReloadAndRerender() {
+  try { if (_roUseDb()) requestOrderState.data = _buildRequestOrderRowsFromDb(); } catch (e) { /* keep prior data */ }
+  if (typeof renderRequestOrderTable === 'function') renderRequestOrderTable();
+  requestAnimationFrame(function() { try { syncExpandPanelHeights(); } catch (e) {} });
+}
+
+// Collect N+1..N+3 editor inputs (id prefix + one input per month). blank = no change (null); otherwise a
+// number ≥ 0 (throws on invalid). Throws if nothing changed. → [{ mo, val }].
+function _roCollectEditInputs(prefix, months) {
+  var edits = [], anyVal = false;
+  months.forEach(function(mo, i) {
+    var inp = document.getElementById(prefix + i);
+    var raw = inp ? String(inp.value).trim() : '';
+    if (raw === '') { edits.push({ mo: mo, val: null }); return; }
+    var num = Number(raw);
+    if (!isFinite(num) || num < 0) throw new Error('Invalid value for ' + mo.label + ' — enter a number ≥ 0 or leave blank.');
+    edits.push({ mo: mo, val: num }); anyVal = true;
+  });
+  if (!anyVal) throw new Error('No changes entered.');
+  return edits;
+}
+
+// Bind Cancel + Save on an editor modal. saveFn() must return a Promise (or throw on validation). Handles
+// disabled-while-saving + loading / success / error status (no alert; no optimistic fake success).
+function _roBindEditModal(saveFn) {
+  var save = document.getElementById('ro-modal-save');
+  var cancel = document.getElementById('ro-modal-cancel');
+  if (cancel) cancel.addEventListener('click', _roCloseModal);
+  if (!save) return;
+  save.addEventListener('click', function() {
+    var status = document.getElementById('ro-modal-status');
+    if (status) { status.className = 'ro-modal-status'; status.textContent = ''; }
+    var p;
+    try { p = saveFn(); } catch (e) { if (status) { status.className = 'ro-modal-status is-error'; status.textContent = (e && e.message) || String(e); } return; }
+    save.disabled = true; save.textContent = 'Saving…';
+    if (status) { status.className = 'ro-modal-status is-info'; status.textContent = 'Saving…'; }
+    p.then(function(res) {
+      if (res && res.success === false) { save.disabled = false; save.textContent = 'Save'; if (status) { status.className = 'ro-modal-status is-error'; status.textContent = 'Save failed: ' + (res.error || 'unknown error'); } return; }
+      if (status) { status.className = 'ro-modal-status is-success'; status.textContent = 'Saved.'; }
+      _roReloadAndRerender();
+      setTimeout(_roCloseModal, 600);
+    }).catch(function(err) {
+      save.disabled = false; save.textContent = 'Save';
+      if (status) { status.className = 'ro-modal-status is-error'; status.textContent = 'Save failed: ' + ((err && err.message) || err); }
+    });
+  });
+}
+
+// Canonical Target % write (per year in the N+1..N+3 window). Reuses upsertFcTargetRule. Round-trips the
+// existing SKU-scope rule's target_rule_id (dedupe), seeds the other 11 months from the current effective
+// target (no regression), overrides only the edited months. Scope = SKU + row marketplace + year.
+function _roSaveTargetPct(item, edits) {
   var DB = (window.KM && window.KM.DB) || {};
+  if (!DB.upsertFcTargetRule) throw new Error('Target rule write API not available.');
+  var byYear = {};
+  edits.forEach(function(e) { if (e.val == null) return; (byYear[e.mo.year] = byYear[e.mo.year] || []).push(e); });
+  var years = Object.keys(byYear);
+  if (!years.length) throw new Error('No changes entered.');
   var rules = (DB.getFcTargetRules && DB.getFcTargetRules()) || [];
-  var match = rules.filter(function(r) {
-    return (r.scopeType === 'sku' && _roUpper(r.scopeId) === _roUpper(sku)) &&
-      (!r.country || !country || _roUpper(r.country) === _roUpper(country)) &&
-      (!r.marketplace || !marketplace || _roLower(r.marketplace) === _roLower(marketplace));
-  })[0];
-  var cur = (match && match.targetPercentage != null) ? (match.targetPercentage + '%') : '--';
+  var payloads = years.map(function(yr) {
+    var existing = rules.filter(function(r) {
+      var raw = r.raw || {};
+      var isSku = (r.scopeType === 'sku') || _roUpper(raw.scope_type) === 'SKU';
+      if (!isSku) return false;
+      var scopeVal = r.scopeId || raw.sku || '';
+      if (_roUpper(scopeVal) !== _roUpper(item.sku) && _roUpper(raw.sku) !== _roUpper(item.sku)) return false;
+      if (String(raw.year || '') !== String(yr)) return false;
+      return item.marketplace ? (_roLower(r.marketplace) === _roLower(item.marketplace)) : (!r.marketplace);
+    })[0];
+    var payload = { scope_type: 'SKU', scope_id: item.sku, year: parseInt(yr, 10), marketplace: item.marketplace || '', category: '', series: '', sku: item.sku, actor: 'request-order' };
+    if (existing && existing.ruleId) payload.target_rule_id = existing.ruleId;
+    RO_MONTH_KEYS.forEach(function(mk, idx) { payload[mk + '_pct'] = _roTargetPct(item, { idx: idx, year: parseInt(yr, 10) }); });
+    byYear[yr].forEach(function(e) { payload[RO_MONTH_KEYS[e.mo.idx] + '_pct'] = e.val; });
+    payload.target_percentage = payload.jan_pct;
+    return payload;
+  });
+  return payloads.reduce(function(chain, pl) { return chain.then(function() { return DB.upsertFcTargetRule(pl); }); }, Promise.resolve());
+}
+
+// Canonical Base FC write (per year). Reuses importFcRegularForecastBatch (business key year+company+
+// country+marketplace+sku). Preserves the other 11 months from the existing row; sets only edited months.
+function _roSaveFc(item, edits) {
+  var DB = (window.KM && window.KM.DB) || {};
+  if (!DB.importFcRegularForecastBatch) throw new Error('Regular forecast write API not available.');
+  var fcRows = ((DB.getFcRegularForecast && DB.getFcRegularForecast()) || []).filter(function(r) {
+    return _roUpper(r.sku) === _roUpper(item.sku) &&
+      (!r.country || !item.country || _roUpper(r.country) === _roUpper(item.country)) &&
+      (!r.marketplace || !item.marketplace || _roLower(r.marketplace) === _roLower(item.marketplace)) &&
+      (!r.company || !item.company || _roUpper(r.company) === _roUpper(item.company));
+  });
+  var byYear = {};
+  edits.forEach(function(e) { if (e.val == null) return; (byYear[e.mo.year] = byYear[e.mo.year] || []).push(e); });
+  var years = Object.keys(byYear);
+  if (!years.length) throw new Error('No changes entered.');
+  var toWrite = years.map(function(yr) {
+    var existing = fcRows.filter(function(r) { return String(r.year) === String(yr); })[0];
+    var row = { sku: item.sku, year: parseInt(yr, 10), company: item.company || '', country: item.country || '', marketplace: item.marketplace || '' };
+    RO_MONTH_KEYS.forEach(function(mk) { var v = existing ? existing[mk] : ''; row[mk] = (v === '' || v == null) ? '' : v; });
+    byYear[yr].forEach(function(e) { row[RO_MONTH_KEYS[e.mo.idx]] = Math.round(e.val); });
+    return row;
+  });
+  return DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'request_order' });
+}
+
+// Edit Target % — editable N+1..N+3 (Month / Current / New). Writes to canonical fc_target_rules.
+function handleEditTargetPct(sku, country, marketplace) {
+  if (!_roUseDb()) { _roOpenModal('Edit Target %', '<p class="ro-modal-note">Target % editing requires the live Operation DB (Demo mode is read-only here).</p>'); return; }
+  var item = _roFindItem(sku, country, marketplace);
+  var next3 = _roNextMonths(3);
+  var rowsHtml = next3.map(function(mo, i) {
+    var cur = _roTargetPct(item, mo);
+    return '<tr><td>' + mo.label + '</td><td>' + cur + '%</td><td><input type="number" min="0" step="1" class="ro-edit-input" id="ro-tgt-new-' + i + '" value="' + cur + '" aria-label="New Target % for ' + _roEsc(mo.label) + '"></td></tr>';
+  }).join('');
   var body =
     '<div class="ro-modal-row"><span>SKU</span><strong>' + _roEsc(sku) + '</strong></div>' +
     '<div class="ro-modal-row"><span>Country / Marketplace</span><strong>' + _roEsc(country || '--') + ' / ' + _roEsc(marketplace || '--') + '</strong></div>' +
-    '<div class="ro-modal-row"><span>Current Target %</span><strong>' + _roEsc(cur) + '</strong></div>' +
-    '<p class="ro-modal-note">Source / future write target: <code>fc_target_rules</code>. Read-only in v1 — no save handler yet.</p>';
-  _roOpenModal('Edit Target %', body);
+    '<table class="ro-expand-table ro-edit-table"><thead><tr><th>Month</th><th>Current Target %</th><th>New Target %</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+    '<p class="ro-modal-note">Writes to canonical <code>fc_target_rules</code> (same path as FC Summary). Applies to Base FC only — Special Event FC is never × Target%. Default 100% when no rule; leave blank for no change.</p>' +
+    '<div class="ro-modal-status" id="ro-modal-status" role="status" aria-live="polite"></div>' +
+    '<div class="ro-date-actions"><button type="button" class="btn" id="ro-modal-cancel">Cancel</button><button type="button" class="btn btn-primary" id="ro-modal-save">Save Target %</button></div>';
+  _roOpenModal('Edit Target % (N+1 ~ N+3)', body, { hideDefaultActions: true });
+  _roBindEditModal(function() { return _roSaveTargetPct(item, _roCollectEditInputs('ro-tgt-new-', next3)); });
 }
 
-// FC Update — loads the current fc_regular_forecast (next 3 months) for SKU+country+marketplace
-// (read-only). Future write target: fc_regular_forecast (no handler yet → read-only + notice).
+// FC Update — editable N+1..N+3 Base FC (Month / Current / New). Writes to canonical fc_regular_forecast.
 function handleFcUpdate(sku, country, marketplace) {
+  if (!_roUseDb()) { _roOpenModal('FC Update', '<p class="ro-modal-note">Base FC editing requires the live Operation DB (Demo mode is read-only here).</p>'); return; }
   var DB = (window.KM && window.KM.DB) || {};
+  var item = _roFindItem(sku, country, marketplace);
   var fcRows = ((DB.getFcRegularForecast && DB.getFcRegularForecast()) || []).filter(function(r) {
     return _roUpper(r.sku) === _roUpper(sku) &&
       (!r.country || !country || _roUpper(r.country) === _roUpper(country)) &&
       (!r.marketplace || !marketplace || _roLower(r.marketplace) === _roLower(marketplace));
   });
   var next3 = _roNextMonths(3);
-  var rows = next3.map(function(mo) {
-    var row = fcRows.filter(function(r) { return String(r.year) === String(mo.year); })[0] || fcRows[0];
+  var rowsHtml = next3.map(function(mo, i) {
+    var row = fcRows.filter(function(r) { return String(r.year) === String(mo.year); })[0];
     var v = row ? parseFloat(row[mo.key]) : NaN;
-    return '<tr><td>' + mo.label + '</td><td>' + (isNaN(v) ? '--' : v.toLocaleString()) + '</td></tr>';
+    var curDisp = isNaN(v) ? '--' : v.toLocaleString();
+    var curVal = isNaN(v) ? '' : v;
+    return '<tr><td>' + mo.label + '</td><td>' + curDisp + '</td><td><input type="number" min="0" step="1" class="ro-edit-input" id="ro-fc-new-' + i + '" value="' + curVal + '" placeholder="' + curDisp + '" aria-label="New Base FC for ' + _roEsc(mo.label) + '"></td></tr>';
   }).join('');
   var body =
     '<div class="ro-modal-row"><span>SKU</span><strong>' + _roEsc(sku) + '</strong></div>' +
     '<div class="ro-modal-row"><span>Country / Marketplace</span><strong>' + _roEsc(country || '--') + ' / ' + _roEsc(marketplace || '--') + '</strong></div>' +
-    '<table class="ro-expand-table" style="margin-top:8px;"><thead><tr><th>Month</th><th>Regular FC Qty</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<p class="ro-modal-note">Source / future write target: <code>fc_regular_forecast</code>. Read-only in v1 — no save handler yet.</p>';
-  _roOpenModal('FC Update', body);
+    '<table class="ro-expand-table ro-edit-table"><thead><tr><th>Month</th><th>Current Base FC</th><th>New Base FC</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+    '<p class="ro-modal-note">Writes to canonical <code>fc_regular_forecast</code> (same batch path + business key as FC Summary). Base FC only; Special Event FC is separate. Integer ≥ 0; leave blank for no change.</p>' +
+    '<div class="ro-modal-status" id="ro-modal-status" role="status" aria-live="polite"></div>' +
+    '<div class="ro-date-actions"><button type="button" class="btn" id="ro-modal-cancel">Cancel</button><button type="button" class="btn btn-primary" id="ro-modal-save">Save Base FC</button></div>';
+  _roOpenModal('FC Update (N+1 ~ N+3)', body, { hideDefaultActions: true });
+  _roBindEditModal(function() { return _roSaveFc(item, _roCollectEditInputs('ro-fc-new-', next3)); });
 }
 
 // Site confirmation (Fix 1) — now DB-backed via request_order_site_confirmations. `confirmedSites` is
@@ -1606,28 +2164,34 @@ async function handleSendRequest() {
   // Collect eligible allocation lines from the confirmed, filtered rows (only order_qty > 0).
   // Each line carries its bucket/month + the same source snapshots used by the 下單系統 table.
   const rows = _applyRequestOrderFilters(requestOrderState.data).filter(_roIsRowConfirmed);
-  const drafts = [];        // { item, lines: [{ bucket, month, orderQty, note, upc, carton, fcQty, targetPct }] }
-  const cartonErrors = [];  // full-carton violations → block Send
+  const drafts = [];        // { item, lines: [{ bucket, month, orderQty, note, upc, carton, looseUnits, isPartial, ... }] }
+  let partialCount = 0;     // manual partial-carton lines (allowed — recorded, never blocked)
   rows.forEach(function(item) {
     const edits = requestOrderState.allocEdits[_roAllocKey(item)] || {};
     const upc = parseFloat(item.boxSize) || 0;
     const lines = [];
     buckets.forEach(function(b) {
-      const e = edits[b]; if (!e) return;
-      const q = parseInt(e.orderQty, 10) || 0;
-      if (q <= 0) return;
-      // Full-carton rule: when units/carton is known, order_qty must be an exact multiple.
-      if (upc > 0 && (q % upc !== 0)) {
-        cartonErrors.push(item.sku + ' / ' + (item.country || '--') + ' / ' + (item.marketplace || '--') +
-          ' · ' + b + ': ' + q + ' not a multiple of ' + upc + '/ctn');
-        return;
-      }
+      const idx = RO_TIER_LABELS.indexOf(b);
+      const e = edits[b] || {};
+      const eff = _roEffectiveOrderQty(item, idx, e);   // explicit user edit, else default Suggested Qty
+      const q = (eff == null) ? 0 : Number(eff);
+      if (isNaN(q) || q <= 0) return;                    // none / invalid → skip (negatives blocked at input)
+      const cb = _roCartonBreak(q, upc);
+      const sug = _roTierSuggested(item, idx);
+      const diff = (sug == null) ? '' : (q - sug);
+      const partial = !!(cb.isValid && cb.isPartial);    // NON-blocking manual partial carton
+      if (partial) partialCount++;
       const mo = _roBucketMonthObj(b);
       const moYm = mo ? (mo.year + '-' + String(mo.idx + 1).padStart(2, '0')) : '';
       const fcQty = _roFcForItemMonth(item, mo);
       lines.push({
         bucket: b, month: e.month || moYm, orderQty: q, note: e.note || '',
-        upc: upc, carton: upc > 0 ? Math.round(q / upc) : '',
+        upc: upc,
+        carton: (upc > 0) ? (cb.full != null ? cb.full : Math.floor(q / upc)) : '',   // FULL cartons only
+        looseUnits: (upc > 0 && cb.loose != null) ? cb.loose : '',                     // remainder units (partial)
+        isPartial: partial,
+        suggestedQty: (sug == null ? '' : sug),
+        orderVsSuggested: diff,                                                        // Order − Suggested (audit)
         fcQty: (fcQty == null ? '' : fcQty),
         targetPct: mo ? _roTargetPct(item, mo) : '',
         siteStock: (item.siteStock == null ? '' : item.siteStock),
@@ -1638,12 +2202,8 @@ async function handleSendRequest() {
     if (lines.length) drafts.push({ item: item, lines: lines });
   });
 
-  // Gate 2 (data integrity): block Send when any selected line is not a full carton.
-  if (cartonErrors.length) {
-    alert('Full-carton required before Send Request. Fix these Order Qty values (must be a multiple of units/carton):\n\n' +
-      cartonErrors.slice(0, 20).join('\n') + (cartonErrors.length > 20 ? ('\n… +' + (cartonErrors.length - 20) + ' more') : ''));
-    return;
-  }
+  // NOTE: partial cartons are ALLOWED (non-blocking). They are recorded (full cartons + loose units +
+  // Order−Suggested diff) but never rounded back to a full carton (task H). No full-carton Gate here.
 
   if (!drafts.length) {
     alert('No positive Order Qty in ' + typeLabel + '.\n\nOpen a confirmed SKU’s Order Allocation and enter Order Qty (T1/T2/T3) first.');
@@ -1651,7 +2211,9 @@ async function handleSendRequest() {
   }
 
   const totalUnits = drafts.reduce(function(s, d) { return s + d.lines.reduce(function(a, l) { return a + l.orderQty; }, 0); }, 0);
-  let msg = 'Send Request — ' + typeLabel + '\n\nSKU rows: ' + drafts.length + '\nTotal units: ' + totalUnits.toLocaleString() + '\n\nGrouped into Request Order Draft(s) by Series (supplier/factory pending).\n\nProceed?';
+  let msg = 'Send Request — ' + typeLabel + '\n\nSKU rows: ' + drafts.length + '\nTotal units: ' + totalUnits.toLocaleString() +
+    (partialCount ? ('\nPartial-carton lines: ' + partialCount + ' (allowed — recorded with loose units)') : '') +
+    '\n\nGrouped into Request Order Draft(s) by Series (supplier/factory pending).\n\nProceed?';
   if (!confirm(msg)) return;
 
   // Group lines by Series → one Request Order Draft per series (supplier/factory pending).
@@ -1667,9 +2229,12 @@ async function handleSendRequest() {
         // country/marketplace flow into request_order_line_sources (source of truth for site allocation).
         country: d.item.country || '', marketplace: d.item.marketplace || '',
         units_per_carton: l.upc || '',
-        calculation_method: 'manual_order_allocation', line_status: 'draft',
+        calculation_method: l.isPartial ? 'manual_partial_carton' : 'manual_order_allocation', line_status: 'draft',
         note: (d.item.company || '--') + ' / ' + (d.item.country || '--') + ' / ' + (d.item.marketplace || '--') +
-              ' · ' + l.bucket + ' ' + (l.month || '') + (l.note ? (' — ' + l.note) : '')
+              ' · ' + l.bucket + ' ' + (l.month || '') +
+              (l.isPartial ? (' · PARTIAL CARTON (' + (l.carton || 0) + ' ctn + ' + (l.looseUnits || 0) + ' loose)') : '') +
+              (l.suggestedQty !== '' && l.orderVsSuggested !== '' && l.orderVsSuggested !== 0 ? (' · Order−Suggested=' + l.orderVsSuggested + ' (suggested ' + l.suggestedQty + ')') : '') +
+              (l.note ? (' — ' + l.note) : '')
       });
     });
   });
@@ -1706,7 +2271,11 @@ async function handleSendRequest() {
               carton_qty: l.carton, units_per_carton: l.upc,
               factory_stock_snapshot: l.factoryStock, site_stock_snapshot: l.siteStock,
               third_party_stock_snapshot: l.thirdPartyStock, fc_qty_snapshot: l.fcQty,
-              target_pct_snapshot: l.targetPct, note: l.note, allocation_method: 'manual'
+              target_pct_snapshot: l.targetPct,
+              // Persistence boundary: no dedicated partial/override column exists → partial full/loose +
+              // Order−Suggested diff are carried in `note` (audit) + allocation_method. No schema change.
+              note: (l.isPartial ? ('[PARTIAL ' + (l.carton || 0) + 'ctn+' + (l.looseUnits || 0) + 'loose; suggested ' + l.suggestedQty + '; diff ' + l.orderVsSuggested + '] ') : '') + (l.note || ''),
+              allocation_method: l.isPartial ? 'manual_partial_carton' : 'manual'
             };
           })
         });

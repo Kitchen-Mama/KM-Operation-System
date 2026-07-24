@@ -20,11 +20,30 @@ Principle: **Spec First / Database First / Mapping First / Runtime Last.** Close
 | **P1-D** | Factory / Shipment / Overseas Inventory movement closed loop — every stock change writes a movement ledger | flow defined |
 | **P1-E** | Shipment Route Runtime + Events + ETA + Tracking foundation | **spec only** (Templates Reference DB done; runtime not built) |
 | **P1-F** | Full module API-ization (unified contract; GET/POST/PATCH/domain-action; idempotency/versioning) | future |
-| **P1-G** | **90-Day Rule-Based Supply Planning** (four modes, exact-date buckets, target rules, 30-day safety, special-event lifecycle, shared-overseas allocation) — **REQUIRED before Go-Live** | formula defined; engine pending |
-| **P1-H** | Login + Google/Gmail identity + People + Roles/Permissions + Notifications + Admin UI + **Shipment On the Way World Map UI** | future |
-| **P1-I** | Go-Live Integration Test and Acceptance Gate | future |
+| **P1-G** | **90-Day Rule-Based Supply Planning** (four modes, exact-date buckets, target rules, 30-day safety, special-event lifecycle, shared-overseas allocation) — **REQUIRED before Phase-1A Go-Live** | formula defined; engine pending |
+| **P1-I** | Phase-1A Go-Live: Supply Chain Closed Loop verified → **GitHub deployment (system URL)** → controlled internal trial by approved employees. **NOT gated on Login / RBAC** (see boundary below) | future |
+| **P2-A** *(was P1-H)* | **Phase 2** — Login + Google Identity + People + `users`/`roles`/`permissions`/`user_roles`/`role_permissions` + backend token verification + KM session + API permission enforcement + company/country/marketplace/warehouse data scope + Admin User Management + login/security audit + **DB Capacity Monitor** (same phase) + Shipment On the Way World Map UI | Phase 2 |
+| **P2+** | **Phase 2+** — role-based system **notification email** (after Role & Permission), then personal **Gmail Connect** integration (separate from Login), Gmail read / attachment sync / Amazon Case thread sync | Phase 2+ |
 
 **Route DB reality (2026-07-22):** `shipment_route_templates` + `shipment_route_template_nodes` = **Reference DBs manually completed by the user** (not recreated). `shipment_routes` / `shipment_route_nodes` / `shipment_events` = **spec-only / NOT implemented** (P1-E). Authority: `docs/planning/SHIPMENT_ROUTE_AND_EVENT_SPEC.md`.
+
+### Phase 1A / Phase 2 / Phase 2+ Boundaries (CANONICAL — 2026-07-23)
+
+Three distinct concepts — never conflated:
+- **Login** = confirms *who* the user is (authentication).
+- **Permission** = decides *what* the user may do (authorization).
+- **Deployment URL** = provides the *entry point* to the system (delivery/access) — it is **NOT** authentication or authorization.
+
+**Phase 1A (current Go-Live target):** complete the **Supply Chain Closed Loop (P1-A…P1-G)** → deploy via **GitHub (system URL)** → **controlled internal trial by approved employees**.
+- GitHub deployment is the **delivery / access entry**, **not** authentication or authorization.
+- **NOT a Phase-1A blocker:** Google Login, Gmail, full RBAC, DB Capacity Monitor.
+- **"Knowing the URL" is NOT a security control.**
+- Phase 1A must **not** place any Client Secret / Refresh Token / API credential / other sensitive data in the frontend, repository, Google Sheet, or any public environment.
+- Phase 1A still keeps necessary **environment isolation, controlled sharing, and minimal data exposure** — but this round invents **no** login/permission runtime.
+
+**Phase 2 (formal Login + Session + Role & Permission):** Google Identity / Sign in with Google; `users`, `roles`, `permissions`, `user_roles`, `role_permissions`; backend token verification + KM session; API permission enforcement; company/country/marketplace/warehouse **data scope**; Admin User Management; login + security audit; and **DB Capacity Monitor** (introduced with Role & Permission). None of these is a Phase-1A / closed-loop completion requirement.
+
+**Phase 2+ (after Role & Permission):** role-based system **notification email**; then a **separate** personal **Gmail Connect** integration (Gmail read, attachment sync, Amazon Case thread sync). Google **Login ≠ Gmail access** — signing in with Google does **not** grant Gmail permissions. **No hard-coded Admin recipient email** anywhere in Phase 1A.
 
 ### Post-Phase-1 (deferred — LEARNING-BASED features only)
 AI demand forecast + explainable recommendation · automatic statistical correction · **dynamic** Safety Stock / dynamic optimization · forecast accuracy (bias / WAPE / MAPE) · route actual lead-time calibration · cross-company borrowing / return / approval / cost · BigQuery historical / analytics / semantic layer. **The rule-based 90-Day engine is NOT here — it is P1-G.** Phase 1 must still retain dates / snapshots / decisions / overrides / audit to feed these later.
@@ -35,6 +54,7 @@ AI demand forecast + explainable recommendation · automatic statistical correct
 - **Review / monitoring center + site overview** — pending approvals, exceptions, missing data, delays, API errors, inventory risk, site health.
 - **External factory portal** — scoped view/update of PO, production progress, completion, lead time, factory stock, ship-prep, with strict company/field scope.
 - **Promotion Risk Tracker / Campaign Tracking · New-product monitoring center · Inventory Overview deepening · Export Center / Document Engine deepening.**
+- **DB Capacity Monitor** — Google-Sheet cell-usage monitor (per-spreadsheet `total_allocated_cells = Σ(max_rows × max_columns)` vs `cell_limit`, `usage_rate`, largest-tabs ranking, thresholds Normal / Warning / High Risk / Critical, scheduled + import-preflight checks, Dashboard + Email alerts, dismiss/acknowledge, alert audit log, Archive / BigQuery-migration recommendation). **Planned — Phase 2, implement TOGETHER with Role & Permission Management (`P2-A`, formerly `P1-H`)** (recipients, alert visibility, escalation policy, notification preferences must be role-driven — no hard-coded Admin email). **NOT a Phase-1A blocker. Docs-only; no DB tab / trigger / email / runtime.** Spec: `docs/planning/DB_CAPACITY_MONITOR_SPEC.md`.
 
 ---
 

@@ -156,3 +156,32 @@
     #sku-regional-details-section .srd-back { display: inline-block; }
     #sku-regional-details-section .srd-modal__body { grid-template-columns: 1fr; }
 }
+
+/* ── Right Detail Panel typography (2026-07-23) ────────────────────────────────────────────────
+   The right-side expanded content read too small. Bump ONLY the .srd-detail-panel one level using
+   rem + clamp (gentle growth on large screens, never below a readable floor on small screens). The
+   left SKU list (.srd-list*) and the page toolbar are intentionally NOT touched, so the list↔detail
+   ratio and site-wide type scale are unchanged. Values wrap (no truncation); country tabs keep their
+   existing scroll/wrap; no fixed px that only suits large screens. */
+#sku-regional-details-section .srd-detail-panel { font-size: clamp(0.875rem, 0.82rem + 0.18vw, 1rem); }
+/* Header hierarchy */
+#sku-regional-details-section .srd-dh__sku  { font-size: clamp(1rem, 0.95rem + 0.2vw, 1.15rem); }
+#sku-regional-details-section .srd-dh__name,
+#sku-regional-details-section .srd-dh__ctx  { font-size: clamp(0.8125rem, 0.78rem + 0.14vw, 0.9375rem); }
+#sku-regional-details-section .srd-dh__meta { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); }
+/* Country tabs + country/marketplace selector */
+#sku-regional-details-section .srd-ctab      { font-size: clamp(0.8125rem, 0.78rem + 0.14vw, 0.9375rem); }
+#sku-regional-details-section .srd-ctab__n   { font-size: clamp(0.625rem, 0.6rem + 0.08vw, 0.75rem); }
+#sku-regional-details-section .srd-cmsel__lbl,
+#sku-regional-details-section .srd-cmsel__opt { font-size: clamp(0.75rem, 0.72rem + 0.12vw, 0.875rem); }
+/* Inner section tabs */
+#sku-regional-details-section .srd-tab       { font-size: clamp(0.8125rem, 0.78rem + 0.12vw, 0.9375rem); }
+/* Field rows: label + value one level up; keep the value wrapping so long text is never truncated */
+#sku-regional-details-section .srd-field__k  { font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem); }
+#sku-regional-details-section .srd-field__v  { font-size: clamp(0.8125rem, 0.78rem + 0.15vw, 0.9375rem); overflow-wrap: anywhere; }
+/* Supporting content (tax component table, section notes, coverage) */
+#sku-regional-details-section .srd-comp,
+#sku-regional-details-section .srd-comp th,
+#sku-regional-details-section .srd-comp td,
+#sku-regional-details-section .srd-secnote,
+#sku-regional-details-section .srd-cov       { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); }

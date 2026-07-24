@@ -45,6 +45,15 @@ window.toggleSidebar = toggleSidebar;
 // ========================================
 // 區塊切換函式
 function showSection(section) {
+    // TEMP Phase-2 disable: Overseas Inbound / Overseas Outbound sidebar nav is intentionally
+    // non-interactive ("coming later"). This guard is SCOPED to only these two section ids so all
+    // other sidebar navigation is unaffected. The pages/routes/section maps below are kept intact.
+    // TO RE-ENABLE: remove this guard AND restore the onclick handlers + remove
+    // menu-item--disabled/aria-disabled/tabindex on the two items in index.html.
+    if (section === 'overseas-inbound' || section === 'overseas-outbound') {
+        return;
+    }
+
     // 隱藏所有區塊
     // home-section is partial-loaded (Phase 1) and may not be in the DOM yet — null-guard it.
     var _homeSection = document.getElementById('home-section');
@@ -58,6 +67,8 @@ function showSection(section) {
             'ops': 'ops-section',
             'factory-stock': 'factory-stock-section',
             'overseas-stock': 'overseas-stock-section',
+            'overseas-inbound': 'overseas-inbound-section',
+            'overseas-outbound': 'overseas-outbound-section',
             'forecast': 'forecast-section',
             'request-order': 'request-order-section',
             'fc-summary': 'fc-summary-section',
@@ -73,7 +84,8 @@ function showSection(section) {
             'purchase-order-overview': 'purchase-order-overview-section',
             'purchase-order-list': 'purchase-order-list-section',
             'carrier-rate-card': 'carrier-rate-card-section',
-            'sku-regional-details': 'sku-regional-details-section'
+            'sku-regional-details': 'sku-regional-details-section',
+            'global-logistics-map': 'global-logistics-map-section'
         };
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
@@ -86,6 +98,8 @@ function showSection(section) {
         'ops': 'ops-section',
         'factory-stock': 'factory-stock-section',
         'overseas-stock': 'overseas-stock-section',
+        'overseas-inbound': 'overseas-inbound-section',
+        'overseas-outbound': 'overseas-outbound-section',
         'forecast': 'forecast-section',
         'request-order': 'request-order-section',
         'fc-summary': 'fc-summary-section',

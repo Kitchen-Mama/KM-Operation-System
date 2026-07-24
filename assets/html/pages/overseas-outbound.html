@@ -1,0 +1,18 @@
+<!-- Overseas Outbound — Origin Fulfillment Operation WORKSPACE (Preview Mode).
+     Interactive operation workspace: list / KPI summary / create-edit drawer / warehouse selector /
+     shipment mapping / SKU lines editor / lock→submit→pick→pack→ship-confirm lifecycle / movement
+     impact preview. Selectors and the impact panel read REAL KM.DB data; the lifecycle runs in an
+     in-memory session store because the runtime tables/handlers in OVERSEAS_OUTBOUND_SPEC.md are
+     spec-only (NOT implemented) — so no reserve/deduction is posted and nothing is persisted.
+     Route key `overseas-outbound` / section id `overseas-outbound-section`. -->
+            <section id="overseas-outbound-section" class="module-section oow">
+                <h2 class="module-title">Overseas Outbound — Origin Fulfillment Operation</h2>
+
+                <div class="oow-banner" role="status">
+                    <span class="oow-banner__tag">Preview Mode</span>
+                    <span class="oow-banner__text">Fully interactive operation workspace. Selectors and the Movement / Inventory Impact panel use <strong>real</strong> shipment, warehouse and overseas-inventory data. The reserve → ship-confirm lifecycle runs <strong>in memory for this session only</strong> — no stock is reserved or deducted, no <code>overseas_inventory_movements</code> are posted, and nothing is saved, because the runtime handlers (<code>OVERSEAS_OUTBOUND_SPEC.md</code>) are not yet implemented.</span>
+                </div>
+
+                <div class="oow-kpis"></div>
+                <div class="oow-body"></div>
+            </section>

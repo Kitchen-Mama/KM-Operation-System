@@ -174,44 +174,63 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
 }
 
 // ========================================
-// Overseas Inventory Manual Adjustment Handler
+// Overseas Inventory Adjustment Handler (renamed 2026-07-23: "Manual Adjustment" -> "Inventory Adjustment")
 // ========================================
 
 /**
- * Manual stock adjustment for one overseas_inventory_snapshot row.
- * Input: warehouse_id, sku, adjustment_qty (integer, may be negative), reason, note.
- * - Adjusts the `available_stock` bucket (MVP target).
- * - quantity_before = current available_stock; quantity_after = before + adjustment_qty.
- *   Result must be >= 0 (else error; no write).
- * - Updates snapshot.available_stock + last_movement_at + updated_at.
- * - Inserts an overseas_inventory_movements row (movement_type = 'manual_adjustment').
- * The snapshot row must already exist (created via Import). warehouse_name / company etc.
- * are NOT written onto the movement row — they join from `warehouses` by warehouse_id.
+ * Inventory Adjustment for one overseas_inventory_snapshot row.
+ * Input (preferred): warehouse_id, sku, new_available (integer >= 0), note (required), reference_id (optional), created_by.
+ * Backward-compatible: adjustment_qty (signed integer) is still accepted when new_available is absent.
+ *
+ * Scope: adjusts ONLY the available_stock bucket (wh_available_stock). reserved / physical / damaged /
+ *   on_the_way are NEVER modified (they are recorded unchanged on the movement's before/after columns).
+ *   available_stock is the source-reported authority bucket (may be non-reconstructable) — see
+ *   INVENTORY_TABLE_MAPPING_SPEC §overseas. We do NOT recompute physical from available.
+ *
+ * Movement (canonical, per user spec Part F):
+ *   movement_type = 'manual_adjustment', movement_scope = 'available_stock',
+ *   from_stock_type = '' (empty/nullable — allowed set: available|reserved|damaged|on_the_way|none),
+ *   to_stock_type = 'available', reference_type = 'inventory_adjustment',
+ *   reference_id = backend-generated ADJ-YYYYMMDD-XXXX (frontend never assembles ids/timestamps),
+ *   source_module = 'overseas_inventory'.
+ *
+ * Atomicity: a script lock serializes writers; all validation happens BEFORE any write; and if the
+ * movement append throws AFTER the snapshot cell was updated, the snapshot cell is reverted (manual
+ * rollback) so the two tables never diverge (acceptance case 7).
+ *
+ * The snapshot row must already exist (created via Import). warehouse_name / company etc. are NOT
+ * written onto the movement row — they join from `warehouses` by warehouse_id.
  */
 function handleAdjustOverseasInventory_(body) {
+  body = body || {};
   var warehouseId = String(body.warehouse_id || '').trim();
   var sku = String(body.sku || '').trim();
-  var reason = String(body.reason || '').trim();
   var note = body.note !== undefined ? String(body.note).trim() : '';
   var createdBy = String(body.created_by || 'operation-system').trim();
+  var refIdIn = String(body.reference_id || '').trim();
 
   if (!warehouseId) return jsonResponse_({ success: false, error: 'Missing warehouse_id' });
   if (!sku) return jsonResponse_({ success: false, error: 'Missing sku' });
-
-  var adjRaw = String(body.adjustment_qty == null ? '' : body.adjustment_qty).trim();
-  if (adjRaw === '') return jsonResponse_({ success: false, error: 'Missing adjustment_qty' });
-  if (!/^-?\d+$/.test(adjRaw)) return jsonResponse_({ success: false, error: 'adjustment_qty must be a whole number (may be negative)' });
-  var adjustmentQty = parseInt(adjRaw, 10);
-  if (adjustmentQty === 0) return jsonResponse_({ success: false, error: 'adjustment_qty cannot be 0' });
-  if (!reason) return jsonResponse_({ success: false, error: 'Missing reason' });
+  if (!note) return jsonResponse_({ success: false, error: 'Note is required' });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var snapSheet = ss.getSheetByName('overseas_inventory_snapshot');
-  var movSheet = ss.getSheetByName('overseas_inventory_movements');
   var whSheet = ss.getSheetByName('warehouses');
   if (!snapSheet) return jsonResponse_({ success: false, error: 'overseas_inventory_snapshot sheet not found' });
-  if (!movSheet) return jsonResponse_({ success: false, error: 'overseas_inventory_movements sheet not found' });
   if (!whSheet) return jsonResponse_({ success: false, error: 'warehouses sheet not found' });
+
+  // Ensure the movements sheet exists with the canonical (wh_*) headers; additive — never renames/drops.
+  var OVS_MOV_HEADERS = [
+    'movement_id', 'movement_date', 'warehouse_id', 'sku', 'site_sku',
+    'movement_type', 'movement_scope', 'from_stock_type', 'to_stock_type',
+    'wh_quantity', 'wh_quantity_before', 'wh_quantity_after',
+    'wh_before_physical_stock', 'wh_after_physical_stock',
+    'wh_before_reserved_stock', 'wh_after_reserved_stock',
+    'wh_before_available_stock', 'wh_after_available_stock',
+    'reference_type', 'reference_id', 'source_module', 'created_by', 'created_at', 'note'
+  ];
+  var movSheet = fcWriteEnsureSheet_(ss, 'overseas_inventory_movements', OVS_MOV_HEADERS);
+  fcWriteEnsureColumns_(movSheet, OVS_MOV_HEADERS);
 
   // Validate warehouse exists.
   var whData = whSheet.getDataRange().getValues();
@@ -228,8 +247,10 @@ function handleAdjustOverseasInventory_(body) {
   var snapData = snapSheet.getDataRange().getValues();
   var snapHeaders = snapData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var snCol = function(n) { return snapHeaders.indexOf(n); };
-  // Canonical wh_available_stock; legacy fallback until the live sheet is renamed (temporary).
+  // Canonical wh_* with legacy fallback until the live sheet is renamed (temporary).
   var snAvail = snapHeaders.indexOf('wh_available_stock'); if (snAvail === -1) snAvail = snapHeaders.indexOf('available_stock');
+  var snPhys = snapHeaders.indexOf('wh_physical_stock'); if (snPhys === -1) snPhys = snapHeaders.indexOf('physical_stock');
+  var snRes = snapHeaders.indexOf('wh_reserved_stock'); if (snRes === -1) snRes = snapHeaders.indexOf('reserved_stock');
   if (snCol('warehouse_id') === -1 || snCol('sku') === -1 || snAvail === -1) {
     return jsonResponse_({ success: false, error: 'overseas_inventory_snapshot missing required columns (warehouse_id, sku, wh_available_stock/available_stock)' });
   }
@@ -248,66 +269,117 @@ function handleAdjustOverseasInventory_(body) {
     return jsonResponse_({ success: false, error: 'No snapshot row found for warehouse_id + sku. Import the snapshot first.' });
   }
 
-  var quantityBefore = Math.round(parseFloat(snapData[targetRow - 1][snAvail]) || 0);   // wh_available_stock bucket
-  var quantityAfter = quantityBefore + adjustmentQty;
-  if (quantityAfter < 0) {
-    return jsonResponse_({ success: false, error: 'Resulting wh_available_stock would be negative (' + quantityBefore + ' + ' + adjustmentQty + ' = ' + quantityAfter + ')' });
+  var beforeAvailable = Math.round(parseFloat(snapData[targetRow - 1][snAvail]) || 0);   // wh_available_stock bucket
+  var beforePhysical = snPhys !== -1 ? Math.round(parseFloat(snapData[targetRow - 1][snPhys]) || 0) : '';
+  var beforeReserved = snRes !== -1 ? Math.round(parseFloat(snapData[targetRow - 1][snRes]) || 0) : '';
+
+  // Resolve target available: prefer new_available; fall back to adjustment_qty (signed).
+  var afterAvailable, adjustmentQty;
+  var newRaw = String(body.new_available == null ? '' : body.new_available).trim();
+  if (newRaw !== '') {
+    if (!/^\d+$/.test(newRaw)) return jsonResponse_({ success: false, error: 'new_available must be a whole number >= 0' });
+    afterAvailable = parseInt(newRaw, 10);
+    if (afterAvailable < 0) return jsonResponse_({ success: false, error: 'new_available cannot be negative' });
+    if (afterAvailable === beforeAvailable) {
+      return jsonResponse_({ success: false, error: 'New Available equals Current Available (' + beforeAvailable + '); nothing to adjust.' });
+    }
+    adjustmentQty = afterAvailable - beforeAvailable;
+  } else {
+    var adjRaw = String(body.adjustment_qty == null ? '' : body.adjustment_qty).trim();
+    if (adjRaw === '') return jsonResponse_({ success: false, error: 'Missing new_available (or adjustment_qty)' });
+    if (!/^-?\d+$/.test(adjRaw)) return jsonResponse_({ success: false, error: 'adjustment_qty must be a whole number (may be negative)' });
+    adjustmentQty = parseInt(adjRaw, 10);
+    if (adjustmentQty === 0) return jsonResponse_({ success: false, error: 'adjustment_qty cannot be 0' });
+    afterAvailable = beforeAvailable + adjustmentQty;
+    if (afterAvailable < 0) {
+      return jsonResponse_({ success: false, error: 'Resulting wh_available_stock would be negative (' + beforeAvailable + ' + ' + adjustmentQty + ' = ' + afterAvailable + ')' });
+    }
   }
 
   var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-
-  // Update snapshot.
-  snapSheet.getRange(targetRow, snAvail + 1).setValue(quantityAfter);
-  if (snCol('last_movement_at') !== -1) snapSheet.getRange(targetRow, snCol('last_movement_at') + 1).setValue(now);
-  if (snCol('updated_at') !== -1) snapSheet.getRange(targetRow, snCol('updated_at') + 1).setValue(now);
-
-  // Insert movement row.
-  var movData = movSheet.getDataRange().getValues();
-  var movHeaders = movData[0].map(function(h) { return String(h).trim().toLowerCase(); });
-  var mvCol = function(n) { return movHeaders.indexOf(n); };
-  // Canonical wh_ movement quantity columns; legacy fallback until the live sheet is renamed (temporary).
-  var mvQty = movHeaders.indexOf('wh_quantity'); if (mvQty === -1) mvQty = movHeaders.indexOf('quantity');
-  var mvQtyB = movHeaders.indexOf('wh_quantity_before'); if (mvQtyB === -1) mvQtyB = movHeaders.indexOf('quantity_before');
-  var mvQtyA = movHeaders.indexOf('wh_quantity_after'); if (mvQtyA === -1) mvQtyA = movHeaders.indexOf('quantity_after');
+  var referenceId = refIdIn || ('ADJ-' + now.replace(/-/g, '') + '-' + Utilities.getUuid().replace(/-/g, '').substring(0, 4).toUpperCase());
   var movementId = 'OVMV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
-  var movRow = new Array(movHeaders.length).fill('');
-  if (mvCol('movement_id') !== -1) movRow[mvCol('movement_id')] = movementId;
-  if (mvCol('movement_date') !== -1) movRow[mvCol('movement_date')] = now;
-  if (mvCol('warehouse_id') !== -1) movRow[mvCol('warehouse_id')] = warehouseId;
-  if (mvCol('sku') !== -1) movRow[mvCol('sku')] = sku;
-  if (mvCol('site_sku') !== -1) movRow[mvCol('site_sku')] = siteSku;
-  if (mvCol('movement_type') !== -1) movRow[mvCol('movement_type')] = 'adjustment';
-  // Stock-direction (MVP: manual adjustment targets the available bucket). Written only if columns exist.
-  if (mvCol('from_stock_type') !== -1) movRow[mvCol('from_stock_type')] = 'none';
-  if (mvCol('to_stock_type') !== -1) movRow[mvCol('to_stock_type')] = 'available';
-  if (mvQty !== -1) movRow[mvQty] = adjustmentQty;
-  if (mvQtyB !== -1) movRow[mvQtyB] = quantityBefore;
-  if (mvQtyA !== -1) movRow[mvQtyA] = quantityAfter;
-  if (mvCol('reference_type') !== -1) movRow[mvCol('reference_type')] = 'manual';
-  if (mvCol('reference_id') !== -1) movRow[mvCol('reference_id')] = '';
-  if (mvCol('source_module') !== -1) movRow[mvCol('source_module')] = 'overseas_stock';
-  if (mvCol('created_by') !== -1) movRow[mvCol('created_by')] = createdBy;
-  if (mvCol('created_at') !== -1) movRow[mvCol('created_at')] = now;
-  // reason is stored in note (prefixed) when there is no dedicated reason column.
-  var noteOut = reason ? ('[' + reason + ']' + (note ? ' ' + note : '')) : note;
-  if (mvCol('reason') !== -1) {
-    movRow[mvCol('reason')] = reason;
-    if (mvCol('note') !== -1) movRow[mvCol('note')] = note;
-  } else if (mvCol('note') !== -1) {
-    movRow[mvCol('note')] = noteOut;
+
+  // Serialize writers so a concurrent adjustment cannot interleave the read/update/append.
+  var lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.' });
+  } catch (e) {
+    return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e) });
   }
-  movSheet.appendRow(movRow);
+
+  var wroteSnapshot = false;
+  try {
+    // 1) Update snapshot (available bucket only) + timestamps.
+    snapSheet.getRange(targetRow, snAvail + 1).setValue(afterAvailable);
+    if (snCol('last_movement_at') !== -1) snapSheet.getRange(targetRow, snCol('last_movement_at') + 1).setValue(now);
+    if (snCol('updated_at') !== -1) snapSheet.getRange(targetRow, snCol('updated_at') + 1).setValue(now);
+    SpreadsheetApp.flush();
+    wroteSnapshot = true;
+
+    // 2) Append the movement row (mapped by live header; wh_* canonical with legacy quantity fallback).
+    var movHeaders = movSheet.getDataRange().getValues()[0].map(function(h) { return String(h).trim().toLowerCase(); });
+    var mvCol = function(n) { return movHeaders.indexOf(n); };
+    var mvQty = movHeaders.indexOf('wh_quantity'); if (mvQty === -1) mvQty = movHeaders.indexOf('quantity');
+    var mvQtyB = movHeaders.indexOf('wh_quantity_before'); if (mvQtyB === -1) mvQtyB = movHeaders.indexOf('quantity_before');
+    var mvQtyA = movHeaders.indexOf('wh_quantity_after'); if (mvQtyA === -1) mvQtyA = movHeaders.indexOf('quantity_after');
+    var movRow = new Array(movHeaders.length).fill('');
+    var setMv = function(name, val) { var i = mvCol(name); if (i !== -1) movRow[i] = val; };
+    setMv('movement_id', movementId);
+    setMv('movement_date', now);
+    setMv('warehouse_id', warehouseId);
+    setMv('sku', sku);
+    setMv('site_sku', siteSku);
+    setMv('movement_type', 'manual_adjustment');
+    setMv('movement_scope', 'available_stock');
+    setMv('from_stock_type', '');          // empty/nullable per spec (source bucket not applicable)
+    setMv('to_stock_type', 'available');
+    if (mvQty !== -1) movRow[mvQty] = adjustmentQty;
+    if (mvQtyB !== -1) movRow[mvQtyB] = beforeAvailable;
+    if (mvQtyA !== -1) movRow[mvQtyA] = afterAvailable;
+    setMv('wh_before_available_stock', beforeAvailable);
+    setMv('wh_after_available_stock', afterAvailable);
+    setMv('wh_before_physical_stock', beforePhysical);     // unchanged original
+    setMv('wh_after_physical_stock', beforePhysical);       // same original
+    setMv('wh_before_reserved_stock', beforeReserved);      // unchanged original
+    setMv('wh_after_reserved_stock', beforeReserved);       // same original
+    setMv('reference_type', 'inventory_adjustment');
+    setMv('reference_id', referenceId);
+    setMv('source_module', 'overseas_inventory');
+    setMv('created_by', createdBy);
+    setMv('created_at', now);
+    setMv('note', note);
+    movSheet.appendRow(movRow);
+    SpreadsheetApp.flush();
+  } catch (err) {
+    if (wroteSnapshot) {
+      try {
+        snapSheet.getRange(targetRow, snAvail + 1).setValue(beforeAvailable);
+        if (snCol('last_movement_at') !== -1) snapSheet.getRange(targetRow, snCol('last_movement_at') + 1).setValue(snapData[targetRow - 1][snCol('last_movement_at')]);
+        if (snCol('updated_at') !== -1) snapSheet.getRange(targetRow, snCol('updated_at') + 1).setValue(snapData[targetRow - 1][snCol('updated_at')]);
+        SpreadsheetApp.flush();
+      } catch (e2) {
+        return jsonResponse_({ success: false, error: 'Movement write failed AND snapshot rollback failed: ' + (err && err.message ? err.message : err) + ' | rollback: ' + (e2 && e2.message ? e2.message : e2) });
+      }
+    }
+    return jsonResponse_({ success: false, error: 'Movement write failed; snapshot rolled back. ' + (err && err.message ? err.message : err) });
+  } finally {
+    try { lock.releaseLock(); } catch (e3) {}
+  }
 
   return jsonResponse_({
     success: true,
     data: {
       movement_id: movementId,
+      reference_id: referenceId,
       snapshot_id: snapshotId,
       warehouse_id: warehouseId,
       sku: sku,
       quantity: adjustmentQty,
-      quantity_before: quantityBefore,
-      quantity_after: quantityAfter
+      quantity_before: beforeAvailable,
+      quantity_after: afterAvailable,
+      before_available: beforeAvailable,
+      after_available: afterAvailable
     }
   });
 }

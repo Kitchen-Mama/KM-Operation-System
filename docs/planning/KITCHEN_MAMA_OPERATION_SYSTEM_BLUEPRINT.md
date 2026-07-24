@@ -338,11 +338,13 @@ These are **required foundation items**, not necessarily Phase 1 UI pages:
 - **Calculation Engine Spec** — formalize replenishment / allocation / order-need math (`calculation_run_id` traceability).
 - **API Migration** — unified request layer (local / demo / cloud), error handling, retry, caching (`SYSTEM_ROADMAP.md` Phase 4-2).
 - **BigQuery / Data Warehouse** — analytics/reporting target and field mapping.
-- **Notification Center** — dangerous alerts (stockout, missed shipment, risky promotion), arrival notifications, due-payment reminders.
-- **Permission / Sensitive Data Control** — role model gating cost/payment data and portal scope.
+- **Notification Center** — dangerous alerts (stockout, missed shipment, risky promotion), arrival notifications, due-payment reminders. **Phase 2+** (role-based email after Role & Permission).
+- **Permission / Sensitive Data Control** — role model gating cost/payment data and portal scope. **Phase 2.**
 - **AI Assistant / Prediction Engine** — only after data sources are stable and history has accumulated (`SYSTEM_ROADMAP.md` Stage 5).
 
 > **Clarification:** These are **system foundation** items. Some surface as background services or governance rather than as standalone Phase 1 pages, but the system depends on them being designed deliberately.
+
+> **Phase 1A / Phase 2 / Phase 2+ boundary (CANONICAL 2026-07-23):** **Login** confirms *who* the user is; **Permission** decides *what* they may do; the **Deployment URL** is the *entry point* only (delivery/access, **not** authentication/authorization). **Phase 1A Go-Live** = Supply Chain Closed Loop + **GitHub deployment (system URL)** + controlled internal trial by approved employees — **not** gated on Google Login, Gmail, full RBAC, or DB Capacity Monitor; **"knowing the URL" is not a security control**; and **no** Client Secret / Refresh Token / API credential / sensitive data goes in the frontend, repo, Google Sheet, or any public environment (environment isolation + controlled sharing + minimal exposure still apply). Formal **Login + Session + Role & Permission (+ DB Capacity Monitor) = Phase 2**; role-based **notification email + personal Gmail Connect = Phase 2+** (signing in with Google does **not** grant Gmail access). Authority: `SYSTEM_ROADMAP.md` → "Phase 1A / Phase 2 / Phase 2+ Boundaries".
 
 ---
 

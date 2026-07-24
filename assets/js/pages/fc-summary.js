@@ -1681,7 +1681,35 @@ function _regularMsSyncAll(which) {
   var allCb = document.getElementById('regular-' + which + '-all');
   if (allCb) allCb.checked = !anyChecked;
   _regularMsUpdateText(which);
+  if (which === 'category') _regularRebuildSeriesOptions();   // Series depends on selected Category
   _regularClearPreview();   // scope changed → must Preview again before Save
+}
+// Series options for the selected categories (null = All → every series). Deduped + sorted, derived
+// from sku_details (never hard-coded). Shared by the Regular and Special Event builders.
+function _fcSeriesForCategories(selectedCats) {
+  var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+  var set = {};
+  details.forEach(function(d){
+    var c = String(d.category || '').trim();
+    if (!selectedCats || selectedCats.indexOf(c) >= 0) { var s = String(d.series || '').trim(); if (s) set[s] = 1; }
+  });
+  return Object.keys(set).sort();
+}
+// Rebuild the Regular Series options constrained to the selected Category(ies); preserve still-valid
+// checked series, drop the rest (so an out-of-category Series can never survive into Preview/Save).
+function _regularRebuildSeriesOptions() {
+  var box = document.getElementById('regular-series-options');
+  if (!box) return;
+  var prevSel = _regularMsValues('series');   // null = All, or array of series
+  var valid = _fcSeriesForCategories(_regularMsValues('category'));
+  box.innerHTML = valid.map(function(v){
+    var safe = String(v).replace(/"/g, '&quot;');
+    var checked = (prevSel && prevSel.indexOf(v) >= 0) ? ' checked' : '';
+    return '<label class="fc-ms-item"><input type="checkbox" value="' + safe + '"' + checked + ' onchange="_regularMsChanged(\'series\')"><span>' + v + '</span></label>';
+  }).join('');
+  var anyChecked = Array.prototype.slice.call(box.querySelectorAll('input[type="checkbox"]')).some(function(o){ return o.checked; });
+  var allCb = document.getElementById('regular-series-all'); if (allCb) allCb.checked = !anyChecked;
+  _regularMsUpdateText('series');
 }
 function _regularMsValues(which) {
   var allCb = document.getElementById('regular-' + which + '-all');
@@ -1974,7 +2002,7 @@ function _regularRenderPreview() {
       '</td><td>' + oldDisp + '</td><td>' + newCell + '</td><td>' + diffCell + '</td></tr>';
   }).join('');
   box.innerHTML = '<table class="fc-assist-preview-table"><thead><tr><th>SKU</th><th>Category / Series</th>' +
-    '<th>Old (' + monthLbl + ' ' + _regularPreview.targetYear + ')</th><th>New</th><th>Difference</th></tr></thead><tbody>' +
+    '<th>Current Forecast (' + monthLbl + ' ' + _regularPreview.targetYear + ')</th><th>New Forecast</th><th>Change</th></tr></thead><tbody>' +
     body + '</tbody></table>';
   box.style.display = '';
   if (cnt) {
@@ -2020,17 +2048,18 @@ function openEventModal() {
   // reset batch controls (Category / Series multi-selects reset inside _populateEventBatchSelects)
   var dp = document.getElementById('event-discount-pct'); if (dp) dp.value = '';
   var by = document.getElementById('event-assist-base-year'); if (by) by.value = '';
+  var bm = document.getElementById('event-assist-base-month'); if (bm) bm.value = '0';
   var gr = document.getElementById('event-assist-growth'); if (gr) gr.value = '';
   var am = document.getElementById('event-assist-method'); if (am) am.value = 'growth';
   var av = document.getElementById('event-assist-adjust-value'); if (av) av.value = '';
   var ap = document.getElementById('event-assist-preview'); if (ap) { ap.style.display = 'none'; ap.innerHTML = ''; }
-  _evtToggleAssistFields();
   _evtGroups = [];
   var cards = document.getElementById('event-group-cards'); if (cards) cards.innerHTML = '';
   _evtSetAssistHelp('', '');
   _evtSetPreviewEnabled(false);   // Preview & Pre-fill disabled until cards are built (#5)
   _populateEventScopeSelects();
   _populateEventBatchSelects();
+  _evtToggleAssistFields();   // AFTER scope + category/series are ready (populates Base Campaign for Growth)
   // Single-SKU rows: start with one empty row.
   var rows = document.getElementById('event-sku-rows'); if (rows) rows.innerHTML = '';
   _evtAddSingleRow();
@@ -2202,7 +2231,24 @@ function _evtMsSyncAll(which) {
   var allCb = document.getElementById('event-' + which + '-all');
   if (allCb) allCb.checked = !anyChecked;
   _evtMsUpdateText(which);
+  if (which === 'category') _evtRebuildSeriesOptions();   // Series depends on selected Category
   _evtUpdateDiscountRow();
+}
+// Rebuild the Special Event Series options constrained to the selected Category(ies); preserve
+// still-valid checked series (shared _fcSeriesForCategories helper; never hard-coded).
+function _evtRebuildSeriesOptions() {
+  var box = document.getElementById('event-series-options');
+  if (!box) return;
+  var prevSel = _evtMsValues('series');
+  var valid = _fcSeriesForCategories(_evtMsValues('category'));
+  box.innerHTML = valid.map(function(v){
+    var safe = String(v).replace(/"/g, '&quot;');
+    var checked = (prevSel && prevSel.indexOf(v) >= 0) ? ' checked' : '';
+    return '<label class="fc-ms-item"><input type="checkbox" value="' + safe + '"' + checked + ' onchange="_evtMsChanged(\'series\')"><span>' + v + '</span></label>';
+  }).join('');
+  var anyChecked = Array.prototype.slice.call(box.querySelectorAll('input[type="checkbox"]')).some(function(o){ return o.checked; });
+  var allCb = document.getElementById('event-series-all'); if (allCb) allCb.checked = !anyChecked;
+  _evtMsUpdateText('series');
 }
 // Selected values, or null when "All" (All checked / nothing individually checked).
 function _evtMsValues(which) {
@@ -2357,30 +2403,91 @@ function _evtResolveMarketplaceId(site) {
   return m ? m.marketplaceId : '';
 }
 
-// Base FC for a SKU = fc_regular_forecast[baseYear][eventMonth] in the selected scope (company-safe).
-// baseYear from the Base Year field (fallback targetYear−1); eventMonth from the event Start Date.
-// Returns a number, or null when there is no scoped regular-forecast row/month (never fabricated 0).
-function _evtBaseFcForSku(sku, monthIdx) {
+// ADJUST base: fc_regular_forecast[baseYear][baseMonthIdx] for a SKU in the selected scope
+// (company + country + marketplace). Returns a number, or null when there is no scoped row/month
+// (→ "No Base Forecast", SKU skipped, never fabricated 0).
+function _evtBaseFcForSku(sku, monthIdx, baseYear) {
   var site = _evtSelectedSite();
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
-  var baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
-  if (!baseYear) { var ty = parseInt((document.getElementById('event-target-year') || {}).value, 10); baseYear = ty ? ty - 1 : 0; }
-  if (monthIdx == null || monthIdx < 0) return null;
+  if (!baseYear) baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
+  if (monthIdx == null || monthIdx < 0 || !baseYear) return null;
   var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
   var mkey = _fcResolveMarketplaceKey(site.marketplace);
   var row = rows.filter(function(r){
-    return up(r.sku) === up(sku) && (!baseYear || String(r.year) === String(baseYear)) &&
+    return up(r.sku) === up(sku) && String(r.year) === String(baseYear) &&
       (!site.company || up(r.company) === up(site.company)) &&
       (!site.country || up(r.country) === up(site.country)) &&
       (!mkey || lo(r.marketplace) === lo(mkey));
   })[0];
   if (!row) return null;
-  var key = REG_MONTH_KEYS[monthIdx];
-  var raw = row[key];
+  var raw = row[REG_MONTH_KEYS[monthIdx]];
   if (raw === '' || raw == null) return null;
   var n = Number(raw);
   return isNaN(n) ? null : Math.round(n);
+}
+// GROWTH base: Σ fc_special_events.fc_qty for the selected Base Campaign + this SKU in the current
+// scope. Returns a number, or null when the campaign has no FC for this SKU (→ "No Base Campaign FC",
+// SKU skipped, never fabricated 0). Matches by campaign_id (never by event_name string).
+function _evtGrowthBaseForSku(campaignId, sku) {
+  if (!campaignId) return null;
+  var site = _evtSelectedSite();
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var events = (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
+  var total = null;
+  events.forEach(function(e){
+    if (String(e.campaignId || '') !== String(campaignId)) return;
+    if (up(e.sku) !== up(sku)) return;
+    if (site.company && e.company && up(e.company) !== up(site.company)) return;
+    if (site.country && e.country && up(e.country) !== up(site.country)) return;
+    if (mkey && e.marketplace && lo(e.marketplace) !== lo(mkey)) return;
+    total = (total || 0) + (parseFloat(e.fcQty) || 0);
+  });
+  return total;
+}
+// Populate the Base Campaign dropdown (Apply Growth Rate). Value = campaign_id (stable key, never the
+// {year}_{event} string); label = {year}_{event_name}. Candidates = campaigns that have valid scoped
+// fc_special_events FC (matching company + country + marketplace + selected category/series, fc_qty>0).
+function _evtPopulateBaseCampaigns() {
+  var sel = document.getElementById('event-assist-base-campaign');
+  if (!sel) return;
+  var site = _evtSelectedSite();
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var cats = _evtMsValues('category'), series = _evtMsValues('series');
+  var campaigns = (window.KM && window.KM.DB && window.KM.DB.getCampaigns) ? window.KM.DB.getCampaigns() : [];
+  var events = (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
+  // Which campaigns have valid scoped FC?
+  var valid = {};
+  events.forEach(function(e){
+    if (!e.campaignId) return;
+    if (site.company && e.company && up(e.company) !== up(site.company)) return;
+    if (site.country && e.country && up(e.country) !== up(site.country)) return;
+    if (mkey && e.marketplace && lo(e.marketplace) !== lo(mkey)) return;
+    if (cats && cats.indexOf(e.category) < 0) return;
+    if (series && series.indexOf(e.series) < 0) return;
+    if (!(parseFloat(e.fcQty) > 0)) return;
+    valid[e.campaignId] = 1;
+  });
+  var list = campaigns.filter(function(c){
+    if (!c.campaignId || !valid[c.campaignId]) return false;
+    if (site.company && c.company && up(c.company) !== up(site.company)) return false;
+    if (site.country && c.country && up(c.country) !== up(site.country)) return false;
+    if (mkey && c.marketplace && lo(c.marketplace) !== lo(mkey)) return false;
+    return true;
+  });
+  var prev = sel.value;
+  if (!list.length) { sel.disabled = true; sel.innerHTML = '<option value="">(no matching campaign with FC data)</option>'; return; }
+  sel.disabled = false;
+  sel.innerHTML = '<option value="">Select Base Campaign</option>' + list.map(function(c){
+    var name = c.eventFlag || c.promotionType || c.campaignName || 'Campaign';
+    var label = (c.year ? (c.year + '_') : '') + String(name).replace(/\s+/g, '_');
+    return '<option value="' + c.campaignId + '">' + label + '</option>';
+  }).join('');
+  if (prev && list.some(function(c){ return c.campaignId === prev; })) sel.value = prev;
 }
 // Month index (0–11) of the event Start Date; null when not set.
 function _evtEventMonthIdx() {
@@ -2649,16 +2756,20 @@ function _evtAssistMethod() {
 // Show/hide method-specific inputs; re-render cards so forecast editability matches the method.
 function _evtToggleAssistFields() {
   var method = _evtAssistMethod();
-  var growthRow = document.getElementById('event-assist-growth-row');
-  var adjustRow = document.getElementById('event-assist-adjust-row');
-  var baseYearGrp = document.getElementById('event-assist-base-year-group');
+  var growthRow = document.getElementById('event-assist-growth-row');        // Base Campaign + Growth Rate
+  var basePeriodRow = document.getElementById('event-assist-base-period-row'); // Base Year + Base Month
+  var adjustRow = document.getElementById('event-assist-adjust-row');        // Adjustment type + value
   if (growthRow) growthRow.style.display = (method === 'growth') ? '' : 'none';
+  if (basePeriodRow) basePeriodRow.style.display = (method === 'adjust') ? '' : 'none';
   if (adjustRow) adjustRow.style.display = (method === 'adjust') ? '' : 'none';
-  if (baseYearGrp) baseYearGrp.style.display = (method === 'manual') ? 'none' : '';   // Base Year only for growth/adjust
   var lbl = document.getElementById('event-assist-adjust-label');
   var type = (document.getElementById('event-assist-adjust-type') || {}).value || 'percent';
   if (lbl) lbl.textContent = (type === 'fixed') ? 'Adjustment (± units)' : 'Adjustment %';
-  if (_evtGroups.length) _evtRenderGroupCards();   // toggle read-only vs editable New Event FC
+  // Clear the OTHER method's inputs so a stale value can't leak into the next preview/save.
+  if (method !== 'growth') { var g = document.getElementById('event-assist-growth'); if (g) g.value = ''; }
+  if (method !== 'adjust') { var av = document.getElementById('event-assist-adjust-value'); if (av) av.value = ''; }
+  if (method === 'growth') _evtPopulateBaseCampaigns();   // scoped Base Campaign candidates
+  if (_evtGroups.length) _evtRenderGroupCards();          // toggle read-only vs editable New Event FC
 }
 // Render the per-SKU preview table (SKU · Base FC · New Event FC · Difference). PREVIEW ONLY.
 function _evtRenderAssistPreview(rows) {
@@ -2672,46 +2783,54 @@ function _evtRenderAssistPreview(rows) {
       var diff = (hasBase && r.newQty != null) ? (r.newQty - r.base) : null;
       var sign = (diff != null && diff > 0) ? '+' : '';
       var color = (diff == null) ? '#94a3b8' : (diff > 0 ? '#0f766e' : (diff < 0 ? '#dc2626' : '#64748b'));
+      var baseCell = hasBase ? r.base.toLocaleString() : ('<span class="fc-evt-warn">' + (r.note || 'No Base FC') + '</span>');
       return '<tr><td>' + (r.category || '—') + '</td><td>' + (r.series || '—') + '</td><td>' + r.sku + '</td>' +
-        '<td>' + (hasBase ? r.base.toLocaleString() : '—') + '</td>' +
-        '<td>' + (r.newQty == null ? '—' : r.newQty.toLocaleString()) + '</td>' +
+        '<td>' + baseCell + '</td>' +
+        '<td>' + (r.newQty == null ? '<span class="fc-evt-warn">Skip</span>' : r.newQty.toLocaleString()) + '</td>' +
         '<td style="color:' + color + '">' + (diff == null ? '—' : sign + diff.toLocaleString()) + '</td></tr>';
     }).join('') + '</tbody></table>';
   box.innerHTML = html;
   box.style.display = '';
 }
-// Preview & Pre-fill (validation stage, PREVIEW-ONLY — never writes DB).
-//   growth : newFc = round(baseFc × (1 + growthRate%))    (baseFc from fc_regular_forecast)
-//   adjust : percent → baseFc × (1 + value%) ; fixed → baseFc + value (clamped ≥ 0)
-//   manual : no calculation — user edits New Event FC per SKU; preview echoes current values
+// Preview & Pre-fill (validation stage, PREVIEW-ONLY — never writes DB). Base source by method:
+//   growth : base = Σ Base Campaign fc_special_events.fc_qty for the SKU; newFc = round(base × (1+g%))
+//   adjust : base = fc_regular_forecast[Base Year][Base Month] for the SKU; percent/fixed adjustment
+//   manual : no calc — user edits New Event FC per SKU; preview echoes current values
+// A SKU with no base is SKIPPED (New Event FC blank / "No Base Campaign FC" / "No Base Forecast") —
+// never written as 0.
 function _evtApplyForecastAssist() {
   if (_evtMode() !== 'batch') { alert('Preview applies to Category / Series (Group Cards) mode.'); return; }
   if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
   var method = _evtAssistMethod();
-  var monthIdx = _evtEventMonthIdx();
-  if (method !== 'manual' && monthIdx == null) {
-    _evtSetAssistHelp('Set the Event Start Date first — Base FC is read from the regular forecast for the event month.', '#b45309');
-    return;
-  }
 
-  var compute;
+  var compute, baseFor, noBaseLabel = '';
   if (method === 'growth') {
+    var campaignId = (document.getElementById('event-assist-base-campaign') || {}).value || '';
+    if (!campaignId) { alert('Select a Base Campaign.'); return; }
     var growth = parseFloat((document.getElementById('event-assist-growth') || {}).value);
     if (isNaN(growth)) { alert('Enter a Growth Rate %.'); return; }
+    baseFor = function(sku){ return _evtGrowthBaseForSku(campaignId, sku); };
     compute = function(b){ return Math.round(b * (1 + growth / 100)); };
+    noBaseLabel = 'No Base Campaign FC';
   } else if (method === 'adjust') {
+    var baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
+    var baseMonthIdx = parseInt((document.getElementById('event-assist-base-month') || {}).value, 10);
+    if (!baseYear) { alert('Enter a Base Year.'); return; }
+    if (isNaN(baseMonthIdx)) { alert('Select a Base Month.'); return; }
     var type = (document.getElementById('event-assist-adjust-type') || {}).value || 'percent';
     var val = parseFloat((document.getElementById('event-assist-adjust-value') || {}).value);
     if (isNaN(val)) { alert('Enter an Adjustment value.'); return; }
+    baseFor = function(sku){ return _evtBaseFcForSku(sku, baseMonthIdx, baseYear); };
     compute = (type === 'fixed')
       ? function(b){ return Math.max(0, Math.round(b + val)); }
       : function(b){ return Math.max(0, Math.round(b * (1 + val / 100))); };
-  } else { compute = null; }   // manual
+    noBaseLabel = 'No Base Forecast';
+  } else { compute = null; baseFor = null; }   // manual
 
   var preview = [], filled = 0, missingBase = 0;
   _evtGroups.forEach(function(g){
     g.rows.forEach(function(r){
-      var base = (method === 'manual') ? null : _evtBaseFcForSku(r.sku, monthIdx);
+      var base = baseFor ? baseFor(r.sku) : null;
       r.baseFc = base;
       var newQty;
       if (compute) {
@@ -2720,7 +2839,8 @@ function _evtApplyForecastAssist() {
       } else {
         newQty = isNaN(r.newFc) ? null : r.newFc;   // manual echoes the current editable value
       }
-      preview.push({ category: g.category, series: g.series, sku: r.sku, base: base, newQty: newQty });
+      preview.push({ category: g.category, series: g.series, sku: r.sku, base: base, newQty: newQty,
+        note: (compute && base == null) ? noBaseLabel : '' });
     });
   });
   _evtRenderAssistPreview(preview);
@@ -2729,7 +2849,7 @@ function _evtApplyForecastAssist() {
   if (method === 'manual') {
     _evtSetAssistHelp('Manual Entry: edit New Event FC per SKU below. Blank = skip that SKU. Nothing is written until you click Save.', '#0f766e');
   } else if (missingBase) {
-    _evtSetAssistHelp('Pre-filled ' + filled + ' SKU(s). ' + missingBase + ' SKU(s) have no regular forecast for the Base Year + event month — enter New Event FC manually (never fabricated). Nothing is written until Save.', '#b45309');
+    _evtSetAssistHelp('Pre-filled ' + filled + ' SKU(s). ' + missingBase + ' SKU(s) have ' + noBaseLabel + ' — skipped (New Event FC blank, never fabricated 0). Save will skip them. Nothing is written until Save.', '#b45309');
   } else {
     _evtSetAssistHelp('Previewed & pre-filled New Event FC for ' + filled + ' SKU(s). Review Base FC → New → Difference before Save — nothing is written until you click Save.', '#0f766e');
   }
@@ -2787,22 +2907,26 @@ async function saveEventUpdate() {
     }
   } else {
     if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
+    var skipped = 0;
     for (var gi = 0; gi < _evtGroups.length; gi++) {
       var g = _evtGroups[gi];
       for (var ri = 0; ri < g.rows.length; ri++) {
         var gr = g.rows[ri];
         var tag = (g.category || '—') + ' / ' + (g.series || '—') + ' / ' + gr.sku;
+        // Blank / no-base New Event FC = SKIP that SKU (not an error, never written as 0).
+        if (isNaN(gr.newFc) || gr.newFc <= 0) { skipped++; continue; }
+        // Hard errors only for SKUs that DO have a forecast to write.
         if (!gr.marketplaceSkuId) { alert(tag + ': marketplace_sku_id unresolved (out of scope).'); return; }
         if (gr.regularPrice == null) { alert(tag + ': Missing Regular Price — set it in pricing_list (not substituted with 0).'); return; }
         if (isNaN(gr.dealPrice)) { alert(tag + ': Deal Price is required.'); return; }
-        if (isNaN(gr.newFc) || gr.newFc <= 0) { alert(tag + ': New Event FC is required (> 0). Use Preview & Pre-fill (Growth/Adjust) or enter it (Manual).'); return; }
         var meta2 = _fcDeriveSkuMeta(gr.sku);
         var disc2 = isNaN(gr.discountPct) ? (gr.regularPrice > 0 ? Math.round((1 - gr.dealPrice / gr.regularPrice) * 1000) / 10 : 0) : gr.discountPct;
         lines.push({ sku: gr.sku, marketplaceSkuId: gr.marketplaceSkuId, category: meta2.category, series: meta2.series,
           regularPrice: gr.regularPrice, dealPrice: gr.dealPrice, discountPercent: disc2, fcQty: gr.newFc });
       }
     }
-    if (!lines.length) { alert('No SKU lines to save.'); return; }
+    if (!lines.length) { alert('No SKU lines to save — every card row is blank / has no base forecast (all skipped).'); return; }
+    if (skipped && !confirm(skipped + ' SKU(s) have no New Event FC and will be SKIPPED. Save the remaining ' + lines.length + ' SKU(s)?')) return;
   }
 
   var marketplaceId = _evtResolveMarketplaceId(site);
@@ -2851,15 +2975,16 @@ async function saveEventUpdate() {
     var lineIdBySku = {};
     ((lineRes && lineRes.lines) || []).forEach(function(x){ if (x && x.sku) lineIdBySku[String(x.sku).toUpperCase()] = x.campaign_sku_line_id; });
 
-    // 3) fc_special_events per line, linked by campaign_id + campaign_sku_line_id (idempotent by
-    //    a deterministic event_id so repeated Save updates the same rows).
+    // 3) fc_special_events per line, linked by campaign_id + campaign_sku_line_id. The BACKEND owns
+    //    event_fc_id (canonical PK) — the frontend does NOT fabricate it. Idempotency is the stable
+    //    business key campaign_id + campaign_sku_line_id, so a double-click / retry updates the SAME
+    //    row (no duplicate) and preserves its event_fc_id.
     var written = 0;
     for (var k = 0; k < lines.length; k++) {
       var l = lines[k];
       var lineId = lineIdBySku[String(l.sku).toUpperCase()] || '';
-      var eventId = 'EVT-' + campaignId + '-' + String(l.marketplaceSkuId || l.sku).replace(/[^A-Za-z0-9_-]/g, '').toUpperCase();
       await DB.upsertFcSpecialEvent({
-        event_id: eventId, campaign_id: campaignId, campaign_sku_line_id: lineId,
+        campaign_id: campaignId, campaign_sku_line_id: lineId,
         company: company, country: country, marketplace: mkey, marketplace_id: marketplaceId,
         scope_type: 'sku', scope_id: l.sku, sku: l.sku, series: l.series, category: l.category,
         event_name: eventFlag, event_period: eventPeriod, event_start_date: eventStartDate,

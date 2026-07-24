@@ -27,8 +27,9 @@
 
 .cr-page-actions {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    align-items: flex-end; /* filters (label+control) and bare buttons share one bottom baseline */
+    flex-wrap: wrap;
+    gap: 10px; /* consistent column + row gap on wrap / zoom */
 }
 
 .cr-country-select {
@@ -41,8 +42,16 @@
 }
 
 .cr-btn {
+    /* Fixed medium control height so Country / Marketplace selects + Delete / Add buttons render at
+       the SAME height (border-box makes any border count inside the 36px, not on top of it), with
+       text vertically centred via inline-flex. */
     padding: 0 var(--km-button-padding-x, 16px);
     height: var(--km-button-height, 36px);
+    min-height: var(--km-button-height, 36px);
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border: none;
     border-radius: var(--km-button-radius, 6px);
     font-size: 13px;
@@ -666,3 +675,40 @@
 /* Warnings */
 .cr-form-warnings { margin-top: 8px; }
 .cr-warning-item { font-size: 12px; color: #d97706; padding: 4px 0; }
+
+/* ── Rebuild 2026-07-23: site scope selectors, states, Site SKU column, real image, Missing Data ── */
+/* Site scope cascade (Country → Marketplace → Company) */
+#campaign-risk-section .cr-site { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+#campaign-risk-section .cr-site__field { display: flex; flex-direction: column; gap: 3px; }
+#campaign-risk-section .cr-site__label { font-size: 11px; font-weight: 600; color: #64748b; }
+#campaign-risk-section .cr-site select {
+    height: var(--km-button-height, 36px); /* match .cr-btn so controls + buttons share one height */
+    min-height: var(--km-button-height, 36px);
+    box-sizing: border-box;
+    min-width: 150px; padding: 4px 10px;
+    border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: #fff; color: #1e293b;
+}
+#campaign-risk-section .cr-site select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+#campaign-risk-section .cr-site select:focus-visible { outline: 2px solid #7fb069; outline-offset: 1px; }
+
+/* Site SKU column */
+#campaign-risk-section .cr-table .scroll-header .cr-hcell--sitesku,
+#campaign-risk-section .cr-table .scroll-cell.cr-cell--sitesku { width: 130px; min-width: 130px; justify-content: flex-start; }
+
+/* Real product image (falls back to the IMG placeholder via onerror in JS) */
+#campaign-risk-section .cr-img { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f8fafc; }
+
+/* Missing Data risk (neutral — never green/Safe) */
+.cr-risk--missing { color: #64748b; font-weight: 600; font-style: italic; }
+
+/* Empty / guided / error states */
+#campaign-risk-section .cr-empty-state { padding: 40px 24px; text-align: center; color: #64748b; font-size: 14px; }
+#campaign-risk-section .cr-empty-state--error { color: #b91c1c; }
+#campaign-risk-section .cr-empty-state--error .cr-btn { margin-left: 8px; }
+
+/* Scope readout + small button (Add/Delete modals, retry) */
+#campaign-risk-section .cr-scope-readout,
+.cr-modal .cr-scope-readout { font-size: 13px; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+.cr-modal .cr-scope-note, #campaign-risk-section .cr-scope-note { color: #94a3b8; font-size: 12px; font-weight: 400; }
+.cr-btn--small { padding: 4px 10px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; cursor: pointer; }
+.cr-btn--small:hover { border-color: #7fb069; color: #256b33; }

@@ -6,9 +6,20 @@
                         <p>Rolling 90-day promotion analysis by SKU</p>
                     </div>
                     <div class="cr-page-actions">
-                        <button class="cr-btn cr-btn--filter" id="cr-country-filter-btn" onclick="openCrCountryMarketplaceModal()">US • 1 marketplace</button>
-                        <button class="cr-btn cr-btn--danger" onclick="crDeletePromotions()">Delete Promotions</button>
-                        <button class="cr-btn cr-btn--primary" onclick="crAddPromotion()">+ Add Promotion</button>
+                        <!-- Site scope: Country → Marketplace (→ Company). Derived from marketplace_skus (active).
+                             No default; SKUs load only after a full scope resolves. -->
+                        <div class="cr-site">
+                            <label class="cr-site__field">
+                                <span class="cr-site__label">Country</span>
+                                <select id="cr-country" onchange="onCrCountryChange()" aria-label="Country"><option value="">Select Country</option></select>
+                            </label>
+                            <label class="cr-site__field">
+                                <span class="cr-site__label">Marketplace</span>
+                                <select id="cr-marketplace" onchange="onCrMarketplaceChange()" aria-label="Marketplace" disabled><option value="">Select Marketplace</option></select>
+                            </label>
+                        </div>
+                        <button class="cr-btn cr-btn--danger" id="cr-del-promo-btn" onclick="crDeletePromotions()" disabled title="Select a country and marketplace first">Delete Promotions</button>
+                        <button class="cr-btn cr-btn--primary" id="cr-add-promo-btn" onclick="crAddPromotion()" disabled title="Select a country and marketplace first">+ Add Promotion</button>
                     </div>
                 </div>
                 
@@ -38,6 +49,7 @@
                         <div class="fixed-header"><div class="header-cell">SKU</div></div>
                         <div class="scroll-header-viewport">
                             <div class="scroll-header">
+                                <div class="header-cell cr-hcell--sitesku">Site SKU</div>
                                 <div class="header-cell cr-hcell--img">Image</div>
                                 <div class="header-cell cr-hcell--name">Product Name</div>
                                 <div class="header-cell">90-Day Promo</div>

@@ -1,7 +1,8 @@
 # Inventory Table Mapping Spec (Inventory Replenishment / 貨物庫存表)
 
-**Status:** 🟢 v1.5.6 — Inventory Table Mapping **finalized** (Spec only — formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`)
-**Last Updated:** 2026-07-01
+**Status:** 🟢 v1.5.7 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1 FINALIZED**)
+**Last Updated:** 2026-07-24
+> **Changelog v1.5.6 → v1.5.7 (2026-07-24):** documentation-only sync to calculation owner **v4.1** — Avg Sales/Day now sampled as the latest 30 eligible normal days within a 90-completed-day source window (§8/§13); §21 calculation Open Questions closed (resolved → owner sections, runtime mapping pending); §14/§15 restated as owner-pointing summaries. No formula redefined here.
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md), [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md), [`UI_COMPONENT_GUIDELINES.md`](./UI_COMPONENT_GUIDELINES.md) (**KM Sticky Header Framework**).
 
@@ -35,7 +36,7 @@
 > - **§5 Long Term Storage standardized (no country branch):** **Over 90+ = `inv_age_91_to_180_days`** (the `inv_age_0_to_90_days` bucket is **not** included — corrected after the initial v1.4 draft); **Over 180+ = `inv_age_181_to_270_days` + `inv_age_271_to_365_days` + `inv_age_365_plus_days` + `inv_age_366_to_455_days` + `inv_age_456_plus_days`** (previously omitted `inv_age_365_plus_days` — corrected). **`inv_age_61_to_90_days` removed** (superseded by `0–90` in DB/import only); missing buckets count as 0. Implemented in `inventory-replenishment.js` (`IRMap.longTermStorage`), `operation-system-db-api.js` (added `invAge0To90Days`, retained for storage), and `06_amazon_import_config.gs` (all age buckets optional; `inv-age-61-to-90-days` removed).
 >
 > **Changelog v1.2 → v1.3:**
-> - **Avg Sales/Day is no longer always `sales_units_7d ÷ 7`.** It now uses **`normalized_avg_sales_per_day`** (30-day daily-sales window excluding event/promotion days) when event/promotion contamination exists and enough normal days are available; otherwise it falls back to `sales_units_7d ÷ 7` (per `SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **Sales Trend still shows the Past 7 complete days** — only the Avg Sales *calculation* may use the 30-day normalization (§8, §13).
+> - **Avg Sales/Day is no longer always `sales_units_7d ÷ 7`.** It now uses **`normalized_avg_sales_per_day`** (the latest 30 **eligible normal** sales days sampled backward within a 90-completed-day source window, this SKU's event/promotion days excluded) when contamination exists and enough normal days are available; otherwise it falls back to `sales_units_7d ÷ 7` (per `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2). **Sales Trend still shows the Past 7 complete days** — only the Avg Sales *calculation* uses the 90→30-normal-day normalization (§8, §13).
 >
 > **Changelog v1.1 → v1.2:**
 > - §5 Long Term Storage: kept the finalized Over 180+ formula and added the **report-version compatibility note** — `inv_age_365_plus_days` is the backward-compatible fallback for older Amazon reports, while `inv_age_366_to_455_days` / `inv_age_456_plus_days` are preferred when available. The importer now maps these buckets via `optionalFieldMap` (missing → blank/0, never fails the import).
@@ -195,11 +196,11 @@ Over 180+ = inv_age_181_to_270_days
 > on the axis as an explicit **no-data GAP** — never a fabricated 0 (per the no-fabrication rule). An empty
 > scoped result renders an honest empty chart (no synthetic points).
 
-**Apps Script note:** the Daily Sales snapshot now imports the **previous 30 complete days, excluding today** (`06_amazon_import_config.gs`: `lookbackDays: 30`, `excludeToday: true`). This single snapshot serves **two** purposes:
+**Apps Script note (CANONICAL v4.1):** the Daily Sales snapshot's canonical source window is the **latest 90 completed calendar days, excluding today** (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 — `retentionDays: 90` / `lookbackDays: 90`). *(Runtime gap: if the current importer still runs `lookbackDays: 30`, that is a recorded implementation gap — see `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 and `project-current-state.md`; this spec states the requirement, not a claim that runtime is live.)* This single snapshot serves **two** purposes:
 - **Sales Trend display = the most recent 7 complete days** (unchanged — show each of the last 7 completed `snapshot_date` rows, excluding today).
-- **Avg Sales/Day calculation may use the full 30 completed days** for event/promotion normalization (§13; `SUPPLY_PLANNING_CALCULATION_RULES.md` §22).
+- **Avg Sales/Day calculation** searches backward within the 90-day window and uses the **latest 30 eligible normal sales days** (excluding this SKU's event/promotion days), dividing by the actual normal-day count (§13; `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2).
 
-> **Trend vs Avg Sales are separate:** the trend chart stays at 7 days; the wider 30-day window exists only to compute a clean Avg Sales/Day baseline. No new `amazon_daily_sales_snapshot` column and no BigQuery schema change.
+> **Trend vs Avg Sales are separate:** the trend chart stays at 7 days; the 90-day source window exists only to sample the latest 30 normal days for a clean Avg Sales/Day baseline. No new `amazon_daily_sales_snapshot` column and no BigQuery schema change.
 
 ---
 
@@ -389,7 +390,7 @@ Top-level per-SKU summary row (scope: selected Company + Country + Marketplace).
 | **Current Stock** | `Available + FC Transfer + FC Processing` (from `amazon_inventory_snapshot`) |
 | **On The Way** | Shipping Shipment Total — **pending implementation** (§9) |
 | **3rd Party Stock** | total **available stock** across eligible Overseas Warehouses (`overseas_inventory_snapshot.available_stock`, eligible warehouses only — see §16) |
-| **Avg Sales / Day** | **Primary:** `normalized_avg_sales_per_day` (30-day daily-sales window, event/promotion days excluded) when contamination exists and enough normal days are available; **Fallback:** `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7`. **Rounded to 1 decimal.** This Avg Sales is a **Runtime calculation result** (not persisted); the adopted **source** + **warning** are frozen only at Submit Plan. Per `SUPPLY_PLANNING_CALCULATION_RULES.md` §22 (§22.6 runtime rule). |
+| **Avg Sales / Day** | **Primary:** `normalized_avg_sales_per_day` (latest 30 eligible normal days within a 90-completed-day source window, this SKU's event/promotion days excluded; divide by actual normal-day count) when contamination exists and enough normal days are available; **Fallback:** `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7`. **Rounded to 1 decimal.** This Avg Sales is a **Runtime calculation result** (not persisted); the adopted **source** + **warning** are frozen only at Submit Plan. Per `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 / §22.6. |
 | **60 Days FC** | `Forecast Month+1 + Forecast Month+2` (**Target Rule already applied**, §7) |
 | **Upcoming Event** | Total Event FC (`fc_special_events`, §8) |
 | **Days of Supply** | `Current Stock ÷ Avg Sales per Day` (UI color per §12) |
@@ -412,49 +413,29 @@ Top-level per-SKU summary row (scope: selected Company + Country + Marketplace).
 - **Upcoming Events:** each event may be counted **once only** — never double-count. An event is attributed to the single Need bucket whose window contains its **Preparation Date = Event Start Date − 30 days** (see §8.1), not its event date.
 - **On-the-Way shipments:** shipment quantity **must also be deducted** from Need, and a given shipment quantity **can only be deducted once** — never double-deduct. Earlier-arriving shipments offset the earliest unmet demand first (FIFO by ETA bucket).
 
-### 14.2 Bucket logic
+### 14.2 Bucket logic (direction / mapping summary — no formula here)
 
-```
-For each bucket (0–18 → 19–30 → 31–45 → 46–90), in order:
+- Need is evaluated over the **non-overlapping exact-date buckets** `0–18 / 19–30 / 31–45 / 46–90`, each bucket taking **only its own incremental base sales demand**.
+- **Upcoming Events** are attributed to the single bucket whose window contains the event **Preparation Date = Event Start Date − 30 days** (§8.1), and each event is **counted once**.
+- **On-the-Way** shipments offset the earliest unmet demand first (FIFO by ETA bucket) and each shipment quantity is **deducted once**.
+- **Current Stock**, **On-the-Way**, and **Upcoming Event** are applied cumulatively across buckets so nothing is counted / deducted twice.
+- The engine output is the **Engine A live Demand / Shortage / Remaining Need** — a planning signal, **not** Suggested Order Qty (that exists only after Engine B reallocation → `Net Order Need`, owner §20 / §31).
 
-  Incremental Demand[b]  = base sales demand within bucket b's window only
-  Event[b]               = event FC whose period falls in bucket b   (count once)
-  Shipment[b]            = remaining on-the-way qty arriving within bucket b
-                           (FIFO; not already consumed by an earlier bucket — deduct once)
+### 14.3 Formula ownership
 
-  Need[b] = max(0, Incremental Demand[b] + Event[b] − Shipment[b]
-                   − stock still available after earlier buckets )
-```
-
-- **Current Stock**, **On-the-Way**, and **Upcoming Event** are applied cumulatively across buckets so nothing is counted/deducted twice.
-
-### 14.3 Suggested Qty
-
-```
-Suggested Qty = final remaining demand AFTER
-                Current Stock, On-the-Way, and Upcoming Event have all been processed
-Minimum value = 0.
-```
-
-> Equivalent roll-up view: `Suggested Qty = Need 0–18d + Need 19–30d + Need 31–45d + Need 46–90d` (each floored at 0). The authoritative ordering of stock vs on-the-way vs event consumption is owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` §20.
+> **This section owns no formula.** The authoritative Sales-Driven math — bucket ordering, count-once / deduct-once, sales run-rate, and the final remaining-demand result (min 0) — is owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1** (§2C / §20 / §26 / §29E). Any quantity displayed here maps to that owner output; this page does not define or re-derive it.
 
 ---
 
 ## 15. Forecast Driven Calculation (finalized)
 
-> **Direction / intent — final math owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`.** Safety Days updated to **30**.
+> **Direction / intent only — this section does not own the formula. Final math owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1** (§29F Forecast-Driven, §29G 30-Day Safety Demand, §8/§28 Current Stock). Safety Days = **30**.
 
-```
-Suggested Qty = max(0,
-                  Forecast Month+1
-                + Forecast Month+2
-                + Safety Stock                 (Safety Days = 30 × daily demand)
-                − Current Stock
-                − Qualified On-the-Way )
+**Term set (semantic mapping only — no formula here).** The Forecast-Driven demand result combines, on the demand side: **Target-Adjusted Regular FC** (Month+1 + Month+2, with the Target Rule SKU > Series > Category already applied, §7), **30-Day Safety Demand** (owner §29G), and **Special Event Demand** (100%, owner §10 — must not be omitted). It is netted against the supply offsets: **Current Stock**, **Qualified Incoming**, and **Approved / Committed Supply** (must not be omitted). Floored at 0.
 
-Target Rule must already be applied to the forecast (SKU > Series > Category, §7).
-Minimum value = 0.
-```
+> **Formula ownership — canonical `SUPPLY_PLANNING_CALCULATION_RULES.md` §2D (v4.1)** (with §29F Forecast-Driven, §29G 30-Day Safety Demand). **This section owns no executable formula**; it lists the term mapping only. Neither the demand-side terms nor the supply offsets may be dropped, but the authoritative equation lives only in the owner.
+
+> **Live vs Persisted (canonical, owner §36).** Every Demand / Shortage figure the Inventory Replenishment page shows — including the forecast-breakdown windows and any T1–T4 tier view — is a **LIVE, continuously-recalculated planning signal** (danger notification / shortage risk / planner review / emergency-order entry). It is **NOT** a saved order and **must NOT overwrite** a persisted monthly/emergency Suggested Order snapshot (`recommended_qty`) or the user's `order_qty` / `carton_qty`. Re-displaying the live value never auto-reverts a user edit. **T4 (Month+4) is visibility-only** — shown for risk/planning, never turned into an order commitment (owner §27 / §36).
 
 Where:
 - **Forecast Month+1 / Month+2** = target-adjusted regular forecast for the next two months.
@@ -470,7 +451,7 @@ This chapter is the **official Supply Planning allocation rule**. The calculatio
 
 **Rule 1 — Allocation Scope.** Allocate inventory **only within the same Company and same Country**. **Never** allocate across companies or across countries.
 
-**Rule 2 — Platform Fulfilled.** **No shared allocation.** Inventory belongs to the platform (e.g. Amazon FBA). It is not pooled into shared overseas allocation.
+**Rule 2 — Platform Fulfilled (CANONICAL, 2026-07-22 addendum; owner v4.1).** Platform FBA **Current Stock is a separate bucket** and is **never merged/added into 3PL Current Stock** (separate lineages). **However, a platform-fulfilled marketplace MAY still participate in the shared 3PL replenishment RESERVE** where warehouse-side eligibility holds (`company + country + warehouse_type='3PL' + is_active`); that reserve is shown as `3PL Replenishment Reserve` and can later replenish FBA — it is never displayed as FBA Current Stock. *(Supersedes the earlier "No shared allocation" wording.)* Authoritative formula: `SUPPLY_PLANNING_CALCULATION_RULES.md` §23.6/§24.9 (v4.1 FINALIZED).
 
 > **FBA inventory source precedence (canonical 2026-07-20; `SUPPLY_PLANNING_CALCULATION_RULES.md` §24.2).** **Mode 1 — Platform Snapshot (preferred):** FBA Current Stock = latest valid `amazon_inventory_snapshot` value (the platform SSOT), at the existing grain `company + country/site + marketplace + SKU`. **Do NOT subtract Sales Report quantities again from an imported snapshot** (double-deduct). **Mode 2 — Estimated Ledger (fallback only, when no current snapshot):** opening confirmed stock ± confirmed inbound/returns/adjustments − sales/removals/disposals/loss-damage; label the result **"Estimated Inventory"**; a newer snapshot replaces/reconciles it; never apply both modes to the same interval. Missing adjustment sources → verified-only + stale warning, no fabrication → **Runtime Mapping Required.** FBA is **never** virtually redistributed into the shared FBM pool and Warehouse Reference rows never infer FBA quantity.
 
@@ -536,7 +517,7 @@ Add Marketplace SKU (into planning scope)
   → company / country / marketplace preserved as planning-DEMAND context (not physical grain)
 ```
 - **Marketplace is NOT part of the physical shared-3PL stock grain.** Shared self-fulfilled marketplaces (Shopify / Target / Walmart / Wayfair / …) may **share one physical warehouse inventory**; adding multiple Marketplace SKUs for one Master SKU must **not** create multiple copies of the same physical 3PL inventory (see §17.3A.2).
-- **Amazon FBA / `platform_fulfilled`** inventory stays **separate** from the shared self-fulfilled 3PL pool.
+- **Amazon FBA / `platform_fulfilled`** inventory stays a **separate bucket** (never merged into 3PL Current Stock); marketplace-level participation in the shared 3PL **reserve** is a separate, warehouse-side eligibility question — see §16 Rule 2 and `SUPPLY_PLANNING_CALCULATION_RULES.md` §23.6 (v4.1 FINALIZED).
 - `overseas_inventory_snapshot` / `_movements` are keyed by `warehouse_id + sku` (Master sku); `company`/`country` resolved via `warehouses` at read time — not stored on the rows.
 
 **Runtime status (updated 2026-07-21):**
@@ -582,17 +563,23 @@ Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONA
 
 ## 21. Open Questions
 
-- **Inventory-health finer buckets (§5):** confirm `inv_age_366_to_455_days` / `inv_age_456_plus_days` are added to the Amazon Inventory Health source + import mapping to feed the finalized Over 180+ formula.
+**Calculation-semantic questions are CLOSED at v4.1 (owner `SUPPLY_PLANNING_CALCULATION_RULES.md`).** The items below are **Specification: FINALIZED**; where the runtime engine is not yet built, `Runtime Mapping: NOT IMPLEMENTED` (never reopened as an Open Question):
+
+| Former Open Question | Resolution (owner section) | Runtime |
+|----------------------|----------------------------|---------|
+| Demand run-rate window (§14) | Latest **30 eligible normal days within the latest 90 completed days** — §22.2 | NOT IMPLEMENTED |
+| Event-to-bucket attribution (§8, §14) | Preparation Date = Event Start − 30d; count-once — §10 / §29 | NOT IMPLEMENTED |
+| Forecast-Driven Current Stock (§15) | Destination sellable stock; Factory Stock is source-side — §8 / §28 | NOT IMPLEMENTED |
+| Eligible Overseas Warehouses (§13, §16) | Warehouse-side eligibility `company + country + warehouse_type='3PL' + is_active` — §23.6 / §24.9 | NOT IMPLEMENTED |
+| Allocation rounding (§16) | Deterministic largest-remainder — §24.5–§24.7 / §31 / §34 | NOT IMPLEMENTED |
+
+**Remaining (non-calculation / data-mapping) items — genuinely open, do not affect a frozen formula:**
+- **Inventory-health finer buckets (§5):** confirm `inv_age_366_to_455_days` / `inv_age_456_plus_days` are added to the Amazon Inventory Health source + import mapping to feed the Over 180+ display.
 - **Shipping Shipment / On-the-Way (§9, §13):** finalize the shipment source mapping and reconcile warehouse-side `overseas_inventory_snapshot.on_the_way_*` with marketplace-level `shipments` to avoid double-counting.
-- **Demand run-rate window (§14):** confirm which daily/weekly sales window drives Sales Driven base demand.
-- **Event-to-bucket attribution (§8, §14):** confirm attribution by `event_period` start and handling of multi-bucket-spanning events (still count-once).
-- **Current Stock definition (§15):** confirm Forecast Driven "Current Stock" source (FBA `available_qty` vs warehouse `available_stock` vs combined).
-- **Eligible Overseas Warehouses (§13, §16):** confirm warehouse eligibility resolution for 3rd Party Stock and Self-Fulfilled allocation.
-- **Allocation rounding (§16):** integer rounding / reconciliation vs physical available stock (aligns with `SHIPMENT_CENTER_SPEC.md` §19.1).
-- **Monthly close / recalculation (§10, §20).**
+- **Monthly close / recalculation cadence (§10, §20).**
 
 ---
 
-**v1.0 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`.**
+**v1.5.7 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1 FINALIZED.**
 
 **End of Document**

@@ -3,170 +3,118 @@
 // ========================================
 
 // --- State ---
+// Rebuilt 2026-07-23: the SKU universe is now sourced from the real `marketplace_skus` table (scoped by
+// company + country + marketplace + active status), NOT from window globals or a hardcoded mock, and NO
+// site is defaulted — nothing loads until Country + Marketplace (+ Company) resolve to a full scope.
 const CampaignRiskState = {
-    country: 'US',
-    marketplaces: ['Amazon'],
-    selectedCategories: [],  // empty = all
-    selectedSeries: [],      // empty = all
+    country: '',            // no default (was 'US')
+    marketplaceId: '',      // canonical site identity (C) — the dropdown value; resolves company+marketplace
+    marketplace: '',        // display string, DERIVED from the selected marketplace_id (downstream compares)
+    company: '',            // DERIVED from marketplace_id (visible Company filter removed, D); never user-picked
+    selectedCategories: [], // empty = all
+    selectedSeries: [],     // empty = all
     selectedRisk: 'all',
     page: 1,
     pageSize: 25
 };
+var _crLoadToken = 0;                 // race guard: a country/marketplace switch bumps this; only the latest render wins
+var _crViewState = 'no-scope';        // 'no-scope' | 'no-sku' | 'ready' | 'error'
 
-// --- Country / Marketplace Mapping ---
-const countryMarketplaceMap = {
-    'US': ['Amazon', 'KM Walmart', 'RU Walmart', 'Target', 'Wayfair', 'Shopify', 'Newegg'],
-    'CA': ['Amazon', 'Shopify'],
-    'DE': ['Amazon', 'Shopify'],
-    'FR': ['Amazon', 'Shopify'],
-    'UK': ['Amazon', 'Shopify'],
-    'AU': ['Amazon', 'Shopify'],
-    'ES': ['Amazon'],
-    'NL': ['Amazon'],
-    'SG': ['Amazon'],
-    'JP': ['Amazon']
-};
+// --- Helpers ---
+function _crEqv(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
+function _crActive(status) { var s = String(status == null ? '' : status).trim().toLowerCase(); return s === '' || s === 'active'; }
+function _crDB() { return (window.KM && window.KM.DB) || {}; }
+function crScopeReady() { var s = CampaignRiskState; return !!(s.country && s.marketplace && s.company); }
+function _crEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
-// --- Inventory SKU Availability Mock ---
-const inventorySkuAvailabilityMock = [
-    { country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' },
-    { country: 'US', marketplace: 'Amazon', sku: 'CO1100-S' },
-    { country: 'US', marketplace: 'Amazon', sku: 'CO1150-R' },
-    { country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG' },
-    { country: 'US', marketplace: 'Amazon', sku: 'SP3120-R' },
-    { country: 'US', marketplace: 'Target', sku: 'CO1100-R' },
-    { country: 'US', marketplace: 'Target', sku: 'CO1150-R' },
-    { country: 'US', marketplace: 'Target', sku: 'MO5600-R' },
-    { country: 'US', marketplace: 'Shopify', sku: 'CO1100-W' },
-    { country: 'US', marketplace: 'Shopify', sku: 'SP3410-R' },
-    { country: 'US', marketplace: 'Shopify', sku: 'MO5600-W' },
-    { country: 'US', marketplace: 'KM Walmart', sku: 'CO1100-R' },
-    { country: 'US', marketplace: 'KM Walmart', sku: 'CO1150-R' },
-    { country: 'US', marketplace: 'KM Walmart', sku: 'SP3120-M' },
-    { country: 'US', marketplace: 'KM Walmart', sku: 'MO5600-R' },
-    { country: 'CA', marketplace: 'Amazon', sku: 'CO1100-R' },
-    { country: 'CA', marketplace: 'Amazon', sku: 'CO1150-N' },
-    { country: 'CA', marketplace: 'Amazon', sku: 'SP3120-T' },
-    { country: 'CA', marketplace: 'Amazon', sku: 'MO5600-M' },
-    { country: 'UK', marketplace: 'Amazon', sku: 'CO1100-T' },
-    { country: 'UK', marketplace: 'Amazon', sku: 'CO1150-MB' },
-    { country: 'UK', marketplace: 'Amazon', sku: 'SP3410-B' },
-    { country: 'UK', marketplace: 'Amazon', sku: 'MO5600-T' },
-    { country: 'DE', marketplace: 'Amazon', sku: 'CO1100-R' },
-    { country: 'DE', marketplace: 'Amazon', sku: 'CO1150-R' },
-    { country: 'DE', marketplace: 'Amazon', sku: 'SP3120-B' },
-    { country: 'FR', marketplace: 'Amazon', sku: 'CO1100-S' },
-    { country: 'FR', marketplace: 'Amazon', sku: 'CO1150-AG' },
-    { country: 'FR', marketplace: 'Amazon', sku: 'MO5600-R' },
-    { country: 'AU', marketplace: 'Amazon', sku: 'CO1100-R' },
-    { country: 'AU', marketplace: 'Amazon', sku: 'SP3120-Y' },
-    { country: 'AU', marketplace: 'Amazon', sku: 'MO5600-B' },
-    { country: 'JP', marketplace: 'Amazon', sku: 'CO1100-T' },
-    { country: 'JP', marketplace: 'Amazon', sku: 'SP3120-R' },
-    { country: 'JP', marketplace: 'Amazon', sku: 'SP3410-T' },
-    { country: 'ES', marketplace: 'Amazon', sku: 'CO1100-R' },
-    { country: 'ES', marketplace: 'Amazon', sku: 'CO1150-R' },
-    { country: 'ES', marketplace: 'Amazon', sku: 'MO5600-R' },
-    { country: 'NL', marketplace: 'Amazon', sku: 'CO1100-S' },
-    { country: 'NL', marketplace: 'Amazon', sku: 'SP3120-M' },
-    { country: 'NL', marketplace: 'Amazon', sku: 'MO5600-M' },
-    { country: 'SG', marketplace: 'Amazon', sku: 'CO1100-R' },
-    { country: 'SG', marketplace: 'Amazon', sku: 'CO1150-R' },
-    { country: 'SG', marketplace: 'Amazon', sku: 'SP3410-R' },
-    { country: 'CA', marketplace: 'Shopify', sku: 'CO1100-R' },
-    { country: 'CA', marketplace: 'Shopify', sku: 'SP3120-R' },
-    { country: 'CA', marketplace: 'Shopify', sku: 'MO5600-R' },
-    { country: 'UK', marketplace: 'Shopify', sku: 'CO1100-R' },
-    { country: 'UK', marketplace: 'Shopify', sku: 'SP3410-T' },
-    { country: 'UK', marketplace: 'Shopify', sku: 'MO5600-W' },
-    { country: 'DE', marketplace: 'Shopify', sku: 'CO1150-MB' },
-    { country: 'DE', marketplace: 'Shopify', sku: 'SP3120-T' },
-    { country: 'DE', marketplace: 'Shopify', sku: 'MO5600-T' },
-];
-
-// --- Promotion Mock Data ---
-const LOCALSTORAGE_KEY = 'km_campaign_promotion_records_v2';
-
-const defaultPromotionMockData = [
-    { promotionId: 'promo_001', campaignName: 'CO1100-R-PD-20260210', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-02-10', endDate: '2026-02-20', promoPrice: 19.99, regularPrice: 29.99 },
-    { promotionId: 'promo_002', campaignName: 'CO1100-R-CP-20260301', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-14', promoPrice: 21.99, regularPrice: 29.99 },
-    { promotionId: 'promo_003', campaignName: 'CO1100-R-PD-20260320', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-20', endDate: '2026-04-05', promoPrice: 22.99, regularPrice: 29.99 },
-    { promotionId: 'promo_004', campaignName: 'CO1100-R-PD-20260415', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-04-15', endDate: '2026-04-25', promoPrice: 20.99, regularPrice: 29.99 },
-    { promotionId: 'promo_005', campaignName: 'CO1100-S-CP-20260215', country: 'US', marketplace: 'Amazon', sku: 'CO1100-S', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-15', endDate: '2026-02-25', promoPrice: 21.99, regularPrice: 29.99 },
-    { promotionId: 'promo_006', campaignName: 'CO1100-S-PD-20260420', country: 'US', marketplace: 'Amazon', sku: 'CO1100-S', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-04-20', endDate: '2026-05-10', promoPrice: 22.99, regularPrice: 29.99 },
-    { promotionId: 'promo_007', campaignName: 'CO1150-R-LD-PrimeDay', country: 'US', marketplace: 'Amazon', sku: 'CO1150-R', promotionType: 'Lightning Deal', eventFlag: 'Prime Day', startDate: '2026-07-15', endDate: '2026-07-16', promoPrice: 22.99, regularPrice: 34.99 },
-    { promotionId: 'promo_008', campaignName: 'CO1150-R-PD-20260305', country: 'US', marketplace: 'Amazon', sku: 'CO1150-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-05', endDate: '2026-03-12', promoPrice: 26.99, regularPrice: 34.99 },
-    { promotionId: 'promo_009', campaignName: 'CO1150-AG-BD-BFCM', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Best Deal', eventFlag: 'BFCM', startDate: '2026-11-27', endDate: '2026-12-02', promoPrice: 19.99, regularPrice: 34.99 },
-    { promotionId: 'promo_010', campaignName: 'CO1150-AG-CP-20260120', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-01-20', endDate: '2026-02-15', promoPrice: 27.99, regularPrice: 34.99 },
-    { promotionId: 'promo_011', campaignName: 'CO1150-AG-PD-20260220', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-02-20', endDate: '2026-03-10', promoPrice: 26.99, regularPrice: 34.99 },
-    { promotionId: 'promo_012', campaignName: 'CO1150-AG-PD-20260315', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-15', endDate: '2026-04-01', promoPrice: 27.99, regularPrice: 34.99 },
-    { promotionId: 'promo_013', campaignName: 'CO1150-AG-CP-20260410', country: 'US', marketplace: 'Amazon', sku: 'CO1150-AG', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-04-10', endDate: '2026-04-30', promoPrice: 28.99, regularPrice: 34.99 },
-    { promotionId: 'promo_014', campaignName: 'SP3120-R-PD-20260301', country: 'US', marketplace: 'Amazon', sku: 'SP3120-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-07', promoPrice: 9.99, regularPrice: 14.99 },
-    { promotionId: 'promo_015', campaignName: 'SP3120-R-LD-FallPrime', country: 'US', marketplace: 'Amazon', sku: 'SP3120-R', promotionType: 'Lightning Deal', eventFlag: 'Fall Prime', startDate: '2026-10-08', endDate: '2026-10-09', promoPrice: 8.99, regularPrice: 14.99 },
-    { promotionId: 'promo_016', campaignName: 'MO5600-R-CP-20260201', country: 'US', marketplace: 'Target', sku: 'MO5600-R', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-01', endDate: '2026-02-07', promoPrice: 13.99, regularPrice: 19.99 },
-    { promotionId: 'promo_017', campaignName: 'CO1100-R-PD-CA', country: 'CA', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-10', endDate: '2026-03-20', promoPrice: 19.99, regularPrice: 29.99 },
-    { promotionId: 'promo_018', campaignName: 'CO1100-T-PD-UK', country: 'UK', marketplace: 'Amazon', sku: 'CO1100-T', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-03-01', endDate: '2026-03-10', promoPrice: 17.99, regularPrice: 24.99 },
-    { promotionId: 'promo_019', campaignName: 'CO1100-R-CP-DE', country: 'DE', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Coupon', eventFlag: 'Normal', startDate: '2026-02-20', endDate: '2026-03-05', promoPrice: 18.99, regularPrice: 26.99 },
-    { promotionId: 'promo_020', campaignName: 'CO1150-R-LD-PrimeDay2', country: 'US', marketplace: 'Amazon', sku: 'CO1150-R', promotionType: 'Lightning Deal', eventFlag: 'Prime Day', startDate: '2026-07-15', endDate: '2026-07-16', promoPrice: 24.99, regularPrice: 34.99 },
-    { promotionId: 'promo_021', campaignName: 'CO1100-R-PD-Heavy01', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R', promotionType: 'Price Discount', eventFlag: 'Normal', startDate: '2026-01-15', endDate: '2026-02-05', promoPrice: 19.99, regularPrice: 29.99 },
-];
-
-// --- localStorage Persistence ---
+// --- User-added promotion overlay ---
+// Authoritative promotions come from campaigns + campaign_sku_lines (read-only join below). This overlay
+// holds promotions the user ADDS on this page, keyed by marketplace_sku_id, persisted locally until a real
+// campaign write path (upsertCampaign / upsertCampaignSkuLines) is wired — see the completion report. It is
+// seeded EMPTY (no fabricated promo rows).
+const LOCALSTORAGE_KEY = 'km_campaign_promotion_records_v3';
 function normalizePromotionRecord(rec) {
     const duration = rec.duration || (rec.startDate && rec.endDate ? calculatePromotionDuration(rec.startDate, rec.endDate) : 0);
     const discountPercent = rec.discountPercent || (rec.regularPrice > 0 ? Math.round((1 - rec.promoPrice / rec.regularPrice) * 1000) / 10 : 0);
-    return { ...rec, duration, discountPercent, lps: rec.lps || false, specialCondition: rec.specialCondition || '', createdAt: rec.createdAt || new Date().toISOString(), updatedAt: rec.updatedAt || '' };
-}
-
-function loadPromotionRecords() {
-    try {
-        const stored = localStorage.getItem(LOCALSTORAGE_KEY);
-        if (stored) return JSON.parse(stored).map(normalizePromotionRecord);
-    } catch(e) { console.warn('Failed to load localStorage promotion records:', e); }
-    return defaultPromotionMockData.map(normalizePromotionRecord);
-}
-
-function savePromotionRecords() {
-    try { localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(promotionMockData)); } catch(e) { console.warn('Failed to save:', e); }
-}
-
-let promotionMockData = loadPromotionRecords();
-
-// --- SKU Master Mapping ---
-function getAllSkuDetails() {
-    return [...(window.upcomingSkuData || []), ...(window.runningSkuData || []), ...(window.phasingOutSkuData || [])];
-}
-
-function getEligibleSkusByCountryMarketplace(country, marketplaces) {
-    return [...new Set(
-        inventorySkuAvailabilityMock
-            .filter(r => r.country === country && marketplaces.includes(r.marketplace))
-            .map(r => r.sku)
-    )];
-}
-
-function enrichEligibleSkusWithSkuDetails(eligibleSkuCodes) {
-    const allDetails = getAllSkuDetails();
-    return eligibleSkuCodes.map(sku => {
-        const detail = allDetails.find(d => d.sku === sku);
-        return {
-            sku,
-            productName: detail?.productName || 'Unknown Product',
-            category: detail?.category || 'Unknown',
-            series: detail?.series || 'Unknown',
-            image: detail?.image || ''
-        };
+    return Object.assign({}, rec, {
+        marketplaceSkuId: rec.marketplaceSkuId || '',
+        company: rec.company || '',
+        source: 'overlay',
+        duration, discountPercent,
+        lps: rec.lps || false,
+        specialCondition: rec.specialCondition || '',
+        createdAt: rec.createdAt || new Date().toISOString(),
+        updatedAt: rec.updatedAt || ''
     });
 }
-
-function getSkuMasterData() {
-    // Only show data when Demo mode is ON
-    if (!(window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled())) {
-        return [];
-    }
-    const eligibleCodes = getEligibleSkusByCountryMarketplace(CampaignRiskState.country, CampaignRiskState.marketplaces);
-    return enrichEligibleSkusWithSkuDetails(eligibleCodes);
+function loadPromotionRecords() {
+    try { const stored = localStorage.getItem(LOCALSTORAGE_KEY); if (stored) return JSON.parse(stored).map(normalizePromotionRecord); }
+    catch (e) { console.warn('[CampaignRisk] overlay load failed:', e); }
+    return [];   // empty by default — no mock promotions
 }
+function savePromotionRecords() {
+    try { localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(promotionMockData)); } catch (e) { console.warn('[CampaignRisk] overlay save failed:', e); }
+}
+let promotionMockData = loadPromotionRecords();
+
+// --- SKU universe: marketplace_skus (scoped) JOIN sku_details (read-only for name/image/category/series) ---
+function _crSkuDetailsMap() {
+    var map = {};
+    ((_crDB().getSkuDetails && _crDB().getSkuDetails()) || []).forEach(function (d) {
+        if (d.sku) map[d.sku] = { productName: d.productName || '', image: d.image || '', category: d.category || '', series: d.series || '' };
+    });
+    return map;
+}
+// The scoped, ACTIVE site-SKU list. Uniqueness key = marketplace_sku_id (never plain sku). Front-end
+// filter of the cached whole-table array (the adapter has no scoped GET — see report §9).
+function getSkuMasterData() {
+    if (!crScopeReady()) return [];
+    var s = CampaignRiskState, sd = _crSkuDetailsMap(), out = [], seen = {};
+    ((_crDB().getMarketplaceSkus && _crDB().getMarketplaceSkus()) || []).forEach(function (m) {
+        if (!_crEqv(m.country, s.country) || !_crEqv(m.marketplace, s.marketplace) || !_crEqv(m.company, s.company)) return;
+        if (!_crActive(m.marketplaceSkuStatus)) return;
+        var id = m.marketplaceSkuId || ('MS::' + m.company + '::' + m.country + '::' + m.marketplace + '::' + m.sku);
+        if (seen[id]) return; seen[id] = 1;
+        var d = sd[m.sku] || {};
+        out.push({
+            marketplaceSkuId: id, sku: m.sku, siteSku: m.siteSku || '',
+            company: m.company, country: m.country, marketplace: m.marketplace,
+            marketplaceProductId: m.marketplaceProductId || '',
+            regularPrice: m.regularPrice || 0, msrp: m.msrp || 0,
+            productName: d.productName || '', image: d.image || '', category: d.category || '', series: d.series || ''
+        });
+    });
+    return out;
+}
+// Compat shim: the Add-Promotion batch/lookup code reads this; it now returns the scoped universe.
+function getAllSkuDetails() { return getSkuMasterData(); }
+
+// --- Promotions for the current scope: real campaigns + campaign_sku_lines, merged with the overlay ---
+// Each promo is normalized to { marketplaceSkuId, sku, startDate, endDate, eventFlag, source }. Real lines
+// join campaign_sku_lines.campaignId → campaigns (for company/country/marketplace/dates/eventFlag), and
+// campaign_sku_lines.marketplaceSkuId → marketplace_skus (canonical), sku as Master-SKU fallback.
+function _crScopedPromotions() {
+    if (!crScopeReady()) return [];
+    var s = CampaignRiskState;
+    var out = [];
+    var camps = (_crDB().getCampaigns && _crDB().getCampaigns()) || [];
+    var lines = (_crDB().getCampaignSkuLines && _crDB().getCampaignSkuLines()) || [];
+    var campById = {}; camps.forEach(function (c) { campById[c.campaignId] = c; });
+    lines.forEach(function (l) {
+        var c = campById[l.campaignId]; if (!c) return;
+        if (!_crEqv(c.country, s.country) || !_crEqv(c.marketplace, s.marketplace) || !_crEqv(c.company, s.company)) return;
+        if (l.lineStatus && String(l.lineStatus).toLowerCase() === 'cancelled') return;
+        out.push({ marketplaceSkuId: l.marketplaceSkuId || '', sku: l.sku || '', startDate: c.startDate || '', endDate: c.endDate || '', eventFlag: c.eventFlag || c.majorEventFlag || 'Normal', source: 'campaign' });
+    });
+    // Overlay (user-added) promotions scoped by company+country+marketplace.
+    promotionMockData.forEach(function (p) {
+        if (!_crEqv(p.country, s.country) || !_crEqv(p.marketplace, s.marketplace)) return;
+        if (p.company && !_crEqv(p.company, s.company)) return;
+        out.push({ marketplaceSkuId: p.marketplaceSkuId || '', sku: p.sku || '', startDate: p.startDate || '', endDate: p.endDate || '', eventFlag: p.eventFlag || 'Normal', source: 'overlay' });
+    });
+    return out;
+}
+function _crValidDate(d) { if (!d) return false; var t = new Date(d); return !isNaN(t.getTime()); }
 
 // --- Risk Calculation ---
 function daysBetweenInclusive(start, end) {
@@ -177,18 +125,34 @@ function daysBetweenInclusive(start, end) {
 
 const ANNUAL_EVENTS = ['Prime Day', 'BFCM', 'Fall Prime'];
 
-function calculateSkuRisk(sku, country, marketplaces) {
+// Match promos to a site-SKU by marketplace_sku_id (canonical); fall back to plain sku only when the
+// promo carries no marketplace_sku_id. This prevents same-SKU cross-country/company contamination.
+function _crMatchPromos(promos, marketplaceSkuId, sku) {
+    return promos.filter(function (p) {
+        if (p.marketplaceSkuId) return p.marketplaceSkuId === marketplaceSkuId;
+        return sku && p.sku === sku;
+    });
+}
+
+// Risk formula (UNCHANGED math — trailing-90-day + committed-future promo-days; ≥29 High, ≥15 Watch).
+// Only the INPUT selection changed: real+overlay promos matched by marketplace_sku_id. A promotion that
+// exists but lacks a parseable date range → "Missing Data" (never silently Safe, per G.5).
+function calculateSkuRisk(marketplaceSkuId, sku, promosAll) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const windowStart = new Date(today);
     windowStart.setDate(windowStart.getDate() - 90);
 
-    const promos = promotionMockData.filter(p => p.sku === sku && p.country === country && marketplaces.includes(p.marketplace));
+    const promos = _crMatchPromos(promosAll || _crScopedPromotions(), marketplaceSkuId, sku);
 
     let ninetyDayDays = 0;
     let futureDays = 0;
     let annualEventDays = 0;
     let totalPromos = promos.length;
+
+    if (promos.some(function (p) { return !_crValidDate(p.startDate) || !_crValidDate(p.endDate); })) {
+        return { ninetyDayDays: 0, futureDays: 0, annualEventDays: 0, riskLevel: 'Missing Data', lps: '—', totalPromos: totalPromos, missing: true };
+    }
 
     promos.forEach(p => {
         const pStart = new Date(p.startDate);
@@ -247,16 +211,19 @@ function renderCampaignRiskTracker() {
 }
 
 function renderRiskKPIs() {
-    const results = getFilteredRiskResults();
-    let safe = 0, watch = 0, high = 0;
-    results.forEach(r => {
-        if (r.riskLevel === 'Safe') safe++;
-        else if (r.riskLevel === 'Watch') watch++;
-        else high++;
-    });
-
     const container = document.getElementById('cr-kpi-cards');
     if (!container) return;
+    let safe = 0, watch = 0, high = 0;
+    // Neutral placeholders (all 0) until a full site scope is selected.
+    if (crScopeReady() && _crViewState !== 'error') {
+        const results = getFilteredRiskResults();
+        results.forEach(r => {
+            if (r.riskLevel === 'Safe') safe++;
+            else if (r.riskLevel === 'Watch') watch++;
+            else if (r.riskLevel === 'High Risk') high++;
+            // 'Missing Data' is deliberately counted in NONE of the three cards (never as Safe).
+        });
+    }
     container.innerHTML = `
         <div class="cr-kpi-card cr-kpi-card--safe ${CampaignRiskState.selectedRisk === 'Safe' ? 'is-active' : ''}" onclick="filterByRisk('Safe')">
             <div class="cr-kpi-value">${safe}</div>
@@ -409,46 +376,62 @@ function getFilteredRiskResults() {
     if (CampaignRiskState.selectedSeries.length > 0) {
         skus = skus.filter(s => CampaignRiskState.selectedSeries.includes(s.series));
     }
-    return skus.map(s => ({ ...s, ...calculateSkuRisk(s.sku, CampaignRiskState.country, CampaignRiskState.marketplaces) }));
+    var promosAll = _crScopedPromotions();   // compute once per render (not per SKU)
+    return skus.map(s => Object.assign({}, s, calculateSkuRisk(s.marketplaceSkuId, s.sku, promosAll)));
 }
 
 function renderRiskTable() {
-    let results = getFilteredRiskResults();
-    if (CampaignRiskState.selectedRisk !== 'all') {
-        results = results.filter(r => r.riskLevel === CampaignRiskState.selectedRisk);
-    }
-
-    const total = results.length;
-    const totalPages = Math.ceil(total / CampaignRiskState.pageSize);
-    if (CampaignRiskState.page > totalPages) CampaignRiskState.page = 1;
-    const start = (CampaignRiskState.page - 1) * CampaignRiskState.pageSize;
-    const pageData = results.slice(start, start + CampaignRiskState.pageSize);
-
     const fixedBody = document.getElementById('cr-table-fixed-body');
     const scrollBody = document.getElementById('cr-table-scroll-body');
     const pagination = document.getElementById('cr-pagination');
     if (!fixedBody || !scrollBody) return;
-
-    if (total === 0) {
+    const msg = function (html, cls) {
         fixedBody.innerHTML = '';
-        scrollBody.innerHTML = '<div style="padding:40px;text-align:center;color:#6b7280;">No SKUs found for the selected filters.</div>';
+        scrollBody.innerHTML = '<div class="cr-empty-state ' + (cls || '') + '">' + html + '</div>';
         if (pagination) pagination.innerHTML = '';
-        return;
-    }
+    };
 
+    // STATE 1 — no site scope selected yet (guided empty state; no SKU query is run).
+    if (!crScopeReady()) { msg('Select a country and marketplace to view promotion risk.'); return; }
+    // STATE 4 — API/load error (set by the loader). Show error + Retry, never treat as empty data.
+    if (_crViewState === 'error') { msg('Could not load promotion data. <button type="button" class="cr-btn cr-btn--small" onclick="crReload()">Retry</button>', 'cr-empty-state--error'); return; }
+
+    const master = getSkuMasterData();
+    // STATE 2 — the site has no active marketplace SKUs.
+    if (master.length === 0) { msg('No active marketplace SKUs were found for this site.'); return; }
+
+    let results = getFilteredRiskResults();
+    if (CampaignRiskState.selectedRisk !== 'all') results = results.filter(r => r.riskLevel === CampaignRiskState.selectedRisk);
+
+    const total = results.length;
+    const totalPages = Math.ceil(total / CampaignRiskState.pageSize) || 1;
+    if (CampaignRiskState.page > totalPages) CampaignRiskState.page = 1;
+    const start = (CampaignRiskState.page - 1) * CampaignRiskState.pageSize;
+    const pageData = results.slice(start, start + CampaignRiskState.pageSize);
+
+    // Category/Series (or risk-card) filters excluded everything — but the site DOES have SKUs.
+    if (total === 0) { msg('No SKUs match the current filters.'); return; }
+
+    // STATE 3 (SKUs present, some/all with 0 promotions) is a normal render: rows show, Total Promos = 0.
     fixedBody.innerHTML = pageData.map(r => `
-        <div class="fixed-row">${r.sku}</div>
+        <div class="fixed-row">${_crEsc(r.sku)}</div>
     `).join('');
 
     scrollBody.innerHTML = pageData.map(r => {
-        const riskClass = r.riskLevel === 'Safe' ? 'cr-risk--safe' : r.riskLevel === 'Watch' ? 'cr-risk--watch' : 'cr-risk--high';
+        const riskClass = r.riskLevel === 'Safe' ? 'cr-risk--safe'
+            : r.riskLevel === 'Watch' ? 'cr-risk--watch'
+            : r.riskLevel === 'Missing Data' ? 'cr-risk--missing' : 'cr-risk--high';
+        const img = r.image
+            ? `<img class="cr-img" src="${_crEsc(r.image)}" alt="" loading="lazy" onerror="this.style.display='none';this.parentNode.innerHTML='<div class=\\'cr-img-placeholder\\'>IMG</div>'">`
+            : `<div class="cr-img-placeholder">IMG</div>`;
         return `
-        <div class="scroll-row">
-            <div class="scroll-cell cr-cell--img"><div class="cr-img-placeholder">IMG</div></div>
-            <div class="scroll-cell cr-cell--name">${r.productName}</div>
-            <div class="scroll-cell">${r.ninetyDayDays}</div>
-            <div class="scroll-cell">${r.futureDays}</div>
-            <div class="scroll-cell">${r.annualEventDays || 0}</div>
+        <div class="scroll-row" data-mid="${_crEsc(r.marketplaceSkuId)}">
+            <div class="scroll-cell cr-cell--sitesku">${_crEsc(r.siteSku || '—')}</div>
+            <div class="scroll-cell cr-cell--img">${img}</div>
+            <div class="scroll-cell cr-cell--name">${_crEsc(r.productName || '—')}</div>
+            <div class="scroll-cell">${r.missing ? '—' : r.ninetyDayDays}</div>
+            <div class="scroll-cell">${r.missing ? '—' : r.futureDays}</div>
+            <div class="scroll-cell">${r.missing ? '—' : (r.annualEventDays || 0)}</div>
             <div class="scroll-cell">${r.lps}</div>
             <div class="scroll-cell ${riskClass}">${r.riskLevel}</div>
             <div class="scroll-cell">${r.totalPromos}</div>
@@ -468,96 +451,164 @@ function renderRiskTable() {
     }
 }
 
-// --- Interaction Handlers ---
-function setCrCountry(country) {
-    CampaignRiskState.country = country;
-    CampaignRiskState.marketplaces = [countryMarketplaceMap[country]?.[0] || 'Amazon'];
-    CampaignRiskState.selectedCategories = [];
-    CampaignRiskState.selectedSeries = [];
-    CampaignRiskState.selectedRisk = 'all';
-    CampaignRiskState.page = 1;
-    updateCrFilterButton();
-    renderCampaignRiskTracker();
+// --- Site scope: Country -> Marketplace -> Company cascade (derived from marketplace_skus) ---
+// No site is defaulted; the SKU query runs only after country + marketplace (+ company) resolve.
+function _crActiveMpSkus() {
+    return ((_crDB().getMarketplaceSkus && _crDB().getMarketplaceSkus()) || []).filter(function (m) { return _crActive(m.marketplaceSkuStatus); });
+}
+// Active marketplaces from the `marketplaces` master (canonical site identity — carries marketplace_id +
+// display name + company). Company is derived from this, so the visible Company filter is removed (D).
+function _crActiveMarketplaceMasters() {
+    return ((_crDB().getMarketplaces && _crDB().getMarketplaces()) || []).filter(function (m) {
+        if (!m.marketplaceId) return false;
+        var s = String(m.status == null ? '' : m.status).trim().toLowerCase();
+        return s === '' || s === 'active' || s === 'true' || s === 'enabled' || s === '1' || s === 'yes';
+    });
+}
+function _crResolveMarketplaceId(id) {
+    if (id == null || id === '') return null;
+    return _crActiveMarketplaceMasters().filter(function (m) { return String(m.marketplaceId) === String(id); })[0] || null;
 }
 
-function updateCrFilterButton() {
-    const btn = document.getElementById('cr-country-filter-btn');
-    if (btn) {
-        btn.textContent = `${CampaignRiskState.country} \u2022 ${CampaignRiskState.marketplaces.length} marketplace`;
+// Build the Country <select> from distinct active marketplace_skus countries. Resets marketplace/company.
+function populateCrSiteFilters() {
+    var countrySel = document.getElementById('cr-country');
+    if (!countrySel) return;
+    var active = _crActiveMpSkus();
+    var countries = [];
+    active.forEach(function (m) { if (m.country && countries.indexOf(m.country) === -1) countries.push(m.country); });
+    countries.sort();
+    var prev = CampaignRiskState.country;
+    countrySel.innerHTML = '<option value="">Select Country</option>' +
+        countries.map(function (c) { return '<option value="' + _crEsc(c) + '">' + _crEsc(c) + '</option>'; }).join('');
+    countrySel.value = (prev && countries.indexOf(prev) !== -1) ? prev : '';
+    refreshCrMarketplaceOptions();
+}
+
+// Marketplaces available for the chosen country (active). CANONICAL v4 (C/D): option VALUE = marketplace_id,
+// LABEL = marketplace_display_name (with a company hint when a country has more than one company on the same
+// marketplace — e.g. KM vs ResUS on US/Amazon become two distinct options). Company is DERIVED from the
+// selected marketplace_id, so there is no separate Company selector. Falls back to the marketplace_skus
+// display-string list only when the `marketplaces` master is unavailable (e.g. demo).
+function refreshCrMarketplaceOptions() {
+    var mpSel = document.getElementById('cr-marketplace');
+    if (!mpSel) return;
+    var country = CampaignRiskState.country;
+    if (!country) {
+        mpSel.innerHTML = '<option value="">Select Marketplace</option>';
+        mpSel.disabled = true; CampaignRiskState.marketplaceId = ''; CampaignRiskState.marketplace = ''; CampaignRiskState.company = '';
+        return;
     }
-}
+    // marketplace_ids present in active marketplace_skus for this country (only sites that actually have SKUs).
+    var idsInSkus = {};
+    _crActiveMpSkus().forEach(function (m) { if (_crEqv(m.country, country) && m.marketplaceId) idsInSkus[String(m.marketplaceId)] = 1; });
+    var masters = _crActiveMarketplaceMasters().filter(function (m) {
+        return _crEqv(m.country, country) && (Object.keys(idsInSkus).length === 0 || idsInSkus[String(m.marketplaceId)]);
+    });
 
-function openCrCountryMarketplaceModal() {
-    let modal = document.getElementById('cr-cm-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'cr-cm-modal';
-        modal.className = 'cr-modal-overlay';
-        document.body.appendChild(modal);
+    mpSel.disabled = false;
+
+    if (!masters.length) {
+        // Fallback (no master): legacy distinct display-string list; company auto-derived from marketplace_skus.
+        var mps = [];
+        _crActiveMpSkus().forEach(function (m) { if (_crEqv(m.country, country) && m.marketplace && mps.indexOf(m.marketplace) === -1) mps.push(m.marketplace); });
+        mps.sort();
+        mpSel.innerHTML = '<option value="">Select Marketplace</option>' +
+            mps.map(function (m) { return '<option value="str:' + _crEsc(m) + '">' + _crEsc(m) + '</option>'; }).join('');
+        if (mps.length === 1) { mpSel.value = 'str:' + mps[0]; _crApplyMarketplaceSelection('str:' + mps[0]); }
+        else { mpSel.value = ''; _crApplyMarketplaceSelection(''); }
+        return;
     }
-    const countries = Object.keys(countryMarketplaceMap);
-    const currentCountry = CampaignRiskState.country;
-    const currentMPs = CampaignRiskState.marketplaces;
-    const mpOptions = countryMarketplaceMap[currentCountry] || [];
 
-    modal.innerHTML = `
-        <div class="cr-modal">
-            <div class="cr-modal-header"><h3>Filter by Country & Marketplace</h3><button class="cr-modal-close" onclick="closeCrCmModal()">&times;</button></div>
-            <div class="cr-modal-body">
-                <div class="cr-filter-group"><div class="cr-filter-group-label">Country</div>
-                    <div class="cr-chips" id="cr-cm-countries">${countries.map(c => `<button class="cr-chip ${c === currentCountry ? 'is-active' : ''}" onclick="crCmSelectCountry('${c}')">${c}</button>`).join('')}</div>
-                </div>
-                <div class="cr-filter-group" style="margin-top:16px;"><div class="cr-filter-group-label">Marketplace</div>
-                    <div class="cr-chips" id="cr-cm-marketplaces">${mpOptions.map(m => `<button class="cr-chip ${currentMPs.includes(m) ? 'is-active' : ''}" onclick="crCmToggleMarketplace('${m}')">${m}</button>`).join('')}</div>
-                </div>
-            </div>
-            <div class="cr-modal-footer">
-                <button class="cr-btn cr-btn--cancel" onclick="closeCrCmModal()">Cancel</button>
-                <button class="cr-btn cr-btn--primary" onclick="applyCrCmFilter()">Apply Filters</button>
-            </div>
-        </div>
-    `;
-    modal.style.display = 'flex';
-    window._crCmTempCountry = currentCountry;
-    window._crCmTempMPs = [...currentMPs];
-}
+    // Disambiguate label when >1 company shares the same (country, marketplace) display string.
+    var byDisplay = {};
+    masters.forEach(function (m) { var k = (m.marketplaceDisplayName || m.marketplace); byDisplay[k] = (byDisplay[k] || 0) + 1; });
+    masters.sort(function (a, b) { return String(a.marketplaceDisplayName || a.marketplace).localeCompare(String(b.marketplaceDisplayName || b.marketplace)); });
 
-function closeCrCmModal() {
-    const modal = document.getElementById('cr-cm-modal');
-    if (modal) modal.style.display = 'none';
-}
+    mpSel.innerHTML = '<option value="">Select Marketplace</option>' +
+        masters.map(function (m) {
+            var base = m.marketplaceDisplayName || m.marketplace;
+            var label = _crEsc(base) + (byDisplay[base] > 1 && m.company ? ' (' + _crEsc(m.company) + ')' : '');
+            return '<option value="' + _crEsc(m.marketplaceId) + '">' + label + '</option>';
+        }).join('');
 
-function crCmSelectCountry(country) {
-    window._crCmTempCountry = country;
-    window._crCmTempMPs = [countryMarketplaceMap[country]?.[0] || 'Amazon'];
-    // Re-render chips
-    const countries = Object.keys(countryMarketplaceMap);
-    const mpOptions = countryMarketplaceMap[country] || [];
-    document.getElementById('cr-cm-countries').innerHTML = countries.map(c => `<button class="cr-chip ${c === country ? 'is-active' : ''}" onclick="crCmSelectCountry('${c}')">${c}</button>`).join('');
-    document.getElementById('cr-cm-marketplaces').innerHTML = mpOptions.map(m => `<button class="cr-chip ${window._crCmTempMPs.includes(m) ? 'is-active' : ''}" onclick="crCmToggleMarketplace('${m}')">${m}</button>`).join('');
-}
-
-function crCmToggleMarketplace(mp) {
-    const idx = window._crCmTempMPs.indexOf(mp);
-    if (idx >= 0) {
-        if (window._crCmTempMPs.length > 1) window._crCmTempMPs.splice(idx, 1);
+    var prevId = CampaignRiskState.marketplaceId;
+    if (prevId && masters.some(function (m) { return String(m.marketplaceId) === String(prevId); })) {
+        mpSel.value = prevId; _crApplyMarketplaceSelection(prevId);
+    } else if (masters.length === 1) {
+        mpSel.value = masters[0].marketplaceId; _crApplyMarketplaceSelection(masters[0].marketplaceId);
     } else {
-        window._crCmTempMPs.push(mp);
+        mpSel.value = ''; _crApplyMarketplaceSelection('');
     }
-    const mpOptions = countryMarketplaceMap[window._crCmTempCountry] || [];
-    document.getElementById('cr-cm-marketplaces').innerHTML = mpOptions.map(m => `<button class="cr-chip ${window._crCmTempMPs.includes(m) ? 'is-active' : ''}" onclick="crCmToggleMarketplace('${m}')">${m}</button>`).join('');
 }
 
-function applyCrCmFilter() {
-    CampaignRiskState.country = window._crCmTempCountry;
-    CampaignRiskState.marketplaces = [...window._crCmTempMPs];
+// Resolve a marketplace-dropdown value into the derived scope (marketplace_id → company + marketplace).
+// A "str:" prefix marks the demo fallback (no marketplace_id available).
+function _crApplyMarketplaceSelection(val) {
+    if (val && val.indexOf('str:') === 0) {
+        CampaignRiskState.marketplaceId = '';
+        CampaignRiskState.marketplace = val.slice(4);
+        // Derive company from marketplace_skus for this country + marketplace (fallback path).
+        var comps = [];
+        _crActiveMpSkus().forEach(function (m) { if (_crEqv(m.country, CampaignRiskState.country) && _crEqv(m.marketplace, CampaignRiskState.marketplace) && m.company && comps.indexOf(m.company) === -1) comps.push(m.company); });
+        if (comps.length > 1 && window.console) console.warn('[CR] mapping integrity: multiple companies for ' + CampaignRiskState.country + '/' + CampaignRiskState.marketplace + ' without a marketplace_id — using ' + comps[0]);
+        CampaignRiskState.company = comps[0] || '';
+        return;
+    }
+    var rec = _crResolveMarketplaceId(val);
+    if (!rec) { CampaignRiskState.marketplaceId = ''; CampaignRiskState.marketplace = ''; CampaignRiskState.company = ''; return; }
+    CampaignRiskState.marketplaceId = String(rec.marketplaceId);
+    CampaignRiskState.marketplace = rec.marketplace || '';
+    CampaignRiskState.company = rec.company || '';    // company derived from marketplace_id (D)
+}
+
+function onCrCountryChange() {
+    var countrySel = document.getElementById('cr-country');
+    CampaignRiskState.country = countrySel ? countrySel.value : '';
+    CampaignRiskState.marketplaceId = '';
+    CampaignRiskState.marketplace = '';
+    CampaignRiskState.company = '';
+    _crResetScopeFilters();
+    _crLoadToken++;                 // invalidate any prior async load
+    refreshCrMarketplaceOptions();
+    crRenderScoped();
+}
+function onCrMarketplaceChange() {
+    var mpSel = document.getElementById('cr-marketplace');
+    _crApplyMarketplaceSelection(mpSel ? mpSel.value : '');   // resolves marketplace_id → company + marketplace
+    _crResetScopeFilters();
+    _crLoadToken++;
+    crRenderScoped();
+}
+function _crResetScopeFilters() {
     CampaignRiskState.selectedCategories = [];
     CampaignRiskState.selectedSeries = [];
     CampaignRiskState.selectedRisk = 'all';
     CampaignRiskState.page = 1;
-    closeCrCmModal();
-    updateCrFilterButton();
-    renderCampaignRiskTracker();
+}
+
+// Render for the current scope. Clears prior rows FIRST (so a country switch never shows stale rows),
+// rebuilds the category/series options for the new scope, updates the Add/Delete gate, then renders.
+function crRenderScoped() {
+    if (_crViewState !== 'error') _crViewState = crScopeReady() ? 'ready' : 'no-scope';
+    renderRiskKPIs();
+    renderRiskFilters();
+    renderRiskTable();
+    _crUpdatePromoButtonsGate();
+}
+
+// Ensure the DB cache is loaded (race-guarded), populate the country selector, then render. Sets the
+// error state on failure (shown with a Retry button) — never treats a failed load as empty data.
+function crReload() {
+    if (_crViewState === 'error') _crViewState = 'ready';
+    var done = function () { _crViewState = _crViewState === 'error' ? 'error' : (crScopeReady() ? 'ready' : 'no-scope'); populateCrSiteFilters(); crRenderScoped(); };
+    if (window._opDbCache) { done(); return; }
+    var token = ++_crLoadToken;
+    var loader = (_crDB().loadOperationDb) || window.reloadOperationDb;
+    if (!loader) { _crViewState = 'error'; crRenderScoped(); return; }
+    loader({ force: true })
+        .then(function () { if (token !== _crLoadToken) return; done(); })
+        .catch(function () { if (token !== _crLoadToken) return; _crViewState = 'error'; crRenderScoped(); });
 }
 
 // Legacy compat — no longer used for dropdown but kept for add-promotion modal
@@ -589,10 +640,22 @@ function crNextPage() {
 }
 
 function crAddPromotion() {
+    if (!crScopeReady()) return;   // guarded (button is also disabled)
     openAddPromotionModal();
 }
 function crDeletePromotions() {
+    if (!crScopeReady()) return;
     openDeletePromotionModal();
+}
+// Enable Add / Delete Promotion only when a full site scope is selected; show the reason otherwise.
+function _crUpdatePromoButtonsGate() {
+    var ready = crScopeReady();
+    ['cr-add-promo-btn', 'cr-del-promo-btn'].forEach(function (id) {
+        var b = document.getElementById(id);
+        if (!b) return;
+        b.disabled = !ready;
+        b.title = ready ? '' : 'Select a country and marketplace first';
+    });
 }
 
 // --- Data Access ---
@@ -644,23 +707,29 @@ function calculatePromotionDuration(startDate, endDate) {
     return Math.floor((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
 }
 
+// Same-site match: prefer marketplace_sku_id (canonical); fall back to country+marketplace+sku for
+// overlay rows that predate the id. This keeps the same SKU in a different country/company separate.
+function _crSameSite(p, rec) {
+    if (rec.marketplaceSkuId && p.marketplaceSkuId) return p.marketplaceSkuId === rec.marketplaceSkuId;
+    return p.country === rec.country && p.marketplace === rec.marketplace && p.sku === rec.sku;
+}
 function detectDuplicatePromotion(rec) {
     return promotionMockData.some(p =>
-        p.country === rec.country && p.marketplace === rec.marketplace && p.sku === rec.sku &&
+        _crSameSite(p, rec) &&
         p.startDate === rec.startDate && p.endDate === rec.endDate && p.promotionType === rec.promotionType
     );
 }
 
 function detectOverlappingPromotions(rec) {
     return promotionMockData.filter(p =>
-        p.sku === rec.sku && p.country === rec.country && p.marketplace === rec.marketplace &&
+        _crSameSite(p, rec) &&
         rec.startDate <= p.endDate && rec.endDate >= p.startDate &&
         !(p.startDate === rec.startDate && p.endDate === rec.endDate && p.promotionType === rec.promotionType)
     );
 }
 
-function calculateSkuRiskAfterAdd(sku, newRecords) {
-    const current = calculateSkuRisk(sku, CampaignRiskState.country, CampaignRiskState.marketplaces);
+function calculateSkuRiskAfterAdd(marketplaceSkuId, sku, newRecords) {
+    const current = calculateSkuRisk(marketplaceSkuId, sku);
     const today = new Date(); today.setHours(0,0,0,0);
     let addedFuture = 0;
     let addedAnnual = 0;
@@ -684,17 +753,15 @@ function calculateSkuRiskAfterAdd(sku, newRecords) {
 }
 
 function buildPriceGroupsForBatchSelection(category, series) {
-    let skus = getSkuMasterData();
+    let skus = getSkuMasterData();   // already scoped to the selected company + country + marketplace
     if (category !== 'all') skus = skus.filter(s => s.category === category);
     if (series !== 'all') skus = skus.filter(s => s.series === series);
-    const allDetails = getAllSkuDetails();
     const groups = {};
     skus.forEach(s => {
-        const detail = allDetails.find(d => d.sku === s.sku);
-        const regPrice = parseFloat(detail?.sellingPrice?.replace('$','') || detail?.msrp?.replace('$','') || '29.99');
+        const regPrice = parseFloat(s.regularPrice) || parseFloat(s.msrp) || 0;   // real price from marketplace_skus
         const key = `${s.series}__${regPrice.toFixed(2)}`;
         if (!groups[key]) groups[key] = { series: s.series, category: s.category, regularPrice: regPrice, skus: [] };
-        groups[key].skus.push({ sku: s.sku, productName: s.productName });
+        groups[key].skus.push({ sku: s.sku, productName: s.productName, marketplaceSkuId: s.marketplaceSkuId });
     });
     return Object.values(groups);
 }
@@ -709,14 +776,13 @@ function openAddPromotionModal() {
             <div class="cr-modal-header"><h3>Add Promotion</h3><button class="cr-modal-close" onclick="closeAddPromotionModal()">&times;</button></div>
             <div class="cr-modal-body">
                 <div class="cr-add-section"><div class="cr-add-section-title">1. Scope</div>
-                    <div class="cr-form-row">
-                        <div class="cr-form-group"><label>Country</label><select id="cr-add-country"><option value="US">US</option><option value="CA">CA</option><option value="UK">UK</option><option value="DE">DE</option><option value="AU">AU</option><option value="JP">JP</option></select></div>
-                        <div class="cr-form-group"><label>Marketplace</label><select id="cr-add-marketplace"><option value="Amazon">Amazon</option><option value="Shopify">Shopify</option><option value="Target">Target</option><option value="Walmart">Walmart</option><option value="Wayfair">Wayfair</option></select></div>
-                    </div>
+                    <div class="cr-scope-readout">Site: <strong>${_crEsc(CampaignRiskState.country)} / ${_crEsc(CampaignRiskState.marketplace)}${CampaignRiskState.company ? ' / ' + _crEsc(CampaignRiskState.company) : ''}</strong> <span class="cr-scope-note">(promotions are added to this site only)</span></div>
+                    <input type="hidden" id="cr-add-country" value="${_crEsc(CampaignRiskState.country)}">
+                    <input type="hidden" id="cr-add-marketplace" value="${_crEsc(CampaignRiskState.marketplace)}">
                     <div class="cr-form-row"><div class="cr-form-group cr-form-group--full"><label>Mode</label><div class="cr-mode-toggle"><button class="cr-mode-btn is-active" onclick="setCrAddMode('single')">Single SKU</button><button class="cr-mode-btn" onclick="setCrAddMode('batch')">Category / Series Batch</button></div></div></div>
                 </div>
                 <div class="cr-add-section"><div class="cr-add-section-title">2. Target</div>
-                    <div id="cr-add-single-fields"><div class="cr-form-row"><div class="cr-form-group cr-form-group--full"><label>SKU *</label><input type="text" id="cr-add-sku" placeholder="Enter SKU..." oninput="crLookupSku()"><div id="cr-add-sku-status" class="cr-sku-status"></div></div></div></div>
+                    <div id="cr-add-single-fields"><div class="cr-form-row"><div class="cr-form-group cr-form-group--full"><label>SKU *</label><select id="cr-add-sku" onchange="crOnAddSkuSelect()"><option value="">Select SKU...</option>${getSkuMasterData().map(function(s){return '<option value="'+_crEsc(s.marketplaceSkuId)+'">'+_crEsc(s.sku)+(s.siteSku?(' · '+_crEsc(s.siteSku)):'')+' — '+_crEsc(s.productName||'')+'</option>';}).join('')}</select><div id="cr-add-sku-status" class="cr-sku-status"></div></div></div></div>
                     <div id="cr-add-batch-fields" style="display:none;"><div class="cr-form-row"><div class="cr-form-group"><label>Category</label><select id="cr-add-category" onchange="crUpdateBatchSeries();crBuildGroups()"><option value="all">All Categories</option>${categories.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div><div class="cr-form-group"><label>Series</label><select id="cr-add-series" onchange="crBuildGroups()"><option value="all">All Series</option></select></div></div><div id="cr-add-batch-count" class="cr-batch-count"></div></div>
                 </div>
                 <div class="cr-add-section"><div class="cr-add-section-title">3. Campaign Info</div>
@@ -760,17 +826,14 @@ function setCrAddMode(mode) {
     document.getElementById('cr-add-submit-btn').style.display='none';
 }
 
-function crLookupSku() {
-    const val = document.getElementById('cr-add-sku').value.trim();
+function crOnAddSkuSelect() {
+    const sel = document.getElementById('cr-add-sku');
     const status = document.getElementById('cr-add-sku-status');
-    if (!val) { status.innerHTML = ''; return; }
-    const allDetails = getAllSkuDetails();
-    const found = allDetails.find(d => d.sku === val);
-    if (found) {
-        const eligible = getEligibleSkusByCountryMarketplace(CampaignRiskState.country, CampaignRiskState.marketplaces);
-        if (eligible.includes(val)) status.innerHTML = `<span class="cr-sku-found">SKU found: ${found.productName}</span>`;
-        else status.innerHTML = `<span class="cr-sku-warning">This SKU exists in SKU Details but is not available in the selected country / marketplace.</span>`;
-    } else { status.innerHTML = `<span class="cr-sku-notfound">SKU not found in SKU Details</span>`; }
+    if (!sel || !status) return;
+    const mid = sel.value;
+    if (!mid) { status.innerHTML = ''; return; }
+    const found = getSkuMasterData().find(s => s.marketplaceSkuId === mid);
+    status.innerHTML = found ? `<span class="cr-sku-found">${_crEsc(found.sku)} — ${_crEsc(found.productName || '')}</span>` : '';
 }
 
 function crUpdateBatchSeries() {
@@ -819,16 +882,16 @@ function crPreviewAdd() {
 
     let records = [];
     if(crAddMode==='single'){
-        const sku = document.getElementById('cr-add-sku').value.trim();
-        if(!sku){errEl.textContent='SKU is required.';return;}
-        const found = getAllSkuDetails().find(d=>d.sku===sku);
-        if(!found){errEl.textContent='SKU not found in SKU Details.';return;}
+        const mid = document.getElementById('cr-add-sku').value;
+        if(!mid){errEl.textContent='Please select a SKU.';return;}
+        const found = getSkuMasterData().find(s=>s.marketplaceSkuId===mid);
+        if(!found){errEl.textContent='Selected SKU is not in the current site scope.';return;}
         const reg = parseFloat(document.getElementById('cr-add-regular').value);
         const promo = parseFloat(document.getElementById('cr-add-promo').value);
         if(isNaN(reg)||reg<0){errEl.textContent='Regular Price must be a valid number.';return;}
         if(isNaN(promo)||promo<0){errEl.textContent='Promo Price must be a valid number.';return;}
         if(promo>reg){errEl.textContent='Promo Price cannot be greater than Regular Price.';return;}
-        records.push({sku,regularPrice:reg,promoPrice:promo,productName:found.productName,series:found.series||''});
+        records.push({sku:found.sku, marketplaceSkuId:mid, regularPrice:reg, promoPrice:promo, productName:found.productName, series:found.series||''});
     } else {
         if(crPriceGroups.length===0){errEl.textContent='No eligible SKUs found.';return;}
         const inputs = document.querySelectorAll('.cr-pg-promo-input');
@@ -837,7 +900,7 @@ function crPreviewAdd() {
             if(isNaN(promo)||promo<0){errEl.textContent=`Promo Price for group ${crPriceGroups[i].series} is invalid.`;return;}
             if(promo>crPriceGroups[i].regularPrice){errEl.textContent=`Promo Price for ${crPriceGroups[i].series} cannot exceed Regular Price.`;return;}
             crPriceGroups[i].skus.forEach(s=>{
-                records.push({sku:s.sku,regularPrice:crPriceGroups[i].regularPrice,promoPrice:promo,productName:s.productName,series:crPriceGroups[i].series});
+                records.push({sku:s.sku, marketplaceSkuId:s.marketplaceSkuId, regularPrice:crPriceGroups[i].regularPrice, promoPrice:promo, productName:s.productName, series:crPriceGroups[i].series});
             });
         }
     }
@@ -846,11 +909,11 @@ function crPreviewAdd() {
     const previewRows = [];
     let hasDuplicate = false;
     records.forEach(r=>{
-        const rec = {country,marketplace,sku:r.sku,startDate,endDate,promotionType:type==='PED'?'Prime Exclusive Discount':type,eventFlag};
+        const rec = {country,marketplace,sku:r.sku,marketplaceSkuId:r.marketplaceSkuId,startDate,endDate,promotionType:type==='PED'?'Prime Exclusive Discount':type,eventFlag};
         if(detectDuplicatePromotion(rec)){hasDuplicate=true;return;}
         const overlaps = detectOverlappingPromotions(rec);
         if(overlaps.length>0) warnings.push(`${r.sku}: overlaps with existing promotion.`);
-        const riskAfter = calculateSkuRiskAfterAdd(r.sku,[{...rec,promoPrice:r.promoPrice,regularPrice:r.regularPrice}]);
+        const riskAfter = calculateSkuRiskAfterAdd(r.marketplaceSkuId, r.sku,[{...rec,promoPrice:r.promoPrice,regularPrice:r.regularPrice}]);
         previewRows.push({...r,currentRisk:riskAfter.riskLevel==='Safe'&&riskAfter.ninetyDayDays+riskAfter.futureDays<15?'Safe':riskAfter.ninetyDayDays+riskAfter.futureDays>=29?'High Risk':'Watch', newRisk:riskAfter.newRisk, newTotal:riskAfter.newTotal, lps:riskAfter.lps, current90:riskAfter.ninetyDayDays, currentFuture:riskAfter.futureDays});
     });
     if(hasDuplicate){errEl.textContent='Duplicate promotion record already exists.';return;}
@@ -889,7 +952,7 @@ function submitAddPromotion() {
         const rec = normalizePromotionRecord({
             promotionId: generatePromotionId()+'_'+i,
             campaignName: name || generatePromotionName(r.sku, type),
-            country, marketplace, sku: r.sku,
+            country, marketplace, company: CampaignRiskState.company, sku: r.sku, marketplaceSkuId: r.marketplaceSkuId,
             promotionType: type==='PED'?'Prime Exclusive Discount':type,
             eventFlag, startDate, endDate,
             promoPrice: r.promoPrice, regularPrice: r.regularPrice,
@@ -921,9 +984,10 @@ function openDeletePromotionModal() {
         <div class="cr-modal cr-modal--wide">
             <div class="cr-modal-header"><h3>Delete Promotions</h3><button class="cr-modal-close" onclick="closeDeletePromotionModal()">&times;</button></div>
             <div class="cr-modal-body">
+                <div class="cr-scope-readout">Site: <strong>${_crEsc(CampaignRiskState.country)} / ${_crEsc(CampaignRiskState.marketplace)}${CampaignRiskState.company ? ' / ' + _crEsc(CampaignRiskState.company) : ''}</strong> <span class="cr-scope-note">(only promotions added on this page, for this site, can be deleted here)</span></div>
+                <input type="hidden" id="cr-del-country" value="${_crEsc(CampaignRiskState.country)}">
+                <input type="hidden" id="cr-del-marketplace" value="${_crEsc(CampaignRiskState.marketplace)}">
                 <div class="cr-form-row">
-                    <div class="cr-form-group"><label>Country</label><select id="cr-del-country"><option value="">All</option><option value="US">US</option><option value="CA">CA</option><option value="UK">UK</option><option value="DE">DE</option><option value="AU">AU</option><option value="JP">JP</option></select></div>
-                    <div class="cr-form-group"><label>Marketplace</label><select id="cr-del-marketplace"><option value="">All</option><option value="Amazon">Amazon</option><option value="Shopify">Shopify</option><option value="Target">Target</option><option value="Walmart">Walmart</option></select></div>
                     <div class="cr-form-group"><label>SKU</label><input type="text" id="cr-del-sku" placeholder="SKU..."></div>
                 </div>
                 <div class="cr-form-row">
@@ -957,10 +1021,15 @@ function crSearchDeleteRecords() {
     const startDate = document.getElementById('cr-del-start').value;
     const endDate = document.getElementById('cr-del-end').value;
 
+    // Scope-locked: only overlay (user-added) promotions for the CURRENT site are searchable/deletable.
+    // Real campaign_sku_lines are read-only here (not in promotionMockData), so they can never be deleted
+    // by mistake, and a Master SKU can never delete another country/company's promotion.
+    var company = CampaignRiskState.company;
     crDeleteResults = promotionMockData.filter(p => {
-        if (country && p.country !== country) return false;
-        if (marketplace && p.marketplace !== marketplace) return false;
-        if (sku && !p.sku.toLowerCase().includes(sku.toLowerCase())) return false;
+        if (country && !_crEqv(p.country, country)) return false;
+        if (marketplace && !_crEqv(p.marketplace, marketplace)) return false;
+        if (company && p.company && !_crEqv(p.company, company)) return false;
+        if (sku && !String(p.sku || '').toLowerCase().includes(sku.toLowerCase())) return false;
         if (startDate && p.endDate < startDate) return false;
         if (endDate && p.startDate > endDate) return false;
         return true;
@@ -1027,13 +1096,11 @@ function initCrScrollSync() {
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
     initCrScrollSync();
-    updateCrFilterButton();
-    renderRiskFilters();
+    // Selector population + initial (gated) render happen on lifecycle mount via crReload().
 });
 
 // --- Exports ---
 window.renderCampaignRiskTracker = renderCampaignRiskTracker;
-window.setCrCountry = setCrCountry;
 window.setCrCategory = setCrCategory;
 window.setCrSeries = setCrSeries;
 window.filterByRisk = filterByRisk;
@@ -1046,23 +1113,21 @@ window.closeAddPromotionModal = closeAddPromotionModal;
 window.openDeletePromotionModal = openDeletePromotionModal;
 window.closeDeletePromotionModal = closeDeletePromotionModal;
 window.setCrAddMode = setCrAddMode;
-window.crLookupSku = crLookupSku;
+window.crOnAddSkuSelect = crOnAddSkuSelect;
 window.crUpdateBatchSeries = crUpdateBatchSeries;
 window.submitAddPromotion = submitAddPromotion;
 window.crSearchDeleteRecords = crSearchDeleteRecords;
 window.crSelectAllDelete = crSelectAllDelete;
 window.crDeleteSelected = crDeleteSelected;
 window.refreshCampaignRiskTracker = refreshCampaignRiskTracker;
-window.openCrCountryMarketplaceModal = openCrCountryMarketplaceModal;
-window.closeCrCmModal = closeCrCmModal;
-window.crCmSelectCountry = crCmSelectCountry;
-window.crCmToggleMarketplace = crCmToggleMarketplace;
-window.applyCrCmFilter = applyCrCmFilter;
-window.updateCrFilterButton = updateCrFilterButton;
-
-
 window.crBuildGroups = crBuildGroups;
 window.crPreviewAdd = crPreviewAdd;
+// Site scope cascade + loader
+window.populateCrSiteFilters = populateCrSiteFilters;
+window.onCrCountryChange = onCrCountryChange;
+window.onCrMarketplaceChange = onCrMarketplaceChange;
+// Company filter removed (D) — company is derived from the selected marketplace_id, no separate control.
+window.crReload = crReload;
 
 // --- Lifecycle registration (Phase 2B-3) ---
 // mount re-binds the document outside-click/ESC listeners (idempotent) and renders via the
@@ -1104,7 +1169,7 @@ if (window.KM && window.KM.lifecycle) {
                 var sec = document.getElementById('campaign-risk-section');
                 if (sec) sec.classList.add('active');
                 _bindCrDocListeners();
-                renderCampaignRiskTracker();
+                crReload();   // load cache (race-guarded) → populate Country selector → gated render
             });
         },
         unmount() {
@@ -1123,10 +1188,11 @@ function debugPromotionRecords() {
 
 function resetCampaignPromotionMockData() {
     localStorage.removeItem(LOCALSTORAGE_KEY);
-    promotionMockData = defaultPromotionMockData.map(normalizePromotionRecord);
+    promotionMockData = [];   // overlay is empty by default (no mock seed); real promos come from campaigns
     refreshCampaignRiskTracker();
-    console.log('Mock data reset to defaults. Records:', promotionMockData.length);
+    console.log('Overlay promotions cleared. Records:', promotionMockData.length);
 }
+function _crDebugMid(sku) { var f = getSkuMasterData().find(function (s) { return s.sku === sku; }); return f ? f.marketplaceSkuId : ''; }
 
 function addTestHighRiskPromotion() {
     const today = new Date();
@@ -1138,8 +1204,10 @@ function addTestHighRiskPromotion() {
             promotionId: 'test_high_' + Date.now() + '_' + i,
             campaignName: 'TEST-HighRisk-' + i,
             country: CampaignRiskState.country,
-            marketplace: CampaignRiskState.marketplaces[0] || 'Amazon',
+            marketplace: CampaignRiskState.marketplace,
+            company: CampaignRiskState.company,
             sku: 'CO1100-R',
+            marketplaceSkuId: _crDebugMid('CO1100-R'),
             promotionType: 'Price Discount',
             eventFlag: 'Normal',
             startDate: start.toISOString().slice(0, 10),
@@ -1160,8 +1228,10 @@ function addTestAnnualEventPromotion() {
         promotionId: 'test_annual_' + Date.now(),
         campaignName: 'TEST-PrimeDay',
         country: CampaignRiskState.country,
-        marketplace: CampaignRiskState.marketplaces[0] || 'Amazon',
+        marketplace: CampaignRiskState.marketplace,
+        company: CampaignRiskState.company,
         sku: 'CO1100-R',
+        marketplaceSkuId: _crDebugMid('CO1100-R'),
         promotionType: 'Lightning Deal',
         eventFlag: 'Prime Day',
         startDate: '2026-07-15',

@@ -7,8 +7,8 @@
                 <!-- Filter Bar (Part 1): left = Country / Marketplace / Risk / Show / SKU / Search;
                      right = Confirm Site / All Request / Send Request (action group, right-aligned,
                      same height as Search — NOT in the Category tabs row, NOT above the card).
-                     Country & Marketplace filtering uses OR semantics (see _applyRequestOrderFilters).
-                     Category is a TAB (below), not a filter. -->
+                     Country / Marketplace / Risk / SKU filtering uses AND semantics (see
+                     _applyRequestOrderFilters; empty selection = unconstrained). Category is a TAB (below). -->
                 <div class="ro-filters">
                     <div class="ro-filter ro-filter--dropdown">
                         <label>Country</label>
@@ -70,12 +70,17 @@
 
                     <div class="ro-filter">
                         <label>SKU</label>
-                        <input type="text" class="ro-filter-sku" placeholder="Enter SKU..." onchange="updateRequestOrderFilter('sku')" />
+                        <input type="text" class="ro-filter-sku" placeholder="Enter SKU..." oninput="updateRequestOrderFilter('sku')" onchange="updateRequestOrderFilter('sku')" />
                     </div>
 
                     <div class="ro-filter ro-filter--search">
                         <label>&nbsp;</label>
                         <button type="button" class="ro-btn ro-btn--primary" onclick="handleRequestOrderSearch()">Search</button>
+                    </div>
+
+                    <div class="ro-filter ro-filter--clear">
+                        <label>&nbsp;</label>
+                        <button type="button" class="ro-btn ro-btn--ghost" onclick="clearRequestOrderFilters()">Clear Filters</button>
                     </div>
 
                     <!-- Right-side action group (Part 1/2): Confirm Site / All Request / Send Request.
@@ -120,35 +125,35 @@
                                     <!-- 第一層表頭：群組標題 -->
                                     <div class="km-table__header-row km-table__header-row--level1">
                                         <!-- Upcoming FC (2個子欄位) -->
-                                        <div class="km-table__header-cell" style="width:280px;">Upcoming FC</div>
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:280px;">Upcoming FC</div>
                                         <!-- Inventory & Ongoing (4個子欄位) -->
-                                        <div class="km-table__header-cell" style="width:560px;">Inventory &amp; Ongoing</div>
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:560px;">Inventory &amp; Ongoing</div>
                                         <!-- Coverage & Time (2個子欄位) -->
-                                        <div class="km-table__header-cell" style="width:200px;">Coverage &amp; Time</div>
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:200px;">Coverage &amp; Time</div>
                                         <!-- Shortage (3個子欄位) - 隱藏但保有篩選功能 -->
                                         <div class="km-table__header-cell" style="width:300px; display:none;">Shortage</div>
                                         <!-- Decision (1個子欄位) -->
-                                        <div class="km-table__header-cell" style="width:200px;">Decision</div>
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:200px;">Decision</div>
                                     </div>
                                     <!-- 第二層表頭：詳細欄位 -->
                                     <div class="km-table__header-row km-table__header-row--level2">
                                         <!-- Upcoming FC 子欄位 (2個) -->
-                                        <div class="km-table__header-cell" style="width:140px;">Basic(T3)</div>
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:140px;">Basic(T3)</div>
                                         <div class="km-table__header-cell" style="width:140px;">Special Events</div>
                                         <!-- Inventory & Ongoing 子欄位 (4個) -->
-                                        <div class="km-table__header-cell" style="width:140px;">Site Stock</div>
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:140px;">Site Stock</div>
                                         <div class="km-table__header-cell" style="width:140px;">3rd Party</div>
                                         <div class="km-table__header-cell" style="width:140px;">Factory Stock</div>
                                         <div class="km-table__header-cell" style="width:140px;">Ongoing Orders</div>
-                                        <!-- Coverage & Time 子欄位 (2個) -->
-                                        <div class="km-table__header-cell" style="width:100px;">Remaining</div>
+                                        <!-- Coverage & Time 子欄位 (2個): Remaining 起始群組邊界 -->
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:100px;">Remaining</div>
                                         <div class="km-table__header-cell" style="width:100px;">Lead Time</div>
                                         <!-- Shortage 子欄位 (3個) - 隱藏但保有篩選功能 -->
                                         <div class="km-table__header-cell" style="width:100px; display:none;">M1</div>
                                         <div class="km-table__header-cell" style="width:100px; display:none;">M2</div>
                                         <div class="km-table__header-cell" style="width:100px; display:none;">M3</div>
-                                        <!-- Decision 子欄位 (1個) -->
-                                        <div class="km-table__header-cell" style="width:200px;">Suggest Order</div>
+                                        <!-- Decision 子欄位 (1個): Suggest Order 起始群組邊界 (Lead Time | Suggest Order) -->
+                                        <div class="km-table__header-cell km-table__header-cell--group-start" style="width:200px;">Suggest Order</div>
                                     </div>
                                 </div>
                             </div>

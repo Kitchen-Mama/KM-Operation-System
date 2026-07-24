@@ -154,6 +154,101 @@
     color: white;
 }
 
+/* ================================================================
+   Toolbar "More Options" dropdown (renamed 2026-07-23) — UI-only. Scoped to #ops-section; visual style
+   mirrors the SKU Details "More Options" menu (light-grey ⋯ trigger, white panel, rounded corners, soft
+   shadow, grouped items). Pinned to the far right of the ops group.
+   ================================================================ */
+#ops-section .replen-actions__ops { flex-wrap: wrap; }
+#ops-section .replen-actions-menu { position: relative; margin-left: auto; }
+/* More Options — visually IDENTICAL to SKU Details' More Options (.btn-more-options / .more-options-panel
+   / .more-options-item): neutral light-grey trigger (#f1f5f9 / #334155), white panel with a thin border +
+   soft shadow, flat left-aligned items. Same token values as sku-details.css (no orange / toy look).
+   Menu interaction, keyboard nav and click-outside close are unchanged (JS untouched). */
+#ops-section .replen-actions-menu__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid var(--border-light);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm);
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    cursor: pointer;
+}
+#ops-section .replen-actions-menu__trigger:hover { background: #e2e8f0; opacity: 1; }
+#ops-section .replen-actions-menu__trigger[aria-expanded="true"] { background: #e2e8f0; }
+
+#ops-section .replen-actions-menu__list {
+    position: absolute;
+    top: calc(100% + var(--space-xs));
+    right: 0;
+    min-width: 240px;
+    width: max-content;
+    max-width: min(340px, calc(100vw - 24px));
+    background: white;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft, 0 8px 24px rgba(15,23,42,0.14));
+    padding: var(--space-xs);
+    z-index: 140;   /* above the sticky toolbar (131) */
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+#ops-section .replen-actions-menu__list[hidden] { display: none; }
+
+#ops-section .replen-actions-menu__section {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--km-filter-muted, #94a3b8);
+    padding: 6px 8px 2px;
+}
+#ops-section .replen-actions-menu__divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: var(--space-xs) 4px;
+}
+#ops-section .replen-actions-menu__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 9px 10px;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body);
+    color: var(--text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+#ops-section .replen-actions-menu__item:hover,
+#ops-section .replen-actions-menu__item:focus {
+    background: var(--bg-surface, #f1f5f9);
+    outline: none;
+}
+#ops-section .replen-actions-menu__item:focus-visible {
+    outline: 2px solid var(--km-brand-blue, #0080bb);
+    outline-offset: -2px;
+    background: var(--bg-surface, #f1f5f9);
+}
+#ops-section .replen-actions-menu__item[disabled] { opacity: 0.5; cursor: not-allowed; }
+/* Delete = destructive: red text + a warning glyph (signalled by icon + weight, not colour alone). */
+#ops-section .replen-actions-menu__item--danger { color: var(--km-ui-danger, #dc2626); font-weight: var(--weight-medium); }
+#ops-section .replen-actions-menu__item--danger:hover { background: #fee2e2; }
+#ops-section .replen-actions-menu__danger-icon { font-size: 12px; line-height: 1; }
+
+/* Narrow screens: let the panel align left instead of overflowing the right edge. */
+@media (max-width: 640px) {
+    #ops-section .replen-actions-menu__list { right: auto; left: 0; }
+}
+
 /* Import SKU modal */
 #ops-section .replen-import__hint {
     font-size: 12px;
@@ -369,8 +464,10 @@
 }
 
 #ops-section .fixed-header {
-    width: 120px;
-    min-width: 110px;
+    /* SKU column: wide enough to show the full SKU (no truncation). Kept identical to .fixed-col
+       so the sticky SKU header stays aligned with the SKU body cells. */
+    width: 200px;
+    min-width: 200px;
     height: var(--km-sticky-header-total, 96px);
     background: #f5f5f5;
     border-right: 1px solid #dbe3ea;
@@ -465,10 +562,13 @@
     min-width: 360px;
 }
 
+/* Replenishment group = EXACTLY 2 leaves (Days of Supply + Suggested Qty) = 2 × 120px. The prior
+   "Planned Qty" leaf was removed, so this dropped from 360px (3 leaves) back to 240px — otherwise the
+   group over-spans and CN slides under the Replenishment boundary. Keep in sync with data-leaf-span="2". */
 #ops-section .km-table__header-cell--replen {
     background: #FFD966;
-    width: 360px;
-    min-width: 360px;
+    width: 240px;
+    min-width: 240px;
 }
 
 #ops-section .km-table__header-cell--factory {
@@ -508,14 +608,15 @@
     background: #CDE1F2;
 }
 
+/* Replenishment leaves = 7 (Days of Supply), 8 (Suggested Qty). */
 #ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(7),
-#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(8),
-#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(9) {
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(8) {
     background: #FFECB3;
 }
 
-#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(10),
-#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(11) {
+/* Factory Stock leaves = 9 (CN), 10 (TW). */
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(9),
+#ops-section .km-table__header-row--level2 .km-table__header-cell:nth-child(10) {
     background: #F9D9C2;
 }
 
@@ -546,8 +647,9 @@
 }
 
 #ops-section .fixed-col {
-    width: 120px;
-    min-width: 110px;
+    /* Must match .fixed-header width so the SKU header + SKU body cells stay column-aligned. */
+    width: 200px;
+    min-width: 200px;
     flex-shrink: 0;
     background: white;
     z-index: var(--km-sticky-z-col, 110); /* left sticky column: below header rows */
@@ -563,14 +665,13 @@
 
 #ops-section .fixed-row {
     height: 48px;
-    padding: 0 var(--space-md);
+    /* Compact horizontal padding so the chevron + SKU sit tight to the left; no oversized gutter. */
+    padding: 0 10px;
     display: flex;
     align-items: center;
     border-bottom: 1px solid var(--border-light);
     cursor: pointer;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-weight: 600;
     font-size: 13px;
 }
@@ -604,13 +705,54 @@
     box-sizing: border-box;
 }
 
-#ops-section .scroll-cell:nth-child(1) { width: 100px; min-width: 100px; max-width: 100px; font-size: 12px; font-weight: 500; color: var(--km-filter-muted, #6b7280); white-space: nowrap; }
+/* Planning Model column (first scroll column) — horizontally + vertically centred to match its
+   centred header (.km-table__header-cell--status). Vertical centring comes from .scroll-cell's
+   align-items:center; add horizontal centring here. */
+#ops-section .scroll-cell:nth-child(1) { width: 100px; min-width: 100px; max-width: 100px; font-size: 12px; font-weight: 500; color: var(--km-filter-muted, #6b7280); white-space: nowrap; justify-content: center; text-align: center; }
 #ops-section .scroll-cell:nth-child(2),
 #ops-section .scroll-cell:nth-child(3) { display: none; }
 
-/* Overview table: undo the display:none for child 2,3 */
-#ops-section .ir-overview .scroll-cell:nth-child(2),
-#ops-section .ir-overview .scroll-cell:nth-child(3) { display: flex; }
+/* Suggested Qty cell shows the value / status ONLY. The gear was removed; expand is driven by the whole
+   row and by the chevron in the SKU column. */
+#ops-section .replen-suggested-cell {
+    justify-content: center;
+}
+#ops-section .replen-suggested-cell__value { font-variant-numeric: tabular-nums; }
+
+/* SKU-column expand chevron: a native <button> to the LEFT of the SKU text, vertically centred. Rotates
+   from ▸ (collapsed) to a downward point via .is-open; aria-expanded is kept in sync in JS. */
+#ops-section .fixed-row { gap: 6px; }
+#ops-section .replen-row-chevron {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--km-filter-muted, #6b7280);
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1;
+}
+#ops-section .replen-row-chevron:hover { background: #eef2f7; color: #334155; }
+#ops-section .replen-row-chevron:focus-visible {
+    outline: 2px solid var(--km-brand-blue, #0080bb);
+    outline-offset: 1px;
+}
+#ops-section .replen-row-chevron__icon {
+    display: inline-block;
+    font-size: 11px;
+    transition: transform 0.15s ease;
+}
+#ops-section .replen-row-chevron.is-open .replen-row-chevron__icon { transform: rotate(90deg); }
+#ops-section .replen-row-sku {
+    /* Full SKU, single line, never truncated by ellipsis (the sticky column is sized to fit it). */
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
 
 /* 展開面板等高布局 */
 #ops-section .replen-expand-panel {
@@ -771,6 +913,10 @@
 #ops-section .replen-tp-state--none { color: #64748b; }
 #ops-section .replen-tp-state--missing { color: #b45309; }
 #ops-section .replen-tp-state--na { color: #94a3b8; }
+/* Simplified 3rd Party Stock card (warehouse name + physical qty + Total). */
+#ops-section .replen-tp-empty { font-size: 13px; color: #94a3b8; padding: 6px 0; white-space: normal; }
+#ops-section .replen-tp-total { border-top: 1px solid var(--border-light, #e5e7eb); margin-top: 4px; padding-top: 4px; font-weight: 700; }
+#ops-section .replen-tp-wh .replen-card__value { font-variant-numeric: tabular-nums; }
 
 /* Upcoming Event card: start/end dates + expandable "+N more" list. */
 #ops-section .replen-evt-dates { color: var(--text-secondary); font-size: 11px; }
@@ -880,24 +1026,38 @@
 
 /* Groups use FIXED widths and never shrink/grow (Layout v3). The row extends past the viewport as
    needed; the main table's .scroll-col scrolls it — no wrap, no reflow. */
-/* Group B — forecast context (narrow). */
+/* Group A — inventory state (Stock / LTS / Shipping / 3rd Party). FIXED width so it never shrinks below
+   its 2-col card grid (which previously let the left analysis card collapse/appear covered).
+   Reconciled to a single 360px value (the older duplicate .ir-panel--inventory-group rule below is now
+   also 360px), and given part of the width reclaimed from Group B so the 2-col grid is comfortable. */
+#ops-section .ir-panel--inventory-group {
+    flex: 0 0 360px;
+    width: 360px;
+    min-width: 360px;
+}
+/* Group B — forecast context (Forecast Breakdown + Upcoming Event, stacked). Shrunk ~20% (240px → 192px);
+   the reclaimed ~48px is redistributed to Groups A and C below. Dates / qtys / Event names still fit
+   (they wrap, never truncate). */
 #ops-section .ir-panel-column--context {
-    flex: 0 0 240px;
-    width: 240px;
+    flex: 0 0 192px;
+    width: 192px;
+    min-width: 192px;
 }
-/* Group C — sales recommendation (Sales Trend needs 7 days; Recommendation Summary Reason single-line). */
+/* Group C — sales recommendation (Sales Trend needs 7 days; Recommendation Summary Reason single-line).
+   Given part of the width reclaimed from Group B (420px → 432px). */
 #ops-section .ir-panel-column--insight {
-    flex: 0 0 420px;
-    width: 420px;
-    min-width: 420px;
+    flex: 0 0 432px;
+    width: 432px;
+    min-width: 432px;
 }
-/* Group D — action plan. Wide enough that the Execution Plan grid (From 100 / To 100 / Qty 60 /
-   Method 130 / Delete 36 + 4×8px gaps ≈ 458px min) fits inside the card padding WITHOUT shrinking
-   the Method track under the Delete button (no overlap). */
+/* Group D — action plan. Wide enough that the FULL SIX-column Execution Plan grid
+   (From 84 / To 84 / Qty 52 / Method 112 / Expected Arrival 100 / Action 40 + 5×8px gaps ≈ 512px min)
+   fits inside the card padding WITHOUT the Expected-Arrival cell or the X button escaping the border.
+   Kept at 560px (≥540, the Execution Plan minimum) — untouched by the Group B redistribution. */
 #ops-section .ir-panel-column--action {
-    flex: 0 0 490px;
-    width: 490px;
-    min-width: 490px;
+    flex: 0 0 560px;
+    width: 560px;
+    min-width: 560px;
 }
 
 /* Recommendation Summary / Execution Plan cards size to content — height GROWS with wrapped content,
@@ -987,12 +1147,16 @@
    header's last cell (Delete column) has no text (Part 4). */
 #ops-section .ir-exec-plan__grid {
     display: grid;
-    /* From · To · Qty · Method · Expected Arrival · Action (§11.3/§11.5). min-width:0 on items so the
-       Method select, ETA, and the delete button never overlap or touch the card edge. */
-    grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr) 56px minmax(120px, 1fr) minmax(110px, auto) 36px;
+    /* SIX columns: From · To · Qty · Method · Expected Arrival · Action (§11.3/§11.5). The last (Action)
+       track is a fixed 40px so the X button always sits in its own column, in normal document flow, never
+       overlapping Expected Arrival and never crossing the card border. min-width:0 on items lets Method/
+       ETA shrink+ellipsis rather than push the button out. */
+    grid-template-columns: minmax(84px, 1fr) minmax(84px, 1fr) 52px minmax(112px, 1fr) minmax(100px, auto) 40px;
     column-gap: 8px;
     row-gap: 6px;
     align-items: center;
+    box-sizing: border-box;
+    width: 100%;
 }
 #ops-section .ir-exec-plan__grid > * { min-width: 0; }
 /* Expected Arrival read-only cell (right of Method). Unavailable/lead-time-missing state is muted. */
@@ -1072,14 +1236,19 @@
         width: 100%;
         min-width: 0;
     }
-    /* Inventory + context groups share the first wrapped row and may shrink. */
-    #ops-section .ir-panel--inventory-group,
+    /* Inventory + context groups share the first wrapped row and may shrink. Context keeps a smaller
+       flex-basis than inventory (it holds only the two narrow stacked cards), reflecting the ~20%
+       desktop reduction — but never forced to the desktop fixed width here (tablet/mobile wrap freely). */
+    #ops-section .ir-panel--inventory-group {
+        flex: 1 1 300px;
+        min-width: 0;
+    }
     #ops-section .ir-panel-column--context {
-        flex: 1 1 280px;
+        flex: 1 1 220px;
         min-width: 0;
     }
     /* Execution Plan grid keeps all six columns readable when full-width. */
-    #ops-section .ir-exec-plan__grid { grid-template-columns: minmax(96px,1fr) minmax(96px,1fr) 56px minmax(130px,1.2fr) minmax(120px,auto) 36px; }
+    #ops-section .ir-exec-plan__grid { grid-template-columns: minmax(84px,1fr) minmax(84px,1fr) 52px minmax(112px,1.2fr) minmax(100px,auto) 40px; }
 }
 
 /* Top-row cards across ALL groups share one min-height and do not grow, so their bottoms (the
@@ -1100,6 +1269,15 @@
     max-height: 100px;
 }
 
+/* Monthly Achievement Rate — honest read-only table (3 completed months; "—" for undefined metrics). */
+#ops-section .replen-achv-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
+#ops-section .replen-achv-table th,
+#ops-section .replen-achv-table td { padding: 3px 6px; text-align: left; border-bottom: 1px solid #F1F5F9; white-space: nowrap; }
+#ops-section .replen-achv-table thead th { color: #64748B; font-weight: 600; }
+#ops-section .replen-achv-table .replen-achv__num { text-align: right; }
+/* Achievement card sizes to the table (was a fixed-height chart); keep it aligned with siblings. */
+#ops-section .replen-card--achievement { min-height: 150px; }
+
 /* Second-row cards size to content (not stretched) so Upcoming Event matches the Shipping Shipment
    / 3rd Party Stock small cards in height, and Recommendation Summary / Execution Plan stay compact. */
 #ops-section .replen-card--upcoming,
@@ -1116,174 +1294,13 @@
     min-height: auto;
 }
 
+/* Reconciled to match the scoped #ops-section .ir-panel--inventory-group rule above (single 360px
+   value — no more 360-vs-320 conflict). */
 .ir-panel--inventory-group {
-    width: 320px;
-    min-width: 320px;
-    flex: 0 0 320px;
+    width: 360px;
+    min-width: 360px;
+    flex: 0 0 360px;
 }
-
-/* ========================================
-   Inventory Overview / Warning Summary
-======================================== */
-.ir-overview {
-    margin-bottom: 24px;
-    background: white;
-    border: 1px solid var(--border-light, #e5e7eb);
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    padding: 20px;
-    position: relative;
-    z-index: 121;
-}
-
-.ir-overview__title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1f2937;
-    margin: 0 0 16px 0;
-}
-
-.ir-overview__tabs {
-    display: flex;
-    gap: 0;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    overflow: hidden;
-    margin-bottom: 16px;
-    width: fit-content;
-}
-
-.ir-overview__tab {
-    padding: 6px 20px;
-    border: none;
-    background: white;
-    color: #6b7280;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 0.15s;
-    border-right: 1px solid #e5e7eb;
-}
-
-.ir-overview__tab:last-child { border-right: none; }
-.ir-overview__tab:hover { background: #f9fafb; }
-.ir-overview__tab.is-active { background: #7fb069; color: white; }
-
-/* Overview table uses dual-layer-table structure */
-.ir-overview .dual-layer-table { margin-top: 0; }
-#ops-section .ir-overview-table.dual-layer-table { position: relative; z-index: 1; }
-#ops-section .ir-overview-table .table-header-bar { height: 96px; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 1; position: relative; }
-#ops-section .ir-overview-table .fixed-header { height: 96px; width: 120px; min-width: 110px; background: #f5f5f5; border-right: 1px solid #dbe3ea; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
-#ops-section .ir-overview-table .scroll-header { height: 96px; flex-direction: column; padding-right: 0; position: relative; }
-#ops-section .ir-overview-table .km-table__header-row { display: flex; }
-#ops-section .ir-overview-table .km-table__header-row--level1 { height: 48px; padding-left: 90px; padding-right: 0; }
-#ops-section .ir-overview-table .km-table__header-row--level2 { height: 48px; padding-left: 90px; padding-right: 0; }
-#ops-section .ir-overview-table .km-table__header-cell {
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 600; font-size: 12px; color: #374151;
-    flex-shrink: 0; box-sizing: border-box;
-}
-/* Level 1 group header default */
-#ops-section .ir-overview-table .km-table__header-row--level1 .km-table__header-cell {
-    background: #7fb069; color: white; font-weight: 700; border-bottom: 1px solid #6a9556;
-    flex: none;
-}
-/* Level 2 sub header default */
-#ops-section .ir-overview-table .km-table__header-row--level2 .km-table__header-cell {
-    background: #f0f7ed; color: #2d5016; border-right: 1px solid #e5e7eb;
-    width: 90px; min-width: 90px; flex: 0 0 90px;
-}
-/* Sales group: blue like Detailed Table */
-#ops-section .ir-overview-table .iro-sales { background: #9BC2E6 !important; color: white !important; }
-#ops-section .ir-overview-table .iro-sales-sub { background: #CDE1F2 !important; color: #1a3a5c !important; }
-/* Warning & Recommend: rowspan cells */
-#ops-section .ir-overview-table .iro-rowspan-cell {
-    position: absolute; top: 0; height: 96px; z-index: 2;
-    display: flex; align-items: center; justify-content: center;
-    background: #f5f5f5; color: #000; font-weight: 600; font-size: 12px;
-    border-right: 1px solid #e5e7eb; box-sizing: border-box;
-}
-/* Body rows */
-#ops-section .ir-overview-table .fixed-row { height: 40px; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#ops-section .ir-overview-table .scroll-row { height: 40px; padding-right: 0; min-width: max-content; }
-#ops-section .ir-overview-table .fixed-col { width: 120px; min-width: 110px; border-right: 1px solid #dbe3ea; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
-#ops-section .ir-overview-table .scroll-cell {
-    display: flex; align-items: center; justify-content: center;
-    font-size: 13px; box-sizing: border-box; flex-shrink: 0;
-    width: 90px !important; min-width: 90px !important; max-width: 90px !important;
-    border-right: 1px solid var(--border-light, #e5e7eb);
-    padding: 0 4px;
-}
-/* Undo Detailed Table's display:none for overview */
-#ops-section .ir-overview-table .scroll-cell:nth-child(2),
-#ops-section .ir-overview-table .scroll-cell:nth-child(3) { display: flex !important; }
-/* Recommend cell (last) */
-#ops-section .ir-overview-table .scroll-cell:last-child { width: 110px !important; min-width: 110px !important; max-width: 110px !important; }
-
-/* Warning badge */
-.ir-overview__badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-.ir-overview__badge--high { background: #fee2e2; color: #dc2626; }
-.ir-overview__badge--medium { background: #fef3c7; color: #d97706; }
-.ir-overview__badge--safe { background: #dcfce7; color: #16a34a; }
-
-/* Recommend badge */
-.ir-overview__recommend {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-.ir-overview__recommend--ship { background: #fee2e2; color: #dc2626; }
-.ir-overview__recommend--monitor { background: #fef3c7; color: #d97706; }
-.ir-overview__recommend--sufficient { background: #dcfce7; color: #16a34a; }
-
-/* Clickable shipment cells */
-.ir-overview__shipment-cell {
-    color: #2563eb;
-    cursor: pointer;
-    font-weight: 500;
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-underline-offset: 2px;
-}
-.ir-overview__shipment-cell:hover { color: #1d4ed8; background: #eff6ff; border-radius: 4px; }
-
-/* Popover */
-.ir-overview__popover {
-    position: fixed;
-    z-index: 9999;
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.12);
-    padding: 12px 16px;
-    min-width: 280px;
-    font-size: 12px;
-}
-.ir-overview__popover-title {
-    font-weight: 600;
-    color: #1f2937;
-    margin-bottom: 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #f1f5f9;
-}
-.ir-overview__popover-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
-    color: #475569;
-}
-.ir-overview__popover-row span:last-child { font-weight: 500; color: #1f2937; }
-.ir-overview__popover-backdrop { position: fixed; inset: 0; z-index: 9998; }
 
 /* ============================================================
    Inventory Table Mapping (Phase 1)
@@ -1328,52 +1345,61 @@
 .ir-fulfillment--self_fulfilled .replen-card--third-party { order: -1; }
 
 /* ============================================================
-   Main-table Series tabs — filter the 貨物庫存表 by Series
+   Main-table Category tabs — filter the 貨物庫存表 by sku_details.category
+   (mirrors the Request Order Category filter).
    ============================================================ */
 /* Sits ABOVE the sticky .table-header-bar (z-index:120, whose `0 -100vh 0 100vh white`
    box-shadow paints a white curtain over everything above it). z-index must beat 120 and
    the row needs a solid background so the tabs are not masked. */
-#ops-section .replen-series-tabs {
+/* Category selector — visually IDENTICAL to Request Order's Category tabs (.ro-tabs--category / .ro-tab
+   / .ro-tab--active): a bordered, rounded, overflow-hidden segmented control; grey text on white, blue
+   #3B82F6 active. Uses the same token VALUES as request-order.css. position/z-index/background are kept
+   so the strip is not masked by the sticky table header's shadow (sits above .table-header-bar z:120). */
+/* Category tabs — single-row, compact ROUNDED pills (was a wrapped segmented bar that formed a
+   loose 2nd row). Overflow categories collapse into a "More Categories ▾" dropdown (see the
+   overflow layout in inventory-replenishment.js). The selected pill reuses Request Order's
+   selected visual language (.ro-tab--active: #3B82F6 background, white text) + a shared radius. */
+#ops-section .replen-category-tabs {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;       /* single row; overflow handled by the More dropdown, never wrapped */
     align-items: center;
     gap: 8px;
-    padding: 12px 16px;
-    margin: 0 0 8px;
-    background: #ffffff;
-    border-bottom: 1px solid #e5e7eb;
-    border-top-left-radius: var(--radius-lg);
-    border-top-right-radius: var(--radius-lg);
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    margin: 0 0 12px;
+    background: transparent;
     position: relative;
     z-index: 130;            /* > .table-header-bar z-index:120 */
-    min-height: 44px;
-    overflow: visible;
-    visibility: visible;
-    opacity: 1;
 }
-#ops-section .replen-series-tab {
+#ops-section .replen-category-tab {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 6px 14px;
-    border: 1px solid #d1d5db;
-    border-radius: 999px;
-    background: #f9fafb;
-    color: #374151;
-    font-size: 13px;
-    font-weight: 600;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;      /* compact rounded pill */
+    background: #ffffff;
+    color: #6b7280;
+    font-size: 0.875rem;
+    font-weight: 500;
     line-height: 1.2;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.15s;
+    flex: 0 0 auto;
+    transition: all 0.2s;
 }
-#ops-section .replen-series-tab:hover { background: #eef2f7; }
-#ops-section .replen-series-tab.is-active {
-    background: #7fb069;
-    border-color: #7fb069;
+#ops-section .replen-category-tab:hover { background: #f9fafb; }
+#ops-section .replen-category-tab:focus-visible {
+    outline: 2px solid #3B82F6;
+    outline-offset: 1px;
+}
+#ops-section .replen-category-tab.is-active {
+    background: #3B82F6;     /* same selected language as Request Order .ro-tab--active */
     color: #ffffff;
+    border-color: #3B82F6;
 }
-#ops-section .replen-series-tab__count {
+#ops-section .replen-category-tab__count {
     display: inline-block;
     padding: 0 6px;
     border-radius: 999px;
@@ -1383,7 +1409,73 @@
     color: inherit;
     opacity: 0.85;
 }
-#ops-section .replen-series-tab.is-active .replen-series-tab__count {
+#ops-section .replen-category-tab.is-active .replen-category-tab__count {
     background: rgba(255, 255, 255, 0.28);
     opacity: 1;
 }
+
+/* Overflow "More Categories ▾" — reuses the existing popover idiom (like More Options). */
+#ops-section .replen-category-more {
+    position: relative;
+    flex: 0 0 auto;
+}
+#ops-section .replen-category-more[hidden] { display: none; }
+#ops-section .replen-category-more__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #374151;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+}
+#ops-section .replen-category-more__trigger:hover { background: #f9fafb; }
+#ops-section .replen-category-more__trigger:focus-visible {
+    outline: 2px solid #3B82F6;
+    outline-offset: 1px;
+}
+#ops-section .replen-category-more__caret { font-size: 10px; }
+#ops-section .replen-category-more__list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 200;
+    min-width: 200px;
+    max-height: 320px;
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+#ops-section .replen-category-more__list[hidden] { display: none; }
+#ops-section .replen-category-more__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: #374151;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    text-align: left;
+    width: 100%;
+}
+#ops-section .replen-category-more__item:hover { background: #f3f4f6; }
+#ops-section .replen-category-more__item.is-active { background: #3B82F6; color: #ffffff; }
+#ops-section .replen-category-more__item .replen-category-tab__count { opacity: 1; }

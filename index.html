@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="assets/css/pages/home.css">
     <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css">
     <link rel="stylesheet" href="assets/css/pages/factory-stock.css">
+    <link rel="stylesheet" href="assets/css/pages/overseas-ops.css">
     <link rel="stylesheet" href="assets/css/pages/overseas-stock.css">
     <link rel="stylesheet" href="assets/css/pages/fc-overview.css">
     <link rel="stylesheet" href="assets/css/pages/request-order.css">
@@ -25,6 +26,7 @@
     <link rel="stylesheet" href="assets/css/pages/procurement.css">
     <link rel="stylesheet" href="assets/css/pages/carrier-rate-card.css">
     <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css">
+    <link rel="stylesheet" href="assets/css/pages/global-logistics-map.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- ExcelJS — client-side XLSX generation for formatted export templates (TEMPLATE_UI_STANDARD_SPEC). -->
     <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
@@ -66,13 +68,23 @@
                 <div class="menu-item" onclick="showSection('overseas-stock')" title="Overseas Inventory">
                     <span class="menu-label">Overseas Inventory</span>
                 </div>
-                <div class="menu-item menu-item--disabled" style="position: relative;" title="Overseas Inbound — destination receiving operation (planned; spec only)">
+                <!-- Interactive operation workspace in PREVIEW MODE: lifecycle runs in-memory only
+                     (no persistence, no inventory movement) until the runtime handlers in
+                     OVERSEAS_INBOUND_SPEC.md §10 / OVERSEAS_OUTBOUND_SPEC.md are implemented. -->
+                <!-- TEMP Phase-2 disable: Overseas Inbound / Outbound sidebar nav is intentionally
+                     non-interactive ("coming later"). The page/JS/HTML/CSS/specs/routes are all kept.
+                     Disabled via: menu-item--disabled (opacity + pointer-events:none), aria-disabled,
+                     tabindex="-1", the onclick handler removed, AND a scoped early-return guard in
+                     showSection() (assets/js/app.js). TO RE-ENABLE: restore
+                     onclick="showSection('overseas-inbound')" / '...outbound', remove menu-item--disabled /
+                     aria-disabled / tabindex here, and remove the matching guard in app.js. -->
+                <div class="menu-item menu-item--disabled" aria-disabled="true" tabindex="-1" style="position: relative;" title="Overseas Inbound — coming later">
                     <span class="menu-label">Overseas Inbound</span>
-                    <span class="stage-badge">Soon</span>
+                    <span class="stage-badge">Preview</span>
                 </div>
-                <div class="menu-item menu-item--disabled" style="position: relative;" title="Overseas Outbound — origin fulfillment operation (planned; spec only)">
+                <div class="menu-item menu-item--disabled" aria-disabled="true" tabindex="-1" style="position: relative;" title="Overseas Outbound — coming later">
                     <span class="menu-label">Overseas Outbound</span>
-                    <span class="stage-badge">Soon</span>
+                    <span class="stage-badge">Preview</span>
                 </div>
             </div>
 
@@ -134,6 +146,9 @@
                 </div>
                 <div class="menu-item" onclick="showShipmentOverview()" title="Shipment Overview">
                     <span class="menu-label">Shipment Overview</span>
+                </div>
+                <div class="menu-item" onclick="showSection('global-logistics-map')" title="On-the-Way Shipment Map — shipments in transit on the world map (Global Logistics reference underneath)">
+                    <span class="menu-label">On-the-Way Map</span>
                 </div>
             </div>
             <!-- Procurement Center 父子選單 (下單系統) — Procurement Layer Phase 1 -->
@@ -283,6 +298,13 @@
                  KM.partialLoader injects #overseas-stock-section into this mount point on the page lifecycle mount. -->
             <div id="overseas-stock-mount"></div>
 
+            <!-- Overseas Inbound / Outbound — Architecture Review (read-only). Partials injected by KM.partialLoader. -->
+            <div id="overseas-inbound-mount"></div>
+            <div id="overseas-outbound-mount"></div>
+
+            <!-- Global Logistics Map (Carrier / Route). Partial injected by KM.partialLoader on mount. -->
+            <div id="global-logistics-map-mount"></div>
+
             <!-- Forecast Review Section - markup moved to assets/html/pages/forecast.html (Phase 3-6).
                  KM.partialLoader injects #forecast-section into this mount point on the page lifecycle mount. -->
             <div id="forecast-mount"></div>
@@ -360,6 +382,7 @@
     <script src="assets/js/utils/demo-shared-data.js"></script>
     <script src="assets/js/utils/scroll-sync.js"></script>
     <script src="assets/js/utils/template-export.js"></script>
+    <script src="assets/js/utils/resizable-columns.js"></script>
     
     <!-- API Adapter -->
     <script src="assets/js/api/operation-system-db-api.js"></script>
@@ -369,6 +392,9 @@
     <script src="assets/js/pages/inventory-replenishment.js"></script>
     <script src="assets/js/pages/factory-stock.js"></script>
     <script src="assets/js/pages/overseas-stock.js"></script>
+    <script src="assets/js/pages/overseas-ops-preview.js"></script>
+    <script src="assets/js/pages/overseas-inbound.js"></script>
+    <script src="assets/js/pages/overseas-outbound.js"></script>
     <script src="assets/js/pages/fc-summary.js"></script>
     <script src="assets/js/pages/forecast.js"></script>
     <script src="assets/js/pages/request-order.js"></script>
@@ -387,6 +413,10 @@
     <script src="assets/js/pages/carrier-rate-card.js"></script>
     <!-- SKU Regional Details (SKU Domain v2.0) -->
     <script src="assets/js/pages/sku-regional-details.js"></script>
+    <!-- Global Logistics Map (Carrier / Route) — 3D Earth globe engine + vendored land asset (self-contained, no CDN) -->
+    <script src="assets/js/data/world-land-110m.js"></script>
+    <script src="assets/js/lib/km-globe.js"></script>
+    <script src="assets/js/pages/global-logistics-map.js"></script>
 
     <!-- App (Global) -->
     <script src="assets/js/app.js"></script>

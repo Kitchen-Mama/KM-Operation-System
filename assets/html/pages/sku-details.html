@@ -6,8 +6,36 @@
         <!-- Toolbar: filter group (Category → Series → Search) left, action group right -->
         <div class="sku-toolbar">
           <div class="sku-toolbar__filters">
-            <select id="skuCategoryFilter" class="sku-filter" aria-label="Filter by category" onchange="handleSkuFilterChange()"><option value="">All Categories</option></select>
-            <select id="skuSeriesFilter" class="sku-filter" aria-label="Filter by series" onchange="handleSkuFilterChange()"><option value="">All Series</option></select>
+            <!-- Category / Series multi-select (checkbox dropdowns). Empty selection = All. AND between the
+                 two filters, OR within each. Lightweight self-contained widget (no third-party library). -->
+            <div class="skuf-multi" id="skuCategoryMulti" data-filter="category">
+              <button type="button" class="skuf-trigger" id="skuCategoryTrigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="skuCategoryPanel" onclick="toggleSkuFilterPanel('category', event)">
+                <span class="skuf-trigger__label" id="skuCategoryLabel">All Categories</span>
+                <span class="skuf-trigger__icon" aria-hidden="true">▼</span>
+              </button>
+              <div class="skuf-panel" id="skuCategoryPanel" role="group" aria-label="Filter by category" hidden>
+                <input type="text" class="skuf-search" id="skuCategorySearch" placeholder="Search categories..." aria-label="Search category options" oninput="onSkuFilterOptionSearch('category')">
+                <div class="skuf-tools">
+                  <button type="button" class="skuf-link" onclick="skuFilterSelectAll('category')">Select All</button>
+                  <button type="button" class="skuf-link" onclick="skuFilterClear('category')">Clear</button>
+                </div>
+                <div class="skuf-list" id="skuCategoryList" role="listbox" aria-multiselectable="true"></div>
+              </div>
+            </div>
+            <div class="skuf-multi" id="skuSeriesMulti" data-filter="series">
+              <button type="button" class="skuf-trigger" id="skuSeriesTrigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="skuSeriesPanel" onclick="toggleSkuFilterPanel('series', event)">
+                <span class="skuf-trigger__label" id="skuSeriesLabel">All Series</span>
+                <span class="skuf-trigger__icon" aria-hidden="true">▼</span>
+              </button>
+              <div class="skuf-panel" id="skuSeriesPanel" role="group" aria-label="Filter by series" hidden>
+                <input type="text" class="skuf-search" id="skuSeriesSearch" placeholder="Search series..." aria-label="Search series options" oninput="onSkuFilterOptionSearch('series')">
+                <div class="skuf-tools">
+                  <button type="button" class="skuf-link" onclick="skuFilterSelectAll('series')">Select All</button>
+                  <button type="button" class="skuf-link" onclick="skuFilterClear('series')">Clear</button>
+                </div>
+                <div class="skuf-list" id="skuSeriesList" role="listbox" aria-multiselectable="true"></div>
+              </div>
+            </div>
             <input type="text" id="skuSearchInput" class="sku-search" placeholder="Search SKU..." oninput="handleSkuSearch()">
           </div>
           <div class="sku-toolbar__actions">
@@ -42,6 +70,9 @@
                     <label><input type="checkbox" class="col-checkbox" data-col="21" checked onchange="toggleColumn(21)"> MSRP</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="22" checked onchange="toggleColumn(22)"> Selling Price</label>
                     <label><input type="checkbox" class="col-checkbox" data-col="23" checked onchange="toggleColumn(23)"> 負責PM</label>
+                    <hr style="margin: var(--space-xs) 0; border: none; border-top: 1px solid var(--border-light);">
+                    <!-- Resizable columns pilot: reset column widths ONLY (does not change show/hide, filters, search, or units). -->
+                    <button type="button" class="sku-reset-colw" onclick="resetSkuColumnWidths()">Reset Column Widths</button>
                 </div>
             </div>
             <!-- Secondary actions (Export / Import / Refresh) collapsed into a menu. -->
@@ -49,7 +80,11 @@
                 <button type="button" class="btn-more-options" id="moreOptionsBtn" onclick="toggleMoreOptions(event)" aria-haspopup="true" aria-expanded="false" aria-controls="moreOptionsPanel">⋯ More Options</button>
                 <div class="more-options-panel" id="moreOptionsPanel" role="menu" aria-label="More options">
                     <button type="button" class="more-options-item" role="menuitem" onclick="handleExportStatusTemplate(); closeMoreOptions();">⬇ Export Template</button>
-                    <button type="button" class="more-options-item more-options-item--data" role="menuitem" onclick="handleImportStatusTemplate(); closeMoreOptions();">⬆ Import Template <span class="more-options-tag">changes data</span></button>
+                    <!-- "changes data" caution is preserved (this action mutates data) but its visible text badge is
+                         hidden by default (2026-07-23) so the menu item is not widened / left with trailing space. The
+                         semantic is still exposed via aria-label + title (tooltip). The badge element is kept (hidden)
+                         so any future change-detection can un-hide it by toggling the `hidden` attribute. -->
+                    <button type="button" class="more-options-item more-options-item--data" role="menuitem" aria-label="Import Template (changes data)" title="Changes data" onclick="handleImportStatusTemplate(); closeMoreOptions();">⬆ Import Template<span class="more-options-tag" id="importTemplateChangesBadge" hidden>changes data</span></button>
                     <div class="more-options-sep"></div>
                     <button type="button" class="more-options-item" role="menuitem" onclick="handleRefreshDb(); closeMoreOptions();">⟳ Refresh DB</button>
                 </div>

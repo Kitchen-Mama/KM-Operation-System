@@ -38,11 +38,16 @@
       fcNextMonth: input.fcNextMonth || 0,
       fcMonth2: input.fcMonth2 || 0,
       fcMonth3: input.fcMonth3 || 0,
-      
+      // Month +4 — PLANNING-VISIBILITY demand projection ONLY (added 2026-07-24). Not a Request Bucket:
+      // no month-4 shortage / suggested / allocation is produced, and the T1–T3 recursion is untouched.
+      // null (not passed) → t4Fc stays null so the UI can show "--" instead of a fake 0.
+      fcMonth4: (input.fcMonth4 == null ? null : (input.fcMonth4 || 0)),
+
       // Demand - Campaign FC
       campaignNextMonth: input.campaignNextMonth || 0,
       campaignMonth2: input.campaignMonth2 || 0,
       campaignMonth3: input.campaignMonth3 || 0,
+      campaignMonth4: input.campaignMonth4 || 0,
       
       // Target Factor (預設 100%)
       tfThisMonth: input.tfThisMonth !== undefined ? input.tfThisMonth : 1.0,
@@ -51,7 +56,9 @@
       tfMonth3: input.tfMonth3 !== undefined ? input.tfMonth3 : 1.0,
       campaignTfNextMonth: input.campaignTfNextMonth !== undefined ? input.campaignTfNextMonth : 1.0,
       campaignTfMonth2: input.campaignTfMonth2 !== undefined ? input.campaignTfMonth2 : 1.0,
-      campaignTfMonth3: input.campaignTfMonth3 !== undefined ? input.campaignTfMonth3 : 1.0
+      campaignTfMonth3: input.campaignTfMonth3 !== undefined ? input.campaignTfMonth3 : 1.0,
+      tfMonth4: input.tfMonth4 !== undefined ? input.tfMonth4 : 1.0,
+      campaignTfMonth4: input.campaignTfMonth4 !== undefined ? input.campaignTfMonth4 : 1.0
     };
     
     // 1. 計算總站點庫存
@@ -67,6 +74,9 @@
     const t1Fc = (fcThisMonth * data.tfThisMonth) + (data.fcNextMonth * data.tfNextMonth) + (data.campaignNextMonth * data.campaignTfNextMonth);
     const t2Fc = (data.fcMonth2 * data.tfMonth2) + (data.campaignMonth2 * data.campaignTfMonth2);
     const t3Fc = (data.fcMonth3 * data.tfMonth3) + (data.campaignMonth3 * data.campaignTfMonth3);
+    // Month +4 demand projection (planning visibility only). Same monthly rule as t2/t3 (Adjusted Basic FC
+    // + Special/Campaign for that month). null when no Month+4 source was provided (UI shows "--").
+    const t4Fc = (data.fcMonth4 == null) ? null : ((data.fcMonth4 * data.tfMonth4) + (data.campaignMonth4 * data.campaignTfMonth4));
     
     // 5. 計算供給基礎
     const supplyBase = totalSiteStock + (factoryStockTotal * data.fcAllocationRatio);
@@ -84,8 +94,9 @@
       t1Fc,
       t2Fc,
       t3Fc,
+      t4Fc,            // Month +4 demand projection ONLY (no month-4 shortage — T4 is not a Request Bucket)
       supplyBase,
-      
+
       // 最終結果
       shortageMonth1,
       shortageMonth2,

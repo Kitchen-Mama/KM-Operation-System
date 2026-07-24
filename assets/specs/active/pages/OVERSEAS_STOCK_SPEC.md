@@ -121,16 +121,23 @@ warehouse_id, sku, available_stock, reserved_stock, damaged_stock, on_the_way_qt
 
 ---
 
-## 8. Manual Stock Adjustment
+## 8. Inventory Adjustment (renamed 2026-07-23 from "Manual Adjustment")
 
-**Inputs (MVP):** `warehouse_id` (select), `sku`, `adjustment_qty` (whole number, may be negative, ≠ 0), `reason` (required), `note` (optional).
+**Button/label:** now **"Inventory Adjustment"** (both Overseas and Factory use the same name; "Manual Adjustment" / "Edit" are retired for stock-quantity adjustment).
 
-**Write behavior:**
-- Targets the **`wh_available_stock`** bucket (MVP).
-- `wh_quantity_before = current wh_available_stock`; `wh_quantity_after = before + adjustment_qty`; result must be ≥ 0 (else error, no write). *(⚠ `wh_quantity_before`/`wh_quantity_after` general semantics UNRESOLVED — here they are the `wh_available_stock` bucket; see `INVENTORY_TABLE_MAPPING_SPEC.md` §3.2.)*
+**UX (not inline edit):** a modal where the user first selects ONE unique record (`warehouse_id + sku`), sees SKU / Site SKU / Warehouse / Company / Country / **Current Available**, then enters **New Available**. `Adjustment Qty = New Available − Current Available` is auto-computed and read-only, with a live "Current → New" preview. Reason/Note is required; Reference ID optional. Confirm is disabled until a record is loaded, New Available is a whole number ≥ 0 different from Current, and Note is non-empty; Confirm is guarded against double-submit.
+
+**Inputs:** `warehouse_id`, `sku`, `new_available` (integer ≥ 0; preferred), `note` (required), `reference_id` (optional), `created_by` (runtime identity `operation-system`, not user-entered). *(Backward-compatible: signed `adjustment_qty` still accepted when `new_available` is absent.)*
+
+**Write behavior (atomic — lock-guarded; movement failure rolls back the snapshot):**
+- Adjusts ONLY the **`wh_available_stock`** bucket. `reserved` / `physical` / `damaged` / `on_the_way` are never modified (recorded unchanged on the movement's before/after columns).
+- `before_available = current wh_available_stock`; `after_available = new_available`; result must be ≥ 0; `new_available === current` is rejected (no-op).
 - Updates `overseas_inventory_snapshot`: `wh_available_stock`, `last_movement_at`, `updated_at`.
-- Inserts `overseas_inventory_movements` row: `movement_type = 'manual_adjustment'`, `wh_quantity`, `wh_quantity_before`, `wh_quantity_after`, `reference_type = 'manual'`, `reference_id = ''`, `source_module = 'overseas_stock'`, `created_by`, `created_at`, `movement_date`. `reason` → `reason` column if present, else prefixed into `note` as `[reason] note`. *(Handler resolves canonical `wh_*` headers, legacy fallback until live rename.)*
+- Inserts `overseas_inventory_movements` row: `movement_type = 'manual_adjustment'`, `movement_scope = 'available_stock'`, `from_stock_type = ''` (empty/nullable), `to_stock_type = 'available'`, `wh_quantity` (= after − before, signed), `wh_quantity_before`, `wh_quantity_after`, `wh_before_available_stock`/`wh_after_available_stock`, `wh_before_reserved_stock`/`wh_after_reserved_stock` (unchanged), `wh_before_physical_stock`/`wh_after_physical_stock` (unchanged), `reference_type = 'inventory_adjustment'`, `reference_id = ADJ-YYYYMMDD-XXXX` (backend-generated; frontend never assembles ids/timestamps), `source_module = 'overseas_inventory'`, `created_by`, `created_at`, `movement_date`, `note`. *(Handler additively ensures the canonical `wh_*` movement columns exist; legacy `quantity`/`quantity_before`/`quantity_after` fallback until live rename.)*
 - The snapshot row must already exist (import first); otherwise error.
+- On success the page re-GETs the DB cache and re-renders snapshot + movement log (no front-end-only patch).
+
+> **Value changes vs the prior MVP writer (documented, not accidental):** `movement_type` `'adjustment'` → `'manual_adjustment'`; `reference_type` `'manual'` → `'inventory_adjustment'`; `source_module` `'overseas_stock'` → `'overseas_inventory'`; `from_stock_type` `'none'` → `''`. Historical rows keep their old values; readers already fall back gracefully. `from_stock_type`/`to_stock_type` remain additive app-level conventions (allowed set `available | reserved | damaged | on_the_way | none`, empty allowed) — no incompatible enum value was invented.
 
 **Path:** `runOverseasAdjust()` → `KM.DB.adjustOverseasInventory(payload)` → Apps Script `adjustOverseasInventory` → `handleAdjustOverseasInventory_`.
 
@@ -164,7 +171,7 @@ reason (optional), created_by, created_at, note
 ```
 `movement_id = OVMV-{8hex}`. **No** company / country / warehouse_name / warehouse_type (join `warehouses`).
 
-`from_stock_type` / `to_stock_type` are **additive** stock-direction fields (read gracefully; empty if columns absent). Allowed values: `available | reserved | damaged | on_the_way | none`. Direction examples: received `none→available`, reserved `available→reserved`, release_reserved `reserved→available`, damaged `available→damaged`, outbound `available→none`, adjustment `none→available`, transfer_out `available→none`, transfer_in `none→available`. Manual Adjustment writes `movement_type='adjustment'`, `from_stock_type='none'`, `to_stock_type='available'` (MVP targets the available bucket); these are written only when the columns exist.
+`from_stock_type` / `to_stock_type` are **additive** stock-direction fields (read gracefully; empty if columns absent). Allowed values: `available | reserved | damaged | on_the_way | none`. Direction examples: received `none→available`, reserved `available→reserved`, release_reserved `reserved→available`, damaged `available→damaged`, outbound `available→none`, adjustment `none→available`, transfer_out `available→none`, transfer_in `none→available`. Inventory Adjustment writes `movement_type='manual_adjustment'`, `movement_scope='available_stock'`, `from_stock_type=''` (empty), `to_stock_type='available'` (targets the available bucket); direction columns are written only when they exist.
 
 > Required-header validation runs before any write in the import handler. For the import the snapshot tab must contain at least: `snapshot_id, warehouse_id, sku, site_sku, available_stock, reserved_stock, damaged_stock, on_the_way_qty, on_the_way_eta, note, created_at, updated_at`.
 

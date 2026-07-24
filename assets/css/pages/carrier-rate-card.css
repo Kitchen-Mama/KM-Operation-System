@@ -52,3 +52,97 @@
 @media (max-width: 900px) {
     #carrier-rate-card-section .crc-input { min-width: 120px; }
 }
+
+/* ============================================================
+   F1 — Date-range picker (crc- prefixed; mirrors the fr- modal look, own classes/IDs).
+   No fixed pixel height → safe at 200% zoom; body scrolls if it overflows.
+   ============================================================ */
+#carrier-rate-card-section .crc-date-trigger {
+    text-align: left; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    min-height: 34px; color: #1e293b;
+}
+#carrier-rate-card-section .crc-date-trigger::before { content: '📅'; font-size: 13px; }
+#carrier-rate-card-section .crc-date-trigger:hover { border-color: #94a3b8; }
+#carrier-rate-card-section .crc-date-trigger-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+#carrier-rate-card-section .crc-date-backdrop {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 9998; display: none;
+}
+#carrier-rate-card-section .crc-date-backdrop.is-open { display: block; }
+
+#carrier-rate-card-section .crc-date-modal {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: min(720px, 92vw); max-height: 90vh;
+    background: #fff; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    z-index: 9999; display: none; flex-direction: column;
+}
+#carrier-rate-card-section .crc-date-modal.is-open { display: flex; }
+
+#carrier-rate-card-section .crc-date-modal-body { display: flex; flex: 1 1 auto; overflow: auto; }
+
+#carrier-rate-card-section .crc-date-sidebar {
+    width: 180px; flex-shrink: 0; border-right: 1px solid #e2e8f0; overflow-y: auto; padding: 12px 0;
+}
+#carrier-rate-card-section .crc-preset-item {
+    padding: 10px 20px; cursor: pointer; transition: all 0.2s; font-size: 13px; color: #4a5568;
+}
+#carrier-rate-card-section .crc-preset-item:hover { background: #f7fafc; }
+#carrier-rate-card-section .crc-preset-item.is-active {
+    background: #e6f7ff; color: #1e40af; border-left: 3px solid #3b82f6;
+}
+#carrier-rate-card-section .crc-preset-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+
+#carrier-rate-card-section .crc-date-content { flex: 1 1 auto; padding: 20px; overflow-y: auto; min-width: 0; }
+#carrier-rate-card-section .crc-date-inputs { display: flex; gap: 16px; margin-bottom: 20px; }
+#carrier-rate-card-section .crc-date-input-group { flex: 1; }
+#carrier-rate-card-section .crc-date-input-group label {
+    display: block; font-size: 11px; font-weight: 600; color: #6b7280; margin-bottom: 6px; text-transform: uppercase;
+}
+#carrier-rate-card-section .crc-date-input {
+    width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box; background: #fff;
+}
+#carrier-rate-card-section .crc-calendars { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+#carrier-rate-card-section .crc-calendar { flex: 1 1 240px; max-width: 280px; min-width: 220px; }
+#carrier-rate-card-section .crc-calendar-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+}
+#carrier-rate-card-section .crc-calendar-nav {
+    background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer; padding: 2px 8px; line-height: 1; border-radius: 4px;
+}
+#carrier-rate-card-section .crc-calendar-nav:hover { color: #3b82f6; background: #f3f4f6; }
+#carrier-rate-card-section .crc-calendar-title { font-size: 13px; font-weight: 600; color: #1f2937; }
+#carrier-rate-card-section .crc-calendar-body { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+#carrier-rate-card-section .crc-calendar-weekday {
+    text-align: center; font-size: 11px; font-weight: 600; color: #9ca3af; padding: 6px 0;
+}
+#carrier-rate-card-section .crc-calendar-day {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; border-radius: 6px; cursor: pointer; transition: all 0.15s; color: #374151;
+}
+#carrier-rate-card-section .crc-calendar-day:hover:not(.is-disabled) { background: #f3f4f6; }
+#carrier-rate-card-section .crc-calendar-day.is-disabled { color: #d1d5db; cursor: default; }
+#carrier-rate-card-section .crc-calendar-day.is-today { font-weight: 600; color: #3b82f6; }
+#carrier-rate-card-section .crc-calendar-day.is-start,
+#carrier-rate-card-section .crc-calendar-day.is-end { background: #3b82f6; color: #fff; font-weight: 600; }
+#carrier-rate-card-section .crc-calendar-day.is-in-range { background: #dbeafe; color: #1e40af; }
+
+#carrier-rate-card-section .crc-date-modal-footer {
+    display: flex; justify-content: flex-end; gap: 12px; padding: 14px 20px; border-top: 1px solid #e2e8f0; flex: 0 0 auto;
+}
+#carrier-rate-card-section .crc-date-btn {
+    padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s;
+}
+#carrier-rate-card-section .crc-date-btn--clear { background: #fff; color: #64748b; border: 1px solid #e2e8f0; margin-right: auto; }
+#carrier-rate-card-section .crc-date-btn--clear:hover { background: #f8fafc; }
+#carrier-rate-card-section .crc-date-btn--cancel { background: #f3f4f6; color: #4b5563; }
+#carrier-rate-card-section .crc-date-btn--cancel:hover { background: #e5e7eb; }
+#carrier-rate-card-section .crc-date-btn--apply { background: #3b82f6; color: #fff; }
+#carrier-rate-card-section .crc-date-btn--apply:hover { background: #2563eb; }
+
+@media (max-width: 768px) {
+    #carrier-rate-card-section .crc-date-modal-body { flex-direction: column; }
+    #carrier-rate-card-section .crc-date-sidebar {
+        width: 100%; border-right: none; border-bottom: 1px solid #e2e8f0;
+    }
+    #carrier-rate-card-section .crc-calendars { flex-direction: column; gap: 16px; }
+}

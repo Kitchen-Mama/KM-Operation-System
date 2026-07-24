@@ -426,3 +426,90 @@
 #factory-stock-section .fmvd-calendar-nav:hover { color: #3b82f6; background: #f3f4f6; border-radius: 4px; }
 #factory-stock-section .fr-date-btn--clear { background: #fef3c7; color: #b45309; }
 #factory-stock-section .fr-date-btn--clear:hover { background: #fde68a; }
+
+/* ================================================================
+   Factory Inventory Adjustment modal (2026-07-23) — scoped fia-* classes.
+   ================================================================ */
+#factory-stock-section .fia-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 900;
+}
+#factory-stock-section .fia-modal-overlay.is-open { display: block; }
+#factory-stock-section .fia-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(96vw, 560px);
+    max-height: 92vh;
+    overflow-y: auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+    z-index: 901;
+}
+#factory-stock-section .fia-modal.is-open { display: block; }
+#factory-stock-section .fia-modal-content { padding: 20px 22px; }
+#factory-stock-section .fia-modal-content h3 { margin: 0 0 12px; font-size: 18px; color: #0f172a; }
+#factory-stock-section .fia-hint { font-size: 12px; color: #475569; line-height: 1.5; margin: 0 0 14px; }
+#factory-stock-section .fia-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+}
+#factory-stock-section .fia-field { display: flex; flex-direction: column; gap: 4px; }
+#factory-stock-section .fia-field--full { grid-column: 1 / -1; }
+#factory-stock-section .fia-field label { font-size: 12px; font-weight: 600; color: #334155; }
+#factory-stock-section .fia-field select,
+#factory-stock-section .fia-field input,
+#factory-stock-section .fia-field textarea {
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #0f172a;
+    background: #fff;
+}
+#factory-stock-section .fia-field select:disabled,
+#factory-stock-section .fia-field input:disabled { background: #f1f5f9; color: #94a3b8; }
+#factory-stock-section .fia-field textarea { resize: vertical; }
+#factory-stock-section .fia-readout {
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f172a;
+    padding: 8px 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    min-height: 20px;
+}
+#factory-stock-section .fia-preview {
+    margin-top: 14px;
+    padding: 8px 12px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #1e3a8a;
+}
+#factory-stock-section .fia-result {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 12px;
+}
+#factory-stock-section .fia-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+}
+@media (max-width: 560px) {
+    #factory-stock-section .fia-grid { grid-template-columns: 1fr; }
+}

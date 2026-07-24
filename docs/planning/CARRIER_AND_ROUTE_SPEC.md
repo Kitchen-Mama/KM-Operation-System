@@ -629,6 +629,54 @@ When built, the engine will: pick the applicable `carrier_rate_cards` row (by ca
 
 ---
 
+---
+
+## Provisioned Carriers — data (append-only log)
+
+### 中外運 Sinotrans — `CAR_SINOTRANS` (added 2026-07-22 · **COMPLETED / ACTIVE 2026-07-23**)
+
+**Status: COMPLETED & ACTIVE** — the carrier, its rate card, and its lead time are all entered in the live sheet. **No longer Pending; do NOT recreate the data** (existing `CRC-…` rate card and `CLT-000017` lead time must not be rebuilt). Active service scope: **CN (Shenzhen) → JP, Air + Parcel (空派)** only. No other lane/mode is provisioned (no CN→US/CA/EU/UK/AU, no Sea, no truck). `carrier_rate_cards` and `carrier_lead_times` keep **independent lifecycles** — Lead Time is **never** written back into the Rate Card.
+
+**`carriers` row (Active):**
+
+| carrier_id | carrier_name | is_active |
+|---|---|---|
+| `CAR_SINOTRANS` | 中外運 | `TRUE` (active) |
+
+**`carrier_rate_cards` row (Active — real, completed values; do NOT modify):**
+
+| field | value |
+|---|---|
+| carrier_id | `CAR_SINOTRANS` |
+| route | CN (Shenzhen) → JP |
+| shipping_method | `Air` |
+| last_mile_delivery | `Parcel` |
+| shipping_method_label | 空派 |
+| charge_type / charge_unit | `weight` / `kg` |
+| currency | `RMB` |
+| unit_rate | `42` |
+| battery coverage | `no_battery` + `lithium_battery` |
+| transit_type | `door_to_door` |
+| customs_type | `third_party_customs` |
+| effective_from | `2026-07-01` |
+| status | `active` |
+
+**`carrier_lead_times` row (Active — calendar days):**
+
+| lead_time_id | carrier_id | origin_country | destination_country | shipping_method | last_mile_delivery | min_days | max_days | avg_days |
+|---|---|---|---|---|---|---|---|---|
+| `CLT-000017` | `CAR_SINOTRANS` | `CN` | `JP` | `Air` | `Parcel` | 5 | 8 | 7 |
+
+**Mode mapping (canonical):** the user's "CN→JP 空運＋快遞" maps to `shipping_method = Air` + `last_mile_delivery = Parcel` (`shipping_method_label = 空派`). The schema has **no** "Express/Courier" enum and the two are **not** merged into one field — no new/conflicting enum was created.
+
+**Do NOT change:** unit_rate (42), currency (RMB), battery coverage, customs_type, effective_from, or the existing `CRC-…` / `CLT-000017` ids. **Still pending (genuinely unfinished):** the 中外運 **Booking Form mapping** (see `CARRIER_BOOKING_MAPPING_SPEC.md`) — the completed Carrier **Rate** must not be mistaken for a completed **Document/Booking Template**.
+
+**Provisioning mechanism (historical):** `carriers` / `carrier_lead_times` are manually maintained (no importer); rate cards import via the Carrier Rate Card Master Template. The one-time idempotent seed `handleSeedSinotransCarrier_` (`17_carrier_handlers.gs`) remains only as a no-op fallback (it skips the now-existing rows and never creates a rate card); the live data above is authoritative.
+
+**UI note:** the Carrier Rate Card page joins lead times onto rate-card rows; since the `CRC-…` rate card now exists, selecting `CAR_SINOTRANS` shows the CN→JP Air + Parcel service with its `CLT-000017` lead time. Carrier / Method / Last-Mile filters work generically on live distinct values — no page code change needed.
+
+---
+
 **Draft v1.0 — Carrier & Route Foundation Spec. Schema/relationship definition only; no pricing engine and no implementation is implied. Routing defaults are overridable by the Weekly Shipping Plan; Cost Breakdown stays a placeholder until the future Carrier Price Engine.**
 
 **End of Document**

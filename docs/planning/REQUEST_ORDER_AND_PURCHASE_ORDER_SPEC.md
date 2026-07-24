@@ -1,9 +1,10 @@
 # Request Order & Purchase Order — Procurement Layer Phase 1 Spec
 
 **Status:** 🟢 Phase 1 — UI + Mapping + DB Handler Foundation (API-ready, no auto-procurement engine)
-**Last Updated:** 2026-07-01
+**Last Updated:** 2026-07-24
 **Maintained By:** Development Team
 **Related:** [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md) (extended / future design — three-layer sources, payment terms, multi-PO links), [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md)
+**Authoritative formula:** [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (v4.1 FINALIZED). Net Order Need, Order CEILING, T1–T4 tiers, company reallocation, and missing-UPC handling are defined there; this spec only maps the procurement UI/DB and must not restate a divergent formula.
 
 > **This is the Phase-1 IMPLEMENTED design** for the Procurement Layer (Request Order Draft, Purchase Order Overview, Purchase Order List). It intentionally uses a **flat, directly-implementable** schema (header carries `company` / `supplier` / `factory_id`) so the UI + Apps Script handlers + API adapter can ship now.
 >
@@ -12,7 +13,7 @@
 > **Guardrails honored:** no Factory Stock deduction · no Factory Allocation Engine · no Carrier Rate Engine · no Export/Template Center · no payment/invoice settlement · no full auto-procurement algorithm · no Role & Permission implementation. Actor fields are placeholder identities.
 
 > **Phase 1 P1-B — Order + Allocation + Quantity Reconciliation (CANONICAL 2026-07-22).** Consolidated so Replenishment, Request/PO, Shipment and Inventory share **one** quantity/status vocabulary:
-> - **Flow:** `Net Replenishment Need (SUPPLY_PLANNING §2A) → allocate qualified existing supply → residual uncovered gap → consolidate by SKU + Factory + required date → apply MOQ / carton / production lead time → Order Recommendation → user approval → Request Order / PO`.
+> - **Flow:** `Net Replenishment Need (SUPPLY_PLANNING §2A) → allocate qualified existing supply → residual uncovered gap → consolidate by SKU + Factory + required date → apply carton CEILING + production lead time → Order Recommendation → user approval → Request Order / PO`. **MOQ automation is a Future Extension (not applied to Suggested Order Qty in Phase 1)** — owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §14.
 > - **Source tracking:** `request_order_line_sources` records *why/where* a request line came from (demand-source traceability); it is the audit trail, not a second quantity authority.
 > - **Company Allocation lifecycle:** allocation is a **recommendation** until explicitly approved/committed; only then is it a **locked** commitment. `shipment_line_allocations` (planned table) links a **Shipment Line ↔ PO Line** (the supply-source axis) — see `DATABASE_RELATIONSHIP_MAP.md` §8B.
 > - **Canonical quantity fields (one definition everywhere):** `allocated_qty` (committed to a shipment line), `shipped_qty` (physically shipped), `completed_qty` (production completed / received-to-factory), `ordered_qty` (PO ordered). Derived (never stored):
@@ -244,7 +245,7 @@ Three sections: **Draft / Pending Approval / Approved**. **Card/expand structure
   - **Block 3 — T2 + T3 Request:** identical structure/rules; groups buckets T2 and T3 (rows tagged T2/T3 to preserve bucket).
 - **✕ (cancel tier):** soft cancel — sets `request_order_lines.line_status = 'cancelled'` for the tier's lines (kept in DB, block hidden). If **no active line remains** on the request, `request_orders.request_status = 'cancelled'` + `cancelled_by/at`. Handler `cancelRequestOrderTier`. *(request_order_line_sources rows are append-only and not status-updated on cancel — follow-up.)*
 - **+ Add Note:** reveals a textarea; Save writes the note to the tier's `request_order_lines.note` (line-level note field).
-- **Validation:** Save/Submit blocked when a row's company split ≠ Approved, or Approved is not a full carton (multiple of `units_per_carton`).
+- **Validation:** Save/Submit blocked **only** when a row's company split ≠ Approved. **A partial-carton `Approved Qty` MUST NOT block Save/Submit/Approval** (canonical §37 partial-carton override end-to-end): an explicit partial-carton override is allowed through Approval — it is **not** auto-reverted to Suggested and **not** carton-CEILING'd; the override fact + note are preserved and `carton_qty` is the exact `Approved Qty ÷ units_per_carton` (may be fractional). *(Missing `units_per_carton` still blocks the system Suggested calculation + Send per §12.13 — that is a different gate.)*
 - **Removed from this page:** the **Factory / Payment** block — detailed payment/factory confirmation belongs to Purchase Order Overview. Only **Est. Amount** remains (first-layer header).
 - **Layout:** the three blocks render **horizontally, side by side, equal height** (`.ro-decision-grid`, 3 equal columns; stacks to one column ≤1100px). Each block's table scrolls inside its own wrapper — no page horizontal overflow.
 - **Company Allocation popup (read-only):** in **SKU In Total**, KM/ResUS/ResTW values are **clickable when > 0**. Click opens a compact popover **"Company Allocation Detail"** — fields **Company · SKU · Tier · Month · Country · Marketplace · Requested · Approved · Shortage · Note**. Source = **`request_order_line_sources`** (§3.8) filtered to this request's lines for the SKU+company; when empty it **falls back** to `request_order_lines` grouped by company and shows **"Site-level source pending."** No fake site rows are invented. Clicking `0` / `--` does nothing (or "No allocation detail."). The popup is **read-only**, closes on ✕ / overlay / Esc, and never stacks (a new open closes the previous). Matches the KM modal style (`.pc-modal`).
@@ -459,7 +460,7 @@ Layout = CSS grid `.ro-sku-expand-grid--v5`, columns **A 34% · B 24% · C 42%**
 
 **Column C — Decision block (top → bottom)**
 5. **Recommendation Summary** — Month · Recommended Qty · Reason (future 4 months). **Structure only — no formula.**
-6. **Order Allocation** — **Month · Bucket** · Suggested · **Order Qty (editable)** · Carton · Note. Rows T1/T2/T3 (T1 = next month, T2 = next 2 months, T3 = next 3 months). **Display order is Month → Bucket** (stored data keys unchanged). Order Qty is held in local state and persisted on **Send Request** (`request_order_allocation_drafts` / `_lines`, §3.7).
+6. **Order Allocation** — **Month · Bucket** · Suggested · **Order Qty (editable)** · Carton · Note. Rows **T1 / T2 / T3** using the canonical **non-overlapping** tier definition (owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §27): **T1 = current-month remaining period + Month+1**, **T2 = Month+2**, **T3 = Month+3** (T4 = Month+4 is visibility-only, never an Order Allocation row). Tiers do **not** overlap — Month+1 is counted only in T1, never re-added to T2. **Display order is Month → Bucket** (stored data keys unchanged). Order Qty is held in local state and persisted on **Send Request** (`request_order_allocation_drafts` / `_lines`, §3.7).
 
 > **Recommendation Summary and Order Allocation belong to Column C (the Decision block)** — they are **NOT** placed under the Factory section. Factory Stock + Factory Orders occupy Column B only.
 
@@ -497,16 +498,32 @@ Procurement calculation engine · Remaining / Risk / Suggested Order formula · 
 - **Request Layer preserves T1 / T2 / T3.** Every `request_order_line` carries `request_bucket` (+ `request_month`); buckets are **never merged at the Request stage**.
 - **PO Layer may merge T1 / T2 / T3 later** (T1 urgent PO separate; T2 + T3 merged normal PO; or custom grouping by supplier / factory / SKU / series) — decided in **Purchase Order Overview** (future Phase 3).
 - **T1/T2/T3 are demand buckets, not direct PO-grouping rules.** Request↔PO traceability is preserved later via **`request_order_po_links`** (future). Send Request does **not** force three PO records.
+- **T4 = Month+4 visibility only** (owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §27). T4 is **display-only**: it does **not** enter current allocation, does **not** create a Request Order payload / `request_order_line`, creates **no** order commitment, and does **not** affect the T1–T3 send quantities this cycle. No `request_bucket = T4` is ever written.
 
 **Send Request data integrity (下單系統):**
 1. Send Request first creates/updates `request_order_allocation_drafts` + `_lines` (planning scratchpad), then creates the official `request_orders` + `request_order_lines`. **Draft suggestion data is never treated as official until Send Request runs.**
 
-> **Monthly Order Recommendation cadence (canonical, `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A).** The order recommendation runs **once per month — the 5th at 15:00 Asia/Taipei** (trigger window day-5 15:00–16:00; after the 12:00 Daily Report Pipeline, and in a separate non-overlapping window from the Monday 14:00–15:00 shipping job so a Monday-the-5th does not collide; gated on source-data readiness — no partial/stale/empty-success Draft), producing `request_order_allocation_drafts` → `_lines`. Its scheduler entry point **requires Runtime verification — not claimed implemented**. `recommended_qty` (system snapshot) **initializes** `order_qty` (user-editable); **daily reports never recalculate or overwrite the Draft or the user quantity.** **Do not create a new order recommendation every day.** Idempotent per **Year + Month + Scope** (retries never duplicate/reset). NOT IMPLEMENTED.
-2. **Full-carton gate:** every selected line's `order_qty` must be an exact multiple of `units_per_carton` (when known) — otherwise Send is **blocked** with a per-SKU message.
+> **Monthly Order Recommendation cadence (canonical).** The order recommendation cadence is **monthly** (one recommendation per planning cycle), gated on source-data readiness — no partial/stale/empty-success Draft — and produces `request_order_allocation_drafts` → `_lines`. **The exact execution day, time, trigger window, and source-readiness schedule belong to Runtime scheduling configuration (`SYSTEM_RUNTIME_ARCHITECTURE.md` §7A); this spec does not define or invent an exact clock schedule.** Its scheduler entry point **requires Runtime verification — not claimed implemented; Runtime scheduler remains NOT IMPLEMENTED / PENDING VERIFICATION.** `recommended_qty` (system snapshot) **initializes** `order_qty` (user-editable); **daily reports never recalculate or overwrite the Draft or the user quantity.** **Do not create a new order recommendation every day; the same-month retry is idempotent (per planning cycle `YYYY-MM` + Scope — retries never duplicate/reset), and a new month creates a new cycle without overwriting a prior month's Draft.**
+2. **Carton rule (v4.1 — owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §14 / §31):**
+   - **Suggested Order Qty** is always a full-carton multiple: `CEILING(Net Order Need ÷ units_per_carton) × units_per_carton` — **CEILING, never FLOOR**. `units_per_carton` comes **only** from the canonical SKU master.
+   - **User Order Qty is independent.** When a valid `units_per_carton` exists, the user **MAY enter an explicit partial-carton `order_qty`**; a partial-carton override **does NOT block Send** and **does NOT rewrite** Suggested Order Qty. Send is **not** blocked merely because `order_qty` is not a full-carton multiple.
+   - **Missing `units_per_carton`** blocks the **Suggested calculation and Send** (no silent default of 1, 12, or any value); see §14 / §34.
+   - The payload preserves **Suggested Order Qty** (`recommended_qty`), **User Order Qty** (`order_qty`), the **partial-carton override fact**, and the **override note** using the existing column naming — **no new DB column**.
 3. **Site-confirmation gate (bucket-aware):** Send T1/T2/T3 requires confirmation for that bucket; **All Request** requires T1 ∧ T2 ∧ T3 (Confirm All treats all visible scopes as confirmed) — see §12.10.
 4. Each request line keeps `request_bucket` = `T1/T2/T3`; allocation-draft lines carry snapshots (`factory_stock_snapshot`, `site_stock_snapshot`, `third_party_stock_snapshot`, `fc_qty_snapshot`, `target_pct_snapshot`), and request lines carry `forecast_qty` / `current_stock` from the same sources.
 
 **Phasing (Part E):** Phase 1 (this task) = keep the current page/selector but preserve bucket + data integrity on every line. Phase 2 = T1/T2/T3 tabs (Draft / Pending Approval / Approved inside each). Phase 3 = Purchase Order Overview grouping assistant. UI tabs are **not** added in Phase 1; the data model already preserves bucket.
+
+### 12.15 Order State Separation + Emergency Order + Partial-Carton End-to-End (CANONICAL v4.1 — owner §36/§37)
+
+**Live Planning Signal vs Persisted Suggestion vs User Decision** (owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §36):
+- **Live** — the Request Order analysis view's T1–T4 Demand / Shortage is a **continuously-recalculated planning signal** (risk / review / emergency-order entry). Re-displaying it **never** overwrites a persisted Draft's `recommended_qty`, the user's `order_qty`, or `carton_qty`; it never auto-reverts a user edit; **Engine A shortage is never written straight to an order** (`Forecast Shortage ≠ Order Qty`).
+- **Persisted System Suggestion** — a formal planning run (Engine A → Engine B reallocation → `Net Order Need` → T1–T3 Order carton CEILING) writes `request_order_allocation_drafts` (parent at the existing scope grain — company + country + marketplace + sku + category + series) → `request_order_allocation_draft_lines` (bucket / allocation child line; SKU is inherited from the parent via `request_allocation_draft_id`, the line row carries no `sku` column). **`recommended_qty`** = persisted snapshot of the **system** Suggested Order Qty; **`order_qty`** = the quantity the user will submit; **`carton_qty`** = from the actual `order_qty ÷ units_per_carton`. Cadence is **monthly** (§12.13 note), cycle key `YYYY-MM`; a single monthly run may create **many** scope/SKU parent records; a new month = a new cycle draft — **never overwrites** a prior month's Draft/Line.
+- **User Decision** — user edit updates **`order_qty`** and recomputes **`carton_qty`**; **`recommended_qty` is preserved** (a user input never overwrites it). Uses existing fields only — **no new DB column**.
+
+**Emergency Manual Order** (owner §36.4): a planner may trigger an order any time using the **same Engine A → Engine B → reallocation → `Net Order Need`** path (no second formula) → creates a **new** `request_order_allocation_drafts` + `_lines` with the current Suggested written as `recommended_qty`; the user may edit `order_qty` / `carton_qty` without overwriting `recommended_qty`. Emergency must not: use raw Forecast Shortage as Order Qty, skip reallocation, overwrite the month's existing recommendation or any other Draft, or write a **T4** line. Provenance (source / trigger / note) uses **existing fields** — no new schema.
+
+**Partial-Carton Override end-to-end** (owner §37): an explicit partial-carton `order_qty` / `Approved Qty` is allowed through **Send (§12.13) → Approval (§7.1 / line-validation) → Purchase Order** and is **never re-rounded to a full carton**. Conversion to PO preserves the **exact approved quantity**, its exact `carton_qty`, the `units_per_carton` snapshot, the partial-carton override fact/note, and traceability to the system recommendation. **Request Order → PO mapping must NOT re-CEILING the quantity.** Missing `units_per_carton` still blocks the system Suggested + Send (§12.13). Uses existing fields/note contract — **no new DB column**.
 
 ### 12.14 Decision layer vs Execution layer (finalized) + company-split storage note
 
@@ -522,12 +539,12 @@ Records per-site confirmation before Series aggregation (site-level review → c
 | Column | Note |
 |---|---|
 | `site_confirmation_id` | PK (`SC-XXXXXXXXXX`) |
-| `planning_cycle` | planning cycle (year of the bucket's month, e.g. `2026`) |
+| `planning_cycle` | **canonical monthly cycle key = `YYYY-MM`** (e.g. `2026-07`); a year-only value is not a valid monthly cycle. *(If the current Runtime persists year-only, that is a recorded Runtime Gap — canonical `YYYY-MM`, verify existing persistence, PENDING IMPLEMENTATION; no DB column/handler changed this round.)* |
 | `company` | (locked to the scope's company; `All` = every company) |
 | `country` | (`All` = every country) |
 | `marketplace` | (`All` = every marketplace) |
 | `series` | (`All` = every series) |
-| `bucket` | **`T1` / `T2` / `T3`** — the planning bucket confirmed (T1 = next month … T3 = +3) |
+| `bucket` | **`T1` / `T2` / `T3`** — the planning bucket confirmed (non-overlapping: T1 = current-month remaining + Month+1, T2 = Month+2, T3 = Month+3; owner §27). T4 is visibility-only and never confirmed/sent. |
 | `status` | enum: **`pending` / `confirmed` / `cancelled`** |
 | `confirmed_by` | actor (placeholder identity until Role & Permission) |
 | `confirmed_at` | |
@@ -595,15 +612,15 @@ Records per-site confirmation before Series aggregation (site-level review → c
 
 **Purpose:** persist the **Request Order page second-layer** Order Allocation (T1/T2/T3 editable draft) **before Send Request**, so user edits survive a reload and become the **source for Request Order Draft creation**. **No stock movement / reservation.**
 
-**Buckets:** **T1 = next month, T2 = next two months, T3 = next three months.** Each month can be pushed independently. **No calculation formula in this task** (Suggested/Recommended are placeholders or `--`).
+**Buckets (canonical non-overlapping, owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §27):** **T1 = current-month remaining period + Month+1 · T2 = Month+2 · T3 = Month+3.** Month+1 is counted only in T1 (never re-added to T2). **T4 = Month+4 is visibility-only and is never a draft-line order commitment / never written as `request_bucket = T4`.** Each bucket can be pushed independently. **No calculation formula in this task** (Suggested/Recommended come from Engine B — owner §12/§14/§31).
 
 **`request_order_allocation_drafts` (header):**
 
 | Column | Note |
 |---|---|
 | `request_allocation_draft_id` | PK |
-| `planning_cycle` | planning cycle (e.g. `2026`) |
-| `company` · `country` · `marketplace` · `sku` · `category` · `series` | scope grain |
+| `planning_cycle` | **canonical monthly cycle key = `YYYY-MM`** (e.g. `2026-07`); a year-only value is not a valid monthly cycle. *(If the current Runtime persists year-only, that is a recorded Runtime Gap — Canonical: `YYYY-MM`; Current Runtime: verify existing persistence; Status: PENDING IMPLEMENTATION. No DB column / handler / payload changed this round.)* |
+| `company` · `country` · `marketplace` · `sku` · `category` · `series` | scope grain (SKU lives on this **parent**; child lines inherit it via `request_allocation_draft_id`) |
 | `status` | `draft` / `site_confirmed` / `submitted` / `cancelled` |
 | `source_type` | `manual` / `ai_suggested` |
 | `created_by` · `created_at` · `updated_by` · `updated_at` | audit |
@@ -617,9 +634,9 @@ Records per-site confirmation before Series aggregation (site-level review → c
 | `request_allocation_line_id` | PK |
 | `request_allocation_draft_id` | FK → header |
 | `request_month` | the pushed month `YYYY-MM` |
-| `request_bucket` | `T1` / `T2` / `T3` |
-| `recommended_qty` | placeholder (no formula) |
-| `order_qty` | **editable** user order qty (drives Request Order Draft line) |
+| `request_bucket` | `T1` / `T2` / `T3` (never `T4`; SKU inherited from the parent draft — no `sku` column on the line) |
+| `recommended_qty` | **persisted system Suggested Order snapshot** produced by Engine B (Net Order Need → carton CEILING) when the calculation runtime is implemented. **Current Runtime:** may remain blank / placeholder because Engine A and Engine B are **NOT IMPLEMENTED**. A user edit **never** overwrites it. |
+| `order_qty` | **editable** user order qty (drives Request Order Draft line); user edit updates this + recomputes `carton_qty` and preserves `recommended_qty` |
 | `carton_qty` · `units_per_carton` | carton math inputs (snapshot; may be blank) |
 | `factory_stock_snapshot` · `site_stock_snapshot` · `third_party_stock_snapshot` | stock snapshots at edit time |
 | `fc_qty_snapshot` · `target_pct_snapshot` | forecast + target% snapshots (display) |

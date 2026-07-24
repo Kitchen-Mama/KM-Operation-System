@@ -481,6 +481,10 @@ function _getDbFactoryMovementData() {
         var wh = whMap[m.warehouseId];
         var locationName = (wh && wh.warehouseName) ? wh.warehouseName : (m.factoryName || m.warehouseId || '');
         var meta = skuMeta[m.sku] || { category: '', series: '' };
+        // Available before/after: prefer the normalizer's derived values (from the 4-way current/reserved
+        // audit columns); the normalizer already falls back to legacy before_qty/after_qty when absent.
+        var availBefore = (m.availableBefore != null) ? Number(m.availableBefore) : (Number(m.quantityBefore) || 0);
+        var availAfter = (m.availableAfter != null) ? Number(m.availableAfter) : (Number(m.quantityAfter) || 0);
         return {
             sku: m.sku,
             locationName: locationName,
@@ -488,6 +492,8 @@ function _getDbFactoryMovementData() {
             series: meta.series,
             movementType: m.movementType,
             quantity: Number(m.quantity) || 0,
+            availableBefore: availBefore,
+            availableAfter: availAfter,
             quantityBefore: Number(m.quantityBefore) || 0,
             quantityAfter: Number(m.quantityAfter) || 0,
             relatedEntityType: m.relatedEntityType,
@@ -497,6 +503,12 @@ function _getDbFactoryMovementData() {
             note: m.note
         };
     });
+}
+
+// Signed quantity display: +N for increases, -N for decreases (Movement Log requirement, Part G).
+function _fmvSignedQty(n) {
+    var v = Number(n) || 0;
+    return (v > 0 ? '+' : '') + v.toLocaleString();
 }
 
 function _factoryMovDistinct(data, key) {
@@ -540,6 +552,7 @@ function _populateFactoryMovFilters(movPanel) {
         p.innerHTML = html;
     };
     rebuild('warehouse', _factoryMovDistinct(data, 'locationName'));
+    rebuild('movementType', _factoryMovDistinct(data, 'movementType'));
     rebuild('category', _factoryMovDistinct(data, 'category'));
     rebuild('series', _factoryMovDistinct(data, 'series'));
 }
@@ -593,7 +606,7 @@ function _initFactoryMovementLog(root) {
     if (!movPanel) return;
     _populateFactoryMovFilters(movPanel);
     _bindFactoryMovControls(movPanel);
-    ['warehouse', 'category', 'series'].forEach(function(t) { _updateFactoryMovFilterText(t, movPanel); });
+    ['warehouse', 'movementType', 'category', 'series'].forEach(function(t) { _updateFactoryMovFilterText(t, movPanel); });
     var skuInput = root.querySelector('#factory-mov-sku-input');
     if (skuInput) skuInput.oninput = function() { _factoryMovementSearched = false; renderFactoryMovementTable(); };
     // Bind the Forecast-Review-style date range picker (replaces the old preset <select>).
@@ -629,6 +642,7 @@ function renderFactoryMovementTable(root) {
     var endStr = _fmvMovDate.end ? _fmvFormatDate(_fmvMovDate.end) : '';
     var filters = {
         warehouse: _factoryMovGetFilter(movPanel, 'warehouse'),
+        movementType: _factoryMovGetFilter(movPanel, 'movementType'),
         category: _factoryMovGetFilter(movPanel, 'category'),
         series: _factoryMovGetFilter(movPanel, 'series'),
         sku: (root.querySelector('#factory-mov-sku-input') && root.querySelector('#factory-mov-sku-input').value.toLowerCase()) || ''
@@ -642,6 +656,7 @@ function renderFactoryMovementTable(root) {
             if (endStr && rowDate > endStr) return false;
         }
         if (filters.warehouse.length > 0 && filters.warehouse.indexOf(m.locationName) === -1) return false;
+        if (filters.movementType.length > 0 && filters.movementType.indexOf(m.movementType) === -1) return false;
         if (filters.category.length > 0 && filters.category.indexOf(m.category) === -1) return false;
         if (filters.series.length > 0 && filters.series.indexOf(m.series) === -1) return false;
         if (filters.sku && String(m.sku).toLowerCase().indexOf(filters.sku) === -1) return false;
@@ -664,11 +679,11 @@ function renderFactoryMovementTable(root) {
         return '<div class="scroll-row">' +
             '<div class="scroll-cell">' + _fmvEscapeHtml(m.locationName) + '</div>' +
             '<div class="scroll-cell">' + _fmvEscapeHtml(m.movementType) + '</div>' +
-            '<div class="scroll-cell scroll-cell--num">' + (Number(m.quantity) || 0).toLocaleString() + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + _fmvSignedQty(m.quantity) + '</div>' +
             '<div class="scroll-cell">' + _fmvEscapeHtml(m.relatedEntityType) + '</div>' +
             '<div class="scroll-cell">' + _fmvEscapeHtml(m.relatedEntityId) + '</div>' +
-            '<div class="scroll-cell scroll-cell--num">' + (Number(m.quantityBefore) || 0).toLocaleString() + '</div>' +
-            '<div class="scroll-cell scroll-cell--num">' + (Number(m.quantityAfter) || 0).toLocaleString() + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + (Number(m.availableBefore) || 0).toLocaleString() + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + (Number(m.availableAfter) || 0).toLocaleString() + '</div>' +
             '<div class="scroll-cell">' + _fmvEscapeHtml(m.createdBy) + '</div>' +
             '<div class="scroll-cell">' + _fmvEscapeHtml(m.createdAt) + '</div>' +
             '<div class="scroll-cell">' + _fmvEscapeHtml(m.note) + '</div>' +
@@ -904,6 +919,193 @@ function switchFactoryTab(tab) {
 window.switchFactoryTab = switchFactoryTab;
 window.runFactoryMovementSearch = runFactoryMovementSearch;
 window.renderFactoryMovementTable = renderFactoryMovementTable;
+
+// ============================================================================
+// Factory Inventory Adjustment modal (2026-07-23)
+// Select ONE factory_stock record, set the NEW Available quantity, add a required Reason/Note.
+// Only Available is adjusted (Reserved is never editable). Confirm -> backend atomic write
+// (factory_stock + factory_stock_movements) via KM.DB.adjustFactoryInventory, then re-GET + re-render.
+// NOT an inline edit; a unique record must be selected first.
+// ============================================================================
+var _factoryAdjustRecords = [];
+var _factoryAdjustSelected = null;
+var _factoryAdjustSubmitting = false;
+var _factoryAdjustKeyBound = false;
+
+function openFactoryInventoryAdjustModal() {
+    var overlay = document.getElementById('factory-adjust-overlay');
+    var modal = document.getElementById('factory-adjust-modal');
+    if (!modal || !overlay) return;
+    // Records come from the real DB-backed factory_stock join (this is a real write; never demo rows).
+    _factoryAdjustRecords = _getDbFactoryStockData() || [];
+    var sel = document.getElementById('factory-adjust-record');
+    if (sel) {
+        var opts = ['<option value="">Select SKU / Warehouse…</option>'];
+        _factoryAdjustRecords.forEach(function(rec, i) {
+            var label = rec.sku + ' — ' + (rec.factory || rec.warehouseId || '?') +
+                (rec.company ? ' (' + rec.company + (rec.country ? '/' + rec.country : '') + ')' : '');
+            opts.push('<option value="' + i + '">' + _fmvEscapeHtml(label) + '</option>');
+        });
+        sel.innerHTML = opts.join('');
+    }
+    _factoryAdjustSelected = null;
+    _factoryAdjustSubmitting = false;
+    ['factory-adjust-sku', 'factory-adjust-warehouse', 'factory-adjust-company', 'factory-adjust-country', 'factory-adjust-current', 'factory-adjust-delta']
+        .forEach(function(id) { var el = document.getElementById(id); if (el) el.textContent = '—'; });
+    var newEl = document.getElementById('factory-adjust-new'); if (newEl) { newEl.value = ''; newEl.disabled = true; }
+    var noteEl = document.getElementById('factory-adjust-note'); if (noteEl) noteEl.value = '';
+    var refEl = document.getElementById('factory-adjust-reference'); if (refEl) refEl.value = '';
+    var preview = document.getElementById('factory-adjust-preview'); if (preview) { preview.hidden = true; preview.innerHTML = ''; }
+    var result = document.getElementById('factory-adjust-result'); if (result) { result.hidden = true; result.innerHTML = ''; }
+    var btn = document.getElementById('factory-adjust-confirm-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Confirm Adjustment'; }
+    overlay.classList.add('is-open');
+    modal.classList.add('is-open');
+    // Close on Escape (bound once).
+    if (!_factoryAdjustKeyBound) {
+        document.addEventListener('keydown', function(e) {
+            var m = document.getElementById('factory-adjust-modal');
+            if (e.key === 'Escape' && m && m.classList.contains('is-open')) closeFactoryInventoryAdjustModal();
+        });
+        _factoryAdjustKeyBound = true;
+    }
+}
+
+function closeFactoryInventoryAdjustModal() {
+    var overlay = document.getElementById('factory-adjust-overlay');
+    var modal = document.getElementById('factory-adjust-modal');
+    if (overlay) overlay.classList.remove('is-open');
+    if (modal) modal.classList.remove('is-open');
+}
+
+function onFactoryAdjustRecordChange() {
+    var sel = document.getElementById('factory-adjust-record');
+    var idx = sel ? parseInt(sel.value, 10) : NaN;
+    var rec = (!isNaN(idx) && _factoryAdjustRecords[idx]) ? _factoryAdjustRecords[idx] : null;
+    _factoryAdjustSelected = rec;
+    var set = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = (v == null || v === '') ? '—' : v; };
+    var newEl = document.getElementById('factory-adjust-new');
+    if (!rec) {
+        ['factory-adjust-sku', 'factory-adjust-warehouse', 'factory-adjust-company', 'factory-adjust-country', 'factory-adjust-current', 'factory-adjust-delta']
+            .forEach(function(id) { set(id, '—'); });
+        if (newEl) { newEl.value = ''; newEl.disabled = true; }
+        _factoryAdjustUpdateValidity();
+        return;
+    }
+    set('factory-adjust-sku', rec.sku);
+    set('factory-adjust-warehouse', rec.factory || rec.warehouseId || '—');
+    set('factory-adjust-company', rec.company || '—');
+    set('factory-adjust-country', rec.country || '—');
+    set('factory-adjust-current', Number(rec.availableStock || 0).toLocaleString());
+    set('factory-adjust-delta', '—');
+    if (newEl) { newEl.disabled = false; newEl.value = ''; newEl.focus(); }
+    onFactoryAdjustQtyInput();
+}
+
+// Parse the New Available input. { ok, value } | { ok:false, empty } | { ok:false, invalid }
+function _factoryAdjustNewValue() {
+    var el = document.getElementById('factory-adjust-new');
+    var raw = el ? String(el.value).trim() : '';
+    if (raw === '') return { ok: false, empty: true };
+    if (!/^\d+$/.test(raw)) return { ok: false, invalid: true };   // integer >= 0 only
+    return { ok: true, value: parseInt(raw, 10) };
+}
+
+function onFactoryAdjustQtyInput() {
+    var rec = _factoryAdjustSelected;
+    var deltaEl = document.getElementById('factory-adjust-delta');
+    var preview = document.getElementById('factory-adjust-preview');
+    if (!rec) { if (deltaEl) deltaEl.textContent = '—'; if (preview) preview.hidden = true; _factoryAdjustUpdateValidity(); return; }
+    var cur = Number(rec.availableStock || 0);
+    var nv = _factoryAdjustNewValue();
+    if (nv.ok) {
+        var delta = nv.value - cur;
+        if (deltaEl) deltaEl.textContent = _fmvSignedQty(delta);
+        // Preview "Current Available → New Available" before Confirm (Part D rule 4).
+        if (preview) { preview.hidden = false; preview.innerHTML = 'Available: <strong>' + cur.toLocaleString() + '</strong> &rarr; <strong>' + nv.value.toLocaleString() + '</strong> (' + _fmvSignedQty(delta) + ')'; }
+    } else {
+        if (deltaEl) deltaEl.textContent = '—';
+        if (preview) { preview.hidden = true; preview.innerHTML = ''; }
+    }
+    _factoryAdjustUpdateValidity();
+}
+
+function _factoryAdjustUpdateValidity() {
+    var btn = document.getElementById('factory-adjust-confirm-btn');
+    if (!btn) return;
+    var rec = _factoryAdjustSelected;
+    var nv = _factoryAdjustNewValue();
+    var noteEl = document.getElementById('factory-adjust-note');
+    var noteOk = noteEl && String(noteEl.value).trim() !== '';
+    // Confirm enabled only when: a record is loaded, New Available is a valid int != current, note is filled.
+    var valid = !!rec && nv.ok && nv.value !== Number(rec.availableStock || 0) && noteOk && !_factoryAdjustSubmitting;
+    btn.disabled = !valid;
+}
+
+function confirmFactoryInventoryAdjustment() {
+    if (_factoryAdjustSubmitting) return;              // double-submit guard (Part D rule 5)
+    var rec = _factoryAdjustSelected;
+    var nv = _factoryAdjustNewValue();
+    var noteEl = document.getElementById('factory-adjust-note');
+    var note = noteEl ? String(noteEl.value).trim() : '';
+    var refEl = document.getElementById('factory-adjust-reference');
+    var reference = refEl ? String(refEl.value).trim() : '';
+    var resultEl = document.getElementById('factory-adjust-result');
+    var show = function(html, isErr) {
+        if (!resultEl) return;
+        resultEl.hidden = false;
+        resultEl.innerHTML = isErr ? ('<div style="color:#dc2626;font-weight:600;">Error: ' + _fmvEscapeHtml(html) + '</div>') : html;
+    };
+
+    if (!rec) { show('Please select a stock record.', true); return; }
+    if (nv.empty) { show('New Available is required.', true); return; }
+    if (nv.invalid) { show('New Available must be a whole number ≥ 0.', true); return; }
+    if (nv.value === Number(rec.availableStock || 0)) { show('New Available equals Current Available; nothing to adjust.', true); return; }
+    if (!note) { show('Reason / Note is required.', true); return; }
+    if (!(window.KM && window.KM.DB && window.KM.DB.adjustFactoryInventory)) { show('Adjustment API is not available.', true); return; }
+
+    _factoryAdjustSubmitting = true;
+    var btn = document.getElementById('factory-adjust-confirm-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+
+    window.KM.DB.adjustFactoryInventory({
+        warehouse_id: rec.warehouseId,
+        sku: rec.sku,
+        new_available: nv.value,
+        note: note,
+        reference_id: reference,
+        created_by: 'operation-system'          // Phase 1 runtime identity; not user-entered
+    }).then(function(result) {
+        _factoryAdjustSubmitting = false;
+        if (!result || result.success === false) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Confirm Adjustment'; }
+            show(result && result.error ? result.error : 'Adjustment failed. API may not be configured.', true);
+            return;
+        }
+        var d = result.data || {};
+        show('<div style="color:#16a34a;font-weight:600;margin-bottom:4px;">Adjustment applied.</div>' +
+            '<div>Movement: ' + _fmvEscapeHtml(d.movement_id || '') + '</div>' +
+            '<div>Reference: ' + _fmvEscapeHtml(d.reference_id || '') + '</div>' +
+            '<div>Available: ' + _fmvEscapeHtml(String(d.before_available)) + ' &rarr; ' + _fmvEscapeHtml(String(d.after_available)) + ' (' + _fmvSignedQty(d.quantity) + ')</div>', false);
+        if (btn) { btn.textContent = 'Done'; }
+        // Adapter already re-GET the DB cache (loadOperationDb force). Re-render snapshot (keeps filters);
+        // refresh the movement log if its tab is visible so the new row shows immediately.
+        var root = document.querySelector('#factory-stock-section');
+        renderFactoryStockTable(root);
+        var movPanel = root && root.querySelector('[data-fs-panel="movement"]');
+        var movVisible = movPanel && movPanel.style.display !== 'none';
+        if (movVisible) { _factoryMovementSearched = true; renderFactoryMovementTable(root); }
+    }).catch(function(err) {
+        _factoryAdjustSubmitting = false;
+        if (btn) { btn.disabled = false; btn.textContent = 'Confirm Adjustment'; }
+        show(err && err.message ? err.message : 'Adjustment request failed.', true);
+    });
+}
+
+window.openFactoryInventoryAdjustModal = openFactoryInventoryAdjustModal;
+window.closeFactoryInventoryAdjustModal = closeFactoryInventoryAdjustModal;
+window.onFactoryAdjustRecordChange = onFactoryAdjustRecordChange;
+window.onFactoryAdjustQtyInput = onFactoryAdjustQtyInput;
+window.confirmFactoryInventoryAdjustment = confirmFactoryInventoryAdjustment;
 
 // ========================================
 // Lifecycle 註冊

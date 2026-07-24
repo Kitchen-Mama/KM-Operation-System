@@ -1138,7 +1138,7 @@ function _shRenderDbCard(s, planLines, mode) {
                           btn("shReadyToShip('" + sid + "')", 'Ready to Ship →', '#3B82F6');
         } else if (status === 'ready_to_ship') {
             actionsHtml = btn("shSaveExecution('" + sid + "')", 'Save', '#10B981') +
-                          btn("shShip('" + sid + "')", 'Ship 🚢', '#0EA5E9') +
+                          btn("shConfirmShipment('" + sid + "')", 'Confirm Shipment 🚢', '#0EA5E9') +
                           btn("shReturnToDraft('" + sid + "')", '← Return to Draft', '#94A3B8');
         } else if (status === 'shipped') {
             actionsHtml = btn("shShipmentDone('" + sid + "')", 'Done', '#64748B');
@@ -1341,6 +1341,116 @@ function shShip(shipmentId) {
     }).catch(function(err) { alert('Ship failed: ' + (err && err.message ? err.message : err)); });
 }
 
+// Confirm Shipment (2026-07-24) — the canonical dispatch action. Validates client-side, persists the
+// current field edits (Save), then calls the SINGLE backend orchestration `confirmShipmentAndDispatch`
+// which finalizes the Formal Shipment (in_transit) + snapshots shipment_routes + creates the initial
+// shipment_event + deducts factory_stock atomically & idempotently. Opens a confirm modal first; the
+// button disables while confirming; on success shows the structured result + "View On the Way".
+function shConfirmShipment(shipmentId) {
+    var cartonV = _shValidateCartons(shipmentId, true);
+    if (!cartonV.ok) { alert('Cannot Confirm — ' + cartonV.error); return; }
+    var payload = _shCollectExec(shipmentId);
+    var box = document.getElementById('sh-exec-' + shipmentId);
+    var totalQty = box ? (parseFloat(box.getAttribute('data-total-qty')) || 0) : 0;
+    var missing = [];
+    if (!String(payload.external_shipment_id || '').trim()) missing.push('Shipment ID (external)');
+    if (!String(payload.reference_id || '').trim()) missing.push('Reference ID');
+    if (!String(payload.warehouse_code || '').trim()) missing.push('Warehouse Code');
+    if (!String(payload.carrier_id || '').trim()) missing.push('Carrier');
+    if (!String(payload.shipping_method || '').trim()) missing.push('Shipping Method');
+    if (!String(payload.etd || '').trim()) missing.push('ETD');
+    if (!String(payload.eta || '').trim()) missing.push('ETA');
+    if (totalQty <= 0) missing.push('Total Qty');
+    if (missing.length) { alert('Cannot Confirm — please complete:\n\n• ' + missing.join('\n• ')); return; }
+
+    var s = (window.KM.DB.getShipments() || []).filter(function (x) { return x.shipmentId === shipmentId; })[0] || {};
+    var lines = (window.KM.DB.getShipmentLines() || []).filter(function (l) { return l.shipmentId === shipmentId; });
+    var units = lines.reduce(function (a, l) { return a + (l.shipmentQty || l.qty || 0); }, 0);
+    _shOpenConfirmModal(shipmentId, {
+        no: s.externalShipmentId || s.shipmentNo || shipmentId,
+        lineCount: lines.length, units: units,
+        origin: payload.ship_from || s.shipFrom || '—',
+        dest: (s.destination || payload.warehouse_code || s.warehouseId || '—'),
+        carrier: payload.carrier_id || s.carrierId || '—',
+        method: s.shippingMethodLabel || payload.shipping_method || s.shippingMethod || '—',
+        tracking: payload.tracking_number || s.trackingNumber || '—',
+        container: payload.container_no || s.containerNo || '—',
+        etd: payload.etd || s.etd || '—', eta: payload.eta || s.eta || '—'
+    }, payload);
+}
+
+function _shCloseConfirmModal() {
+    var o = document.getElementById('sh-confirm-overlay'); if (o) o.remove();
+    var m = document.getElementById('sh-confirm-modal'); if (m) m.remove();
+}
+function _shOpenConfirmModal(shipmentId, sum, execPayload) {
+    _shCloseConfirmModal();
+    var overlay = document.createElement('div');
+    overlay.id = 'sh-confirm-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:2000;';
+    overlay.addEventListener('click', _shCloseConfirmModal);
+    document.body.appendChild(overlay);
+    var modal = document.createElement('div');
+    modal.id = 'sh-confirm-modal';
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-label', 'Confirm Shipment');
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2001;background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,0.25);width:460px;max-width:94vw;max-height:90vh;overflow-y:auto;padding:20px 22px;font-size:13px;color:#1E293B;';
+    function row(k, v) { return '<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid #F1F5F9;"><span style="color:#64748B;">' + _shEsc(k) + '</span><strong>' + _shEsc(v) + '</strong></div>'; }
+    modal.innerHTML =
+        '<h3 style="margin:0 0 10px;font-size:16px;">Confirm Shipment</h3>' +
+        row('Shipment No.', sum.no) + row('Lines / Total Units', sum.lineCount + ' / ' + (sum.units || 0).toLocaleString()) +
+        row('Origin → Destination', sum.origin + ' → ' + sum.dest) + row('Carrier', sum.carrier) + row('Shipping Method', sum.method) +
+        row('Tracking / Container', sum.tracking + ' / ' + sum.container) + row('ETD / ETA', sum.etd + ' / ' + sum.eta) +
+        '<div style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:6px;padding:8px 10px;margin:12px 0;font-size:12px;line-height:1.5;">' +
+          'On confirm: the shipment enters <strong>In Transit</strong>; Factory Stock is <strong>deducted</strong> (canonical movements); the Shipment <strong>Route</strong> and an <strong>initial Event</strong> are created. The route template is auto-resolved from destination + carrier + method.</div>' +
+        '<div id="sh-confirm-status" role="status" aria-live="polite" style="min-height:18px;font-size:12.5px;margin:6px 0;"></div>' +
+        '<div id="sh-confirm-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">' +
+          '<button type="button" id="sh-confirm-cancel" style="padding:7px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;">Cancel</button>' +
+          '<button type="button" id="sh-confirm-go" style="padding:7px 14px;border:0;background:#0EA5E9;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;">Confirm &amp; Dispatch</button>' +
+        '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('sh-confirm-cancel').addEventListener('click', _shCloseConfirmModal);
+    document.getElementById('sh-confirm-go').addEventListener('click', function () { _shRunConfirm(shipmentId, execPayload); });
+}
+function _shRunConfirm(shipmentId, execPayload) {
+    var go = document.getElementById('sh-confirm-go');
+    var cancel = document.getElementById('sh-confirm-cancel');
+    var status = document.getElementById('sh-confirm-status');
+    if (!go) return;
+    go.disabled = true; go.textContent = 'Confirming…'; if (cancel) cancel.disabled = true;
+    if (status) { status.style.color = '#0369a1'; status.textContent = 'Persisting fields…'; }
+    // 1) Persist the card's field edits (Save; no status change). 2) Single atomic dispatch command.
+    Promise.resolve(window.KM.DB.updateShipment(execPayload)).then(function () {
+        if (status) status.textContent = 'Confirming & dispatching…';
+        return window.KM.DB.confirmShipmentAndDispatch({ shipment_id: shipmentId, actor: 'operation-system' });
+    }).then(function (res) {
+        if (!res || res.success === false) {
+            var stage = (res && res.stage) ? (' [' + res.stage + ']') : '';
+            if (status) { status.style.color = '#b91c1c'; status.textContent = 'Confirm failed' + stage + ': ' + ((res && res.error) || 'Unknown error') + ' — shipment_id: ' + shipmentId; }
+            go.disabled = false; go.textContent = 'Confirm & Dispatch'; if (cancel) cancel.disabled = false;
+            return;
+        }
+        var d = res.data || {};
+        var already = res.already_confirmed ? ' (already confirmed — no duplicate writes)' : '';
+        if (status) status.style.color = '#166534';
+        var actions = document.getElementById('sh-confirm-actions');
+        if (status) status.innerHTML = '<strong>Confirmed' + already + '.</strong><br>Shipment <code>' + _shEsc(d.shipment_id || shipmentId) + '</code> → <strong>' + _shEsc(d.status || 'in_transit') + '</strong><br>' +
+            'Route initialized: ' + (d.route_nodes_created != null ? d.route_nodes_created : '—') + ' node(s) · Initial Event created: ' + (d.events_created != null ? d.events_created : '—') + ' · Stock movements: ' + (d.stock_movements_created != null ? d.stock_movements_created : '—');
+        if (actions) {
+            actions.innerHTML = '<button type="button" id="sh-confirm-close" style="padding:7px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;">Close</button>' +
+                '<button type="button" id="sh-confirm-view" style="padding:7px 14px;border:0;background:#0080bb;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;">View On the Way</button>';
+            document.getElementById('sh-confirm-close').addEventListener('click', function () { _shCloseConfirmModal(); _shLoadAndRender(); });
+            document.getElementById('sh-confirm-view').addEventListener('click', function () {
+                _shCloseConfirmModal();
+                window._glmPendingSelect = d.shipment_id || shipmentId;   // runtime page auto-selects it on mount
+                if (typeof showSection === 'function') showSection('global-logistics-map');
+            });
+        }
+    }).catch(function (err) {
+        if (status) { status.style.color = '#b91c1c'; status.textContent = 'Confirm failed: ' + (err && err.message ? err.message : err) + ' — shipment_id: ' + shipmentId; }
+        go.disabled = false; go.textContent = 'Confirm & Dispatch'; if (cancel) cancel.disabled = false;
+    });
+}
+
 // Return to Draft (Phase-2 placeholder, no permissions): send a Ready to Ship shipment back to
 // Draft with a required revision reason (appended to the note history server-side).
 function shReturnToDraft(shipmentId) {
@@ -1397,6 +1507,7 @@ window.toggleShipmentCard = toggleShipmentCard;
 window.shSaveExecution = shSaveExecution;
 window.shReadyToShip = shReadyToShip;
 window.shShip = shShip;
+window.shConfirmShipment = shConfirmShipment;
 window.shReturnToDraft = shReturnToDraft;
 window.shShipmentDone = shShipmentDone;
 window.shWarehousePick = shWarehousePick;

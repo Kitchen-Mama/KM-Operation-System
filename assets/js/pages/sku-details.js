@@ -1326,50 +1326,151 @@ function saveSkuTaxRate() {
 // is preserved exactly (case-insensitive substring over the SKU value).
 function handleSkuSearch() { applySkuFilters(); }
 
-// ── Toolbar list filters (Series / Category) + combined AND filtering ─────────────────────────────
-// Options = DISTINCT non-empty values across ALL lifecycle groups, read live from the rendered rows'
-// data-series / data-category (so options always match what is on screen and pick up new values after a
-// save + refresh). Filtering is show/hide only — it never mutates data. Each lifecycle group keeps its
-// heading and shows a concise zero-result note when every one of its rows is filtered out.
-function _skuFilterEls() {
-    return {
-        search: document.getElementById('skuSearchInput'),
-        series: document.getElementById('skuSeriesFilter'),
-        category: document.getElementById('skuCategoryFilter')
-    };
-}
+// ── Toolbar Category / Series MULTI-SELECT + combined filtering ───────────────────────────────────
+// Options = DISTINCT non-empty data-category / data-series across ALL rendered lifecycle rows (so they
+// always match what is on screen and pick up new values after a save + refresh). Empty selection = All.
+// AND between Category and Series; OR within each (a row matches if its value is in the selected set).
+// Series options narrow to the selected Categories, but a still-selected Series is never silently
+// dropped. Filtering is show/hide only — it never mutates data. Applies to EVERY .sku-lifecycle-section
+// (Upcoming SKU, Running in the Market, Phasing, Closure) at once.
+var _skuMultiState = { category: [], series: [] };   // selected values; [] = All
+var _skuCatSeriesMap = {};                            // category -> [series...] (for Series narrowing)
+var _skuAllOptions = { category: [], series: [] };    // full distinct option universe
 
+function _skuFilterEls() { return { search: document.getElementById('skuSearchInput') }; }
+
+// (Re)build the option universe from rendered rows, prune selections to still-existing values, re-render
+// both dropdowns. Called on init and after a save+refresh.
 function populateSkuFilters() {
-    var els = _skuFilterEls();
-    if (!els.series || !els.category) return;
     var rows = document.querySelectorAll('#sku-section .fixed-body .fixed-row[data-sku]');
-    var seriesMap = {}, catMap = {};
+    var catMap = {}, serMap = {}, catSer = {};
     rows.forEach(function (r) {
-        var s = String(r.getAttribute('data-series') || '').trim();
         var c = String(r.getAttribute('data-category') || '').trim();
-        if (s && !seriesMap[s.toLowerCase()]) seriesMap[s.toLowerCase()] = s;
+        var s = String(r.getAttribute('data-series') || '').trim();
         if (c && !catMap[c.toLowerCase()]) catMap[c.toLowerCase()] = c;
+        if (s && !serMap[s.toLowerCase()]) serMap[s.toLowerCase()] = s;
+        if (c) { catSer[c] = catSer[c] || {}; if (s) catSer[c][s] = true; }
     });
-    _skuFillFilter(els.series, seriesMap, 'All Series');
-    _skuFillFilter(els.category, catMap, 'All Categories');
+    var sortVals = function (m) {
+        return Object.keys(m).map(function (k) { return m[k]; })
+            .sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); });
+    };
+    _skuAllOptions.category = sortVals(catMap);
+    _skuAllOptions.series = sortVals(serMap);
+    _skuCatSeriesMap = {};
+    Object.keys(catSer).forEach(function (c) { _skuCatSeriesMap[c] = Object.keys(catSer[c]); });
+    // Prune selections to values that still exist (drop stale; keep valid — never invents a value).
+    _skuMultiState.category = _skuMultiState.category.filter(function (v) { return _skuAllOptions.category.indexOf(v) !== -1; });
+    _skuMultiState.series = _skuMultiState.series.filter(function (v) { return _skuAllOptions.series.indexOf(v) !== -1; });
+    _skuRenderFilterOptions('category');
+    _skuRenderFilterOptions('series');
+    _skuUpdateFilterLabel('category');
+    _skuUpdateFilterLabel('series');
 }
 
-function _skuFillFilter(sel, map, allLabel) {
-    var prev = sel.value;   // preserve the current selection across repopulation (e.g. after a save)
-    var vals = Object.keys(map).map(function (k) { return map[k]; });
-    vals.sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); });
-    sel.innerHTML = '<option value="">' + allLabel + '</option>' +
-        vals.map(function (v) { return '<option value="' + _skuEsc(v) + '">' + _skuEsc(v) + '</option>'; }).join('');
-    sel.value = (prev && vals.indexOf(prev) !== -1) ? prev : '';
+// Candidate options for a filter. Series narrows to series under the selected categories, UNIONed with
+// any currently-selected series so a valid selection is never hidden or cleared.
+function _skuCandidateOptions(kind) {
+    if (kind === 'category') return _skuAllOptions.category.slice();
+    var cats = _skuMultiState.category;
+    if (!cats.length) return _skuAllOptions.series.slice();
+    var set = {};
+    cats.forEach(function (c) { (_skuCatSeriesMap[c] || []).forEach(function (s) { set[s] = true; }); });
+    _skuMultiState.series.forEach(function (s) { set[s] = true; });   // keep selected series visible
+    return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); });
 }
+
+function _skuRenderFilterOptions(kind) {
+    var list = document.getElementById(kind === 'category' ? 'skuCategoryList' : 'skuSeriesList');
+    if (!list) return;
+    var opts = _skuCandidateOptions(kind);
+    var sel = _skuMultiState[kind];
+    if (!opts.length) { list.innerHTML = '<div class="skuf-empty">No options</div>'; return; }
+    list.innerHTML = opts.map(function (v) {
+        var isSel = sel.indexOf(v) !== -1;
+        return '<label class="skuf-item" role="option" aria-selected="' + (isSel ? 'true' : 'false') + '">' +
+            '<input type="checkbox" value="' + _skuEsc(v) + '"' + (isSel ? ' checked' : '') + ' onchange="onSkuFilterToggle(\'' + kind + '\')"> ' +
+            '<span>' + _skuEsc(v) + '</span></label>';
+    }).join('');
+    onSkuFilterOptionSearch(kind);   // re-apply any active option-search text
+}
+
+function _skuUpdateFilterLabel(kind) {
+    var el = document.getElementById(kind === 'category' ? 'skuCategoryLabel' : 'skuSeriesLabel');
+    if (!el) return;
+    var n = _skuMultiState[kind].length;
+    el.textContent = n === 0 ? (kind === 'category' ? 'All Categories' : 'All Series') : (n + ' selected');
+}
+
+function onSkuFilterToggle(kind) {
+    var list = document.getElementById(kind === 'category' ? 'skuCategoryList' : 'skuSeriesList');
+    if (!list) return;
+    var checked = list.querySelectorAll('input[type="checkbox"]:checked');
+    _skuMultiState[kind] = Array.prototype.map.call(checked, function (cb) { return cb.value; });
+    list.querySelectorAll('.skuf-item').forEach(function (item) {
+        var cb = item.querySelector('input'); if (cb) item.setAttribute('aria-selected', cb.checked ? 'true' : 'false');
+    });
+    _skuUpdateFilterLabel(kind);
+    if (kind === 'category') { _skuRenderFilterOptions('series'); _skuUpdateFilterLabel('series'); }  // re-narrow Series
+    applySkuFilters();
+}
+
+function skuFilterSelectAll(kind) {
+    _skuMultiState[kind] = _skuCandidateOptions(kind).slice();
+    _skuRenderFilterOptions(kind); _skuUpdateFilterLabel(kind);
+    if (kind === 'category') { _skuRenderFilterOptions('series'); _skuUpdateFilterLabel('series'); }
+    applySkuFilters();
+}
+
+function skuFilterClear(kind) {
+    _skuMultiState[kind] = [];
+    _skuRenderFilterOptions(kind); _skuUpdateFilterLabel(kind);
+    if (kind === 'category') { _skuRenderFilterOptions('series'); _skuUpdateFilterLabel('series'); }
+    applySkuFilters();
+}
+
+// Option-search inside a panel: show/hide options by text; does NOT change the selection.
+function onSkuFilterOptionSearch(kind) {
+    var input = document.getElementById(kind === 'category' ? 'skuCategorySearch' : 'skuSeriesSearch');
+    var list = document.getElementById(kind === 'category' ? 'skuCategoryList' : 'skuSeriesList');
+    if (!input || !list) return;
+    var q = String(input.value || '').toLowerCase().trim();
+    list.querySelectorAll('.skuf-item').forEach(function (item) {
+        var txt = (item.textContent || '').toLowerCase();
+        item.style.display = (q === '' || txt.indexOf(q) !== -1) ? '' : 'none';
+    });
+}
+
+function toggleSkuFilterPanel(kind, ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    var panel = document.getElementById(kind === 'category' ? 'skuCategoryPanel' : 'skuSeriesPanel');
+    var trig = document.getElementById(kind === 'category' ? 'skuCategoryTrigger' : 'skuSeriesTrigger');
+    var other = document.getElementById(kind === 'category' ? 'skuSeriesPanel' : 'skuCategoryPanel');
+    var otherTrig = document.getElementById(kind === 'category' ? 'skuSeriesTrigger' : 'skuCategoryTrigger');
+    if (other) other.hidden = true;
+    if (otherTrig) otherTrig.setAttribute('aria-expanded', 'false');
+    if (!panel) return;
+    var opening = panel.hidden;
+    panel.hidden = !opening;
+    if (trig) trig.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}
+
+function _skuCloseFilterPanels() {
+    ['skuCategoryPanel', 'skuSeriesPanel'].forEach(function (id) { var p = document.getElementById(id); if (p) p.hidden = true; });
+    ['skuCategoryTrigger', 'skuSeriesTrigger'].forEach(function (id) { var t = document.getElementById(id); if (t) t.setAttribute('aria-expanded', 'false'); });
+}
+// Outside-click + Escape close (bound once at module load).
+document.addEventListener('click', function (event) {
+    if (event.target && event.target.closest && !event.target.closest('.skuf-multi')) _skuCloseFilterPanels();
+});
+document.addEventListener('keydown', function (event) { if (event.key === 'Escape') _skuCloseFilterPanels(); });
 
 function handleSkuFilterChange() { applySkuFilters(); }
 
 function applySkuFilters() {
     var els = _skuFilterEls();
     var q = els.search ? String(els.search.value || '').toLowerCase().trim() : '';
-    var series = els.series ? els.series.value : '';
-    var cat = els.category ? els.category.value : '';
+    var cats = _skuMultiState.category, sers = _skuMultiState.series;
     var sections = document.querySelectorAll('#sku-section .sku-lifecycle-section');
     sections.forEach(function (section) {
         var fixedRows = section.querySelectorAll('.fixed-body .fixed-row');
@@ -1382,8 +1483,8 @@ function applySkuFilters() {
             var rowSeries = String(fr.getAttribute('data-series') || '');
             var rowCat = String(fr.getAttribute('data-category') || '');
             var show = (q === '' || sku.toLowerCase().indexOf(q) !== -1) &&
-                (series === '' || rowSeries === series) &&
-                (cat === '' || rowCat === cat);
+                (cats.length === 0 || cats.indexOf(rowCat) !== -1) &&
+                (sers.length === 0 || sers.indexOf(rowSeries) !== -1);
             fr.style.display = show ? '' : 'none';
             if (scrollRows[i]) scrollRows[i].style.display = show ? '' : 'none';
             if (show) visible++;
@@ -1496,6 +1597,11 @@ window.handleAddSku = handleAddSku;
 window.handleSkuSearch = handleSkuSearch;
 window.handleSkuFilterChange = handleSkuFilterChange;
 window.populateSkuFilters = populateSkuFilters;
+window.toggleSkuFilterPanel = toggleSkuFilterPanel;
+window.onSkuFilterToggle = onSkuFilterToggle;
+window.skuFilterSelectAll = skuFilterSelectAll;
+window.skuFilterClear = skuFilterClear;
+window.onSkuFilterOptionSearch = onSkuFilterOptionSearch;
 window.applySkuFilters = applySkuFilters;
 window.toggleMoreOptions = toggleMoreOptions;
 window.closeMoreOptions = closeMoreOptions;
@@ -1579,6 +1685,7 @@ if (window.KM && window.KM.lifecycle) {
                 renderSkuDetailsTable();
                 setTimeout(function() {
                     if (window.initSkuScroll) initSkuScroll();
+                    if (window.initSkuResizableColumns) initSkuResizableColumns();   // resizable columns pilot
                     if (window.updateSkuScrollWidth) updateSkuScrollWidth();
                 }, 100);
             });
@@ -1658,6 +1765,76 @@ function convertWtStr(str, factor) {
 }
 
 window.toggleSkuUnits = toggleSkuUnits;
+
+
+// ========================================
+// Resizable Table Columns (pilot — SKU Details only). Uses the shared KM.ui.resizableColumns utility.
+// Stable column keys (NOT index/label); one width map shared by all four status tables (same schema);
+// persisted to localStorage; restored after reload / filter / search / unit switch / Display / rerender.
+// ========================================
+// col = the existing data-col index (0 = fixed SKU column). key = stable identity. def matches the base
+// CSS width; min/max are content-sensitive clamps. Keys mirror the canonical column schema.
+var SKU_RESIZE_COLUMNS = [
+  { key: 'sku',                col: 0,  def: 120, min: 90,  max: 260, label: 'SKU' },
+  { key: 'image',              col: 1,  def: 64,  min: 48,  max: 140, label: 'Image' },
+  { key: 'status',             col: 2,  def: 100, min: 80,  max: 200, label: 'Status' },
+  { key: 'product_name',       col: 3,  def: 180, min: 120, max: 440, label: 'Product Name' },
+  { key: 'product_name_cn',    col: 4,  def: 180, min: 120, max: 440, label: 'Product Name CN' },
+  { key: 'series',             col: 5,  def: 100, min: 80,  max: 240, label: 'Series' },
+  { key: 'category',           col: 6,  def: 120, min: 90,  max: 260, label: 'Category' },
+  { key: 'gs1_code',           col: 7,  def: 120, min: 90,  max: 240, label: 'GS1 Code' },
+  { key: 'gs1_type',           col: 8,  def: 80,  min: 70,  max: 200, label: 'GS1 Type' },
+  { key: 'item_dimensions',    col: 9,  def: 150, min: 110, max: 280, label: 'Item DM' },
+  { key: 'item_weight',        col: 10, def: 110, min: 90,  max: 240, label: 'Item WT' },
+  { key: 'package_dimensions', col: 11, def: 150, min: 110, max: 280, label: 'Package DM' },
+  { key: 'package_weight',     col: 12, def: 110, min: 90,  max: 240, label: 'Package WT' },
+  { key: 'carton_dimensions',  col: 13, def: 150, min: 110, max: 280, label: 'Carton DM' },
+  { key: 'carton_weight',      col: 14, def: 110, min: 90,  max: 240, label: 'Carton WT' },
+  { key: 'units_per_carton',   col: 15, def: 80,  min: 70,  max: 200, label: '單箱數量' },
+  { key: 'product_use',        col: 16, def: 140, min: 100, max: 320, label: 'Product Use' },
+  { key: 'material',           col: 17, def: 90,  min: 80,  max: 280, label: 'Material' },
+  { key: 'battery_type',       col: 18, def: 80,  min: 70,  max: 220, label: 'Battery Type' },
+  { key: 'magnet_type',        col: 19, def: 80,  min: 70,  max: 220, label: 'Magnet Type' },
+  { key: 'minimum_price',      col: 20, def: 120, min: 90,  max: 240, label: 'Minimum Price' },
+  { key: 'msrp',               col: 21, def: 80,  min: 70,  max: 220, label: 'MSRP' },
+  { key: 'selling_price',      col: 22, def: 100, min: 80,  max: 240, label: 'Selling Price' },
+  { key: 'pm',                 col: 23, def: 80,  min: 70,  max: 220, label: '負責PM' }
+];
+var _skuResizeCtl = null;
+function initSkuResizableColumns() {
+  var lib = window.KM && window.KM.ui && window.KM.ui.resizableColumns;
+  var root = document.getElementById('sku-section');
+  if (!lib || !root) return;
+  if (_skuResizeCtl) { _skuResizeCtl.refresh(); return; }   // idempotent — re-apply, never duplicate handles
+  _skuResizeCtl = lib.create({
+    root: root,
+    storage: { key: 'km.ui.tableWidths.v1', page: 'sku-details', group: 'master-sku-tables' },
+    columns: SKU_RESIZE_COLUMNS,
+    getHeaderCells: function (c) {
+      return c.col === 0
+        ? root.querySelectorAll('.fixed-header .header-cell')
+        : root.querySelectorAll('.scroll-header .header-cell[data-col="' + c.col + '"]');
+    },
+    cssRule: function (c, w) {
+      if (c.col === 0) {
+        return '#sku-section .fixed-header, #sku-section .fixed-header .header-cell, #sku-section .fixed-col, ' +
+               '#sku-section .fixed-body, #sku-section .fixed-row { width:' + w + 'px; min-width:' + w + 'px; max-width:' + w + 'px; }';
+      }
+      return '#sku-section .scroll-header .header-cell[data-col="' + c.col + '"], ' +
+             '#sku-section .scroll-col .scroll-cell[data-col="' + c.col + '"] { width:' + w + 'px; min-width:' + w + 'px; max-width:' + w + 'px; }';
+    },
+    afterApply: function () { if (window.updateSkuScrollWidth) window.updateSkuScrollWidth(); }
+  });
+  if (_skuResizeCtl) _skuResizeCtl.init();
+}
+// Reset Column Widths (Display panel action) — resets ONLY the SKU Details tables; does not touch column
+// show/hide, filters, search, unit selection, or any other page's localStorage.
+function resetSkuColumnWidths() {
+  if (_skuResizeCtl) _skuResizeCtl.resetAll();
+  var panel = document.getElementById('displayPanel'); if (panel) panel.classList.remove('show');
+}
+window.initSkuResizableColumns = initSkuResizableColumns;
+window.resetSkuColumnWidths = resetSkuColumnWidths;
 
 
 // Refresh DB button handler

@@ -410,3 +410,103 @@ function crcMasterWritableForExisting_(row) {
   });
   return w;
 }
+
+// ============================================================
+// 中外運 Sinotrans (CAR_SINOTRANS), CN → JP Air + Parcel.
+// STATUS (2026-07-23): the carrier, its rate card (CRC-…), and its lead time (CLT-000017) are already
+// ENTERED IN THE LIVE SHEET and ACTIVE — the live data is authoritative (see CARRIER_AND_ROUTE_SPEC
+// "Provisioned Carriers"). This seed is now only an idempotent NO-OP FALLBACK: it skips the existing
+// carrier + lead-time rows, never creates a rate card, never edits/deletes existing carrier data, and
+// invents NO price. Do NOT use it to rebuild CRC-… / CLT-000017. Reuses the shared fcWrite* helpers.
+// ============================================================
+
+var CARRIERS_HEADERS_ = [
+  'carrier_id', 'carrier_code', 'carrier_name', 'carrier_type', 'scac_code', 'default_currency',
+  'contact_name', 'contact_email', 'contact_phone', 'website', 'is_active', 'note',
+  'created_by', 'created_at', 'updated_by', 'updated_at'
+];
+var CARRIER_LEAD_TIMES_HEADERS_ = [
+  'lead_time_id', 'carrier_id', 'origin_country', 'destination_country',
+  'shipping_method', 'last_mile_delivery', 'min_days', 'max_days', 'avg_days',
+  'created_at', 'updated_at'
+];
+
+// Next CLT-###### lead-time id (immutable global 6-digit sequence; business dims NOT encoded in the PK).
+function carrierNextLeadTimeId_(s) {
+  var iId = s.col('lead_time_id');
+  var maxN = 0;
+  if (iId !== -1) {
+    for (var i = 1; i < s.rows.length; i++) {
+      var m = String(s.rows[i][iId] || '').trim().match(/^CLT-(\d{1,})$/i);
+      if (m) { var n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
+    }
+  }
+  var next = maxN + 1;
+  var padded = String(next);
+  while (padded.length < 6) padded = '0' + padded;
+  return 'CLT-' + padded;
+}
+
+/**
+ * Idempotent one-time seed of CAR_SINOTRANS (CN→JP Air + Parcel). Body: {} (optional actor).
+ * Creates the carrier row if absent, and the single CN→JP Air/Parcel lead time (5/8/7) if absent.
+ * No rate card, no price. Safe to re-run (existing rows are skipped, not duplicated).
+ */
+function handleSeedSinotransCarrier_(body) {
+  body = body || {};
+  var actor = String(body.actor || 'carrier-provisioning').trim();
+  var now = fcWriteTimestamp_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var out = { carrier: 'skipped_exists', lead_time: 'skipped_exists', rate_card: 'not_created_no_price' };
+
+  function up(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+  function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+
+  // ---- carriers ----
+  var cSheet = fcWriteEnsureSheet_(ss, 'carriers', CARRIERS_HEADERS_);
+  fcWriteEnsureColumns_(cSheet, CARRIERS_HEADERS_);
+  var cs = fcWriteReadSheet_(cSheet);
+  var iCid = cs.col('carrier_id');
+  var carrierExists = false;
+  if (iCid !== -1) {
+    for (var i = 1; i < cs.rows.length; i++) { if (up(cs.rows[i][iCid]) === 'CAR_SINOTRANS') { carrierExists = true; break; } }
+  }
+  if (!carrierExists) {
+    fcWriteAppendByHeader_(cSheet, {
+      carrier_id: 'CAR_SINOTRANS', carrier_code: 'SINOTRANS', carrier_name: '中外運',
+      carrier_type: '', scac_code: '', default_currency: 'RMB',
+      contact_name: '', contact_email: '', contact_phone: '', website: '',
+      is_active: 'TRUE',
+      note: '中外運 Sinotrans — Active. CN(Shenzhen)→JP Air + Parcel (空派). Rate card + lead time (CLT-000017) live. Fallback-only seed; do not rebuild existing rows.',
+      created_by: actor, created_at: now, updated_by: actor, updated_at: now
+    });
+    out.carrier = 'created';
+  }
+
+  // ---- carrier_lead_times (CN → JP, Air + Parcel; 5 / 8 / 7 calendar days) ----
+  var lSheet = fcWriteEnsureSheet_(ss, 'carrier_lead_times', CARRIER_LEAD_TIMES_HEADERS_);
+  fcWriteEnsureColumns_(lSheet, CARRIER_LEAD_TIMES_HEADERS_);
+  var ls = fcWriteReadSheet_(lSheet);
+  var iLCid = ls.col('carrier_id'), iOc = ls.col('origin_country'), iDc = ls.col('destination_country'),
+      iSm = ls.col('shipping_method'), iLm = ls.col('last_mile_delivery');
+  var ltExists = false;
+  for (var j = 1; j < ls.rows.length; j++) {
+    var r = ls.rows[j];
+    if (up(r[iLCid]) === 'CAR_SINOTRANS' && up(r[iOc]) === 'CN' && up(r[iDc]) === 'JP' &&
+        lo(r[iSm]) === 'air' && lo(r[iLm]) === 'parcel') { ltExists = true; break; }
+  }
+  if (!ltExists) {
+    var leadTimeId = carrierNextLeadTimeId_(ls);
+    fcWriteAppendByHeader_(lSheet, {
+      lead_time_id: leadTimeId, carrier_id: 'CAR_SINOTRANS',
+      origin_country: 'CN', destination_country: 'JP',
+      shipping_method: 'Air', last_mile_delivery: 'Parcel',
+      min_days: 5, max_days: 8, avg_days: 7,
+      created_at: now, updated_at: now
+    });
+    out.lead_time = 'created';
+    out.lead_time_id = leadTimeId;
+  }
+
+  return jsonResponse_({ success: true, data: out });
+}

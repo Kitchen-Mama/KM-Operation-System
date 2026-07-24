@@ -62,7 +62,7 @@
                         </div>
                         <div style="display: flex; gap: 8px; align-items: flex-end;">
                             <button class="btn btn-primary" id="overseas-import-btn" onclick="openOverseasImportModal()">Import Inventory</button>
-                            <button class="btn btn-secondary" id="overseas-adjust-btn" onclick="openOverseasAdjustModal()">Manual Adjustment</button>
+                            <button class="btn btn-secondary" id="overseas-adjust-btn" onclick="openOverseasAdjustModal()">Inventory Adjustment</button>
                         </div>
                     </div>
 
@@ -131,6 +131,26 @@
                                     <span class="fc-dropdown-icon">▼</span>
                                 </button>
                                 <div class="fc-dropdown-panel" data-filter="marketplace">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Warehouse</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="warehouse">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="warehouse">
+                                    <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
+                                </div>
+                            </div>
+                            <div class="filter-group filter-group--dropdown">
+                                <label>Movement Type</label>
+                                <button type="button" class="fc-dropdown-trigger" data-filter="movementType">
+                                    <span class="fc-dropdown-text">All</span>
+                                    <span class="fc-dropdown-icon">▼</span>
+                                </button>
+                                <div class="fc-dropdown-panel" data-filter="movementType">
                                     <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
                                 </div>
                             </div>
@@ -229,48 +249,65 @@
                     </div>
                 </div>
 
-                <!-- Manual Adjustment Modal -->
+                <!-- Inventory Adjustment Modal (renamed 2026-07-23 from "Manual Adjustment").
+                     Select ONE snapshot record, set the NEW Available quantity, add a required Reason/Note.
+                     Only available_stock is adjusted — reserved / physical / damaged / on-the-way are never
+                     changed. On Confirm the backend writes the snapshot + a movement row atomically, then
+                     the page re-GETs both tables (never a front-end-only patch). -->
                 <div class="ovs-modal" id="overseas-adjust-modal">
                     <div class="ovs-modal-content">
-                        <h3>Manual Stock Adjustment</h3>
+                        <h3>Inventory Adjustment</h3>
                         <div class="ovs-modal-body">
                             <p style="font-size:12px;color:#475569;line-height:1.5;margin:0 0 8px;">
-                                Adjusts <strong>available_stock</strong> for one warehouse + SKU and records a movement.
+                                Select a snapshot record, then set the new <strong>Available</strong> quantity. Only
+                                <strong>available_stock</strong> is adjusted — reserved / physical / damaged / on-the-way are never changed.
                                 The snapshot row must already exist (import it first).
                             </p>
                             <div class="ovs-form-row">
-                                <div class="ovs-form-group">
-                                    <label>Warehouse *</label>
-                                    <select id="overseas-adjust-warehouse" onchange="onOverseasAdjustWarehouseChange()">
-                                        <option value="">Select Warehouse</option>
+                                <div class="ovs-form-group" style="flex:1 1 100%;">
+                                    <label>Stock Record *</label>
+                                    <select id="overseas-adjust-record" onchange="onOverseasAdjustRecordChange()">
+                                        <option value="">Select SKU / Warehouse…</option>
                                     </select>
-                                </div>
-                                <div class="ovs-form-group">
-                                    <label>SKU *</label>
-                                    <input type="text" id="overseas-adjust-sku" placeholder="e.g. CO1100-R">
                                 </div>
                             </div>
                             <div class="ovs-form-row">
+                                <div class="ovs-form-group"><label>SKU</label><div class="ovs-readout" id="overseas-adjust-sku">—</div></div>
+                                <div class="ovs-form-group"><label>Site SKU</label><div class="ovs-readout" id="overseas-adjust-sitesku">—</div></div>
+                            </div>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group"><label>Warehouse</label><div class="ovs-readout" id="overseas-adjust-wh-name">—</div></div>
+                                <div class="ovs-form-group"><label>Company</label><div class="ovs-readout" id="overseas-adjust-company">—</div></div>
+                            </div>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group"><label>Country</label><div class="ovs-readout" id="overseas-adjust-country">—</div></div>
+                                <div class="ovs-form-group"><label>Current Available</label><div class="ovs-readout" id="overseas-adjust-current">—</div></div>
+                            </div>
+                            <div class="ovs-form-row">
                                 <div class="ovs-form-group">
-                                    <label>Adjustment Qty * (+/-)</label>
-                                    <input type="number" id="overseas-adjust-qty" step="1" placeholder="e.g. -10 or 25">
+                                    <label>New Available *</label>
+                                    <input type="number" id="overseas-adjust-new" min="0" step="1" inputmode="numeric" oninput="onOverseasAdjustQtyInput()" disabled>
                                 </div>
-                                <div class="ovs-form-group">
-                                    <label>Reason *</label>
-                                    <input type="text" id="overseas-adjust-reason" placeholder="e.g. cycle_count, damage, correction">
+                                <div class="ovs-form-group"><label>Adjustment Qty</label><div class="ovs-readout" id="overseas-adjust-delta">—</div></div>
+                            </div>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group" style="flex:1 1 100%;">
+                                    <label>Reason / Note *</label>
+                                    <textarea id="overseas-adjust-note" rows="2" oninput="onOverseasAdjustQtyInput()" placeholder="Why is this adjustment being made?"></textarea>
                                 </div>
                             </div>
                             <div class="ovs-form-row">
                                 <div class="ovs-form-group" style="flex:1 1 100%;">
-                                    <label>Note</label>
-                                    <input type="text" id="overseas-adjust-note" placeholder="Optional note">
+                                    <label>Reference ID (optional)</label>
+                                    <input type="text" id="overseas-adjust-reference" placeholder="e.g. cycle-count batch id">
                                 </div>
                             </div>
+                            <div class="ovs-adjust-preview" id="overseas-adjust-preview" hidden></div>
                             <div id="overseas-adjust-result" style="display:none;margin-top:12px;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;font-size:12px;"></div>
                         </div>
                         <div class="ovs-modal-actions">
-                            <button class="btn btn-secondary" onclick="closeOverseasModals()">Close</button>
-                            <button class="btn btn-primary" id="overseas-adjust-run-btn" onclick="runOverseasAdjust()">Apply Adjustment</button>
+                            <button class="btn btn-secondary" onclick="closeOverseasModals()">Cancel</button>
+                            <button class="btn btn-primary" id="overseas-adjust-run-btn" onclick="runOverseasAdjust()" disabled>Confirm Adjustment</button>
                         </div>
                     </div>
                 </div>

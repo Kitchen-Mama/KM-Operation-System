@@ -7,6 +7,8 @@
 
 > **AUTHORITY (CANONICAL 2026-07-22).** This is the **single canonical Overseas Outbound authority** — the **origin-side overseas warehouse picking / packing / shipping (fulfillment) operation** and its WMS/API details. It owns the outbound **operation + confirmation contract and lifecycle**. Navigation / page layout is owned by `WAREHOUSE_OPERATIONS_SPEC.md` §5; endpoint semantics / auto-create trigger / shipout push direction by `SHIPMENT_CENTER_SPEC.md` §23; **inventory movement posting** by the inventory specs (referenced, not restated here). **Spec only — nothing here is implemented.**
 
+> **UI STATUS UPDATE (2026-07-23).** A **Preview-Mode Operation Workspace UI** now exists for the Overseas Outbound page (interactive list / KPI / create-edit drawer / warehouse selector / shipment mapping / SKU-lines editor / lock→submit→pick→pack→ship-confirm lifecycle / projected Movement-Impact panel / empty-loading-error states). It is a **non-authoritative front-end shell only**: the lifecycle runs in an **in-memory session store**, and **no stock is reserved or deducted and no `overseas_inventory_movements` are posted** — the runtime tables + handlers are still NOT implemented. Selectors and the movement projection read real `shipments`/`shipment_lines`/`warehouses`/`overseas_inventory_snapshot`; the Lock/Ship-Confirm actions map 1:1 to the planned reserve/deduct handlers. See `project-current-state.md` (2026-07-23 Overseas workspace entry).
+
 ---
 
 ## 1. Purpose & Positioning

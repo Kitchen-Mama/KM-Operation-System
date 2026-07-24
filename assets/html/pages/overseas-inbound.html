@@ -1,0 +1,18 @@
+<!-- Overseas Inbound — Destination Receiving Operation WORKSPACE (Preview Mode).
+     Interactive operation workspace: list / KPI summary / create-edit drawer / warehouse selector /
+     shipment mapping / SKU lines editor / receipt lifecycle / movement impact preview. Selectors and
+     the impact panel read REAL KM.DB data; the lifecycle runs in an in-memory session store because
+     the runtime tables/handlers in OVERSEAS_INBOUND_SPEC.md §10 are spec-only (NOT implemented) — so
+     no inventory movement is posted and nothing is persisted (see the Preview Mode banner).
+     Route key `overseas-inbound` / section id `overseas-inbound-section`. -->
+            <section id="overseas-inbound-section" class="module-section oow">
+                <h2 class="module-title">Overseas Inbound — Destination Receiving Operation</h2>
+
+                <div class="oow-banner" role="status">
+                    <span class="oow-banner__tag">Preview Mode</span>
+                    <span class="oow-banner__text">Fully interactive operation workspace. Selectors and the Movement / Inventory Impact panel use <strong>real</strong> shipment, warehouse and overseas-inventory data. The receipt lifecycle runs <strong>in memory for this session only</strong> — no <code>overseas_inventory_movements</code> are posted and nothing is saved to the database, because the runtime handlers (<code>OVERSEAS_INBOUND_SPEC.md §10–§11</code>) are not yet implemented.</span>
+                </div>
+
+                <div class="oow-kpis"></div>
+                <div class="oow-body"></div>
+            </section>

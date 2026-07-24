@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overseas Inbound / Outbound — Workspace Preview (local demo harness)</title>
+<!--
+  LOCAL DEMO HARNESS — visual proof of the Overseas Inbound / Outbound operation workspace.
+  It loads the REAL page CSS (../../assets/css/pages/overseas-ops.css) and the REAL controller code
+  (overseas-ops-preview.js + overseas-inbound.js + overseas-outbound.js) with a stubbed KM.DB holding
+  representative SAMPLE data, so what you see is exactly what the live page renders — just fed sample
+  rows instead of the Google Sheet. Open this file directly in a browser to view/screenshot both
+  workspaces. The live app renders identical UI from real DB data. Nothing here writes to any backend.
+-->
+<link rel="stylesheet" href="../../assets/css/pages/overseas-ops.css">
+<style>
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: #0f172a; background: #f1f5f9; }
+  .demo-note { background: #0f172a; color: #e2e8f0; padding: 10px 24px; font-size: 13px; }
+  .demo-note code { background: rgba(255,255,255,0.12); padding: 0 5px; border-radius: 3px; }
+  .module-section { background: #fff; margin: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .module-title { font-size: 18px; padding: 16px 24px 0; margin: 0; }
+</style>
+</head>
+<body>
+<div class="demo-note">Local demo harness — real page CSS + real controller code, fed sample data via a stubbed <code>KM.DB</code>. Click <b>Open</b> on any row to drive the full lifecycle (Submit / Lock / Ship Confirm / Receive) and watch the projected Movement / Inventory Impact update. No data is persisted or posted.</div>
+
+<!-- Real section markup (mirrors assets/html/pages/overseas-inbound.html) -->
+<section id="overseas-inbound-section" class="module-section oow">
+  <h2 class="module-title">Overseas Inbound — Destination Receiving Operation</h2>
+  <div style="padding:0 24px 24px;">
+    <div class="oow-banner" role="status">
+      <span class="oow-banner__tag">Preview Mode</span>
+      <span class="oow-banner__text">Fully interactive operation workspace. Selectors and the Movement / Inventory Impact panel use <strong>real</strong> data. The receipt lifecycle runs <strong>in memory for this session only</strong> — no <code>overseas_inventory_movements</code> are posted.</span>
+    </div>
+    <div class="oow-kpis"></div>
+    <div class="oow-body"></div>
+  </div>
+</section>
+
+<section id="overseas-outbound-section" class="module-section oow">
+  <h2 class="module-title">Overseas Outbound — Origin Fulfillment Operation</h2>
+  <div style="padding:0 24px 24px;">
+    <div class="oow-banner" role="status">
+      <span class="oow-banner__tag">Preview Mode</span>
+      <span class="oow-banner__text">Fully interactive operation workspace. Selectors and the Movement / Inventory Impact panel use <strong>real</strong> data. The reserve → ship-confirm lifecycle runs <strong>in memory for this session only</strong> — no stock is reserved or deducted.</span>
+    </div>
+    <div class="oow-kpis"></div>
+    <div class="oow-body"></div>
+  </div>
+</section>
+
+<script>
+  // --- Minimal KM harness stubs (the real app supplies these) ---
+  window.KM = window.KM || {};
+  var _controllers = [];
+  KM.lifecycle = { register: function (id, ctrl) { _controllers.push(ctrl); } };
+  // Sections already exist inline, so ensureMarkup resolves without fetching a partial.
+  KM.partialLoader = { loadPartial: function () { return Promise.resolve(true); } };
+
+  // --- Sample data (stands in for the Google Sheet DB) ---
+  var WAREHOUSES = [
+    { warehouseId: 'WH-KM-US-3PL-AMZLGS', warehouseName: 'AMZ LGS California', isFactoryWarehouse: false, isActive: true, country: 'US' },
+    { warehouseId: 'WH-KM-CA-3PL-WINIT', warehouseName: 'WINIT Toronto', isFactoryWarehouse: false, isActive: true, country: 'CA' },
+    { warehouseId: 'WH-KM-CN-FAC-DG', warehouseName: 'Dongguan Factory', isFactoryWarehouse: true, isActive: true, country: 'CN' }
+  ];
+  var SHIPMENTS = [
+    { shipmentId: 'SHP-1001', shipmentNo: 'SHP-2026-1001', warehouseId: 'WH-KM-US-3PL-AMZLGS', company: 'KM', country: 'US', marketplace: 'Amazon US', status: 'in_transit', etd: '2026-07-10', eta: '2026-07-28' },
+    { shipmentId: 'SHP-1002', shipmentNo: 'SHP-2026-1002', warehouseId: 'WH-KM-CA-3PL-WINIT', company: 'KM', country: 'CA', marketplace: 'Amazon CA', status: 'shipped', etd: '2026-07-14', eta: '2026-08-02' },
+    { shipmentId: 'SHP-9000', shipmentNo: 'SHP-2026-9000', warehouseId: 'WH-KM-CN-FAC-DG', company: 'KM', country: 'CN', status: 'draft', etd: '', eta: '' } // factory dest — excluded
+  ];
+  var SHIPMENT_LINES = [
+    { shipmentId: 'SHP-1001', sku: 'KM-CO-001', qty: 600, cartonQty: 25, unitsPerCarton: 24, raw: { site_sku: 'B0CO001US' } },
+    { shipmentId: 'SHP-1001', sku: 'KM-CO-002', qty: 300, cartonQty: 15, unitsPerCarton: 20, raw: { site_sku: 'B0CO002US' } },
+    { shipmentId: 'SHP-1002', sku: 'KM-CO-001', qty: 240, cartonQty: 10, unitsPerCarton: 24, raw: { site_sku: 'B0CO001CA' } }
+  ];
+  var OVERSEAS_SNAPSHOT = [
+    { warehouseId: 'WH-KM-US-3PL-AMZLGS', sku: 'KM-CO-001', siteSku: 'B0CO001US', availableStock: 480, reservedStock: 60, physicalStock: 540, damagedStock: 0 },
+    { warehouseId: 'WH-KM-US-3PL-AMZLGS', sku: 'KM-CO-002', siteSku: 'B0CO002US', availableStock: 120, reservedStock: 0, physicalStock: 120, damagedStock: 3 },
+    { warehouseId: 'WH-KM-CA-3PL-WINIT', sku: 'KM-CO-001', siteSku: 'B0CO001CA', availableStock: 90, reservedStock: 10, physicalStock: 100, damagedStock: 0 }
+  ];
+  window._opDbCache = { warehouses: WAREHOUSES };
+  KM.DB = {
+    loadOperationDb: function () { return Promise.resolve(true); },
+    getWarehouses: function () { return WAREHOUSES; },
+    getShipments: function () { return SHIPMENTS; },
+    getShipmentLines: function () { return SHIPMENT_LINES; },
+    getOverseasInventorySnapshot: function () { return OVERSEAS_SNAPSHOT; },
+    getOverseasInventoryMovements: function () { return []; }
+  };
+</script>
+<!-- REAL controller + page code -->
+<script src="../../assets/js/pages/overseas-ops-preview.js"></script>
+<script src="../../assets/js/pages/overseas-inbound.js"></script>
+<script src="../../assets/js/pages/overseas-outbound.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    _controllers.forEach(function (c) { try { c.mount(); } catch (e) { console.error(e); } });
+  });
+</script>
+</body>
+</html>

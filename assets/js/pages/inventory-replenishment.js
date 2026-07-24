@@ -614,6 +614,30 @@ window.IRMap = (function () {
   };
 })();
 
+// Format an Upcoming Event date range as "M.D~M.D" for the 3-month window (year always dropped —
+// same-month 7.27~7.31, cross-month 7.29~8.4, cross-year 12.29~1.4 all render year-less). Parsing is
+// done by regex on the Y-M-D / Y.M.D / Y/M/D string (NOT new Date()) to avoid any UTC off-by-one
+// shift. The underlying event dates are NEVER mutated — this is display formatting only. Returns null
+// when neither end parses so callers keep their existing safe fallback.
+function _irParseYMD(s) {
+    if (s == null) return null;
+    var m = String(s).trim().match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if (!m) return null;
+    var mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
+    if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return null;
+    return { m: mo, d: d };
+}
+function _irFmtEventDate(s) {
+    var p = _irParseYMD(s);
+    return p ? (p.m + '.' + p.d) : null;
+}
+function _irFmtEventRange(start, end) {
+    var a = _irFmtEventDate(start), b = _irFmtEventDate(end);
+    if (a && b) return a + '~' + b;
+    return a || b || null;
+}
+window._irFmtEventRange = _irFmtEventRange;
+
 // Render the Upcoming Event card body from a matched, nearest-first event list (IRMap.upcomingEvents):
 // nearest event (name + start/end + fc_qty) shown first, remaining events in an expandable "+N more"
 // (native <details> — keyboard accessible). Events are displayed separately (never merged into one row).
@@ -624,9 +648,12 @@ function _irRenderUpcoming(list) {
     return '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>';
   }
   function line(ev){
-    var dates = (ev.eventStartDate && ev.eventEndDate) ? (ev.eventStartDate + ' ~ ' + ev.eventEndDate) : (ev.eventPeriod || '');
+    // Display "M.D~M.D" (year-less); keep the full range in title= for accessibility / hover.
+    var fullR = (ev.eventStartDate && ev.eventEndDate) ? (ev.eventStartDate + ' ~ ' + ev.eventEndDate) : (ev.eventPeriod || '');
+    var dates = _irFmtEventRange(ev.eventStartDate, ev.eventEndDate) || fullR;
+    var titleAttr = fullR ? (' title="' + esc(fullR) + '"') : '';
     return '<div class="replen-card__row"><span class="replen-card__label">' + esc(ev.event || ev.scopeId || 'Event') +
-      (dates ? (' <span class="replen-evt-dates">(' + esc(dates) + ')</span>') : '') +
+      (dates ? (' <span class="replen-evt-dates"' + titleAttr + '>(' + esc(dates) + ')</span>') : '') +
       '</span><span class="replen-card__value">' + qty(ev.fcQty) + '</span></div>';
   }
   var html = line(list[0]);
@@ -640,36 +667,26 @@ function _irRenderUpcoming(list) {
 // Render the 3rd Party Stock (Site Planning Available) detail body from a sitePlanningAllocation() result.
 // Honest missing-data states — never a fabricated zero. Labels the number "Planning Available" (a
 // distribution of the shared pool), never implying the site owns the whole pool.
+// 3rd Party Stock card — SIMPLIFIED daily view (2026-07-22): shows only the physical 3PL warehouses
+// contributing stock to the current Company/Country/Marketplace/SKU scope + their Available Physical
+// Quantity + an optional Total. The full allocation/runtime detail (site_planning_available,
+// physical_3pl_pool, protected_need, allocation_method, allocated_to_other_sites, unallocated_pool,
+// coverage_rate, snapshot_as_of, priority/weighted-shortage/largest-remainder) is NOT deleted — it
+// stays on the returned `plan` object (thirdPartyPlan) for the replenishment/shortage engine, the API
+// response, and Admin Debug / Calculation Details. It is only hidden from this daily SKU-expand card.
 function _irRenderThirdPartyDetail(plan) {
   function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function n(v){ return (window.IRMap && IRMap.num) ? IRMap.num(v) : (parseFloat(v) || 0); }
-  function row(label, val){ return '<div class="replen-card__row"><span class="replen-card__label">' + esc(label) + '</span><span class="replen-card__value">' + val + '</span></div>'; }
-  if (!plan) return row('3rd Party Stock', '—');
-  if (plan.state === 'NO_ELIGIBLE_3PL') {
-    return '<div class="replen-tp-state replen-tp-state--none">No Eligible 3PL Warehouse</div>' +
-      '<div class="replen-card__hint">No active 3PL warehouse matches this company + country. (Not a confirmed zero.)</div>';
-  }
-  if (plan.state === 'MISSING_SNAPSHOT') {
-    return '<div class="replen-tp-state replen-tp-state--missing">Missing Snapshot / Data Unavailable</div>' +
-      '<div class="replen-card__hint">' + n(plan.eligibleCount) + ' eligible 3PL warehouse(s) exist but no overseas snapshot row for this SKU. (Not treated as zero.)</div>';
-  }
-  // OK — platform-fulfilled sites are NOT excluded; they participate in the shared 3PL reserve.
-  var html = row('Site Planning Available', '<strong>' + n(plan.sitePlanningAvailable) + '</strong>');
-  html += row('Physical 3PL Pool', n(plan.physicalPool));
-  html += row('18-Day Protected Need', n(plan.minNeed));
-  html += row('Allocation Basis', esc(plan.allocationMode) + (plan.allocationBasis ? (' — ' + esc(plan.allocationBasis)) : ''));
-  html += row('Allocated to Other Sites', n(plan.allocatedToOthers));
-  html += row('Unallocated Pool', n(plan.unallocatedPool));
-  if (plan.coverageRate != null && plan.allocationMode === 'SHORTAGE_ALLOCATION') {
-    html += row('Coverage Rate', Math.round(plan.coverageRate * 1000) / 10 + '%');
-  }
-  html += row('Snapshot As Of', plan.snapshotAt ? esc(plan.snapshotAt) : '—');
-  var contribs = (plan.contributions || []).filter(function (c) { return c.qty > 0 || c.hasRow; });
-  if (contribs.length) {
-    html += '<div class="replen-card__subhead">Contributing 3PL Warehouses</div>' +
-      contribs.map(function (c) { return row(c.warehouseName + (c.hasRow ? '' : ' (no snapshot)'), n(c.qty)); }).join('');
-  }
-  if (plan.warn) html += '<div class="replen-card__hint replen-card__hint--warn">' + esc(plan.warn) + '</div>';
+  function fmt(v){ return (Math.round(Number(v)) || 0).toLocaleString(); }
+  function whRow(name, qty){ return '<div class="replen-card__row replen-tp-wh"><span class="replen-card__label">' + esc(name) + '</span><span class="replen-card__value">' + fmt(qty) + '</span></div>'; }
+  if (!plan) return '<div class="replen-tp-empty">No 3rd Party Stock</div>';
+  // One row per contributing 3PL warehouse (available_qty > 0), joined by warehouse_id, displayed by
+  // warehouse_name; sort qty desc, then warehouse_name. No-match → "No 3rd Party Stock".
+  var contribs = (plan.contributions || []).filter(function (c) { return (Number(c.qty) || 0) > 0; })
+    .sort(function (a, b) { return (Number(b.qty) - Number(a.qty)) || String(a.warehouseName || a.warehouseId).localeCompare(String(b.warehouseName || b.warehouseId)); });
+  if (!contribs.length) return '<div class="replen-tp-empty">No 3rd Party Stock</div>';
+  var html = contribs.map(function (c) { return whRow(c.warehouseName || c.warehouseId, c.qty); }).join('');
+  var total = contribs.reduce(function (s, c) { return s + (Number(c.qty) || 0); }, 0);
+  html += '<div class="replen-card__row replen-tp-total"><span class="replen-card__label">Total</span><span class="replen-card__value">' + fmt(total) + '</span></div>';
   return html;
 }
 
@@ -693,15 +710,14 @@ function _shippingDraftLinesFor(scope, drafts, lines) {
 
 // Plain-text tooltip for the results-table 3rd Party Stock cell (hover). Detail lives in the expand card.
 function _irThirdPartyTitle(plan) {
+  // Simplified hover: list the contributing physical 3PL warehouses (name + qty). Allocation detail
+  // stays on the plan object for the engine / Admin Debug, not surfaced here.
   if (!plan) return '';
-  if (plan.state === 'NO_ELIGIBLE_3PL') return 'No eligible 3PL warehouse for this company + country (not a confirmed zero).';
-  if (plan.state === 'MISSING_SNAPSHOT') return 'Eligible 3PL warehouse(s) exist but no overseas snapshot for this SKU (data unavailable, not zero).';
-  return 'Site Planning Available (18-day virtual allocation)\n' +
-    'Physical 3PL Pool: ' + Math.round(plan.physicalPool) + '\n' +
-    '18-Day Protected Need: ' + Math.round(plan.minNeed) + '\n' +
-    'Allocation: ' + plan.allocationMode + '\n' +
-    'Allocated to others: ' + Math.round(plan.allocatedToOthers) + ' · Unallocated: ' + Math.round(plan.unallocatedPool) + '\n' +
-    'Snapshot as of: ' + (plan.snapshotAt || '—');
+  var contribs = (plan.contributions || []).filter(function (c) { return (Number(c.qty) || 0) > 0; })
+    .sort(function (a, b) { return (Number(b.qty) - Number(a.qty)) || String(a.warehouseName || '').localeCompare(String(b.warehouseName || '')); });
+  if (!contribs.length) return 'No 3rd Party Stock in scope.';
+  return '3rd Party Stock (physical, by warehouse):\n' +
+    contribs.map(function (c) { return (c.warehouseName || c.warehouseId) + ': ' + Math.round(c.qty).toLocaleString(); }).join('\n');
 }
 
 function closeReplenModal() {
@@ -855,164 +871,6 @@ window.prefillReplenSiteSku = prefillReplenSiteSku;
 document.addEventListener('DOMContentLoaded', () => {
   _inventoryReplenStaticInit();
 });
-
-// ========================================
-// Inventory Overview / Warning Summary
-// ========================================
-
-const irOverviewState = { series: 'All' };
-
-const irOverviewMockData = [
-    { sku: 'CO1100-R', series: 'CO1100', warning: 'high', d1: 42, d7: 294, d30: 1260, d90: 3780, fba: 320, david: 50, winit: 35, eta18: 120, eta45: 340, factoryYX: 1400, factorySY: 1000, recommend: 'ship',
-      shipments18: [{ name: 'Shipment A', eta: '2026-04-20', qty: 120 }],
-      shipments45: [{ name: 'Shipment A', eta: '2026-04-20', qty: 120 }, { name: 'Shipment B', eta: '2026-05-01', qty: 220 }] },
-    { sku: 'CO1100-B', series: 'CO1100', warning: 'medium', d1: 28, d7: 196, d30: 840, d90: 2520, fba: 680, david: 80, winit: 70, eta18: 0, eta45: 200, factoryYX: 1000, factorySY: 800, recommend: 'monitor',
-      shipments18: [],
-      shipments45: [{ name: 'Shipment C', eta: '2026-04-28', qty: 200 }] },
-    { sku: 'CO1100-G', series: 'CO1100', warning: 'safe', d1: 15, d7: 105, d30: 450, d90: 1350, fba: 1200, david: 150, winit: 150, eta18: 80, eta45: 180, factoryYX: 1800, factorySY: 1400, recommend: 'sufficient',
-      shipments18: [{ name: 'Shipment D', eta: '2026-04-18', qty: 80 }],
-      shipments45: [{ name: 'Shipment D', eta: '2026-04-18', qty: 80 }, { name: 'Shipment E', eta: '2026-05-05', qty: 100 }] },
-    { sku: 'CO1150-A', series: 'CO1150', warning: 'high', d1: 55, d7: 385, d30: 1650, d90: 4950, fba: 180, david: 20, winit: 20, eta18: 200, eta45: 500, factoryYX: 900, factorySY: 600, recommend: 'ship',
-      shipments18: [{ name: 'Shipment F', eta: '2026-04-19', qty: 200 }],
-      shipments45: [{ name: 'Shipment F', eta: '2026-04-19', qty: 200 }, { name: 'Shipment G', eta: '2026-05-03', qty: 300 }] },
-    { sku: 'CO1150-B', series: 'CO1150', warning: 'safe', d1: 12, d7: 84, d30: 360, d90: 1080, fba: 950, david: 120, winit: 100, eta18: 0, eta45: 150, factoryYX: 1600, factorySY: 1200, recommend: 'sufficient',
-      shipments18: [],
-      shipments45: [{ name: 'Shipment H', eta: '2026-04-30', qty: 150 }] },
-    { sku: 'CO1200-X', series: 'CO1200', warning: 'medium', d1: 33, d7: 231, d30: 990, d90: 2970, fba: 420, david: 60, winit: 50, eta18: 60, eta45: 260, factoryYX: 1200, factorySY: 900, recommend: 'monitor',
-      shipments18: [{ name: 'Shipment I', eta: '2026-04-22', qty: 60 }],
-      shipments45: [{ name: 'Shipment I', eta: '2026-04-22', qty: 60 }, { name: 'Shipment J', eta: '2026-05-08', qty: 200 }] },
-    { sku: 'CO1200-Y', series: 'CO1200', warning: 'high', d1: 48, d7: 336, d30: 1440, d90: 4320, fba: 150, david: 15, winit: 15, eta18: 100, eta45: 380, factoryYX: 500, factorySY: 400, recommend: 'ship',
-      shipments18: [{ name: 'Shipment K', eta: '2026-04-21', qty: 100 }],
-      shipments45: [{ name: 'Shipment K', eta: '2026-04-21', qty: 100 }, { name: 'Shipment L', eta: '2026-05-02', qty: 280 }] },
-];
-
-function setIrOverviewTab(series) {
-    irOverviewState.series = series;
-    document.querySelectorAll('.ir-overview__tab').forEach(t => t.classList.remove('is-active'));
-    document.querySelector(`.ir-overview__tab[data-series="${series}"]`)?.classList.add('is-active');
-    renderIrOverview();
-}
-
-function renderIrOverview() {
-    const fixedBody = document.getElementById('ir-overview-fixed-body');
-    const scrollBody = document.getElementById('ir-overview-scroll-body');
-    if (!fixedBody || !scrollBody) return;
-
-    // Only show data when Demo mode is ON
-    if (!(window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled())) {
-        fixedBody.innerHTML = '';
-        scrollBody.innerHTML = '';
-        return;
-    }
-
-    const data = irOverviewState.series === 'All'
-        ? irOverviewMockData
-        : irOverviewMockData.filter(d => d.series === irOverviewState.series);
-
-    const warningLabel = { high: 'High Risk', medium: 'Medium', safe: 'Safe' };
-    const recLabel = { ship: 'Ship Now', monitor: 'Monitor', sufficient: 'Sufficient' };
-
-    fixedBody.innerHTML = data.map(d => `
-        <div class="fixed-row">${d.sku}</div>
-    `).join('');
-
-    scrollBody.innerHTML = data.map((d, i) => `
-        <div class="scroll-row">
-            <div class="scroll-cell"><span class="ir-overview__badge ir-overview__badge--${d.warning}">${warningLabel[d.warning]}</span></div>
-            <div class="scroll-cell">${d.d1}</div>
-            <div class="scroll-cell">${d.d7.toLocaleString()}</div>
-            <div class="scroll-cell">${d.d30.toLocaleString()}</div>
-            <div class="scroll-cell">${d.d90.toLocaleString()}</div>
-            <div class="scroll-cell">${d.fba.toLocaleString()}</div>
-            <div class="scroll-cell">${d.david.toLocaleString()}</div>
-            <div class="scroll-cell">${d.winit.toLocaleString()}</div>
-            <div class="scroll-cell ir-overview__shipment-cell" onclick="showIrShipmentPopover(event, ${i}, '18')">${d.eta18 > 0 ? d.eta18.toLocaleString() : '-'}</div>
-            <div class="scroll-cell ir-overview__shipment-cell" onclick="showIrShipmentPopover(event, ${i}, '45')">${d.eta45 > 0 ? d.eta45.toLocaleString() : '-'}</div>
-            <div class="scroll-cell">${d.factoryYX.toLocaleString()}</div>
-            <div class="scroll-cell">${d.factorySY.toLocaleString()}</div>
-            <div class="scroll-cell"><span class="ir-overview__recommend ir-overview__recommend--${d.recommend}">${recLabel[d.recommend]}</span></div>
-        </div>
-    `).join('');
-}
-
-function showIrShipmentPopover(event, index, type) {
-    event.stopPropagation();
-    closeIrShipmentPopover();
-
-    const d = (irOverviewState.series === 'All'
-        ? irOverviewMockData
-        : irOverviewMockData.filter(r => r.series === irOverviewState.series))[index];
-    if (!d) return;
-
-    const shipments = type === '18' ? d.shipments18 : d.shipments45;
-    if (!shipments || shipments.length === 0) return;
-
-    const rect = event.target.getBoundingClientRect();
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'ir-overview__popover-backdrop';
-    backdrop.onclick = closeIrShipmentPopover;
-    document.body.appendChild(backdrop);
-
-    const pop = document.createElement('div');
-    pop.className = 'ir-overview__popover';
-    pop.id = 'irShipmentPopover';
-    pop.innerHTML = `
-        <div class="ir-overview__popover-title">${d.sku} — ≤${type} Days Shipments</div>
-        ${shipments.map(s => `
-            <div class="ir-overview__popover-row">
-                <span>${s.name} — ETA: ${s.eta}</span>
-                <span>Qty: ${s.qty.toLocaleString()}</span>
-            </div>
-        `).join('')}
-    `;
-    document.body.appendChild(pop);
-
-    const popRect = pop.getBoundingClientRect();
-    let top = rect.bottom + 6;
-    let left = rect.left;
-    if (top + popRect.height > window.innerHeight) top = rect.top - popRect.height - 6;
-    if (left + popRect.width > window.innerWidth) left = window.innerWidth - popRect.width - 12;
-    pop.style.top = top + 'px';
-    pop.style.left = left + 'px';
-}
-
-function closeIrShipmentPopover() {
-    document.getElementById('irShipmentPopover')?.remove();
-    document.querySelector('.ir-overview__popover-backdrop')?.remove();
-}
-
-// Init: hook into showSection lifecycle after all scripts loaded
-document.addEventListener('DOMContentLoaded', () => {
-    // Once-only DOM bindings (overlay close + overview scroll sync) run after the partial is
-    // injected — no-op here on first load, re-attempted by the lifecycle mount. The overview
-    // render itself happens via the wrapped renderReplenishment on mount.
-    _inventoryReplenStaticInit();
-
-    // Wrap renderReplenishment (defined in app.js, loaded after this file). DOM-independent,
-    // so it is safe to apply now; the wrap adds renderIrOverview() after each replenishment render.
-    const _origRenderReplen = window.renderReplenishment;
-    if (typeof _origRenderReplen === 'function') {
-        window.renderReplenishment = function() {
-            _origRenderReplen();
-            renderIrOverview();
-        };
-    }
-});
-
-window.setIrOverviewTab = setIrOverviewTab;
-window.showIrShipmentPopover = showIrShipmentPopover;
-window.closeIrShipmentPopover = closeIrShipmentPopover;
-window.renderIrOverview = renderIrOverview;
-
-function syncIrOverviewScroll() {
-    const scrollCol = document.getElementById('ir-overview-scroll-col');
-    const scrollHeader = document.getElementById('ir-overview-scroll-header');
-    if (!scrollCol || !scrollHeader) return;
-    scrollCol.addEventListener('scroll', function() {
-        scrollHeader.style.transform = 'translateX(-' + this.scrollLeft + 'px)';
-    });
-}
 
 // ========================================
 // Inventory Replenishment - 從 app.js 搬移 (批次 1: Mock Data + 核心計算渲染)
@@ -1178,8 +1036,10 @@ function getReplenishmentData() {
             salesDay4 = Math.floor(Math.random() * 40) + 40;
         }
         
-            achievementLastMonth = Math.floor(Math.random() * 20) + 85;
-            achievementLast2Month = Math.floor(Math.random() * 20) + 80;
+            // Monthly Achievement Rate has NO defined source/formula → never fabricated (not even in
+            // demo). The honest table (_irRenderMonthlyAchievement) shows "—" for these.
+            achievementLastMonth = null;
+            achievementLast2Month = null;
             
             // LTS data - 部分 SKU 設為 0 以測試篩選
             let over90, over180;
@@ -1251,7 +1111,10 @@ function getReplenishmentData() {
         const upcomingEventsText = filteredEvents.length > 0
             ? filteredEvents.map(e => {
                 const event = specialEvents.find(se => se.name === e.name);
-                return `<div class="replen-card__row"><span class="replen-card__label">${e.name} (${event?.startDate}~${event?.endDate})</span><span class="replen-card__value">${e.qty}</span></div>`;
+                // "M.D~M.D" year-less display; full range preserved in title= for accessibility.
+                const fullR = `${event?.startDate}~${event?.endDate}`;
+                const shortR = _irFmtEventRange(event?.startDate, event?.endDate) || fullR;
+                return `<div class="replen-card__row"><span class="replen-card__label" title="${fullR}">${e.name} (${shortR})</span><span class="replen-card__value">${e.qty}</span></div>`;
               }).join('')
             : '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>';
         
@@ -1397,56 +1260,244 @@ function getReplenishmentData() {
 }
 
 // ========================================
-// Main table Series tabs — filter the 貨物庫存表 main table by Series so the page
-// stays focused instead of rendering every SKU at once. Tabs are built dynamically
-// from the Series present in the current (search-scoped) result set, plus "All".
+// Main table Category tabs — filter the 貨物庫存表 main table by sku_details.category so the
+// page stays focused instead of rendering every SKU at once. Tabs are built dynamically from the
+// distinct non-empty categories present in the current (search-scoped) result set, plus "All".
+// Mirrors the Request Order Category filter (sku_details.category; canonical values only — category
+// is NEVER guessed from the SKU prefix/series). The dedupe + sort matches Request Order's _roDistinct
+// so the Category tab order is identical to Request Order's.
 // ========================================
-var replenSeriesTab = 'All';
+var replenCategoryTab = 'All';
 
-function _replenSeriesOf(item) {
-    var s = item && item.series != null ? String(item.series).trim() : '';
-    return s || 'Other';
+// Canonical category value for a row (trimmed). Uncategorized rows return '' and only appear under
+// the "All" tab — category is never inferred from the SKU/series.
+function _replenCategoryOf(item) {
+    return item && item.category != null ? String(item.category).trim() : '';
 }
 
-function setReplenSeriesTab(series) {
-    replenSeriesTab = series;
+function setReplenCategoryTab(category) {
+    replenCategoryTab = category;
     renderReplenishment();
 }
-window.setReplenSeriesTab = setReplenSeriesTab;
+window.setReplenCategoryTab = setReplenCategoryTab;
 
-function renderReplenSeriesTabs(allData) {
-    var bar = document.getElementById('replenSeriesTabs');
+// Cached tab model ({name, count}[]) used by both the initial render and the resize-driven overflow
+// re-layout, so the layout function can rebuild from data without re-deriving categories.
+var _replenCatCache = null;
+
+// One category pill (main row).
+function _replenCatPillHtml(name, count, active) {
+    var safe = escapeReplenHtml(name);
+    var arg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<button class="replen-category-tab' + (active ? ' is-active' : '') + '" data-cat="' + safe +
+        '" onclick="setReplenCategoryTab(\'' + arg + '\')">' + safe +
+        ' <span class="replen-category-tab__count">' + count + '</span></button>';
+}
+// One category row inside the "More Categories ▾" dropdown.
+function _replenCatMoreItemHtml(name, count, active) {
+    var safe = escapeReplenHtml(name);
+    var arg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<button type="button" role="menuitem" class="replen-category-more__item' + (active ? ' is-active' : '') +
+        '" onclick="setReplenCategoryTab(\'' + arg + '\')"><span>' + safe +
+        '</span><span class="replen-category-tab__count">' + count + '</span></button>';
+}
+
+function renderReplenCategoryTabs(allData) {
+    var bar = document.getElementById('replenCategoryTabs');
     if (!bar) return;
 
     if (!allData || allData.length === 0) {
         bar.innerHTML = '';
         bar.style.display = 'none';
+        _replenCatCache = null;
         return;
     }
 
-    // Distinct series in the current result set.
-    var seriesList = [];
+    // Distinct non-empty categories in the current result set (same dedupe + alphabetical sort as
+    // Request Order's _roDistinct, so the Category tab order matches Request Order).
+    var seen = {}, categoryList = [];
     allData.forEach(function (it) {
-        var s = _replenSeriesOf(it);
-        if (seriesList.indexOf(s) === -1) seriesList.push(s);
+        var c = _replenCategoryOf(it);
+        if (c && !seen[c]) { seen[c] = 1; categoryList.push(c); }
     });
-    seriesList.sort();
+    categoryList.sort();
 
-    // Reset to All if the previously-active series is no longer present.
-    if (replenSeriesTab !== 'All' && seriesList.indexOf(replenSeriesTab) === -1) replenSeriesTab = 'All';
+    // Reset to All if the previously-active category is no longer present (data changed).
+    if (replenCategoryTab !== 'All' && categoryList.indexOf(replenCategoryTab) === -1) replenCategoryTab = 'All';
+
+    // 'All' is always first; category order = the existing alphabetical data order (unchanged).
+    _replenCatCache = [{ name: 'All', count: allData.length }].concat(categoryList.map(function (c) {
+        return { name: c, count: allData.filter(function (it) { return _replenCategoryOf(it) === c; }).length };
+    }));
 
     bar.style.display = '';
-    var tabs = ['All'].concat(seriesList);
-    bar.innerHTML = tabs.map(function (s) {
-        var count = (s === 'All') ? allData.length : allData.filter(function (it) { return _replenSeriesOf(it) === s; }).length;
-        var active = (s === replenSeriesTab) ? ' is-active' : '';
-        var safe = escapeReplenHtml(s);
-        var arg = String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return '<button class="replen-series-tab' + active + '" onclick="setReplenSeriesTab(\'' + arg + '\')">' +
-            safe + ' <span class="replen-series-tab__count">' + count + '</span></button>';
-    }).join('');
+    _replenBindCategoryMoreGlobal();
+    _replenLayoutCategoryOverflow();
 }
-window.renderReplenSeriesTabs = renderReplenSeriesTabs;
+window.renderReplenCategoryTabs = renderReplenCategoryTabs;
+
+// Single-row overflow layout: render every pill, measure, and if they exceed the container width,
+// keep the pills that fit (All + as many leading categories as possible) and move the rest into a
+// "More Categories ▾" dropdown. If the selected category is among the overflow, it is pinned as a
+// visible pill just before the dropdown so the current selection is always on screen. Never wraps to
+// a 2nd row, never CSS-clips a category out of existence. Filtering / counts are untouched.
+function _replenLayoutCategoryOverflow() {
+    var bar = document.getElementById('replenCategoryTabs');
+    if (!bar || !_replenCatCache) return;
+    var tabs = _replenCatCache;
+
+    // Measure pass — render all pills, no dropdown.
+    bar.innerHTML = tabs.map(function (t) { return _replenCatPillHtml(t.name, t.count, t.name === replenCategoryTab); }).join('');
+
+    var barWidth = bar.clientWidth;
+    if (!barWidth) return;   // container not laid out yet (page hidden) — retry on next render/resize
+    var pills = Array.prototype.slice.call(bar.querySelectorAll('.replen-category-tab'));
+    if (pills.length !== tabs.length) return;
+
+    var GAP = 8;
+    var widths = pills.map(function (p) { return p.offsetWidth; });
+    var total = widths.reduce(function (a, b) { return a + b; }, 0) + GAP * Math.max(0, pills.length - 1);
+    if (total <= barWidth) return;   // everything fits on one row — leave the all-pills render as-is
+
+    // Greedily keep leading pills (All is index 0, always kept), reserving room for the More button.
+    var MORE_RESERVE = 175;          // px reserved for "More Categories ▾" incl. gap
+    var budget = barWidth - MORE_RESERVE;
+    var visible = [0];
+    var used = widths[0];
+    for (var i = 1; i < tabs.length; i++) {
+        var w = widths[i] + GAP;
+        if (used + w <= budget) { used += w; visible.push(i); } else break;
+    }
+
+    var activeIdx = -1;
+    for (var j = 0; j < tabs.length; j++) { if (tabs[j].name === replenCategoryTab) { activeIdx = j; break; } }
+    var overflow = [];
+    for (var k = 0; k < tabs.length; k++) { if (visible.indexOf(k) === -1) overflow.push(k); }
+    var pinActive = (activeIdx > 0 && overflow.indexOf(activeIdx) !== -1);
+
+    var html = visible.map(function (i) { return _replenCatPillHtml(tabs[i].name, tabs[i].count, tabs[i].name === replenCategoryTab); }).join('');
+    if (pinActive) html += _replenCatPillHtml(tabs[activeIdx].name, tabs[activeIdx].count, true);
+    var listIdx = overflow.filter(function (i) { return !(pinActive && i === activeIdx); });
+    html += '<div class="replen-category-more" id="replenCategoryMore">' +
+        '<button type="button" class="replen-category-more__trigger" id="replenCategoryMoreTrigger" ' +
+        'aria-haspopup="menu" aria-expanded="false" aria-controls="replenCategoryMoreList" ' +
+        'onclick="toggleReplenCategoryMore(event)">More Categories <span class="replen-category-more__caret" aria-hidden="true">▾</span></button>' +
+        '<div class="replen-category-more__list" id="replenCategoryMoreList" role="menu" aria-label="More categories" hidden>' +
+        listIdx.map(function (i) { return _replenCatMoreItemHtml(tabs[i].name, tabs[i].count, tabs[i].name === replenCategoryTab); }).join('') +
+        '</div></div>';
+    bar.innerHTML = html;
+}
+window._replenLayoutCategoryOverflow = _replenLayoutCategoryOverflow;
+
+function toggleReplenCategoryMore(ev) {
+    if (ev) { try { ev.stopPropagation(); } catch (_e) {} }
+    var list = document.getElementById('replenCategoryMoreList');
+    var trg = document.getElementById('replenCategoryMoreTrigger');
+    if (!list) return;
+    var willOpen = list.hidden;
+    list.hidden = !willOpen;
+    if (trg) trg.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+window.toggleReplenCategoryMore = toggleReplenCategoryMore;
+
+var _replenCatMoreBound = false;
+var _replenCatResizeTimer = null;
+function _replenBindCategoryMoreGlobal() {
+    if (_replenCatMoreBound) return;
+    // Outside-click closes the dropdown.
+    document.addEventListener('click', function (ev) {
+        var list = document.getElementById('replenCategoryMoreList');
+        if (!list || list.hidden) return;
+        if (ev.target && ev.target.closest && ev.target.closest('#replenCategoryMore')) return;
+        list.hidden = true;
+        var trg = document.getElementById('replenCategoryMoreTrigger');
+        if (trg) trg.setAttribute('aria-expanded', 'false');
+    });
+    // Escape closes + returns focus to the trigger.
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Escape') return;
+        var list = document.getElementById('replenCategoryMoreList');
+        if (!list || list.hidden) return;
+        list.hidden = true;
+        var trg = document.getElementById('replenCategoryMoreTrigger');
+        if (trg) { trg.setAttribute('aria-expanded', 'false'); trg.focus(); }
+    });
+    // Re-flow overflow on resize (debounced).
+    window.addEventListener('resize', function () {
+        if (_replenCatResizeTimer) clearTimeout(_replenCatResizeTimer);
+        _replenCatResizeTimer = setTimeout(function () { _replenLayoutCategoryOverflow(); }, 150);
+    });
+    _replenCatMoreBound = true;
+}
+
+// ── Planning Model display (Canonical Decision 1) ────────────────────────────────────────────────
+// The first column holds the canonical replenishment_model value (sales_driven / forecast_driven).
+// The DB / API / payload / filter-state keep the canonical value; the UI shows ONLY the friendly label
+// via this single shared formatter (table cell + Add/Edit forms + anywhere the field is displayed).
+// Never render "Sales Driven" / "Forecast Driven" / "Status" for this field anymore.
+function _replenPlanningModelLabel(v) {
+    var s = String(v == null ? '' : v).trim().toLowerCase();
+    if (s === 'forecast_driven') return 'Forecast';
+    if (s === 'sales_driven') return 'Sales';
+    return v ? String(v) : 'Sales';
+}
+window._replenPlanningModelLabel = _replenPlanningModelLabel;
+
+// ── Whole-row expand: interactive-target guard (mirrors request-order._roIsInteractiveTarget) ─────
+// A click on any control (button/link/input/select/…) or a [data-no-row-toggle] element must NOT
+// toggle the row — those elements own their own behaviour.
+var IR_INTERACTIVE_TAGS = { BUTTON: 1, A: 1, INPUT: 1, SELECT: 1, TEXTAREA: 1, LABEL: 1, OPTION: 1 };
+function _irIsInteractiveTarget(el, stopAt) {
+    while (el && el !== stopAt && el.nodeType === 1) {
+        if (IR_INTERACTIVE_TAGS[el.tagName]) return true;
+        if (el.isContentEditable) return true;
+        var role = el.getAttribute && el.getAttribute('role');
+        if (role === 'button' || role === 'link' || role === 'checkbox' || role === 'radio' || role === 'textbox' || role === 'switch') return true;
+        if (el.hasAttribute && el.hasAttribute('data-no-row-toggle')) return true;
+        el = el.parentNode;
+    }
+    return false;
+}
+
+// Canonical row key for the expanded-row state — prefer marketplace_sku_id; fall back to the composite
+// (company|country|marketplace|sku) when that field isn't on the row. Exposed for callers/tests.
+function _irRowKey(item) {
+    if (!item) return '';
+    if (item.marketplaceSkuId) return String(item.marketplaceSkuId);
+    return [item.company, item.country, item.marketplace, item.sku]
+        .map(function (v) { return String(v == null ? '' : v); }).join('|');
+}
+// Pure single-state toggle decision: returns the NEXT expanded key. One variable drives BOTH the left
+// (fixed) and right (scroll) sides, so they can never desync no matter how fast the user clicks.
+function _irNextExpandedKey(currentKey, clickedKey) {
+    return currentKey === clickedKey ? null : clickedKey;
+}
+// Stable detail-panel DOM id for aria-controls (sku sanitised to an id-safe token).
+function _irPanelId(sku) {
+    return 'replen-detail-' + String(sku == null ? '' : sku).replace(/[^A-Za-z0-9_-]/g, '-');
+}
+// Escape a sku for safe interpolation into an inline on* handler argument.
+function _irSkuArg(sku) {
+    return String(sku == null ? '' : sku).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+window._irRowKey = _irRowKey;
+window._irNextExpandedKey = _irNextExpandedKey;
+window._irIsInteractiveTarget = _irIsInteractiveTarget;
+
+// Row-level click handler: toggle unless the click landed on an interactive control (which handles
+// itself). Bound on BOTH the fixed row and the scroll row so the whole row is a hit target.
+function _replenRowClick(event, sku) {
+    if (event && _irIsInteractiveTarget(event.target, event.currentTarget)) return;
+    toggleReplenRow(sku);
+}
+// Chevron click: stopPropagation so the row handler doesn't also fire (no double-toggle), then toggle
+// exactly once. aria-expanded / rotation are synced inside toggleReplenRow.
+function _replenChevronClick(event, sku) {
+    if (event) { try { event.stopPropagation(); } catch (_e) {} }
+    toggleReplenRow(sku);
+}
+window._replenRowClick = _replenRowClick;
+window._replenChevronClick = _replenChevronClick;
 
 function renderReplenishment() {
     const allData = getReplenishmentData();
@@ -1455,25 +1506,36 @@ function renderReplenishment() {
 
     if (!fixedBody || !scrollBody) return;
 
-    // Build/refresh the Series tabs from the full result set, then filter to the active tab.
-    renderReplenSeriesTabs(allData);
-    const data = (replenSeriesTab === 'All')
+    // Build/refresh the Category tabs from the full result set, then filter to the active tab.
+    renderReplenCategoryTabs(allData);
+    const data = (replenCategoryTab === 'All')
         ? allData
-        : allData.filter(function (it) { return _replenSeriesOf(it) === replenSeriesTab; });
+        : allData.filter(function (it) { return _replenCategoryOf(it) === replenCategoryTab; });
 
     currentExpandedRow = null;
     
-    // Render fixed column (SKU)
-    fixedBody.innerHTML = data.map(item => `
-        <div class="fixed-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
-            ${item.sku}
+    // Render fixed column (chevron + SKU). The chevron is a native <button> (Enter/Space operable) with
+    // aria-expanded synced to the open state and aria-controls pointing at the detail panel it opens.
+    // Clicking it stopPropagation()s so the row + chevron handlers never double-fire.
+    fixedBody.innerHTML = data.map(item => {
+        const arg = _irSkuArg(item.sku);
+        const skuText = escapeReplenHtml(item.sku);
+        return `
+        <div class="fixed-row" data-sku="${item.sku}" data-rowkey="${escapeReplenHtml(_irRowKey(item))}" onclick="_replenRowClick(event, '${arg}')">
+            <button type="button" class="replen-row-chevron" aria-expanded="false" aria-controls="${_irPanelId(item.sku)}"
+                    aria-label="Toggle replenishment details for ${skuText}"
+                    onclick="_replenChevronClick(event, '${arg}')">
+                <span class="replen-row-chevron__icon" aria-hidden="true">▸</span>
+            </button>
+            <span class="replen-row-sku">${skuText}</span>
         </div>
-    `).join('');
-    
+    `;
+    }).join('');
+
     // Render scrollable columns
     scrollBody.innerHTML = data.map(item => `
-        <div class="scroll-row" data-sku="${item.sku}" onclick="toggleReplenRow('${item.sku}')">
-            <div class="scroll-cell">${item.replenishmentModel === 'forecast_driven' ? 'Forecast Driven' : 'Sales Driven'}</div>
+        <div class="scroll-row" data-sku="${item.sku}" data-rowkey="${escapeReplenHtml(_irRowKey(item))}" onclick="_replenRowClick(event, '${_irSkuArg(item.sku)}')">
+            <div class="scroll-cell">${_replenPlanningModelLabel(item.replenishmentModel)}</div>
             <div class="scroll-cell">${item.company}</div>
             <div class="scroll-cell">${_replenMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
             <div class="scroll-cell">${item.currentInventory}</div>
@@ -1483,17 +1545,12 @@ function renderReplenishment() {
             <div class="scroll-cell">${item.forecast60d}</div>
             <div class="scroll-cell">${item.upcomingEventQty !== null ? item.upcomingEventQty : '-'}</div>
             <div class="scroll-cell ${(window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '')}${item.needsAlert ? ' alert-red' : ''}">${item.daysOfSupply}</div>
-            <div class="scroll-cell">${item.suggestedQty}</div>
-            <div class="scroll-cell" style="display: flex; gap: 4px; align-items: center; justify-content: center; width: 120px; min-width: 120px; max-width: 120px; flex-shrink: 0;">
-                <span style="color: #64748B; font-size: 12px; cursor: pointer;" onclick="openShippingAllocation(event, '${item.sku}')">See Details</span>
-                <button class="planned-qty-config-btn" 
-                        onclick="openShippingAllocation(event, '${item.sku}')"
-                        title="Configure shipping allocation"
-                        style="padding: 4px 8px; font-size: 12px; margin: 0; min-width: auto;">⚙️</button>
+            <div class="scroll-cell replen-suggested-cell">
+                <span class="replen-suggested-cell__value">${item.suggestedQty}</span>
             </div>
             <div class="scroll-cell">${item.cnStock || 0}</div>
             <div class="scroll-cell">${item.twStock || 0}</div>
-            <div class="scroll-cell ai-action-cell" onclick="openAISuggestion(event, '${item.sku}')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">
+            <div class="scroll-cell ai-action-cell" role="button" data-no-row-toggle onclick="openAISuggestion(event, '${_irSkuArg(item.sku)}')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">
                 <span class="ai-action-cell__text">View Recommendation</span>
             </div>
         </div>
@@ -1599,26 +1656,39 @@ function toggleReplenRow(sku) {
     const fixedBody = document.getElementById('replenFixedBody');
     const scrollBody = document.getElementById('replenScrollBody');
     
+    // ONE render transaction drives BOTH sides. Collapse everything first (both bodies, both rows'
+    // .expanded class, and every chevron's aria-expanded/rotation) so left and right can never desync.
     const existingFixedPanels = document.querySelectorAll('#ops-section .fixed-body .replen-expand-panel');
     const existingScrollPanels = document.querySelectorAll('#ops-section .scroll-body .replen-expand-panel');
     existingFixedPanels.forEach(panel => panel.remove());
     existingScrollPanels.forEach(panel => panel.remove());
-    
+
     fixedRows.forEach(row => row.classList.remove('expanded'));
     scrollRows.forEach(row => row.classList.remove('expanded'));
-    
-    if (currentExpandedRow === sku) {
+    document.querySelectorAll('#ops-section .replen-row-chevron').forEach(function (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.classList.remove('is-open');
+    });
+
+    // Single source of truth: currentExpandedRow. _irNextExpandedKey collapses on re-click, else opens.
+    const nextKey = _irNextExpandedKey(currentExpandedRow, sku);
+    if (nextKey === null) {
         currentExpandedRow = null;
         return;
     }
-    
-    currentExpandedRow = sku;
+
+    currentExpandedRow = nextKey;
     const fixedRow = Array.from(fixedRows).find(row => row.dataset.sku === sku);
     const scrollRow = Array.from(scrollRows).find(row => row.dataset.sku === sku);
-    
+
+    // Both containers receive their expanded class in the SAME synchronous pass (no per-side setTimeout).
     if (fixedRow) fixedRow.classList.add('expanded');
     if (scrollRow) scrollRow.classList.add('expanded');
-    
+    if (fixedRow) {
+        const chevron = fixedRow.querySelector('.replen-row-chevron');
+        if (chevron) { chevron.setAttribute('aria-expanded', 'true'); chevron.classList.add('is-open'); }
+    }
+
     const data = getReplenishmentData();
     const skuData = data.find(item => item.sku === sku);
     
@@ -1642,7 +1712,7 @@ function toggleReplenRow(sku) {
     // - weekly replenishment recommendation
     
     const expandScrollHTML = `
-        <div class="replen-expand-panel replen-expand-panel--scroll">
+        <div class="replen-expand-panel replen-expand-panel--scroll" id="${_irPanelId(sku)}">
             <div class="replen-expand-scroll">
                 <div class="ir-panel ir-panel--inventory-group ir-fulfillment--${skuData?.fulfillmentModel || 'unset'}" data-fulfillment="${skuData?.fulfillmentModel || ''}">
                     <section class="replen-expand-section--inventory">
@@ -1667,7 +1737,7 @@ function toggleReplenRow(sku) {
                                 <div class="replen-card__row"><span class="replen-card__label">Within 45 days</span><span class="replen-card__value">${skuData?.within45days || 0}</span></div>
                             </article>
                             <article class="replen-card replen-card--third-party">
-                                <h4 class="replen-card__title">3rd Party Stock <span class="replen-card__subtitle">(Site Planning Available)</span></h4>
+                                <h4 class="replen-card__title">3rd Party Stock</h4>
                                 ${skuData?.thirdPartyDetailHtml || ('<div class="replen-card__row"><span class="replen-card__label">Winit</span><span class="replen-card__value">' + (skuData?.winitStock || 0) + '</span></div><div class="replen-card__row"><span class="replen-card__label">ONUS</span><span class="replen-card__value">' + (skuData?.onusStock || 0) + '</span></div>')}
                             </article>
                         </div>
@@ -1694,8 +1764,8 @@ function toggleReplenRow(sku) {
                         <canvas id="sales-trend-chart-${sku}" style="max-height: 100px;"></canvas>
                     </article>
                     <article class="ir-panel replen-card replen-card--achievement">
-                        <h4 class="replen-card__title">Monthly Achievement Rate</h4>
-                        <canvas id="achievement-chart-${sku}" style="max-height: 100px;"></canvas>
+                        <h4 class="replen-card__title">Monthly Achievement Rate <span class="replen-card__title-note">(past 3 completed months)</span></h4>
+                        ${_irRenderMonthlyAchievement(skuData)}
                     </article>
                 </div>
                 <!-- Decision area (action column): Recommendation Summary directly ABOVE Execution Plan,
@@ -1761,10 +1831,9 @@ function toggleReplenRow(sku) {
         // Seed / restore the Execution Plan routes (from Working Draft, or a default preview).
         initializeShippingAllocation(sku, skuData);
         
-        // Initialize charts
+        // Initialize charts (Monthly Achievement Rate is now an honest table, not a chart — no init needed).
         initSalesTrendChart(sku, skuData);
-        initAchievementChart(sku, skuData);
-        
+
         // Re-sync after initialization
         setTimeout(() => syncExpandPanelHeight(sku), 50);
     }, 0);
@@ -1794,8 +1863,11 @@ function createPlan(sku) {
 
 function submitReplenishmentPlans() {
     const data = getReplenishmentData();
-    const country = document.getElementById('replenCountry').value;
-    const marketplace = document.getElementById('replenMarketplace').value;
+    // Country + marketplace NAME are derived from the selected scope (the Marketplace dropdown value is a
+    // marketplace_id in Cloud mode), so the payload carries the marketplace NAME — not the raw id.
+    const _scope = _replenSelectedScope();
+    const country = _scope.country;
+    const marketplace = _scope.marketplace;
     const targetDays = document.getElementById('replenTargetDays').value;
     const shippingPlans = {};
     
@@ -2013,11 +2085,10 @@ if (!window.KM) window.KM = {};
 window.KM.shippingAllocationDraft = replenAllocationDraft;
 
 function _replenCtx() {
-    return {
-        company: (document.getElementById('replenCompany') || {}).value || '',
-        country: (document.getElementById('replenCountry') || {}).value || '',
-        marketplace: (document.getElementById('replenMarketplace') || {}).value || ''
-    };
+    // Company + marketplace NAME are derived from the selected marketplace_id (no Company select); this
+    // keeps the allocation-draft context keyed on stable, human-meaningful scope values (not the raw id).
+    var s = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : { company: '', country: '', marketplace: '' };
+    return { company: s.company, country: s.country, marketplace: s.marketplace };
 }
 function _replenCtxEq(a, b) {
     return !!a && !!b && a.company === b.company && a.country === b.country && a.marketplace === b.marketplace;
@@ -2434,89 +2505,88 @@ function initSalesTrendChart(sku, skuData) {
     });
 }
 
-function initAchievementChart(sku, skuData) {
-    const canvas = document.getElementById(`achievement-chart-${sku}`);
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    const today = new Date();
-    const labels = [];
-    const data = [];
-    
-    // Generate past 3 months data
-    for (let i = 2; i >= 0; i--) {
-        const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        labels.push(monthNames[date.getMonth()]);
-        
-        // Generate achievement rate (80-110%)
-        data.push(Math.round(80 + Math.random() * 30));
+// The random-data Achievement Rate chart was removed (2026-07-22). Monthly Achievement Rate is now an
+// honest read-only TABLE (see _irRenderMonthlyAchievement): no mock/random/fabricated percentages, and
+// no 0% (which would imply a computed-zero). Kept as a no-op so any legacy caller can't throw.
+function initAchievementChart(/* sku, skuData */) { /* intentionally empty — see _irRenderMonthlyAchievement */ }
+
+// The N most-recently COMPLETED calendar months ending with the month BEFORE referenceDate's month
+// (the current partial month is excluded). Handles year rollover. Returns oldest→newest.
+// e.g. getPreviousCompletedMonths(2026-07-22, 3) → [Apr 2026, May 2026, Jun 2026].
+function getPreviousCompletedMonths(referenceDate, n) {
+    var ref = referenceDate ? new Date(referenceDate) : new Date();
+    var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var out = [];
+    for (var i = n; i >= 1; i--) {
+        // First day of (this month − i) safely handles year boundaries.
+        var d = new Date(ref.getFullYear(), ref.getMonth() - i, 1);
+        out.push({ year: d.getFullYear(), monthIdx: d.getMonth(), label: MON[d.getMonth()] + ' ' + d.getFullYear() });
     }
-    
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Achievement Rate (%)',
-                data: data,
-                borderColor: '#10B981',
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                borderWidth: 2,
-                tension: 0.3,
-                fill: true,
-                pointRadius: 3,
-                pointHoverRadius: 5
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    callbacks: {
-                        label: function(context) {
-                            return context.parsed.y + '%';
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    grid: {
-                        display: false
-                    },
-                    ticks: {
-                        font: {
-                            size: 10
-                        }
-                    }
-                },
-                y: {
-                    beginAtZero: false,
-                    min: 70,
-                    max: 120,
-                    ticks: {
-                        font: {
-                            size: 10
-                        },
-                        callback: function(value) {
-                            return value + '%';
-                        }
-                    }
-                }
-            }
-        }
-    });
+    return out;
+}
+
+// PLACEHOLDER interface — the canonical Monthly Achievement metric is NOT defined/implemented yet.
+// Returns an explicit unavailable state; NEVER computes a rate from FC / sales / any approximation.
+// When the formal metric is defined, this is the single wiring point.
+function getMonthlyAchievementMetrics(/* { marketplace_sku_id, company, country, marketplace, year, month } */) {
+    return { status: 'unavailable', achievementRate: null, actual: null, sessions: null, usp: null };
+}
+
+// Real historical FC Qty for a scoped SKU + a specific completed year/month, from fc_regular_forecast
+// (company + country + marketplace, company-safe). Returns a number or null (→ "—"; never fabricated 0).
+var _IR_MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function _irHistoricalFcQty(skuData, year, monthIdx) {
+    if (!skuData || !skuData.sku) return null;
+    var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
+    if (!DB || !DB.getFcRegularForecast) return null;
+    function up(v){ return String(v == null ? '' : v).trim().toUpperCase(); }
+    function lo(v){ return String(v == null ? '' : v).trim().toLowerCase(); }
+    var rows = DB.getFcRegularForecast() || [];
+    var row = rows.filter(function (r) {
+        return up(r.sku) === up(skuData.sku) && String(r.year) === String(year) &&
+            (!skuData.company || !r.company || up(r.company) === up(skuData.company)) &&
+            (!skuData.country || !r.country || up(r.country) === up(skuData.country)) &&
+            (!skuData.marketplace || !r.marketplace || lo(r.marketplace) === lo(skuData.marketplace));
+    })[0];
+    if (!row) return null;
+    var raw = row[_IR_MONTH_KEYS[monthIdx]];
+    if (raw === '' || raw == null) return null;
+    var num = Number(raw);
+    return isNaN(num) ? null : Math.round(num);
+}
+
+// Monthly Achievement Rate — honest read-only table for the past 3 COMPLETED months. Achievement Rate /
+// Actual / Sessions / USP have no defined source yet → "—" (never 0%, never mock). FC Qty shows real
+// historical fc_regular_forecast when present, else "—".
+function _irRenderMonthlyAchievement(skuData) {
+    var DASH = '—';
+    var months = getPreviousCompletedMonths(new Date(), 3);
+    var body = months.map(function (m) {
+        var metrics = getMonthlyAchievementMetrics({
+            marketplace_sku_id: skuData ? skuData.marketplaceSkuId : '', company: skuData ? skuData.company : '',
+            country: skuData ? skuData.country : '', marketplace: skuData ? skuData.marketplace : '',
+            year: m.year, month: m.monthIdx + 1
+        });
+        var ach = (metrics && metrics.achievementRate != null) ? (metrics.achievementRate + '%') : DASH;
+        var fcQty = _irHistoricalFcQty(skuData, m.year, m.monthIdx);
+        var fcDisp = (fcQty == null) ? DASH : fcQty.toLocaleString();
+        var actual = (metrics && metrics.actual != null) ? Number(metrics.actual).toLocaleString() : DASH;
+        var sessions = (metrics && metrics.sessions != null) ? Number(metrics.sessions).toLocaleString() : DASH;
+        var usp = (metrics && metrics.usp != null) ? metrics.usp : DASH;
+        return '<tr><td>' + m.label + '</td><td>' + ach + '</td><td class="replen-achv__num">' + fcDisp +
+            '</td><td class="replen-achv__num">' + actual + '</td><td class="replen-achv__num">' + sessions +
+            '</td><td class="replen-achv__num">' + usp + '</td></tr>';
+    }).join('');
+    return '<table class="replen-achv-table"><thead><tr>' +
+        '<th>Month</th><th>Achievement</th><th class="replen-achv__num">FC Qty</th>' +
+        '<th class="replen-achv__num">Actual</th><th class="replen-achv__num">Sessions</th><th class="replen-achv__num">USP</th>' +
+        '</tr></thead><tbody>' + body + '</tbody></table>';
 }
 
 window.initSalesTrendChart = initSalesTrendChart;
 window.initAchievementChart = initAchievementChart;
+window.getPreviousCompletedMonths = getPreviousCompletedMonths;
+window.getMonthlyAchievementMetrics = getMonthlyAchievementMetrics;
 
 
 // Add Marketplace Modal Functions
@@ -2714,8 +2784,8 @@ window.addNewCountry = addNewCountry;
 // Search-triggered loading (Demo OFF + Cloud Read)
 // ========================================
 function searchReplenishment() {
-    // A new search (incl. Country / Marketplace change then Search) resets the Series tab to All.
-    replenSeriesTab = 'All';
+    // A new search (incl. Country / Marketplace change then Search) resets the Category tab to All.
+    replenCategoryTab = 'All';
 
     // Demo ON: just re-render (demo does not need search)
     if (_replenDemoOn()) {
@@ -2742,14 +2812,9 @@ function searchReplenishment() {
 }
 
 function _doReplenSearch() {
-    var company = (document.getElementById('replenCompany') || {}).value || '';
     var country = document.getElementById('replenCountry').value;
+    // marketplace = marketplace_id (Cloud) or marketplace name (Demo); company is derived from it.
     var marketplace = document.getElementById('replenMarketplace').value;
-    // Demo mode has no company selector (static demo scope) — only enforce Company on live.
-    if (!_replenDemoOn() && !company) {
-        alert('Please select a Company (KM and ResUS are separate scopes).');
-        return;
-    }
     if (!country && !marketplace) {
         alert('Please select Country and Marketplace before searching.');
         return;
@@ -2772,23 +2837,36 @@ window.searchReplenishment = searchReplenishment;
 function _getCloudReplenishmentData() {
     var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
     var IR = window.IRMap;
-    var company = document.getElementById('replenCompany') ? document.getElementById('replenCompany').value : '';
+    // IDENTITY: the Marketplace dropdown value is the marketplace_id (no Company select). Company +
+    // country + marketplace are DERIVED from the marketplaces master for that marketplace_id below.
+    var marketplaceId = document.getElementById('replenMarketplace') ? document.getElementById('replenMarketplace').value : '';
     var country = document.getElementById('replenCountry') ? document.getElementById('replenCountry').value : '';
-    var marketplace = document.getElementById('replenMarketplace') ? document.getElementById('replenMarketplace').value : '';
     var ltsFilter = document.getElementById('replenLTSFilter') ? document.getElementById('replenLTSFilter').value : '';
-    if (!company || !country || !marketplace || !DB || !DB.getMarketplaceSkus || !IR) return [];
+    if (!marketplaceId || !DB || !DB.getMarketplaceSkus || !IR) return [];
 
     function eqv(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
     function get(name) { return (DB[name]) ? (DB[name]() || []) : []; }
 
+    // Source tables — all safe [] when not yet exposed to the frontend.
+    var marketplacesReg = get('getMarketplaces');
+    // Resolve the selected marketplace_id to its marketplaces master record; company + country +
+    // marketplace all come from THIS record (the SSOT). No Company select, no first-row fallback.
+    var scopeMkt = marketplacesReg.find(function (m) { return String(m.marketplaceId) === String(marketplaceId); });
+    if (!scopeMkt) return [];
+    var company = scopeMkt.company;
+    var marketplace = scopeMkt.marketplace;
+    var mktCountry = scopeMkt.country;
+
     var mpSkus = get('getMarketplaceSkus');
-    // STRICT SCOPE: company + country + marketplace. KM/US/Amazon and ResUS/US/Amazon are separate
-    // scopes — a company mismatch is never merged (fixes the KM↔ResUS bleed). This company-scoped SKU
-    // universe is also what keeps the company-less Amazon stock/sales tables correctly partitioned.
-    var filtered = mpSkus.filter(function (mp) { return eqv(mp.company, company) && eqv(mp.country, country) && eqv(mp.marketplace, marketplace); });
+    // STRICT SCOPE: identity-first on marketplace_id (which already encodes company+country+marketplace,
+    // so KM/US/Amazon and ResUS/US/Amazon never merge — the company bleed is impossible). Legacy rows
+    // without a marketplace_id fall back to the master's derived company+country+marketplace.
+    var filtered = mpSkus.filter(function (mp) {
+        if (mp.marketplaceId) return String(mp.marketplaceId) === String(marketplaceId);
+        return eqv(mp.company, company) && eqv(mp.country, mktCountry) && eqv(mp.marketplace, marketplace);
+    });
     if (filtered.length === 0) return [];
 
-    // Source tables — all safe [] when not yet exposed to the frontend.
     var invSnaps = get('getAmazonInventorySnapshot');
     var healthSnaps = get('getAmazonInventoryHealthSnapshot');
     var dailyRows = get('getAmazonDailySalesSnapshot');
@@ -2799,7 +2877,6 @@ function _getCloudReplenishmentData() {
     var overseas = get('getOverseasInventorySnapshot');
     var warehouses = get('getWarehouses');
     var factory = get('getFactoryStock');
-    var marketplacesReg = get('getMarketplaces');
     var skuDetails = get('getSkuDetails');
 
     var monthNames = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
@@ -2808,14 +2885,22 @@ function _getCloudReplenishmentData() {
 
     var rows = filtered.map(function (mp) {
         var det = skuDetails.find(function (d) { return eqv(d.sku, mp.sku); }) || {};
-        // Resolve the canonical marketplace_id (id-first joins) for this company+country+marketplace.
-        var scopeMktReg = marketplacesReg.find(function (m) {
-            return (mp.marketplaceId && m.marketplaceId === mp.marketplaceId) ||
-                (eqv(m.company, mp.company) && eqv(m.country, mp.country) && eqv(m.marketplace, mp.marketplace));
-        });
+        // The marketplaces master (scopeMkt) is authoritative for this marketplace_id. If a
+        // marketplace_skus row carries a denormalized company/country/marketplace that DISAGREES with
+        // the master, prefer the master and warn (mapping-integrity note) — never silently take the row.
+        var scopeMktReg = scopeMkt;
+        if (mp.marketplaceId && (
+                (mp.company && !eqv(mp.company, scopeMkt.company)) ||
+                (mp.country && !eqv(mp.country, scopeMkt.country)) ||
+                (mp.marketplace && !eqv(mp.marketplace, scopeMkt.marketplace)))) {
+            console.warn('[Replenishment] marketplace_skus scope disagrees with marketplaces master for marketplace_id ' +
+                marketplaceId + ' (sku ' + mp.sku + '); using master.',
+                { row: { company: mp.company, country: mp.country, marketplace: mp.marketplace },
+                  master: { company: scopeMkt.company, country: scopeMkt.country, marketplace: scopeMkt.marketplace } });
+        }
         var scope = {
-            company: mp.company, country: mp.country, marketplace: mp.marketplace, sku: mp.sku,
-            marketplaceId: mp.marketplaceId || (scopeMktReg ? scopeMktReg.marketplaceId : ''),
+            company: scopeMkt.company, country: scopeMkt.country, marketplace: scopeMkt.marketplace, sku: mp.sku,
+            marketplaceId: marketplaceId,
             series: det.series || '', category: det.category || det.productLine || ''
         };
 
@@ -2869,10 +2954,12 @@ function _getCloudReplenishmentData() {
             sku: mp.sku,
             lifecycle: det.lifecycle || '--',
             replenishmentModel: mp.replenishmentModel || 'sales_driven',
-            company: mp.company || '--',
-            country: mp.country,
-            marketplace: mp.marketplace,
+            company: scope.company || '--',       // derived from the marketplaces master (marketplace_id)
+            country: scope.country,
+            marketplace: scope.marketplace,
+            marketplaceId: scope.marketplaceId,
             series: scope.series || '',
+            category: scope.category || '',        // Category tab filter (sku_details.category)
             // First Layer Summary
             currentInventory: currentStock,
             onTheWay: 0,                       // Shipping Shipment — pending mapping (spec §9)
@@ -2957,6 +3044,7 @@ function _getDemoReplenishmentData() {
             country: r.country || 'US',
             marketplace: r.marketplace,
             series: r.series || '',
+            category: r.category || '',   // Category tab filter (sku_details.category)
             currentInventory: currentInv,
             onTheWay: onTheWay,
             thirdPartyStock: thirdParty,
@@ -3492,45 +3580,42 @@ function _replenActiveMarketplaces() {
     return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
 }
 
-// Selected replenishment company ('' = none). Top of the scope key.
+// Resolve the CURRENT scope from the Marketplace dropdown. There is no Company select: in Cloud mode
+// the dropdown value is a marketplace_id, so company + country + marketplace are DERIVED from the
+// marketplaces master. In Demo mode the dropdown keeps its static marketplace-NAME options, so the
+// value is the marketplace name directly (and company is unused for the demo scope).
+function _replenSelectedScope() {
+    var country = (document.getElementById('replenCountry') || {}).value || '';
+    var mpVal = (document.getElementById('replenMarketplace') || {}).value || '';
+    if (_replenDemoOn()) {
+        return { company: '', country: country, marketplace: mpVal, marketplaceId: '' };
+    }
+    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    var rec = mpVal ? list.find(function(m){ return String(m.marketplaceId) === String(mpVal); }) : null;
+    if (!rec) return { company: '', country: country, marketplace: '', marketplaceId: mpVal };
+    return { company: rec.company || '', country: rec.country || country, marketplace: rec.marketplace || '', marketplaceId: rec.marketplaceId || mpVal };
+}
+window._replenSelectedScope = _replenSelectedScope;
+
+// Selected replenishment company ('' = none) — now DERIVED from the selected marketplace_id (no
+// Company select). Kept for callers that still ask for the company of the current scope.
 function _replenSelectedCompany() {
-    var el = document.getElementById('replenCompany');
-    return el ? (el.value || '') : '';
+    return _replenSelectedScope().company;
 }
 window._replenSelectedCompany = _replenSelectedCompany;
 
-// Rebuild Company options from active marketplaces. Demo OFF only. Resets an invalid selection.
-function refreshReplenCompanyOptions() {
-    if (_replenDemoOn()) return;
-    var sel = document.getElementById('replenCompany');
-    if (!sel) return;
-    var active = _replenActiveMarketplaces();
-    var selCompany = sel.value;
-    var companies = [];
-    active.forEach(function(m) { if (m.company && companies.indexOf(m.company) === -1) companies.push(m.company); });
-    companies.sort();
-    sel.innerHTML = '<option value="">Select Company</option>' +
-        companies.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
-    sel.value = (selCompany && companies.indexOf(selCompany) !== -1) ? selCompany : '';
-}
-
-// Rebuild Country options, constrained by the selected Company + Marketplace. Demo OFF only.
+// Rebuild Country options from active marketplaces. Demo OFF only. Resets an invalid selection.
 function refreshReplenCountryOptions() {
     if (_replenDemoOn()) return;
     var countrySel = document.getElementById('replenCountry');
-    var mpSel = document.getElementById('replenMarketplace');
     if (!countrySel) return;
 
     var active = _replenActiveMarketplaces();
-    var selCompany = _replenSelectedCompany();
-    var selMarketplace = mpSel ? mpSel.value : '';
     var selCountry = countrySel.value;
 
     var countries = [];
     active.forEach(function(m) {
         if (!m.country) return;
-        if (selCompany && m.company !== selCompany) return;
-        if (selMarketplace && m.marketplace !== selMarketplace) return;
         if (countries.indexOf(m.country) === -1) countries.push(m.country);
     });
     countries.sort();
@@ -3540,7 +3625,10 @@ function refreshReplenCountryOptions() {
     countrySel.value = (selCountry && countries.indexOf(selCountry) !== -1) ? selCountry : '';
 }
 
-// Rebuild Marketplace options, constrained by the selected Company + Country. Demo OFF only.
+// Rebuild Marketplace options, scoped to the selected Country + active status. Demo OFF only.
+// Each option's value = marketplace_id (identity), label = marketplace_display_name. Company is NOT a
+// separate selector — it is carried by the marketplace_id and derived downstream. Distinct marketplace_ids
+// are never collapsed, so KM/US/Amazon and ResUS/US/Amazon remain two separate options.
 function refreshReplenMarketplaceOptions() {
     if (_replenDemoOn()) return;
     var countrySel = document.getElementById('replenCountry');
@@ -3548,30 +3636,32 @@ function refreshReplenMarketplaceOptions() {
     if (!mpSel) return;
 
     var active = _replenActiveMarketplaces();
-    var selCompany = _replenSelectedCompany();
     var selCountry = countrySel ? countrySel.value : '';
-    var selMarketplace = mpSel.value;
+    var selMarketplaceId = mpSel.value;
 
-    // Build { value: canonical key, label: display name } options; dedupe by value+label pair so
-    // distinct display names for the same key are kept (never collapsed on key alone).
-    var opts = [], seenPair = {}, keys = [];
+    var opts = [], ids = {};
     active.forEach(function(m) {
-        if (!m.marketplace) return;
-        if (selCompany && m.company !== selCompany) return;
+        if (!m.marketplaceId) return;
         if (selCountry && m.country !== selCountry) return;
-        var value = m.marketplace;
-        var label = m.marketplaceDisplayName || m.marketplace;
-        var k = value + '||' + label;
-        if (seenPair[k]) return; seenPair[k] = 1;
-        if (keys.indexOf(value) === -1) keys.push(value);
-        opts.push({ value: value, label: label });
+        if (ids[m.marketplaceId]) return; ids[m.marketplaceId] = 1;
+        opts.push({ value: m.marketplaceId, label: m.marketplaceDisplayName || m.marketplace || m.marketplaceId, company: m.company || '' });
     });
-    opts.sort(function(a, b) { return a.label.localeCompare(b.label); });
+
+    // Canonical Decision 2: the option LABEL is marketplace_display_name only — NO country suffix (the
+    // Country filter already scopes the list). The value stays marketplace_id (identity); the display
+    // string is never used as identity. Single-select must resolve to ONE marketplace_id, so ONLY when
+    // two options within this country share the EXACT same display name (rare KM vs ResUS case) do we
+    // append a minimal company hint to disambiguate — otherwise the label is channel-only.
+    var labelCount = {};
+    opts.forEach(function(o) { labelCount[o.label] = (labelCount[o.label] || 0) + 1; });
+    opts.forEach(function(o) { o.display = (labelCount[o.label] > 1 && o.company) ? (o.label + ' (' + o.company + ')') : o.label; });
+    opts.sort(function(a, b) { return a.display.localeCompare(b.display); });
 
     mpSel.innerHTML = '<option value="">Select Marketplace</option>' +
-        opts.map(function(o) { return '<option value="' + o.value + '">' + o.label + '</option>'; }).join('');
-    // Keep the current selection if its canonical key is still present.
-    mpSel.value = (selMarketplace && keys.indexOf(selMarketplace) !== -1) ? selMarketplace : '';
+        opts.map(function(o) { return '<option value="' + escapeReplenHtml(o.value) + '">' + escapeReplenHtml(o.display) + '</option>'; }).join('');
+    // Keep the current marketplace_id ONLY if it still belongs to the (new) country scope — otherwise
+    // reset to "" (no US/first-match fallback, no silent fallback to the first marketplace).
+    mpSel.value = (selMarketplaceId && ids[selMarketplaceId]) ? selMarketplaceId : '';
 }
 
 // Resolve a canonical marketplace key to its display label (marketplace_display_name if present,
@@ -3594,51 +3684,121 @@ window._replenMarketplaceLabel = _replenMarketplaceLabel;
 // in Demo mode this is a no-op so the static demo options/behavior are preserved.
 function populateReplenFiltersFromRegistry() {
     if (_replenDemoOn()) return;
-    refreshReplenCompanyOptions();
     refreshReplenCountryOptions();
     refreshReplenMarketplaceOptions();
 }
 
 // Bind dependency handlers. Idempotent (onchange property assignment). Canonical scope:
-// Company → Country ↔ Marketplace. Changing Company clears invalid downstream selections.
+// Country → Marketplace (marketplace_id). There is no Company select — company is derived from the
+// selected marketplace_id. Changing Country resets the marketplace if its id no longer belongs.
 function bindReplenFilterDependencies() {
-    var companySel = document.getElementById('replenCompany');
     var countrySel = document.getElementById('replenCountry');
     var mpSel = document.getElementById('replenMarketplace');
-    if (companySel) {
-        companySel.onchange = function() {
-            _clearAllocationDraft();
-            if (_replenDemoOn()) return;
-            // Company changed → re-scope Country + Marketplace (clears now-invalid selections).
-            refreshReplenCountryOptions();
-            refreshReplenMarketplaceOptions();
-        };
-    }
     if (countrySel) {
         countrySel.onchange = function() {
             // Context (Country) changed → discard the Shipping Allocation Working Draft (both modes).
             _clearAllocationDraft();
             if (_replenDemoOn()) return;
-            // Country changed -> refresh marketplace options (resets marketplace if now invalid).
+            // Country changed -> re-scope Marketplace options; resets the marketplace_id selection if it
+            // does not belong to the new country (no fallback to US / first marketplace).
             refreshReplenMarketplaceOptions();
         };
     }
     if (mpSel) {
         mpSel.onchange = function() {
             // Context (Marketplace) changed → discard the Shipping Allocation Working Draft (both modes).
+            // The chosen marketplace_id already belongs to the selected Country (options are country-scoped),
+            // so no further re-scoping is needed.
             _clearAllocationDraft();
-            if (_replenDemoOn()) return;
-            // Marketplace changed -> refresh country options (resets country if now invalid).
-            refreshReplenCountryOptions();
         };
     }
 }
 
 window.populateReplenFiltersFromRegistry = populateReplenFiltersFromRegistry;
-window.refreshReplenCompanyOptions = refreshReplenCompanyOptions;
 window.refreshReplenCountryOptions = refreshReplenCountryOptions;
 window.refreshReplenMarketplaceOptions = refreshReplenMarketplaceOptions;
 window.bindReplenFilterDependencies = bindReplenFilterDependencies;
+
+// ============================================================================
+// Toolbar "More Options" dropdown (renamed 2026-07-23) — UI-only consolidation of the five data-management buttons
+// (Add / Import / Edit / Delete SKU, Add Marketplace). Each item calls the EXISTING handler verbatim
+// (no second flow); the menu just opens/closes accessibly. No business logic / payload / handler change.
+// ============================================================================
+var _replenActionsBound = false;
+function _replenActionsEls() {
+    return {
+        menu: document.getElementById('replenActionsMenu'),
+        trigger: document.getElementById('replenActionsTrigger'),
+        list: document.getElementById('replenActionsList')
+    };
+}
+function _replenActionsItems() {
+    var e = _replenActionsEls();
+    if (!e.list) return [];
+    return Array.prototype.slice.call(e.list.querySelectorAll('.replen-actions-menu__item'))
+        .filter(function (b) { return !b.disabled; });
+}
+function _replenActionsOpen() {
+    var e = _replenActionsEls();
+    if (!e.list || !e.trigger || !e.list.hidden) return;
+    e.list.hidden = false;
+    e.trigger.setAttribute('aria-expanded', 'true');
+    if (e.menu) e.menu.classList.add('is-open');
+    _replenBindActionsMenuGlobal();
+    var first = _replenActionsItems()[0];
+    if (first) first.focus();
+}
+function _replenActionsClose(returnFocus) {
+    var e = _replenActionsEls();
+    if (!e.list || e.list.hidden) return;
+    e.list.hidden = true;
+    if (e.trigger) e.trigger.setAttribute('aria-expanded', 'false');
+    if (e.menu) e.menu.classList.remove('is-open');
+    if (returnFocus && e.trigger) e.trigger.focus();
+}
+// Click trigger → toggle. stopPropagation so the just-fired click doesn't hit the outside-click closer.
+function toggleReplenActionsMenu(ev) {
+    if (ev) { try { ev.stopPropagation(); } catch (_e) {} }
+    var e = _replenActionsEls();
+    if (!e.list) return;
+    if (e.list.hidden) _replenActionsOpen(); else _replenActionsClose(false);
+}
+// Run one action = reuse the EXISTING handler verbatim, then close the menu. One item → one handler
+// call (no double-trigger). Each handler keeps its own selection / validation / confirmation / modal.
+function runReplenAction(kind) {
+    _replenActionsClose(false);
+    if (kind === 'add' && typeof openReplenAddSkuModal === 'function') return openReplenAddSkuModal();
+    if (kind === 'import' && typeof openReplenImportModal === 'function') return openReplenImportModal();
+    if (kind === 'edit' && typeof openEditSkuModal === 'function') return openEditSkuModal();
+    if (kind === 'delete' && typeof handleDeleteSku === 'function') return handleDeleteSku();
+    if (kind === 'marketplace' && typeof openAddMarketplaceModal === 'function') return openAddMarketplaceModal();
+}
+// Bind outside-click + keyboard once (guarded). Only acts while the menu is open.
+function _replenBindActionsMenuGlobal() {
+    if (_replenActionsBound) return;
+    document.addEventListener('click', function (ev) {
+        var e = _replenActionsEls();
+        if (!e.list || e.list.hidden) return;
+        if (ev.target && ev.target.closest && ev.target.closest('#replenActionsMenu')) return; // inside
+        _replenActionsClose(false);
+    });
+    document.addEventListener('keydown', function (ev) {
+        var e = _replenActionsEls();
+        if (!e.list || e.list.hidden) return;
+        var items = _replenActionsItems();
+        if (!items.length) return;
+        var idx = items.indexOf(document.activeElement);
+        if (ev.key === 'Escape') { ev.preventDefault(); _replenActionsClose(true); }           // return focus to trigger
+        else if (ev.key === 'ArrowDown') { ev.preventDefault(); (items[(idx + 1) % items.length] || items[0]).focus(); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); (items[(idx - 1 + items.length) % items.length] || items[items.length - 1]).focus(); }
+        else if (ev.key === 'Home') { ev.preventDefault(); items[0].focus(); }
+        else if (ev.key === 'End') { ev.preventDefault(); items[items.length - 1].focus(); }
+        else if (ev.key === 'Tab') { _replenActionsClose(false); }                              // let focus leave naturally
+    });
+    _replenActionsBound = true;
+}
+window.toggleReplenActionsMenu = toggleReplenActionsMenu;
+window.runReplenAction = runReplenAction;
 
 window.debugInventoryDemoData = function() {
     var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
@@ -3717,7 +3877,6 @@ function _inventoryReplenStaticInit() {
             closeReplenImportModal();
         });
     }
-    if (typeof syncIrOverviewScroll === 'function') syncIrOverviewScroll();
     _invReplenStaticInitDone = true;
 }
 

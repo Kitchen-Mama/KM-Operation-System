@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On-the-Way / Shipment Runtime — local demo harness</title>
+<!--
+  LOCAL DEMO HARNESS — loads the REAL page CSS + REAL page code with a stubbed KM.DB holding the
+  SHP-202607-001 test fixture (shipments + shipment_routes + shipment_events). What you see is exactly
+  what the live page renders, fed sample rows instead of the Google Sheet. Open in a browser to view /
+  screenshot the On-the-Way runtime: KPIs, filters, shipment list, route (completed solid / upcoming
+  dashed), current position, and the event timeline. Nothing writes to any backend.
+  NOTE: the map is the labeled 2D schematic FALLBACK — a real 3D geographic globe is pending approval.
+-->
+<link rel="stylesheet" href="../../assets/css/pages/global-logistics-map.css">
+<style>
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: #0f172a; background: #f1f5f9; }
+  .demo-note { background: #0f172a; color: #e2e8f0; padding: 10px 24px; font-size: 13px; }
+  .module-section { background: #fff; margin: 16px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+</style>
+</head>
+<body>
+<div class="demo-note">Local demo harness — real page CSS + real controller, fed the SHP-202607-001 fixture via a stubbed <b>KM.DB</b>. Click a KPI to filter, click the shipment to focus its route + open the drawer. No data is persisted.</div>
+
+<section id="global-logistics-map-section" class="module-section glm">
+  <div class="glm-head">
+    <h2 class="glm-head__title">On-the-Way Shipment Map</h2>
+    <p class="glm-head__sub">Where shipments are on the way — plotted on the world map. Built on the Global Logistics reference layer.</p>
+    <p class="glm-head__meta" data-glm="meta"></p>
+  </div>
+  <div class="glm-body" data-glm="body"></div>
+</section>
+
+<script>
+  window.KM = window.KM || {};
+  var _ctrls = [];
+  KM.lifecycle = { register: function (id, c) { _ctrls.push(c); } };
+  KM.partialLoader = { loadPartial: function () { return Promise.resolve(true); } };
+
+  var SHIPMENTS = [{
+    shipmentId: 'SHP-202607-001', shipmentNo: 'SHP-202607-001', company: 'KM', country: 'US', marketplace: 'Amazon US',
+    carrierId: 'OOCL', shippingMethodLabel: 'Sea_FCL', shippingMethod: 'sea', status: 'in_transit',
+    eta: '2026-07-28', etd: '2026-07-08', warehouseId: 'WH-KM-US-3PL-LA', trackingNumber: 'OOCU1234567', containerNo: 'TCLU7654321',
+    shipFrom: 'CN Youxin Factory', destination: 'Amazon LGB8', updatedAt: '2026-07-18'
+  }, {
+    // Coordinate-pending shipment (mirrors real SHP-20260701-230A): in_transit, US, but NO routes/events and
+    // no resolvable warehouse coordinate → must appear in the Coordinate Pending tray, never at (0,0).
+    shipmentId: 'SHP-20260701-230A', shipmentNo: 'SHP-20260701-230A', company: 'ResUS', country: 'US',
+    carrierId: '', shippingMethod: '', status: 'in_transit', eta: '', warehouseId: 'WH-RESUS-UNKNOWN',
+    shipFrom: '', destination: '', updatedAt: '2026-07-20'
+  }];
+  // shipment_routes = one row per NODE (canonical live schema)
+  var ROUTES = [
+    { shipment_route_id: 'SR1', shipment_id: 'SHP-202607-001', route_template_id: 'SRT-TOP-CN-US-SEA-V1', sequence_no: 1, node_type: 'origin_factory', node_code: 'CN_YOUXIN', location_name: 'CN Youxin Factory', country: 'CN', latitude: 23.02, longitude: 113.75, transport_mode: 'truck', status: 'completed', actual_departure_date: '2026-07-05' },
+    { shipment_route_id: 'SR2', shipment_id: 'SHP-202607-001', route_template_id: 'SRT-TOP-CN-US-SEA-V1', sequence_no: 2, node_type: 'port', node_code: 'CNYTN', location_name: 'Yantian Port', country: 'CN', latitude: 22.56, longitude: 114.27, transport_mode: 'sea', status: 'completed', actual_departure_date: '2026-07-08' },
+    { shipment_route_id: 'SR3', shipment_id: 'SHP-202607-001', route_template_id: 'SRT-TOP-CN-US-SEA-V1', sequence_no: 3, node_type: 'ocean_transit', node_code: 'PAC', location_name: 'Pacific Ocean', country: '', latitude: 30, longitude: -160, transport_mode: 'sea', status: 'current' },
+    { shipment_route_id: 'SR4', shipment_id: 'SHP-202607-001', route_template_id: 'SRT-TOP-CN-US-SEA-V1', sequence_no: 4, node_type: 'port', node_code: 'USLGB', location_name: 'Long Beach Port', country: 'US', latitude: 33.75, longitude: -118.2, transport_mode: 'truck', status: 'planned', planned_arrival_date: '2026-07-28' },
+    { shipment_route_id: 'SR5', shipment_id: 'SHP-202607-001', route_template_id: 'SRT-TOP-CN-US-SEA-V1', sequence_no: 5, node_type: 'customs_facility', node_code: 'USLGB_CUS', location_name: 'Long Beach Customs', country: 'US', latitude: 33.78, longitude: -118.19, transport_mode: 'truck', status: 'planned', planned_arrival_date: '2026-07-29' },
+    { shipment_route_id: 'SR6', shipment_id: 'SHP-202607-001', route_template_id: 'SRT-TOP-CN-US-SEA-V1', sequence_no: 6, node_type: 'fulfillment_center', node_code: 'LGB8', location_name: 'Amazon LGB8', country: 'US', latitude: 34.05, longitude: -118.25, transport_mode: 'truck', status: 'planned', planned_arrival_date: '2026-07-31' }
+  ];
+  // shipment_events = ACTUAL events only (never future/planned)
+  var EVENTS = [
+    { shipment_event_id: 'E1', shipment_id: 'SHP-202607-001', shipment_route_id: 'SR1', event_sequence: 1, event_time: '2026-07-05', event_type: 'pickup_completed', event_status: 'completed', location_name: 'CN Youxin Factory', country: 'CN', latitude: 23.02, longitude: 113.75, source: 'manual', source_event_id: 'M1', raw_status: 'PU DONE' },
+    { shipment_event_id: 'E2', shipment_id: 'SHP-202607-001', shipment_route_id: 'SR2', event_sequence: 2, event_time: '2026-07-08', event_type: 'port_departure', event_status: 'departed', location_name: 'Yantian Port', country: 'CN', latitude: 22.56, longitude: 114.27, source: 'carrier_api', source_event_id: 'C-DEP-1', raw_status: 'VESSEL DEPARTED' },
+    { shipment_event_id: 'E3', shipment_id: 'SHP-202607-001', shipment_route_id: 'SR3', event_sequence: 3, event_time: '2026-07-18', event_type: 'in_transit', event_status: 'in_transit', location_name: 'Mid-Pacific', country: '', latitude: 30, longitude: -160, source: 'carrier_api', source_event_id: 'C-POS-9', raw_status: 'ON WATER' }
+  ];
+  var WAREHOUSES = [{ warehouseId: 'WH-KM-US-3PL-LA', warehouseName: 'Amazon LGB8 (3PL)', isFactoryWarehouse: false, isActive: true }];
+  // logistics_locations — incl. one coordinate-pending row (numeric-string coords also proven to parse).
+  var LOCATIONS = [
+    { logisticsLocationId: 'LOC-CN-FACTORY-0001', locationCode: 'CN-YOUXIN', locationName: 'CN Youxin Factory', locationType: 'factory', country: 'CN', region: 'Guangdong', city: 'Dongguan', latitude: 23.02, longitude: 113.75, coordinateAccuracy: 'exact_facility', verificationStatus: 'verified', isActive: true },
+    { logisticsLocationId: 'LOC-CN-PORT-0001', locationCode: 'CNYTN', locationName: 'Yantian Port', locationType: 'port', country: 'CN', city: 'Shenzhen', latitude: 22.56, longitude: 114.27, verificationStatus: 'verified', isActive: true },
+    { logisticsLocationId: 'LOC-US-PORT-0001', locationCode: 'USLGB', locationName: 'Long Beach Port', locationType: 'port', country: 'US', city: 'Long Beach', latitude: 33.75, longitude: -118.20, verificationStatus: 'verified', isActive: true },
+    { logisticsLocationId: 'LOC-US-FC-0001', locationCode: 'LGB8', locationName: 'Amazon LGB8', locationType: 'fulfillment_center', country: 'US', city: 'Los Angeles', latitude: 34.05, longitude: -118.25, verificationStatus: 'verified', warehouseId: 'WH-KM-US-3PL-LA', isActive: true },
+    { logisticsLocationId: 'LOC-TW-WH-0001', locationCode: 'TW-RET', locationName: 'Taipei Return Warehouse', locationType: 'warehouse', country: 'TW', city: 'Taipei', latitude: null, longitude: null, verificationStatus: 'draft', isActive: true } // coordinate pending
+  ];
+  var TEMPLATES = [{ routeTemplateId: 'SRT-TOP-CN-US-SEA-V1', routeTemplateName: 'CN → US West (Sea)', originCountry: 'CN', destinationCountry: 'US', carrierId: 'OOCL', transitType: 'sea', isActive: true }];
+  var TEMPLATE_NODES = [
+    { routeTemplateNodeId: 'TN1', routeTemplateId: 'SRT-TOP-CN-US-SEA-V1', nodeSequence: 1, nodeType: 'origin_factory', nodeName: 'CN Youxin Factory', country: 'CN', latitude: 23.02, longitude: 113.75, transportModeToNext: 'truck', logisticsLocationId: 'LOC-CN-FACTORY-0001' },
+    { routeTemplateNodeId: 'TN2', routeTemplateId: 'SRT-TOP-CN-US-SEA-V1', nodeSequence: 2, nodeType: 'port', nodeName: 'Yantian Port', country: 'CN', latitude: 22.56, longitude: 114.27, transportModeToNext: 'sea', logisticsLocationId: 'LOC-CN-PORT-0001' },
+    { routeTemplateNodeId: 'TN3', routeTemplateId: 'SRT-TOP-CN-US-SEA-V1', nodeSequence: 3, nodeType: 'port', nodeName: 'Long Beach Port', country: 'US', latitude: 33.75, longitude: -118.20, transportModeToNext: 'truck', logisticsLocationId: 'LOC-US-PORT-0001' },
+    { routeTemplateNodeId: 'TN4', routeTemplateId: 'SRT-TOP-CN-US-SEA-V1', nodeSequence: 4, nodeType: 'fulfillment_center', nodeName: 'Amazon LGB8', country: 'US', latitude: 34.05, longitude: -118.25, logisticsLocationId: 'LOC-US-FC-0001' }
+  ];
+  window._opDbCache = { shipments: SHIPMENTS, _sourceMode: 'google-sheet' };
+  window._opDbDiag = { sourceMode: 'google-sheet', at: '(demo)', tables: {
+    logistics_locations: { raw: LOCATIONS.length, kept: LOCATIONS.length, sampleKeys: Object.keys(LOCATIONS[0]) },
+    shipment_route_templates: { raw: TEMPLATES.length, kept: TEMPLATES.length, sampleKeys: Object.keys(TEMPLATES[0]) },
+    shipment_route_template_nodes: { raw: TEMPLATE_NODES.length, kept: TEMPLATE_NODES.length, sampleKeys: Object.keys(TEMPLATE_NODES[0]) },
+    shipment_routes: { raw: ROUTES.length, kept: ROUTES.length, sampleKeys: Object.keys(ROUTES[0]) },
+    shipment_events: { raw: EVENTS.length, kept: EVENTS.length, sampleKeys: Object.keys(EVENTS[0]) },
+    shipments: { raw: SHIPMENTS.length, kept: SHIPMENTS.length, sampleKeys: Object.keys(SHIPMENTS[0]) },
+    warehouses: { raw: WAREHOUSES.length, kept: WAREHOUSES.length, sampleKeys: Object.keys(WAREHOUSES[0]) }
+  } };
+  KM.DB = {
+    loadOperationDb: function () { return Promise.resolve(true); },
+    getShipments: function () { return SHIPMENTS; },
+    getShipmentRoutes: function () { return ROUTES.map(norm); },
+    getShipmentEvents: function () { return EVENTS.map(normEv); },
+    getWarehouses: function () { return WAREHOUSES; },
+    getLogisticsLocations: function () { return LOCATIONS; },
+    getShipmentRouteTemplates: function () { return TEMPLATES; },
+    getShipmentRouteTemplateNodes: function () { return TEMPLATE_NODES; },
+    getDataDiagnostics: function () { return window._opDbDiag; },
+    getDataSourceMode: function () { return 'google-sheet'; }
+  };
+  // Minimal camelCase normalization mirroring the adapter (demo only).
+  function norm(r) { return { shipmentRouteId: r.shipment_route_id, shipmentId: r.shipment_id, routeTemplateId: r.route_template_id, sequenceNo: r.sequence_no, nodeType: r.node_type, nodeCode: r.node_code, locationRefId: r.location_ref_id || '', locationName: r.location_name, country: r.country || '', latitude: (typeof r.latitude === 'number' ? r.latitude : null), longitude: (typeof r.longitude === 'number' ? r.longitude : null), transportMode: r.transport_mode || '', plannedArrivalDate: r.planned_arrival_date || '', plannedDepartureDate: r.planned_departure_date || '', actualArrivalDate: r.actual_arrival_date || '', actualDepartureDate: r.actual_departure_date || '', status: r.status || '', raw: r }; }
+  function normEv(e) { return { shipmentEventId: e.shipment_event_id, shipmentId: e.shipment_id, shipmentRouteId: e.shipment_route_id, eventSequence: e.event_sequence, eventTime: e.event_time, eventType: e.event_type, eventStatus: e.event_status, locationName: e.location_name, country: e.country || '', latitude: (typeof e.latitude === 'number' ? e.latitude : null), longitude: (typeof e.longitude === 'number' ? e.longitude : null), source: e.source || '', sourceEventId: e.source_event_id || '', rawStatus: e.raw_status || '', logisticsLocationId: '', raw: e }; }
+</script>
+<script src="../../assets/js/data/world-land-110m.js"></script>
+<script src="../../assets/js/lib/km-globe.js"></script>
+<script src="../../assets/js/pages/global-logistics-map.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () { _ctrls.forEach(function (c) { try { c.mount(); } catch (e) { console.error(e); } }); });
+</script>
+</body>
+</html>

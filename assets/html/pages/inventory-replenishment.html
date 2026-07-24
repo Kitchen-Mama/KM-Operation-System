@@ -6,14 +6,11 @@
                     <!-- Control Panel (Sticky) -->
                     <div class="replen-control-panel">
                         <div class="replen-filters">
-                            <div class="replen-filter-group">
-                                <label>Company</label>
-                                <!-- Company is the top of the scope key. KM and ResUS are SEPARATE scopes even on the
-                                     same Country + Marketplace (e.g. KM/US/Amazon ≠ ResUS/US/Amazon). -->
-                                <select id="replenCompany">
-                                    <option value="">Select Company</option>
-                                </select>
-                            </div>
+                            <!-- Company selector removed (2026-07-24). Company is no longer a visible filter; it is
+                                 DERIVED internally from the selected Marketplace's marketplace_id (see the Marketplace
+                                 dropdown below, whose option value = marketplace_id). KM and ResUS therefore stay
+                                 SEPARATE scopes (KM/US/Amazon ≠ ResUS/US/Amazon) because each has a distinct
+                                 marketplace_id — the scope no longer needs a manual Company pick. -->
                             <div class="replen-filter-group">
                                 <label>Country</label>
                                 <select id="replenCountry">
@@ -61,11 +58,29 @@
                             </div>
                             <div class="replen-actions__ops">
                                 <button class="replen-btn replen-btn--primary" onclick="submitReplenishmentPlans()">Submit Plan</button>
-                                <button class="replen-btn replen-btn--add" onclick="openReplenAddSkuModal()">+ Add SKU</button>
-                                <button class="replen-btn replen-btn--import" onclick="openReplenImportModal()">Import SKU</button>
-                                <button class="replen-btn replen-btn--info" onclick="openEditSkuModal()">Edit SKU</button>
-                                <button class="replen-btn replen-btn--danger" onclick="handleDeleteSku()">Delete SKU</button>
-                                <button class="replen-btn replen-btn--secondary" onclick="openAddMarketplaceModal()">+ Marketplace</button>
+                                <!-- Data-management actions consolidated into one "More Options" menu (renamed 2026-07-23
+                                     to match SKU Details). Each item reuses the EXISTING handler verbatim — no second flow,
+                                     no duplicate exposed buttons. The five prior buttons (Add/Import/Edit/Delete SKU,
+                                     + Marketplace) now live only here. More Options stays pinned to the far right of the
+                                     ops group; Search and Submit Plan remain primary and are NOT moved into this menu. -->
+                                <div class="replen-actions-menu" id="replenActionsMenu">
+                                    <button type="button" class="replen-btn replen-actions-menu__trigger"
+                                            id="replenActionsTrigger" aria-haspopup="menu" aria-expanded="false"
+                                            aria-controls="replenActionsList" onclick="toggleReplenActionsMenu(event)">⋯ More Options</button>
+                                    <div class="replen-actions-menu__list" id="replenActionsList" role="menu"
+                                         aria-label="SKU and marketplace actions" hidden>
+                                        <div class="replen-actions-menu__section" role="presentation">SKU Management</div>
+                                        <button type="button" role="menuitem" class="replen-actions-menu__item" onclick="runReplenAction('add')">Add SKU</button>
+                                        <button type="button" role="menuitem" class="replen-actions-menu__item" onclick="runReplenAction('import')">Import SKU</button>
+                                        <button type="button" role="menuitem" class="replen-actions-menu__item" onclick="runReplenAction('edit')">Edit SKU</button>
+                                        <button type="button" role="menuitem" class="replen-actions-menu__item replen-actions-menu__item--danger" onclick="runReplenAction('delete')">
+                                            <span class="replen-actions-menu__danger-icon" aria-hidden="true">⚠</span> Delete SKU
+                                        </button>
+                                        <div class="replen-actions-menu__divider" role="separator"></div>
+                                        <div class="replen-actions-menu__section" role="presentation">Marketplace</div>
+                                        <button type="button" role="menuitem" class="replen-actions-menu__item" onclick="runReplenAction('marketplace')">Add Marketplace</button>
+                                    </div>
+                                </div>
                                 <!-- "Sync Regional Details" button removed (2026-07-06) — one-time sku_regional_details
                                      backfill migration is complete; not a permanent operational feature. The backend action
                                      `syncMarketplaceSkusToSkuRegionalDetails` + JS handler `syncRegionalDetails()` remain
@@ -129,10 +144,10 @@
                                 </div>
                                 <div class="fc-form-row">
                                     <div class="fc-form-group">
-                                        <label>Replenishment Model</label>
+                                        <label>Planning Model</label>
                                         <select id="replen-add-model">
-                                            <option value="sales_driven">Sales Driven</option>
-                                            <option value="forecast_driven">Forecast Driven</option>
+                                            <option value="sales_driven">Sales</option>
+                                            <option value="forecast_driven">Forecast</option>
                                         </select>
                                     </div>
                                     <div class="fc-form-group">
@@ -256,10 +271,10 @@
                                 </div>
                                 <div class="fc-form-row">
                                     <div class="fc-form-group">
-                                        <label>Replenishment Model</label>
+                                        <label>Planning Model</label>
                                         <select id="edit-sku-model">
-                                            <option value="sales_driven">Sales Driven</option>
-                                            <option value="forecast_driven">Forecast Driven</option>
+                                            <option value="sales_driven">Sales</option>
+                                            <option value="forecast_driven">Forecast</option>
                                         </select>
                                     </div>
                                     <div class="fc-form-group">
@@ -335,64 +350,12 @@
                         </div>
                     </div>
 
-                    <!-- Inventory Overview -->
-                    <div class="ir-overview">
-                        <h3 class="ir-overview__title">(待開發) Inventory Overview</h3>
-                        <div class="ir-overview__tabs" id="irOverviewTabs">
-                            <button class="ir-overview__tab is-active" data-series="All" onclick="setIrOverviewTab('All')">All</button>
-                            <button class="ir-overview__tab" data-series="CO1100" onclick="setIrOverviewTab('CO1100')">CO1100</button>
-                            <button class="ir-overview__tab" data-series="CO1150" onclick="setIrOverviewTab('CO1150')">CO1150</button>
-                            <button class="ir-overview__tab" data-series="CO1200" onclick="setIrOverviewTab('CO1200')">CO1200</button>
-                        </div>
-                        <div class="dual-layer-table ir-overview-table">
-                            <div class="table-header-bar">
-                                <div class="fixed-header" style="width:120px;"><div class="header-cell">SKU</div></div>
-                                <div class="scroll-header-viewport">
-                                    <div class="scroll-header" id="ir-overview-scroll-header">
-                                        <!-- Warning & Recommend: rowspan headers -->
-                                        <div class="iro-rowspan-cell" style="left:0; width:90px;">Warning</div>
-                                        <div class="iro-rowspan-cell" style="left:1080px; width:110px;">Recommend</div>
-                                        <!-- Level 1: Group headers -->
-                                        <div class="km-table__header-row km-table__header-row--level1">
-                                            <div class="km-table__header-cell iro-sales" style="flex:0 0 360px;">Sales</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">Amazon</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">3rd WH</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">Overseas On The Way</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 calc(90px * 2);">Factory</div>
-                                        </div>
-                                        <!-- Level 2: Sub headers -->
-                                        <div class="km-table__header-row km-table__header-row--level2">
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">1d</div>
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">7d</div>
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">30d</div>
-                                            <div class="km-table__header-cell iro-sales-sub" style="flex:0 0 90px;">90d</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">FBA</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">David</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">Winit</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&le;18 Days</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&le;45 Days</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&#20369;&#37995;</div>
-                                            <div class="km-table__header-cell" style="flex:0 0 90px;">&#21213;&#19968;</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="table-body-bar">
-                                <div class="fixed-col" style="width:120px;">
-                                    <div class="fixed-body" id="ir-overview-fixed-body"></div>
-                                </div>
-                                <div class="scroll-col" id="ir-overview-scroll-col">
-                                    <div class="scroll-body" id="ir-overview-scroll-body"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <!-- Replenishment Table -->
                     <div class="dual-layer-table">
-                        <!-- Series Tabs (inside the main table card, above the SKU/Status header).
-                             Filters this main 貨物庫存表 by Series to keep the page focused. -->
-                        <div class="replen-series-tabs" id="replenSeriesTabs"></div>
+                        <!-- Category Tabs (inside the main table card, above the SKU/Status header).
+                             Filters this main 貨物庫存表 by sku_details.category to keep the page focused
+                             (mirrors the Request Order Category filter). -->
+                        <div class="replen-category-tabs" id="replenCategoryTabs"></div>
                         <!-- Table Header Bar (Sticky) -->
                         <div class="table-header-bar">
                             <div class="fixed-header">
@@ -401,15 +364,22 @@
                             <div class="scroll-header-viewport">
                                 <div class="scroll-header">
                                     <!-- First Layer: Group Headers -->
+                                    <!-- Group-header row. data-leaf-span = how many level-2 leaf columns each
+                                         group spans (its "colspan"). It MUST equal the group's CSS width / 120px
+                                         and match the leaf sequence below 1:1, and the first-layer body-cell order
+                                         in renderReplenishment(). Replenishment spans exactly 2 leaves (Days of
+                                         Supply, Suggested Qty); Factory Stock spans exactly 2 leaves (CN, TW).
+                                         The "Planned Qty" leaf was removed in a prior round — Replenishment was
+                                         corrected back to 2 (was 3) so CN/TW no longer fall inside its boundary. -->
                                     <div class="km-table__header-row km-table__header-row--level1">
-                                        <div class="km-table__header-cell km-table__header-cell--status">Status</div>
-                                        <div class="km-table__header-cell km-table__header-cell--company">Company</div>
-                                        <div class="km-table__header-cell km-table__header-cell--marketplace">Marketplace</div>
-                                        <div class="km-table__header-cell km-table__header-cell--inventory">Inventory</div>
-                                        <div class="km-table__header-cell km-table__header-cell--sales">Sales</div>
-                                        <div class="km-table__header-cell km-table__header-cell--replen">Replenishment</div>
-                                        <div class="km-table__header-cell km-table__header-cell--factory">工廠Stock</div>
-                                        <div class="km-table__header-cell km-table__header-cell--note-span">AI Action</div>
+                                        <div class="km-table__header-cell km-table__header-cell--status" data-leaf-span="1">Planning Model</div>
+                                        <div class="km-table__header-cell km-table__header-cell--company" data-leaf-span="1">Company</div>
+                                        <div class="km-table__header-cell km-table__header-cell--marketplace" data-leaf-span="1">Marketplace</div>
+                                        <div class="km-table__header-cell km-table__header-cell--inventory" data-leaf-span="3">Inventory</div>
+                                        <div class="km-table__header-cell km-table__header-cell--sales" data-leaf-span="3">Sales</div>
+                                        <div class="km-table__header-cell km-table__header-cell--replen" data-leaf-span="2">Replenishment</div>
+                                        <div class="km-table__header-cell km-table__header-cell--factory" data-leaf-span="2">工廠Stock</div>
+                                        <div class="km-table__header-cell km-table__header-cell--note-span" data-leaf-span="1">AI Action</div>
                                     </div>
                                     <!-- Second Layer: Sub Headers -->
                                     <div class="km-table__header-row km-table__header-row--level2">
@@ -421,7 +391,6 @@
                                         <div class="km-table__header-cell">Upcoming Event</div>
                                         <div class="km-table__header-cell">Days of Supply</div>
                                         <div class="km-table__header-cell">Suggested Qty</div>
-                                        <div class="km-table__header-cell">Planned Qty</div>
                                         <div class="km-table__header-cell">CN</div>
                                         <div class="km-table__header-cell">TW</div>
                                     </div>

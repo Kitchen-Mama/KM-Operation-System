@@ -712,7 +712,7 @@
                                      Manual = editable New Event FC per SKU. No Base Campaign selector. -->
                                 <div class="fc-form-section-label">Forecast Method <span class="fc-hint">(Growth / Adjust compute a read-only forecast; Manual is editable per SKU)</span></div>
                                 <div class="fc-form-row">
-                                    <div class="fc-form-group">
+                                    <div class="fc-form-group fc-form-group--wide">
                                         <label>Assist Method</label>
                                         <select id="event-assist-method" onchange="_evtToggleAssistFields()">
                                             <option value="growth">Apply Growth Rate</option>
@@ -720,15 +720,34 @@
                                             <option value="manual">Manual Entry</option>
                                         </select>
                                     </div>
-                                    <div class="fc-form-group" id="event-assist-base-year-group">
-                                        <label>Base Year <span class="fc-hint">(regular FC source)</span></label>
-                                        <input type="number" id="event-assist-base-year" placeholder="e.g. 2025">
-                                    </div>
                                 </div>
+                                <!-- Apply Growth Rate: Base Campaign (prior campaign's Special Event FC) + Growth Rate. -->
                                 <div class="fc-form-row" id="event-assist-growth-row">
+                                    <div class="fc-form-group">
+                                        <label>Base Campaign *</label>
+                                        <select id="event-assist-base-campaign"></select>
+                                    </div>
                                     <div class="fc-form-group">
                                         <label>Growth Rate %</label>
                                         <input type="number" id="event-assist-growth" placeholder="e.g. 10">
+                                    </div>
+                                </div>
+                                <!-- Adjust from Base Forecast: Base Year + Base Month (regular FC source), then Adjustment. -->
+                                <div class="fc-form-row" id="event-assist-base-period-row" style="display:none;">
+                                    <div class="fc-form-group">
+                                        <label>Base Year *</label>
+                                        <input type="number" id="event-assist-base-year" placeholder="e.g. 2025">
+                                    </div>
+                                    <div class="fc-form-group">
+                                        <label>Base Month *</label>
+                                        <select id="event-assist-base-month">
+                                            <option value="0">January</option><option value="1">February</option>
+                                            <option value="2">March</option><option value="3">April</option>
+                                            <option value="4">May</option><option value="5">June</option>
+                                            <option value="6">July</option><option value="7">August</option>
+                                            <option value="8">September</option><option value="9">October</option>
+                                            <option value="10">November</option><option value="11">December</option>
+                                        </select>
                                     </div>
                                 </div>
                                 <div class="fc-form-row" id="event-assist-adjust-row" style="display:none;">

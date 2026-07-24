@@ -32,6 +32,156 @@
     var crcCurrentRows = [];
     var crcSearched = false;
 
+    // Carrier ids already warned about (missing carriers-master row) — warn once per session (F5).
+    var crcWarnedCarriers = {};
+
+    // ---- data accessors ----
+    function getCards() { return (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || []; }
+    function getCarriers() { return (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || []; }
+
+    // ============================================================
+    // F1 — Date-RANGE picker (self-contained; mirrors Forecast Review's contract, own crc- state/IDs).
+    //  - display format YYYY-MM-DD via LOCAL getters (no UTC normalization)
+    //  - inclusive two-date range (both endpoints); day clicks auto-swap so start<=end
+    //  - manual day click clears the active preset; edits staged in `temp`, committed only on Apply
+    // ============================================================
+    var crcDateState = {
+        range: { start: null, end: null, preset: null },   // committed (drives the filter)
+        temp: { start: null, end: null, preset: null },     // staged inside the modal
+        months: { start: new Date(), end: new Date() }
+    };
+    // Local YYYY-MM-DD (zero-padded) — never touches UTC.
+    function crcFmt(d) {
+        if (!d) return '';
+        var y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + day;
+    }
+    function crcParseLocal(s) { var p = String(s).split('-'); return new Date(+p[0], (+p[1]) - 1, +p[2]); }
+    function crcSameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+    function openDateModal() {
+        var bd = document.getElementById('crcDateBackdrop'), m = document.getElementById('crcDateModal');
+        if (!bd || !m) return;
+        crcDateState.temp = { start: crcDateState.range.start, end: crcDateState.range.end, preset: crcDateState.range.preset };
+        var anchor = crcDateState.range.start || new Date();
+        crcDateState.months.start = new Date(anchor);
+        crcDateState.months.end = new Date(crcDateState.range.end || anchor);
+        bd.classList.add('is-open'); m.classList.add('is-open');
+        crcUpdateDateInputs(); crcUpdatePresetHighlight(); crcRenderCalendars();
+    }
+    function closeDateModal() {
+        var bd = document.getElementById('crcDateBackdrop'), m = document.getElementById('crcDateModal');
+        if (bd) bd.classList.remove('is-open');
+        if (m) m.classList.remove('is-open');
+    }
+    // Commit staged range → filter state, re-derive facets, re-run search.
+    function dateApply() {
+        crcDateState.range = { start: crcDateState.temp.start, end: crcDateState.temp.end, preset: crcDateState.temp.preset };
+        crcUpdateDateTriggerText();
+        closeDateModal();
+        _crcRebuildFacets();
+        search();
+    }
+    // Clear = stage an empty range (still requires Apply to commit).
+    function dateClear() {
+        crcDateState.temp = { start: null, end: null, preset: null };
+        crcUpdateDateInputs(); crcUpdatePresetHighlight(); crcRenderCalendars();
+    }
+    function crcUpdateDateTriggerText() {
+        var el = document.getElementById('crcDateTriggerText');
+        if (!el) return;
+        var r = crcDateState.range;
+        if (!r.start && !r.end) { el.textContent = 'All dates'; return; }
+        var labels = { 'last-7-days': 'Last 7 days', 'last-30-days': 'Last 30 days', 'last-90-days': 'Last 90 days' };
+        if (r.preset && labels[r.preset]) { el.textContent = labels[r.preset]; return; }
+        el.textContent = crcFmt(r.start) + ' ~ ' + (r.end ? crcFmt(r.end) : '…');
+    }
+    function presetClick(preset) {
+        if (preset === 'custom') { crcDateState.temp.preset = null; crcUpdatePresetHighlight(); return; }
+        var today = new Date(), start = new Date(), end = new Date(today);
+        switch (preset) {
+            case 'last-7-days': start.setDate(today.getDate() - 7); break;
+            case 'last-30-days': start.setDate(today.getDate() - 30); break;
+            case 'last-90-days': start.setDate(today.getDate() - 90); break;
+        }
+        crcDateState.temp.start = start; crcDateState.temp.end = end; crcDateState.temp.preset = preset;
+        crcDateState.months.start = new Date(start); crcDateState.months.end = new Date(end);
+        crcUpdateDateInputs(); crcUpdatePresetHighlight(); crcRenderCalendars();
+    }
+    function crcUpdatePresetHighlight() {
+        var p = crcDateState.temp.preset;
+        var items = document.querySelectorAll('#crcDateModal .crc-preset-item');
+        Array.prototype.forEach.call(items, function (it) {
+            var active = (it.getAttribute('data-preset') === p) || (!p && it.getAttribute('data-preset') === 'custom');
+            if (active) it.classList.add('is-active'); else it.classList.remove('is-active');
+        });
+    }
+    function crcUpdateDateInputs() {
+        var s = document.getElementById('crcStartDisplay'), e = document.getElementById('crcEndDisplay');
+        if (s) s.value = crcFmt(crcDateState.temp.start);
+        if (e) e.value = crcFmt(crcDateState.temp.end);
+    }
+    function calNav(nav) {
+        var mo = crcDateState.months;
+        if (nav === 'prev-start') mo.start.setMonth(mo.start.getMonth() - 1);
+        else if (nav === 'next-start') mo.start.setMonth(mo.start.getMonth() + 1);
+        else if (nav === 'prev-end') mo.end.setMonth(mo.end.getMonth() - 1);
+        else if (nav === 'next-end') mo.end.setMonth(mo.end.getMonth() + 1);
+        crcRenderCalendars();
+    }
+    function crcRenderCalendars() { crcRenderCalendar('start'); crcRenderCalendar('end'); }
+    function crcRenderCalendar(type) {
+        var month = crcDateState.months[type];
+        var cap = type.charAt(0).toUpperCase() + type.slice(1);
+        var titleEl = document.getElementById('crcCalendar' + cap + 'Title');
+        var bodyEl = document.getElementById('crcCalendar' + cap + 'Body');
+        if (!titleEl || !bodyEl) return;
+        var names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        titleEl.textContent = names[month.getMonth()] + ' ' + month.getFullYear();
+        var lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+        var startDow = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
+        var wk = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'], html = '';
+        wk.forEach(function (d) { html += '<div class="crc-calendar-weekday">' + d + '</div>'; });
+        for (var i = 0; i < startDow; i++) html += '<div class="crc-calendar-day is-disabled"></div>';
+        var start = crcDateState.temp.start, end = crcDateState.temp.end, today = new Date();
+        for (var day = 1; day <= lastDay.getDate(); day++) {
+            var date = new Date(month.getFullYear(), month.getMonth(), day);
+            var cls = ['crc-calendar-day'];
+            if (start && crcSameDay(date, start)) cls.push('is-start');
+            if (end && crcSameDay(date, end)) cls.push('is-end');
+            if (start && end && date > start && date < end) cls.push('is-in-range');
+            if (crcSameDay(date, today)) cls.push('is-today');
+            html += '<div class="' + cls.join(' ') + '" data-date="' + crcFmt(date) + '" data-type="' + type + '">' + day + '</div>';
+        }
+        bodyEl.innerHTML = html;
+        Array.prototype.forEach.call(bodyEl.querySelectorAll('.crc-calendar-day:not(.is-disabled)'), function (el) {
+            el.addEventListener('click', function () { crcDayClick(crcParseLocal(el.getAttribute('data-date')), el.getAttribute('data-type')); });
+        });
+    }
+    // Clicking a day: auto-swap so the range stays ordered; a manual click clears the preset.
+    function crcDayClick(date, calType) {
+        var start = crcDateState.temp.start, end = crcDateState.temp.end;
+        if (calType === 'start') {
+            if (end && date > end) { crcDateState.temp.start = end; crcDateState.temp.end = date; }
+            else crcDateState.temp.start = date;
+        } else {
+            if (start && date < start) { crcDateState.temp.end = start; crcDateState.temp.start = date; }
+            else crcDateState.temp.end = date;
+        }
+        crcDateState.temp.preset = null;
+        crcUpdateDateInputs(); crcUpdatePresetHighlight(); crcRenderCalendars();
+    }
+    // Rate-card date match: card effective window [effectiveFrom, effectiveTo] (blank effectiveTo =
+    // open-ended) must OVERLAP the selected [start, end] range (inclusive). Strings are YYYY-MM-DD so
+    // lexical comparison is chronological. Consistent with the old single-date [from, to] containment.
+    function crcDateMatch(c, start, end) {
+        if (!start && !end) return true;
+        var ef = c.effectiveFrom || '', et = c.effectiveTo || '';
+        if (start && et && et < start) return false;   // card ended before the range starts
+        if (end && ef && ef > end) return false;         // card starts after the range ends
+        return true;
+    }
+
     // ---- load + init ----
     function loadAndInit() {
         var note = document.getElementById('crc-mode-note');
@@ -57,41 +207,109 @@
         if (!crcSearched) _crcResetTable('Set filters and click <strong>Search</strong> to view carrier rate cards.');
     }
 
-    // Populate Method + Carrier dropdowns from live data (distinct). Table stays empty until Search.
+    // Populate all filter dropdowns (faceted) + the date trigger label. Table stays empty until Search.
     function _crcPopulateFilters() {
-        var cards = (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || [];
-        var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
-
-        var methodSel = document.getElementById('crcFilterMethod');
-        if (methodSel) {
-            var methods = {}, mList = [];
-            cards.forEach(function (c) { var m = String(c.shippingMethod || '').trim(); if (m && !methods[m]) { methods[m] = 1; mList.push(m); } });
-            mList.sort();
-            methodSel.innerHTML = '<option value="">All</option>' + mList.map(function (m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join('');
-        }
-
-        var mileSel = document.getElementById('crcFilterLastMile');
-        if (mileSel) {
-            var miles = {}, mileList = [];
-            cards.forEach(function (c) { var lm = String(c.lastMileDelivery || '').trim(); if (lm && !miles[lm]) { miles[lm] = 1; mileList.push(lm); } });
-            mileList.sort();
-            mileSel.innerHTML = '<option value="">All</option>' + mileList.map(function (m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join('');
-        }
-
-        var carrierSel = document.getElementById('crcFilterCarrier');
-        if (carrierSel) {
-            // Prefer the carriers master; fall back to distinct carrier_id present on rate cards.
-            var opts = [];
-            if (carriers.length) {
-                carriers.forEach(function (c) { if (c.carrierId) opts.push({ id: c.carrierId, label: c.carrierName || c.carrierId }); });
-            } else {
-                var seen = {};
-                cards.forEach(function (c) { if (c.carrierId && !seen[c.carrierId]) { seen[c.carrierId] = 1; opts.push({ id: c.carrierId, label: c.carrierId }); } });
-            }
-            opts.sort(function (a, b) { return String(a.label).localeCompare(String(b.label)); });
-            carrierSel.innerHTML = '<option value="">All</option>' + opts.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('');
-        }
+        crcUpdateDateTriggerText();
+        _crcRebuildFacets();
     }
+
+    // ============================================================
+    // F2–F6 — Dependent (faceted) filters.
+    // Order: Date → Country → Method → Carrier → Last Mile. Each dropdown's options are computed from the
+    // rate-card rows STILL matching every UPSTREAM selection (Date included). The SAME filter state feeds
+    // both the dropdown facets and the Search query. When an upstream change invalidates a downstream
+    // selection, it is reset to "All" and its options are rebuilt.
+    // ============================================================
+    function _crcReadFilters() {
+        return {
+            dateStart: crcFmt(crcDateState.range.start),
+            dateEnd: crcFmt(crcDateState.range.end),
+            country: (document.getElementById('crcFilterCountry') || {}).value || '',
+            method: (document.getElementById('crcFilterMethod') || {}).value || '',
+            carrier: (document.getElementById('crcFilterCarrier') || {}).value || '',
+            lastMile: (document.getElementById('crcFilterLastMile') || {}).value || ''
+        };
+    }
+    // Distinct, trimmed, non-empty values of `field` across `rows`, sorted. `upper` uppercases (country).
+    function _crcDistinct(rows, field, upper) {
+        var seen = {}, list = [];
+        rows.forEach(function (c) {
+            var v = String(c[field] == null ? '' : c[field]).trim();
+            if (upper) v = v.toUpperCase();
+            if (v && !seen[v]) { seen[v] = 1; list.push(v); }
+        });
+        list.sort();
+        return list;
+    }
+    function _crcFillSelect(id, values, current) {
+        var sel = document.getElementById(id);
+        if (!sel) return;
+        var keep = values.indexOf(current) !== -1 ? current : '';   // reset to "All" if no longer valid
+        sel.innerHTML = '<option value="">All</option>' +
+            values.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
+        sel.value = keep;
+    }
+    // F5 — Carrier options from rate-card rows (never hide a card): value = carrier_id, label = carrier_name
+    // joined via carrier_id → carriers.carrier_id. Each carrier_id once. No master row → "Unmapped Carrier
+    // ({id})" + a one-time console.warn. carrier_name is NEVER used as the join key or fabricated.
+    function _crcCarrierOptions(rows) {
+        var nameById = {};
+        getCarriers().forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = String(c.carrierName == null ? '' : c.carrierName).trim(); });
+        var seen = {}, opts = [];
+        rows.forEach(function (c) {
+            var id = String(c.carrierId == null ? '' : c.carrierId).trim();
+            if (!id || seen[id]) return;
+            seen[id] = 1;
+            var name = nameById[id];
+            if (name) {
+                opts.push({ id: id, label: name });
+            } else {
+                if (!crcWarnedCarriers[id]) {
+                    crcWarnedCarriers[id] = 1;
+                    console.warn('[CRC] mapping warning: carrier_id "' + id + '" has no matching carriers master row — showing "Unmapped Carrier (' + id + ')". The rate card is NOT hidden.');
+                }
+                opts.push({ id: id, label: 'Unmapped Carrier (' + id + ')' });
+            }
+        });
+        opts.sort(function (a, b) { return String(a.label).localeCompare(String(b.label)); });
+        return opts;
+    }
+    function _crcFillCarrierSelect(rows, current) {
+        var sel = document.getElementById('crcFilterCarrier');
+        if (!sel) return;
+        var opts = _crcCarrierOptions(rows);
+        var ids = opts.map(function (o) { return o.id; });
+        var keep = ids.indexOf(current) !== -1 ? current : '';
+        sel.innerHTML = '<option value="">All</option>' +
+            opts.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('');
+        sel.value = keep;
+    }
+    // Rebuild every downstream facet from the rows matching the upstream selections, resetting invalids.
+    function _crcRebuildFacets() {
+        var cards = getCards();
+        var f = _crcReadFilters();
+
+        // F2 — Country: rows matching Date only. Options come ONLY from destinationCountry (uppercase code).
+        var dateRows = cards.filter(function (c) { return crcDateMatch(c, f.dateStart, f.dateEnd); });
+        _crcFillSelect('crcFilterCountry', _crcDistinct(dateRows, 'destinationCountry', true), up(f.country));
+        var country = (document.getElementById('crcFilterCountry') || {}).value || '';
+
+        // F3 — Method: rows matching Date + Country. Distinct shippingMethod (NOT the CRC_ENUMS list).
+        var methodRows = dateRows.filter(function (c) { return !country || up(c.destinationCountry) === country; });
+        _crcFillSelect('crcFilterMethod', _crcDistinct(methodRows, 'shippingMethod'), f.method);
+        var method = (document.getElementById('crcFilterMethod') || {}).value || '';
+
+        // F5 — Carrier: rows matching Date + Country + Method.
+        var carrierRows = methodRows.filter(function (c) { return !method || String(c.shippingMethod || '') === method; });
+        _crcFillCarrierSelect(carrierRows, f.carrier);
+        var carrier = (document.getElementById('crcFilterCarrier') || {}).value || '';
+
+        // F4 — Last Mile: rows matching Date + Country + Method + Carrier. Distinct lastMileDelivery.
+        var mileRows = carrierRows.filter(function (c) { return !carrier || String(c.carrierId || '') === carrier; });
+        _crcFillSelect('crcFilterLastMile', _crcDistinct(mileRows, 'lastMileDelivery'), f.lastMile);
+    }
+    // A downstream dropdown changed → rebuild the facets below it (and reset any now-invalid picks).
+    function onFilterChange() { _crcRebuildFacets(); }
 
     function _crcResetTable(msg) {
         var wrap = document.getElementById('crc-table-wrap');
@@ -141,27 +359,20 @@
         if (!useDb()) { _crcResetTable('Enable the cloud DB to search Carrier Rate Cards.'); return; }
         crcSearched = true;
 
-        var fDate = (document.getElementById('crcFilterDate') || {}).value || '';
-        var fCountry = up((document.getElementById('crcFilterCountry') || {}).value || '');
-        var fMethod = (document.getElementById('crcFilterMethod') || {}).value || '';
-        var fLastMile = (document.getElementById('crcFilterLastMile') || {}).value || '';
-        var fCarrier = (document.getElementById('crcFilterCarrier') || {}).value || '';
+        // Same filter state that feeds the dropdown facets (F6) — never query a different set.
+        var f = _crcReadFilters();
+        var fCountry = up(f.country);
 
-        var cards = (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || [];
-        var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
+        var cards = getCards();
         var nameById = {};
-        carriers.forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName || c.carrierId; });
+        getCarriers().forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName || c.carrierId; });
 
         var filtered = cards.filter(function (c) {
-            // Date within [effective_from, effective_to] (blank effective_to = open-ended).
-            if (fDate) {
-                if (c.effectiveFrom && fDate < c.effectiveFrom) return false;
-                if (c.effectiveTo && fDate > c.effectiveTo) return false;
-            }
-            if (fCountry && up(c.destinationCountry).indexOf(fCountry) === -1) return false;
-            if (fMethod && String(c.shippingMethod || '') !== fMethod) return false;
-            if (fLastMile && String(c.lastMileDelivery || '') !== fLastMile) return false;
-            if (fCarrier && String(c.carrierId || '') !== fCarrier) return false;
+            if (!crcDateMatch(c, f.dateStart, f.dateEnd)) return false;              // F1 — date-range overlap
+            if (fCountry && up(c.destinationCountry) !== fCountry) return false;      // F2 — exact country code
+            if (f.method && String(c.shippingMethod || '') !== f.method) return false;
+            if (f.carrier && String(c.carrierId || '') !== f.carrier) return false;
+            if (f.lastMile && String(c.lastMileDelivery || '') !== f.lastMile) return false;
             return true;
         });
 
@@ -723,6 +934,15 @@
 
     // Expose inline handlers.
     window.crcSearch = search;
+    // F1 — Date-range picker
+    window.crcOpenDateModal = openDateModal;
+    window.crcCloseDateModal = closeDateModal;
+    window.crcDateApply = dateApply;
+    window.crcDateClear = dateClear;
+    window.crcPresetClick = presetClick;
+    window.crcCalNav = calNav;
+    // F6 — faceted filter change
+    window.crcOnFilterChange = onFilterChange;
     window.crcExportUpdateTemplate = exportUpdateTemplate;
     window.crcExportMasterTemplate = exportMasterTemplate;
     window.crcExportTemplate = exportUpdateTemplate;   // back-compat alias (old single-button handler)

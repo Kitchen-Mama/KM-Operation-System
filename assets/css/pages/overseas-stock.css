@@ -437,6 +437,41 @@
     font-size: 13px;
     box-sizing: border-box;
 }
+#overseas-stock-section .ovs-form-group input:disabled { background: #f1f5f9; color: #94a3b8; }
+#overseas-stock-section .ovs-form-group textarea {
+    padding: 6px 10px;
+    border: 1px solid var(--filter-border-color, #cbd5e0);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    box-sizing: border-box;
+    resize: vertical;
+}
+/* Read-only field display (Inventory Adjustment modal). */
+#overseas-stock-section .ovs-readout {
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+    box-sizing: border-box;
+}
+/* "Current → New" preview before Confirm. */
+#overseas-stock-section .ovs-adjust-preview {
+    margin-top: 4px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #1e3a8a;
+}
 
 #overseas-stock-section .ovs-modal-body .ovs-info-grid {
     display: grid;

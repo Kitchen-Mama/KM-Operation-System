@@ -23,23 +23,25 @@
     <div class="crc-filters" id="crc-filters">
         <div class="crc-filter">
             <label>Date</label>
-            <input type="date" id="crcFilterDate" class="crc-input">
+            <button type="button" class="crc-input crc-date-trigger" id="crcDateTrigger" onclick="crcOpenDateModal()">
+                <span class="crc-date-trigger-text" id="crcDateTriggerText">All dates</span>
+            </button>
         </div>
         <div class="crc-filter">
             <label>Country / Ship To</label>
-            <input type="text" id="crcFilterCountry" class="crc-input" placeholder="e.g. US">
+            <select id="crcFilterCountry" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
         </div>
         <div class="crc-filter">
             <label>Method</label>
-            <select id="crcFilterMethod" class="crc-input"><option value="">All</option></select>
-        </div>
-        <div class="crc-filter">
-            <label>Last Mile Delivery</label>
-            <select id="crcFilterLastMile" class="crc-input"><option value="">All</option></select>
+            <select id="crcFilterMethod" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
         </div>
         <div class="crc-filter">
             <label>Carrier</label>
-            <select id="crcFilterCarrier" class="crc-input"><option value="">All</option></select>
+            <select id="crcFilterCarrier" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
+        </div>
+        <div class="crc-filter">
+            <label>Last Mile Delivery</label>
+            <select id="crcFilterLastMile" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
         </div>
         <div class="crc-filter crc-filter--action">
             <button type="button" class="crc-btn crc-btn--primary" onclick="crcSearch()">Search</button>
@@ -113,6 +115,59 @@
                 <button type="button" class="pc-btn pc-btn--default" onclick="crcCloseMasterModal()">Close</button>
                 <button type="button" class="pc-btn pc-btn--primary" onclick="crcModalImportMaster()">Import</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Date-range picker (F1) — self-contained crc- modal. Mirrors Forecast Review's interaction
+         contract (preset list + two month calendars + staged temp state committed on Apply) but uses
+         its OWN crc- IDs / crc- state / crc- CSS. Does NOT reuse #frDateModal or forecastReviewState. -->
+    <div class="crc-date-backdrop" id="crcDateBackdrop" onclick="crcCloseDateModal()"></div>
+    <div class="crc-date-modal" id="crcDateModal" role="dialog" aria-modal="true" aria-label="Select date range">
+        <div class="crc-date-modal-body">
+            <!-- Presets -->
+            <div class="crc-date-sidebar">
+                <div class="crc-preset-item" data-preset="last-7-days" onclick="crcPresetClick('last-7-days')">Last 7 days</div>
+                <div class="crc-preset-item" data-preset="last-30-days" onclick="crcPresetClick('last-30-days')">Last 30 days</div>
+                <div class="crc-preset-item" data-preset="last-90-days" onclick="crcPresetClick('last-90-days')">Last 90 days</div>
+                <div class="crc-preset-divider"></div>
+                <div class="crc-preset-item" data-preset="custom" onclick="crcPresetClick('custom')">Custom</div>
+            </div>
+            <!-- Calendars -->
+            <div class="crc-date-content">
+                <div class="crc-date-inputs">
+                    <div class="crc-date-input-group">
+                        <label>Start</label>
+                        <input type="text" class="crc-date-input" id="crcStartDisplay" readonly placeholder="YYYY-MM-DD">
+                    </div>
+                    <div class="crc-date-input-group">
+                        <label>End</label>
+                        <input type="text" class="crc-date-input" id="crcEndDisplay" readonly placeholder="YYYY-MM-DD">
+                    </div>
+                </div>
+                <div class="crc-calendars">
+                    <div class="crc-calendar">
+                        <div class="crc-calendar-header">
+                            <button type="button" class="crc-calendar-nav" data-nav="prev-start" onclick="crcCalNav('prev-start')" aria-label="Previous month">‹</button>
+                            <span class="crc-calendar-title" id="crcCalendarStartTitle"></span>
+                            <button type="button" class="crc-calendar-nav" data-nav="next-start" onclick="crcCalNav('next-start')" aria-label="Next month">›</button>
+                        </div>
+                        <div class="crc-calendar-body" id="crcCalendarStartBody"></div>
+                    </div>
+                    <div class="crc-calendar">
+                        <div class="crc-calendar-header">
+                            <button type="button" class="crc-calendar-nav" data-nav="prev-end" onclick="crcCalNav('prev-end')" aria-label="Previous month">‹</button>
+                            <span class="crc-calendar-title" id="crcCalendarEndTitle"></span>
+                            <button type="button" class="crc-calendar-nav" data-nav="next-end" onclick="crcCalNav('next-end')" aria-label="Next month">›</button>
+                        </div>
+                        <div class="crc-calendar-body" id="crcCalendarEndBody"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="crc-date-modal-footer">
+            <button type="button" class="crc-date-btn crc-date-btn--clear" onclick="crcDateClear()">Clear</button>
+            <button type="button" class="crc-date-btn crc-date-btn--cancel" onclick="crcCloseDateModal()">Cancel</button>
+            <button type="button" class="crc-date-btn crc-date-btn--apply" onclick="crcDateApply()">Apply</button>
         </div>
     </div>
 </section>

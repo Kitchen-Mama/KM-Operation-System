@@ -1,0 +1,14 @@
+<!-- Global Logistics Map — first-version world map for logistics locations, route templates, and
+     (future) shipment runtime. Integrated page (Sidebar → Carrier / Route). Reads REAL data via the
+     API Adapter (KM.DB.getLogisticsLocations / getShipmentRouteTemplates / getShipmentRouteTemplateNodes
+     / getShipmentEvents / getWarehouses); renders a dependency-free inline SVG world map that degrades
+     to the list + Route Step Panel if the map cannot draw. No data is written; no geocoding is performed.
+     Route key `global-logistics-map` / section id `global-logistics-map-section`. -->
+            <section id="global-logistics-map-section" class="module-section glm">
+                <div class="glm-head">
+                    <h2 class="glm-head__title">On-the-Way Shipment Map</h2>
+                    <p class="glm-head__sub">Where shipments are on the way — plotted on the world map. Built on the Global Logistics reference layer (physical locations, gateways, and standard route templates).</p>
+                    <p class="glm-head__meta" data-glm="meta"></p>
+                </div>
+                <div class="glm-body" data-glm="body"></div>
+            </section>
