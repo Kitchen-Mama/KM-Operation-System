@@ -357,22 +357,23 @@
                         </div>
                     </div>
 
-                    <!-- Replenishment Table -->
-                    <div class="dual-layer-table">
-                        <!-- Category Section header (2026-07-28): the framed table card now opens with an
-                             explicit header band — an eyebrow + the active Category title — so the tabbed
-                             content reads as one clearly-delineated Category Section (Panel + Header +
-                             content, all inside the same white/bordered/rounded frame). The title text is
-                             refreshed by renderReplenishment() on first render, filter re-render and tab
-                             switch, so the frame + header never disappear when the Category changes. -->
+                    <!-- Category Filter Bar — a STANDALONE card (System Repair 2 §9), pulled OUT of the
+                         table card so it reuses the SAME outer frame as the Order Planning Category bar
+                         (shared .km-category-card / __rail in components.css): white / rounded / shadowed
+                         panel + 1px bordered inner rail. Its margin-bottom (var(--space-lg)) equals the
+                         Control Panel's margin-bottom, so the gaps toolbar→category and category→table are
+                         equal. The rail scrolls horizontally inside itself; the page never overflows.
+                         renderReplenishment() refreshes the active Category title on render / filter / tab. -->
+                    <div class="km-category-card replen-category-card">
                         <div class="replen-category-panel__head">
                             <span class="replen-category-panel__eyebrow">Category</span>
                             <h3 class="replen-category-panel__title" id="replenCategoryTitle">All Categories</h3>
                         </div>
-                        <!-- Category Tabs (inside the main table card, above the SKU/Status header).
-                             Filters this main 貨物庫存表 by sku_details.category to keep the page focused
-                             (mirrors the Request Order Category filter). -->
-                        <div class="replen-category-tabs km-tab-rail" id="replenCategoryTabs"></div>
+                        <div class="replen-category-tabs km-category-card__rail km-tab-rail" id="replenCategoryTabs"></div>
+                    </div>
+
+                    <!-- Replenishment Table -->
+                    <div class="dual-layer-table">
                         <!-- Table Header Bar (Sticky) -->
                         <div class="table-header-bar">
                             <div class="fixed-header">

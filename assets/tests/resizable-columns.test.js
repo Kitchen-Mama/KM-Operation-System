@@ -73,12 +73,23 @@ eq(/resetSkuColumnWidths/.test(skuJs) && /Reset Column Widths/.test(skuHtml), tr
 eq(/initSkuResizableColumns\(\)/.test(skuJs), true, 'pilot init hooked on mount');
 eq(/_skuResizeCtl\.refresh\(\)/.test(skuJs), true, 'J: idempotent refresh (no duplicate handles/listeners)');
 
-// Pilot ONLY on SKU Details — other pages must NOT activate the utility
+// Pilot ONLY on SKU Details — other pages must NOT activate the RAW engine directly (they use the
+// dual-layer adapter instead). campaign-risk is intentionally excluded (it wires the shared adapter).
 ['request-order.js', 'inventory-replenishment.js', 'global-logistics-map.js', 'factory-stock.js', 'overseas-stock.js'].forEach(function (f) {
   var p = path.join(__dirname, '..', 'js', 'pages', f);
   if (!fs.existsSync(p)) return;
   eq(/resizableColumns/.test(fs.readFileSync(p, 'utf8')), false, 'pilot scope: ' + f + ' does NOT activate resizable columns');
 });
+
+// System Repair 2 Part E — Promotion Risk Tracker uses the SHARED resize (dual-layer adapter), not a
+// page-specific drag implementation, and its scroll header carries the id the adapter targets.
+var crJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'pages', 'campaign-risk.js'), 'utf8');
+var crHtml = fs.readFileSync(path.join(__dirname, '..', 'html', 'pages', 'campaign-risk.html'), 'utf8');
+eq(/dualLayerResize\.init\(/.test(crJs), true, 'Part E: campaign-risk wires the shared dualLayerResize adapter');
+eq(/scrollHeaderSel: '#cr-table-scroll-header'/.test(crJs) && /scrollBodySel: '#cr-table-scroll-body'/.test(crJs), true, 'Part E: adapter points at the Promotion Risk table id selectors');
+eq(/group: 'promotion-risk'/.test(crJs), true, 'Part E: isolated storage group promotion-risk (shares km.ui.tableWidths.v1 key)');
+eq(/id="cr-table-scroll-header"/.test(crHtml), true, 'Part E: scroll header carries the id the adapter needs to out-specify base widths');
+eq(/_initCrColumnResize\(\)/.test(crJs), true, 'Part E: resize init invoked once on mount (header static → no duplicate handles)');
 
 console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
 process.exit(fail ? 1 : 0);

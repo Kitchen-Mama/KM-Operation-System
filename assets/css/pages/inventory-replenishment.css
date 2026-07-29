@@ -1436,14 +1436,17 @@
    The tab/count visuals come from the shared .km-tab-rail__tab / __count classes so Inventory, Order
    System and Promotion Risk look identical. This id+class override only carries the page-local
    spacing + stacking context (so the rail sits above the sticky table header's shadow). */
-/* Category Section header band (2026-07-28) — sits at the top of the framed .dual-layer-table card so
-   the tabbed content reads as one delineated Category Section. Header + tabs + table all share the one
-   panel frame (white bg / border / radius already on .dual-layer-table). */
+/* Category Filter Bar (System Repair 2 §9) — now a STANDALONE .km-category-card (shared frame, see
+   components.css) sitting between the Control Panel and the table card, matching Order Planning. The
+   card owns the white/rounded/shadowed panel + 1px inner rail frame + outer padding; these page rules
+   only lay out the eyebrow/title band and neutralise the old in-table paddings/margins so they don't
+   double the shared frame. */
 #ops-section .replen-category-panel__head {
     display: flex;
     align-items: baseline;
     gap: 10px;
-    padding: var(--space-md) var(--space-md) 0;
+    padding: 0;
+    margin-bottom: 10px;
 }
 #ops-section .replen-category-panel__eyebrow {
     font-size: 11px;
@@ -1460,10 +1463,9 @@
     line-height: 1.2;
 }
 #ops-section .replen-category-tabs.km-tab-rail {
-    margin: 10px 0 12px;
-    padding: 0 var(--space-md);
-    position: relative;
-    z-index: 130;            /* > .table-header-bar z-index:120 */
+    /* Border / radius / 6px padding + single-row scroll come from .km-category-card__rail + .km-tab-rail.
+       No page-local margin/padding/z-index here (the rail lives in its own card now, not over the table). */
+    margin: 0;
 }
 
 /* ---- AI Plan button (2026-07-28) — shared visual with the Order System AI Plan (.ro-btn--ai). Refined

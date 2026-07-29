@@ -20,8 +20,10 @@
 
     <!-- Single-row toolbar: filters left (Category → Series → Search), action right -->
     <div class="srd-toolbar" id="srd-toolbar">
-        <select id="srd-f-category" class="srd-input srd-filter" aria-label="Filter by category"></select>
-        <select id="srd-f-series" class="srd-input srd-filter" aria-label="Filter by series"></select>
+        <!-- Category / Series filters use the ONE shared searchable multi-select (KM.ui.multiFilter),
+             System Repair 2 §13/§14 — replaces the former native <select>s. -->
+        <div id="srd-f-category-mount" class="srd-filter srd-filter--multi" aria-label="Filter by category"></div>
+        <div id="srd-f-series-mount" class="srd-filter srd-filter--multi" aria-label="Filter by series"></div>
         <input type="text" id="srd-search" class="srd-input srd-search" placeholder="Search SKU…" aria-label="Search master SKUs">
         <span class="srd-toolbar__spacer"></span>
         <button type="button" class="srd-btn srd-btn--primary" id="srd-add-btn" onclick="srdOpenEdit(null, 'add')">+ Add Regional Details</button>

@@ -307,7 +307,22 @@ Authoritative schedule for the recommendation pipeline. **Spec only — no Apps 
 
 **Duplicate-run protection (idempotent):** there must be **one active recommendation batch per recommendation cycle + Scope** (a cycle = one weekly run for Shipping, one monthly run for Order); repeated/retried execution for the same cycle must be **idempotent** (no duplicate Draft headers/lines, no reset of user-edited fields); a failed partial run **must not report success**. The **persisted cycle / unique-key mechanism** — whether a dedicated key column, composite key, or unique index, and its exact composition — is **Blocked — B-7** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **No DB column, key, or index is decided or added here.**
 
-**Legacy naming:** the canonical shipping-draft quantities are **`recommended_qty`** (system snapshot) + **`planned_qty`** (user) — schema owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6. The misspelled **`recommand_shipment_draft_qty`** and **`shipment_draft_qty`** are **LEGACY READ/MIGRATION ALIASES only** (for `recommended_qty` / `planned_qty` respectively) — do NOT introduce them as new canonical columns. Persistence remains spec/DB-design only (no writer in code).
+**Legacy naming:** the canonical shipping-draft quantities are **`recommended_qty`** (system snapshot) + **`planned_qty`** (user) — schema owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6. The misspelled **`recommand_shipment_draft_qty`** and **`shipment_draft_qty`** are **LEGACY READ/MIGRATION ALIASES only** (for `recommended_qty` / `planned_qty` respectively) — do NOT introduce them as new canonical columns.
+
+**Shipping-draft persistence capability status (do NOT collapse into one "Not Implemented"):**
+| Capability | Status |
+|---|---|
+| `shipping_allocation_drafts` table | **Schema Exists** |
+| `shipping_allocation_draft_lines` table | **Schema Exists** |
+| Body-driven Draft getter | **Source Exists** (`getShippingAllocationDrafts` / `_Lines` adapter + Apps Script) |
+| Body-driven Draft create/update/cancel writer | **Source Exists** (`16_shipping_allocation_handlers.gs`: `handleUpsertShippingAllocationDraft_` / `handleUpsertShippingAllocationDraftLines_` / `handleSubmitShippingAllocationDrafts_`; router-wired `01_router.gs`) |
+| UI adapter integration (active call path) | **Not Verified** — active Execution-Plan call path not confirmed here (System Repair 1 territory; do not infer from handler existence) |
+| Recommendation calculation engine | **Not Implemented** |
+| No-arg recommendation scheduler | **Not Implemented** |
+| Automatic generation / orchestration | **Not Implemented** |
+| Deployment / production verification | **Not Verified** (no deployment evidence in this environment) |
+
+**Invariant:** the Draft persistence table + body-driven CRUD **source exist**; the recommendation engine, scheduler and automatic generation may still be **Not Implemented**; and **source existence does not prove deployment or production behaviour**. (Supersedes the earlier "Persistence remains spec/DB-design only — no writer in code" wording, which was factually incorrect about the writer source.)
 
 **Risk / Danger Alerts:** **FUTURE ADD-ON / NOT IMPLEMENTED.** Future scope may include Homepage risk display, notification dedup, severity changes, unresolved reminders, resolved state, Exception Shipping Draft, Exception Order Draft. **No notification table/workflow/permission/trigger is defined now.**
 

@@ -4,7 +4,10 @@
     margin-bottom: 24px;
 }
 
-/* Filter Bar */
+/* Filter Bar — responsive (System Repair 2 Part C). The toolbar WRAPS instead of overflowing: filter
+   cells can shrink (min-width:0) and reflow to a second row before anything is clipped, so at 1366px
+   with the sidebar open the Search / AI Plan / Request selector / Send Request stay reachable and the
+   PAGE never grows a horizontal scrollbar. The table keeps its own overflow wrapper. */
 .ro-filters {
     display: flex;
     gap: 12px;
@@ -13,7 +16,7 @@
     padding: var(--space-md);
     background: var(--bg-surface);
     border-radius: var(--radius-md);
-    flex-wrap: nowrap;
+    flex-wrap: wrap;                 /* was nowrap — the toolbar reflows instead of overflowing */
 }
 
 .ro-filter {
@@ -21,8 +24,17 @@
     flex-direction: column;
     gap: 0.25rem;
     position: relative;
-    min-width: 160px;
-    flex: 0 0 160px;
+    min-width: 0;                    /* allow the cell (and its select/trigger) to shrink below 160px */
+    flex: 1 1 160px;                 /* grow to fill a row, shrink + wrap when the row is full */
+}
+/* Controls inside a filter cell fill the (shrinkable) cell and never force overflow. */
+.ro-filter > select,
+.ro-filter > .ro-dropdown-trigger,
+.ro-filter > .ro-date-trigger {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .ro-filter label {
@@ -36,8 +48,8 @@
 }
 
 .ro-filter--date {
-    min-width: 250px;
-    flex: 0 0 250px;
+    min-width: 0;
+    flex: 1 1 220px;     /* shrinkable + wraps like the other cells (was fixed 250px, non-shrinking) */
 }
 
 /* Search + Clear action columns — size to their button (not a fixed 160px filter) and bottom-align. */
@@ -1803,6 +1815,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;        /* action buttons wrap on very narrow rows instead of clipping (Part C) */
+    justify-content: flex-end;
 }
 /* Confirm Site / All Request / Send Request — one consistent height / radius / font / alignment. */
 .ro-action-group .ro-btn,
@@ -1816,6 +1830,25 @@
     line-height: 1;
 }
 .ro-action-group .ro-btn { padding: 0 16px; }
+
+/* Narrow viewports (System Repair 2 Part C) — stack the toolbar into a single full-width column so every
+   filter and the action group stay fully visible; the page still never scrolls sideways. Wider laptop/
+   desktop widths (1280–1920) are handled by the flex-wrap reflow above. */
+@media (max-width: 820px) {
+    .ro-filters { flex-direction: column; align-items: stretch; }
+    .ro-filter,
+    .ro-filter--date,
+    .ro-filter--search,
+    .ro-filter--clear,
+    .ro-filter--actions {
+        flex: 1 1 auto;
+        width: 100%;
+        min-width: 0;
+        margin-left: 0;
+    }
+    .ro-filter--actions { align-items: stretch; }
+    .ro-action-group { justify-content: flex-start; }
+}
 
 /* AI Plan — a refined accent action (suggestion refresh), visually BELOW the primary Send Request. Uses
    existing tokens; an outlined violet accent so it never reads as the final submit. Loading / disabled /

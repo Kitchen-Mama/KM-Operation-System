@@ -31,8 +31,8 @@
 
 ## A. Daily Report Pipeline
 
-- **Entry point (Status: Verified Complete):** `runAmazonSnapshotImports()` — `assets/specs/active/apps-script/07_amazon_import_runner.gs:14`, a no-argument loop over `IMPORT_CONFIGS` → `runAmazonSnapshotImport_(cfg,'scheduler',{})`. Safe as a no-arg time-trigger entry point.
-- **What it does (verified by audit):** imports the four configured Amazon sources and writes `amazon_inventory_snapshot`, `amazon_inventory_health_snapshot`, `amazon_weekly_sales_snapshot` (full rewrite), `amazon_daily_sales_snapshot` (rolling upsert), plus append-only logs `import_sync_runs` and `import_sync_issues`.
+- **Entry point (Status: Source-Verified — Deployment/Runtime UNVERIFIED):** `runAmazonSnapshotImports()` — `assets/specs/active/apps-script/07_amazon_import_runner.gs:14`, a no-argument loop over `IMPORT_CONFIGS` → `runAmazonSnapshotImport_(cfg,'scheduler',{})`. Safe as a no-arg time-trigger entry point. (Source mirror only; not proof of deployment or a successful run.)
+- **What it does (source-verified by audit — source mirror; Deployment/Runtime UNVERIFIED):** imports the four configured Amazon sources and writes `amazon_inventory_snapshot`, `amazon_inventory_health_snapshot`, `amazon_weekly_sales_snapshot` (full rewrite), `amazon_daily_sales_snapshot` (**`rolling_upsert`** — `amazonUpsertRollingSnapshot_`, wired from the runner, 90-day gap-aware config; **Runtime verification PENDING, owner `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`**), plus append-only logs `import_sync_runs` and `import_sync_issues`.
 - **What it does NOT do (verified by audit):** it does **not** run Shared-FBM allocation, Days of Supply, or Suggested-Qty recalculation; it does **not** call any Weekly/Monthly recommendation; it has **no** link to `shipping_allocation_drafts`. **Do not claim otherwise.**
 - **Canonical trigger:** every day, Asia/Taipei, **12:00–13:00** window.
 - **Legacy metadata:** `06_amazon_import_config.gs:184` `scheduleTime: '16:00'` is **LEGACY / SUPERSEDED as a schedule** — it is **config metadata never consumed by Runtime** (only `scheduleTimezone` is read, for BQ date math/pruning). The operative daily trigger is the manually-installed 12:00–13:00 trigger on `runAmazonSnapshotImports`. See §J (Phase 1) for the reconciliation sequence. **Do NOT prescribe a second duplicate same-day Daily Sales import.**
@@ -158,13 +158,13 @@ Hard rules:
 
 ## K. Work-item Status (four allowed states only)
 
-Each row uses exactly one of: **Verified Complete** (has Code/DB/Runtime evidence) · **In Progress** · **Not Started** · **Blocked** (awaits a Batch B decision). No other status vocabulary is used.
+Each row uses exactly one of: **Source-Verified** (the code path exists and is wired in the Apps Script **source mirror** — Code evidence only; **Apps Script Deployment and Runtime execution are UNVERIFIED in this environment**. Source existence does not prove deployment or runtime behavior; this specification separately classifies source evidence, deployment evidence, and runtime evidence) · **In Progress** · **Not Started** · **Blocked** (awaits a Batch B decision). A function name is **never** treated as implementation proof, and no item is marked runtime-complete without deployment + runtime evidence (unavailable here).
 
 | Work item | Status | Evidence |
 |---|---|---|
-| `runAmazonSnapshotImports()` no-arg Daily entry | **Verified Complete** | `07_amazon_import_runner.gs:14` |
-| Amazon snapshot writers + import logs | **Verified Complete** | `07/08/09_*.gs` |
-| Request-order Draft body-driven writers/getters/router/frontend | **Verified Complete** | `15_*.gs`, `01_router.gs:170-179` |
+| `runAmazonSnapshotImports()` no-arg Daily entry | **Source-Verified** (Deployment/Runtime UNVERIFIED) | `07_amazon_import_runner.gs:14` |
+| Amazon snapshot writers + import logs (incl. Daily Sales `rolling_upsert`) | **Source-Verified** (Deployment/Runtime UNVERIFIED — owner `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`) | `07/08/09_*.gs` |
+| Request-order Draft body-driven writers/getters/router/frontend | **Source-Verified** (Deployment/Runtime UNVERIFIED) | `15_*.gs`, `01_router.gs:170-179` |
 | `runAmazonSnapshotImports` running allocation/DoS/Suggested-Qty | **Not Started** (verified absent — do not claim) | audit |
 | `recommended_qty` population by an engine | **In Progress** — column exists, blank at runtime (passthrough); engine not built | `15_..:123`, `request-order.js:1703` |
 | `runWeeklyShippingRecommendation()` | **Not Started** | zero grep hits |
@@ -181,7 +181,7 @@ Each row uses exactly one of: **Verified Complete** (has Code/DB/Runtime evidenc
 
 ## Implementation Status
 
-This is an implementation **work tracker / handoff spec** — no Runtime, Apps Script, frontend, trigger, DB column, sheet tab, or `project-current-state.md` is created or changed. Per §K: `runAmazonSnapshotImports()` and the Amazon writers + the request-order body-driven writers are **Verified Complete**; the two recommendation scheduler entry points and both recommendation engines are **Not Started**; cycle idempotency, the source-readiness gate, and the reserve dependency are **Blocked**.
+This is an implementation **work tracker / handoff spec** — no Runtime, Apps Script, frontend, trigger, DB column, sheet tab, or `project-current-state.md` is created or changed. Per §K: `runAmazonSnapshotImports()` and the Amazon writers + the request-order body-driven writers are **Source-Verified** (source mirror only; **Apps Script Deployment/Runtime UNVERIFIED**); the two recommendation scheduler entry points and both recommendation engines are **Not Started**; cycle idempotency, the source-readiness gate, and the reserve dependency are **Blocked**.
 
 **No build. No redeploy. No migration. No trigger installation.**
 

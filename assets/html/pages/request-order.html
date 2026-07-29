@@ -100,10 +100,13 @@
                     </div>
                 </div>
 
-                <div class="ro-panel ro-header">
+                <div class="ro-panel ro-header km-category-card">
                     <!-- Category tabs ONLY (Part 2) — no action buttons here. Populated from
-                         sku_details.category by _populateRequestOrderCategoryTabs(). -->
-                    <div class="ro-tabs ro-tabs--category km-tab-rail" id="ro-category-tabs">
+                         sku_details.category by _populateRequestOrderCategoryTabs(). The shared
+                         .km-category-card / __rail classes (System Repair 2 §9) make this the ONE
+                         canonical Category-bar frame reused by Inventory Replenishment; the page-local
+                         .ro-header / .ro-tabs--category rules load later and keep this page's exact gap. -->
+                    <div class="ro-tabs ro-tabs--category km-category-card__rail km-tab-rail" id="ro-category-tabs">
                         <button class="km-tab-rail__tab is-active" data-category="All" onclick="setRequestOrderCategory('All', this)">All</button>
                     </div>
                 </div>

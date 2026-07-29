@@ -472,7 +472,7 @@ Overseas Outbound confirmed shipped
 - **FC Summary is forecast management, not direct order execution.**
 - **FC Summary does NOT create SKUs / FC base rows** (the "+ Add SKU" button is removed for data safety). SKU + FC base-row creation is owned by the **SKU Details / Inventory SKU flow** (and batch Import Forecast). See [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md) §1.1.
 - **Special Event forecast** (`fc_special_events`) has two linked sources — **Campaign** (promotion source of truth) and **FC Summary direct** (supply-chain forecast source of truth) — joined by `campaign_id` / `campaign_sku_line_id`, never blind two-way synced. Event Flag = **Normal** creates no special-event row (baseline is `fc_regular_forecast`); Event Flag != Normal requires FC Qty. See [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md) §9–§10, §12.
-- **FC Summary Special Event Builder v2** creates deal-priced events in **Single SKU** (≤8 rows) or **Category / Series** group-card mode (grouped by category + series + regular_price). Save target = `campaigns` → `campaign_sku_lines` → `fc_special_events`. Campaign / line writers are **PENDING** — live Save reports pending and writes nothing (no orphan `fc_special_events`, no fake success). See [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md) §9, §12.
+- **FC Summary Special Event Builder v2** creates deal-priced events in **Single SKU** (≤8 rows) or **Category / Series** group-card mode (grouped by **category + series** only; `regular_price` is a per-SKU value, **not** part of the group key — `fc-summary.js:2643`). Save target = `campaigns` → `campaign_sku_lines` → `fc_special_events`. The campaign / line writers **SOURCE-EXIST and are router-wired** (`20_campaign_write_handlers.gs`); a **single atomic three-table Save is NOT implemented** (client-side sequential writes; `handleUpsertFcSpecialEvent_` rejects an event with no `campaign_id`, preventing orphans / fake success); **Deployment/Runtime UNVERIFIED**. See [`FC_SUMMARY_SPEC.md`](./FC_SUMMARY_SPEC.md) §9, §12.
 
 ### Step 8 — Request Order / 下單系統
 - Existing page.
@@ -481,7 +481,7 @@ Overseas Outbound confirmed shipped
 - **Forecast shortage does NOT directly equal order qty.**
 - Reallocation and order-need logic are defined in [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md).
 - User can review, adjust, and send the request.
-- Future output creates `purchase_orders` / `purchase_order_lines` and documents.
+- Send Request persists `request_orders` / `request_order_lines`; only a later Approve / Convert action creates `purchase_orders` / `purchase_order_lines` and related PO documents. Request Order and Purchase Order are distinct lifecycle stages.
 
 > **Procurement Layer Phase 1 (implemented — API-ready foundation):** the Procurement Center adds **Request Order Draft** (= Procurement Planning Draft; `request_orders` + `request_order_lines`; Draft / Pending Approval / Approved), **Purchase Order Overview** (= Procurement Commitment dashboard; `purchase_orders` + `purchase_order_lines`), and **Purchase Order List** (= PO operational list / history). **Immutable Flow:** `Shipment / Inventory / Factory Stock` → Request Order Draft → Purchase Order — downstream copies upstream, never writes back (PO ⇏ Request Order; Request Order ⇏ Shipment / Inventory / Factory Stock). No auto-procurement engine, supplier API, or payment flow in Phase 1. See [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md).
 
@@ -508,7 +508,7 @@ Overseas Outbound confirmed shipped
 | 5 On The Way | shipments, lines, events, routes | — (visualization) |
 | 6 Shipping History | shipments, lines | — (read) |
 | 7 FC Summary | `fc_regular_forecast` (+ events/targets) | forecast edits |
-| 8 Request Order | forecast, inventory, factory, on-the-way | future `purchase_orders` / lines |
+| 8 Request Order | forecast, inventory, factory, on-the-way | Send Request → `request_orders` / `request_order_lines`; Approve / Convert → `purchase_orders` / `purchase_order_lines` (separate downstream stage — Send Request never writes PO directly; atomicity remains BLOCKED — B-6) |
 | 9 Document Center | `document_templates` | `generated_documents` |
 
 ---

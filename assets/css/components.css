@@ -931,6 +931,29 @@ table td button {
 .km-tab-rail__tab--active .km-tab-rail__count { background: rgba(255,255,255,0.28); color: #fff; }
 
 /* ============================================================
+   Shared Category Filter Card (System Repair 2 Part B) — ONE outer-frame contract for the horizontal
+   Category quick-filter bar so 貨物庫存表 (Inventory Replenishment) and 下單系統 (Order Planning) render the
+   category rail inside the SAME standalone card: a white / rounded / shadowed panel whose inner rail sits
+   in a 1px bordered frame with equal 6px padding. The chip / label / count visuals come from .km-tab-rail;
+   this owns only the OUTER container + inner frame so both pages share the STRUCTURE, not just the buttons
+   (System Repair 2 §9). Values match the canonical Order Planning look (.ro-header + .ro-tabs--category).
+   A page rule loading later may still fine-tune its own gap (Order Planning keeps margin-bottom:16px).
+   ============================================================ */
+.km-category-card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 16px 20px;
+    margin-bottom: var(--space-lg, 1.5rem);
+}
+.km-category-card__rail {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 6px;
+    /* single-row horizontal scroll comes from .km-tab-rail; the page never scrolls horizontally */
+}
+
+/* ============================================================
    Shared drag-to-resize column HANDLE (2026-07-28) — the visual for the resize grabber created by
    resizable-columns.js. SKU Details defines its own #sku-section-scoped copy (which wins there); this
    UNSCOPED copy lets the same engine render handles on the other dual-layer tables that reuse it via

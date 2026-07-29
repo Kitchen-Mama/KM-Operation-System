@@ -14,9 +14,9 @@
 **Last Updated:** 2026-06-17
 **Maintained By:** Development Team
 **Audience:** Company leadership · internal users · future developers · Claude / Codex agents · factory & overseas-warehouse stakeholders
-**Related (authoritative sources):** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md), [`FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md`](./FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md), `assets/specs/active/SYSTEM_ROADMAP.md`, `assets/specs/active/project-current-state.md`, `KM Website Road Map.xlsx`
+**Related (authoritative sources):** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) (current Request/PO authority), [`FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md`](./FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md), `assets/specs/active/SYSTEM_ROADMAP.md`, `assets/specs/active/project-current-state.md`, `KM Website Road Map.xlsx`
 
-> **Spec only.** This is a high-level + structural blueprint intended to (a) orient all stakeholders and (b) serve as source material for a future system-introduction page. It introduces **no** code, Apps Script, API, UI, DB migration, BigQuery, or runtime changes. Where this document and a domain spec disagree, the **domain spec is authoritative** (Shipment → `SHIPMENT_CENTER_SPEC.md`; Request/PO → `REQUEST_ORDER_AND_PO_SPEC.md`; calculations → `SUPPLY_PLANNING_CALCULATION_RULES.md`; frontend → the Phase 3 audit).
+> **Spec only.** This is a high-level + structural blueprint intended to (a) orient all stakeholders and (b) serve as source material for a future system-introduction page. It introduces **no** code, Apps Script, API, UI, DB migration, BigQuery, or runtime changes. Where this document and a domain spec disagree, the **domain spec is authoritative** (Shipment → `SHIPMENT_CENTER_SPEC.md`; Request/PO → `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` (current authority; `REQUEST_ORDER_AND_PO_SPEC.md` is Extended/Future only — see §7); calculations → `SUPPLY_PLANNING_CALCULATION_RULES.md`; frontend → the Phase 3 audit).
 
 ---
 
@@ -52,8 +52,8 @@ These principles govern every module and every future addition:
 2. **Planning / Execution / Tracking / Knowledge are connected.** Forecast → replenishment → order → shipment → tracking → documents → knowledge form one chain, not isolated tools.
 3. **Main system, factory portal, and overseas-warehouse portal share the same data backbone.** Portals are *role-scoped lenses* over the same database, not separate systems.
 4. **No duplicate parallel DB when existing execution tables are authoritative.** e.g. Shipment Draft / Overview / On-the-Way all read `shipments` + `shipment_lines`; there is **no** separate `shipment_drafts` table. Request views read the request tables; PO views read the PO tables.
-5. **Page UI can aggregate by Series, but DB stays SKU-level when required.** Series/category are presentation groupings joined from SKU Details; quantities are stored at SKU granularity (e.g. `request_order_lines` is SKU-level).
-6. **A Recommendation Draft may be persisted before Decision Commit; persistence does not convert it into Decision or Execution Truth.** Replenishment math and live analysis are recomputed (not committed); a Recommendation Draft / Workspace may be saved to a non-commit DB Draft. Only an explicit Submit Plan / Send Request / Create action creates Decision or Execution Truth. A persisted Draft is not Qualified Incoming, reserves no stock, and creates no inventory movement.
+5. **Page UI can aggregate by Series, but presentation grouping is not the persistence grain.** Series/category are presentation groupings joined from SKU Details; the request **header/line grain, aggregation level, grouping and field placement follow the approved Request/PO canonical contract** ([`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)) and unresolved Decision Registry items — the Blueprint does not fix them.
+6. **A Recommendation Draft may be persisted before Decision Commit; persistence does not convert it into Decision or Execution Truth.** Replenishment math and live analysis are recomputed (not committed); a Recommendation Draft / Workspace may be saved to a non-commit DB Draft. Only an explicit commit action creates committed truth: **Submit Plan** creates Shipping Decision Truth (Weekly Shipping Plan); **Send Request** creates the Procurement Request Order execution record (per the Request/PO contract) — **not** Shipping Decision Truth. A persisted Draft is neither: it is not Qualified Incoming, reserves no stock, and creates no inventory movement.
 7. **Sensitive cost / payment data must later be permission-controlled.** Supplier prices, unit cost, deposit/balance, and payment status are sensitive; a permission model is required before broad exposure (future).
 
 ---
@@ -206,7 +206,7 @@ Shared planning inputs feed **two parallel branches** that meet only at **Factor
    Engine A                          Engine B
    → Shipping Recommendation          → Request Recommendation
      Workspace (non-commit Draft)       Workspace (non-commit Draft)
-   → Submit Plan (Decision Commit)    → Send Request (Decision Commit)
+   → Submit Plan (Decision Commit)    → Send Request (Request execution record)
    → shipping_plans / _lines          → request_orders / _lines
    → Shipment (Draft → Overview       → Purchase Order (purchase_orders / _lines)
      → On The Way)                    → Production / Receiving
@@ -218,7 +218,7 @@ Shared planning inputs feed **two parallel branches** that meet only at **Factor
               Export Center / Cost Analysis   (documents + cost from PO / shipment / SKU / warehouse)
 ```
 
-Each arrow is a **forward data hand-off**, honoring Principle #6 (a Draft may persist, but only Submit Plan / Send Request / Create creates Decision or Execution Truth) and Principle #4 (no parallel DB). Detailed E2E steps: [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) §5.5 (Procurement) / §5.6 (Shipping).
+Each arrow is a **forward data hand-off**, honoring Principle #6 (a Draft may persist, but committed truth begins only at **Submit Plan** — Shipping Decision Truth — or **Send Request** — the Procurement Request Order execution record, not Shipping Decision Truth) and Principle #4 (no parallel DB). Detailed E2E steps: [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) §5.5 (Procurement) / §5.6 (Shipping).
 
 ---
 
@@ -238,10 +238,8 @@ Each arrow is a **forward data hand-off**, honoring Principle #6 (a Draft may pe
 > **Current authority:** [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) (Procurement Phase 1 — implemented schema + Request/PO status lifecycle + Convert-to-PO + allocation persistence). **PO Workspace / Remaining Overview / Receive / Production Timeline** detail: [`PURCHASE_ORDER_SPEC.md`](./PURCHASE_ORDER_SPEC.md) (PO v2). [`REQUEST_ORDER_AND_PO_SPEC.md`](./REQUEST_ORDER_AND_PO_SPEC.md) is the **EXTENDED / FUTURE** reference only (three-layer sources, `supplier_price_list` / `payment_terms`, `request_order_po_links`) and does **not** govern the current runtime. This summary points to those specs — it does not redefine the schema.
 
 - **下單系統 is the calculation / recommendation page** — it computes recommended order quantities across all companies / sites / marketplaces.
-- **One push creates one combined Request** → writes the three-layer structure in a single action.
-- **`request_orders`** = overall request **header / batch** (no company/country/marketplace on the header).
-- **`request_order_lines`** = **SKU-level aggregated** order quantity (Series joined from SKU Details, not stored).
-- **`request_order_line_sources`** = the demand-origin **source breakdown** for a request line (which company / site / marketplace the quantity came from). Its grain, columns, writer, and lifecycle are **owned by [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) "§7.5 Second-layer draft tables / §7.6A Batch B Schema Decisions"** — the Blueprint does not fix them (final grain/writer/lineage = Batch B).
+- **Request generation follows the approved Request/PO canonical contract** ([`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)). How many request records a push produces, the request header-vs-line grain, which layer carries company / country / marketplace, the request grouping key, uniqueness and atomicity are all **governed by that detailed spec and the unresolved Decision Registry** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 — e.g. Request→PO atomicity B-6) — the Blueprint fixes **none** of them.
+- **`request_order_line_sources`** = the demand-origin **source breakdown** for a request line. Its grain, columns, writer, and lifecycle are **owned by [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) "§7.5 Second-layer draft tables / §7.6A Batch B Schema Decisions"** — the Blueprint does not fix them (final grain/writer/lineage = Batch B, B-5).
 - **Request Order Draft handles approval; Purchase Order Overview handles formal PO execution.** The request-layer approval states, the PO execution lifecycle, `available_to_ship`, and the Request→PO conversion contract are **owned by [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)** — not restated here. Request→PO **atomic orchestration is a Batch B decision** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-6).
 - **PO document generation** uses `document_templates` / `generated_documents`; **MVP factory communication is a manual email** (automation/portal is future).
 - **PO-line → shipment-line allocation** (single-link today; multi-PO FIFO allocation planned) is **owned by [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md)** — the Blueprint does not restate the FIFO algorithm or the remaining-quantity formula.

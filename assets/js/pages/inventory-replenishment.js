@@ -149,6 +149,14 @@ window.IRMap = (function () {
   function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
   function eq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
   function ymd(s) { return String(s == null ? '' : s).trim().slice(0, 10); }
+  // Country compatibility (System Repair 1) — delegates to the shared inventory-compat contract
+  // (UK ≡ GB same-market alias; EU sales aggregation handled separately). Safe exact-match fallback
+  // if the shared module has not loaded, so behavior degrades to the previous exact comparison.
+  function _irCountryMatch(rowCountry, scopeCountry) {
+    return (typeof window !== 'undefined' && window.IRCountry)
+      ? window.IRCountry.matches(rowCountry, scopeCountry)
+      : eq(rowCountry, scopeCountry);
+  }
 
   function todayYmd() {
     var d = new Date();
@@ -174,7 +182,9 @@ window.IRMap = (function () {
       var r = rows[i];
       if (!eq(r.sku, scope.sku)) continue;
       if (scope.company && r.company && !eq(r.company, scope.company)) continue;
-      if (scope.country && r.country && !eq(r.country, scope.country)) continue;
+      // Country is alias-aware (UK ≡ GB — same market; e.g. amazon_inventory_snapshot.country='GB'
+      // for an Amazon UK site). NO EU aggregation here — inventory identity is per single market.
+      if (scope.country && r.country && !_irCountryMatch(r.country, scope.country)) continue;
       if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) continue;
       if (!best || ymd(r.snapshotDate) > ymd(best.snapshotDate)) best = r;
     }
@@ -215,10 +225,18 @@ window.IRMap = (function () {
   // only when the scope has zero daily rows (honest empty chart). (INVENTORY_TABLE_MAPPING_SPEC §6.)
   function salesTrend7d(dailyRows, scope) {
     var byDate = {}, latest = '';
+    // Country membership (System Repair 1): UK ≡ GB alias; Amazon EU sums IT/DE/ES/FR per date
+    // (byDate accumulation naturally sums the member markets). Legacy 'EU' rows are used only when no
+    // per-country member row exists (salesTrendCountries applies that precedence).
+    var _trendSet = (typeof window !== 'undefined' && window.IRCountry)
+      ? window.IRCountry.salesTrendCountries(dailyRows || [], scope) : null;
     (dailyRows || []).forEach(function (r) {
       if (!eq(r.sku, scope.sku)) return;
       if (scope.company && r.company && !eq(r.company, scope.company)) return;
-      if (scope.country && r.country && !eq(r.country, scope.country)) return;
+      if (scope.country && r.country) {
+        if (_trendSet) { if (!_trendSet.any && _trendSet.members.indexOf(window.IRCountry.up(r.country)) === -1) return; }
+        else if (!eq(r.country, scope.country)) return;
+      }
       if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) return;
       var d = ymd(r.snapshotDate);
       if (!d) return;
@@ -241,19 +259,31 @@ window.IRMap = (function () {
   }
 
   // Avg Sales / Day ← amazon_weekly_sales_snapshot.sales_units_7d / 7 (1 decimal).
+  // Country handling (System Repair 1) is delegated to the shared inventory-compat contract:
+  //   - single market: the latest week's units (UK ≡ GB alias-aware)
+  //   - Amazon EU (scope.country='EU'): SUM of IT + DE + ES + FR (each market's OWN latest week;
+  //     legacy pan-EU 'EU' row used only as a fallback, never double-counted)
+  // Isolation: Amazon FR/DE/ES/IT and every non-EU context stay single-market. The /7 rounding is
+  // unchanged (no formula change). Falls back to the previous exact-match logic if the module is absent.
   function avgSalesPerDay(weeklyRows, scope) {
     if (!weeklyRows || !weeklyRows.length) return 0;
-    var best = null;
-    weeklyRows.forEach(function (r) {
-      if (!eq(r.sku, scope.sku)) return;
-      if (scope.company && r.company && !eq(r.company, scope.company)) return;
-      if (scope.country && r.country && !eq(r.country, scope.country)) return;
-      if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) return;
-      var key = r.weekEndDate || r.snapshotWeek || '';
-      if (!best || String(key) > String(best.weekEndDate || best.snapshotWeek || '')) best = r;
-    });
-    if (!best) return 0;
-    return Math.round((num(best.salesUnits7d) / 7) * 10) / 10;
+    var units;
+    if (typeof window !== 'undefined' && window.IRCountry) {
+      units = window.IRCountry.weeklyUnits7d(weeklyRows, scope);
+    } else {
+      var best = null;
+      weeklyRows.forEach(function (r) {
+        if (!eq(r.sku, scope.sku)) return;
+        if (scope.company && r.company && !eq(r.company, scope.company)) return;
+        if (scope.country && r.country && !eq(r.country, scope.country)) return;
+        if (scope.marketplace && r.marketplace && !eq(r.marketplace, scope.marketplace)) return;
+        var key = r.weekEndDate || r.snapshotWeek || '';
+        if (!best || String(key) > String(best.weekEndDate || best.snapshotWeek || '')) best = r;
+      });
+      units = best ? num(best.salesUnits7d) : null;
+    }
+    if (units == null) return 0;
+    return Math.round((units / 7) * 10) / 10;
   }
 
   // Resolve the single applicable Target Rule % (SKU > Series > Category). Default 100%.
@@ -679,14 +709,17 @@ function _irRenderThirdPartyDetail(plan) {
   function fmt(v){ return (Math.round(Number(v)) || 0).toLocaleString(); }
   function whRow(name, qty){ return '<div class="replen-card__row replen-tp-wh"><span class="replen-card__label">' + esc(name) + '</span><span class="replen-card__value">' + fmt(qty) + '</span></div>'; }
   if (!plan) return '<div class="replen-tp-empty">No 3rd Party Stock</div>';
-  // One row per contributing 3PL warehouse (available_qty > 0), joined by warehouse_id, displayed by
-  // warehouse_name; sort qty desc, then warehouse_name. No-match → "No 3rd Party Stock".
-  var contribs = (plan.contributions || []).filter(function (c) { return (Number(c.qty) || 0) > 0; })
-    .sort(function (a, b) { return (Number(b.qty) - Number(a.qty)) || String(a.warehouseName || a.warehouseId).localeCompare(String(b.warehouseName || b.warehouseId)); });
-  if (!contribs.length) return '<div class="replen-tp-empty">No 3rd Party Stock</div>';
-  var html = contribs.map(function (c) { return whRow(c.warehouseName || c.warehouseId, c.qty); }).join('');
-  var total = contribs.reduce(function (s, c) { return s + (Number(c.qty) || 0); }, 0);
-  html += '<div class="replen-card__row replen-tp-total"><span class="replen-card__label">Total</span><span class="replen-card__value">' + fmt(total) + '</span></div>';
+  // SINGLE shared source (Round 4 Decision A): the summary total and this detail use the SAME rows
+  // from IRWarehouse.buildPhysicalThirdPartyBreakdown → total = SUM(rows.qty). One row per physical
+  // 3PL warehouse (deduped by warehouse_id; UK/GB same physical row never double-counted). Physical
+  // availability only — never sitePlanningAvailable / FBA / virtual allocation.
+  var bd = (window.IRWarehouse && window.IRWarehouse.buildPhysicalThirdPartyBreakdown)
+    ? window.IRWarehouse.buildPhysicalThirdPartyBreakdown(plan)
+    : { rows: (plan.contributions || []).map(function (c) { return { warehouseName: c.warehouseName || c.warehouseId, qty: Number(c.qty) || 0 }; }), total: 0, hasRows: (plan.contributions || []).length > 0 };
+  var visible = bd.rows.filter(function (r) { return (Number(r.qty) || 0) > 0; });
+  if (!visible.length) return '<div class="replen-tp-empty">No 3rd Party Stock</div>';
+  var html = visible.map(function (r) { return whRow(r.warehouseName || r.warehouseId, r.qty); }).join('');
+  html += '<div class="replen-card__row replen-tp-total"><span class="replen-card__label">Total</span><span class="replen-card__value">' + fmt(bd.total) + '</span></div>';
   return html;
 }
 
@@ -2008,16 +2041,206 @@ function _replenCtxEq(a, b) {
     return !!a && !!b && a.company === b.company && a.country === b.country && a.marketplace === b.marketplace;
 }
 function _persistAllocationDraft() {
+    // sessionStorage is a UI RECOVERY CACHE only — NOT the Draft SSOT (Round 4 Decision E).
     try { sessionStorage.setItem(REPLEN_ALLOC_DRAFT_KEY, JSON.stringify(replenAllocationDraft)); } catch (e) {}
 }
+// ── Draft DB persistence (Round 4 Decision E + System Repair 2 Part A) ───────────────────────────────
+// SSOT = shipping_allocation_drafts / _lines. A working-draft route is persisted ONLY when it is a
+// COMPLETE Execution Plan line (From + To + Qty>0 + Method — the single shared IRDraft.isRouteComplete
+// gate, §4/§7); an incomplete route stays frontend-only and NEVER reaches the DB (§20). Persistence is
+// incremental upsert-by-line-id (never a blanket REPLACE): each complete route carries a STABLE
+// allocation_draft_line_id so repeated edits UPDATE the same line instead of inserting duplicates
+// (§6/§13). A user edit sends planned_qty + selected_* only; recommended_qty is sent ONLY for a
+// system-generated line (protects the immutable snapshot). Amazon logical destination persists as
+// selected_destination_warehouse_id=null. The header is upserted ONLY when ≥1 complete line exists —
+// never an empty header (§20); when the last valid line is gone the header is soft-cancelled (§5.3).
+// BROWSER/LIVE-DB-UNVERIFIED: when the API is not configured (headless), the adapter no-ops and the
+// sessionStorage recovery cache remains — behaviour is unchanged until deployed.
+
+// Shared completeness predicate (single source — §7). Prefer the pure IRDraft implementation so the
+// frontend gate and the Node unit tests exercise the exact same logic; keep a tiny inline fallback so
+// the page still gates correctly if the shared module failed to load.
+function _isRouteComplete(route) {
+    if (window.IRDraft && typeof window.IRDraft.isRouteComplete === 'function') return window.IRDraft.isRouteComplete(route);
+    route = route || {};
+    var from = String(route.source_warehouse_id == null ? '' : route.source_warehouse_id).trim();
+    var toReal = String(route.destination_warehouse_id == null ? '' : route.destination_warehouse_id).trim();
+    var logical = route.destination_type === 'MARKETPLACE_DESTINATION' || !!(route.destination_marketplace && String(route.destination_marketplace).trim());
+    var qty = Number(route.planned_qty != null ? route.planned_qty : route.qty); if (!isFinite(qty)) qty = 0;
+    var method = String(route.shipping_method == null ? '' : route.shipping_method).trim();
+    return !!from && (!!toReal || logical) && qty > 0 && !!method && method.toLowerCase().indexOf('no available') === -1;
+}
+window._isRouteComplete = _isRouteComplete;
+
+// Stable client-side draft line id (§6): assigned when a route first becomes COMPLETE so every later
+// edit upserts the SAME shipping_allocation_draft_lines row (idempotent — no duplicate lines). Survives
+// reload because the DB stores the row under this id and _hydrateAllocationDraftFromDb reads it back.
+function _newDraftLineId() {
+    var rnd = (Math.random().toString(36).slice(2) + Date.now().toString(36)).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return 'SADL-' + rnd.slice(0, 10);
+}
+
+// Debounced DB sync (§5.4/§7): rapid Qty keystrokes / re-renders collapse into ONE write after the edit
+// settles, and an in-flight guard prevents duplicate concurrent writes / out-of-order overwrite.
+var _draftDbTimers = {};        // sku -> setTimeout handle
+var _pendingDraftCancels = {};  // sku -> [ line_id, ... ] lines to soft-cancel on the next flush (§5)
+var _draftDbInFlight = {};      // sku -> bool
+var _draftDbDirty = {};         // sku -> bool (an edit landed while a write was in flight)
+function _scheduleDraftDbPersist(sku) {
+    if (_draftDbTimers[sku]) clearTimeout(_draftDbTimers[sku]);
+    _draftDbTimers[sku] = setTimeout(function () { _draftDbTimers[sku] = null; _flushDraftDbPersist(sku); }, 400);
+}
+window._scheduleDraftDbPersist = _scheduleDraftDbPersist;
+
+// Soft-cancel the (now empty) Draft Header once its last valid line is gone (§5.3) — never a hard
+// delete, never an orphan/empty header. Upserts the header with status='cancelled' so it is excluded
+// from hydrate; the local id is cleared so a future complete route starts a fresh header.
+function _cancelAllocationDraftHeader() {
+    try {
+        var draftId = replenAllocationDraft.allocationDraftId;
+        if (!draftId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraft && window.IRDraft)) { replenAllocationDraft.allocationDraftId = ''; return; }
+        if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) { replenAllocationDraft.allocationDraftId = ''; return; }
+        var ctx = _replenCtx();
+        var header = window.IRDraft.buildDraftHeaderPayload({ allocation_draft_id: draftId, company: ctx.company, country: ctx.country, marketplace: ctx.marketplace, status: 'cancelled' });
+        replenAllocationDraft.allocationDraftId = '';
+        return window.KM.DB.upsertShippingAllocationDraft(header);
+    } catch (e) { console.warn('[replen] cancel draft header error:', e); }
+}
+window._cancelAllocationDraftHeader = _cancelAllocationDraftHeader;
+
+// The actual DB sync for one SKU: soft-cancel any queued now-invalid lines, then upsert the header +
+// the COMPLETE line set (or cancel the header if nothing valid remains). Called by the debounced flush.
+function _flushDraftDbPersist(sku) {
+    try {
+        var cancels = _pendingDraftCancels[sku] || []; _pendingDraftCancels[sku] = [];
+        if (!(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraft &&
+              window.KM.DB.upsertShippingAllocationDraftLines && window.IRDraft)) return;
+        if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) return; // headless → cache only
+        if (_draftDbInFlight[sku]) { _draftDbDirty[sku] = true; if (cancels.length) _pendingDraftCancels[sku] = (_pendingDraftCancels[sku] || []).concat(cancels); return; }
+
+        var ctx = _replenCtx();
+        var rows = (replenAllocationDraft.bySku && replenAllocationDraft.bySku[sku]) || [];
+        var complete = rows.filter(_isRouteComplete);
+
+        // De-dupe queued cancels and drop any id that is STILL a live complete line this flush (e.g. the
+        // user cleared then retyped a Qty within the debounce window) — never cancel a line we are about
+        // to upsert. Cancelling an id the DB never stored is a defensive no-op (see the backend guard).
+        var liveIds = {}; complete.forEach(function (r) { if (r.allocation_draft_line_id) liveIds[r.allocation_draft_line_id] = 1; });
+        var seen = {};
+        cancels = cancels.filter(function (id) { if (!id || seen[id] || liveIds[id]) return false; seen[id] = 1; return true; });
+        // Soft-cancel lines that became invalid this edit (keeps the DB free of stale/incomplete plans, §5).
+        cancels.forEach(function (id) { if (typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(id); });
+
+        // No valid line left → never keep an empty header (§5.3).
+        if (!complete.length) { _cancelAllocationDraftHeader(); return; }
+
+        _draftDbInFlight[sku] = true;
+        var header = window.IRDraft.buildDraftHeaderPayload({
+            allocation_draft_id: replenAllocationDraft.allocationDraftId,
+            company: ctx.company, country: ctx.country, marketplace: ctx.marketplace
+        });
+        return window.KM.DB.upsertShippingAllocationDraft(header).then(function (hres) {
+            if (!hres || hres.success === false) throw new Error((hres && hres.error) || 'draft header upsert failed');
+            var draftId = (hres.data && hres.data.allocation_draft_id) || replenAllocationDraft.allocationDraftId;
+            replenAllocationDraft.allocationDraftId = draftId;
+            var lines = complete.map(function (r) {
+                return window.IRDraft.buildDraftLinePayload(sku, r, { scope: ctx, system: r.generation_type === 'system_generated' });
+            });
+            return window.KM.DB.upsertShippingAllocationDraftLines({ allocation_draft_id: draftId, lines: lines });
+        }).then(function (lres) {
+            if (lres && lres.success === false) throw new Error(lres.error || 'draft line upsert failed');
+            _draftDbInFlight[sku] = false;
+            if (_draftDbDirty[sku]) { _draftDbDirty[sku] = false; _flushDraftDbPersist(sku); }   // coalesced edit → one more write
+        }).catch(function (err) {
+            _draftDbInFlight[sku] = false;
+            // Never fake success; keep the sessionStorage recovery cache so the user can retry.
+            if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, err);
+            console.warn('[replen] Draft DB persistence failed (kept local cache):', err && err.message ? err.message : err);
+        });
+    } catch (e) { _draftDbInFlight[sku] = false; console.warn('[replen] Draft DB persistence error:', e); }
+}
+window._flushDraftDbPersist = _flushDraftDbPersist;
+
+// Back-compat entry point (older callers / AI Plan): route through the debounced flush.
+function _persistAllocationDraftToDb(sku) { _scheduleDraftDbPersist(sku); }
+window._persistAllocationDraftToDb = _persistAllocationDraftToDb;
+
+// Non-fatal Draft save error surface (never fakes success; keeps the recovery cache).
+function _irShowDraftSaveError(sku, err) {
+    var el = document.getElementById('allocation-carton-error-' + sku);
+    if (el) { el.textContent = 'Draft not saved to DB — ' + (err && err.message ? err.message : 'error') + ' (kept locally; retry).'; el.style.display = 'block'; el.style.color = '#dc2626'; }
+}
+// Soft-cancel ONE persisted draft line (Decision E §16) — never hard delete. line_status='cancelled'.
+function _cancelAllocationDraftLine(lineId) {
+    try {
+        if (!lineId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftLines && window.IRDraft)) return;
+        if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) return;
+        var draftId = replenAllocationDraft.allocationDraftId;
+        if (!draftId) return;
+        return window.KM.DB.upsertShippingAllocationDraftLines(window.IRDraft.buildCancelLinePayload(draftId, lineId));
+    } catch (e) { console.warn('[replen] cancel draft line error:', e); }
+}
+window._cancelAllocationDraftLine = _cancelAllocationDraftLine;
+// Async-race guard: only the newest context hydrate may write the working draft.
+var _replenHydrateToken = 0;
+// Hydrate the working draft from the DB (SSOT) for the current scope. DB state wins over the
+// sessionStorage cache when present; cancelled lines are excluded. Reads the already-loaded adapter
+// cache (getShippingAllocationDrafts/_Lines). BROWSER/LIVE-DB-UNVERIFIED.
+function _hydrateAllocationDraftFromDb(ctx) {
+    var myToken = ++_replenHydrateToken;
+    try {
+        if (!(window.KM && window.KM.DB && window.KM.DB.getShippingAllocationDrafts && window.KM.DB.getShippingAllocationDraftLines)) return false;
+        var drafts = window.KM.DB.getShippingAllocationDrafts() || [];
+        var lines = window.KM.DB.getShippingAllocationDraftLines() || [];
+        function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+        var draft = drafts.filter(function (d) {
+            return lo(d.country) === lo(ctx.country) && lo(d.marketplace) === lo(ctx.marketplace) &&
+                (!ctx.company || !d.company || lo(d.company) === lo(ctx.company)) && lo(d.status) !== 'cancelled';
+        }).sort(function (a, b) { return String(b.updatedAt || '') < String(a.updatedAt || '') ? -1 : 1; })[0];
+        if (myToken !== _replenHydrateToken) return false;   // a newer context request superseded this one
+        if (!draft) return false;
+        var bySku = {};
+        lines.filter(function (l) {
+            return l.allocationDraftId === draft.allocationDraftId && lo(l.lineStatus || l.line_status) !== 'cancelled';
+        }).forEach(function (l) {
+            var raw = l.raw || l;
+            var sku = raw.sku;
+            if (!sku) return;
+            (bySku[sku] = bySku[sku] || []).push({
+                allocation_draft_line_id: raw.allocation_draft_line_id,
+                sku: sku,
+                planned_qty: Number(raw.planned_qty) || 0,
+                qty: Number(raw.planned_qty) || 0,
+                recommended_qty: (raw.recommended_qty == null || raw.recommended_qty === '') ? null : Number(raw.recommended_qty),
+                source_warehouse_id: raw.selected_source_warehouse_id || '',
+                destination_warehouse_id: raw.selected_destination_warehouse_id || '',
+                destination_type: (raw.destination_marketplace ? 'MARKETPLACE_DESTINATION' : ''),
+                destination_marketplace: raw.destination_marketplace || '',
+                shipping_method: raw.selected_shipping_method || '',
+                generation_type: raw.generation_type || 'user_created'
+            });
+        });
+        replenAllocationDraft = { context: ctx, allocationDraftId: draft.allocationDraftId, targetDays: replenAllocationDraft.targetDays || '', bySku: bySku };
+        window.KM.shippingAllocationDraft = replenAllocationDraft;
+        _persistAllocationDraft();
+        return true;
+    } catch (e) { console.warn('[replen] hydrate draft error:', e); return false; }
+}
+window._hydrateAllocationDraftFromDb = _hydrateAllocationDraftFromDb;
 function _clearAllocationDraft() {
     replenAllocationDraft = { context: { country: '', marketplace: '' }, targetDays: '', bySku: {} };
     window.KM.shippingAllocationDraft = replenAllocationDraft;
     try { sessionStorage.removeItem(REPLEN_ALLOC_DRAFT_KEY); } catch (e) {}
 }
-// Recovery only — restores the live JS state from sessionStorage (not a committed record).
+// Restore the working draft. SSOT = DB (Round 4 Decision E): try DB hydrate for the current scope
+// first (DB wins); sessionStorage is only a recovery cache used when the DB has nothing / is not
+// configured (headless). Never let a stale cache overwrite a successful DB load.
 function _restoreAllocationDraftFromSession() {
     try {
+        var ctx = _replenCtx();
+        if (ctx && (ctx.country || ctx.marketplace) && typeof _hydrateAllocationDraftFromDb === 'function') {
+            if (_hydrateAllocationDraftFromDb(ctx)) return;   // DB SSOT loaded → do not overlay the cache
+        }
         var raw = sessionStorage.getItem(REPLEN_ALLOC_DRAFT_KEY);
         if (!raw) return;
         var parsed = JSON.parse(raw);
@@ -2069,36 +2292,61 @@ function _saveAllocationDraftFromDom(sku) {
         var method = fieldVal('shipping_method');
         var qty = parseInt(fieldVal('qty')) || 0;
         var sourceWarehouseId = fieldVal('source_warehouse_id');       // canonical id (option value)
-        var destWarehouseId = fieldVal('destination_warehouse_id');    // canonical id (option value)
+        var destRawValue = fieldVal('destination_warehouse_id');       // real warehouse_id OR Amazon logical token
         var shipFrom = selOptData('source_warehouse_id', 'data-wh-name');       // display name
         var shipFromType = selOptData('source_warehouse_id', 'data-wh-type');   // warehouse_type snapshot
         var destination = selOptData('destination_warehouse_id', 'data-wh-name');
         var destType = selOptData('destination_warehouse_id', 'data-wh-type');
+        // Round 4 Decision B: an Amazon logical destination (MARKETPLACE_DESTINATION token) persists as
+        // marketplace=Amazon + destination_warehouse_id=null (NEVER a fake warehouse_id). Real 3PL keeps
+        // its warehouse_id. The actual FBA warehouse_id is resolved later at the Shipment Draft stage.
+        var destPayload = (window.IRWarehouse && window.IRWarehouse.resolveDestinationPayload)
+            ? window.IRWarehouse.resolveDestinationPayload(destRawValue, ctx)
+            : { selected_destination_warehouse_id: (destRawValue && destRawValue.indexOf('MARKETPLACE_DESTINATION:') === 0) ? null : (destRawValue || null) };
+        var isLogicalAmazon = (destType === 'MARKETPLACE_DESTINATION') || (typeof destRawValue === 'string' && destRawValue.indexOf('MARKETPLACE_DESTINATION:') === 0);
+        var destWarehouseId = isLogicalAmazon ? '' : destRawValue;   // canonical To id ('' = none/logical)
         var etaEl = rowEl.querySelector('[data-field="expected_arrival"]');
         var expectedArrival = etaEl ? String(etaEl.textContent || '').trim() : '';
-        // Keep a row if it carries ANY user intent (method / qty / From / To warehouse).
-        // `qty` is the user Execution quantity (canonical planned_qty). `recommended_qty` (immutable
-        // system snapshot) is preserved separately and never overwritten by a user edit.
-        if (method || qty > 0 || sourceWarehouseId || destWarehouseId) {
-            rows.push({
-                shipping_method: method,
-                qty: qty,                              // = planned_qty (canonical)
-                planned_qty: qty,
-                source_warehouse_id: sourceWarehouseId,   // canonical From (warehouse_id)
-                ship_from: shipFrom,                       // display name only
-                ship_from_type: shipFromType,
-                destination_warehouse_id: destWarehouseId, // canonical To (warehouse_id)
-                destination: destination,                  // display name only
-                destination_type: destType,
-                expected_arrival: expectedArrival,
-                source_reason: 'pm_adjustment'
-            });
+        var lineId = rowEl.getAttribute('data-line-id') || '';   // persisted Draft line identity (§6)
+        // ALL rows are kept in the local render/recovery draft so an in-progress (still incomplete) route
+        // survives collapse/expand. Whether a row is PERSISTED to the DB is decided ONLY by the shared
+        // four-field completeness gate below — a truthy "any intent" check is NOT enough (§4).
+        var row = {
+            shipping_method: method,
+            qty: qty,                              // = planned_qty (canonical)
+            planned_qty: qty,
+            source_warehouse_id: sourceWarehouseId,   // canonical From (warehouse_id)
+            ship_from: shipFrom,                       // display name only
+            ship_from_type: shipFromType,
+            // Amazon logical destination → destination_warehouse_id null + marketplace=Amazon (Decision B).
+            destination_warehouse_id: (destPayload.selected_destination_warehouse_id == null ? '' : destPayload.selected_destination_warehouse_id),
+            destination: isLogicalAmazon ? 'Amazon' : destination,   // display name only
+            destination_type: isLogicalAmazon ? 'MARKETPLACE_DESTINATION' : destType,
+            destination_marketplace: isLogicalAmazon ? 'Amazon' : '',
+            destination_country: isLogicalAmazon ? (destPayload.country || (ctx && ctx.country) || '') : '',
+            expected_arrival: expectedArrival,
+            source_reason: 'pm_adjustment'
+        };
+        if (_isRouteComplete(row)) {
+            // A complete route is persistable. Assign a STABLE line id the first time so every later edit
+            // UPDATES the same shipping_allocation_draft_lines row (idempotent — no duplicate lines, §6/§13).
+            if (!lineId) { lineId = _newDraftLineId(); rowEl.setAttribute('data-line-id', lineId); }
+            row.allocation_draft_line_id = lineId;
+        } else if (lineId) {
+            // Was persisted, now incomplete → queue a soft-cancel and drop the persisted identity so we
+            // never overwrite the stored line with a null/invalid payload (§5). It stays in the local
+            // draft as editable temporary state, but is no longer a DB line.
+            (_pendingDraftCancels[sku] = _pendingDraftCancels[sku] || []).push(lineId);
+            rowEl.removeAttribute('data-line-id');
+            row.allocation_draft_line_id = '';
         }
+        rows.push(row);
     });
     if (rows.length) replenAllocationDraft.bySku[sku] = rows;
     else delete replenAllocationDraft.bySku[sku];
     window.KM.shippingAllocationDraft = replenAllocationDraft;
-    _persistAllocationDraft();
+    _persistAllocationDraft();            // recovery cache (not SSOT)
+    _scheduleDraftDbPersist(sku);         // SSOT: shipping_allocation_drafts/_lines — debounced; only COMPLETE routes are written
 }
 // Explicit user edit on an Execution Plan route: recompute totals AND capture the Working Draft.
 // (Pure render must NOT call this.)
@@ -2347,26 +2595,40 @@ function _execWarehouseCandidates() {
     var scope = _replenSelectedScope();
     var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
     var whs = (DB && DB.getWarehouses) ? (DB.getWarehouses() || []) : [];
-    var isAmazon = _execEq(scope.marketplace, 'Amazon');
 
-    // Active = tri-state is_active where only an explicit FALSE is inactive (blank/unknown counts as
-    // active). This matches the canonical warehouse-active rule used by Request Order (_roActiveFlag);
-    // the previous `=== true` silently dropped Factory warehouses whose is_active cell is blank (#4).
-    function active(w) { return w && w.warehouseId && w.isActive !== false; }
-    function companyOk(w) { return !scope.company || !w.company || _execEq(w.company, scope.company); }
+    // One central candidate contract for EVERY site (System Repair 1) — see inventory-compat.js
+    // IRWarehouse.buildCandidates. Classification is by warehouse master fields (warehouse_type /
+    // is_factory_warehouse), never by display name; country is UK≡GB alias-aware (no EU expansion for
+    // warehouses). FROM = Factory (any country) + same-company/country Active 3PL Overseas. TO =
+    // same-company/country Active 3PL Overseas + (Amazon only) matching Active FBA — every option a
+    // REAL warehouse_id.
+    if (window.IRWarehouse && window.IRWarehouse.buildCandidates) {
+        return window.IRWarehouse.buildCandidates(whs, scope);
+    }
+
+    // Fallback (shared module absent): previous inline logic, kept only for resilience. Aligned with
+    // the Round 2 strict contract — STRICT active (is_active must resolve to TRUE; blank/null/false
+    // excluded) and Factory company-scoped (no blank-company sharing). It does NOT enumerate FBA
+    // destinations (Amazon To handled by the legacy _execToOptionsHtml path).
+    var isAmazon = _execEq(scope.marketplace, 'Amazon');
+    function activeStrict(w) {
+        if (!w || !w.warehouseId) return false;
+        var v = w.isActive;
+        if (v === true) return true;
+        if (v === false) return false;
+        var s = String(v == null ? '' : v).trim().toLowerCase();
+        return s === 'true' || s === 'yes' || s === 'y' || s === '1';
+    }
     function companyStrict(w) { return !scope.company || _execEq(w.company, scope.company); }
     function countryStrict(w) { return !scope.country || _execEq(w.country, scope.country); }
 
     var from = [], to = [];
     whs.forEach(function (w) {
-        if (!active(w)) return;
+        if (!activeStrict(w)) return;
         var t = _execWhType(w);
         var isFactory = (w.isFactoryWarehouse === true) || t === 'FACTORY';
-        // FROM: Factory (NOT country-filtered — factory source may be CN/TW) OR company+country 3PL.
-        if (isFactory && companyOk(w)) from.push(w);
+        if (isFactory && companyStrict(w)) from.push(w);
         else if (t === '3PL' && companyStrict(w) && countryStrict(w)) from.push(w);
-        // TO (non-Amazon only): company+country 3PL. For an Amazon marketplace, To is a single LOGICAL
-        // "Amazon" destination (§3) — we do NOT enumerate FBA warehouses and never bind an FBA id here.
         if (!isAmazon && t === '3PL' && companyStrict(w) && countryStrict(w)) to.push(w);
     });
     return { from: _execDedupWh(from), to: _execDedupWh(to), isAmazon: isAmazon };
@@ -2411,17 +2673,23 @@ function _execFromOptionsHtml(list, selectedId) {
     return html;
 }
 function _execToOptionsHtml(list, selectedId, isAmazon) {
-    // Amazon marketplace (§3): To is a SINGLE logical destination "Amazon". We do NOT list individual
-    // FBA warehouses and we NEVER silently bind a specific FBA warehouse_id — the canonical To
-    // warehouse_id stays empty (option value ""); only the logical name "Amazon" is carried for display.
-    if (isAmazon) {
-        return '<option value="" data-wh-name="Amazon" data-wh-type="AMAZON" data-wh-country="" selected>Amazon</option>';
-    }
-    if (!list.length) return '<option value="">No warehouses</option>';
-    var counts = _execNameCounts(list);
+    // Round 4 Decision B (Weekly Shipping Plan / planning level): To = eligible real 3PL warehouses
+    // (value = real warehouse_id) PLUS — for an Amazon marketplace — EXACTLY ONE Amazon logical
+    // destination (value = MARKETPLACE_DESTINATION token, NOT a warehouse_id; no individual FBA codes).
+    // buildCandidates already appended the single logical destination for Amazon. The real FBA
+    // warehouse_id is resolved later at the Shipment Draft execution stage (contract unchanged).
+    if (!list.length) return '<option value="">No eligible warehouses</option>';
+    var reals = list.filter(function (w) { return !w.logicalDestination; });
+    var counts = _execNameCounts(reals);
     var html = '<option value="">To…</option>';
-    // Non-Amazon: real company/country 3PL destinations only (each option value is a real warehouse_id).
-    list.forEach(function (w) { html += _execWhOption(w, selectedId, (counts[_execNameKey(w)] || 0) > 1); });
+    list.forEach(function (w) {
+        if (w.logicalDestination) {
+            var lsel = (selectedId && String(selectedId) === String(w.token)) ? ' selected' : '';
+            html += '<option value="' + _execEsc(String(w.token)) + '" data-wh-name="Amazon" data-wh-type="MARKETPLACE_DESTINATION" data-wh-country="' + _execEsc(w.country || '') + '"' + lsel + '>Amazon</option>';
+        } else {
+            html += _execWhOption(w, selectedId, (counts[_execNameKey(w)] || 0) > 1);
+        }
+    });
     return html;
 }
 // From and To must never be the same warehouse_id — clear the To selection if it collides (verify #19).
@@ -2453,7 +2721,9 @@ function _renderExecutionRoute(sku, route) {
     var fromSelId = route.source_warehouse_id || _execResolveIdByName(cand.from, route.ship_from);
     var toSelId = route.destination_warehouse_id || _execResolveIdByName(cand.to, route.destination);
     var fromDisabled = cand.from.length ? '' : ' disabled';
-    var toDisabled = (cand.isAmazon || cand.to.length) ? '' : ' disabled';
+    // System Repair 1: To is enabled only when there are REAL candidates (Amazon no longer force-enabled
+    // via a synthetic option). Empty → disabled + explicit empty state, for every site type alike.
+    var toDisabled = cand.to.length ? '' : ' disabled';
     // Method options from real carrier_rate_cards, keyed on the chosen From origin country (if any) +
     // destination country + marketplace. No hardcoded fallback.
     var fromWh = cand.from.filter(function (w) { return String(w.warehouseId) === String(fromSelId); })[0];
@@ -2463,6 +2733,9 @@ function _renderExecutionRoute(sku, route) {
     var methodDisabled = methods.length ? '' : ' disabled';
     var row = document.createElement('div');
     row.className = 'exec-route-row ir-exec-plan__grid';
+    // Persisted Draft line identity (Round 4 Decision E) — enables incremental update + soft-cancel of
+    // the SAME shipping_allocation_draft_lines row (empty for a new/unsaved route).
+    if (route && route.allocation_draft_line_id) row.setAttribute('data-line-id', String(route.allocation_draft_line_id));
     row.innerHTML =
         '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
         '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
@@ -2482,11 +2755,16 @@ function addExecutionRoute(event, sku) {
     syncExpandPanelHeight(sku);
 }
 
-// Delete an Execution Plan route.
+// Delete an Execution Plan route = SOFT CANCEL the persisted Draft line (Round 4 Decision E §16);
+// never a hard delete. If the row was persisted (has data-line-id) its DB line is soft-cancelled
+// (line_status='cancelled'); the remaining rows are re-saved incrementally. New/unsaved rows just
+// drop from the DOM. (No-op headless — API not configured.)
 function removeExecutionRoute(event, sku) {
     if (event) event.stopPropagation();
     var row = event.target.closest('.exec-route-row');
     if (row) {
+        var lineId = row.getAttribute('data-line-id');
+        if (lineId && typeof _cancelAllocationDraftLine === 'function') _cancelAllocationDraftLine(lineId);
         row.remove();
         onExecutionRouteEdit(sku);
         syncExpandPanelHeight(sku);
@@ -3059,9 +3337,16 @@ function _getCloudReplenishmentData() {
         // shipping_allocation_draft (the SSOT, §11.4) when one exists for this scope + SKU; otherwise the
         // Recommendation Summary renders its honest "not generated" empty state (engine is inactive).
         var recDraftLines = _shippingDraftLinesFor(scope, get('getShippingAllocationDrafts'), get('getShippingAllocationDraftLines'));
-        var thirdPartyDisplay = (thirdPartyPlan.state === 'OK') ? String(Math.round(thirdPartyPlan.sitePlanningAvailable).toLocaleString())
-          : (thirdPartyPlan.state === 'NO_ELIGIBLE_3PL') ? 'No 3PL'
+        // 3rd Party Stock card = PHYSICAL 3PL availability (Round 4 Decision A). Summary total and the
+        // expanded detail use the SAME shared breakdown rows (IRWarehouse.buildPhysicalThirdPartyBreakdown);
+        // it is NEVER sitePlanningAvailable (the 18-day virtual planning allocation stays in the planning
+        // path only). Empty → state label (No 3PL / No Data), never a fallback to the virtual value.
+        var _tpBreakdown = (window.IRWarehouse && window.IRWarehouse.buildPhysicalThirdPartyBreakdown)
+          ? window.IRWarehouse.buildPhysicalThirdPartyBreakdown(thirdPartyPlan)
+          : { total: 0, hasRows: false, rows: (thirdPartyPlan.contributions || []) };
+        var thirdPartyDisplay = (thirdPartyPlan.state === 'NO_ELIGIBLE_3PL') ? 'No 3PL'
           : (thirdPartyPlan.state === 'MISSING_SNAPSHOT') ? 'No Data'
+          : (thirdPartyPlan.state === 'OK' || _tpBreakdown.hasRows) ? String(Math.round(_tpBreakdown.total).toLocaleString())
           : '—';
         var cnStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'CN');
         var twStock = IR.factoryByCountry(factory, warehouses, mp.sku, 'TW');

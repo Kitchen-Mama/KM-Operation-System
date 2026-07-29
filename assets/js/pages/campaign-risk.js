@@ -1080,6 +1080,27 @@ function initCrScrollSync() {
     });
 }
 
+// --- Column resize (System Repair 2 Part E) ---
+// Drag-to-resize the Promotion Risk Tracker scroll columns using the SHARED engine via the dual-layer
+// adapter (KM.ui.dualLayerResize → KM.ui.resizableColumns) — NOT a page-specific drag implementation.
+// The header cells are static in the partial, so this runs ONCE on mount; the filter / risk-card /
+// pagination / scope re-renders only rewrite the body, so the handles + injected width rule persist
+// (no duplicate handles). The adapter is idempotent + re-mount-safe (tears down any prior controller).
+// The sticky SKU identity column stays fixed; only the scroll columns are resizable, and the table
+// keeps its existing horizontal scroll wrapper (.scroll-col).
+function _initCrColumnResize() {
+    try {
+        if (window.KM && window.KM.ui && window.KM.ui.dualLayerResize) {
+            window.KM.ui.dualLayerResize.init({
+                sectionId: 'campaign-risk-section',
+                scrollHeaderSel: '#cr-table-scroll-header',
+                scrollBodySel: '#cr-table-scroll-body',
+                page: 'campaign-risk', group: 'promotion-risk'
+            });
+        }
+    } catch (e) { console.warn('[CampaignRisk] column resize init failed:', e); }
+}
+
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
     initCrScrollSync();
@@ -1157,6 +1178,7 @@ if (window.KM && window.KM.lifecycle) {
                 if (sec) sec.classList.add('active');
                 _bindCrDocListeners();
                 crReload();   // load cache (race-guarded) → populate Country selector → gated render
+                _initCrColumnResize();   // static header present → wire drag-to-resize once (Part E)
             });
         },
         unmount() {

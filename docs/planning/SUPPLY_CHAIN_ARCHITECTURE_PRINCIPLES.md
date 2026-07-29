@@ -42,7 +42,7 @@ These are the **official, single-definition** terms for the Kitchen Mama Supply 
 | Term | One-line definition | Section |
 |------|---------------------|---------|
 | **Analysis Truth** | The live, always-recalculated state owned by Inventory Replenishment. | §2.1 |
-| **Decision Truth** | The committed planning decision owned by Weekly Shipping Plan (`shipping_plans` / `shipping_plan_lines`). | §2.2 |
+| **Decision Truth** | The committed **Shipping** planning decision owned by Weekly Shipping Plan (`shipping_plans` / `shipping_plan_lines`). The **parallel Procurement branch** commits via its own Request Order execution record (`request_orders` / `request_order_lines`, owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`) — a separate committed record, **not** this Shipping Decision Truth and **not** owned by Weekly Shipping Plan. | §2.2 |
 | **Execution Truth** | The physical execution record owned by Shipment (`shipments` / `shipment_lines`). | §2.3 |
 | **Settlement Truth** | The final, immutable records owned by the Settlement Layer (history / documents / audit / KPI). | §10 |
 | **Decision Layer Completion** | The Decision Layer's terminal state (Done): decision finished, Execution Layer has taken over, snapshot preserved (`completed_at`). | §10 |
@@ -58,11 +58,11 @@ These are the **official, single-definition** terms for the Kitchen Mama Supply 
 | **Single Source of Truth** | Each layer has one Owner / Truth / Snapshot; no duplicate authority. | §7 |
 | **Business Object Identity** | Stable business-level identity of a logical object, independent of physical DB identity. | §8 |
 
-> Canonical chain (Batch A 2026-07-28): **Live Analysis → Persisted Recommendation Workspace (non-commit Draft) → Decision Commit → Decision Snapshot → Execution / Settlement.** Expanded: Analysis → Recommendation Snapshot / Working Draft → Decision Commit (Submit Plan / Send Request) → Decision Snapshot → Execution Commit → Execution Snapshot → Shipment Events → History → Documents.
+> Canonical chain (Batch A 2026-07-28): **Live Analysis → Persisted Recommendation Workspace (non-commit Draft) → Decision Commit → Decision Snapshot → Execution / Settlement.** Expanded: Analysis → Recommendation Snapshot / Working Draft → Decision Commit (Submit Plan — Shipping; the parallel Procurement branch's Send Request creates the Request Order execution record, not a Shipping Decision Commit) → Decision Snapshot → Execution Commit → Execution Snapshot → Shipment Events → History → Documents.
 >
 > **Two parallel business branches (never sequential — Engine A does not feed Engine B):**
 > - **Shipping:** Engine A → Shipping Recommendation Workspace → Decision Commit (Submit Plan) → Shipping Plan → Shipment → Receive / Close.
-> - **Procurement:** Engine B → Request Recommendation Workspace → Decision Commit (Send Request) → Request Order → Purchase Order → Production / Receiving → Factory Stock.
+> - **Procurement:** Engine B → Request Recommendation Workspace → **Request Execution Transition (Send Request)** → Request Order (execution record) → Purchase Order → Production / Receiving → Factory Stock. *(Send Request is the procurement request-execution transition, not a Shipping Decision Commit and not Shipping Decision Truth.)*
 > They **meet only at Factory Stock** (Procurement produces it; Shipping consumes it) — see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §5.5/§5.6 and `SYSTEM_RUNTIME_ARCHITECTURE.md` §6.
 
 ---
@@ -358,9 +358,9 @@ Each layer has an **Owner**, a **Truth** (its source of truth), and a **Snapshot
 - **JS State** is the live editing state.
 - The **Recommendation Draft (Recommendation Workspace) MAY be persisted to a DB Draft table** — a **non-commit snapshot** used for versioning, multi-user collaboration, pre-approval editing, and traceability. (Shipping = `shipping_allocation_drafts` / `_lines`; Order = `request_order_allocation_drafts` / `_lines` — schema owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6/§3.7.) When a persisted Draft exists it is the **SSOT for the active cycle's working state**.
 - **`sessionStorage` is UI recovery ONLY** — never the sole Draft owner and never a decision record.
-- **Persisting a Draft never makes it a commitment.** A persisted Recommendation Draft is **NOT** Qualified Incoming, does **NOT** reserve or deduct factory / overseas stock, creates **NO** inventory movement, and is **NOT** Decision Truth. Only a formal user action (**Submit Plan** / **Send Request**) creates Decision Truth.
+- **Persisting a Draft never makes it a commitment.** A persisted Recommendation Draft is **NOT** Qualified Incoming, does **NOT** reserve or deduct factory / overseas stock, creates **NO** inventory movement, and is **NOT** Decision Truth. Only a formal user action creates committed truth: **Submit Plan** creates Shipping Decision Truth (Weekly Shipping Plan); **Send Request** creates the Procurement Request Order execution record (**not** Shipping Decision Truth).
 
-> Layer placement: the Working Draft / Recommendation Workspace belongs to the **Analysis Layer + Persisted Recommendation Workspace** state (it lives inside Inventory Replenishment / 下單系統). **Decision Truth** (§2.2) begins only **after** Submit Plan / Send Request, when the Draft is committed into the official records (`shipping_plans` / `shipping_plan_lines`; `request_orders` / `request_order_lines`) and the per-SKU **Decision Snapshot** (§4) is frozen.
+> Layer placement: the Working Draft / Recommendation Workspace belongs to the **Analysis Layer + Persisted Recommendation Workspace** state (it lives inside Inventory Replenishment / 下單系統). Commitment then happens on **two parallel branches**: **Submit Plan** freezes the **Shipping Decision Truth** (`shipping_plans` / `shipping_plan_lines`, owned by Weekly Shipping Plan) with its per-SKU **Decision Snapshot** (§4); **Send Request** creates the **Procurement branch's Request Order execution record** (`request_orders` / `request_order_lines`, owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`) — a parallel committed record, **not** the Weekly-Shipping-Plan-owned Shipping Decision Truth. A Draft is neither until one of those actions occurs.
 
 > **BLOCKED — Requires Batch B Canonical Decision (Factory Stock Reserve Trigger).** The single event that first **reserves** factory stock (Plan Lock / Approval / Create Shipment Draft / Execution Commit / other) is **not decided**. **Verified current code (2026-07-28):** there is **no reserve logic in code at all** — the only factory-stock mutation is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch** (`22_shipment_dispatch_handlers.gs`); `fac_reserved_stock` is never written. The reserve-on-approval / reserve-on-draft lifecycles described across the specs are **spec-only / not implemented** and currently disagree — they must NOT be treated as decided. See the consolidated Batch B Handoff.
 

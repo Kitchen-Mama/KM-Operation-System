@@ -37,7 +37,7 @@
     var srdState = {
         search: '', page: 1, pageSize: 50,
         selectedSku: null, activeCountry: null, activeRecordKey: null, activeSection: 'overview',
-        filters: { category: '', series: '' }
+        filters: { category: [], series: [] }   // shared multi-select: [] = All (System Repair 2 §13)
     };
     var _srdReqSeq = 0;
     var _srdSaving = false;
@@ -105,8 +105,9 @@
             var m = masterBySku(sku);
             return { sku: sku, name: mName(m), series: mSeries(m), category: mCategory(m) };
         }).filter(function (e) {
-            if (f.category && lc(e.category) !== lc(f.category)) return false;
-            if (f.series && lc(e.series) !== lc(f.series)) return false;
+            // Multi-select filters: empty array = All; otherwise an OR-set membership test (§13/§15).
+            if (f.category.length && f.category.map(lc).indexOf(lc(e.category)) === -1) return false;
+            if (f.series.length && f.series.map(lc).indexOf(lc(e.series)) === -1) return false;
             if (kw) { if ([e.sku, e.name, e.series, e.category].map(lc).join(' ').indexOf(kw) === -1) return false; }
             return true;
         });
@@ -131,9 +132,22 @@
         var masters = (window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [];
         var cats = distinct(masters.map(function (m) { return (m.raw && m.raw.category) || m.category; }));
         var sers = distinct(masters.map(function (m) { return m.series || (m.raw && m.raw.series); }));
-        fillSelect('srd-f-category', cats.map(function (v) { return { value: v, label: v }; }), srdState.filters.category, 'All Categories');
-        fillSelect('srd-f-series', sers.map(function (v) { return { value: v, label: v }; }), srdState.filters.series, 'All Series');
+        // ONE shared searchable multi-select per filter (KM.ui.multiFilter). create() is idempotent:
+        // re-calling it on the same mount just refreshes the option universe + selection (dynamic
+        // options), so a data reload never stacks panels or duplicates listeners (§13/§15).
+        _srdMountFilter('srd-f-category-mount', 'srd-cat', 'Category', cats, srdState.filters.category, 'All Categories');
+        _srdMountFilter('srd-f-series-mount', 'srd-ser', 'Series', sers, srdState.filters.series, 'All Series');
         var s = el('srd-search'); if (s && s.value !== srdState.search) s.value = srdState.search;
+    }
+    function _srdMountFilter(mountId, filterId, label, values, selected, allText) {
+        if (!(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
+        var name = mountId === 'srd-f-category-mount' ? 'category' : 'series';
+        window.KM.ui.multiFilter.create({
+            mount: mountId, filterId: filterId, label: label, allText: allText,
+            options: values.map(function (v) { return { value: v, label: v }; }),
+            selectedValues: selected,
+            onChange: function (vals) { onFilterChange(name, vals); }
+        });
     }
 
     // ---- Left list render ----
@@ -510,17 +524,16 @@
     function srdPage(delta) { srdState.page += delta; renderList(masterList()); }
     function srdPageSize(v) { srdState.pageSize = parseInt(v, 10) || 50; srdState.page = 1; renderList(masterList()); }
 
-    // Filter change handlers.
-    function onFilterChange(name, value) { srdState.filters[name] = value; srdState.page = 1; render(); }
+    // Filter change handler — `value` is the shared multi-select's selected-values array ([] = All).
+    function onFilterChange(name, value) { srdState.filters[name] = Array.isArray(value) ? value : (value ? [value] : []); srdState.page = 1; render(); }
 
     // ---- Bind listeners once per section ----
     function bindOnce() {
         var sec = el('sku-regional-details-section'); if (!sec || sec.dataset.srdBound === '1') return; sec.dataset.srdBound = '1';
         var search = el('srd-search');
         if (search) search.addEventListener('input', function () { clearTimeout(_srdSearchTimer); var v = this.value; _srdSearchTimer = setTimeout(function () { srdState.search = v; srdState.page = 1; render(); }, 200); });
-        [['srd-f-category', 'category'], ['srd-f-series', 'series']].forEach(function (t) {
-            var e = el(t[0]); if (e) e.addEventListener('change', function () { onFilterChange(t[1], this.value); });
-        });
+        // Category / Series now use the shared multi-select (KM.ui.multiFilter); it owns its own change
+        // handling via onChange (wired in populateFilters) — no native <select> change listener here.
         var list = el('srd-list');
         if (list) {
             list.addEventListener('click', function (e) { var it = e.target.closest ? e.target.closest('.srd-item') : null; if (it) selectSku(it.getAttribute('data-sku')); });

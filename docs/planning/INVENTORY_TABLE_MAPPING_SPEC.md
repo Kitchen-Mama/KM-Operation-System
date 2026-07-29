@@ -239,9 +239,9 @@ Over 180+ = inv_age_181_to_270_days
 - **Display fields:** Event Name · Period · FC Qty · **Total Event Qty**.
 - **Each event counts once** for AI Suggestion (§14) — never double-count one event across multiple Need buckets.
 
-### 8.1 Special Event Preparation-Date Rule (authoritative)
+### 8.1 Special Event Preparation-Date Rule (consumer view — formula owned by Calculation Rules §10)
 
-Event demand must be prepared **before** the event begins, so an event is **not** placed in a Need bucket by its event date — it is placed by its **Preparation Date**:
+The **authoritative Preparation-Date formula is owned by [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) §10**; this section only describes how the Inventory Replenishment page **consumes** it — it does **not** own or redefine the formula. As a summary of the §10 rule: event demand must be prepared **before** the event begins, so an event is **not** placed in a Need bucket by its event date — it is placed by its **Preparation Date**:
 
 ```
 Preparation Date = Event Start Date − 30 days
@@ -250,7 +250,7 @@ Preparation Date = Event Start Date − 30 days
 - **All Need buckets (0–18 / 19–30 / 31–45 / 46–90) are judged against the Preparation Date**, not the event start/end date. The bucket is the one whose day-window (counted from today) contains the Preparation Date.
 - **Each event is counted once.** An event contributes its `fc_qty` to exactly one Need bucket (the one its Preparation Date falls into) and **must not be accumulated again** in any other bucket or in a later recalculation pass.
 - If the Preparation Date is already in the past (event imminent), the event falls into the earliest bucket (0–18d).
-- This rule supersedes the previous "attribute by event period" wording in §14 and is the authoritative event-timing rule for both the Sales Driven and Forecast Driven engines.
+- The **authoritative event-timing formula is `SUPPLY_PLANNING_CALCULATION_RULES.md` §10** (not this section). This consumer summary supersedes the previous "attribute by event period" wording in §14 for the page's display; where any wording differs, **§10 wins**.
 
 > Example: an event starting **Aug 15** has Preparation Date **Jul 16**. If today is **Jul 1**, the Preparation Date is 15 days out → it lands in the **0–18d** bucket (not by the Aug 15 event date).
 
@@ -299,14 +299,14 @@ The expanded SKU row's **right panel** is split into two blocks (top → bottom)
 | Column | Meaning |
 |--------|---------|
 | **Window** | `0–18d` / `19–30d` / `31–45d` / `46–90d` / **Total**. |
-| **Calculated Gap** | destination demand remaining **after** destination stock + timely supply — `= max(0, Regular Demand + Special Event Demand − Remaining Destination Stock − Timely Qualified Incoming − Timely Approved Supply)` (`SUPPLY_PLANNING_CALCULATION_RULES.md` §2C). Maps to DB `calculated_gap_qty`. |
-| **Recommended Qty** | the actual system shipping recommendation **after source availability, carton rules, and route timing feasibility** (`= carton-adjusted min(Calculated Gap, Eligible Source Available)`, §2C). Maps to DB `recommended_qty`. |
+| **Calculated Gap** | destination demand remaining **after** destination stock + timely supply. **Derived output consumed by this mapping; the formula, its inputs and operators are owned exclusively by `SUPPLY_PLANNING_CALCULATION_RULES.md` §2C** — this spec neither restates nor re-derives it. Maps to DB `calculated_gap_qty`. |
+| **Recommended Qty** | the actual system shipping recommendation **after source availability, carton rules, and route timing feasibility**. **Derived recommendation output; the formula, rounding mode, caps and carton behaviour are owned exclusively by `SUPPLY_PLANNING_CALCULATION_RULES.md` §2C** — not restated here. Maps to DB `recommended_qty`. |
 | **Route** | recommended carrier / method / last-mile display (from the Route Recommendation Engine, `CARRIER_AND_ROUTE_SPEC.md`; placeholder `--` until wired). |
 | **Reason** | compact explanation exposing: **Sales or Forecast** basis · **Platform or Overseas** stock basis · **Special Event** when applicable · stock/incoming shortage · timing constraint · route-selection reason. |
 
 **REMOVED from the visible Recommendation Summary table (2026-07-22):** `Required By`, `Suggested Source`, `Expected Arrival`, `Coverage Status`, `Uncovered Qty`.
 - **`Required By` remains a calculation/DB field** (`required_by_date` on the Draft line) — just hidden from the compact table.
-- **Do NOT persist `Uncovered Qty`** (nor `Coverage Status`). Instead derive at Runtime under the Execution Plan totals if useful: `Remaining Gap = max(Calculated Gap − Σ(Execution Plan planned_qty), 0)`.
+- **Do NOT persist `Uncovered Qty`** (nor `Coverage Status`). A **`Remaining Gap`** may be derived at Runtime under the Execution Plan totals for display only; its definition (Calculated Gap net of committed Execution-Plan quantity, floored at zero) and operators are owned by **`SUPPLY_PLANNING_CALCULATION_RULES.md` §2C** — not restated as an equation here.
 - Which engine fills the windows depends on the four modes (`SUPPLY_PLANNING_CALCULATION_RULES.md` §2B: Sales/Forecast × Platform/Overseas).
 - **Total row shows only `Window=Total` + `Calculated Gap` + `Recommended Qty`** — Route/Reason blank.
 - **Read-only / never submitted:** the Recommendation Summary alone never commits; **Submit Plan reads only the Execution Plan** (§11.4). Recommendation Summary and Execution Plan are **separate cards, stacked** (Recommendation Summary directly above Execution Plan — §11.5).

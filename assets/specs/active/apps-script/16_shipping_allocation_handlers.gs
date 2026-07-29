@@ -199,11 +199,25 @@ function handleUpsertShippingAllocationDraft_(body) {
 function handleUpsertShippingAllocationDraftLines_(body) {
   var draftId = String((body && body.allocation_draft_id) || '').trim();
   if (!draftId) return jsonResponse_({ success: false, error: 'allocation_draft_id required' });
-  var lines = (body && body.lines) || [];
+  var rawLines = (body && body.lines) || [];
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
   var now = procurementTimestamp_();
-  var created = 0, updated = 0;
+  var created = 0, updated = 0, skipped = 0;
+
+  // Alias-map every line up front, then validate the whole batch BEFORE any write so an incomplete
+  // manual line rejects the request with ZERO mutation (System Repair 2 §4/§8). A soft-cancel line
+  // (line_status='cancelled') and a system-generated recommendation snapshot are exempt from the
+  // four-field gate; only a manual execution line must carry From + To + Qty>0 + Method.
+  var lines = [];
+  for (var m = 0; m < rawLines.length; m++) lines.push(sadApplyLineAliases_(rawLines[m] || {}));
+  for (var v = 0; v < lines.length; v++) {
+    var lv = lines[v];
+    var isCancelV = String(lv.line_status || '').trim().toLowerCase() === 'cancelled';
+    var isSystemV = String(lv.generation_type || '').trim().toLowerCase() === 'system_generated';
+    if (isCancelV || isSystemV) continue;
+    if (!sadLineIsComplete_(lv)) return jsonResponse_({ success: false, error: 'incomplete draft line rejected — a manual Execution Plan line requires From + To + Qty>0 + Method (zero rows written)' });
+  }
 
   function isRec(name) { for (var i = 0; i < SAD_RECOMMENDATION_FIELDS_.length; i++) if (SAD_RECOMMENDATION_FIELDS_[i] === name) return true; return false; }
   var EXEC_FIELDS = ['planned_qty', 'selected_source_warehouse_id', 'selected_destination_warehouse_id',
@@ -212,9 +226,12 @@ function handleUpsertShippingAllocationDraftLines_(body) {
     'selected_last_mile_delivery', 'expected_arrival', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
 
   for (var i = 0; i < lines.length; i++) {
-    var l = sadApplyLineAliases_(lines[i] || {});
+    var l = lines[i];
     var lineId = String(l.allocation_draft_line_id || '').trim();
     var found = lineId ? procurementFindRow_(sh, 'allocation_draft_line_id', lineId) : null;
+    // Defensive: a soft-cancel for a line that was never stored (e.g. an incomplete route the user
+    // cleared before it was ever persisted) must NOT append a spurious cancelled row — skip it.
+    if (!found && String(l.line_status || '').trim().toLowerCase() === 'cancelled') { skipped++; continue; }
     if (found) {
       function setU(name) { if (l[name] != null) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(String(l[name])); } }
       // Execution-Plan (user) fields — always update when provided.
@@ -239,7 +256,21 @@ function handleUpsertShippingAllocationDraftLines_(body) {
       created++;
     }
   }
-  return jsonResponse_({ success: true, data: { allocation_draft_id: draftId, line_count: created + updated, created: created, updated: updated } });
+  return jsonResponse_({ success: true, data: { allocation_draft_id: draftId, line_count: created + updated, created: created, updated: updated, skipped: skipped } });
+}
+
+// Four-field completeness gate (System Repair 2 §4/§8) — the backend mirror of IRDraft.isRouteComplete.
+// A manual Execution Plan line is valid ONLY with From + To + Qty>0 + Method. An Amazon logical
+// destination (destination_marketplace set, selected_destination_warehouse_id null) is a valid To.
+function sadLineIsComplete_(l) {
+  l = l || {};
+  var from = String(l.selected_source_warehouse_id == null ? '' : l.selected_source_warehouse_id).trim();
+  var toReal = String(l.selected_destination_warehouse_id == null ? '' : l.selected_destination_warehouse_id).trim();
+  var hasTo = !!toReal || !!String(l.destination_marketplace == null ? '' : l.destination_marketplace).trim();
+  var qty = Number(l.planned_qty); if (isNaN(qty)) qty = 0;
+  var method = String(l.selected_shipping_method == null ? '' : l.selected_shipping_method).trim();
+  var methodOk = !!method && method.toLowerCase().indexOf('no available') === -1;
+  return !!from && hasTo && qty > 0 && methodOk;
 }
 
 // ---- submitShippingAllocationDrafts -------------------------------
