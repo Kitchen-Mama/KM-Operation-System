@@ -1,5 +1,15 @@
 # Supply Planning Calculation Rules
 
+> **Owner Boundary (reviewed 2026-07-28).**
+> - **Document Role:** the **single formula SSOT** — all math, time windows, tiers, rounding.
+> - **Canonical Owner For:** Engine A / Engine B; **T1–T4** (T4 = display-only, never in Request/PO payload); **Normal Sales Days** (latest 30 eligible normal days within a 90-completed-day window); Forecast Adjustment; Inventory Projection; Shortage; Reallocation; Net Order Need; **Shipping carton = FLOOR**; **Ordering carton = CEILING**; Engine `Current Stock` semantics.
+> - **Not Owner For:** DB schema (`DATABASE_RELATIONSHIP_MAP.md`), UI/layout (`INVENTORY_TABLE_MAPPING_SPEC.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), Shipment/PO lifecycle (respective specs). No other doc may restate a divergent formula.
+> - **Status:** Reviewed — Batch B Blockers Remain (formulas finalized; the **Qualified Incoming allowlist** that feeds Current-Stock netting is Batch B).
+> - **Current Version:** v4.1 FINALIZED (unchanged; Batch A adds this header only — no formula edited).
+> - **Last Reviewed:** 2026-07-28.
+> - **Depends On:** none (upstream formula authority).
+> - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).
+
 **Status:** ✅ **FINALIZED v4.1 — Calculation Specification** (v4.1 = v4.0 freeze + §22 Avg. Sales/day sample-acquisition refinement)
 **Runtime Status:** **NOT IMPLEMENTED**
 **Executable Test Status:** **PENDING** (Golden Scenario Matrix §33 defined; executable tests not yet built)
@@ -9,7 +19,7 @@
 **Authoritative formula owner:** THIS document. All other specs reference or map these formulas; none may restate a divergent version.
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) (operational flow), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) (Inventory Table mapping + AI Suggestion display), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md`](./RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md)
 
-> **Changelog v4.1 (2026-07-24 — residual documentation cleanup, NO version bump / core formulas unchanged):** §20.5 Forecast-Driven summary de-duplicated → now a pointer to the complete §2D (the old one-line summary that omitted Special Event Demand + Approved/Committed Supply is superseded). Added **§36 Order State Separation** (Layer A live planning signal vs Layer B persisted monthly/emergency Suggestion via `request_order_allocation_drafts`/`_lines` — `recommended_qty` snapshot vs user `order_qty`/`carton_qty` — plus the Emergency Manual Order flow through Engine A → Engine B → reallocation → Net Order Need) and **§37 Partial-Carton Override end-to-end** (allowed through Send / Approval / PO, never re-rounded; missing UPC still blocks Suggested + Send; MOQ still Future Extension). Owner remains **v4.1** (no v4.2). Golden Scenarios still **40 specified**; Executable Golden Tests still **PENDING**. **Residual surgical repair (2026-07-24, later pass):** §2D result renamed `Suggested Qty` → **`Forecast-Driven Remaining Need`** (Engine A live shortage, explicitly NOT Suggested Order Qty — that exists only after Engine B `Net Order Need`); §20.5 Sales-Driven likewise no longer names Engine A output "Suggested Qty"; §22.4 + §20.5 + §21.2 ownership pointers corrected so `INVENTORY_TABLE_MAPPING_SPEC.md §14/§15` is display/mapping context only and **this document §2C/§2D governs**; Golden Scenario #6 expected output now includes **− Approved/Committed Supply**; §24.10 + §36.2 exact monthly clock (5th/15:00) removed → cadence-only, exact schedule deferred to Runtime config; §36.2 draft parent/line grain corrected to match the existing schema (SKU on parent, inherited by lines via `request_allocation_draft_id`; cycle key `YYYY-MM`).
+> **Changelog v4.1 (2026-07-24 — residual documentation cleanup, NO version bump / core formulas unchanged):** §20.5 Forecast-Driven summary de-duplicated → now a pointer to the complete §2D (the old one-line summary that omitted Special Event Demand + Approved/Committed Supply is superseded). Added **§36 Order State Separation** (Layer A live planning signal vs Layer B persisted monthly/emergency Suggestion via `request_order_allocation_drafts`/`_lines` — `recommended_qty` snapshot vs user `order_qty`/`carton_qty` — plus the Emergency Manual Order flow through Engine A → Engine B → reallocation → Net Order Need) and **§37 Partial-Carton Override end-to-end** (allowed through Send / Approval / PO, never re-rounded; missing UPC still blocks Suggested + Send; MOQ still Future Extension). Owner remains **v4.1** (no v4.2). Golden Scenarios still **40 specified**; Executable Golden Tests still **PENDING**. **Residual surgical repair (2026-07-24, later pass):** §2D result renamed `Suggested Qty` → **`Forecast-Driven Remaining Need`** (Engine A live shortage, explicitly NOT Suggested Order Qty — that exists only after Engine B `Net Order Need`); §20.5 Sales-Driven likewise no longer names Engine A output "Suggested Qty"; §22.4 + §20.5 + §21.2 ownership pointers corrected so `INVENTORY_TABLE_MAPPING_SPEC.md §14/§15` is display/mapping context only and **this document §2C/§2D governs**; Golden Scenario #6 expected output now includes **− Approved/Committed Supply**; §24.10 + §36.2 exact monthly clock (5th/15:00) removed → cadence-only, exact schedule deferred to Runtime config; §36.2 draft parent/line grain corrected to match the existing schema (SKU on parent, inherited by lines via `request_allocation_draft_id`; cycle key `YYYY-MM`). **Round-3 residual cleanup (same v4.1):** §20 restated as the authoritative overseas-allocation rule (INVENTORY §16 only maps/displays it — reverse "official rule in Inventory" wording removed); §4 Inventory-source persistence wording replaced (the stale "no `shipping_allocation` DB / not persisted in MVP" line) with the layered persistence contract (live preview not persisted · shipping recommendation → `shipping_allocation_drafts`/`_lines` · monthly/emergency → `request_order_allocation_drafts`/`_lines` · Request/PO only after user decision · Runtime NOT IMPLEMENTED), with detailed schema referenced to the mapping specs. **Round-4 residual cleanup (same v4.1):** §15/§16 no longer label the **existing** `purchase_orders` lifecycle as "Future" — restated as live downstream user-decision/conversion layer with the same persistence layering (schema owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`); §20.3 Avg Sales/Day stale `sales_units_7d ÷ 7 / engine-defined run-rate` second entry point removed → resolved **exclusively by §22** (90-day window → latest 30 eligible normal days; `sales_units_7d÷7` is only §22's fallback rung).
 >
 > **Changelog v4.0 → v4.1 (2026-07-24 — Avg. Sales/day sample refinement):** §22 corrected. **Source Lookback Window = latest 90 completed calendar days (today excluded)**; the sample = the **latest 30 ELIGIBLE NORMAL sales days** collected by walking backward and skipping this SKU's Campaign/Deal/Special-Event days. Clarified: the "30" is a *historical normal-sales sample size, not a future 30-day window*; when fewer than 30 normal days exist inside the 90-day window, divide by the **actual** normal-day count (never a fixed 30) and keep the frozen low-sample/fallback ladder; campaign exclusion is **per-SKU participation** (`campaign_sku_lines`), never site-wide; Campaign∩Event overlap excluded once; cancelled/invalid events not counted; Event Preparation Date is not a contamination period; confirmed zero-sales day counts as a normal day (value 0), missing day is not auto-zero. Golden Scenarios §33 #35–#40 added. **Runtime: NOT IMPLEMENTED; Executable Test: PENDING — no engine built.**
 >
@@ -76,7 +86,7 @@ Net Replenishment Need
 **Term definitions (canonical):**
 - **Demand Within Planning Window** — the demand for the planning window from the current Sales-Driven / Forecast-Driven rule (Layer A projection + special-event pull-forward, §8–§10). The **planning window** is the configured target-days horizon (§6). **Event Demand is NOT deleted when a Shipment is created** — it is only *offset by qualified Supply*; creating a shipment never erases the underlying demand.
 - **Sellable / usable Current Stock** — on-hand that can actually satisfy this demand at the relevant location: `available_stock = current_stock − reserved_stock` (excludes damaged / reserved / non-sellable). Platform-fulfilled (FBA) vs shared self-fulfilled pools are counted per §20 (not double-counted).
-- **Qualified Incoming (canonical status range)** — incoming supply already committed enough to count against demand: **Approved Plan / Shipped / In Transit / Received-not-yet-reflected**, timed by ETA within the window. **Draft is NOT confirmed supply** and does **NOT** count as Qualified Incoming. (Received stock that has already increased `current_stock` is counted there, not double-counted here.)
+- **Qualified Incoming (business semantics — NOT a DB status allowlist)** — incoming supply already committed enough to count against demand. The stages **Approved Plan / Shipped / In Transit / Received-not-yet-reflected** are **business-stage examples**, timed by ETA within the window; they illustrate the *business meaning*, not a canonical set of DB status values. **The exact DB status values, per-table status allowlist, writer, lifecycle trigger, and cancellation-state mapping are BLOCKED — Requires Batch B Canonical Decision** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). **Draft is NOT confirmed supply** and does **NOT** count as Qualified Incoming. (Received stock already in `current_stock` is counted there, not double-counted here.)
 - **Approved / Committed Supply** — approved Request/PO quantity not yet in the incoming/stock buckets above (production committed but pre-shipment), to avoid re-ordering what is already on order.
 
 **Rules:**
@@ -165,6 +175,8 @@ Forecast-Driven Remaining Need = max( 0,
 
 A supply row is **Qualified Incoming** only when **all** hold: matching **SKU**; matching **Company**; matching **destination or eligible service scope**; **approved/qualified status**; **ETA ≤ requirement date**; **remaining unconsumed quantity > 0**. **Draft is never Qualified Incoming.**
 
+> **Business semantics only — not a DB status allowlist.** "approved/qualified status" here states the **business rule**; the **exact DB status values, per-table allowlist, writer, lifecycle trigger, and cancellation/unlock/reopen release mapping are BLOCKED — Requires Batch B Canonical Decision** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). This document defines the qualification's business meaning; it does not fix the DB status set.
+
 Each physical quantity exists in **exactly one** active planning bucket, in this progression — never counted in two at once:
 ```
 Committed Production → Approved Shipping Plan → In Transit → Delivered-not-Received → Received (Current Stock)
@@ -221,7 +233,7 @@ Supply-side inputs to projection:
 - `factory_stock` = **production-side** inventory (**Factory Inventory** domain).
 - `overseas_inventory_snapshot` = **warehouse-side** inventory (**Overseas Inventory** domain).
 - `shipments` + `shipment_lines` + ETA = **on-the-way** source.
-- **Shipping Allocation preview is NOT persisted in MVP** (no `shipping_allocation` DB).
+- **Persistence layering (canonical; detailed schema is owned by the mapping specs, not by this document):** (1) **Live analysis / calculation preview is NOT persisted** — it is a Runtime recompute. (2) A **scheduled / manual shipping recommendation** persists to the existing `shipping_allocation_drafts` / `shipping_allocation_draft_lines` (see `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6 / `SHIPMENT_CENTER_SPEC.md`). (3) A **monthly / emergency order suggestion** persists to the existing `request_order_allocation_drafts` / `request_order_allocation_draft_lines` (§36; `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.7). (4) Only **after the user's decision** does it enter the Request Order / Purchase Order lifecycle. (5) **Calculation Runtime remains NOT IMPLEMENTED** — these are spec contracts, not live behavior.
 - **Inventory-domain separation (CANONICAL 2026-07-21 — authority `DATABASE_RELATIONSHIP_MAP.md` §6.0).** Factory Inventory (`factory_stock` / `factory_stock_movements`) and Overseas Inventory (`overseas_inventory_snapshot` / `overseas_inventory_movements`) are **separate domains** — the calculation engine reads each as a **distinct input** and must **never merge them into one balance**. **On-the-way / in-transit shipment quantities are a transportation state, NOT inventory at either endpoint** — they must never be double-counted as available inventory simultaneously at the factory and the overseas warehouse. Overseas on-hand rises only on confirmed receipt; factory on-hand falls on confirmed dispatch.
 
 ---
@@ -489,8 +501,8 @@ Suggested Order Qty = CEILING(Net Order Need ÷ Units Per Carton) × Units Per C
 **Outputs:**
 - Recommended order need
 - Editable user request qty
-- *Future:* `purchase_orders` / `purchase_order_lines`
-- *Future:* generated documents
+- **Persistence (existing lifecycle — `purchase_orders` is NOT a Future table):** the live calculation preview is **not** persisted; scheduled/manual **shipping recommendations** persist through `shipping_allocation_drafts` / `shipping_allocation_draft_lines`; monthly/emergency **order recommendations** persist through `request_order_allocation_drafts` / `request_order_allocation_draft_lines`. **Only after an explicit user decision** does the result enter the **existing** `request_orders` / `request_order_lines` lifecycle and then `purchase_orders` / `purchase_order_lines` through conversion. Detailed schema is owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` (this document is not the DB-schema owner); **Calculation Runtime remains NOT IMPLEMENTED.**
+- *Future:* generated documents (Document Engine)
 
 > **Request Order is the bridge between planning calculation and procurement records.**
 
@@ -503,7 +515,7 @@ Suggested Order Qty = CEILING(Net Order Need ÷ Units Per Carton) × Units Per C
 | Level | Operational replenishment to marketplace / warehouse | Group-level procurement planning |
 | Inputs | Target Days, avg sales, site inventory, on-the-way, shipping allocation preview | Monthly projection, shortage/surplus, reallocation |
 | Math | Required Coverage Demand (Target Days × avg sales) | Net Order Need (after reallocation) + carton rounding |
-| Persists | `shipping_plans` only when user submits | *Future:* `purchase_orders` |
+| Persists | `shipping_plans` only when user submits | Existing lifecycle (not Future): `request_order_allocation_drafts` → (user decision) `request_orders` / `request_order_lines` → `purchase_orders` via conversion |
 | Question answered | "What to ship to the site now?" | "What must the group actually produce/order?" |
 
 ---
@@ -557,7 +569,7 @@ Suggested Order Qty = CEILING(Net Order Need ÷ Units Per Carton) × Units Per C
 
 ## 20. Overseas Shared Inventory Allocation Engine
 
-Defines how **shared overseas warehouse inventory** is allocated across self-fulfilled sites. This is the calculation-engine form of the official rule in [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) §16. **Calculation rule only — no code, no DB, no implementation.**
+Defines how **shared overseas warehouse inventory** is allocated across self-fulfilled sites. **This section (§20) is the authoritative overseas allocation calculation rule; [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) §16 only maps / displays this owner output.** **Calculation rule only — no code, no DB, no implementation.**
 
 ### 20.1 Allocation Scope
 
@@ -581,7 +593,7 @@ Defines how **shared overseas warehouse inventory** is allocated across self-ful
 ```
 Survival Need[site] = 18 × Avg Sales Per Day[site]
 ```
-- Avg Sales Per Day per the Inventory Table mapping = `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7` (rounded to 1 decimal), or the engine-defined run-rate.
+- **Avg Sales Per Day is resolved EXCLUSIVELY by §22** (never by an Inventory Table mapping field, and there is no separate "engine-defined run-rate" entry point). §22 searches within the **latest 90 completed calendar days**, selects the **latest 30 eligible normal sales days**, and divides by the **actual eligible normal-day count**; **confirmed zero-sales days count as eligible days**; a **missing source date is not zero**; the **§22 fallback ladder** governs insufficient eligible-day coverage. `sales_units_7d ÷ 7` is only §22's weekly **fallback** rung — never a canonical default here.
 - Survival allocation is the **highest priority**; only **remaining** inventory after all sites hit 18-day survival stock continues to §20.4.
 
 ### 20.4 Allocation Priority (remaining inventory)

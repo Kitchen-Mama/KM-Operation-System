@@ -127,6 +127,17 @@ function initFactoryStockPage() {
             };
             scrollCol.addEventListener('scroll', scrollCol._syncHandler);
         }
+        // Drag-to-resize on the Factory Inventory data columns (reuses the SKU Details resize engine
+        // via the shared dual-layer adapter). Header cells are static, so this init runs once at mount;
+        // filter/pagination re-renders reuse the same handles + injected width rule.
+        if (window.KM && window.KM.ui && window.KM.ui.dualLayerResize) {
+            window.KM.ui.dualLayerResize.init({
+                sectionId: 'factory-stock-section',
+                scrollHeaderSel: '#factory-stock-scroll-header',
+                scrollBodySel: '#factory-stock-scroll-body',
+                page: 'factory-stock', group: 'factory-inventory'
+            });
+        }
     }, 50);
 }
 

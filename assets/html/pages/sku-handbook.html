@@ -18,39 +18,26 @@
                     Browse products by lifecycle, product line, and series. Click a SKU card to review product images, specs, and key selling points. Use search when you already know the SKU or product name.
                 </div>
                 <div class="skuh-filters">
-                    <div class="skuh-filter">
-                        <label>Search</label>
-                        <input type="text" id="skuh-filter-search" placeholder="Search product name or SKU...">
-                    </div>
+                    <!-- Product Line / Brand / Lifecycle use the SHARED multi-select filter component
+                         (KM.ui.multiFilter → .kmf-*): search + Select All + Clear + checkbox list. The page
+                         mounts each here and feeds options + reads selection via onChange (see sku-handbook.js).
+                         Toolbar order (2026-07-28): … | Lifecycle | Search — Search sits to the RIGHT of
+                         Lifecycle, same height/typography as the other controls (shared filter tokens). -->
                     <div class="skuh-filter skuh-filter--dropdown">
                         <label>Product Line</label>
-                        <button type="button" class="skuh-dropdown-trigger" data-filter="productline" aria-expanded="false">
-                            <span class="skuh-dropdown-text">All Product Lines</span>
-                            <span class="skuh-dropdown-icon">▼</span>
-                        </button>
-                        <div class="skuh-dropdown-panel" data-filter="productline" id="skuh-panel-productline"></div>
+                        <div class="skuh-filter-mount" id="skuh-mount-productline"></div>
                     </div>
                     <div class="skuh-filter skuh-filter--dropdown">
                         <label>Brand</label>
-                        <button type="button" class="skuh-dropdown-trigger" data-filter="brand" aria-expanded="false">
-                            <span class="skuh-dropdown-text">All Brands</span>
-                            <span class="skuh-dropdown-icon">▼</span>
-                        </button>
-                        <div class="skuh-dropdown-panel" data-filter="brand" id="skuh-panel-brand"></div>
+                        <div class="skuh-filter-mount" id="skuh-mount-brand"></div>
                     </div>
                     <div class="skuh-filter skuh-filter--dropdown">
                         <label>Lifecycle</label>
-                        <button type="button" class="skuh-dropdown-trigger" data-filter="lifecycle" aria-expanded="false">
-                            <span class="skuh-dropdown-text">All Lifecycle</span>
-                            <span class="skuh-dropdown-icon">▼</span>
-                        </button>
-                        <div class="skuh-dropdown-panel" data-filter="lifecycle" id="skuh-panel-lifecycle">
-                            <label class="skuh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
-                            <label class="skuh-checkbox-item"><input type="checkbox" value="Upcoming SKU" checked> Upcoming SKU</label>
-                            <label class="skuh-checkbox-item"><input type="checkbox" value="Running in the Market" checked> Running in the Market</label>
-                            <label class="skuh-checkbox-item"><input type="checkbox" value="Phasing Out" checked> Phasing Out</label>
-                            <label class="skuh-checkbox-item"><input type="checkbox" value="Closure" checked> Closure</label>
-                        </div>
+                        <div class="skuh-filter-mount" id="skuh-mount-lifecycle"></div>
+                    </div>
+                    <div class="skuh-filter">
+                        <label>Search</label>
+                        <input type="text" id="skuh-filter-search" placeholder="Search product name or SKU...">
                     </div>
                 </div>
                 <div id="skuh-content"></div>

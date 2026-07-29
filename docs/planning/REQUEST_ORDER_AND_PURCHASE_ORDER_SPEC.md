@@ -54,7 +54,7 @@ Purchase Order        (purchase_orders + purchase_order_lines)    [Procurement C
 ```
 
 - **Downstream may copy upstream data but must NOT write back upstream.**
-- `purchase_orders` **never** writes `request_orders` (except the one-time `request_orders.status = converted_to_po` marker set on the request itself at conversion — that is the request layer recording its own conversion, not the PO editing the request).
+- `purchase_orders` **never** writes `request_orders` (except the one-time `request_orders.request_status = converted_to_po` marker set on the request itself at conversion — that is the request layer recording its own conversion, not the PO editing the request). *(Canonical: `request_status` is the only status field written; legacy `status` is read-only fallback for old rows and is never re-ensured/created/written.)*
 - `request_orders` **never** writes `shipments` / inventory / `factory_stock`. Upstream references are copied into `source_ref_type` / `source_ref_id` / `related_entity_*` for traceability only.
 
 ---
@@ -153,7 +153,7 @@ Draft ─▶ Saved ─▶ Submitted ─▶ Approved ─▶ Converted to PO ─�
 Cancelled  =  TERMINAL state
 ```
 
-- **Draft → Saved** — `Save` persists edits without changing status (still `draft`; "Saved" is the persisted-Draft state, not a separate DB value). **Saved → Submitted** = `submit` (`draft → pending_approval`). **Submitted → Approved** = `approve`. **Approved → Converted to PO** = `convert` (creates the Purchase Order snapshot — `PURCHASE_ORDER_SPEC.md` §8A PO Snapshot Rule; sets `request_orders.status = converted_to_po`). **Converted to PO → Completed** = `done` (`completed_at`/`completed_by`; leaves the default view, row never deleted).
+- **Draft → Saved** — `Save` persists edits without changing status (still `draft`; "Saved" is the persisted-Draft state, not a separate DB value). **Saved → Submitted** = `submit` (`draft → pending_approval`). **Submitted → Approved** = `approve`. **Approved → Converted to PO** = `convert` (creates the Purchase Order snapshot — `PURCHASE_ORDER_SPEC.md` §8A PO Snapshot Rule; sets `request_orders.request_status = converted_to_po` — canonical field; legacy `status` is never written). **Converted to PO → Completed** = `done` (`completed_at`/`completed_by`; leaves the default view, row never deleted).
 - **Status-value mapping:** the canonical `request_status` DB values are `draft` / `pending_approval` / `approved` / `converted_to_po` / `cancelled`; "Saved", "Submitted", "Completed" are lifecycle stages over those values (Saved = persisted draft; Submitted = `pending_approval`; Completed = `converted_to_po`/`approved` with `completed_at` set).
 
 **Cancelled = terminal-state rules (finalized — see §13.4):**
@@ -199,7 +199,7 @@ Cancelled  =  TERMINAL state
 - **Cancelled = terminal:** a cancelled PO **cannot be updated by the normal execution flow**; any future **restore must be explicit and audited** (never automatic). Row is never deleted.
 - **Status-value mapping:** DB enum values below (`issued` = Issued/Sent PO; supplier confirmation is recorded on the PO record and the legacy `confirmed` state maps to "Supplier Confirmed").
 
-**PO `status` enum (target — authoritative):**
+**PO `order_status` enum (target — authoritative):**
 `draft` · `issued` · `in_production` · `partial_completed` · `completed` · `partial_shipped` · `shipped` · `closure` · `cancelled`.
 
 ```
@@ -224,7 +224,7 @@ any (non-completed/closure) ──cancel──▶ cancelled
 
 `closure` has **two** sources:
 
-1. **Auto Closure** — when **every** PO line is **fully shipped** (`shipped_qty ≥ ordered_qty`), the system **may** auto-transition the PO `status → closure` (target behavior; not an auto-procurement algorithm — a simple completion check). *(Note: `remaining_qty = completed_qty − shipped_qty = 0` alone is NOT a closure signal — it is also true for a brand-new PO with nothing completed.)*
+1. **Auto Closure** — when **every** PO line is **fully shipped** (`shipped_qty ≥ ordered_qty`), the system **may** auto-transition the PO `order_status → closure` (canonical field `order_status`; legacy `status` is read-fallback only, never written) (target behavior; not an auto-procurement algorithm — a simple completion check). *(Note: `remaining_qty = completed_qty − shipped_qty = 0` alone is NOT a closure signal — it is also true for a brand-new PO with nothing completed.)*
 2. **Manual Closure** — a user closes / writes off a PO for a special reason. **`closure_reason` is required**; the system records `closed_by` and `closed_at`.
 
 **Suggested DB columns on `purchase_orders`:** `closure_reason`, `closed_by`, `closed_at` (added to the header schema; auto-created by `13_procurement_handlers.gs`). **`completed_qty` is added to `purchase_order_lines`** (production-completed quantity; drives `partial_completed` / `completed` and, with `shipped_qty`, `available_to_ship = completed_qty − shipped_qty`).
@@ -401,7 +401,7 @@ Row identity = **SKU + Country + Marketplace** (`marketplace_skus`).
 | Site Stock | latest `amazon_inventory_snapshot` = `available_qty + fc_transfer_qty + fc_processing_qty` (same normalized source as Inventory Replenishment Current Stock; **never the DOM**) | **Connected (v2)** — `--` if no snapshot |
 | 3rd Party | Σ `overseas_inventory_snapshot.available_stock` across same-country **non-factory** warehouses (same source as Inventory 3rd Party) | **Connected (v2)** — `--` if no snapshot |
 | Factory Stock | **Σ `factory_stock.current_stock` for the SKU across factory warehouses** | **Real** |
-| Ongoing Orders | Σ open-PO `remaining_qty` (fallback `ordered − max(shipped, completed)`) over `purchase_order_lines` ⋈ `purchase_orders.status ∈ {issued, in_production, partial_completed, partial_shipped, ready_to_ship, confirmed}` (per SKU) | **Connected (v2, best-effort)** — `--` if no open PO |
+| Ongoing Orders | Σ open-PO `remaining_qty` (fallback `ordered − max(shipped, completed)`) over `purchase_order_lines` ⋈ `purchase_orders.order_status ∈ {issued, in_production, partial_completed, partial_shipped, ready_to_ship, confirmed}` (canonical `order_status`; legacy `status` read-fallback only) (per SKU) | **Connected (v2, best-effort)** — `--` if no open PO |
 | Remaining | calculation engine | **Placeholder** → `--` |
 | Lead Time | `supplier_price_list.lead_time_days` — active row (`is_active ∈ {active,true,TRUE,yes,1}`), latest `effective_from` | **Connected (v2)** — `--` if table/getter absent or no active row |
 | Suggested Order | calculation engine | **Placeholder** → `--` |
@@ -510,7 +510,7 @@ Procurement calculation engine · Remaining / Risk / Suggested Order formula · 
    - **Missing `units_per_carton`** blocks the **Suggested calculation and Send** (no silent default of 1, 12, or any value); see §14 / §34.
    - The payload preserves **Suggested Order Qty** (`recommended_qty`), **User Order Qty** (`order_qty`), the **partial-carton override fact**, and the **override note** using the existing column naming — **no new DB column**.
 3. **Site-confirmation gate (bucket-aware):** Send T1/T2/T3 requires confirmation for that bucket; **All Request** requires T1 ∧ T2 ∧ T3 (Confirm All treats all visible scopes as confirmed) — see §12.10.
-4. Each request line keeps `request_bucket` = `T1/T2/T3`; allocation-draft lines carry snapshots (`factory_stock_snapshot`, `site_stock_snapshot`, `third_party_stock_snapshot`, `fc_qty_snapshot`, `target_pct_snapshot`), and request lines carry `forecast_qty` / `current_stock` from the same sources.
+4. Each request line keeps `request_bucket` = `T1/T2/T3`; allocation-draft lines carry snapshots (`factory_available_qty_snapshot`, `destination_stock_snapshot`, `third_party_available_qty_snapshot`, `regular_demand_snapshot`, `target_pct_snapshot`), and request lines carry `forecast_qty` / `current_stock` from the same sources.
 
 **Phasing (Part E):** Phase 1 (this task) = keep the current page/selector but preserve bucket + data integrity on every line. Phase 2 = T1/T2/T3 tabs (Draft / Pending Approval / Approved inside each). Phase 3 = Purchase Order Overview grouping assistant. UI tabs are **not** added in Phase 1; the data model already preserves bucket.
 
@@ -575,6 +575,7 @@ Records per-site confirmation before Series aggregation (site-level review → c
 | `status` | `draft` / `site_confirmed` / `submitted` / `cancelled` |
 | `generation_type` | **`scheduled` / `manual_refresh` / `user_created`** (replaces the old `source_type` generator indicator) |
 | `calculation_run_id` | the calculation run that produced this Draft (idempotency / audit) |
+| `formula_version` | formula version used for the recommendation (audit) |
 | `calculated_at` | when the recommendation was computed |
 | `source_data_as_of` | as-of timestamp of the analysis inputs used |
 | `draft_version` | version counter (only if versioning is required; see uniqueness below) |
@@ -588,12 +589,13 @@ Records per-site confirmation before Series aggregation (site-level review → c
 
 ### `shipping_allocation_draft_lines` (CANONICAL)
 
-**Identity:** `allocation_draft_line_id` (PK) · `allocation_draft_id` (FK) · `sku` · `site_sku` · `route_no` · `line_status`.
+**Identity:** `allocation_draft_line_id` (PK) · `allocation_draft_id` (FK) · `sku` · `site_sku`.
 **Window:** `window_code` · `window_start_date` · `window_end_date` · `required_by_date`.
-**Recommendation input snapshots:** `regular_demand_snapshot` · `special_event_demand_snapshot` · `destination_stock_snapshot` · `qualified_incoming_snapshot` · `approved_supply_snapshot` · `calculated_gap_qty` · `source_warehouse_id` · `source_available_qty_snapshot` · `units_per_carton`.
-**System recommendation snapshot (immutable per generation):** `recommended_qty` · `recommended_route_rule_id` · `recommended_rate_card_id` · `recommended_lead_time_id` · `recommended_carrier_id` · `recommended_shipping_method` · `recommended_last_mile_delivery` · `recommended_expected_arrival` · `recommended_estimated_cost` · `recommendation_reason` · `recommendation_flags`.
-**User Execution Plan (editable):** `planned_qty` · `ship_from` · `destination` · `selected_rate_card_id` · `selected_lead_time_id` · `selected_carrier_id` · `selected_shipping_method` · `selected_last_mile_delivery` · `expected_arrival` · `override_reason`.
-**Audit:** `note` · `created_at` · `updated_at`.
+**Recommendation input snapshots:** `regular_demand_snapshot` · `special_event_demand_snapshot` · `destination_stock_snapshot` · `qualified_incoming_snapshot` · `approved_supply_snapshot` · `calculated_gap_qty`.
+**System recommendation snapshot — source/destination + sequence (immutable per generation):** `recommended_source_warehouse_id` · `recommended_destination_warehouse_id` · `recommended_source_warehouse_code_snapshot` · `recommended_destination_warehouse_code_snapshot` · `source_initial_available_qty_snapshot` · `source_available_before_allocation_snapshot` · `allocation_sequence`. *(`recommended_source_warehouse_id` renamed from `source_warehouse_id`; `source_initial_available_qty_snapshot` renamed from `source_available_qty_snapshot`; legacy names are read-only aliases.)*
+**System recommendation snapshot — route / carrier / cost (immutable per generation):** `recommended_route_rule_id` · `recommended_rate_card_id` · `recommended_lead_time_id` · `recommended_carrier_id` · `recommended_shipping_method` · `recommended_last_mile_delivery` · `recommended_expected_arrival` · `recommended_estimated_cost` · `recommendation_reason` · `recommendation_flags` · `recommended_qty`.
+**User Execution Plan (editable):** `planned_qty` · `selected_source_warehouse_id` · `selected_destination_warehouse_id` · `selected_source_warehouse_code_snapshot` · `selected_destination_warehouse_code_snapshot` · `selected_rate_card_id` · `selected_lead_time_id` · `selected_carrier_id` · `selected_shipping_method` · `selected_last_mile_delivery` · `expected_arrival` · `units_per_carton` · `route_no` · `override_reason`. *(`selected_source_warehouse_id` / `selected_destination_warehouse_id` rename the old `ship_from` / `destination`; legacy names are read-only aliases.)*
+**Status / Audit:** `line_status` · `note` · `created_at` · `updated_at`.
 
 **Canonical quantity names:**
 - **`recommended_qty`** = the immutable **system suggestion snapshot** for that Draft generation. *(Legacy read/migration alias: `recommand_shipment_draft_qty` — the misspelling is a LEGACY ALIAS only, never the new canonical column name.)*
@@ -601,7 +603,7 @@ Records per-site confirmation before Series aggregation (site-level review → c
 - **On initial generation:** `planned_qty = recommended_qty`.
 - After the user edits `planned_qty`: the weekly/daily refresh **must never overwrite it**; live analysis **must never silently change `recommended_qty`** in that Draft; a deliberate **Regenerate** action creates/updates per the versioning rule and preserves auditability (§8/§9 of the round instruction).
 
-**Submit Plan reads ONLY:** `planned_qty` + the selected execution route fields (`ship_from` / `destination` / `selected_*` / `expected_arrival`).
+**Submit Plan reads ONLY:** `planned_qty` + the selected execution route fields (`selected_source_warehouse_id` / `selected_destination_warehouse_id` / `selected_*` / `expected_arrival`).
 **Recommendation Summary reads ONLY:** `calculated_gap_qty` + `recommended_qty` + the `recommended_*` route fields + `recommendation_reason`.
 
 **MUST NOT store** (derive at Runtime): `uncovered_qty` · `coverage_status` · `window_label` (use `window_code`) · route display string · source display name. **`required_by_date` IS a DB/calc field** (kept on the line) even though hidden from the compact Recommendation Summary table.
@@ -620,12 +622,19 @@ Records per-site confirmation before Series aggregation (site-level review → c
 |---|---|
 | `request_allocation_draft_id` | PK |
 | `planning_cycle` | **canonical monthly cycle key = `YYYY-MM`** (e.g. `2026-07`); a year-only value is not a valid monthly cycle. *(If the current Runtime persists year-only, that is a recorded Runtime Gap — Canonical: `YYYY-MM`; Current Runtime: verify existing persistence; Status: PENDING IMPLEMENTATION. No DB column / handler / payload changed this round.)* |
-| `company` · `country` · `marketplace` · `sku` · `category` · `series` | scope grain (SKU lives on this **parent**; child lines inherit it via `request_allocation_draft_id`) |
-| `status` | `draft` / `site_confirmed` / `submitted` / `cancelled` |
-| `source_type` | `manual` / `ai_suggested` |
+| `company` · `country` · `marketplace` · `sku` | scope grain (SKU lives on this **parent**; child lines inherit it via `request_allocation_draft_id`) |
+| `category_snapshot` · `series_snapshot` | Master SKU category / series captured at draft creation *(renamed from `category` / `series`; legacy names are read-only migration aliases)* |
+| `status` | `draft` / `site_confirmed` / `submitted` / `partially_submitted` / `cancelled` |
+| `generation_type` | **`scheduled` / `manual_refresh` / `user_created`** — the generator (**replaces the retired `source_type`**; `ai_suggested` is NOT used — the recommendation is a rules Engine, not AI). Manual Send Request = `user_created`. |
+| `draft_purpose` | `regular` / `emergency` — the normal flow is always `regular`; `emergency` only when a Draft is created from the (future) Emergency Order entry |
+| `calculation_run_id` · `formula_version` · `calculated_at` · `source_data_as_of` | calculation provenance — populated by Engine B when implemented; **blank in the current manual flow (never faked)** |
+| `draft_version` | version counter (manual flow = `1`) |
 | `created_by` · `created_at` · `updated_by` · `updated_at` | audit |
-| `submitted_by` · `submitted_at` | set when Send Request submits the draft |
+| `submitted_by` · `submitted_at` | set when Send Request fully submits the draft |
+| `cancelled_by` · `cancelled_at` · `cancel_reason` | soft cancel |
 | `note` | free text |
+
+**REMOVED from the header (canonical):** `source_type` — superseded by `generation_type` (legacy `source_type` may be read as a migration fallback, never written).
 
 **`request_order_allocation_draft_lines`:**
 
@@ -635,15 +644,20 @@ Records per-site confirmation before Series aggregation (site-level review → c
 | `request_allocation_draft_id` | FK → header |
 | `request_month` | the pushed month `YYYY-MM` |
 | `request_bucket` | `T1` / `T2` / `T3` (never `T4`; SKU inherited from the parent draft — no `sku` column on the line) |
+| `regular_demand_snapshot` · `special_event_demand_snapshot` | forecast demand snapshots *(regular renamed from `fc_qty_snapshot`; legacy name is a read-only alias)* |
+| `destination_stock_snapshot` · `third_party_available_qty_snapshot` · `qualified_incoming_snapshot` · `approved_supply_snapshot` · `factory_available_qty_snapshot` | supply / stock snapshots at edit time *(destination renamed from `site_stock_snapshot`; third-party from `third_party_stock_snapshot`; factory from `factory_stock_snapshot`; legacy names are read-only aliases)* |
+| `target_pct_snapshot` | target% snapshot (display) |
+| `calculated_gap_qty_snapshot` · `recommended_shipping_qty_snapshot` · `residual_production_required_snapshot` · `reallocation_in_qty_snapshot` · `reallocation_out_qty_snapshot` · `net_order_need_snapshot` | Engine A / Engine B calculation-output snapshots — **blank until the calculation runtime is implemented (never faked 0)** |
 | `recommended_qty` | **persisted system Suggested Order snapshot** produced by Engine B (Net Order Need → carton CEILING) when the calculation runtime is implemented. **Current Runtime:** may remain blank / placeholder because Engine A and Engine B are **NOT IMPLEMENTED**. A user edit **never** overwrites it. |
 | `order_qty` | **editable** user order qty (drives Request Order Draft line); user edit updates this + recomputes `carton_qty` and preserves `recommended_qty` |
 | `carton_qty` · `units_per_carton` | carton math inputs (snapshot; may be blank) |
-| `factory_stock_snapshot` · `site_stock_snapshot` · `third_party_stock_snapshot` | stock snapshots at edit time |
-| `fc_qty_snapshot` · `target_pct_snapshot` | forecast + target% snapshots (display) |
 | `allocation_method` | tag (no formula) |
+| `recommendation_reason` · `recommendation_flags` | Engine B recommendation annotations (blank in the current manual flow) |
+| `line_status` | `draft` / `submitted` / `cancelled` — a new line starts `draft`; Send Request marks the submitted lines `submitted` (+ `submitted_by` / `submitted_at`); unsent `T1` / `T2` / `T3` lines stay `draft` |
+| `submitted_by` · `submitted_at` | set on the line when it is submitted |
 | `note` · `created_at` · `updated_at` | audit + note |
 
-**Status enum:** `draft` / `site_confirmed` / `submitted` / `cancelled`.
+**Header status enum:** `draft` / `site_confirmed` / `submitted` / `partially_submitted` / `cancelled`. When only some buckets are sent, the header is `partially_submitted`; once every eligible line is submitted, the header is `submitted`.
 
 **Wiring (this task):** Apps Script `getRequestOrderAllocationDrafts` (read via `getOperationDb`), `upsertRequestOrderAllocationDraft`, `upsertRequestOrderAllocationDraftLines`, `submitRequestOrderAllocationDrafts`; adapter `KM.DB.getRequestOrderAllocationDrafts()` / `getRequestOrderAllocationDraftLines()` / `upsertRequestOrderAllocationDraft()` / `upsertRequestOrderAllocationDraftLines()` / `submitRequestOrderAllocationDrafts()`. **Send Request** reads eligible (`draft` / `site_confirmed`) lines with `order_qty > 0`, creates `request_orders` / `request_order_lines` via the existing `createRequestOrderDraft` handler (grouped by series + supplier/factory when available; else series with supplier/factory = `--`/pending), then marks the allocation drafts `submitted`. **Demo Mode:** in-memory only (no DB writes; clearly labelled).
 

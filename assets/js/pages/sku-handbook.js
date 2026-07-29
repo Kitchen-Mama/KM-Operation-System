@@ -386,21 +386,33 @@ function groupSkuHandbookItems(items) {
     return groups;
 }
 
+// Product Line / Brand / Lifecycle use the SHARED multi-select filter (KM.ui.multiFilter). Selection is an
+// array in SkuHandbookState ([] = all, consumed by applySkuHandbookFilters); mounting is idempotent so a
+// data reload just refreshes options (no duplicate listeners). Instant apply (onChange → re-render).
+function _skuhMountFilter(filterId, stateKey, label, allText, values) {
+    var mount = document.getElementById('skuh-mount-' + filterId);
+    if (!mount || !(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
+    window.KM.ui.multiFilter.create({
+        mount: mount,
+        filterId: 'skuh-' + filterId,
+        label: label,
+        allText: allText,
+        options: values,
+        selectedValues: SkuHandbookState[stateKey] || [],
+        onChange: function (vals) {
+            SkuHandbookState[stateKey] = vals;   // [] = all
+            renderSkuHandbookGroups(applySkuHandbookFilters(getSkuHandbookData()));
+        }
+    });
+}
 function renderSkuHandbookFilters() {
-    const data = getSkuHandbookData();
-    const productLines = [...new Set(data.map(i => i.productLine).filter(Boolean))].sort();
-    const brands = [...new Set(data.map(i => i.brand).filter(Boolean))].sort();
-
-    const plPanel = document.getElementById('skuh-panel-productline');
-    const brPanel = document.getElementById('skuh-panel-brand');
-    if (plPanel) {
-        plPanel.innerHTML = '<label class="skuh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
-            productLines.map(pl => `<label class="skuh-checkbox-item"><input type="checkbox" value="${pl}" checked> ${pl}</label>`).join('');
-    }
-    if (brPanel) {
-        brPanel.innerHTML = '<label class="skuh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
-            brands.map(b => `<label class="skuh-checkbox-item"><input type="checkbox" value="${b}" checked> ${b}</label>`).join('');
-    }
+    var data = getSkuHandbookData();
+    var productLines = [...new Set(data.map(i => i.productLine).filter(Boolean))].sort();
+    var brands = [...new Set(data.map(i => i.brand).filter(Boolean))].sort();
+    var lifecycles = ['Upcoming SKU', 'Running in the Market', 'Phasing Out', 'Closure'];
+    _skuhMountFilter('productline', 'productLine', 'Product Line', 'All Product Lines', productLines);
+    _skuhMountFilter('brand', 'brand', 'Brand', 'All Brands', brands);
+    _skuhMountFilter('lifecycle', 'lifecycle', 'Lifecycle', 'All Lifecycle', lifecycles);
 }
 
 function renderSkuHandbookStats(data) {
@@ -639,119 +651,20 @@ function clearSkuHandbookFilters() {
     SkuHandbookState.lifecycle = [];
     const searchInput = document.getElementById('skuh-filter-search');
     if (searchInput) searchInput.value = '';
-    // Re-check all checkboxes
-    document.querySelectorAll('#sku-handbook-section .skuh-dropdown-panel input[type="checkbox"]').forEach(cb => cb.checked = true);
-    // Reset trigger text
-    _updateSkuhDropdownText('productline');
-    _updateSkuhDropdownText('brand');
-    _updateSkuhDropdownText('lifecycle');
+    // Clear each shared-filter selection (the component syncs its own checkboxes + trigger text).
+    ['productline', 'brand', 'lifecycle'].forEach(function (fid) {
+        var mount = document.getElementById('skuh-mount-' + fid);
+        if (mount && mount.__kmfCtl) mount.__kmfCtl.setSelected([]);
+    });
     renderSkuHandbook();
-}
-
-// --- Checkbox Dropdown Logic ---
-function _initSkuhDropdowns() {
-    var root = document.getElementById('sku-handbook-section');
-    if (!root) return;
-
-    root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(trigger) {
-        trigger.onclick = function(e) {
-            e.stopPropagation();
-            var filterType = this.dataset.filter;
-            var panel = root.querySelector('.skuh-dropdown-panel[data-filter="' + filterType + '"]');
-            root.querySelectorAll('.skuh-dropdown-panel').forEach(function(p) {
-                if (p !== panel) { p.classList.remove('is-open'); }
-            });
-            root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
-            if (panel) {
-                panel.classList.toggle('is-open');
-                this.setAttribute('aria-expanded', panel.classList.contains('is-open') ? 'true' : 'false');
-            }
-        };
-    });
-
-    root.querySelectorAll('.skuh-dropdown-panel').forEach(function(panel) {
-        panel.onclick = function(e) { e.stopPropagation(); };
-        var filterType = panel.dataset.filter;
-        var allCb = panel.querySelector('input[value=""]');
-        var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-
-        if (allCb) {
-            allCb.onchange = function() {
-                otherCbs.forEach(function(cb) { cb.checked = allCb.checked; });
-                _syncSkuhFilterState(filterType, panel);
-            };
-        }
-        otherCbs.forEach(function(cb) {
-            cb.onchange = function() {
-                var checkedCount = Array.from(otherCbs).filter(function(c) { return c.checked; }).length;
-                if (allCb) allCb.checked = (checkedCount === otherCbs.length);
-                _syncSkuhFilterState(filterType, panel);
-            };
-        });
-    });
-
-    // Close on outside click
-    document.addEventListener('click', function(e) {
-        if (!root.contains(e.target)) {
-            root.querySelectorAll('.skuh-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
-            root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
-        }
-    });
-
-    // Close on Esc
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            root.querySelectorAll('.skuh-dropdown-panel').forEach(function(p) { p.classList.remove('is-open'); });
-            root.querySelectorAll('.skuh-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
-        }
-    });
-}
-
-function _syncSkuhFilterState(filterType, panel) {
-    var allCb = panel.querySelector('input[value=""]');
-    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-    var selected = Array.from(otherCbs).filter(function(c) { return c.checked; }).map(function(c) { return c.value; });
-
-    // If all checked or none checked, treat as no filter
-    if (allCb && allCb.checked) selected = [];
-    if (selected.length === otherCbs.length) selected = [];
-
-    var stateKey = filterType === 'productline' ? 'productLine' : filterType;
-    SkuHandbookState[stateKey] = selected;
-
-    _updateSkuhDropdownText(filterType);
-    var filtered = applySkuHandbookFilters(getSkuHandbookData());
-    renderSkuHandbookGroups(filtered);
-}
-
-function _updateSkuhDropdownText(filterType) {
-    var root = document.getElementById('sku-handbook-section');
-    if (!root) return;
-    var trigger = root.querySelector('.skuh-dropdown-trigger[data-filter="' + filterType + '"]');
-    var panel = root.querySelector('.skuh-dropdown-panel[data-filter="' + filterType + '"]');
-    if (!trigger || !panel) return;
-    var textSpan = trigger.querySelector('.skuh-dropdown-text');
-    var allCb = panel.querySelector('input[value=""]');
-    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-    var checked = Array.from(otherCbs).filter(function(c) { return c.checked; });
-
-    var labels = { productline: 'Product Lines', brand: 'Brands', lifecycle: 'Lifecycle' };
-    var label = labels[filterType] || filterType;
-
-    if (allCb && allCb.checked || checked.length === 0 || checked.length === otherCbs.length) {
-        textSpan.textContent = 'All ' + label;
-    } else if (checked.length === 1) {
-        textSpan.textContent = checked[0].value;
-    } else {
-        textSpan.textContent = checked.length + ' ' + label;
-    }
 }
 
 function initSkuHandbook() {
     updateSkuhLangButtons();
     renderSkuHandbook();
 
-    // Bind filter events
+    // Bind free-text search (instant). The Product Line / Brand / Lifecycle dropdowns are the shared
+    // KM.ui.multiFilter component (mounted in renderSkuHandbookFilters) — no page-local dropdown wiring.
     const searchInput = document.getElementById('skuh-filter-search');
     if (searchInput) {
         searchInput.addEventListener('input', function() {
@@ -760,9 +673,6 @@ function initSkuHandbook() {
             renderSkuHandbookGroups(filtered);
         });
     }
-
-    // Init checkbox dropdowns
-    _initSkuhDropdowns();
 }
 
 

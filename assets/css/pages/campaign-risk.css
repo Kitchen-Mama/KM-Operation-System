@@ -237,6 +237,39 @@
     accent-color: var(--km-brand-teal, #3abfb6);
 }
 
+/* Category / Series Tab Rails (2026-07-28) — two stacked rail ROWS (Category, then Series). Each row
+   is a compact label + the shared .km-tab-rail (single-row horizontal scroll, from components.css).
+   Replaces the old .cr-dropdown-* multi-select panels. */
+.cr-filter-panel--rails {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    /* Hard width boundary so the rails can only scroll INSIDE the card, never widen it (and never push
+       the page body into a horizontal scrollbar). Not `overflow:hidden` — the rail owns the scrolling. */
+    min-width: 0;
+    max-width: 100%;
+}
+.cr-filter-group--rail {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;          /* override .cr-filter-group min-width:200px so the rail can shrink + scroll */
+    max-width: 100%;       /* never grow past the card content-box; the rail scrolls within */
+}
+.cr-filter-group--rail .cr-filter-group-label {
+    flex: 0 0 auto;
+    width: 130px;
+    margin-bottom: 0;
+}
+.cr-filter-group--rail .cr-tab-rail.km-tab-rail {
+    flex: 1 1 auto;
+    min-width: 0;          /* let the rail become narrower than its content → scrolls inside itself */
+}
+@media (max-width: 640px) {
+    .cr-filter-group--rail { flex-direction: column; align-items: stretch; gap: 6px; }
+    .cr-filter-group--rail .cr-filter-group-label { width: auto; }
+}
+
 /* Table — Raw Data Table Visual Baseline */
 .cr-table {
     display: flex;

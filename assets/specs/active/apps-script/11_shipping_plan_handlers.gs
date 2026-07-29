@@ -12,30 +12,43 @@
 // tables only — no existing table/field is altered).
 // ============================================================
 
+// CANONICAL shipping_plans header (2026-07-28 DB sync). Weekly Plan = rough-quote layer: it snapshots the
+// chosen carrier_id + carrier_unit_rate + carrier_rate_type + import_duty_treatment (NO rate_card_id / Route /
+// Lead Time — those are resolved later at Shipment Draft). Warehouse endpoints: ship_from / destination
+// (human-readable snapshots) + source_warehouse_id / destination_warehouse_id (authoritative ids) +
+// ship_from_type / destination_type. NO origin_warehouse_id / origin_type. All reads/writes are by header NAME.
 var SHIPPING_PLANS_HEADERS_ = [
-  'shipping_plan_id', 'shipping_plan_no', 'plan_name',
-  'company', 'country', 'marketplace', 'ship_from', 'destination', 'shipping_method',
-  'plan_version', 'parent_shipping_plan_id', 'submit_batch_id', 'batch_status',
-  'carrier_id', 'carrier_unit_rate', 'carrier_rate_type',
-  'estimated_freight_cost', 'estimated_duty', 'estimated_total_cost', 'currency',
-  'status', 'created_by', 'created_at', 'submitted_by', 'submitted_at',
-  'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'rejected_reason',
-  'cancelled_by', 'cancelled_at',
-  'transferred_to_shipment_at', 'transferred_shipment_id',
-  'completed_at', 'completed_by',
-  'note', 'source', 'updated_by', 'updated_at'
+  'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
+  'company', 'country', 'marketplace',
+  'ship_from', 'source_warehouse_id', 'ship_from_type',
+  'destination', 'destination_warehouse_id', 'destination_type',
+  'shipping_method', 'last_mile_delivery', 'customs_type',
+  'carrier_id', 'carrier_unit_rate', 'carrier_rate_type', 'import_duty_treatment',
+  'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee', 'estimated_total_cost', 'currency',
+  'status', 'submit_batch_id', 'batch_status', 'plan_version',
+  'created_by', 'created_at', 'cancelled_by', 'cancelled_at', 'submitted_by', 'submitted_at',
+  'approved_by', 'approved_at', 'rejected_by', 'rejected_at', 'rejected_reason', 'rejected_comment',
+  'completed_by', 'completed_at', 'note', 'source', 'updated_at', 'updated_by',
+  'transferred_to_shipment_at', 'transferred_shipment_id'
 ];
 
+// CANONICAL shipping_plan_lines header (2026-07-28 DB sync). NEW: site_sku + marketplace (each line keeps its
+// real Marketplace + site SKU — a Combined Plan NEVER merges Marketplace lines in the DB) + the avg-sales
+// provenance snapshots. The retained snapshot_* Decision-Snapshot columns (current_stock / avg_sales_per_day /
+// days_of_supply / suggested_qty / target_days / fc_context / event_context) are STILL WRITTEN and copied into
+// the shipment Execution Snapshot — kept (additive) per the no-delete rule; NOT canonical-minimal but in use.
 var SHIPPING_PLAN_LINES_HEADERS_ = [
-  'shipping_plan_line_id', 'shipping_plan_id', 'sku',
+  'shipping_plan_line_id', 'shipping_plan_id', 'sku', 'site_sku', 'marketplace',
   // plan_carton_qty = CANONICAL renamed column (was carton_qty; legacy read-fallback only).
   'requested_qty', 'approved_qty', 'plan_carton_qty', 'units_per_carton',
-  'source_page', 'source_reason', 'inventory_snapshot_date', 'note',
-  'created_at', 'updated_at',
-  'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
-  'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_fc_context', 'snapshot_event_context',
   // Logistics Decision Snapshot (computed from sku_details carton dims/weights at Submit Plan / Save).
-  'carton_cbm', 'cbm', 'gross_weight', 'net_weight'
+  'carton_cbm', 'cbm', 'gross_weight', 'net_weight',
+  // Avg-sales provenance snapshots (canonical).
+  'snapshot_avg_sales_source', 'snapshot_normal_days_count', 'snapshot_excluded_event_days_count', 'snapshot_avg_sales_warning',
+  'source_page', 'source_reason', 'inventory_snapshot_date', 'note', 'created_at', 'updated_at',
+  // Retained in-use Decision Snapshot columns (additive; copied to shipment Execution Snapshot).
+  'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
+  'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_fc_context', 'snapshot_event_context'
 ];
 
 // ---- helpers ------------------------------------------------------
@@ -213,6 +226,26 @@ function shippingPlanCompanyMaps_(ss) {
   return { bySku: bySku, byMarket: byMarket };
 }
 
+/** country||marketplace||sku -> site_sku from marketplace_skus (blank when unavailable). */
+function shippingPlanSiteSkuMap_(ss) {
+  var map = {};
+  function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  var sh = ss.getSheetByName('marketplace_skus');
+  if (!sh) return map;
+  var d = sh.getDataRange().getValues();
+  if (d.length < 2) return map;
+  var h = d[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var cCo = h.indexOf('country'), cMk = h.indexOf('marketplace'), cSku = h.indexOf('sku'), cSite = h.indexOf('site_sku');
+  if (cSku === -1 || cSite === -1) return map;
+  for (var i = 1; i < d.length; i++) {
+    var site = String(d[i][cSite] || '').trim();
+    if (!site) continue;
+    var key = (cCo === -1 ? '' : lc(d[i][cCo])) + '||' + (cMk === -1 ? '' : lc(d[i][cMk])) + '||' + lc(d[i][cSku]);
+    if (!map[key]) map[key] = site;
+  }
+  return map;
+}
+
 /** Resolve a line's company per spec §3.3 priority (marketplaces → marketplace_skus → payload → blank). */
 function shippingPlanResolveCompany_(maps, country, marketplace, sku, payloadCompany) {
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
@@ -234,11 +267,14 @@ function shippingPlanResolveCompany_(maps, country, marketplace, sku, payloadCom
 // ---- createShippingPlansBatch -------------------------------------
 
 /**
- * Submit Plan write. Groups lines by the six-value key
- *   company + country + marketplace + ship_from + destination + shipping_method
- * (six-all-identical → one shipping_plan). All plans in this call share one submit_batch_id.
- * Creates shipping_plans (status=draft, plan_version=1, parent=self, batch_status=open) +
- * shipping_plan_lines (approved_qty=requested_qty, carton_qty, snapshots).
+ * Submit Plan write. Groups lines by the ROUTE key (company + country + ship_from + destination +
+ * shipping_method) — Marketplace is NOT part of the key, so one plan can COMBINE several Marketplaces
+ * (Combined Plan). Header marketplace is DERIVED from the plan's lines: one distinct → the actual
+ * Marketplace; two or more distinct → `MULTI` (a header scope marker, not a real Marketplace). Each line
+ * keeps its own real marketplace + site_sku (Marketplace lines are NEVER merged in the DB). All plans in
+ * this call share one submit_batch_id. Creates shipping_plans (status=draft, plan_version=1, parent=self,
+ * batch_status=open) + shipping_plan_lines. Carrier/cost snapshot is written only when a carrier is chosen
+ * (rough estimate); otherwise carrier + estimated_* stay blank (Not Applied — never 0).
  */
 function handleCreateShippingPlansBatch_(body) {
   var lines = (body && body.lines) || [];
@@ -250,17 +286,25 @@ function handleCreateShippingPlansBatch_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var planSheet = shippingPlanEnsureSheet_(ss, 'shipping_plans', SHIPPING_PLANS_HEADERS_);
   var lineSheet = shippingPlanEnsureSheet_(ss, 'shipping_plan_lines', SHIPPING_PLAN_LINES_HEADERS_);
-  // Ensure the CANONICAL renamed column on tabs that predate it (legacy carton_qty is NOT re-created).
-  sheetEnsureColumns_(lineSheet, ['plan_carton_qty']);
+  // Additive migration for the CANONICAL columns on tabs that predate them (no reorder / shift / dup).
+  sheetEnsureColumns_(planSheet, ['parent_shipping_plan_id', 'source_warehouse_id', 'ship_from_type',
+    'destination_warehouse_id', 'destination_type', 'last_mile_delivery',
+    'customs_type', 'carrier_id', 'carrier_unit_rate', 'carrier_rate_type',
+    'import_duty_treatment', 'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee',
+    'estimated_total_cost', 'currency', 'rejected_comment']);
+  sheetEnsureColumns_(lineSheet, ['site_sku', 'marketplace', 'plan_carton_qty',
+    'snapshot_avg_sales_source', 'snapshot_normal_days_count', 'snapshot_excluded_event_days_count', 'snapshot_avg_sales_warning']);
   var upcMap = shippingPlanUpcMap_(ss);
   var companyMaps = shippingPlanCompanyMaps_(ss);
   var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
+  var siteSkuMap = shippingPlanSiteSkuMap_(ss);
 
   var now = shippingPlanTimestamp_();
   var today = shippingPlanToday_();
   var submitBatchId = 'SB-' + Utilities.getUuid().substring(0, 12);
 
-  // Group by the six-value key.
+  // Group by the ROUTE key (company + country + ship_from + destination + shipping_method) — NOT marketplace.
+  function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
   var groups = {};
   var order = [];
   for (var i = 0; i < lines.length; i++) {
@@ -274,8 +318,20 @@ function handleCreateShippingPlansBatch_(body) {
     if (!sku) continue;
     // Resolve company from marketplace context (never leave it blank when a source exists).
     var company = shippingPlanResolveCompany_(companyMaps, country, marketplace, sku, ln.company);
-    var key = [company, country, marketplace, shipFrom, destination, method].join('||');
-    if (!groups[key]) { groups[key] = { meta: { company: company, country: country, marketplace: marketplace, ship_from: shipFrom, destination: destination, shipping_method: method }, lines: [] }; order.push(key); }
+    var key = [company, country, shipFrom, destination, method].join('||');
+    if (!groups[key]) {
+      groups[key] = { meta: {
+        company: company, country: country, ship_from: shipFrom, destination: destination, shipping_method: method,
+        source_warehouse_id: String(ln.source_warehouse_id || '').trim(),
+        ship_from_type: String(ln.ship_from_type || '').trim(),
+        destination_warehouse_id: String(ln.destination_warehouse_id || '').trim(),
+        destination_type: String(ln.destination_type || '').trim(),
+        last_mile_delivery: String(ln.last_mile_delivery || '').trim(),
+        carrier_id: String(ln.carrier_id || '').trim(),
+        customs_type: String(ln.customs_type || '').trim()
+      }, lines: [] };
+      order.push(key);
+    }
     groups[key].lines.push(ln);
   }
 
@@ -287,24 +343,47 @@ function handleCreateShippingPlansBatch_(body) {
     var meta = grp.meta;
     var planId = 'SP-' + Utilities.getUuid().substring(0, 10).toUpperCase();
     var planNo = 'WSP-' + today.replace(/-/g, '') + '-' + (g + 1);
-    var planName = [meta.company, meta.country, meta.marketplace, meta.shipping_method, today].filter(String).join(' / ');
+
+    // Header marketplace: one distinct line marketplace → actual; two or more → MULTI (scope marker).
+    var mkSet = {};
+    grp.lines.forEach(function (l) { var m = String(l.marketplace || '').trim(); if (m) mkSet[m] = 1; });
+    var distinctMk = Object.keys(mkSet);
+    var headerMarketplace = distinctMk.length === 1 ? distinctMk[0] : (distinctMk.length >= 2 ? 'MULTI' : '');
+    var planName = [meta.company, meta.country, (headerMarketplace || ''), meta.shipping_method, today].filter(String).join(' / ');
+
+    // Rough carrier/cost snapshot (only when a carrier is chosen for this route). Never throws.
+    var quote = shippingPlanRoughQuote_(ss, meta, grp.lines, today);
 
     shippingPlanAppendByHeader_(planSheet, {
       shipping_plan_id: planId,
+      parent_shipping_plan_id: planId, // MVP: parent = self
       shipping_plan_no: planNo,
       plan_name: planName,
       company: meta.company,
       country: meta.country,
-      marketplace: meta.marketplace,
+      marketplace: headerMarketplace,
       ship_from: meta.ship_from,
+      source_warehouse_id: meta.source_warehouse_id,
+      ship_from_type: meta.ship_from_type,
       destination: meta.destination,
+      destination_warehouse_id: meta.destination_warehouse_id,
+      destination_type: meta.destination_type,
       shipping_method: meta.shipping_method,
-      plan_version: 1,
-      parent_shipping_plan_id: planId, // MVP: parent = self
+      last_mile_delivery: meta.last_mile_delivery,
+      customs_type: quote.customs_type,
+      carrier_id: quote.carrier_id,
+      carrier_unit_rate: quote.carrier_unit_rate,
+      carrier_rate_type: quote.carrier_rate_type,
+      import_duty_treatment: quote.import_duty_treatment,
+      estimated_freight_cost: quote.estimated_freight_cost,
+      estimated_duty: quote.estimated_duty,
+      estimated_customs_fee: quote.estimated_customs_fee,
+      estimated_total_cost: quote.estimated_total_cost,
+      currency: quote.currency,
+      status: 'draft',
       submit_batch_id: submitBatchId,
       batch_status: 'open',
-      currency: '',
-      status: 'draft',
+      plan_version: 1,
       created_by: createdBy,
       created_at: now,
       note: '',
@@ -316,20 +395,32 @@ function handleCreateShippingPlansBatch_(body) {
     for (var j = 0; j < grp.lines.length; j++) {
       var l = grp.lines[j];
       var sku2 = String(l.sku || '').trim();
+      var lineMk = String(l.marketplace || '').trim();
       var requested = shippingPlanNum_(l.requested_qty);
       var upc = shippingPlanNum_(l.units_per_carton) || upcMap[sku2] || 0;
       var approved = requested;
       var carton = (upc > 0) ? Math.ceil(approved / upc) : 0;
       var logi = shippingPlanLineLogistics_(logisticsMap[sku2], approved, carton);
+      var siteSku = String(l.site_sku || '').trim() || siteSkuMap[lc(l.country) + '||' + lc(lineMk) + '||' + lc(sku2)] || '';
 
       shippingPlanAppendByHeader_(lineSheet, {
         shipping_plan_line_id: 'SPL-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
         shipping_plan_id: planId,
         sku: sku2,
+        site_sku: siteSku,
+        marketplace: lineMk,   // the line's REAL marketplace (never MULTI)
         requested_qty: requested,
         approved_qty: approved,
         plan_carton_qty: carton,
         units_per_carton: upc,
+        carton_cbm: logi.carton_cbm,
+        cbm: logi.cbm,
+        gross_weight: logi.gross_weight,
+        net_weight: logi.net_weight,
+        snapshot_avg_sales_source: String(l.snapshot_avg_sales_source || '').trim(),
+        snapshot_normal_days_count: (l.snapshot_normal_days_count === '' || l.snapshot_normal_days_count == null) ? '' : l.snapshot_normal_days_count,
+        snapshot_excluded_event_days_count: (l.snapshot_excluded_event_days_count === '' || l.snapshot_excluded_event_days_count == null) ? '' : l.snapshot_excluded_event_days_count,
+        snapshot_avg_sales_warning: String(l.snapshot_avg_sales_warning || '').trim(),
         source_page: String(l.source_page || 'inventory_replenishment').trim(),
         source_reason: String(l.source_reason || 'manual_submit').trim(),
         inventory_snapshot_date: String(l.inventory_snapshot_date || '').trim(),
@@ -342,19 +433,75 @@ function handleCreateShippingPlansBatch_(body) {
         snapshot_suggested_qty: shippingPlanNum_(l.snapshot_suggested_qty),
         snapshot_target_days: shippingPlanNum_(l.snapshot_target_days),
         snapshot_fc_context: (l.snapshot_fc_context == null) ? '' : l.snapshot_fc_context,
-        snapshot_event_context: (l.snapshot_event_context == null) ? '' : l.snapshot_event_context,
-        carton_cbm: logi.carton_cbm,
-        cbm: logi.cbm,
-        gross_weight: logi.gross_weight,
-        net_weight: logi.net_weight
+        snapshot_event_context: (l.snapshot_event_context == null) ? '' : l.snapshot_event_context
       });
       totalLines++;
     }
 
-    created.push({ shipping_plan_id: planId, shipping_plan_no: planNo, shipping_method: meta.shipping_method, line_count: grp.lines.length });
+    created.push({ shipping_plan_id: planId, shipping_plan_no: planNo, marketplace: headerMarketplace, shipping_method: meta.shipping_method, line_count: grp.lines.length });
   }
 
   return jsonResponse_({ success: true, data: { submit_batch_id: submitBatchId, plan_count: created.length, line_count: totalLines, plans: created } });
+}
+
+/**
+ * Rough carrier + cost snapshot for a Weekly Shipping Plan group. Returns blanks (Not Applied) when no
+ * carrier is chosen for the route or no active rate-card candidate exists (e.g. overseas → FBA has no rate
+ * system yet) — estimated_* stay '' (never 0). When a carrier IS chosen, resolves the rough candidate
+ * (country + method + last_mile + battery + active + effective; postal/route NOT required) and snapshots
+ * carrier_unit_rate / carrier_rate_type (= charge_type) / import_duty_treatment, then computes Phase-1 cost.
+ * Never throws.
+ */
+function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
+  var blank = { carrier_id: String(meta.carrier_id || '').trim(), carrier_unit_rate: '', carrier_rate_type: '',
+    import_duty_treatment: '', customs_type: String(meta.customs_type || '').trim(),
+    estimated_freight_cost: '', estimated_duty: '', estimated_customs_fee: '',
+    estimated_total_cost: '', currency: '' };
+  try {
+    var carrierId = String(meta.carrier_id || '').trim();
+    if (!carrierId) return blank;   // no carrier chosen → rough estimate not applicable yet
+    var skus = groupLines.map(function (l) { return String(l.sku || '').trim(); }).filter(String);
+    var battery = shippingBatteryClass_(ss, skus);
+    var candidates = shippingMatchRateCards_(ss, {
+      originCountry: '', destinationCountry: meta.country, shippingMethod: meta.shipping_method,
+      lastMile: meta.last_mile_delivery, batteryType: battery, quoteDate: today
+    }, false).filter(function (rc) { return String(rc.carrier_id || '').trim() === carrierId; });
+    if (!candidates.length) return blank;   // no candidate → Not Applied (blank)
+    var rc = candidates[0];
+    // Measures from the plan lines (approved_qty = requested at submit). gross weight in kg.
+    var upcMap = shippingPlanUpcMap_(ss), logisticsMap = shippingPlanSkuLogisticsMap_(ss);
+    var totCartons = 0, totCbm = 0, totGross = 0, dutyLines = [];
+    groupLines.forEach(function (l) {
+      var sku = String(l.sku || '').trim();
+      var qty = shippingPlanNum_(l.requested_qty);
+      var upc = shippingPlanNum_(l.units_per_carton) || upcMap[sku] || 0;
+      var carton = upc > 0 ? Math.ceil(qty / upc) : 0;
+      var logi = shippingPlanLineLogistics_(logisticsMap[sku], qty, carton);
+      totCartons += carton;
+      totCbm += shippingPlanNum_(logi.cbm);
+      totGross += shippingPlanNum_(logi.gross_weight);
+      dutyLines.push({ sku: sku, qty: qty });
+    });
+    var freight = shippingFreight_(rc, { grossWeightKg: totGross, cbm: totCbm, cartons: totCartons });
+    var customsFee = shippingCustomsFee_(rc);
+    var treat = String(rc.import_duty_treatment || '').trim();
+    var duty = shippingDuty_(ss, dutyLines, treat, meta.country, today);
+    var total = freight.freight + customsFee + (duty === '' ? 0 : duty);
+    return {
+      carrier_id: carrierId,
+      carrier_unit_rate: shippingPlanNum_(rc.unit_rate),
+      carrier_rate_type: String(rc.charge_type || '').trim(),
+      import_duty_treatment: treat,
+      customs_type: String(meta.customs_type || rc.customs_type || '').trim(),
+      estimated_freight_cost: freight.freight,
+      estimated_duty: duty,
+      estimated_customs_fee: customsFee,
+      estimated_total_cost: shippingPlanRound_(total, 2),
+      currency: String(rc.currency || '').trim()
+    };
+  } catch (e) {
+    return blank;
+  }
 }
 
 // ---- updateShippingPlanStatus -------------------------------------
@@ -410,6 +557,15 @@ function handleUpdateShippingPlanStatus_(body) {
   var curStatus = col('status') !== -1 ? String(rowVals[col('status')]).trim() : '';
   var now = shippingPlanTimestamp_();
   function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(value); }
+
+  // Combined-Plan guard: a CHILD (parent_shipping_plan_id points at a Combined Parent) can NOT be submitted /
+  // approved / cancelled independently — the Combined Parent owns those actions (§七). transfer is likewise
+  // blocked in createShipmentFromApprovedPlan_.
+  var pcCol = col('parent_shipping_plan_id');
+  var parentRef = pcCol !== -1 ? String(rowVals[pcCol] || '').trim() : '';
+  if (parentRef && parentRef !== planId && (transition === 'submit' || transition === 'approve' || transition === 'cancel')) {
+    return jsonResponse_({ success: false, error: 'Plan ' + planId + ' is a child of Combined Parent ' + parentRef + ' — submit/approve/cancel via the Combined Parent (or uncombine first).' });
+  }
 
   if (transition === 'submit') {
     if (curStatus !== 'draft') return jsonResponse_({ success: false, error: 'Only a Draft plan can be submitted (current: ' + curStatus + ')' });

@@ -1281,27 +1281,21 @@ function setReplenCategoryTab(category) {
 }
 window.setReplenCategoryTab = setReplenCategoryTab;
 
-// Cached tab model ({name, count}[]) used by both the initial render and the resize-driven overflow
-// re-layout, so the layout function can rebuild from data without re-deriving categories.
-var _replenCatCache = null;
-
-// One category pill (main row).
-function _replenCatPillHtml(name, count, active) {
+// One category tab — uses the SHARED Category Tab Rail markup (.km-tab-rail__tab / __label / __count),
+// identical to the Order System, so all three pages share one look. Clicking re-renders (via the inline
+// onclick); active state is rebuilt on every render from `replenCategoryTab`.
+function _replenCatTabHtml(name, count, active) {
     var safe = escapeReplenHtml(name);
     var arg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return '<button class="replen-category-tab' + (active ? ' is-active' : '') + '" data-cat="' + safe +
-        '" onclick="setReplenCategoryTab(\'' + arg + '\')">' + safe +
-        ' <span class="replen-category-tab__count">' + count + '</span></button>';
-}
-// One category row inside the "More Categories ▾" dropdown.
-function _replenCatMoreItemHtml(name, count, active) {
-    var safe = escapeReplenHtml(name);
-    var arg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return '<button type="button" role="menuitem" class="replen-category-more__item' + (active ? ' is-active' : '') +
-        '" onclick="setReplenCategoryTab(\'' + arg + '\')"><span>' + safe +
-        '</span><span class="replen-category-tab__count">' + count + '</span></button>';
+    return '<button type="button" class="km-tab-rail__tab' + (active ? ' is-active' : '') + '" data-cat="' + safe +
+        '" onclick="setReplenCategoryTab(\'' + arg + '\')">' +
+        '<span class="km-tab-rail__label">' + safe + '</span>' +
+        '<span class="km-tab-rail__count">' + count + '</span></button>';
 }
 
+// Build the Category Tab Rail. All categories live in ONE horizontally-scrollable rail (the old
+// measure-based overflow dropdown that hid later categories was removed 2026-07-28) — the shared
+// KM.ui.tabRail handles wheel/keyboard/scroll-into-view, and the last category is always reachable.
 function renderReplenCategoryTabs(allData) {
     var bar = document.getElementById('replenCategoryTabs');
     if (!bar) return;
@@ -1309,7 +1303,6 @@ function renderReplenCategoryTabs(allData) {
     if (!allData || allData.length === 0) {
         bar.innerHTML = '';
         bar.style.display = 'none';
-        _replenCatCache = null;
         return;
     }
 
@@ -1325,110 +1318,23 @@ function renderReplenCategoryTabs(allData) {
     // Reset to All if the previously-active category is no longer present (data changed).
     if (replenCategoryTab !== 'All' && categoryList.indexOf(replenCategoryTab) === -1) replenCategoryTab = 'All';
 
-    // 'All' is always first; category order = the existing alphabetical data order (unchanged).
-    _replenCatCache = [{ name: 'All', count: allData.length }].concat(categoryList.map(function (c) {
+    // 'All' is always first; counts come from the full (search-scoped) set so selecting a category never
+    // zeroes the other category counts.
+    var tabs = [{ name: 'All', count: allData.length }].concat(categoryList.map(function (c) {
         return { name: c, count: allData.filter(function (it) { return _replenCategoryOf(it) === c; }).length };
     }));
 
     bar.style.display = '';
-    _replenBindCategoryMoreGlobal();
-    _replenLayoutCategoryOverflow();
+    bar.innerHTML = tabs.map(function (t) {
+        return _replenCatTabHtml(t.name, t.count, t.name === replenCategoryTab);
+    }).join('');
+
+    if (window.KM && window.KM.ui && window.KM.ui.tabRail) {
+        window.KM.ui.tabRail.enhance(bar);
+        window.KM.ui.tabRail.scrollActiveIntoView(bar);
+    }
 }
 window.renderReplenCategoryTabs = renderReplenCategoryTabs;
-
-// Single-row overflow layout: render every pill, measure, and if they exceed the container width,
-// keep the pills that fit (All + as many leading categories as possible) and move the rest into a
-// "More Categories ▾" dropdown. If the selected category is among the overflow, it is pinned as a
-// visible pill just before the dropdown so the current selection is always on screen. Never wraps to
-// a 2nd row, never CSS-clips a category out of existence. Filtering / counts are untouched.
-function _replenLayoutCategoryOverflow() {
-    var bar = document.getElementById('replenCategoryTabs');
-    if (!bar || !_replenCatCache) return;
-    var tabs = _replenCatCache;
-
-    // Measure pass — render all pills, no dropdown.
-    bar.innerHTML = tabs.map(function (t) { return _replenCatPillHtml(t.name, t.count, t.name === replenCategoryTab); }).join('');
-
-    var barWidth = bar.clientWidth;
-    if (!barWidth) return;   // container not laid out yet (page hidden) — retry on next render/resize
-    var pills = Array.prototype.slice.call(bar.querySelectorAll('.replen-category-tab'));
-    if (pills.length !== tabs.length) return;
-
-    var GAP = 8;
-    var widths = pills.map(function (p) { return p.offsetWidth; });
-    var total = widths.reduce(function (a, b) { return a + b; }, 0) + GAP * Math.max(0, pills.length - 1);
-    if (total <= barWidth) return;   // everything fits on one row — leave the all-pills render as-is
-
-    // Greedily keep leading pills (All is index 0, always kept), reserving room for the More button.
-    var MORE_RESERVE = 175;          // px reserved for "More Categories ▾" incl. gap
-    var budget = barWidth - MORE_RESERVE;
-    var visible = [0];
-    var used = widths[0];
-    for (var i = 1; i < tabs.length; i++) {
-        var w = widths[i] + GAP;
-        if (used + w <= budget) { used += w; visible.push(i); } else break;
-    }
-
-    var activeIdx = -1;
-    for (var j = 0; j < tabs.length; j++) { if (tabs[j].name === replenCategoryTab) { activeIdx = j; break; } }
-    var overflow = [];
-    for (var k = 0; k < tabs.length; k++) { if (visible.indexOf(k) === -1) overflow.push(k); }
-    var pinActive = (activeIdx > 0 && overflow.indexOf(activeIdx) !== -1);
-
-    var html = visible.map(function (i) { return _replenCatPillHtml(tabs[i].name, tabs[i].count, tabs[i].name === replenCategoryTab); }).join('');
-    if (pinActive) html += _replenCatPillHtml(tabs[activeIdx].name, tabs[activeIdx].count, true);
-    var listIdx = overflow.filter(function (i) { return !(pinActive && i === activeIdx); });
-    html += '<div class="replen-category-more" id="replenCategoryMore">' +
-        '<button type="button" class="replen-category-more__trigger" id="replenCategoryMoreTrigger" ' +
-        'aria-haspopup="menu" aria-expanded="false" aria-controls="replenCategoryMoreList" ' +
-        'onclick="toggleReplenCategoryMore(event)">More Categories <span class="replen-category-more__caret" aria-hidden="true">▾</span></button>' +
-        '<div class="replen-category-more__list" id="replenCategoryMoreList" role="menu" aria-label="More categories" hidden>' +
-        listIdx.map(function (i) { return _replenCatMoreItemHtml(tabs[i].name, tabs[i].count, tabs[i].name === replenCategoryTab); }).join('') +
-        '</div></div>';
-    bar.innerHTML = html;
-}
-window._replenLayoutCategoryOverflow = _replenLayoutCategoryOverflow;
-
-function toggleReplenCategoryMore(ev) {
-    if (ev) { try { ev.stopPropagation(); } catch (_e) {} }
-    var list = document.getElementById('replenCategoryMoreList');
-    var trg = document.getElementById('replenCategoryMoreTrigger');
-    if (!list) return;
-    var willOpen = list.hidden;
-    list.hidden = !willOpen;
-    if (trg) trg.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-}
-window.toggleReplenCategoryMore = toggleReplenCategoryMore;
-
-var _replenCatMoreBound = false;
-var _replenCatResizeTimer = null;
-function _replenBindCategoryMoreGlobal() {
-    if (_replenCatMoreBound) return;
-    // Outside-click closes the dropdown.
-    document.addEventListener('click', function (ev) {
-        var list = document.getElementById('replenCategoryMoreList');
-        if (!list || list.hidden) return;
-        if (ev.target && ev.target.closest && ev.target.closest('#replenCategoryMore')) return;
-        list.hidden = true;
-        var trg = document.getElementById('replenCategoryMoreTrigger');
-        if (trg) trg.setAttribute('aria-expanded', 'false');
-    });
-    // Escape closes + returns focus to the trigger.
-    document.addEventListener('keydown', function (ev) {
-        if (ev.key !== 'Escape') return;
-        var list = document.getElementById('replenCategoryMoreList');
-        if (!list || list.hidden) return;
-        list.hidden = true;
-        var trg = document.getElementById('replenCategoryMoreTrigger');
-        if (trg) { trg.setAttribute('aria-expanded', 'false'); trg.focus(); }
-    });
-    // Re-flow overflow on resize (debounced).
-    window.addEventListener('resize', function () {
-        if (_replenCatResizeTimer) clearTimeout(_replenCatResizeTimer);
-        _replenCatResizeTimer = setTimeout(function () { _replenLayoutCategoryOverflow(); }, 150);
-    });
-    _replenCatMoreBound = true;
-}
 
 // ── Planning Model display (Canonical Decision 1) ────────────────────────────────────────────────
 // The first column holds the canonical replenishment_model value (sales_driven / forecast_driven).
@@ -1508,6 +1414,9 @@ function renderReplenishment() {
 
     // Build/refresh the Category tabs from the full result set, then filter to the active tab.
     renderReplenCategoryTabs(allData);
+    // Keep the Category Section header title in sync with the active tab (persists across re-render/switch).
+    var _catTitleEl = document.getElementById('replenCategoryTitle');
+    if (_catTitleEl) _catTitleEl.textContent = (replenCategoryTab === 'All') ? 'All Categories' : replenCategoryTab;
     const data = (replenCategoryTab === 'All')
         ? allData
         : allData.filter(function (it) { return _replenCategoryOf(it) === replenCategoryTab; });
@@ -1824,18 +1733,15 @@ function toggleReplenRow(sku) {
         scrollBody.appendChild(scrollElement);
     }
     
-    // Sync heights after DOM insertion
+    // Expand-row equal height is now CSS-native (flex-column .fixed-col / .fixed-body + the
+    // .replen-expand-panel--fixed { flex:1 } that stretches to the taller .scroll-col) — so the SKU
+    // identity panel is already full height in the FIRST paint, with NO JS measure-and-sync and NO
+    // inline height writes. This tick only seeds routes + charts (unrelated to height).
     setTimeout(() => {
-        syncExpandPanelHeight(sku);
-        
         // Seed / restore the Execution Plan routes (from Working Draft, or a default preview).
         initializeShippingAllocation(sku, skuData);
-        
         // Initialize charts (Monthly Achievement Rate is now an honest table, not a chart — no init needed).
         initSalesTrendChart(sku, skuData);
-
-        // Re-sync after initialization
-        setTimeout(() => syncExpandPanelHeight(sku), 50);
     }, 0);
 }
 
@@ -1892,8 +1798,12 @@ function submitReplenishmentPlans() {
                     sku: item.sku,
                     qty: qty,
                     skuData: item,
-                    ship_from: r.ship_from || '',
-                    destination: r.destination || '',
+                    ship_from: r.ship_from || '',                         // display name
+                    source_warehouse_id: r.source_warehouse_id || '',    // canonical From id
+                    ship_from_type: r.ship_from_type || '',
+                    destination: r.destination || '',                    // display name
+                    destination_warehouse_id: r.destination_warehouse_id || '',  // canonical To id
+                    destination_type: r.destination_type || '',
                     sourceReason: r.source_reason || 'pm_adjustment'
                 });
             }
@@ -1929,8 +1839,12 @@ function submitReplenishmentPlans() {
                 company: lineCompany,
                 country: country,
                 marketplace: marketplace,
-                ship_from: item.ship_from || '',       // from the Execution Plan route (future: replenishment_route_rules)
-                destination: item.destination || '',   // from the Execution Plan route (future: replenishment_route_rules)
+                ship_from: item.ship_from || '',                             // display name (Warehouse Name is display-only)
+                source_warehouse_id: item.source_warehouse_id || '',        // canonical From (warehouse_id)
+                ship_from_type: item.ship_from_type || '',
+                destination: item.destination || '',                        // display name
+                destination_warehouse_id: item.destination_warehouse_id || '',  // canonical To (warehouse_id)
+                destination_type: item.destination_type || '',
                 shipping_method: method,
                 sku: item.sku,
                 requested_qty: item.qty,
@@ -2144,22 +2058,38 @@ function _saveAllocationDraftFromDom(sku) {
             var el = rowEl.querySelector('[data-field="' + f + '"]');
             return el ? String(el.value || '').trim() : '';
         }
+        // Read the display name + warehouse_type off the SELECTED <option> of a warehouse picker (so
+        // ship_from/destination stay the human label while *_warehouse_id holds the canonical value).
+        function selOptData(f, attr) {
+            var el = rowEl.querySelector('[data-field="' + f + '"]');
+            if (!el || !el.options || el.selectedIndex < 0) return '';
+            var opt = el.options[el.selectedIndex];
+            return opt ? String(opt.getAttribute(attr) || '').trim() : '';
+        }
         var method = fieldVal('shipping_method');
         var qty = parseInt(fieldVal('qty')) || 0;
-        var shipFrom = fieldVal('ship_from');
-        var destination = fieldVal('destination');
+        var sourceWarehouseId = fieldVal('source_warehouse_id');       // canonical id (option value)
+        var destWarehouseId = fieldVal('destination_warehouse_id');    // canonical id (option value)
+        var shipFrom = selOptData('source_warehouse_id', 'data-wh-name');       // display name
+        var shipFromType = selOptData('source_warehouse_id', 'data-wh-type');   // warehouse_type snapshot
+        var destination = selOptData('destination_warehouse_id', 'data-wh-name');
+        var destType = selOptData('destination_warehouse_id', 'data-wh-type');
         var etaEl = rowEl.querySelector('[data-field="expected_arrival"]');
         var expectedArrival = etaEl ? String(etaEl.textContent || '').trim() : '';
-        // Keep a row if it carries ANY user intent (method / qty / ship_from / destination).
+        // Keep a row if it carries ANY user intent (method / qty / From / To warehouse).
         // `qty` is the user Execution quantity (canonical planned_qty). `recommended_qty` (immutable
         // system snapshot) is preserved separately and never overwritten by a user edit.
-        if (method || qty > 0 || shipFrom || destination) {
+        if (method || qty > 0 || sourceWarehouseId || destWarehouseId) {
             rows.push({
                 shipping_method: method,
                 qty: qty,                              // = planned_qty (canonical)
                 planned_qty: qty,
-                ship_from: shipFrom,
-                destination: destination,
+                source_warehouse_id: sourceWarehouseId,   // canonical From (warehouse_id)
+                ship_from: shipFrom,                       // display name only
+                ship_from_type: shipFromType,
+                destination_warehouse_id: destWarehouseId, // canonical To (warehouse_id)
+                destination: destination,                  // display name only
+                destination_type: destType,
                 expected_arrival: expectedArrival,
                 source_reason: 'pm_adjustment'
             });
@@ -2173,6 +2103,8 @@ function _saveAllocationDraftFromDom(sku) {
 // Explicit user edit on an Execution Plan route: recompute totals AND capture the Working Draft.
 // (Pure render must NOT call this.)
 function onExecutionRouteEdit(sku) {
+    _execEnforceDistinctWarehouses(sku);   // From and To can never be the same warehouse_id (verify #19)
+    _execRebuildMethodOptions(sku);        // re-filter Method from carrier_rate_cards on From/scope change (§3.5)
     updateShippingAllocationTotal(sku);
     _irUpdateRouteEtas(sku);        // recompute Expected Arrival on From/To/Method change (§11.3)
     _saveAllocationDraftFromDom(sku);
@@ -2266,9 +2198,90 @@ function _execEsc(v) {
     return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Execution Plan shipping-method options. FUTURE: ship_from / destination / shipping_method are
-// defaulted from replenishment_route_rules and may be permission-locked (see CARRIER_AND_ROUTE_SPEC).
-var EXEC_PLAN_METHODS = ['Air Freight', 'Sea Freight', 'Express', 'Rail Freight'];
+// ── Execution Plan shipping-method options — REAL carrier_rate_cards read path (2026-07-28) ──────────
+// Method is NO LONGER a hardcoded list. Options are derived live from `carrier_rate_cards`
+// (KM.DB.getCarrierRateCards) matched to the route: origin country (From warehouse) + destination
+// country (selected Marketplace/Site country — for Amazon this comes from the Site context, NEVER from
+// an FBA warehouse) + marketplace. The displayed value is the rate card's real shipping_method (label
+// falls back to shipping_method_label when present). No mock, no static fallback — when nothing matches
+// the picker shows an explicit "No available methods" empty state. See CARRIER_AND_ROUTE_SPEC.
+
+// A rate card is usable if it is not explicitly inactive and (when effective dates are present) today
+// falls inside the effective window. carrier_rate_cards has NO is_active column — the only status
+// signal is the free-text `status` field, so we exclude explicit inactive tokens rather than allow-list.
+function _execRateCardUsable(rc) {
+    if (!rc) return false;
+    var st = String(rc.status || '').trim().toLowerCase();
+    if (st === 'inactive' || st === 'disabled' || st === 'archived' || st === 'expired' || st === 'void' || st === 'deleted') return false;
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    function parseD(s) { var d = new Date(String(s == null ? '' : s).trim()); return isNaN(d.getTime()) ? null : d; }
+    var from = rc.effectiveFrom ? parseD(rc.effectiveFrom) : null;
+    var to = rc.effectiveTo ? parseD(rc.effectiveTo) : null;
+    if (from && today < from) return false;
+    if (to && today > to) return false;
+    return true;
+}
+
+// Distinct { value, label } shipping methods from carrier_rate_cards for a route. originCountry may be ''
+// (From not yet chosen) — then origin is not constrained; destination + marketplace still narrow the set.
+// A rate card field that is blank does not exclude it (blank = wildcard on that axis).
+function _execRateCardMethods(originCountry, destCountry, marketplace) {
+    var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
+    var cards = (DB && DB.getCarrierRateCards) ? (DB.getCarrierRateCards() || []) : [];
+    function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    var seen = {}, out = [];
+    cards.forEach(function (rc) {
+        if (!_execRateCardUsable(rc)) return;
+        if (destCountry && rc.destinationCountry && lo(rc.destinationCountry) !== lo(destCountry)) return;
+        if (originCountry && rc.originCountry && lo(rc.originCountry) !== lo(originCountry)) return;
+        if (marketplace && rc.marketplace && lo(rc.marketplace) !== lo(marketplace)) return;
+        var value = String(rc.shippingMethod || '').trim();
+        if (!value) return;
+        var label = String(rc.shippingMethodLabel || '').trim() || value;
+        var k = value.toLowerCase();
+        if (seen[k]) return;
+        seen[k] = 1;
+        out.push({ value: value, label: label });
+    });
+    out.sort(function (a, b) { return a.label.localeCompare(b.label); });
+    return out;
+}
+
+// Build the Method <select> option HTML. Empty match set → single explicit empty-state option (never a
+// fabricated method). A previously-saved method that is no longer in the set is dropped (not re-added).
+function _execMethodOptionsHtml(methods, selected) {
+    if (!methods || !methods.length) return '<option value="">No available methods</option>';
+    var html = '<option value="">Method…</option>';
+    methods.forEach(function (m) {
+        var sel = (String(selected == null ? '' : selected) === m.value) ? ' selected' : '';
+        html += '<option value="' + _execEsc(m.value) + '"' + sel + '>' + _execEsc(m.label) + '</option>';
+    });
+    return html;
+}
+
+// Re-filter every route row's Method options after a From/To/scope change: origin country is read off the
+// selected From option; a still-valid selection is preserved, an out-of-scope one is cleared (§3.5).
+function _execRebuildMethodOptions(sku) {
+    var list = document.getElementById('shipping-methods-' + sku);
+    if (!list) return;
+    var scope = _replenSelectedScope();
+    list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
+        var fromEl = rowEl.querySelector('[data-field="source_warehouse_id"]');
+        var methodEl = rowEl.querySelector('[data-field="shipping_method"]');
+        if (!methodEl) return;
+        var originCountry = '';
+        if (fromEl && fromEl.options && fromEl.selectedIndex >= 0) {
+            var opt = fromEl.options[fromEl.selectedIndex];
+            originCountry = opt ? String(opt.getAttribute('data-wh-country') || '').trim() : '';
+        }
+        var methods = _execRateCardMethods(originCountry, scope.country, scope.marketplace);
+        var current = methodEl.value;
+        var stillValid = methods.some(function (m) { return m.value === current; });
+        methodEl.innerHTML = _execMethodOptionsHtml(methods, stillValid ? current : '');
+        if (!stillValid) methodEl.value = '';
+        methodEl.disabled = !methods.length;
+    });
+}
 
 // Map an Execution Plan method label to a carrier_lead_times.shipping_method value.
 function _irMethodToLeadKey(method) {
@@ -2319,24 +2332,142 @@ function _irUpdateRouteEtas(sku) {
     });
 }
 
+// ── Execution Plan warehouse pickers (2026-07-28) ────────────────────────────────────────────────
+// From / To are Dropdowns sourced from the `warehouses` master — no free text. Each option's VALUE is
+// the canonical warehouse_id; the label is warehouse_name (Warehouse Name is display-only, NEVER a
+// stored key). Candidates are scoped to the current Company + the selected Marketplace country:
+//   FROM = Factory warehouses (ANY country — factory source may be CN/TW) + company/country 3PL.
+//   TO   = company/country 3PL + (Amazon marketplace only) real Amazon FBA destinations in that country.
+// Every concrete option is a real warehouse_id (no fabricated Amazon id). Country/Marketplace/Company
+// changes re-derive candidates on the next render; a saved selection no longer in scope is cleared.
+function _execEq(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
+function _execWhType(w) { return String((w && w.warehouseType) || '').trim().toUpperCase(); }
+
+function _execWarehouseCandidates() {
+    var scope = _replenSelectedScope();
+    var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
+    var whs = (DB && DB.getWarehouses) ? (DB.getWarehouses() || []) : [];
+    var isAmazon = _execEq(scope.marketplace, 'Amazon');
+
+    // Active = tri-state is_active where only an explicit FALSE is inactive (blank/unknown counts as
+    // active). This matches the canonical warehouse-active rule used by Request Order (_roActiveFlag);
+    // the previous `=== true` silently dropped Factory warehouses whose is_active cell is blank (#4).
+    function active(w) { return w && w.warehouseId && w.isActive !== false; }
+    function companyOk(w) { return !scope.company || !w.company || _execEq(w.company, scope.company); }
+    function companyStrict(w) { return !scope.company || _execEq(w.company, scope.company); }
+    function countryStrict(w) { return !scope.country || _execEq(w.country, scope.country); }
+
+    var from = [], to = [];
+    whs.forEach(function (w) {
+        if (!active(w)) return;
+        var t = _execWhType(w);
+        var isFactory = (w.isFactoryWarehouse === true) || t === 'FACTORY';
+        // FROM: Factory (NOT country-filtered — factory source may be CN/TW) OR company+country 3PL.
+        if (isFactory && companyOk(w)) from.push(w);
+        else if (t === '3PL' && companyStrict(w) && countryStrict(w)) from.push(w);
+        // TO (non-Amazon only): company+country 3PL. For an Amazon marketplace, To is a single LOGICAL
+        // "Amazon" destination (§3) — we do NOT enumerate FBA warehouses and never bind an FBA id here.
+        if (!isAmazon && t === '3PL' && companyStrict(w) && countryStrict(w)) to.push(w);
+    });
+    return { from: _execDedupWh(from), to: _execDedupWh(to), isAmazon: isAmazon };
+}
+
+function _execDedupWh(list) {
+    var seen = {}, out = [];
+    (list || []).forEach(function (w) { var id = String(w.warehouseId); if (seen[id]) return; seen[id] = 1; out.push(w); });
+    out.sort(function (a, b) { return String(a.warehouseName || a.warehouseId).localeCompare(String(b.warehouseName || b.warehouseId)); });
+    return out;
+}
+
+// Resolve a warehouse_id from a saved display name (legacy drafts that stored only ship_from/destination
+// text before the picker existed). Returns '' if no candidate name matches.
+function _execResolveIdByName(list, name) {
+    if (!name) return '';
+    var hit = (list || []).filter(function (w) { return _execEq(w.warehouseName, name); })[0];
+    return hit ? String(hit.warehouseId) : '';
+}
+
+function _execNameKey(w) { return String((w && w.warehouseName) || '').trim().toLowerCase(); }
+function _execNameCounts(list) {
+    var counts = {};
+    (list || []).forEach(function (w) { var k = _execNameKey(w); counts[k] = (counts[k] || 0) + 1; });
+    return counts;
+}
+// One <option>. Secondary info (code / country) is appended to the label ONLY when names repeat — the
+// VALUE always stays the raw warehouse_id.
+function _execWhOption(w, selectedId, ambiguous) {
+    var name = w.warehouseName || w.warehouseId;
+    var label = name;
+    if (ambiguous) { var extra = [w.warehouseCode, w.country].filter(Boolean).join(' / '); if (extra) label = name + ' (' + extra + ')'; }
+    var sel = (selectedId && String(w.warehouseId) === String(selectedId)) ? ' selected' : '';
+    return '<option value="' + _execEsc(String(w.warehouseId)) + '" data-wh-name="' + _execEsc(name) +
+        '" data-wh-type="' + _execEsc(w.warehouseType || '') + '" data-wh-country="' + _execEsc(w.country || '') + '"' + sel + '>' + _execEsc(label) + '</option>';
+}
+function _execFromOptionsHtml(list, selectedId) {
+    if (!list.length) return '<option value="">No warehouses</option>';
+    var counts = _execNameCounts(list);
+    var html = '<option value="">From…</option>';
+    list.forEach(function (w) { html += _execWhOption(w, selectedId, (counts[_execNameKey(w)] || 0) > 1); });
+    return html;
+}
+function _execToOptionsHtml(list, selectedId, isAmazon) {
+    // Amazon marketplace (§3): To is a SINGLE logical destination "Amazon". We do NOT list individual
+    // FBA warehouses and we NEVER silently bind a specific FBA warehouse_id — the canonical To
+    // warehouse_id stays empty (option value ""); only the logical name "Amazon" is carried for display.
+    if (isAmazon) {
+        return '<option value="" data-wh-name="Amazon" data-wh-type="AMAZON" data-wh-country="" selected>Amazon</option>';
+    }
+    if (!list.length) return '<option value="">No warehouses</option>';
+    var counts = _execNameCounts(list);
+    var html = '<option value="">To…</option>';
+    // Non-Amazon: real company/country 3PL destinations only (each option value is a real warehouse_id).
+    list.forEach(function (w) { html += _execWhOption(w, selectedId, (counts[_execNameKey(w)] || 0) > 1); });
+    return html;
+}
+// From and To must never be the same warehouse_id — clear the To selection if it collides (verify #19).
+function _execEnforceDistinctWarehouses(sku) {
+    var list = document.getElementById('shipping-methods-' + sku);
+    if (!list) return;
+    list.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
+        var fromEl = rowEl.querySelector('[data-field="source_warehouse_id"]');
+        var toEl = rowEl.querySelector('[data-field="destination_warehouse_id"]');
+        if (fromEl && toEl && fromEl.value && toEl.value && fromEl.value === toEl.value) {
+            toEl.value = '';
+            toEl.classList.add('replen-card__select--error');
+            setTimeout(function () { if (toEl) toEl.classList.remove('replen-card__select--error'); }, 1500);
+        }
+    });
+}
+
 // Render one Execution Plan route row: From / To / Qty / Method / Expected Arrival / Action (§11.3).
 function _renderExecutionRoute(sku, route) {
     route = route || {};
-    var methodOpts = '<option value="">Method…</option>' + EXEC_PLAN_METHODS.map(function (m) {
-        var sel = (String(route.shipping_method || '') === m) ? ' selected' : '';
-        return '<option value="' + _execEsc(m) + '"' + sel + '>' + _execEsc(m) + '</option>';
-    }).join('');
     var qty = parseInt(route.qty) || 0;
+    var scope = _replenSelectedScope();
     var destCountry = '';
     try { var data = getReplenishmentData(); var sd = data && data.find(function (d) { return d.sku === sku; }); destCountry = sd ? sd.country : ''; } catch (e) {}
+    if (!destCountry) destCountry = scope.country;   // Amazon dest country comes from Site/Marketplace context
     var eta = _irComputeRouteEta(destCountry, route);
+    // Warehouse picker candidates for the current scope + the saved (or name-resolved) selections.
+    var cand = _execWarehouseCandidates();
+    var fromSelId = route.source_warehouse_id || _execResolveIdByName(cand.from, route.ship_from);
+    var toSelId = route.destination_warehouse_id || _execResolveIdByName(cand.to, route.destination);
+    var fromDisabled = cand.from.length ? '' : ' disabled';
+    var toDisabled = (cand.isAmazon || cand.to.length) ? '' : ' disabled';
+    // Method options from real carrier_rate_cards, keyed on the chosen From origin country (if any) +
+    // destination country + marketplace. No hardcoded fallback.
+    var fromWh = cand.from.filter(function (w) { return String(w.warehouseId) === String(fromSelId); })[0];
+    var originCountry = fromWh ? fromWh.country : '';
+    var methods = _execRateCardMethods(originCountry, destCountry, scope.marketplace);
+    var methodOpts = _execMethodOptionsHtml(methods, route.shipping_method);
+    var methodDisabled = methods.length ? '' : ' disabled';
     var row = document.createElement('div');
     row.className = 'exec-route-row ir-exec-plan__grid';
     row.innerHTML =
-        '<input class="replen-card__input" type="text" data-field="ship_from" value="' + _execEsc(route.ship_from) + '" placeholder="From" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
-        '<input class="replen-card__input" type="text" data-field="destination" value="' + _execEsc(route.destination) + '" placeholder="To" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
+        '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
+        '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
         '<input class="replen-card__input" type="number" data-field="qty" value="' + qty + '" oninput="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' +
-        '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()">' + methodOpts + '</select>' +
+        '<select class="replen-card__select" data-field="shipping_method" onchange="onExecutionRouteEdit(\'' + sku + '\')" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
         '<span class="replen-card__eta' + (eta.available ? '' : ' replen-card__eta--na') + '" data-field="expected_arrival">' + _execEsc(eta.text) + '</span>' +
         '<button class="replen-card__remove-btn" onclick="removeExecutionRoute(event, \'' + sku + '\')" title="Delete">×</button>';
     var list = document.getElementById('shipping-methods-' + sku);
@@ -2365,27 +2496,12 @@ window.addExecutionRoute = addExecutionRoute;
 window.removeExecutionRoute = removeExecutionRoute;
 
 function syncExpandPanelHeight(sku) {
-    setTimeout(() => {
-        const fixedPanel = document.querySelector(`#ops-section .fixed-body .replen-expand-panel`);
-        const scrollPanel = document.querySelector(`#ops-section .scroll-body .replen-expand-panel`);
-        
-        if (fixedPanel && scrollPanel) {
-            // 移除之前設定的固定高度
-            fixedPanel.style.height = 'auto';
-            scrollPanel.style.height = 'auto';
-            
-            // 強制重新計算
-            setTimeout(() => {
-                const fixedHeight = fixedPanel.scrollHeight;
-                const scrollHeight = scrollPanel.scrollHeight;
-                const maxHeight = Math.max(fixedHeight, scrollHeight);
-                
-                // 設定相同高度
-                fixedPanel.style.height = maxHeight + 'px';
-                scrollPanel.style.height = maxHeight + 'px';
-            }, 0);
-        }
-    }, 0);
+    // No-op. Expand-row equal height is now CSS-native: .fixed-col / .fixed-body are flex columns and
+    // .replen-expand-panel--fixed { flex:1 } stretches the SKU identity panel to the taller .scroll-col
+    // (via .table-body-bar's default align-items:stretch). This must NEVER write inline height again —
+    // doing so reintroduced the two-stage first-paint height flash. Kept as a stub so existing callers
+    // (Execution Plan route add/remove) don't break; when the right panel's content changes height, the
+    // left panel re-stretches in the same frame with no measurement.
 }
 
 // Render the Execution Plan routes for a SKU (from Working Draft, or a default preview).
@@ -2830,6 +2946,27 @@ function _doReplenSearch() {
     renderReplenishment();
 }
 window.searchReplenishment = searchReplenishment;
+
+// AI Plan (Inventory Replenishment) — refreshes replenishment suggestions using the EXISTING Suggested Qty /
+// View Recommendation calculation (renderReplenishment recomputes + re-renders with the CURRENT filter /
+// planning scope; the same entry used on load + Search). It does NOT reset the Category tab, NEVER runs
+// Submit Plan, and NEVER creates a Shipping Plan. No new AI model / API / recommendation schema. Loading
+// state guards double-click and shows success/error styling.
+function handleReplenAiPlan() {
+    var btn = document.getElementById('replen-ai-plan-btn');
+    if (btn && btn.disabled) return;
+    if (btn) { btn.disabled = true; btn.classList.remove('is-success', 'is-error'); btn.classList.add('is-loading'); }
+    try {
+        renderReplenishment();   // reuse the existing recommendation entry — NOT Submit Plan
+        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); }
+    } catch (err) {
+        if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
+        console.error('[AI Plan] replenishment suggestion refresh failed:', err);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+window.handleReplenAiPlan = handleReplenAiPlan;
 
 // ========================================
 // Cloud mapping (Demo OFF): Inventory Table Phase 1 mapping via IRMap

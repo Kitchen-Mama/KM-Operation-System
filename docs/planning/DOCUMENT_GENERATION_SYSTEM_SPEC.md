@@ -322,7 +322,9 @@ carrier
 - **Main source = `shipments` + `shipment_lines`.**
 - **Shipment documents MUST use the Shipment Snapshot only.** **Do NOT live-read the Request Order.** **Do NOT recalculate allocation.**
 - PO No display **may join the PO snapshot** through `purchase_order_lines` / `shipment_line_allocations` **for label only**.
-- **Shipping service display name = `shipments.shipping_method_label` (snapshot).** Shipment Detail (and every shipment document) reads the localized service name **from `shipments.shipping_method_label`** — it does **NOT** reconstruct it from `shipping_method` / `last_mile_delivery` at generation (`SHIPMENT_CENTER_SPEC.md` §15A / §20). **`document_template_fields` mapping row (one per placeholder — §F.1):**
+> **AMENDED 2026-07-28 (Label Snapshot RETIRED):** `shipments.shipping_method_label` / `shipments_customs_type_label` are **RETIRED** — no longer stored on `shipments`. The document runtime now **resolves the display service name / customs label at generation from the CODE** (`shipments.shipping_method` + `last_mile_delivery` / `shipments_customs_type`) via the shared Code→Display resolver (`KM.display.*` / the API `*_display` view fields). Every `data_source_path = shipments.shipping_method_label` / `shipments.shipments_customs_type_label` mapping below is **superseded** by the corresponding CODE + render-time resolver; `carrier_rate_cards.*_label` may serve as a resolver candidate source but is never read as a stored shipment column.
+
+- **Shipping service display name = resolved from `shipments.shipping_method` + `last_mile_delivery` at render (Code→Display resolver).** *(Superseded snapshot: `shipments.shipping_method_label`.)* **`document_template_fields` mapping row (one per placeholder — §F.1):**
 
 | attribute | value |
 |---|---|
@@ -669,7 +671,7 @@ These **field-level rules are confirmed** even though the Packing List tab **lay
   - `TOTAL_GROSS_WEIGHT` → `shipments.shipment_total_gross_weight`
   - (all recomputed by `shipmentRecalcTotals_`, `SHIPMENT_CENTER_SPEC.md` §15/§20 — never computed at generation time)
 - **Customs type enum (canonical, D):** `third_party_customs` = 買單報關 · `formal_customs` = 正式報關 · `tax_refund_customs` = 退稅報關. **`tax_refund_customs` is NOT renamed.** The enum→Label map is owned by the backend (`CUSTOMS_TYPE_LABELS_` in `17_carrier_handlers.gs`, mirrored read-side in the API normalizer). The Label is **snapshotted** into `carrier_rate_cards.customs_type_label` → `shipments.shipments_customs_type_label` — exactly like `shipping_method_label`. If a Label ever changes, only the map changes; documents never change.
-- **`{{CUSTOMS_TYPE}}` reads the Label snapshot (`shipments.shipments_customs_type_label`), NOT the enum.** The Document runtime is forbidden from performing any `if (customs_type == …)` translation to produce the display Label.
+- **`{{CUSTOMS_TYPE}}` resolves from the CODE `shipments.shipments_customs_type` at render (Code→Display resolver / API `customsTypeDisplay`).** *(Superseded 2026-07-28: the `shipments_customs_type_label` snapshot is retired.)* The Document runtime uses the shared canonical resolver (single source of truth) rather than inline `if (customs_type == …)` translations — the resolver, not scattered code, owns the enum→Label mapping.
 - **Packing-list field 「是否出口退税」** is a *separate* boolean placeholder derived from the **enum** `shipments.shipments_customs_type` (this is an intended enum consumer — a yes/no derivation, not a Label translation):
   - `tax_refund_customs` → **是**
   - `third_party_customs` → **否**

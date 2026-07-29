@@ -199,7 +199,7 @@
 
         var summary =
             roSummary('Status', '<span class="plan-status-badge plan-status-badge--' + esc(o.status) + '">' + esc(statusLabel) + (num(o.requestOrderVersion) > 1 ? ' (v' + num(o.requestOrderVersion) + ')' : '') + '</span>') +
-            roSummary('Request No', '<strong>' + esc(o.requestOrderNo || id) + '</strong>') +
+            roSummary('Request No', esc(o.requestOrderNo || id)) +   // no bold — same value typography as its siblings (2026-07-28)
             roSummary('Company', companyDisp) +
             roSummary('Factory', esc(roFactoryDisplay(o, whMap))) +      // renamed Factory/WH → Factory (warehouse_name)
             roSummary('Series', seriesHtml) +
@@ -792,13 +792,202 @@
     }
 
     // ---- manual create modal ----
-    function createFromShortage() {
-        alert('From Shipment / Inventory shortage is a Phase 1 placeholder.\n\nAuto-population from upstream demand will be wired to the future procurement engine (spec: REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md §4). For now, use + New Manual Draft.');
-    }
+    // (The "From Shortage (soon)" placeholder button + its createFromShortage handler were removed
+    //  2026-07-28 — UI entry only; the future Shortage runtime / DB fields / calculations are untouched.)
 
     function createManualDraft() {
         if (!useDb()) { alert('Connect the Operation DB (Google Sheet) to create Request Orders.'); return; }
         openCreateModal();
+    }
+
+    // ==== New Manual Draft — front-end data-source contracts (no new DB tables, no mock data) ========
+    // Company / Supplier / Factory / SKU are all Dropdowns sourced from EXISTING providers; the locked
+    // commercial fields are resolved (never fabricated). See the Completion Report for the Spec Gaps.
+    function _roActiveWarehouses() { return (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? (window.KM.DB.getWarehouses() || []) : []; }
+    function _roSkuMaster() { return (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? (window.KM.DB.getSkuDetails() || []) : []; }
+    function _roSupplierPriceList() { return (window.KM && window.KM.DB && window.KM.DB.getSupplierPriceList) ? (window.KM.DB.getSupplierPriceList() || []) : []; }
+    function _roEq(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
+    function _roActiveFlag(v) { return v !== false; }   // tri-state: only an explicit false is inactive
+
+    // Company options = the system's existing canonical company list (no free text, no hardcoded sample-only).
+    function getCompanyOptions() { return RO_CANON_COMPANIES.slice(); }
+
+    // Supplier options — the ONLY trustworthy supplier provider today is the supplier_price_list master
+    // (getSupplierPriceList: a maintained table with supplier identity + is_active, NOT PO-history dedup,
+    // NOT hardcoded). It has no company column, so `company` cannot narrow it — all ACTIVE suppliers are
+    // returned. Empty master → [] (caller shows "Supplier master not configured" + disables Factory/Create).
+    function getSupplierOptions(company) {
+        var seen = {}, out = [];
+        _roSupplierPriceList().forEach(function (r) {
+            if (!_roActiveFlag(r.isActive)) return;
+            var name = String(r.supplierName == null ? '' : r.supplierName).trim();
+            if (!name) return;
+            var key = name.toLowerCase();
+            if (seen[key]) return; seen[key] = 1;
+            out.push({ id: String(r.supplierId == null ? '' : r.supplierId).trim(), name: name });
+        });
+        out.sort(function (a, b) { return a.name.localeCompare(b.name); });
+        return out;
+    }
+
+    // Factory options — canonical source is `warehouses` (is_factory_warehouse=true, is_active). Option
+    // VALUE = real warehouse_id; label shows factory code / warehouse name. Filtered by the selected company
+    // (a factory may sit in CN/TW but belongs to a company). No supplier→factory link exists in the data, so
+    // supplier cannot narrow factories (Spec Gap — reported).
+    function getFactoryOptions(company) {
+        var out = [];
+        _roActiveWarehouses().forEach(function (w) {
+            if (!w || !w.warehouseId) return;
+            if (w.isFactoryWarehouse !== true) return;
+            if (!_roActiveFlag(w.isActive)) return;
+            if (company && w.company && !_roEq(w.company, company)) return;
+            out.push({ id: String(w.warehouseId), code: w.warehouseCode || '', name: w.warehouseName || '' });
+        });
+        out.sort(function (a, b) { return String(a.code || a.name || a.id).localeCompare(String(b.code || b.name || b.id)); });
+        return out;
+    }
+
+    // Resolve one SKU's commercial data for (company + supplier + factory + sku). units_per_carton from
+    // sku_details; supplier_sku / unit_cost / currency from supplier_price_list (matched by supplier NAME +
+    // sku, active). NEVER fabricates 0 / -- / N/A — a missing field yields status 'unresolved' → blocks Create.
+    // status: 'no-sku' | 'no-supplier' | 'unresolved' | 'ok'.
+    function _roResolveCommercial(company, supplierName, factoryId, sku) {
+        if (!sku) return { status: 'no-sku' };
+        if (!supplierName) return { status: 'no-supplier' };
+        var skuRec = _roSkuMaster().filter(function (s) { return _roEq(s.sku, sku); })[0];
+        if (!skuRec) return { status: 'unresolved' };   // SKU not in sku_details
+        var upc = parseInt(skuRec.unitsPerCarton, 10);
+        var priceRows = _roSupplierPriceList().filter(function (r) {
+            return _roActiveFlag(r.isActive) && _roEq(r.supplierName, supplierName) && _roEq(r.sku, sku);
+        });
+        priceRows.sort(function (a, b) { return String(b.effectiveFrom || '').localeCompare(String(a.effectiveFrom || '')); });
+        var price = priceRows[0];
+        var upcOk = upc > 0;
+        var supplierSku = (price && price.supplierSku != null && String(price.supplierSku).trim() !== '') ? String(price.supplierSku).trim() : null;
+        var unitCost = (price && price.unitCost != null && price.unitCost !== '' && !isNaN(parseFloat(price.unitCost))) ? parseFloat(price.unitCost) : null;
+        var currency = (price && price.currency) ? String(price.currency).trim() : null;
+        if (!upcOk || !supplierSku || unitCost == null || !currency) {
+            return { status: 'unresolved', unitsPerCarton: upcOk ? upc : null, supplierSku: supplierSku, unitCost: unitCost, currency: currency };
+        }
+        return { status: 'ok', unitsPerCarton: upc, supplierSku: supplierSku, unitCost: unitCost, currency: currency };
+    }
+    function _roLineStatusText(status) {
+        if (status === 'no-sku') return 'Select a SKU';
+        if (status === 'no-supplier') return 'Select a Supplier first';
+        return 'Supplier SKU mapping not configured';   // 'unresolved'
+    }
+    function _roCreateVal(id) { var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
+
+    // ---- select population ----
+    function _roFillCompanySelect() {
+        var sel = document.getElementById('ro-c-company');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Select company</option>' +
+            getCompanyOptions().map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    }
+    function _roFillSupplierSelect(company) {
+        var sel = document.getElementById('ro-c-supplier');
+        if (!sel) return;
+        if (!company) { sel.innerHTML = '<option value="">Select company first</option>'; sel.disabled = true; return; }
+        var opts = getSupplierOptions(company);
+        if (!opts.length) { sel.innerHTML = '<option value="">Supplier master not configured</option>'; sel.disabled = true; return; }
+        sel.innerHTML = '<option value="">Select supplier</option>' + opts.map(function (o) {
+            return '<option value="' + esc(o.name) + '" data-id="' + esc(o.id) + '">' + esc(o.name) + '</option>';
+        }).join('');
+        sel.disabled = false;
+    }
+    function _roFillFactorySelect(company, enabled) {
+        var sel = document.getElementById('ro-c-factory');
+        if (!sel) return;
+        if (!enabled || !company) { sel.innerHTML = '<option value="">Select supplier first</option>'; sel.disabled = true; return; }
+        var opts = getFactoryOptions(company);
+        if (!opts.length) { sel.innerHTML = '<option value="">No factory warehouse for this company</option>'; sel.disabled = true; return; }
+        sel.innerHTML = '<option value="">Select factory</option>' + opts.map(function (o) {
+            var label = o.code ? (o.code + (o.name ? ' — ' + o.name : '')) : (o.name || o.id);
+            return '<option value="' + esc(o.id) + '" data-code="' + esc(o.code) + '">' + esc(label) + '</option>';
+        }).join('');
+        sel.disabled = false;
+    }
+    function _roBuildSkuDatalistHtml() {
+        var seen = {}, opts = '';
+        _roSkuMaster().forEach(function (s) {
+            var sku = String(s.sku == null ? '' : s.sku).trim();
+            if (!sku || seen[sku]) return; seen[sku] = 1;
+            opts += '<option value="' + esc(sku) + '">' + esc(sku + (s.productName ? ' — ' + s.productName : '')) + '</option>';
+        });
+        return opts;
+    }
+
+    // ---- cascading + per-line resolution ----
+    function onCreateCompanyChange() {
+        var company = _roCreateVal('ro-c-company');
+        _roFillSupplierSelect(company);           // Company → rebuild Supplier, reset Factory + line data
+        _roFillFactorySelect('', false);
+        _roResolveAllLines();
+        _roUpdateCreateGate();
+    }
+    function onCreateSupplierChange() {
+        var company = _roCreateVal('ro-c-company');
+        var supplierChosen = !!_roCreateVal('ro-c-supplier');
+        _roFillFactorySelect(company, supplierChosen);   // Supplier → rebuild Factory, clear derived fields
+        _roResolveAllLines();
+        _roUpdateCreateGate();
+    }
+    function onCreateFactoryChange() {
+        _roResolveAllLines();                     // Factory → re-resolve every SKU line
+        _roUpdateCreateGate();
+    }
+    function _roResolveLineRow(tr) {
+        if (!tr) return;
+        var company = _roCreateVal('ro-c-company');
+        var supplier = _roCreateVal('ro-c-supplier');
+        var factory = _roCreateVal('ro-c-factory');
+        var skuEl = tr.querySelector('[data-f="sku"]');
+        var sku = skuEl ? String(skuEl.value || '').trim() : '';
+        var res = _roResolveCommercial(company, supplier, factory, sku);
+        function set(f, v) { var el = tr.querySelector('[data-f="' + f + '"]'); if (el) el.value = (v == null ? '' : v); }
+        set('units_per_carton', res.unitsPerCarton != null ? res.unitsPerCarton : '');
+        set('supplier_sku', res.supplierSku != null ? res.supplierSku : '');
+        set('unit_cost', res.unitCost != null ? res.unitCost : '');
+        set('currency', res.currency != null ? res.currency : '');
+        var msg = tr.querySelector('.ro-c-line-msg');
+        if (msg) {
+            if (!sku) { msg.textContent = ''; msg.className = 'ro-c-line-msg'; tr.classList.remove('is-error'); }
+            else if (res.status === 'ok') { msg.textContent = 'Currency ' + res.currency; msg.className = 'ro-c-line-msg ro-c-line-msg--ok'; tr.classList.remove('is-error'); }
+            else { msg.textContent = _roLineStatusText(res.status); msg.className = 'ro-c-line-msg ro-c-line-msg--error'; tr.classList.add('is-error'); }
+        }
+    }
+    function _roResolveAllLines() {
+        document.querySelectorAll('#ro-c-lines tbody tr').forEach(function (tr) { _roResolveLineRow(tr); });
+    }
+    function onCreateLineSku(input) {
+        var tr = input && input.closest ? input.closest('tr') : null;
+        _roResolveLineRow(tr);
+        _roUpdateCreateGate();
+    }
+    // Enable Create Draft only when Company + Supplier + Factory are chosen and every SKU line resolves
+    // cleanly (status ok + qty>0). Full validation (incl. single-currency) still runs on submit.
+    function _roUpdateCreateGate() {
+        var btn = document.getElementById('ro-c-create-btn');
+        if (!btn) return;
+        var company = _roCreateVal('ro-c-company');
+        var supplier = _roCreateVal('ro-c-supplier');
+        var factory = _roCreateVal('ro-c-factory');
+        var ok = !!(company && supplier && factory);
+        if (ok) {
+            var anyValid = false, anyError = false;
+            document.querySelectorAll('#ro-c-lines tbody tr').forEach(function (tr) {
+                var skuEl = tr.querySelector('[data-f="sku"]');
+                var sku = skuEl ? String(skuEl.value || '').trim() : '';
+                if (!sku) return;
+                var res = _roResolveCommercial(company, supplier, factory, sku);
+                var qtyEl = tr.querySelector('[data-f="requested_qty"]');
+                var qty = qtyEl ? parseInt(qtyEl.value, 10) : 0;
+                if (res.status === 'ok' && qty > 0) anyValid = true; else anyError = true;
+            });
+            ok = anyValid && !anyError;
+        }
+        btn.disabled = !ok;
     }
 
     function openCreateModal() {
@@ -813,41 +1002,56 @@
                     '<button class="pc-modal__close" onclick="roCloseCreateModal()">×</button></div>' +
                 '<div class="pc-modal__body">' +
                     '<div class="pc-modal__grid">' +
-                        '<label>Company<input id="ro-c-company" class="pc-input" placeholder="e.g. ResTW"></label>' +
-                        '<label>Supplier Name<input id="ro-c-supplier" class="pc-input" placeholder="e.g. Dongguan Youxin"></label>' +
-                        '<label>Factory ID<input id="ro-c-factory" class="pc-input" placeholder="e.g. CN_YOUXIN"></label>' +
-                        '<label>Warehouse ID<input id="ro-c-warehouse" class="pc-input"></label>' +
-                        '<label>Currency<input id="ro-c-currency" class="pc-input" placeholder="e.g. USD"></label>' +
+                        '<label>Company<select id="ro-c-company" class="pc-input" onchange="roOnCreateCompanyChange()"></select></label>' +
+                        '<label>Supplier Name<select id="ro-c-supplier" class="pc-input" onchange="roOnCreateSupplierChange()" disabled></select></label>' +
+                        '<label>Factory ID<select id="ro-c-factory" class="pc-input" onchange="roOnCreateFactoryChange()" disabled></select></label>' +
                     '</div>' +
+                    '<div class="pc-modal__msg" id="ro-c-msg"></div>' +
                     '<h4 class="pc-modal__subtitle">SKU Lines</h4>' +
                     '<div class="procurement-table-wrap"><table class="procurement-table" id="ro-c-lines">' +
                         '<thead><tr><th>SKU</th><th>Requested Qty</th><th>Units/Ctn</th><th>Supplier SKU</th><th>Unit Cost</th><th>Need Reason</th><th></th></tr></thead>' +
                         '<tbody></tbody>' +
                     '</table></div>' +
+                    '<datalist id="ro-c-sku-list">' + _roBuildSkuDatalistHtml() + '</datalist>' +
                     '<button class="pc-btn pc-btn--ghost" onclick="roAddCreateLine()">+ Add SKU Line</button>' +
                 '</div>' +
                 '<div class="pc-modal__foot">' +
                     '<button class="pc-btn pc-btn--default" onclick="roCloseCreateModal()">Cancel</button>' +
-                    '<button class="pc-btn pc-btn--primary" onclick="roSubmitCreateModal()">Create Draft</button>' +
+                    '<button class="pc-btn pc-btn--primary" id="ro-c-create-btn" onclick="roSubmitCreateModal()" disabled>Create Draft</button>' +
                 '</div>' +
             '</div>';
         document.body.appendChild(overlay);
+        _roFillCompanySelect();
+        _roFillSupplierSelect('');
+        _roFillFactorySelect('', false);
         addCreateLine();
+        _roUpdateCreateGate();
     }
 
     function addCreateLine() {
         var tbody = document.querySelector('#ro-c-lines tbody');
         if (!tbody) return;
         var tr = document.createElement('tr');
+        // SKU = searchable (datalist, sourced from sku_details, validated on resolve). Units/Ctn / Supplier
+        // SKU / Unit Cost are LOCKED (readonly + tabindex -1; auto-resolved, never user-typed). Currency is
+        // a hidden per-line canonical value (no input box). Requested Qty + Need Reason stay editable.
         tr.innerHTML =
-            '<td><input class="pc-input" data-f="sku"></td>' +
-            '<td><input class="pc-input pc-input--qty" type="number" min="0" step="1" data-f="requested_qty"></td>' +
-            '<td><input class="pc-input pc-input--qty" type="number" min="0" step="1" data-f="units_per_carton"></td>' +
-            '<td><input class="pc-input" data-f="supplier_sku"></td>' +
-            '<td><input class="pc-input pc-input--qty" type="number" min="0" step="0.01" data-f="unit_cost"></td>' +
+            '<td><input class="pc-input" list="ro-c-sku-list" data-f="sku" placeholder="Search SKU…" autocomplete="off" oninput="roOnCreateLineSku(this)" onchange="roOnCreateLineSku(this)">' +
+                '<input type="hidden" data-f="currency"><div class="ro-c-line-msg"></div></td>' +
+            '<td><input class="pc-input pc-input--qty" type="number" min="1" step="1" data-f="requested_qty" oninput="roUpdateCreateGate()"></td>' +
+            '<td><input class="pc-input pc-input--locked" type="number" data-f="units_per_carton" readonly tabindex="-1" placeholder="—"></td>' +
+            '<td><input class="pc-input pc-input--locked" data-f="supplier_sku" readonly tabindex="-1" placeholder="—"></td>' +
+            '<td><input class="pc-input pc-input--locked" type="number" data-f="unit_cost" readonly tabindex="-1" placeholder="—"></td>' +
             '<td><input class="pc-input" data-f="need_reason"></td>' +
-            '<td><button class="pc-btn pc-btn--rm" onclick="this.closest(\'tr\').remove()">×</button></td>';
+            '<td><button class="pc-btn pc-btn--rm" onclick="roRemoveCreateLine(this)">×</button></td>';
         tbody.appendChild(tr);
+        _roResolveLineRow(tr);
+        _roUpdateCreateGate();
+    }
+    function removeCreateLine(btn) {
+        var tr = btn && btn.closest ? btn.closest('tr') : null;
+        if (tr) tr.remove();
+        _roUpdateCreateGate();
     }
 
     function closeCreateModal() {
@@ -856,35 +1060,77 @@
     }
 
     function submitCreateModal() {
-        var lines = [];
-        document.querySelectorAll('#ro-c-lines tbody tr').forEach(function (tr) {
-            function g(f) { var el = tr.querySelector('[data-f="' + f + '"]'); return el ? el.value.trim() : ''; }
-            var sku = g('sku');
-            if (!sku) return;
-            var line = { sku: sku, requested_qty: num(g('requested_qty')) };
-            if (g('units_per_carton')) line.units_per_carton = num(g('units_per_carton'));
-            if (g('supplier_sku')) line.supplier_sku = g('supplier_sku');
-            if (g('unit_cost')) line.unit_cost = num(g('unit_cost'));
-            if (g('need_reason')) line.need_reason = g('need_reason');
-            lines.push(line);
-        });
-        if (!lines.length) { alert('Add at least one SKU line (with a SKU).'); return; }
-        function gv(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+        var msgEl = document.getElementById('ro-c-msg');
+        function fail(m) {
+            if (msgEl) { msgEl.textContent = m; msgEl.className = 'pc-modal__msg pc-modal__msg--error'; }
+            else alert(m);
+        }
+        var company = _roCreateVal('ro-c-company');
+        var supplierSel = document.getElementById('ro-c-supplier');
+        var supplierName = _roCreateVal('ro-c-supplier');   // the option value IS the supplier name
+        var supplierId = (supplierSel && supplierSel.selectedIndex >= 0 && supplierSel.options[supplierSel.selectedIndex]) ? (supplierSel.options[supplierSel.selectedIndex].getAttribute('data-id') || '') : '';
+        var factorySel = document.getElementById('ro-c-factory');
+        var warehouseId = _roCreateVal('ro-c-factory');     // Factory option value = canonical warehouse_id
+        var factoryCode = (factorySel && factorySel.selectedIndex >= 0 && factorySel.options[factorySel.selectedIndex]) ? (factorySel.options[factorySel.selectedIndex].getAttribute('data-code') || '') : '';
+
+        if (!company) return fail('Select a Company.');
+        if (!supplierName) return fail('Select a Supplier.');
+        if (!warehouseId) return fail('Select a Factory.');
+
+        var rows = Array.prototype.slice.call(document.querySelectorAll('#ro-c-lines tbody tr'));
+        var lines = [], currencies = {}, sawSku = false;
+        for (var i = 0; i < rows.length; i++) {
+            var tr = rows[i];
+            var skuEl = tr.querySelector('[data-f="sku"]');
+            var sku = skuEl ? String(skuEl.value || '').trim() : '';
+            if (!sku) continue;
+            sawSku = true;
+            var res = _roResolveCommercial(company, supplierName, warehouseId, sku);
+            if (res.status !== 'ok') return fail('Line "' + sku + '": ' + _roLineStatusText(res.status) + ' — cannot create draft.');
+            var qtyEl = tr.querySelector('[data-f="requested_qty"]');
+            var qty = qtyEl ? parseInt(qtyEl.value, 10) : 0;
+            if (!(qty > 0)) return fail('Line "' + sku + '": Requested Qty must be greater than 0.');
+            var reasonEl = tr.querySelector('[data-f="need_reason"]');
+            currencies[res.currency] = 1;
+            lines.push({
+                sku: sku,
+                requested_qty: qty,
+                units_per_carton: res.unitsPerCarton,
+                supplier_sku: res.supplierSku,
+                unit_cost: res.unitCost,
+                currency: res.currency,
+                need_reason: reasonEl ? String(reasonEl.value || '').trim() : ''
+            });
+        }
+        if (!sawSku || !lines.length) return fail('Add at least one SKU line (with a SKU).');
+        var curKeys = Object.keys(currencies);
+        if (curKeys.length > 1) return fail('Lines resolve to conflicting currencies (' + curKeys.join(', ') + '). All lines in a draft must share one currency.');
+        var currency = curKeys[0];
+
+        // Warehouse Name is display-only; warehouse_id (canonical) is auto-carried from the Factory choice.
+        // factory_id keeps the factory's own readable code (not merged with warehouse_id). supplier_name is
+        // transported for compatibility while supplier_id (when known) carries the canonical identity.
         var payload = {
-            company: gv('ro-c-company'),
-            supplier_name: gv('ro-c-supplier'),
-            factory_id: gv('ro-c-factory'),
-            warehouse_id: gv('ro-c-warehouse'),
-            currency: gv('ro-c-currency'),
+            company: company,
+            supplier_id: supplierId || '',
+            supplier_name: supplierName,
+            factory_id: factoryCode || warehouseId,
+            warehouse_id: warehouseId,
+            currency: currency,
             source: 'manual',
             created_by: 'operation-system',
             lines: lines
         };
+        var btn = document.getElementById('ro-c-create-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
         window.KM.DB.createRequestOrderDraft(payload).then(function (data) {
             closeCreateModal();
             alert('Request Order Draft created: ' + ((data && data.request_order_no) || 'OK'));
             loadAndRender();
-        }).catch(function (e) { alert('Create failed: ' + (e && e.message ? e.message : e)); });
+        }).catch(function (e) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Create Draft'; }
+            fail('Create failed: ' + (e && e.message ? e.message : e));
+        });
     }
 
     // ---- markup ensure + lifecycle ----
@@ -916,10 +1162,15 @@
     window.roConvertToPo = convertToPo;
     window.roDone = done;
     window.roCreateManualDraft = createManualDraft;
-    window.roCreateFromShortage = createFromShortage;
     window.roAddCreateLine = addCreateLine;
+    window.roRemoveCreateLine = removeCreateLine;
     window.roCloseCreateModal = closeCreateModal;
     window.roSubmitCreateModal = submitCreateModal;
+    window.roOnCreateCompanyChange = onCreateCompanyChange;
+    window.roOnCreateSupplierChange = onCreateSupplierChange;
+    window.roOnCreateFactoryChange = onCreateFactoryChange;
+    window.roOnCreateLineSku = onCreateLineSku;
+    window.roUpdateCreateGate = _roUpdateCreateGate;
     window.initRequestOrderDraftPage = loadAndRender;
 
     if (window.KM && window.KM.lifecycle) {

@@ -42,13 +42,13 @@
 }
 
 #factory-stock-section .fc-dropdown-text {
-    color: #2d3748;
+    color: var(--filter-text-color);
     flex: 1;
 }
 
 #factory-stock-section .fc-dropdown-icon {
-    font-size: 10px;
-    color: #a0aec0;
+    font-size: var(--filter-chevron-size);
+    color: var(--filter-chevron-color);
     margin-left: 8px;
 }
 
@@ -59,10 +59,10 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: #ffffff;
+    background: var(--filter-panel-bg);
     border: 1px solid var(--filter-border-color);
-    border-radius: var(--filter-border-radius);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: var(--filter-panel-radius);
+    box-shadow: var(--filter-panel-shadow);
     z-index: 1000;
     max-height: 300px;
     overflow-y: auto;
@@ -76,16 +76,16 @@
 #factory-stock-section .fc-checkbox-item {
     display: flex;
     align-items: center;
-    padding: 6px 12px;
-    font-size: var(--filter-font-size);
-    color: #2d3748;
+    padding: var(--filter-option-padding);
+    font-size: var(--filter-option-font-size);
+    color: var(--filter-text-color);
     cursor: pointer;
     transition: background 0.15s;
     user-select: none;
 }
 
 #factory-stock-section .fc-checkbox-item:hover {
-    background: #f7fafc;
+    background: var(--filter-option-hover-bg);
 }
 
 #factory-stock-section .fc-checkbox-item input[type="checkbox"] {
@@ -351,7 +351,7 @@
     border: 1px solid var(--filter-border-color);
     border-radius: var(--filter-border-radius);
     font-size: var(--filter-font-size);
-    color: #2d3748;
+    color: var(--filter-text-color);
     cursor: pointer;
     width: 100%;
     height: var(--filter-height);
@@ -374,8 +374,8 @@
     line-height: 1;
 }
 #factory-stock-section .fmv-dropdown-trigger:hover { border-color: #cbd5e0; background: #f7fafc; }
-#factory-stock-section .fmv-dropdown-text { color: #2d3748; flex: 1; }
-#factory-stock-section .fmv-dropdown-icon { font-size: 10px; color: #a0aec0; margin-left: 8px; }
+#factory-stock-section .fmv-dropdown-text { color: var(--filter-text-color); flex: 1; }
+#factory-stock-section .fmv-dropdown-icon { font-size: var(--filter-chevron-size); color: var(--filter-chevron-color); margin-left: 8px; }
 #factory-stock-section .fmv-dropdown-panel {
     display: none;
     position: absolute;
@@ -383,10 +383,10 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: #ffffff;
+    background: var(--filter-panel-bg);
     border: 1px solid var(--filter-border-color);
-    border-radius: var(--filter-border-radius);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: var(--filter-panel-radius);
+    box-shadow: var(--filter-panel-shadow);
     z-index: 1000;
     max-height: 300px;
     overflow-y: auto;

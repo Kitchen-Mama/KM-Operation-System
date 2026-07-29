@@ -240,68 +240,92 @@ function renderRiskKPIs() {
     `;
 }
 
+// Category / Series filters — two single-select SHARED Tab Rails (.km-tab-rail). Category is row 1,
+// Series row 2; each keeps an "All" option + Name/Count badge. Series cascades from the selected
+// Category. selectedCategories/selectedSeries stay arrays ([] = all, [value] = one) so the downstream
+// getFilteredRiskResults() / _crResetScopeFilters() are untouched — only the picker UI changed.
+function _crRailTabHtml(name, count, active, handler) {
+    var safe = _crEsc(name);
+    return '<button type="button" class="km-tab-rail__tab' + (active ? ' is-active' : '') + '" data-value="' + safe +
+        '" onclick="' + handler + '(this.getAttribute(\'data-value\'))">' +
+        '<span class="km-tab-rail__label">' + safe + '</span>' +
+        '<span class="km-tab-rail__count">' + count + '</span></button>';
+}
+
+// SKUs after the currently-selected Category (single-select) is applied — the Series rail's options
+// and counts cascade from this scope, so choosing a Category narrows the Series rail.
+function _crSkuScope() {
+    var skus = getSkuMasterData();
+    var cat = CampaignRiskState.selectedCategories;
+    if (cat && cat.length === 1) skus = skus.filter(function (s) { return s.category === cat[0]; });
+    return skus;
+}
+
 function renderRiskFilters() {
+    var catRail = document.getElementById('cr-category-rail');
+    var serRail = document.getElementById('cr-series-rail');
+    if (!catRail || !serRail) return;
+
+    var allSkus = getSkuMasterData();
+    var selCat = CampaignRiskState.selectedCategories;
+    var activeCat = (selCat && selCat.length === 1) ? selCat[0] : 'All';
+
+    // Category rail — All + each category; count = SKUs in that category (whole scope, so selecting a
+    // category never zeroes the other category counts).
     var categories = getCategories();
-    var allSeries = getSeriesForCategory('all');
+    var catTabs = [{ name: 'All', count: allSkus.length }].concat(categories.map(function (c) {
+        return { name: c, count: allSkus.filter(function (s) { return s.category === c; }).length };
+    }));
+    catRail.innerHTML = catTabs.map(function (t) {
+        return _crRailTabHtml(t.name, t.count, t.name === activeCat, 'crSelectCategory');
+    }).join('');
 
-    var catPanel = document.getElementById('cr-category-panel');
-    var serPanel = document.getElementById('cr-series-panel');
-    if (!catPanel || !serPanel) return;
+    // Series rail — cascades from the selected category. Drop an incompatible series selection to All.
+    var seriesList = getSeriesForCategory(activeCat === 'All' ? 'all' : activeCat);
+    var selSer = CampaignRiskState.selectedSeries;
+    if (selSer && selSer.length === 1 && seriesList.indexOf(selSer[0]) === -1) {
+        CampaignRiskState.selectedSeries = [];
+        selSer = CampaignRiskState.selectedSeries;
+    }
+    var activeSer = (selSer && selSer.length === 1) ? selSer[0] : 'All';
+    var scopeSkus = _crSkuScope();
+    var serTabs = [{ name: 'All', count: scopeSkus.length }].concat(seriesList.map(function (s) {
+        return { name: s, count: scopeSkus.filter(function (x) { return x.series === s; }).length };
+    }));
+    serRail.innerHTML = serTabs.map(function (t) {
+        return _crRailTabHtml(t.name, t.count, t.name === activeSer, 'crSelectSeries');
+    }).join('');
 
-    catPanel.innerHTML = '<label class="cr-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
-        categories.map(function(c) { return '<label class="cr-checkbox-item"><input type="checkbox" value="' + c + '" checked> ' + c + '</label>'; }).join('');
-
-    serPanel.innerHTML = '<label class="cr-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>' +
-        allSeries.map(function(s) { return '<label class="cr-checkbox-item"><input type="checkbox" value="' + s + '" checked> ' + s + '</label>'; }).join('');
-
-    _initCrDropdowns();
+    if (window.KM && window.KM.ui && window.KM.ui.tabRail) {
+        window.KM.ui.tabRail.enhance(catRail);
+        window.KM.ui.tabRail.enhance(serRail);
+        window.KM.ui.tabRail.scrollActiveIntoView(catRail);
+        window.KM.ui.tabRail.scrollActiveIntoView(serRail);
+    }
 }
 
-function _initCrDropdowns() {
-    var root = document.getElementById('campaign-risk-section');
-    if (!root) return;
-
-    root.querySelectorAll('.cr-dropdown-trigger').forEach(function(trigger) {
-        trigger.onclick = function(e) {
-            e.stopPropagation();
-            var filterType = this.dataset.filter;
-            var panel = root.querySelector('.cr-dropdown-panel[data-filter="' + filterType + '"]');
-            root.querySelectorAll('.cr-dropdown-panel').forEach(function(p) {
-                if (p !== panel) p.classList.remove('is-open');
-            });
-            root.querySelectorAll('.cr-dropdown-trigger').forEach(function(t) { t.setAttribute('aria-expanded', 'false'); });
-            if (panel) {
-                panel.classList.toggle('is-open');
-                this.setAttribute('aria-expanded', panel.classList.contains('is-open') ? 'true' : 'false');
-            }
-        };
-    });
-
-    root.querySelectorAll('.cr-dropdown-panel').forEach(function(panel) {
-        panel.onclick = function(e) { e.stopPropagation(); };
-        var filterType = panel.dataset.filter;
-        var allCb = panel.querySelector('input[value=""]');
-        var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-
-        if (allCb) {
-            allCb.onchange = function() {
-                otherCbs.forEach(function(cb) { cb.checked = allCb.checked; });
-                _syncCrFilterState(filterType, panel);
-            };
-        }
-        otherCbs.forEach(function(cb) {
-            cb.onchange = function() {
-                var checkedCount = Array.from(otherCbs).filter(function(c) { return c.checked; }).length;
-                if (allCb) allCb.checked = (checkedCount === otherCbs.length);
-                _syncCrFilterState(filterType, panel);
-            };
-        });
-    });
-
-    // Document-level outside-click / ESC handlers — bound via idempotent helper so repeated
-    // renderRiskFilters()/_initCrDropdowns() (DOMContentLoaded, refresh, lifecycle mount) never stack them.
-    _bindCrDocListeners();
+// Category tab click — single-select. Cascades the Series rail (drops an incompatible series), then
+// re-renders the rails + tracker (page → 1).
+function crSelectCategory(cat) {
+    CampaignRiskState.selectedCategories = (cat === 'All') ? [] : [cat];
+    var seriesList = getSeriesForCategory(cat === 'All' ? 'all' : cat);
+    if (CampaignRiskState.selectedSeries.length === 1 && seriesList.indexOf(CampaignRiskState.selectedSeries[0]) === -1) {
+        CampaignRiskState.selectedSeries = [];
+    }
+    CampaignRiskState.page = 1;
+    renderRiskFilters();
+    renderCampaignRiskTracker();
 }
+window.crSelectCategory = crSelectCategory;
+
+// Series tab click — single-select within the current category scope.
+function crSelectSeries(series) {
+    CampaignRiskState.selectedSeries = (series === 'All') ? [] : [series];
+    CampaignRiskState.page = 1;
+    renderRiskFilters();
+    renderCampaignRiskTracker();
+}
+window.crSelectSeries = crSelectSeries;
 
 // Module-scoped refs so the document listeners can be removed (idempotent + lifecycle unmount).
 var _crDocClick = null;
@@ -330,43 +354,6 @@ function _unbindCrDocListeners() {
     if (_crDocKeydown) { document.removeEventListener('keydown', _crDocKeydown); _crDocKeydown = null; }
 }
 
-function _syncCrFilterState(filterType, panel) {
-    var allCb = panel.querySelector('input[value=""]');
-    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-    var selected = Array.from(otherCbs).filter(function(c) { return c.checked; }).map(function(c) { return c.value; });
-    if (allCb && allCb.checked) selected = [];
-    if (selected.length === otherCbs.length) selected = [];
-
-    if (filterType === 'category') CampaignRiskState.selectedCategories = selected;
-    else if (filterType === 'series') CampaignRiskState.selectedSeries = selected;
-
-    _updateCrDropdownText(filterType);
-    CampaignRiskState.page = 1;
-    renderCampaignRiskTracker();
-}
-
-function _updateCrDropdownText(filterType) {
-    var root = document.getElementById('campaign-risk-section');
-    if (!root) return;
-    var trigger = root.querySelector('.cr-dropdown-trigger[data-filter="' + filterType + '"]');
-    var panel = root.querySelector('.cr-dropdown-panel[data-filter="' + filterType + '"]');
-    if (!trigger || !panel) return;
-    var textSpan = trigger.querySelector('.cr-dropdown-text');
-    var allCb = panel.querySelector('input[value=""]');
-    var otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-    var checked = Array.from(otherCbs).filter(function(c) { return c.checked; });
-
-    var labels = { category: 'Categories', series: 'Series' };
-    var label = labels[filterType] || filterType;
-
-    if ((allCb && allCb.checked) || checked.length === 0 || checked.length === otherCbs.length) {
-        textSpan.textContent = 'All ' + label;
-    } else if (checked.length === 1) {
-        textSpan.textContent = checked[0].value;
-    } else {
-        textSpan.textContent = checked.length + ' ' + label;
-    }
-}
 
 function getFilteredRiskResults() {
     let skus = getSkuMasterData();

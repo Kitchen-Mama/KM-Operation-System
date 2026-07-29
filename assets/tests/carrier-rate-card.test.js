@@ -114,37 +114,43 @@ eq(fmt(new Date(2026, 0, 5)), '2026-01-05', 'F1: display format is zero-padded l
 // ============================================================
 // Source-scan (CRLF-safe: match on the raw text with flexible whitespace)
 // ============================================================
-// F2 — country is now a <select> (not free-text) and search is exact (not substring indexOf).
-ok(/<select[^>]*id="crcFilterCountry"/.test(html), 'F2: Country/Ship To is a <select id="crcFilterCountry">');
-ok(!/id="crcFilterCountry"[^>]*type="text"/.test(html) && !/type="text"[^>]*id="crcFilterCountry"/.test(html), 'F2: Country is no longer a free-text input');
-ok(/up\(c\.destinationCountry\)\s*!==\s*fCountry/.test(js), 'F2: search uses EXACT country match (=== / !==), not substring indexOf');
+// F2 — Country is now a MULTI-SELECT checkbox filter (crcf-* checkbox dropdown, reusing the SKU Details
+// template), not a <select> and not free-text. Search matches by membership of the selected code array.
+ok(/class="crcf-multi"[^>]*data-filter="country"/.test(html) && /id="crcCountryList"/.test(html), 'F2: Country/Ship To is a crcf-multi checkbox filter (search + list)');
+ok(!/<select[^>]*id="crcFilterCountry"/.test(html), 'F2: Country is no longer a <select> (converted to checkbox multi-select)');
+ok(/f\.country\.indexOf\(up\(c\.destinationCountry\)\)\s*===\s*-1/.test(js), 'F2: search matches country by membership of the selected array (empty = All)');
 ok(!/destinationCountry\)\.indexOf\(fCountry\)/.test(js), 'F2: old substring country match removed');
+ok(/crcToggleFilterPanel/.test(html) && /crcOnFilterOptionSearch/.test(html) && /crcFilterSelectAll/.test(html) && /crcFilterClear/.test(html), 'F2: checkbox panels have search + Select All + Clear + toggle');
 
 // F5 — mapping warning + unmapped label present, carrier_name never the join key.
 ok(/\[CRC\]\s*mapping warning:/.test(js), 'F5: console.warn "[CRC] mapping warning:" present');
 ok(/Unmapped Carrier \('/.test(js) || /Unmapped Carrier \(/.test(js), 'F5: "Unmapped Carrier (id)" label present');
 ok(/nameById\[id\]/.test(js), 'F5: join is carrier_id → carrier name (id is the key)');
 
-// F6 — facets rebuilt from upstream-matching rows; invalid downstream reset to "".
+// F6 — facets rebuilt from upstream-matching rows; invalid downstream selections pruned; the four filters
+// are checkbox multi-selects; carrier-scoped exports require exactly one carrier.
 ok(/_crcRebuildFacets/.test(js), 'F6: faceted rebuild function present');
-ok(/onchange="crcOnFilterChange\(\)"/.test(html), 'F6: dropdowns rebuild downstream facets on change');
-ok(/values\.indexOf\(current\)\s*!==\s*-1\s*\?\s*current\s*:\s*''/.test(js), 'F6: keep-or-reset-to-All logic present');
+ok(/function crcOnFilterToggle/.test(js), 'F6: checkbox toggle rebuilds downstream facets');
+ok(/function _crcPruneState/.test(js) && /crcFilterState\[kind\]\.filter/.test(js), 'F6: invalid downstream selections pruned to the current universe');
+ok(/function _crcSingleCarrier/.test(js) && /crcFilterState\.carrier\.length\s*===\s*1/.test(js), 'F6: carrier-scoped export requires exactly one selected carrier');
 
-// F1 — crc-prefixed date modal, YYYY-MM-DD, range/inclusive/swap; NOT reusing forecast IDs/state.
-ok(/id="crcDateModal"/.test(html) && /id="crcDateBackdrop"/.test(html), 'F1: crc-prefixed modal markup (crcDateModal / crcDateBackdrop)');
-ok(/id="crcStartDisplay"/.test(html) && /id="crcEndDisplay"/.test(html), 'F1: start/end readonly display inputs (crcStartDisplay / crcEndDisplay)');
-ok(/data-preset="last-7-days"/.test(html) && /data-preset="last-30-days"/.test(html) && /data-preset="last-90-days"/.test(html), 'F1: Last 7/30/90 day presets present');
-ok(/data-preset="custom"/.test(html), 'F1: Custom preset present');
-ok(/padStart\(2,\s*'0'\)/.test(js), 'F1: zero-padded date parts (YYYY-MM-DD)');
-ok(/crcDateState/.test(js), 'F1: own crc- date state object');
-ok(!/forecastReviewState/.test(js) && !/frDateModal/.test(js) && !/frStartDisplay/.test(js), 'F1: does NOT reuse forecast IDs / state');
+// F1 — the date picker now REUSES the shared Shipment-Overview modal (#frDateModal) instead of a bespoke
+// crc- modal (2026-07-28). The rate-card query (crcDateMatch), LOCAL YYYY-MM-DD formatting, the "All dates"
+// label and Clear semantics are unchanged. Handlers bind the shared .fr-* controls via `.onclick=`.
+ok(/onclick="crcOpenDateModal\(\)"/.test(html), 'F1: Date trigger opens the shared modal (crcOpenDateModal)');
+ok(!/id="crcDateModal"/.test(html) && !/id="crcDateBackdrop"/.test(html), 'F1: self-contained crc- date modal markup removed');
+ok(/id="crcDateClear"/.test(html) && /crcDateClear\(\)/.test(html), 'F1: Clear affordance present (resets to All dates)');
+ok(/getElementById\('frDateModal'\)/.test(js) && /getElementById\('frDateBackdrop'\)/.test(js), 'F1: controllers drive the shared #frDateModal / #frDateBackdrop');
+ok(/frStartDisplay/.test(js) && /frEndDisplay/.test(js) && /frCalendar/.test(js), 'F1: reuses the shared modal inputs + calendars (fr* ids)');
+ok(/\.fr-preset-item/.test(js) && /\.fr-calendar-nav/.test(js), 'F1: binds the shared .fr-preset-item / .fr-calendar-nav controls');
+ok(/last-60-days/.test(js) && /last-year/.test(js) && /last-month/.test(js), 'F1: full Shipment-Overview preset set handled (last-60-days / last-month / last-year)');
+ok(/padStart\(2,\s*'0'\)/.test(js), 'F1: zero-padded LOCAL date parts (YYYY-MM-DD)');
+ok(/crcDateState/.test(js), 'F1: own committed/temp crc- date state retained');
+ok(/data-date="'\s*\+\s*crcFmt\(date\)/.test(js), 'F1: day cells use LOCAL crcFmt for data-date (off-by-one safe, no toISOString)');
 ok(/temp\.start\s*=\s*end;[\s\S]{0,40}temp\.end\s*=\s*date;/.test(js), 'F1: day-click auto-swap keeps the range ordered');
 ok(/crcDateState\.temp\.preset\s*=\s*null;/.test(js), 'F1: manual day click clears the active preset');
-
-// F1 — scoped crc- CSS (own classes, not relying on fr-); zoom-safe (no fixed pixel modal height).
-ok(/\.crc-date-modal/.test(css) && /\.crc-calendar-day/.test(css), 'F1: crc- modal CSS present');
-ok(!/\bfr-date-modal\b/.test(css), 'F1: CSS does not rely on fr- classes');
-ok(/max-height:\s*90vh/.test(css) && !/\.crc-date-modal\s*\{[^}]*height:\s*\d+px/.test(css), 'F1: modal uses max-height vh (no fixed px height that clips at zoom)');
+ok(/textContent\s*=\s*'All dates'/.test(js), 'F1: "All dates" label preserved');
+ok(/\.crc-date-clear/.test(css), 'F1: toolbar Clear affordance styled (scoped crc- CSS)');
 
 console.log('\n' + (fail ? fail + ' FAILURE(S)' : 'ALL PASS'));
 process.exit(fail ? 1 : 0);

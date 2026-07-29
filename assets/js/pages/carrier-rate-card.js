@@ -59,18 +59,47 @@
     function crcParseLocal(s) { var p = String(s).split('-'); return new Date(+p[0], (+p[1]) - 1, +p[2]); }
     function crcSameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
+    // ---- Shared Date-Range Modal (#frDateModal) reuse ----
+    // Reuses the SAME modal component + presets + calendar layout as Shipment Overview (index.html
+    // #frDateModal / .fr-* classes) instead of a bespoke crc- modal — one look, one interaction. The
+    // committed state, the date query (crcDateMatch / _crcReadFilters / search) and the "All dates" label
+    // are unchanged. Handlers are bound via `.onclick=` on open, matching how each page claims the shared
+    // modal while it is open (see purchase-order-list.js / shipping-history.js). Clear is preserved as a
+    // small toolbar affordance next to the trigger (the shared modal footer stays Cancel/Apply only, so
+    // Shipment Overview / PO-List are never polluted).
+    var CRC_PRESET_LABELS = {
+        'today': 'Today', 'yesterday': 'Yesterday',
+        'last-7-days': 'Last 7 days', 'last-30-days': 'Last 30 days',
+        'last-60-days': 'Last 60 days', 'last-90-days': 'Last 90 days',
+        'last-month': 'Last month', 'last-2-months': 'Last 2 months',
+        'last-3-months': 'Last 3 months', 'last-year': 'Last year'
+    };
+
     function openDateModal() {
-        var bd = document.getElementById('crcDateBackdrop'), m = document.getElementById('crcDateModal');
+        var bd = document.getElementById('frDateBackdrop'), m = document.getElementById('frDateModal');
         if (!bd || !m) return;
         crcDateState.temp = { start: crcDateState.range.start, end: crcDateState.range.end, preset: crcDateState.range.preset };
         var anchor = crcDateState.range.start || new Date();
         crcDateState.months.start = new Date(anchor);
         crcDateState.months.end = new Date(crcDateState.range.end || anchor);
         bd.classList.add('is-open'); m.classList.add('is-open');
+        crcSetupDateModalEvents();
         crcUpdateDateInputs(); crcUpdatePresetHighlight(); crcRenderCalendars();
     }
+    // Claim the shared modal's controls for CRC (.onclick=, matching PO-List / Shipment Overview).
+    function crcSetupDateModalEvents() {
+        var bd = document.getElementById('frDateBackdrop'); if (bd) bd.onclick = closeDateModal;
+        var cancel = document.getElementById('frDateCancel'); if (cancel) cancel.onclick = closeDateModal;
+        var apply = document.getElementById('frDateApply'); if (apply) apply.onclick = dateApply;
+        Array.prototype.forEach.call(document.querySelectorAll('#frDateModal .fr-preset-item'), function (it) {
+            it.onclick = function () { presetClick(it.getAttribute('data-preset')); };
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('#frDateModal .fr-calendar-nav'), function (btn) {
+            btn.onclick = function () { calNav(btn.getAttribute('data-nav')); };
+        });
+    }
     function closeDateModal() {
-        var bd = document.getElementById('crcDateBackdrop'), m = document.getElementById('crcDateModal');
+        var bd = document.getElementById('frDateBackdrop'), m = document.getElementById('frDateModal');
         if (bd) bd.classList.remove('is-open');
         if (m) m.classList.remove('is-open');
     }
@@ -82,42 +111,54 @@
         _crcRebuildFacets();
         search();
     }
-    // Clear = stage an empty range (still requires Apply to commit).
+    // Clear (toolbar affordance beside the trigger) — reset to "All dates" and re-run immediately.
     function dateClear() {
+        crcDateState.range = { start: null, end: null, preset: null };
         crcDateState.temp = { start: null, end: null, preset: null };
-        crcUpdateDateInputs(); crcUpdatePresetHighlight(); crcRenderCalendars();
+        crcUpdateDateTriggerText();
+        _crcRebuildFacets();
+        search();
     }
     function crcUpdateDateTriggerText() {
         var el = document.getElementById('crcDateTriggerText');
-        if (!el) return;
         var r = crcDateState.range;
-        if (!r.start && !r.end) { el.textContent = 'All dates'; return; }
-        var labels = { 'last-7-days': 'Last 7 days', 'last-30-days': 'Last 30 days', 'last-90-days': 'Last 90 days' };
-        if (r.preset && labels[r.preset]) { el.textContent = labels[r.preset]; return; }
-        el.textContent = crcFmt(r.start) + ' ~ ' + (r.end ? crcFmt(r.end) : '…');
+        if (el) {
+            if (!r.start && !r.end) el.textContent = 'All dates';
+            else if (r.preset && CRC_PRESET_LABELS[r.preset]) el.textContent = CRC_PRESET_LABELS[r.preset];
+            else el.textContent = crcFmt(r.start) + ' ~ ' + (r.end ? crcFmt(r.end) : '…');
+        }
+        // The Clear affordance shows only when a date filter is active (committed range).
+        var clr = document.getElementById('crcDateClear');
+        if (clr) clr.style.display = (r.start || r.end) ? '' : 'none';
     }
+    // Preset compute — the FULL Shipment Overview preset set (10). A manual day-click clears the preset.
     function presetClick(preset) {
-        if (preset === 'custom') { crcDateState.temp.preset = null; crcUpdatePresetHighlight(); return; }
         var today = new Date(), start = new Date(), end = new Date(today);
         switch (preset) {
+            case 'today': start = new Date(today); break;
+            case 'yesterday': start.setDate(today.getDate() - 1); end.setDate(today.getDate() - 1); break;
             case 'last-7-days': start.setDate(today.getDate() - 7); break;
             case 'last-30-days': start.setDate(today.getDate() - 30); break;
+            case 'last-60-days': start.setDate(today.getDate() - 60); break;
             case 'last-90-days': start.setDate(today.getDate() - 90); break;
+            case 'last-month': start = new Date(today.getFullYear(), today.getMonth() - 1, 1); end = new Date(today.getFullYear(), today.getMonth(), 0); break;
+            case 'last-2-months': start = new Date(today.getFullYear(), today.getMonth() - 2, 1); end = new Date(today.getFullYear(), today.getMonth(), 0); break;
+            case 'last-3-months': start = new Date(today.getFullYear(), today.getMonth() - 3, 1); end = new Date(today.getFullYear(), today.getMonth(), 0); break;
+            case 'last-year': start = new Date(today.getFullYear() - 1, 0, 1); end = new Date(today.getFullYear() - 1, 11, 31); break;
+            default: return;
         }
-        crcDateState.temp.start = start; crcDateState.temp.end = end; crcDateState.temp.preset = preset;
+        crcDateState.temp = { start: start, end: end, preset: preset };
         crcDateState.months.start = new Date(start); crcDateState.months.end = new Date(end);
         crcUpdateDateInputs(); crcUpdatePresetHighlight(); crcRenderCalendars();
     }
     function crcUpdatePresetHighlight() {
         var p = crcDateState.temp.preset;
-        var items = document.querySelectorAll('#crcDateModal .crc-preset-item');
-        Array.prototype.forEach.call(items, function (it) {
-            var active = (it.getAttribute('data-preset') === p) || (!p && it.getAttribute('data-preset') === 'custom');
-            if (active) it.classList.add('is-active'); else it.classList.remove('is-active');
+        Array.prototype.forEach.call(document.querySelectorAll('#frDateModal .fr-preset-item'), function (it) {
+            if (it.getAttribute('data-preset') === p) it.classList.add('is-active'); else it.classList.remove('is-active');
         });
     }
     function crcUpdateDateInputs() {
-        var s = document.getElementById('crcStartDisplay'), e = document.getElementById('crcEndDisplay');
+        var s = document.getElementById('frStartDisplay'), e = document.getElementById('frEndDisplay');
         if (s) s.value = crcFmt(crcDateState.temp.start);
         if (e) e.value = crcFmt(crcDateState.temp.end);
     }
@@ -133,28 +174,29 @@
     function crcRenderCalendar(type) {
         var month = crcDateState.months[type];
         var cap = type.charAt(0).toUpperCase() + type.slice(1);
-        var titleEl = document.getElementById('crcCalendar' + cap + 'Title');
-        var bodyEl = document.getElementById('crcCalendar' + cap + 'Body');
+        var titleEl = document.getElementById('frCalendar' + cap + 'Title');
+        var bodyEl = document.getElementById('frCalendar' + cap + 'Body');
         if (!titleEl || !bodyEl) return;
         var names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         titleEl.textContent = names[month.getMonth()] + ' ' + month.getFullYear();
         var lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0);
         var startDow = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
         var wk = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'], html = '';
-        wk.forEach(function (d) { html += '<div class="crc-calendar-weekday">' + d + '</div>'; });
-        for (var i = 0; i < startDow; i++) html += '<div class="crc-calendar-day is-disabled"></div>';
+        wk.forEach(function (d) { html += '<div class="fr-calendar-weekday">' + d + '</div>'; });
+        for (var i = 0; i < startDow; i++) html += '<div class="fr-calendar-day is-disabled"></div>';
         var start = crcDateState.temp.start, end = crcDateState.temp.end, today = new Date();
         for (var day = 1; day <= lastDay.getDate(); day++) {
             var date = new Date(month.getFullYear(), month.getMonth(), day);
-            var cls = ['crc-calendar-day'];
+            var cls = ['fr-calendar-day'];
             if (start && crcSameDay(date, start)) cls.push('is-start');
             if (end && crcSameDay(date, end)) cls.push('is-end');
             if (start && end && date > start && date < end) cls.push('is-in-range');
             if (crcSameDay(date, today)) cls.push('is-today');
+            // data-date uses LOCAL YYYY-MM-DD (crcFmt) so read-back never shifts a day (no toISOString/UTC).
             html += '<div class="' + cls.join(' ') + '" data-date="' + crcFmt(date) + '" data-type="' + type + '">' + day + '</div>';
         }
         bodyEl.innerHTML = html;
-        Array.prototype.forEach.call(bodyEl.querySelectorAll('.crc-calendar-day:not(.is-disabled)'), function (el) {
+        Array.prototype.forEach.call(bodyEl.querySelectorAll('.fr-calendar-day:not(.is-disabled)'), function (el) {
             el.addEventListener('click', function () { crcDayClick(crcParseLocal(el.getAttribute('data-date')), el.getAttribute('data-type')); });
         });
     }
@@ -220,16 +262,30 @@
     // both the dropdown facets and the Search query. When an upstream change invalidates a downstream
     // selection, it is reset to "All" and its options are rebuilt.
     // ============================================================
+    // ---- Multi-select checkbox filters (Country / Method / Carrier / Last Mile) ----
+    // Converted 2026-07-28 from plain <select>s to the SKU-Details checkbox dropdown template (search +
+    // Select All + Clear + scrollable checkbox list + outside-click/Esc). Each filter's selection is an
+    // ARRAY ([] = All); the query keeps the same "empty = no filter" semantics, extended from equality to
+    // membership. Cascading (Date→Country→Method→Carrier→Last Mile) + downstream pruning are preserved.
+    var crcFilterState = { country: [], method: [], carrier: [], lastMile: [] };
+    var _crcFilterCandidates = { country: [], method: [], carrier: [], lastMile: [] };  // full universe per kind
+    var _crcFilterOpts = { country: [], method: [], carrier: [], lastMile: [] };        // last-rendered {value,label}[]
+    var CRCF_ORDER = ['country', 'method', 'carrier', 'lastMile'];
+    var CRCF_IDS = { country: 'crcCountry', method: 'crcMethod', carrier: 'crcCarrier', lastMile: 'crcLastMile' };
+
     function _crcReadFilters() {
         return {
             dateStart: crcFmt(crcDateState.range.start),
             dateEnd: crcFmt(crcDateState.range.end),
-            country: (document.getElementById('crcFilterCountry') || {}).value || '',
-            method: (document.getElementById('crcFilterMethod') || {}).value || '',
-            carrier: (document.getElementById('crcFilterCarrier') || {}).value || '',
-            lastMile: (document.getElementById('crcFilterLastMile') || {}).value || ''
+            country: crcFilterState.country.slice(),
+            method: crcFilterState.method.slice(),
+            carrier: crcFilterState.carrier.slice(),
+            lastMile: crcFilterState.lastMile.slice()
         };
     }
+    // Carrier-scoped exports (Update / Master template) require EXACTLY ONE carrier — return it, else ''.
+    function _crcSingleCarrier() { return crcFilterState.carrier.length === 1 ? crcFilterState.carrier[0] : ''; }
+
     // Distinct, trimmed, non-empty values of `field` across `rows`, sorted. `upper` uppercases (country).
     function _crcDistinct(rows, field, upper) {
         var seen = {}, list = [];
@@ -241,14 +297,7 @@
         list.sort();
         return list;
     }
-    function _crcFillSelect(id, values, current) {
-        var sel = document.getElementById(id);
-        if (!sel) return;
-        var keep = values.indexOf(current) !== -1 ? current : '';   // reset to "All" if no longer valid
-        sel.innerHTML = '<option value="">All</option>' +
-            values.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
-        sel.value = keep;
-    }
+    function _crcValOpts(vals) { return vals.map(function (v) { return { value: v, label: v }; }); }
     // F5 — Carrier options from rate-card rows (never hide a card): value = carrier_id, label = carrier_name
     // joined via carrier_id → carriers.carrier_id. Each carrier_id once. No master row → "Unmapped Carrier
     // ({id})" + a one-time console.warn. carrier_name is NEVER used as the join key or fabricated.
@@ -274,41 +323,130 @@
         opts.sort(function (a, b) { return String(a.label).localeCompare(String(b.label)); });
         return opts;
     }
-    function _crcFillCarrierSelect(rows, current) {
-        var sel = document.getElementById('crcFilterCarrier');
-        if (!sel) return;
-        var opts = _crcCarrierOptions(rows);
-        var ids = opts.map(function (o) { return o.id; });
-        var keep = ids.indexOf(current) !== -1 ? current : '';
-        sel.innerHTML = '<option value="">All</option>' +
-            opts.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('');
-        sel.value = keep;
+
+    // ---- checkbox-panel rendering + behavior (per filter `kind`) ----
+    function _crcPruneState(kind, validValues) {
+        crcFilterState[kind] = crcFilterState[kind].filter(function (v) { return validValues.indexOf(v) !== -1; });
     }
-    // Rebuild every downstream facet from the rows matching the upstream selections, resetting invalids.
-    function _crcRebuildFacets() {
+    function _crcLabelForValue(kind, val) {
+        var hit = (_crcFilterOpts[kind] || []).filter(function (o) { return o.value === val; })[0];
+        return hit ? hit.label : val;
+    }
+    function _crcUpdateFilterLabel(kind) {
+        var el = document.getElementById(CRCF_IDS[kind] + 'Label');
+        if (!el) return;
+        var n = crcFilterState[kind].length;
+        el.textContent = n === 0 ? 'All' : (n === 1 ? _crcLabelForValue(kind, crcFilterState[kind][0]) : (n + ' selected'));
+    }
+    function _crcRenderFilterOptions(kind, opts) {
+        _crcFilterCandidates[kind] = opts.map(function (o) { return o.value; });
+        _crcFilterOpts[kind] = opts;
+        var list = document.getElementById(CRCF_IDS[kind] + 'List');
+        if (!list) return;
+        var sel = crcFilterState[kind];
+        if (!opts.length) {
+            list.innerHTML = '<div class="crcf-empty">No options</div>';
+        } else {
+            list.innerHTML = opts.map(function (o) {
+                var checked = sel.indexOf(o.value) !== -1;
+                return '<label class="crcf-item" role="option" aria-selected="' + (checked ? 'true' : 'false') + '">' +
+                    '<input type="checkbox" value="' + esc(o.value) + '" onchange="crcOnFilterToggle(\'' + kind + '\')"' + (checked ? ' checked' : '') + '>' +
+                    '<span>' + esc(o.label) + '</span></label>';
+            }).join('');
+        }
+        var searchEl = document.getElementById(CRCF_IDS[kind] + 'Search');
+        if (searchEl && searchEl.value) _crcApplyOptionSearch(kind, searchEl.value);
+    }
+    function crcOnFilterToggle(kind) {
+        var list = document.getElementById(CRCF_IDS[kind] + 'List');
+        if (!list) return;
+        var checked = [];
+        Array.prototype.forEach.call(list.querySelectorAll('input[type="checkbox"]:checked'), function (cb) { checked.push(cb.value); });
+        crcFilterState[kind] = checked;
+        _crcUpdateFilterLabel(kind);
+        _crcRebuildFacets(kind);   // prune + rebuild DOWNSTREAM facets (skip re-rendering the active list)
+    }
+    function crcFilterSelectAll(kind) {
+        crcFilterState[kind] = (_crcFilterCandidates[kind] || []).slice();
+        _crcRenderFilterOptions(kind, _crcFilterOpts[kind] || []);
+        _crcUpdateFilterLabel(kind);
+        _crcRebuildFacets(kind);
+    }
+    function crcFilterClear(kind) {
+        crcFilterState[kind] = [];
+        _crcRenderFilterOptions(kind, _crcFilterOpts[kind] || []);
+        _crcUpdateFilterLabel(kind);
+        _crcRebuildFacets(kind);
+    }
+    function crcOnFilterOptionSearch(kind) {
+        var searchEl = document.getElementById(CRCF_IDS[kind] + 'Search');
+        _crcApplyOptionSearch(kind, searchEl ? searchEl.value : '');
+    }
+    function _crcApplyOptionSearch(kind, q) {
+        var list = document.getElementById(CRCF_IDS[kind] + 'List');
+        if (!list) return;
+        var low = String(q || '').toLowerCase();
+        Array.prototype.forEach.call(list.querySelectorAll('.crcf-item'), function (item) {
+            var t = (item.textContent || '').toLowerCase();
+            item.style.display = (!low || t.indexOf(low) !== -1) ? '' : 'none';
+        });
+    }
+    function crcToggleFilterPanel(kind, ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        var panel = document.getElementById(CRCF_IDS[kind] + 'Panel');
+        if (!panel) return;
+        var willOpen = panel.hidden;
+        _crcCloseFilterPanels();
+        if (willOpen) {
+            panel.hidden = false;
+            var trigger = document.getElementById(CRCF_IDS[kind] + 'Trigger');
+            if (trigger) trigger.setAttribute('aria-expanded', 'true');
+        }
+    }
+    function _crcCloseFilterPanels() {
+        CRCF_ORDER.forEach(function (kind) {
+            var p = document.getElementById(CRCF_IDS[kind] + 'Panel'); if (p) p.hidden = true;
+            var t = document.getElementById(CRCF_IDS[kind] + 'Trigger'); if (t) t.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    // Rebuild every facet's checkbox universe from the rows matching the UPSTREAM selections, pruning any
+    // now-invalid selections. `skipKind` (optional) = the filter the user just toggled — its own list is
+    // left intact (so their checkboxes / scroll position don't jump), only its downstream facets rebuild.
+    function _crcRebuildFacets(skipKind) {
         var cards = getCards();
-        var f = _crcReadFilters();
+        var dateStart = crcFmt(crcDateState.range.start), dateEnd = crcFmt(crcDateState.range.end);
+        var dateRows = cards.filter(function (c) { return crcDateMatch(c, dateStart, dateEnd); });
 
-        // F2 — Country: rows matching Date only. Options come ONLY from destinationCountry (uppercase code).
-        var dateRows = cards.filter(function (c) { return crcDateMatch(c, f.dateStart, f.dateEnd); });
-        _crcFillSelect('crcFilterCountry', _crcDistinct(dateRows, 'destinationCountry', true), up(f.country));
-        var country = (document.getElementById('crcFilterCountry') || {}).value || '';
+        // F2 — Country (uppercase codes) from date rows.
+        var countryVals = _crcDistinct(dateRows, 'destinationCountry', true);
+        _crcPruneState('country', countryVals);
+        if (skipKind !== 'country') _crcRenderFilterOptions('country', _crcValOpts(countryVals));
 
-        // F3 — Method: rows matching Date + Country. Distinct shippingMethod (NOT the CRC_ENUMS list).
-        var methodRows = dateRows.filter(function (c) { return !country || up(c.destinationCountry) === country; });
-        _crcFillSelect('crcFilterMethod', _crcDistinct(methodRows, 'shippingMethod'), f.method);
-        var method = (document.getElementById('crcFilterMethod') || {}).value || '';
+        // F3 — Method from Date + Country.
+        var cSel = crcFilterState.country;
+        var methodRows = dateRows.filter(function (c) { return !cSel.length || cSel.indexOf(up(c.destinationCountry)) !== -1; });
+        var methodVals = _crcDistinct(methodRows, 'shippingMethod');
+        _crcPruneState('method', methodVals);
+        if (skipKind !== 'method') _crcRenderFilterOptions('method', _crcValOpts(methodVals));
 
-        // F5 — Carrier: rows matching Date + Country + Method.
-        var carrierRows = methodRows.filter(function (c) { return !method || String(c.shippingMethod || '') === method; });
-        _crcFillCarrierSelect(carrierRows, f.carrier);
-        var carrier = (document.getElementById('crcFilterCarrier') || {}).value || '';
+        // F5 — Carrier from Date + Country + Method.
+        var mSel = crcFilterState.method;
+        var carrierRows = methodRows.filter(function (c) { return !mSel.length || mSel.indexOf(String(c.shippingMethod || '')) !== -1; });
+        var carrierOpts = _crcCarrierOptions(carrierRows);
+        _crcPruneState('carrier', carrierOpts.map(function (o) { return o.id; }));
+        if (skipKind !== 'carrier') _crcRenderFilterOptions('carrier', carrierOpts.map(function (o) { return { value: o.id, label: o.label }; }));
 
-        // F4 — Last Mile: rows matching Date + Country + Method + Carrier. Distinct lastMileDelivery.
-        var mileRows = carrierRows.filter(function (c) { return !carrier || String(c.carrierId || '') === carrier; });
-        _crcFillSelect('crcFilterLastMile', _crcDistinct(mileRows, 'lastMileDelivery'), f.lastMile);
+        // F4 — Last Mile from Date + Country + Method + Carrier.
+        var caSel = crcFilterState.carrier;
+        var mileRows = carrierRows.filter(function (c) { return !caSel.length || caSel.indexOf(String(c.carrierId || '')) !== -1; });
+        var mileVals = _crcDistinct(mileRows, 'lastMileDelivery');
+        _crcPruneState('lastMile', mileVals);
+        if (skipKind !== 'lastMile') _crcRenderFilterOptions('lastMile', _crcValOpts(mileVals));
+
+        CRCF_ORDER.forEach(_crcUpdateFilterLabel);
     }
-    // A downstream dropdown changed → rebuild the facets below it (and reset any now-invalid picks).
+    // Kept for compatibility (was the selects' onchange) — a full facet rebuild.
     function onFilterChange() { _crcRebuildFacets(); }
 
     function _crcResetTable(msg) {
@@ -359,20 +497,21 @@
         if (!useDb()) { _crcResetTable('Enable the cloud DB to search Carrier Rate Cards.'); return; }
         crcSearched = true;
 
-        // Same filter state that feeds the dropdown facets (F6) — never query a different set.
+        // Same filter state that feeds the dropdown facets (F6) — never query a different set. Each filter
+        // is now an array ([] = All); a card must match ONE of the selected values (membership), preserving
+        // the old "empty = no filter" behavior. Country is compared as an uppercase code.
         var f = _crcReadFilters();
-        var fCountry = up(f.country);
 
         var cards = getCards();
         var nameById = {};
         getCarriers().forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName || c.carrierId; });
 
         var filtered = cards.filter(function (c) {
-            if (!crcDateMatch(c, f.dateStart, f.dateEnd)) return false;              // F1 — date-range overlap
-            if (fCountry && up(c.destinationCountry) !== fCountry) return false;      // F2 — exact country code
-            if (f.method && String(c.shippingMethod || '') !== f.method) return false;
-            if (f.carrier && String(c.carrierId || '') !== f.carrier) return false;
-            if (f.lastMile && String(c.lastMileDelivery || '') !== f.lastMile) return false;
+            if (!crcDateMatch(c, f.dateStart, f.dateEnd)) return false;                                          // F1 — date-range overlap
+            if (f.country.length && f.country.indexOf(up(c.destinationCountry)) === -1) return false;            // F2 — country code(s)
+            if (f.method.length && f.method.indexOf(String(c.shippingMethod || '')) === -1) return false;        // F3
+            if (f.carrier.length && f.carrier.indexOf(String(c.carrierId || '')) === -1) return false;           // F5
+            if (f.lastMile.length && f.lastMile.indexOf(String(c.lastMileDelivery || '')) === -1) return false;  // F4
             return true;
         });
 
@@ -453,8 +592,8 @@
     // The carrier may add new route/method rows in the blank rows below (blank rate_card_id → created on import).
     function exportUpdateTemplate() {
         if (!useDb()) { alert('Enable the cloud DB first.'); return; }
-        var fCarrier = (document.getElementById('crcFilterCarrier') || {}).value || '';
-        if (!fCarrier) { alert('Please select a carrier before exporting Update Template.'); return; }
+        var fCarrier = _crcSingleCarrier();
+        if (!fCarrier) { alert('Please select exactly one carrier before exporting Update Template.'); return; }
 
         var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
         var nameById = {};
@@ -659,9 +798,8 @@
         if (!useDb()) { alert('Enable the cloud DB first.'); return; }
         if (!crcXlsxReady()) return;
         // Carrier id comes from an explicit arg (Update Rate Card modal) or the page filter.
-        var fCarrier = (typeof carrierIdArg === 'string' && carrierIdArg) ? carrierIdArg
-            : ((document.getElementById('crcFilterCarrier') || {}).value || '');
-        if (!fCarrier) { alert('Please select a carrier before exporting Update Template.'); return; }
+        var fCarrier = (typeof carrierIdArg === 'string' && carrierIdArg) ? carrierIdArg : _crcSingleCarrier();
+        if (!fCarrier) { alert('Please select exactly one carrier before exporting Update Template.'); return; }
         var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
         var nameById = {};
         carriers.forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName || c.carrierId; });
@@ -708,7 +846,7 @@
     // Legacy hidden CSV import button path — delegates to the shared file importer (page-filter scope).
     function importTemplate(input) {
         if (!input || !input.files || !input.files[0]) return;
-        var pageCarrier = (document.getElementById('crcFilterCarrier') || {}).value || '';
+        var pageCarrier = _crcSingleCarrier();
         crcImportFile(input.files[0], pageCarrier);
     }
 
@@ -817,7 +955,7 @@
         sel.innerHTML = '<option value="">Select carrier…</option>' +
             opts.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('');
         // Prefill from the page filter when present.
-        var pageCarrier = (document.getElementById('crcFilterCarrier') || {}).value || '';
+        var pageCarrier = _crcSingleCarrier();
         sel.value = cur || pageCarrier || '';
     }
     function openUpdateModal() {
@@ -941,8 +1079,19 @@
     window.crcDateClear = dateClear;
     window.crcPresetClick = presetClick;
     window.crcCalNav = calNav;
-    // F6 — faceted filter change
+    // F6 — faceted filter change (kept for compat) + the multi-select checkbox filter widget handlers.
     window.crcOnFilterChange = onFilterChange;
+    window.crcToggleFilterPanel = crcToggleFilterPanel;
+    window.crcOnFilterToggle = crcOnFilterToggle;
+    window.crcFilterSelectAll = crcFilterSelectAll;
+    window.crcFilterClear = crcFilterClear;
+    window.crcOnFilterOptionSearch = crcOnFilterOptionSearch;
+
+    // Outside-click / Esc close the open filter panel (bound once; null-safe by id lookup).
+    document.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && !e.target.closest('.crcf-multi')) _crcCloseFilterPanels();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') _crcCloseFilterPanels(); });
     window.crcExportUpdateTemplate = exportUpdateTemplate;
     window.crcExportMasterTemplate = exportMasterTemplate;
     window.crcExportTemplate = exportUpdateTemplate;   // back-compat alias (old single-button handler)

@@ -37,7 +37,10 @@
     color: #374151;
 }
 
-.forecast-filter input {
+/* DIRECT-CHILD only (`>`): sizes the page's own SKU text box / native inputs, NOT the nested shared
+   multi-select (`.forecast-filter-mount .kmf …`). Descendant scope here would inflate the `.kmf`
+   checkboxes + search — same root cause as SKU Handbook. */
+.forecast-filter > input {
     padding: var(--filter-padding-block) var(--filter-padding-inline);
     border: 1px solid var(--filter-border-color);
     border-radius: var(--filter-border-radius);
@@ -51,6 +54,18 @@
 
 .forecast-filter--dropdown {
     position: relative;
+}
+
+/* Multi-select trigger matches the Date field's rendered height (the page height baseline) so Country /
+   Marketplace / Category / Series / SKU / Date all render at exactly the same outer height. */
+#forecast-section .forecast-filter--dropdown .kmf,
+#forecast-section .forecast-filter--dropdown .kmf-trigger { width: 100%; }
+#forecast-section .forecast-filter--dropdown .kmf-trigger {
+    height: var(--filter-height);
+    min-width: 0; max-width: none;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    font-size: var(--filter-font-size);
+    box-sizing: border-box;
 }
 
 /* Date Filter - 確保日期不換行 */
@@ -75,7 +90,9 @@
     box-sizing: border-box;
     height: var(--filter-height);
     line-height: 1;
-    margin: 4px 0;
+    /* No vertical margin: the row is `align-items: flex-end`, so a stray 4px bottom margin lifted the
+       Date control 4px above the other filters. Removing it bottom-aligns Date with all controls. */
+    margin: 0;
 }
 
 .forecast-date-trigger:hover {
@@ -124,13 +141,13 @@
 }
 
 .forecast-dropdown-text {
-    color: #2d3748;
+    color: var(--filter-text-color);
     flex: 1;
 }
 
 .forecast-dropdown-icon {
-    font-size: 10px;
-    color: #a0aec0;
+    font-size: var(--filter-chevron-size);
+    color: var(--filter-chevron-color);
     margin-left: 8px;
 }
 
@@ -142,10 +159,10 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: #ffffff;
+    background: var(--filter-panel-bg);
     border: 1px solid var(--filter-border-color);
-    border-radius: var(--filter-border-radius);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: var(--filter-panel-radius);
+    box-shadow: var(--filter-panel-shadow);
     z-index: 1000;
     max-height: 300px;
     overflow-y: auto;
@@ -159,16 +176,16 @@
 .forecast-checkbox-item {
     display: flex;
     align-items: center;
-    padding: 6px 12px;
-    font-size: var(--filter-font-size);
-    color: #2d3748;
+    padding: var(--filter-option-padding);
+    font-size: var(--filter-option-font-size);
+    color: var(--filter-text-color);
     cursor: pointer;
     transition: background 0.15s;
     user-select: none;
 }
 
 .forecast-checkbox-item:hover {
-    background: #f7fafc;
+    background: var(--filter-option-hover-bg);
 }
 
 .forecast-checkbox-item input[type="checkbox"] {
@@ -1011,12 +1028,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 10px;
-    border: 1px solid #E2E8F0;
-    border-radius: 6px;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
     background: white;
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--filter-font-size);
     min-width: 120px;
     gap: 8px;
 }
@@ -1028,10 +1045,10 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: white;
-    border: 1px solid var(--km-filter-border, #E2E8F0);
-    border-radius: var(--km-filter-radius, 6px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    background: var(--filter-panel-bg);
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-panel-radius);
+    box-shadow: var(--filter-panel-shadow);
     padding: 8px 0;
     z-index: 1000;
     min-width: 150px;
@@ -1047,9 +1064,9 @@
 #fc-summary-section .fc-checkbox-item {
     display: flex;
     align-items: center;
-    padding: 6px 12px;
-    font-size: 13px;
-    color: #2d3748;
+    padding: var(--filter-option-padding);
+    font-size: var(--filter-option-font-size);
+    color: var(--filter-text-color);
     cursor: pointer;
     border-radius: 4px;
     transition: background 0.15s;
@@ -1059,7 +1076,7 @@
 }
 
 #fc-summary-section .fc-checkbox-item:hover {
-    background: #f7fafc;
+    background: var(--filter-option-hover-bg);
 }
 
 #fc-summary-section .fc-checkbox-item input[type="checkbox"] {

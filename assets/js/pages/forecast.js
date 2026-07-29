@@ -20,8 +20,43 @@ const forecastReviewState = {
   calendarMonths: {
     start: new Date(),
     end: new Date()
-  }
+  },
+  // Country / Marketplace / Category / Series option-list filters — now backed by the shared
+  // KM.ui.multiFilter component. Positive-inclusion query (a value list; empty = none), default = all.
+  filters: { country: [], marketplace: [], category: [], series: [] }
 };
+
+// Static option universes for the Forecast Review filters (deduped; was hardcoded in the HTML panels).
+var FORECAST_FILTER_OPTS = {
+  country: ['US', 'JP', 'UK', 'DE', 'CA', 'FR', 'IT', 'ES', 'AU'],
+  marketplace: ['Amazon', 'Shopify', 'Target'],
+  category: ['Electric Can Opener', 'Silicone Product', 'Manual Opener'],
+  series: ['CO1100', 'CO1150', 'SP3120', 'SP3410', 'MO5600']
+};
+var FORECAST_FILTER_LABELS = { country: 'Country', marketplace: 'Marketplace', category: 'Category', series: 'Series' };
+
+// Mount the four discrete filters as shared multi-select components. Default = all values selected (matches
+// the old all-checked default; the query is positive-inclusion so [] = none). Idempotent per mount.
+function _forecastMountFilters(root) {
+  if (!(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
+  ['country', 'marketplace', 'category', 'series'].forEach(function (kind) {
+    var mount = document.getElementById('forecast-mount-' + kind);
+    if (!mount) return;
+    if (!forecastReviewState.filters[kind] || !forecastReviewState.filters[kind].length) {
+      forecastReviewState.filters[kind] = FORECAST_FILTER_OPTS[kind].slice();
+    }
+    window.KM.ui.multiFilter.create({
+      mount: mount,
+      filterId: 'forecast-' + kind,
+      label: FORECAST_FILTER_LABELS[kind],
+      allText: 'All',
+      emptyMeansAll: false,
+      options: FORECAST_FILTER_OPTS[kind],
+      selectedValues: forecastReviewState.filters[kind],
+      onChange: function (vals) { forecastReviewState.filters[kind] = vals; handleForecastSearch(root); }
+    });
+  });
+}
 
 function initForecastReviewPage() {
   const root = document.querySelector('.page-forecast-review');
@@ -43,8 +78,8 @@ function initForecastReviewPage() {
   const unitSwitchBtn = document.getElementById('forecastUnitSwitchBtn');
   const viewToggleButtons = root.querySelectorAll('.forecast-chart-view-toggle button');
 
-  // Initialize dropdown filters
-  initForecastDropdowns(root);
+  // Mount the Country / Marketplace / Category / Series filters as shared multi-select components.
+  _forecastMountFilters(root);
 
   // SKU filter
   const skuFilter = root.querySelector('.forecast-filter-sku');
@@ -566,24 +601,16 @@ function handleForecastSearch(root) {
 }
 
 function collectForecastFilterParams(root) {
-  const countryPanel = root.querySelector('.forecast-dropdown-panel[data-filter="country"]');
-  const marketplacePanel = root.querySelector('.forecast-dropdown-panel[data-filter="marketplace"]');
-  const categoryPanel = root.querySelector('.forecast-dropdown-panel[data-filter="category"]');
-  const seriesPanel = root.querySelector('.forecast-dropdown-panel[data-filter="series"]');
-  
-  const getSelectedValues = (panel) => {
-    if (!panel) return [];
-    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
-    return Array.from(checkboxes).map(cb => cb.value);
-  };
-  
+  // Selections come from the shared filter components' state (arrays; positive-inclusion, empty = none) —
+  // identical shape to the old DOM-read version so the downstream query behavior is unchanged.
+  var f = forecastReviewState.filters || {};
   return {
     startDate: formatDateForDisplay(forecastReviewState.dateRange.start),
     endDate: formatDateForDisplay(forecastReviewState.dateRange.end),
-    countries: getSelectedValues(countryPanel),
-    marketplaces: getSelectedValues(marketplacePanel),
-    categories: getSelectedValues(categoryPanel),
-    series: getSelectedValues(seriesPanel),
+    countries: (f.country || []).slice(),
+    marketplaces: (f.marketplace || []).slice(),
+    categories: (f.category || []).slice(),
+    series: (f.series || []).slice(),
     sku: root.querySelector('.forecast-filter-sku')?.value.trim() || '',
   };
 }

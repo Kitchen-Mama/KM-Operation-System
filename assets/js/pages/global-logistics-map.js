@@ -146,7 +146,7 @@
       var originCountry = (nodes[0] && nodes[0].country) || '';
       var vm = {
         shipmentId: s.shipmentId, shipmentNo: s.shipmentNo || s.shipmentId, company: s.company || '',
-        carrier: s.carrierId || '', method: s.shippingMethodLabel || s.shippingMethod || '',
+        carrier: s.carrierId || '', method: s.shippingMethodDisplay || s.shippingMethod || '',
         originCountry: originCountry, destCountry: s.country || '', destWarehouseId: s.warehouseId || '',
         destWarehouse: (idx.whById[s.warehouseId] && idx.whById[s.warehouseId].warehouseName) || s.warehouseId || (s.destination || ''),
         shipFrom: s.shipFrom || '', destination: s.destination || '', status: s.status || '',

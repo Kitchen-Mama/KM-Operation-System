@@ -84,21 +84,32 @@
     color: var(--km-filter-muted, #64748b);
 }
 
-#sku-handbook-section .skuh-filter input,
-#sku-handbook-section .skuh-filter select {
+/* DIRECT-CHILD only (`>`): this sizing is for the page's own Search box / native selects, NOT for the
+   nested shared multi-select (`.skuh-filter-mount .kmf …`). Using a descendant selector here was the
+   root cause of the giant-checkbox / oversized-search bug — the `.kmf` checkboxes inherited height:36px
+   + min-width. Direct-child scoping removes the pollution without any global override. */
+#sku-handbook-section .skuh-filter > input,
+#sku-handbook-section .skuh-filter > select {
     height: var(--km-filter-height, 36px);
     padding: 0 12px;
     border: 1px solid var(--km-filter-border, #e2e8f0);
     border-radius: var(--km-filter-radius, 6px);
     background: var(--km-filter-bg, white);
     color: var(--km-filter-text, #1f2937);
-    font-size: 13px;
+    font-size: var(--filter-font-size);   /* match the dropdown triggers on the same toolbar */
     box-sizing: border-box;
     min-width: 140px;
 }
 
-#sku-handbook-section .skuh-filter input {
+#sku-handbook-section .skuh-filter > input {
     min-width: 220px;
+}
+/* The shared multi-select trigger matches the page's other filter controls' height. */
+#sku-handbook-section .skuh-filter--dropdown .kmf,
+#sku-handbook-section .skuh-filter--dropdown .kmf-trigger { width: 100%; }
+#sku-handbook-section .skuh-filter--dropdown .kmf-trigger {
+    height: var(--km-filter-height, 36px);
+    min-width: 180px; max-width: none;
 }
 
 /* Checkbox Dropdown */

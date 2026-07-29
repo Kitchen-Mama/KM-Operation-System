@@ -186,6 +186,26 @@
     min-width: 130px;
 }
 .pc-input--qty { min-width: 80px; width: 90px; text-align: right; }
+/* Locked auto-resolved fields (Units/Ctn, Supplier SKU, Unit Cost) — readonly, greyed, not user-editable
+   but still submitted (read via .value). Disabled selects (Supplier/Factory before their scope resolves)
+   share the same muted look. */
+.pc-input--locked,
+.pc-input:disabled,
+select.pc-input:disabled {
+    background: #f1f5f9;
+    color: #475569;
+    cursor: not-allowed;
+}
+.pc-input--locked { text-align: right; min-width: 80px; }
+.pc-modal__grid select.pc-input { min-width: 180px; }
+/* Per-line resolution status (currency ok / mapping-not-configured) + row error highlight. */
+.ro-c-line-msg { font-size: 11px; margin-top: 3px; color: #94a3b8; }
+.ro-c-line-msg--ok { color: #059669; }
+.ro-c-line-msg--error { color: #dc2626; }
+#ro-c-lines tr.is-error td { background: #fef2f2; }
+/* Modal-level message (validation / create errors). */
+.pc-modal__msg { font-size: 12px; margin: 8px 0 0; min-height: 16px; color: #64748B; }
+.pc-modal__msg--error { color: #dc2626; font-weight: 500; }
 
 /* ---- buttons ---- */
 .pc-btn {
@@ -374,7 +394,7 @@
 #purchase-order-overview-section .po-tab.is-active { background: var(--soft-green, #7CB342); border-color: var(--soft-green, #7CB342); color: #fff; }
 #purchase-order-overview-section .po-selectors { display: flex; gap: 12px; flex-wrap: wrap; }
 #purchase-order-overview-section .po-selector { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #64748B; font-weight: 500; }
-#purchase-order-overview-section .po-selector select { padding: 6px 10px; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 13px; min-width: 150px; }
+#purchase-order-overview-section .po-selector select { padding: var(--filter-padding-block) var(--filter-padding-inline); border: 1px solid var(--filter-border-color); border-radius: var(--filter-border-radius); font-size: var(--filter-font-size); min-width: 150px; height: var(--filter-height); box-sizing: border-box; }
 
 /* Card (mirrors Request Order Draft .sp-card, scoped to this section). */
 #purchase-order-overview-section .sp-card {
@@ -446,9 +466,12 @@
 #purchase-order-overview-section .po-status-badge--closure { background: #E0F2FE; color: #075985; }
 #purchase-order-overview-section .po-status-badge--cancelled { background: #FEE2E2; color: #991B1B; }
 
-/* Four blocks: horizontal on desktop, equal height, stack + scroll-inside on small screens. */
+/* Four blocks: horizontal on desktop, equal height, stack + scroll-inside on small screens.
+   Column ratio 5fr 4fr 3fr 4fr (2026-07-28): SKU Summary widest, Factory Notes narrowest (~75% of
+   the former equal width). Timeline/Payment stay ~1/4 each. No transform:scale; the table scroll
+   wrapper (.procurement-table-wrap) + min-width:0 on blocks keep header/body/h-scroll intact. */
 #purchase-order-overview-section .po-blocks-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch;
+    display: grid; grid-template-columns: 5fr 4fr 3fr 4fr; gap: 16px; align-items: stretch;
 }
 #purchase-order-overview-section .po-blocks-grid > .po-block { margin-bottom: 0; min-width: 0; display: flex; flex-direction: column; }
 #purchase-order-overview-section .po-blocks-grid .procurement-table-wrap { overflow-x: auto; max-width: 100%; }

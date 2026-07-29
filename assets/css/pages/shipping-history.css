@@ -37,12 +37,12 @@
     align-items: center;
     justify-content: space-between;
     height: var(--km-filter-height);
-    padding: 0 12px;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
     border: 1px solid var(--km-filter-border);
     border-radius: var(--km-filter-radius);
     background: var(--km-filter-bg);
     color: var(--km-filter-text);
-    font-size: 13px;
+    font-size: var(--filter-font-size);
     cursor: pointer;
     width: 100%;
     box-sizing: border-box;
@@ -63,7 +63,7 @@
 }
 
 #shippinghistory-section .sh-dropdown-icon {
-    font-size: 10px;
+    font-size: var(--filter-chevron-size);
     color: var(--km-filter-muted);
     margin-left: 8px;
     flex-shrink: 0;
@@ -76,10 +76,10 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: #ffffff;
-    border: 1px solid var(--km-filter-border);
-    border-radius: var(--km-filter-radius);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    background: var(--filter-panel-bg);
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-panel-radius);
+    box-shadow: var(--filter-panel-shadow);
     z-index: 1000;
     max-height: 300px;
     overflow-y: auto;
@@ -94,9 +94,9 @@
 #shippinghistory-section .sh-checkbox-item {
     display: flex;
     align-items: center;
-    padding: 6px 12px;
-    font-size: 13px;
-    color: #2d3748;
+    padding: var(--filter-option-padding);
+    font-size: var(--filter-option-font-size);
+    color: var(--filter-text-color);
     cursor: pointer;
     transition: background 0.15s;
     user-select: none;
@@ -104,7 +104,7 @@
 }
 
 #shippinghistory-section .sh-checkbox-item:hover {
-    background: #f7fafc;
+    background: var(--filter-option-hover-bg);
 }
 
 #shippinghistory-section .sh-checkbox-item input[type="checkbox"] {

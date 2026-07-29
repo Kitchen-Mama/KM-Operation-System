@@ -714,15 +714,33 @@ function normalizeShippingPlanRecord(raw) {
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
         shipFrom: String(r.ship_from || '').trim(),
+        // CANONICAL warehouse endpoints (2026-07-28). source_warehouse_id = out-source identity (NO
+        // origin_warehouse_id); destination_warehouse_id = out-destination identity; *_type qualifiers.
+        sourceWarehouseId: String(r.source_warehouse_id || '').trim(),
+        shipFromType: String(r.ship_from_type || '').trim(),
         destination: String(r.destination || '').trim(),
+        destinationWarehouseId: String(r.destination_warehouse_id || '').trim(),
+        destinationType: String(r.destination_type || '').trim(),
         shippingMethod: String(r.shipping_method || '').trim(),
+        lastMileDelivery: String(r.last_mile_delivery || '').trim(),
+        customsType: String(r.customs_type || '').trim(),
+        // NON-PERSISTENT view fields (2026-07-28): display text derived from the CODE at read time. The
+        // *_label snapshot columns are RETIRED — these are never written back to shipping_plans.
+        shippingMethodDisplay: codeDisplay_.shippingMethod(r.shipping_method),
+        lastMileDeliveryDisplay: codeDisplay_.lastMileDelivery(r.last_mile_delivery),
+        customsTypeDisplay: codeDisplay_.customsType(r.customs_type),
         planVersion: parseFloat(r.plan_version) || 1,
         parentShippingPlanId: String(r.parent_shipping_plan_id || '').trim(),
         submitBatchId: String(r.submit_batch_id || '').trim(),
         batchStatus: String(r.batch_status || '').trim(),
         carrierId: String(r.carrier_id || '').trim(),
-        estimatedFreightCost: parseFloat(r.estimated_freight_cost) || 0,
-        estimatedDuty: parseFloat(r.estimated_duty) || 0,
+        // Rough-quote carrier snapshot (Weekly Plan). carrier_rate_type = the rate card charge_type.
+        carrierUnitRate: (r.carrier_unit_rate === '' || r.carrier_unit_rate == null) ? '' : (parseFloat(r.carrier_unit_rate) || 0),
+        carrierRateType: String(r.carrier_rate_type || '').trim(),
+        importDutyTreatment: String(r.import_duty_treatment || '').trim(),
+        estimatedFreightCost: (r.estimated_freight_cost === '' || r.estimated_freight_cost == null) ? '' : (parseFloat(r.estimated_freight_cost) || 0),
+        estimatedDuty: (r.estimated_duty === '' || r.estimated_duty == null) ? '' : (parseFloat(r.estimated_duty) || 0),
+        estimatedCustomsFee: (r.estimated_customs_fee === '' || r.estimated_customs_fee == null) ? '' : (parseFloat(r.estimated_customs_fee) || 0),
         estimatedTotalCost: (r.estimated_total_cost === '' || r.estimated_total_cost == null) ? '' : (parseFloat(r.estimated_total_cost) || 0),
         currency: String(r.currency || '').trim(),
         status: String(r.status || '').trim(),
@@ -735,6 +753,7 @@ function normalizeShippingPlanRecord(raw) {
         rejectedBy: String(r.rejected_by || '').trim(),
         rejectedAt: String(r.rejected_at || '').trim(),
         rejectedReason: String(r.rejected_reason || '').trim(),
+        rejectedComment: String(r.rejected_comment || '').trim(),
         cancelledBy: String(r.cancelled_by || '').trim(),
         cancelledAt: String(r.cancelled_at || '').trim(),
         // Execution-Layer handoff metadata (set when the plan is converted to a Shipment Draft).
@@ -757,6 +776,9 @@ function normalizeShippingPlanLineRecord(raw) {
         shippingPlanLineId: String(r.shipping_plan_line_id || '').trim(),
         shippingPlanId: String(r.shipping_plan_id || '').trim(),
         sku: String(r.sku || '').trim(),
+        // CANONICAL (2026-07-28): each line keeps its REAL marketplace + site SKU (never MULTI on a line).
+        siteSku: String(r.site_sku || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
         requestedQty: parseFloat(r.requested_qty) || 0,
         approvedQty: parseFloat(r.approved_qty) || 0,
         // CANONICAL plan_carton_qty with legacy carton_qty read-fallback. cartonQty kept as UI alias.
@@ -775,6 +797,11 @@ function normalizeShippingPlanLineRecord(raw) {
         snapshotTargetDays: parseFloat(r.snapshot_target_days) || 0,
         snapshotFcContext: (r.snapshot_fc_context == null) ? '' : r.snapshot_fc_context,
         snapshotEventContext: (r.snapshot_event_context == null) ? '' : r.snapshot_event_context,
+        // Avg-sales provenance snapshots (canonical 2026-07-28).
+        snapshotAvgSalesSource: String(r.snapshot_avg_sales_source || '').trim(),
+        snapshotNormalDaysCount: (r.snapshot_normal_days_count === '' || r.snapshot_normal_days_count == null) ? '' : (parseFloat(r.snapshot_normal_days_count) || 0),
+        snapshotExcludedEventDaysCount: (r.snapshot_excluded_event_days_count === '' || r.snapshot_excluded_event_days_count == null) ? '' : (parseFloat(r.snapshot_excluded_event_days_count) || 0),
+        snapshotAvgSalesWarning: String(r.snapshot_avg_sales_warning || '').trim(),
         // Logistics Decision Snapshot (computed at Submit Plan / Save from sku_details carton dims/weights).
         cartonCbm: parseFloat(r.carton_cbm) || 0,
         cbm: parseFloat(r.cbm) || 0,
@@ -799,6 +826,50 @@ function customsTypeLabelFallback_(code) {
     return Object.prototype.hasOwnProperty.call(CUSTOMS_TYPE_LABELS_, key) ? CUSTOMS_TYPE_LABELS_[key] : '';
 }
 
+// ============================================================
+// Code → Display Resolver (VIEW / Presentation ONLY — 2026-07-28 Canonical Decision).
+// The retired *_label snapshot columns (shipping_plans / shipments shipping_method_label, customs_type_label,
+// shipments_customs_type_label) are GONE from the transaction DB. Display text is derived at render time from
+// the CODE fields (shipping_method / last_mile_delivery / customs_type / shipments_customs_type). These return
+// NON-PERSISTENT values and must NEVER be written back to shipping_plans / shipments. Business logic (rate/carrier
+// matching, customs/duty, grouping, dedupe) uses the CODE only — never these display strings.
+// Display source priority: (1) canonical enum→Label map (customs); (2) a humanized Code fallback. A future
+// shared Enum Display Dictionary / Code Dictionary table can extend this without touching callers or the DB.
+// ============================================================
+function _codeHumanize_(code) {
+    var s = String(code == null ? '' : code).trim();
+    if (!s) return '';
+    return s.split(/[_\s]+/).map(function (w) { return w ? (w.charAt(0).toUpperCase() + w.slice(1)) : w; }).join(' ');
+}
+var codeDisplay_ = {
+    shippingMethod: function (code) { return _codeHumanize_(code); },
+    lastMileDelivery: function (code) { return _codeHumanize_(code); },
+    customsType: function (code) { return customsTypeLabelFallback_(code) || _codeHumanize_(code); }
+};
+// Public render-time resolver. carrierName is looked up LIVE from the carriers master (carrier_id →
+// carriers.carrier_name) — carrier_name is NEVER stored on shipping_plans / shipments / carrier_rate_cards.
+if (typeof window !== 'undefined') {
+    window.KM = window.KM || {};
+    window.KM.display = {
+        shippingMethod: codeDisplay_.shippingMethod,
+        lastMileDelivery: codeDisplay_.lastMileDelivery,
+        customsType: codeDisplay_.customsType,
+        carrierName: function (carrierId) {
+            var id = String(carrierId == null ? '' : carrierId).trim();
+            if (!id) return '';
+            try {
+                var db = (window.KM.DB && typeof window.KM.DB.getOperationDb === 'function') ? window.KM.DB.getOperationDb() : null;
+                var carriers = (db && (db.carriers || [])) || [];
+                for (var i = 0; i < carriers.length; i++) {
+                    var c = carriers[i] || {};
+                    if (String(c.carrierId || c.carrier_id || '').trim() === id) return String(c.carrierName || c.carrier_name || '').trim();
+                }
+            } catch (e) { /* carriers not loaded yet → blank */ }
+            return '';
+        }
+    };
+}
+
 // Shipment (Execution Layer) header. Execution Snapshot lives on the lines (see below).
 function normalizeShipmentRecord(raw) {
     var r = raw || {};
@@ -808,29 +879,38 @@ function normalizeShipmentRecord(raw) {
         externalShipmentId: String(r.external_shipment_id || '').trim(),
         shippingPlanId: String(r.shipping_plan_id || '').trim(),
         referenceId: String(r.reference_id || '').trim(),
-        warehouseId: String(r.warehouse_id || '').trim(),
+        // CANONICAL warehouse endpoints (2026-07-28). source_warehouse_id = out-source identity (NO
+        // origin_warehouse_id). destination_warehouse_id = out-destination identity; legacy warehouse_id
+        // (the old destination identity) is the read-fallback. warehouse_code = DESTINATION code snapshot.
+        sourceWarehouseId: String(r.source_warehouse_id || '').trim(),
+        destinationWarehouseId: String((r.destination_warehouse_id === '' || r.destination_warehouse_id == null) ? (r.warehouse_id || '') : r.destination_warehouse_id).trim(),
+        destinationType: String(r.destination_type || '').trim(),
+        warehouseId: String(r.warehouse_id || '').trim(),   // legacy (destination) read alias
         warehouseCode: String(r.warehouse_code || '').trim(),
         company: String(r.company || '').trim(),
         country: String(r.country || '').trim(),
-        marketplace: String(r.marketplace || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),   // actual, or MULTI when the plan combined marketplaces
         shipFrom: String(r.ship_from || '').trim(),
         destination: String(r.destination || '').trim(),
         carrierId: String(r.carrier_id || '').trim(),
         rateCardId: String(r.rate_card_id || '').trim(),
+        importDutyTreatment: String(r.import_duty_treatment || '').trim(),
+        masterTrackingNumber: String(r.master_tracking_number || '').trim(),
+        isCrossDock: String(r.is_cross_dock || '').trim(),
+        temperatureRequirement: String(r.temperature_requirement || '').trim(),
+        hazmatFlag: String(r.hazmat_flag || '').trim(),
         shippingMethod: String(r.shipping_method || '').trim(),
         lastMileDelivery: String(r.last_mile_delivery || '').trim(),
-        // Localized display-name SNAPSHOT (copied from carrier_rate_cards at creation). Fallback for
-        // legacy rows without it: shipping_method + '_' + last_mile_delivery.
-        shippingMethodLabel: String(r.shipping_method_label || '').trim() ||
-            [String(r.shipping_method || '').trim(), String(r.last_mile_delivery || '').trim()].filter(Boolean).join('_'),
-        // Customs method SNAPSHOT. Canonical shipments_customs_type; legacy customs_type read-fallback
+        // Customs method SNAPSHOT — CODE. Canonical shipments_customs_type; legacy customs_type read-fallback
         // (historical rows). customsType kept as a temporary read-compat alias = shipmentsCustomsType.
         shipmentsCustomsType: String((r.shipments_customs_type === '' || r.shipments_customs_type == null) ? (r.customs_type || '') : r.shipments_customs_type).trim(),
         customsType: String((r.shipments_customs_type === '' || r.shipments_customs_type == null) ? (r.customs_type || '') : r.shipments_customs_type).trim(),
-        // Customs Label SNAPSHOT (中文). Canonical shipments_customs_type_label; blank legacy rows fall back
-        // to the canonical enum→Label map. Documents read THIS — never translate the enum at render time.
-        shipmentsCustomsTypeLabel: String(r.shipments_customs_type_label || '').trim() ||
-            customsTypeLabelFallback_((r.shipments_customs_type === '' || r.shipments_customs_type == null) ? r.customs_type : r.shipments_customs_type),
+        // NON-PERSISTENT view fields (2026-07-28): the *_label snapshot columns are RETIRED; display text is
+        // derived from the CODE at read time and is NEVER written back to shipments. Documents/Export/UI read
+        // these (or call KM.display.* at render) — they must not translate the enum inline elsewhere.
+        shippingMethodDisplay: codeDisplay_.shippingMethod(r.shipping_method),
+        lastMileDeliveryDisplay: codeDisplay_.lastMileDelivery(r.last_mile_delivery),
+        customsTypeDisplay: codeDisplay_.customsType((r.shipments_customs_type === '' || r.shipments_customs_type == null) ? r.customs_type : r.shipments_customs_type),
         status: String(r.status || '').trim(),
         salesOrderId: String(r.sales_order_id || '').trim(),
         bookingNo: String(r.booking_no || '').trim(),
@@ -857,8 +937,15 @@ function normalizeShipmentRecord(raw) {
         shipmentTotalNetWeight: (function () { var v = (r.shipment_total_net_weight === '' || r.shipment_total_net_weight == null) ? r.total_net_weight : r.shipment_total_net_weight; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
         totalGrossWeight: (function () { var v = (r.shipment_total_gross_weight === '' || r.shipment_total_gross_weight == null) ? r.total_gross_weight : r.shipment_total_gross_weight; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
         totalNetWeight: (function () { var v = (r.shipment_total_net_weight === '' || r.shipment_total_net_weight == null) ? r.total_net_weight : r.shipment_total_net_weight; return (v === '' || v == null) ? '' : (parseFloat(v) || 0); })(),
+        // Phase-1 Estimated Cost (exact on the shipment; blank = Not Applied / Rate Review — never 0).
+        estimatedFreightCost: (r.estimated_freight_cost === '' || r.estimated_freight_cost == null) ? '' : (parseFloat(r.estimated_freight_cost) || 0),
+        estimatedDuty: (r.estimated_duty === '' || r.estimated_duty == null) ? '' : (parseFloat(r.estimated_duty) || 0),
+        estimatedCustomsFee: (r.estimated_customs_fee === '' || r.estimated_customs_fee == null) ? '' : (parseFloat(r.estimated_customs_fee) || 0),
+        estimatedTotalCost: (r.estimated_total_cost === '' || r.estimated_total_cost == null) ? '' : (parseFloat(r.estimated_total_cost) || 0),
+        estimatedUnitCost: (r.estimated_unit_cost === '' || r.estimated_unit_cost == null) ? '' : (parseFloat(r.estimated_unit_cost) || 0),
         freightCostActual: (r.freight_cost_actual === '' || r.freight_cost_actual == null) ? '' : (parseFloat(r.freight_cost_actual) || 0),
         dutyActual: (r.duty_actual === '' || r.duty_actual == null) ? '' : (parseFloat(r.duty_actual) || 0),
+        totalCostActual: (r.total_cost_actual === '' || r.total_cost_actual == null) ? '' : (parseFloat(r.total_cost_actual) || 0),
         currency: String(r.currency || '').trim(),
         // Ship / Done (Shipment Draft workspace) lifecycle metadata.
         shippedAt: String(r.shipped_at || '').trim(),
@@ -1534,6 +1621,9 @@ function normalizeCarrierRateCardRecord(raw) {
         customsType: String(r.customs_type || '').trim(),
         // Localized customs Label (display metadata; enum stays authoritative). Blank rows derive from the map.
         customsTypeLabel: String(r.customs_type_label || '').trim() || customsTypeLabelFallback_(r.customs_type),
+        // import_duty_treatment: included_in_rate | excluded_in_rate | '' (blank = needs data completion;
+        // NEVER auto-derived from customs_type; a blank must NOT be treated as a known cross-border result).
+        importDutyTreatment: String(r.import_duty_treatment || '').trim(),
         note: String(r.note || '').trim(),
         effectiveFrom: String(r.effective_from || '').trim(),
         effectiveTo: String(r.effective_to || '').trim(),
@@ -1625,8 +1715,12 @@ function normalizeRequestOrderSiteConfirmationRecord(raw) {
 }
 
 // Request Order second-layer allocation draft (header). Planning scratchpad only (no stock effect).
+// Request Order second-layer allocation draft (header). CANONICAL fields (2026-07-27 DB sync);
+// generation_type replaces the retired source_type, category_snapshot/series_snapshot replace
+// category/series. Legacy columns are read ONLY as a compatibility fallback (never written).
 function normalizeRequestOrderAllocationDraftRecord(raw) {
     var r = raw || {};
+    function pick(canon, legacy) { var v = r[canon]; if (v == null || v === '') v = legacy != null ? r[legacy] : ''; return String(v || '').trim(); }
     return {
         requestAllocationDraftId: String(r.request_allocation_draft_id || '').trim(),
         planningCycle: String(r.planning_cycle || '').trim(),
@@ -1634,39 +1728,69 @@ function normalizeRequestOrderAllocationDraftRecord(raw) {
         country: String(r.country || '').trim(),
         marketplace: String(r.marketplace || '').trim(),
         sku: String(r.sku || '').trim(),
-        category: String(r.category || '').trim(),
-        series: String(r.series || '').trim(),
+        categorySnapshot: pick('category_snapshot', r.category),   // legacy: category
+        seriesSnapshot: pick('series_snapshot', r.series),         // legacy: series
         status: String(r.status || '').trim(),
-        sourceType: String(r.source_type || '').trim(),
+        generationType: pick('generation_type', r.source_type),    // legacy: source_type (retired)
+        draftPurpose: String(r.draft_purpose || '').trim(),
+        calculationRunId: String(r.calculation_run_id || '').trim(),
+        formulaVersion: String(r.formula_version || '').trim(),
+        calculatedAt: String(r.calculated_at || '').trim(),
+        sourceDataAsOf: String(r.source_data_as_of || '').trim(),
+        draftVersion: String(r.draft_version || '').trim(),
         createdBy: String(r.created_by || '').trim(),
         createdAt: String(r.created_at || '').trim(),
         updatedBy: String(r.updated_by || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
         submittedBy: String(r.submitted_by || '').trim(),
         submittedAt: String(r.submitted_at || '').trim(),
+        cancelledBy: String(r.cancelled_by || '').trim(),
+        cancelledAt: String(r.cancelled_at || '').trim(),
+        cancelReason: String(r.cancel_reason || '').trim(),
         note: String(r.note || '').trim(),
         raw: r
     };
 }
 
-// Request Order second-layer allocation draft (line). request_bucket = T1/T2/T3.
+// Request Order second-layer allocation draft (line). request_bucket = T1/T2/T3. CANONICAL fields
+// (2026-07-27 DB sync): regular_demand_snapshot (legacy fc_qty_snapshot) · destination_stock_snapshot
+// (legacy site_stock_snapshot) · third_party_available_qty_snapshot (legacy third_party_stock_snapshot)
+// · factory_available_qty_snapshot (legacy factory_stock_snapshot). recommended_qty (system Suggested
+// Order snapshot) and order_qty (user input) stay independent. Blank numeric snapshots stay blank (a
+// not-yet-calculated Engine A/B value is never coerced to 0). Legacy columns are read-only fallbacks.
 function normalizeRequestOrderAllocationDraftLineRecord(raw) {
     var r = raw || {};
+    function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
+    function nfb(canon, legacy) { var v = r[canon]; if (v == null || v === '') v = legacy; return n(v); }
     return {
         requestAllocationLineId: String(r.request_allocation_line_id || '').trim(),
         requestAllocationDraftId: String(r.request_allocation_draft_id || '').trim(),
         requestMonth: String(r.request_month || '').trim(),
         requestBucket: String(r.request_bucket || '').trim(),
-        recommendedQty: parseFloat(r.recommended_qty) || 0,
-        orderQty: parseFloat(r.order_qty) || 0,
-        cartonQty: parseFloat(r.carton_qty) || 0,
-        unitsPerCarton: parseFloat(r.units_per_carton) || 0,
-        factoryStockSnapshot: parseFloat(r.factory_stock_snapshot) || 0,
-        siteStockSnapshot: parseFloat(r.site_stock_snapshot) || 0,
-        thirdPartyStockSnapshot: parseFloat(r.third_party_stock_snapshot) || 0,
-        fcQtySnapshot: parseFloat(r.fc_qty_snapshot) || 0,
-        targetPctSnapshot: parseFloat(r.target_pct_snapshot) || 0,
+        regularDemandSnapshot: nfb('regular_demand_snapshot', r.fc_qty_snapshot),
+        specialEventDemandSnapshot: n(r.special_event_demand_snapshot),
+        destinationStockSnapshot: nfb('destination_stock_snapshot', r.site_stock_snapshot),
+        thirdPartyAvailableQtySnapshot: nfb('third_party_available_qty_snapshot', r.third_party_stock_snapshot),
+        qualifiedIncomingSnapshot: n(r.qualified_incoming_snapshot),
+        approvedSupplySnapshot: n(r.approved_supply_snapshot),
+        factoryAvailableQtySnapshot: nfb('factory_available_qty_snapshot', r.factory_stock_snapshot),
+        targetPctSnapshot: n(r.target_pct_snapshot),
+        calculatedGapQtySnapshot: n(r.calculated_gap_qty_snapshot),
+        recommendedShippingQtySnapshot: n(r.recommended_shipping_qty_snapshot),
+        residualProductionRequiredSnapshot: n(r.residual_production_required_snapshot),
+        reallocationInQtySnapshot: n(r.reallocation_in_qty_snapshot),
+        reallocationOutQtySnapshot: n(r.reallocation_out_qty_snapshot),
+        netOrderNeedSnapshot: n(r.net_order_need_snapshot),
+        recommendedQty: n(r.recommended_qty),
+        orderQty: n(r.order_qty),
+        cartonQty: n(r.carton_qty),
+        unitsPerCarton: n(r.units_per_carton),
         allocationMethod: String(r.allocation_method || '').trim(),
+        recommendationReason: String(r.recommendation_reason || '').trim(),
+        recommendationFlags: String(r.recommendation_flags || '').trim(),
+        lineStatus: String(r.line_status || '').trim(),
+        submittedBy: String(r.submitted_by || '').trim(),
+        submittedAt: String(r.submitted_at || '').trim(),
         note: String(r.note || '').trim(),
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),
@@ -2590,6 +2714,32 @@ window.KM.DB.completeShippingPlan = async function(payload) {
     return json.data;
 };
 
+// ---- Weekly Plan Layer-1/2 + Combined Plan + Method Recommendation adapters (2026-07-28) ----
+// All matching is CODE/ID based server-side. Weekly Plan NEVER persists rate_card_id; carrier_name is
+// resolved live (KM.display.carrierName). READ helpers do not force a DB reload; WRITE helpers do.
+async function _kmShippingPost_(action, payload, errMsg, reloadAfter) {
+    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, ' + action + ' skipped'); return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: action }, payload)) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || errMsg);
+    if (reloadAfter) await loadOperationDb({ force: true });
+    return json.data;
+}
+// READ: Execution Plan method recommendation + Weekly L1 cascade { origin_country?, destination_country|country, planning_date?, skus?, shipping_method?, last_mile_delivery? }.
+window.KM.DB.getShippingMethodCandidates = function(payload) { return _kmShippingPost_('getShippingMethodCandidates', payload, 'Get method candidates failed', false); };
+// READ: Weekly L2 rough rate candidates for a plan { shipping_plan_id }.
+window.KM.DB.getWeeklyPlanRateCandidates = function(payload) { return _kmShippingPost_('getWeeklyPlanRateCandidates', payload, 'Get rate candidates failed', false); };
+// WRITE: Weekly L1 rationale (clears carrier/cost, bumps version) { shipping_plan_id, shipping_method?, last_mile_delivery?, customs_type?, ... }.
+window.KM.DB.updateShippingPlanRationale = function(payload) { return _kmShippingPost_('updateShippingPlanRationale', payload, 'Update rationale failed', true); };
+// WRITE: Weekly L2 carrier select (snapshot + cost; NO rate_card_id) { shipping_plan_id, selected_rate_card_id }.
+window.KM.DB.selectShippingPlanCarrier = function(payload) { return _kmShippingPost_('selectShippingPlanCarrier', payload, 'Select carrier failed', true); };
+// WRITE: create a Combined Parent over eligible Draft plans { source_plan_ids: [...] }.
+window.KM.DB.combineShippingPlans = function(payload) { return _kmShippingPost_('combineShippingPlans', payload, 'Combine plans failed', true); };
+// WRITE: dissolve a Combined Parent { parent_shipping_plan_id }.
+window.KM.DB.uncombineShippingPlans = function(payload) { return _kmShippingPost_('uncombineShippingPlans', payload, 'Uncombine plans failed', true); };
+
 // Execution Commit (explicit / retry): Approved shipping_plan → shipments + shipment_lines (draft).
 // Normally Approve auto-creates the Shipment Draft server-side; this is the idempotent retry path.
 // { shipping_plan_id, actor? }
@@ -2662,8 +2812,10 @@ window.KM.DB.createRequestOrderDraft = async function(payload) {
 };
 
 // ---- Request Order second-layer allocation drafts (planning scratchpads; no stock movement) ----
-// Upsert ONE draft header. { request_allocation_draft_id?, planning_cycle?, company?, country?,
-//   marketplace?, sku?, category?, series?, status?, source_type?, created_by?, note? } → { request_allocation_draft_id }.
+// Upsert ONE draft header (CANONICAL fields). { request_allocation_draft_id?, planning_cycle?, company?,
+//   country?, marketplace?, sku?, category_snapshot?, series_snapshot?, status?, generation_type?,
+//   draft_purpose?, draft_version?, created_by?, note? } → { request_allocation_draft_id }.
+//   (generation_type replaces the retired source_type; category/series are legacy read-only aliases.)
 window.KM.DB.upsertRequestOrderAllocationDraft = async function(payload) {
     if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertRequestOrderAllocationDraft skipped'); return { success: false, error: 'API not configured' }; }
     var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },

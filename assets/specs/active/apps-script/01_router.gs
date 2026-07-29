@@ -105,6 +105,26 @@ function doPost(e) {
       return handleCompleteShippingPlan_(body);
     }
 
+    // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
+    if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
+      return handleGetShippingMethodCandidates_(body);
+    }
+    if (action === 'getWeeklyPlanRateCandidates') {   // Weekly L2 rough candidates (user picks; never auto-selected)
+      return handleGetWeeklyPlanRateCandidates_(body);
+    }
+    if (action === 'updateShippingPlanRationale') {   // Weekly L1 write (clears carrier/cost, bumps version)
+      return handleUpdateShippingPlanRationale_(body);
+    }
+    if (action === 'selectShippingPlanCarrier') {     // Weekly L2 write (snapshot carrier+rate+cost; NO rate_card_id)
+      return handleSelectShippingPlanCarrier_(body);
+    }
+    if (action === 'combineShippingPlans') {
+      return handleCombineShippingPlans_(body);
+    }
+    if (action === 'uncombineShippingPlans') {
+      return handleUncombineShippingPlans_(body);
+    }
+
     if (action === 'createShipmentFromPlan') {
       return handleCreateShipmentFromPlan_(body);
     }
@@ -219,6 +239,13 @@ function doPost(e) {
 
     if (action === 'upsertRequestOrderSiteConfirmations') {
       return handleUpsertRequestOrderSiteConfirmations_(body);
+    }
+
+    // One-time migration (2026-07-28): retire the display-label snapshot columns from shipping_plans /
+    // shipments (shipping_method_label / customs_type_label / shipments_customs_type_label). Backfill-safe:
+    // dry_run reports; live deletes only when every code cell is populated (else blocked_needs_review).
+    if (action === 'retireShipmentLabelColumns') {
+      return handleRetireShipmentLabelColumns_(body);
     }
 
     if (action === 'importCarrierRateCards') {

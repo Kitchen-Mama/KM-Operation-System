@@ -134,15 +134,16 @@ eq(/>Sales Driven<|>Forecast Driven</.test(html), false, 'A5: Add/Edit forms sho
 eq(/<option value="sales_driven">Sales<\/option>/.test(html) && /<option value="forecast_driven">Forecast<\/option>/.test(html), true, 'A5: canonical option values preserved (sales_driven / forecast_driven)');
 
 // ============================================================================
-// A4 — Category selector visual parity with Request Order (blue #3B82F6, segmented control).
+// A4 — Category selector is now the SHARED Category Tab Rail (.km-tab-rail), unified with Order System /
+// Promotion Risk (2026-07-28). The old measure-based "More Categories" overflow + the .replen-category-tab
+// segmented control were removed; every category lives in one horizontally-scrollable rail. Active-tab blue
+// (#3B82F6) now comes from the shared .km-tab-rail__tab.is-active rule in components.css.
 // ============================================================================
-var catActive = (css.match(/\.replen-category-tab\.is-active\s*\{[\s\S]*?\}/) || [''])[0];
-eq(/#3B82F6/i.test(catActive), true, 'A4: active Category tab uses Request Order blue (#3B82F6)');
-eq(/#7fb069/i.test(catActive), false, 'A4: no leftover green/orange active style');
-var catTabs = (css.match(/#ops-section \.replen-category-tabs\s*\{[\s\S]*?\}/) || [''])[0];
-eq(/border-radius:\s*6px/.test(catTabs) && /overflow:\s*hidden/.test(catTabs), true, 'A4: container is a bordered, rounded, overflow-hidden segmented control (RO tokens)');
-var catTab = (css.match(/#ops-section \.replen-category-tab\s*\{[\s\S]*?\}/) || [''])[0];
-eq(/padding:\s*0\.5rem 1\.5rem/.test(catTab) && /font-size:\s*0\.875rem/.test(catTab) && /font-weight:\s*500/.test(catTab), true, 'A4: tab padding/font match RO .ro-tab tokens');
+eq(/class="[^"]*km-tab-rail[^"]*"[^>]*id="replenCategoryTabs"/.test(html), true, 'A4: category container uses the shared .km-tab-rail');
+eq(/km-tab-rail__tab/.test(js) && /km-tab-rail__count/.test(js), true, 'A4: tabs render with the shared .km-tab-rail__tab / __count classes');
+eq(/KM\.ui\.tabRail\.enhance/.test(js) && /scrollActiveIntoView/.test(js), true, 'A4: rail wired to KM.ui.tabRail (wheel/keyboard scroll + active-into-view)');
+eq(/replen-category-more|_replenLayoutCategoryOverflow|More Categories/.test(js), false, 'A4: old "More Categories" overflow mode removed');
+eq(/replen-category-tabs\.km-tab-rail/.test(css), true, 'A4: category container styled as a .km-tab-rail (page carries only spacing/z-index override)');
 
 // ============================================================================
 // A6 — More Options visual parity with SKU Details (neutral, no orange/toy look).

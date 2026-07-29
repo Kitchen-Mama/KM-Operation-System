@@ -79,6 +79,9 @@
 /* ── Category / Series multi-select (checkbox dropdown) ─────────────────────────────────────────
    Lightweight self-contained widget (no third-party library), scoped to #sku-section, KM tokens. */
 #sku-section .skuf-multi { position: relative; }
+/* Canonical filter (SSOT) — now expressed through the shared --filter-* tokens (base.css) so every
+   other filter family can consume the exact same contract. Values are unchanged in intent; only the
+   literals became tokens (+ a unified --filter-height so all filters share one height). */
 #sku-section .skuf-trigger {
     display: inline-flex;
     align-items: center;
@@ -86,30 +89,33 @@
     gap: 8px;
     min-width: 150px;
     max-width: 210px;
-    padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    background: #fff;
-    color: var(--text-primary);
-    font-size: var(--font-size-body);
+    height: var(--filter-height);
+    box-sizing: border-box;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    background: var(--filter-panel-bg);
+    color: var(--filter-text-color);
+    font-size: var(--filter-font-size);
+    line-height: 1;
     cursor: pointer;
 }
-#sku-section .skuf-trigger:focus-visible { outline: 2px solid var(--soft-green, #7DAB63); outline-offset: -1px; }
-#sku-section .skuf-trigger[aria-expanded="true"] { border-color: var(--soft-green, #7DAB63); }
+#sku-section .skuf-trigger:focus-visible { outline: 2px solid var(--filter-focus-ring); outline-offset: -1px; }
+#sku-section .skuf-trigger[aria-expanded="true"] { border-color: var(--filter-focus-ring); }
 #sku-section .skuf-trigger__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#sku-section .skuf-trigger__icon { font-size: 10px; color: #64748b; flex-shrink: 0; }
+#sku-section .skuf-trigger__icon { font-size: var(--filter-chevron-size); color: var(--filter-chevron-color); flex-shrink: 0; }
 #sku-section .skuf-panel {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    z-index: 140;
+    z-index: var(--filter-panel-z);
     width: max-content;
     min-width: 200px;
     max-width: min(280px, calc(100vw - 24px));
-    background: #fff;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-md);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+    background: var(--filter-panel-bg);
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-panel-radius);
+    box-shadow: var(--filter-panel-shadow);
     padding: 8px;
 }
 #sku-section .skuf-panel[hidden] { display: none; }
@@ -118,26 +124,27 @@
     box-sizing: border-box;
     margin-bottom: 6px;
     padding: 6px 8px;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    font-size: 12px;
+    border: 1px solid var(--filter-border-color);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-search-font-size);
 }
 #sku-section .skuf-tools { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; padding: 0 2px; }
 #sku-section .skuf-link {
     background: none; border: none; padding: 2px 4px;
-    color: var(--km-brand-blue, #0080bb); font-size: 12px; font-weight: 600; cursor: pointer;
+    color: var(--km-brand-blue, #0080bb); font-size: var(--filter-search-font-size); font-weight: 600; cursor: pointer;
 }
 #sku-section .skuf-link:hover { text-decoration: underline; }
-#sku-section .skuf-link:focus-visible { outline: 2px solid var(--soft-green, #7DAB63); outline-offset: 1px; }
+#sku-section .skuf-link:focus-visible { outline: 2px solid var(--filter-focus-ring); outline-offset: 1px; }
 #sku-section .skuf-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 #sku-section .skuf-item {
     display: flex; align-items: center; gap: 8px;
-    padding: 6px; border-radius: 4px;
-    font-size: 13px; color: var(--text-primary); cursor: pointer; white-space: nowrap;
+    padding: var(--filter-option-padding); border-radius: 4px;
+    font-size: var(--filter-option-font-size); color: var(--filter-text-color); cursor: pointer; white-space: nowrap;
 }
-#sku-section .skuf-item:hover { background: #f1f5f9; }
+#sku-section .skuf-item:hover { background: var(--filter-option-hover-bg); }
+#sku-section .skuf-item[aria-selected="true"] { background: var(--filter-option-selected-bg); }
 #sku-section .skuf-item input { accent-color: var(--km-brand-teal, #3abfb6); }
-#sku-section .skuf-empty { padding: 8px; color: #94a3b8; font-size: 12px; font-style: italic; }
+#sku-section .skuf-empty { padding: 8px; color: var(--filter-muted-color); font-size: var(--filter-search-font-size); font-style: italic; }
 @media (max-width: 640px) {
     #sku-section .skuf-panel { max-width: calc(100vw - 24px); }
 }

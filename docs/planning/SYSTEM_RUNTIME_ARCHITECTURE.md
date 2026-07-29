@@ -1,6 +1,16 @@
 # Kitchen Mama Operation System — Runtime Architecture
 
-**Status:** 🟡 Draft v1.2 — Runtime Architecture Specification (architecture only · NO code, NO Apps Script, NO API, NO SQL, NO DB change, NO implementation)
+> **Owner Boundary (reviewed 2026-07-28).**
+> - **Document Role:** the **Runtime Mapping** layer — service boundary, triggers, cadence, read/calculate/snapshot/write ownership, idempotency, commit boundary.
+> - **Canonical Owner For:** service/trigger/cadence boundaries and runtime ownership classes.
+> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), layer language (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`), the **Reserve Trigger** (Batch B).
+> - **Status:** Reviewed — Batch B Blockers Remain.
+> - **Current Version:** Draft v1.3 (Batch A repair: Reserve blocker + import≠recommendation clarification + 16:00 reconciliation to §7A).
+> - **Last Reviewed:** 2026-07-28.
+> - **Depends On:** DB Map, System Flow, Calculation Rules (formulas), domain specs.
+> - **Blocked By:** Batch B — Reserve Trigger · Qualified Incoming allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11).
+
+**Status:** 🟡 Draft v1.3 — Runtime Architecture Specification (architecture only · NO code, NO Apps Script, NO API, NO SQL, NO DB change, NO implementation; Batch A canonical repair 2026-07-28)
 **Last Updated:** 2026-06-26
 **Maintained By:** Development Team / Enterprise System Architect
 **Scope:** Authoritative **runtime blueprint** for the whole system — how data flows at runtime, who owns it, what triggers recalculation, and how layers depend on one another.
@@ -18,7 +28,7 @@
 ### Changelog
 
 - **Draft v1.2 (2026-06-26)** — Named the **Daily Sales freshness fields** the runtime/UI must read — `latest_source_date`, `data_window_start_date`, `data_window_end_date`, `is_fallback_used`, `data_age_days` (now defined as importer-generated headers in `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` v1.4 §7.4 / §16). Updated §9 Freshness accordingly.
-- **Draft v1.1 (2026-06-26)** — Aligned with `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` v1.3: documented the **Daily Sales fallback** (rolling 4-day default → per-group latest-available fallback) and the requirement that runtime/UI **expose the actual data date range used**; noted that the Import Layer's normalization includes **Amazon numeric placeholder normalization** (`365+`→`365`, `/`→null); refined freshness + open questions accordingly.
+- **Draft v1.1 (2026-06-26)** — Aligned Daily Sales handling with `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` (import window + cadence owned there; the current canonical is the gap-aware rolling 90-completed-day upsert) and required that runtime/UI **expose the actual data date range used**; noted the Import Layer's **Amazon numeric placeholder normalization** (`365+`→`365`, `/`→null); refined freshness + open questions.
 - **Draft v1 (2026-06-26)** — Initial Runtime Architecture: philosophy, canonical data flow, layers, lifecycle, module boundaries, dependency, triggers, recalculation, freshness, ownership, event flow, logging, service catalog, future API, design principles.
 
 ---
@@ -108,7 +118,7 @@ Everything below this chapter elaborates ownership, triggers, dependencies, and 
 | # | Layer | Responsibility | Must NOT |
 |---|-------|----------------|----------|
 | 1 | **External Sources** | Origin of raw data: Amazon (API/report exports), BigQuery raw tables, factory/warehouse/carrier inputs | — |
-| 2 | **Import Layer** | Read sources by header name, map → destination, normalize (incl. **Amazon numeric placeholders** `365+`→`365`, `/`→null), generate metadata/hash/batch, record runs/issues; for BigQuery daily sales apply the rolling-window **+ per-group latest-available fallback** | interpret business meaning |
+| 2 | **Import Layer** | Read sources by header name, map → destination, normalize (incl. **Amazon numeric placeholders** `365+`→`365`, `/`→null), generate metadata/hash/batch, record runs/issues; for BigQuery daily sales apply the **gap-aware rolling 90-completed-day upsert** (window + strategy owned by `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 — the earlier "latest-available fallback" is superseded and NOT executed) | interpret business meaning; substitute latest-available data for missing in-window dates |
 | 3 | **Snapshot Layer** | Hold the **latest** imported snapshot as the **single source of truth**; import-only | be manually edited; hold permanent row-level history (MVP) |
 | 4 | **Business Data Layer** | Master data + business services that interpret snapshots (SKU, marketplace, inventory, forecast, factory stock) | recompute planning math |
 | 5 | **Calculation Layer** | Apply formula rules (projection, shortage/surplus, reallocation, order need, carton rounding) | write to source/snapshot |
@@ -130,9 +140,9 @@ For each data type: where it comes from, who owns/writes/reads it, and how it li
 | **Amazon Inventory** | Amazon report → Google Sheet "Combined Sheet" | OP / Supply Chain | Import Service | `amazon_inventory_snapshot` | Importer only | Inventory Service, dashboards | derived from `import_sync_runs` | clear-and-rewrite each sync |
 | **Amazon Inventory Health** | Amazon report → Sheet | OP / Supply Chain | Import Service | `amazon_inventory_health_snapshot` | Importer only | Inventory Service | derived | clear-and-rewrite |
 | **Weekly Sales** | Amazon report → Sheet | Sales / OP | Import Service | `amazon_weekly_sales_snapshot` | Importer only | Forecast Service, dashboards | derived | clear-and-rewrite |
-| **Daily Sales** | BigQuery `Raw Daily Sales` | Sales / OP | Import Service (rolling 4-day, 16:00 Asia/Taipei; **per-group latest-available fallback** when window empty) | `amazon_daily_sales_snapshot` | Importer only | Forecast Service, dashboards | derived; **actual data date range exposed** (may differ per group) | rolling window refresh, fallback to latest |
+| **Daily Sales** | BigQuery `Raw Daily Sales` | Sales / OP | Import Service — window + cadence owned by `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 (gap-aware rolling **90-completed-day** upsert) and §7A (Daily Report Pipeline 12:00–13:00). *(Any earlier "rolling 4-day / 16:00 / latest-available fallback" wording is superseded by those owners; runtime implementation is UNVERIFIED.)* | `amazon_daily_sales_snapshot` | Importer only | Forecast Service, dashboards | derived; actual data date range exposed | rolling 90-day upsert (per owner) |
 | **Forecast** | User + future AI | OP (forecast) | — (UI/edit) | `fc_regular_forecast`, `fc_special_events`, `fc_target_rules` | Authorized users | Calculation Engine, Request Order | last edit | user-maintained, periodic review |
-| **Factory Stock** | Factory ops / movements | OP / Factory | — | `factory_stock`, `factory_stock_movements` | Execution events (reserve/deduct), authorized users | Planning, Shipment, Request | event-driven | reserve on approval, deduct on Confirm & Ship |
+| **Factory Stock** | Factory ops / movements | OP / Factory | — | `factory_stock`, `factory_stock_movements` | Execution events (deduct; reserve = Batch B), authorized users | Planning, Shipment, Request | event-driven | **deduct `fac_current_stock` at Confirm Shipment & Dispatch (verified); reserve event BLOCKED — Batch B** (§7 note / SYSTEM_FLOW §11 B-1) |
 | **Overseas / 3PL / FBA Stock** | Receiving + Amazon API | OP / Supply Chain | Import (FBA) / receiving | `overseas_inventory_snapshot`, `overseas_inventory_movements` | Importer (FBA) / receiving | Inventory projection | derived/event | snapshot + movements |
 | **Shipping Plan** | Planning (Submit Plan) | OP | — | `shipping_plans`, `shipping_plan_lines` | Planning (on submit/approval) | Shipment creation | plan timestamp | draft → approved → converted |
 | **Shipment** | Execution (create from plan) | OP / Logistics | — | `shipments`, `shipment_lines` (+ events/routes) | Execution only | On-the-way, history, documents | execution timestamp | draft → … → completed |
@@ -218,16 +228,46 @@ What events cause the runtime to react. (Conceptual — actual scheduling/eventi
 | **Snapshot imported** (sync run success) | snapshot tab refreshed; freshness updated | Inventory projection, replenishment, dashboards |
 | **Forecast updated** (base/event/target edit) | forecast inputs change | projection, shortage/surplus, request order need |
 | **Replenishment override set** | a planning input is manually adjusted | replenishment suggestion, shipping plan |
-| **Shipping plan approved** | plan becomes convertible; factory stock **reserved** | factory stock available, shipment creation readiness |
-| **Execution Commit / Create Shipment Draft** | one physical `shipments` row created; may consolidate **multiple approved plans** via `shipment_plan_links` (human-confirmed, §SHIPMENT_CENTER §2.A/Ready-to-Create); persists plan-source + PO allocations; increases `factory_stock.fac_reserved_stock` | consolidated shipment, plan/marketplace traceability, PO allocation |
+| **Shipping plan approved** | plan becomes convertible; **no inventory movement** (any reserve event = **BLOCKED — Requires Batch B**, §7 note / `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1) | shipment creation readiness |
+| **Execution Commit / Create Shipment Draft** | one physical `shipments` row created; may consolidate **multiple approved plans** via `shipment_plan_links` (human-confirmed); persists plan-source + PO allocations. **No factory-stock reserve is written today** (reserve event = Batch B). | consolidated shipment, plan/marketplace traceability, PO allocation |
 | **Lifecycle → `Running in the Market`** (transition) | ensures `factory_stock` baseline (idempotent by `warehouse_id + Master sku`; `fac_current_stock=0`, `fac_reserved_stock=0`) — **NOT** on Master- or Marketplace-SKU create | factory stock rows exist for planning |
 | **Marketplace SKU added to planning scope** | ensures **Overseas Inventory** baseline/context (physical grain `company + warehouse_id + Master sku`; marketplace = demand context, not physical grain) — shared 3PL counted once | overseas shared-pool planning |
-| **Shipment confirmed (Confirm & Ship)** | `factory_stock.fac_current_stock` **deducted**; `fac_reserved_stock` released | inventory projection, available_to_ship, on-the-way |
+| **Shipment confirmed (Confirm & Ship)** | `factory_stock.fac_current_stock` **deducted** (verified — `22_shipment_dispatch_handlers.gs`); writes `factory_stock_movements`. No reserved-stock release today (no reserve is written). | inventory projection, available_to_ship, on-the-way |
 | **PO completed** (production) | `completed_qty` increases | `available_to_ship`, shipment allocation |
 | **Factory stock changed** (movement) | physical supply changes | projection, replenishment, request order |
 | **Receiving recorded** | destination inventory increases | next-cycle snapshot / projection |
 
 **Trigger principle:** a trigger fires a **recompute of derived data only**. It never rewrites the source that triggered it.
+
+> **Reservation / Recommendation boundary (canonical).**
+> ```
+> Recommendation Snapshot Write
+>   ≠ Decision Commit
+>   ≠ Stock Reservation
+>   ≠ Inventory Movement
+>
+> BLOCKED — Exact reservation event requires Batch B canonical decision.
+> ```
+> **Verified current code (2026-07-28):** no reserve logic exists; `fac_reserved_stock` is never written — the only factory-stock mutation is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch** (`22_shipment_dispatch_handlers.gs`). The single Reserve Trigger is undecided (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1).
+>
+**Import / recommendation outcome boundary — five distinct stages, never auto-equal:**
+
+| Stage | Meaning |
+|---|---|
+| **Import Job Completed** | Import process finished without execution error |
+| **Snapshot Persist Verified** | Expected snapshot rows were written and verified |
+| **Analysis Ready** | Required normalized inputs are eligible for calculation |
+| **Recommendation Snapshot Written** | Non-commit recommendation result was persisted |
+| **Decision Committed** | User action created formal business commitment |
+
+**Rules (each fails independently; an earlier stage never implies a later one):**
+- Import Job Completed **≠** Snapshot Persist Verified.
+- Snapshot Persist Verified **≠** Analysis Ready.
+- Analysis Ready **≠** Recommendation Snapshot Written.
+- Recommendation Snapshot Written **≠** Decision Committed (and **≠** Stock Reservation **≠** Inventory Movement).
+- A successful Amazon import **must not** be used to prove the Recommendation Runtime is deployed or complete.
+
+(Downstream of Decision Committed the same discipline continues into Execution Entity Created → Inventory Movement Applied → Settlement Completed.)
 
 ---
 
@@ -247,7 +287,9 @@ Authoritative schedule for the recommendation pipeline. **Spec only — no Apps 
 > **Trigger-window note (why times, not exact minutes):** Google Apps Script time-driven triggers fire **within the selected hour window**, not guaranteed at the first minute. The four windows above (Daily 12:00–13:00 · validation/buffer 13:00–14:00 · Weekly Mon 14:00–15:00 · Monthly day-5 15:00–16:00) are staged so each stage settles before the next. **When the 5th falls on a Monday, the Weekly (14:00–15:00) and Monthly (15:00–16:00) recommendations remain in separate, non-overlapping windows.**
 
 **Daily Report Pipeline (12:00):** import/update platform inventory reports, daily sales reports, forecast/source snapshots, qualified on-the-way; recalc FBA confirmed/estimated status; recalc Shared FBM Planning Allocation; refresh Analysis-Layer Days of Supply & Suggested Qty. It **does NOT** create `shipping_allocation_drafts`/`_lines` or `request_order_allocation_drafts`/`_lines`, modify an existing Draft, overwrite user-entered quantities, submit a Weekly Shipping Plan, or create a Request Order / Shipment / PO. **Daily refresh is Analysis Layer only.**
-> **16:00 reconciliation (RESOLVED as canonical schedule; operational move pending).** §4/§11 and `06_amazon_import_config.gs:184` reference `scheduleTime: '16:00'` for the BQ daily-sales import. This is **LEGACY / SUPERSEDED as a schedule** — `scheduleTime` is **config metadata never consumed by Runtime** (only `scheduleTimezone` is read); 16:00 is **too late** for the Monday 14:00 recommendation. Canonical: the **single** daily trigger on `runAmazonSnapshotImports` runs in the **12:00–13:00** window. **Do NOT add a duplicate same-day daily-sales import.** Moving the installed trigger is an **operational step** (`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §A/§11/§J-Phase 1); no config value is changed by spec.
+
+> **Staged success — never conflate (Batch A 2026-07-28).** The canonical outcome stages are owned by `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` (Outcome-stage separation table): **Import Job Completed ≠ Snapshot Persist Verified ≠ Analysis Ready ≠ Recommendation Snapshot Written ≠ Decision Committed.** An earlier stage never implies a later one: **Import Job Completed** (the import process finished) does **not** prove snapshots were verified-persisted, nor that replenishment/order **Analysis** ran, nor that any **Recommendation Snapshot** was written, nor that anything was **committed**. Each stage has its own success signal and its own readiness gate (§H of `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md`). Do not report a recommendation as "done" on the strength of an import completing.
+> **16:00 reconciliation (RESOLVED as canonical schedule; operational move pending).** §4/§11 and `06_amazon_import_config.gs:184` reference `scheduleTime: '16:00'` for the BQ daily-sales import. This is **LEGACY / SUPERSEDED as a schedule** — `scheduleTime` is **config metadata never consumed by Runtime** (only `scheduleTimezone` is read); 16:00 is **too late** for the Monday 14:00 recommendation. Canonical: the **single** daily trigger on `runAmazonSnapshotImports` runs in the **12:00–13:00** window. **Do NOT add a duplicate same-day daily-sales import.** Moving the installed trigger is an **operational step** (`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §A / §J Phase 1); no config value is changed by spec.
 
 **Source-readiness gate (both recommendation jobs):** the latest required Daily Report Pipeline batch for that cycle **must have completed successfully** first. If the required batch is incomplete/failed: **do not** generate a partial/stale recommendation silently, **do not** create an empty-success Draft; report a clear **source-readiness error**; allow safe **manual retry** after the pipeline succeeds. (Weekly 14:00 and Monthly 15:00 both run after the 12:00 pipeline + 13:00–14:00 validation buffer; the two recommendation windows never overlap, so a Monday-the-5th does not collide.)
 
@@ -255,7 +297,7 @@ Authoritative schedule for the recommendation pipeline. **Spec only — no Apps 
 - **Daily Report Pipeline — `runAmazonSnapshotImports()`:** **EXISTING** in the Apps Script source (`07_amazon_import_runner.gs`) and **explicitly safe for a time-based trigger** (no required arguments).
 - **Weekly Shipping Recommendation entry point:** **REQUIRES RUNTIME VERIFICATION — not claimed to exist.** A trigger must **not** be configured against an empty or parameterized handler.
 - **Monthly Order Recommendation entry point:** **REQUIRES RUNTIME VERIFICATION — not claimed to exist.** Same rule.
-- **A recommendation scheduler entry point MUST:** accept no required arguments; enforce source-data readiness; be idempotent by recommendation cycle (Cycle Key below); never overwrite user quantity; never report success after a partial failure.
+- **A recommendation scheduler entry point MUST:** accept no required arguments; enforce source-data readiness; be idempotent by recommendation cycle (see Duplicate-run protection below; the persisted cycle-key mechanism is **B-7**); never overwrite user quantity; never report success after a partial failure.
 
 **Recommendation vs user quantity (both layers):** the system recommendation is captured **once** at Draft generation; the user-operational quantity is **initialized from it** on new-line creation and thereafter **independently editable and independently visible**. Automated reports/schedulers **never overwrite the user quantity**, and **never silently refresh** a Draft's recommended quantity from live Analysis.
 - **Shipping:** **`recommended_qty`** (system snapshot; canonical 2026-07-22, legacy alias `recommand_shipment_draft_qty`) → initializes **`planned_qty`** (user qty; legacy alias `shipment_draft_qty`). Schema owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6.
@@ -263,7 +305,7 @@ Authoritative schedule for the recommendation pipeline. **Spec only — no Apps 
 
 **Snapshot boundary:** Daily Analysis stays live/recalculable; a Recommendation Draft is a **point-in-time working snapshot** created only by the Monday Shipping job, the monthly-5th Order job, or a future manually-initiated Exception action. **No** "latest live recommendation / daily difference / Compare Changes / automatic version replacement" requirement is introduced. **No daily Draft versioning.**
 
-**Duplicate-run protection (idempotent):** conceptual **Shipping Cycle Key = ISO Year + ISO Week + Scope**; **Order Cycle Key = Year + Month + Scope**. One active recommendation batch per Cycle Key + Scope; repeated/retried execution for the same cycle is **idempotent** (no duplicate Draft headers/lines, no reset of user-edited fields); a failed partial run **must not report success**. Precise persistence fields remain **Runtime/DB Mapping Required** if not already present. **No DB column is added here.**
+**Duplicate-run protection (idempotent):** there must be **one active recommendation batch per recommendation cycle + Scope** (a cycle = one weekly run for Shipping, one monthly run for Order); repeated/retried execution for the same cycle must be **idempotent** (no duplicate Draft headers/lines, no reset of user-edited fields); a failed partial run **must not report success**. The **persisted cycle / unique-key mechanism** — whether a dedicated key column, composite key, or unique index, and its exact composition — is **Blocked — B-7** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **No DB column, key, or index is decided or added here.**
 
 **Legacy naming:** the canonical shipping-draft quantities are **`recommended_qty`** (system snapshot) + **`planned_qty`** (user) — schema owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6. The misspelled **`recommand_shipment_draft_qty`** and **`shipment_draft_qty`** are **LEGACY READ/MIGRATION ALIASES only** (for `recommended_qty` / `planned_qty` respectively) — do NOT introduce them as new canonical columns. Persistence remains spec/DB-design only (no writer in code).
 
@@ -306,11 +348,11 @@ Reuses the Import Framework freshness model (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPE
 - Each consuming page (replenishment, Site Health Dashboard) checks the freshness of the snapshots it depends on (§6) before presenting results.
 - Freshness degradation **does not delete** data — the last good snapshot remains; only its trust level changes.
 - A blocked dependency should surface *why* (which snapshot, last successful sync) rather than silently failing.
-- **Actual data date range must be visible.** For Daily Sales, the rolling-4-day default may fall back to **latest-available data per country/marketplace/channel/sku group** (see import spec §4). The runtime/UI must **expose the actual date range used** (per group where it differs) so freshness is honest — a fallback snapshot reads as `delayed`/`stale`, not `fresh`, when its latest date is behind the expected cadence. Groups may legitimately show **different latest dates**; the system must not force one global latest date.
+- **Actual data date range must be visible.** The canonical Daily Sales path is the **gap-aware rolling 90-completed-day upsert** (owner `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §4 / §7.4); missing in-window dates are recorded as `source_unavailable` and **retried, never substituted by latest-available data**. The runtime/UI must **expose the actual date range used** (per group where it differs) so freshness is honest — a snapshot whose latest in-window date is behind the expected cadence reads as `delayed`/`stale`, not `fresh`. Groups may legitimately show **different latest dates**; the system must not force one global latest date.
 - **Daily Sales freshness fields the runtime/UI must read** (importer-generated, defined in import spec v1.4 §7.4 / §16):
   - `latest_source_date` — the most recent source date present (drives the "data as of …" label).
   - `data_window_start_date` / `data_window_end_date` — the actual date range covered (per group on the snapshot; min/max on the run).
-  - `is_fallback_used` — whether latest-available fallback was used (show a "fallback / latest available" indicator instead of "live").
+  - `is_fallback_used` — **legacy compatibility field**; the canonical gap-aware path performs **no** latest-available fallback and writes `FALSE`/blank (import spec §4). Older rows may retain historical `TRUE`; surface as-is, but never treat a snapshot with missing in-window dates as complete.
   - `data_age_days` — age of the latest source date vs sync date (drives fresh / delayed / stale thresholds).
   These let dashboards display an honest "data as of `latest_source_date` (range `start`–`end`, fallback: yes/no, age `N` days)" badge rather than implying every row is current.
 
@@ -345,7 +387,7 @@ End-to-end runtime event chain (the §2 canonical flow expressed as events):
 
 ```
 Amazon (report / API / BigQuery)
-        ↓  (scheduled sync — e.g. daily 16:00 Asia/Taipei for BQ daily sales)
+        ↓  (scheduled sync — canonical Daily Report Pipeline 12:00–13:00 Asia/Taipei; §7A. The legacy "16:00" config metadata is SUPERSEDED — see §7A 16:00 reconciliation)
 Importer            → writes snapshot + import_sync_runs / import_sync_issues
         ↓
 Snapshot            → single source of truth (write-protected)
@@ -488,8 +530,8 @@ This document does **not**:
 - **Daily status materialization:** is `inventory_replenishment_daily_status` precomputed nightly or computed on demand?
 - **History store:** when does row-level history move from "latest snapshot only" to BigQuery / a dedicated history table?
 - **Cross-snapshot consistency:** how is partial freshness handled when (e.g.) daily sales is fresh but inventory snapshot is stale?
-- **Fallback granularity & display:** when Daily Sales falls back to latest-available per group, how is the per-group date range surfaced in the UI, and how do downstream calculations treat mixed dates within one snapshot?
-- **Fallback vs freshness mapping:** exactly which `freshness_status` does a fallback snapshot map to (`delayed` vs `stale`) given the gap between its latest date and the expected cadence?
+- **Date-range granularity & display:** when Daily Sales groups have different latest in-window dates (or `source_unavailable` gaps within the rolling 90-day window), how is the per-group date range surfaced in the UI, and how do downstream calculations treat mixed dates within one snapshot?
+- **Incomplete-window vs freshness mapping:** exactly which `freshness_status` does a snapshot with `source_unavailable` in-window dates map to (`delayed` vs `stale`) given the gap between its latest date and the expected cadence?
 - **Placeholder accounting:** should normalized Amazon placeholders (`365+`, `/`) be tallied per run (e.g. on `import_sync_runs`), and is the `365+ → 365` open-bound loss acceptable for all downstream uses or does Days-of-Supply need the "or more" flag?
 - **Service boundary in MVP:** which services are real runtime components vs conceptual groupings until the API layer exists?
 - **Override interaction with recompute:** precedence rules when an override and a fresh snapshot disagree.

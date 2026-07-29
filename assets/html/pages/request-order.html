@@ -78,18 +78,17 @@
                         <button type="button" class="ro-btn ro-btn--primary" onclick="handleRequestOrderSearch()">Search</button>
                     </div>
 
-                    <div class="ro-filter ro-filter--clear">
-                        <label>&nbsp;</label>
-                        <button type="button" class="ro-btn ro-btn--ghost" onclick="clearRequestOrderFilters()">Clear Filters</button>
-                    </div>
-
-                    <!-- Right-side action group (Part 1/2): Confirm Site / All Request / Send Request.
-                         Pushed right via margin-left:auto; controls share Search's height. Confirm Site
-                         opens a modal (Part 2); Send Request is gated on confirmations (Part 3). -->
+                    <!-- Right-side action group: Confirmed Scope Status (read-only) / AI Plan / Request Type / Send
+                         Request. (2026-07-28 UI: Clear Filters removed; Confirm Site temporarily removed — its
+                         backend/DB/confirmed data are untouched; the status label stays read-only. AI Plan is a
+                         suggestion-refresh action, NOT a submit — it never Sends or Confirms.) -->
                     <div class="ro-filter ro-filter--actions">
                         <label class="ro-confirm-status" id="ro-confirm-status">No site confirmed yet</label>
                         <div class="ro-action-group">
-                            <button type="button" class="ro-btn ro-btn--secondary" onclick="openConfirmSiteModal()">Confirm Site</button>
+                            <button type="button" class="ro-btn ro-btn--ai" id="ro-ai-plan-btn" onclick="handleRequestOrderAiPlan()" title="Generate order suggestions" aria-label="Generate order suggestions">
+                                <svg class="ro-ai-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"></path><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8L19 14z"></path></svg>
+                                <span>AI Plan</span>
+                            </button>
                             <select id="ro-request-type" class="ro-action-select">
                                 <option value="all">All Request</option>
                                 <option value="t1">T1 Request</option>
@@ -104,8 +103,8 @@
                 <div class="ro-panel ro-header">
                     <!-- Category tabs ONLY (Part 2) — no action buttons here. Populated from
                          sku_details.category by _populateRequestOrderCategoryTabs(). -->
-                    <div class="ro-tabs ro-tabs--category" id="ro-category-tabs">
-                        <button class="ro-tab ro-tab--active" data-category="All" onclick="setRequestOrderCategory('All', this)">All</button>
+                    <div class="ro-tabs ro-tabs--category km-tab-rail" id="ro-category-tabs">
+                        <button class="km-tab-rail__tab is-active" data-category="All" onclick="setRequestOrderCategory('All', this)">All</button>
                     </div>
                 </div>
                 

@@ -98,15 +98,39 @@
     --btn-font-weight: 500;
     
     /* ========================================
-       Filter Design Tokens
+       Filter Design Tokens — SINGLE SOURCE OF TRUTH for every filter control
+       Calibrated to the SKU Details filter (the canonical visual SSOT: .skuf-*).
+       All filter families (.skuf-*, .kmf-*, .fc-dropdown-*, .ro-dropdown-*,
+       .sh-dropdown-*, native .srd-filter / .crc-input triggers) consume THESE
+       tokens so trigger, panel and option share one styling contract. Change a
+       value here and it changes everywhere — never hardcode these per page.
     ======================================== */
-    --filter-height: 38px;
-    --filter-border-radius: 4px;
-    --filter-border-color: #e2e8f0;
+    /* Trigger (the collapsed control) */
+    --filter-height: 38px;                       /* unified height → every filter is the same height */
+    --filter-border-radius: 4px;                 /* = --radius-sm (SSOT trigger radius) */
+    --filter-border-color: #e2e8f0;              /* = --border-light */
     --filter-padding-inline: 12px;
     --filter-padding-block: 8px;
-    --filter-font-size: 13px;
+    --filter-font-size: 14px;                    /* = --font-size-body (SSOT trigger font) */
+    --filter-text-color: #2d3748;                /* = --text-primary */
     --filter-gap: 1rem;
+    /* Chevron / trigger icon */
+    --filter-chevron-size: 10px;
+    --filter-chevron-color: #64748b;
+    /* Focus / open accent */
+    --filter-focus-ring: #7FB069;                /* = --soft-green (SSOT focus) */
+    /* Dropdown panel (expanded) */
+    --filter-panel-bg: #ffffff;
+    --filter-panel-radius: 6px;                  /* = --radius-md (SSOT panel radius) */
+    --filter-panel-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);   /* SSOT panel shadow */
+    --filter-panel-z: 200;
+    /* Option rows + search box inside the panel */
+    --filter-option-font-size: 13px;             /* SSOT .skuf-item */
+    --filter-option-padding: 6px 12px;
+    --filter-option-hover-bg: #f1f5f9;           /* SSOT .skuf-item:hover */
+    --filter-option-selected-bg: #f8fafc;
+    --filter-search-font-size: 12px;             /* SSOT .skuf-search */
+    --filter-muted-color: #94a3b8;               /* empty-state / placeholder */
     
     /* ========================================
        Table Design Tokens
@@ -141,15 +165,18 @@
     --km-ui-neutral: #3a3a3a;
 
     /* ========================================
-       Filter UI Tokens
+       Filter UI Tokens — LEGACY ALIASES.
+       These older --km-filter-* names are still referenced by a few pages (SKU Handbook, FC Summary).
+       They are now thin aliases onto the canonical --filter-* contract above so there is ONE set of
+       real values (no more 36px-vs-38px / #dbe3ea-vs-#e2e8f0 drift). Prefer --filter-* in new code.
     ======================================== */
-    --km-filter-bg: #ffffff;
+    --km-filter-bg: var(--filter-panel-bg);
     --km-filter-surface: #f8f9fa;
-    --km-filter-border: #dbe3ea;
-    --km-filter-text: #1f2937;
-    --km-filter-muted: #6b7280;
-    --km-filter-radius: 6px;
-    --km-filter-height: 36px;
+    --km-filter-border: var(--filter-border-color);
+    --km-filter-text: var(--filter-text-color);
+    --km-filter-muted: #6b7280;                  /* label muted grey — intentionally darker than empty-state */
+    --km-filter-radius: var(--filter-border-radius);
+    --km-filter-height: var(--filter-height);
 
     /* ========================================
        Button UI Tokens

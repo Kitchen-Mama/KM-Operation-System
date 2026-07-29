@@ -1,5 +1,15 @@
 # Kitchen Mama Operation System — Master Blueprint
 
+> **Owner Boundary (reviewed 2026-07-28).**
+> - **Document Role:** system-wide **scope, module map, and long-term boundaries** — orientation for all stakeholders.
+> - **Canonical Owner For:** system scope, module map, product direction, the two-branch (Shipping / Procurement) framing.
+> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), shipment lifecycle (`SHIPMENT_CENTER_SPEC.md`), Request/PO (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`), the **Reserve Trigger** (Batch B). It restates none of them.
+> - **Status:** Reviewed — Batch B Blockers Remain.
+> - **Current Version:** Draft v1 (Batch A repair: parallel-branch clarification + Reserve blocker).
+> - **Last Reviewed:** 2026-07-28.
+> - **Depends On:** all domain specs above (Blueprint summarizes, they govern).
+> - **Blocked By:** Batch B — Reserve Trigger · Request→PO atomicity (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11).
+
 **Status:** 🟡 Draft v1 — Master Architecture Blueprint / Spec only (NO code, NO DB, NO implementation)
 **Last Updated:** 2026-06-17
 **Maintained By:** Development Team
@@ -43,7 +53,7 @@ These principles govern every module and every future addition:
 3. **Main system, factory portal, and overseas-warehouse portal share the same data backbone.** Portals are *role-scoped lenses* over the same database, not separate systems.
 4. **No duplicate parallel DB when existing execution tables are authoritative.** e.g. Shipment Draft / Overview / On-the-Way all read `shipments` + `shipment_lines`; there is **no** separate `shipment_drafts` table. Request views read the request tables; PO views read the PO tables.
 5. **Page UI can aggregate by Series, but DB stays SKU-level when required.** Series/category are presentation groupings joined from SKU Details; quantities are stored at SKU granularity (e.g. `request_order_lines` is SKU-level).
-6. **Calculated preview is not persisted until the user creates / submits a formal record.** Replenishment math, allocation previews, and recommendations are ephemeral until an explicit Submit / Push / Create action writes a record.
+6. **A Recommendation Draft may be persisted before Decision Commit; persistence does not convert it into Decision or Execution Truth.** Replenishment math and live analysis are recomputed (not committed); a Recommendation Draft / Workspace may be saved to a non-commit DB Draft. Only an explicit Submit Plan / Send Request / Create action creates Decision or Execution Truth. A persisted Draft is not Qualified Incoming, reserves no stock, and creates no inventory movement.
 7. **Sensitive cost / payment data must later be permission-controlled.** Supplier prices, unit cost, deposit/balance, and payment status are sensitive; a permission model is required before broad exposure (future).
 
 ---
@@ -184,44 +194,42 @@ Phase 2 layers intelligence, portals, and integrations on top of the stable Phas
 
 The end-to-end backbone that ties the modules together:
 
+Shared planning inputs feed **two parallel branches** that meet only at **Factory Stock** (Procurement produces it; Shipping consumes it). They are **not** a single sequence — the Shipping branch is not a pre-step of the Procurement branch, and vice-versa.
+
 ```
-Forecast
-   ↓
-Inventory Projection
-   ↓
-Factory Stock Allocation            (planning layer; factory_stock_allocation_plans — future)
-   ↓
-Inventory Replenishment             (suggested replenishment; Submit → shipping_plans)
-   ↓
-Request Order                       (下單系統: calc/recommend across companies/sites)
-   ↓
-Request Order Draft                 (request_orders approval: draft→pending→approved/rejected/cancelled)
-   ↓
-Purchase Order Overview             (approved request → purchase_orders + purchase_order_lines)
-   ↓
-Production Schedule                 (production readiness; completed_qty)
-   ↓
-Shipment Draft                      (shipments.status = draft → ready_to_ship)
-   ↓
-Shipment Overview                   (read shipments + shipment_lines)
-   ↓
-On The Way / World Map              (+ future shipment_events / shipment_routes; no parallel DB)
-   ↓
-Export Center / Cost Analysis       (documents + cost from PO/shipment/SKU/warehouse)
+                    Forecast + Inventory Projection + Factory Stock + Qualified Incoming
+                    (shared planning inputs)
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+   SHIPPING BRANCH                    PROCUREMENT BRANCH
+   Engine A                          Engine B
+   → Shipping Recommendation          → Request Recommendation
+     Workspace (non-commit Draft)       Workspace (non-commit Draft)
+   → Submit Plan (Decision Commit)    → Send Request (Decision Commit)
+   → shipping_plans / _lines          → request_orders / _lines
+   → Shipment (Draft → Overview       → Purchase Order (purchase_orders / _lines)
+     → On The Way)                    → Production / Receiving
+   → Receive / Close                  → Factory Stock ──┐
+              │                                         │
+              └──────── consumes Factory Stock ◀────────┘
+                              │
+                              ▼
+              Export Center / Cost Analysis   (documents + cost from PO / shipment / SKU / warehouse)
 ```
 
-Each arrow is a **forward data hand-off**, honoring Principle #6 (preview not persisted until submit) and Principle #4 (no parallel DB).
+Each arrow is a **forward data hand-off**, honoring Principle #6 (a Draft may persist, but only Submit Plan / Send Request / Create creates Decision or Execution Truth) and Principle #4 (no parallel DB). Detailed E2E steps: [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) §5.5 (Procurement) / §5.6 (Shipping).
 
 ---
 
 ## 6. Replenishment Architecture
 
-- **Inventory Replenishment monitors marketplace / site inventory** and computes the suggested quantity to ship to each site (Target Days × avg sales vs current coverage — see `SUPPLY_PLANNING_CALCULATION_RULES.md`).
-- **Inputs:** **Overseas Stock + Factory Stock + On-the-Way + Forecast** (plus reallocation and carton rounding).
-- **Factory Stock is physical inventory** at a factory warehouse (`factory_stock`, keyed by `warehouse_id + sku`); `available_stock = current_stock − reserved_stock` (computed).
+- **Inventory Replenishment monitors marketplace / site inventory** and computes a suggested quantity to ship to each site. **All replenishment / shortage / reallocation / carton-rounding formulas are owned by [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) v4.1** — the Blueprint does not restate them.
+- **Inputs (business-level):** Overseas Stock, Factory Stock, Qualified Incoming, Forecast (plus reallocation and carton rounding) — precise definitions and equations in the Calculation Rules owner.
+- **Factory Stock is physical inventory** at a factory warehouse (`factory_stock`); the field-level schema (columns, keys, `available` derivation) is owned by [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md).
 - **`factory_stock_allocation_plans` is a planning-layer allocation** snapshot (future): it virtually allocates factory stock across company / country / marketplace / warehouse / SKU to support replenishment and shortage review. It does **not** deduct factory stock, transfer ownership, or create SO/PO/intercompany transactions (`SHIPMENT_CENTER_SPEC.md` §9).
 - **Allocation by company / site / marketplace is planning metadata, not ownership / accounting.** ResTW is the procurement hub; allocation answers "who needs it," not "who owns/bills it."
-- **Shortage / overstock alerts feed risk management** — net shortage (after reallocation) signals order need; overstock signals surplus to redistribute. Carton rounding: `CEILING(Order Need ÷ units_per_carton) × units_per_carton`.
+- **Shortage / overstock alerts feed risk management** — net shortage (after reallocation) signals order need; overstock signals surplus. Carton rounding (Shipping `FLOOR` / Ordering `CEILING`) is defined only in the Calculation Rules owner.
 
 ---
 
@@ -233,15 +241,10 @@ Each arrow is a **forward data hand-off**, honoring Principle #6 (preview not pe
 - **One push creates one combined Request** → writes the three-layer structure in a single action.
 - **`request_orders`** = overall request **header / batch** (no company/country/marketplace on the header).
 - **`request_order_lines`** = **SKU-level aggregated** order quantity (Series joined from SKU Details, not stored).
-- **`request_order_line_sources`** = **company / country / marketplace / warehouse / site_sku source breakdown** — answers "this total qty came from which demand origin." Includes future `source_type` / `source_priority` metadata and `ownership_company` (default **ResTW**, planning metadata only).
-- **Request Order Draft handles approval** — `draft → pending_approval → approved / rejected / cancelled`. Approval workflow lives **only** on the request layer.
-- **Purchase Order Overview handles formal PO execution** — an approved request converts to `purchase_orders` + `purchase_order_lines`; the PO does **not** own a submit/approve/reject workflow. One-request → many-PO is designed via the planned `request_order_po_links` table (MVP uses `converted_purchase_order_id` for one→one).
-- **PO execution lifecycle (v1.3):** `draft → issued → in_production → … → closed/cancelled`. **PO `draft`** = formal PO created but **not yet issued** to factory (execution-preparation, NOT approval). **PO `issued`** = PO document generated / sent / confirmed to factory. This is separate from the request approval lifecycle.
-- **PO document generation** uses `document_templates` / `generated_documents` (`document_type = PURCHASE_ORDER`); **MVP factory communication is a manual email**, then the user sets `order_status = issued` (automation/portal is future).
-- **Purchase Order List shows raw line status** — ordered / completed / shipped / remaining (a read/view over `purchase_orders` + `purchase_order_lines`, not a separate DB).
-- **Production completion updates `purchase_order_lines.completed_qty`.**
-- **`available_to_ship = completed_qty − shipped_qty`** — only produced-but-not-yet-shipped units may ship.
-- **`shipment_line_allocations` (PLANNED — NOT IMPLEMENTED)** will consume PO lines during shipment (FIFO default; one shipment line ← many PO lines; one PO line → many shipment lines). **Current runtime uses the single-link `shipment_lines.purchase_order_line_id`**; the multi-PO allocation table + writer are planned (`SHIPMENT_CENTER_SPEC.md` §16 / §6).
+- **`request_order_line_sources`** = the demand-origin **source breakdown** for a request line (which company / site / marketplace the quantity came from). Its grain, columns, writer, and lifecycle are **owned by [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) "§7.5 Second-layer draft tables / §7.6A Batch B Schema Decisions"** — the Blueprint does not fix them (final grain/writer/lineage = Batch B).
+- **Request Order Draft handles approval; Purchase Order Overview handles formal PO execution.** The request-layer approval states, the PO execution lifecycle, `available_to_ship`, and the Request→PO conversion contract are **owned by [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)** — not restated here. Request→PO **atomic orchestration is a Batch B decision** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-6).
+- **PO document generation** uses `document_templates` / `generated_documents`; **MVP factory communication is a manual email** (automation/portal is future).
+- **PO-line → shipment-line allocation** (single-link today; multi-PO FIFO allocation planned) is **owned by [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md)** — the Blueprint does not restate the FIFO algorithm or the remaining-quantity formula.
 
 ---
 
@@ -249,22 +252,15 @@ Each arrow is a **forward data hand-off**, honoring Principle #6 (preview not pe
 
 > Authority: [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) (Draft v2.3).
 
-- **Weekly Shipping Plan creates `shipping_plans` + `shipping_plan_lines`** (planning + approval).
-- **An approved Weekly Shipping Plan creates `shipments` + `shipment_lines`** as a snapshot (execution layer).
-- **Shipment Draft IS `shipments.status = draft`** — it is an editable preparation **view**, not a new table. **Do NOT create a separate `shipment_drafts` table.**
-- **Shipment Draft completes formal shipment details** (carrier, ETD/ETA, cartons, container/BL/invoice) and advances status to `ready_to_ship` (triggering FIFO PO allocation and factory-stock deduction).
-- **Shipment Overview reads `shipments` + `shipment_lines`** (tracking / history / search, read-only).
-- **On The Way / world map reads `shipments` + `shipment_lines` + future `shipment_events` + `shipment_routes`** — the **same** data source.
-- **`completed` / `cancelled` shipments do NOT count as on-the-way**; only `ready_to_ship` / `in_transit` / `partial_received` are active candidates.
-- **`shipment_events` and `shipment_routes` are future tracking-detail tables, not replacement DBs** — they enrich, never duplicate, `shipments` / `shipment_lines`.
+- **Weekly Shipping Plan creates `shipping_plans` + `shipping_plan_lines`** (planning + approval); an approved plan creates `shipments` + `shipment_lines` as an execution snapshot.
+- **Shipment Draft IS `shipments.status = draft`** — an editable preparation **view**, not a new table. **Do NOT create a separate `shipment_drafts` table** (topology principle).
+- **Shipment Overview / On-The-Way / world map read the same `shipments` + `shipment_lines`** (+ future `shipment_events` / `shipment_routes` which enrich, never duplicate) — **no parallel shipment DB**.
+- The **shipment status lifecycle, on-the-way eligibility, FIFO PO allocation, and factory-stock deduction/reserve timing** are **owned by [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md)** — the Blueprint does not restate the status enum or the deduction/reserve rules.
 
-Status lifecycle: `draft → planned → ready_to_ship → in_transit → partial_received → completed` (+ `cancelled`, `stuck`). Factory stock is **reserved** on plan approval, **deducted** on ready-to-ship, **released** on cancel (never deducting `current_stock` on cancel).
+> **BLOCKED — Requires Batch B Canonical Decision (Reserve Trigger).** The single event that first **reserves** factory stock is **undecided**. **Verified current code (2026-07-28):** no reserve logic exists; the only factory-stock mutation is a hard **deduction of `current_stock` at Confirm Shipment & Dispatch**. Do not implement any reserve path until Batch B decides (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1).
 
-**v2.2 / v2.3 sync:**
-- **Confirm & Ship is the single physical `factory_stock.current_stock` deduction trigger** (plan creation/submission and Shipment Draft never deduct `current_stock`).
-- **Shipment documents** (Shipment Detail Sheet · Carrier Booking Form / 托單 · Commercial Invoice · Packing List · AGL Combined) are generated via `document_templates` / `generated_documents`; **MVP communication to factory/carrier is manual email**.
-- **One shared Shipment Document Dataset → many rendered templates** (template controls layout, dataset controls values; token-to-DB mapping is future Export Center / Mapping Spec).
-- **Shipment Center executes planned needs — it does NOT run a parallel replenishment calculation engine.** Inventory Replenishment's per-site **allocated factory stock is planning metadata only** (no `current_stock` deduction, no ownership transfer), and a site's planned shipment qty should not exceed its allocated available factory stock (cross-site/company borrowing is a future planning exception, never accounting).
+- **Shipment documents** are generated via `document_templates` / `generated_documents` (one shared dataset → many rendered templates); **MVP communication to factory/carrier is manual email**. Token-to-DB mapping is future Export Center scope.
+- **Shipment Center executes planned needs — it does NOT run a parallel replenishment calculation engine.** Per-site allocated factory stock is planning metadata only (no `current_stock` deduction, no ownership transfer).
 
 ---
 
@@ -377,9 +373,11 @@ Do **not** implement now:
 
 ## 16. Open Items
 
-- exact **replenishment calculation formula**
-- **factory stock allocation engine** (`factory_stock_allocation_plans` calculation + versioning)
-- **request order calculation engine** (`source_calculation_run_id` / `calculation_run_id`)
+> Note: the **replenishment / order calculation formulas are already finalized** in `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1 — they are **not** open. What remains open below is the **calculation-engine RUNTIME** (building + wiring the engine), not the math.
+
+- **calculation-engine runtime** — building the replenishment/order engine that executes the finalized `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1 formulas (formula NOT open; runtime NOT implemented)
+- **factory stock allocation engine runtime** (`factory_stock_allocation_plans` calculation + versioning — engine not built; the Factory Stock Allocation workflow is described in `SUPPLY_CHAIN_SYSTEM_FLOW.md` "§5.2 Factory Stock Allocation → Shipping workflow" / "§5.3 Allocation Rule", and the FC-Share math is owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`)
+- **request order calculation engine runtime** (`calculation_run_id` traceability — engine not built)
 - **`shipment_events` / `shipment_routes`** detail design
 - **carrier master / rate card** (`carriers`, `carrier_routes`, `carrier_rate_cards`, lead times, performance)
 - **export document templates** (layout/fields per document type)

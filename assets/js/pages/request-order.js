@@ -524,17 +524,30 @@ function _roRebuildDropdown(filterType, vals) {
 }
 
 // Category tabs (Part 2) — built from distinct sku_details.category present in the data. "All" first.
+// Uses the SHARED Category Tab Rail (.km-tab-rail / .km-tab-rail__tab + count badge) so the Order System
+// matches Inventory Replenishment / Promotion Risk. Each tab shows Name + Count; counts reflect the
+// current (other-filter) data set — selecting a Category never zeroes the other Category counts (they are
+// computed from requestOrderState.data, not the post-category-filtered rows). Single-row horizontal scroll
+// + active-into-view are handled by KM.ui.tabRail.
 function _populateRequestOrderCategoryTabs() {
   var container = document.getElementById('ro-category-tabs');
   if (!container) return;
-  var cats = _roDistinct((requestOrderState.data || []).map(function(i) { return i.category; }));
+  var data = requestOrderState.data || [];
+  var cats = _roDistinct(data.map(function(i) { return i.category; }));
   var active = requestOrderState.categoryTab || 'All';
   if (active !== 'All' && cats.indexOf(active) === -1) { active = 'All'; requestOrderState.categoryTab = 'All'; }
+  function countFor(c) { return c === 'All' ? data.length : data.filter(function(i){ return i.category === c; }).length; }
   var tabs = ['All'].concat(cats);
   container.innerHTML = tabs.map(function(c) {
-    var cls = 'ro-tab' + (c === active ? ' ro-tab--active' : '');
-    return '<button class="' + cls + '" data-category="' + _roEsc(c) + '" onclick="setRequestOrderCategory(this.getAttribute(\'data-category\'), this)">' + _roEsc(c) + '</button>';
+    var cls = 'km-tab-rail__tab' + (c === active ? ' is-active' : '');
+    return '<button type="button" class="' + cls + '" data-category="' + _roEsc(c) + '" onclick="setRequestOrderCategory(this.getAttribute(\'data-category\'), this)">' +
+      '<span class="km-tab-rail__label">' + _roEsc(c) + '</span>' +
+      '<span class="km-tab-rail__count">' + countFor(c) + '</span></button>';
   }).join('');
+  if (window.KM && window.KM.ui && window.KM.ui.tabRail) {
+    window.KM.ui.tabRail.enhance(container);
+    window.KM.ui.tabRail.scrollActiveIntoView(container);
+  }
 }
 
 function initRequestOrderDropdowns() {
@@ -1097,13 +1110,15 @@ function setRequestOrderSeries(series) {
   renderRequestOrderTable();
 }
 
-// Category tab click (Part 2) — sets the active Category tab and re-renders (page → 1).
+// Category tab click (Part 2) — sets the active Category tab and re-renders (page → 1). Active styling +
+// scroll-into-view use the shared Tab Rail classes (.km-tab-rail__tab / .is-active).
 function setRequestOrderCategory(cat, btn) {
   requestOrderState.categoryTab = cat || 'All';
   requestOrderState.page = 1;
   const container = document.getElementById('ro-category-tabs');
-  if (container) container.querySelectorAll('.ro-tab').forEach(t => t.classList.remove('ro-tab--active'));
-  if (btn && btn.classList) btn.classList.add('ro-tab--active');
+  if (container) container.querySelectorAll('.km-tab-rail__tab').forEach(t => t.classList.remove('is-active'));
+  if (btn && btn.classList) btn.classList.add('is-active');
+  if (container && window.KM && window.KM.ui && window.KM.ui.tabRail) window.KM.ui.tabRail.scrollActiveIntoView(container);
   renderRequestOrderTable();
 }
 
@@ -2256,9 +2271,14 @@ async function handleSendRequest() {
     for (var di = 0; di < drafts.length; di++) {
       const d = drafts[di];
       const hdr = await DB.upsertRequestOrderAllocationDraft({
+        // CANONICAL fields (2026-07-27 DB sync): category_snapshot/series_snapshot capture the Master SKU
+        // values at creation; generation_type replaces the retired source_type. The manual Send Request
+        // flow is always user_created / regular / draft_version 1.
         planning_cycle: cycle, company: d.item.company || '', country: d.item.country || '',
-        marketplace: d.item.marketplace || '', sku: d.item.sku, category: d.item.category || '',
-        series: d.item.series || '', status: 'site_confirmed', source_type: 'manual', created_by: 'request-order'
+        marketplace: d.item.marketplace || '', sku: d.item.sku,
+        category_snapshot: d.item.category || '', series_snapshot: d.item.series || '',
+        status: 'site_confirmed', generation_type: 'user_created', draft_purpose: 'regular',
+        draft_version: 1, created_by: 'request-order'
       });
       const draftId = hdr && (hdr.request_allocation_draft_id || hdr.requestAllocationDraftId);
       if (draftId) {
@@ -2267,10 +2287,12 @@ async function handleSendRequest() {
           request_allocation_draft_id: draftId,
           lines: d.lines.map(function(l) {
             return {
+              // CANONICAL snapshot field names (2026-07-27 DB sync). order_qty = user input; no
+              // recommended_qty is sent (Engine B not implemented) so the system snapshot stays blank.
               request_month: l.month, request_bucket: l.bucket, order_qty: l.orderQty,
               carton_qty: l.carton, units_per_carton: l.upc,
-              factory_stock_snapshot: l.factoryStock, site_stock_snapshot: l.siteStock,
-              third_party_stock_snapshot: l.thirdPartyStock, fc_qty_snapshot: l.fcQty,
+              factory_available_qty_snapshot: l.factoryStock, destination_stock_snapshot: l.siteStock,
+              third_party_available_qty_snapshot: l.thirdPartyStock, regular_demand_snapshot: l.fcQty,
               target_pct_snapshot: l.targetPct,
               // Persistence boundary: no dedicated partial/override column exists → partial full/loose +
               // Order−Suggested diff are carried in `note` (audit) + allocation_method. No schema change.
@@ -2305,11 +2327,32 @@ async function handleSendRequest() {
   }
 }
 
+// AI Plan (Order System) — refreshes order suggestions using the EXISTING Suggest Order / order-calculation
+// path (renderRequestOrderTable recomputes suggestions from the current filter + request scope; the same
+// entry used on initial load and filter refresh). It NEVER confirms a site and NEVER sends a request — it is
+// a suggestion-refresh only. No new AI model / API / recommendation schema is introduced. Loading state
+// guards against double-click and exposes success/error styling.
+function handleRequestOrderAiPlan() {
+  var btn = document.getElementById('ro-ai-plan-btn');
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.classList.remove('is-success', 'is-error'); btn.classList.add('is-loading'); }
+  try {
+    renderRequestOrderTable();   // reuse the existing recommendation entry — NOT Send Request / Confirm Site
+    if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); }
+  } catch (err) {
+    if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
+    console.error('[AI Plan] order suggestion refresh failed:', err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 window.setRequestOrderSeries = setRequestOrderSeries;
 window.setRequestOrderCategory = setRequestOrderCategory;
 window.handleRequestOrderSearch = handleRequestOrderSearch;
 window.setRequestOrderShowMode = setRequestOrderShowMode;
 window.handleSendRequest = handleSendRequest;
+window.handleRequestOrderAiPlan = handleRequestOrderAiPlan;
 window.roPrevPage = roPrevPage;
 window.roNextPage = roNextPage;
 window.openConfirmSiteModal = openConfirmSiteModal;

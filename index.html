@@ -50,8 +50,8 @@
                 <span class="menu-label sidebar-toggle-label">Menu</span>
                 <span class="sidebar-toggle-icon">&#9664;</span>
             </div>
-            <div class="menu-item" onclick="showSection('ops')" title="貨物庫存表">
-                <span class="menu-icon">📦</span><span class="menu-label">貨物庫存表</span>
+            <div class="menu-item" onclick="showSection('ops')" title="Inventory">
+                <span class="menu-icon">📦</span><span class="menu-label">Inventory</span>
             </div>
             <!-- Warehouse 父子選單 (Factory Inventory / Overseas Inventory / Overseas Inbound / Overseas Outbound).
                  Warehouse Master remains under Admin / Master Data (out of this group). -->
@@ -98,13 +98,13 @@
             <div class="menu-children"
                  data-parent="forecast">
                 <div class="menu-item"
-                     onclick="showSection('forecast')" title="Forecast 管理">
-                    <span class="menu-label">Forecast 管理</span>
+                     onclick="showSection('forecast')" title="Forecast">
+                    <span class="menu-label">Forecast</span>
                 </div>
-                
+
                 <div class="menu-item"
-                     onclick="showSection('request-order')" title="下單系統">
-                    <span class="menu-label">下單系統</span>
+                     onclick="showSection('request-order')" title="Order Planning">
+                    <span class="menu-label">Order Planning</span>
                 </div>
                 
                 <div class="menu-item"
@@ -383,6 +383,9 @@
     <script src="assets/js/utils/scroll-sync.js"></script>
     <script src="assets/js/utils/template-export.js"></script>
     <script src="assets/js/utils/resizable-columns.js"></script>
+    <script src="assets/js/utils/dual-layer-resize.js"></script>
+    <script src="assets/js/utils/tab-rail.js"></script>
+    <script src="assets/js/utils/multi-select-filter.js"></script>
     
     <!-- API Adapter -->
     <script src="assets/js/api/operation-system-db-api.js"></script>

@@ -1,18 +1,46 @@
 # FC Summary — Spec & DB Mapping
 
+> **Owner Boundary (reviewed 2026-07-28).**
+> - **Document Role:** the FC Summary page + domain contract (Regular Forecast / Special Event / Target % Rules) DB mapping + write-path wiring.
+> - **Canonical Owner For:** the FC Summary page contract only.
+> - **Not Owner For:** Engine A/B forecast formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema authority (`DATABASE_RELATIONSHIP_MAP.md`).
+> - **Status:** Reviewed — Batch B Blockers Remain (FC Summary itself has no Batch B blocker, but some fields are runtime-pending).
+> - **Current Version:** v1.1 (Batch A repair: **Source Code Verified / Deployment Status Unverified** split; grain-vs-key gap recorded).
+> - **Last Reviewed:** 2026-07-28.
+> - **Depends On:** Calculation Rules (formulas), Database Relationship Map (schema).
+> - **Blocked By:** none in Batch B; internal PENDING items are Campaign/CampaignLine writers + single-row Regular FC writer (Phase 2); **deployment status = UNVERIFIED**.
+> **Verification split (Batch A 2026-07-28).** *Source Code Verified* means the active `.gs` mirror + adapter carry the contract; it is **NOT** proof of the Google Apps Script deployment. **Deployment status = UNVERIFIED** in this environment (see §3.1 / §6). No deployment claim is made anywhere in this document.
+>
+> | Item | Current Source Behavior (verified in `.gs`/adapter) | Deployment |
+> |---|---|---|
+> | Regular row grain | one row per SKU × year × company × country × marketplace × category × series (12 month cols) | Adapter read path present (Demo OFF → Operation DB); Deployment UNVERIFIED; single-row write = Phase 2 (not wired) |
+> | Regular upsert **key** | `year + country + marketplace + sku` (§8.4) — **does NOT include company / category / series** | **Known Contract Gap** vs the row grain (below) |
+> | Company scope | per-row `company`; multi-company; Company filter dropdown | Filter + display; not part of the Regular upsert key |
+> | Event PK | `event_fc_id` in `14_fc_write_handlers.gs` header + upsert key; adapter reads `event_fc_id` → legacy `event_id`/`special_event_id` fallback | Source Code Verified; **Deployment UNVERIFIED** (§3.1/§6) |
+> | Builder | `saveRegularUpdate` / `saveEventUpdate` (modals); CSV `importFcRegularForecastBatch` | Adapter read path present; event write via `upsertFcSpecialEvent` (Deployment UNVERIFIED) |
+> | Writer | `handleUpsertFcSpecialEvent_` / `handleImportFcRegularForecastBatch_`; inline table-edit "Save" is a **mock** | `upsertCampaign`/`upsertCampaignSkuLine` = **PENDING** (§12.1) |
+> | Read source | `getFcRegularForecast` / `getFcSpecialEvents` / `getFcTargetRules` (adapter cache) | Adapter read path present; Deployment UNVERIFIED |
+> | Forecast months | selected year's Jan–Dec (12 fixed columns) | Adapter read path present; Deployment UNVERIFIED |
+> | Write permission | display read-only; writes via builder + import only | — |
+> | Empty-selection filter | **empty = NONE** (positive inclusion) | Adapter read path present; Deployment UNVERIFIED |
+>
+> **Known Contract Gap (recorded, not silently reconciled):** the Regular **row grain** includes `company / category / series`, but the Regular **upsert key** is only `year + country + marketplace + sku`. These are **not** made to look identical here — the gap and any future key decision are Required Future Fixes, not a current fact.
+
 > Scope: the **FC Summary page** (`assets/html/pages/fc-summary.html` + `assets/js/pages/fc-summary.js`). Three datasets: **Regular Forecast**, **Special Event**, **Target % Rules**. This spec records the DB mapping and the phased write-path wiring. **No FC calculation formula / Target-rule resolver formula is changed here** — only data source + read/write wiring.
 
 ---
 
 ## 1. Tables
 
-| UI dataset | DB table | Read | Write |
-|---|---|---|---|
-| Regular Forecast | `fc_regular_forecast` | ✅ live (Demo OFF) | Batch **Import Forecast** only (`importFcRegularForecastBatch`). Edit Base FC / + Add SKU single-row upsert = **Phase 2 (not wired)** |
-| Special Event | `fc_special_events` | ✅ live (Demo OFF) — **Phase 1** | ✅ **Phase 1** (`upsertFcSpecialEvent` / `deleteFcSpecialEvent`) |
-| Target % Rules | `fc_target_rules` | ✅ live (Demo OFF) — **Phase 1** | ✅ **Phase 1** (`upsertFcTargetRule` / `deleteFcTargetRule`) |
+"Read/Write status" below records the **source-code** wiring only. **Source Code Present ≠ Deployment Verified**: the live Apps Script deployment is **UNVERIFIED** in this environment (see the Verification split in the header + §3.1 redeploy gap). "Demo OFF → Operation DB" means the adapter reads the Operation DB when Demo is off; it is not a claim that the Google Apps Script project is deployed.
 
-**Data-source rule (all three):** Demo ON → local demo/mock arrays; **Demo OFF → live Operation DB** (`window.KM.DB.getFcRegularForecast/getFcSpecialEvents/getFcTargetRules`). The page never reads another page's DOM.
+| UI dataset | DB table | Read (source code) | Write (source code) |
+|---|---|---|---|
+| Regular Forecast | `fc_regular_forecast` | Adapter reader present (Demo OFF → Operation DB); deployment UNVERIFIED | Batch **Import Forecast** only (`importFcRegularForecastBatch`). Edit Base FC / + Add SKU single-row upsert = **Not Started (Phase 2)** |
+| Special Event | `fc_special_events` | Adapter reader present; deployment UNVERIFIED | `upsertFcSpecialEvent` / `deleteFcSpecialEvent` present in source; deployment UNVERIFIED |
+| Target % Rules | `fc_target_rules` | Adapter reader present; deployment UNVERIFIED | `upsertFcTargetRule` / `deleteFcTargetRule` present in source; deployment UNVERIFIED |
+
+**Data-source rule (all three):** Demo ON → local demo/mock arrays; **Demo OFF → Operation DB** (`window.KM.DB.getFcRegularForecast/getFcSpecialEvents/getFcTargetRules`). The page never reads another page's DOM. Deployment of the writers to the live Apps Script project is **UNVERIFIED** (§3.1 / §6).
 
 ### 1.1 FC Summary data ownership (SKU creation is out of scope)
 - **FC Summary must NOT create SKUs or `fc_regular_forecast` base rows.** The **+ Add SKU** button is **removed / deprecated** (data safety).
@@ -23,8 +51,8 @@
 
 ## 2. Current status (post Phase 1)
 
-- `fc_regular_forecast` **read** already connected; **Import Forecast** writes it (batch upsert + auto-create base rows on marketplace import).
-- **Special Event / Target Rules now have a live read + write path** (Phase 1 — this task):
+- `fc_regular_forecast` **read** adapter connected in source; **Import Forecast** writer present in source (batch upsert + auto-create base rows on marketplace import). **Deployment UNVERIFIED.**
+- **Special Event / Target Rules have a read + write path in the source code** (Phase 1 — this task); **deployment to the live Apps Script project is UNVERIFIED**:
   - Special Event tab reads `getFcSpecialEvents()` on Demo OFF (no longer a fixed empty array).
   - `+ New FC Update` → Special Event (Manual Input **and** growth/copy batch) writes `fc_special_events`.
   - Target % Rules tab reads `getFcTargetRules()`; **Add / Save** writes `fc_target_rules`; **Delete** hard-deletes by id. The local `const targetRules = []` is used **only in Demo ON**.
@@ -77,11 +105,11 @@ The **target** `fc_special_events` schema is:
 
 **Full target column order (Part 3):** `event_fc_id, campaign_id, campaign_sku_line_id, marketplace_id, sku, year, company, country, marketplace, category, series, event, event_period, event_month, fc_qty, fc_share, source, status, created_by, created_at, updated_by, updated_at, note`.
 
-**Reconciliation — RESOLVED IN SOURCE (2026-07-22; REDEPLOY PENDING):** `14_fc_write_handlers.gs` now uses **`event_fc_id`** as the canonical PK (was `event_id`, which left `event_fc_id` blank because `fcWriteEnsureColumns_` appended a stray `event_id` column). The header now includes `event_fc_id / campaign_id / campaign_sku_line_id / marketplace_id / event_start_date / event_end_date`; additive columns are appended non-destructively, and any legacy `event_id` column is left untouched (no longer written).
+**Reconciliation — Source Code Verified; Deployment Status Unverified (Batch A 2026-07-28):** in the active source, `14_fc_write_handlers.gs` uses **`event_fc_id`** as the canonical PK (header + upsert key) and the adapter (`operation-system-db-api.js`) reads `event_fc_id` with `event_id` / `special_event_id` as **read-only legacy fallbacks**. The header includes `event_fc_id / campaign_id / campaign_sku_line_id / marketplace_id / event_start_date / event_end_date`; additive columns are appended non-destructively; any legacy `event_id` column is left untouched (no longer written). **This is source-mirror evidence only.** **Deployment status = UNVERIFIED** (§6): the runtime writer's PK cannot be confirmed from this environment and is not asserted here.
 - **event_fc_id is generated by the BACKEND** (`fcSpecialEventUpsert_`): `EFC-<12-hex>` on create; **preserved** on update (never regenerated by fc_qty / date / name edits); the frontend no longer fabricates an id.
 - **Idempotency** = the stable business key **campaign_id + campaign_sku_line_id** (fallback `campaign_id + marketplace_id + sku + event_month + year`) → a double-click / retry updates the SAME row (no duplicate) and inline-backfills a blank id on the row being saved.
 - **Validation** before write: `campaign_id`, `sku`/`scope_id`, `event_name`, numeric `fc_qty ≥ 0`.
-- **Legacy blank `event_fc_id` rows:** a **read-only audit** (`auditFcSpecialEventIds`) reports blank count / re-identifiability / duplicate business keys; a **standalone, re-runnable, one-time backfill** (`backfillFcSpecialEventIds`) is **DRY-RUN by default** (reports would-fill / ambiguous-no-campaign / colliding-business-key + sample, writes nothing) and only writes with `{confirm:true}` — assigning ids to blank rows that carry a `campaign_id` (ambiguous rows without one are never auto-filled). Neither runs automatically. **Apps Script redeploy is pending** — until then the deployed writer still uses the old `event_id` PK.
+- **Legacy blank `event_fc_id` rows:** a **read-only audit** (`auditFcSpecialEventIds`) reports blank count / re-identifiability / duplicate business keys; a **standalone, re-runnable, one-time backfill** (`backfillFcSpecialEventIds`) is **DRY-RUN by default** (reports would-fill / ambiguous-no-campaign / colliding-business-key + sample, writes nothing) and only writes with `{confirm:true}` — assigning ids to blank rows that carry a `campaign_id` (ambiguous rows without one are never auto-filled). Neither runs automatically. **Runtime deployment status = UNVERIFIED** (§6); the runtime writer's PK is not asserted from this environment.
 
 ---
 
@@ -121,7 +149,7 @@ The **target** `fc_special_events` schema is:
 
 ## 6. Deployment note
 
-The `.gs` files under `assets/specs/active/apps-script/` are a **source mirror**. `14_fc_write_handlers.gs` + the updated `01_router.gs` must be copied into the live Apps Script project and **redeployed** before the write path works against the Google Sheet. Until then, `upsert*/delete*` return `{success:false}` (API not configured) or 404, and Demo OFF read shows whatever the sheet already contains (or empty).
+The `.gs` files under `assets/specs/active/apps-script/` are a **source mirror**. `14_fc_write_handlers.gs` + the updated `01_router.gs` must be deployed into the Apps Script project before the write path functions against the Google Sheet. **Deployment status = UNVERIFIED** from this environment. If not deployed, `upsert*/delete*` return `{success:false}` (API not configured) or 404, and a Demo-OFF read shows whatever the sheet already contains (or empty).
 
 ---
 

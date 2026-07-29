@@ -16,7 +16,7 @@
 #sku-regional-details-section .srd-count { font-size: 12px; color: #64748B; }
 
 /* Inputs / buttons */
-#sku-regional-details-section .srd-input { padding: 7px 10px; border: 1px solid #CBD5E1; border-radius: 6px; font-size: 13px; box-sizing: border-box; background: #fff; color: #1E293B; }
+#sku-regional-details-section .srd-input { padding: var(--filter-padding-block) var(--filter-padding-inline); border: 1px solid var(--filter-border-color); border-radius: var(--filter-border-radius); font-size: var(--filter-font-size); box-sizing: border-box; background: #fff; color: var(--filter-text-color); height: var(--filter-height); }
 #sku-regional-details-section .srd-input:focus-visible { outline: 2px solid #7DAB63; outline-offset: 1px; }
 #sku-regional-details-section .srd-btn { padding: 7px 14px; border: 1px solid transparent; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
 #sku-regional-details-section .srd-btn--primary { background: #7DAB63; color: #fff; }

@@ -21,47 +21,86 @@
 // DO NOT persist uncovered_qty / coverage_status / window_label / route-display / source-display (§C).
 // ============================================================
 
+// CANONICAL SYNC (2026-07-27): headers below MATCH the manually-adjusted Live DB header exactly (name
+// + order). Shipping remains DB + Spec Ready — this task syncs the SCHEMA only; it does NOT build the
+// Shipping Recommendation writer, Engine A, route/rate/carrier resolution, Submit-Plan runtime, or any
+// UI (those stay NOT IMPLEMENTED). The writer functions here are the existing UNWIRED scaffold; the
+// live persistence path is still gated off in the adapter (returns {success:false} until an authorized
+// redeploy). Line renames vs the previous code header: source_warehouse_id→recommended_source_warehouse_id ·
+// source_available_qty_snapshot→source_initial_available_qty_snapshot · ship_from→selected_source_warehouse_id ·
+// destination→selected_destination_warehouse_id. Added header: shipping_allocation_drafts.formula_version.
 var SHIPPING_ALLOCATION_DRAFTS_HEADERS_ = [
   'allocation_draft_id', 'planning_cycle', 'source_page', 'company', 'country', 'marketplace',
-  'status', 'generation_type', 'calculation_run_id', 'calculated_at', 'source_data_as_of', 'draft_version',
+  'status', 'generation_type', 'calculation_run_id', 'formula_version', 'calculated_at',
+  'source_data_as_of', 'draft_version',
   'created_by', 'created_at', 'updated_by', 'updated_at',
   'submitted_by', 'submitted_at', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'note'
 ];
 
 var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   // identity
-  'allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku', 'route_no', 'line_status',
+  'allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku',
   // window
   'window_code', 'window_start_date', 'window_end_date', 'required_by_date',
   // recommendation input snapshots
   'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot',
   'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
-  'source_warehouse_id', 'source_available_qty_snapshot', 'units_per_carton',
-  // system recommendation snapshot (immutable per generation)
-  'recommended_qty', 'recommended_route_rule_id', 'recommended_rate_card_id', 'recommended_lead_time_id',
+  // system recommendation snapshot — source/destination warehouse + allocation sequence (immutable)
+  'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+  'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+  'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
+  // system recommendation snapshot — route / carrier / cost (immutable per generation)
+  'recommended_route_rule_id', 'recommended_rate_card_id', 'recommended_lead_time_id',
   'recommended_carrier_id', 'recommended_shipping_method', 'recommended_last_mile_delivery',
   'recommended_expected_arrival', 'recommended_estimated_cost', 'recommendation_reason', 'recommendation_flags',
+  'recommended_qty',
   // user Execution Plan
-  'planned_qty', 'ship_from', 'destination', 'selected_rate_card_id', 'selected_lead_time_id',
-  'selected_carrier_id', 'selected_shipping_method', 'selected_last_mile_delivery', 'expected_arrival', 'override_reason',
-  // audit
-  'note', 'created_at', 'updated_at'
+  'planned_qty', 'selected_source_warehouse_id', 'selected_destination_warehouse_id',
+  'selected_source_warehouse_code_snapshot', 'selected_destination_warehouse_code_snapshot',
+  'selected_rate_card_id', 'selected_lead_time_id', 'selected_carrier_id', 'selected_shipping_method',
+  'selected_last_mile_delivery', 'expected_arrival', 'units_per_carton', 'route_no',
+  // status / audit
+  'line_status', 'override_reason', 'note', 'created_at', 'updated_at'
 ];
 
 var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1 };
 var SAD_GENERATION_TYPES_ = { scheduled: 1, manual_refresh: 1, user_created: 1 };
 
 // The recommendation-snapshot fields — written only when the incoming line supplies them, so an
-// Execution-Plan save (which omits them) never clobbers the immutable recommendation (§D).
+// Execution-Plan save (which omits them) never clobbers the immutable recommendation (§D). Canonical
+// names (2026-07-27 sync).
 var SAD_RECOMMENDATION_FIELDS_ = [
-  'recommended_qty', 'recommended_route_rule_id', 'recommended_rate_card_id', 'recommended_lead_time_id',
+  'recommended_qty', 'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+  'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+  'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
+  'recommended_route_rule_id', 'recommended_rate_card_id', 'recommended_lead_time_id',
   'recommended_carrier_id', 'recommended_shipping_method', 'recommended_last_mile_delivery',
   'recommended_expected_arrival', 'recommended_estimated_cost', 'recommendation_reason', 'recommendation_flags',
   'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot',
   'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
-  'source_warehouse_id', 'source_available_qty_snapshot', 'window_code', 'window_start_date',
-  'window_end_date', 'required_by_date'
+  'window_code', 'window_start_date', 'window_end_date', 'required_by_date'
 ];
+
+// Read-only legacy aliases accepted on the incoming shipping-draft line payload → canonical column.
+// Keeps the existing (not-yet-migrated, still gated) Inventory Replenishment caller working without
+// editing it; new writes always use the canonical key.
+var SAD_LINE_LEGACY_ALIASES_ = {
+  source_warehouse_id: 'recommended_source_warehouse_id',
+  source_available_qty_snapshot: 'source_initial_available_qty_snapshot',
+  ship_from: 'selected_source_warehouse_id',
+  destination: 'selected_destination_warehouse_id'
+};
+
+// Copy legacy alias keys to their canonical name when the canonical key is absent (never overwrites an
+// explicitly-provided canonical value).
+function sadApplyLineAliases_(l) {
+  for (var legacy in SAD_LINE_LEGACY_ALIASES_) {
+    if (!SAD_LINE_LEGACY_ALIASES_.hasOwnProperty(legacy)) continue;
+    var canon = SAD_LINE_LEGACY_ALIASES_[legacy];
+    if ((l[canon] == null || l[canon] === '') && l[legacy] != null && l[legacy] !== '') l[canon] = l[legacy];
+  }
+  return l;
+}
 
 // ---- upsertShippingAllocationDraft --------------------------------
 /**
@@ -144,9 +183,12 @@ function handleUpsertShippingAllocationDraft_(body) {
 /**
  * UPSERT lines by allocation_draft_line_id (NOT a blanket replace — that would wipe the immutable
  * recommendation snapshot). Body:
- *   { allocation_draft_id, lines: [ { allocation_draft_line_id?, sku, planned_qty?, ship_from?,
- *     destination?, selected_*?, expected_arrival?, override_reason?, recommended_qty?, recommended_*?,
- *     calculated_gap_qty?, window_code?, required_by_date?, units_per_carton?, ... } ] }
+ *   { allocation_draft_id, lines: [ { allocation_draft_line_id?, sku, planned_qty?,
+ *     selected_source_warehouse_id?, selected_destination_warehouse_id?, selected_*?, expected_arrival?,
+ *     override_reason?, recommended_qty?, recommended_*?, calculated_gap_qty?, window_code?,
+ *     required_by_date?, units_per_carton?, ... } ] }
+ *   (legacy ship_from / destination / source_warehouse_id / source_available_qty_snapshot are accepted
+ *    as read-only aliases via sadApplyLineAliases_ and mapped onto the canonical columns.)
  * Rules (§D quantity protection):
  *   - Existing line (id matches): update planned_qty + Execution-Plan fields always; update a
  *     recommendation-snapshot field ONLY if the incoming line supplies it (else preserved).
@@ -164,11 +206,13 @@ function handleUpsertShippingAllocationDraftLines_(body) {
   var created = 0, updated = 0;
 
   function isRec(name) { for (var i = 0; i < SAD_RECOMMENDATION_FIELDS_.length; i++) if (SAD_RECOMMENDATION_FIELDS_[i] === name) return true; return false; }
-  var EXEC_FIELDS = ['planned_qty', 'ship_from', 'destination', 'selected_rate_card_id', 'selected_lead_time_id',
-    'selected_carrier_id', 'selected_shipping_method', 'selected_last_mile_delivery', 'expected_arrival', 'override_reason', 'line_status', 'route_no', 'note'];
+  var EXEC_FIELDS = ['planned_qty', 'selected_source_warehouse_id', 'selected_destination_warehouse_id',
+    'selected_source_warehouse_code_snapshot', 'selected_destination_warehouse_code_snapshot',
+    'selected_rate_card_id', 'selected_lead_time_id', 'selected_carrier_id', 'selected_shipping_method',
+    'selected_last_mile_delivery', 'expected_arrival', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
 
   for (var i = 0; i < lines.length; i++) {
-    var l = lines[i] || {};
+    var l = sadApplyLineAliases_(lines[i] || {});
     var lineId = String(l.allocation_draft_line_id || '').trim();
     var found = lineId ? procurementFindRow_(sh, 'allocation_draft_line_id', lineId) : null;
     if (found) {

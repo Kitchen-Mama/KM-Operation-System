@@ -86,6 +86,18 @@ function initOverseasStockPage() {
     }
 
     _bindOverseasScrollSync(root);
+
+    // Drag-to-resize on the Overseas Inventory (snapshot) data columns — reuses the SKU Details resize
+    // engine via the shared dual-layer adapter. Header cells are static, so this runs once at mount;
+    // filter/pagination re-renders reuse the same handles + injected width rule.
+    if (window.KM && window.KM.ui && window.KM.ui.dualLayerResize) {
+        window.KM.ui.dualLayerResize.init({
+            sectionId: 'overseas-stock-section',
+            scrollHeaderSel: '#overseas-snapshot-scroll-header',
+            scrollBodySel: '#overseas-snapshot-scroll-body',
+            page: 'overseas-stock', group: 'overseas-inventory'
+        });
+    }
 }
 
 // container = the tab panel (snapshot or movement) so the same data-filter names don't collide.

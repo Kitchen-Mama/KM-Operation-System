@@ -20,21 +20,32 @@
 // header row (the two NEW Execution-Layer tables only — no existing table/field is altered).
 // ============================================================
 
+// CANONICAL shipments header (2026-07-28 DB sync). Warehouse endpoints: source_warehouse_id (out-source
+// identity — the shipment source, resolved via the Warehouse Master; NO origin_warehouse_id / origin_type),
+// warehouse_code (KEPT = DESTINATION warehouse code snapshot — semantic unchanged), destination_warehouse_id
+// (out-destination identity) + destination_type. last_mile_delivery appears ONCE (the trailing duplicate in
+// the canonical decision list is intentionally NOT re-added — no duplicate header). estimated_* = Phase-1
+// rough/exact estimate; *_actual = manual actuals. Retained-legacy columns (warehouse_id / total_gross_weight
+// / total_net_weight / updated_by) are additive read-fallbacks (never deleted; never re-created if absent).
 var SHIPMENTS_HEADERS_ = [
-  'shipment_id', 'shipment_no', 'external_shipment_id', 'shipping_plan_id', 'reference_id',
-  'warehouse_id', 'warehouse_code',
-  'company', 'country', 'marketplace', 'ship_from', 'destination',
-  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'shipments_customs_type', 'shipments_customs_type_label', 'status', 'sales_order_id',
-  'booking_no', 'tracking_number', 'container_no', 'bl_no', 'invoice_no',
-  'etd', 'eta', 'actual_departure_date', 'actual_arrival_date',
-  'customs_clearance_date', 'delivered_date',
-  // Quantity totals — CANONICAL renamed columns (2026-07 DB rename). Legacy total_qty / total_cartons /
-  // total_cbm are RETIRED (read-fallback only; never re-ensured). Weights keep their original names.
-  'shipment_total_qty', 'shipment_total_cartons', 'shipment_total_cbm', 'total_gross_weight', 'total_net_weight',
-  'freight_cost_actual', 'duty_actual', 'currency',
+  'shipment_id', 'shipment_no', 'shipping_plan_id', 'external_shipment_id', 'reference_id',
+  'source_warehouse_id', 'warehouse_code', 'company', 'country', 'marketplace',
+  'ship_from', 'destination', 'destination_warehouse_id', 'destination_type',
+  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'shipments_customs_type', 'import_duty_treatment', 'status', 'sales_order_id',
+  'booking_no', 'master_tracking_number', 'tracking_number', 'container_no', 'bl_no', 'invoice_no',
+  'etd', 'eta', 'is_cross_dock', 'temperature_requirement', 'hazmat_flag',
+  'actual_departure_date', 'actual_arrival_date', 'customs_clearance_date', 'delivered_date',
+  // Quantity totals — CANONICAL renamed columns. Legacy total_qty / total_cartons / total_cbm are RETIRED
+  // (read-fallback only; never re-ensured).
+  'shipment_total_qty', 'shipment_total_cartons', 'shipment_total_cbm', 'shipment_total_gross_weight', 'shipment_total_net_weight',
+  // Phase-1 estimated cost (rough on plan, exact on shipment) + manual actuals.
+  'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee', 'estimated_total_cost', 'estimated_unit_cost',
+  'freight_cost_actual', 'duty_actual', 'total_cost_actual', 'currency', 'note',
+  'created_by', 'created_at', 'updated_at',
   // Ship / Done lifecycle metadata (Shipment Draft workspace).
   'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by',
-  'note', 'created_by', 'created_at', 'updated_by', 'updated_at'
+  // Retained legacy (additive read-fallback; never deleted / re-created).
+  'warehouse_id', 'total_gross_weight', 'total_net_weight', 'updated_by'
 ];
 
 // NOTE: shipment_lines.shipment_carton_cbm = LINE-TOTAL CBM (m³) for the whole line/SKU quantity —
@@ -60,18 +71,17 @@ var SHIPMENT_LINES_HEADERS_ = [
 // context, totals, and the whole Execution Snapshot — is immutable here).
 var SHIPMENT_EDITABLE_FIELDS_ = [
   'external_shipment_id',
-  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'shipments_customs_type',
-  'booking_no', 'tracking_number', 'container_no', 'bl_no', 'invoice_no',
-  'etd', 'eta', 'actual_departure_date', 'actual_arrival_date',
-  'customs_clearance_date', 'delivered_date',
+  'carrier_id', 'rate_card_id', 'shipping_method', 'last_mile_delivery', 'shipments_customs_type', 'import_duty_treatment',
+  'booking_no', 'master_tracking_number', 'tracking_number', 'container_no', 'bl_no', 'invoice_no',
+  'etd', 'eta', 'is_cross_dock', 'temperature_requirement', 'hazmat_flag',
+  'actual_departure_date', 'actual_arrival_date', 'customs_clearance_date', 'delivered_date',
   'shipment_total_cbm', 'shipment_total_gross_weight', 'shipment_total_net_weight',
-  'freight_cost_actual', 'duty_actual', 'currency',
-  // Warehouse Picker (SHIPMENT_CENTER_SPEC §22.0): warehouse_id is the DESTINATION warehouse identity
-  // chosen from the Warehouse Master; warehouse_code is the code SNAPSHOT copied from that same row by
-  // the frontend picker (never free-typed, never inferred from destination text). Both persist together.
-  // TEMPORARY SEMANTIC (inbound-first, task item 9): these = the destination warehouse. Explicit
-  // origin_warehouse_id / destination_warehouse_id arrive with Warehouse Outbound via a planned migration.
-  'warehouse_id', 'warehouse_code', 'reference_id', 'note'
+  'freight_cost_actual', 'duty_actual', 'total_cost_actual', 'currency',
+  // Warehouse Picker (SHIPMENT_CENTER_SPEC §22.0). CANONICAL: source_warehouse_id (out-source identity),
+  // destination_warehouse_id (out-destination identity) + destination_type; warehouse_code = DESTINATION
+  // warehouse code SNAPSHOT (semantic unchanged — never a source code). Legacy warehouse_id (the old
+  // destination identity) is still accepted and MIRRORED onto destination_warehouse_id (see handleUpdateShipment_).
+  'source_warehouse_id', 'destination_warehouse_id', 'destination_type', 'warehouse_id', 'warehouse_code', 'reference_id', 'note'
 ];
 
 function shipmentTimestamp_() {
@@ -82,16 +92,8 @@ function shipmentToday_() {
 }
 function shipmentNum_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
-// Read carrier_rate_cards.shipping_method_label for a rate_card_id (READ-ONLY; never modifies the
-// carrier tables). Returns '' when the table / column / row / value is absent — the caller then
-// applies the fallback. carrier_rate_cards.shipping_method_label is populated by the Carrier module
-// (out of scope here); this resolver is ready for it and safe before it exists.
-function shipmentRateCardLabel_(ss, rateCardId) {
-  return shipmentRateCardField_(ss, rateCardId, 'shipping_method_label');
-}
-
 // Read an arbitrary carrier_rate_cards column for a rate_card_id (READ-ONLY). Returns '' when the
-// table / column / row / value is absent. Shared by the label + customs_type snapshot resolvers.
+// table / column / row / value is absent. Used by the customs_type snapshot resolver.
 function shipmentRateCardField_(ss, rateCardId, fieldName) {
   var id = String(rateCardId || '').trim();
   if (!id) return '';
@@ -117,30 +119,10 @@ function shipmentCustomsType_(ss, rateCardId, presetCustomsType) {
   return shipmentRateCardField_(ss, rateCardId, 'customs_type');
 }
 
-// Resolve the Shipment shipments_customs_type_label SNAPSHOT — the localized (中文) display Label frozen
-// at creation. Mirrors shipmentMethodLabel_ EXACTLY. Priority: (1) a label already on the plan/body,
-// (2) carrier_rate_cards.customs_type_label by rate_card_id (the Carrier module populates it), (3) FALLBACK
-// = the canonical enum→Label map for the resolved customs_type. Blank when nothing is available (nullable).
-// Documents read ONLY this label; they must never translate the enum themselves.
-function shipmentCustomsTypeLabel_(ss, rateCardId, presetLabel, customsType) {
-  var lbl = String(presetLabel || '').trim();
-  if (!lbl) lbl = shipmentRateCardField_(ss, rateCardId, 'customs_type_label');
-  if (lbl) return lbl;
-  return customsTypeLabel_(customsType);   // canonical enum→Label fallback (shared global; see 17_carrier_handlers.gs)
-}
-
-// Resolve the Shipment display label (SNAPSHOT). Priority: (1) a label already on the plan/body,
-// (2) carrier_rate_cards.shipping_method_label by rate_card_id, (3) FALLBACK = shipping_method + '_' +
-// last_mile_delivery (compat only; leading/trailing '_' trimmed). Blank when nothing is available.
-function shipmentMethodLabel_(ss, rateCardId, presetLabel, shippingMethod, lastMile) {
-  var lbl = String(presetLabel || '').trim();
-  if (!lbl) lbl = shipmentRateCardLabel_(ss, rateCardId);
-  if (lbl) return lbl;
-  var sm = String(shippingMethod || '').trim();
-  var lm = String(lastMile || '').trim();
-  if (!sm && !lm) return '';
-  return (sm + '_' + lm).replace(/^_+|_+$/g, '');   // fallback: Sea_Parcel
-}
+// RETIRED (2026-07-28 Canonical Decision): shipments.shipping_method_label / shipments_customs_type_label
+// are NO LONGER persisted. Display text is resolved at RENDER time from the Code fields (shipping_method /
+// last_mile_delivery / shipments_customs_type) — see the frontend Code→display resolver. The old snapshot
+// resolvers (shipmentMethodLabel_ / shipmentCustomsTypeLabel_ / shipmentRateCardLabel_) were removed.
 
 /** Marketplace short code for the external_shipment_id default (unknown -> first 3 chars uppercased). */
 var SHIPMENT_MARKETPLACE_ABBREV_ = {
@@ -263,6 +245,59 @@ function shipmentValidateCartons_(ss, shipmentId, requireComplete) {
   return { ok: true };
 }
 
+/**
+ * Shipment EXACT rate-card resolution + Phase-1 Estimated Cost. ctx carries the plan carrier + route +
+ * measures + lines. Returns { rateCardId, rateReview, currency, estimated* }.
+ *   - No carrier chosen (e.g. overseas → FBA, no rate system) → Not Applied: everything blank, rateReview=false.
+ *   - Carrier chosen but NO exact candidate → rateReview=true, estimated_* blank, rate_card_id blank
+ *     (the carrier is NEVER silently switched; the shipment must be resolved before Approve/Ship).
+ *   - Exact candidate found → prefer the plan's own rate_card_id if still valid, else the newest candidate;
+ *     compute Freight(+fuel) + Customs Fee(once) + Duty(series; included→0 / excluded→calc / blank→'') and
+ *     estimated_unit_cost = total / total_qty (blank when qty 0). Uses shared engine helpers (17_). Never throws.
+ */
+function shipmentExactRateAndCost_(ss, ctx) {
+  var out = { rateCardId: '', rateReview: false, splitRequired: false, currency: '',
+    estimatedFreightCost: '', estimatedDuty: '', estimatedCustomsFee: '', estimatedTotalCost: '', estimatedUnitCost: '' };
+  try {
+    var carrierId = String(ctx.carrierId || '').trim();
+    if (!carrierId) return out;   // no carrier → Not Applied (blank; not a Rate Review failure)
+    if (typeof shippingMatchRateCards_ !== 'function') return out;   // engine not present → Not Applied
+    var battery = shippingBatteryClass_(ss, (ctx.lines || []).map(function (l) { return l.sku; }));
+    var isMulti = String(ctx.marketplace || '').trim().toUpperCase() === 'MULTI';
+    var candidates = shippingMatchRateCards_(ss, {
+      originCountry: '', destinationCountry: ctx.country, shippingMethod: ctx.shippingMethod,
+      lastMile: ctx.lastMile, batteryType: battery, quoteDate: ctx.quoteDate,
+      marketplace: isMulti ? 'MULTI' : ctx.marketplace,
+      destinationWarehouseCode: ctx.destinationWarehouseCode
+    }, true).filter(function (rc) { return String(rc.carrier_id || '').trim() === carrierId; });
+    // Combined (MULTI) shipment: a SINGLE rate card must apply to the WHOLE shipment — accept ONLY a card
+    // with a BLANK marketplace (applies to all). If only per-marketplace cards exist → SPLIT SHIPMENT
+    // required (never average/merge multiple marketplace cards into one quote).
+    if (isMulti) {
+      var whole = candidates.filter(function (c) { return String(c.marketplace || '').trim() === ''; });
+      if (whole.length) { candidates = whole; }
+      else if (candidates.length) { out.splitRequired = true; out.rateReview = true; return out; }
+    }
+    var rc = null;
+    if (ctx.planRateCardId) rc = candidates.filter(function (c) { return String(c.rate_card_id || '').trim() === String(ctx.planRateCardId).trim(); })[0] || null;
+    if (!rc) rc = candidates[0] || null;
+    if (!rc) { out.rateReview = true; return out; }   // no exact match → Rate Review (no silent switch)
+    var freight = shippingFreight_(rc, { grossWeightKg: ctx.grossWeightKg, cbm: ctx.cbm, cartons: ctx.cartons });
+    var customsFee = shippingCustomsFee_(rc);
+    var treat = String(ctx.importDutyTreatment || rc.import_duty_treatment || '').trim();
+    var duty = shippingDuty_(ss, ctx.lines, treat, ctx.country, ctx.quoteDate);
+    var total = freight.freight + customsFee + (duty === '' ? 0 : duty);
+    out.rateCardId = String(rc.rate_card_id || '').trim();
+    out.currency = String(rc.currency || '').trim();
+    out.estimatedFreightCost = freight.freight;
+    out.estimatedDuty = duty;
+    out.estimatedCustomsFee = customsFee;
+    out.estimatedTotalCost = Math.round(total * 100) / 100;
+    out.estimatedUnitCost = (shipmentNum_(ctx.totalQty) > 0) ? Math.round((total / shipmentNum_(ctx.totalQty)) * 10000) / 10000 : '';
+    return out;
+  } catch (e) { out.rateReview = true; return out; }
+}
+
 // ---- Execution Commit: Approved shipping_plan → shipments + shipment_lines (draft) ----
 
 /**
@@ -294,6 +329,13 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   if (String(pv('status')).trim() !== 'approved') {
     return { created: false, reason: 'plan_not_approved' };
   }
+  // Combined-Plan guard: a CHILD (parent_shipping_plan_id points at a Combined Parent) is NEVER transferred
+  // on its own — the Combined Parent is the transfer unit (§七). Prevents duplicate Shipments from a Parent
+  // + its Children.
+  var planParentRef = String(pv('parent_shipping_plan_id') || '').trim();
+  if (planParentRef && planParentRef !== planId) {
+    return { created: false, reason: 'is_combined_child', parent_shipping_plan_id: planParentRef };
+  }
 
   var shipmentSheet = shipmentEnsureSheet_(ss, 'shipments', SHIPMENTS_HEADERS_);
   var shipmentLineSheet = shipmentEnsureSheet_(ss, 'shipment_lines', SHIPMENT_LINES_HEADERS_);
@@ -301,9 +343,14 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   // quantity totals + shipments_customs_type snapshot so appendByHeader can write them. Retired legacy columns
   // (total_qty / total_cartons / total_cbm / carton_qty) are intentionally NOT ensured here.
   sheetEnsureColumns_(shipmentSheet, ['external_shipment_id', 'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by',
-    'last_mile_delivery', 'shipping_method_label', 'shipments_customs_type', 'shipments_customs_type_label', 'booking_no', 'note',
+    'last_mile_delivery', 'shipments_customs_type', 'booking_no', 'note',
     'shipment_total_qty', 'shipment_total_cartons', 'shipment_total_cbm',
-    'shipment_total_gross_weight', 'shipment_total_net_weight']);
+    'shipment_total_gross_weight', 'shipment_total_net_weight',
+    // CANONICAL 2026-07-28 columns (additive; no reorder / shift / dup).
+    'source_warehouse_id', 'destination_warehouse_id', 'destination_type', 'import_duty_treatment',
+    'master_tracking_number', 'is_cross_dock', 'temperature_requirement', 'hazmat_flag',
+    'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee', 'estimated_total_cost', 'estimated_unit_cost',
+    'total_cost_actual']);
   sheetEnsureColumns_(shipmentLineSheet, ['carton_no_start', 'carton_no_end', 'shipment_carton_qty', 'shipment_qty', 'shipment_carton_cbm']);
   sheetEnsureColumns_(planSheet, ['transferred_to_shipment_at', 'transferred_shipment_id']);
 
@@ -319,12 +366,16 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     }
   }
 
-  // Collect the plan's lines.
+  // Collect the plan's EFFECTIVE lines. A Combined Parent owns NO lines directly — its effective lines are
+  // the UNION of its children's lines (shippingPlanEffectiveOwnerIds_, 11_). A normal plan → its own lines.
+  // Never reads both Parent-direct + child lines (no double count).
+  var ownerIds = {};
+  (typeof shippingPlanEffectiveOwnerIds_ === 'function' ? shippingPlanEffectiveOwnerIds_(ss, planId) : [planId]).forEach(function (x) { ownerIds[String(x).trim()] = 1; });
   var pl = shipmentReadSheet_(planLineSheet);
   var plPlanCol = pl.col('shipping_plan_id');
   var planLines = [];
   for (var k = 1; k < pl.rows.length; k++) {
-    if (plPlanCol !== -1 && String(pl.rows[k][plPlanCol]).trim() === planId) planLines.push(pl.rows[k]);
+    if (plPlanCol !== -1 && ownerIds[String(pl.rows[k][plPlanCol]).trim()]) planLines.push(pl.rows[k]);
   }
   var plv = function (rowVals, name) { var c = pl.col(name); return c === -1 ? '' : rowVals[c]; };
   // Plan carton qty — CANONICAL shipping_plan_lines.plan_carton_qty with legacy carton_qty read-fallback.
@@ -399,15 +450,41 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   var pRateCardId = pv('rate_card_id');
   var pShipMethod = pv('shipping_method');
   var pLastMile = pv('last_mile_delivery');
-  var pMethodLabel = shipmentMethodLabel_(ss, pRateCardId, pv('shipping_method_label'), pShipMethod, pLastMile);
-  // Customs type SNAPSHOT: prefill from the plan's Carrier Rate Card at creation (user-confirmable
-  // while Draft via updateShipment). Blank/nullable when no rate card / value is available.
+  // Customs type SNAPSHOT (CODE, canonical): prefill from the plan's Carrier Rate Card at creation
+  // (user-confirmable while Draft via updateShipment). Blank/nullable when no rate card / value is available.
+  // NOTE (2026-07-28): the *_label snapshots are RETIRED — display text is resolved at render time from CODE.
   var pCustomsType = shipmentCustomsType_(ss, pRateCardId, pv('customs_type'));
-  // Customs type LABEL SNAPSHOT — mirrors shipping_method_label. Source: carrier_rate_cards.customs_type_label
-  // (fallback = canonical enum→Label map for pCustomsType). Frozen after creation; documents read this only.
-  var pCustomsTypeLabel = shipmentCustomsTypeLabel_(ss, pRateCardId, pv('customs_type_label'), pCustomsType);
 
-  // Header: copy the six-key context + carrier from the plan (WEEKLY §12).
+  // import_duty_treatment SNAPSHOT copied from the plan (blank when the plan had none — never derived).
+  var pImportDutyTreatment = String(pv('import_duty_treatment') || '').trim();
+
+  // ---- Shipment EXACT rate-card match + Estimated Cost (Phase 1) ----
+  // Copy the plan's carrier + method + last_mile + customs + import_duty_treatment, then resolve the EXACT
+  // rate_card_id for the shipment's full route (origin=source country not modelled at plan level; match on
+  // destination country + method + last_mile + battery + marketplace + destination_warehouse_code + postal).
+  // No exact candidate → RATE REVIEW: rate_card_id stays blank, estimated_* blank (Not Applied), a note is
+  // recorded, and the carrier is NEVER silently switched. Cost NEVER writes back to the approved plan.
+  var exact = shipmentExactRateAndCost_(ss, {
+    planRateCardId: pRateCardId,
+    carrierId: String(pv('carrier_id') || '').trim(),
+    country: pv('country'),
+    marketplace: pv('marketplace'),
+    shippingMethod: pShipMethod,
+    lastMile: pLastMile,
+    importDutyTreatment: pImportDutyTreatment,
+    destinationWarehouseCode: '',   // set later by the Warehouse Picker; blank = don't constrain
+    quoteDate: today,
+    grossWeightKg: totalGross,
+    cbm: totalCbm,
+    cartons: totalCartons,
+    totalQty: totalQty,
+    lines: planLines.map(function (lr) { return { sku: String(plv(lr, 'sku') || '').trim(), qty: shipmentNum_(plv(lr, 'approved_qty')) }; })
+  });
+  var rateReviewNote = exact.splitRequired
+    ? ('[RATE REVIEW — SPLIT SHIPMENT @' + now + '] Combined (MULTI-marketplace) shipment has no single carrier_rate_card that applies to the whole shipment (only per-marketplace cards exist). Split the shipment by marketplace — do NOT average/merge rate cards. Estimated Cost = Not Applied; carrier NOT auto-switched.')
+    : (exact.rateReview ? ('[RATE REVIEW @' + now + '] No exact carrier_rate_card matched the shipment route — Estimated Cost = Not Applied; resolve a rate card before Approve/Ship (carrier NOT auto-switched).') : '');
+
+  // Header: copy the six-key context + carrier from the plan (WEEKLY §12) + CANONICAL warehouse ids + cost.
   shipmentAppendByHeader_(shipmentSheet, {
     shipment_id: shipmentId,
     shipment_no: shipmentNo,
@@ -415,23 +492,31 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     shipping_plan_id: planId,
     company: pv('company'),
     country: pv('country'),
-    marketplace: pv('marketplace'),
+    marketplace: pv('marketplace'),   // actual Marketplace, or MULTI when the plan combined marketplaces
     ship_from: pv('ship_from'),
+    source_warehouse_id: pv('source_warehouse_id'),           // out-source identity (NO origin_warehouse_id)
     destination: pv('destination'),
+    destination_warehouse_id: pv('destination_warehouse_id'), // out-destination identity
+    destination_type: pv('destination_type'),
     shipping_method: pShipMethod,
     last_mile_delivery: pLastMile,
-    shipping_method_label: pMethodLabel,   // localized display SNAPSHOT (frozen after creation)
-    shipments_customs_type: pCustomsType,  // customs method SNAPSHOT (prefilled; editable while Draft)
-    shipments_customs_type_label: pCustomsTypeLabel,  // customs Label SNAPSHOT (中文; frozen; documents read this)
+    shipments_customs_type: pCustomsType,  // customs method SNAPSHOT — CODE (prefilled; editable while Draft)
+    import_duty_treatment: pImportDutyTreatment,
     carrier_id: pv('carrier_id'),
-    rate_card_id: pRateCardId,
-    currency: pv('currency'),
+    rate_card_id: exact.rateCardId || '',   // blank when Rate Review (never a silently-switched carrier)
+    currency: exact.currency || pv('currency'),
     status: 'draft',
     shipment_total_qty: totalQty,
     shipment_total_cartons: totalCartons,
     shipment_total_cbm: shipmentNum_(Math.round(totalCbm * 10000) / 10000),
     shipment_total_gross_weight: shipmentNum_(Math.round(totalGross * 1000) / 1000),
     shipment_total_net_weight: shipmentNum_(Math.round(totalNet * 1000) / 1000),
+    estimated_freight_cost: exact.estimatedFreightCost,
+    estimated_duty: exact.estimatedDuty,
+    estimated_customs_fee: exact.estimatedCustomsFee,
+    estimated_total_cost: exact.estimatedTotalCost,
+    estimated_unit_cost: exact.estimatedUnitCost,
+    note: rateReviewNote,
     created_by: actor,
     created_at: now,
     updated_by: actor,
@@ -584,8 +669,11 @@ function handleUpdateShipment_(body) {
 
   // Auto-add columns on tabs that predate them.
   sheetEnsureColumns_(sheet, ['external_shipment_id', 'shipped_at', 'shipped_by', 'hidden_from_draft_at', 'hidden_from_draft_by',
-    'last_mile_delivery', 'shipping_method_label', 'shipments_customs_type', 'shipments_customs_type_label', 'booking_no', 'note',
-    'shipment_total_gross_weight', 'shipment_total_net_weight']);
+    'last_mile_delivery', 'shipments_customs_type', 'booking_no', 'note',
+    'shipment_total_gross_weight', 'shipment_total_net_weight',
+    // CANONICAL 2026-07-28 editable columns.
+    'source_warehouse_id', 'destination_warehouse_id', 'destination_type', 'import_duty_treatment',
+    'master_tracking_number', 'is_cross_dock', 'temperature_requirement', 'hazmat_flag', 'total_cost_actual']);
 
   var s = shipmentReadSheet_(sheet);
   var idCol = s.col('shipment_id');
@@ -617,31 +705,17 @@ function handleUpdateShipment_(body) {
     var fld = SHIPMENT_EDITABLE_FIELDS_[f];
     if (body.hasOwnProperty(fld)) { setCell(fld, body[fld]); changed++; }
   }
-
-  // B — re-copy the display label from the (possibly changed) Carrier Rate Card ONLY while still Draft
-  // (pre-confirmation). After Draft the snapshot is frozen and NEVER auto-resynced. `shipping_method_label`
-  // is a derived snapshot, so it is not directly editable — it is recomputed here.
-  if (curStatus === 'draft' &&
-      (body.hasOwnProperty('rate_card_id') || body.hasOwnProperty('shipping_method') || body.hasOwnProperty('last_mile_delivery'))) {
-    function curVal_(name) { var c = s.col(name); return c === -1 ? '' : String(rowVals[c] == null ? '' : rowVals[c]).trim(); }
-    var uRateCardId = body.hasOwnProperty('rate_card_id') ? String(body.rate_card_id || '').trim() : curVal_('rate_card_id');
-    var uShipMethod = body.hasOwnProperty('shipping_method') ? String(body.shipping_method || '').trim() : curVal_('shipping_method');
-    var uLastMile = body.hasOwnProperty('last_mile_delivery') ? String(body.last_mile_delivery || '').trim() : curVal_('last_mile_delivery');
-    setCell('shipping_method_label', shipmentMethodLabel_(ss, uRateCardId, '', uShipMethod, uLastMile));
-    changed++;
+  // Legacy write-compat: the existing Warehouse Picker sends warehouse_id (the DESTINATION identity).
+  // Mirror it onto the canonical destination_warehouse_id when the canonical key was not sent, so the new
+  // column is populated without editing the picker UI. warehouse_code stays the DESTINATION code snapshot.
+  if (body.hasOwnProperty('warehouse_id') && !body.hasOwnProperty('destination_warehouse_id')) {
+    setCell('destination_warehouse_id', body.warehouse_id);
   }
 
-  // B (customs) — re-derive the customs Label SNAPSHOT ONLY while still Draft, when the customs enum or the
-  // Rate Card changes. Mirrors shipping_method_label: the label is derived, never directly editable. After
-  // Draft it is frozen and never auto-resynced. Documents read shipments_customs_type_label only.
-  if (curStatus === 'draft' &&
-      (body.hasOwnProperty('rate_card_id') || body.hasOwnProperty('shipments_customs_type'))) {
-    function curVal2_(name) { var c = s.col(name); return c === -1 ? '' : String(rowVals[c] == null ? '' : rowVals[c]).trim(); }
-    var uRateCardId2 = body.hasOwnProperty('rate_card_id') ? String(body.rate_card_id || '').trim() : curVal2_('rate_card_id');
-    var uCustomsType = body.hasOwnProperty('shipments_customs_type') ? String(body.shipments_customs_type || '').trim() : curVal2_('shipments_customs_type');
-    setCell('shipments_customs_type_label', shipmentCustomsTypeLabel_(ss, uRateCardId2, '', uCustomsType));
-    changed++;
-  }
+  // NOTE (2026-07-28 Canonical Decision): the shipping_method_label / shipments_customs_type_label
+  // snapshot re-sync blocks were REMOVED — those columns are retired. Only the CODE fields
+  // (shipping_method / last_mile_delivery / shipments_customs_type) are persisted; display text is
+  // resolved at render time from the Code.
 
   // Optional: update editable shipment_line fields (carton_no_start / carton_no_end — numeric).
   var linesUpdated = 0;
@@ -738,4 +812,85 @@ function handleUpdateShipment_(body) {
   }
 
   return jsonResponse_({ success: true, data: { shipment_id: shipmentId, fields_updated: changed, lines_updated: linesUpdated, status: newStatus || curStatus } });
+}
+
+// ============================================================
+// Migration (2026-07-28 Canonical Decision): RETIRE the display-label snapshot columns
+//   shipping_plans.shipping_method_label · shipping_plans.customs_type_label ·
+//   shipments.shipping_method_label · shipments.shipments_customs_type_label
+// Display text is now resolved at RENDER time from the CODE fields (shipping_method / last_mile_delivery /
+// customs_type / shipments_customs_type). This handler physically removes the four columns BY HEADER NAME,
+// safely:
+//   1. If a row's CODE cell is blank but its LABEL cell has a value, backfill the CODE ONLY via an explicit
+//      1:1 label→code map (customs uses the canonical CUSTOMS_TYPE_LABELS_ inverse). shipping_method has NO
+//      canonical label→code dictionary, so a blank-code+label row is reported, never guessed.
+//   2. If any label maps to MULTIPLE codes, or a code cannot be safely backfilled, the column is NOT deleted
+//      — it returns status = blocked_needs_review with the affected rows (operator resolves, then re-runs).
+//   3. A column is deleted ONLY when every row's code is populated. Deletion is BY NAME (never a fixed index);
+//      the whole column (header + data) is removed together, so remaining columns stay aligned (no shift).
+// Body: { dry_run?: true }  (dry_run reports what WOULD happen without writing/deleting). Idempotent: an
+// already-retired column returns already_retired. Header Repair never re-creates these (removed from every
+// header constant + ensure list), so this migration is one-way and safe to re-run.
+// ============================================================
+
+// Inverse of the canonical customs label→code map (shared CUSTOMS_TYPE_LABELS_ lives in 17_carrier_handlers.gs).
+// A label seen for more than one code becomes '__AMBIGUOUS__' (blocks deletion for that column).
+function shipmentInvertedCustomsLabels_() {
+  var inv = {};
+  var src = (typeof CUSTOMS_TYPE_LABELS_ !== 'undefined') ? CUSTOMS_TYPE_LABELS_ : {};
+  for (var code in src) {
+    if (!src.hasOwnProperty(code)) continue;
+    var lbl = String(src[code] == null ? '' : src[code]).trim();
+    if (!lbl) continue;
+    if (inv.hasOwnProperty(lbl) && inv[lbl] !== code) inv[lbl] = '__AMBIGUOUS__'; else inv[lbl] = code;
+  }
+  return inv;
+}
+
+function shipmentRetireOneLabelCol_(ss, p, dryRun) {
+  var out = { table: p.table, label_col: p.labelCol, code_col: p.codeCol, status: '', backfilled: 0, affected_rows: [], deleted: false };
+  var sh = ss.getSheetByName(p.table);
+  if (!sh) { out.status = 'table_missing'; return out; }
+  var data = sh.getDataRange().getValues();
+  if (!data.length) { out.status = 'empty'; return out; }
+  var headers = data[0].map(function (h) { return String(h).trim(); });
+  var lc = headers.indexOf(p.labelCol);
+  if (lc === -1) { out.status = 'already_retired'; return out; }
+  var cc = headers.indexOf(p.codeCol);
+  for (var i = 1; i < data.length; i++) {
+    var label = String(data[i][lc] == null ? '' : data[i][lc]).trim();
+    var code = cc !== -1 ? String(data[i][cc] == null ? '' : data[i][cc]).trim() : '';
+    if (!label || code) continue;   // no label, or code already present → nothing to backfill
+    if (p.dict && Object.prototype.hasOwnProperty.call(p.dict, label)) {
+      var mapped = p.dict[label];
+      if (mapped === '__AMBIGUOUS__') { out.affected_rows.push({ row: i + 1, label: label, reason: 'label maps to multiple codes' }); continue; }
+      if (cc !== -1 && !dryRun) sh.getRange(i + 1, cc + 1).setValue(mapped);
+      out.backfilled++;
+    } else {
+      out.affected_rows.push({ row: i + 1, label: label, reason: 'code blank and no 1:1 label→code mapping' });
+    }
+  }
+  if (out.affected_rows.length) { out.status = 'blocked_needs_review'; return out; }   // do NOT delete
+  if (dryRun) { out.status = 'ready_to_delete'; return out; }
+  sh.deleteColumn(lc + 1);   // delete BY NAME-resolved index (whole column; remaining columns stay aligned)
+  out.deleted = true; out.status = 'deleted';
+  return out;
+}
+
+/** Retire the four display-label columns. Body: { dry_run?: true }. */
+function handleRetireShipmentLabelColumns_(body) {
+  body = body || {};
+  var dryRun = !!body.dry_run;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var invCustoms = shipmentInvertedCustomsLabels_();
+  var plan = [
+    { table: 'shipping_plans', labelCol: 'shipping_method_label', codeCol: 'shipping_method', dict: null },
+    { table: 'shipping_plans', labelCol: 'customs_type_label', codeCol: 'customs_type', dict: invCustoms },
+    { table: 'shipments', labelCol: 'shipping_method_label', codeCol: 'shipping_method', dict: null },
+    { table: 'shipments', labelCol: 'shipments_customs_type_label', codeCol: 'shipments_customs_type', dict: invCustoms }
+  ];
+  var report = [];
+  for (var i = 0; i < plan.length; i++) report.push(shipmentRetireOneLabelCol_(ss, plan[i], dryRun));   // re-reads each sheet per column (fresh indices after any delete)
+  var blocked = report.filter(function (r) { return r.status === 'blocked_needs_review'; }).length;
+  return jsonResponse_({ success: true, data: { dry_run: dryRun, blocked_columns: blocked, columns: report } });
 }

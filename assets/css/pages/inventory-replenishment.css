@@ -238,7 +238,21 @@
     outline-offset: -2px;
     background: var(--bg-surface, #f1f5f9);
 }
-#ops-section .replen-actions-menu__item[disabled] { opacity: 0.5; cursor: not-allowed; }
+/* Disabled item — explicit readable GREY text on a light surface (never white-on-white, never conveyed
+   by opacity alone). aria-disabled is styled identically and blocks pointer events so the visual and
+   interactive states stay in lock-step (§1.3). Applies to whichever item gets permission-gated. */
+#ops-section .replen-actions-menu__item[disabled],
+#ops-section .replen-actions-menu__item[aria-disabled="true"] {
+    color: #94a3b8;
+    background: #f8fafc;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+#ops-section .replen-actions-menu__item[disabled]:hover,
+#ops-section .replen-actions-menu__item[aria-disabled="true"]:hover { background: #f8fafc; }
+/* A disabled destructive item stays grey (not red) so "disabled" reads clearly. */
+#ops-section .replen-actions-menu__item--danger[disabled],
+#ops-section .replen-actions-menu__item--danger[aria-disabled="true"] { color: #94a3b8; }
 /* Delete = destructive: red text + a warning glyph (signalled by icon + weight, not colour alone). */
 #ops-section .replen-actions-menu__item--danger { color: var(--km-ui-danger, #dc2626); font-weight: var(--weight-medium); }
 #ops-section .replen-actions-menu__item--danger:hover { background: #fee2e2; }
@@ -464,10 +478,11 @@
 }
 
 #ops-section .fixed-header {
-    /* SKU column: wide enough to show the full SKU (no truncation). Kept identical to .fixed-col
-       so the sticky SKU header stays aligned with the SKU body cells. */
-    width: 200px;
-    min-width: 200px;
+    /* SKU column width = Request Order's SKU column contract (.ro-table .fixed-header/.fixed-col = 143px)
+       so both pages' SKU columns render at the same width. Kept identical to .fixed-col below so the
+       sticky SKU header stays aligned with the SKU body cells. */
+    width: 143px;
+    min-width: 143px;
     height: var(--km-sticky-header-total, 96px);
     background: #f5f5f5;
     border-right: 1px solid #dbe3ea;
@@ -533,8 +548,9 @@
     z-index: var(--km-sticky-z-corner, 121); /* corner: above header rows, below toolbar */
     border-right: 1px solid #dbe3ea;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: center;      /* vertical centre */
+    justify-content: center;  /* horizontal centre of the (possibly wrapped) text block */
+    text-align: center;       /* centre EACH line when "Planning Model" wraps to two lines */
     font-weight: 600;
     font-size: 14px;
     color: #000000;
@@ -647,9 +663,11 @@
 }
 
 #ops-section .fixed-col {
-    /* Must match .fixed-header width so the SKU header + SKU body cells stay column-aligned. */
-    width: 200px;
-    min-width: 200px;
+    /* Must match .fixed-header width (143px = Request Order SKU column) so the SKU header + SKU body
+       cells stay column-aligned and the two pages' SKU columns render at the same width. */
+    width: 143px;
+    min-width: 143px;
+    box-sizing: border-box;
     flex-shrink: 0;
     background: white;
     z-index: var(--km-sticky-z-col, 110); /* left sticky column: below header rows */
@@ -657,14 +675,45 @@
     box-shadow: 2px 0 4px rgba(0,0,0,0.06);
     position: sticky;
     left: 0;
+    /* Flex column so this sticky column can pass its (align-items:stretch) height down to .fixed-body →
+       the expand panel, giving the SKU identity panel the SAME height as the right detail canvas in the
+       FIRST paint — no JS measure-and-sync, no height flash. .table-body-bar is display:flex (default
+       align-items:stretch), so .fixed-col already stretches to the taller .scroll-col. */
+    display: flex;
+    flex-direction: column;
+    /* Reserve the SAME horizontal-scrollbar gutter that .scroll-col reserves (scrollbar-gutter:stable),
+       so both columns have an identical ~scrollbar-height bottom gutter. Without this, .scroll-col's
+       horizontal scrollbar inflated its box by the scrollbar height, and the flex-stretched expand
+       panel here overshot the right detail canvas by exactly that amount (~15px). overflow-x:auto keeps
+       the gutter axis horizontal (its own 143px content never actually overflows, so no scrollbar
+       shows — only the reserved gutter); overflow-y:hidden avoids a stray vertical gutter. No fixed
+       pixel value — the gutter width is the browser's own scrollbar metric, kept symmetric. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-gutter: stable;
 }
 
 #ops-section .fixed-body {
     background: white;
+    /* Fill the stretched .fixed-col and lay its rows + expand panel out in a column so the expand
+       panel can absorb the stretch difference (see .replen-expand-panel--fixed { flex:1 }). */
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Always reserve the horizontal-scrollbar gutter (whether or not the scrollbar is currently shown) so
+   .scroll-col and .fixed-col keep IDENTICAL bottom gutters. This removes the ~15px asymmetry that made
+   the flex-stretched left SKU panel overshoot the right detail canvas. Page-scoped only — the shared
+   .scroll-col overflow (components.css) is unchanged, so the header⇄scroll-col scrollLeft sync and the
+   horizontal-scroll behaviour are preserved. */
+#ops-section .scroll-col {
+    scrollbar-gutter: stable;
 }
 
 #ops-section .fixed-row {
     height: 48px;
+    flex: 0 0 48px;   /* fixed data-row height inside the flex-column .fixed-body (never grow/shrink) */
     /* Compact horizontal padding so the chevron + SKU sit tight to the left; no oversized gutter. */
     padding: 0 10px;
     display: flex;
@@ -719,34 +768,37 @@
 }
 #ops-section .replen-suggested-cell__value { font-variant-numeric: tabular-nums; }
 
-/* SKU-column expand chevron: a native <button> to the LEFT of the SKU text, vertically centred. Rotates
-   from ▸ (collapsed) to a downward point via .is-open; aria-expanded is kept in sync in JS. */
+/* SKU-column expand toggle: a compact INLINE triangle immediately left of the SKU, matching Request
+   Order's `.ro-sku-expand-toggle` (bare glyph — NO fixed-width box, NO border, NO rounded gray button
+   background). It stays a native <button> for keyboard/ARIA. Collapsed ▸ rotates to ▾ via .is-open;
+   aria-expanded is kept in sync in JS. Sits inline with the SKU inside the same SKU cell (.fixed-row),
+   so it never forms a wide button area or pushes the SKU to the right. */
 #ops-section .fixed-row { gap: 6px; }
 #ops-section .replen-row-chevron {
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    min-width: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border: none;
-    background: none;
+    padding: 0 6px;           /* = Request Order .ro-sku-expand-toggle (no fixed width / no box) */
+    border: 0;
+    background: transparent;   /* no gray button block */
     color: var(--km-filter-muted, #6b7280);
     cursor: pointer;
-    border-radius: 4px;
     line-height: 1;
 }
-#ops-section .replen-row-chevron:hover { background: #eef2f7; color: #334155; }
+#ops-section .replen-row-chevron:hover { color: #334155; }   /* color only — no background block */
 #ops-section .replen-row-chevron:focus-visible {
     outline: 2px solid var(--km-brand-blue, #0080bb);
     outline-offset: 1px;
 }
 #ops-section .replen-row-chevron__icon {
     display: inline-block;
-    font-size: 11px;
+    font-size: 12px;          /* = Request Order triangle glyph size */
+    line-height: 1;
     transition: transform 0.15s ease;
 }
+#ops-section .replen-row-chevron.is-open { color: #3B82F6; }  /* expanded accent, like RO .is-expanded */
 #ops-section .replen-row-chevron.is-open .replen-row-chevron__icon { transform: rotate(90deg); }
 #ops-section .replen-row-sku {
     /* Full SKU, single line, never truncated by ellipsis (the sticky column is sized to fit it). */
@@ -761,6 +813,14 @@
     display: flex;
     overflow: visible;
     min-height: auto;
+}
+/* Left (SKU identity) expand panel grows to absorb the height that .fixed-col gains from
+   align-items:stretch matching the taller .scroll-col — so it equals the right detail canvas in the
+   first paint. The right panel (--scroll) stays content-height (the source of truth). Its inner
+   .replen-expand-fixed stretches to this height via the panel's default flex align-items:stretch. */
+#ops-section .replen-expand-panel--fixed {
+    flex: 1 1 auto;
+    align-items: stretch;
 }
 
 /* Expanded-row content area (Layout v3). Fixed-width horizontal groups — NO wrap, NO nested
@@ -800,8 +860,12 @@
 }
 
 #ops-section .replen-expand-fixed {
-    width: 120px;
-    min-width: 110px;
+    /* Fill the FULL first-layer SKU column (.fixed-col = 143px) instead of a stale 120px, so the white
+       identity panel's right edge lines up exactly with the first-layer SKU column and no gray
+       .replen-expand-panel background is exposed as a vertical strip. width:100% follows the column
+       width itself — no second magic number to keep in sync with the first layer. */
+    width: 100%;
+    box-sizing: border-box;
     padding: var(--space-md);
     background: white;
     min-height: auto;
@@ -1205,6 +1269,17 @@
     padding: 2px 4px;
     box-sizing: border-box;
 }
+/* Warehouse pickers (From / To) — canonical value is warehouse_id; label is warehouse_name. Disabled =
+   no candidates for the current scope (empty state). Error flash = From/To collided on the same id. */
+#ops-section .exec-route-row .replen-card__select--wh:disabled {
+    background: #f1f5f9;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+#ops-section .exec-route-row .replen-card__select--error {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+}
 #ops-section .exec-route-row .replen-card__remove-btn {
     width: 24px;
     height: 24px;
@@ -1355,127 +1430,55 @@
    / .ro-tab--active): a bordered, rounded, overflow-hidden segmented control; grey text on white, blue
    #3B82F6 active. Uses the same token VALUES as request-order.css. position/z-index/background are kept
    so the strip is not masked by the sticky table header's shadow (sits above .table-header-bar z:120). */
-/* Category tabs — single-row, compact ROUNDED pills (was a wrapped segmented bar that formed a
-   loose 2nd row). Overflow categories collapse into a "More Categories ▾" dropdown (see the
-   overflow layout in inventory-replenishment.js). The selected pill reuses Request Order's
-   selected visual language (.ro-tab--active: #3B82F6 background, white text) + a shared radius. */
-#ops-section .replen-category-tabs {
+/* Category tabs — now the SHARED Category Tab Rail (.km-tab-rail in components.css): one single-row,
+   horizontally-scrollable rail holding ALL categories (the old measure-based "More Categories ▾"
+   overflow dropdown was removed 2026-07-28 — every category is directly reachable by scrolling).
+   The tab/count visuals come from the shared .km-tab-rail__tab / __count classes so Inventory, Order
+   System and Promotion Risk look identical. This id+class override only carries the page-local
+   spacing + stacking context (so the rail sits above the sticky table header's shadow). */
+/* Category Section header band (2026-07-28) — sits at the top of the framed .dual-layer-table card so
+   the tabbed content reads as one delineated Category Section. Header + tabs + table all share the one
+   panel frame (white bg / border / radius already on .dual-layer-table). */
+#ops-section .replen-category-panel__head {
     display: flex;
-    flex-wrap: nowrap;       /* single row; overflow handled by the More dropdown, never wrapped */
-    align-items: center;
-    gap: 8px;
-    border: none;
-    border-radius: 0;
-    overflow: visible;
-    margin: 0 0 12px;
-    background: transparent;
+    align-items: baseline;
+    gap: 10px;
+    padding: var(--space-md) var(--space-md) 0;
+}
+#ops-section .replen-category-panel__eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #94a3b8);
+}
+#ops-section .replen-category-panel__title {
+    margin: 0;
+    font-size: var(--font-size-h4, 1.125rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+#ops-section .replen-category-tabs.km-tab-rail {
+    margin: 10px 0 12px;
+    padding: 0 var(--space-md);
     position: relative;
     z-index: 130;            /* > .table-header-bar z-index:120 */
 }
-#ops-section .replen-category-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;      /* compact rounded pill */
-    background: #ffffff;
-    color: #6b7280;
-    font-size: 0.875rem;
-    font-weight: 500;
-    line-height: 1.2;
-    cursor: pointer;
-    white-space: nowrap;
-    flex: 0 0 auto;
-    transition: all 0.2s;
-}
-#ops-section .replen-category-tab:hover { background: #f9fafb; }
-#ops-section .replen-category-tab:focus-visible {
-    outline: 2px solid #3B82F6;
-    outline-offset: 1px;
-}
-#ops-section .replen-category-tab.is-active {
-    background: #3B82F6;     /* same selected language as Request Order .ro-tab--active */
-    color: #ffffff;
-    border-color: #3B82F6;
-}
-#ops-section .replen-category-tab__count {
-    display: inline-block;
-    padding: 0 6px;
-    border-radius: 999px;
-    font-size: 11px;
-    line-height: 16px;
-    background: rgba(100, 116, 139, 0.14);
-    color: inherit;
-    opacity: 0.85;
-}
-#ops-section .replen-category-tab.is-active .replen-category-tab__count {
-    background: rgba(255, 255, 255, 0.28);
-    opacity: 1;
-}
 
-/* Overflow "More Categories ▾" — reuses the existing popover idiom (like More Options). */
-#ops-section .replen-category-more {
-    position: relative;
-    flex: 0 0 auto;
+/* ---- AI Plan button (2026-07-28) — shared visual with the Order System AI Plan (.ro-btn--ai). Refined
+   violet accent; sits BELOW the primary Submit Plan; loading / disabled / success / error states. Page-local
+   copy so the ops page doesn't depend on request-order.css. ---- */
+#ops-section .replen-btn.ro-btn--ai {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #F5F3FF; color: #6D28D9; border: 1px solid #DDD6FE; font-weight: 600;
 }
-#ops-section .replen-category-more[hidden] { display: none; }
-#ops-section .replen-category-more__trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 6px 12px;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    background: #ffffff;
-    color: #374151;
-    font-size: 0.875rem;
-    font-weight: 500;
-    line-height: 1.2;
-    cursor: pointer;
-    white-space: nowrap;
-}
-#ops-section .replen-category-more__trigger:hover { background: #f9fafb; }
-#ops-section .replen-category-more__trigger:focus-visible {
-    outline: 2px solid #3B82F6;
-    outline-offset: 1px;
-}
-#ops-section .replen-category-more__caret { font-size: 10px; }
-#ops-section .replen-category-more__list {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    z-index: 200;
-    min-width: 200px;
-    max-height: 320px;
-    overflow-y: auto;
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-#ops-section .replen-category-more__list[hidden] { display: none; }
-#ops-section .replen-category-more__item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 6px 10px;
-    border: none;
-    border-radius: 6px;
-    background: none;
-    color: #374151;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    text-align: left;
-    width: 100%;
-}
-#ops-section .replen-category-more__item:hover { background: #f3f4f6; }
-#ops-section .replen-category-more__item.is-active { background: #3B82F6; color: #ffffff; }
-#ops-section .replen-category-more__item .replen-category-tab__count { opacity: 1; }
+#ops-section .replen-btn.ro-btn--ai:hover:not(:disabled) { background: #EDE9FE; border-color: #C4B5FD; }
+#ops-section .replen-btn.ro-btn--ai:focus-visible { outline: 2px solid #A78BFA; outline-offset: 1px; }
+#ops-section .replen-btn.ro-btn--ai .ro-ai-icon { flex: 0 0 auto; }
+#ops-section .replen-btn.ro-btn--ai:disabled { opacity: 0.6; cursor: default; }
+#ops-section .replen-btn.ro-btn--ai.is-loading { color: #7C3AED; cursor: progress; }
+#ops-section .replen-btn.ro-btn--ai.is-loading .ro-ai-icon { animation: replenAiSpin 0.8s linear infinite; }
+#ops-section .replen-btn.ro-btn--ai.is-success { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
+#ops-section .replen-btn.ro-btn--ai.is-error { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; }
+@keyframes replenAiSpin { to { transform: rotate(360deg); } }

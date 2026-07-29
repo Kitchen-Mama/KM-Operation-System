@@ -1,8 +1,18 @@
 # Inventory Table Mapping Spec (Inventory Replenishment / 貨物庫存表)
 
-**Status:** 🟢 v1.5.7 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1 FINALIZED**)
+> **Owner Boundary (reviewed 2026-07-28).**
+> - **Document Role:** how the Inventory Replenishment page maps to data sources + display fields.
+> - **Canonical Owner For:** Inventory page field → source mapping and display labels.
+> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md` — all Current Stock / Qualified Incoming / shortage / allocation math), schema (`DATABASE_RELATIONSHIP_MAP.md`), the **Qualified Incoming allowlist** (Batch B).
+> - **Status:** Reviewed — Batch B Blockers Remain.
+> - **Current Version:** v1.5.8 (Batch A repair: Engine Current Stock vs UI Inventory Position vs Qualified Incoming separation).
+> - **Last Reviewed:** 2026-07-28.
+> - **Depends On:** Calculation Rules, Database Relationship Map, Amazon Snapshot Import, Runtime Architecture.
+> - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).
+
+**Status:** 🟢 v1.5.8 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1 FINALIZED**)
 **Last Updated:** 2026-07-24
-> **Changelog v1.5.6 → v1.5.7 (2026-07-24):** documentation-only sync to calculation owner **v4.1** — Avg Sales/Day now sampled as the latest 30 eligible normal days within a 90-completed-day source window (§8/§13); §21 calculation Open Questions closed (resolved → owner sections, runtime mapping pending); §14/§15 restated as owner-pointing summaries. No formula redefined here.
+> **Changelog v1.5.6 → v1.5.7 (2026-07-24):** documentation-only sync to calculation owner **v4.1** — Avg Sales/Day now sampled as the latest 30 eligible normal days within a 90-completed-day source window (§8/§13); §21 calculation Open Questions closed (resolved → owner sections, runtime mapping pending); §14/§15 restated as owner-pointing summaries. No formula redefined here. *(Round-3 residual cleanup, same v1.5.7: §13 "Suggested Qty" mapping now specifies its canonical meaning = Recommended Shipping Qty from `shipping_allocation_draft_lines.recommended_qty` per owner §2C.1/§31 — NOT raw Engine A shortage and NOT Request Order Suggested Order Qty; §16 restated as a UI/data-mapping summary that does not own the allocation rule — owner §20 is authoritative.)*
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md), [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md), [`UI_COMPONENT_GUIDELINES.md`](./UI_COMPONENT_GUIDELINES.md) (**KM Sticky Header Framework**).
 
@@ -148,6 +158,8 @@ Scope: selected Company + Country + Marketplace, per SKU. Source: `amazon_invent
 | **Customer Orders** | `amazon_inventory_snapshot.customer_order_qty` |
 | **Unsellable** | `amazon_inventory_snapshot.unfulfillable_qty` (field already exists in DB) |
 
+> **Sellable vs in-transit (Batch A 2026-07-28):** only **Available** is currently sellable. **FC Transfer** and **FC Processing** are **in-transit-to-FBA** buckets — they roll up into the UI **Inventory Position** display (§13) but are **not** part of the Engine's sellable **Current Stock**; they offset demand only as **Qualified Incoming** when qualified (owner `SUPPLY_PLANNING_CALCULATION_RULES.md`; allowlist = Batch B). **Customer Orders** / **Unsellable** are never added to sellable stock.
+
 ---
 
 ## 5. Long Term Storage
@@ -198,7 +210,7 @@ Over 180+ = inv_age_181_to_270_days
 
 **Apps Script note (CANONICAL v4.1):** the Daily Sales snapshot's canonical source window is the **latest 90 completed calendar days, excluding today** (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 — `retentionDays: 90` / `lookbackDays: 90`). *(Runtime gap: if the current importer still runs `lookbackDays: 30`, that is a recorded implementation gap — see `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 and `project-current-state.md`; this spec states the requirement, not a claim that runtime is live.)* This single snapshot serves **two** purposes:
 - **Sales Trend display = the most recent 7 complete days** (unchanged — show each of the last 7 completed `snapshot_date` rows, excluding today).
-- **Avg Sales/Day calculation** searches backward within the 90-day window and uses the **latest 30 eligible normal sales days** (excluding this SKU's event/promotion days), dividing by the actual normal-day count (§13; `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2).
+- **Avg Sales/Day** is the Normal Sales Days baseline **defined by `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2** (90-day search → latest 30 eligible normal sales days, excluding this SKU's event/promotion days). This page **consumes** that value and does **not** redefine the formula (§13).
 
 > **Trend vs Avg Sales are separate:** the trend chart stays at 7 days; the 90-day source window exists only to sample the latest 30 normal days for a clean Avg Sales/Day baseline. No new `amazon_daily_sales_snapshot` column and no BigQuery schema change.
 
@@ -317,9 +329,8 @@ A route list the PM builds. Canonical columns — **From / To / Qty / Method / E
 - **Carton gate (unchanged):** every submitted route qty must be an integer multiple of the SKU's `units_per_carton`; a missing UPC blocks Submit.
 - **Factory-stock hint** is display-only (no deduction; no allocation engine).
 
-### 11.4 Persistence rule (Recommendation Summary + Execution Plan) — CANONICAL 2026-07-22
+### 11.4 Persistence rule (Recommendation Summary + Execution Plan)
 
-> **SUPERSEDES** any "Recommendation Summary / Execution Plan require NO DB and exist only in JS State / sessionStorage" statement. Final rule:
 - **Live analysis / calculation preview** may remain **non-persisted** (transient).
 - The **scheduled / manual generated recommendation cycle persists** a `shipping_allocation_drafts` header + `_draft_lines` (canonical schema: `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6). **The persisted Draft is the SSOT** for the active cycle.
 - **Recommendation Summary** displays the persisted **system snapshot** (`recommended_qty` / `calculated_gap_qty` / `recommended_*` / `recommendation_reason`) for the active Draft when one exists (read-only).
@@ -329,9 +340,9 @@ A route list the PM builds. Canonical columns — **From / To / Qty / Method / E
 - All persistence goes through **`KM.DB` / Apps Script handlers** (`createShippingPlansBatch` = Decision Commit). No direct DOM-to-DB writes.
 - A line the PM never customized still carries `planned_qty = recommended_qty` (initialized at generation); the Recommendation Summary alone never commits.
 
-### 11.5 Expanded-row layout — REVISED (Analysis area + Decision area, CANONICAL 2026-07-22)
+### 11.5 Expanded-row layout (Analysis area + Decision area)
 
-> **SUPERSEDES the earlier v3 four-group A/B/C/D split** where "Recommendation Summary sat under Sales Trend (Group C) and Execution Plan under Achievement Rate (Group D)." The expanded row is now organized as an **Analysis area** and a **Decision area**; **Recommendation Summary sits directly ABOVE Execution Plan** (stacked, same width), and **Monthly Achievement Rate sits directly below Sales Trend** (in the Analysis area — no longer paired with Execution Plan).
+> The expanded row is organized as an **Analysis area** and a **Decision area**: **Recommendation Summary sits directly ABOVE Execution Plan** (stacked, same width), and **Monthly Achievement Rate sits directly below Sales Trend** (in the Analysis area).
 
 **Analysis area (cards):** Stock · Long Term Storage · Forecast Breakdown · Upcoming Event · Sales Trend · **Monthly Achievement Rate directly below Sales Trend**.
 
@@ -385,18 +396,34 @@ These are **UI display thresholds only**; the Days of Supply value is computed p
 
 Top-level per-SKU summary row (scope: selected Company + Country + Marketplace).
 
-| Summary field | Definition / source |
-|---------------|---------------------|
-| **Current Stock** | `Available + FC Transfer + FC Processing` (from `amazon_inventory_snapshot`) |
-| **On The Way** | Shipping Shipment Total — **pending implementation** (§9) |
-| **3rd Party Stock** | total **available stock** across eligible Overseas Warehouses (`overseas_inventory_snapshot.available_stock`, eligible warehouses only — see §16) |
-| **Avg Sales / Day** | **Primary:** `normalized_avg_sales_per_day` (latest 30 eligible normal days within a 90-completed-day source window, this SKU's event/promotion days excluded; divide by actual normal-day count) when contamination exists and enough normal days are available; **Fallback:** `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7`. **Rounded to 1 decimal.** This Avg Sales is a **Runtime calculation result** (not persisted); the adopted **source** + **warning** are frozen only at Submit Plan. Per `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 / §22.6. |
-| **60 Days FC** | `Forecast Month+1 + Forecast Month+2` (**Target Rule already applied**, §7) |
-| **Upcoming Event** | Total Event FC (`fc_special_events`, §8) |
-| **Days of Supply** | `Current Stock ÷ Avg Sales per Day` (UI color per §12) |
-| **Suggested Qty** | output from AI Suggestion (§14 / §15) |
-| **Factory CN** | `factory_stock.current_stock` where the warehouse resolves to a **CN** factory (`warehouses.country = CN`, `is_factory_warehouse = TRUE`) |
-| **Factory TW** | `factory_stock.current_stock` where the warehouse resolves to a **TW** factory (`warehouses.country = TW`, `is_factory_warehouse = TRUE`) |
+#### 13.0 Stock-quantity naming (three distinct concepts — must never be merged)
+
+`Sellable Current Stock ≠ Qualified Incoming ≠ Inventory Position ≠ Draft/Unqualified Quantity`. The first-layer top cell **currently displays the label "Current Stock"** while showing `Available + FC Transfer + FC Processing`, which is an **Inventory Position** total, not the Engine's sellable input — a known label gap:
+
+| Aspect | Value / status |
+|--------|----------------|
+| **Current Physical UI Label** | **`Current Stock`** — *Legacy / Misleading* (shows `Available + FC Transfer + FC Processing`, an Inventory Position sum) |
+| **Target Canonical UI Label** | **`Inventory Position`** |
+| **Engine Input Name** | **`Sellable Current Stock`** = currently sellable / available only (owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §8/§28) |
+| **UI-label Migration Status** | **NOT Implemented / Unverified** — the screen still reads "Current Stock"; renaming to "Inventory Position" is a future UI change (no code change in Batch A) |
+
+The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Processing, Recommendation Draft, Shipment Draft, or unqualified On-the-way. FC Transfer / FC Processing / On-the-way may offset demand only as **Qualified Incoming** when they satisfy the qualification rules owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` (exact DB status allowlist = **BLOCKED — Batch B**, `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). The Inventory Position display must never be fed to the Engine as sellable stock.
+
+**Per-field tags** — `Engine Input?` = feeds the Engine's `Sellable Current Stock`; `Qual. Req?` = must pass Qualified-Incoming qualification before it can offset demand.
+
+| Summary field | Definition / source | Engine Input? | Qual. Req? | Current / Target / Legacy |
+|---------------|---------------------|:---:|:---:|---|
+| **Inventory Position** *(screen label currently "Current Stock" — see §13.0)* | `Available + FC Transfer + FC Processing` (`amazon_inventory_snapshot`) — display total only | No | — | Current physical label = Legacy; Target label = Inventory Position |
+| **Sellable Current Stock** *(Engine input — owner Calc Rules §8/§28; not a screen column)* | destination sellable/available only; excludes FC Transfer / FC Processing / Draft / unqualified On-the-way | Yes | No | Target canonical (Engine semantics) |
+| **On The Way** | Shipping Shipment Total — **pending implementation** (§9); raw label only | No (unless qualified) | **Yes** | Current label; qualification allowlist = Batch B |
+| **3rd Party Stock** | total **available stock** across eligible Overseas Warehouses (`overseas_inventory_snapshot.available_stock`, eligible warehouses only — see §16) | Yes (sellable overseas) | No | Current |
+| **Avg Sales / Day** | **Primary:** `normalized_avg_sales_per_day` (latest 30 eligible normal days within a 90-completed-day source window, this SKU's event/promotion days excluded; divide by actual normal-day count); **Fallback:** `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7`. **Rounded to 1 decimal.** Runtime result (not persisted); adopted source + warning frozen only at Submit Plan. Owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 / §22.6. | Yes (demand rate) | — | Current |
+| **60 Days FC** | `Forecast Month+1 + Forecast Month+2` (**Target Rule already applied**, §7) | Yes (demand) | — | Current |
+| **Upcoming Event** | Total Event FC (`fc_special_events`, §8) | Yes (demand) | — | Current |
+| **Days of Supply** | `Inventory Position ÷ Avg Sales per Day` (the displayed top-cell total; UI color per §12). Engine coverage uses **Sellable Current Stock** + Qualified Incoming per the owner — the UI Days-of-Supply is not the Engine coverage. | No (display) | — | Current |
+| **Suggested Qty** *(UI label)* | Canonical meaning = **Recommended Shipping Qty**, sourced from `shipping_allocation_draft_lines.recommended_qty`, derived per Formula Owner **§2C.1 / §31** (`Calculated Gap → eligible source availability → shipment carton FLOOR`). **NOT** raw Engine A Shortage (§14/§15), **NOT** Request Order Suggested Order Qty. *(UI column still labelled "Suggested Qty"; Calculation Runtime NOT IMPLEMENTED.)* | No (recommendation) | — | Current label; Target = Recommended Shipping Qty |
+| **Factory CN** | `factory_stock.current_stock` where the warehouse resolves to a **CN** factory (`warehouses.country = CN`, `is_factory_warehouse = TRUE`) | Yes (source pool) | No | Current |
+| **Factory TW** | `factory_stock.current_stock` where the warehouse resolves to a **TW** factory (`warehouses.country = TW`, `is_factory_warehouse = TRUE`) | Yes (source pool) | No | Current |
 
 > `factory_stock` has no `company` / `factory_name`; CN/TW factory is resolved via `warehouse_id → warehouses` (per `SHIPMENT_CENTER_SPEC.md` §0). Factory stock is **physical, shared** stock (display only; not deducted here).
 
@@ -411,19 +438,26 @@ Top-level per-SKU summary row (scope: selected Company + Country + Marketplace).
 ### 14.1 Count-once / deduct-once rules (must hold)
 
 - **Upcoming Events:** each event may be counted **once only** — never double-count. An event is attributed to the single Need bucket whose window contains its **Preparation Date = Event Start Date − 30 days** (see §8.1), not its event date.
-- **On-the-Way shipments:** shipment quantity **must also be deducted** from Need, and a given shipment quantity **can only be deducted once** — never double-deduct. Earlier-arriving shipments offset the earliest unmet demand first (FIFO by ETA bucket).
+- **On-the-Way shipments:** only the **qualifying** portion (Qualified Incoming per owner v4.1 — see the §14.2 On-the-Way boundary) is **deducted** from Need, and a given shipment quantity **can only be deducted once** — never double-deduct. Earlier-arriving qualifying shipments offset the earliest unmet demand first (FIFO by ETA bucket).
 
-### 14.2 Bucket logic (direction / mapping summary — no formula here)
+### 14.2 Canonical term set (direction / mapping summary — no formula here)
 
-- Need is evaluated over the **non-overlapping exact-date buckets** `0–18 / 19–30 / 31–45 / 46–90`, each bucket taking **only its own incremental base sales demand**.
-- **Upcoming Events** are attributed to the single bucket whose window contains the event **Preparation Date = Event Start Date − 30 days** (§8.1), and each event is **counted once**.
-- **On-the-Way** shipments offset the earliest unmet demand first (FIFO by ETA bucket) and each shipment quantity is **deducted once**.
-- **Current Stock**, **On-the-Way**, and **Upcoming Event** are applied cumulatively across buckets so nothing is counted / deducted twice.
-- The engine output is the **Engine A live Demand / Shortage / Remaining Need** — a planning signal, **not** Suggested Order Qty (that exists only after Engine B reallocation → `Net Order Need`, owner §20 / §31).
+The Sales-Driven Need this page consumes and displays uses the owner's **complete** canonical term set — none of the following may be dropped or simplified here:
+
+- **Demand side:** incremental base sales demand per bucket **+ Special Event Demand** (owner §10 — 100%, counted once).
+- **Supply offsets:** **Current Stock** − **Qualified Incoming** − **Approved / Committed Supply** (all three required; never omit Approved / Committed Supply).
+
+Buckets are the **non-overlapping exact-date windows** `0–18 / 19–30 / 31–45 / 46–90`; events are attributed to the single bucket whose window contains the event **Preparation Date = Event Start Date − 30 days** (§8.1) and counted **once**; qualifying incoming is deducted **once** (FIFO by ETA). Nothing is counted or deducted twice.
+
+**UI-label boundaries (must hold):**
+- **On-the-Way** is a **UI / mapping label only**. It must **not** be treated as **Qualified Incoming** unless it satisfies the qualification, timing, status, and commitment rules owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1. Only the qualifying portion offsets Need — the raw On-the-Way total is never assumed to equal Qualified Incoming.
+- **Upcoming Event** is the **UI presentation of Special Event Demand** (a demand term) and does **not** define a separate calculation formula. It is **never** treated as supply.
+
+The engine output is the **Engine A live Demand / Shortage / Remaining Need** — a planning signal, **not** Suggested Order Qty (that exists only after Engine B reallocation → `Net Order Need`, owner §20 / §31).
 
 ### 14.3 Formula ownership
 
-> **This section owns no formula.** The authoritative Sales-Driven math — bucket ordering, count-once / deduct-once, sales run-rate, and the final remaining-demand result (min 0) — is owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1** (§2C / §20 / §26 / §29E). Any quantity displayed here maps to that owner output; this page does not define or re-derive it.
+> **This document is a UI / data-mapping consumer only.** **Current Stock, Qualified Incoming, Approved / Committed Supply, Special Event Demand, timing eligibility, shortage, reallocation, and Net Order Need are governed exclusively by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1** (§2C / §2D / §20 / §26 / §29E / §29F / §29G / §31). This section owns no formula, adds **no** simplified shortage equation, does not restore any prior v4.0 formula, and never reverses ownership onto Inventory §14/§15; any quantity displayed here maps to the owner output.
 
 ---
 
@@ -445,9 +479,9 @@ Where:
 
 ---
 
-## 16. Overseas Shared Inventory Allocation (official Supply Planning rule)
+## 16. Overseas Shared Inventory Allocation (UI / data-mapping summary)
 
-This chapter is the **official Supply Planning allocation rule**. The calculation-engine form lives in `SUPPLY_PLANNING_CALCULATION_RULES.md` §20.
+This chapter is a **UI / data-mapping summary and consumer**. The authoritative overseas allocation formula is owned **exclusively** by `SUPPLY_PLANNING_CALCULATION_RULES.md` §20; this section only maps / displays that owner output and does not own or generate the rule.
 
 **Rule 1 — Allocation Scope.** Allocate inventory **only within the same Company and same Country**. **Never** allocate across companies or across countries.
 

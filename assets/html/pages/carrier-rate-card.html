@@ -23,27 +23,72 @@
     <div class="crc-filters" id="crc-filters">
         <div class="crc-filter">
             <label>Date</label>
-            <button type="button" class="crc-input crc-date-trigger" id="crcDateTrigger" onclick="crcOpenDateModal()">
-                <span class="crc-date-trigger-text" id="crcDateTriggerText">All dates</span>
-            </button>
+            <!-- Opens the SHARED Shipment-Overview date-range modal (#frDateModal). Clear (shown only when a
+                 range is active) resets to All dates — the shared modal footer stays Cancel/Apply, so other
+                 pages that reuse #frDateModal are never affected. -->
+            <div class="crc-date-field">
+                <button type="button" class="crc-input crc-date-trigger" id="crcDateTrigger" onclick="crcOpenDateModal()">
+                    <span class="crc-date-trigger-text" id="crcDateTriggerText">All dates</span>
+                </button>
+                <button type="button" class="crc-date-clear" id="crcDateClear" onclick="crcDateClear()" title="Clear date filter (show all dates)" aria-label="Clear date filter" style="display:none;">×</button>
+            </div>
         </div>
+        <!-- Discrete-option filters are checkbox multi-selects (search + Select All + Clear), reusing the
+             SKU Details dropdown template (crcf-* mirrors skuf-*). Options are faceted/cascading; [] = All. -->
         <div class="crc-filter">
             <label>Country / Ship To</label>
-            <select id="crcFilterCountry" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
+            <div class="crcf-multi" data-filter="country">
+                <button type="button" class="crc-input crcf-trigger" id="crcCountryTrigger" onclick="crcToggleFilterPanel('country', event)" aria-haspopup="listbox" aria-expanded="false" aria-controls="crcCountryPanel">
+                    <span class="crcf-trigger__label" id="crcCountryLabel">All</span><span class="crcf-trigger__icon" aria-hidden="true">▼</span>
+                </button>
+                <div class="crcf-panel" id="crcCountryPanel" role="group" aria-label="Filter by country" hidden>
+                    <input type="text" class="crcf-search" id="crcCountrySearch" placeholder="Search…" oninput="crcOnFilterOptionSearch('country')">
+                    <div class="crcf-tools"><button type="button" class="crcf-link" onclick="crcFilterSelectAll('country')">Select All</button><button type="button" class="crcf-link" onclick="crcFilterClear('country')">Clear</button></div>
+                    <div class="crcf-list" id="crcCountryList" role="listbox" aria-multiselectable="true"></div>
+                </div>
+            </div>
         </div>
         <div class="crc-filter">
             <label>Method</label>
-            <select id="crcFilterMethod" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
+            <div class="crcf-multi" data-filter="method">
+                <button type="button" class="crc-input crcf-trigger" id="crcMethodTrigger" onclick="crcToggleFilterPanel('method', event)" aria-haspopup="listbox" aria-expanded="false" aria-controls="crcMethodPanel">
+                    <span class="crcf-trigger__label" id="crcMethodLabel">All</span><span class="crcf-trigger__icon" aria-hidden="true">▼</span>
+                </button>
+                <div class="crcf-panel" id="crcMethodPanel" role="group" aria-label="Filter by method" hidden>
+                    <input type="text" class="crcf-search" id="crcMethodSearch" placeholder="Search…" oninput="crcOnFilterOptionSearch('method')">
+                    <div class="crcf-tools"><button type="button" class="crcf-link" onclick="crcFilterSelectAll('method')">Select All</button><button type="button" class="crcf-link" onclick="crcFilterClear('method')">Clear</button></div>
+                    <div class="crcf-list" id="crcMethodList" role="listbox" aria-multiselectable="true"></div>
+                </div>
+            </div>
         </div>
         <div class="crc-filter">
             <label>Carrier</label>
-            <select id="crcFilterCarrier" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
+            <div class="crcf-multi" data-filter="carrier">
+                <button type="button" class="crc-input crcf-trigger" id="crcCarrierTrigger" onclick="crcToggleFilterPanel('carrier', event)" aria-haspopup="listbox" aria-expanded="false" aria-controls="crcCarrierPanel">
+                    <span class="crcf-trigger__label" id="crcCarrierLabel">All</span><span class="crcf-trigger__icon" aria-hidden="true">▼</span>
+                </button>
+                <div class="crcf-panel" id="crcCarrierPanel" role="group" aria-label="Filter by carrier" hidden>
+                    <input type="text" class="crcf-search" id="crcCarrierSearch" placeholder="Search…" oninput="crcOnFilterOptionSearch('carrier')">
+                    <div class="crcf-tools"><button type="button" class="crcf-link" onclick="crcFilterSelectAll('carrier')">Select All</button><button type="button" class="crcf-link" onclick="crcFilterClear('carrier')">Clear</button></div>
+                    <div class="crcf-list" id="crcCarrierList" role="listbox" aria-multiselectable="true"></div>
+                </div>
+            </div>
         </div>
         <div class="crc-filter">
             <label>Last Mile Delivery</label>
-            <select id="crcFilterLastMile" class="crc-input" onchange="crcOnFilterChange()"><option value="">All</option></select>
+            <div class="crcf-multi" data-filter="lastMile">
+                <button type="button" class="crc-input crcf-trigger" id="crcLastMileTrigger" onclick="crcToggleFilterPanel('lastMile', event)" aria-haspopup="listbox" aria-expanded="false" aria-controls="crcLastMilePanel">
+                    <span class="crcf-trigger__label" id="crcLastMileLabel">All</span><span class="crcf-trigger__icon" aria-hidden="true">▼</span>
+                </button>
+                <div class="crcf-panel" id="crcLastMilePanel" role="group" aria-label="Filter by last mile delivery" hidden>
+                    <input type="text" class="crcf-search" id="crcLastMileSearch" placeholder="Search…" oninput="crcOnFilterOptionSearch('lastMile')">
+                    <div class="crcf-tools"><button type="button" class="crcf-link" onclick="crcFilterSelectAll('lastMile')">Select All</button><button type="button" class="crcf-link" onclick="crcFilterClear('lastMile')">Clear</button></div>
+                    <div class="crcf-list" id="crcLastMileList" role="listbox" aria-multiselectable="true"></div>
+                </div>
+            </div>
         </div>
         <div class="crc-filter crc-filter--action">
+            <label aria-hidden="true">&nbsp;</label>
             <button type="button" class="crc-btn crc-btn--primary" onclick="crcSearch()">Search</button>
         </div>
     </div>
@@ -118,56 +163,8 @@
         </div>
     </div>
 
-    <!-- Date-range picker (F1) — self-contained crc- modal. Mirrors Forecast Review's interaction
-         contract (preset list + two month calendars + staged temp state committed on Apply) but uses
-         its OWN crc- IDs / crc- state / crc- CSS. Does NOT reuse #frDateModal or forecastReviewState. -->
-    <div class="crc-date-backdrop" id="crcDateBackdrop" onclick="crcCloseDateModal()"></div>
-    <div class="crc-date-modal" id="crcDateModal" role="dialog" aria-modal="true" aria-label="Select date range">
-        <div class="crc-date-modal-body">
-            <!-- Presets -->
-            <div class="crc-date-sidebar">
-                <div class="crc-preset-item" data-preset="last-7-days" onclick="crcPresetClick('last-7-days')">Last 7 days</div>
-                <div class="crc-preset-item" data-preset="last-30-days" onclick="crcPresetClick('last-30-days')">Last 30 days</div>
-                <div class="crc-preset-item" data-preset="last-90-days" onclick="crcPresetClick('last-90-days')">Last 90 days</div>
-                <div class="crc-preset-divider"></div>
-                <div class="crc-preset-item" data-preset="custom" onclick="crcPresetClick('custom')">Custom</div>
-            </div>
-            <!-- Calendars -->
-            <div class="crc-date-content">
-                <div class="crc-date-inputs">
-                    <div class="crc-date-input-group">
-                        <label>Start</label>
-                        <input type="text" class="crc-date-input" id="crcStartDisplay" readonly placeholder="YYYY-MM-DD">
-                    </div>
-                    <div class="crc-date-input-group">
-                        <label>End</label>
-                        <input type="text" class="crc-date-input" id="crcEndDisplay" readonly placeholder="YYYY-MM-DD">
-                    </div>
-                </div>
-                <div class="crc-calendars">
-                    <div class="crc-calendar">
-                        <div class="crc-calendar-header">
-                            <button type="button" class="crc-calendar-nav" data-nav="prev-start" onclick="crcCalNav('prev-start')" aria-label="Previous month">‹</button>
-                            <span class="crc-calendar-title" id="crcCalendarStartTitle"></span>
-                            <button type="button" class="crc-calendar-nav" data-nav="next-start" onclick="crcCalNav('next-start')" aria-label="Next month">›</button>
-                        </div>
-                        <div class="crc-calendar-body" id="crcCalendarStartBody"></div>
-                    </div>
-                    <div class="crc-calendar">
-                        <div class="crc-calendar-header">
-                            <button type="button" class="crc-calendar-nav" data-nav="prev-end" onclick="crcCalNav('prev-end')" aria-label="Previous month">‹</button>
-                            <span class="crc-calendar-title" id="crcCalendarEndTitle"></span>
-                            <button type="button" class="crc-calendar-nav" data-nav="next-end" onclick="crcCalNav('next-end')" aria-label="Next month">›</button>
-                        </div>
-                        <div class="crc-calendar-body" id="crcCalendarEndBody"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="crc-date-modal-footer">
-            <button type="button" class="crc-date-btn crc-date-btn--clear" onclick="crcDateClear()">Clear</button>
-            <button type="button" class="crc-date-btn crc-date-btn--cancel" onclick="crcCloseDateModal()">Cancel</button>
-            <button type="button" class="crc-date-btn crc-date-btn--apply" onclick="crcDateApply()">Apply</button>
-        </div>
-    </div>
+    <!-- Date-range picker (F1) now REUSES the shared Shipment-Overview modal (#frDateModal in index.html)
+         via the crc* controllers in carrier-rate-card.js — the self-contained crc- modal was removed
+         2026-07-28. Trigger: #crcDateTrigger (opens the shared modal); Clear: the #crcDateClear toolbar
+         button above. The rate-card query (crcDateMatch / _crcReadFilters / search) is unchanged. -->
 </section>

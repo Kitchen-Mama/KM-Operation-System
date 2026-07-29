@@ -104,7 +104,7 @@ function handleConfirmShipmentAndDispatch_(body) {
     if (!sc('reference_id')) missing.push('Reference ID');
     if (!sc('warehouse_code')) missing.push('Warehouse Code');
     if (!sc('carrier_id')) missing.push('Carrier');
-    if (!sc('shipping_method') && !sc('shipping_method_label')) missing.push('Shipping Method');
+    if (!sc('shipping_method')) missing.push('Shipping Method');   // CODE only (shipping_method_label retired 2026-07-28)
     if (!sc('etd')) missing.push('ETD');
     if (!sc('eta')) missing.push('ETA');
     if (csdNum_(sc('shipment_total_qty')) <= 0 && csdNum_(sc('total_qty')) <= 0) missing.push('Total Qty');

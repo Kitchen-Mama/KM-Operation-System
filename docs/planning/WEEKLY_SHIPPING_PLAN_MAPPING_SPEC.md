@@ -135,21 +135,34 @@ When the user clicks **Submit Plan** in Inventory Replenishment, the system crea
 
 ### 3.1 Shipping Plan Group Key (authoritative system rule)
 
-A Shipping Plan is **uniquely grouped by the following six values**:
+**AMENDED 2026-07-28 (Combined-Marketplace Plan):** a Shipping Plan is grouped by the **ROUTE key (five values)** — **Marketplace is NOT part of the group key** so one plan may **combine several Marketplaces**:
 
 1. **Company**
 2. **Country**
-3. **Marketplace**
-4. **Ship From**
-5. **Destination**
-6. **Shipping Method**
+3. **Ship From**
+4. **Destination**
+5. **Shipping Method**
 
-- **Only when ALL six values are identical** may SKUs belong to the **same** `shipping_plan`.
-- **If any one of the six differs, a new `shipping_plan` is created.**
-- This is the **official system grouping rule** and supersedes the earlier "one shipping method = one plan" wording (shipping method is now just one of the six keys).
+- **Only when ALL five route values are identical** may SKUs belong to the **same** `shipping_plan`. If any one differs, a new `shipping_plan` is created.
+- **`shipping_plans.marketplace` is DERIVED from the plan's lines:** exactly one distinct line marketplace → the **actual** Marketplace; **two or more** distinct → **`MULTI`** (a header **scope marker**, not a real Marketplace). To display the real marketplaces of a `MULTI` plan, read the DISTINCT `shipping_plan_lines.marketplace` — never render `MULTI` as an actual marketplace.
+- **`shipping_plan_lines` keeps each line's REAL `marketplace` + `site_sku`** (the site SKU for that marketplace). A Combined Plan **NEVER merges Marketplace lines in the DB** — the same SKU across two marketplaces persists as two lines; the UI MAY aggregate to a Master-SKU parent row with per-site child rows, but the DB keeps them separate.
+- This supersedes the earlier "six-value key (incl. Marketplace)" wording; Marketplace moved from a group key to a derived header scope.
 - Each `shipping_plan` owns its own `shipping_plan_lines`.
 
-> The six group-key values are persisted on `shipping_plans` as `company`, `country`, `marketplace`, `ship_from`, `destination`, `shipping_method` (§4). `ship_from` / `destination` / `shipping_method` come from the **Execution Plan route** the PM built (future default source: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md` §5A) — until route rules are implemented they are whatever the PM entered on the Execution Plan route (blank counts as a distinct value).
+> The route group-key values are persisted on `shipping_plans` as `company`, `country`, `ship_from`, `destination`, `shipping_method` (§4); `marketplace` is the derived header scope (actual / `MULTI`). `ship_from` / `destination` / `shipping_method` come from the **Execution Plan route** the PM built (future default source: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md` §5A) — until route rules are implemented they are whatever the PM entered on the Execution Plan route (blank counts as a distinct value). The plan also snapshots the chosen `carrier_id` + rough `carrier_unit_rate` / `carrier_rate_type` / `import_duty_treatment` + `estimated_freight_cost` / `estimated_duty` / `estimated_customs_fee` / `estimated_total_cost` (Phase-1 rough quote; blank = Not Applied, never 0). Warehouse endpoints add `source_warehouse_id` / `ship_from_type` / `destination_warehouse_id` / `destination_type` alongside the human-readable `ship_from` / `destination`.
+
+### 3.1A Two-Layer Plan + Rate Matcher + Combined Plan (2026-07-28 runtime)
+
+**Unified Rate Matcher (shared, `17_carrier_handlers.gs` `shippingRateMatch_`)** — three modes, all matching on **CODE / ID only** (never Label / Name):
+- **recommendation** — active + effective + origin/destination country + battery scope; `shipping_method` / `last_mile_delivery` / `customs_type` are the OUTPUT. Used by the Inventory Replenishment **Execution Plan Method Recommendation** (`getShippingMethodCandidates`) — **read-only, persists nothing** (no `carrier_id` / `rate_card_id` / `carrier_unit_rate` / `customs_type`; Shipping Allocation Draft NOT touched). Execution Plan only *recommends* a transport method.
+- **rough** — recommendation set + `shipping_method` + `last_mile_delivery` + `customs_type`. Weekly Plan Layer-2 candidates (`getWeeklyPlanRateCandidates`). If more than one card qualifies, the **user chooses** (`selectShippingPlanCarrier`) — the engine **never auto-selects / never auto-cheapest / never auto-first**.
+- **exact** — rough set + `carrier_id` + city / postal / `destination_warehouse_code` / `marketplace`. Shipment Draft only (§4 exact).
+
+**Layer 1 — Plan Rationale** (`updateShippingPlanRationale`): the plan stores `shipping_method` + `last_mile_delivery` + `customs_type` (CODES; display resolved at render). Changing any Layer-1 code (or a warehouse endpoint) **clears** `carrier_id` / `carrier_unit_rate` / `carrier_rate_type` / `import_duty_treatment` / `estimated_*` / `currency` and bumps `plan_version` (re-quote required). `customs_type` = export-side customs arrangement only — it **never** decides Duty.
+
+**Layer 2 — Carrier & Cost** (`selectShippingPlanCarrier`): snapshots the chosen candidate's `carrier_id` / `unit_rate`→`carrier_unit_rate` / `charge_type`→`carrier_rate_type` / `import_duty_treatment` / `currency` and computes Phase-1 cost. **`rate_card_id` is NOT stored on the plan** (resolved later at Shipment exact match). `carrier_name` is **never stored** — resolve `carrier_id → carriers.carrier_name` at render.
+
+**Combined Plan** (`combineShippingPlans` / `uncombineShippingPlans`): uses the existing `parent_shipping_plan_id` (a normal plan = its own parent; a **child** points at the Combined **Parent**; a Parent is referenced by ≥1 child and owns **no** lines of its own). **Eligibility:** all `status=draft`, same `company` / `country` / `source_warehouse_id` / `destination_warehouse_id` / `ship_from_type` / `destination_type`, `currency` same-or-blank, not transferred / cancelled / already-child / already-parent (no nested combine). **Marketplace may differ.** **Effective Lines** = the Parent's children's lines (a normal plan = its own lines) — read **once**, never Parent-direct + child together (no double count). Parent `marketplace` derives from effective lines (actual / `MULTI`; UI shows the DISTINCT real marketplaces of a `MULTI`). Child plans **cannot** submit / approve / cancel / transfer independently — the Parent is the unit; **Shipment transfer uses the Parent's effective lines**. Combine / uncombine / any line-qty change bumps `plan_version`, clears carrier + cost, and re-derives Method / Customs / Carrier candidates; **Totals recompute wholly from Effective Lines** (never old-total + delta). **Combined exact rate:** a MULTI shipment needs ONE rate card that applies to the whole shipment (blank-marketplace card); if only per-marketplace cards exist → **Split Shipment** required (never average / merge cards).
 
 **Example (same Company/Country/Marketplace/Ship From/Destination, differing only by Method):**
 ```

@@ -19,15 +19,17 @@
 // and sheetEnsureColumns_ from the shared global scope. Table auto-creates with the documented header.
 // ============================================================
 
-// Canonical carrier_rate_cards header (v1.4 — NO transit_days; Lead Time lives in carrier_lead_times).
+// Canonical carrier_rate_cards header (2026-07-28 DB sync — adds import_duty_treatment; NO transit_days;
+// Lead Time lives in carrier_lead_times). import_duty_treatment sits after customs_type_label; note moves
+// after status (canonical order).
 var CARRIER_RATE_CARDS_HEADERS_ = [
   'rate_card_id', 'carrier_id', 'origin_country', 'origin_city', 'destination_country', 'destination_city',
   'destination_postal_code_start', 'destination_postal_code_end', 'destination_warehouse_code',
   'marketplace', 'shipping_method', 'last_mile_delivery', 'shipping_method_label', 'charge_type', 'charge_unit', 'dim_divisor',
   'min_box_weight', 'min_box_weight_unit', 'weight_tier', 'weight_tier_unit',
   'currency', 'unit_rate', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee',
-  'transit_type', 'battery_type', 'customs_type', 'customs_type_label', 'note',
-  'effective_from', 'effective_to', 'status', 'source_file_name', 'import_batch_id',
+  'transit_type', 'battery_type', 'customs_type', 'customs_type_label', 'import_duty_treatment',
+  'effective_from', 'effective_to', 'status', 'note', 'source_file_name', 'import_batch_id',
   'created_at', 'updated_at'
 ];
 
@@ -35,13 +37,16 @@ var CARRIER_RATE_CARDS_HEADERS_ = [
 var CRC_CHARGE_TYPES_ = { weight: 1, volume: 1, container: 1, shipment: 1, carton: 1 };
 var CRC_CHARGE_UNITS_ = { kg: 1, lb: 1, cbm: 1, '20gp': 1, '40hq': 1, shipment: 1, carton: 1 };
 var CRC_STATUSES_ = { active: 1, inactive: 1 };
+// import_duty_treatment enum. Blank is a VALID stored state = "needs data completion" (never auto-derived
+// from customs_type; a blank must never be treated as a known cross-border result).
+var CRC_IMPORT_DUTY_TREATMENTS_ = { included_in_rate: 1, excluded_in_rate: 1 };
 // Columns that MUST NOT appear in a Carrier Rate Template (Lead Time is maintained separately).
 var CRC_FORBIDDEN_COLS_ = ['transit_days', 'min_days', 'max_days', 'avg_days', 'lead_time_id'];
 
 // Update-Template EDITABLE fields on EXISTING rows (everything else stored is LOCKED).
 // NOTE: min_charge is editable per the Carrier Update UI task (Part C/D) — extends §4C.3A (which had it
 // locked); keep the Update template's editable set and this list in sync.
-var CRC_UPDATE_EDITABLE_ = { unit_rate: 1, min_charge: 1, effective_from: 1, effective_to: 1, fuel_surcharge: 1, customs_fee: 1, doc_fee: 1, status: 1, note: 1 };
+var CRC_UPDATE_EDITABLE_ = { unit_rate: 1, min_charge: 1, effective_from: 1, effective_to: 1, fuel_surcharge: 1, customs_fee: 1, doc_fee: 1, import_duty_treatment: 1, status: 1, note: 1 };
 // Stored data columns that are LOCKED on existing rows in 'update' mode (identity / route / method / structure).
 var CRC_LOCKED_COLS_ = [
   'carrier_id', 'origin_country', 'origin_city', 'destination_country', 'destination_city',
@@ -123,6 +128,8 @@ function handleImportCarrierRateCards_(body) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'carrier_rate_cards', CARRIER_RATE_CARDS_HEADERS_);
+  // Additive migration on tabs that predate the canonical column (no reorder, no data shift, no dup).
+  sheetEnsureColumns_(sh, ['import_duty_treatment']);
 
   // Known carriers (validation + carrier_name → carrier_id resolution). We NEVER create carriers here —
   // the carrier master is maintained separately (avoid polluting it with typos / inconsistent names).
@@ -263,6 +270,9 @@ function handleImportCarrierRateCards_(body) {
       if (efCheck && etCheck && efCheck > etCheck) updErrors.push('effective_from > effective_to');
       if (writable.status && row.hasOwnProperty('status') && crcNorm_(row.status) !== '' && !CRC_STATUSES_[crcLower_(row.status)]) updErrors.push('status invalid (active/inactive)');
       if (writable.unit_rate && row.hasOwnProperty('unit_rate') && crcNorm_(row.unit_rate) !== '' && !crcIsNum_(row.unit_rate)) updErrors.push('unit_rate is not numeric');
+      // import_duty_treatment: only the two enum values are accepted; blank is allowed (data-completion
+      // state). NEVER auto-derived from customs_type.
+      if (writable.import_duty_treatment && row.hasOwnProperty('import_duty_treatment') && crcNorm_(row.import_duty_treatment) !== '' && !CRC_IMPORT_DUTY_TREATMENTS_[crcLower_(row.import_duty_treatment)]) updErrors.push('import_duty_treatment invalid (included_in_rate/excluded_in_rate)');
       if (updErrors.length) { rejected++; errors.push({ row: rowNo, message: 'rate_card_id ' + rateCardId + ': ' + updErrors.join('; ') }); continue; }
 
       function setCell(name, value) { var c = hcol(name); if (c !== -1) sh.getRange(target.rowIndex, c + 1).setValue(value); }
@@ -277,6 +287,7 @@ function handleImportCarrierRateCards_(body) {
           setCell(f, crcIsNum_(raw) ? parseFloat(raw) : (crcNorm_(raw) === '' ? '' : crcNorm_(raw)));
         }
         else if (f === 'charge_type') { setCell(f, crcLower_(raw)); }
+        else if (f === 'import_duty_treatment') { setCell(f, crcLower_(raw)); }   // enum lowercased; blank stays blank
         else { setCell(f, crcNorm_(raw)); }
       });
       setCell('updated_at', now);
@@ -331,6 +342,9 @@ function handleImportCarrierRateCards_(body) {
     if (ef === null || ef === '') rowErrors.push('effective_from is not a valid date');
     if (et === null) rowErrors.push('effective_to is not a valid date');   // '' (blank) is allowed — open-ended
     if (ef && et && ef > et) rowErrors.push('effective_from > effective_to');
+    // import_duty_treatment: enum-only when present; blank allowed (needs-data-completion). NEVER derived.
+    var importDutyTreatment = crcLower_(row.import_duty_treatment);
+    if (importDutyTreatment && !CRC_IMPORT_DUTY_TREATMENTS_[importDutyTreatment]) rowErrors.push('import_duty_treatment invalid (included_in_rate/excluded_in_rate)');
 
     if (rowErrors.length) { rejected++; errors.push({ row: rowNo, message: rowErrors.join('; ') }); continue; }
 
@@ -367,6 +381,8 @@ function handleImportCarrierRateCards_(body) {
       // Localized customs Label — canonical enum→Label derivation (row override honored if present). Mirrors
       // shipping_method_label as display metadata; shipments snapshot copies this at Execution Commit.
       customs_type_label: crcNorm_(row.customs_type_label) || customsTypeLabel_(row.customs_type),
+      // import_duty_treatment: stored EXACTLY as provided (enum or blank). NEVER auto-derived from customs_type.
+      import_duty_treatment: importDutyTreatment,
       note: crcNorm_(row.note),
       effective_from: ef,
       effective_to: et,
@@ -380,6 +396,27 @@ function handleImportCarrierRateCards_(body) {
     // carrier_id authoritative over carrier_name — surface a warning (not a silent overwrite) on mismatch.
     if (carrierRes.warning) warnings.push({ row: rowNo, carrier_id: carrierId, message: carrierRes.warning });
   }
+
+  // DATA-QUALITY (2026-07-28): carrier_rate_cards keeps shipping_method_label / customs_type_label as DISPLAY
+  // metadata ONLY — they are NEVER a matching key (matching uses carrier_id + shipping_method + last_mile_delivery
+  // + customs_type CODES). If one CODE carries inconsistent labels across the batch, warn — the codes are the
+  // SAME method / customs type, not different ones.
+  (function () {
+    function scan(codeField, labelField, kind) {
+      var seen = {};
+      for (var i = 0; i < rows.length; i++) {
+        var code = crcLower_(rows[i] && rows[i][codeField]); if (!code) continue;
+        var label = crcNorm_(rows[i] && rows[i][labelField]); if (!label) continue;
+        (seen[code] = seen[code] || {})[label] = 1;
+      }
+      Object.keys(seen).forEach(function (code) {
+        var labels = Object.keys(seen[code]);
+        if (labels.length > 1) warnings.push({ data_quality: kind, code: code, message: 'Code "' + code + '" has inconsistent ' + labelField + ' values (' + labels.join(' | ') + ') — SAME ' + kind + ', not different types; labels are display-only and are NOT a matching key.' });
+      });
+    }
+    scan('shipping_method', 'shipping_method_label', 'shipping_method');
+    scan('customs_type', 'customs_type_label', 'customs_type');
+  })();
 
   return jsonResponse_({
     success: true,
@@ -409,6 +446,339 @@ function crcMasterWritableForExisting_(row) {
     w[key] = 1;
   });
   return w;
+}
+
+// ============================================================
+// Shipping Cost + Rate-Card Matching Engine (Phase 1). Shared global scope — used by
+//   11_shipping_plan_handlers.gs (Weekly Plan ROUGH estimate) and
+//   12_shipment_handlers.gs   (Shipment Draft EXACT match).
+// Phase 1 Estimated Cost = Freight (+ fuel_surcharge%) + Customs Fee (ONCE) + Duty (series-based).
+//   • doc_fee is stored on the rate card but is NOT added to Phase 1 total (and no Estimated Doc Fee col).
+//   • Overseas warehouse → FBA (no carrier rate system yet) → Not Applied: every estimated_* stays BLANK
+//     (never 0 — 0 would read as "free"). detected via a warehouse-code/route lacking a rate candidate.
+//   • customs_type NEVER decides duty; import_duty_treatment does. A blank import_duty_treatment = unknown
+//     → duty Not Applied (blank), never silently 0.
+// Reads are all missing-tab/column/row safe; nothing here throws into the Submit / Approval flow.
+// ============================================================
+
+function shippingCostNum_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function shippingCostLower_(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+function shippingCostRound_(v, d) { var f = Math.pow(10, d); return Math.round((parseFloat(v) || 0) * f) / f; }
+
+// Battery class for a set of SKUs: 'lithium_battery' if ANY sku is a lithium battery (whole shipment is
+// then quoted with the lithium candidate), else '' (non-lithium). Reads sku_details.battery_type.
+function shippingBatteryClass_(ss, skus) {
+  var sh = ss.getSheetByName('sku_details');
+  if (!sh) return '';
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return '';
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var cSku = h.indexOf('sku'), cBat = h.indexOf('battery_type');
+  if (cSku === -1 || cBat === -1) return '';
+  var want = {}; (skus || []).forEach(function (s) { want[String(s || '').trim().toLowerCase()] = 1; });
+  for (var i = 1; i < data.length; i++) {
+    var s = String(data[i][cSku] || '').trim().toLowerCase();
+    if (!want[s]) continue;
+    if (shippingCostLower_(data[i][cBat]).indexOf('lithium') !== -1) return 'lithium_battery';
+  }
+  return '';
+}
+
+// Read carrier_rate_cards as row objects (missing-safe). Returns [] when tab/header absent.
+function shippingReadRateCards_(ss) {
+  var sh = ss.getSheetByName('carrier_rate_cards');
+  if (!sh) return [];
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var h = data[0].map(function (x) { return String(x).trim(); });
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var o = {}; for (var c = 0; c < h.length; c++) o[h[c]] = data[i][c];
+    out.push(o);
+  }
+  return out;
+}
+
+// Active + effective-date filter for a rate card at quoteDate (yyyy-mm-dd). Blank effective_to = open.
+function shippingRateActive_(rc, quoteDate) {
+  if (shippingCostLower_(rc.status) !== 'active') return false;
+  var q = String(quoteDate || '').trim();
+  var ef = String(rc.effective_from || '').trim();
+  var et = String(rc.effective_to || '').trim();
+  if (ef && q && ef > q) return false;
+  if (et && q && et < q) return false;
+  return true;
+}
+
+/**
+ * UNIFIED Rate Matcher (single shared service — no per-page duplication). All matching uses CODE / ID,
+ * never Label / Name. criteria = {
+ *   mode: 'recommendation' | 'rough' | 'exact',
+ *   originCountry, destinationCountry, batteryType, quoteDate,           // all modes
+ *   shippingMethod, lastMile, customsType,                              // rough + exact
+ *   carrierId, originCity, destinationCity, destinationPostalCode,      // exact
+ *   destinationWarehouseCode, marketplace                              // exact
+ * }
+ *   recommendation → status=active + effective + origin_country + destination_country + battery. method /
+ *                    last_mile / customs are the OUTPUT (not filters). Used by Execution Plan + Weekly L1.
+ *   rough          → recommendation set + shipping_method + last_mile_delivery + customs_type. (City / postal
+ *                    / warehouse / marketplace / weight-tier NOT required — Weekly Plan rough.)
+ *   exact          → rough set + carrier_id + city/postal/warehouse_code/marketplace (each: match or the card
+ *                    leaves it blank = applies broadly). Shipment Draft precise match.
+ * Battery: a lithium shipment (batteryType='lithium_battery') requires battery_type=lithium_battery cards;
+ * a non-lithium shipment skips lithium-only cards (uses blank/non-lithium cards — never invents an enum).
+ * Returns an array sorted newest effective_from first.
+ */
+function shippingRateMatch_(ss, criteria) {
+  var cr = criteria || {};
+  var mode = String(cr.mode || 'rough').trim();
+  function eqi(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
+  function cardHas(rc, f) { return String(rc[f] == null ? '' : rc[f]).trim() !== ''; }
+  var wantLithium = shippingCostLower_(cr.batteryType) === 'lithium_battery';
+  var cards = shippingReadRateCards_(ss).filter(function (rc) {
+    if (!shippingRateActive_(rc, cr.quoteDate)) return false;
+    if (cr.originCountry && !eqi(rc.origin_country, cr.originCountry)) return false;
+    if (cr.destinationCountry && !eqi(rc.destination_country, cr.destinationCountry)) return false;
+    var rcBat = shippingCostLower_(rc.battery_type);
+    if (wantLithium) { if (rcBat !== 'lithium_battery') return false; }
+    else { if (rcBat === 'lithium_battery') return false; }
+    if (mode === 'recommendation') return true;   // method/last_mile/customs are OUTPUT here
+    if (cr.shippingMethod && !eqi(rc.shipping_method, cr.shippingMethod)) return false;
+    if (cr.lastMile && !eqi(rc.last_mile_delivery, cr.lastMile)) return false;
+    if (cr.customsType && cardHas(rc, 'customs_type') && !eqi(rc.customs_type, cr.customsType)) return false;
+    if (mode !== 'exact') return true;
+    // exact-only precise filters (a blank card field = broad applicability, not a mismatch)
+    if (cr.carrierId && !eqi(rc.carrier_id, cr.carrierId)) return false;
+    if (cr.originCity && cardHas(rc, 'origin_city') && !eqi(rc.origin_city, cr.originCity)) return false;
+    if (cr.destinationCity && cardHas(rc, 'destination_city') && !eqi(rc.destination_city, cr.destinationCity)) return false;
+    if (cr.marketplace && String(cr.marketplace).trim().toUpperCase() !== 'MULTI' && cardHas(rc, 'marketplace') && !eqi(rc.marketplace, cr.marketplace)) return false;
+    if (cr.destinationWarehouseCode && cardHas(rc, 'destination_warehouse_code') && !eqi(rc.destination_warehouse_code, cr.destinationWarehouseCode)) return false;
+    var pc = String(cr.destinationPostalCode || '').trim();
+    var ps = String(rc.destination_postal_code_start || '').trim(), pe = String(rc.destination_postal_code_end || '').trim();
+    if (pc && ps && pe && !(pc >= ps && pc <= pe)) return false;
+    return true;
+  });
+  cards.sort(function (a, b) { return String(b.effective_from || '').localeCompare(String(a.effective_from || '')); });
+  return cards;
+}
+
+// Back-compat wrapper (existing callers pass a boolean `exact`). Delegates to the unified matcher.
+function shippingMatchRateCards_(ss, criteria, exact) {
+  var cr = {}; for (var k in (criteria || {})) if (criteria.hasOwnProperty(k)) cr[k] = criteria[k];
+  cr.mode = exact ? 'exact' : 'rough';
+  return shippingRateMatch_(ss, cr);
+}
+
+// Recommendation-mode Method candidates: DISTINCT { shipping_method, last_mile_delivery } combos available
+// for the origin/destination country + battery scope. Label is NEVER included (display resolved at render).
+function shippingMethodCandidates_(ss, criteria) {
+  var cards = shippingRateMatch_(ss, {
+    mode: 'recommendation', originCountry: criteria.originCountry, destinationCountry: criteria.destinationCountry,
+    batteryType: criteria.batteryType, quoteDate: criteria.quoteDate
+  });
+  var seen = {}, out = [];
+  cards.forEach(function (rc) {
+    var m = String(rc.shipping_method || '').trim(); if (!m) return;
+    var lm = String(rc.last_mile_delivery || '').trim();
+    var key = m.toLowerCase() + '||' + lm.toLowerCase();
+    if (seen[key]) return; seen[key] = 1;
+    out.push({ shipping_method: m, last_mile_delivery: lm });
+  });
+  return out;
+}
+
+// DISTINCT last_mile_delivery values compatible with a chosen shipping_method (recommendation cascade).
+function shippingLastMileCandidates_(ss, criteria) {
+  var out = [], seen = {};
+  shippingMethodCandidates_(ss, criteria).forEach(function (c) {
+    if (criteria.shippingMethod && c.shipping_method.toLowerCase() !== String(criteria.shippingMethod).trim().toLowerCase()) return;
+    var lm = c.last_mile_delivery; var k = lm.toLowerCase(); if (seen[k]) return; seen[k] = 1; out.push(lm);
+  });
+  return out;
+}
+
+// DISTINCT customs_type CODES available for a chosen method+last_mile (rough scope). Codes only — the UI
+// dictionary renders the 中文 label; the customs_type is NEVER used to decide duty.
+function shippingCustomsCandidates_(ss, criteria) {
+  var cards = shippingRateMatch_(ss, {
+    mode: 'rough', originCountry: criteria.originCountry, destinationCountry: criteria.destinationCountry,
+    batteryType: criteria.batteryType, quoteDate: criteria.quoteDate,
+    shippingMethod: criteria.shippingMethod, lastMile: criteria.lastMile
+  });
+  var seen = {}, out = [];
+  cards.forEach(function (rc) { var c = String(rc.customs_type || '').trim(); if (!c || seen[c.toLowerCase()]) return; seen[c.toLowerCase()] = 1; out.push(c); });
+  return out;
+}
+
+// carrier_id → carrier_name (read-only). carrier_name is NEVER stored on plans / shipments / rate_cards —
+// it is resolved live from the carriers master at display/candidate time.
+function shippingCarrierNameById_(ss, carrierId) {
+  var id = String(carrierId || '').trim(); if (!id) return '';
+  var sh = ss.getSheetByName('carriers'); if (!sh) return '';
+  var d = sh.getDataRange().getValues(); if (d.length < 2) return '';
+  var h = d[0].map(function (x) { return String(x).trim(); });
+  var ci = h.indexOf('carrier_id'), cn = h.indexOf('carrier_name');
+  if (ci === -1) return '';
+  for (var i = 1; i < d.length; i++) { if (String(d[i][ci]).trim() === id) return cn === -1 ? '' : String(d[i][cn] == null ? '' : d[i][cn]).trim(); }
+  return '';
+}
+
+// Rough rate CANDIDATES for Weekly Plan L2 (the user PICKS — never auto-selected / never auto-cheapest).
+// Each exposes carrier + charge structure + rate + import_duty_treatment. rate_card_id is a TRANSIENT
+// reference for the follow-up select call ONLY (it is NOT persisted on the plan). carrier_name resolved live.
+function shippingRoughRateCandidates_(ss, criteria) {
+  var cards = shippingRateMatch_(ss, {
+    mode: 'rough', originCountry: criteria.originCountry, destinationCountry: criteria.destinationCountry,
+    batteryType: criteria.batteryType, quoteDate: criteria.quoteDate,
+    shippingMethod: criteria.shippingMethod, lastMile: criteria.lastMile, customsType: criteria.customsType
+  });
+  return cards.map(function (rc) {
+    return {
+      rate_card_id: String(rc.rate_card_id || '').trim(),   // transient reference for selectCarrier (NOT persisted)
+      carrier_id: String(rc.carrier_id || '').trim(),
+      carrier_name: shippingCarrierNameById_(ss, rc.carrier_id),
+      charge_type: String(rc.charge_type || '').trim(),
+      charge_unit: String(rc.charge_unit || '').trim(),
+      unit_rate: shippingCostNum_(rc.unit_rate),
+      min_charge: (rc.min_charge === '' || rc.min_charge == null) ? '' : shippingCostNum_(rc.min_charge),
+      fuel_surcharge: (rc.fuel_surcharge === '' || rc.fuel_surcharge == null) ? '' : shippingCostNum_(rc.fuel_surcharge),
+      customs_fee: (rc.customs_fee === '' || rc.customs_fee == null) ? '' : shippingCostNum_(rc.customs_fee),
+      import_duty_treatment: String(rc.import_duty_treatment || '').trim(),
+      customs_type: String(rc.customs_type || '').trim(),
+      currency: String(rc.currency || '').trim()
+    };
+  });
+}
+
+// ---- READ handler: Method / Last-Mile / Customs candidates (Execution Plan recommendation + Weekly L1 cascade)
+/**
+ * Body: { origin_country?, destination_country?, country?, planning_date?, skus?: [ ... ],
+ *         shipping_method?, last_mile_delivery? }
+ * Returns { battery_class, methods: [ { shipping_method, last_mile_delivery } ],
+ *           last_miles: [ ... ] (when shipping_method given),
+ *           customs_types: [ ... ] (when shipping_method + last_mile_delivery given) }.
+ * READ-ONLY: no persistence, no carrier/rate selection, no shipping_allocation_drafts. Codes only (display
+ * text resolved at render). Used by Inventory Replenishment Execution Plan (methods) AND Weekly Plan L1.
+ */
+function handleGetShippingMethodCandidates_(body) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var destCountry = String((body && (body.destination_country || body.country)) || '').trim();
+  var criteria = {
+    originCountry: String((body && body.origin_country) || '').trim(),
+    destinationCountry: destCountry,
+    quoteDate: String((body && body.planning_date) || '').trim(),
+    batteryType: shippingBatteryClass_(ss, (body && body.skus) || []),
+    shippingMethod: String((body && body.shipping_method) || '').trim(),
+    lastMile: String((body && body.last_mile_delivery) || '').trim()
+  };
+  var data = {
+    battery_class: criteria.batteryType || 'non_lithium',
+    methods: shippingMethodCandidates_(ss, criteria)
+  };
+  if (criteria.shippingMethod) data.last_miles = shippingLastMileCandidates_(ss, criteria);
+  if (criteria.shippingMethod && criteria.lastMile) data.customs_types = shippingCustomsCandidates_(ss, criteria);
+  return jsonResponse_({ success: true, data: data });
+}
+
+/**
+ * Freight for ONE rate card given the shipment measures { grossWeightKg, cbm, cartons }.
+ * base by charge_type/charge_unit (weight kg/lb, volume cbm, carton, shipment; container = per-shipment
+ * unit_rate as a Phase-1 rough, container-count not modelled), floored by min_charge; fuel = base ×
+ * fuel_surcharge/100 (a percentage — 15 means 15%, never a flat 15). Returns { base, fuel, freight }.
+ */
+function shippingFreight_(rc, measures) {
+  var m = measures || {};
+  var rate = shippingCostNum_(rc.unit_rate);
+  var ct = shippingCostLower_(rc.charge_type), cu = shippingCostLower_(rc.charge_unit);
+  var base = 0;
+  if (ct === 'weight') {
+    var w = shippingCostNum_(m.grossWeightKg);
+    if (cu === 'lb') w = w * 2.20462;
+    base = rate * w;
+  } else if (ct === 'volume') {
+    base = rate * shippingCostNum_(m.cbm);
+  } else if (ct === 'carton') {
+    base = rate * shippingCostNum_(m.cartons);
+  } else if (ct === 'shipment' || ct === 'container') {
+    base = rate;   // per-shipment (container count not modelled in Phase 1 rough)
+  } else {
+    base = rate;   // unknown charge_type → treat as per-shipment
+  }
+  var minCharge = shippingCostNum_(rc.min_charge);
+  if (minCharge > 0 && base < minCharge) base = minCharge;
+  var fuelPct = shippingCostNum_(rc.fuel_surcharge);   // percentage value
+  var fuel = base * fuelPct / 100;
+  return { base: shippingCostRound_(base, 2), fuel: shippingCostRound_(fuel, 2), freight: shippingCostRound_(base + fuel, 2) };
+}
+
+// Customs fee = the rate card's per-shipment customs_fee, charged ONCE. Never × qty / lines / cartons /
+// marketplaces. Blank/0 → 0.
+function shippingCustomsFee_(rc) { return shippingCostRound_(shippingCostNum_(rc && rc.customs_fee), 2); }
+
+// Duty via the Tax SSOT. import_duty_treatment:
+//   included_in_rate → 0 (never double-added).
+//   excluded_in_rate → Σ over lines of declared_value × duty_rate, resolved by sku_details.series →
+//                      tax_referral_rates (series + duty_country [+ origin] + effective window).
+//   blank/unknown    → '' (Not Applied — never silently 0).
+// lines = [{ sku, qty }]. Uses sku_details.series (NEVER category). Missing tax row → that line contributes 0.
+function shippingDuty_(ss, lines, importDutyTreatment, destinationCountry, quoteDate) {
+  var treat = shippingCostLower_(importDutyTreatment);
+  if (treat === 'included_in_rate') return 0;
+  if (treat !== 'excluded_in_rate') return '';   // blank/unknown → Not Applied
+  // sku → series
+  var seriesBySku = {};
+  var sd = ss.getSheetByName('sku_details');
+  if (sd) {
+    var sdd = sd.getDataRange().getValues();
+    if (sdd.length >= 2) {
+      var sh = sdd[0].map(function (x) { return String(x).trim().toLowerCase(); });
+      var cS = sh.indexOf('sku'), cSer = sh.indexOf('series');
+      if (cS !== -1 && cSer !== -1) for (var i = 1; i < sdd.length; i++) seriesBySku[String(sdd[i][cS] || '').trim().toLowerCase()] = String(sdd[i][cSer] || '').trim();
+    }
+  }
+  // tax_referral_rates rows (series + duty_country + effective) → { duty_rate, declared_value }
+  var taxRows = [];
+  var tr = ss.getSheetByName('tax_referral_rates');
+  if (tr) {
+    var trd = tr.getDataRange().getValues();
+    if (trd.length >= 2) {
+      var th = trd[0].map(function (x) { return String(x).trim().toLowerCase(); });
+      function tc(n) { return th.indexOf(n); }
+      for (var r = 1; r < trd.length; r++) {
+        taxRows.push({
+          series: String(trd[r][tc('series')] || '').trim(),
+          duty_country: String(trd[r][tc('duty_country')] || '').trim(),
+          country_of_origin: tc('country_of_origin') !== -1 ? String(trd[r][tc('country_of_origin')] || '').trim() : '',
+          duty_rate: tc('duty_rate') !== -1 ? shippingCostNum_(trd[r][tc('duty_rate')]) : 0,
+          declared_value: tc('declared_value') !== -1 ? shippingCostNum_(trd[r][tc('declared_value')]) : 0,
+          effective_from: tc('effective_from') !== -1 ? String(trd[r][tc('effective_from')] || '').trim() : '',
+          effective_to: tc('effective_to') !== -1 ? String(trd[r][tc('effective_to')] || '').trim() : ''
+        });
+      }
+    }
+  }
+  function matchTax(series) {
+    var q = String(quoteDate || '').trim();
+    var cand = taxRows.filter(function (t) {
+      if (String(t.series || '').trim().toLowerCase() !== String(series || '').trim().toLowerCase()) return false;
+      if (destinationCountry && t.duty_country && t.duty_country.toLowerCase() !== String(destinationCountry).trim().toLowerCase()) return false;
+      if (t.effective_from && q && t.effective_from > q) return false;
+      if (t.effective_to && q && t.effective_to < q) return false;
+      return true;
+    });
+    cand.sort(function (a, b) { return String(b.effective_from || '').localeCompare(String(a.effective_from || '')); });
+    return cand[0] || null;
+  }
+  var total = 0;
+  (lines || []).forEach(function (ln) {
+    var series = seriesBySku[String(ln.sku || '').trim().toLowerCase()] || '';
+    if (!series) return;
+    var t = matchTax(series);
+    if (!t) return;
+    // Declared value is per-unit in the Tax SSOT; duty = declared_value × qty × duty_rate (rate as %).
+    total += shippingCostNum_(t.declared_value) * shippingCostNum_(ln.qty) * shippingCostNum_(t.duty_rate) / 100;
+  });
+  return shippingCostRound_(total, 2);
 }
 
 // ============================================================

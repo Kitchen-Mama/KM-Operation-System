@@ -3358,6 +3358,15 @@ window.initFcSummaryPage = function() {
     if (_prevInitFcSummaryPage) _prevInitFcSummaryPage();
     // Defer slightly so dropdown init (also deferred) has run; panel rebuild is order-independent.
     setTimeout(_fcSummaryEnsureDbAndRender, 60);
+    // Drag-to-resize on both FC Summary tables (Regular + Event) — reuses the SKU Details resize engine
+    // via the shared dual-layer adapter. Header cells are static, so this runs once per mount; the two
+    // tables use distinct storage groups so their widths never overwrite each other.
+    setTimeout(function () {
+        var dlr = window.KM && window.KM.ui && window.KM.ui.dualLayerResize;
+        if (!dlr) return;
+        dlr.init({ sectionId: 'fc-summary-section', scrollHeaderSel: '#fc-regular-scroll-header', scrollBodySel: '#fc-regular-scroll-body', page: 'fc-summary', group: 'fc-regular' });
+        dlr.init({ sectionId: 'fc-summary-section', scrollHeaderSel: '#fc-event-scroll-header', scrollBodySel: '#fc-event-scroll-body', page: 'fc-summary', group: 'fc-event' });
+    }, 120);
 };
 
 // ========================================

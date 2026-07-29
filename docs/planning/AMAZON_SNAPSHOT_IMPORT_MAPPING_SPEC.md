@@ -1,16 +1,39 @@
 # Amazon Snapshot Import — Mapping Reference Spec
 
+> **Owner Boundary (reviewed 2026-07-28).**
+> - **Document Role:** the single **Amazon import contract** — how four Amazon sources map into four snapshot tabs + import governance.
+> - **Canonical Owner For:** the Amazon Raw → Snapshot mapping and import-governance rules.
+> - **Not Owner For:** the canonical **Domain product identity** `marketplace_product_id` (owner `DATABASE_RELATIONSHIP_MAP.md` / `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`), formulas, recommendation runtime.
+> - **Status:** Reviewed — Batch B Blockers Remain.
+> - **Current Version:** Draft v1.8 (Batch A repair: raw-asin→domain clarification + staged-success note; no config change).
+> - **Last Reviewed:** 2026-07-28.
+> - **Depends On:** Database Relationship Map (domain identity), Runtime Architecture (cadence).
+> - **Blocked By:** none specific to import (the recommendation pipeline it feeds has Batch B blockers — see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11).
+> **Raw vs Domain identity (Batch A 2026-07-28).** The `asin` column mapped in the config blocks below is a **RAW Amazon snapshot source field** on the `amazon_*_snapshot` tabs — retained because the source report supplies it. The **canonical Domain product identity is `marketplace_product_id`** (platform-neutral), owned by the **`marketplace_skus` / SKU Master Domain section of [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md)** and by **[`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md) §5**. **`asin` is NOT a shared cross-marketplace Domain column.** The normalization boundary is **`raw asin → marketplace_product_id`**, performed downstream of import; this spec does not treat `asin` as the domain key.
+>
+> **Outcome-stage separation (Batch A 2026-07-28) — these are distinct results, never auto-equal:**
+>
+> | Stage | Meaning |
+> |---|---|
+> | **Import Job Completed** | Import process finished without execution error |
+> | **Snapshot Persist Verified** | Expected snapshot rows were successfully written and verified |
+> | **Analysis Ready** | Required normalized inputs are available and eligible for calculation |
+> | **Recommendation Snapshot Written** | A non-commit recommendation result was persisted |
+> | **Decision Committed** | A user action created a formal business commitment |
+>
+> Import Job Completed ≠ Snapshot Persist Verified ≠ Analysis Ready ≠ Recommendation Snapshot Written ≠ Decision Committed. **A successful Amazon import never implies replenishment/order Analysis ran, nor that a recommendation was produced, nor that anything was committed** (see `SYSTEM_RUNTIME_ARCHITECTURE.md` §7 "outcome boundary", `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §H).
+
 **Status:** 🟡 Draft v1.8 — Mapping + import-governance reference spec (Daily Sales now uses a **gap-aware rolling 90-completed-day upsert** with missing/incomplete-date recovery + recent reconciliation + locking; supersedes the earlier "import yesterday only / 30-day retention / latest-per-group fallback"; NO DB migration, NO BigQuery schema change, NO API, NO frontend, NO routes)
 **Last Updated:** 2026-07-24
 **Maintained By:** Development Team
 **Audience:** developers building the config-driven importer · OP / data stakeholders
 **Cross-reference (context only, not edited here):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (Inventory Layer notes a *future* `amazon_inventory_snapshot`).
 
-> **Spec only.** This document records the **finalized mapping rules** for importing Amazon snapshot data into the Operation System DB Google Sheet, **plus the import-governance rules** around those imports. It introduces **no** code, Apps Script, DB schema/migration, API, or frontend change. It is the authoritative reference for the **next** task: refactoring Apps Script into a **config-driven importer**. The config blocks in §7 and the Appendix (§21) are the **source of truth** and are reproduced verbatim.
+> **Spec only.** This document records the **finalized mapping rules** for importing Amazon snapshot data into the Operation System DB Google Sheet, **plus the import-governance rules** around those imports. It introduces **no** code, Apps Script, DB schema/migration, API, or frontend change. It is the authoritative reference for the **next** task: refactoring Apps Script into a **config-driven importer**. The config blocks in §7 and the Appendix (§27) are the **source of truth** and are reproduced verbatim.
 
 ### Changelog
 
-- **Draft v1.8 (2026-07-24)** — **Daily Sales canonical source window corrected to a rolling 90 completed days + honest runtime status.** The canonical Daily Sales contract is a **gap-aware rolling 90-completed-day upsert + prune** (`retentionDays: 90`, `lookbackDays: 90`, backfill ceiling 90); this is the source window feeding `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 (90-day search → latest 30 eligible normal days). Fixed residual active 30-day references (§7.4 comparison table `backfill_days` ceiling, config notes) to 90; 30-day text now survives only in historical v1.6/v1.7 changelog and clearly-marked SUPERSEDED / Runtime-Gap notes. Constrained the generic "clear-and-rewrite" / "upsert is a future enhancement" statements to **Configs 1–3 only** — Config 4 `amazon_daily_sales_snapshot`'s canonical strategy is already `rolling_upsert`. Reworded the §7.4 runtime-mapping note so listed function names are components to **verify/update**, not proof of implementation. **Canonical requirement: gap-aware rolling 90-completed-day upsert; Runtime implementation/verification: PENDING.** Spec-only: NO Apps Script, DB, API, frontend, or route change in this task.
+- **Draft v1.8 (2026-07-24)** — **Daily Sales canonical source window corrected to a rolling 90 completed days + honest runtime status.** The canonical Daily Sales contract is a **gap-aware rolling 90-completed-day upsert + prune** (`retentionDays: 90`, `lookbackDays: 90`, backfill ceiling 90); this is the source window feeding `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 (90-day search → latest 30 eligible normal days). Fixed residual active 30-day references (§7.4 comparison table `backfill_days` ceiling, config notes) to 90; 30-day text now survives only in historical v1.6/v1.7 changelog and clearly-marked SUPERSEDED / Runtime-Gap notes. Constrained the generic "clear-and-rewrite" / "upsert is a future enhancement" statements to **Configs 1–3 only** — Config 4 `amazon_daily_sales_snapshot`'s canonical strategy is already `rolling_upsert`. Reworded the §7.4 runtime-mapping note so listed function names are components to **verify/update**, not proof of implementation. **Canonical requirement: gap-aware rolling 90-completed-day upsert; Runtime implementation/verification: PENDING.** Spec-only: NO Apps Script, DB, API, frontend, or route change in this task. *(Residual cleanup, same v1.8 — no version bump: made the §2 Import Architecture diagram, the §5 metadata/upsert note, and the §8 Import Flow Config-specific so Config 4 Daily Sales is never described as clear-and-rewrite and `rolling_upsert` is stated as the canonical contract with Runtime NOT IMPLEMENTED; corrected the §9 "Spec only" intro's Appendix cross-reference from §21 to §27.)* *(Round-3 residual cleanup, same v1.8: §5 metadata table `created_at`/`updated_at` rows made Config-lifecycle-aware (Configs 1–3 set both each write; Config 4 sets `created_at` on insert only + preserves on update, refreshes `updated_at`, no churn on unchanged rows); §7.4 comparison table Volume-control row reworded to the gap-aware read (not "default 1 day = yesterday", not unconditional 90-day re-read; `incrementalDefaultDays:1` = legacy, not consumed); §7.4 + §15 schedule reconciled to the canonical 12:00–13:00 trigger window with `scheduleTime:16:00` marked legacy-not-consumed; removed-fallback contract made consistent — `is_fallback_used`/`fallback_reason`/`fallback_group_count` marked legacy-compatibility (canonical gap-aware path performs NO fallback → FALSE/blank/0; missing dates = `source_unavailable`, retried), and §26 "Daily-sales fallback implementation" replaced with "Source-unavailable date visibility and alerting".)*
 - **Draft v1.7 (2026-07-01)** — **Amazon Daily Sales → incremental rolling upsert + prune (Daily Sales ONLY).** Config 4 (§7.4, §4, Appendix) gains `writeMode: rolling_upsert`, `retentionDays: 30`, `incrementalDefaultDays: 1` (`lookbackDays: 30` kept as the backfill ceiling). Each daily run now reads **only new completed-day data (default 1 = yesterday)**, **UPSERTs** by natural key `snapshot_date + country + marketplace + channel + sku` (**no full-table rewrite**), then **prunes** destination rows older than 30 days. **BigQuery keeps full history (never pruned); the Google Sheet keeps a rolling 30 completed days.** POST `backfill_days: N` re-reads the last N completed days and upserts them. `import_sync_runs.quality_note` records `write_mode=rolling_upsert; rows_pruned=<n>`. **No new column, no BigQuery schema change.** Implemented in `06_amazon_import_config.gs` (config), `07_amazon_import_runner.gs` (rolling_upsert branch + `options.backfillDays`), `08_amazon_import_sources.gs` (incremental read window), `09_amazon_import_writer_logger.gs` (`amazonUpsertRollingSnapshot_` + `amazonRollingCutoffDate_`). **Configs 1–3 (Inventory / Health / Weekly) unchanged (full snapshot rewrite).**
 - **Draft v1.6 (2026-06-29)** — **Amazon Daily Sales window 7 → 30 completed days (excludes today).** Updated config 4 (§7.4) + the BigQuery rolling-window rule (§4) + Appendix verbatim config to `lookbackDays: 30`, `excludeToday: true`. The 30-day snapshot now serves **both** the Sales Trend 7-day display and the Normalized Avg Sales 30-day calculation (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22). **No new `amazon_daily_sales_snapshot` column and no BigQuery table schema change** — window length only. Applies to `06_amazon_import_config.gs`.
 - **Draft v1.5 (2026-06-29)** — **Optional source headers (`optionalFieldMap`) bug fix.** Added `optionalFieldMap` behavior (§9.1): header validation checks **only** `fieldMap`; optional headers map-if-present else blank and never raise `missing_required_header`. Reworked **Amazon Inventory Health** config (§7.2): age buckets that vary by report version (`inv_age_0_to_90_days`, `inv_age_365_plus_days`, `inv_age_366_to_455_days`, `inv_age_456_plus_days`) moved to `optionalFieldMap`; required `fieldMap` keeps Date/Country/SKU/ASIN/Available + the 61–90 / 91–180 / 181–270 / 271–365 buckets; `rowHashFields` extended to all required + optional buckets. Documented the destination-header naming reminder (`inv_age_456_plus_days`, underscored — not `inv-age-456-plus-days`). Applies to `06_amazon_import_config.gs` + `07_amazon_import_runner.gs` (importer code; spec is the reference).
@@ -59,7 +82,11 @@ Importer (generic, config-driven)
         ↓   generate source_row_hash           (from config.rowHashFields, §6)
         ↓   generate sync_batch_id + timestamps (per run, §5)
 Destination tab in Operation System DB Sheet
-        ↓   PRESERVE header row · CLEAR + REWRITE data rows (MVP)
+        ↓   PRESERVE header row, then write per THAT config's canonical mode:
+        ├─ Configs 1–3 (Inventory / Health / Weekly Sales): CLEAR + REWRITE data rows
+        └─ Config 4 (Daily Sales): rolling_upsert by natural key + prune to the latest
+                                    90 completed calendar days  (canonical write mode;
+                                    this rolling-upsert Runtime is NOT IMPLEMENTED)
 ```
 
 ### Two source modes
@@ -146,11 +173,13 @@ The following fields are **generated by the importer** (not mapped from source c
 | `source_sheet_name` | **Google Sheet sources:** `"Combined Sheet"` (`config.sourceSheetName`). **BigQuery source:** may be set to `"Raw Daily Sales"` or left blank depending on importer implementation — **document that this is a BigQuery table, not a Google Sheet tab** |
 | `source_row_hash` | generated from `config.rowHashFields` (§6) |
 | `sync_batch_id` | generated **once per sync run**, stamped on every row written in that run |
-| `synced_at` | generated at sync time |
-| `created_at` | generated at sync time |
-| `updated_at` | generated at sync time |
+| `synced_at` | generated at sync time (each run that writes the row) |
+| `created_at` | **Configs 1–3 (clear-and-rewrite):** set at each sync that writes the row. **Config 4 (rolling_upsert):** set on **insert only**; on **update** it is **preserved** (not regenerated); an **unchanged** row is not rewritten. See the Config-specific note below. |
+| `updated_at` | **Configs 1–3:** set at each sync that writes the row. **Config 4:** set on insert; **refreshed on update**; an unchanged row causes **no** timestamp churn. |
 
-> In MVP (clear-and-rewrite), `created_at` and `updated_at` are both set at the sync that writes the row. When upsert is introduced (§9), `created_at` should be preserved and only `updated_at` refreshed.
+> **Configs 1–3:** the active snapshot write mode remains **clear-and-rewrite**; `created_at` and `updated_at` are both set at the sync that writes the row. (For Configs 1–3, an upsert mode that preserves `created_at` and refreshes only `updated_at` is a future enhancement — §9.)
+>
+> **Config 4 Daily Sales:** `rolling_upsert` is already the **canonical write contract** (not a future extension) — on upsert, `created_at` must be preserved and only `updated_at` refreshed. The required 90-completed-day rolling-upsert Runtime remains **NOT IMPLEMENTED** (there is no executable importer for it yet — §7.4 / §20).
 
 ### `source_file_id` quick reference
 | Config | `source_file_id` | `source_sheet_name` |
@@ -447,11 +476,11 @@ The 90 retained completed days serve: (a) the **Sales Trend 7-day display** (mos
 | `data_window_start_date` | date `yyyy-MM-dd` | earliest source date actually included for this row's group |
 | `data_window_end_date` | date `yyyy-MM-dd` | latest source date actually included for this row's group |
 | `latest_source_date` | date `yyyy-MM-dd` | the most recent `snapshot_date` present for this row's group |
-| `is_fallback_used` | boolean | `TRUE` when the rolling **90-day** window was empty and the importer fell back to latest-available data for this group (§4; legacy latest-per-group fallback — superseded by the gap-aware sync but the field is retained); else `FALSE` |
-| `fallback_reason` | text | short reason when `is_fallback_used = TRUE` (e.g. `rolling_window_empty`); blank otherwise |
+| `is_fallback_used` | boolean | **Legacy schema field (compatibility only).** The **canonical gap-aware path does NOT execute the latest-per-group fallback** (that behavior is SUPERSEDED, §4) — it writes **`FALSE` / blank**. A missing in-window date is recorded as `source_unavailable` and retried, never replaced by latest-available data. Older rows may retain historical `TRUE` values from the superseded path; those are **not** rewritten or re-fabricated. |
+| `fallback_reason` | text | **Legacy schema field.** Stays **blank** on the canonical gap-aware path. Historical non-blank values from the superseded fallback are left as-is (not backfilled). |
 | `data_age_days` | integer | days between `latest_source_date` and the sync date (0 = same-day; higher = staler) |
 
-> The fallback is evaluated **per `country`/`marketplace`/`channel`/`sku` group**, so these per-row values may legitimately differ between groups (§4). They are **importer-generated destination headers**, **not** `fieldMap` entries — the config block below is unchanged.
+> `data_window_*` / `latest_source_date` / `data_age_days` are computed **per `country`/`marketplace`/`channel`/`sku` group**, so these per-row values may legitimately differ between groups (§4). They are **importer-generated destination headers**, **not** `fieldMap` entries — the config block below is unchanged. **The canonical gap-aware Runtime performs no fallback; `is_fallback_used`/`fallback_reason` remain legacy compatibility fields only.**
 
 ```js
 {
@@ -534,9 +563,9 @@ The 90 retained completed days serve: (a) the **Sales Trend 7-day display** (mos
 |--------|----------------------------|----------------------|
 | Source identifier | `sourceId` (spreadsheet ID) + `sourceSheetName: "Combined Sheet"` | `sourceProjectId` / `sourceDataset` / `sourceTable` |
 | Read mechanism | read all rows of the `Combined Sheet` tab | **query** with `queryMode: rolling_window`, filtered on `dateField` |
-| Volume control | full sheet (snapshot already scoped) | **incremental completed-day window** (default 1 day = yesterday; `backfill_days` widens up to **90 completed calendar days** (`lookbackDays: 90` ceiling), excludes today); fetch only mapped fields |
+| Volume control | full sheet (snapshot already scoped) | **gap-aware:** every run inspects the latest **90 completed-day** source/destination coverage, then fetches **only** missing dates + incomplete dates + recent reconciliation dates (`reconcileRecentDays: 3`) + optional manual `backfill_days` (capped at `lookbackDays: 90`), excludes today; fetch only mapped fields. `incrementalDefaultDays: 1` is **legacy metadata — NOT consumed by the canonical gap-aware path** (neither a fixed daily "yesterday-only" read nor an unconditional 90-day re-read) |
 | Write mode | full snapshot rewrite (clear + rewrite data rows) | **`rolling_upsert`**: upsert by natural key + prune to `retentionDays` (**90**, canonical §7.4/§20); header + non-batch rows preserved (no full rewrite) |
-| Schedule | per importer schedule | **16:00 `Asia/Taipei`**, daily |
+| Schedule | per importer schedule | Daily Report Pipeline trigger window **12:00–13:00 `Asia/Taipei`** — schedule owned by `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A. `scheduleTime: "16:00"` is **LEGACY config metadata NOT consumed by Runtime** (only `scheduleTimezone` is read) — not the active schedule; no second same-day trigger |
 | `source_system` | `Google Sheet Import` | `BigQuery Import` |
 | `source_file_id` | spreadsheet ID | `amazon-database-489810.AmazonSales.Raw Daily Sales` |
 | `source_sheet_name` | `Combined Sheet` | `Raw Daily Sales` or blank (**not** a Sheet tab) |
@@ -565,7 +594,12 @@ Generate Metadata           (source_* + sync_batch_id + timestamps — §5)
    ↓
 Generate Row Hash           (from rowHashFields — §6)
    ↓
-Write Snapshot              (preserve header; clear + rewrite data rows in MVP)
+Write Snapshot              (preserve header, then write per THAT config's canonical mode:)
+   ├─ Configs 1–3:          clear and rewrite the data rows
+   └─ Config 4 Daily Sales: rolling upsert by the canonical Daily Sales natural key, retain the
+                            latest 90 completed calendar days (Avg. Sales/day then uses the latest
+                            30 ELIGIBLE NORMAL sales days WITHIN that 90-day window — not 30 calendar
+                            days, not the source window). Runtime status: NOT IMPLEMENTED.
    ↓
 Record import_sync_runs / import_sync_issues   (run summary + per-issue log — §16)
 ```
@@ -753,8 +787,8 @@ Snapshot tabs refreshed
 Dashboard / replenishment page reads the refreshed snapshot
 ```
 
-- The **exact time is configurable** and can be adjusted later.
-- The **daily BigQuery** rule remains the **16:00 `Asia/Taipei`** target for now (config 4).
+- The **exact time is Runtime scheduling configuration** and can be adjusted later.
+- The canonical **daily BigQuery** (config 4) sync runs in the Daily Report Pipeline **12:00–13:00 `Asia/Taipei`** trigger window — schedule owned by `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A. The config block's `scheduleTime: "16:00"` is **legacy metadata NOT consumed by Runtime** (only `scheduleTimezone` is read) — it is not the active schedule, and no second same-day trigger is created.
 - The downstream calculation job and dashboard read are shown for context only — they are **out of scope** for this spec (§18, §25).
 
 ---
@@ -806,8 +840,8 @@ quality_note
 | `latest_source_date` | date `yyyy-MM-dd` | most recent source date written this run (across groups; the max) |
 | `data_window_start_date` | date `yyyy-MM-dd` | earliest source date written this run |
 | `data_window_end_date` | date `yyyy-MM-dd` | latest source date written this run |
-| `is_fallback_used` | boolean | `TRUE` if **any** group used the latest-available fallback (§4) |
-| `fallback_group_count` | integer | how many `country`/`marketplace`/`channel`/`sku` groups used fallback |
+| `is_fallback_used` | boolean | **Legacy compatibility field.** The canonical gap-aware path performs **no** fallback (SUPERSEDED, §4) → **`FALSE`**. In-window dates with no source rows are logged as `source_unavailable` and retried. |
+| `fallback_group_count` | integer | **Legacy compatibility field.** Canonical gap-aware path → **`0`** (no group fallback is performed). |
 | `normalized_placeholder_count` | integer | count of normalized Amazon placeholders (`365+`, `/`, blank) — visibility without inflating `invalid_number` |
 | `data_age_days` | integer | days between `latest_source_date` and the sync date |
 | `quality_note` | text | human-readable quality summary (e.g. quality score + placeholder/fallback notes) |
@@ -1020,7 +1054,7 @@ This spec does **not**:
 - **Error reports** (rejected/invalid rows).
 - **BigQuery partition optimization** (e.g. partition pruning on the date field).
 - **API-based Amazon sync** (replace sheet/BQ staging with direct API pulls).
-- **Daily-sales fallback implementation** — per-group (country/marketplace/channel/sku) latest-available query + surfacing the actual data date range used to runtime/UI (§4).
+- **Source-unavailable date visibility and alerting** — surface, per group, the `source_unavailable` in-window dates and the actual data date range used, for runtime/UI observability (§4). *(This does NOT reintroduce a latest-available fallback — missing dates are retried, never substituted.)*
 - **Open-bound preservation** — optionally retain the `365+` "or more" semantics in a companion flag/text field instead of only the numeric `365`.
 - **Placeholder tally** — per-run count of normalized Amazon placeholders (`365+`, `/`, blanks) recorded on `import_sync_runs` (e.g. in `note`) for visibility without inflating `invalid_number`.
 

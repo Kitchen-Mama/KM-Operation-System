@@ -15,74 +15,24 @@
                         </button>
                     </div>
 
-                    <!-- Country -->
+                    <!-- Country / Marketplace / Category / Series — shared multi-select filter component
+                         (KM.ui.multiFilter → .kmf-*): search + Select All + Clear + checkbox list. Options +
+                         selection are fed/read in forecast.js (_forecastMountFilters / collectForecastFilterParams). -->
                     <div class="forecast-filter forecast-filter--dropdown">
                         <label>Country</label>
-                        <button type="button" class="forecast-dropdown-trigger" data-filter="country">
-                            <span class="forecast-dropdown-text">All</span>
-                            <span class="forecast-dropdown-icon">▼</span>
-                        </button>
-                        <div class="forecast-dropdown-panel" data-filter="country">
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'country')"> <strong>All</strong></label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="US" checked onchange="updateForecastFilter('country')"> US</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="JP" checked onchange="updateForecastFilter('country')"> JP</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="UK" checked onchange="updateForecastFilter('country')"> UK</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="DE" checked onchange="updateForecastFilter('country')"> DE</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="CA" checked onchange="updateForecastFilter('country')"> CA</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="FR" checked onchange="updateForecastFilter('country')"> FR</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="IT" checked onchange="updateForecastFilter('country')"> IT</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="ES" checked onchange="updateForecastFilter('country')"> ES</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="CA" checked onchange="updateForecastFilter('country')"> CA</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="JP" checked onchange="updateForecastFilter('country')"> JP</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="AU" checked onchange="updateForecastFilter('country')"> AU</label>
-                        </div>
+                        <div class="forecast-filter-mount" id="forecast-mount-country"></div>
                     </div>
-
-                    <!-- Marketplace -->
                     <div class="forecast-filter forecast-filter--dropdown">
                         <label>Marketplace</label>
-                        <button type="button" class="forecast-dropdown-trigger" data-filter="marketplace">
-                            <span class="forecast-dropdown-text">All</span>
-                            <span class="forecast-dropdown-icon">▼</span>
-                        </button>
-                        <div class="forecast-dropdown-panel" data-filter="marketplace">
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'marketplace')"> <strong>All</strong></label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Amazon" checked onchange="updateForecastFilter('marketplace')"> Amazon</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Shopify" checked onchange="updateForecastFilter('marketplace')"> Shopify</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Target" checked onchange="updateForecastFilter('marketplace')"> Target</label>
-                        </div>
+                        <div class="forecast-filter-mount" id="forecast-mount-marketplace"></div>
                     </div>
-
-                    <!-- Category -->
                     <div class="forecast-filter forecast-filter--dropdown">
                         <label>Category</label>
-                        <button type="button" class="forecast-dropdown-trigger" data-filter="category">
-                            <span class="forecast-dropdown-text">All</span>
-                            <span class="forecast-dropdown-icon">▼</span>
-                        </button>
-                        <div class="forecast-dropdown-panel" data-filter="category">
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'category')"> <strong>All</strong></label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Electric Can Opener" checked onchange="updateForecastFilter('category')"> Electric Can Opener</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Silicone Product" checked onchange="updateForecastFilter('category')"> Silicone Product</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="Manual Opener" checked onchange="updateForecastFilter('category')"> Manual Opener</label>
-                        </div>
+                        <div class="forecast-filter-mount" id="forecast-mount-category"></div>
                     </div>
-
-                    <!-- Series -->
                     <div class="forecast-filter forecast-filter--dropdown">
                         <label>Series</label>
-                        <button type="button" class="forecast-dropdown-trigger" data-filter="series">
-                            <span class="forecast-dropdown-text">All</span>
-                            <span class="forecast-dropdown-icon">▼</span>
-                        </button>
-                        <div class="forecast-dropdown-panel" data-filter="series">
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="" checked onchange="toggleForecastAll(this, 'series')"> <strong>All</strong></label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="CO1100" checked onchange="updateForecastFilter('series')"> CO1100</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="CO1150" checked onchange="updateForecastFilter('series')"> CO1150</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="SP3120" checked onchange="updateForecastFilter('series')"> SP3120</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="SP3410" checked onchange="updateForecastFilter('series')"> SP3410</label>
-                            <label class="forecast-checkbox-item"><input type="checkbox" value="MO5600" checked onchange="updateForecastFilter('series')"> MO5600</label>
-                        </div>
+                        <div class="forecast-filter-mount" id="forecast-mount-series"></div>
                     </div>
 
                     <!-- SKU -->

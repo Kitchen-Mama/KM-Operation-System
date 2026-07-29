@@ -1372,7 +1372,7 @@ function shConfirmShipment(shipmentId) {
         origin: payload.ship_from || s.shipFrom || '—',
         dest: (s.destination || payload.warehouse_code || s.warehouseId || '—'),
         carrier: payload.carrier_id || s.carrierId || '—',
-        method: s.shippingMethodLabel || payload.shipping_method || s.shippingMethod || '—',
+        method: s.shippingMethodDisplay || payload.shipping_method || s.shippingMethod || '—',
         tracking: payload.tracking_number || s.trackingNumber || '—',
         container: payload.container_no || s.containerNo || '—',
         etd: payload.etd || s.etd || '—', eta: payload.eta || s.eta || '—'

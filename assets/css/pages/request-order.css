@@ -232,13 +232,13 @@
 }
 
 .ro-dropdown-text {
-    color: #2d3748;
+    color: var(--filter-text-color);
     flex: 1;
 }
 
 .ro-dropdown-icon {
-    font-size: 10px;
-    color: #a0aec0;
+    font-size: var(--filter-chevron-size);
+    color: var(--filter-chevron-color);
     margin-left: 8px;
 }
 
@@ -249,10 +249,10 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: #ffffff;
+    background: var(--filter-panel-bg);
     border: 1px solid var(--filter-border-color);
-    border-radius: var(--filter-border-radius);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: var(--filter-panel-radius);
+    box-shadow: var(--filter-panel-shadow);
     z-index: 1000;
     max-height: 300px;
     overflow-y: auto;
@@ -266,16 +266,16 @@
 .ro-checkbox-item {
     display: flex;
     align-items: center;
-    padding: 6px 12px;
-    font-size: var(--filter-font-size);
-    color: #2d3748;
+    padding: var(--filter-option-padding);
+    font-size: var(--filter-option-font-size);
+    color: var(--filter-text-color);
     cursor: pointer;
     transition: background 0.15s;
     user-select: none;
 }
 
 .ro-checkbox-item:hover {
-    background: #f7fafc;
+    background: var(--filter-option-hover-bg);
 }
 
 .ro-checkbox-item input[type="checkbox"] {
@@ -320,6 +320,17 @@
     border-radius: 6px;
     overflow: hidden;
     flex-wrap: wrap;
+}
+/* When the category rail also carries the shared .km-tab-rail (2026-07-28), it becomes a single-row
+   horizontally-scrollable rail — override the wrap/overflow above (two-class specificity beats the base
+   rule which loads later than components.css). The Section frame (border/radius) is kept; gap for the
+   shared tabs. */
+.ro-tabs--category.km-tab-rail {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+    padding: 6px;
 }
 
 .ro-tab {
@@ -1805,23 +1816,47 @@
     line-height: 1;
 }
 .ro-action-group .ro-btn { padding: 0 16px; }
+
+/* AI Plan — a refined accent action (suggestion refresh), visually BELOW the primary Send Request. Uses
+   existing tokens; an outlined violet accent so it never reads as the final submit. Loading / disabled /
+   success / error states. Shared style reused by the Inventory Replenishment AI Plan (#ops-section). */
+.ro-btn--ai,
+#ops-section .ro-btn--ai {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #F5F3FF; color: #6D28D9; border: 1px solid #DDD6FE; font-weight: 600;
+}
+.ro-btn--ai:hover:not(:disabled),
+#ops-section .ro-btn--ai:hover:not(:disabled) { background: #EDE9FE; border-color: #C4B5FD; }
+.ro-btn--ai:focus-visible,
+#ops-section .ro-btn--ai:focus-visible { outline: 2px solid #A78BFA; outline-offset: 1px; }
+.ro-btn--ai .ro-ai-icon { flex: 0 0 auto; }
+.ro-btn--ai:disabled,
+#ops-section .ro-btn--ai:disabled { opacity: 0.6; cursor: default; }
+.ro-btn--ai.is-loading,
+#ops-section .ro-btn--ai.is-loading { color: #7C3AED; cursor: progress; }
+.ro-btn--ai.is-loading .ro-ai-icon { animation: roAiSpin 0.8s linear infinite; }
+.ro-btn--ai.is-success,
+#ops-section .ro-btn--ai.is-success { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
+.ro-btn--ai.is-error,
+#ops-section .ro-btn--ai.is-error { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; }
+@keyframes roAiSpin { to { transform: rotate(360deg); } }
 .ro-action-select {
-    padding: 0 10px;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
     border: 1px solid var(--filter-border-color);
     background: #fff;
-    color: #1e293b;
+    color: var(--filter-text-color);
     cursor: pointer;
 }
 
 /* Show filter (between Risk and SKU) — match the other filter controls' height. */
 .ro-filter--show .ro-filter-select {
     height: var(--filter-height);
-    padding: 0 10px;
+    padding: var(--filter-padding-block) var(--filter-padding-inline);
     border: 1px solid var(--filter-border-color);
     border-radius: var(--filter-border-radius);
     font-size: var(--filter-font-size);
     background: #fff;
-    color: #1e293b;
+    color: var(--filter-text-color);
     box-sizing: border-box;
     width: 100%;
     margin: 4px 0;
@@ -1923,10 +1958,11 @@
    grows with content and is carried by the main table's horizontal scroll. ---- */
 #request-order-section .ro-sku-expand-grid--v6 {
   display: grid;
-  /* B1 (2026-07-24): Achievement & Forecast (block 1) base width +15% → 300px → 345px; the extra ~45px is
-     taken from Factory Supply (block 2, 260px → 215px). Recommendation / Order Allocation (block 3) stays
-     360px so it remains readable + operable. Tracks still grow to max-content, carried by the main scroll. */
-  grid-template-columns: minmax(345px, max-content) minmax(215px, max-content) minmax(360px, max-content);
+  /* B1 (2026-07-28): Achievement & Forecast (block 1) base width ×1.20 → 345px → 414px. The whole block +
+     its inner tables widen together (tables are width:100% of the block, so header + content stay aligned;
+     NO transform:scale). Factory Supply (215px) + Recommendation (360px) unchanged; the grid grows and is
+     carried by the main table's horizontal scroll (the browser page never scrolls horizontally). */
+  grid-template-columns: minmax(414px, max-content) minmax(215px, max-content) minmax(360px, max-content);
   gap: 12px; align-items: start;
   width: max-content; min-width: 100%; box-sizing: border-box;
 }
@@ -1966,7 +2002,7 @@
 
 /* Tablet: blocks 1–2 side by side, block 3 spans a full row */
 @media (max-width: 1200px) {
-  #request-order-section .ro-sku-expand-grid--v6 { grid-template-columns: minmax(345px, max-content) minmax(300px, max-content); }
+  #request-order-section .ro-sku-expand-grid--v6 { grid-template-columns: minmax(414px, max-content) minmax(300px, max-content); }
   #request-order-section .ro-block--recommend { grid-column: 1 / -1; }
 }
 /* Mobile: single column; the main table's scroll boundary reveals wide inner tables (no nested scrollbar). */

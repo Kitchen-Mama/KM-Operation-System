@@ -789,9 +789,9 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                     _spSummary('Shipping Method', _spEsc(plan.shippingMethod || '')) +
                     _spSummary('Total Pcs', '<span id="sp-total-pcs-' + _spEsc(pid) + '">' + totalPcs + '</span>') +
                     _spSummary('Total Cartons', '<span id="sp-total-cartons-' + _spEsc(pid) + '">' + totalCartons + '</span>') +
-                    _spSummary('Total CBM', '<span id="sp-total-cbm-' + _spEsc(pid) + '">' + totalCbm.toFixed(3) + '</span>') +
-                    _spSummary('Total Gross Wt', '<span id="sp-total-gross-' + _spEsc(pid) + '">' + totalGross.toFixed(2) + '</span>') +
-                    _spSummary('Total Net Wt', '<span id="sp-total-net-' + _spEsc(pid) + '">' + totalNet.toFixed(2) + '</span>') +
+                    // Total CBM / Gross Wt / Net Wt are HIDDEN from the Layer-1 Approval/Review summary
+                    // (2026-07-28 UI). They remain computed here (totalCbm/totalGross/totalNet) + shown in the
+                    // Layer-2 Details table + used by Combined-plan recompute / Shipment — data is NOT removed.
                     _spSummary('Total Cost', totalCostDisp) +
                     _spSummary('Unit Cost', '<span id="sp-unit-cost-' + _spEsc(pid) + '">' + unitCostDisp + '</span>') +
                 '</div>' +

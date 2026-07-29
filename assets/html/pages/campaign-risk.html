@@ -25,22 +25,19 @@
                 
                 <div class="cr-kpi-cards" id="cr-kpi-cards"></div>
                 
-                <div class="cr-filter-panel">
-                    <div class="cr-filter-group cr-filter-group--dropdown">
+                <!-- Category / Series filters (2026-07-28): two single-select Tab Rails (was two multi-select
+                     checkbox dropdowns). Category is row 1, Series is row 2 — still two independent filter
+                     dimensions, each with an "All" option and a Name + Count badge. Selecting a Category
+                     cascades the Series rail to its compatible series. Uses the SHARED .km-tab-rail (single-row
+                     horizontal scroll) so this page matches Inventory Replenishment / Order System. -->
+                <div class="cr-filter-panel cr-filter-panel--rails">
+                    <div class="cr-filter-group cr-filter-group--rail">
                         <div class="cr-filter-group-label">Product Category</div>
-                        <button type="button" class="cr-dropdown-trigger" data-filter="category" aria-expanded="false">
-                            <span class="cr-dropdown-text">All Categories</span>
-                            <span class="cr-dropdown-icon">▼</span>
-                        </button>
-                        <div class="cr-dropdown-panel" data-filter="category" id="cr-category-panel"></div>
+                        <div class="cr-tab-rail km-tab-rail" id="cr-category-rail"></div>
                     </div>
-                    <div class="cr-filter-group cr-filter-group--dropdown">
+                    <div class="cr-filter-group cr-filter-group--rail">
                         <div class="cr-filter-group-label">Product Series</div>
-                        <button type="button" class="cr-dropdown-trigger" data-filter="series" aria-expanded="false">
-                            <span class="cr-dropdown-text">All Series</span>
-                            <span class="cr-dropdown-icon">▼</span>
-                        </button>
-                        <div class="cr-dropdown-panel" data-filter="series" id="cr-series-panel"></div>
+                        <div class="cr-tab-rail km-tab-rail" id="cr-series-rail"></div>
                     </div>
                 </div>
                 
