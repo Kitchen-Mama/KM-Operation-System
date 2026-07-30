@@ -81,6 +81,17 @@ button:hover {
     color: #374151;
 }
 
+/* Unified filter-bar contract (opt-in). Add `.km-filter-bar` to a page's filter bar to inherit the ONE
+   canonical filter-bar label spec (FC Summary reference) from the --filter-label-* tokens, instead of a
+   per-page label rule. FC Summary, Forecast Management and Inventory Replenishment all carry this class so
+   their labels are pixel-identical; pages that have not adopted it keep the plain .filter-group label above
+   until they migrate in a later round. This is the single owner for the filter label spec — do NOT re-declare
+   filter label size/color in page CSS. */
+.km-filter-bar .filter-group label {
+    font-size: var(--filter-label-font-size);
+    color: var(--filter-label-color);
+}
+
 /* Text-input / select styling. Excludes checkbox & radio so dropdown option checkboxes
    (which live inside .filter-group--dropdown) don't inherit the full-width box model,
    transition:all, and :hover/:focus border/background changes — those caused the option
@@ -1036,17 +1047,21 @@ table td button {
 /* Option list scrolls VERTICALLY only; long labels wrap (never truncated, never a horizontal scrollbar). */
 .kmf-list { max-height: 240px; overflow-y: auto; overflow-x: hidden; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .kmf-item {
-    display: flex; align-items: flex-start; gap: 8px; padding: var(--filter-option-padding); border-radius: 4px; min-width: 0;
+    /* Canonical baseline = SKU Details `.skuf-item` (align-items:center): the checkbox and its label
+       share ONE vertical centre line. (Was `flex-start` + a checkbox top-margin hack, which left the
+       box and text off-centre — the Shipment Overview Country dropdown bug.) */
+    display: flex; align-items: center; gap: 8px; padding: var(--filter-option-padding); border-radius: 4px; min-width: 0;
     font-size: var(--filter-option-font-size); color: var(--filter-text-color); cursor: pointer; white-space: normal; overflow-wrap: anywhere;
 }
 .kmf-item:hover { background: var(--filter-option-hover-bg); }
 .kmf-item[aria-selected="true"] { background: var(--filter-option-selected-bg); }
 /* Self-defence: force the option checkbox back to a normal control size + reset any inherited
    page field sizing (some pages set `.<page>-filter input { height:36px; min-width:220px }` which
-   would otherwise inflate these into big empty boxes). Scoped to the component only. */
+   would otherwise inflate these into big empty boxes). `margin:0` + `flex:0 0 auto` keep it a fixed,
+   centred square regardless of the host page's global `input` rules. Scoped to the component only. */
 .kmf-item input[type="checkbox"] {
     width: 16px; height: 16px; min-width: 16px; min-height: 16px; max-width: 16px;
-    margin: 2px 0 0; padding: 0; flex: 0 0 auto; box-sizing: border-box;
+    margin: 0; padding: 0; flex: 0 0 auto; box-sizing: border-box;
     accent-color: var(--km-brand-teal, #3abfb6);
 }
 .kmf-item span { min-width: 0; }

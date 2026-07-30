@@ -76,7 +76,7 @@ Purchase Order        (purchase_orders + purchase_order_lines)    [Procurement C
 `request_order_line_id` (PK) · `request_order_id` (FK) · `sku` · **`company`** · **`request_bucket`** · **`request_month`** · `series` · `supplier_id` · `supplier_name` · `supplier_sku` · **`factory_item_no`** · **`factory_item_name`** · **`supplier_warehouse_id`** · **`km_qty`** · **`resus_qty`** · **`restw_qty`** · **`recommended_qty`** · `requested_qty` · `approved_qty` · **`shortage_qty`** · **`reallocation_qty`** · `carton_qty` · `units_per_carton` · `unit_cost` · `estimated_amount` · `currency` · **`calculation_method`** · **`line_status`** · **`inspection_date`** · **`expected_ready_date`** · **`expected_ship_date`** · **`purchase_order_line_id`** · `note` · **`cancelled_by`** · **`cancelled_at`** · **`cancel_reason`** · `created_at` · `updated_at`.
 
 **Line identity & rules:**
-- **Line identity = `company` + `sku` + `request_bucket`.** **One company = one `request_order_line`** (one company = one `request_order_line_source`, §3.8).
+- **Line grain / identity — Blocked under B-5 (NOT canonical):** `company` + `sku` + `request_bucket`, **one company = one `request_order_line`**, and **one company = one `request_order_line_source`** (§3.8) are a **legacy / provisional design assumption only** — the final grain, unique identity, and one-line/one-source mapping are **not canonically approved** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-5, still **Blocked**); they must not be treated as a canonical uniqueness, validation, or implementation guarantee.
 - **`request_bucket`** = **canonical `T1` / `T2` / `T3`** — **`tier_type` MUST NOT be used on this table** (deprecated; never re-add). `request_month` = `YYYY-MM`.
 - **`km_qty` / `resus_qty` / `restw_qty`** = per-company allocation — the matched company column carries the qty (= `approved_qty`), others `0` (never blank). Recomputed on `approved_qty` edit; validated so the row Approved = `km_qty + resus_qty + restw_qty` (Manual Allocation Mode, §13).
 - **`recommended_qty`** = engine/allocation-draft recommendation snapshot (blank when no formula). **`requested_qty`** = requested from the Order Allocation draft. **`approved_qty`** = editable approval qty (decision). **`shortage_qty` / `reallocation_qty`** = allocation snapshots (blank when no formula).
@@ -88,7 +88,7 @@ Purchase Order        (purchase_orders + purchase_order_lines)    [Procurement C
 
 > All columns are **additive** — `sheetEnsureColumns_` appends any missing header; existing columns are never altered, and **deleted headers are missing-header-safe** (code never re-creates removed columns).
 
-**DEPRECATED — no longer written or ensured** (kept only if physically present; NOT source of truth; code must **not** re-create): on `request_order_lines` → `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `source_company_count`, `source_site_count`, **`tier_type`**, `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`, **`linked_purchase_order_line_id`** (replaced by `purchase_order_line_id`); on `request_orders` → `status` (replaced by `request_status`), header `inspection_date`/`expected_ready_date`/`expected_ship_date` (line-level only). Forecast / stock / on-the-way snapshot detail is owned by **`request_order_line_sources`** (§3.8) and **must NOT be re-added to `request_order_lines`**.
+**DEPRECATED — no longer written or ensured** (kept only if physically present; NOT source of truth; code must **not** re-create): on `request_order_lines` → `final_order_qty`, `forecast_qty`, `current_stock`, `on_the_way_qty`, `factory_allocated_qty`, `source_company_count`, `source_site_count`, **`tier_type`**, `product_name`, `need_reason`, `related_entity_type`, `related_entity_id`, **`linked_purchase_order_line_id`** (replaced by `purchase_order_line_id`); on `request_orders` → `status` (replaced by `request_status`), header `inspection_date`/`expected_ready_date`/`expected_ship_date` (line-level only). Forecast / stock / on-the-way snapshot detail relates to **`request_order_line_sources`** (§3.8) — whose source authority / ownership is **unresolved under B-5** (not a confirmed canonical source of truth) — and **must NOT be re-added to `request_order_lines`**.
 
 ### 3.3 `purchase_orders` — **FINAL schema (PO v2 mapping)**
 
@@ -116,7 +116,7 @@ Purchase Order        (purchase_orders + purchase_order_lines)    [Procurement C
 
 **Field rules & mapping (snapshot — copied at Convert to PO):**
 - **`product_name` is REMOVED** (not on `purchase_order_lines`). Product display joins `sku_details` by `sku` (display-label only).
-- **Company allocation snapshot is MANDATORY:** **`km_qty` / `resus_qty` / `restw_qty`** copied from `request_order_lines` (one company = one line, so exactly one is non-zero per line). **`request_bucket`** (original `T1`/`T2`/`T3`) is **mandatory**. **`line_status`** is **mandatory**.
+- **Company allocation snapshot is MANDATORY:** **`km_qty` / `resus_qty` / `restw_qty`** copied from `request_order_lines` (exactly one non-zero per line — reflecting the request-side per-company grain, which is **legacy / provisional, Blocked under B-5**, not a canonical guarantee). **`request_bucket`** (original `T1`/`T2`/`T3`) is **mandatory**. **`line_status`** is **mandatory**.
 - **`ordered_qty` = `request_order_lines.approved_qty`** (the committed **execution** quantity). **`km_qty + resus_qty + restw_qty` must equal `ordered_qty`** (company allocation snapshot).
 - **`requested_qty` / `approved_qty` / `recommended_qty` on `purchase_order_lines` are AUDIT SNAPSHOT fields only** — copied from the Request line at Convert for lineage/traceability. They are **NOT used for execution, receiving, remaining, or shipment allocation** (those all key off `ordered_qty` / `completed_qty` / `shipped_qty` / `remaining_qty`). Runtime currently does **not** read them (PO Workspace / PO Remaining Overview never reference `requested_qty` / `approved_qty`). Columns are **retained** (do not remove without an explicit later decision).
 - **`completed_qty` starts `0`** (received / production-completed qty; drives `partial_completed`/`completed`; `+= receive_qty` on each Receive). **`shipped_qty` starts `0`**. **`remaining_qty` = `completed_qty − shipped_qty`** = **available-to-ship** (clamp ≥ 0), **= `0` at creation** (NOT `ordered_qty` — no completed goods means nothing available to ship). **`unreceived_qty` = `ordered_qty − completed_qty`** is production-outstanding, **derived only in the Receive modal — never stored** (see `PURCHASE_ORDER_SPEC.md` §4A/§4C).
@@ -243,7 +243,7 @@ Three sections: **Draft / Pending Approval / Approved**. **Card/expand structure
   - **Block 1 — SKU In Total (READ-ONLY):** `SKU · KM · ResUS · ResTW · Requested · Approved · Carton` (company columns are the distinct companies present). Footer: **Total SKUs · Total Approved · Total Ctn**. **Computed live** = Σ of Block 2 (T1) + Block 3 (T2+T3). Removed columns (no longer shown): Current Stock, Following 3 Month FC, Avg. Sales / FC, Days of Supply.
   - **Block 2 — T1 Request:** upper table `SKU · KM · ResUS · ResTW · Requested · Approved · Carton` (one row per `(sku, bucket)` so bucket integrity is kept). **Approved editable**; when **Approved == Requested** the KM/ResUS/ResTW split is **locked** (= requested split); when **Approved ≠ Requested** the split becomes **editable and must sum to Approved** (validated on Save/Submit). Each company cell = one real `request_order_line` (`company` column). Lower editable schedule: **Inspection Date · Expected Ready Date · Expected Ship Date** (written to all T1 lines on Save). Top-right actions: **✕ (cancel tier)** and **+ Add Note**.
   - **Block 3 — T2 + T3 Request:** identical structure/rules; groups buckets T2 and T3 (rows tagged T2/T3 to preserve bucket).
-- **✕ (cancel tier):** soft cancel — sets `request_order_lines.line_status = 'cancelled'` for the tier's lines (kept in DB, block hidden). If **no active line remains** on the request, `request_orders.request_status = 'cancelled'` + `cancelled_by/at`. Handler `cancelRequestOrderTier`. *(request_order_line_sources rows are append-only and not status-updated on cancel — follow-up.)*
+- **✕ (cancel tier):** soft cancel — sets `request_order_lines.line_status = 'cancelled'` for the tier's lines (kept in DB, block hidden). If **no active line remains** on the request, `request_orders.request_status = 'cancelled'` + `cancelled_by/at`. Handler `cancelRequestOrderTier`. *(prior documentation described request_order_line_sources rows as appended and not status-updated on cancel — not current Runtime evidence; Runtime UNVERIFIED; the append-only / cancel-sync behaviour is unresolved under B-5; follow-up.)*
 - **+ Add Note:** reveals a textarea; Save writes the note to the tier's `request_order_lines.note` (line-level note field).
 - **Validation:** Save/Submit blocked **only** when a row's company split ≠ Approved. **A partial-carton `Approved Qty` MUST NOT block Save/Submit/Approval** (canonical §37 partial-carton override end-to-end): an explicit partial-carton override is allowed through Approval — it is **not** auto-reverted to Suggested and **not** carton-CEILING'd; the override fact + note are preserved and `carton_qty` is the exact `Approved Qty ÷ units_per_carton` (may be fractional). *(Missing `units_per_carton` still blocks the system Suggested calculation + Send per §12.13 — that is a different gate.)*
 - **Removed from this page:** the **Factory / Payment** block — detailed payment/factory confirmation belongs to Purchase Order Overview. Only **Est. Amount** remains (first-layer header).
@@ -530,7 +530,7 @@ Procurement calculation engine · Remaining / Risk / Suggested Order formula · 
 - **Request Order Draft = Decision Layer.** All ordering decisions finish here: **Approved qty, KM/ResUS/ResTW company split, T1 vs T2+T3, schedule dates, tier cancel**. See §7.1.
 - **Purchase Order Overview = Execution Layer.** It **inherits the approved request result** and handles execution info only (supplier / factory / payment / delivery dates). **PO Overview split/merge logic is PAUSED** — it must not re-decide T1/T2/T3 split/merge until an explicit future design. Request↔PO traceability → `request_order_po_links` (future).
 - **Factory display** = `warehouses.warehouse_name`; **`warehouse_id` remains the source of truth** (shown only when no name exists; default Tier 1 = `WH-TW-CN-FACTORY-YOUXIN`).
-- **Company-split storage:** the KM/ResUS/ResTW split is stored **two ways** — (1) denormalized per-line `km_qty` / `resus_qty` / `restw_qty` on `request_order_lines` (matched company = approved, others 0), and (2) the append-only **`request_order_line_sources`** rows (source of truth for company/site/month). Each `request_order_line` maps to **one company**. **Manual Allocation Mode (finalized):** re-allocating Approved to a company that has **no existing line** for a `(sku, bucket)` **automatically creates that company's `request_order_line`** (and its `request_order_line_sources` row) — one company = one line = one source, **no ratio allocation**, each company owns its own `approved_qty`. Full rule: **§13 Allocation Persistence Rules**.
+- **Company-split storage:** the KM/ResUS/ResTW split is recorded **two ways** — (1) denormalized per-line `km_qty` / `resus_qty` / `restw_qty` on `request_order_lines` (matched company = approved, others 0), and (2) the **`request_order_line_sources`** rows (company/site/month source breakdown). **Manual Allocation Mode (finalized — UI / user-decision workflow only):** the approved user workflow — re-allocating Approved to a company, with each company's `approved_qty` a direct user decision and **no ratio allocation** — is finalized. **B-5 boundary (NOT canonical):** the accompanying DB-grain description — that `request_order_line_sources` is **append-only** / the **source of truth** for company/site/month, that each `request_order_line` maps to exactly **one company**, and that a missing company row **auto-creates** a `request_order_line` (+ `request_order_line_sources` row) in a fixed **one company = one line = one source** mapping — is a **legacy / provisional** implementation assumption only and does **not** finalize the DB grain, identity, uniqueness, authority, or one-line/one-source mapping (Blocked under B-5). Full rule + boundary: **§13 Allocation Persistence Rules**.
 
 ### 3.5 `request_order_site_confirmations` (IMPLEMENTED — Fix 1)
 
@@ -661,17 +661,17 @@ Records per-site confirmation before Series aggregation (site-level review → c
 
 **Wiring (this task):** Apps Script `getRequestOrderAllocationDrafts` (read via `getOperationDb`), `upsertRequestOrderAllocationDraft`, `upsertRequestOrderAllocationDraftLines`, `submitRequestOrderAllocationDrafts`; adapter `KM.DB.getRequestOrderAllocationDrafts()` / `getRequestOrderAllocationDraftLines()` / `upsertRequestOrderAllocationDraft()` / `upsertRequestOrderAllocationDraftLines()` / `submitRequestOrderAllocationDrafts()`. **Send Request** reads eligible (`draft` / `site_confirmed`) lines with `order_qty > 0`, creates `request_orders` / `request_order_lines` via the existing `createRequestOrderDraft` handler (grouped by series + supplier/factory when available; else series with supplier/factory = `--`/pending), then marks the allocation drafts `submitted`. **Demo Mode:** in-memory only (no DB writes; clearly labelled).
 
-## 3.8 `request_order_line_sources` — **FINAL schema (company/site/month source breakdown)**
+## 3.8 `request_order_line_sources` — **documented schema shape (company/site/month source breakdown) — final grain / authority Blocked under B-5**
 
-**Purpose:** the **append-only** company / site / month **source-of-truth breakdown** behind each request line. Read by the **Company Allocation popup** (Request Order Draft → SKU In Total → click a KM/ResUS/ResTW value). **This is the source-detail table — it MAY keep snapshot fields (forecast / stock / on-the-way / etc.); those must NOT be re-added to `request_order_lines` (§3.2).**
+**Purpose:** the documented company / site / month source-breakdown relation behind each request line. Read by the **Company Allocation popup** (Request Order Draft → SKU In Total → click a KM/ResUS/ResTW value). **This is the source-detail table — it MAY keep snapshot fields (forecast / stock / on-the-way / etc.); those must NOT be re-added to `request_order_lines` (§3.2).** **B-5 boundary (NOT canonical):** whether this relation is the **source-of-truth**, whether it is **append-only**, and its final grain / authority are **unresolved under B-5** — the "append-only source-of-truth breakdown" wording is a **legacy / provisional** description only, not a confirmed canonical guarantee.
 
-**PK standardized to `request_order_line_source_id`** (the legacy name `line_source_id` is retired; a physical legacy column may be dual-read, never the canonical key).
+**`request_order_line_source_id`** is listed as the current documented identifier column. **B-5 boundary (NOT canonical):** its final primary-key role, unique-key semantics, naming standard, and any replacement relationship to the legacy `line_source_id` are **unresolved under B-5**; a physical legacy column may be dual-read. Runtime status is **UNVERIFIED**. No standardized / canonical / final PK is decided here.
 
-**Final columns (canonical):**
+**Documented columns (prior-documentation shape — not current Runtime evidence; Runtime UNVERIFIED; final grain / primary-unique key Blocked under B-5; NOT a canonical FINAL schema):**
 
 | Column | Note |
 |---|---|
-| `request_order_line_source_id` | **PK** (standard; replaces `line_source_id`) |
+| `request_order_line_source_id` | Documented identifier column; final PK / unique-key status unresolved under B-5 |
 | `request_order_line_id` | FK → `request_order_lines` |
 | `request_order_id` | FK (denormalized, for lookup) |
 | **`tier_type`** | **`T1` / `T2` / `T3`** — the source bucket (mirrors `source_bucket`) |
@@ -689,49 +689,54 @@ Records per-site confirmation before Series aggregation (site-level review → c
 | `source_priority` | T1=1 / T2=2 / T3=3 |
 | `note` · `created_at` · `updated_at` | audit + note |
 
-**Rules (finalized):**
-- **One company = one `request_order_line_source`** for each `request_order_line` (mirrors the one-company-per-line rule, §3.2 / §13).
-- **`approved_qty` MUST equal** the matching `request_order_lines.approved_qty` for the **same company + sku + bucket** — **no ratio allocation**.
-- **Sync on Save / Submit / Convert to PO** (same decision qty; snapshot fields never overwritten by sync).
-- **Cancelled request lines must NOT update source rows** (§13.4 / §G).
+**Rules — legacy / provisional (non-canonical pending B-5):** the following describe a prior-documentation / provisional assumption only (not current Runtime evidence; Runtime UNVERIFIED); the final grain, one-line/one-source mapping, quantity-equality, and writer/synchronization contract are **Blocked under B-5** and must not be treated as canonical guarantees:
+- **One company = one `request_order_line_source`** for each `request_order_line` (mirrors the one-company-per-line rule, §3.2 / §13) — *legacy / provisional, unresolved under B-5*.
+- **`approved_qty`** matching the `request_order_lines.approved_qty` for the **same company + sku + bucket** (**no ratio allocation**) — *legacy / provisional quantity-equality assumption, not a mandatory canonical contract; Runtime UNVERIFIED*.
+- **Sync on Save / Submit / Convert to PO** (same decision qty; snapshot fields never overwritten by sync) — *legacy / provisional writer/synchronization assumption; Runtime UNVERIFIED*.
+- **Cancelled request lines and source rows:** any prior description that cancelled request lines do not update source rows is legacy / provisional (not current Runtime evidence; Runtime UNVERIFIED; cancel / source-sync behaviour unresolved under B-5) (§13.4 / §G).
 - **`tier_type` / `source_bucket`** both store the `T1`/`T2`/`T3` source bucket (kept in sync). `site_sku` is populated from `marketplace_skus` / `sku_regional_details` when resolvable.
 
-**Status:** write + read implemented (`handleCreateRequestOrderDraft_` appends one row per line; adapter `KM.DB.getRequestOrderLineSources()` + `normalizeRequestOrderLineSourceRecord`). The Company Allocation popup shows real source rows and falls back to `request_order_lines` grouped by company (**"Site-level source pending."**) for legacy requests. *(Doc standardizes the PK + full column set; runtime header reconciliation is a runtime-phase follow-up — no code change in this task.)*
+**Status (prior observed evidence — Runtime UNVERIFIED this round):** a write + read path was previously observed (`handleCreateRequestOrderDraft_` appending one row per line; adapter `KM.DB.getRequestOrderLineSources()` + `normalizeRequestOrderLineSourceRecord`). The Company Allocation popup shows source rows and falls back to `request_order_lines` grouped by company (**"Site-level source pending."**) for legacy requests. This round did **not** re-verify the runtime write path, and the one-row-per-line grain remains **Blocked under B-5** — the observation above is not a canonical grain/writer guarantee. *(Doc records the observed PK + column set; runtime header reconciliation is a runtime-phase follow-up — no code change in this task.)*
 
 ---
 
-## 13. Allocation Persistence Rules (official architecture rule)
+## 13. Manual Allocation Workflow and B-5 Persistence Boundary
 
-This is a **foundational architecture rule** for the whole procurement/supply chain layer. It governs how company allocation is persisted and synchronized, and is the basis for **Shipment Allocation**, **Purchase Orders**, and **Factory Allocation**.
+This section preserves the approved **Manual Allocation UI and user-decision workflow** (and the Round 1 lifecycle). It does **not** establish the Canonical database grain, authority, uniqueness, persistence pattern, or writer / synchronization contract between `request_order_lines` and `request_order_line_sources` — those semantics remain **unresolved under B-5**. It remains the reference point for how company allocation is presented for **Shipment Allocation**, **Purchase Orders**, and **Factory Allocation**, without finalizing their DB persistence.
+
+> **B-5 boundary (applies to all of §13 — NOT canonical):** the approved content in this section is the **UI / user-decision workflow** (each company's `approved_qty` is a direct user decision, with **no** proportional split) together with the **cancelled-line immutability** rule (§13.4). The **DB-level** claims below — one `request_order_line` per company, one `request_order_line_source` per line, `Company + SKU + Tier` as final identity, a mandatory line/source `approved_qty` equality, and the Save / Submit / Convert writer-synchronization contract — are **legacy / provisional implementation assumptions only** and remain **Blocked under B-5** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). They do **not** establish the final DB grain, uniqueness, authority, or writer contract, and this round did **not** re-verify the runtime write path (Runtime UNVERIFIED).
 
 ### 13.1 Company-based persistence
 
-Request Order persistence is **Company-based**. Primary identity:
+Request Order persistence was, in prior documentation, described as **Company-based** (legacy / provisional grain — not current Runtime evidence; Runtime UNVERIFIED; Blocked under B-5, not a canonical identity). Prior-documentation primary identity:
 
 ```
 request_order_id + company + sku + tier   (tier = request_bucket: T1 / T2 / T3)
 ```
 
-- **One Company = one `request_order_line`.**
-- **One Company = one `request_order_line_source`.**
+- **One Company = one `request_order_line`** — *legacy / provisional, unresolved under B-5*.
+- **One Company = one `request_order_line_source`** — *legacy / provisional, unresolved under B-5*.
 - Each `request_order_line` carries exactly **one** `company`; its `km_qty` / `resus_qty` / `restw_qty` place `approved_qty` on the matched company column (others `0`, never blank).
 
 ### 13.2 Manual Allocation Mode
 
-- When a company row **does not exist** for a `(request_order_id, sku, tier)`, the system **automatically creates it** (both the `request_order_line` and its `request_order_line_source`).
-- **No ratio allocation.** Quantities are never split proportionally.
-- **Each company owns its own `approved_qty`** — the row total (Approved) must equal the sum of the per-company allocations (`km_qty + resus_qty + restw_qty`), validated before Save/Submit.
+- When a company row **does not exist** for a `(request_order_id, sku, tier)`, prior documentation described an **auto-create** of a `request_order_line` (and a `request_order_line_source` row) — *legacy / provisional; not current Runtime evidence; Runtime UNVERIFIED; unresolved under B-5; not a canonical grain / writer rule*.
+- **No ratio allocation.** Quantities are never split proportionally. *(approved user-decision workflow)*
+- **Each company owns its own `approved_qty`** — the row total (Approved) equals the sum of the per-company allocations (`km_qty + resus_qty + restw_qty`), validated before Save/Submit. *(approved user-decision workflow)*
 
-### 13.3 Synchronization rule
+### 13.3 Synchronization rule (legacy / provisional — non-canonical pending B-5; Runtime UNVERIFIED)
+
+The line/source `approved_qty` synchronization described here is a **legacy / provisional implementation assumption only** — the quantity-equality and writer/synchronization contract are **Blocked under B-5** and were **not** re-verified this round; it is **not** a mandatory canonical guarantee:
 
 ```
-request_order_line_sources.approved_qty  MUST ALWAYS EQUAL  request_order_lines.approved_qty
+request_order_line_sources.approved_qty  =  request_order_lines.approved_qty   (legacy / provisional)
         for the same  Company + SKU + Tier
+        — non-canonical, Blocked under B-5; Runtime UNVERIFIED (not a mandatory contract)
 ```
 
-- Synchronization runs the **same decision quantity** into both tables in parallel — **no ratio, no proportional distribution**.
-- Only `approved_qty` (+ `updated_at`) is synchronized; **snapshot fields on `request_order_line_sources`** (forecast_qty / current_stock / on_the_way_qty / shortage_qty / reallocation_qty / recommended_qty / requested_qty / source_month / source_bucket / source_priority / site_sku / marketplace_product_id) are **never** overwritten by sync.
-- **Synchronization occurs on:** **Save** · **Submit** · **Convert to PO**.
+- Where run, synchronization uses the **same decision quantity** for both tables — **no ratio, no proportional distribution**.
+- Only `approved_qty` (+ `updated_at`) is synchronized; **snapshot fields on `request_order_line_sources`** (forecast_qty / current_stock / on_the_way_qty / shortage_qty / reallocation_qty / recommended_qty / requested_qty / source_month / source_bucket / source_priority / site_sku / marketplace_product_id) are **not** overwritten by sync.
+- **Observed to occur on:** **Save** · **Submit** · **Convert to PO** *(legacy / provisional; Runtime UNVERIFIED)*.
 
 ### 13.4 Cancelled-line immutability (terminal — official)
 
@@ -740,7 +745,7 @@ request_order_line_sources.approved_qty  MUST ALWAYS EQUAL  request_order_lines.
 - **Submit must NOT reactivate** cancelled lines — Submit **ignores** them (no re-status, no re-stamp).
 - **Approve must NOT approve** cancelled lines — they are skipped.
 - **Convert to PO EXCLUDES** cancelled lines (never copied into the PO snapshot, §15).
-- **`request_order_line_sources` sync IGNORES** cancelled lines (their source rows are not updated).
+- **`request_order_line_sources` sync** — any described behaviour of source-row sync ignoring cancelled lines is a **legacy / provisional** writer detail, non-canonical pending B-5 (Runtime UNVERIFIED); the canonical writer / synchronization contract is unresolved.
 - Excluded from company-split validation and from `total_sku` / `total_qty` / `total_cartons` totals.
 - **Rows remain in the DB for audit** — never deleted.
 - **Restore** (if ever needed) must be a **future explicit, audited action** — never automatic.
@@ -749,7 +754,7 @@ request_order_line_sources.approved_qty  MUST ALWAYS EQUAL  request_order_lines.
 
 This rule is the **foundation** for:
 - **Shipment Allocation** — company-owned quantities flow to shipment allocation without ratio splitting.
-- **Purchase Orders** — the PO company-split snapshot (`purchase_order_lines.km_qty / resus_qty / restw_qty`, §3.4) is captured per company from the synchronized request source.
+- **Purchase Orders** — the PO company-split snapshot (`purchase_order_lines.km_qty / resus_qty / restw_qty`, §3.4) is captured per company from the request source (the underlying line/source **synchronization is legacy / provisional, non-canonical pending B-5; Runtime UNVERIFIED**).
 - **Factory Allocation** — factory-side allocation reads company-owned quantities, never a re-derived ratio.
 
 ---

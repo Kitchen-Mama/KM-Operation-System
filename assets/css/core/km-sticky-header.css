@@ -59,6 +59,7 @@
 
     /* Z-index scale — one place, in descending stacking order. */
     --km-sticky-z-toolbar: 131;   /* page sticky control panel / filter toolbar */
+    --km-sticky-z-cat-rail: 125;  /* sticky category rail (below toolbar, above headers) */
     --km-sticky-z-corner: 121;    /* top-left corner cell (sticky both axes)     */
     --km-sticky-z-header-1: 120;  /* header row 1                                 */
     --km-sticky-z-header-2: 119;  /* header row 2                                 */

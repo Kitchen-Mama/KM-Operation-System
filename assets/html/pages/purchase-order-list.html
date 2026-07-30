@@ -16,28 +16,21 @@
                 <span class="history-date-trigger-icon">▼</span>
             </button>
         </div>
-        <div class="procurement-filter"><label>Status</label>
-            <select id="pol-f-status" class="pc-input">
-                <option value="">All</option>
-                <option value="draft">Draft</option>
-                <option value="issued">Issued</option>
-                <option value="in_production">In Production</option>
-                <option value="partial_completed">Partial Completed</option>
-                <option value="completed">Completed</option>
-                <option value="partial_shipped">Partial Shipped</option>
-                <option value="shipped">Shipped</option>
-                <option value="closure">Closure</option>
-                <option value="cancelled">Cancelled</option>
-            </select>
+        <!-- Status / Supplier / Category / Series migrated to the shared SKU-Details-style multi-select
+             (KM.ui.multiFilter). Option VALUES are unchanged (Status enum draft is excluded from this
+             page by applyFilters); selection is a multi-value array (OR within a filter, AND across
+             filters). SKU stays a free-text search; Date stays the range modal. -->
+        <div class="procurement-filter procurement-filter--multi"><label>Status</label>
+            <div class="pol-filter-mount" id="pol-f-status-mount"></div>
         </div>
-        <div class="procurement-filter"><label>Supplier</label>
-            <select id="pol-f-supplier" class="pc-input"><option value="">All</option></select>
+        <div class="procurement-filter procurement-filter--multi"><label>Supplier</label>
+            <div class="pol-filter-mount" id="pol-f-supplier-mount"></div>
         </div>
-        <div class="procurement-filter"><label>Category</label>
-            <select id="pol-f-category" class="pc-input"><option value="">All</option></select>
+        <div class="procurement-filter procurement-filter--multi"><label>Category</label>
+            <div class="pol-filter-mount" id="pol-f-category-mount"></div>
         </div>
-        <div class="procurement-filter"><label>Series</label>
-            <select id="pol-f-series" class="pc-input"><option value="">All</option></select>
+        <div class="procurement-filter procurement-filter--multi"><label>Series</label>
+            <div class="pol-filter-mount" id="pol-f-series-mount"></div>
         </div>
         <div class="procurement-filter"><label>SKU</label><input type="text" id="pol-f-sku" class="pc-input" placeholder="All"></div>
         <button type="button" class="pc-btn pc-btn--primary" onclick="polSearch()">Search</button>

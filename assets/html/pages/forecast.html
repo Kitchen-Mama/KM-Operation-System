@@ -5,9 +5,9 @@
                 </div>
 
                 <!-- Filter Bar -->
-                <div class="forecast-filters">
+                <div class="forecast-filters km-filter-bar">
                     <!-- Date Trigger Button -->
-                    <div class="forecast-filter forecast-filter--date">
+                    <div class="filter-group forecast-filter--date">
                         <label>Date</label>
                         <button type="button" class="forecast-date-trigger" id="forecastDateTrigger">
                             <span class="forecast-date-trigger-text">Last 30 days</span>
@@ -18,25 +18,25 @@
                     <!-- Country / Marketplace / Category / Series — shared multi-select filter component
                          (KM.ui.multiFilter → .kmf-*): search + Select All + Clear + checkbox list. Options +
                          selection are fed/read in forecast.js (_forecastMountFilters / collectForecastFilterParams). -->
-                    <div class="forecast-filter forecast-filter--dropdown">
+                    <div class="filter-group filter-group--dropdown">
                         <label>Country</label>
                         <div class="forecast-filter-mount" id="forecast-mount-country"></div>
                     </div>
-                    <div class="forecast-filter forecast-filter--dropdown">
+                    <div class="filter-group filter-group--dropdown">
                         <label>Marketplace</label>
                         <div class="forecast-filter-mount" id="forecast-mount-marketplace"></div>
                     </div>
-                    <div class="forecast-filter forecast-filter--dropdown">
+                    <div class="filter-group filter-group--dropdown">
                         <label>Category</label>
                         <div class="forecast-filter-mount" id="forecast-mount-category"></div>
                     </div>
-                    <div class="forecast-filter forecast-filter--dropdown">
+                    <div class="filter-group filter-group--dropdown">
                         <label>Series</label>
                         <div class="forecast-filter-mount" id="forecast-mount-series"></div>
                     </div>
 
                     <!-- SKU -->
-                    <div class="forecast-filter">
+                    <div class="filter-group">
                         <label>SKU</label>
                         <input type="text" class="forecast-filter-sku" placeholder="Enter SKU..." />
                     </div>

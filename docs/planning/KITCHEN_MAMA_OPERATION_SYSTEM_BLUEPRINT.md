@@ -3,15 +3,15 @@
 > **Owner Boundary (reviewed 2026-07-28).**
 > - **Document Role:** system-wide **scope, module map, and long-term boundaries** — orientation for all stakeholders.
 > - **Canonical Owner For:** system scope, module map, product direction, the two-branch (Shipping / Procurement) framing.
-> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), shipment lifecycle (`SHIPMENT_CENTER_SPEC.md`), Request/PO (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`), the **Reserve Trigger** (Batch B). It restates none of them.
-> - **Status:** Reviewed — Batch B Blockers Remain.
-> - **Current Version:** Draft v1 (Batch A repair: parallel-branch clarification + Reserve blocker).
-> - **Last Reviewed:** 2026-07-28.
+> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), shipment lifecycle (`SHIPMENT_CENTER_SPEC.md`), Request/PO (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`), the **Reserve Trigger** (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1). It restates none of them.
+> - **Status:** Reviewed — B-1 Resolved (owner §8A.1; not implemented); B-2…B-8 Blockers Remain.
+> - **Current Version:** Draft v1 (Batch A repair: parallel-branch clarification + Reserve blocker) → Batch B Round 1 sync: B-1 Reserve Trigger resolved (Formal Shipment Execution Commit; decision only).
+> - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** all domain specs above (Blueprint summarizes, they govern).
-> - **Blocked By:** Batch B — Reserve Trigger · Request→PO atomicity (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11).
+> - **Blocked By:** Batch B — Request→PO atomicity (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **B-1 Reserve Trigger no longer blocks — resolved (decision only; implementation not started).**
 
-**Status:** 🟡 Draft v1 — Master Architecture Blueprint / Spec only (NO code, NO DB, NO implementation)
-**Last Updated:** 2026-06-17
+**Status:** 🟡 Draft v1 — Master Architecture Blueprint / Spec only (NO code, NO DB, NO implementation; Batch B Round 1 B-1 sync 2026-07-30)
+**Last Updated:** 2026-07-30
 **Maintained By:** Development Team
 **Audience:** Company leadership · internal users · future developers · Claude / Codex agents · factory & overseas-warehouse stakeholders
 **Related (authoritative sources):** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) (current Request/PO authority), [`FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md`](./FRONTEND_MODULARIZATION_PHASE3_COMPLETION_AUDIT.md), `assets/specs/active/SYSTEM_ROADMAP.md`, `assets/specs/active/project-current-state.md`, `KM Website Road Map.xlsx`
@@ -253,12 +253,12 @@ Each arrow is a **forward data hand-off**, honoring Principle #6 (a Draft may pe
 - **Weekly Shipping Plan creates `shipping_plans` + `shipping_plan_lines`** (planning + approval); an approved plan creates `shipments` + `shipment_lines` as an execution snapshot.
 - **Shipment Draft IS `shipments.status = draft`** — an editable preparation **view**, not a new table. **Do NOT create a separate `shipment_drafts` table** (topology principle).
 - **Shipment Overview / On-The-Way / world map read the same `shipments` + `shipment_lines`** (+ future `shipment_events` / `shipment_routes` which enrich, never duplicate) — **no parallel shipment DB**.
-- The **shipment status lifecycle, on-the-way eligibility, FIFO PO allocation, and factory-stock deduction/reserve timing** are **owned by [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md)** — the Blueprint does not restate the status enum or the deduction/reserve rules.
+- The **shipment status lifecycle, on-the-way eligibility, FIFO PO allocation, and factory-stock deduction/release lifecycle** are **owned by [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md)**; the **Exact Reserve Trigger (B-1)** is owned by [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) **§8A.1** — the Blueprint restates neither the status enum nor the deduction/reserve rules.
 
-> **BLOCKED — Requires Batch B Canonical Decision (Reserve Trigger).** The single event that first **reserves** factory stock is **undecided**. **Verified current code (2026-07-28):** no reserve logic exists; the only factory-stock mutation is a hard **deduction of `current_stock` at Confirm Shipment & Dispatch**. Do not implement any reserve path until Batch B decides (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1).
+> **B-1 Reserve Trigger — RESOLVED (Batch B Round 1; decision only, owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1).** The event that first **reserves** factory stock is a **successful Formal Shipment Execution Commit**; Shipment Draft create/save/edit and plan approval do **not** reserve. **Verified current code (2026-07-28):** no reserve logic exists yet; the only factory-stock mutation is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch**. **Implementation / Runtime / Deployment Not Started — do not implement a reserve path from this decision alone** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1).
 
 - **Shipment documents** are generated via `document_templates` / `generated_documents` (one shared dataset → many rendered templates); **MVP communication to factory/carrier is manual email**. Token-to-DB mapping is future Export Center scope.
-- **Shipment Center executes planned needs — it does NOT run a parallel replenishment calculation engine.** Per-site allocated factory stock is planning metadata only (no `current_stock` deduction, no ownership transfer).
+- **Shipment Center executes planned needs — it does NOT run a parallel replenishment calculation engine.** Per-site allocated factory stock is planning metadata only (no `fac_current_stock` deduction, no ownership transfer).
 
 ---
 

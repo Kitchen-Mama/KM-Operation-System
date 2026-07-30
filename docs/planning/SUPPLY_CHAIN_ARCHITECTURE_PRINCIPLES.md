@@ -3,17 +3,19 @@
 > **Owner Boundary (reviewed 2026-07-28).**
 > - **Document Role:** the stable home for supply-chain **architecture language** (layers, truth, commit points, immutable flow).
 > - **Canonical Owner For:** architecture-layer semantics — Analysis / **Persisted Recommendation Workspace** / Decision / Execution / Settlement truth; Decision Commit; Immutable Flow; Truth Flow; Single Source of Truth; Business Object Identity.
-> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), cadence/service boundary (`SYSTEM_RUNTIME_ARCHITECTURE.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), the **Reserve Trigger** (Batch B).
-> - **Status:** Reviewed — Batch B Blockers Remain.
-> - **Current Version:** v1.3 (Batch A repair: draft-persistence correction + Recommendation Workspace layer).
-> - **Last Reviewed:** 2026-07-28.
+> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), cadence/service boundary (`SYSTEM_RUNTIME_ARCHITECTURE.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`). *(The **Reserve Trigger** (B-1) IS owned here — §8A.1; see "Owns (Batch B)" below. It is deliberately NOT listed as a non-owned concern.)*
+> - **Status:** Reviewed — B-1 Resolved (§8A.1); B-2…B-8 Blockers Remain.
+> - **Current Version:** v1.4 (Batch B Round 1 + acceptance-correction: B-1 Exact Reserve Trigger resolved = the **Ready to Ship** transition; identity = origin factory `warehouse_id + sku`; cancel/release deferred to B-8 — decision only).
+> - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** none (upstream authority for layer language).
-> - **Blocked By:** Batch B — Factory Stock **Reserve Trigger** (see the consolidated Batch B Handoff).
+> - **Owns (Batch B):** **B-1 Exact Reserve Trigger** — this document (§8A.1) is the single Canonical owner. Decision Resolved; Implementation / Runtime / Deployment Not Started; Runtime Verification Not Verified.
+> - **Blocked By:** Batch B — B-2…B-8 remain undecided (see the consolidated Batch B Handoff). B-1 no longer blocks (resolved §8A.1).
 
-**Status:** 🟢 v1.3 — Stable architecture principles (four-layer lifecycle + **Persisted Recommendation Workspace**)
-**Last Updated:** 2026-07-28
+**Status:** 🟢 v1.4 — Stable architecture principles (four-layer lifecycle + **Persisted Recommendation Workspace**; **B-1 Reserve Trigger resolved**, §8A.1)
+**Last Updated:** 2026-07-30
 **Changelog:**
-- **v1.3 (2026-07-28)** — Draft-persistence rule stated (§3/§8A): a Recommendation Draft (Recommendation Workspace) may be persisted as a non-commit snapshot; `sessionStorage` is UI recovery only. Added the Persisted Recommendation Workspace state, the Recommendation Snapshot term, and the parallel Procurement branch. Factory Stock **Reserve Trigger** = BLOCKED — Requires Batch B. Documentation only; no DB/runtime change.
+- **v1.4 (2026-07-30, acceptance-corrected)** — **B-1 Exact Reserve Trigger RESOLVED** (§8A.1 is the single Canonical owner): reserve trigger = the **successful Ready to Ship** transition (`draft → ready_to_ship`) = *Formal Shipment Execution Commit*, explicitly **distinct** from the non-reserving *Execution Commit* (Approved Plan → Create Draft). Plan approval / Create Draft / Draft create-save-edit do **not** reserve. Factory reservation applies only to a **factory-origin** shipment; identity = **origin factory `warehouse_id (= shipments.origin_warehouse_id) + sku`** (never `shipments.warehouse_id` / `destination_warehouse_id` / `warehouse_code` / `company` / `factory_name`); overseas origin uses the Overseas Outbound Lock / `wh_reserved_stock` (not `factory_stock`). **Ship** deducts `fac_current_stock` + consumes `fac_reserved_stock`. Header Owner/Not-Owner contradiction removed. **Cancel / unlock / reject / reopen / return-to-draft / negative-delta release / release status mapping remain BLOCKED under B-8.** **Decision only — Implementation / Runtime / Deployment Not Started; no DB / schema / Apps Script / writer / movement literal added.**
+- **v1.3 (2026-07-28)** — Draft-persistence rule stated (§3/§8A): a Recommendation Draft (Recommendation Workspace) may be persisted as a non-commit snapshot; `sessionStorage` is UI recovery only. Added the Persisted Recommendation Workspace state, the Recommendation Snapshot term, and the parallel Procurement branch. Factory Stock **Reserve Trigger** = BLOCKED — Requires Batch B *(Historical — superseded by v1.4; resolved by B-1)*. Documentation only; no DB/runtime change.
 - v1.2 — Formalized the **four-layer lifecycle** (Analysis → Decision → Execution → **Settlement**): added §10 **Supply Chain Layer Lifecycle** (per-layer owner/truth/lifecycle, incl. **Decision Layer Completion** and the Execution lifecycle Draft→Booked→…→Closed), §11 **Truth Flow extended to Settlement**, §12 **Layer Responsibility**. Added **Settlement Truth** + **Decision Layer Completion** to §1A. Drives `shipping_plans.completed_at` / `completed_by` (Done) — see `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`.
 - v1.1 — Added §4B **Snapshot Provenance** (Value + Source + Provenance; Provenance is architecture-reserved, not persisted) and §5A **Truth Flow Principle** (truth flows downstream, authority never flows back); added both to §1A terminology; cross-referenced from §4. No DB / runtime / API change.
 **Maintained By:** Development Team
@@ -307,11 +309,11 @@ Each layer has an **Owner**, a **Truth** (its source of truth), and a **Snapshot
 | **Persisted Recommendation Workspace** | Inventory Replenishment / 下單系統 (Draft) | `shipping_allocation_drafts` / `request_order_allocation_drafts` (+ `_lines`) | **Recommendation Snapshot** — non-commit; not Decision Truth, not Qualified Incoming, no reserve/deduct/movement |
 | **Decision** | Weekly Shipping Plan | `shipping_plans` + `shipping_plan_lines` | **Decision Snapshot** (§4) |
 | **Execution** | Shipment (Draft / Overview) | `shipments` + `shipment_lines` | **Execution Snapshot** (§4A) |
-| **Procurement (Planning)** | Request Order Draft | `request_orders` + `request_order_lines` | Procurement Planning Draft (copies upstream demand; never writes back) |
+| **Procurement (Request)** | Formal Request Order / Approval Workspace | `request_orders` + `request_order_lines` | **Formal Procurement Request snapshot created by Send Request** — NOT the pre-Send Recommendation Draft (that non-commit working state is the `request_order_allocation_drafts` / `_lines` row above); copies upstream demand, never writes back |
 | **Procurement (Commitment)** | Purchase Order | `purchase_orders` + `purchase_order_lines` | Procurement Commitment (copies from the approved Request Order; never writes back) |
 | **Documents** | Export / Document Center | `generated_documents` | (derived output) |
 
-> **Procurement Layer Phase 1 (Immutable Flow):** `Shipment / Inventory / Factory Stock` → **Request Order Draft** (Procurement Planning Draft) → **Purchase Order** (Procurement Commitment). Downstream copies upstream but never writes back: **PO does not write Request Order; Request Order does not write Shipment / Inventory / Factory Stock.** Request Order / PO are **API-ready** modules (see [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)). Future links to Shipment / Factory Stock / Supplier Price List are copy-only references.
+> **Procurement Layer Phase 1 (Immutable Flow):** `Shipment / Inventory / Factory Stock` → **Request Recommendation Workspace** (`request_order_allocation_drafts` / `_lines`; non-commit) → **Send Request** → **Formal Request Order** (`request_orders` / `request_order_lines`) → **Approve / Convert** → **Purchase Order** (`purchase_orders` / `purchase_order_lines`; Procurement Commitment). Shipping and Procurement remain parallel branches; Send Request is not a Shipping Decision Commit, a Draft is non-commit (no reserve / deduction / movement). Downstream copies upstream but never writes back: **PO does not write Request Order; Request Order does not write Shipment / Inventory / Factory Stock.** Request Order / PO are **API-ready** modules (see [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md)). Future links to Shipment / Factory Stock / Supplier Price List are copy-only references.
 
 > **Overseas Inbound (planning input, Immutable Flow):** an Overseas Inbound Draft is a **planning input** that feeds the **Decision Layer** — **Submit creates a Weekly Shipping Plan** (never a Shipment Draft directly, never a direct overseas-stock or factory-stock write). Only an approved plan reaches the Execution Layer; Overseas Stock updates only on shipment **receipt**. See [`OVERSEAS_INBOUND_SPEC.md`](./OVERSEAS_INBOUND_SPEC.md).
 
@@ -362,7 +364,41 @@ Each layer has an **Owner**, a **Truth** (its source of truth), and a **Snapshot
 
 > Layer placement: the Working Draft / Recommendation Workspace belongs to the **Analysis Layer + Persisted Recommendation Workspace** state (it lives inside Inventory Replenishment / 下單系統). Commitment then happens on **two parallel branches**: **Submit Plan** freezes the **Shipping Decision Truth** (`shipping_plans` / `shipping_plan_lines`, owned by Weekly Shipping Plan) with its per-SKU **Decision Snapshot** (§4); **Send Request** creates the **Procurement branch's Request Order execution record** (`request_orders` / `request_order_lines`, owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`) — a parallel committed record, **not** the Weekly-Shipping-Plan-owned Shipping Decision Truth. A Draft is neither until one of those actions occurs.
 
-> **BLOCKED — Requires Batch B Canonical Decision (Factory Stock Reserve Trigger).** The single event that first **reserves** factory stock (Plan Lock / Approval / Create Shipment Draft / Execution Commit / other) is **not decided**. **Verified current code (2026-07-28):** there is **no reserve logic in code at all** — the only factory-stock mutation is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch** (`22_shipment_dispatch_handlers.gs`); `fac_reserved_stock` is never written. The reserve-on-approval / reserve-on-draft lifecycles described across the specs are **spec-only / not implemented** and currently disagree — they must NOT be treated as decided. See the consolidated Batch B Handoff.
+### 8A.1 B-1 Exact Reserve Trigger — Canonical Decision *(this section is the single Canonical owner)*
+
+> **RESOLVED (B-1) — Canonical decision only; implementation NOT STARTED.** This subsection is the **single Canonical owner** of the Factory Stock Reserve Trigger. All other specs **reference** it and must not restate a conflicting trigger. The decision is a **business event**; it does **not** assert that any transaction, locking, atomic writer, movement literal, or idempotency key exists in Runtime today.
+
+**Two distinct commit events — do NOT conflate:**
+- **Execution Commit** = Approved Weekly Shipping Plan → **Create Shipment Draft** → `shipments.status = draft` → copy the Execution Snapshot. This is the Execution-Layer **handoff**; it performs **NO reservation** and is **NOT** the reserve trigger. It must **not** be called "Formal Shipment Execution Commit".
+- **Formal Shipment Execution Commit** = the **successful Ready to Ship action** = `shipments.status: draft → ready_to_ship`. **This — and only this — is the B-1 Factory Stock reserve trigger.** It reuses the existing Ready-to-Ship transition; no parallel status / API / DB literal / new table is created.
+
+**Exact Reserve Trigger = successful Formal Shipment Execution Commit (the Ready to Ship transition `draft → ready_to_ship`).**
+
+**Events that must NOT reserve** (they never write `fac_reserved_stock`): Shipping Recommendation calculation · Weekly Shipping Plan generation · **Plan approval** · **Create Shipment Draft (Execution Commit / the Approved-Plan → Draft handoff)** · Shipment Draft create / save / edit · Draft allocation staging · warehouse selection · Shipment Overview viewing · document / label / packing-list generation · pure status preview. *Rationale: a Draft is editable, cancellable, or may sit uncommitted indefinitely; reserving before Ready to Ship would create ghost reservations, double-holds, and stock that cannot be reliably released.*
+
+**The Formal Shipment Execution Commit must, within ONE atomic business commit:** (1) validate the Shipment header / lines / carton / warehouse / allocation; (2) validate **Factory Stock applicability** (origin factory warehouse resolvable — see identity below); (3) **successfully reserve** Factory Stock; (4) transition `status → ready_to_ship`. **If any step fails: status must NOT enter `ready_to_ship`; there must be NO partial reserve; and NO "`ready_to_ship` but not reserved" state may exist.**
+
+**Factory-domain applicability + reservation identity (Canonical):** reservation applies **only** when `shipments.origin_warehouse_id → warehouses.warehouse_id` resolves to `is_factory_warehouse = TRUE`. The reservation identity is exactly:
+```
+factory_stock.warehouse_id = shipments.origin_warehouse_id
+key = factory_stock.warehouse_id + sku
+```
+It must **NOT** use `shipments.warehouse_id`, `destination_warehouse_id`, `warehouse_code`, `company`, or `factory_name` as the reservation identity. If the origin is an **Overseas Warehouse**: do **NOT** write `factory_stock` / `factory_stock_movements` — reservation there is the **Overseas Outbound Lock / `wh_reserved_stock`** lifecycle (separate domain, `OVERSEAS_OUTBOUND_SPEC.md`). If a Factory-origin Shipment lacks a valid `origin_warehouse_id` or no matching Factory Stock row exists, the Formal Shipment Execution Commit must **FAIL** (not enter `ready_to_ship`).
+
+**Reservation effect** on a successful commit:
+```
+fac_current_stock   = unchanged
+fac_reserved_stock += reserved qty
+fac_available_stock = MAX(fac_current_stock - fac_reserved_stock, 0)
+```
+*(**Naming (Round 4):** Factory Stock availability is `fac_available_stock` — a **derived value, NOT a new DB column**. It is deliberately DISTINCT from the PO/FIFO `available_to_ship` quantity (completed-but-not-yet-shipped PO qty, owned by `SHIPMENT_CENTER_SPEC.md` §6). The two must never share a name: Factory Stock availability = `fac_available_stock`; PO/FIFO shipment eligibility = `available_to_ship`.)*
+A corresponding Factory Stock movement / audit lineage is required, but the **movement literal, writer function, idempotency key, transaction mechanism, and locking/concurrency mechanism are NOT added or implemented in this round.**
+
+**B-1 scope vs B-8 (strict):** B-1 owns **only** — the **first reserve trigger**, the **reserve amount**, **same-event idempotency** (re-submitting the same Ready-to-Ship event does not reserve twice), and the **atomic success/failure invariant** above. **All release / rollback semantics — cancel, unlock, reject, reopen, return-to-draft, partial rollback, negative-delta release event mapping, exact release status mapping, and any release writer / movement literal — remain BLOCKED under B-8** and are **NOT** decided by B-1.
+
+**Deduction boundary:** B-1 does not define deduction. The existing **Ship** action (Confirm Shipment & Dispatch) **deducts `fac_current_stock` and consumes `fac_reserved_stock`**; that lifecycle stays owned by `SHIPMENT_CENTER_SPEC.md`. **Reserve = Ready to Ship; Deduct = Ship** — two separate events, never merged. (Reserved-stock consumption at Ship is Canonical intent; its release/consumption writer detail is B-8 / not implemented.)
+
+> **Verified current code (2026-07-28):** there is still **no reserve logic in code** — `fac_reserved_stock` is never written; the only factory-stock mutation is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch** (`22_shipment_dispatch_handlers.gs`). B-1 is a **Canonical decision RESOLVED**; **Implementation / Runtime / Deployment = Not Started; Runtime Verification = Not Verified.** Do not implement any reserve write from this decision alone.
 
 ---
 
@@ -449,6 +485,6 @@ This extends §5A (Truth Flow Principle): **truth flows downstream, context flow
 
 ---
 
-**v1.2 — Supply Chain Architecture Principles. Four-layer lifecycle (Analysis → Decision → Execution → Settlement) + Decision Layer Completion. Stable, reusable architecture language. Spec only; no runtime change is implied beyond the documented `shipping_plans.completed_at` / `completed_by` Decision-Layer-completion fields.**
+**v1.4 — Supply Chain Architecture Principles. Four-layer lifecycle (Analysis → Decision → Execution → Settlement) + Decision Layer Completion + **B-1 Exact Reserve Trigger resolved (§8A.1: the Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit; decision only, implementation not started)**. Stable, reusable architecture language. Spec only; no runtime change is implied beyond the documented `shipping_plans.completed_at` / `completed_by` Decision-Layer-completion fields.**
 
 **End of Document**

@@ -61,7 +61,9 @@
     text-align: left; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
     min-height: 34px; color: #1e293b;
 }
-#carrier-rate-card-section .crc-date-trigger::before { content: '📅'; font-size: 13px; }
+/* Calendar icon removed (per user request): the `All dates` trigger no longer shows a leading 📅.
+   The trigger is `display:inline-flex; gap:6px`, so with the ::before gone there is only one child
+   (`.crc-date-trigger-text`) and the gap collapses — no residual left padding/gap remains. */
 #carrier-rate-card-section .crc-date-trigger:hover { border-color: #94a3b8; }
 #carrier-rate-card-section .crc-date-trigger-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

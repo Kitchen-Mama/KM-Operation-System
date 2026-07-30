@@ -1314,16 +1314,18 @@ function setReplenCategoryTab(category) {
 }
 window.setReplenCategoryTab = setReplenCategoryTab;
 
-// One category tab — uses the SHARED Category Tab Rail markup (.km-tab-rail__tab / __label / __count),
-// identical to the Order System, so all three pages share one look. Clicking re-renders (via the inline
-// onclick); active state is rebuilt on every render from `replenCategoryTab`.
+// One category tab — uses Inventory Replenishment's OWN page-scoped rail markup
+// (.replen-category-rail__tab / __label / __count). These are INDEPENDENT of the shared
+// km-tab-rail / km-category-card component (Round 3): own class/id/state/event owner, styled in
+// inventory-replenishment.css to visually match the Order Planning category bar. Clicking re-renders
+// (via the inline onclick); active state is rebuilt on every render from `replenCategoryTab`.
 function _replenCatTabHtml(name, count, active) {
     var safe = escapeReplenHtml(name);
     var arg = String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return '<button type="button" class="km-tab-rail__tab' + (active ? ' is-active' : '') + '" data-cat="' + safe +
+    return '<button type="button" class="replen-category-rail__tab' + (active ? ' is-active' : '') + '" data-cat="' + safe +
         '" onclick="setReplenCategoryTab(\'' + arg + '\')">' +
-        '<span class="km-tab-rail__label">' + safe + '</span>' +
-        '<span class="km-tab-rail__count">' + count + '</span></button>';
+        '<span class="replen-category-rail__label">' + safe + '</span>' +
+        '<span class="replen-category-rail__count">' + count + '</span></button>';
 }
 
 // Build the Category Tab Rail. All categories live in ONE horizontally-scrollable rail (the old
@@ -1333,30 +1335,31 @@ function renderReplenCategoryTabs(allData) {
     var bar = document.getElementById('replenCategoryTabs');
     if (!bar) return;
 
-    if (!allData || allData.length === 0) {
-        bar.innerHTML = '';
-        bar.style.display = 'none';
-        return;
-    }
+    // Empty-data state: the Category Bar shell is NEVER hidden. The old empty-data gate (which hid the
+    // rail via an inline none display) is removed — we always render at least `All (0)` so the bar is a
+    // clearly-visible standalone panel even before a Marketplace/dataset is chosen.
+    var rows = allData || [];
 
-    // Distinct non-empty categories in the current result set (same dedupe + alphabetical sort as
-    // Request Order's _roDistinct, so the Category tab order matches Request Order).
+    // Distinct non-empty categories in the current (upstream-filtered) result set — dedupe +
+    // alphabetical sort (matches Request Order's category order).
     var seen = {}, categoryList = [];
-    allData.forEach(function (it) {
+    rows.forEach(function (it) {
         var c = _replenCategoryOf(it);
         if (c && !seen[c]) { seen[c] = 1; categoryList.push(c); }
     });
     categoryList.sort();
 
-    // Reset to All if the previously-active category is no longer present (data changed).
+    // Reset to All if the previously-active category is no longer present (data changed / empty).
     if (replenCategoryTab !== 'All' && categoryList.indexOf(replenCategoryTab) === -1) replenCategoryTab = 'All';
 
-    // 'All' is always first; counts come from the full (search-scoped) set so selecting a category never
-    // zeroes the other category counts.
-    var tabs = [{ name: 'All', count: allData.length }].concat(categoryList.map(function (c) {
-        return { name: c, count: allData.filter(function (it) { return _replenCategoryOf(it) === c; }).length };
+    // 'All' is always first; counts come from the full upstream-scoped set (computed BEFORE the
+    // category filter is applied) so selecting a category never zeroes the other category counts.
+    var tabs = [{ name: 'All', count: rows.length }].concat(categoryList.map(function (c) {
+        return { name: c, count: rows.filter(function (it) { return _replenCategoryOf(it) === c; }).length };
     }));
 
+    // Actively clear any stale inline display (the old empty-gate could leave display:none in the DOM);
+    // the bar always shows.
     bar.style.display = '';
     bar.innerHTML = tabs.map(function (t) {
         return _replenCatTabHtml(t.name, t.count, t.name === replenCategoryTab);
@@ -1440,16 +1443,21 @@ window._replenChevronClick = _replenChevronClick;
 
 function renderReplenishment() {
     const allData = getReplenishmentData();
-    const fixedBody = document.getElementById('replenFixedBody');
-    const scrollBody = document.getElementById('replenScrollBody');
 
-    if (!fixedBody || !scrollBody) return;
-
-    // Build/refresh the Category tabs from the full result set, then filter to the active tab.
+    // Category rail renders FIRST and UNCONDITIONALLY — BEFORE the table-body guard below. It must
+    // appear across initial mount, loading, empty-data, filter-change, and remount even when the table
+    // bodies are not (yet) in the DOM, so `.replen-category-shell` is never left as an empty container.
+    // (Universal Filter UI Repair root-cause fix: the rail render used to sit AFTER the
+    // `if (!fixedBody || !scrollBody) return;` guard, so an absent/late table body left the shell blank.)
     renderReplenCategoryTabs(allData);
     // Keep the Category Section header title in sync with the active tab (persists across re-render/switch).
     var _catTitleEl = document.getElementById('replenCategoryTitle');
     if (_catTitleEl) _catTitleEl.textContent = (replenCategoryTab === 'All') ? 'All Categories' : replenCategoryTab;
+
+    const fixedBody = document.getElementById('replenFixedBody');
+    const scrollBody = document.getElementById('replenScrollBody');
+    if (!fixedBody || !scrollBody) return;
+
     const data = (replenCategoryTab === 'All')
         ? allData
         : allData.filter(function (it) { return _replenCategoryOf(it) === replenCategoryTab; });
@@ -4272,6 +4280,8 @@ function _ensureInventoryReplenishmentMarkup() {
 // variable — replacing the old hard-coded top:72px that let the taller/wrapping panel cover the
 // Current Stock / On the Way / Avg. Sales/day row. Reusable helper: KM.stickyHeader (core).
 var _replenStickyHeaderHandle = null;
+var _replenCatRailRO = null;
+var _replenCatRailResizeHandler = null;
 function _bindReplenStickyHeader() {
     if (!(window.KM && window.KM.stickyHeader && window.KM.stickyHeader.bindToolbar)) return;
     var root = document.getElementById('opsSection');            // .page-inventory (var scope)
@@ -4281,6 +4291,24 @@ function _bindReplenStickyHeader() {
         _replenStickyHeaderHandle.destroy();
     }
     _replenStickyHeaderHandle = window.KM.stickyHeader.bindToolbar(root, toolbar);
+
+    // Category rail is sticky just below the control panel; the main table header must pin a further
+    // "category-rail height" down so the rail is never covered. Measure the rail's live height into
+    // --km-replen-cat-rail-h (derived offset — NOT a hard-coded magic number). Re-measure on resize.
+    var shell = document.querySelector('#ops-section .replen-category-shell');
+    var measureCatRail = function () {
+        var h = (shell && shell.getBoundingClientRect) ? Math.ceil(shell.getBoundingClientRect().height) : 0;
+        root.style.setProperty('--km-replen-cat-rail-h', h + 'px');
+    };
+    measureCatRail();
+    try { if (typeof requestAnimationFrame === 'function') requestAnimationFrame(measureCatRail); } catch (e) {}
+    if (_replenCatRailRO && _replenCatRailRO.disconnect) { try { _replenCatRailRO.disconnect(); } catch (e) {} _replenCatRailRO = null; }
+    if (window.ResizeObserver && shell) {
+        try { _replenCatRailRO = new ResizeObserver(measureCatRail); _replenCatRailRO.observe(shell); } catch (e) { _replenCatRailRO = null; }
+    }
+    if (_replenCatRailResizeHandler) window.removeEventListener('resize', _replenCatRailResizeHandler);
+    _replenCatRailResizeHandler = measureCatRail;
+    window.addEventListener('resize', _replenCatRailResizeHandler);
 }
 
 // One-time wiring of the modal-overlay close listener + overview scroll sync. These bind plain
@@ -4333,6 +4361,9 @@ if (window.KM && window.KM.lifecycle) {
                 _replenStickyHeaderHandle.destroy();
                 _replenStickyHeaderHandle = null;
             }
+            // Release the category-rail height observer (sticky offset for the table header).
+            if (_replenCatRailRO && _replenCatRailRO.disconnect) { try { _replenCatRailRO.disconnect(); } catch (e) {} _replenCatRailRO = null; }
+            if (_replenCatRailResizeHandler) { window.removeEventListener('resize', _replenCatRailResizeHandler); _replenCatRailResizeHandler = null; }
             // 清理展開面板中的 Chart.js 實例
             var expandPanels = document.querySelectorAll('#ops-section .replen-expand-panel');
             expandPanels.forEach(function(panel) { panel.remove(); });

@@ -111,6 +111,13 @@
     height: var(--km-filter-height, 36px);
     min-width: 180px; max-width: none;
 }
+/* Filter Consistency Repair — SKU Handbook control alignment. ROOT CAUSE: the mount is a plain block
+   div wrapping an inline-block `.kmf` (components.css), so its line box reserves a ~4px baseline
+   descender gap BELOW the trigger; with the row's `align-items:flex-end` that pushed the Product Line /
+   Brand / Lifecycle triggers up relative to the Search <input> (Search appeared to sink). Making the
+   mount a flex box removes the inline descender gap so the trigger fills the mount exactly — no
+   negative margin / translateY / offset hack. Now all four controls share one top+bottom edge. */
+#sku-handbook-section .skuh-filter-mount { display: flex; }
 
 /* Checkbox Dropdown */
 #sku-handbook-section .skuh-filter--dropdown {

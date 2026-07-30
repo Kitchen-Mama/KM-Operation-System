@@ -18,43 +18,24 @@
                 </button>
             </div>
 
-            <!-- Country -->
+            <!-- Country — shared KM.ui.multiFilter (Round 3). Options derived from live runtime data by
+                 _shSyncFilterOptions (no hardcoded options); mounted by _shInitFilters. -->
             <div class="filter-group filter-group--dropdown">
                 <label>Country</label>
-                <button type="button" class="sh-dropdown-trigger" data-filter="country">
-                    <span class="sh-dropdown-text">All</span>
-                    <span class="sh-dropdown-icon">▼</span>
-                </button>
-                <div class="sh-dropdown-panel" data-filter="country">
-                    <label class="sh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="US" checked> US</label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="UK" checked> UK</label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="DE" checked> DE</label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="CA" checked> CA</label>
-                </div>
+                <div class="sh-filter-mount" id="sh-f-country-mount"></div>
+            </div>
+
+            <!-- Shipping Method — shared KM.ui.multiFilter (Round 3). DOM order keeps Shipping Method
+                 before SKU (Round 1). Options derived from live runtime data; multi-value OR-within. -->
+            <div class="filter-group filter-group--dropdown">
+                <label>Shipping Method</label>
+                <div class="sh-filter-mount" id="sh-f-method-mount"></div>
             </div>
 
             <!-- SKU -->
             <div class="filter-group filter-group--sku">
                 <label>SKU</label>
                 <input type="text" placeholder="Search SKU..." />
-            </div>
-
-            <!-- Shipping Method -->
-            <div class="filter-group filter-group--dropdown">
-                <label>Shipping Method</label>
-                <button type="button" class="sh-dropdown-trigger" data-filter="method">
-                    <span class="sh-dropdown-text">All</span>
-                    <span class="sh-dropdown-icon">▼</span>
-                </button>
-                <div class="sh-dropdown-panel" data-filter="method">
-                    <label class="sh-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="Air Freight" checked> Air Freight</label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="Sea Freight" checked> Sea Freight</label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="AGL Ship" checked> AGL Ship</label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="Private Ship" checked> Private Ship</label>
-                    <label class="sh-checkbox-item"><input type="checkbox" value="Express" checked> Express</label>
-                </div>
             </div>
 
             <!-- Search Button -->

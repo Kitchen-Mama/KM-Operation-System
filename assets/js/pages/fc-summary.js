@@ -11,25 +11,68 @@ const fcPaginationState = {
 const fcRegularMock = window.fcRegularData || [];
 const fcEventMock = window.fcEventData || [];
 
-// Get filter values from DOM
-function getFcFilters() {
-  const getSelectedFromDropdown = (filterType) => {
-    const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
-    if (!panel) return [];
-    const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
-    return Array.from(checkboxes).map(cb => cb.value);
-  };
+// ── FC Summary filters — shared KM.ui.multiFilter (Round 3) ──────────────────────────────────────
+// Company / Marketplace / Country / Category / Series / Event Type migrated from the page's own
+// `fc-dropdown` checkbox panels to the ONE shared component. Positive-inclusion semantics are PRESERVED
+// exactly: default = ALL values selected (show all); a subset = only those; NONE selected = show nothing
+// (emptyMeansAll:false). Within a filter OR; across filters AND. Options are the FULL distinct set per
+// dimension from the active dataset — FC Summary is deliberately NON-CASCADING (faceted narrowing was
+// removed as a canonical decision; see FC_SUMMARY_SPEC §13 / DATABASE_RELATIONSHIP_MAP §13), so no
+// dimension hides another's options. Year stays a native <select>; SKU stays a free-text contains search.
+var fcFilterState = { company: [], marketplace: [], country: [], category: [], series: [], event: [] };
 
+// Read the current filters from the shared-component state (single owner; no DOM checkbox scraping).
+function getFcFilters() {
   return {
     year: document.getElementById('fc-year-select').value,
-    companies: getSelectedFromDropdown('company'),
-    marketplaces: getSelectedFromDropdown('marketplace'),
-    countries: getSelectedFromDropdown('country'),
-    categories: getSelectedFromDropdown('category'),
-    series: getSelectedFromDropdown('series'),
-    events: getSelectedFromDropdown('event'),
+    companies: fcFilterState.company.slice(),
+    marketplaces: fcFilterState.marketplace.slice(),
+    countries: fcFilterState.country.slice(),
+    categories: fcFilterState.category.slice(),
+    series: fcFilterState.series.slice(),
+    events: fcFilterState.event.slice(),
     sku: document.getElementById('fc-sku-input').value.trim().toLowerCase()
   };
+}
+
+// Create-or-update ONE shared multi-select on its mount, defaulting to ALL options selected (matches the
+// legacy "All checked" default; none-checked = show nothing). onChange writes the array back to state and
+// re-renders both tables. Idempotent: safe to call on every populate/reload.
+function _fcApplyFilter(key, label, mountId, options) {
+  if (!(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
+  var mount = document.getElementById(mountId);
+  if (!mount) return;
+  var allVals = (options || []).map(function (o) { return (o && typeof o === 'object') ? String(o.value) : String(o); });
+  KM.ui.multiFilter.create({
+    mount: mount, filterId: mountId, label: label, options: options || [],
+    selectedValues: allVals,        // default = ALL selected (positive-inclusion default)
+    emptyMeansAll: false,           // none checked → show nothing (FC semantics)
+    allText: 'All', noneText: 'None',
+    onChange: function (vals) {
+      fcFilterState[key] = vals;
+      fcPaginationState.currentPage = 1;
+      renderFcRegularTable();
+      renderFcEventTable();
+    }
+  });
+  if (mount.__kmfCtl) fcFilterState[key] = mount.__kmfCtl.getSelected();
+}
+
+// (Re)build every FC filter's option universe from the ACTIVE dataset (Demo ON → demo mock; Demo OFF → DB
+// fc_regular_forecast + fc event data). Each dimension gets its FULL distinct set (non-cascading). Called
+// once per load / data reload / demo toggle — NOT on every render (renders read state only).
+function _fcSyncFilterOptions() {
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  var regular = demoOn ? _getDemoFcRegularData() : _getDbFcRegularData();
+  var events = demoOn ? _getDemoFcEventData() : _getDbFcEventData();
+  function distinct(arr) { var o = [], s = {}; (arr || []).forEach(function (v) { v = String(v == null ? '' : v).trim(); if (v && !s[v]) { s[v] = 1; o.push(v); } }); return o.sort(); }
+  _fcApplyFilter('company', 'Company', 'fc-f-company-mount', distinct((regular || []).map(function (r) { return r.company; })));
+  _fcApplyFilter('marketplace', 'Marketplace', 'fc-f-marketplace-mount',
+    distinct((regular || []).map(function (r) { return r.marketplace; })).map(function (mk) { return { value: mk, label: _fcMarketplaceLabel(mk) }; }));
+  _fcApplyFilter('country', 'Country', 'fc-f-country-mount', distinct((regular || []).map(function (r) { return r.country; })));
+  _fcApplyFilter('category', 'Category', 'fc-f-category-mount', distinct((regular || []).map(function (r) { return r.category; })));
+  _fcApplyFilter('series', 'Series', 'fc-f-series-mount', distinct((regular || []).map(function (r) { return r.series; })));
+  _fcApplyFilter('event', 'Event Type', 'fc-f-event-mount', distinct((events || []).map(function (e) { return e.event; })));
 }
 
 // Filter Regular Forecast data.
@@ -461,42 +504,11 @@ function updateActionButtons(tab) {
   }
 }
 
-// Initialize Dropdown
+// Initialize Dropdown — Round 3: mount + populate the shared KM.ui.multiFilter controllers from the
+// active dataset. The shared component owns open/close, outside-click, Esc, and the checkbox list, so the
+// old per-panel trigger/cloneNode/outside-click wiring is gone.
 function initFcDropdown() {
-  // FC Summary 篩選器
-  const fcTriggers = document.querySelectorAll('#fc-summary-section .fc-dropdown-trigger');
-  
-  fcTriggers.forEach(trigger => {
-    // 移除舊的事件監聽器
-    const newTrigger = trigger.cloneNode(true);
-    trigger.parentNode.replaceChild(newTrigger, trigger);
-    
-    newTrigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const filterType = newTrigger.dataset.filter;
-      const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
-      
-      if (!panel) return;
-      
-      // Close other panels
-      document.querySelectorAll('#fc-summary-section .fc-dropdown-panel').forEach(p => {
-        if (p !== panel) p.classList.remove('is-open');
-      });
-      
-      // Toggle current panel
-      panel.classList.toggle('is-open');
-    });
-  });
-  
-  // Prevent panel clicks from closing
-  document.querySelectorAll('#fc-summary-section .fc-dropdown-panel').forEach(panel => {
-    const newPanel = panel.cloneNode(true);
-    panel.parentNode.replaceChild(newPanel, panel);
-    
-    newPanel.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-  });
+  _fcSyncFilterOptions();
 }
 
 // Initialize Factory Stock Dropdown
@@ -510,59 +522,10 @@ function initFactoryDropdown() {
   }
 }
 
-// Close dropdown when clicking outside (scoped to FC Summary only)
-document.addEventListener('click', () => {
-  document.querySelectorAll('#fc-summary-section .fc-dropdown-panel').forEach(p => {
-    p.classList.remove('is-open');
-  });
-});
-
-// Toggle All checkboxes
-function toggleFcAll(checkbox, filterType) {
-  const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
-  const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-  
-  checkboxes.forEach(cb => {
-    cb.checked = checkbox.checked;
-  });
-
-  updateFcFilterText(filterType);
-  fcPaginationState.currentPage = 1;
-  renderFcRegularTable();
-  renderFcEventTable();
-}
-
-// Update individual filter
-function updateFcFilter(filterType) {
-  const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
-  const allCheckbox = panel.querySelector('input[value=""]');
-  const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-  const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-
-  // Update "All" checkbox
-  allCheckbox.checked = checkedCount === checkboxes.length;
-
-  updateFcFilterText(filterType);
-  fcPaginationState.currentPage = 1;
-  renderFcRegularTable();
-  renderFcEventTable();
-}
-
-// Update filter button text
-function updateFcFilterText(filterType) {
-  const panel = document.querySelector(`#fc-summary-section .fc-dropdown-panel[data-filter="${filterType}"]`);
-  const trigger = document.querySelector(`#fc-summary-section .fc-dropdown-trigger[data-filter="${filterType}"]`);
-  const textSpan = trigger.querySelector('.fc-dropdown-text');
-  const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
-  
-  if (checkboxes.length === 0) {
-    textSpan.textContent = 'None';
-  } else if (checkboxes.length === panel.querySelectorAll('input[type="checkbox"]:not([value=""])').length) {
-    textSpan.textContent = 'All';
-  } else {
-    textSpan.textContent = `${checkboxes.length} selected`;
-  }
-}
+// (Round 3) The old FC filter helpers — the section-wide outside-click closer, toggleFcAll, updateFcFilter,
+// and updateFcFilterText — were removed. The shared KM.ui.multiFilter now owns open/close, outside-click,
+// Esc, Select All / Clear, the trigger summary label, and selection state (see _fcApplyFilter above). No
+// old fc-dropdown DOM / inline onchange / dual owner remains.
 
 // Initialize Search
 function initFcSearch() {
@@ -3265,47 +3228,15 @@ function _getActiveTargetRules() {
     return _fcUseDb() ? _getDbTargetRules() : targetRules;
 }
 
-// Rebuild a FC Summary filter checkbox panel from distinct DB values (Demo OFF).
-// values: array of strings OR { value, label } objects. Checkbox value stays the canonical key
-// (used for filter matching); label is what the user sees (e.g. marketplace_display_name).
-function _rebuildFcPanel(filterType, values) {
-    var panel = document.querySelector('#fc-summary-section .fc-dropdown-panel[data-filter="' + filterType + '"]');
-    if (!panel) return;
-    var html = '<label class="fc-checkbox-item"><input type="checkbox" value="" checked onchange="toggleFcAll(this, \'' + filterType + '\')"> <strong>All</strong></label>';
-    values.forEach(function(v) {
-        var value = (v && typeof v === 'object') ? v.value : v;
-        var label = (v && typeof v === 'object') ? v.label : v;
-        html += '<label class="fc-checkbox-item"><input type="checkbox" value="' + value + '" checked onchange="updateFcFilter(\'' + filterType + '\')"> ' + label + '</label>';
-    });
-    panel.innerHTML = html;
-}
+// NOTE: Cascading/faceted filter narrowing remains intentionally REMOVED — every dimension keeps its full
+// option set (selecting US must NOT hide other countries' related options). Options are built per load by
+// _fcSyncFilterOptions (shared KM.ui.multiFilter); table filtering (filterFcRegular / filterFcEvent) still
+// applies the selected values. (_rebuildFcPanel / _rebuildFcPanelChecked / _fcCascadeFilters removed.)
 
-// NOTE: Cascading/faceted filter narrowing was intentionally removed — every dimension keeps its full
-// option set (selecting US must NOT hide other countries' related options). Options are built once per
-// load by _populateFcFilterOptionsFromDb; table filtering (filterFcRegular / filterFcEvent) still
-// applies the selected values. (_rebuildFcPanelChecked / _fcCascadeFilters removed.)
-
-// Populate company/marketplace/country/category/series filter options from fc_regular_forecast distinct values.
-// Event filter is left as-is (Special Event not connected in this task).
+// Populate all FC filter option universes from the active dataset. Kept as a thin alias so existing DB
+// call sites keep working; the shared-component populate lives in _fcSyncFilterOptions (Demo ON + OFF).
 function _populateFcFilterOptionsFromDb() {
-    // Build options ONLY from actual fc_regular_forecast data. No static/demo fallback:
-    // when DB is empty, panels are rebuilt with just the "All" entry (no fake options).
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
-    var distinct = function(key) {
-        var arr = [];
-        rows.forEach(function(r) { var v = String(r[key] || '').trim(); if (v && arr.indexOf(v) === -1) arr.push(v); });
-        arr.sort();
-        return arr;
-    };
-    _rebuildFcPanel('company', distinct('company'));
-    // Marketplace: checkbox value = canonical key present in the data; label = display name.
-    _rebuildFcPanel('marketplace', distinct('marketplace').map(function(mk){ return { value: mk, label: _fcMarketplaceLabel(mk) }; }));
-    _rebuildFcPanel('country', distinct('country'));
-    _rebuildFcPanel('category', distinct('category'));
-    _rebuildFcPanel('series', distinct('series'));
-    ['company', 'marketplace', 'country', 'category', 'series'].forEach(function(t) {
-        if (typeof updateFcFilterText === 'function') updateFcFilterText(t);
-    });
+    _fcSyncFilterOptions();
 }
 
 // Populate the Year dropdown from fc_regular_forecast.year distinct values (Demo OFF).

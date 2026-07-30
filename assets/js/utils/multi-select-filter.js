@@ -133,9 +133,21 @@
       return hit ? hit.label : value;
     };
     inst._updateTriggerLabel = function () {
-      var n = inst.selected.length;
-      inst.labelEl.textContent = n === 0 ? ('All ' + inst.label)
-        : (n === 1 ? inst._labelFor(inst.selected[0]) : (n + ' selected'));
+      // Honor the documented allText / noneText / emptyMeansAll / singleShowsLabel contract (previously
+      // _updateTriggerLabel ignored these and always read "All {label}" at 0 — a universal defect for
+      // positive-inclusion pages like FC Summary where 0 selected means "show nothing", not "All").
+      var n = inst.selected.length, total = inst.options.length, txt;
+      if (n === 0) {
+        txt = inst.emptyMeansAll ? inst.allText : inst.noneText;
+      } else if (total > 0 && n === total && !inst.emptyMeansAll) {
+        // Positive-inclusion: every option selected reads as "All" (the not-filtering state).
+        txt = inst.allText;
+      } else if (n === 1 && inst.singleShowsLabel) {
+        txt = inst._labelFor(inst.selected[0]);
+      } else {
+        txt = n + ' selected';
+      }
+      inst.labelEl.textContent = txt;
       inst.trigger.setAttribute('aria-expanded', inst.isOpen ? 'true' : 'false');
     };
     inst._renderList = function () {

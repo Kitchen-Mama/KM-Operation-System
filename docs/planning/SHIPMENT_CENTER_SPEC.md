@@ -1,7 +1,7 @@
 # Shipment Center / Shipment Draft / Shipment Overview — Specification
 
-**Status:** 🟢🟡 Draft v2.6 — **Mixed implementation status.** Core Shipment execution is live and runtime-aligned; several sections remain spec-only (see the status legend below). **Warehouse Picker remains PLANNED / NOT IMPLEMENTED.** This is not a whole-module "spec only" document. No Runtime or DB change in this documentation task.
-**Last Updated:** 2026-07-07
+**Status:** 🟢🟡 Draft v2.7 — **Mixed implementation status.** Core Shipment execution is live and runtime-aligned; several sections remain spec-only (see the status legend below). **Warehouse Picker status is component-level (canonical matrix in §23.8): frontend CODE-COMPLETE, backend source acceptance of the compatibility `warehouse_id + warehouse_code` SOURCE IMPLEMENTED, REDEPLOY PENDING, live GET/save/reload NOT VERIFIED, and `destination_warehouse_id` canonical persistence NOT IMPLEMENTED.** **Factory Stock reservation lifecycle remains PLANNED / NOT IMPLEMENTED (B-1 decision resolved; owner §8A.1).** This is not a whole-module "spec only" document. No Runtime or DB change in this documentation task.
+**Last Updated:** 2026-07-30
 **Maintained By:** Development Team
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`CARRIER_AND_ROUTE_SPEC.md`](./CARRIER_AND_ROUTE_SPEC.md) (Global Logistics Enums §4.5 / matching §4 / resolution §4.6), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md)
 
@@ -10,7 +10,7 @@
 > - **🟡 PLANNED / spec-only (NOT implemented):** `shipment_line_allocations` multi-PO table + writer (§16/Doc Gen §I.1 allocation grain); `factory_stock` reservation lifecycle + `factory_stock_allocation_plans` (§15.1); `shipment_events` / `shipment_routes` enrichment (§18); Document Engine runtime + most document mappings (§16/§20); cross-site borrowing (§19.3). New tables/fields marked *planned* here are design, not live.
 > - Individual sections should be read with this legend; where a section says "planned/future," it is spec-only. Legacy DB names appear in this document **only** inside explicit read-fallback / migration notes.
 >
-> **Changelog v1 → v2:** Added `warehouses` full schema, `factory_stock.fac_reserved_stock` + `available_stock = current_stock − reserved_stock` rule, reservation lifecycle (reserve on plan approval, release on cancel, deduct on ship), expanded `factory_stock_movements` (separate before/after for current vs reserved + reservation movement types), planned `factory_stock_allocation_plans` planning-layer table, production_schedule positioned as upstream readiness (not an MVP shipment dependency), and multi-PO display via `shipment_line_allocations`.
+> **Changelog v1 → v2:** *(Historical — the "reserve on plan approval" timing below is **SUPERSEDED by v2.7 / B-1**: reserve = Ready to Ship, and cancel-release = B-8. Retained as a historical record only.)* Added `warehouses` full schema, `factory_stock.fac_reserved_stock` + `available_stock = current_stock − reserved_stock` rule, reservation lifecycle (reserve on plan approval, release on cancel, deduct on ship), expanded `factory_stock_movements` (separate before/after for current vs reserved + reservation movement types), planned `factory_stock_allocation_plans` planning-layer table, production_schedule positioned as upstream readiness (not an MVP shipment dependency), and multi-PO display via `shipment_line_allocations`.
 >
 > **Changelog v2 → v2.1:**
 > - Refined FIFO PO allocation eligibility (`available_to_ship = completed_qty − shipped_qty`; never ship uncompleted PO quantity).
@@ -20,7 +20,7 @@
 >
 > **Changelog v2.1 → v2.2:**
 > - Added the complete **Formal Shipment end-to-end execution flow** (§15) — stock/order/rate confirmation → Weekly Shipping Plan → Manager + COO approval → Shipment Draft → Confirm & Ship → document generation → manual carrier/factory email → in-transit → receiving → completion → Overview/History.
-> - **Clarified factory-stock reservation & deduction timing** unambiguously (§15.1): plan creation/submission never deducts `current_stock`; reservation increases on approval/shipment creation; **Confirm & Ship is the physical deduction trigger**; cancellation releases reservation only.
+> - **Clarified factory-stock reservation & deduction timing** unambiguously (§15.1): plan creation/submission never deducts `current_stock`; reservation increases on approval/shipment creation; **Confirm & Ship is the physical deduction trigger**; cancellation releases reservation only. *(Historical — "reservation increases on approval/shipment creation" and "cancellation releases reservation" are **SUPERSEDED by v2.7 / B-1**: reserve = Ready to Ship transition; cancel/release mapping = B-8 (BLOCKED). See §7/§8/§15.1.)*
 > - Reconfirmed **Shipment Draft = `shipments.status = draft`** (no `shipment_drafts` table) as a dedicated role subsection (§15.2).
 > - Added **Shipment Document Generation** (§16): `document_templates` / `generated_documents` as the MVP document DB, document-type catalog, and shipment-focused document set.
 > - Added field lists for **Shipment Detail Sheet**, **Carrier Booking Form / 托單**, **Commercial Invoice**, **Packing List**, and **Amazon AGL Combined Invoice + Packing** (§16.1–§16.3).
@@ -35,14 +35,17 @@
 > - Added **future Cross-site / Cross-company Borrowing** planning exception (§19.3) — planning only, never ownership/accounting.
 > - Added the **Shipment Document Dataset** concept (§20): one shared dataset → many rendered templates → `generated_documents`; template controls layout, dataset controls values.
 >
+> **Changelog v2.6 → v2.7 (2026-07-30, acceptance-corrected) — B-1 Reserve Trigger sync (Batch B Round 1; decision only, NOT implemented):**
+> - Mapped the **Factory Stock reserve trigger** to the resolved **B-1** decision (single Canonical owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1): the reserve event is the **successful Ready to Ship transition (`shipments.status: draft → ready_to_ship`) = Formal Shipment Execution Commit** — explicitly **distinct** from the non-reserving *Execution Commit / Create Shipment Draft* (Step 10, the Approved-Plan → Draft handoff). **Plan approval, Create Shipment Draft, and interactive Draft create/save/edit do NOT reserve.** Reservation applies to a **factory-origin** shipment only; identity = **`factory_stock.warehouse_id (= shipments.origin_warehouse_id) + sku`** (never `shipments.warehouse_id` / `destination_warehouse_id` / `warehouse_code` / `company` / `factory_name`); overseas origin → Overseas Outbound Lock / `wh_reserved_stock`, not `factory_stock`. **Ship (Confirm & Ship)** deducts `fac_current_stock` and consumes `fac_reserved_stock` (§8; reserved-consumption not implemented). Corrected §0/§3/§4/§7/§8/§15.1/§23.9 so reserve = Ready to Ship and deduct = Ship (prior sync had bound reserve to Step-10 draft creation). **Cancel / return-to-draft / reject release + `stock_reservation_released` are B-8 (BLOCKED), marked non-canonical.** **No Shipment status redesign, no Warehouse Picker / FIFO / allocation / document-generation change; reservation lifecycle stays PLANNED / NOT IMPLEMENTED.**
+>
 > **Changelog v2.3 → v2.4 (2026-07-01) — Shipment Draft refinement (implemented):**
 > - **external_shipment_id default reformatted** to **`COMPANY-MKT-YYMMDD-##`** (marketplace short codes; 2-digit daily serial; e.g. `RESUS-AMZ-260701-01`) and shown as the **first Shipment Draft card-header field** (fallback `shipment_no` → internal `shipment_id`); §2.
 > - **`shipment_lines.carton_cbm` renamed to `shipment_carton_cbm`** and its meaning corrected to **LINE-TOTAL CBM** (total for the whole line/SKU qty — NOT per-carton). Header total CBM = **`Σ shipment_carton_cbm`** (direct sum, never re-multiplied). SKU Lines show **CBM** (line total), totals row shows **Total CBM**; §2, §15.3. Legacy `carton_cbm` (per-carton) = read-fallback only.
 > - **Carton No. validation** (§12): integers, `start ≤ end`, non-overlapping within a shipment; blocks Save / Ready to Ship / Ship (frontend + `updateShipment`).
 > - **§5B Required fields before Ship** changed to: `external_shipment_id`, Carton No. Start/End (all lines), `reference_id`, `warehouse_code`, `etd`, `eta` (tracking/booking no longer required).
 > - **Remark maps to `shipments.note`** (§4).
-> - **§12A Return to Draft** revision rule (future) + reserved **← Return to Draft** button on Ready to Ship (reason appended to `note`; no permissions yet); future `shipment_revision_log` table documented (not created).
-> - Implemented in `12_shipment_handlers.gs`, `11_shipping_plan_handlers.gs`, `operation-system-db-api.js`, `shipping-history.js`.
+> - **§12A Return to Draft — Historical v2.4 proposal — SUPERSEDED by v2.7 / B-8.** The former reason-appended-to-`note`, the exact status transition, the release behavior, the writer, the movement literal, and the `shipment_revision_log` table and its columns are **NOT current canonical contracts. They remain BLOCKED under B-8.** No table, writer, status mapping or release contract is created or specified by B-1. *(History preserved; the active misreading is removed — see §12A.)*
+> - Implemented in `12_shipment_handlers.gs`, `11_shipping_plan_handlers.gs`, `operation-system-db-api.js`, `shipping-history.js` — **this "implemented" note applies ONLY to the genuinely-completed v2.4 non-B-8 items above (external_shipment_id format, `shipment_carton_cbm`, Carton No. validation, §5B required fields, Remark→`note`). It does NOT implement Return to Draft, any reservation release, an exact status transition, or the `shipment_revision_log` table — those remain B-8 (BLOCKED), not implemented.**
 
 ---
 
@@ -63,14 +66,14 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
 - **Inventory namespace (finalized 2026-07-21):** Factory Stock balance columns are `fac_*`. `fac_current_stock` / `fac_reserved_stock` **supersede** the earlier `current_stock` / `reserved_stock` (same fields, renamed to disambiguate from the overseas `wh_*` domain). See the Inventory Field Namespace Rule in `DATABASE_RELATIONSHIP_MAP.md`. Throughout this spec, prose mentions of `factory_stock.fac_current_stock` / `.reserved_stock` refer to these canonical `fac_*` columns.
 - **No `company`, no `factory_name`.** Company = `warehouses.company`; Factory name = `warehouses.warehouse_name` (join by `warehouse_id`).
 - `fac_current_stock` = physical stock currently in the factory warehouse.
-- `fac_reserved_stock` = stock reserved for approved Shipping Plans / draft shipments, **not yet physically shipped**.
+- `fac_reserved_stock` = stock reserved at the **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** (B-1 resolved, owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1) and **not yet physically shipped** — reserved only for **factory-origin** shipments (identity origin `warehouse_id + sku`), **not** at plan approval, the Create-Shipment-Draft handoff, or interactive Draft create/save/edit. Consumed/released at **Ship**; cancel/release mapping is **B-8 (BLOCKED)**.
 - **`fac_available_stock` = `MAX(fac_current_stock − fac_reserved_stock, 0)`** — **computed, do NOT store** unless a future performance need arises (not created as a DB column in this task).
 - **Unique key: `warehouse_id + sku`.**
 - `factory_stock_movements` audit columns (`before_current_stock` / `after_current_stock` / `before_reserved_stock` / `after_reserved_stock`, below) are **NOT part of this rename** — only the two balance columns were finalized; movement audit columns keep their names pending a separate decision.
 
 **`factory_stock_movements`** — `factory_stock_movement_id, movement_date, sku, warehouse_id, movement_type, qty, related_entity_type, related_entity_id, before_current_stock, after_current_stock, before_reserved_stock, after_reserved_stock, note, created_by, created_at`
 - Uses `warehouse_id` (no `factory_name`). Must log **both physical stock and reservation changes** — hence separate `before/after_current_stock` and `before/after_reserved_stock`.
-- **Recommended `movement_type` values:** `stock_in`, `stock_reserved`, `stock_reservation_released`, `stock_shipped`, `stock_adjustment`.
+- **Recommended `movement_type` values:** `stock_in`, `stock_reserved` *(B-1 reserve at Ready to Ship)*, `stock_reservation_released` *(**B-8 — BLOCKED**: cancel/release event & mapping not decided)*, `stock_shipped`, `stock_adjustment`. *(These are recommended literals only — no movement writer is implemented; the release literal is not a decided contract.)*
 - **Manual Inventory Adjustment writer (2026-07-23):** the Factory Inventory page's **Inventory Adjustment** modal (renamed from the old dead "Edit" placeholder) calls action `adjustFactoryInventory` → `handleAdjustFactoryInventory_` (`21_factory_inventory_handlers.gs`). It writes `factory_stock` (`fac_current_stock` only; **`fac_reserved_stock` is never modified**) + one `factory_stock_movements` row **atomically** (script lock; movement-write failure rolls back the snapshot). The movement row uses `movement_type = 'manual_adjustment'` (already in the authoritative enum), `related_entity_type = 'inventory_adjustment'` (a value this workflow adds to the `related_entity_type` set — existing values `purchase_order` / `shipment` / `manual_adjustment` / `system_import` are unchanged), `related_entity_id = ADJ-YYYYMMDD-XXXX` (backend-generated), `factory_stock_movement_id = FSMV-<8hex>`, and the full 4-way `before/after_current_stock` + `before/after_reserved_stock` audit columns. User sets **New Available** only; backend computes `after_current = new_available + before_reserved`, `qty = new_available − before_available`, invariant `after_current − after_reserved === new_available`.
 
 **`purchase_orders`** — `purchase_order_id, po_no, km_po_no, warehouse_id, supplier_name, order_status, order_date, expected_completion_date, expected_ship_date, submitted_by, submitted_at, rejected_by, rejected_at, rejected_reason, created_by, created_at, approved_by, approved_at, note, updated_at`
@@ -92,15 +95,16 @@ These reflect the **current** Google Sheet schema and supersede older docs. **Fa
   - Examples: `RESUS-AMZ-260701-01`, `KM-AMZ-260701-02`, `RESTW-AMZ-260701-01`.
   - The user may override it (e.g. an Amazon-platform Shipment ID); Save writes `shipments.external_shipment_id`. It is shown as the **first field of the Shipment Draft card header** (fallback: `shipment_no` → internal `shipment_id`) and refreshes there after Save.
 - **`carrier_id` is read-only in the Shipment Draft UI** — the carrier is chosen on the Weekly Shipping Plan. Displayed for reference (`--` when none).
-- **`warehouse_id` selection (canonical — supersedes the earlier "auto-derived from destination" note):** `warehouse_id` is **NOT auto-derived** from `destination`. `company` / `marketplace` / country scope / `destination` context are **filtering context** that narrow the candidate list; the user then **selects exactly one warehouse** via the Warehouse Picker, and the system **copies `warehouse_code`** from that row:
+- **Destination warehouse selection (canonical — supersedes the earlier "auto-derived from destination" note; the committed canonical destination is `shipments.destination_warehouse_id`, with `shipments.warehouse_id` as the compatibility mirror):** the destination warehouse is **NOT auto-derived** from `destination`. `company` / `marketplace` / country scope / `destination` context are **filtering context** that narrow the candidate list; the user then **selects exactly one warehouse** via the Warehouse Picker, and the system **copies `warehouse_code`** from that row:
   ```
   company / marketplace / country scope / destination context
     ↓ filter eligible warehouses (§22.0(E)–(G))
   user selects exactly one warehouses.warehouse_id
-    ↓ persist shipments.warehouse_id (canonical identity)
-    ↓ copy warehouses.warehouse_code → shipments.warehouse_code (display/external-code snapshot)
+    ↓ persist shipments.destination_warehouse_id (canonical destination identity)   [Target Canonical — persistence NOT IMPLEMENTED, §23.8]
+    ↓ persist shipments.warehouse_id (destination compatibility mirror / read fallback only — the field the current Runtime writes)
+    ↓ copy warehouses.warehouse_code → shipments.warehouse_code (display/external-code snapshot, never an identity)
   ```
-  **Runtime status (2026-07-21):** the **Warehouse Picker IS IMPLEMENTED** in the Shipment Draft frontend (`assets/js/pages/shipping-history.js`, `warehouseFld()` / `shWarehousePick()`) — it replaces the legacy free-text `warehouse_code` input with a grouped FBA→3PL `warehouse_id` selector (candidates filtered per §22.0(E)–(H)), copies `warehouses.warehouse_code` into the hidden `warehouse_code` mirror on selection, and persists **both** `warehouse_id` + `warehouse_code` via `_shCollectExec`. Backend `SHIPMENT_EDITABLE_FIELDS_` (`12_shipment_handlers.gs`) now accepts `warehouse_id`. `normalizeWarehouseRecord` was extended to expose `warehouse_code` / `warehouse_owner` / `is_active` / `is_factory_warehouse` / `logistics_region` / `city` / `state`. **PENDING:** (a) live GET verifying the `warehouses` master actually carries `warehouse_code` / `warehouse_type` / `marketplace` / `is_active` / `is_factory_warehouse` / `logistics_region`; (b) `12_shipment_handlers.gs` redeploy; (c) live save/reload smoke test. Until (a)–(c) pass, the picker is code-complete but **NOT live-verified**. **CANONICAL WAREHOUSE ENDPOINTS (AMENDED 2026-07-28):** the destination identity is now `shipments.destination_warehouse_id` (+ `destination_type`); the shipment **source** is `shipments.source_warehouse_id` (out-source — **`origin_warehouse_id` / `origin_type` are NOT restored**). `warehouse_code` stays the **DESTINATION** warehouse code snapshot (never a source code). The Warehouse Picker still sends the legacy `shipments.warehouse_id` (destination), which the backend **mirrors onto `destination_warehouse_id`**; `warehouse_id` is retained as a read-fallback (never deleted). Source-warehouse data is resolved via `source_warehouse_id` → `warehouses`.
+  **Runtime status (2026-07-21; component-level — canonical matrix §23.8):** the **Warehouse Picker frontend is CODE-COMPLETE** in the Shipment Draft frontend (`assets/js/pages/shipping-history.js`, `warehouseFld()` / `shWarehousePick()`) — it replaces the legacy free-text `warehouse_code` input with a grouped FBA→3PL `warehouse_id` selector (candidates filtered per §22.0(E)–(H)), copies `warehouses.warehouse_code` into the hidden `warehouse_code` mirror on selection, and persists the **compatibility** `warehouse_id` + `warehouse_code` via `_shCollectExec` (the destination compatibility mirror — **NOT** the canonical `destination_warehouse_id`, whose persistence is **NOT IMPLEMENTED**). **Backend source acceptance (SOURCE IMPLEMENTED):** `SHIPMENT_EDITABLE_FIELDS_` (`12_shipment_handlers.gs`) accepts the compatibility `warehouse_id`; `normalizeWarehouseRecord` was extended to expose `warehouse_code` / `warehouse_owner` / `is_active` / `is_factory_warehouse` / `logistics_region` / `city` / `state`. **REDEPLOY PENDING + live verification PENDING:** (a) live GET verifying the `warehouses` master actually carries `warehouse_code` / `warehouse_type` / `marketplace` / `is_active` / `is_factory_warehouse` / `logistics_region`; (b) `12_shipment_handlers.gs` redeploy; (c) live save/reload smoke test. Until (a)–(c) pass, the picker frontend is **CODE-COMPLETE but NOT live-verified**, and `destination_warehouse_id` canonical persistence stays **NOT IMPLEMENTED**. **CANONICAL WAREHOUSE ENDPOINTS (AMENDED 2026-07-28; B-1 reconciled 2026-07-30) — single contract, aligned with §23.3 / §23.4 / §7 / §15.1 / §23.9:** (1) **Destination canonical identity = `shipments.destination_warehouse_id` (+ `destination_type`)**. (2) Legacy **`shipments.warehouse_id` = destination compatibility / read-fallback only** — the Warehouse Picker still sends it (destination) and the backend **mirrors it onto `destination_warehouse_id`**; it is never deleted. (3) **`warehouse_code` = the DESTINATION warehouse-code snapshot — never a source identity.** (4) **Canonical shipment origin/source identity = `shipments.origin_warehouse_id`.** (5) **Factory Stock B-1 reservation identity = `factory_stock.warehouse_id` = `shipments.origin_warehouse_id` + `sku`** (owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1). (6) The **current Runtime may still persist/observe `source_warehouse_id`** as the out-source endpoint column, but this is a **Current Runtime Gap / migration-pending compatibility state**, not a canonical decision. (7) **`source_warehouse_id` is NOT a competing canonical identity** and must **NOT** be used as the B-1 Factory Stock reservation key. (8) This documentation repair **does not implement, restore, rename, migrate or write any Runtime column**; `origin_type` transfer semantics remain exactly as defined in §23.3 / §23.4 (no new Runtime / schema decision is introduced here).
 - **`shipped_at` / `shipped_by`** — stamped when the shipment is **Shipped** (status → `shipped`) from the Shipment Draft **Ready to Ship** section (§4). `shipped_by` is a placeholder actor (`system_user`; future Role & Permission).
 - **`hidden_from_draft_at` / `hidden_from_draft_by`** — the **Done** marker: the Shipped card is **hidden from the Shipment Draft workspace** (still fully visible in Shipment Overview; the row is **never deleted** and status is unchanged). Minimal-change design (not `completed_*`) because the shipment lifecycle continues in Overview after Done.
 - **`company`** = **copied from `shipping_plans.company` at Execution Commit** (when the Shipment Draft is created). It is a **persisted execution snapshot of company ownership** — the Shipment must **NOT** live-join `marketplaces` to recover company for historical records. Company lives on the **header only**; `shipment_lines` do **not** carry company (they inherit it via `shipment_id`).
@@ -212,20 +216,21 @@ The three views are lenses over this same execution data — they do **not** own
 ```
 Weekly Shipping Plan Approved
         ↓
-Create shipments + shipment_lines           (shipments.status = draft)
-        ↓
-Reserve factory stock
-   factory_stock.fac_reserved_stock  ↑ (increases)
-   factory_stock.fac_current_stock   = unchanged (NOT decreased yet)
+Execution Commit — Create Shipment Draft     (creates shipments + shipment_lines, shipments.status = draft; copy Execution Snapshot)
+   NO reservation                            (the Approved-Plan → Draft handoff never reserves)
         ↓
 Shipment Draft page fills formal shipment data (carrier, ETD/ETA, cartons, …)
+Save / edit draft            → NO reservation (status stays draft / planned)
         ↓
-Save edited draft            → status = planned
-        ↓
-Confirm / Ready to Ship      → status = ready_to_ship
+Ready to Ship = Formal Shipment Execution Commit   → status: draft → ready_to_ship
+   B-1 reserve trigger (owner §8A.1) — atomic with the status transition:
+   factory_stock.fac_reserved_stock  ↑ (increases)   [factory-origin only; identity origin warehouse_id + sku]
+   factory_stock.fac_current_stock   = unchanged (NOT decreased yet)
    FIFO PO allocation finalized (§6)
-   factory_stock.fac_current_stock  ↓ (decreases)
-   factory_stock.fac_reserved_stock ↓ (decreases)
+        ↓
+Ship (Confirm & Ship)        → status = shipped
+   factory_stock.fac_current_stock  ↓ (decreases)             [physical deduction — verified in code]
+   factory_stock.fac_reserved_stock ↓ (consumed / released)   [Canonical intent; consumption writer NOT implemented — B-8]
         ↓
 ETD or actual_departure_date reached   → status = in_transit
         ↓
@@ -234,9 +239,9 @@ Arrival / receiving process            → partial_received  or  completed
 Completed shipments remain searchable in Shipment Overview
 ```
 
-**Cancelled shipments:**
-- **Must release `reserved_stock`** if a reservation exists.
-- **Must NOT deduct `current_stock`.**
+**Cancelled shipments (release semantics are B-8 — BLOCKED, NOT canonical yet):**
+- A cancel **should** release any held `fac_reserved_stock`, but the **release event / status mapping / movement literal is B-8 pending** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-8) — not a decided Runtime contract.
+- **Must NOT deduct `fac_current_stock`.**
 - **Must NOT count as on-the-way.**
 
 Status transitions are explicit user actions in MVP (no auto-scheduler yet — see Open Items).
@@ -288,8 +293,8 @@ Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Re
 `tracking_number`, `container_no`, `bl_no`, `invoice_no`, `actual_departure_date`, `actual_arrival_date`, `customs_clearance_date`, `delivered_date`, `freight_cost_actual`, `duty_actual`.
 
 **Transitions from this page:**
-- Save edited draft → `planned`.
-- Confirm / Ready to Ship → `ready_to_ship` (triggers FIFO PO allocation §6 and factory stock deduction §8).
+- Save edited draft → `planned` (**no reserve**).
+- Confirm / Ready to Ship → `ready_to_ship` — **Formal Shipment Execution Commit**: finalizes FIFO PO allocation (§6) and **reserves Factory Stock** (§7, factory-origin only; B-1). **Factory-stock deduction happens later at Ship (§8), NOT here.**
 
 > **Page separation (FINAL) — Shipment Draft and Shipment Overview are TWO independent pages.** They **share** the `shipments` / `shipment_lines` DB and the card render helper, but each is its **own section, filter UI, init, and render** — there is **no shared view-mode flag and no shared filter DOM state** (switching between them cannot pollute the other's filter). Sections: **Shipment Draft → `#shipment-draft-section`** (compact **Country + Status** filter); **Shipment Overview → `#shippinghistory-section`** (full **Date / Country / SKU / Shipping Method / Search** bar). Frontend: `assets/html/pages/shipment-draft.html` + `shipping-history.html`; `assets/js/pages/shipping-history.js` hosts `initShipmentDraftPage` / `renderShipmentDraft` and `initShipmentOverviewPage` / `renderShipmentOverview`. (This supersedes the earlier single-page `mode` toggle.)
 
@@ -310,14 +315,14 @@ Draft → Booked → Ready to Ship → Shipped → In Transit → Arrived → Re
 >   - **Total SKU Rule (official — global):** the **Total SKU** figure (and any `shipments.total_sku` field) = **`COUNT(DISTINCT sku)`, NEVER `COUNT(rows)`**. Qty / Ctn. / CBM / weights remain summations; only the SKU **count** is distinct. Same rule across Request Order, Purchase Order, Weekly Shipping Plan, Shipment Overview — see `DATABASE_RELATIONSHIP_MAP.md` §7.5A.
 > - **Execution Fields (clean 2-column form):** **Shipment ID (external, editable = `external_shipment_id`)**, Carrier (**read-only**), Reference ID, **Warehouse (Picker — see below)**, Tracking No, Booking No, Container No, BL No, Invoice No, ETD, ETA, **Remark**. The **internal `shipment_id` is shown read-only and never editable**. **Never editable:** the six-key context, `shipment_qty` / `shipment_carton_qty`, copied logistics + Decision Snapshot. **Remark mapping: the UI "Remark" field maps to `shipments.note`.**
 >   - **Warehouse field semantics (three kinds — canonical, §22.0):**
->     - **Picker-controlled identity — `warehouse_id`:** changed **only** through Warehouse Picker selection (choose one `warehouses` row); **NOT a free-text editable field**. Canonical committed identity. *(Target Canonical; population NOT IMPLEMENTED — §22.0(L).)*
+>     - **Picker-controlled destination identity:** changed **only** through Warehouse Picker selection (choose one `warehouses` row); **NOT a free-text editable field**. The **canonical committed destination identity is `shipments.destination_warehouse_id`**; **`shipments.warehouse_id` is the destination compatibility mirror / read-fallback** the current Runtime writes. *(destination_warehouse_id canonical persistence is Target Canonical — NOT IMPLEMENTED, §22.0(L) / §23.8.)*
 >     - **Derived display snapshot — `warehouse_code`:** **populated from the selected warehouse row** (external-code snapshot); it must **not** remain an independently editable free-text field after Picker implementation. *(Legacy runtime currently persists `warehouse_code` directly; that is the gap the Picker closes.)*
 >     - **Normal manually editable execution fields:** Reference ID, Tracking No, Booking No, Container No, BL No, Invoice No, ETD, ETA, Remark (free text / dates).
 > - **Carton No. validation (§12):** integers only; `start ≤ end`; **ranges must not overlap within the same shipment**. On error the offending inputs get a red border + message, and **Save / Ready to Ship / Ship are blocked** (frontend + server-side in `updateShipment`).
 > - **Save vs Ship (FINAL):** **Save** only updates execution fields — no history, no Overview, not a shipment. **Ship** requires status `shipped`, sets **`shipped_at` = now**, **`shipped_by` = `system_user`** placeholder, and only then does the shipment enter **Shipment Overview**.
 > - **§5B — Required fields before Ship** (validated on the frontend AND server-side in `updateShipment`): **`external_shipment_id`, Carton No. Start, Carton No. End (every line), `reference_id`, `warehouse_code`, `etd`, `eta`** (and `shipment_total_qty > 0`). `tracking_number` / `booking_no` are **not** required at this phase. Missing → error, Ship blocked.
 > - **Done (Shipped card):** writes **`hidden_from_draft_at` / `hidden_from_draft_by`** → the card leaves the **Shipment Draft** default view. It stays in **Shipment Overview**; status is unchanged; **no row is deleted**.
-> - **Return to Draft (Phase-2 placeholder, no permissions yet):** a **Ready to Ship** card has a **← Return to Draft** button. It prompts for a **required reason** (appended to `shipments.note` history) and sets `status = draft` so core data can be re-edited, then re-submitted. See §12A for the standard revision flow and the future `shipment_revision_log` table.
+> - **Return to Draft (B-8 — BLOCKED, NOT canonical):** a **← Return to Draft** button may appear as a *visual placeholder* on **Ready to Ship** cards, but the **status transition it would perform (whether/how `ready_to_ship → draft`), the reserved-stock release it implies, the exact status mapping, and any writer / movement literal are NOT decided by B-1 — they remain BLOCKED under B-8** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-8). This round defines **no** canonical revert mapping and **no** reservation-release contract. See §12A.
 
 ---
 
@@ -444,35 +449,27 @@ available_to_ship = completed_qty − shipped_qty = 5000 − 0 = 5000
 
 ## 7. Factory Stock Reservation Design
 
-**On Weekly Shipping Plan approval** (shipments + shipment_lines created as `draft`):
-- **Do NOT deduct `factory_stock.fac_current_stock`.**
-- Reserve by **increasing `factory_stock.fac_reserved_stock`**.
-- Available stock = `current_stock − reserved_stock` (computed).
-- Write `factory_stock_movements` with:
-  - `movement_type = stock_reserved`
-  - `related_entity_type = shipment_line`, `related_entity_id = shipment_line_id`
-  - `before_current_stock` / `after_current_stock` **unchanged**
-  - `before_reserved_stock` / `after_reserved_stock` record the reservation change.
+> **B-1 Reserve Trigger (RESOLVED — owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1; decision only, NOT implemented).** The reserve event is the **successful Ready to Ship transition (`shipments.status: draft → ready_to_ship`) = Formal Shipment Execution Commit**. **Weekly Shipping Plan approval, the Approved-Plan → Create-Shipment-Draft handoff (Execution Commit), and interactive Draft create / save / edit all do NOT reserve.** Reservation applies **only** to a **factory-origin** shipment; identity = **`factory_stock.warehouse_id (= shipments.origin_warehouse_id) + sku`**, `warehouses.is_factory_warehouse = TRUE` (never `shipments.warehouse_id` / `destination_warehouse_id` / `warehouse_code` / `company` / `factory_name`). If the origin is an Overseas Warehouse, this section does **not** apply — see the Overseas Outbound Lock / `wh_reserved_stock` lifecycle (`OVERSEAS_OUTBOUND_SPEC.md`). Reserve and the existing **Ship deduction** (§8) stay separate events. This section describes the reserve *mechanics*; per the doc legend it remains **PLANNED / NOT IMPLEMENTED** (no reserve writer/trigger is live).
 
-**On cancellation before shipping:**
-- Release by **decreasing `factory_stock.fac_reserved_stock`**.
-- **Do NOT change `current_stock`.**
-- Write `movement_type = stock_reservation_released`, `related_entity_type = shipment_line`, `related_entity_id = shipment_line_id`.
+**At the Ready to Ship / Formal Shipment Execution Commit** (`draft → ready_to_ship`), atomically with the status transition (validate header/lines/carton/warehouse/allocation + Factory Stock applicability; on any failure the status must NOT enter `ready_to_ship` and NO partial reserve occurs):
+- **Do NOT deduct `factory_stock.fac_current_stock`.**
+- Reserve by **increasing `factory_stock.fac_reserved_stock`** (factory-origin only; identity above).
+- Available stock = `fac_current_stock − fac_reserved_stock` (computed).
+- The intended audit movement is `movement_type = stock_reserved` (`before/after_reserved_stock` change; `before/after_current_stock` unchanged), keyed `warehouse_id = origin_warehouse_id`, `sku`. **Movement literal / writer / idempotency key are NOT created this round.**
+
+**Release on cancellation / return-to-draft / reject — B-8 (BLOCKED, NOT canonical):**
+- A cancel before shipping **should** release the held `fac_reserved_stock` (never change `fac_current_stock`), but the **release event, exact status mapping, negative-delta mapping, and the `stock_reservation_released` writer are NOT decided by B-1 — they remain BLOCKED under B-8** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-8). Do not treat any release/rollback mapping here as a decided Runtime contract.
 
 ---
 
 ## 8. Factory Stock Deduction Design
 
-**When shipment is confirmed / `ready_to_ship`:**
-- `factory_stock.fac_current_stock` decreases by `shipment_lines.factory_stock_allocation_qty`, or by `shipment_qty` (legacy `qty` fallback) if allocation qty is blank.
-- `factory_stock.fac_reserved_stock` decreases by the same reserved amount.
-- Write `factory_stock_movements` with:
-  - `movement_type = stock_shipped`
-  - `related_entity_type = shipment_line`, `related_entity_id = shipment_line_id`
-  - `before_current_stock` / `after_current_stock` recorded
-  - `before_reserved_stock` / `after_reserved_stock` recorded.
+**At Ship (Confirm & Ship; `ready_to_ship → shipped` / dispatch) — NOT at the Ready to Ship reserve step:**
+- `factory_stock.fac_current_stock` decreases by `shipment_lines.factory_stock_allocation_qty`, or by `shipment_qty` (legacy `qty` fallback) if allocation qty is blank. *(This `fac_current_stock` deduction at Confirm Shipment & Dispatch is the one **verified** factory-stock mutation in code.)*
+- `factory_stock.fac_reserved_stock` is **consumed** by the same amount (the hold placed at Ready to Ship is drawn down). **Canonical intent only — the reserved-stock consumption writer is NOT implemented (no reserve is written today); its exact status/movement mapping is B-8.**
+- Intended audit movement `movement_type = stock_shipped` (`before/after_current_stock` + `before/after_reserved_stock` recorded), keyed `warehouse_id = origin_warehouse_id`, `sku`.
 
-> Spec only — not implemented here.
+> Reserve = Ready to Ship (§7); Deduct = Ship (this section). Two separate events. **Spec only — reserve + reserved-consumption not implemented; only the `fac_current_stock` deduction at Ship exists in code.**
 
 ---
 
@@ -532,10 +529,10 @@ Shipment Overview and the future On The Way view read from `shipments` + `shipme
 - `shipments.warehouse_id` = **destination logical warehouse** = system warehouse master id, e.g. `WH-RESUS-US-FBA-AMAZON`.
 - `shipments.warehouse_code` = **external / receiving code** (FC / receiving), e.g. `ONT8`, `LGB8`.
 - **Do not confuse the two.** Factory/source warehouse and all factory metadata come from `warehouse_id` → `warehouses` relationships, **not** `factory_name`.
-- **Warehouse Master is independent shared master data — NOT owned by Shipment.** `warehouses` is the authoritative source for all warehouse address / contact / country / status details; a Shipment stores only the **selected identity** and must **not** duplicate warehouse address/contact fields into separate Shipment columns. The **canonical committed identity is `warehouse_id`** (`warehouse_code` is displayed but is **not globally unique**) — see §22.0(D)/(L).
+- **Warehouse Master is independent shared master data — NOT owned by Shipment.** `warehouses` is the authoritative source for all warehouse address / contact / country / status details; a Shipment stores only the **selected identity** and must **not** duplicate warehouse address/contact fields into separate Shipment columns. The **canonical committed destination identity is `shipments.destination_warehouse_id`** (with `shipments.warehouse_id` as the destination compatibility mirror / read-fallback; `warehouse_code` is displayed but is **not globally unique** and is never an identity) — see §22.0(D)/(L).
 - **Cardinality:** `warehouses` **1 → many** `shipments`. **Relationship key: primary `shipments.warehouse_id → warehouses.warehouse_id`; legacy fallback the composite `company + country/scope + marketplace + warehouse_code` (exactly one row; ambiguous → error). Never `warehouse_code` alone** (§22.J).
 - **Two distinct uses of the relationship (do not conflate):**
-  - **Operational selection (Shipment Draft):** candidates resolve by `company + marketplace + warehouse_type + country scope` (§22.0(E)–(G)); the committed identity is **`warehouse_id`** (Target Canonical; legacy runtime persists `warehouse_code`, `warehouse_id` population **not implemented** — §22.0(L)). See **§22 / §22.0**.
+  - **Operational selection (Shipment Draft):** candidates resolve by `company + marketplace + warehouse_type + country scope` (§22.0(E)–(G)); the committed **destination** identity is **`shipments.destination_warehouse_id`** (Target Canonical; `shipments.warehouse_id` is the compatibility mirror; legacy runtime persists `warehouse_code` + the compatibility `warehouse_id`, `destination_warehouse_id` canonical persistence **not implemented** — §22.0(L) / §23.8). See **§22 / §22.0**.
   - **Document lookup (dataset build):** resolves the Warehouse Master row (primary by `warehouse_id`, legacy composite fallback) to populate recipient/warehouse document fields — a **reference lookup at build time, NOT a Shipment snapshot** (values never copied onto `shipments`; the generated document is the immutable snapshot). See **§22.J**.
 
 ---
@@ -553,17 +550,12 @@ Shipment Overview and the future On The Way view read from `shipments` + `shipme
 
 ---
 
-## 12A. Return to Draft / Revision Rule *(future — Return to Draft button reserved now, no permissions)*
+## 12A. Return to Draft / Revision Rule *(B-8 — BLOCKED, NOT canonical)*
 
-Once a shipment is **Ready to Ship** (or **Shipped**), core data (SKUs, carrier, carton numbers) must **not** be edited freely in place. If an issue is found (SKU shortage, carrier change, carton-number error, etc.) the **standard revision flow** is:
+> **B-8 (BLOCKED — NOT canonical).** Once a shipment is **Ready to Ship** (or **Shipped**), core data (SKUs, carrier, carton numbers) must **not** be edited freely in place. A revision path (revert to an editable state, re-edit, re-submit) is a *recognized need*, but its **exact status mapping (whether/how `ready_to_ship → draft`), the reserved-stock release it implies, the release / revision writer, the movement literal, and any revision-log schema are all part of B-8 (Cancellation / Rollback status mapping) and are NOT decided by B-1.** This section defines **no** canonical transition, **no** release event, **no** writer, and **no** table.
 
-```
-Ready to Ship → Return to Draft (enter reason) → [authorized editor] edit → Save → Ready to Ship
-```
-
-- **This phase:** a **← Return to Draft** button is reserved on Ready to Ship cards. It prompts for a **required reason** (appended to `shipments.note`) and sets `status = draft`. **No permission gating yet.**
-- **Future `shipment_revision_log` table** (NOT created now — future spec only):
-  `revision_id, shipment_id, action, from_status, to_status, reason, changed_by, changed_at, note`.
+- **This phase:** a **← Return to Draft** button may appear as a *visual placeholder* on Ready to Ship cards (no permission gating, no decided behaviour). It does **not** constitute a canonical status transition or a reserved-stock release contract.
+- Any `shipment_revision_log` table, its columns, and any `from_status → to_status` mapping remain **BLOCKED under B-8** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11) — **not created and not specified here.**
 
 ---
 
@@ -625,7 +617,10 @@ This section documents the **full shipment-side operating flow**, from stock/ord
 10. Approved Weekly Shipping Plan → create shipments + shipment_lines   (shipments.status = draft)
 11. Shipment Draft stage: OP completes shipment details
        (Amazon shipment ID / reference / warehouse code / ship date / ETD / ETA / carrier / shipping method / note)
-12. Confirm & Ship: status → ready_to_ship / in_transit (as applicable); FACTORY STOCK DEDUCTION HAPPENS HERE
+12a. Ready to Ship (draft → ready_to_ship) = Formal Shipment Execution Commit: RESERVES factory stock
+       (fac_reserved_stock; factory-origin only) + finalizes FIFO PO allocation; NO deduction here
+12b. Ship (Confirm & Ship → shipped / dispatch): DEDUCTS factory_stock.fac_current_stock + CONSUMES
+       fac_reserved_stock — FACTORY STOCK DEDUCTION HAPPENS HERE (a separate event from 12a)
 13. Generate shipment documents:
        Shipment Detail Sheet · Carrier Booking Form / 托單 · Commercial Invoice · Packing List ·
        Commercial Invoice + Packing Combined (e.g. Amazon AGL combined form)
@@ -643,9 +638,9 @@ This section documents the **full shipment-side operating flow**, from stock/ord
 **Step notes:**
 - **Steps 1–4 (pre-plan readiness):** factory/overseas stock and PO completion (`completed_qty` / delivery schedule) are confirmed; carrier/forwarder rate is confirmed (MVP manual, future API-driven); the OP team is notified. These are prerequisites — they do not write shipment records.
 - **Steps 5–9 (planning + approval):** Inventory Replenishment suggestions drive the Weekly Shipping Plan; OP submits; **Manager then COO** approve. This is the planning/approval layer (`shipping_plans` / `shipping_plan_lines`).
-- **Step 10 (Execution Commit):** approval **creates `shipments` + `shipment_lines` with `status = draft`** and may reserve factory stock (§15.1). The Shipment Draft **copies the header context from `shipping_plans`** — including **`shipping_plans.company` → `shipments.company`** (persisted execution snapshot; **never live-joined from `marketplaces`**, §2) — and **copies each line's Decision Snapshot into the line Execution Snapshot** (`snapshot_*`, §2 / ARCHITECTURE §4A). The Execution Layer **never recalculates** Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event — all are copied. Once created, the Shipment reads **only** `shipments` / `shipment_lines` and no longer reads the Weekly Shipping Plan.
+- **Step 10 (Execution Commit — Create Shipment Draft):** approval **creates `shipments` + `shipment_lines` with `status = draft`** and performs **NO reservation and NO deduction** (§15.1 — this handoff is **NOT** the reserve trigger and must **not** be called "Formal Shipment Execution Commit"). The Shipment Draft **copies the header context from `shipping_plans`** — including **`shipping_plans.company` → `shipments.company`** (persisted execution snapshot; **never live-joined from `marketplaces`**, §2) — and **copies each line's Decision Snapshot into the line Execution Snapshot** (`snapshot_*`, §2 / ARCHITECTURE §4A). The Execution Layer **never recalculates** Current Stock / Avg Sales / Days of Supply / Suggested Qty / Target Days / FC / Event — all are copied. Once created, the Shipment reads **only** `shipments` / `shipment_lines` and no longer reads the Weekly Shipping Plan.
   - **Execution Commit Phase 1 (implemented):** Approve auto-creates the Shipment Draft (idempotent — one shipment per approved plan; an explicit `createShipmentFromPlan` action retries). Execution-layer fields (carrier / booking / container / BL / invoice / ETD / ETA / tracking / remark / status) are editable via `updateShipment`; the Execution Snapshot is immutable. **Factory-stock reservation (§15.1) is NOT performed in Phase 1** (deferred — out of this scope); no `factory_stock` / `factory_stock_movements` write occurs yet.
-- **Steps 11–12:** Shipment Draft completes formal data; **Confirm & Ship is the physical execution trigger** (§15.1) and finalizes FIFO PO allocation (§6).
+- **Steps 11–12 (two separate stock events, §15.1):** Shipment Draft completes formal data (no reserve, no deduct). **Step 12a — Ready to Ship (`draft → ready_to_ship`) = the B-1 reserve event:** reserves `fac_reserved_stock` (factory-origin only) and finalizes FIFO PO allocation (§6); **no `fac_current_stock` deduction.** **Step 12b — Ship (Confirm & Ship) = the physical deduction event:** deducts `fac_current_stock` and consumes `fac_reserved_stock`. Reserve = Ready to Ship; Deduct = Ship — never merged.
 - **Steps 13–14:** documents are generated (§16) and, in MVP, manually emailed to factory/carrier.
 - **Steps 15–18:** in-transit (future events/routes §18) → receiving (§17) → completed → searchable in Overview/History.
 
@@ -653,18 +648,19 @@ This section documents the **full shipment-side operating flow**, from stock/ord
 
 This makes the reservation/deduction timing in §7/§8 **unambiguous across the full flow**:
 
-- **Creating a Shipping Plan does NOT deduct `factory_stock.fac_current_stock`.**
-- **Submitting a Weekly Shipping Plan does NOT deduct `factory_stock.fac_current_stock`.**
-- **Execution Commit / Create Shipment Draft (Step 10)** — the canonical consolidation-and-reservation moment — performs, idempotently: (a) persist **`shipment_plan_links`** for every source plan (§2.A); (b) persist **line source mapping/allocation** (Demand axis — `shipment_lines.source_shipping_plan_line_id` or `shipment_line_plan_allocations`, §2.A); (c) allocate eligible **PO lines** (Supply axis — FIFO, §6); (d) **increase `factory_stock.fac_reserved_stock`** (reservation), writing `factory_stock_movements` `movement_type = stock_reserved` (`current_stock` unchanged). **No `current_stock` deduction here.**
-- **Shipment Draft is `shipments.status = draft` and does NOT deduct `current_stock` by itself.**
-- **Confirm & Ship (Step 12) is the physical execution trigger:**
-  - `factory_stock.fac_current_stock` **decreases**.
-  - `factory_stock.fac_reserved_stock` **decreases / is released to zero** for the shipped allocation.
-  - `factory_stock_movements` writes a **`stock_shipped`** (a.k.a. shipment_allocated) movement, recording before/after for both current and reserved stock, `related_entity_type = shipment_line`, `related_entity_id = shipment_line_id`.
-- **Cancelled shipments must release `reserved_stock` and must NOT deduct `current_stock`** (write `stock_reservation_released`).
+- **Creating a Shipping Plan does NOT deduct `factory_stock.fac_current_stock`** and does NOT reserve.
+- **Submitting a Weekly Shipping Plan does NOT deduct `factory_stock.fac_current_stock`** and does NOT reserve.
+- **Execution Commit — Create Shipment Draft (Step 10)** — the Approved-Plan → Draft **handoff** that creates the `shipments` row at `status = draft`: performs, idempotently, (a) persist **`shipment_plan_links`** for every source plan (§2.A); (b) persist **line source mapping/allocation** (Demand axis — `shipment_lines.source_shipping_plan_line_id` or `shipment_line_plan_allocations`, §2.A); (c) copy the Execution Snapshot. **It performs NO reservation and NO deduction — it is NOT the reserve trigger and must not be called "Formal Shipment Execution Commit".**
+- **Shipment Draft is `shipments.status = draft`; interactive Draft create / save / edit (§4 `updateShipment`) does NOT reserve and does NOT deduct.**
+- **Ready to Ship (`draft → ready_to_ship`) = Formal Shipment Execution Commit — the B-1 reserve trigger** (owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1): atomically with the status transition it (a) finalizes eligible **PO-line** allocation (Supply axis — FIFO, §6); (b) for a **factory-origin** shipment **increases `factory_stock.fac_reserved_stock`** (identity `factory_stock.warehouse_id = shipments.origin_warehouse_id` + `sku`; overseas origin → `wh_reserved_stock`, not here), intended movement `stock_reserved`, `fac_current_stock` unchanged. **If validation / applicability / reserve fails, status must NOT enter `ready_to_ship` and NO partial reserve occurs. No `current_stock` deduction here.**
+- **Ship (Confirm & Ship, Step 12) is the physical execution trigger:**
+  - `factory_stock.fac_current_stock` **decreases** (verified in code).
+  - `factory_stock.fac_reserved_stock` is **consumed** for the shipped allocation (Canonical intent; **consumption writer NOT implemented**).
+  - intended `factory_stock_movements` `stock_shipped` movement, before/after for both balances, keyed `warehouse_id = origin_warehouse_id`, `sku`.
+- **Cancel / return-to-draft / reject release of `reserved_stock`** (never touching `fac_current_stock`) **is B-8 (BLOCKED)** — the release event, status mapping, and `stock_reservation_released` writer are NOT decided by B-1.
 - **`completed` / `cancelled` shipments must NOT count as on-the-way.**
 
-> Consistent with §7 (reservation on plan approval) and §8 (deduction on ready_to_ship/confirm). The single authoritative deduction moment is **Confirm & Ship**.
+> Consistent with §7 (reservation at the **Ready to Ship transition** — B-1 resolved, owner §8A.1; plan approval / Create-Draft / draft-edit do not reserve) and §8 (deduction at **Ship**). **Reserve = Ready to Ship; Deduct = Ship** — two separate events; the physical deduction moment is Confirm & Ship. Cancel/release mapping = B-8.
 
 ### 15.2 Shipment Draft Role
 
@@ -986,7 +982,7 @@ Each `shipment_lines.sku` resolves its per-SKU logistics attributes from `sku_de
 
 ### 22.0 Warehouse Picker — Canonical Semantics & Candidate Filtering (2026-07 refinement — SPEC ONLY)
 
-> **Warehouse Picker Runtime: IMPLEMENTED (frontend) 2026-07-21** in `shipping-history.js` (`warehouseFld()` / `shWarehousePick()`), replacing the free-text `warehouse_code` input with a grouped FBA→3PL `warehouse_id` selector that copies `warehouse_code` from the chosen row and persists both. `normalizeWarehouseRecord` extended (`warehouse_code` / `warehouse_owner` / `is_active` / `is_factory_warehouse` / `logistics_region` / `city` / `state`); `12_shipment_handlers.gs` `SHIPMENT_EDITABLE_FIELDS_` accepts `warehouse_id`. **PENDING live verification:** the `warehouses` master must actually carry these columns (live GET), `12_shipment_handlers.gs` must be redeployed, and a live save/reload smoke test must pass. **Legacy aggregate migration: NOT EXECUTED. Warehouse DB rows: already populated externally by the user. Inventory Runtime + Overseas Inbound Runtime: unchanged.**
+> **Warehouse Picker status (component-level — canonical matrix §23.8):** frontend **CODE-COMPLETE** 2026-07-21 in `shipping-history.js` (`warehouseFld()` / `shWarehousePick()`), replacing the free-text `warehouse_code` input with a grouped FBA→3PL `warehouse_id` selector that copies `warehouse_code` from the chosen row and persists the **compatibility** `warehouse_id` + `warehouse_code` (destination mirror — **NOT** the canonical `destination_warehouse_id`, whose persistence is **NOT IMPLEMENTED**). Backend **SOURCE IMPLEMENTED**: `normalizeWarehouseRecord` extended (`warehouse_code` / `warehouse_owner` / `is_active` / `is_factory_warehouse` / `logistics_region` / `city` / `state`); `12_shipment_handlers.gs` `SHIPMENT_EDITABLE_FIELDS_` accepts the compatibility `warehouse_id`. **REDEPLOY PENDING + live verification NOT VERIFIED:** the `warehouses` master must actually carry these columns (live GET), `12_shipment_handlers.gs` must be redeployed, and a live save/reload smoke test must pass. **Legacy aggregate migration: NOT EXECUTED. Warehouse DB rows: already populated externally by the user. Inventory Runtime + Overseas Inbound Runtime: unchanged.**
 
 **(A) `warehouses` is a passive Reference Master.** It stores location/reference truth only — internal identity, external code, operating company context, physical operator/owner, warehouse type, physical country, marketplace context, logistics region, address, active state. It may be **read** by Shipment Draft destination selection, Warehouse Lookup, Route Template / Shipment Route initialization, shipment map points, Document Generation address lookup, Overseas Inbound destination selection, and Receiving destination selection. It must **NOT automatically** create/split/move/allocate inventory, update `overseas_inventory_snapshot` / `overseas_inventory_movements`, or create Shipment Events / Shipment Routes / Warehouse Receipts.
 
@@ -994,7 +990,7 @@ Each `shipment_lines.sku` resolves its per-SKU logistics attributes from `sku_de
 
 **(C) `company` vs `warehouse_owner` (distinct dimensions).** `company` = the KM legal/business/account context **using** the warehouse (`KM` / `ResUS` / `ResTW`); it determines whose shipment / inventory context / marketplace account / transaction uses the warehouse. **Country alone must not determine `company`** — US contains both `KM` and `ResUS`, so site/account context must participate. `warehouse_owner` = the physical warehouse **operator / controlling logistics party** (e.g. `Amazon` for FBA, `WINIT`, `AMZLGS`, `ResTW` for an owned factory). Example: `WH-RESUS-US-FBA-ONT8` → `company = ResUS`, `warehouse_owner = Amazon`; `WH-KM-US-FBA-ONT8` → `company = KM`, `warehouse_owner = Amazon`. **Do not redefine `warehouse_owner` as the inventory-owning company.**
 
-**(D) `warehouse_id` is the canonical committed identity; `warehouse_code` is NOT globally unique.** `warehouse_id` is the system-unique internal identifier; `warehouse_code` is the external/operator code and **may repeat across companies** (e.g. `ONT8` under both `WH-RESUS-US-FBA-ONT8` and `WH-KM-US-FBA-ONT8`). The UI **displays** `warehouse_code` (+ location); the **committed selected identity is `warehouse_id`**. Any logical uniqueness is either `warehouse_id`, or the composite `company + country + marketplace context + warehouse_code` — **never `warehouse_code` alone.** *(No DB constraint is added by this task.)*
+**(D) The warehouse MASTER row identity is `warehouses.warehouse_id`; the committed shipment DESTINATION identity is `shipments.destination_warehouse_id` (with `shipments.warehouse_id` as the compatibility mirror); `warehouse_code` is NOT globally unique.** `warehouses.warehouse_id` is the system-unique internal master identifier; `warehouse_code` is the external/operator code and **may repeat across companies** (e.g. `ONT8` under both `WH-RESUS-US-FBA-ONT8` and `WH-KM-US-FBA-ONT8`). The UI **displays** `warehouse_code` (+ location); the **committed destination endpoint is `shipments.destination_warehouse_id`, with `shipments.warehouse_id` as the destination compatibility mirror / read-fallback** (both resolve to a `warehouses.warehouse_id` master row). Any logical uniqueness is either `warehouses.warehouse_id`, or the composite `company + country + marketplace context + warehouse_code` — **never `warehouse_code` alone.** *(No DB constraint is added by this task.)*
 
 **(E) Picker trigger / resolution order.** `Site / Marketplace Account → Company → Marketplace → Shipment Destination Country / Country Scope → Destination Warehouse Type → Active Warehouse Candidates → Selected warehouse_id`. Site/account selection derives or confirms `company`, `marketplace`, and the business destination country/site context. **Country alone is insufficient to derive `company`.**
 
@@ -1011,14 +1007,14 @@ Each `shipment_lines.sku` resolves its per-SKU logistics attributes from `sku_de
 **(K) Empty result.** If no matching warehouse exists: **do not** silently fall back to another company, another country, or a legacy aggregate row; show **"No eligible warehouse found"**; authorized master-data correction / explicit exception handling is a later concern.
 
 **(L) Persistence boundary + DB Mapping Gap.**
-- **Identity persistence.** UI **displays** `warehouse_code`; the **canonical committed identity is `warehouse_id`**. *Target Canonical:* on Warehouse Picker Save the system **MUST persist BOTH** `shipments.warehouse_id` (canonical identity) **and** `shipments.warehouse_code` (external/display snapshot copied from the selected row). *Current Runtime (LEGACY):* persists/relies on `shipments.warehouse_code`; **`shipments.warehouse_id` population is NOT IMPLEMENTED**. **The target runtime is NOT IMPLEMENTED and is not claimed complete.**
+- **Identity persistence.** UI **displays** `warehouse_code`; the **canonical committed destination identity is `shipments.destination_warehouse_id`** (with `shipments.warehouse_id` as the compatibility mirror). *Target Canonical:* on Warehouse Picker Save the system **MUST persist** the canonical `shipments.destination_warehouse_id`, plus the compatibility `shipments.warehouse_id` mirror and the `shipments.warehouse_code` display snapshot (external/display code copied from the selected row). *Current Runtime (LEGACY):* persists/relies on `shipments.warehouse_code` (+ the compatibility `shipments.warehouse_id`); **`shipments.destination_warehouse_id` canonical persistence is NOT IMPLEMENTED**. **The target runtime is NOT IMPLEMENTED and is not claimed complete.**
 - **Address is NOT snapshotted onto the Shipment today (reconciliation).** The shipment commits only the warehouse **identity** (`warehouse_id` once the gap is closed); **warehouse address stays Reference Master data** and is **read from `warehouses`** for display in Draft. There are **no complete shipment warehouse-address snapshot fields** in the current schema — **do not claim Shipment address-snapshot persistence exists.** Document Generation resolves Warehouse Reference fields **at generation time** per `DOCUMENT_GENERATION_SYSTEM_SPEC.md` §P.6/§P.7 + `document_template_fields`; the **generated document is the immutable snapshot**, and later Warehouse Master edits **never mutate an already-generated document**. A dedicated Shipment Address Snapshot is **FUTURE / REQUIRES DB DESIGN** (no fields added in this task).
-- **DB Mapping Gap.** Committing `warehouse_id` as the canonical identity **requires closing this gap before Warehouse Picker implementation.** Interim composite resolution until then: `company + destination country/scope + marketplace + warehouse_code` (must resolve exactly one row — §22.J).
+- **DB Mapping Gap.** Committing `shipments.destination_warehouse_id` as the canonical destination identity (with `shipments.warehouse_id` as the compatibility mirror) **requires closing this gap before Warehouse Picker implementation.** Interim composite resolution until then: `company + destination country/scope + marketplace + warehouse_code` (must resolve exactly one row — §22.J).
 
 ### 22.A Architecture Position
 
 - **Warehouse Master (`warehouses`) is the single source of truth** for: `warehouse_code`, `warehouse_name`, `country`, `state`, `city`, `address`, `postal_code`, `contact_phone`, `contact_email`, and warehouse status / availability (`is_active`, `is_factory_warehouse`, proposed `is_selectable_for_shipment`).
-- **Shipment stores only the reference** (not duplicated address/contact fields). Per §22.0(D)/(L) the **canonical committed identity is `warehouse_id`**; `warehouse_code` is displayed but is **not globally unique** and is insufficient alone (composite resolution / DB Mapping Gap — §22.0(L)).
+- **Shipment stores only the reference** (not duplicated address/contact fields). Per §22.0(D)/(L) the **canonical committed destination identity is `shipments.destination_warehouse_id`** (with `shipments.warehouse_id` as the compatibility mirror); `warehouse_code` is displayed but is **not globally unique** and is insufficient alone (composite resolution / DB Mapping Gap — §22.0(L)).
 - **Document Dataset resolves warehouse details by reference lookup at build time** — **not** a Shipment snapshot (§22.J). *(Resolution keys per §22.0(D): by `warehouse_id`, or the composite `company + country + marketplace + warehouse_code` until the `warehouse_id` gap is resolved.)*
 
 ### 22.B Shipment Draft Warehouse Selection Flow
@@ -1088,7 +1084,7 @@ The Warehouse selector includes a visible **+ Add New Warehouse** action that op
 5. Close the create flow.
 6. Refresh **only** the current candidate options (company/type/country-scope filtered — §22.0(F)/(G)).
 7. **New warehouse selection must resolve `warehouse_id`** (the committed identity).
-8. **Persistence is blocked by the DB Mapping Gap** (§22.0(L)): until `shipments.warehouse_id` population is implemented, Add-New-Warehouse → auto-select/commit is **NOT IMPLEMENTED** and must not be claimed. *(When implemented, Save MUST persist BOTH `shipments.warehouse_id` (canonical) and `shipments.warehouse_code` (display snapshot copied from the selected row).)*
+8. **Persistence is blocked by the DB Mapping Gap** (§22.0(L)): until `shipments.destination_warehouse_id` canonical persistence is implemented, Add-New-Warehouse → auto-select/commit is **NOT IMPLEMENTED** and must not be claimed. *(When implemented, Save MUST persist the canonical `shipments.destination_warehouse_id` + the compatibility `shipments.warehouse_id` mirror + the `shipments.warehouse_code` display snapshot copied from the selected row.)*
 9. Do **not** force a manual page refresh.
 
 **Canceling** the create flow leaves the previous Shipment warehouse selection unchanged.
@@ -1135,8 +1131,8 @@ No Shipment may proceed to the formal / external-document stage with a warehouse
 
 ### 22.J Document Dataset Warehouse Lookup
 
-- **Primary canonical lookup:** `shipments.warehouse_id → warehouses.warehouse_id`.
-- **Legacy fallback ONLY** (until `warehouse_id` is populated): `shipments.company + destination country/country scope + shipments.marketplace + shipments.warehouse_code → warehouses`.
+- **Lookup precedence (canonical):** (1) `shipments.destination_warehouse_id → warehouses.warehouse_id`; (2) `shipments.warehouse_id → warehouses.warehouse_id` — **destination compatibility fallback only** (until `destination_warehouse_id` is populated); (3) legacy composite fallback: `shipments.company + destination country/country scope + shipments.marketplace + shipments.warehouse_code → warehouses`.
+- `shipments.warehouse_code` is only a **display snapshot / legacy support dimension** — never an endpoint identity and never a primary lookup key.
 - **`warehouse_code` alone must NEVER be used when more than one row can match.** **No first-row fallback. No cross-company fallback.** Ambiguous legacy lookup (>1 match) returns an **explicit validation error** — it must not silently pick a KM vs ResUS row on a duplicate FC code.
 - Canonical document fields resolved from the matched Warehouse Master row: `WAREHOUSE_CODE`, `WAREHOUSE_NAME`, `WAREHOUSE_ADDRESS`, `WAREHOUSE_CITY`, `WAREHOUSE_STATE`, `WAREHOUSE_POSTAL_CODE`, `WAREHOUSE_COUNTRY_CODE`, `WAREHOUSE_PHONE`, `WAREHOUSE_EMAIL`.
 - These values are **not stored redundantly on `shipments`**. The **template never performs the lookup** — the **Document Dataset Builder resolves it before rendering** (the generated document is the immutable snapshot — §22.0(L)). Field-level placeholder mappings live in `document_template_fields` (SSOT) / `DOCUMENT_GENERATION_SYSTEM_SPEC.md` §P.6/§P.7 — **not duplicated here**. *(Those DOC-GEN sections still show the older `warehouse_code`-only path and need the same primary/legacy correction in a future DOC-GEN-scoped task — out of scope for this task's allowed files.)*
@@ -1213,10 +1209,26 @@ An endpoint qualifies as an **Overseas Warehouse Operation** only when its `ware
 - **Marking shipped/dispatched:** apply the finalized business gate; if successful warehouse submission is required before dispatch, block and link directly to the relevant operation record; **do not block unrelated normal shipments.**
 
 ### 23.9 Factory vs Overseas Inventory separation (CANONICAL 2026-07-21)
-Factory Inventory (`factory_stock` / `factory_stock_movements`) and Overseas Inventory (`overseas_inventory_snapshot` / `overseas_inventory_movements`) are **separate domains** (authority: `DATABASE_RELATIONSHIP_MAP.md` §6.0). A Shipment carries goods **in transit** — it is a transportation state, **not** an inventory balance at either endpoint. **Formal Shipment creation does NOT add Overseas Inventory.** Overseas Inventory increases **only** on a confirmed Overseas Inbound receipt; it decreases **only** on a confirmed Overseas Outbound ship-out. Factory Stock reservation/deduction uses **only** the factory tables (§7/§8/§15.1) and is unaffected by Overseas Outbound. **In-transit quantities are never double-counted as available inventory at both endpoints.**
+Factory Inventory (`factory_stock` / `factory_stock_movements`) and Overseas Inventory (`overseas_inventory_snapshot` / `overseas_inventory_movements`) are **separate domains** (authority: `DATABASE_RELATIONSHIP_MAP.md` §6.0). A Shipment carries goods **in transit** — it is a transportation state, **not** an inventory balance at either endpoint. **Formal Shipment creation does NOT add Overseas Inventory.** Overseas Inventory increases **only** on a confirmed Overseas Inbound receipt; it decreases **only** on a confirmed Overseas Outbound ship-out. Factory Stock reservation/deduction uses **only** the factory tables (§7/§8/§15.1) and is unaffected by Overseas Outbound. **B-1 reservation applies only when the Shipment's `origin_warehouse_id` resolves to a factory warehouse (`is_factory_warehouse = TRUE`); an overseas-origin shipment reserves via the Overseas Outbound Lock / `wh_reserved_stock` and never writes `factory_stock`.** **In-transit quantities are never double-counted as available inventory at both endpoints.**
 
-### 23.8 Warehouse Picker (canonical; frontend implemented 2026-07-21, live-verification pending)
-Picker-controlled `warehouse_id` identity (never free text); display labels may use warehouse name/code; Save persists the canonical identity and derives the `warehouse_code` snapshot; company compatibility + receiving/shipping capability filtering applied where applicable; reload restores the selected endpoint identity. Current implementation (`shipping-history.js`) selects the **destination** warehouse and persists `warehouse_id` + `warehouse_code`; extending it to select/restore **both** `origin_warehouse_id` and `destination_warehouse_id` is a documented pending step. See §22.0 for candidate-filtering detail.
+### 23.8 Warehouse Picker — component-level status (CANONICAL status matrix; Round 4)
+The blanket phrases "Warehouse Picker IS IMPLEMENTED" and "Warehouse Picker PLANNED / NOT IMPLEMENTED" are **both retired** — each conflated frontend code, backend source acceptance, deployment, live verification, and canonical endpoint persistence. This matrix is the **single canonical status owner**; every summary / heading / changelog / status note in this spec and in `DATABASE_RELATIONSHIP_MAP.md` must agree with it:
+
+| Component | Canonical status |
+|---|---|
+| Picker decision / spec | **FINALIZED** |
+| Frontend Picker controls / code (`shipping-history.js` `warehouseFld()` / `shWarehousePick()`) | **IMPLEMENTED / CODE-COMPLETE** |
+| Backend source acceptance of compatibility `warehouse_id + warehouse_code` (`12_shipment_handlers.gs` `SHIPMENT_EDITABLE_FIELDS_`) | **SOURCE IMPLEMENTED** |
+| Apps Script / backend deployment state | **REDEPLOY PENDING** |
+| Live GET / save / reload verification | **NOT VERIFIED** |
+| `destination_warehouse_id` canonical persistence / mirror / dual-endpoint carry | **NOT IMPLEMENTED** |
+| Full end-to-end Picker Runtime acceptance | **NOT ACCEPTED / NOT LIVE-VERIFIED** |
+
+- **Frontend code-complete does NOT mean the full Runtime is complete.**
+- **Backend source acceptance does NOT mean a deployed Runtime is verified.**
+- **Current compatibility `warehouse_id + warehouse_code` support does NOT mean `destination_warehouse_id` canonical persistence is implemented.**
+
+Behaviour: the Picker (never free text) selects the **destination** warehouse and copies the `warehouse_code` display snapshot; company compatibility + receiving/shipping capability filtering apply where applicable; reload restores the selected endpoint. The current frontend selects/persists the compatibility `warehouse_id` + `warehouse_code`; extending it to persist/select/restore **both** `origin_warehouse_id` and the canonical `destination_warehouse_id` is **NOT IMPLEMENTED**. Candidate-filtering detail: §22.0. This round changes documentation only — no Picker code, handler, Apps Script, schema, UI, or deployment is modified, and no redeploy / live save-reload is claimed complete.
 
 ### 23.10 Shipout Push Compatibility & Operation Timing (CANONICAL 2026-07-22 — runtime NOT implemented)
 Two **directional** integration pushes exist and must never be conflated:
@@ -1275,6 +1287,6 @@ Destination Inbound reference/labels  +  Origin Shipout Instruction
 
 ---
 
-**Draft v2.6 — Mixed implementation status. Warehouse Picker remains PLANNED / NOT IMPLEMENTED. No Runtime or DB change in this documentation task.** (v2.6: destination-derived-identity conflict removed (§0 warehouse selection = filter → select one `warehouse_id` → copy `warehouse_code`); editable-field semantics split (Picker-controlled `warehouse_id` / derived `warehouse_code` snapshot / normal editable — §4); document warehouse lookup made `warehouse_id`-primary + legacy composite across §22.J/§I.2.3/§I.2.7A/§P.6; header/footer aligned to v2.6. Earlier v2.6: Warehouse Picker residual-conflict cleanup — §22.F composite duplicate validation (no global `warehouse_code` uniqueness), `warehouse_id` as committed identity, §22.H/§22.I/§22.J/§22.K/§22.L corrected to `warehouse_id`-primary + legacy composite lookup (exactly one row; ambiguous → error), §22.0(L) address-snapshot reconciliation with DOC-GEN §P.7. v2.5: added §22 Shipment Draft Warehouse Selection Flow — country-filtered dropdown, Add New Warehouse flow, country-change invalidation, document warehouse lookup + `WAREHOUSE_COUNTRY_CODE` fallback + `country_to_iso2` transform; proposed `is_selectable_for_shipment` field. v2.4: added §21 Shipment Logistics Attribute Aggregation + planned `battery_flag`/`battery_type`/`magnet_flag`/`transit_type`/`last_mile_delivery`/`shipments_customs_type` header fields.)
+**Draft v2.7 — Mixed implementation status. Warehouse Picker status is component-level (canonical matrix §23.8): frontend CODE-COMPLETE, backend source acceptance SOURCE IMPLEMENTED, REDEPLOY PENDING, live GET/save/reload NOT VERIFIED, `destination_warehouse_id` canonical persistence NOT IMPLEMENTED. Factory Stock reservation lifecycle PLANNED / NOT IMPLEMENTED (B-1 resolved — trigger = the Ready to Ship transition `draft → ready_to_ship` = Formal Shipment Execution Commit, owner §8A.1; identity origin factory `warehouse_id + sku`; decision only). No Runtime or DB change in this documentation task.** (v2.7, acceptance-corrected: mapped the Factory Stock reserve trigger to the resolved B-1 decision — reserve at **Ready to Ship**, distinct from the non-reserving Create-Shipment-Draft Execution Commit; plan approval / Create Draft / interactive Draft create/save/edit do not reserve; reserve applies to factory-origin only (origin `warehouse_id + sku`; overseas → `wh_reserved_stock`); **Ship** deducts `fac_current_stock` + consumes `fac_reserved_stock`; cancel/release = B-8 (BLOCKED); §0/§3/§4/§7/§8/§15.1/§23.9 corrected; no status redesign. v2.6: destination-derived-identity conflict removed (§0 warehouse selection = filter → select one `warehouse_id` → copy `warehouse_code`); editable-field semantics split (Picker-controlled `warehouse_id` / derived `warehouse_code` snapshot / normal editable — §4); document warehouse lookup made `warehouse_id`-primary + legacy composite across §22.J/§I.2.3/§I.2.7A/§P.6; header/footer aligned to v2.6. Earlier v2.6: Warehouse Picker residual-conflict cleanup — §22.F composite duplicate validation (no global `warehouse_code` uniqueness), `warehouse_id` as committed identity, §22.H/§22.I/§22.J/§22.K/§22.L corrected to `warehouse_id`-primary + legacy composite lookup (exactly one row; ambiguous → error), §22.0(L) address-snapshot reconciliation with DOC-GEN §P.7. v2.5: added §22 Shipment Draft Warehouse Selection Flow — country-filtered dropdown, Add New Warehouse flow, country-change invalidation, document warehouse lookup + `WAREHOUSE_COUNTRY_CODE` fallback + `country_to_iso2` transform; proposed `is_selectable_for_shipment` field. v2.4: added §21 Shipment Logistics Attribute Aggregation + planned `battery_flag`/`battery_type`/`magnet_flag`/`transit_type`/`last_mile_delivery`/`shipments_customs_type` header fields.)
 
 **End of Document**

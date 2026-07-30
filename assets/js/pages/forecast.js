@@ -26,24 +26,36 @@ const forecastReviewState = {
   filters: { country: [], marketplace: [], category: [], series: [] }
 };
 
-// Static option universes for the Forecast Review filters (deduped; was hardcoded in the HTML panels).
-var FORECAST_FILTER_OPTS = {
-  country: ['US', 'JP', 'UK', 'DE', 'CA', 'FR', 'IT', 'ES', 'AU'],
-  marketplace: ['Amazon', 'Shopify', 'Target'],
-  category: ['Electric Can Opener', 'Silicone Product', 'Manual Opener'],
-  series: ['CO1100', 'CO1150', 'SP3120', 'SP3410', 'MO5600']
-};
 var FORECAST_FILTER_LABELS = { country: 'Country', marketplace: 'Marketplace', category: 'Category', series: 'Series' };
 
-// Mount the four discrete filters as shared multi-select components. Default = all values selected (matches
-// the old all-checked default; the query is positive-inclusion so [] = none). Idempotent per mount.
-function _forecastMountFilters(root) {
+// Build each filter's option universe from the ACTIVE dataset — mirrors FC Summary's _fcSyncFilterOptions.
+// Demo ON → distinct values from the demo forecast rows; Demo OFF → EMPTY (this page has no live DB source
+// yet, so Demo OFF shows empty universes). NO static / demo / hardcoded option lists, and no fake data when
+// Demo is OFF. Options are the FULL distinct set per dimension from the active dataset.
+function _forecastFilterUniverse() {
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  var rows = (demoOn && window.KM.DemoData.getForecastRows) ? (window.KM.DemoData.getForecastRows({}) || []) : [];
+  function distinct(key) {
+    var out = [], seen = {};
+    rows.forEach(function (r) { var v = String(r && r[key] == null ? '' : r[key]).trim(); if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out.sort();
+  }
+  return { country: distinct('country'), marketplace: distinct('marketplace'), category: distinct('category'), series: distinct('series') };
+}
+
+// (Re)mount the four discrete filters as shared KM.ui.multiFilter components from the active-dataset
+// universe. Default = ALL current values selected (positive-inclusion; [] = none). Idempotent per mount
+// (KM.ui.multiFilter.create reuses the existing controller), so it also refreshes options after a demo
+// toggle / data reload. Replaces the old static FORECAST_FILTER_OPTS (removed — was demo/hardcoded).
+function _forecastSyncFilterOptions(root) {
   if (!(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
+  var universe = _forecastFilterUniverse();
   ['country', 'marketplace', 'category', 'series'].forEach(function (kind) {
     var mount = document.getElementById('forecast-mount-' + kind);
     if (!mount) return;
+    var opts = universe[kind] || [];
     if (!forecastReviewState.filters[kind] || !forecastReviewState.filters[kind].length) {
-      forecastReviewState.filters[kind] = FORECAST_FILTER_OPTS[kind].slice();
+      forecastReviewState.filters[kind] = opts.slice();   // default = all current options selected
     }
     window.KM.ui.multiFilter.create({
       mount: mount,
@@ -51,7 +63,7 @@ function _forecastMountFilters(root) {
       label: FORECAST_FILTER_LABELS[kind],
       allText: 'All',
       emptyMeansAll: false,
-      options: FORECAST_FILTER_OPTS[kind],
+      options: opts,
       selectedValues: forecastReviewState.filters[kind],
       onChange: function (vals) { forecastReviewState.filters[kind] = vals; handleForecastSearch(root); }
     });
@@ -78,8 +90,9 @@ function initForecastReviewPage() {
   const unitSwitchBtn = document.getElementById('forecastUnitSwitchBtn');
   const viewToggleButtons = root.querySelectorAll('.forecast-chart-view-toggle button');
 
-  // Mount the Country / Marketplace / Category / Series filters as shared multi-select components.
-  _forecastMountFilters(root);
+  // Mount the Country / Marketplace / Category / Series filters as shared multi-select components,
+  // with options derived from the active dataset (Demo ON → distinct; Demo OFF → empty).
+  _forecastSyncFilterOptions(root);
 
   // SKU filter
   const skuFilter = root.querySelector('.forecast-filter-sku');
@@ -163,106 +176,11 @@ function initForecastReviewPage() {
   setupShareChart();
 }
 
-function initForecastDropdowns(root) {
-  if (!root) return;
-  
-  // Remove existing listeners to prevent duplicates
-  const existingTriggers = root.querySelectorAll('.forecast-dropdown-trigger');
-  existingTriggers.forEach(trigger => {
-    const clone = trigger.cloneNode(true);
-    trigger.parentNode.replaceChild(clone, trigger);
-  });
-  
-  const triggers = root.querySelectorAll('.forecast-dropdown-trigger');
-  
-  triggers.forEach(trigger => {
-    trigger.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const filterType = trigger.dataset.filter;
-      const panel = root.querySelector(`.forecast-dropdown-panel[data-filter="${filterType}"]`);
-      
-      // Close other panels
-      root.querySelectorAll('.forecast-dropdown-panel').forEach(p => {
-        if (p !== panel) p.classList.remove('is-open');
-      });
-      
-      // Toggle current panel
-      if (panel) {
-        panel.classList.toggle('is-open');
-      }
-    });
-  });
-  
-  // Prevent panel from closing when clicking inside
-  root.querySelectorAll('.forecast-dropdown-panel').forEach(panel => {
-    panel.addEventListener('click', (e) => {
-      e.stopPropagation();
-    });
-  });
-  
-  // Close dropdowns when clicking outside
-  const handleOutsideClick = (e) => {
-    const isInsideRoot = root.contains(e.target);
-    if (!isInsideRoot) return;
-    
-    const isClickOnTrigger = e.target.closest('.forecast-dropdown-trigger');
-    const isClickInPanel = e.target.closest('.forecast-dropdown-panel');
-    
-    if (!isClickOnTrigger && !isClickInPanel) {
-      root.querySelectorAll('.forecast-dropdown-panel').forEach(p => {
-        p.classList.remove('is-open');
-      });
-    }
-  };
-  
-  // Store handler reference for cleanup
-  if (root._forecastDropdownHandler) {
-    document.removeEventListener('click', root._forecastDropdownHandler, true);
-  }
-  root._forecastDropdownHandler = handleOutsideClick;
-  document.addEventListener('click', handleOutsideClick, true);
-}
-
-function toggleForecastAll(checkbox, filterType) {
-  const root = document.querySelector('.page-forecast-review');
-  const panel = root.querySelector(`.forecast-dropdown-panel[data-filter="${filterType}"]`);
-  const checkboxes = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-  
-  checkboxes.forEach(cb => {
-    cb.checked = checkbox.checked;
-  });
-  
-  updateForecastFilter(filterType);
-}
-
-function updateForecastFilter(filterType) {
-  const root = document.querySelector('.page-forecast-review');
-  const panel = root.querySelector(`.forecast-dropdown-panel[data-filter="${filterType}"]`);
-  const trigger = root.querySelector(`.forecast-dropdown-trigger[data-filter="${filterType}"]`);
-  const allCheckbox = panel.querySelector('input[type="checkbox"][value=""]');
-  const checkboxes = Array.from(panel.querySelectorAll('input[type="checkbox"]:not([value=""])'));
-  
-  const checkedCount = checkboxes.filter(cb => cb.checked).length;
-  const totalCount = checkboxes.length;
-  
-  // Update "All" checkbox
-  if (allCheckbox) {
-    allCheckbox.checked = checkedCount === totalCount;
-  }
-  
-  // Update trigger text
-  const triggerText = trigger.querySelector('.forecast-dropdown-text');
-  if (checkedCount === 0) {
-    triggerText.textContent = 'None';
-  } else if (checkedCount === totalCount) {
-    triggerText.textContent = 'All';
-  } else {
-    triggerText.textContent = `${checkedCount} selected`;
-  }
-  
-  handleForecastSearch(root);
-}
+// NOTE (2026-07-30): the legacy per-page `forecast-dropdown-*` checkbox-panel implementation
+// (initForecastDropdowns / toggleForecastAll / updateForecastFilter) was REMOVED. Those functions
+// referenced markup that no longer exists (the panels were replaced by the shared KM.ui.multiFilter
+// mounts) and had no remaining callers — they were dead duplicate filter logic. The shared component
+// now owns open/close, Select All / Clear, checkbox list, outside-click and Esc.
 
 function initDefaultDateRange() {
   forecastReviewState.dateRange.start = new Date('2026-02-02');

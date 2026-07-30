@@ -5,13 +5,15 @@
 > - **Canonical Owner For:** Inventory page field → source mapping and display labels.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md` — all Current Stock / Qualified Incoming / shortage / allocation math), schema (`DATABASE_RELATIONSHIP_MAP.md`), the **Qualified Incoming allowlist** (Batch B).
 > - **Status:** Reviewed — Batch B Blockers Remain.
-> - **Current Version:** v1.5.8 (Batch A repair: Engine Current Stock vs UI Inventory Position vs Qualified Incoming separation).
-> - **Last Reviewed:** 2026-07-28.
+> - **Current Version:** v1.5.9 (Batch B Round 1: Factory Stock `fac_*` residual fix in §17.3A / display map + header/footer/changelog version reconciliation).
+> - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** Calculation Rules, Database Relationship Map, Amazon Snapshot Import, Runtime Architecture.
-> - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).
+> - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). *(B-1 Reserve Trigger is resolved elsewhere — owner Architecture Principles §8A.1; not a blocker of this document.)*
 
-**Status:** 🟢 v1.5.8 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1 FINALIZED**)
-**Last Updated:** 2026-07-24
+**Status:** 🟢 v1.5.9 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1 FINALIZED**)
+**Last Updated:** 2026-07-30
+> **Changelog v1.5.8 → v1.5.9 (2026-07-30):** Batch B Round 1 residual cleanup — replaced the remaining unprefixed Factory Stock field names with the canonical `fac_*` namespace (`factory_stock.fac_current_stock` in the Factory CN/TW display map §17.3A; `fac_current_stock=0` / `fac_reserved_stock=0` in the lifecycle baseline + Runtime-status note), per the Inventory Field Namespace Rule (§3.0). Reconciled header/footer/changelog to the same version. Overseas `wh_*` and non-inventory entity fields deliberately left unchanged. No formula, mapping direction, or runtime change.
+> **Changelog v1.5.7 → v1.5.8 (2026-07-28):** Batch A repair — clarified **Engine Current Stock vs UI Inventory Position vs Qualified Incoming** separation (display vs engine-coverage). Documentation only; no formula redefined. *(Changelog entry backfilled 2026-07-30.)*
 > **Changelog v1.5.6 → v1.5.7 (2026-07-24):** documentation-only sync to calculation owner **v4.1** — Avg Sales/Day now sampled as the latest 30 eligible normal days within a 90-completed-day source window (§8/§13); §21 calculation Open Questions closed (resolved → owner sections, runtime mapping pending); §14/§15 restated as owner-pointing summaries. No formula redefined here. *(Round-3 residual cleanup, same v1.5.7: §13 "Suggested Qty" mapping now specifies its canonical meaning = Recommended Shipping Qty from `shipping_allocation_draft_lines.recommended_qty` per owner §2C.1/§31 — NOT raw Engine A shortage and NOT Request Order Suggested Order Qty; §16 restated as a UI/data-mapping summary that does not own the allocation rule — owner §20 is authoritative.)*
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`](./AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md), [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md), [`UI_COMPONENT_GUIDELINES.md`](./UI_COMPONENT_GUIDELINES.md) (**KM Sticky Header Framework**).
@@ -422,8 +424,8 @@ The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Process
 | **Upcoming Event** | Total Event FC (`fc_special_events`, §8) | Yes (demand) | — | Current |
 | **Days of Supply** | `Inventory Position ÷ Avg Sales per Day` (the displayed top-cell total; UI color per §12). Engine coverage uses **Sellable Current Stock** + Qualified Incoming per the owner — the UI Days-of-Supply is not the Engine coverage. | No (display) | — | Current |
 | **Suggested Qty** *(UI label)* | Canonical meaning = **Recommended Shipping Qty**, sourced from `shipping_allocation_draft_lines.recommended_qty`, derived per Formula Owner **§2C.1 / §31** (`Calculated Gap → eligible source availability → shipment carton FLOOR`). **NOT** raw Engine A Shortage (§14/§15), **NOT** Request Order Suggested Order Qty. *(UI column still labelled "Suggested Qty"; Calculation Runtime NOT IMPLEMENTED.)* | No (recommendation) | — | Current label; Target = Recommended Shipping Qty |
-| **Factory CN** | `factory_stock.current_stock` where the warehouse resolves to a **CN** factory (`warehouses.country = CN`, `is_factory_warehouse = TRUE`) | Yes (source pool) | No | Current |
-| **Factory TW** | `factory_stock.current_stock` where the warehouse resolves to a **TW** factory (`warehouses.country = TW`, `is_factory_warehouse = TRUE`) | Yes (source pool) | No | Current |
+| **Factory CN** | `factory_stock.fac_current_stock` where the warehouse resolves to a **CN** factory (`warehouses.country = CN`, `is_factory_warehouse = TRUE`) | Yes (source pool) | No | Current |
+| **Factory TW** | `factory_stock.fac_current_stock` where the warehouse resolves to a **TW** factory (`warehouses.country = TW`, `is_factory_warehouse = TRUE`) | Yes (source pool) | No | Current |
 
 > `factory_stock` has no `company` / `factory_name`; CN/TW factory is resolved via `warehouse_id → warehouses` (per `SHIPMENT_CENTER_SPEC.md` §0). Factory stock is **physical, shared** stock (display only; not deducted here).
 
@@ -536,7 +538,7 @@ Save edits without entering Running in the Market    → NO factory_stock mutati
 sku_details.lifecycle: non-running → "Running in the Market"
   → ensure factory_stock baseline (eligible Factory Warehouses)
   → idempotent by warehouse_id + MASTER sku   (never site_sku / company / country / marketplace)
-  → current_stock = 0 ; reserved_stock = 0 (where the schema/default supports it)
+  → fac_current_stock = 0 ; fac_reserved_stock = 0 (where the schema/default supports it)
 ```
 - Exact stored value from `VALID_LIFECYCLES_` = `['Upcoming SKU','Running in the Market','Phasing Out','Closure','Other']` (do not invent a second value).
 - **Keyed by `warehouse_id + Master sku`** — never `site_sku`/company/country/marketplace. Editing a SKU already Running must not reset stock; leaving Running must not delete stock/history; returning to Running repeats only the idempotent ensure.
@@ -555,7 +557,7 @@ Add Marketplace SKU (into planning scope)
 - `overseas_inventory_snapshot` / `_movements` are keyed by `warehouse_id + sku` (Master sku); `company`/`country` resolved via `warehouses` at read time — not stored on the rows.
 
 **Runtime status (updated 2026-07-21):**
-- **(a) Factory Stock baseline on lifecycle → `Running in the Market`: IMPLEMENTED IN SOURCE (Apps Script — pending redeploy + live verification).** `handleUpsertSkuDetail_` now captures previous lifecycle, and on a non-running → Running transition calls `ensureFactoryStockBaseline_` (`03_master_data_handlers.gs`): eligibility `is_active ∧ is_factory_warehouse`, idempotent by `warehouse_id + Master sku`, `current_stock=0`/`reserved_stock=0` where the column exists, **fail-closed to `db_mapping_gap`** if the `warehouses`/`factory_stock` sheet or columns are absent (never invents). Logic unit-tested (5 cases). Requires redeploy + a live `factory_stock` sheet with the documented columns.
+- **(a) Factory Stock baseline on lifecycle → `Running in the Market`: IMPLEMENTED IN SOURCE (Apps Script — pending redeploy + live verification).** `handleUpsertSkuDetail_` now captures previous lifecycle, and on a non-running → Running transition calls `ensureFactoryStockBaseline_` (`03_master_data_handlers.gs`): eligibility `is_active ∧ is_factory_warehouse`, idempotent by `warehouse_id + Master sku`, `fac_current_stock=0`/`fac_reserved_stock=0` where the column exists, **fail-closed to `db_mapping_gap`** if the `warehouses`/`factory_stock` sheet or columns are absent (never invents). Logic unit-tested (5 cases). Requires redeploy + a live `factory_stock` sheet with the documented columns.
 - **(b) Overseas Inventory baseline on Marketplace-SKU add: NOT IMPLEMENTED / Runtime Mapping Required** — the ensure-write flow is not yet designed.
 Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md) §6.1, [`SKU_DETAILS_ADD_EDIT_SPEC.md`](./SKU_DETAILS_ADD_EDIT_SPEC.md) §15/§23.
 - **Add SKU required fields (2026-07):** the Add SKU modal requires **ASIN** (UI label → `marketplace_skus.marketplace_product_id`, also synced into `sku_regional_details.marketplace_product_id`) and **Product URL** (→ `sku_regional_details.product_url`). Validation: `product_url` trimmed + `http(s)://` (no fixed domain); `marketplace_product_id` trimmed, case-preserved, no fixed length. `site_sku` stays required. No separate `asin` column is created.
@@ -614,6 +616,6 @@ Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONA
 
 ---
 
-**v1.5.7 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1 FINALIZED.**
+**v1.5.9 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1 FINALIZED.**
 
 **End of Document**

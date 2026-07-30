@@ -298,6 +298,19 @@
         return list;
     }
     function _crcValOpts(vals) { return vals.map(function (v) { return { value: v, label: v }; }); }
+    // Method filter DISPLAY labels (Filter Consistency Repair). The option VALUE stays the raw DB enum
+    // (air / sea / sea_express / truck / rail / …); ONLY the shown label is the formal frontend text.
+    // Selection state, filter payload and the .filter() match (`c.shippingMethod`) all keep the canonical
+    // enum — nothing is sent to the backend as a label. An unmapped-but-legal enum is title-cased (never
+    // dropped or renamed) so new enums still read cleanly without a schema/label change.
+    var CRC_METHOD_LABELS = { air: 'Air', sea: 'Sea', sea_express: 'Sea Express', truck: 'Truck', rail: 'Rail', courier: 'Courier' };
+    function _crcMethodLabel(v) {
+        var key = String(v == null ? '' : v).trim().toLowerCase();
+        if (!key) return String(v == null ? '' : v);
+        if (CRC_METHOD_LABELS[key]) return CRC_METHOD_LABELS[key];
+        return key.split(/[_\s]+/).map(function (w) { return w ? w.charAt(0).toUpperCase() + w.slice(1) : w; }).join(' ');
+    }
+    function _crcMethodOpts(vals) { return vals.map(function (v) { return { value: v, label: _crcMethodLabel(v) }; }); }
     // F5 — Carrier options from rate-card rows (never hide a card): value = carrier_id, label = carrier_name
     // joined via carrier_id → carriers.carrier_id. Each carrier_id once. No master row → "Unmapped Carrier
     // ({id})" + a one-time console.warn. carrier_name is NEVER used as the join key or fabricated.
@@ -428,7 +441,7 @@
         var methodRows = dateRows.filter(function (c) { return !cSel.length || cSel.indexOf(up(c.destinationCountry)) !== -1; });
         var methodVals = _crcDistinct(methodRows, 'shippingMethod');
         _crcPruneState('method', methodVals);
-        if (skipKind !== 'method') _crcRenderFilterOptions('method', _crcValOpts(methodVals));
+        if (skipKind !== 'method') _crcRenderFilterOptions('method', _crcMethodOpts(methodVals));
 
         // F5 — Carrier from Date + Country + Method.
         var mSel = crcFilterState.method;

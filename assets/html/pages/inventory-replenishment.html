@@ -5,13 +5,13 @@
                     
                     <!-- Control Panel (Sticky) -->
                     <div class="replen-control-panel">
-                        <div class="replen-filters">
+                        <div class="replen-filters km-filter-bar">
                             <!-- Company selector removed (2026-07-24). Company is no longer a visible filter; it is
                                  DERIVED internally from the selected Marketplace's marketplace_id (see the Marketplace
                                  dropdown below, whose option value = marketplace_id). KM and ResUS therefore stay
                                  SEPARATE scopes (KM/US/Amazon ≠ ResUS/US/Amazon) because each has a distinct
                                  marketplace_id — the scope no longer needs a manual Company pick. -->
-                            <div class="replen-filter-group">
+                            <div class="filter-group">
                                 <label>Country</label>
                                 <select id="replenCountry">
                                     <option value="">Select Country</option>
@@ -27,7 +27,7 @@
                                     <option value="NL">NL</option>
                                 </select>
                             </div>
-                            <div class="replen-filter-group">
+                            <div class="filter-group">
                                 <label>Marketplace</label>
                                 <select id="replenMarketplace">
                                     <option value="">Select Marketplace</option>
@@ -39,7 +39,7 @@
                                     <option value="Newegg">Newegg</option>
                                 </select>
                             </div>
-                            <div class="replen-filter-group">
+                            <div class="filter-group">
                                 <label>LTS Filter</label>
                                 <select id="replenLTSFilter" onchange="renderReplenishment()">
                                     <option value="">All SKU</option>
@@ -47,7 +47,7 @@
                                     <option value="over180">Over 180+</option>
                                 </select>
                             </div>
-                            <div class="replen-filter-group">
+                            <div class="filter-group">
                                 <label>Target Days</label>
                                 <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="Days">
                             </div>
@@ -357,19 +357,18 @@
                         </div>
                     </div>
 
-                    <!-- Category Filter Bar — a STANDALONE card (System Repair 2 §9), pulled OUT of the
-                         table card so it reuses the SAME outer frame as the Order Planning Category bar
-                         (shared .km-category-card / __rail in components.css): white / rounded / shadowed
-                         panel + 1px bordered inner rail. Its margin-bottom (var(--space-lg)) equals the
-                         Control Panel's margin-bottom, so the gaps toolbar→category and category→table are
-                         equal. The rail scrolls horizontally inside itself; the page never overflows.
-                         renderReplenishment() refreshes the active Category title on render / filter / tab. -->
-                    <div class="km-category-card replen-category-card">
-                        <div class="replen-category-panel__head">
-                            <span class="replen-category-panel__eyebrow">Category</span>
-                            <h3 class="replen-category-panel__title" id="replenCategoryTitle">All Categories</h3>
-                        </div>
-                        <div class="replen-category-tabs km-category-card__rail km-tab-rail" id="replenCategoryTabs"></div>
+                    <!-- Category selection region (Round 3 TRUE reconstruction) — a SINGLE compact page-scoped
+                         shell whose ONLY child is the category rail. This deliberately replaces the Round 2
+                         three-layer `panel → card.km-category-card → rail.km-tab-rail` nesting (which stacked a
+                         second full white card + padding + shadow and enlarged the mid-page white block). Order
+                         Planning's `ro-panel ro-header km-category-card` is a SINGLE element with several classes,
+                         NOT three nested DOM layers — so we mirror its COMPACT VISUAL (white/rounded/shadow, 16px
+                         20px) on one shell, using fully INDEPENDENT `replen-category-*` classes/ids/state/events
+                         (no ro-*, no km-category-card, no km-tab-rail). The shell is a SIBLING of the table below
+                         (never wraps it); it has no height/min-height/flex growth. renderReplenCategoryTabs always
+                         renders at least All (0) — the bar is never hidden on empty data. -->
+                    <div class="replen-category-shell" id="replenCategoryPanel">
+                        <div class="replen-category-rail" id="replenCategoryTabs"></div>
                     </div>
 
                     <!-- Replenishment Table -->

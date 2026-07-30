@@ -5,10 +5,14 @@
 > - **Canonical Owner For:** Engine A / Engine B; **T1–T4** (T4 = display-only, never in Request/PO payload); **Normal Sales Days** (latest 30 eligible normal days within a 90-completed-day window); Forecast Adjustment; Inventory Projection; Shortage; Reallocation; Net Order Need; **Shipping carton = FLOOR**; **Ordering carton = CEILING**; Engine `Current Stock` semantics.
 > - **Not Owner For:** DB schema (`DATABASE_RELATIONSHIP_MAP.md`), UI/layout (`INVENTORY_TABLE_MAPPING_SPEC.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), Shipment/PO lifecycle (respective specs). No other doc may restate a divergent formula.
 > - **Status:** Reviewed — Batch B Blockers Remain (formulas finalized; the **Qualified Incoming allowlist** that feeds Current-Stock netting is Batch B).
-> - **Current Version:** v4.1 FINALIZED (unchanged; Batch A adds this header only — no formula edited).
-> - **Last Reviewed:** 2026-07-28.
+> - **Current Version:** v4.1 FINALIZED (unchanged; Batch A adds this header only — no formula edited. Batch B Round 1: added the B-1 reserve-boundary cross-reference below. Phase 2B Pre-Engine readiness: reconciled the stale §22 weekly-default wording with §29E and §33 — **documentation residual cleanup only; no version bump, no formula expansion, no §33/test/runtime change**).
+> - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** none (upstream formula authority).
 > - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).
+> - **Reserve boundary (cross-reference only — B-1 RESOLVED, owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1):** calculation / recommendation output (shortage, Net Order Need, Recommended Shipping Qty, reallocation, etc.) **never reserves or deducts stock**. Factory-stock reservation is triggered **only** by a successful **Formal Shipment Execution Commit** (decision only; implementation not started). This document owns no reserve logic and defines none.
+
+> **Changelog v4.1 (2026-07-30 — Phase 2B Pre-Engine Normalized Avg Sales readiness cleanup, NO version bump / NO formula expansion):** Reconciled the stale §22 "weekly default" wording with the already-adopted **§29E** and **§33 Scenario #1–#5 / #35–#40** so there is **one** Sales-Driven basis. §22 intro + **§22.1** now state the Sales-Driven default **IS** the normalized sampling ladder (latest 30 eligible normal days within the latest 90 completed days, ÷ actual `normal_day_count`); **§22.2** reframed from "exception when contaminated" to the **contamination EXCLUSION rules within** that sampling; **§22.3** no-contamination bullet corrected — no contamination = **zero excluded dates**, the ladder still applies, and `weekly_7d` is **only** the `< 3`-normal-day fallback rung (never a no-contamination default). Per-SKU exclusion, Campaign∩Event count-once, cancelled/invalid-not-excluded, Preparation-Date-not-contamination, zero-sales-day vs missing-day, and the decoupled `source`/`warning` fields are all **unchanged**. §22.4/§22.6 Forecast-Driven-reference-only + Runtime-recompute wording unchanged. **Runtime remains NOT IMPLEMENTED; Executable Tests PENDING; no engine, no §33 change, no Batch B decision.**
+>
 
 **Status:** ✅ **FINALIZED v4.1 — Calculation Specification** (v4.1 = v4.0 freeze + §22 Avg. Sales/day sample-acquisition refinement)
 **Runtime Status:** **NOT IMPLEMENTED**
@@ -651,17 +655,21 @@ The system optimizes in this strict priority order — a lower priority is impro
 
 ## 22. Normalized Avg Sales / Day Rule
 
-Avg Sales/Day drives Days of Supply and the Sales-Driven replenishment baseline. A single Special Event / Campaign / Deal day can spike weekly sales and **falsely inflate** the baseline, over-ordering. This rule **excludes event/promotion days** from the baseline when contamination is present.
+Avg Sales/Day drives Days of Supply and the Sales-Driven replenishment baseline. The **Sales-Driven baseline is always the normalized sampling ladder** (§22.2–§22.3): the latest **30 eligible normal sales days** collected backward within the **latest 90 completed calendar days**, divided by the **actual** `normal_day_count`. Because a single Special Event / Campaign / Deal day can spike sales and **falsely inflate** the baseline, event/promotion selling days are **excluded from the sample**; when no such days exist the sample simply has **zero excluded dates** and the same ladder still applies. `weekly_7d` is **only** the `< 3`-eligible-normal-day fallback rung (§22.3) — **never** a "no-contamination default".
 
-### 22.1 Default
+### 22.1 Default (Sales-Driven)
 
 ```
-Avg Sales/Day = amazon_weekly_sales_snapshot.sales_units_7d ÷ 7
+Sales-Driven Avg Sales/Day
+  = normalized sampling ladder (§22.2–§22.3) within the latest 90 COMPLETED calendar days
+  = SUM(sales_units on the latest ≤30 eligible normal days) ÷ actual normal_day_count
 ```
 
-### 22.2 Exception — event/promotion contamination (CANONICAL v4.1, 2026-07-24)
+`amazon_weekly_sales_snapshot.sales_units_7d ÷ 7` (**`weekly_7d`**) is **not** the default — it is used **only** as the `normal_day_count < 3` fallback rung of the §22.3 ladder.
 
-If, within the source window, the SKU has any day overlapping a Special Event / Campaign / Deal, do **NOT** use `sales_units_7d ÷ 7`. Compute a **Normalized Avg Sales** from `amazon_daily_sales_snapshot`. **The 30-day sample is a HISTORICAL normal-sales sample, NOT a future 30-day window** — search **backward** and collect the latest eligible normal days.
+### 22.2 Campaign / Special-Event contamination EXCLUSION rules (within the normalized sampling) (CANONICAL v4.1, 2026-07-24)
+
+The Sales-Driven baseline **always** computes a **Normalized Avg Sales** from `amazon_daily_sales_snapshot` (§22.1). This subsection defines **which days are excluded** from that sample. **The 30-day sample is a HISTORICAL normal-sales sample, NOT a future 30-day window** — search **backward** and collect the latest eligible normal days; **skip** any day overlapping a Special Event / Campaign / Deal that applies to this SKU. When the SKU has **no** applicable event/campaign day in the window, the excluded-day count is simply **0** and the same sampling proceeds over the available daily-sales days (it does **not** fall back to `sales_units_7d ÷ 7`).
 
 **Source Lookback Window (raw search range only):**
 ```
@@ -706,7 +714,7 @@ Avg. Sales/day = SUM(sales_units on eligible normal days) ÷ normal_day_count
 | **< 3** | `weekly_7d` | `sales_units_7d ÷ 7` (weekly fallback) | `insufficient_normal_days` |
 
 - **Correct:** `source = normalized_30d` + `warning = low_sample_warning` (two separate values). **Do NOT** combine into `normalized_30d_low_sample`.
-- When no contamination exists in the window, the default (§22.1) applies → `source = weekly_7d`, `warning = blank`; if weekly data is nonetheless event-affected but still used, `warning = event_contaminated_weekly_sales`.
+- **No contamination in the window** means simply **zero excluded dates** — the normalized sampling ladder (the table above) **still applies** (collect the latest eligible normal days and divide by the actual `normal_day_count`; `source = normalized_30d` when `normal_day_count ≥ 3`). It does **NOT** fall back to `weekly_7d`. `weekly_7d` (`source = weekly_7d`, `warning = insufficient_normal_days`) is used **only** on the `normal_day_count < 3` rung; if that fallback weekly value is itself event-affected, `warning = event_contaminated_weekly_sales` may accompany it as a data-quality note (still never a no-contamination default).
 - **Event / double-count guard:** because event/campaign selling days are excluded from this run-rate, the **Special Event FC is added back exactly once** downstream (§10, §29E). The same event must never both inflate Avg. Sales/day and be added again as Event FC.
 
 ### 22.4 Forecast-Driven SKUs

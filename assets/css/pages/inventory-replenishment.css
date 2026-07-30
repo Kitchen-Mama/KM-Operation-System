@@ -35,45 +35,11 @@
     flex: 1;
 }
 
-#ops-section .replen-filter-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 120px;
-}
-
-#ops-section .replen-filter-group label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--km-filter-muted);
-}
-
-#ops-section .replen-filter-group select,
-#ops-section .replen-filter-group input {
-    height: var(--km-filter-height);
-    padding: 0 12px;
-    border: 1px solid var(--km-filter-border);
-    border-radius: var(--km-filter-radius);
-    background: var(--km-filter-bg);
-    color: var(--km-filter-text);
-    font-size: 13px;
-    box-sizing: border-box;
-    line-height: 1;
-    width: 100%;
-}
-
-#ops-section .replen-filter-group select:hover,
-#ops-section .replen-filter-group input:hover {
-    border-color: #cbd5e0;
-    background: #f7fafc;
-}
-
-#ops-section .replen-filter-group select:focus,
-#ops-section .replen-filter-group input:focus {
-    outline: none;
-    border-color: var(--km-brand-blue);
-    box-shadow: 0 0 0 2px rgba(0, 128, 187, 0.1);
-}
+/* Filter GROUP + control styling moved to the shared owner (components.css `.filter-group` + `.kmf-*`,
+   base.css `--filter-*` / `--filter-label-*` tokens). Inventory Replenishment now uses `.filter-group`
+   inside a `.km-filter-bar` bar, so Country / Marketplace / LTS / Target Days render with the SAME control
+   height, border, radius, font, label size/color, hover and focus as FC Summary — no page-local control
+   spec here. `.replen-filters` below keeps ONLY the page's bar layout (flex / gap / wrap). */
 
 #ops-section .replen-actions {
     display: flex;
@@ -470,7 +436,10 @@
 #ops-section .table-header-bar {
     height: var(--km-sticky-header-total, 96px);
     position: sticky;
-    top: var(--km-sticky-top-base, 72px);
+    /* Pins BELOW the sticky control panel AND the sticky category rail: base (control-panel height) +
+       the live category-rail height (--km-replen-cat-rail-h, set by _bindReplenStickyHeader). This keeps
+       the rail visible above the header instead of the header covering it. */
+    top: calc(var(--km-sticky-top-base, 72px) + var(--km-replen-cat-rail-h, 0px));
     z-index: var(--km-sticky-z-header-1, 120);
     display: flex;
     background: #f5f5f5;
@@ -1426,47 +1395,90 @@
 /* Sits ABOVE the sticky .table-header-bar (z-index:120, whose `0 -100vh 0 100vh white`
    box-shadow paints a white curtain over everything above it). z-index must beat 120 and
    the row needs a solid background so the tabs are not masked. */
-/* Category selector — visually IDENTICAL to Request Order's Category tabs (.ro-tabs--category / .ro-tab
-   / .ro-tab--active): a bordered, rounded, overflow-hidden segmented control; grey text on white, blue
-   #3B82F6 active. Uses the same token VALUES as request-order.css. position/z-index/background are kept
-   so the strip is not masked by the sticky table header's shadow (sits above .table-header-bar z:120). */
-/* Category tabs — now the SHARED Category Tab Rail (.km-tab-rail in components.css): one single-row,
-   horizontally-scrollable rail holding ALL categories (the old measure-based "More Categories ▾"
-   overflow dropdown was removed 2026-07-28 — every category is directly reachable by scrolling).
-   The tab/count visuals come from the shared .km-tab-rail__tab / __count classes so Inventory, Order
-   System and Promotion Risk look identical. This id+class override only carries the page-local
-   spacing + stacking context (so the rail sits above the sticky table header's shadow). */
-/* Category Filter Bar (System Repair 2 §9) — now a STANDALONE .km-category-card (shared frame, see
-   components.css) sitting between the Control Panel and the table card, matching Order Planning. The
-   card owns the white/rounded/shadowed panel + 1px inner rail frame + outer padding; these page rules
-   only lay out the eyebrow/title band and neutralise the old in-table paddings/margins so they don't
-   double the shared frame. */
-#ops-section .replen-category-panel__head {
+/* ============================================================
+   Category selection region — Round 3 TRUE reconstruction (2026-07-30).
+   ONE compact page-scoped shell (`.replen-category-shell`) + its single rail child
+   (`.replen-category-rail`). This REPLACES the Round 2 three-layer `panel → card.km-category-card →
+   rail.km-tab-rail` nesting, which stacked a second full white card (padding 16/20 + shadow + margin)
+   on top of the panel wrapper and enlarged the mid-page white block.
+
+   Fully INDEPENDENT of the shared component: no `km-category-card`, no `km-category-card__rail`, no
+   `km-tab-rail`, no `ro-*` classes / ids / state / event owners are used here. Visual parity with the
+   Order Planning category bar (`.ro-header` + `.ro-tabs--category`, request-order.css) is reproduced with
+   the SAME token VALUES on page-scoped selectors only. The shell is a SIBLING of the table (never wraps
+   it) and has NO height / min-height / flex growth — so it stays a single compact bar and cannot expand
+   into a large white region. The tab/count chip visuals mirror the canonical rail (grey-on-transparent
+   inactive, #3B82F6 active). KM.ui.tabRail.enhance() (behavior-only, class-agnostic) is attached in JS for
+   wheel/keyboard horizontal scroll; it does not style or own selection.
+   ============================================================ */
+#ops-section .replen-category-shell {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 16px 20px;
+    margin-bottom: var(--space-lg, 1.5rem);
+    /* Sticky just BELOW the sticky control panel (which drives --km-sticky-top-base) and ABOVE the
+       table header (which is offset a further --km-replen-cat-rail-h down by JS, see _bindReplenStickyHeader).
+       z sits between the toolbar (131) and the table header (120) so it is never covered, and the white
+       background paints over the table header's white-curtain box-shadow. Uses sticky (never fixed-position) with no hard-coded top offset. */
+    position: sticky;
+    top: var(--km-sticky-top-base, 72px);
+    z-index: var(--km-sticky-z-cat-rail, 125);
+}
+#ops-section .replen-category-rail {
     display: flex;
-    align-items: baseline;
-    gap: 10px;
-    padding: 0;
-    margin-bottom: 10px;
+    flex-wrap: nowrap;              /* single row — never wraps */
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;               /* overflow scrolls INSIDE the rail, never the page */
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 6px;
 }
-#ops-section .replen-category-panel__eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted, #94a3b8);
-}
-#ops-section .replen-category-panel__title {
-    margin: 0;
-    font-size: var(--font-size-h4, 1.125rem);
-    font-weight: var(--font-weight-semibold, 600);
-    color: var(--text-primary);
+#ops-section .replen-category-rail::-webkit-scrollbar { height: 6px; }
+#ops-section .replen-category-rail::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 999px; }
+#ops-section .replen-category-rail__tab {
+    flex: 0 0 auto;                 /* tabs keep their intrinsic width; row scrolls instead of shrinking */
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    padding: 5px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #475569;                 /* inactive = clean text style */
+    font-size: 13px;
     line-height: 1.2;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-#ops-section .replen-category-tabs.km-tab-rail {
-    /* Border / radius / 6px padding + single-row scroll come from .km-category-card__rail + .km-tab-rail.
-       No page-local margin/padding/z-index here (the rail lives in its own card now, not over the table). */
-    margin: 0;
+#ops-section .replen-category-rail__tab:hover { background: #F1F5F9; color: #1E293B; }
+#ops-section .replen-category-rail__tab:focus-visible { outline: 2px solid #93C5FD; outline-offset: 1px; }
+#ops-section .replen-category-rail__tab.is-active {
+    background: #3B82F6;            /* system primary active */
+    color: #fff;
+    border-color: #3B82F6;
 }
+#ops-section .replen-category-rail__count {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0 6px;
+    min-width: 18px;
+    text-align: center;
+    border-radius: 999px;
+    background: #E2E8F0;
+    color: #475569;
+}
+#ops-section .replen-category-rail__tab.is-active .replen-category-rail__count { background: rgba(255, 255, 255, 0.28); color: #fff; }
 
 /* ---- AI Plan button (2026-07-28) — shared visual with the Order System AI Plan (.ro-btn--ai). Refined
    violet accent; sits BELOW the primary Submit Plan; loading / disabled / success / error states. Page-local

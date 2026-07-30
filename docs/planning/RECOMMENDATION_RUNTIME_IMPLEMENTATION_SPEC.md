@@ -6,15 +6,15 @@
 > - **Lifecycle:** **Temporary** — once the pipeline is built and verified, this doc moves to History; the permanent rules live in its Canonical Owners.
 > - **Canonical Owners (this doc restates none of them):** `SUPPLY_PLANNING_CALCULATION_RULES.md` (formulas) · `SYSTEM_RUNTIME_ARCHITECTURE.md` (cadence / service boundary) · `DATABASE_RELATIONSHIP_MAP.md` (schema) · `SUPPLY_CHAIN_SYSTEM_FLOW.md` (E2E flow).
 > - **Canonical Owner For:** nothing permanent (implementation sequencing only).
-> - **Not Owner For:** formulas, DB schema, Reserve Trigger, cadence — all deferred to the owners above.
-> - **Status:** Reviewed — Batch B Blockers Remain.
-> - **Current Version:** Draft v1.0 (unchanged).
-> - **Last Reviewed:** 2026-07-28.
+> - **Not Owner For:** formulas, DB schema, Reserve Trigger (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1), cadence — all deferred to the owners above.
+> - **Status:** Reviewed — B-1 Resolved (decision only); B-4 / B-7 Blockers Remain.
+> - **Current Version:** Draft v1.0 (unchanged; Batch B Round 1 registry sync — B-1 resolved).
+> - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** the four Canonical Owners above.
-> - **Blocked By:** Batch B (Reserve Trigger, cycle-key persistence design, Qualified Incoming allowlist) — see the consolidated Batch B Handoff.
+> - **Blocked By:** Batch B (cycle-key persistence design B-7, Qualified Incoming allowlist B-4) — see the consolidated Batch B Handoff. **B-1 Reserve Trigger no longer blocks — resolved (decision only; Implementation Not Started; Runtime Not Verified). Next open decision = B-2 Shipping Group Key.**
 
 **Status:** 🟡 Draft v1.0 — **SPECIFICATION ONLY.** No Runtime, Apps Script, frontend, trigger, DB column, or sheet tab is created here. Function-level runtime status below was **verified by read-only audit** (2026-07-20).
-**Last Updated:** 2026-07-20
+**Last Updated:** 2026-07-30 (Batch A Round 4 — internal consistency repair; content unchanged elsewhere)
 **Maintained By:** Development Team
 **Related / Authority chain:**
 - [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md) §7A — canonical cadence (this spec is its implementation contract).
@@ -25,17 +25,17 @@
 
 > **Scope.** Implementation-ready Runtime contract for the recommendation pipeline: the existing Daily entry point, two **future** no-arg scheduler entry points, source-readiness, cycle idempotency, recommendation-vs-user-quantity protection, Draft persistence, and future trigger installation. **No formulas are redefined** (owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`).
 
-> **Canonical schedule is owned by [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md) §7A** (Daily 12:00–13:00 · validation buffer 13:00–14:00 · Weekly Mon 14:00–15:00 · Monthly day-5 15:00–16:00, Asia/Taipei). This spec does **not** re-define the cadence — it references it and sequences the implementation work against it.
+> **Canonical cadence is owned by [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md) §7A** (Daily · validation buffer · Weekly · Monthly windows, Asia/Taipei — the exact times are defined there). This spec does **not** re-define or restate the cadence times — it references the §7A owner and sequences the implementation work against it.
 
 ---
 
 ## A. Daily Report Pipeline
 
-- **Entry point (Status: Source-Verified — Deployment/Runtime UNVERIFIED):** `runAmazonSnapshotImports()` — `assets/specs/active/apps-script/07_amazon_import_runner.gs:14`, a no-argument loop over `IMPORT_CONFIGS` → `runAmazonSnapshotImport_(cfg,'scheduler',{})`. Safe as a no-arg time-trigger entry point. (Source mirror only; not proof of deployment or a successful run.)
+- **Entry point (Current Status: In Progress — Source Code Present: Verified; Deployment/Runtime UNVERIFIED):** `runAmazonSnapshotImports()` — `assets/specs/active/apps-script/07_amazon_import_runner.gs:14`, a no-argument loop over `IMPORT_CONFIGS` → `runAmazonSnapshotImport_(cfg,'scheduler',{})`. Safe as a no-arg time-trigger entry point. (Source mirror only; not proof of deployment or a successful run.)
 - **What it does (source-verified by audit — source mirror; Deployment/Runtime UNVERIFIED):** imports the four configured Amazon sources and writes `amazon_inventory_snapshot`, `amazon_inventory_health_snapshot`, `amazon_weekly_sales_snapshot` (full rewrite), `amazon_daily_sales_snapshot` (**`rolling_upsert`** — `amazonUpsertRollingSnapshot_`, wired from the runner, 90-day gap-aware config; **Runtime verification PENDING, owner `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`**), plus append-only logs `import_sync_runs` and `import_sync_issues`.
 - **What it does NOT do (verified by audit):** it does **not** run Shared-FBM allocation, Days of Supply, or Suggested-Qty recalculation; it does **not** call any Weekly/Monthly recommendation; it has **no** link to `shipping_allocation_drafts`. **Do not claim otherwise.**
-- **Canonical trigger:** every day, Asia/Taipei, **12:00–13:00** window.
-- **Legacy metadata:** `06_amazon_import_config.gs:184` `scheduleTime: '16:00'` is **LEGACY / SUPERSEDED as a schedule** — it is **config metadata never consumed by Runtime** (only `scheduleTimezone` is read, for BQ date math/pruning). The operative daily trigger is the manually-installed 12:00–13:00 trigger on `runAmazonSnapshotImports`. See §J (Phase 1) for the reconciliation sequence. **Do NOT prescribe a second duplicate same-day Daily Sales import.**
+- **Canonical target cadence:** owned by [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md) §7A (this spec restates no times). **Whether the trigger is currently installed and running remains Deployment/Runtime UNVERIFIED.**
+- **Legacy metadata:** `06_amazon_import_config.gs:184` `scheduleTime: '16:00'` is **LEGACY / SUPERSEDED / not consumed by Runtime** (only `scheduleTimezone` is read, for BQ date math/pruning) — it is **not** the current cadence and must not be presented as one. The daily trigger on `runAmazonSnapshotImports` targets the §7A cadence; whether it is installed and running is **Deployment/Runtime UNVERIFIED**. See §J (Phase 1) for the reconciliation sequence. **Do NOT prescribe a second duplicate same-day Daily Sales import.**
 - **Auditable result:** each configured source must produce an auditable `import_sync_runs` row. A job is **not** source-ready merely because the outer function returned; **required configured sources must be individually successful for the applicable business date/batch**, and a partial source failure must remain visible and **block** dependent recommendation generation (§H).
 - **Three separate readiness concepts (do not conflate):** (1) imported-source readiness; (2) Analysis-calculation readiness; (3) recommendation readiness (§H).
 
@@ -65,7 +65,7 @@
 
 The `shipping_allocation_drafts` / `shipping_allocation_draft_lines` schema (header columns, line columns, uniqueness, "MUST NOT store" derived fields, and canonical vs legacy quantity names) is **owned by [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) §3.6** and mirrored in **[`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) §7.5**. This spec **does not reproduce or amend that schema** — it only consumes it.
 
-- **Work item (this spec):** wire a writer/accessor for that schema. **Status: table + body-driven writer exist (`16_shipping_allocation_handlers.gs`); the recommendation-generating calc engine + no-arg scheduler do NOT (§B/§K).**
+- **Work items (this spec) — split (see §K):** (1) the **existing body-driven persistence handler** (`16_shipping_allocation_handlers.gs`: `handleUpsertShippingAllocationDraft_` / `…DraftLines_` / `handleSubmitShippingAllocationDrafts_` + `SHIPPING_ALLOCATION_DRAFTS_HEADERS_` / `procurementEnsureSheet_`) is **In Progress — Source Code Present: Verified; Deployment/Runtime UNVERIFIED**; (2) the **recommendation calculation engine**, (3) the **scheduler-safe accessor / orchestration**, and (4) the **no-arg weekly scheduler** are **Not Started**. This spec wires an accessor around the existing handler; it introduces **no schema**.
 - **Quantity names:** canonical = `recommended_qty` (system) + `planned_qty` (user); `recommand_shipment_draft_qty` / `shipment_draft_qty` / `qty` are **legacy read/migration aliases only** — full definition in the schema owner. This spec introduces no new column.
 
 ---
@@ -133,22 +133,22 @@ Idempotency work items (to implement once B-7 is decided):
 ## I. Trigger Installation Boundary
 
 Future **manual** trigger configuration (Apps Script console — operational deployment step, **not** part of this spec):
-- `runAmazonSnapshotImports` — Daily, **12:00–13:00**. **Currently the ONLY safe/available entry point.**
-- `runWeeklyShippingRecommendation` — Weekly Monday, **14:00–15:00**. **Do not create until the no-arg entry point exists and is manually tested.**
-- `runMonthlyOrderRecommendation` — Monthly day 5, **15:00–16:00**. **Do not create until implemented + tested.**
+- `runAmazonSnapshotImports` — Daily, at the **§7A cadence** (`SYSTEM_RUNTIME_ARCHITECTURE.md` §7A; no times restated here). Currently the only **no-arg** entry point safe to attach; whether a trigger is installed and running is **Deployment/Runtime UNVERIFIED**.
+- `runWeeklyShippingRecommendation` — Weekly, at the **§7A cadence**. **Do not create until the no-arg entry point exists and is manually tested.**
+- `runMonthlyOrderRecommendation` — Monthly, at the **§7A cadence**. **Do not create until implemented + tested.**
 
 Hard rules:
 - **Never bind a trigger** to `handleUpsertRequestOrderAllocationDraft_(body)`, `handleUpsertRequestOrderAllocationDraftLines_(body)`, or `handleSubmitRequestOrderAllocationDrafts_(body)` — they require a `body` argument (a time trigger passes none).
 - **Apps Script project timezone AND Spreadsheet timezone must both be Asia/Taipei.**
-- No `ScriptApp.newTrigger(...).timeBased()` installer exists today (audited); installation remains manual/operational.
+- No `ScriptApp.newTrigger(...).timeBased()` installer exists today (audited); installation remains a **manual / operational** step. **No automatic trigger installer is planned by this spec.**
 
 ---
 
 ## J. Runtime Implementation Sequence (recommended future order)
 
-1. **Phase 1** — Reconcile the 16:00 metadata (§A Legacy metadata) and configure/test the **Daily 12:00–13:00** trigger on `runAmazonSnapshotImports`.
+1. **Phase 1** — Reconcile the legacy `16:00` metadata (§A Legacy metadata) and configure/test the **Daily** trigger on `runAmazonSnapshotImports` at the **§7A cadence** (times owned by `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A).
 2. **Phase 2** — Implement the **Import + Analysis readiness** contract (§H), incl. a batch identity if `import_sync_runs` can't express one.
-3. **Phase 3** — Implement shipping Draft **schema + accessors + writer** and the **calculation engine** (canonical `recommended_qty` / `planned_qty`; legacy alias `recommand_shipment_draft_qty`).
+3. **Phase 3** — **Reuse or safely extend the existing shipping persistence path** (`16_shipping_allocation_handlers.gs` body-driven upsert/lines/submit; schema owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6 / `DATABASE_RELATIONSHIP_MAP.md` §7.5). Implement **only the missing** recommendation **calculation engine** and **scheduler-safe accessors / orchestration** (canonical `recommended_qty` / `planned_qty`; legacy alias `recommand_shipment_draft_qty`). **This spec creates/modifies no schema.**
 4. **Phase 4** — Implement `runWeeklyShippingRecommendation()` with cycle idempotency (§B/§G).
 5. **Phase 5** — Implement the request-order **recommendation engine** and the **monthly orchestration layer** around the existing writers (§E.9).
 6. **Phase 6** — Implement `runMonthlyOrderRecommendation()` with cycle idempotency (§E/§G).
@@ -156,24 +156,26 @@ Hard rules:
 
 ---
 
-## K. Work-item Status (four allowed states only)
+## K. Work-item Status (Current Status ∈ {Not Started · In Progress · Verified Complete · Blocked})
 
-Each row uses exactly one of: **Source-Verified** (the code path exists and is wired in the Apps Script **source mirror** — Code evidence only; **Apps Script Deployment and Runtime execution are UNVERIFIED in this environment**. Source existence does not prove deployment or runtime behavior; this specification separately classifies source evidence, deployment evidence, and runtime evidence) · **In Progress** · **Not Started** · **Blocked** (awaits a Batch B decision). A function name is **never** treated as implementation proof, and no item is marked runtime-complete without deployment + runtime evidence (unavailable here).
+Each row's **Current Status** uses exactly one of the four canonical values: **Not Started · In Progress · Verified Complete · Blocked** (Blocked = awaits a Batch B decision). Source-code existence is recorded as a **separate evidence annotation** (`Source Code Present: Verified`), **never as a Current Status value**: a work item whose code path exists and is wired in the Apps Script **source mirror** — but whose **Apps Script Deployment and Runtime execution are UNVERIFIED in this environment** — is **In Progress**, not "Verified Complete". A function name is **never** treated as implementation proof; **no item is Verified Complete without Code + DB + Runtime + Test evidence** (unavailable here). Source evidence, deployment evidence, and runtime evidence are classified separately.
 
 | Work item | Status | Evidence |
 |---|---|---|
-| `runAmazonSnapshotImports()` no-arg Daily entry | **Source-Verified** (Deployment/Runtime UNVERIFIED) | `07_amazon_import_runner.gs:14` |
-| Amazon snapshot writers + import logs (incl. Daily Sales `rolling_upsert`) | **Source-Verified** (Deployment/Runtime UNVERIFIED — owner `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`) | `07/08/09_*.gs` |
-| Request-order Draft body-driven writers/getters/router/frontend | **Source-Verified** (Deployment/Runtime UNVERIFIED) | `15_*.gs`, `01_router.gs:170-179` |
+| `runAmazonSnapshotImports()` no-arg Daily entry | **In Progress** — Source Code Present: Verified; Deployment/Runtime UNVERIFIED | `07_amazon_import_runner.gs:14` |
+| Amazon snapshot writers + import logs (incl. Daily Sales `rolling_upsert`) | **In Progress** — Source Code Present: Verified; Deployment/Runtime UNVERIFIED (owner `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md`) | `07/08/09_*.gs` |
+| Request-order Draft body-driven writers/getters/router/frontend | **In Progress** — Source Code Present: Verified; Deployment/Runtime UNVERIFIED | `15_*.gs`, `01_router.gs:170-179` |
 | `runAmazonSnapshotImports` running allocation/DoS/Suggested-Qty | **Not Started** (verified absent — do not claim) | audit |
-| `recommended_qty` population by an engine | **In Progress** — column exists, blank at runtime (passthrough); engine not built | `15_..:123`, `request-order.js:1703` |
+| `recommended_qty` population by a recommendation engine | **Not Started** | canonical column / passthrough path exists (`15_..:123`, `request-order.js:1703`), but **no recommendation engine populates it** — column existence ≠ engine started |
 | `runWeeklyShippingRecommendation()` | **Not Started** | zero grep hits |
-| Shipping calc engine / writer / getter / schema-in-code | **Not Started** | no HEADERS/ensure/writer |
+| Shipping Draft persistence handler — body-driven upsert/lines/submit + HEADERS + ensure-sheet | **In Progress** — Source Code Present: Verified; Deployment/Runtime UNVERIFIED | `16_shipping_allocation_handlers.gs` (`handleUpsertShippingAllocationDraft_`:115 / `…DraftLines_`:199 / `handleSubmitShippingAllocationDrafts_`:278) |
+| Shipping **recommendation calculation engine** | **Not Started** | audit — no calc engine populates `recommended_qty` |
+| Shipping **scheduler-safe accessor / orchestration** (wrapping the existing handler for the no-arg weekly job) | **Not Started** | audit — no scheduler-safe wrapper exists |
 | `runMonthlyOrderRecommendation()` + monthly engine | **Not Started** | audit; `13_..:607` |
-| Time-trigger installer | **Not Started** (manual op only) | no `newTrigger` in `.gs` |
-| Cycle idempotency (both) — persist the cycle key (definition owned by `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A) | **Blocked** | §G |
-| Source-readiness gate (3 states) — batch-identity persistence | **Blocked** | §H |
-| Reserve Trigger dependency (does any recommendation step reserve stock?) | **Blocked** — Batch B (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1) | §D |
+| Manual trigger configuration and runtime verification | **Not Started** | no verified installation/runtime evidence (`newTrigger` absent in `.gs`, audited). **No automatic trigger installer is planned by this spec.** |
+| Cycle idempotency (both) — **persisted recommendation cycle / unique-key mechanism** | **Blocked** — B-7 (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11); undecided. *(Recommendation **cadence** is owned by `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A — a separate concern from the persisted key.)* | §G |
+| Source-readiness gate (3 states) — batch-identity persistence | **Not Started** | **Runtime/DB Mapping Required**; whether the existing `import_sync_runs` / `import_sync_issues` logs can express a single Daily-Pipeline batch identity remains **UNVERIFIED**. No Batch B decision ID governs this — it is **not** a Blocker (§H) |
+| Reserve Trigger dependency (does any recommendation step reserve stock?) | **B-1 RESOLVED (decision only)** — **No recommendation step reserves.** Reserve happens only at the **Formal Shipment Execution Commit** (owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1), which is not part of this pipeline. **B-1 Implementation = Not Started; Runtime Verification = Not Verified.** | owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1; registry `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1. *(§D specifies quantity protection, not the Reserve Trigger.)* |
 
 *(Schema, schedule, cycle-key definition, and the quantity-name contract are owned elsewhere and only referenced here — see §C / §A / §G. `recommand_shipment_draft_qty` is a legacy alias defined by the schema owner, not a work item.)*
 
@@ -181,7 +183,7 @@ Each row uses exactly one of: **Source-Verified** (the code path exists and is w
 
 ## Implementation Status
 
-This is an implementation **work tracker / handoff spec** — no Runtime, Apps Script, frontend, trigger, DB column, sheet tab, or `project-current-state.md` is created or changed. Per §K: `runAmazonSnapshotImports()` and the Amazon writers + the request-order body-driven writers are **Source-Verified** (source mirror only; **Apps Script Deployment/Runtime UNVERIFIED**); the two recommendation scheduler entry points and both recommendation engines are **Not Started**; cycle idempotency, the source-readiness gate, and the reserve dependency are **Blocked**.
+This is an implementation **work tracker / handoff spec** — no Runtime, Apps Script, frontend, trigger, DB column, sheet tab, or `project-current-state.md` is created or changed. Per §K: `runAmazonSnapshotImports()` and the Amazon writers + the request-order body-driven writers + the **shipping-draft body-driven persistence handler** (`16_shipping_allocation_handlers.gs`) are **In Progress** (Source Code Present: Verified — source mirror only; **Apps Script Deployment/Runtime UNVERIFIED**); the two recommendation scheduler entry points, both recommendation **calculation engines**, the scheduler-safe orchestration, `recommended_qty` engine population, the **source-readiness gate** (Runtime/DB mapping required — **not** a Batch B blocker), and manual trigger configuration/verification are **Not Started**; the **persisted cycle/unique-key mechanism** (B-7) remains **Blocked**. The **Reserve Trigger dependency** (B-1) is **RESOLVED (decision only)** — no recommendation step reserves; reserve happens only at the Formal Shipment Execution Commit (owner §8A.1), with B-1 **Implementation Not Started / Runtime Not Verified**.
 
 **No build. No redeploy. No migration. No trigger installation.**
 

@@ -183,8 +183,36 @@
         });
     }
 
-    // Populate Supplier / Category / Series dropdowns from the current PO List data
-    // (option values are the raw strings; selection is preserved across reloads).
+    // Shared multi-select state (SKU-Details-style KM.ui.multiFilter). [] = All (no restriction);
+    // multiple values within a filter = OR; across filters = AND (applyFilters). Draft Status is
+    // excluded from this page regardless (applyFilters), so it is not offered as an option.
+    var polFilterState = { status: [], supplier: [], category: [], series: [] };
+    var POL_STATUS_OPTS = [
+        { value: 'issued', label: 'Issued' }, { value: 'in_production', label: 'In Production' },
+        { value: 'partial_completed', label: 'Partial Completed' }, { value: 'completed', label: 'Completed' },
+        { value: 'partial_shipped', label: 'Partial Shipped' }, { value: 'shipped', label: 'Shipped' },
+        { value: 'closure', label: 'Closure' }, { value: 'cancelled', label: 'Cancelled' }
+    ];
+
+    // Create-or-update ONE shared multi-select on its mount (idempotent: KM.ui.multiFilter.create reuses
+    // the controller + refreshes options, dropping selections no longer in the option universe — this is
+    // the cascading downstream-cleanup). onChange writes the selection array back into polFilterState and
+    // re-renders through the existing render/query path (no parallel state owner, no native <select>).
+    function _polMountFilter(key, label, mountId, options) {
+        if (!(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
+        var mount = document.getElementById(mountId);
+        if (!mount) return;
+        KM.ui.multiFilter.create({
+            mount: mount, filterId: mountId, label: label, options: options,
+            selectedValues: polFilterState[key],
+            onChange: function (vals) { polFilterState[key] = vals; polPage = 1; renderRows(); }
+        });
+        // Keep state in sync when setOptions pruned a now-invalid selection.
+        if (mount.__kmfCtl) polFilterState[key] = mount.__kmfCtl.getSelected();
+    }
+
+    // Populate Status / Supplier / Category / Series shared multi-selects from the current PO List data
+    // (option values are the raw strings; selection is preserved + pruned across reloads).
     function populateFilterOptions(models) {
         var suppliers = {}, categories = {}, series = {};
         models.forEach(function (m) {
@@ -193,38 +221,32 @@
             m.categoryList.forEach(function (c) { if (c) categories[c] = 1; });
             m.seriesList.forEach(function (s) { if (s) series[s] = 1; });
         });
-        function fill(id, map) {
-            var el = document.getElementById(id);
-            if (!el) return;
-            var current = el.value;
-            var opts = Object.keys(map).sort(function (a, b) { return a.localeCompare(b); });
-            el.innerHTML = '<option value="">All</option>' + opts.map(function (v) {
-                return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
-            }).join('');
-            if (current && map[current]) el.value = current; else el.value = '';
+        function sortedOpts(map) {
+            return Object.keys(map).sort(function (a, b) { return a.localeCompare(b); })
+                .map(function (v) { return { value: v, label: v }; });
         }
-        fill('pol-f-supplier', suppliers);
-        fill('pol-f-category', categories);
-        fill('pol-f-series', series);
+        _polMountFilter('status', 'Status', 'pol-f-status-mount', POL_STATUS_OPTS);
+        _polMountFilter('supplier', 'Supplier', 'pol-f-supplier-mount', sortedOpts(suppliers));
+        _polMountFilter('category', 'Category', 'pol-f-category-mount', sortedOpts(categories));
+        _polMountFilter('series', 'Series', 'pol-f-series-mount', sortedOpts(series));
     }
 
     // Apply header + line filters (dropdowns exact-match; SKU is free-text contains).
     // Tab filtering is applied separately by the active tab.
     function applyFilters(models) {
-        var fStatus = val('pol-f-status');
-        var fSupplier = val('pol-f-supplier');
-        var fCategory = val('pol-f-category');
-        var fSeries = val('pol-f-series');
+        // Multi-select: [] = All; within a filter OR; across filters AND. (SKU stays free-text contains.)
+        var fStatus = polFilterState.status, fSupplier = polFilterState.supplier,
+            fCategory = polFilterState.category, fSeries = polFilterState.series;
         var fSku = val('pol-f-sku').toLowerCase();
         var fFrom = polDateState.createdFrom, fTo = polDateState.createdTo;
         return models.filter(function (m) {
             var o = m.o;
             // Draft POs never appear here (Remaining/historical overview) — they belong to the Workspace.
             if (m.status === 'draft') return false;
-            if (fStatus && m.status !== fStatus) return false;
-            if (fSupplier && String(o.supplierName || o.supplierId || '').trim() !== fSupplier) return false;
-            if (fCategory && m.categoryList.indexOf(fCategory) === -1) return false;
-            if (fSeries && m.seriesList.indexOf(fSeries) === -1) return false;
+            if (fStatus.length && fStatus.indexOf(m.status) === -1) return false;
+            if (fSupplier.length && fSupplier.indexOf(String(o.supplierName || o.supplierId || '').trim()) === -1) return false;
+            if (fCategory.length && !m.categoryList.some(function (c) { return fCategory.indexOf(c) !== -1; })) return false;
+            if (fSeries.length && !m.seriesList.some(function (s) { return fSeries.indexOf(s) !== -1; })) return false;
             if (fSku && m.skuList.join(' ').toLowerCase().indexOf(fSku) === -1) return false;
             var created = String(o.createdAt || '').slice(0, 10);
             if (fFrom && created && created < fFrom) return false;
@@ -524,9 +546,12 @@
     }
 
     function reset() {
-        ['pol-f-status', 'pol-f-supplier', 'pol-f-category', 'pol-f-series', 'pol-f-sku'].forEach(function (id) {
-            var el = document.getElementById(id); if (el) el.value = '';
+        // Clear the shared multi-selects (state + controllers) and the SKU free-text.
+        polFilterState = { status: [], supplier: [], category: [], series: [] };
+        ['pol-f-status-mount', 'pol-f-supplier-mount', 'pol-f-category-mount', 'pol-f-series-mount'].forEach(function (mid) {
+            var mt = document.getElementById(mid); if (mt && mt.__kmfCtl) mt.__kmfCtl.setSelected([]);
         });
+        var skuEl = document.getElementById('pol-f-sku'); if (skuEl) skuEl.value = '';
         // Clear the Date range → trigger back to "All".
         polDateState.dateRange = { start: null, end: null, preset: null };
         polDateState.createdFrom = '';

@@ -1071,13 +1071,40 @@ function crDeleteSelected() {
 }
 
 // --- Scroll Sync ---
+// Header/body horizontal scroll sync. Module-scoped refs so the listener can be rebound
+// idempotently on each partial (re)mount and cleaned up on unmount (never stacked).
+var _crScrollColEl = null;
+var _crScrollHandler = null;
+
 function initCrScrollSync() {
-    const scrollCol = document.querySelector('#campaign-risk-section .cr-table .scroll-col');
-    const scrollHeader = document.querySelector('#campaign-risk-section .cr-table .scroll-header');
+    // Was previously wired only on DOMContentLoaded — but this section is partial-loaded, so the
+    // .scroll-col/.scroll-header nodes do not exist at DOMContentLoaded and the listener was never
+    // attached (header stayed out of sync with the body). Bind on mount instead, idempotently.
+    const root = document.getElementById('campaign-risk-section');
+    if (!root) return;
+    const scrollCol = root.querySelector('.cr-table .scroll-col');
+    const scrollHeader = root.querySelector('.cr-table .scroll-header');
     if (!scrollCol || !scrollHeader) return;
-    scrollCol.addEventListener('scroll', function() {
-        scrollHeader.style.transform = 'translateX(-' + this.scrollLeft + 'px)';
-    });
+    // Idempotent: drop any prior handler before re-binding so a re-mount never stacks listeners.
+    if (_crScrollColEl && _crScrollHandler) {
+        _crScrollColEl.removeEventListener('scroll', _crScrollHandler);
+    }
+    _crScrollColEl = scrollCol;
+    _crScrollHandler = function() {
+        scrollHeader.style.transform = 'translateX(-' + scrollCol.scrollLeft + 'px)';
+    };
+    scrollCol.addEventListener('scroll', _crScrollHandler);
+    // Apply once so the header matches the body's current scrollLeft immediately (e.g. after a
+    // resize/rerender that leaves the body scrolled).
+    _crScrollHandler();
+}
+
+function _teardownCrScrollSync() {
+    if (_crScrollColEl && _crScrollHandler) {
+        _crScrollColEl.removeEventListener('scroll', _crScrollHandler);
+    }
+    _crScrollColEl = null;
+    _crScrollHandler = null;
 }
 
 // --- Column resize (System Repair 2 Part E) ---
@@ -1179,11 +1206,13 @@ if (window.KM && window.KM.lifecycle) {
                 _bindCrDocListeners();
                 crReload();   // load cache (race-guarded) → populate Country selector → gated render
                 _initCrColumnResize();   // static header present → wire drag-to-resize once (Part E)
+                initCrScrollSync();      // bind header↔body horizontal scroll sync on mount (partial is now in the DOM)
             });
         },
         unmount() {
             console.log('[CampaignRisk] unmount');
             _unbindCrDocListeners();
+            _teardownCrScrollSync();
         }
     });
 }

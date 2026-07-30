@@ -127,8 +127,9 @@ function initShipmentOverviewPage() {
     loadHistoryData();
     updateHistoryDateTriggerText();
 
-    // Init custom dropdowns (Country / Shipping Method) — scoped to the Overview section.
-    _initShDropdowns();
+    // Mount the shared multi-select filters (Country / Shipping Method) — scoped to the Overview section.
+    // Options are refreshed from live data by _shSyncFilterOptions (called in renderShipmentOverview).
+    _shInitFilters();
 
     // Bind the full filter bar's Search + Date trigger (no cloneNode).
     if (searchBtn) searchBtn.onclick = onHistorySearch;
@@ -464,45 +465,81 @@ function onHistorySearch() {
 
 function collectFilterParams() {
     const skuInput = document.querySelector("#shippinghistory-section .filter-group--sku input");
-    
-    // Read from checkbox dropdowns
-    const country = _getShDropdownValue('country');
-    const method = _getShDropdownValue('method');
-    const sku = skuInput?.value.trim() || "";
-    
-    return { 
-        start: formatHistoryDate(historyState.dateRange.start), 
-        end: formatHistoryDate(historyState.dateRange.end), 
-        country, 
-        sku, 
-        method 
+    // Country / Method are multi-value arrays ([] = All). SKU stays a free-text contains search.
+    return {
+        start: formatHistoryDate(historyState.dateRange.start),
+        end: formatHistoryDate(historyState.dateRange.end),
+        country: shOverviewFilterState.country.slice(),
+        sku: skuInput?.value.trim() || "",
+        method: shOverviewFilterState.method.slice()
     };
 }
 
-// Get single selected value from shipping history dropdown (single-select behavior)
-function _getShDropdownValue(filterType) {
-    const panel = document.querySelector(`#shippinghistory-section .sh-dropdown-panel[data-filter="${filterType}"]`);
-    if (!panel) return '';
-    const checked = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
-    const allCb = panel.querySelector('input[value=""]');
-    if (allCb && allCb.checked) return '';
-    if (checked.length === 0) return '';
-    // Single-select: return first checked value
-    return checked[0].value;
+// ── Shipment Overview filters — shared KM.ui.multiFilter (Round 3) ───────────────────────────────
+// Country / Shipping Method migrated from the old single-select `sh-dropdown` checkbox panels to the
+// ONE shared component. State is multi-value ([] = All; within a filter OR; across filters AND). The
+// shared controller is the SINGLE owner — no old sh-dropdown DOM / single-value reader / native panel
+// remains. Options are derived from live runtime data (never hardcoded) by _shSyncFilterOptions.
+var shOverviewFilterState = { country: [], method: [] };
+
+// Create-or-update ONE shared multi-select on its mount (idempotent). onChange writes the selection
+// array back into shOverviewFilterState and re-renders through the existing Overview path.
+function _shMountFilter(key, label, mountId, options) {
+    if (!(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
+    var mount = document.getElementById(mountId);
+    if (!mount) return;
+    KM.ui.multiFilter.create({
+        mount: mount, filterId: mountId, label: label, options: options || [],
+        selectedValues: shOverviewFilterState[key],
+        onChange: function (vals) { shOverviewFilterState[key] = vals; renderShipmentOverview(); }
+    });
+    // Keep state in sync when setOptions pruned a now-invalid selection.
+    if (mount.__kmfCtl) shOverviewFilterState[key] = mount.__kmfCtl.getSelected();
+}
+
+function _shInitFilters() {
+    _shMountFilter('country', 'Country', 'sh-f-country-mount', []);
+    _shMountFilter('method', 'Method', 'sh-f-method-mount', []);
+}
+
+// Refresh Country / Shipping Method option universes from live runtime data (DB official shipments when
+// present, else the mock/demo dataset). setOptions prunes selections no longer available; the pruned
+// result is written back to the single page state so the predicate never queries a stale value.
+function _shSyncFilterOptions(shipments) {
+    var countrySrc, methodSrc;
+    if (shipments) {
+        var official = shipments.filter(function (s) { return SH_OVERVIEW_STATUSES[s.status]; });
+        countrySrc = official.map(function (s) { return s.country; });
+        methodSrc = official.map(function (s) { return s.shippingMethod; });
+    } else {
+        var data = historyState.data || [];
+        countrySrc = data.map(function (d) { return d.country; });
+        methodSrc = data.map(function (d) { return d.method; });
+    }
+    _shSetFilterOptions('country', 'sh-f-country-mount', _shDistinct(countrySrc));
+    _shSetFilterOptions('method', 'sh-f-method-mount', _shDistinct(methodSrc));
+}
+
+function _shSetFilterOptions(key, mountId, vals) {
+    var mount = document.getElementById(mountId);
+    if (!mount || !mount.__kmfCtl) return;
+    mount.__kmfCtl.setOptions((vals || []).map(function (v) { return { value: v, label: v }; }));
+    shOverviewFilterState[key] = mount.__kmfCtl.getSelected(); // re-sync after cascade prune
 }
 
 function filterHistoryData(data, params) {
+    // Multi-value: [] = All (no restriction); within a filter OR-set membership; across filters AND.
     return data.filter(item => {
         if (params.start && item.date < params.start) return false;
         if (params.end && item.date > params.end) return false;
-        if (params.country && item.country !== params.country) return false;
+        if (params.country && params.country.length && params.country.indexOf(item.country) === -1) return false;
         if (params.sku) {
-            const hasSku = item.skus.some(s => 
+            const hasSku = item.skus.some(s =>
                 s.sku.toLowerCase().includes(params.sku.toLowerCase())
             );
             if (!hasSku) return false;
         }
-        if (params.method && item.method !== params.method) return false;
+        if (params.method && params.method.length && params.method.indexOf(item.method) === -1) return false;
         return true;
     });
 }
@@ -613,112 +650,10 @@ function toggleHistoryCard(shipmentId) {
     }
 }
 
-// Shipping History custom dropdown logic (single-select behavior with checkbox visual)
-function _initShDropdowns() {
-    const root = document.querySelector('#shippinghistory-section');
-    if (!root) return;
-
-    // Trigger click
-    root.querySelectorAll('.sh-dropdown-trigger').forEach(trigger => {
-        trigger.onclick = function(e) {
-            e.stopPropagation();
-            const filterType = this.dataset.filter;
-            const panel = root.querySelector(`.sh-dropdown-panel[data-filter="${filterType}"]`);
-            root.querySelectorAll('.sh-dropdown-panel').forEach(p => {
-                if (p !== panel) p.classList.remove('is-open');
-            });
-            if (panel) panel.classList.toggle('is-open');
-        };
-    });
-
-    // Panel checkbox binding (extracted so DB-driven option rebuilds can re-bind — see
-    // _shOverviewSyncFilterOptions). Idempotent: safe to call again after replacing panel contents.
-    root.querySelectorAll('.sh-dropdown-panel').forEach(panel => _shBindDropdownPanel(panel, root));
-
-    // Close on outside click — bound once per section (guard against stacking on re-init).
-    if (!root._shOutsideBound) {
-        root._shOutsideBound = true;
-        document.addEventListener('click', function _shOutside(e) {
-            if (!root.contains(e.target)) {
-                root.querySelectorAll('.sh-dropdown-panel').forEach(p => p.classList.remove('is-open'));
-            }
-        });
-    }
-}
-
-// Bind (or re-bind) one dropdown panel's checkbox behavior (single-select with an "All" master).
-function _shBindDropdownPanel(panel, root) {
-    if (!panel) return;
-    panel.onclick = e => e.stopPropagation();
-    const filterType = panel.dataset.filter;
-    const allCb = panel.querySelector('input[value=""]');
-    const otherCbs = panel.querySelectorAll('input[type="checkbox"]:not([value=""])');
-
-    // "All" toggles every option together (checking All also checks the others).
-    if (allCb) {
-        allCb.onchange = function() {
-            const isChecked = this.checked;
-            otherCbs.forEach(cb => cb.checked = isChecked);
-            _updateShDropdownText(filterType, root);
-        };
-    }
-    otherCbs.forEach(cb => {
-        cb.onchange = function() {
-            // Single-select: uncheck all others, uncheck "All"
-            otherCbs.forEach(other => { if (other !== cb) other.checked = false; });
-            if (allCb) allCb.checked = !this.checked;
-            _updateShDropdownText(filterType, root);
-        };
-    });
-}
-
-// Rebuild the Overview Country / Shipping Method dropdown options from LIVE DB values (no mock
-// options). Preserves the current single selection. When the DB has no shipments the panel shows
-// only "All" (SHIPMENT_CENTER_SPEC / Part 3 — never inject hardcoded sample options).
-function _shOverviewSyncFilterOptions(shipments) {
-    var root = document.querySelector('#shippinghistory-section');
-    if (!root) return;
-    var official = (shipments || []).filter(function(s) { return SH_OVERVIEW_STATUSES[s.status]; });
-    var optionSets = {
-        country: _shDistinct(official.map(function(s) { return s.country; })),
-        method: _shDistinct(official.map(function(s) { return s.shippingMethod; }))
-    };
-    Object.keys(optionSets).forEach(function(filter) {
-        var panel = root.querySelector('.sh-dropdown-panel[data-filter="' + filter + '"]');
-        if (!panel) return;
-        var prev = (typeof _getShDropdownValue === 'function') ? _getShDropdownValue(filter) : '';
-        var vals = optionSets[filter];
-        var allChecked = !prev || vals.indexOf(prev) === -1; // fall back to All if prior value is gone
-        panel.innerHTML = '<label class="sh-checkbox-item"><input type="checkbox" value="" ' +
-                (allChecked ? 'checked' : '') + '> <strong>All</strong></label>' +
-            vals.map(function(v) {
-                var checked = allChecked || v === prev;
-                return '<label class="sh-checkbox-item"><input type="checkbox" value="' + _shEsc(v) + '" ' +
-                    (checked ? 'checked' : '') + '> ' + _shEsc(v) + '</label>';
-            }).join('');
-        _shBindDropdownPanel(panel, root);
-        _updateShDropdownText(filter, root);
-    });
-}
-
-function _updateShDropdownText(filterType, root) {
-    const trigger = root.querySelector(`.sh-dropdown-trigger[data-filter="${filterType}"]`);
-    const panel = root.querySelector(`.sh-dropdown-panel[data-filter="${filterType}"]`);
-    if (!trigger || !panel) return;
-    const textSpan = trigger.querySelector('.sh-dropdown-text');
-    const allCb = panel.querySelector('input[value=""]');
-    const checked = panel.querySelectorAll('input[type="checkbox"]:not([value=""]):checked');
-    if (allCb && allCb.checked) {
-        textSpan.textContent = 'All';
-    } else if (checked.length === 1) {
-        textSpan.textContent = checked[0].value;
-    } else if (checked.length === 0) {
-        textSpan.textContent = 'All';
-        if (allCb) allCb.checked = true;
-    } else {
-        textSpan.textContent = `${checked.length} selected`;
-    }
-}
+// (Round 3) The old single-select `sh-dropdown` panel logic — _initShDropdowns / _shBindDropdownPanel /
+// _shOverviewSyncFilterOptions / _updateShDropdownText / _getShDropdownValue — was removed. Country and
+// Shipping Method are now owned solely by KM.ui.multiFilter (see _shInitFilters / _shSyncFilterOptions
+// above). No old DOM, single-value reader, click/listener owner, or native panel state remains.
 
 // ========================================
 // Shipment Overview — DB (Execution Layer) rendering + execution-field editing
@@ -884,7 +819,9 @@ function renderShipmentOverview() {
     if (!emptyStateEl || !listEl) return;
 
     if (!_shUseDb()) {
-        // Demo mode: keep the existing mock-history behavior (Search-gated).
+        // Demo mode: keep the existing mock-history behavior (Search-gated). Refresh the multi-select
+        // option universes from the mock dataset so Country / Method reflect runtime data (not hardcoded).
+        _shSyncFilterOptions();
         renderHistoryResults(historyState.hasSearched ? filterHistoryData(historyState.data, collectFilterParams()) : []);
         return;
     }
@@ -900,10 +837,11 @@ function renderShipmentOverview() {
     lines.forEach(function(l) { (linesByShipment[l.shipmentId] = linesByShipment[l.shipmentId] || []).push(l); });
 
     // Refresh Country / Shipping Method options from live DB (Part 3) before reading the filters.
-    _shOverviewSyncFilterOptions(shipments);
+    _shSyncFilterOptions(shipments);
 
-    var fCountry = (typeof _getShDropdownValue === 'function') ? _getShDropdownValue('country') : '';
-    var fMethod = (typeof _getShDropdownValue === 'function') ? _getShDropdownValue('method') : '';
+    // Multi-value state ([] = All; within a filter OR; across filters AND).
+    var fCountry = shOverviewFilterState.country;
+    var fMethod = shOverviewFilterState.method;
     var skuInput = document.querySelector('#shippinghistory-section .filter-group--sku input');
     var fSku = skuInput ? String(skuInput.value || '').trim().toLowerCase() : '';
     var startStr = (historyState.dateRange && historyState.dateRange.start) ? formatHistoryDate(historyState.dateRange.start) : '';
@@ -911,8 +849,8 @@ function renderShipmentOverview() {
 
     var list = shipments.filter(function(s) {
         if (!SH_OVERVIEW_STATUSES[s.status]) return false;
-        if (fCountry && s.country !== fCountry) return false;
-        if (fMethod && s.shippingMethod !== fMethod) return false;
+        if (fCountry.length && fCountry.indexOf(s.country) === -1) return false;
+        if (fMethod.length && fMethod.indexOf(s.shippingMethod) === -1) return false;
         if (fSku) {
             var lns = linesByShipment[s.shipmentId] || [];
             if (!lns.some(function(l) { return String(l.sku || '').toLowerCase().indexOf(fSku) !== -1; })) return false;

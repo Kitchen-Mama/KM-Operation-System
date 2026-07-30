@@ -131,7 +131,12 @@
     --filter-option-selected-bg: #f8fafc;
     --filter-search-font-size: 12px;             /* SSOT .skuf-search */
     --filter-muted-color: #94a3b8;               /* empty-state / placeholder */
-    
+    /* Filter-bar LABEL (the "Country/Marketplace/…" caption above each control). SSOT = FC Summary's
+       canonical label. Applied via the opt-in .km-filter-bar shared class (components.css) so pages that
+       have NOT yet adopted the unified bar keep their own label styling until a later round. */
+    --filter-label-font-size: 12px;              /* SSOT filter-bar label size (FC Summary reference) */
+    --filter-label-color: #64748b;               /* SSOT filter-bar label color (FC Summary reference) */
+
     /* ========================================
        Table Design Tokens
     ======================================== */

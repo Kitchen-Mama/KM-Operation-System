@@ -134,16 +134,19 @@ eq(/>Sales Driven<|>Forecast Driven</.test(html), false, 'A5: Add/Edit forms sho
 eq(/<option value="sales_driven">Sales<\/option>/.test(html) && /<option value="forecast_driven">Forecast<\/option>/.test(html), true, 'A5: canonical option values preserved (sales_driven / forecast_driven)');
 
 // ============================================================================
-// A4 — Category selector is now the SHARED Category Tab Rail (.km-tab-rail), unified with Order System /
-// Promotion Risk (2026-07-28). The old measure-based "More Categories" overflow + the .replen-category-tab
-// segmented control were removed; every category lives in one horizontally-scrollable rail. Active-tab blue
-// (#3B82F6) now comes from the shared .km-tab-rail__tab.is-active rule in components.css.
+// A4 — Category selector is a SINGLE compact page-scoped shell + rail with INDEPENDENT replen-category-*
+// classes (UI Runtime Small Repair Round 3, 2026-07-30). It NO LONGER uses the shared km-tab-rail /
+// km-category-card component (that dependency was the Round 2 approach and is removed for full class
+// ownership). The rail is still behavior-enhanced by the class-agnostic KM.ui.tabRail helper (wheel/
+// keyboard scroll only — no styling/selection ownership). Active-tab blue (#3B82F6) comes from the
+// page-scoped .replen-category-rail__tab.is-active rule in inventory-replenishment.css.
 // ============================================================================
-eq(/class="[^"]*km-tab-rail[^"]*"[^>]*id="replenCategoryTabs"/.test(html), true, 'A4: category container uses the shared .km-tab-rail');
-eq(/km-tab-rail__tab/.test(js) && /km-tab-rail__count/.test(js), true, 'A4: tabs render with the shared .km-tab-rail__tab / __count classes');
-eq(/KM\.ui\.tabRail\.enhance/.test(js) && /scrollActiveIntoView/.test(js), true, 'A4: rail wired to KM.ui.tabRail (wheel/keyboard scroll + active-into-view)');
+eq(/class="replen-category-rail" id="replenCategoryTabs"/.test(html), true, 'A4: category container uses the OWN .replen-category-rail (not km-tab-rail)');
+eq(/km-tab-rail/.test(html.replace(/<!--[\s\S]*?-->/g, '')), false, 'A4: markup no longer uses the shared km-tab-rail class');
+eq(/replen-category-rail__tab/.test(js) && /replen-category-rail__count/.test(js), true, 'A4: tabs render with the OWN .replen-category-rail__tab / __count classes');
+eq(/KM\.ui\.tabRail\.enhance/.test(js) && /scrollActiveIntoView/.test(js), true, 'A4: rail still wired to KM.ui.tabRail (behavior-only wheel/keyboard scroll)');
 eq(/replen-category-more|_replenLayoutCategoryOverflow|More Categories/.test(js), false, 'A4: old "More Categories" overflow mode removed');
-eq(/replen-category-tabs\.km-tab-rail/.test(css), true, 'A4: category container styled as a .km-tab-rail (page carries only spacing/z-index override)');
+eq(/#ops-section \.replen-category-shell/.test(css) && /#ops-section \.replen-category-rail/.test(css), true, 'A4: page-scoped shell + rail CSS present (own styling, not km-category-card)');
 
 // ============================================================================
 // A6 — More Options visual parity with SKU Details (neutral, no orange/toy look).

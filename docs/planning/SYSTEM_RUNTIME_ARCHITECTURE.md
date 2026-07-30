@@ -3,15 +3,15 @@
 > **Owner Boundary (reviewed 2026-07-28).**
 > - **Document Role:** the **Runtime Mapping** layer — service boundary, triggers, cadence, read/calculate/snapshot/write ownership, idempotency, commit boundary.
 > - **Canonical Owner For:** service/trigger/cadence boundaries and runtime ownership classes.
-> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), layer language (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`), the **Reserve Trigger** (Batch B).
-> - **Status:** Reviewed — Batch B Blockers Remain.
-> - **Current Version:** Draft v1.3 (Batch A repair: Reserve blocker + import≠recommendation clarification + 16:00 reconciliation to §7A).
-> - **Last Reviewed:** 2026-07-28.
+> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), layer language (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`), the **Reserve Trigger** (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1).
+> - **Status:** Reviewed — B-1 Resolved (owner §8A.1; implementation not started); B-2…B-8 Blockers Remain.
+> - **Current Version:** Draft v1.4 (Batch B Round 1: B-1 Reserve Trigger resolved as the **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** — decision only, runtime not started).
+> - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** DB Map, System Flow, Calculation Rules (formulas), domain specs.
-> - **Blocked By:** Batch B — Reserve Trigger · Qualified Incoming allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11).
+> - **Blocked By:** Batch B — Qualified Incoming allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **B-1 Reserve Trigger no longer blocks — resolved (decision only; Runtime implementation Not Started / Unverified).**
 
-**Status:** 🟡 Draft v1.3 — Runtime Architecture Specification (architecture only · NO code, NO Apps Script, NO API, NO SQL, NO DB change, NO implementation; Batch A canonical repair 2026-07-28)
-**Last Updated:** 2026-06-26
+**Status:** 🟡 Draft v1.4 — Runtime Architecture Specification (architecture only · NO code, NO Apps Script, NO API, NO SQL, NO DB change, NO implementation; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30)
+**Last Updated:** 2026-07-30
 **Maintained By:** Development Team / Enterprise System Architect
 **Scope:** Authoritative **runtime blueprint** for the whole system — how data flows at runtime, who owns it, what triggers recalculation, and how layers depend on one another.
 
@@ -27,6 +27,8 @@
 
 ### Changelog
 
+- **Draft v1.4 (2026-07-30, acceptance-corrected)** — **B-1 Reserve Trigger resolved** (owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1): the reserve event is the **successful Ready to Ship** transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit — **distinct** from the non-reserving Create-Shipment-Draft (Execution Commit). §7 trigger table split into Plan-approval/Create-Draft (no reserve) · Ready-to-Ship (canonical reserve, Runtime Not Started) · Ship (existing `fac_current_stock` deduction; reserved-stock consumption not implemented). Removed the stale "BLOCKED — Exact reservation event requires Batch B" residual. Reserve identity = origin factory `warehouse_id + sku`; cancel/release = B-8. **Decision only — Runtime / trigger / atomic writer / reservation Not Started / Unverified; no trigger or writer deployed.**
+- **Draft v1.3 (2026-07-28)** — Batch A canonical repair: recorded the Factory Stock **Reserve event blocker** (B-1) and `fac_current_stock` deduct-only verified state; clarified **import ≠ recommendation**; reconciled the 16:00 cadence reference to §7A. (Changelog entry backfilled 2026-07-30.)
 - **Draft v1.2 (2026-06-26)** — Named the **Daily Sales freshness fields** the runtime/UI must read — `latest_source_date`, `data_window_start_date`, `data_window_end_date`, `is_fallback_used`, `data_age_days` (now defined as importer-generated headers in `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` v1.4 §7.4 / §16). Updated §9 Freshness accordingly.
 - **Draft v1.1 (2026-06-26)** — Aligned Daily Sales handling with `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` (import window + cadence owned there; the current canonical is the gap-aware rolling 90-completed-day upsert) and required that runtime/UI **expose the actual data date range used**; noted the Import Layer's **Amazon numeric placeholder normalization** (`365+`→`365`, `/`→null); refined freshness + open questions.
 - **Draft v1 (2026-06-26)** — Initial Runtime Architecture: philosophy, canonical data flow, layers, lifecycle, module boundaries, dependency, triggers, recalculation, freshness, ownership, event flow, logging, service catalog, future API, design principles.
@@ -142,7 +144,7 @@ For each data type: where it comes from, who owns/writes/reads it, and how it li
 | **Weekly Sales** | Amazon report → Sheet | Sales / OP | Import Service | `amazon_weekly_sales_snapshot` | Importer only | Forecast Service, dashboards | derived | clear-and-rewrite |
 | **Daily Sales** | BigQuery `Raw Daily Sales` | Sales / OP | Import Service — window + cadence owned by `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 (gap-aware rolling **90-completed-day** upsert) and §7A (Daily Report Pipeline 12:00–13:00). *(Any earlier "rolling 4-day / 16:00 / latest-available fallback" wording is superseded by those owners; runtime implementation is UNVERIFIED.)* | `amazon_daily_sales_snapshot` | Importer only | Forecast Service, dashboards | derived; actual data date range exposed | rolling 90-day upsert (per owner) |
 | **Forecast** | User + future AI | OP (forecast) | — (UI/edit) | `fc_regular_forecast`, `fc_special_events`, `fc_target_rules` | Authorized users | Calculation Engine, Request Order | last edit | user-maintained, periodic review |
-| **Factory Stock** | Factory ops / movements | OP / Factory | — | `factory_stock`, `factory_stock_movements` | Execution events (deduct; reserve = Batch B), authorized users | Planning, Shipment, Request | event-driven | **deduct `fac_current_stock` at Confirm Shipment & Dispatch (verified); reserve event BLOCKED — Batch B** (§7 note / SYSTEM_FLOW §11 B-1) |
+| **Factory Stock** | Factory ops / movements | OP / Factory | — | `factory_stock`, `factory_stock_movements` | Execution events (deduct at Ship; reserve at Ready to Ship = Formal Shipment Execution Commit, B-1), authorized users | Planning, Shipment, Request | event-driven | **deduct `fac_current_stock` at Ship / Confirm Shipment & Dispatch (verified); reserve `fac_reserved_stock` at Ready to Ship = Formal Shipment Execution Commit (B-1 resolved, owner §8A.1; origin factory `warehouse_id + sku`; decision only — runtime Not Started); release/rollback = B-8** (§7 note / SYSTEM_FLOW §11 B-1) |
 | **Overseas / 3PL / FBA Stock** | Receiving + Amazon API | OP / Supply Chain | Import (FBA) / receiving | `overseas_inventory_snapshot`, `overseas_inventory_movements` | Importer (FBA) / receiving | Inventory projection | derived/event | snapshot + movements |
 | **Shipping Plan** | Planning (Submit Plan) | OP | — | `shipping_plans`, `shipping_plan_lines` | Planning (on submit/approval) | Shipment creation | plan timestamp | draft → approved → converted |
 | **Shipment** | Execution (create from plan) | OP / Logistics | — | `shipments`, `shipment_lines` (+ events/routes) | Execution only | On-the-way, history, documents | execution timestamp | draft → … → completed |
@@ -228,11 +230,12 @@ What events cause the runtime to react. (Conceptual — actual scheduling/eventi
 | **Snapshot imported** (sync run success) | snapshot tab refreshed; freshness updated | Inventory projection, replenishment, dashboards |
 | **Forecast updated** (base/event/target edit) | forecast inputs change | projection, shortage/surplus, request order need |
 | **Replenishment override set** | a planning input is manually adjusted | replenishment suggestion, shipping plan |
-| **Shipping plan approved** | plan becomes convertible; **no inventory movement** (any reserve event = **BLOCKED — Requires Batch B**, §7 note / `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1) | shipment creation readiness |
-| **Execution Commit / Create Shipment Draft** | one physical `shipments` row created; may consolidate **multiple approved plans** via `shipment_plan_links` (human-confirmed); persists plan-source + PO allocations. **No factory-stock reserve is written today** (reserve event = Batch B). | consolidated shipment, plan/marketplace traceability, PO allocation |
+| **Shipping plan approved** | plan becomes convertible; **no inventory movement** (approval does **not** reserve; the reserve event is the later **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit**, B-1 resolved — owner §8A.1; decision only, runtime not started) | shipment creation readiness |
+| **Execution Commit / Create Shipment Draft** | one physical `shipments` row created (`status = draft`); may consolidate **multiple approved plans** via `shipment_plan_links` (human-confirmed); persists plan-source + PO allocations + Execution Snapshot. **No factory-stock reserve is written** — the Approved-Plan → Draft handoff is **non-reserving** (the reserve event is the later Ready to Ship, B-1). | consolidated shipment, plan/marketplace traceability, PO allocation |
+| **Ready to Ship / Formal Shipment Execution Commit** (`draft → ready_to_ship`) | **Canonical Factory Stock reserve trigger (B-1, owner §8A.1).** Reserves `fac_reserved_stock` for a **factory-origin** shipment (identity origin factory `warehouse_id + sku`; overseas origin → Overseas Outbound Lock / `wh_reserved_stock`, not `factory_stock`), atomically with the status transition. **Runtime Not Started / Not Verified — no reserve writer is deployed.** | reserved-stock hold; available_to_ship |
 | **Lifecycle → `Running in the Market`** (transition) | ensures `factory_stock` baseline (idempotent by `warehouse_id + Master sku`; `fac_current_stock=0`, `fac_reserved_stock=0`) — **NOT** on Master- or Marketplace-SKU create | factory stock rows exist for planning |
 | **Marketplace SKU added to planning scope** | ensures **Overseas Inventory** baseline/context (physical grain `company + warehouse_id + Master sku`; marketplace = demand context, not physical grain) — shared 3PL counted once | overseas shared-pool planning |
-| **Shipment confirmed (Confirm & Ship)** | `factory_stock.fac_current_stock` **deducted** (verified — `22_shipment_dispatch_handlers.gs`); writes `factory_stock_movements`. No reserved-stock release today (no reserve is written). | inventory projection, available_to_ship, on-the-way |
+| **Ship (Confirm & Ship)** | `factory_stock.fac_current_stock` **deducted** (verified — `22_shipment_dispatch_handlers.gs`); writes `factory_stock_movements`. Canonical intent also **consumes `fac_reserved_stock`**, but **reserved-stock consumption is NOT implemented** (no reserve is written today); release/rollback status mapping is **B-8 (BLOCKED)**. | inventory projection, available_to_ship, on-the-way |
 | **PO completed** (production) | `completed_qty` increases | `available_to_ship`, shipment allocation |
 | **Factory stock changed** (movement) | physical supply changes | projection, replenishment, request order |
 | **Receiving recorded** | destination inventory increases | next-cycle snapshot / projection |
@@ -246,9 +249,11 @@ What events cause the runtime to react. (Conceptual — actual scheduling/eventi
 >   ≠ Stock Reservation
 >   ≠ Inventory Movement
 >
-> BLOCKED — Exact reservation event requires Batch B canonical decision.
+> RESOLVED (B-1) — the exact reservation event is the successful Ready to Ship transition
+> (draft → ready_to_ship) = Formal Shipment Execution Commit; owner ARCHITECTURE §8A.1.
+> Decision only — Runtime Not Started / Not Verified.
 > ```
-> **Verified current code (2026-07-28):** no reserve logic exists; `fac_reserved_stock` is never written — the only factory-stock mutation is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch** (`22_shipment_dispatch_handlers.gs`). The single Reserve Trigger is undecided (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1).
+> **Verified current code (2026-07-28):** no reserve logic exists; `fac_reserved_stock` is never written — the only factory-stock mutation is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch** (`22_shipment_dispatch_handlers.gs`). The single Reserve Trigger is **resolved (B-1)** as the successful **Ready to Ship** transition (`draft → ready_to_ship`) = **Formal Shipment Execution Commit** (owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1) — a **Canonical decision only; Implementation / Runtime / Deployment Not Started; Runtime Verification Not Verified.** No reserve trigger, atomic writer, or reservation runtime is deployed. Cancel / release / rollback status mapping is **B-8 (BLOCKED)**.
 >
 **Import / recommendation outcome boundary — five distinct stages, never auto-equal:**
 
@@ -554,6 +559,6 @@ This document does **not**:
 
 ---
 
-**Draft v1 — Runtime Architecture Specification. Architecture only. No code, Apps Script, API, SQL, DB, frontend, or existing-spec changes are implied by this document. Domain specs remain authoritative for their domains.**
+**Draft v1.4 — Runtime Architecture Specification. Architecture only. No code, Apps Script, API, SQL, DB, frontend, or existing-spec changes are implied by this document. B-1 Reserve Trigger resolved (the Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit; owner §8A.1) — decision only, Runtime / trigger / writer Not Started / Unverified. Domain specs remain authoritative for their domains.**
 
 **End of Document**
