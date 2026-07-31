@@ -16,6 +16,18 @@ SHIPMENT_CENTER_SPEC.md §0 / §2.A / §3 / §4 / §6 / §7 / §8 / §15 / §23
 
 It does not claim that the corresponding Runtime, DB migration, API, UI, stock movement, PO allocation, Combine, quote engine, or tax engine is already implemented.
 
+---
+
+**PARTIALLY SUPERSEDED — 2026-07-31 (Batch B · B-2 / B-3 precedence).**
+
+The 2026-07-31 B-2 / B-3 decision supersedes this amendment **only** where this document prohibits `shipping_plans.marketplace = MULTI` or treats the Shipping Plan header as incapable of storing a derived Marketplace scope marker. Those specific clauses (originally §4.2 "Do not write a fake canonical value such as MULTI" and the §15 Final Canonical Invariant "No fake marketplace = MULTI") are **SUPERSEDED — B-2 / B-3 2026-07-31** and are corrected in-place below.
+
+All **non-conflicting** invariants of this amendment remain active: the Logistics Decision boundary, Combine, `shipping_plan_lines` real Marketplace / Site SKU provenance, the two allocation axes (`factory_stock_allocation_plans` planning + `shipment_line_allocations` PO/FIFO supply), `shipment_plan_links` header consolidation, Plan → Shipment single-transfer / no-split, same-SKU Shipment-Line aggregation, `shipments.marketplace ≠ MULTI` (MIX only as a shipment-number token), and warehouse-identity rules. This document is **not** rescinded as a whole; only the two Marketplace-header clauses above are corrected. (Owner of the corrected Marketplace-header rule: `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1 / §3.1B, `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-3.)
+
+This amendment file name keeps its historical `2026-07-27` date; this 2026-07-31 partial supersession is recorded here as an amended-revision marker.
+
+**Revision:** 2026-07-27 (r2 — 2026-07-31 partial supersession of the two Marketplace-header clauses). **Runtime / DB / API / migration status unchanged: SPEC / SCHEMA CONTRACT ONLY — NOT IMPLEMENTED.**
+
 1. Final Decision
 
 The responsibility boundary is finalized as:
@@ -401,7 +413,16 @@ Total Carton = SUM(carton_qty)
 Total CBM    = SUM(cbm)
 Gross / Net  = SUM(line weights)
 
-shipping_plans.marketplace is no longer authoritative for a Combined Plan. Do not write a fake canonical value such as MULTI. Legacy single-Marketplace rows may retain the old header value; new UI/API logic derives Marketplace scope from the Lines.
+**CORRECTED — B-2 / B-3 2026-07-31 (supersedes the original clause below):** `shipping_plans.marketplace` **is a persisted derived scope marker** recomputed from the effective `shipping_plan_lines`:
+
+```text
+1 distinct Marketplace  → the real Marketplace literal
+2 or more distinct      → MULTI
+```
+
+The header is **not** the source of real Marketplace provenance. Real Marketplace and Site SKU remain on the Plan Lines (`shipping_plan_lines.marketplace` / `site_sku`). Marketplace filtering must inspect the Plan Lines. `MULTI` is a derived, non-FK scope marker — never a real Marketplace, never a Marketplace FK, never a Marketplace-Master lookup value.
+
+> *SUPERSEDED — B-2 / B-3 2026-07-31 (historical original wording, no longer canonical):* ~~"shipping_plans.marketplace is no longer authoritative for a Combined Plan. Do not write a fake canonical value such as MULTI. Legacy single-Marketplace rows may retain the old header value; new UI/API logic derives Marketplace scope from the Lines."~~
 
 4.3 Cost/tax grain boundary
 
@@ -626,7 +647,7 @@ Return to Weekly Plan / Create Revision
 → re-approve
 → create a new idempotent Execution Commit
 
-Allowing an Admin to directly change shipment_lines.shipment_qty without recording which Marketplace source changed would make the Plan provenance false. If direct Shipment quantity edits become mandatory later, shipment_line_plan_allocations or an equivalent per-source execution allocation becomes required.
+Allowing an Admin to directly change shipment_lines.shipment_qty without recording which Marketplace source changed would make the Plan provenance false. **Any future partial / split execution or actual Marketplace allocation ledger requires a separate Canonical Design. The current design does not preselect a table name, schema or implementation** — in particular `shipment_line_plan_allocations` is **not** part of the current Canonical design and must not be created or implemented (B-3, 2026-07-31).
 
 7. Approval Gates
 
@@ -782,7 +803,7 @@ Shipment Draft quantity cannot be directly changed outside the Return-to-Plan re
 
 Marketplace provenance is read through shipment_plan_links → shipping_plan_lines.
 
-If any invariant is removed, a line-level execution allocation table becomes required.
+If any of these invariants is ever removed, that is a **separate future Canonical Design** — the current design does **not** preselect a table name, schema or implementation, and `shipment_line_plan_allocations` is **not** part of the current Canonical design and must not be created or implemented (B-3, 2026-07-31).
 
 shipment_line_allocations remains required because it serves a different axis: PO/FIFO supply provenance.
 
@@ -1045,13 +1066,13 @@ Multiple Plans combine into one Shipment
 
 Phase 1 first combines into one shipping_plan_id, then creates one Shipment
 
-shipment_line_plan_allocations is always required
+shipment_line_plan_allocations is NOT part of the current Canonical design and must not be created or implemented (B-3, 2026-07-31)
 
-Omitted in Phase 1 only while §9 invariants remain enforced
+Correct: the current design omits it entirely; the §9 invariants (SKU aggregation, no split, Return-to-Plan revision) are what make it unnecessary — it is not "required-but-omitted"
 
 Shipment Draft qty may be edited independently
 
-Qty changes use Return-to-Plan revision unless a per-source execution allocation table is added
+Correct: qty changes use the Return-to-Plan revision flow. Any future independent per-source qty ledger is a separate Canonical Design (no table name / schema / implementation preselected)
 
 origin_warehouse_id / origin_type
 
@@ -1093,7 +1114,7 @@ source_warehouse_id / destination_warehouse_id are identities; names/codes/text 
 
 Generic warehouse_code is legacy destination compatibility only.
 
-No fake marketplace = MULTI.
+MULTI is the canonical non-FK scope marker for a multi-Marketplace Shipping Plan. It must never be treated as a real Marketplace, Marketplace FK or Marketplace Master lookup value. *(SUPERSEDED — B-2 / B-3 2026-07-31: the original invariant "No fake marketplace = MULTI." is no longer canonical for `shipping_plans.marketplace`; `shipments.marketplace ≠ MULTI` still holds — see §8.1 / MIX token.)*
 
 No document, cost, route, or inventory flow may silently re-read current upstream values instead of the approved/execution snapshot.
 

@@ -1,7 +1,7 @@
 # Overseas Inbound Spec — Destination Receiving Operation (CANONICAL) + Inbound Planning Request (planning-layer)
 
-**Status:** 🟡 Draft v2 — Spec only (NO code, NO Apps Script, NO DB migration, NO UI)
-**Last Updated:** 2026-07-22
+**Status:** 🟡 Draft v2.1 — Spec only (NO code, NO Apps Script, NO DB migration, NO UI) — v2.1 = Batch B · B-2/B-3 residual: corrected the stale "six-value key" cross-reference to the five-value Shipping Group Key
+**Last Updated:** 2026-07-31
 **Maintained By:** Development Team
 **Related:** [`WAREHOUSE_OPERATIONS_SPEC.md`](./WAREHOUSE_OPERATIONS_SPEC.md), [`OVERSEAS_OUTBOUND_SPEC.md`](./OVERSEAS_OUTBOUND_SPEC.md), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md)
 
@@ -158,7 +158,7 @@ Do **not** implement now: code · UI · Apps Script · API · DB migration · a 
 
 ## 8. Open Items
 
-- Exact Submit → Weekly Shipping Plan mapping (which header fields seed the plan; grouping key alignment with the plan's six-value key).
+- Exact Submit → Weekly Shipping Plan mapping (which header fields seed the plan; grouping key alignment with the plan's **five-value Shipping Group Key** — `company + country + origin_endpoint + destination_endpoint + shipping_method`; Marketplace is NOT a key field, B-2/B-3 RESOLVED 2026-07-31, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1).
 - Inbound → plan → shipment linkage fields (`submitted_shipping_plan_id`, etc.).
 - Receiving reconciliation: matching a received shipment back to the originating Inbound Draft for reporting.
 - Editing after submit (must go through the Weekly Shipping Plan; inbound stays locked).

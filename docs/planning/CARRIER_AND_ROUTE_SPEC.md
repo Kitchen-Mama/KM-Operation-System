@@ -1,7 +1,7 @@
 # Carrier & Route Foundation Spec
 
-**Status:** 🟢 Draft v2.1 — Foundation DB + **Carrier Rate Card v1.1** + **Global Logistics Enums finalized** (§4.5) + **Carrier Rate Resolution Rules** (§4.6: Open End / latest-`effective_from` / overlap-warning) + **matching priority extended to logistics attributes** (§4) + shipment-level battery/magnet aggregation drives matching (`SHIPMENT_CENTER_SPEC.md` §21) + **templates adopt the Template UI Standard** (§4C.3 → `TEMPLATE_UI_STANDARD_SPEC.md`) (SPEC — NO runtime code, NO email/Export Center, NO pricing/cost engine, NO DB migration by this spec)
-**Last Updated:** 2026-07-07
+**Status:** 🟢 Draft v2.2 — Foundation DB + **Carrier Rate Card v1.1** + **Global Logistics Enums finalized** (§4.5) + **Carrier Rate Resolution Rules** (§4.6: Open End / latest-`effective_from` / overlap-warning) + **matching priority extended to logistics attributes** (§4) + shipment-level battery/magnet aggregation drives matching (`SHIPMENT_CENTER_SPEC.md` §21) + **templates adopt the Template UI Standard** (§4C.3 → `TEMPLATE_UI_STANDARD_SPEC.md`); v2.2 = Batch B · B-2/B-3 residual — corrected the stale "six-value group key" cross-reference to the five-value Shipping Group Key (§4B) (SPEC — NO runtime code, NO email/Export Center, NO pricing/cost engine, NO DB migration by this spec)
+**Last Updated:** 2026-07-31
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md), [`IMPORT_JOB_FRAMEWORK_SPEC.md`](./IMPORT_JOB_FRAMEWORK_SPEC.md) (**canonical import review/apply workflow — Carrier is the first adopter**), [`IMPORT_JOB_DATABASE_SPEC.md`](./IMPORT_JOB_DATABASE_SPEC.md), [`TEMPLATE_UI_STANDARD_SPEC.md`](./TEMPLATE_UI_STANDARD_SPEC.md) (**spreadsheet template formatting standard — Carrier templates are the first adopter**), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md).
 
@@ -499,7 +499,7 @@ One row per (Company × Country × Marketplace × Shipping Method) routing defau
 ### 5.1 How route rules feed the Weekly Shipping Plan (defaults, overridable)
 
 - When building a Weekly Shipping Plan group, the system **looks up `shipping_route_rules`** by the plan's `company` + `country` + `marketplace` + `shipping_method` (most specific active rule by `priority`) to **pre-fill** `ship_from`, `destination`, and `route_code`.
-- **The Weekly Shipping Plan may OVERRIDE `ship_from` / `destination`.** The route rule provides only a **default**; the PM's chosen values win and are what get persisted on `shipping_plans` (and they are part of the six-value group key, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1).
+- **The Weekly Shipping Plan may OVERRIDE `ship_from` / `destination`.** The route rule provides only a **default**; the PM's chosen values win and are what get persisted on `shipping_plans` (and they are the `origin_endpoint` / `destination_endpoint` of the **five-value Shipping Group Key** — `company + country + origin_endpoint + destination_endpoint + shipping_method`; Marketplace is NOT a key field; B-2/B-3 RESOLVED 2026-07-31, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1).
 - If **no** route rule matches, `ship_from` / `destination` fall back to whatever the allocation/selection provides (blank counts as a distinct group-key value, per the Weekly spec).
 - This lookup/override behavior is **specified here but NOT implemented** (no frontend / Apps Script change). Today the Weekly Shipping Plan already treats `ship_from` / `destination` as part of the key with manual/blank values; this table is the future default source.
 

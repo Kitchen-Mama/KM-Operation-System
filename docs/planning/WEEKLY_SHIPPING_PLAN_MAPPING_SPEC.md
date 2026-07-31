@@ -1,13 +1,15 @@
 # Weekly Shipping Plan — Mapping Spec (Decision Layer)
 
-**Status:** 🟡 Draft v1.12 — Mapping + Submit-Plan write contract (mapping spec; the v1.6–v1.12 UI/mapping fixes are recorded as implemented in the frontend/API/Apps Script per the changelog + project-current-state; any item not confirmed there requires runtime verification)
-**Last Updated:** 2026-07-01
+**Status:** 🟡 Draft v1.14 — Mapping + Submit-Plan write contract (mapping spec; the v1.6–v1.12 UI/mapping fixes are recorded as implemented in the frontend/API/Apps Script per the changelog + project-current-state; v1.13 = Batch B · B-2 Shipping Group Key / Combined-Plan reconciliation; v1.14 = Batch B · B-3 Marketplace Header/Line placement RESOLVED + `shipment_line_plan_allocations` WITHDRAWN + Plan→Shipment `0..1` — **documentation only, no Runtime/DB/assets-specs change**; any item not confirmed in the changelog requires runtime verification)
+**Last Updated:** 2026-07-31
 **Maintained By:** Development Team
 **Authority / context (read, not overridden):** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (**authoritative architecture language — Decision Commit / Decision Snapshot / Immutable Flow / layer source-of-truth**), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (**authoritative for all formulas**), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md).
 
 > **Spec only.** This document defines how a Submit Plan action in Inventory Replenishment becomes **Weekly Shipping Plan** records, the **`shipping_plans` / `shipping_plan_lines` column schema** (previously undefined — see the implementation-readiness audit), the plan status/approval flow, and the hand-off to Shipment Draft. It introduces **no** code, frontend, Apps Script, API, DB migration, or runtime change. Calculation formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; shipment execution remains owned by `SHIPMENT_CENTER_SPEC.md`.
 
 > **Changelog:**
+> - **Draft v1.14 (2026-07-31)** — **Batch B · B-3 Marketplace Header/Line Placement RESOLVED + Reissue reconciliation (2026-07-31 B-2/B-3 precedence).** Confirmed `shipping_plans.marketplace` as a **persisted derived scope marker** (1 distinct → real Marketplace; ≥2 → `MULTI`; §3.1B), real Marketplace/Site SKU on `shipping_plan_lines.marketplace` / `site_sku` (§3.1C); §3.1B/§3.1C marked **B-3 RESOLVED**. **WITHDREW `shipment_line_plan_allocations`** entirely (§12.4) — not Required Design / not Planned / not handoff / no third Demand-source axis; the allocation model is the **two axes** (`factory_stock_allocation_plans` planning + `shipment_line_allocations` PO/FIFO). Rewrote **§12.3/§12.4**: Marketplace provenance stays on `shipping_plan_lines` (linked Plan Lines = original planning context only, **not** an actual-shipped ledger); **Plan → Shipment cardinality `0..1` (no split), Shipment → Plans `1..N`**; `shipment_plan_links` = **header relationship, not an allocation axis**, written only after the Shipment exists, one idempotent link per plan, **conflict if a plan is already linked to a different Shipment**, `transferred_shipment_id` must match the link. Fixed §3.2A **`rejected-locked`** wording → gate on **current** `status = draft` (a rejected plan returned to Draft **is** a Draft). Per the 2026-07-31 precedence ruling, the 2026-07-27 amendment's Marketplace-header clauses (no-MULTI) are **partially superseded**; all its non-conflicting invariants remain. **Documentation only — no code / Apps Script / API / DB migration / `assets/specs` change; B-1 reserve trigger untouched; B-4…B-8 unchanged.**
+> - **Draft v1.13 (2026-07-31)** — **Batch B · B-2 Shipping Group Key / Combined Shipping Plan (CANONICAL, resolved 2026-07-31).** Reconciled all group-key wording to the **five-value Shipping Group Key** = `company + country + origin_endpoint (Ship From) + destination_endpoint (Destination) + shipping_method` (§3.1); **Marketplace is NOT a group key** — it is a **derived header scope** (actual / `MULTI`) recomputed from the effective lines (§3.1B), with each line keeping its **real** marketplace + site SKU (`shipping_plan_lines.marketplace` / `site_sku`, §3.1C). Added **§3.2A Draft-only cumulative Submit** (find same-Key `status=draft` plan → update; else create; `approved`/non-Draft never modified), **§3.1B Single/MULTI derivation**, **§3.1C line grain + idempotent-by-source**, **§3.5 multi-period lines**, **§12.3 Combined-Plan vs Shipment consolidation boundary**, **§12.4 `shipment_plan_links` timing (written only after the Shipment exists; unique `shipment_id + shipping_plan_id`; idempotent) + `shipment_line_plan_allocations` Implement handoff (not created / not implemented)** *(the `shipment_line_plan_allocations` handoff was later **WITHDRAWN in v1.14** — see the v1.14 entry above; it is not part of the current Canonical design)*. **`parent_shipping_plan_id` is version-lineage ONLY — never Combined-Plan membership** (§3.1A/§4.3); the interim `combineShippingPlans` parent/child overload is SUPERSEDED. Fixed residual six-value / method-only / "one plan per marketplace" wording (§2, §3.2, §4, §14). **Documentation only — no code, Apps Script, API, DB migration, or `assets/specs` change; B-1 reserve trigger untouched; B-3…B-8 unchanged.**
 > - **Draft v1.12 (2026-07-01)** — **Execution Plan terminology (§2A/§3):** the pre-Submit Working Draft is now the **Execution Plan Working Draft** ("Shipping Allocation" is legacy). Submit Plan reads the **Execution Plan** (Ship From / Destination / Suggested Qty / Shipping Method per route) — never the **Recommendation Summary** (system suggestion). `ship_from` / `destination` / `shipping_method` now come from the Execution Plan route (future default: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md` §5A). See `INVENTORY_TABLE_MAPPING_SPEC.md` §11. Frontend implemented in `inventory-replenishment.js`; no backend/DB change.
 > - **Draft v1.11 (2026-07-01)** — **Done bug fix (§12.2):** `handleCompleteShippingPlan_` now detects the transfer **robustly** — if `transferred_shipment_id` is blank it looks up an existing `shipments` row (by `shipping_plan_id` / `source_shipping_plan_id` / `plan_id`) and **backfills** `transferred_shipment_id` + `transferred_to_shipment_at` before writing `completed_at` / `completed_by`. Fixes *"Plan has not been transferred to a Shipment Draft yet"* when the Draft existed but the metadata was never persisted. Implemented in `11_shipping_plan_handlers.gs` + a shared `shipmentFindForPlan_` helper in `12_shipment_handlers.gs`.
 > - **Draft v1.10 (2026-06-30)** — **Decision Layer Completion** (Supply Chain Architecture v1.2): added `completed_at` / `completed_by` to `shipping_plans` (§4) and **§12.2 Done / Completed rules** — an Approved+transferred plan shows a **Done** button (`completeShippingPlan`: writes only `completed_at`/`completed_by`, never touches Shipment); **Completed plans leave the Active view** (`completed_at IS NULL` only) but are preserved and viewable via the new **Completed** filter (§9B). **Supersedes the v1.8 "Converted auto-hide on transfer"** — visibility is now completion-driven; transferred-but-not-completed plans stay in Approved with the Done button. Implemented in `11_shipping_plan_handlers.gs` (+2 headers + `handleCompleteShippingPlan_`), `01_router.gs`, `operation-system-db-api.js`, `shipping-plan.js` + `shipping-plan.html` (Done button + Completed section/filter).
@@ -19,7 +21,7 @@
 > - **Draft v1.4 (2026-06-29)** — Added the **Shipping Allocation Working Draft** section (§2A): the pre-Submit temporary decision inside Inventory Replenishment (JS State + sessionStorage recovery) that **creates nothing** and **never updates** a Weekly Shipping Plan; Submit Plan reads it and is the **only** creator of `shipping_plans` / `shipping_plan_lines`; draft lifetime (keep on collapse/expand/edit/re-render; clear on submit success / context change / clear search) and the context-scoped sessionStorage rule. Governed by `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.
 > - **Draft v1.3 (2026-06-29)** — Extended the Decision Snapshot for the **Normalized Avg Sales** rule (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22): added 4 `shipping_plan_lines` fields — `snapshot_avg_sales_source` (the Avg-Sales source field; renamed in v1.5), `snapshot_normal_days_count`, `snapshot_excluded_event_days_count`, `snapshot_avg_sales_warning` (§5). `snapshot_avg_sales_per_day` is retained and now holds the **final adopted** Avg Sales/Day (normalized or weekly fallback).
 > - **Draft v1.2 (2026-06-29)** — Finalized reject/resubmit version behavior + audit fields: (1) **Reject → Draft → Resubmit keeps the SAME `shipping_plan_id`** (one MVP row); only `plan_version` increments (§4.1). (2) Added **`parent_shipping_plan_id`** (MVP = `shipping_plan_id`; future one-row-per-version model) (§4.3). (3) Added **`batch_status`** — batch-level helper summarizing all plans sharing a `submit_batch_id`; `shipping_plans.status` remains the primary approval status (§4.4). (4) Added a **Glossary** defining **Decision Commit** (Submit Plan) and **Decision Snapshot** (§0).
-> - **Draft v1.1 (2026-06-29)** — Finalized architecture before implementation: (1) **Shipping Plan Group Key** is now the **six-value tuple** Company + Country + Marketplace + Ship From + Destination + Shipping Method (§3) — supersedes the method-only grouping; `company` added to `shipping_plans`. (2) Added **`plan_version`** (decision-revision counter) and **`submit_batch_id`** (one Submit Plan action → many plans) to `shipping_plans` (§4). (3) **Snapshot location finalized to `shipping_plan_lines` only** — planning snapshots are per-SKU and are NOT stored on `shipping_plans` (§5). (4) Shipment Draft inherits line snapshots without recalculation (§12).
+> - **Draft v1.1 (2026-06-29)** — Finalized architecture before implementation: (1) **Shipping Plan Group Key** *(HISTORICAL — the v1.1 six-value tuple incl. Marketplace was **SUPERSEDED** by the v1.13 / Batch B · B-2 five-value Key with Marketplace derived, §3.1)* was defined as Company + Country + Marketplace + Ship From + Destination + Shipping Method (§3) — supersedes the method-only grouping; `company` added to `shipping_plans`. (2) Added **`plan_version`** (decision-revision counter) and **`submit_batch_id`** (one Submit Plan action → many plans) to `shipping_plans` (§4). (3) **Snapshot location finalized to `shipping_plan_lines` only** — planning snapshots are per-SKU and are NOT stored on `shipping_plans` (§5). (4) Shipment Draft inherits line snapshots without recalculation (§12).
 > - **Draft v1 (2026-06-29)** — Created. Defines the Decision Layer, the Submit-Plan write contract, the `shipping_plans` / `shipping_plan_lines` schema, the decision snapshot rule, the card + SKU-detail mapping, the editable-only-in-Draft rule, the Draft → Pending Approval → Approved/Rejected/Cancelled flow, and the Shipment Draft hand-off. Fills the `shipping_plans`/lines schema gap noted in the readiness audit.
 
 ---
@@ -74,9 +76,11 @@ It becomes the **single source of truth for Shipment execution** and **must neve
 ```
 Inventory Replenishment  (Analysis)
         ↓  Submit Plan
-Create shipping_plans                 (one per shipping_method)
+Create / reuse shipping_plans         (one per five-value Shipping Group Key — §3.1;
+                                       cumulative into the same-key open Draft — §3.2A)
         ↓
-Create shipping_plan_lines            (one per SKU under that method)
+Create / update shipping_plan_lines   (per SKU × line-level marketplace / site_sku;
+                                       Marketplace is NOT part of the group key — it is derived onto the header)
         ↓
 Weekly Shipping Plan — Draft          (Decision Layer; editable)
         ↓  Submit for approval
@@ -133,21 +137,56 @@ The **Execution Plan Working Draft** is the **pre-Submit temporary decision** in
 
 When the user clicks **Submit Plan** in Inventory Replenishment, the system creates Weekly Shipping Plan records.
 
-### 3.1 Shipping Plan Group Key (authoritative system rule)
+### 3.1 Shipping Plan Group Key (CANONICAL — Batch B · B-2, resolved 2026-07-31)
 
-**AMENDED 2026-07-28 (Combined-Marketplace Plan):** a Shipping Plan is grouped by the **ROUTE key (five values)** — **Marketplace is NOT part of the group key** so one plan may **combine several Marketplaces**:
+**B-2 Canonical Decision (owner: this spec §3.1; registry `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-2).** A Shipping Plan is grouped by the **five-value Shipping Group Key**:
 
-1. **Company**
-2. **Country**
-3. **Ship From**
-4. **Destination**
-5. **Shipping Method**
+```text
+Shipping Group Key
+= company
++ country
++ origin_endpoint          (Ship From)
++ destination_endpoint     (Destination)
++ shipping_method
+```
 
-- **Only when ALL five route values are identical** may SKUs belong to the **same** `shipping_plan`. If any one differs, a new `shipping_plan` is created.
-- **`shipping_plans.marketplace` is DERIVED from the plan's lines:** exactly one distinct line marketplace → the **actual** Marketplace; **two or more** distinct → **`MULTI`** (a header **scope marker**, not a real Marketplace). To display the real marketplaces of a `MULTI` plan, read the DISTINCT `shipping_plan_lines.marketplace` — never render `MULTI` as an actual marketplace.
-- **`shipping_plan_lines` keeps each line's REAL `marketplace` + `site_sku`** (the site SKU for that marketplace). A Combined Plan **NEVER merges Marketplace lines in the DB** — the same SKU across two marketplaces persists as two lines; the UI MAY aggregate to a Master-SKU parent row with per-site child rows, but the DB keeps them separate.
-- This supersedes the earlier "six-value key (incl. Marketplace)" wording; Marketplace moved from a group key to a derived header scope.
+1. **company**
+2. **country**
+3. **origin_endpoint** — **Ship From**
+4. **destination_endpoint** — **Destination**
+5. **shipping_method**
+
+**Rules:**
+- **Only when ALL five values are identical** may SKUs belong to the **same** `shipping_plan`. If any one differs, a new `shipping_plan` is created.
+- **`marketplace` is NOT part of the Shipping Group Key.** `plan_month` / `plan_week` (any time dimension) are **also NOT** part of the Header group key — time stays on the lines (§3.5, §5.2).
+- **Structured endpoint identity.** `origin_endpoint` / `destination_endpoint` are **structured endpoint identities**, not free text. Where the schema carries a canonical warehouse identity (`shipping_plans.ship_from_warehouse_id` / `destination_warehouse_id` → `warehouses.warehouse_id`, §4 / DB Map §8C), grouping is by that **canonical ID** (each qualified by its `*_type`). The human-readable **`ship_from` / `destination` display text is a snapshot / legacy-compatibility label only** — never the authoritative grouping identity, and identity is never inferred from it.
+- **The Shipping Group Key is NOT a permanent cross-history DB unique constraint.** It governs how a **single Submit Plan action** groups lines and which **open Draft** a cumulative Submit reuses (§3.2A) — it does **not** forbid historical plans (approved / cancelled / completed) from sharing the same five values over time.
+- **Runtime must avoid two simultaneously-writable Drafts for the same five-value Key.** A cumulative Submit targets the **one** existing `status = draft` plan for the Key (§3.2A). If Runtime ever finds **multiple** legacy matching Drafts for one Key, it must **flag a data conflict** — it must **NOT** silently pick one at random.
 - Each `shipping_plan` owns its own `shipping_plan_lines`.
+
+> This supersedes the earlier "six-value key (incl. Marketplace)" wording (v1.1) and the interim "one plan per marketplace" model: **Marketplace moved from a group key to a derived header scope** (§3.1B); no plan is created per marketplace.
+
+### 3.1B Single / MULTI Marketplace derivation (CANONICAL — B-2 / B-3 RESOLVED 2026-07-31)
+
+`shipping_plans.marketplace` is **not user-entered** — it is **DERIVED from the effective `shipping_plan_lines`** on every write:
+
+```text
+COUNT(DISTINCT effective line marketplace) = 1  → shipping_plans.marketplace = that real Marketplace
+COUNT(DISTINCT effective line marketplace) ≥ 2  → shipping_plans.marketplace = MULTI  (controlled scope marker)
+```
+
+- A Draft may flip **Single → `MULTI`** when a second-marketplace line is added, and **`MULTI` → back to the real Marketplace** when the lines collapse to one marketplace again — the header is **recomputed from the lines each time**, never held stale.
+- **`MULTI` is a controlled scope marker, NOT a real Marketplace and NOT a Marketplace foreign key.** It is **forbidden** to use `MULTI` to look up Marketplace-specific Master Data (Site SKU, Rate Card, listing URL, referral rate, or any per-marketplace value). To show the real marketplaces of a `MULTI` plan, read the **DISTINCT `shipping_plan_lines.marketplace`** — never render `MULTI` as an actual marketplace.
+- **Marketplace filtering works on the lines, not the header.** A Marketplace filter set to e.g. `Amazon` must match any plan that **has Amazon lines**, including a `MULTI` plan — it must not compare the header value alone (a `MULTI` header must still surface under an `Amazon` filter).
+
+### 3.1C Shipping Plan Line grain (CANONICAL — B-2 / B-3 RESOLVED 2026-07-31)
+
+The Decision Layer must **not** merge lines by Master SKU alone. The **same `sku` may exist as multiple `shipping_plan_lines`** because of a different:
+- **Marketplace** · **Site SKU** · **plan month / plan week** (time dimension) · **recommendation / allocation source**.
+
+- **Each line preserves its real line-level Marketplace + Site SKU.** The **exact physical columns are `shipping_plan_lines.marketplace` + `shipping_plan_lines.site_sku`** (confirmed live per the 2026-07-28 DB sync — a cleanly-spelled `marketplace` column; the hypothetical `marketplace_seperate` spelling does **not** apply here). "Line-level marketplace" is the semantic label; `shipping_plan_lines.marketplace` is the exact physical column. This spec does **not** rename that column.
+- **A Combined Plan NEVER merges Marketplace lines in the DB** — the same SKU across two marketplaces persists as **two** lines; the UI MAY aggregate to a Master-SKU parent row with per-site child rows, but the DB keeps them separate.
+- **Idempotent by source row.** A repeated Submit / retry of the **same source allocation row** must **update the existing** Plan Line (matched by its existing source identity) — it must **NOT** add quantity again. Only a **new** source row creates a **new** Plan Line. If the current schema has **no column able to identify a source row**, that is recorded as a **B-3 / Implement gap** — this Batch does **NOT** add an unapproved source-identity column to `shipping_plan_lines`.
 
 > The route group-key values are persisted on `shipping_plans` as `company`, `country`, `ship_from`, `destination`, `shipping_method` (§4); `marketplace` is the derived header scope (actual / `MULTI`). `ship_from` / `destination` / `shipping_method` come from the **Execution Plan route** the PM built (future default source: `replenishment_route_rules`, `CARRIER_AND_ROUTE_SPEC.md` §5A) — until route rules are implemented they are whatever the PM entered on the Execution Plan route (blank counts as a distinct value). The plan also snapshots the chosen `carrier_id` + rough `carrier_unit_rate` / `carrier_rate_type` / `import_duty_treatment` + `estimated_freight_cost` / `estimated_duty` / `estimated_customs_fee` / `estimated_total_cost` (Phase-1 rough quote; blank = Not Applied, never 0). Warehouse endpoints add `source_warehouse_id` / `ship_from_type` / `destination_warehouse_id` / `destination_type` alongside the human-readable `ship_from` / `destination`.
 
@@ -162,9 +201,13 @@ When the user clicks **Submit Plan** in Inventory Replenishment, the system crea
 
 **Layer 2 — Carrier & Cost** (`selectShippingPlanCarrier`): snapshots the chosen candidate's `carrier_id` / `unit_rate`→`carrier_unit_rate` / `charge_type`→`carrier_rate_type` / `import_duty_treatment` / `currency` and computes Phase-1 cost. **`rate_card_id` is NOT stored on the plan** (resolved later at Shipment exact match). `carrier_name` is **never stored** — resolve `carrier_id → carriers.carrier_name` at render.
 
-**Combined Plan** (`combineShippingPlans` / `uncombineShippingPlans`): uses the existing `parent_shipping_plan_id` (a normal plan = its own parent; a **child** points at the Combined **Parent**; a Parent is referenced by ≥1 child and owns **no** lines of its own). **Eligibility:** all `status=draft`, same `company` / `country` / `source_warehouse_id` / `destination_warehouse_id` / `ship_from_type` / `destination_type`, `currency` same-or-blank, not transferred / cancelled / already-child / already-parent (no nested combine). **Marketplace may differ.** **Effective Lines** = the Parent's children's lines (a normal plan = its own lines) — read **once**, never Parent-direct + child together (no double count). Parent `marketplace` derives from effective lines (actual / `MULTI`; UI shows the DISTINCT real marketplaces of a `MULTI`). Child plans **cannot** submit / approve / cancel / transfer independently — the Parent is the unit; **Shipment transfer uses the Parent's effective lines**. Combine / uncombine / any line-qty change bumps `plan_version`, clears carrier + cost, and re-derives Method / Customs / Carrier candidates; **Totals recompute wholly from Effective Lines** (never old-total + delta). **Combined exact rate:** a MULTI shipment needs ONE rate card that applies to the whole shipment (blank-marketplace card); if only per-marketplace cards exist → **Split Shipment** required (never average / merge cards).
+**Combined (multi-marketplace) Plan — CANONICAL model (B-2, 2026-07-31):** a "Combined Plan" is simply a **single `shipping_plan` whose effective lines span ≥2 marketplaces** → `marketplace = MULTI` (derived, §3.1B), with each line keeping its **real** marketplace + site SKU (§3.1C). It is produced **directly by the five-value Shipping Group Key at Submit** — because Marketplace is not in the Key, lines for different marketplaces on the same route land in the **same** plan automatically. **No separate "combine two plans" action, and no parent/child plan rows, are required to represent marketplace membership.**
+- **`parent_shipping_plan_id` is the version-lineage anchor ONLY (§4.3)** — MVP = self. It must **NOT** also be overloaded as Combined-Plan membership. *(An interim runtime `combineShippingPlans` / `uncombineShippingPlans` that pointed a child at a Combined Parent via `parent_shipping_plan_id` is **SUPERSEDED** by this derived-`MULTI` model and is **not** the canonical representation of a multi-marketplace plan.)*
+- **Physical consolidation across separate plans is an Execution-Layer concern**, handled by `shipment_plan_links` **after** the Shipment exists (§12.3) — never by merging Decision-Layer plan rows.
+- **Effective Lines** = the plan's own `shipping_plan_lines` — read **once** (no double count). Any line-qty change bumps `plan_version`, clears carrier + cost, and re-derives Method / Customs / Carrier candidates; **Totals recompute wholly from Effective Lines** (never old-total + delta).
+- **Combined exact rate:** a `MULTI` shipment needs ONE rate card that applies to the whole shipment (blank-marketplace card); if only per-marketplace cards exist → **Split Shipment** required (never average / merge cards).
 
-**Example (same Company/Country/Marketplace/Ship From/Destination, differing only by Method):**
+**Example (same Company / Country / Ship From / Destination, differing only by Method — Marketplace is NOT a group key):**
 ```
 Air Freight:  SKU A, SKU B
 Sea Freight:  SKU C, SKU D
@@ -176,10 +219,25 @@ If, say, two SKUs share the same Method but have different `ship_from`, they sti
 
 ### 3.2 Submit Plan behavior
 
-- One Submit Plan action may produce **multiple** `shipping_plan` rows (one per distinct six-value group). All of them share the **same** `submit_batch_id` (§4).
-- Each plan is created in `status = draft`, `plan_version = 1`.
+- One Submit Plan action may produce **multiple** `shipping_plan` rows (one per distinct **five-value Shipping Group Key**, §3.1). All of them share the **same** `submit_batch_id` (§4).
+- A new plan is created in `status = draft`, `plan_version = 1`; an existing same-Key **open Draft is reused cumulatively** (§3.2A).
 - **No factory-stock reservation or deduction happens at Submit Plan** — reservation/deduction belongs to Shipment Center (`SHIPMENT_CENTER_SPEC.md` §7, §8, §15.1).
 - `shipping_plans.company` is **resolved from the marketplace context** at write time (§3.3).
+
+### 3.2A Draft-only cumulative Submit (CANONICAL — B-2)
+
+Each **Submit Plan** resolves, **per five-value Shipping Group Key**, against the existing plans:
+
+1. **Look up** the `status = draft` plan for that Key.
+2. **If a Draft is found** — the Submit is **cumulative into that same plan**:
+   - update the **same** `shipping_plans` row (no new plan row);
+   - **add or update** its `shipping_plan_lines` (a repeated **source row** updates its existing line idempotently; a **new** source row adds a line — §3.1C);
+   - **recompute** Header totals (§6) and the derived Marketplace scope (Single / `MULTI`, §3.1B).
+3. **If no Draft is found** — create a **new** Draft `shipping_plan` (`status = draft`, `plan_version = 1`) and its lines.
+4. **If the same-Key existing plan's CURRENT status is any non-`draft` status** (pending_approval / approved / cancelled / completed) — it is **NOT** modified: **do not touch its Header, do not touch its Lines.** A **new Draft plan** is created instead.
+
+- **All cumulative updates are gated on the plan's CURRENT `status = draft`.** Only a Draft is writable; every other current status is immutable to a later Submit (consistent with §8 editable-only-in-Draft and §12.1 Immutable Flow). **There is no `rejected-locked` lifecycle:** a Reject returns the **same row** to `status = draft` (§4.1, §8) — a rejected-then-returned plan **is** a Draft and is writable again; "rejected" is not a separate locked, non-writable state.
+- A whole Shipping Plan is **one complete approval object** and may contain **multiple Marketplaces and multiple time periods** (§3.5). This round does **not** design Marketplace-level partial approval — approval / lock act on the **entire** plan (§3.5, §9).
 
 ### 3.3 Company resolution (FINAL — `shipping_plans.company` is a persisted snapshot, never blank when a source exists)
 
@@ -204,11 +262,20 @@ Every Execution Plan route qty submitted must be an **integer multiple of `sku_d
 - Examples: with `units_per_carton = 40`, qty **41 is invalid**; qty **40 / 80 / 120 are valid**.
 - An invalid allocation **does not create any `shipping_plans`**.
 
-> **Current implementation note (non-binding):** today's frontend `submitReplenishmentPlans()` writes a method-grouped structure to `sessionStorage` (`allShippingPlans`) — a placeholder. This spec is the contract to replace it with real `shipping_plans` / `shipping_plan_lines` writes grouped by the six-value key.
+> **Current implementation note (non-binding):** today's frontend `submitReplenishmentPlans()` writes a method-grouped structure to `sessionStorage` (`allShippingPlans`) — a placeholder. This spec is the contract to replace it with real `shipping_plans` / `shipping_plan_lines` writes grouped by the **five-value Shipping Group Key**.
+
+### 3.5 Multi-period plan content (CANONICAL — B-2)
+
+One Shipping Plan may contain lines spanning different:
+- **`plan_month`** · **`plan_week`** (time dimensions) · **Marketplace** · **SKU / Site SKU**.
+
+- **Time dimensions stay on the LINES, never in the Header Shipping Group Key** (§3.1). A plan is not split by month/week; the header groups only the five route values.
+- **Approval / lock act on the WHOLE plan.** Once **Approved**, all Header + Lines are frozen and no later Submit may modify them (§3.2A step 4, §8, §12.1).
+- `plan_month` / `plan_week` are **planned line-level planning attributes**. They are line-scope semantics — **not** currently part of the persisted `shipping_plan_lines` physical schema (the live line columns are listed in §5.1); adding physical time columns is a downstream Implement item, not asserted as live here.
 
 ---
 
-## 4. `shipping_plans` — DB Mapping (plan header / one per method)
+## 4. `shipping_plans` — DB Mapping (plan header / one per Shipping Group Key)
 
 | Field | Source / Rule |
 |-------|---------------|
@@ -217,12 +284,12 @@ Every Execution Plan route qty submitted must be an **integer multiple of `sku_d
 | `plan_name` | system generated (e.g. `{company}-{country}-{marketplace}-{method}-{date}`) |
 | `company` | **persisted snapshot** copied from marketplace master data at Submit Plan (**group key 1**, §3.1; resolution priority §3.3). Not display-only. |
 | `country` | current selected Inventory Replenishment **country** (**group key 2**) |
-| `marketplace` | current selected Inventory Replenishment **marketplace** (**group key 3**) |
-| `ship_from` | from the **Execution Plan** route **From** selector (active Factory Warehouses — §4A) (future default: `replenishment_route_rules`) (**group key 4**) |
-| `destination` | from the **Execution Plan** route **To** selector (site-filtered warehouse candidates — §4A) (future default: `replenishment_route_rules`) (**group key 5**) |
-| `shipping_method` | the **Execution Plan** route's selected method (**group key 6**, §3.1) |
+| `marketplace` | **DERIVED header scope, NOT a group key** — recomputed from the effective lines each write: one distinct line marketplace → the actual Marketplace; ≥2 → `MULTI` (§3.1B). Never user-entered; never a Marketplace foreign key. |
+| `ship_from` | from the **Execution Plan** route **From** selector (active Factory Warehouses — §4A) (future default: `replenishment_route_rules`) (**group key 3 — origin_endpoint**; canonical identity = `ship_from_warehouse_id`, `ship_from` = display snapshot, §3.1) |
+| `destination` | from the **Execution Plan** route **To** selector (site-filtered warehouse candidates — §4A) (future default: `replenishment_route_rules`) (**group key 4 — destination_endpoint**; canonical identity = `destination_warehouse_id`, `destination` = display snapshot, §3.1) |
+| `shipping_method` | the **Execution Plan** route's selected method (**group key 5**, §3.1) |
 | `plan_version` | decision-revision counter (§4.1); default `1` |
-| `parent_shipping_plan_id` | version-lineage anchor (§4.3); **MVP = `shipping_plan_id`** |
+| `parent_shipping_plan_id` | **version-lineage anchor ONLY** (§4.3); **MVP = `shipping_plan_id`**. **Never** overloaded as Combined-Plan / marketplace membership (§3.1A). |
 | `submit_batch_id` | shared id for all plans created by one Submit Plan action (§4.2) |
 | `batch_status` | batch-level summary across the `submit_batch_id` group (§4.4); **helper, not the primary status** |
 | `carrier_id` | selected in the Weekly Shipping Plan card Cost Breakdown |
@@ -296,7 +363,7 @@ SP-001 | plan_version = 2 | status = pending_approval
 
 ### 4.2 `submit_batch_id`
 
-- **One Submit Plan action may generate multiple `shipping_plans`** (one per distinct six-value group key, §3.1).
+- **One Submit Plan action may generate multiple `shipping_plans`** (one per distinct **five-value Shipping Group Key**, §3.1) and may also reuse existing same-Key open Drafts cumulatively (§3.2A).
 - **All plans generated in the same Submit Plan action share the same `submit_batch_id`.**
 - Used for **history, audit, AI analysis, and reporting** (e.g. "show everything pushed in this submit").
 
@@ -314,6 +381,7 @@ SP-001 | plan_version = 2 | status = pending_approval
   SP-027  version 3  parent_shipping_plan_id = SP-001
   ```
 - **MVP does NOT create new rows per version** — it only increments `plan_version` on the same row.
+- **Single purpose (B-2, 2026-07-31):** `parent_shipping_plan_id` carries **version lineage only**. It must **NOT** simultaneously encode Combined-Plan / multi-marketplace membership — a multi-marketplace plan is a single plan with derived `marketplace = MULTI` (§3.1A/§3.1B), not a parent/child structure.
 
 ### 4.4 `batch_status` (batch-level summary helper)
 
@@ -332,7 +400,9 @@ SP-001 | plan_version = 2 | status = pending_approval
 |-------|---------------|
 | `shipping_plan_line_id` | system generated (PK) |
 | `shipping_plan_id` | FK → `shipping_plans` |
-| `sku` | submitted SKU |
+| `sku` | submitted Master SKU |
+| `site_sku` | **line-level Site SKU** for this line's marketplace (physical column, live per 2026-07-28 DB sync; never merged across marketplaces — §3.1C) |
+| `marketplace` | **line-level REAL Marketplace** (exact physical column `shipping_plan_lines.marketplace`; never `MULTI` — `MULTI` is a header-only scope marker, §3.1B). Header `shipping_plans.marketplace` is DERIVED from the DISTINCT of this column. |
 | `requested_qty` | original Submit Plan qty |
 | `approved_qty` | editable qty in Draft; final qty after Submit |
 | `carton_qty` | `approved_qty ÷ units_per_carton` |
@@ -639,7 +709,7 @@ The Decision Layer lifecycle is **Draft → Pending Approval → Approved → Ex
 - An **Approved** Weekly Shipping Plan can be **converted into a Shipment Draft** (this conversion is the **Execution Commit**).
 - Shipment Draft must **copy from the Weekly Shipping Plan as an execution snapshot** — it does **not** recalculate planning logic.
 - **Planning decision is owned by Weekly Shipping Plan; shipment execution is owned by Shipment Center.**
-- On conversion, the Shipment Center creates `shipments` + `shipment_lines` with `shipments.status = draft` and performs factory-stock reservation (`SHIPMENT_CENTER_SPEC.md` §3, §7, §15 step 10).
+- On conversion, the Shipment Center creates `shipments` + `shipment_lines` with `shipments.status = draft`. **Create Shipment Draft does NOT reserve factory stock** (B-1, resolved 2026-07-30): the reserve happens only at the successful **Ready to Ship** transition (`draft → ready_to_ship`), and **Ship** deducts `fac_current_stock` + consumes the reserved stock (`SHIPMENT_CENTER_SPEC.md` §3, §7, §15; `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1). This B-2 update does not change that B-1 trigger.
 - **Plan → Shipment field copy (initial mapping):**
 
 | `shipping_plans` / `shipping_plan_lines` | → | `shipments` / `shipment_lines` |
@@ -657,6 +727,26 @@ The Decision Layer lifecycle is **Draft → Pending Approval → Approved → Ex
 
 > **Shipment inherits the line snapshots without recalculation.** The per-SKU `snapshot_current_stock` / `snapshot_avg_sales_per_day` / `snapshot_days_of_supply` / `snapshot_suggested_qty` / `snapshot_target_days` / `snapshot_fc_context` / `snapshot_event_context` travel with the line into the Shipment Draft as the frozen decision basis. Shipment never re-derives planning values.
 > Exact remaining shipment fields (carton number start/end, ETD/ETA, container/BL/invoice) are completed in Shipment Draft (`SHIPMENT_CENTER_SPEC.md` §4) — not copied from the plan.
+
+### 12.3 Combined Plan vs physical Shipment consolidation (CANONICAL — B-2 / B-3)
+
+The **Decision Layer** and the **Execution Layer** consolidate differently — they must not be conflated:
+
+- **Decision Layer (Plan):** a Combined (multi-marketplace) Plan is **one `shipping_plan`** with `marketplace = MULTI` (derived, §3.1B); its lines keep the **real** per-marketplace provenance (§3.1C) and are **NEVER merged** in the DB. `parent_shipping_plan_id` is not used for this (§3.1A) — the single plan already IS the combination.
+- **Execution Layer (Shipment):** a Shipment is the **single physical execution** unit. In a Shipment, `shipment_lines` **MAY aggregate the same SKU from multiple Plan Lines** (across marketplaces / plans) into **one final shipped quantity / one document line**. **Plan Lines are not merged in the Decision Layer; Shipment Lines do the execution aggregation.**
+- **Provenance (B-3):** `shipment_lines` stores the physical SKU shipped quantity; `shipment_line_allocations` stores the Shipment→PO/FIFO supply draw; **Marketplace / Site SKU / period planning context stays on the original `shipping_plan_lines`**, and the header-level source Plans are recorded by `shipment_plan_links` (§12.4). **There is NO Shipment-Line → Plan-Line quantity allocation**, and **actual shipped qty is NOT claimed to be exactly decomposable back to Marketplace**. Reading the linked Plan Lines shows **original planning / decision context only — not an actual-shipped allocation ledger**.
+- **Cardinality (B-3):** **one Approved Shipping Plan → transferred completely, exactly once → to at most one (`0..1`) physical Shipment**; **a Shipment → one-or-many (`1..N`) Approved Plans**. Phase 1 does **not** support splitting one Plan across multiple Shipments, Plan-Line partial consumption, Plan-Line remaining quantity, part-now/part-later transfer, or a Shipment-Line→Plan-Line consumption ledger. Any future partial / split execution is a **separate Canonical Design** (not pre-built here).
+
+### 12.4 `shipment_plan_links` — header consolidation relationship (CANONICAL — B-2 / B-3)
+
+`shipment_plan_links` records **`Shipping Plan(s) → physical Shipment`**. It is a **header relationship, NOT an allocation axis** (the allocation model is the two axes in DB Map §8B: `factory_stock_allocation_plans` planning + `shipment_line_allocations` PO/FIFO supply).
+- Keyed uniquely by **`shipment_id + shipping_plan_id`**. It is **NOT** a Shipping-Plan → Shipping-Plan combination relationship and **never** substitutes for `parent_shipping_plan_id` (version lineage only).
+- **Written only AFTER the Shipment exists.** At **Create Shipment** (Execution Commit) the backend **upserts** one link per source plan; consolidating **multiple Approved plans** into one Shipment upserts **one link per plan**. **A retry never creates a duplicate link** (idempotent upsert on `shipment_id + shipping_plan_id`).
+- **If a `shipping_plan_id` is already linked to a *different* Shipment, report a conflict — never create a second link** (a Plan transfers to at most one Shipment, §12.3). `shipping_plans.transferred_shipment_id` (single handoff metadata) **must point at the same Shipment** as the link.
+- A plan that has only become `MULTI` at the Plan Layer, with **no Shipment yet**, has **NO `shipment_plan_links` row** — there is no `shipment_id` to link (DB Map §8B). A `MULTI` plan does not pre-create a link merely because it is `MULTI`.
+- A consolidated Shipment keeps **one `shipment_id`**; multiple source plans are represented **by the links alone** (never by an invented plan-membership use of `parent_shipping_plan_id`).
+
+> **`shipment_line_plan_allocations` is WITHDRAWN (B-3, 2026-07-31).** It is **not** part of the current Canonical design and must not be created or implemented — not Required Design, not Planned Implementation, not an Implement handoff, and there is **no** third "Demand-source" allocation axis. No substitute or renamed synonym table may be pre-built. This Batch does not build a Shipment-Line→Plan-Line quantity ledger; Marketplace planning provenance stays on `shipping_plan_lines` and is read through `shipment_plan_links` as original planning context only.
 
 ---
 
@@ -696,10 +786,10 @@ The following actor fields are **reserved now but not yet wired to a real user/p
 - **`batch_status` derivation precedence** — exact roll-up rule for `mixed` / `partial_approved` when plans in a batch differ.
 - **Cost recalculation trigger** — exact recompute rule when qty changes after carrier selection (deferred to Carrier Price Spec).
 
-> **Resolved (this version):** Reject→Draft→Resubmit keeps the **same `shipping_plan_id`**, only `plan_version` increments (§4.1); `parent_shipping_plan_id = shipping_plan_id` in MVP (§4.3); `batch_status` is a derived helper, `shipping_plans.status` stays primary (§4.4); Decision Commit = Submit Plan and Decision Snapshot lives on `shipping_plan_lines` (§0, §5.2). Earlier-resolved: six-value group key (§3.1); one Submit Plan action shares one `submit_batch_id` (§4.2).
+> **Resolved (this version):** Reject→Draft→Resubmit keeps the **same `shipping_plan_id`**, only `plan_version` increments (§4.1); `parent_shipping_plan_id = shipping_plan_id` in MVP (§4.3); `batch_status` is a derived helper, `shipping_plans.status` stays primary (§4.4); Decision Commit = Submit Plan and Decision Snapshot lives on `shipping_plan_lines` (§0, §5.2). Earlier-resolved: **five-value Shipping Group Key with Marketplace derived** (§3.1, Batch B · B-2, 2026-07-31 — supersedes the earlier six-value wording); one Submit Plan action shares one `submit_batch_id` (§4.2).
 
 ---
 
-**Draft v1.12 — Weekly Shipping Plan Mapping Spec. Decision Layer between Inventory Analysis and Shipment Execution.** Cumulative through v1.12: the v1.6/v1.7 UI/mapping fixes (company resolution, carton validation, card/footer layout, snapshot-first display, Add Note, Cost Breakdown placeholder, Save/Submit/Cancel semantics + soft cancel, placeholder actor fields), the v1.11 Done/transfer robustness backfill (`11_shipping_plan_handlers.gs` + `shipmentFindForPlan_`), and the v1.12 Execution Plan Working Draft terminology are recorded as implemented in the frontend/API/Apps Script per the changelog above + project-current-state; **implementation status of anything not confirmed there requires runtime verification.** New `shipping_plans` columns across these versions: `cancelled_by` / `cancelled_at` / `updated_by` (+ handoff metadata `transferred_shipment_id` / `transferred_to_shipment_at` and completion `completed_at` / `completed_by`). Formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; execution owned by `SHIPMENT_CENTER_SPEC.md`. Handoff = explicit **Execution Commit** (Approved → Create Shipment Draft), idempotent (§12.1); Approval alone does not create a Shipment.**
+**Draft v1.14 — Weekly Shipping Plan Mapping Spec. Decision Layer between Inventory Analysis and Shipment Execution.** v1.14 (2026-07-31) resolves **Batch B · B-3 Marketplace Header/Line placement** (`shipping_plans.marketplace` = persisted derived scope marker, real Marketplace/Site SKU on lines), **withdraws `shipment_line_plan_allocations`** (two-axis allocation model only), sets **Plan → Shipment `0..1` (no split)**, makes `shipment_plan_links` a header relationship (not an axis) with a same-plan/different-Shipment conflict rule, and fixes the §3.2A `rejected-locked` wording. v1.13 reconciled the **Batch B · B-2 five-value Shipping Group Key** (Marketplace derived to a `MULTI` header scope; real marketplace kept on lines), **Draft-only cumulative Submit** (§3.2A), **Combined-Plan vs Shipment consolidation** (§12.3) — **documentation only; no Runtime / DB / `assets/specs` change; `parent_shipping_plan_id` is version-lineage only; B-1 and B-4…B-8 untouched.** Cumulative through v1.12: the v1.6/v1.7 UI/mapping fixes (company resolution, carton validation, card/footer layout, snapshot-first display, Add Note, Cost Breakdown placeholder, Save/Submit/Cancel semantics + soft cancel, placeholder actor fields), the v1.11 Done/transfer robustness backfill (`11_shipping_plan_handlers.gs` + `shipmentFindForPlan_`), and the v1.12 Execution Plan Working Draft terminology are recorded as implemented in the frontend/API/Apps Script per the changelog above + project-current-state; **implementation status of anything not confirmed there requires runtime verification.** New `shipping_plans` columns across these versions: `cancelled_by` / `cancelled_at` / `updated_by` (+ handoff metadata `transferred_shipment_id` / `transferred_to_shipment_at` and completion `completed_at` / `completed_by`). Formulas owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`; execution owned by `SHIPMENT_CENTER_SPEC.md`. Handoff = explicit **Execution Commit** (Approved → Create Shipment Draft), idempotent (§12.1); Approval alone does not create a Shipment.**
 
 **End of Document**

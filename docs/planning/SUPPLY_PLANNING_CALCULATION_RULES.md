@@ -5,8 +5,8 @@
 > - **Canonical Owner For:** Engine A / Engine B; **T1–T4** (T4 = display-only, never in Request/PO payload); **Normal Sales Days** (latest 30 eligible normal days within a 90-completed-day window); Forecast Adjustment; Inventory Projection; Shortage; Reallocation; Net Order Need; **Shipping carton = FLOOR**; **Ordering carton = CEILING**; Engine `Current Stock` semantics.
 > - **Not Owner For:** DB schema (`DATABASE_RELATIONSHIP_MAP.md`), UI/layout (`INVENTORY_TABLE_MAPPING_SPEC.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), Shipment/PO lifecycle (respective specs). No other doc may restate a divergent formula.
 > - **Status:** Reviewed — Batch B Blockers Remain (formulas finalized; the **Qualified Incoming allowlist** that feeds Current-Stock netting is Batch B).
-> - **Current Version:** v4.1 FINALIZED (unchanged; Batch A adds this header only — no formula edited. Batch B Round 1: added the B-1 reserve-boundary cross-reference below. Phase 2B Pre-Engine readiness: reconciled the stale §22 weekly-default wording with §29E and §33 — **documentation residual cleanup only; no version bump, no formula expansion, no §33/test/runtime change**).
-> - **Last Reviewed:** 2026-07-30.
+> - **Current Version:** v4.3 (v4.1 base — Batch A header, Batch B Round 1 B-1 reserve cross-reference, Phase 2B Pre-Engine §22/§29E/§33 reconciliation, all no-formula-change — **plus the Round 6B dependency catch-up landing (2026-07-31): Round 5A §27A Required-By classifier (v4.2) + Round 6A §32A reallocation-eligibility contract (v4.3) + Round 6 implementation status. `evaluateReallocationEligibility` IMPLEMENTED; Golden #21/#22 executed; Matrix 23 executed / 17 pending / 0 canonical-blocked; Unit 282 / Golden 114 PASS. Line Runtime / Qualified Incoming Runtime NOT IMPLEMENTED; B-4~B-8 unchanged**).
+> - **Last Reviewed:** 2026-07-31.
 > - **Depends On:** none (upstream formula authority).
 > - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).
 > - **Reserve boundary (cross-reference only — B-1 RESOLVED, owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1):** calculation / recommendation output (shortage, Net Order Need, Recommended Shipping Qty, reallocation, etc.) **never reserves or deducts stock**. Factory-stock reservation is triggered **only** by a successful **Formal Shipment Execution Commit** (decision only; implementation not started). This document owns no reserve logic and defines none.
@@ -14,15 +14,39 @@
 > **Changelog v4.1 (2026-07-30 — Phase 2B Pre-Engine Normalized Avg Sales readiness cleanup, NO version bump / NO formula expansion):** Reconciled the stale §22 "weekly default" wording with the already-adopted **§29E** and **§33 Scenario #1–#5 / #35–#40** so there is **one** Sales-Driven basis. §22 intro + **§22.1** now state the Sales-Driven default **IS** the normalized sampling ladder (latest 30 eligible normal days within the latest 90 completed days, ÷ actual `normal_day_count`); **§22.2** reframed from "exception when contaminated" to the **contamination EXCLUSION rules within** that sampling; **§22.3** no-contamination bullet corrected — no contamination = **zero excluded dates**, the ladder still applies, and `weekly_7d` is **only** the `< 3`-normal-day fallback rung (never a no-contamination default). Per-SKU exclusion, Campaign∩Event count-once, cancelled/invalid-not-excluded, Preparation-Date-not-contamination, zero-sales-day vs missing-day, and the decoupled `source`/`warning` fields are all **unchanged**. §22.4/§22.6 Forecast-Driven-reference-only + Runtime-recompute wording unchanged. **Runtime remains NOT IMPLEMENTED; Executable Tests PENDING; no engine, no §33 change, no Batch B decision.**
 >
 
-**Status:** ✅ **FINALIZED v4.1 — Calculation Specification** (v4.1 = v4.0 freeze + §22 Avg. Sales/day sample-acquisition refinement)
-**Runtime Status:** **NOT IMPLEMENTED**
-**Executable Test Status:** **PENDING** (Golden Scenario Matrix §33 defined; executable tests not yet built)
+**Status:** ✅ **FINALIZED v4.3 — Calculation Specification** (v4.1 = v4.0 freeze + §22 Avg. Sales/day sample-acquisition refinement; v4.2 = Round 5A §27A Required-By Window classifier canonical gap closure; v4.3 = Round 6A §32A Reallocation Eligibility owner boundary + public contract freeze; Round 6 = §32A predicate IMPLEMENTED + Golden #21/#22 executed — landed to main by the Round 6B dependency catch-up)
+**Runtime Status:** **NOT IMPLEMENTED** (the pure §27A classifier and §32A eligibility predicate are implemented in the pure calculation core; no Line Runtime / Qualified Incoming Runtime / DB / API / UI)
+**Executable Test Status:** **§27A/§32A pure core = 282 unit + 114 golden PASS (23 executed / 17 pending / 0 canonical-blocked); full 40-scenario matrix still PENDING**
 **Browser / Production Verification:** **PENDING** (no runtime, therefore nothing to verify)
-**Last Updated:** 2026-07-24
+**Last Updated:** 2026-07-31
 **Maintained By:** Development Team
 **Authoritative formula owner:** THIS document. All other specs reference or map these formulas; none may restate a divergent version.
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) (operational flow), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) (Inventory Table mapping + AI Suggestion display), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md`](./RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md)
 
+> **Changelog — Round 6 implementation (2026-07-31 — Reallocation Eligibility Pure Predicate; implementation + tests only, no rule/version change, semantic version stays v4.3; landed to main by the Round 6B dependency catch-up):** Implemented the frozen §32A contract as the pure export `evaluateReallocationEligibility` in `assets/js/core/supply-planning-calculations.js` (Same-Master-SKU exact string equality + Engine B-only tier ordering `donorRank <= receiverRank` over T1/T2/T3; T4/null ineligible; Engine A not read; no quantity in/out; delegates date validation to `classifyRequiredByWindow`; pure/fresh outputs). Promoted **Golden #21** (Same-Master-SKU gate — different SKU ⇒ ineligible) and **Golden #22** (Engine B tier ordering — later surplus cannot cover an earlier shortage; earlier/same-tier may) from `IMPLEMENTATION_PENDING` to `EXECUTED_EXISTING_CORE`. **Golden Matrix = 23 executed / 17 pending / 0 canonical-blocked; Unit = 282 assertions PASS; Golden = 114 assertions PASS.** The §32A contract, §26/§27/§27A, Round 5 classifier, Golden #28/#33, and all quantity primitives are unchanged. No new public API beyond `evaluateReallocationEligibility`; no Line Runtime / Qualified Incoming Runtime / DB / API / UI; no quantity orchestration.
+>
+> **Changelog v4.2 → v4.3 (2026-07-31 — Round 6A: Reallocation Eligibility Owner Boundary + Public Contract Freeze; documentation only, no formula/runtime/test change):** Added **§32A** as the **single canonical owner of the reallocation eligibility predicate** —
+> - froze the **pure-core vs Line-Runtime/caller responsibility split** (pure core = same-Master-SKU deterministic comparison + Engine B tier extraction/ordering + boolean result + strict validation; caller = DB/joins, identity/company resolution, candidate enumeration, route timing, packaging, ownership transfer, inventory qualification, `timelyTransferableQty`, iteration, persistence, concurrency; §32A.1);
+> - froze the **Same-Master-SKU exact-string-equality identity gate** (no `site_sku`/`marketplace_sku_id`/ASIN, no prefix/Series/Category, no case/trim coercion; Golden #21; §32A.2);
+> - froze **Engine B as the sole tier source** (never Engine A / `daysOut` bucket; no 1:1 map; §32A.3);
+> - froze the **eligible tiers** (T1/T2/T3 only; T4 / `null` / `allocationEligible=false` excluded; `visible`/`payloadEligible` are not gates; §32A.4);
+> - froze the **`donorRank <= receiverRank` tier-ordering truth table** (T1=1/T2=2/T3=3 — later surplus cannot cover an earlier shortage; Golden #22; §32A.5);
+> - froze the **adapter-independence guard** (Engine A never AND-ed into the tier gate; §32A.6) and **quantity separation** (no qty in/out; does not replace `applyFeasibleReallocation`; §32A.7);
+> - **authorized the nested `evaluateReallocationEligibility` public contract** — top-level `sameMasterSku`/`donor`/`receiver`/`tierOrderingEligible`/`eligible`, party keys `tier`/`allocationEligible`, no flat aliases / Engine A / quantity / DB / company / UI-reason / global-state fields (§32A.8);
+> - froze the **validation/purity contract** (`TypeError` for shape/non-string-SKU, date validation delegated to `classifyRequiredByWindow`'s strict `RangeError` contract; no coercion/clock/locale; no mutation; §32A.9).
+> **No JavaScript / test / Runtime / DB / API was written; §26/§27/§27A and all formulas unchanged; Round 5 classifier + Golden #28/#33 unchanged; Golden #21/#22 remain IMPLEMENTATION_PENDING; Golden Matrix remains 21 executed / 19 pending / 0 canonical-blocked; Runtime remains NOT IMPLEMENTED; Executable Tests remain PENDING.** *(Historical — this was the Round 6A end-state; superseded by the Round 6 implementation entry above.)*
+>
+> **Changelog v4.1 → v4.2 (2026-07-31 — Round 5A: Required-By Classifier Canonical Gap Closure; documentation only, no formula/runtime/test change):** Closed the Round-5 HALT gaps for the Required-By classifier —
+> - **separated Engine A day-bucket and Engine B monthly-tier outputs** into two adapter-scoped sub-objects (§27A);
+> - **froze the `>90d` literal** as the Engine A beyond-90-day bucket (§27A.4);
+> - **froze overdue behavior** (Engine A `"0–18d"` + Engine B `"T1"`; §27A.4/.5);
+> - **froze T1–T4 and Month+5+ behavior** (Month+5+ ⇒ `tier=null`, not visible; §27A.5);
+> - **froze adapter-scoped visibility / allocation / payload eligibility** (Engine A has no `payloadEligible`; §27A);
+> - **authorized the nested `classifyRequiredByWindow` API contract** and marked the earlier Round-5 flat draft `{daysOut, engineABucket, tier, visible, allocationEligible, payloadEligible}` **SUPERSEDED — do not implement** (§27A.1);
+> - **preserved the prohibition against an Engine A ↔ Engine B 1:1 mapping** (§27 strengthened; §26/§27 rules unchanged);
+> - froze the §33 Scenario #28 / #33 canonical expected values (§27A.8) and updated only those two matrix rows.
+> **No JavaScript / test / Runtime / DB / API was written; §26 & §27 formulas unchanged; Runtime remains NOT IMPLEMENTED; Executable Tests remain PENDING.**
+>
 > **Changelog v4.1 (2026-07-24 — residual documentation cleanup, NO version bump / core formulas unchanged):** §20.5 Forecast-Driven summary de-duplicated → now a pointer to the complete §2D (the old one-line summary that omitted Special Event Demand + Approved/Committed Supply is superseded). Added **§36 Order State Separation** (Layer A live planning signal vs Layer B persisted monthly/emergency Suggestion via `request_order_allocation_drafts`/`_lines` — `recommended_qty` snapshot vs user `order_qty`/`carton_qty` — plus the Emergency Manual Order flow through Engine A → Engine B → reallocation → Net Order Need) and **§37 Partial-Carton Override end-to-end** (allowed through Send / Approval / PO, never re-rounded; missing UPC still blocks Suggested + Send; MOQ still Future Extension). Owner remains **v4.1** (no v4.2). Golden Scenarios still **40 specified**; Executable Golden Tests still **PENDING**. **Residual surgical repair (2026-07-24, later pass):** §2D result renamed `Suggested Qty` → **`Forecast-Driven Remaining Need`** (Engine A live shortage, explicitly NOT Suggested Order Qty — that exists only after Engine B `Net Order Need`); §20.5 Sales-Driven likewise no longer names Engine A output "Suggested Qty"; §22.4 + §20.5 + §21.2 ownership pointers corrected so `INVENTORY_TABLE_MAPPING_SPEC.md §14/§15` is display/mapping context only and **this document §2C/§2D governs**; Golden Scenario #6 expected output now includes **− Approved/Committed Supply**; §24.10 + §36.2 exact monthly clock (5th/15:00) removed → cadence-only, exact schedule deferred to Runtime config; §36.2 draft parent/line grain corrected to match the existing schema (SKU on parent, inherited by lines via `request_allocation_draft_id`; monthly cadence — the persisted cycle-key mechanism is **BLOCKED BY B-7**, not decided here). **Round-3 residual cleanup (same v4.1):** §20 restated as the authoritative overseas-allocation rule (INVENTORY §16 only maps/displays it — reverse "official rule in Inventory" wording removed); §4 Inventory-source persistence wording replaced (the stale "no `shipping_allocation` DB / not persisted in MVP" line) with the layered persistence contract (live preview not persisted · shipping recommendation → `shipping_allocation_drafts`/`_lines` · monthly/emergency → `request_order_allocation_drafts`/`_lines` · Request/PO only after user decision · Runtime NOT IMPLEMENTED), with detailed schema referenced to the mapping specs. **Round-4 residual cleanup (same v4.1):** §15/§16 no longer label the **existing** `purchase_orders` lifecycle as "Future" — restated as live downstream user-decision/conversion layer with the same persistence layering (schema owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`); §20.3 Avg Sales/Day stale `sales_units_7d ÷ 7 / engine-defined run-rate` second entry point removed → resolved **exclusively by §22** (90-day window → latest 30 eligible normal days; `sales_units_7d÷7` is only §22's fallback rung).
 >
 > **Changelog v4.0 → v4.1 (2026-07-24 — Avg. Sales/day sample refinement):** §22 corrected. **Source Lookback Window = latest 90 completed calendar days (today excluded)**; the sample = the **latest 30 ELIGIBLE NORMAL sales days** collected by walking backward and skipping this SKU's Campaign/Deal/Special-Event days. Clarified: the "30" is a *historical normal-sales sample size, not a future 30-day window*; when fewer than 30 normal days exist inside the 90-day window, divide by the **actual** normal-day count (never a fixed 30) and keep the frozen low-sample/fallback ladder; campaign exclusion is **per-SKU participation** (`campaign_sku_lines`), never site-wide; Campaign∩Event overlap excluded once; cancelled/invalid events not counted; Event Preparation Date is not a contamination period; confirmed zero-sales day counts as a normal day (value 0), missing day is not auto-zero. Golden Scenarios §33 #35–#40 added. **Runtime: NOT IMPLEMENTED; Executable Test: PENDING — no engine built.**
@@ -966,6 +990,160 @@ Non-overlap & T4 invariants:
 - Each Regular / Event demand row is assigned to **exactly one** tier.
 - **T4 must NOT:** enter shortage allocation · enter company reallocation · produce a Suggested Order Qty · enter a Request Bucket or Send Request payload · affect any T1–T3 closing balance. T4 is **forward demand visibility only.**
 
+**Adapter independence (strengthened — Round 5A / v4.2):** Engine A's exact-date buckets (§26) and Engine B's monthly T1–T4 tiers (this §27) are **two independent classification dimensions** produced from the *same* `calculationDate` / `requiredByDate` pair — never one derived from the other:
+1. **Engine A** classifies by exact calendar **`daysOut`** (§26 / §27A).
+2. **Engine B** classifies by calendar **`monthDelta`** (this §27 / §27A).
+3. Both are computed **independently** from the same two dates.
+4. An Engine A bucket **must NOT** be used to derive an Engine B tier.
+5. An Engine B tier **must NOT** be used to derive an Engine A bucket.
+6. **No `0–18d → T1`, `19–30d → T2`, `31–45d → T3`, `46–90d → T4` (or any) 1:1 mapping may be created.**
+7. One dated requirement may legitimately be, at the same time, e.g. **Engine A = `46–90d` while Engine B = `T4`**, or **Engine A = `>90d` while Engine B = `T3`** — this is **not** a conflict; it is the independent output of two adapters.
+
+This **preserves and does not weaken** the frozen rule above: *do not rename one into the other or assume a 1:1 map.* The pure classifier that emits both adapters' outputs is frozen in **§27A**.
+
+---
+
+## 27A. Required-By Window Pure Classifier — `classifyRequiredByWindow` (CANONICAL v4.2 — Round 5A)
+
+A single **pure / deterministic** classifier that, from one `calculationDate` / `requiredByDate` pair, emits the **Engine A** (exact-date, §26) and **Engine B** (monthly tier, §27) outputs as **two independently-scoped sub-objects**. It is a **classifier only** — it computes no shortage, reads no inventory, does no reallocation, no carton rounding, no persistence, no system-time access, and never mutates its input. Same input ⇒ identical output.
+
+### 27A.1 Canonical API contract (AUTHORIZED)
+
+**Input:**
+```js
+{
+  calculationDate: "YYYY-MM-DD",
+  requiredByDate: "YYYY-MM-DD"
+}
+```
+
+**Output (frozen field names — the authorized API Contract):**
+```js
+{
+  daysOut,
+  monthDelta,
+  engineA: {
+    bucket,
+    visible,
+    allocationEligible
+  },
+  engineB: {
+    tier,
+    visible,
+    allocationEligible,
+    payloadEligible
+  }
+}
+```
+
+**The earlier Round 5 draft FLAT output is SUPERSEDED and MUST NOT be implemented:**
+```js
+// SUPERSEDED — DO NOT IMPLEMENT (Round 5 draft)
+{ daysOut, engineABucket, tier, visible, allocationEligible, payloadEligible }
+```
+Reason: a **flat** `visible` / `allocationEligible` / `payloadEligible` cannot say whether it belongs to Engine A or Engine B, which would re-merge the two adapters that §26/§27 keep independent. Eligibility is therefore **adapter-scoped** (nested). **Engine A carries no `payloadEligible`** — payload eligibility is an Engine B (Request/PO) concern only.
+
+### 27A.2 `daysOut` — exact civil-calendar day difference
+
+```text
+daysOut = requiredByDate − calculationDate   (whole civil calendar days)
+```
+- Result is an **integer**. No system clock; no locale parsing; unaffected by timezone / DST / execution environment; no hidden rounding; no numeric-string coercion.
+- `requiredByDate < calculationDate` ⇒ a **negative integer** (overdue) is allowed and required.
+
+### 27A.3 `monthDelta` — calendar year/month difference
+
+```text
+monthDelta = (requiredYear − calculationYear) × 12 + (requiredMonth − calculationMonth)
+```
+- Compares **calendar year/month only** — never converted from `daysOut`, never weighted by days-in-month.
+- Example: `2026-01-31 → 2026-02-01` ⇒ `monthDelta = 1` (while `daysOut = 1`).
+
+### 27A.4 Engine A canonical table (exact-date adapter — frozen literals)
+
+| Condition | `engineA.bucket` | `engineA.visible` | `engineA.allocationEligible` |
+|---|---|---:|---:|
+| `daysOut < 0` | `"0–18d"` | `true` | `true` |
+| `0 <= daysOut <= 18` | `"0–18d"` | `true` | `true` |
+| `19 <= daysOut <= 30` | `"19–30d"` | `true` | `true` |
+| `31 <= daysOut <= 45` | `"31–45d"` | `true` | `true` |
+| `46 <= daysOut <= 90` | `"46–90d"` | `true` | `true` |
+| `daysOut > 90` | `">90d"` | `true` | `false` |
+
+- **`">90d"` is the formally-frozen Engine A literal** for the beyond-90-day case (closing the Round 5 gap where no `>90` token existed).
+- **Overdue** (`daysOut < 0`) folds into `"0–18d"` per the existing §26 rule (immediate-processing need; §26 also flags it *Late / Immediate Risk*).
+- `daysOut > 90` keeps **future visibility only** (`visible=true`) and is **not** in the Engine A 90-day allocation (`allocationEligible=false`).
+- **Engine A emits no `payloadEligible`** (that is an Engine B field).
+
+### 27A.5 Engine B canonical table (monthly-tier adapter — frozen literals)
+
+Evaluate **overdue first**, then `monthDelta`:
+
+| Condition | `engineB.tier` | `engineB.visible` | `engineB.allocationEligible` | `engineB.payloadEligible` |
+|---|---|---:|---:|---:|
+| `daysOut < 0` | `"T1"` | `true` | `true` | `true` |
+| `daysOut >= 0` and `monthDelta = 0 or 1` | `"T1"` | `true` | `true` | `true` |
+| `daysOut >= 0` and `monthDelta = 2` | `"T2"` | `true` | `true` | `true` |
+| `daysOut >= 0` and `monthDelta = 3` | `"T3"` | `true` | `true` | `true` |
+| `daysOut >= 0` and `monthDelta = 4` | `"T4"` | `true` | `false` | `false` |
+| `daysOut >= 0` and `monthDelta >= 5` | `null` | `false` | `false` | `false` |
+
+Canonical meanings:
+```text
+T1 = overdue + current-month remainder + Month+1
+T2 = Month+2
+T3 = Month+3
+T4 = Month+4
+```
+- **`null` is the authorized JSON `null`** for Month+5 and beyond — do **not** invent a `T5` / `FUTURE` / `OUT_OF_RANGE` / `N/A` token.
+- **T4 stays display-only:** `visible=true`, `allocationEligible=false`, `payloadEligible=false` (consistent with §27's T4 invariants).
+- **Month+5+** is outside the Engine B T1–T4 display range → `tier=null`, `visible=false`, `allocationEligible=false`, `payloadEligible=false`. This does **not** affect Engine A's `>90d` future visibility — the two adapters are independent.
+
+### 27A.6 Required independence examples (frozen — prove no 1:1 mapping)
+
+**Example A** — same dates, Engine A `46–90d` **and** Engine B `T4`:
+```text
+calculationDate = 2026-01-31 ; requiredByDate = 2026-05-01
+```
+```js
+{
+  daysOut: 90,
+  monthDelta: 4,
+  engineA: { bucket: "46–90d", visible: true, allocationEligible: true },
+  engineB: { tier: "T4", visible: true, allocationEligible: false, payloadEligible: false }
+}
+```
+
+**Example B** — same dates, Engine A `>90d` **and** Engine B `T3`:
+```text
+calculationDate = 2026-01-01 ; requiredByDate = 2026-04-30
+```
+```js
+{
+  daysOut: 119,
+  monthDelta: 3,
+  engineA: { bucket: ">90d", visible: true, allocationEligible: false },
+  engineB: { tier: "T3", visible: true, allocationEligible: true, payloadEligible: true }
+}
+```
+
+> **Callers must consume the fields belonging to their own Engine adapter. They must not combine Engine A and Engine B eligibility by an undocumented AND / OR rule.**
+
+### 27A.7 Input validation contract (frozen error *types* only)
+
+- `input` must be an **object**; `calculationDate` and `requiredByDate` must both be **present** and of type **string**.
+- Only strict **`YYYY-MM-DD`** is accepted; the value must be a **real Gregorian calendar date**. **Rejected:** datetime forms, timezone suffixes, slash dates, non-zero-padded fields, and any auto-normalized (rolled-over) date.
+- Frozen error **types** (full message literal NOT frozen this round):
+  - **`TypeError`** — `input` is not an object · a required field is missing · a field is not a string.
+  - **`RangeError`** — value is not strict `YYYY-MM-DD` · the month / day / leap-day does not exist.
+
+### 27A.8 Scenario #28 / #33 canonical expected behavior (spec only — no tests run this round)
+
+- **Scenario #28** (Engine B T4): `classifyRequiredByWindow` ⇒ `engineB.tier="T4"`, `engineB.visible=true`, `engineB.allocationEligible=false`, `engineB.payloadEligible=false`. T4 is reached via **Engine B `monthDelta=4`** — **never** derived from any Engine A day bucket.
+- **Scenario #33** (Engine A boundary sweep): `classifyRequiredByWindow` ⇒ `engineA.bucket` = frozen literals `0→"0–18d"`, `18→"0–18d"`, `19→"19–30d"`, `30→"19–30d"`, `31→"31–45d"`, `45→"31–45d"`, `46→"46–90d"`, `90→"46–90d"`, `91→">90d"`, and overdue `-1→"0–18d"`. All expecteds are **literals**, never produced by a test-side formula.
+
+> **Status:** §27A is a **frozen specification only. Runtime: NOT IMPLEMENTED. Executable Test: PENDING (at Round 5A).** *(Round 6 later implemented `classifyRequiredByWindow` in the pure calculation core — 282 unit / 114 golden PASS; see §32A and the Round 6 changelog.)*
+
 ---
 
 ## 28. Current-Month / Factory-Stock Resolution (CANONICAL v4.1)
@@ -1079,6 +1257,166 @@ Net Order Need = Σ (Remaining Shortage after legal reallocation)
 
 ---
 
+## 32A. Reallocation Eligibility Owner and Contract — `evaluateReallocationEligibility` (CANONICAL v4.3 — Round 6A freeze; IMPLEMENTED Round 6; Line Runtime NOT IMPLEMENTED)
+
+This subsection is the **single canonical owner** of the reallocation **eligibility predicate** (the *yes/no* decision of whether a donor→receiver pair may reallocate at all). It complements — and does **not** replace or duplicate — the §12/§32 quantity primitives. **No parallel eligibility owner may be created in any other document.** The contract was frozen in Round 6A; the pure predicate is **IMPLEMENTED in Round 6** (`evaluateReallocationEligibility` in `supply-planning-calculations.js`) exactly to this contract, and **Golden #21 / #22 are promoted to `EXECUTED_EXISTING_CORE`**. This owns only the pure yes/no gate — **Line Runtime / candidate enumeration / quantity orchestration remain NOT started.**
+
+The eligibility predicate is the pure calculation core behind Golden **#21** (Different SKUs cannot reallocate) and **#22** (Later surplus cannot cover an earlier shortage) — both now executed (§33).
+
+### 32A.1 Owner boundary — pure calculation core vs Line Runtime / caller
+
+**Pure calculation core** (this module, `supply-planning-calculations.js`) owns ONLY:
+```text
+Same-Master-SKU deterministic comparison (exact string equality of caller-resolved Master SKUs)
+Engine B eligibility extraction (from classifyRequiredByWindow(...).engineB, §27A)
+Engine B tier ordering (donorRank <= receiverRank over T1/T2/T3)
+Pure boolean eligibility result
+Strict input validation (type/shape/date)
+No mutation; deterministic; no side effects
+```
+
+**Line Runtime / caller** (NOT this module) owns:
+```text
+DB records and joins
+Master SKU identity resolution (resolve the canonical Master SKU BEFORE calling the predicate)
+company scope resolution
+donor / receiver candidate enumeration
+route timing
+packaging compatibility
+ownership-transfer rules
+available / reserved inventory qualification
+timelyTransferableQty resolution
+allocation iteration and deterministic donor→receiver pair ordering
+persistence · concurrency · writer behavior
+```
+
+The pure predicate **receives the caller's already-resolved Master SKU strings and dates**; it does **not** read a DB, does **not** guess identity, and does **not** compute route timing / packaging / ownership feasibility. Those remain caller (Line Runtime) responsibilities.
+
+> **Boundary refinement note (implementation, Round 6):** the module header's "does NOT decide SKU eligibility / tier compatibility" boundary refers to **identity/route/packaging RESOLUTION** and to the quantity helpers — the pure predicate performs only the **deterministic comparison of caller-resolved values** (exact string equality + Engine B tier rank). This refinement is reflected in the module header comment at Round 6 implementation time.
+
+The existing quantity primitives — `feasibleReallocationQty`, `applyFeasibleReallocation`, `sumRemainingShortages` — **continue to own quantity arithmetic / consume-once bookkeeping only** and must **not** absorb eligibility, DB, or Runtime behavior.
+
+### 32A.2 Same-Master-SKU identity gate (frozen)
+
+Only `donor.masterSku === receiver.masterSku` passes the identity gate. Requirements:
+- **Exact string equality.**
+- **Must NOT** use `site_sku`, `marketplace_sku_id`, ASIN, or any marketplace product ID.
+- **Must NOT** apply prefix / substring / Series / Category matching.
+- **Must NOT** `trim` / upper- / lower-case coerce and then treat as equal.
+- **Different Master SKU ⇒ `sameMasterSku=false` ⇒ ineligible** (Golden #21).
+
+### 32A.3 Engine B is the ONLY tier source (frozen)
+
+The reallocation tier is read **only** from `classifyRequiredByWindow(...).engineB` (§27A). It **must NOT** read or merge `engineA.bucket`, `engineA.allocationEligible`, or any `daysOut` bucket. **No** `0–18d→T1 / 19–30d→T2 / 31–45d→T3 / 46–90d→T4` (or any) 1:1 mapping may be created — Engine A and Engine B remain independent adapters (§27 / §27A).
+
+### 32A.4 Eligible tiers (frozen)
+
+Only Engine B **`T1` / `T2` / `T3`** may participate in reallocation. **Excluded:** `T4`, `tier=null`, and any pair where `engineB.allocationEligible=false`. `engineB.visible` and `engineB.payloadEligible` are **NOT** additional or hidden allocation gates.
+
+### 32A.5 Tier ordering (frozen)
+
+Canonical rank:
+```text
+T1 = 1 ; T2 = 2 ; T3 = 3
+```
+Eligibility rule: **`donorRank <= receiverRank`.** (Rank is defined only for T1/T2/T3; T4/null are already excluded by §32A.4 before rank is compared.)
+
+| Donor | Receiver | Tier ordering |
+|-------|----------|---------------|
+| T1 | T1 | eligible |
+| T1 | T2 | eligible |
+| T1 | T3 | eligible |
+| T2 | T1 | ineligible |
+| T2 | T2 | eligible |
+| T2 | T3 | eligible |
+| T3 | T1 | ineligible |
+| T3 | T2 | ineligible |
+| T3 | T3 | eligible |
+
+Meaning:
+```text
+Earlier or same-tier surplus MAY cover a same/later shortage.
+A later surplus CANNOT cover an earlier shortage.
+```
+Golden **#22** must be verified by this gate.
+
+### 32A.6 Adapter-independence guard (frozen)
+
+If a single date pair yields, at the same time, `engineA.allocationEligible=false` **and** `engineB.tier="T3"` / `engineB.allocationEligible=true`, the reallocation tier gate is decided **solely by Engine B** — an Engine A value must **NOT** be AND-ed in by any undocumented rule (§27 / §27A.6).
+
+### 32A.7 Quantity separation (frozen)
+
+The eligibility predicate:
+- does **NOT** receive shortage / surplus quantity;
+- does **NOT** compute `reallocatedQty`;
+- does **NOT** decrement donor / receiver;
+- does **NOT** call or duplicate the MIN formula;
+- does **NOT** replace `applyFeasibleReallocation`.
+
+Canonical downstream ordering:
+```text
+resolve identity/dates
+→ evaluate eligibility (§32A)
+→ caller resolves timelyTransferableQty
+→ applyFeasibleReallocation (§32)
+→ consume returned remainders
+→ sumRemainingShortages (§12)
+```
+
+### 32A.8 Public contract (AUTHORIZED — frozen)
+
+No prior, differently-approved eligibility API exists in the canonical (the §12/§32 helpers are quantity-only); the following is therefore the authorized Round 6 contract.
+
+**Input:**
+```js
+evaluateReallocationEligibility({
+  calculationDate: "YYYY-MM-DD",
+  donor:    { masterSku: "GA0450", requiredByDate: "YYYY-MM-DD" },
+  receiver: { masterSku: "GA0450", requiredByDate: "YYYY-MM-DD" }
+})
+```
+
+**Output (exact shape):**
+```js
+{
+  sameMasterSku: true,
+  donor:    { tier: "T1", allocationEligible: true },
+  receiver: { tier: "T2", allocationEligible: true },
+  tierOrderingEligible: true,
+  eligible: true
+}
+```
+
+- **Exact top-level keys:** `sameMasterSku` · `donor` · `receiver` · `tierOrderingEligible` · `eligible`.
+- **Exact `donor` / `receiver` keys:** `tier` · `allocationEligible` (mirrored from that party's `classifyRequiredByWindow(...).engineB`).
+- **MUST NOT add:** flat `donorTier` / `receiverTier` aliases · any Engine A field · bucket aliases · quantity fields · `timelyTransferableQty` · `reallocatedQty` · DB IDs · company inference · a UI-worded reason message · any global mutable state.
+
+**Eligibility formula (frozen):**
+```text
+tierOrderingEligible =
+      donor.engineB.allocationEligible
+  AND receiver.engineB.allocationEligible
+  AND donorRank <= receiverRank
+
+eligible =
+      sameMasterSku
+  AND tierOrderingEligible
+```
+(In output-field terms, `donor.engineB.allocationEligible` / `receiver.engineB.allocationEligible` are surfaced as `donor.allocationEligible` / `receiver.allocationEligible`.)
+
+### 32A.9 Validation / purity contract (frozen — error *types* only)
+
+- `input`, `donor`, `receiver` not a non-null, non-array object ⇒ **`TypeError`**.
+- `masterSku` not a string, or an empty/whitespace-only string ⇒ **`TypeError`**.
+- Date validation is **delegated to / reuses `classifyRequiredByWindow`'s strict contract** (§27A.7): a non-string date ⇒ **`TypeError`**; a non-strict or non-real `YYYY-MM-DD` (datetime/timezone/slash/non-padded/auto-rolled) ⇒ **`RangeError`**.
+- Full error message literals are **NOT** frozen this round.
+- **No** coercion of `number` / `Date` / numeric string; **no** system clock; **no** locale parsing.
+- **No** input mutation; every call returns **fresh** top-level / `donor` / `receiver` objects; mutating one output must not pollute a later call.
+
+> **Status:** the §32A contract is frozen (Round 6A) and the pure predicate is **IMPLEMENTED (Round 6)** exactly to it — `evaluateReallocationEligibility` with Round 6 unit tests and executed Golden #21 / #22. **Golden Matrix = 23 executed / 17 pending / 0 canonical-blocked; Unit = 282 PASS; Golden = 114 PASS.** **Line Runtime / Qualified Incoming Runtime / quantity orchestration remain NOT IMPLEMENTED** (the predicate is a pure yes/no gate only).
+
+---
+
 ## 33. Golden Scenario Matrix (SPECIFICATION — 40 scenarios; executable tests PENDING) (CANONICAL v4.1)
 
 Executable golden tests are **NOT** built this round; this matrix is the frozen specification each future test must satisfy. Each scenario lists Inputs · Expected intermediate ledger · Expected output · Count-once assertion · Applicable invariant · Future executable-test owner (all `assets/tests/*` — to be created next round).
@@ -1112,12 +1450,12 @@ Executable golden tests are **NOT** built this round; this matrix is the frozen 
 | 25 | Source remainder → residual production recompute | §31 example (240 ship, 60 produce, 80 order) | not Gap−RawSource |
 | 26 | Preparation Date crosses month | event demand in month containing (start − 30d) | exact date wins |
 | 27 | Multiple Special Events same month | all events retained, each once | stable event ID |
-| 28 | T4 visible, no allocation/payload | T4 shows demand only | no T4 order/payload |
+| 28 | T4 visible, no allocation/payload (Engine B adapter, §27A) | `classifyRequiredByWindow` ⇒ `engineB.tier="T4"`, `engineB.visible=true`, `engineB.allocationEligible=false`, `engineB.payloadEligible=false` (reached via `monthDelta=4`, NOT via any Engine A day bucket) | T4 display-only; adapter-independent |
 | 29 | Missing / stale snapshot | `MISSING_SNAPSHOT` / `STALE_SNAPSHOT`, not 0 | §34 |
 | 30 | Missing Forecast (forecast-driven SKU) | calculation blocked / review, not 0 | §34 |
 | 31 | Missing `units_per_carton` | Suggested = Calc Blocked; submit blocked; no default | §14/§34 |
 | 32 | One Master SKU, many Marketplaces | physical pool deduped by company+warehouse_id+Master SKU | not duplicated per marketplace |
-| 33 | Bucket boundary sweep | −1,0,18,19,30,31,45,46,90,91 per §26 table | non-overlapping |
+| 33 | Engine A bucket boundary sweep (§26 / §27A) | `classifyRequiredByWindow` ⇒ `engineA.bucket` literals: −1→`"0–18d"`, 0→`"0–18d"`, 18→`"0–18d"`, 19→`"19–30d"`, 30→`"19–30d"`, 31→`"31–45d"`, 45→`"31–45d"`, 46→`"46–90d"`, 90→`"46–90d"`, 91→`">90d"` | non-overlapping; literal expecteds, no off-by-one |
 | 34 | User partial-carton Order Qty | override saved; Suggested unchanged; flagged user override | independence |
 | 35 | 90-day window contains a Campaign 7/15–7/22 the SKU joined | those 8 dates excluded; sampling walks earlier for normal days | campaign days excluded once |
 | 36 | Continue sampling past the campaign gap | keep walking backward until 30 eligible normal days collected (within 90d) | never exceed 90-day window |
@@ -1192,7 +1530,7 @@ System `recommended_qty` is always a full-carton CEILING (§14). The **user `ord
 
 ---
 
-**FINALIZED v4.1 Calculation Specification.** Header, Changelog, and footer versions are consistent (v4.1). Golden Scenarios: 40 specified (§33); Executable Golden Tests: PENDING.
+**FINALIZED v4.3 Calculation Specification.** Header, Changelog, and footer versions are consistent (v4.3 — v4.2 Round 5A §27A classifier freeze + v4.3 Round 6A §32A reallocation-eligibility owner/contract freeze; Round 6 landed the §32A predicate as IMPLEMENTED with Golden #21/#22 executed). Golden Scenarios: 40 specified (§33); Golden #21/#22/#28/#33 and the §27A/§32A pure core are executed (23 executed / 17 pending / 0 canonical-blocked; 282 unit + 114 golden PASS); the full 40-scenario executable matrix remains PENDING.
 ```text
 Specification finalized.
 Runtime not implemented.
