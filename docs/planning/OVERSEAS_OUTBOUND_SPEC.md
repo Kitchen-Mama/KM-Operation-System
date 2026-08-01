@@ -1,6 +1,6 @@
 # Overseas Outbound Spec — Origin Fulfillment Operation (CANONICAL)
 
-**Status:** 🟡 Draft v1 — Spec only (NO code, NO Apps Script, NO DB migration, NO UI). All tables are **planned design — NOT implemented.**
+**Status:** 🟡 Draft v1.1 — Spec only (NO code, NO Apps Script, NO DB migration, NO UI). All tables are **planned design — NOT implemented.** v1.1 (2026-08-01, Round 4D-C) added the External-Discovered Outbound review/adoption relationship (documentation only; Runtime NOT implemented).
 **Last Updated:** 2026-07-22
 **Maintained By:** Development Team
 **Related:** [`WAREHOUSE_OPERATIONS_SPEC.md`](./WAREHOUSE_OPERATIONS_SPEC.md), [`OVERSEAS_INBOUND_SPEC.md`](./OVERSEAS_INBOUND_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) §23, [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) (P1-B reserve/deduct), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md)
@@ -161,6 +161,15 @@ Code · UI · Apps Script · API · DB migration · the actual inventory posting
 
 ---
 
-**Draft v1 — Spec only. All `overseas_outbound_*` tables are planned design, NOT created / NOT implemented. No runtime, UI, API, Apps Script, DB, or live-data change is implied.**
+## External-Discovered Outbound — Review / Adoption Relationship (CANONICAL 2026-08-01 Round 4D-C — documentation only; Runtime NOT implemented)
+
+- An **externally discovered outbound** (OMS/WMS/platform, no accepted KM lineage) enters **quarantine / review** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §12); contribution to planning / stock = **0** until resolved.
+- **Adopt** may create or link a KM **Outbound Operation** through an explicit controlled action (orchestrator `SHIPMENT_CENTER_SPEC.md` §23.11); the original external reference is preserved.
+- **An external shipout report alone never deducts stock.** A validated, idempotent **KM Shipout Confirm** remains the sole authority to deduct overseas Current Stock and consume Reserved Stock.
+- No fuzzy matching (stable source identity only). **No Runtime for quarantine / review / Adopt / shipout confirmation is implemented in this round.**
+
+---
+
+**Draft v1.1 — Spec only. All `overseas_outbound_*` tables are planned design, NOT created / NOT implemented. No runtime, UI, API, Apps Script, DB, or live-data change is implied.**
 
 **End of Document**

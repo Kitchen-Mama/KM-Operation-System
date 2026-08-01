@@ -888,6 +888,12 @@ When converting an **Approved** Request Order to PO:
 
 ---
 
+## External-Origin Admission Cross-Reference (2026-08-01 Round 4D-C — cross-reference only; version retained)
+
+PO committed supply (§P1-B) is a **KM canonical** admission-eligible source: it may enter Qualified Incoming under the planning-admission gate (`SUPPLY_PLANNING_CALCULATION_RULES.md` §38) and transfers ownership to a Formal Shipment **count-once** (§30; lineage `shipment_lines.purchase_order_line_id`). An **externally originated** PO / inbound record with no accepted KM lineage is **quarantined** and contributes **0** until an explicit human **Adopt** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §12). This spec's version is **retained** — cross-reference alignment only; nothing owned here changed.
+
+---
+
 **Phase 1 — UI + mapping + DB handler foundation. API-ready. No auto-procurement engine, supplier API, payment flow, or formal document generation.**
 
 **End of Document**

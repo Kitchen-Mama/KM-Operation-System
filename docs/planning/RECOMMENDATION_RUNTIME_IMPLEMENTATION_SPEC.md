@@ -8,13 +8,13 @@
 > - **Canonical Owner For:** nothing permanent (implementation sequencing only).
 > - **Not Owner For:** formulas, DB schema, Reserve Trigger (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1), cadence — all deferred to the owners above.
 > - **Status:** Reviewed — B-1 Resolved (decision only); B-4 / B-7 Blockers Remain.
-> - **Current Version:** Draft v1.0 (unchanged; Batch B Round 1 registry sync — B-1 resolved).
+> - **Current Version:** Draft v1.1 (Round 4D-C: added the External-Origin-Aware Implementation Order + the Daily-Import / external-sync / scheduler no-auto-admit guards; work-tracker only, nothing implemented). Draft v1.0 (Batch B Round 1 registry sync — B-1 resolved).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** the four Canonical Owners above.
 > - **Blocked By:** Batch B (cycle-key persistence design B-7, Qualified Incoming allowlist B-4) — see the consolidated Batch B Handoff. **B-1 Reserve Trigger no longer blocks — resolved (decision only; Implementation Not Started; Runtime Not Verified). Next open decision = B-2 Shipping Group Key.**
 
-**Status:** 🟡 Draft v1.0 — **SPECIFICATION ONLY.** No Runtime, Apps Script, frontend, trigger, DB column, or sheet tab is created here. Function-level runtime status below was **verified by read-only audit** (2026-07-20).
-**Last Updated:** 2026-07-30 (Batch A Round 4 — internal consistency repair; content unchanged elsewhere)
+**Status:** 🟡 Draft v1.1 — **SPECIFICATION ONLY.** No Runtime, Apps Script, frontend, trigger, DB column, or sheet tab is created here. Function-level runtime status below was **verified by read-only audit** (2026-07-20).
+**Last Updated:** 2026-08-01 (Round 4D-C — external-origin-aware implementation order; content-additive, nothing implemented)
 **Maintained By:** Development Team
 **Related / Authority chain:**
 - [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md) §7A — canonical cadence (this spec is its implementation contract).
@@ -186,5 +186,39 @@ Each row's **Current Status** uses exactly one of the four canonical values: **N
 This is an implementation **work tracker / handoff spec** — no Runtime, Apps Script, frontend, trigger, DB column, sheet tab, or `project-current-state.md` is created or changed. Per §K: `runAmazonSnapshotImports()` and the Amazon writers + the request-order body-driven writers + the **shipping-draft body-driven persistence handler** (`16_shipping_allocation_handlers.gs`) are **In Progress** (Source Code Present: Verified — source mirror only; **Apps Script Deployment/Runtime UNVERIFIED**); the two recommendation scheduler entry points, both recommendation **calculation engines**, the scheduler-safe orchestration, `recommended_qty` engine population, the **source-readiness gate** (Runtime/DB mapping required — **not** a Batch B blocker), and manual trigger configuration/verification are **Not Started**; the **persisted cycle/unique-key mechanism** (B-7) remains **Blocked**. The **Reserve Trigger dependency** (B-1) is **RESOLVED (decision only)** — no recommendation step reserves; reserve happens only at the Formal Shipment Execution Commit (owner §8A.1), with B-1 **Implementation Not Started / Runtime Not Verified**.
 
 **No build. No redeploy. No migration. No trigger installation.**
+
+---
+
+## External-Origin-Aware Implementation Order (CANONICAL 2026-08-01 Round 4D-C — work-tracker only; nothing implemented)
+
+Temporary implementation sequence for B-4 Runtime (owner references §A–§K; `SUPPLY_CHAIN_SYSTEM_FLOW.md` §12; `SUPPLY_PLANNING_CALCULATION_RULES.md` §38). **No Runtime, Apps Script, DB, trigger, or scheduler is created by this spec.**
+
+1. canonical `shipment_qty` reader repair
+2. `destination_warehouse_id` planning read / backfill
+3. normalized supply candidate DTO
+4. KM Shipment Incoming Adapter
+5. external record identity adapter
+6. external authority classifier
+7. quarantine state
+8. exception / review read model
+9. notification event contract
+10. Link / Adopt / Reject / Ignore domain actions
+11. planning admission resolver
+12. lineage resolver
+13. ownership resolver
+14. deduplication
+15. ten-gate Qualified Incoming
+16. Required-By comparison
+17. Line Runtime integration
+18. Golden #12 / #13 / #14
+19. new external-quarantine scenarios
+20. remaining ledger / allocation scenarios
+21. Recommendation Writer
+22. B-7 cycle key
+23. scheduler
+24. retry / lock / failure recovery
+25. production verification
+
+**Explicit guards:** Daily Import does **not** automatically approve external records; external sync does **not** automatically admit planning supply; the scheduler must **not** count review-pending external records.
 
 **End of Document**

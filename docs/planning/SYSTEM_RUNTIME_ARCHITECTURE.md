@@ -5,13 +5,13 @@
 > - **Canonical Owner For:** service/trigger/cadence boundaries and runtime ownership classes.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), layer language (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`), the **Reserve Trigger** (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1).
 > - **Status:** Reviewed — B-1 Resolved (owner §8A.1; implementation not started); B-2…B-8 Blockers Remain.
-> - **Current Version:** Draft v1.4 (Batch B Round 1: B-1 Reserve Trigger resolved as the **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** — decision only, runtime not started).
+> - **Current Version:** Draft v1.5 (Round 4D-C: landed the **External-Origin Quarantine → Admission pipeline** + fail-closed authority rule + notification-as-future-Runtime-service + DTO-first/Ledger-later; architecture only, no code/DB). v1.4 (Batch B Round 1: B-1 Reserve Trigger resolved as the **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** — decision only, runtime not started).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** DB Map, System Flow, Calculation Rules (formulas), domain specs.
 > - **Blocked By:** Batch B — Qualified Incoming allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **B-1 Reserve Trigger no longer blocks — resolved (decision only; Runtime implementation Not Started / Unverified).**
 
-**Status:** 🟡 Draft v1.4 — Runtime Architecture Specification (architecture only · NO code, NO Apps Script, NO API, NO SQL, NO DB change, NO implementation; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30)
-**Last Updated:** 2026-07-30
+**Status:** 🟡 Draft v1.5 — Runtime Architecture Specification (architecture only · NO code, NO Apps Script, NO API, NO SQL, NO DB change, NO implementation; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30; Round 4D-C External-Origin Quarantine/Admission pipeline 2026-08-01)
+**Last Updated:** 2026-08-01
 **Maintained By:** Development Team / Enterprise System Architect
 **Scope:** Authoritative **runtime blueprint** for the whole system — how data flows at runtime, who owns it, what triggers recalculation, and how layers depend on one another.
 
@@ -28,6 +28,7 @@
 ### Changelog
 
 - **Draft v1.4 (2026-07-30, acceptance-corrected)** — **B-1 Reserve Trigger resolved** (owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1): the reserve event is the **successful Ready to Ship** transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit — **distinct** from the non-reserving Create-Shipment-Draft (Execution Commit). §7 trigger table split into Plan-approval/Create-Draft (no reserve) · Ready-to-Ship (canonical reserve, Runtime Not Started) · Ship (existing `fac_current_stock` deduction; reserved-stock consumption not implemented). Removed the stale "BLOCKED — Exact reservation event requires Batch B" residual. Reserve identity = origin factory `warehouse_id + sku`; cancel/release = B-8. **Decision only — Runtime / trigger / atomic writer / reservation Not Started / Unverified; no trigger or writer deployed.**
+- **Draft v1.5 (2026-08-01)** — Round 4D-C: landed the **External-Origin Quarantine → Admission pipeline**, the **fail-closed** authority rule (unknown/external-unlinked → contribution 0), **notification as a future Runtime service** (not UI-only), and **Runtime DTO first / Review-Reconciliation Ledger later** (derived, not SSOT). Architecture only; no code/DB/Runtime.
 - **Draft v1.3 (2026-07-28)** — Batch A canonical repair: recorded the Factory Stock **Reserve event blocker** (B-1) and `fac_current_stock` deduct-only verified state; clarified **import ≠ recommendation**; reconciled the 16:00 cadence reference to §7A. (Changelog entry backfilled 2026-07-30.)
 - **Draft v1.2 (2026-06-26)** — Named the **Daily Sales freshness fields** the runtime/UI must read — `latest_source_date`, `data_window_start_date`, `data_window_end_date`, `is_fallback_used`, `data_age_days` (now defined as importer-generated headers in `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` v1.4 §7.4 / §16). Updated §9 Freshness accordingly.
 - **Draft v1.1 (2026-06-26)** — Aligned Daily Sales handling with `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` (import window + cadence owned there; the current canonical is the gap-aware rolling 90-completed-day upsert) and required that runtime/UI **expose the actual data date range used**; noted the Import Layer's **Amazon numeric placeholder normalization** (`365+`→`365`, `/`→null); refined freshness + open questions.
@@ -560,6 +561,38 @@ This document does **not**:
 
 ---
 
-**Draft v1.4 — Runtime Architecture Specification. Architecture only. No code, Apps Script, API, SQL, DB, frontend, or existing-spec changes are implied by this document. B-1 Reserve Trigger resolved (the Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit; owner §8A.1) — decision only, Runtime / trigger / writer Not Started / Unverified. Domain specs remain authoritative for their domains.**
+## External-Origin Quarantine → Admission Pipeline (CANONICAL 2026-08-01 Round 4D-C — architecture only; Runtime NOT implemented)
+
+**Authority hierarchy:** the KM Operation System is the internal SSOT; OMS/WMS/platform are downstream execution / observation systems. External data affects KM only through **validated, idempotent KM transactions** (Derived Data Never Owns Data).
+
+**Pipeline (external-origin):**
+```
+External Ingestion
+  → Stable Identity Validation
+  → Authority Classification
+  → Quarantine
+  → Exception Creation
+  → Notification
+  → Human Resolution
+  → KM Link / Adopt / Reject / Ignore
+  → Planning Admission
+  → Source Adapter
+  → Normalized Candidate (Runtime DTO)
+  → Dedup
+  → Qualified Incoming (`SUPPLY_PLANNING_CALCULATION_RULES.md` §2E / §38)
+  → Recommendation
+```
+
+**Normal KM-origin pipeline** bypasses external quarantine because KM canonical identity already exists.
+
+**Fail-closed rule:** unknown or external-unlinked authority → visible + reviewable → planning contribution **0**. Freshness never authorizes admission.
+
+**Notification** is a **future Runtime service** (exception / notification / review), **not** UI-only behavior — **NOT implemented** here (no email, webhook, UI, or scheduler).
+
+**Persistence:** **Runtime DTO first**; a persisted Review / Reconciliation Ledger comes **later** and remains **derived / auditable, not a source of truth**.
+
+---
+
+**Draft v1.5 — Runtime Architecture Specification. Architecture only. No code, Apps Script, API, SQL, DB, frontend, or existing-spec changes are implied by this document. B-1 Reserve Trigger resolved (the Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit; owner §8A.1) — decision only, Runtime / trigger / writer Not Started / Unverified. Domain specs remain authoritative for their domains.**
 
 **End of Document**

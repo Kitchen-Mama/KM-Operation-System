@@ -1,6 +1,6 @@
 # Warehouse Operations — Navigation & Workflow Spec
 
-**Status:** 🟡 Draft v2.1 — **Spec only.** NO Runtime, HTML, CSS, JS, Apps Script, API, DB migration, or navigation code change. Nothing here is implemented. This document is authoritative **only for Warehouse Operations navigation / page layout / shared UI conventions**. It **defers** inventory schemas to `DATABASE_RELATIONSHIP_MAP.md`, the Overseas Inbound receiving contract to `OVERSEAS_INBOUND_SPEC.md`, the Overseas Outbound fulfillment contract to `OVERSEAS_OUTBOUND_SPEC.md`, and Shipment execution / endpoint linkage to `SHIPMENT_CENTER_SPEC.md`.
+**Status:** 🟡 Draft v2.2 — **Spec only.** NO Runtime, HTML, CSS, JS, Apps Script, API, DB migration, or navigation code change. Nothing here is implemented. This document is authoritative **only for Warehouse Operations navigation / page layout / shared UI conventions**. It **defers** inventory schemas to `DATABASE_RELATIONSHIP_MAP.md`, the Overseas Inbound receiving contract to `OVERSEAS_INBOUND_SPEC.md`, the Overseas Outbound fulfillment contract to `OVERSEAS_OUTBOUND_SPEC.md`, and Shipment execution / endpoint linkage to `SHIPMENT_CENTER_SPEC.md`.
 **Last Updated:** 2026-07-22
 **Maintained By:** Development Team
 **Related / Authority chain:**
@@ -220,7 +220,21 @@ These boundaries are non-overlapping: a rule stated in one authority is **refere
 
 ---
 
+## External Exception / Reconciliation Workspace (CANONICAL 2026-08-01 Round 4D-C — spec only; Runtime NOT implemented)
+
+Future Warehouse Operations workspace for resolving externally discovered, unlinked OMS/WMS/platform operations (owner flow `SUPPLY_CHAIN_SYSTEM_FLOW.md` §12; admission `SUPPLY_PLANNING_CALCULATION_RULES.md` §38). **Nothing here is implemented** (no queue, action, notification, or UI is built).
+
+- **Queue:** quarantined external operations awaiting human resolution; unrelated valid records are never blocked.
+- **Filters:** provider · company · warehouse · SKU · direction (inbound/outbound) · authority state · review status · age.
+- **Severity + Owner + Age:** each case carries a severity, a responsible operational role/user, and an open-age.
+- **Actions:** **Link · Adopt · Reject · Ignore for Planning · Request More Information** (the §12.3 human actions; no generic "Approve").
+- **Audit history:** actor, timestamp, action, reason/note preserved for every resolution.
+- **Status separation (do not collapse into one field):** operation state · external API/submission state · reconciliation result · review workflow are **distinct dimensions**.
+
+---
+
 ### Changelog
+- **v2.2 (2026-08-01, Round 4D-C):** Added the future **External Exception / Reconciliation Workspace** conventions (queue · filters · severity · owner · age · Link/Adopt/Reject/Ignore-for-Planning/Request-More-Info · audit history) and the operation/API/reconciliation/review status-separation rule. Spec only — no runtime, no UI.
 - **v2.1 (2026-07-22):** SUPERSEDES v2.0's three-page navigation. Finalized to **four separate pages** — **Factory Inventory / Overseas Inventory / Overseas Inbound / Overseas Outbound** — under the Warehouse group, with **Warehouse Master moved explicitly to Admin → Master Data → Warehouses** (outside this group). Added the **Factory Inventory page UI spec** (§6A: KPI Total/Available/Reserved/Low-Stock/In-Production/Pending-Shipout; filters; main table; detail drawer; `available_factory_stock = MAX(fac_current_stock − fac_reserved_stock, 0)`). Reaffirmed Factory vs Overseas as separate domains/pages/queries/balances/ledgers (§2). Added §7 **separate idempotency keys** (create/link · WMS submission · receipt confirmation · shipout confirmation · reversal) + **operation uniqueness `shipment_id + warehouse_id + operation_type`** + **auto-create ≠ auto-submit** + **shipout push direction** reference. Added §8B **Authority Boundaries** table. Marked the §8A Overseas Outbound gap **RESOLVED** (new `OVERSEAS_OUTBOUND_SPEC.md`). Spec only — no runtime.
 - **SUPERSEDED:** Factory Inventory and Overseas Inventory are now confirmed as separate inventory domains. See the canonical inventory separation section (`DATABASE_RELATIONSHIP_MAP.md` §6.0). The v1.0 "Inventory module with Factory Inventory + Overseas Inventory tabs" wording below is retired — Overseas Inventory is a standalone page that excludes Factory Inventory (§6), and Factory Inventory is its own standalone page (§6A).
 - **v2.0 (2026-07-21):** SUPERSEDES v1.0. Finalized to **three separate pages** — **Overseas Inventory / Overseas Inbound / Overseas Outbound** — with mandatory explicit labels. **Overseas Outbound promoted from FUTURE to a first-class page.** Replaced the single combined "Inventory" module (which had Factory + Overseas tabs) with a standalone **Overseas Inventory** page that **excludes Factory Inventory** from its default dataset. Added per-page KPI/filters/table/detail layouts, operation-status vs API-status separation, shared-components-only rule, idempotent auto-create + company routing, validation gates, and deferred outbound address/package tables + World Map. (v1.0 had grouped Inbound + a combined Factory/Overseas Inventory module under one "Warehouse Operations" nav with Outbound deferred — superseded.)

@@ -1,6 +1,6 @@
 # Overseas Inbound Spec — Destination Receiving Operation (CANONICAL) + Inbound Planning Request (planning-layer)
 
-**Status:** 🟡 Draft v2.1 — Spec only (NO code, NO Apps Script, NO DB migration, NO UI) — v2.1 = Batch B · B-2/B-3 residual: corrected the stale "six-value key" cross-reference to the five-value Shipping Group Key
+**Status:** 🟡 Draft v2.2 — Spec only (NO code, NO Apps Script, NO DB migration, NO UI) — v2.1 = Batch B · B-2/B-3 residual: corrected the stale "six-value key" cross-reference to the five-value Shipping Group Key · **v2.2 (2026-08-01, Round 4D-C) added the External-Discovered Inbound review/adoption relationship (documentation only; Runtime NOT implemented)**
 **Last Updated:** 2026-07-31
 **Maintained By:** Development Team
 **Related:** [`WAREHOUSE_OPERATIONS_SPEC.md`](./WAREHOUSE_OPERATIONS_SPEC.md), [`OVERSEAS_OUTBOUND_SPEC.md`](./OVERSEAS_OUTBOUND_SPEC.md), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md), [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md)
@@ -295,6 +295,16 @@ Separate idempotency keys are required for each externally-visible action; a key
 
 ---
 
-**Draft v2 — §§1–8 Inbound Planning Request (planning layer, renamed) + §9 page layer (canonical) + §10 Warehouse Receiving Operation contract (canonical, 2026-07-22) + §11 dual-direction orchestration role (future; Phase-1 manual; canonical owner = SHIPMENT_CENTER §23.11). Spec only — no code, DB, API, Apps Script, or UI changes are implied. All §10 tables are planned design, NOT implemented.**
+## External-Discovered Inbound — Review / Adoption Relationship (CANONICAL 2026-08-01 Round 4D-C — documentation only; Runtime NOT implemented)
+
+- An **externally discovered inbound** (OMS/WMS/platform, no accepted KM lineage) is **NOT automatically an Overseas Inbound Receiving Operation** and **not** a receipt.
+- It enters **quarantine / review** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §12); contribution to planning / stock = **0** until resolved.
+- **Adopt** may create or link a KM **Inbound Operation** through an explicit controlled action (orchestrator `SHIPMENT_CENTER_SPEC.md` §23.11); the original external reference is preserved.
+- **Receive Confirm (§10) remains the sole inventory authority** — `overseas_inventory_snapshot` / `overseas_inventory_movements` change **only** on a validated, idempotent KM Receive Confirm; an **external receipt report alone never adds stock**.
+- No fuzzy matching (stable source identity only). **No Runtime for quarantine / review / Adopt / receiving is implemented in this round.**
+
+---
+
+**Draft v2.2 — §§1–8 Inbound Planning Request (planning layer, renamed) + §9 page layer (canonical) + §10 Warehouse Receiving Operation contract (canonical, 2026-07-22) + §11 dual-direction orchestration role (future; Phase-1 manual; canonical owner = SHIPMENT_CENTER §23.11). Spec only — no code, DB, API, Apps Script, or UI changes are implied. All §10 tables are planned design, NOT implemented.**
 
 **End of Document**

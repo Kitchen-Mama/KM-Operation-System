@@ -5,12 +5,12 @@
 > - **Canonical Owner For:** Inventory page field → source mapping and display labels.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md` — all Current Stock / Qualified Incoming / shortage / allocation math), schema (`DATABASE_RELATIONSHIP_MAP.md`), the **Qualified Incoming allowlist** (Batch B).
 > - **Status:** Reviewed — Batch B Blockers Remain.
-> - **Current Version:** v1.5.9 (Batch B Round 1: Factory Stock `fac_*` residual fix in §17.3A / display map + header/footer/changelog version reconciliation).
+> - **Current Version:** v1.6.0 (Round 4D-C, 2026-08-01: added **§22 On-the-Way + External-Quarantine Read Model** — display mapping only, Runtime NOT implemented). v1.5.9 (Batch B Round 1: Factory Stock `fac_*` residual fix in §17.3A / display map + header/footer/changelog version reconciliation).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** Calculation Rules, Database Relationship Map, Amazon Snapshot Import, Runtime Architecture.
 > - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). *(B-1 Reserve Trigger is resolved elsewhere — owner Architecture Principles §8A.1; not a blocker of this document.)*
 
-**Status:** 🟢 v1.5.9 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **the active canonical formula SSOT**)
+**Status:** 🟢 v1.6.0 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **the active canonical formula SSOT**)
 **Last Updated:** 2026-07-30
 > **Changelog v1.5.8 → v1.5.9 (2026-07-30):** Batch B Round 1 residual cleanup — replaced the remaining unprefixed Factory Stock field names with the canonical `fac_*` namespace (`factory_stock.fac_current_stock` in the Factory CN/TW display map §17.3A; `fac_current_stock=0` / `fac_reserved_stock=0` in the lifecycle baseline + Runtime-status note), per the Inventory Field Namespace Rule (§3.0). Reconciled header/footer/changelog to the same version. Overseas `wh_*` and non-inventory entity fields deliberately left unchanged. No formula, mapping direction, or runtime change.
 > **Changelog v1.5.7 → v1.5.8 (2026-07-28):** Batch A repair — clarified **Engine Current Stock vs UI Inventory Position vs Qualified Incoming** separation (display vs engine-coverage). Documentation only; no formula redefined. *(Changelog entry backfilled 2026-07-30.)*
@@ -616,6 +616,23 @@ Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONA
 
 ---
 
-**v1.5.9 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` the active canonical formula SSOT.**
+## 22. On-the-Way + External-Quarantine Read Model (CANONICAL 2026-08-01 Round 4D-C — display mapping only; Runtime NOT implemented; NO UI built)
+
+> Owns the Inventory Replenishment **On-the-Way** display + the external exception/reconciliation panel mapping. Calculation contribution is owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` §2E / §38; this section maps **display**, never the qualification predicate. **No frontend / calculation-engine / UI is built in this round.**
+
+**22.1 First-layer "On the Way"** shows **only the canonical, deduplicated, planning-eligible Incoming** (post §38 admission + §2E qualification + §30 count-once). A visible external quantity **does not** imply a calculation contribution.
+
+**22.2 Expanded detail rows** (display-only unless admitted): KM Shipment Incoming · Linked External Evidence · Unlinked External Quarantined · Adoption Pending · Needs Reconciliation · Fresh External Not Admitted · Stale External · Quantity Mismatch · ETA Mismatch · Missing Identity · Missing Warehouse Mapping · Missing SKU Mapping · Rejected External · Ignored for Planning · external reference · last sync · responsible person · open age.
+
+**22.3 Rules:**
+- visible external quantity **≠** calculation contribution;
+- **quarantined quantity always contributes 0** (fresh or stale);
+- **no automatic fresh fallback** — admission requires an explicit human Adopt (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §12);
+- `overseas_inventory_snapshot.wh_on_the_way_qty` may be **visible / a reconciliation input** but is **NOT** the canonical On-the-Way total and is never blindly added to Shipment-derived incoming (count-once, `SUPPLY_PLANNING_CALCULATION_RULES.md` §30; the §9 / §13 / §21 OPEN DEPENDENCY);
+- the UI Inventory Position (Available + FC Transfer + FC Processing, §13.0) differs from the Engine sellable Current Stock — external evidence is **not** canonical stock.
+
+---
+
+**v1.6.0 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` the active canonical formula SSOT.**
 
 **End of Document**

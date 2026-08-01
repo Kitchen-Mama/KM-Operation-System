@@ -5,12 +5,12 @@
 > - **Canonical Owner For:** table grain / PK / FK / relationships / current-vs-planned column status.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), field-level schema (respective domain specs), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`).
 > - **Status:** Reviewed — B-1, B-2, B-3 Resolved (owners Architecture Principles §8A.1; `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1 / §3.1B; no schema change); B-4…B-8 Blockers Remain.
-> - **Current Version:** v1.7 (Batch B Round 3 / B-3 Reissue: B-3 Marketplace Header/Line placement resolved — `shipping_plans.marketplace` = persisted derived scope marker (1→real / ≥2→`MULTI`), real `marketplace`/`site_sku` on `shipping_plan_lines`; **`shipment_line_plan_allocations` WITHDRAWN** → allocation model = two axes (`factory_stock_allocation_plans` planning + `shipment_line_allocations` PO/FIFO); `shipment_plan_links` = header relationship, not an axis; Plan→Shipment cardinality `0..1` (no split); `company` confirmed as Group-Key dim 1; decision only — no schema change). v1.6 (B-2 five-value Group Key). v1.5 (B-1 reserve boundary; `request_orders.request_status` residual fix).
+> - **Current Version:** v1.8 (Round 4D-C, 2026-08-01: added **§16 External-Origin Record → Review/Adoption Lineage** as PROPOSED/ADDITIVE only; B-4 = CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED; no schema change). v1.7 (Batch B Round 3 / B-3 Reissue: B-3 Marketplace Header/Line placement resolved — `shipping_plans.marketplace` = persisted derived scope marker (1→real / ≥2→`MULTI`), real `marketplace`/`site_sku` on `shipping_plan_lines`; **`shipment_line_plan_allocations` WITHDRAWN** → allocation model = two axes (`factory_stock_allocation_plans` planning + `shipment_line_allocations` PO/FIFO); `shipment_plan_links` = header relationship, not an axis; Plan→Shipment cardinality `0..1` (no split); `company` confirmed as Group-Key dim 1; decision only — no schema change). v1.6 (B-2 five-value Group Key). v1.5 (B-1 reserve boundary; `request_orders.request_status` residual fix).
 > - **Last Reviewed:** 2026-07-31.
 > - **Depends On:** the domain schema specs it maps.
 > - **Blocked By:** Batch B — Qualified Incoming allowlist · `request_order_line_sources` remaining design (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **B-1 Reserve Trigger, B-2 Shipping Group Key and B-3 Marketplace Header/Line placement no longer block — resolved (decision only; no schema/reserve write path is added — Runtime/Deployment Unverified).**
 
-**Status:** 🟢 v1.7 — Database Relationship Specification (documentation only; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30; Batch B Round 2 B-2 resolution 2026-07-31; Batch B Round 3 B-3 resolution 2026-07-31)
+**Status:** 🟢 v1.8 — Database Relationship Specification (documentation only; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30; Batch B Round 2 B-2 resolution 2026-07-31; Batch B Round 3 B-3 resolution 2026-07-31; Batch B Round 4D-C §16 external review/adoption lineage 2026-08-01)
 **Last Updated:** 2026-07-31
 **Maintained By:** Development Team
 **Calculation authority:** formulas are owned by [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (the active canonical formula SSOT); this map only records tables/relationships.
@@ -826,6 +826,52 @@ Procurement branch (links into shipment_lines):
 
 ---
 
-**v1.7 Database Relationship Specification. Documentation only; no code or DB changes are implied by this document. Calculation formulas are frozen in `SUPPLY_PLANNING_CALCULATION_RULES.md` the active canonical formula SSOT. B-1 reserve boundary resolved (Ready to Ship transition = Formal Shipment Execution Commit; identity origin factory `warehouse_id (= shipments.origin_warehouse_id) + sku`; overseas origin → `wh_reserved_stock`; owner §8A.1) — decision only, no reserve write path added; cancel/release mapping = B-8. B-2 Shipping Group Key resolved (2026-07-31 — five-value Key `company + country + origin_endpoint + destination_endpoint + shipping_method`; Marketplace NOT a key field; `parent_shipping_plan_id` = lineage only; owner §3.1). B-3 Marketplace Header/Line placement resolved (2026-07-31 — `shipping_plans.marketplace` = persisted derived scope marker 1→real / ≥2→`MULTI`; real `marketplace`/`site_sku` on `shipping_plan_lines`; **`shipment_line_plan_allocations` WITHDRAWN**, allocation model = two axes only; `shipment_plan_links` = header relationship not an axis; Plan→Shipment `0..1` no split; owner §3.1B) — decision only, no schema change. **B-4 is PARTIALLY RESOLVED — business / mapping contract repaired (2026-08-01); Runtime prerequisites remain open (`destination_warehouse_id` persistence, `shipment_events` ETA, receiving layer, `wh_on_the_way_qty` double-count) — no schema migration completed, no field/table added; cancel/release = B-8, source grain = B-5. B-5 … B-8 schema decisions (§7.6A) remain open.**
+## 16. External-Origin Record → Review / Adoption Lineage (PROPOSED / ADDITIVE — 2026-08-01 Round 4D-C; NOT created, NOT implemented)
+
+> Documents the **future logical** relationships required by the external-origin quarantine + planning-admission contract (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §12; `SUPPLY_PLANNING_CALCULATION_RULES.md` §38). **No table or column is created here.** Every entity/field below is **PROPOSED / ADDITIVE** — none exist live. `planning_admitted` must **never** be inferred solely from freshness.
+
+**16.1 Logical relationship chain:**
+```
+external source record
+  → external operation identity (stable, non-fuzzy)
+  → review case / exception
+  → resolution action (Link / Adopt / Reject / Ignore / Needs-Info)
+  → KM Shipment / Operation   (only when Linked or Adopted)
+  → reconciliation
+  → inventory movement   (only via a validated, idempotent KM transaction)
+```
+
+**16.2 Minimum future data requirements (all PROPOSED / ADDITIVE unless the row notes an existing scope/mapping):**
+
+| Field | Purpose | Classification |
+|---|---|---|
+| `external_record_id` | stable external identity anchor | PROPOSED ADDITIVE |
+| `provider` | OMS/WMS/platform/carrier source | PROPOSED ADDITIVE |
+| `external_account_ref` | external account scope | PROPOSED ADDITIVE |
+| `external_operation_ref` | external operation identity | PROPOSED ADDITIVE |
+| `external_line_ref` | external line identity | PROPOSED ADDITIVE |
+| `company` | KM company scope (`KM`/`ResUS`/`ResTW`) | EXISTING (scope) |
+| `warehouse_id` mapping | external warehouse → `warehouses.warehouse_id` | PROPOSED ADDITIVE (mapping) |
+| `sku` mapping | external SKU → Master `sku` | PROPOSED ADDITIVE (mapping) |
+| `quantity` | observed external quantity (never auto-counted) | PROPOSED ADDITIVE |
+| `eta` | external ETA (evidence) | PROPOSED ADDITIVE |
+| `source_updated_at` | external freshness authority | PROPOSED ADDITIVE |
+| `detected_at` | KM discovery timestamp | PROPOSED ADDITIVE |
+| `authority_state` | `KM_CANONICAL` / `LINKED_EXTERNAL_EVIDENCE` / `EXTERNAL_UNLINKED_QUARANTINED` / `ADOPTION_PENDING` / `ADOPTED_TO_KM` / `REJECTED_EXTERNAL_RECORD` / `IGNORED_FOR_PLANNING` / `SUPERSEDED` / `REVERSED` | PROPOSED ADDITIVE (enum) |
+| `review_status` | `REVIEW_OPEN` / `ACKNOWLEDGED` / `IN_PROGRESS` / `RESOLVED` / `REJECTED` | PROPOSED ADDITIVE (enum) |
+| `resolution_action` | Link / Adopt / Reject / Ignore / Needs-Info | PROPOSED ADDITIVE (enum) |
+| `resolved_by` / `resolved_at` / `resolution_note` | resolution audit | PROPOSED ADDITIVE |
+| `linked_shipment_id` | link to KM Shipment | PROPOSED ADDITIVE (FK, planned) |
+| `linked_operation_id` | link to KM Inbound/Outbound Operation | PROPOSED ADDITIVE (FK, planned) |
+| `adopted_km_entity_id` | KM canonical entity created by Adopt | PROPOSED ADDITIVE |
+| `exclusion_reason` | why contribution = 0 | PROPOSED ADDITIVE |
+| `planning_admitted` | boolean; TRUE only after explicit Adopt/admission — **never inferred from freshness** | PROPOSED ADDITIVE |
+| `planning_admitted_by` / `planning_admitted_at` | admission audit | PROPOSED ADDITIVE |
+
+**16.3 Identity rule:** the external operation identity is a **stable source key** (e.g. `external_inbound:<provider>:<account>:<op_ref>:<line_ref>`); **fuzzy keys (SKU+ETA / `warehouse_code` / quantity / label / address / free text) are forbidden** for dedup or link. Grain, PK/FK, unique keys, write-owner, immutability, and history for any realized table are decided at a future schema round (`request_order_line_sources` grain remains **B-5**; cancel/release remains **B-8**). **No schema work is performed in this round.**
+
+---
+
+**v1.8 Database Relationship Specification. Documentation only; no code or DB changes are implied by this document. Calculation formulas are frozen in `SUPPLY_PLANNING_CALCULATION_RULES.md` the active canonical formula SSOT. B-1 reserve boundary resolved (Ready to Ship transition = Formal Shipment Execution Commit; identity origin factory `warehouse_id (= shipments.origin_warehouse_id) + sku`; overseas origin → `wh_reserved_stock`; owner §8A.1) — decision only, no reserve write path added; cancel/release mapping = B-8. B-2 Shipping Group Key resolved (2026-07-31 — five-value Key `company + country + origin_endpoint + destination_endpoint + shipping_method`; Marketplace NOT a key field; `parent_shipping_plan_id` = lineage only; owner §3.1). B-3 Marketplace Header/Line placement resolved (2026-07-31 — `shipping_plans.marketplace` = persisted derived scope marker 1→real / ≥2→`MULTI`; real `marketplace`/`site_sku` on `shipping_plan_lines`; **`shipment_line_plan_allocations` WITHDRAWN**, allocation model = two axes only; `shipment_plan_links` = header relationship not an axis; Plan→Shipment `0..1` no split; owner §3.1B) — decision only, no schema change. **B-4 is CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED — business / mapping + external-origin quarantine/admission contract resolved (2026-08-01, Round 4D-C; §16 logical review/adoption lineage is PROPOSED / ADDITIVE only); Runtime prerequisites remain open (`destination_warehouse_id` persistence, `shipment_events` ETA, receiving layer, `wh_on_the_way_qty` double-count, quarantine/review runtime) — no schema migration completed, no field/table added; cancel/release = B-8, source grain = B-5. B-5 … B-8 schema decisions (§7.6A) remain open.**
 
 **End of Document**

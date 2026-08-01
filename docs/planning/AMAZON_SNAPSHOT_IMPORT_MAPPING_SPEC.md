@@ -5,7 +5,7 @@
 > - **Canonical Owner For:** the Amazon Raw → Snapshot mapping and import-governance rules.
 > - **Not Owner For:** the canonical **Domain product identity** `marketplace_product_id` (owner `DATABASE_RELATIONSHIP_MAP.md` / `SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`), formulas, recommendation runtime.
 > - **Status:** Reviewed — Batch B Blockers Remain.
-> - **Current Version:** Draft v1.8 (Batch A repair: raw-asin→domain clarification + staged-success note; no config change).
+> - **Current Version:** Draft v1.9 (Round 4D-C: added the Platform-Observation-vs-KM-Planning-Admission boundary — import persists observations only, never grants planning admission; documentation only, NO config change). v1.8 (Batch A repair: raw-asin→domain clarification + staged-success note; no config change).
 > - **Last Reviewed:** 2026-07-28.
 > - **Depends On:** Database Relationship Map (domain identity), Runtime Architecture (cadence).
 > - **Blocked By:** none specific to import (the recommendation pipeline it feeds has Batch B blockers — see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11).
@@ -23,7 +23,7 @@
 >
 > Import Job Completed ≠ Snapshot Persist Verified ≠ Analysis Ready ≠ Recommendation Snapshot Written ≠ Decision Committed. **A successful Amazon import never implies replenishment/order Analysis ran, nor that a recommendation was produced, nor that anything was committed** (see `SYSTEM_RUNTIME_ARCHITECTURE.md` §7 "outcome boundary", `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §H).
 
-**Status:** 🟡 Draft v1.8 — Mapping + import-governance reference spec (Daily Sales now uses a **gap-aware rolling 90-completed-day upsert** with missing/incomplete-date recovery + recent reconciliation + locking; supersedes the earlier "import yesterday only / 30-day retention / latest-per-group fallback"; NO DB migration, NO BigQuery schema change, NO API, NO frontend, NO routes)
+**Status:** 🟡 Draft v1.9 — Mapping + import-governance reference spec (Daily Sales now uses a **gap-aware rolling 90-completed-day upsert** with missing/incomplete-date recovery + recent reconciliation + locking; supersedes the earlier "import yesterday only / 30-day retention / latest-per-group fallback"; NO DB migration, NO BigQuery schema change, NO API, NO frontend, NO routes)
 **Last Updated:** 2026-07-24
 **Maintained By:** Development Team
 **Audience:** developers building the config-driven importer · OP / data stakeholders
@@ -1304,6 +1304,17 @@ The authoritative config blocks, reproduced together for the importer task. (Ide
 
 ---
 
-**Draft v1.8 — Amazon Snapshot Import Mapping Reference Spec. Spec only. No code, Apps Script, DB/API, frontend, route, or migration changes are implied by this document. The config blocks above are the authoritative source of truth for the upcoming config-driven importer.**
+## Platform Observation vs KM Planning Admission (CANONICAL 2026-08-01 Round 4D-C — documentation only; NO config change; Runtime NOT implemented)
+
+- Amazon import **persists observations only** (`amazon_inventory_snapshot`); import **never grants planning admission**.
+- An **unlinked platform operation / bucket** (`fc_transfer_qty` / `fc_processing_qty` / inbound / receiving / current) remains **source-separated** and is **never merged** with 3PL / overseas incoming (`INVENTORY_TABLE_MAPPING_SPEC.md` §16).
+- **External freshness does not equal KM approval.** Platform-internal movements may be **Ignored for Planning** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §12).
+- Reliable linkage to a KM Shipment turns platform data into **execution evidence** (never a second independent Incoming bucket; count-once `SUPPLY_PLANNING_CALCULATION_RULES.md` §30/§38).
+- Platform observations **cannot directly update KM stock** — only a validated, idempotent KM transaction may.
+- No fuzzy matching (stable source identity only). **No config, importer, DB, API, or Runtime is changed in this round.**
+
+---
+
+**Draft v1.9 — Amazon Snapshot Import Mapping Reference Spec. Spec only. No code, Apps Script, DB/API, frontend, route, or migration changes are implied by this document. The config blocks above are the authoritative source of truth for the upcoming config-driven importer.**
 
 **End of Document**
