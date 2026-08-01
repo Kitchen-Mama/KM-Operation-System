@@ -142,6 +142,9 @@ Warehouse Receipt Confirmed → RECEIVED event → Inbound Receipt Lines
 ```
 **Carrier `delivered` NEVER by itself increases inventory.** Warehouse Receipt is the inventory-increase authority (`OVERSEAS_INBOUND_SPEC.md`, `WAREHOUSE_OPERATIONS_SPEC.md`, `DATABASE_RELATIONSHIP_MAP.md` §6.0). This preserves the Factory/Overseas inventory-domain separation.
 
+### 5.5 ETA authority for Qualified-Incoming (B-4 contract repair, 2026-08-01)
+The qualification ETA authority priority (business rule owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` §2F) is: **(1) latest authoritative `shipment_events` ETA projection → (2) formal `shipments.eta` → (3) lead-time estimate.** **Interim Runtime authority:** `shipment_events` (and its ETA projection) is **NOT IMPLEMENTED** (§8/§9 — spec-only, absent from all code); therefore the **active formal ETA source today is `shipments.eta`**, with the lead-time estimate as fallback only. When an authoritative event ETA later exists, a fresh lead-time recomputation must not overwrite it. Qualification uses **ETA ≤ Required-By Date**; missing ETA never qualifies as timely; ETA > Required-By stays visible as **Late Risk** covering 0. The `shipment_events` ETA projection remains **IMPLEMENTATION_REQUIRED** (future P1-E). **Partial / full receipt** (received portion → Current Stock exactly once; residual stays Incoming; single idempotent inventory posting; `received + residual ≤ original`) is owned by the receiving Runtime (`OVERSEAS_INBOUND_SPEC.md` §10) and is likewise **NOT IMPLEMENTED**.
+
 ---
 
 ## 6. World Map Read Model

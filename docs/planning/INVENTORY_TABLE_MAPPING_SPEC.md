@@ -10,7 +10,7 @@
 > - **Depends On:** Calculation Rules, Database Relationship Map, Amazon Snapshot Import, Runtime Architecture.
 > - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). *(B-1 Reserve Trigger is resolved elsewhere — owner Architecture Principles §8A.1; not a blocker of this document.)*
 
-**Status:** 🟢 v1.5.9 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **v4.1 FINALIZED**)
+**Status:** 🟢 v1.5.9 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **the active canonical formula SSOT**)
 **Last Updated:** 2026-07-30
 > **Changelog v1.5.8 → v1.5.9 (2026-07-30):** Batch B Round 1 residual cleanup — replaced the remaining unprefixed Factory Stock field names with the canonical `fac_*` namespace (`factory_stock.fac_current_stock` in the Factory CN/TW display map §17.3A; `fac_current_stock=0` / `fac_reserved_stock=0` in the lifecycle baseline + Runtime-status note), per the Inventory Field Namespace Rule (§3.0). Reconciled header/footer/changelog to the same version. Overseas `wh_*` and non-inventory entity fields deliberately left unchanged. No formula, mapping direction, or runtime change.
 > **Changelog v1.5.7 → v1.5.8 (2026-07-28):** Batch A repair — clarified **Engine Current Stock vs UI Inventory Position vs Qualified Incoming** separation (display vs engine-coverage). Documentation only; no formula redefined. *(Changelog entry backfilled 2026-07-30.)*
@@ -210,7 +210,7 @@ Over 180+ = inv_age_181_to_270_days
 > on the axis as an explicit **no-data GAP** — never a fabricated 0 (per the no-fabrication rule). An empty
 > scoped result renders an honest empty chart (no synthetic points).
 
-**Apps Script note (CANONICAL v4.1):** the Daily Sales snapshot's canonical source window is the **latest 90 completed calendar days, excluding today** (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 — `retentionDays: 90` / `lookbackDays: 90`). *(Runtime gap: if the current importer still runs `lookbackDays: 30`, that is a recorded implementation gap — see `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 and `project-current-state.md`; this spec states the requirement, not a claim that runtime is live.)* This single snapshot serves **two** purposes:
+**Apps Script note (CANONICAL — active SSOT):** the Daily Sales snapshot's canonical source window is the **latest 90 completed calendar days, excluding today** (`AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 — `retentionDays: 90` / `lookbackDays: 90`). *(Runtime gap: if the current importer still runs `lookbackDays: 30`, that is a recorded implementation gap — see `AMAZON_SNAPSHOT_IMPORT_MAPPING_SPEC.md` §7.4 and `project-current-state.md`; this spec states the requirement, not a claim that runtime is live.)* This single snapshot serves **two** purposes:
 - **Sales Trend display = the most recent 7 complete days** (unchanged — show each of the last 7 completed `snapshot_date` rows, excluding today).
 - **Avg Sales/Day** is the Normal Sales Days baseline **defined by `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2** (90-day search → latest 30 eligible normal sales days, excluding this SKU's event/promotion days). This page **consumes** that value and does **not** redefine the formula (§13).
 
@@ -440,7 +440,7 @@ The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Process
 ### 14.1 Count-once / deduct-once rules (must hold)
 
 - **Upcoming Events:** each event may be counted **once only** — never double-count. An event is attributed to the single Need bucket whose window contains its **Preparation Date = Event Start Date − 30 days** (see §8.1), not its event date.
-- **On-the-Way shipments:** only the **qualifying** portion (Qualified Incoming per owner v4.1 — see the §14.2 On-the-Way boundary) is **deducted** from Need, and a given shipment quantity **can only be deducted once** — never double-deduct. Earlier-arriving qualifying shipments offset the earliest unmet demand first (FIFO by ETA bucket).
+- **On-the-Way shipments:** only the **qualifying** portion (Qualified Incoming per the active owner — see the §14.2 On-the-Way boundary) is **deducted** from Need, and a given shipment quantity **can only be deducted once** — never double-deduct. Earlier-arriving qualifying shipments offset the earliest unmet demand first (FIFO by ETA bucket).
 
 ### 14.2 Canonical term set (direction / mapping summary — no formula here)
 
@@ -452,24 +452,24 @@ The Sales-Driven Need this page consumes and displays uses the owner's **complet
 Buckets are the **non-overlapping exact-date windows** `0–18 / 19–30 / 31–45 / 46–90`; events are attributed to the single bucket whose window contains the event **Preparation Date = Event Start Date − 30 days** (§8.1) and counted **once**; qualifying incoming is deducted **once** (FIFO by ETA). Nothing is counted or deducted twice.
 
 **UI-label boundaries (must hold):**
-- **On-the-Way** is a **UI / mapping label only**. It must **not** be treated as **Qualified Incoming** unless it satisfies the qualification, timing, status, and commitment rules owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1. Only the qualifying portion offsets Need — the raw On-the-Way total is never assumed to equal Qualified Incoming.
+- **On-the-Way** is a **UI / mapping label only**. It must **not** be treated as **Qualified Incoming** unless it satisfies the qualification, timing, status, and commitment rules owned by the active `SUPPLY_PLANNING_CALCULATION_RULES.md` (the current canonical formula SSOT). Only the qualifying portion offsets Need — the raw On-the-Way total is never assumed to equal Qualified Incoming.
 - **Upcoming Event** is the **UI presentation of Special Event Demand** (a demand term) and does **not** define a separate calculation formula. It is **never** treated as supply.
 
 The engine output is the **Engine A live Demand / Shortage / Remaining Need** — a planning signal, **not** Suggested Order Qty (that exists only after Engine B reallocation → `Net Order Need`, owner §20 / §31).
 
 ### 14.3 Formula ownership
 
-> **This document is a UI / data-mapping consumer only.** **Current Stock, Qualified Incoming, Approved / Committed Supply, Special Event Demand, timing eligibility, shortage, reallocation, and Net Order Need are governed exclusively by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1** (§2C / §2D / §20 / §26 / §29E / §29F / §29G / §31). This section owns no formula, adds **no** simplified shortage equation, does not restore any prior v4.0 formula, and never reverses ownership onto Inventory §14/§15; any quantity displayed here maps to the owner output.
+> **This document is a UI / data-mapping consumer only.** **Current Stock, Qualified Incoming, Approved / Committed Supply, Special Event Demand, timing eligibility, shortage, reallocation, and Net Order Need are governed exclusively by the active `SUPPLY_PLANNING_CALCULATION_RULES.md`** (the current canonical formula SSOT; §2C / §2D / §20 / §26 / §29E / §29F / §29G / §31). **Qualified Incoming status (B-4):** the business predicate + per-table qualification direction are **contract-repaired (PARTIALLY RESOLVED, 2026-08-01; `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4)** — but the **Qualified Incoming Runtime remains open**, and the `wh_on_the_way_qty` ↔ Shipment-derived incoming reconciliation is an **OPEN DEPENDENCY** (§21). This document is not blocked by a wholly-undecided allowlist; it is a display/mapping consumer only. This section owns no formula, adds **no** simplified shortage equation, does not restore any prior v4.0 formula, and never reverses ownership onto Inventory §14/§15; any quantity displayed here maps to the owner output.
 
 ---
 
 ## 15. Forecast Driven Calculation (finalized)
 
-> **Direction / intent only — this section does not own the formula. Final math owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1** (§29F Forecast-Driven, §29G 30-Day Safety Demand, §8/§28 Current Stock). Safety Days = **30**.
+> **Direction / intent only — this section does not own the formula. Final math owned by the active `SUPPLY_PLANNING_CALCULATION_RULES.md`** (the current canonical formula SSOT; §29F Forecast-Driven, §29G 30-Day Safety Demand, §8/§28 Current Stock). Safety Days = **30**.
 
 **Term set (semantic mapping only — no formula here).** The Forecast-Driven demand result combines, on the demand side: **Target-Adjusted Regular FC** (Month+1 + Month+2, with the Target Rule SKU > Series > Category already applied, §7), **30-Day Safety Demand** (owner §29G), and **Special Event Demand** (100%, owner §10 — must not be omitted). It is netted against the supply offsets: **Current Stock**, **Qualified Incoming**, and **Approved / Committed Supply** (must not be omitted). Floored at 0.
 
-> **Formula ownership — canonical `SUPPLY_PLANNING_CALCULATION_RULES.md` §2D (v4.1)** (with §29F Forecast-Driven, §29G 30-Day Safety Demand). **This section owns no executable formula**; it lists the term mapping only. Neither the demand-side terms nor the supply offsets may be dropped, but the authoritative equation lives only in the owner.
+> **Formula ownership — canonical `SUPPLY_PLANNING_CALCULATION_RULES.md` §2D** (the active SSOT; with §29F Forecast-Driven, §29G 30-Day Safety Demand). **This section owns no executable formula**; it lists the term mapping only. Neither the demand-side terms nor the supply offsets may be dropped, but the authoritative equation lives only in the owner.
 
 > **Live vs Persisted (canonical, owner §36).** Every Demand / Shortage figure the Inventory Replenishment page shows — including the forecast-breakdown windows and any T1–T4 tier view — is a **LIVE, continuously-recalculated planning signal** (danger notification / shortage risk / planner review / emergency-order entry). It is **NOT** a saved order and **must NOT overwrite** a persisted monthly/emergency Suggested Order snapshot (`recommended_qty`) or the user's `order_qty` / `carton_qty`. Re-displaying the live value never auto-reverts a user edit. **T4 (Month+4) is visibility-only** — shown for risk/planning, never turned into an order commitment (owner §27 / §36).
 
@@ -487,7 +487,7 @@ This chapter is a **UI / data-mapping summary and consumer**. The authoritative 
 
 **Rule 1 — Allocation Scope.** Allocate inventory **only within the same Company and same Country**. **Never** allocate across companies or across countries.
 
-**Rule 2 — Platform Fulfilled (CANONICAL, 2026-07-22 addendum; owner v4.1).** Platform FBA **Current Stock is a separate bucket** and is **never merged/added into 3PL Current Stock** (separate lineages). **However, a platform-fulfilled marketplace MAY still participate in the shared 3PL replenishment RESERVE** where warehouse-side eligibility holds (`company + country + warehouse_type='3PL' + is_active`); that reserve is shown as `3PL Replenishment Reserve` and can later replenish FBA — it is never displayed as FBA Current Stock. *(Supersedes the earlier "No shared allocation" wording.)* Authoritative formula: `SUPPLY_PLANNING_CALCULATION_RULES.md` §23.6/§24.9 (v4.1 FINALIZED).
+**Rule 2 — Platform Fulfilled (CANONICAL, 2026-07-22 addendum; owner = the active `SUPPLY_PLANNING_CALCULATION_RULES.md`).** Platform FBA **Current Stock is a separate bucket** and is **never merged/added into 3PL Current Stock** (separate lineages). **However, a platform-fulfilled marketplace MAY still participate in the shared 3PL replenishment RESERVE** where warehouse-side eligibility holds (`company + country + warehouse_type='3PL' + is_active`); that reserve is shown as `3PL Replenishment Reserve` and can later replenish FBA — it is never displayed as FBA Current Stock. *(Supersedes the earlier "No shared allocation" wording.)* Authoritative formula: `SUPPLY_PLANNING_CALCULATION_RULES.md` §23.6/§24.9 (the active canonical formula SSOT).
 
 > **FBA inventory source precedence (canonical 2026-07-20; `SUPPLY_PLANNING_CALCULATION_RULES.md` §24.2).** **Mode 1 — Platform Snapshot (preferred):** FBA Current Stock = latest valid `amazon_inventory_snapshot` value (the platform SSOT), at the existing grain `company + country/site + marketplace + SKU`. **Do NOT subtract Sales Report quantities again from an imported snapshot** (double-deduct). **Mode 2 — Estimated Ledger (fallback only, when no current snapshot):** opening confirmed stock ± confirmed inbound/returns/adjustments − sales/removals/disposals/loss-damage; label the result **"Estimated Inventory"**; a newer snapshot replaces/reconciles it; never apply both modes to the same interval. Missing adjustment sources → verified-only + stale warning, no fabrication → **Runtime Mapping Required.** FBA is **never** virtually redistributed into the shared FBM pool and Warehouse Reference rows never infer FBA quantity.
 
@@ -553,7 +553,7 @@ Add Marketplace SKU (into planning scope)
   → company / country / marketplace preserved as planning-DEMAND context (not physical grain)
 ```
 - **Marketplace is NOT part of the physical shared-3PL stock grain.** Shared self-fulfilled marketplaces (Shopify / Target / Walmart / Wayfair / …) may **share one physical warehouse inventory**; adding multiple Marketplace SKUs for one Master SKU must **not** create multiple copies of the same physical 3PL inventory (see §17.3A.2).
-- **Amazon FBA / `platform_fulfilled`** inventory stays a **separate bucket** (never merged into 3PL Current Stock); marketplace-level participation in the shared 3PL **reserve** is a separate, warehouse-side eligibility question — see §16 Rule 2 and `SUPPLY_PLANNING_CALCULATION_RULES.md` §23.6 (v4.1 FINALIZED).
+- **Amazon FBA / `platform_fulfilled`** inventory stays a **separate bucket** (never merged into 3PL Current Stock); marketplace-level participation in the shared 3PL **reserve** is a separate, warehouse-side eligibility question — see §16 Rule 2 and `SUPPLY_PLANNING_CALCULATION_RULES.md` §23.6 (the active canonical formula SSOT).
 - `overseas_inventory_snapshot` / `_movements` are keyed by `warehouse_id + sku` (Master sku); `company`/`country` resolved via `warehouses` at read time — not stored on the rows.
 
 **Runtime status (updated 2026-07-21):**
@@ -599,7 +599,7 @@ Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONA
 
 ## 21. Open Questions
 
-**Calculation-semantic questions are CLOSED at v4.1 (owner `SUPPLY_PLANNING_CALCULATION_RULES.md`).** The items below are **Specification: FINALIZED**; where the runtime engine is not yet built, `Runtime Mapping: NOT IMPLEMENTED` (never reopened as an Open Question):
+**Calculation-semantic questions are CLOSED (owner = the active `SUPPLY_PLANNING_CALCULATION_RULES.md`).** The items below are **Specification: FINALIZED**; where the runtime engine is not yet built, `Runtime Mapping: NOT IMPLEMENTED` (never reopened as an Open Question):
 
 | Former Open Question | Resolution (owner section) | Runtime |
 |----------------------|----------------------------|---------|
@@ -611,11 +611,11 @@ Cross-refs: [`SKU_MASTER_AND_REGIONAL_DETAILS_SPEC.md`](./SKU_MASTER_AND_REGIONA
 
 **Remaining (non-calculation / data-mapping) items — genuinely open, do not affect a frozen formula:**
 - **Inventory-health finer buckets (§5):** confirm `inv_age_366_to_455_days` / `inv_age_456_plus_days` are added to the Amazon Inventory Health source + import mapping to feed the Over 180+ display.
-- **Shipping Shipment / On-the-Way (§9, §13):** finalize the shipment source mapping and reconcile warehouse-side `overseas_inventory_snapshot.on_the_way_*` with marketplace-level `shipments` to avoid double-counting.
+- **Shipping Shipment / On-the-Way (§9, §13) — OPEN DEPENDENCY (B-4 contract repair, 2026-08-01):** warehouse-side `overseas_inventory_snapshot.wh_on_the_way_qty` and Shipment-derived incoming (`shipments` + `shipment_lines.shipment_qty`) are **two representations of the same physical incoming** and **must NOT be added blindly**. Before the Recommendation / Qualified-Incoming Runtime can be production-ready, **exactly one canonical owner must be selected for each physical incoming quantity** (count-once, `SUPPLY_PLANNING_CALCULATION_RULES.md` §30). Status: **OPEN DEPENDENCY** — owner = future **Supply Ledger / Inventory Mapping implementation**; **required before Golden #12/#13/#14 Runtime promotion**; **NOT resolved by this documentation round** (this round does not decide whether `wh_on_the_way_qty` is removed or derived). This mapping is **UI/display only** and is never the qualification predicate (owned by §2E).
 - **Monthly close / recalculation cadence (§10, §20).**
 
 ---
 
-**v1.5.9 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` v4.1 FINALIZED.**
+**v1.5.9 — Inventory Table Mapping finalized. Mapping + rule direction only; no frontend, calculation-engine code, Apps Script, BigQuery, API, or DB change is implied. All formulas remain owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` the active canonical formula SSOT.**
 
 **End of Document**

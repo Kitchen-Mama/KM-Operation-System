@@ -23,6 +23,8 @@
 **Authoritative formula owner:** THIS document. All other specs reference or map these formulas; none may restate a divergent version.
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) (operational flow), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) (Inventory Table mapping + AI Suggestion display), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md`](./RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md)
 
+> **Changelog — Batch B Round 4C-R2 B-4 Contract Repair (2026-08-01 — Qualified Incoming contract alignment; documentation only, NO formula / runtime / test change, semantic version stays v4.4):** Aligned the **§2E Qualified Incoming business predicate** to the frozen **ten-gate** form and cross-referenced the **per-table** qualified allowlist owners (Shipment = `SHIPMENT_CENTER_SPEC.md` §10; PO / committed supply = `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §P1-B). Froze the **interim ETA authority** (`shipment_events` NOT IMPLEMENTED ⇒ active source = `shipments.eta`, lead-time fallback; §2F). Reaffirmed **count-once**, **Delivered ≠ Received**, **late/missing ETA contribute 0**, and **`unreceived_qty` = derived, never persisted**. Marked **B-4 = PARTIALLY RESOLVED (contract repaired)** with Runtime / receiving-layer / `shipment_events` ETA / `destination_warehouse_id` persistence / `wh_on_the_way_qty` double-count as **IMPLEMENTATION_REQUIRED**, and **cancel/release = B-8**, **source grain = B-5** kept separate. **No formula changed; §33 #12/#13/#14 remain IMPLEMENTATION_PENDING; Matrix 25/15/0; Unit 325 / Golden 117 unchanged; B-5~B-8 unchanged.**
+>
 > **Changelog — Round 8B implementation (2026-08-01 — §34A Pure Classifier Implementation + Golden #29/#30 Execution + Main Landing; implementation + tests only, no rule change, semantic version stays v4.4):** Implemented the frozen §34A contract as the pure export `classifyPlanningDataState` in `assets/js/core/supply-planning-calculations.js` — `{ state, calculationAllowed }`; five state tokens (`OK` / `STALE_SNAPSHOT` / `MISSING_SNAPSHOT` / `MISSING_FORECAST` / `MISSING_SALES_BASIS`); precedence missing-snapshot ▸ missing-demand-basis ▸ stale (STRICT `age > threshold`) ▸ OK; `STALE_SNAPSHOT` = warn-and-proceed (`calculationAllowed=true`, never auto-0), every other non-OK blocks; branch-scoped `TypeError`/`RangeError` validation; no coercion / clock / locale / fallback; fresh object per call, input never mutated. Added **43 unit assertions** (282 → **325**) and promoted **Golden #29** (missing/stale snapshot → `MISSING_SNAPSHOT` / `STALE_SNAPSHOT`, never 0) and **Golden #30** (forecast-driven + missing forecast → `MISSING_FORECAST`, never 0) from `IMPLEMENTATION_PENDING` to `EXECUTED_EXISTING_CORE` (**+3 golden assertions**, 114 → **117**). **Golden Matrix = 25 executed / 15 pending / 0 canonical-blocked; Unit = 325 PASS; Golden = 117 PASS.** The verified pure core + both test suites were **landed into Main** (`assets/js/core/supply-planning-calculations.js`, `assets/tests/supply-planning-calculations.test.js`, `assets/tests/supply-planning-golden-scenarios.test.js`) and **run from Main** — Main is now the unique canonical implementation; `C:\km-lb` remains a temporary implementation/test lane. The §34/§34A business contract, `replenishment_model` meanings, every other scenario, §26/§27/§27A/§32A, and all quantity primitives are **unchanged**; no new public API beyond `classifyPlanningDataState`; **no formula / Line Runtime / Qualified Incoming Runtime / DB / API / UI change; B-1/B-2/B-3 RESOLVED and B-4~B-8 UNRESOLVED unchanged.**
 >
 > **Changelog v4.3 → v4.4 (2026-08-01 — Round 8A: §34 Missing / Stale Data Pure-Classifier Canonical Contract Freeze; documentation only, no formula/runtime/test change):** Added **§34A** as the **single canonical owner of the Missing / Stale planning-data classifier** —
@@ -212,9 +214,24 @@ Forecast-Driven Remaining Need = max( 0,
 
 ## 2E. Qualified Incoming / Count-Once Contract (canonical)
 
-A supply row is **Qualified Incoming** only when **all** hold: matching **SKU**; matching **Company**; matching **destination or eligible service scope**; **approved/qualified status**; **ETA ≤ requirement date**; **remaining unconsumed quantity > 0**. **Draft is never Qualified Incoming.**
+A candidate supply row is **Qualified Incoming** only when **all ten** gates hold (the frozen business predicate):
+1. **Master SKU** matches.
+2. **Company** matches.
+3. **Destination warehouse or explicitly eligible service scope** matches.
+4. The row **status** belongs to the **canonical qualified allowlist for its own table** (per-table, never one global enum) — Shipment-side allowlist owned by [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md) §10; PO / committed-supply allowlist owned by [`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md`](./REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md) §P1-B.
+5. **ETA is resolved** (authority per §2F).
+6. **ETA ≤ the requirement Required-By Date.**
+7. **Remaining unconsumed quantity > 0.**
+8. The row is **not** draft / rejected / cancelled / void / terminally closed / otherwise excluded.
+9. The quantity has **not already been posted to Current Stock.**
+10. The **same physical quantity is not active in another committed / incoming bucket** (§30 count-once).
 
-> **Business semantics only — not a DB status allowlist.** "approved/qualified status" here states the **business rule**; the **exact DB status values, per-table allowlist, writer, lifecycle trigger, and cancellation/unlock/reopen release mapping are BLOCKED — Requires Batch B Canonical Decision** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). This document defines the qualification's business meaning; it does not fix the DB status set.
+- **Draft is never Qualified Incoming.**
+- **ETA > Required-By = visible Late Risk, contributes 0 to coverage** (§2F/§10.1).
+- **Missing ETA = visible / reviewable but contributes 0 to timely coverage** (§2F/§34).
+- **Delivered ≠ Received;** **Received supply moves out of Incoming into Current Stock exactly once**; there is **no standalone Received-Qty deduction term** (§10.1).
+
+> **B-4 status — PARTIALLY RESOLVED, BUSINESS CONTRACT REPAIRED (2026-08-01; `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).** The **business predicate above and the per-table qualification direction are now contract-repaired** and canonically aligned. Still **BLOCKED / IMPLEMENTATION_REQUIRED** (Runtime not closed): the exact DB status writer/lifecycle trigger, the receiving-layer (received-qty / receipt handler / inventory posting), `shipment_events` ETA authority, `destination_warehouse_id` persistence, and the `wh_on_the_way_qty` ↔ Shipment-derived incoming double-count owner. **Cancellation / unlock / reopen release mapping = B-8; source/line grain = B-5** — not absorbed into B-4. This document owns the qualification's **business meaning** only; it does not fix the DB status set, which each owner spec + Runtime must land.
 
 Each physical quantity exists in **exactly one** active planning bucket, in this progression — never counted in two at once:
 ```
@@ -235,6 +252,7 @@ A Shipment qualifies for a requirement ONLY when Shipment ETA ≤ Requirement Re
   2. **formal Shipment planned ETA** (`shipments.eta`),
   3. **lead-time estimated ETA** (`today/ship-date + carrier_lead_times`).
 - **Once a formal Shipment has an authoritative runtime ETA, do NOT keep replacing it** with a fresh carrier-lead-time estimate (the estimate is only the fallback before a real ETA exists).
+- **Interim Runtime authority (B-4 contract repair, 2026-08-01):** because `shipment_events` is **NOT IMPLEMENTED** (`SHIPMENT_ROUTE_AND_EVENT_SPEC.md` §8/§9), the **active formal ETA source today is `shipments.eta`**, with the lead-time estimate as fallback only. Priority (1) `shipment_events` remains the long-term authority (IMPLEMENTATION_REQUIRED); when it exists, a later lead-time recomputation must not overwrite it. The exact date/datetime/timezone normalization contract is future Runtime work.
 - **Delivered ≠ Received:** delivered-not-received remains **Incoming**, not Current Stock, until confirmed receipt.
 
 ---

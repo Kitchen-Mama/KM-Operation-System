@@ -20,6 +20,12 @@
 >   - `remaining_qty  = MAX(completed_qty − shipped_qty, 0)`  (available-to-ship; **NOT** `ordered − completed`, **NOT** `ordered − shipped`)
 >   - `unreceived_qty = MAX(ordered_qty − completed_qty, 0)`  (production still outstanding; Receive-modal / progress display only)
 > - **Stock-movement timing (shared with `SHIPMENT_CENTER_SPEC.md` §15.1):** Shipment **Draft does NOT deduct `current_stock`**; pre-locking uses **`reserved_stock`**; **Confirm & Ship** is the single physical deduction + movement-ledger trigger. Cancel / partial ship / quantity adjustment / reversal movements must **never double-deduct** (each qty change appends a ledger row; balances are never blind-overwritten).
+> - **PO committed-supply boundary for Qualified Incoming (B-4 contract repair, 2026-08-01; business predicate owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` §2E).** A PO row contributes to the **Timely Approved / Committed Supply** term (never double-counted with Shipment Incoming), using only the **remaining production/shippable quantity not already represented by a Shipment**:
+>   - `draft` → **excluded**. *(SOURCE_CONFIRMED)*
+>   - `issued` / `in_production` / `partial_completed` / `completed` → **production-side Approved / Committed Supply**, quantity = **available-to-ship = `MAX(completed_qty − shipped_qty, 0)`** (not yet shipped). *(`issued`/`completed`/`cancel` transitions SOURCE_CONFIRMED in the runtime subset; `partial_completed` = SPEC_ONLY, receive flow not yet built.)*
+>   - `partial_shipped` / `shipped` → the **Shipment becomes the incoming owner** for the shipped quantity (`shipped_qty`); the PO no longer counts that quantity. *(SPEC_ONLY — these PO transitions are not in the current runtime subset.)*
+>   - `closure` / `cancelled` → **excluded**. *(canonical terminal token is `closure`, not legacy `closed`; SPEC_ONLY for `closure`.)*
+>   - **`unreceived_qty = MAX(ordered_qty − completed_qty, 0)` is DERIVED ONLY — never a stored DB column; no migration is required.** `remaining_qty` is the persisted/materialized representation of `available_to_ship` where currently implemented. Shipment allocation **consumes** PO available-to-ship **read-only** (never writes back into the PO on receive) — the count-once boundary between PO-committed and Shipment-incoming. **A formal Shipment is the incoming owner once the quantity is on it; the earlier PO/plan committed bucket must not be counted for that same quantity.**
 
 ---
 
