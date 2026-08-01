@@ -5,8 +5,8 @@
 > - **Canonical Owner For:** Engine A / Engine B; **T1–T4** (T4 = display-only, never in Request/PO payload); **Normal Sales Days** (latest 30 eligible normal days within a 90-completed-day window); Forecast Adjustment; Inventory Projection; Shortage; Reallocation; Net Order Need; **Shipping carton = FLOOR**; **Ordering carton = CEILING**; Engine `Current Stock` semantics.
 > - **Not Owner For:** DB schema (`DATABASE_RELATIONSHIP_MAP.md`), UI/layout (`INVENTORY_TABLE_MAPPING_SPEC.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), Shipment/PO lifecycle (respective specs). No other doc may restate a divergent formula.
 > - **Status:** Reviewed — Batch B Blockers Remain (formulas finalized; the **Qualified Incoming allowlist** that feeds Current-Stock netting is Batch B).
-> - **Current Version:** v4.3 (v4.1 base — Batch A header, Batch B Round 1 B-1 reserve cross-reference, Phase 2B Pre-Engine §22/§29E/§33 reconciliation, all no-formula-change — **plus the Round 6B dependency catch-up landing (2026-07-31): Round 5A §27A Required-By classifier (v4.2) + Round 6A §32A reallocation-eligibility contract (v4.3) + Round 6 implementation status. `evaluateReallocationEligibility` IMPLEMENTED; Golden #21/#22 executed; Matrix 23 executed / 17 pending / 0 canonical-blocked; Unit 282 / Golden 114 PASS. Line Runtime / Qualified Incoming Runtime NOT IMPLEMENTED; B-4~B-8 unchanged**).
-> - **Last Reviewed:** 2026-07-31.
+> - **Current Version:** v4.4 (v4.1 base — Batch A header, Batch B Round 1 B-1 reserve cross-reference, Phase 2B Pre-Engine §22/§29E/§33 reconciliation, all no-formula-change — **plus the Round 6B dependency catch-up landing (2026-07-31): Round 5A §27A Required-By classifier (v4.2) + Round 6A §32A reallocation-eligibility contract (v4.3) + Round 6 implementation status. `evaluateReallocationEligibility` IMPLEMENTED; Golden #21/#22 executed; Matrix 23 executed / 17 pending / 0 canonical-blocked; Unit 282 / Golden 114 PASS. Line Runtime / Qualified Incoming Runtime NOT IMPLEMENTED; B-4~B-8 unchanged** — **plus Round 8A (2026-08-01): §34A Missing / Stale Data pure-classifier `classifyPlanningDataState` canonical contract freeze (documentation only) — then Round 8B (2026-08-01): `classifyPlanningDataState` IMPLEMENTED in the pure core and landed to Main; Scenario #29/#30 executed; Matrix 25 executed / 15 pending / 0 canonical-blocked; Unit 325 / Golden 117 PASS (run from Main); Line Runtime / Qualified Incoming Runtime / DB / API / UI remain NOT IMPLEMENTED; B-4~B-8 unchanged**).
+> - **Last Reviewed:** 2026-08-01.
 > - **Depends On:** none (upstream formula authority).
 > - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).
 > - **Reserve boundary (cross-reference only — B-1 RESOLVED, owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1):** calculation / recommendation output (shortage, Net Order Need, Recommended Shipping Qty, reallocation, etc.) **never reserves or deducts stock**. Factory-stock reservation is triggered **only** by a successful **Formal Shipment Execution Commit** (decision only; implementation not started). This document owns no reserve logic and defines none.
@@ -14,15 +14,26 @@
 > **Changelog v4.1 (2026-07-30 — Phase 2B Pre-Engine Normalized Avg Sales readiness cleanup, NO version bump / NO formula expansion):** Reconciled the stale §22 "weekly default" wording with the already-adopted **§29E** and **§33 Scenario #1–#5 / #35–#40** so there is **one** Sales-Driven basis. §22 intro + **§22.1** now state the Sales-Driven default **IS** the normalized sampling ladder (latest 30 eligible normal days within the latest 90 completed days, ÷ actual `normal_day_count`); **§22.2** reframed from "exception when contaminated" to the **contamination EXCLUSION rules within** that sampling; **§22.3** no-contamination bullet corrected — no contamination = **zero excluded dates**, the ladder still applies, and `weekly_7d` is **only** the `< 3`-normal-day fallback rung (never a no-contamination default). Per-SKU exclusion, Campaign∩Event count-once, cancelled/invalid-not-excluded, Preparation-Date-not-contamination, zero-sales-day vs missing-day, and the decoupled `source`/`warning` fields are all **unchanged**. §22.4/§22.6 Forecast-Driven-reference-only + Runtime-recompute wording unchanged. **Runtime remains NOT IMPLEMENTED; Executable Tests PENDING; no engine, no §33 change, no Batch B decision.**
 >
 
-**Status:** ✅ **FINALIZED v4.3 — Calculation Specification** (v4.1 = v4.0 freeze + §22 Avg. Sales/day sample-acquisition refinement; v4.2 = Round 5A §27A Required-By Window classifier canonical gap closure; v4.3 = Round 6A §32A Reallocation Eligibility owner boundary + public contract freeze; Round 6 = §32A predicate IMPLEMENTED + Golden #21/#22 executed — landed to main by the Round 6B dependency catch-up)
-**Runtime Status:** **NOT IMPLEMENTED** (the pure §27A classifier and §32A eligibility predicate are implemented in the pure calculation core; no Line Runtime / Qualified Incoming Runtime / DB / API / UI)
-**Executable Test Status:** **§27A/§32A pure core = 282 unit + 114 golden PASS (23 executed / 17 pending / 0 canonical-blocked); full 40-scenario matrix still PENDING**
+**Status:** ✅ **FINALIZED v4.4 — Calculation Specification** (v4.1 = v4.0 freeze + §22 Avg. Sales/day sample-acquisition refinement; v4.2 = Round 5A §27A Required-By Window classifier canonical gap closure; v4.3 = Round 6A §32A Reallocation Eligibility owner boundary + public contract freeze; Round 6 = §32A predicate IMPLEMENTED + Golden #21/#22 executed — landed to main by the Round 6B dependency catch-up; v4.4 = Round 8A §34A Missing / Stale Data pure-classifier `classifyPlanningDataState` canonical contract freeze — documentation only)
+**Runtime Status:** **NOT IMPLEMENTED** (the pure §27A classifier, §32A eligibility predicate, and §34A `classifyPlanningDataState` classifier are implemented in the pure calculation core and run from Main; no Line Runtime / Qualified Incoming Runtime / DB / API / UI / production orchestration)
+**Executable Test Status:** **§27A/§32A/§34A pure core = 325 unit + 117 golden PASS, run from Main (25 executed / 15 pending / 0 canonical-blocked); Scenario #29/#30 executed (Round 8B); full 40-scenario matrix still PENDING (the 15 remaining scenarios need non-pure-core owners)**
 **Browser / Production Verification:** **PENDING** (no runtime, therefore nothing to verify)
-**Last Updated:** 2026-07-31
+**Last Updated:** 2026-08-01
 **Maintained By:** Development Team
 **Authoritative formula owner:** THIS document. All other specs reference or map these formulas; none may restate a divergent version.
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md) (operational flow), [`DATABASE_RELATIONSHIP_MAP.md`](./DATABASE_RELATIONSHIP_MAP.md) (table relationships), [`INVENTORY_TABLE_MAPPING_SPEC.md`](./INVENTORY_TABLE_MAPPING_SPEC.md) (Inventory Table mapping + AI Suggestion display), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), [`RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md`](./RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md)
 
+> **Changelog — Round 8B implementation (2026-08-01 — §34A Pure Classifier Implementation + Golden #29/#30 Execution + Main Landing; implementation + tests only, no rule change, semantic version stays v4.4):** Implemented the frozen §34A contract as the pure export `classifyPlanningDataState` in `assets/js/core/supply-planning-calculations.js` — `{ state, calculationAllowed }`; five state tokens (`OK` / `STALE_SNAPSHOT` / `MISSING_SNAPSHOT` / `MISSING_FORECAST` / `MISSING_SALES_BASIS`); precedence missing-snapshot ▸ missing-demand-basis ▸ stale (STRICT `age > threshold`) ▸ OK; `STALE_SNAPSHOT` = warn-and-proceed (`calculationAllowed=true`, never auto-0), every other non-OK blocks; branch-scoped `TypeError`/`RangeError` validation; no coercion / clock / locale / fallback; fresh object per call, input never mutated. Added **43 unit assertions** (282 → **325**) and promoted **Golden #29** (missing/stale snapshot → `MISSING_SNAPSHOT` / `STALE_SNAPSHOT`, never 0) and **Golden #30** (forecast-driven + missing forecast → `MISSING_FORECAST`, never 0) from `IMPLEMENTATION_PENDING` to `EXECUTED_EXISTING_CORE` (**+3 golden assertions**, 114 → **117**). **Golden Matrix = 25 executed / 15 pending / 0 canonical-blocked; Unit = 325 PASS; Golden = 117 PASS.** The verified pure core + both test suites were **landed into Main** (`assets/js/core/supply-planning-calculations.js`, `assets/tests/supply-planning-calculations.test.js`, `assets/tests/supply-planning-golden-scenarios.test.js`) and **run from Main** — Main is now the unique canonical implementation; `C:\km-lb` remains a temporary implementation/test lane. The §34/§34A business contract, `replenishment_model` meanings, every other scenario, §26/§27/§27A/§32A, and all quantity primitives are **unchanged**; no new public API beyond `classifyPlanningDataState`; **no formula / Line Runtime / Qualified Incoming Runtime / DB / API / UI change; B-1/B-2/B-3 RESOLVED and B-4~B-8 UNRESOLVED unchanged.**
+>
+> **Changelog v4.3 → v4.4 (2026-08-01 — Round 8A: §34 Missing / Stale Data Pure-Classifier Canonical Contract Freeze; documentation only, no formula/runtime/test change):** Added **§34A** as the **single canonical owner of the Missing / Stale planning-data classifier** —
+> - **authorized one pure/deterministic classifier `classifyPlanningDataState(input)`** (no DB / API / UI / clock / locale / implicit default; same input ⇒ same output; classifies *calculation input readiness* only — does not assemble snapshots/forecasts, choose a snapshot source, or orchestrate the Recommendation Runtime; §34A.1);
+> - froze the **exact input schema** — `snapshotPresent` (boolean, required), `snapshotAgeDays` + `stalenessThresholdDays` (finite ≥ 0 numbers, consumed/validated only when `snapshotPresent===true`), `replenishmentModel` (`"forecast_driven"` / `"sales_driven"` enum, §2), `forecastPresent` (boolean, forecast-driven only), `salesBasisPresent` (boolean, sales-driven only); no DB row, no warehouse/marketplace/SKU identity, no current-date input (§34A.2);
+> - froze the **exact output** `{ state, calculationAllowed }` and the **five state tokens** — `MISSING_SNAPSHOT` / `STALE_SNAPSHOT` **preserved verbatim from §34**, plus machine tokens `MISSING_FORECAST` / `MISSING_SALES_BASIS` / `OK` as the deterministic representation of §34's existing "calculation blocked / review" and normal rows (no second/UI vocabulary invented; §34A.3);
+> - froze **`calculationAllowed`**: `OK` and `STALE_SNAPSHOT` ⇒ `true` (STALE proceeds under the §34 "show source + staleness warning" fallback, never auto-0); every other state ⇒ `false` (§34A.3);
+> - froze the **precedence / truth table** — snapshot-missing ▸ demand-basis-missing (forecast/sales) ▸ staleness-warning ▸ OK; a single deterministic `state`; sales-driven **ignores** forecast presence; missing snapshot outranks missing forecast; a blocking demand-basis gap outranks the stale warning (§34A.4/.5);
+> - froze the **boundary + error contract** — staleness is `snapshotAgeDays > stalenessThresholdDays` (strict; age = threshold ⇒ fresh); `TypeError` for shape / non-boolean flags / non-string model / non-number age·threshold; `RangeError` for a non-enum model / NaN / Infinity / negative age / negative threshold; no coercion, no fallback-to-0/OK/sales_driven, no clock; branch-scoped validation mirrors §27A/§32A (§34A.5).
+> **No JavaScript / test / Runtime / DB / API was written; §34 state meanings, replenishment-model meanings, and every other scenario are unchanged; Scenario #29/#30 remain IMPLEMENTATION_PENDING (their blocker moves from "exact pure-function contract not frozen" to "Canonical contract frozen; pure-core implementation pending"); Golden Matrix remains 23 executed / 17 pending / 0 canonical-blocked; Unit 282 / Golden 114 PASS unchanged; Runtime remains NOT IMPLEMENTED; B-1/B-2/B-3 RESOLVED and B-4~B-8 UNRESOLVED unchanged.** Implementation + Scenario #29/#30 execution are deferred to **Round 8B**.
+>
 > **Changelog — Round 6 implementation (2026-07-31 — Reallocation Eligibility Pure Predicate; implementation + tests only, no rule/version change, semantic version stays v4.3; landed to main by the Round 6B dependency catch-up):** Implemented the frozen §32A contract as the pure export `evaluateReallocationEligibility` in `assets/js/core/supply-planning-calculations.js` (Same-Master-SKU exact string equality + Engine B-only tier ordering `donorRank <= receiverRank` over T1/T2/T3; T4/null ineligible; Engine A not read; no quantity in/out; delegates date validation to `classifyRequiredByWindow`; pure/fresh outputs). Promoted **Golden #21** (Same-Master-SKU gate — different SKU ⇒ ineligible) and **Golden #22** (Engine B tier ordering — later surplus cannot cover an earlier shortage; earlier/same-tier may) from `IMPLEMENTATION_PENDING` to `EXECUTED_EXISTING_CORE`. **Golden Matrix = 23 executed / 17 pending / 0 canonical-blocked; Unit = 282 assertions PASS; Golden = 114 assertions PASS.** The §32A contract, §26/§27/§27A, Round 5 classifier, Golden #28/#33, and all quantity primitives are unchanged. No new public API beyond `evaluateReallocationEligibility`; no Line Runtime / Qualified Incoming Runtime / DB / API / UI; no quantity orchestration.
 >
 > **Changelog v4.2 → v4.3 (2026-07-31 — Round 6A: Reallocation Eligibility Owner Boundary + Public Contract Freeze; documentation only, no formula/runtime/test change):** Added **§32A** as the **single canonical owner of the reallocation eligibility predicate** —
@@ -1413,7 +1424,7 @@ eligible =
 - **No** coercion of `number` / `Date` / numeric string; **no** system clock; **no** locale parsing.
 - **No** input mutation; every call returns **fresh** top-level / `donor` / `receiver` objects; mutating one output must not pollute a later call.
 
-> **Status:** the §32A contract is frozen (Round 6A) and the pure predicate is **IMPLEMENTED (Round 6)** exactly to it — `evaluateReallocationEligibility` with Round 6 unit tests and executed Golden #21 / #22. **Golden Matrix = 23 executed / 17 pending / 0 canonical-blocked; Unit = 282 PASS; Golden = 114 PASS.** **Line Runtime / Qualified Incoming Runtime / quantity orchestration remain NOT IMPLEMENTED** (the predicate is a pure yes/no gate only).
+> **Status:** the §32A contract is frozen (Round 6A) and the pure predicate is **IMPLEMENTED (Round 6)** exactly to it — `evaluateReallocationEligibility` with Round 6 unit tests and executed Golden #21 / #22. **Golden Matrix = 25 executed / 15 pending / 0 canonical-blocked; Unit = 325 PASS; Golden = 117 PASS (live totals as of Round 8B).** **Line Runtime / Qualified Incoming Runtime / quantity orchestration remain NOT IMPLEMENTED** (the predicate is a pure yes/no gate only).
 
 ---
 
@@ -1451,8 +1462,8 @@ Executable golden tests are **NOT** built this round; this matrix is the frozen 
 | 26 | Preparation Date crosses month | event demand in month containing (start − 30d) | exact date wins |
 | 27 | Multiple Special Events same month | all events retained, each once | stable event ID |
 | 28 | T4 visible, no allocation/payload (Engine B adapter, §27A) | `classifyRequiredByWindow` ⇒ `engineB.tier="T4"`, `engineB.visible=true`, `engineB.allocationEligible=false`, `engineB.payloadEligible=false` (reached via `monthDelta=4`, NOT via any Engine A day bucket) | T4 display-only; adapter-independent |
-| 29 | Missing / stale snapshot | `MISSING_SNAPSHOT` / `STALE_SNAPSHOT`, not 0 | §34 |
-| 30 | Missing Forecast (forecast-driven SKU) | calculation blocked / review, not 0 | §34 |
+| 29 | Missing / stale snapshot | `MISSING_SNAPSHOT` / `STALE_SNAPSHOT`, not 0 | §34 / §34A |
+| 30 | Missing Forecast (forecast-driven SKU) | `MISSING_FORECAST` — calculation blocked / review, not 0 | §34 / §34A |
 | 31 | Missing `units_per_carton` | Suggested = Calc Blocked; submit blocked; no default | §14/§34 |
 | 32 | One Master SKU, many Marketplaces | physical pool deduped by company+warehouse_id+Master SKU | not duplicated per marketplace |
 | 33 | Engine A bucket boundary sweep (§26 / §27A) | `classifyRequiredByWindow` ⇒ `engineA.bucket` literals: −1→`"0–18d"`, 0→`"0–18d"`, 18→`"0–18d"`, 19→`"19–30d"`, 30→`"19–30d"`, 31→`"31–45d"`, 45→`"31–45d"`, 46→`"46–90d"`, 90→`"46–90d"`, 91→`">90d"` | non-overlapping; literal expecteds, no off-by-one |
@@ -1482,6 +1493,166 @@ Executable golden tests are **NOT** built this round; this matrix is the frozen 
 | Missing route feasibility | no timely cross-company reallocation (§32) |
 
 Fallback is used **only** where a rule explicitly allows it, and always **shows its source + a warning** (e.g. Estimated Ledger §24.2, weekly-7d fallback §22.3).
+
+> The machine-readable pure-classifier contract for these frozen states is **§34A** (`classifyPlanningDataState`). §34 remains the business-outcome owner; §34A only freezes the deterministic function shape that represents §34 — it introduces **no new business classification**.
+
+---
+
+## 34A. Missing / Stale Data Pure Classifier Contract — `classifyPlanningDataState` (CANONICAL v4.4 — Round 8A freeze; NOT IMPLEMENTED)
+
+This subsection is the **single canonical owner** of the deterministic pure-function shape that classifies **calculation input readiness** for the §34 Missing / Stale states. It **does not change any §34 business outcome, `replenishment_model` meaning, or Scenario #29/#30 expected behavior** — it only freezes the *function name, signature, input shape, output shape, state tokens, precedence, boundaries, and error contract* so Scenario #29/#30 can later be implemented (Round 8B). No prior authoritative synonym function exists in the canonical, so `classifyPlanningDataState` is the authorized name (no second alias may be created).
+
+### 34A.1 Purpose and ownership
+
+`classifyPlanningDataState` is a **pure / deterministic classifier**:
+```text
+no DB read/write · no API call · no UI state mutation
+no Date.now() / no system clock · no timezone / locale dependency
+no implicit default data · same input ⇒ identical output
+```
+It **only** classifies whether the calculation *inputs* are ready. It does **NOT**: assemble snapshot or forecast records, decide the snapshot source, resolve identity, compute shortage/demand/supply, or orchestrate the Recommendation Runtime. Snapshot/forecast **assembly and sourcing** remain caller (Line Runtime) responsibilities; this predicate receives already-resolved presence/age facts.
+
+### 34A.2 Exact input contract (AUTHORIZED — frozen)
+
+```js
+classifyPlanningDataState({
+  snapshotPresent:        true,               // boolean — REQUIRED, non-null
+  snapshotAgeDays:        3,                  // number  — REQUIRED & validated ONLY when snapshotPresent===true (whole-day age of the snapshot; ignored when snapshotPresent===false)
+  stalenessThresholdDays: 7,                  // number  — REQUIRED & validated ONLY when snapshotPresent===true (staleness cutoff; ignored when snapshotPresent===false)
+  replenishmentModel:     "forecast_driven",  // string  — REQUIRED enum: "forecast_driven" | "sales_driven" (§2 Demand Basis)
+  forecastPresent:        true,               // boolean — REQUIRED when replenishmentModel==="forecast_driven"; IGNORED when "sales_driven"
+  salesBasisPresent:      true                // boolean — REQUIRED when replenishmentModel==="sales_driven"; IGNORED when "forecast_driven"
+})
+```
+
+Per-field freeze:
+
+| Property | Type | Required | Nullable | Allowed values / range | Unit | Conditionally required / ignored | Evidence |
+|---|---|---|---|---|---|---|---|
+| `snapshotPresent` | boolean | always | non-null | `true` / `false` | — | — | §34 "Missing platform inventory snapshot" |
+| `snapshotAgeDays` | number | when `snapshotPresent===true` | non-null on that branch | finite, **≥ 0** | whole civil days | ignored when `snapshotPresent===false` | §34 "Stale snapshot" |
+| `stalenessThresholdDays` | number | when `snapshotPresent===true` | non-null on that branch | finite, **≥ 0** | whole civil days | ignored when `snapshotPresent===false` | §34 "Stale snapshot" |
+| `replenishmentModel` | string | always | non-null | `"forecast_driven"` \| `"sales_driven"` | — | — | §2 (`sales_driven` / `forecast_driven`) |
+| `forecastPresent` | boolean | forecast-driven only | non-null on that branch | `true` / `false` | — | ignored when `sales_driven` | §34 "Missing Forecast on Forecast-Driven SKU" |
+| `salesBasisPresent` | boolean | sales-driven only | non-null on that branch | `true` / `false` | — | ignored when `forecast_driven` | §34 "Missing sales basis on Sales-Driven SKU" |
+
+Prohibited inputs (frozen): a raw DB row; any `warehouse` / `marketplace` / `SKU` identity; a current-date / timezone input; `undefined` used to imply a legal business state; any UI-only flag with no §34 basis. Unexpected **extra** properties are **ignored** (no error, no effect) — consistent with §27A/§32A non-strict shape.
+
+### 34A.3 Exact output contract (AUTHORIZED — frozen)
+
+```js
+{
+  state:              "OK",   // one of the five frozen tokens below
+  calculationAllowed: true    // boolean, deterministically derived from state
+}
+```
+
+- **Return value is a newly-created object every call; the input is never mutated.**
+- **Exactly one** `state` token is returned (never an array / multiple states).
+- Frozen state tokens and their `calculationAllowed` mapping:
+
+| `state` | Meaning (§34) | `calculationAllowed` | §34 evidence |
+|---|---|---:|---|
+| `OK` | inputs ready | `true` | normal (no §34 blocking row) |
+| `STALE_SNAPSHOT` | snapshot present but older than threshold — **proceed with source + staleness warning, never auto-0** | `true` | §34 "Stale snapshot — show source + staleness warning" |
+| `MISSING_SNAPSHOT` | no platform inventory snapshot — never 0 | `false` | §34 "Missing platform inventory snapshot — not 0" |
+| `MISSING_FORECAST` | forecast-driven SKU with no forecast — calculation blocked / review | `false` | §34 "Missing Forecast on Forecast-Driven SKU → calculation blocked / review" |
+| `MISSING_SALES_BASIS` | sales-driven SKU with no sales basis — calculation blocked / review | `false` | §34 "Missing sales basis on Sales-Driven SKU → calculation blocked / review" |
+
+`MISSING_SNAPSHOT` and `STALE_SNAPSHOT` are the **verbatim §34 tokens**. `MISSING_FORECAST` / `MISSING_SALES_BASIS` / `OK` are the **machine representation** of §34's existing prose rows — **no new business classification, no second/UI vocabulary, no free-text message**. `calculationAllowed` is fully derived from `state` (only `OK` and `STALE_SNAPSHOT` allow); it is surfaced explicitly for callers, not as an independent classification.
+
+### 34A.4 Complete precedence and truth table (frozen)
+
+Evaluate in this deterministic order and return the **first** match:
+
+```text
+1. snapshotPresent !== true                                  → "MISSING_SNAPSHOT"     (blocked)
+2. replenishmentModel === "forecast_driven" && !forecastPresent  → "MISSING_FORECAST"  (blocked)
+3. replenishmentModel === "sales_driven"    && !salesBasisPresent → "MISSING_SALES_BASIS" (blocked)
+4. snapshotAgeDays > stalenessThresholdDays                  → "STALE_SNAPSHOT"       (allowed + warning)
+5. otherwise                                                 → "OK"                   (allowed)
+```
+
+| # | snapshotPresent | age vs threshold | replenishmentModel | forecastPresent | salesBasisPresent | `state` | `calculationAllowed` |
+|---|---|---|---|---|---|---|---:|
+| 1 | `false` | (ignored) | any | (ignored) | (ignored) | `MISSING_SNAPSHOT` | `false` |
+| 2 | `true` | any | `forecast_driven` | `false` | (ignored) | `MISSING_FORECAST` | `false` |
+| 3 | `true` | any | `sales_driven` | (ignored) | `false` | `MISSING_SALES_BASIS` | `false` |
+| 4 | `true` | `age > threshold` | `forecast_driven` | `true` | — | `STALE_SNAPSHOT` | `true` |
+| 5 | `true` | `age > threshold` | `sales_driven` | — | `true` | `STALE_SNAPSHOT` | `true` |
+| 6 | `true` | `age <= threshold` | `forecast_driven` | `true` | — | `OK` | `true` |
+| 7 | `true` | `age <= threshold` | `sales_driven` | (ignored) | `true` | `OK` | `true` |
+| 8 | `false` | (ignored) | `forecast_driven` | `false` | — | `MISSING_SNAPSHOT` | `false` |
+| 9 | `true` | `age > threshold` | `forecast_driven` | `false` | — | `MISSING_FORECAST` | `false` |
+
+Frozen precedence decisions (answering the required questions):
+- **Missing snapshot vs missing forecast:** `MISSING_SNAPSHOT` wins (row 8) — snapshot is the foundational inventory basis, evaluated first.
+- **Stale snapshot vs missing forecast:** `MISSING_FORECAST` wins (row 9) — a **blocking** demand-basis gap outranks the **warning-only** staleness signal.
+- **One state or many:** exactly **one** deterministic `state` is returned.
+- **Do all non-OK states block calculation?** **No** — `STALE_SNAPSHOT` is non-OK yet `calculationAllowed=true` (§34 warn-and-proceed); **every other** non-OK state blocks.
+- **Does `sales_driven` ignore forecast presence?** **Yes** — `forecastPresent` is not read on the `sales_driven` branch (rows 5/7).
+
+This precedence faithfully expresses the §34 condition table; it creates **no** different business outcome.
+
+### 34A.5 Boundary and error contract (frozen — error *types* only)
+
+Boundary behavior (frozen literals):
+```text
+snapshotAgeDays === stalenessThresholdDays   → NOT stale (fresh) → OK-path        (staleness is STRICT ">")
+snapshotAgeDays  >  stalenessThresholdDays    → STALE_SNAPSHOT
+snapshotAgeDays === 0                          → current (fresh)
+```
+
+Error types (full message literals NOT frozen this round; consistent with §27A.7 / §32A.9):
+- **`TypeError`** — `input` is not a non-null, non-array object · `snapshotPresent` missing or non-boolean · `replenishmentModel` missing or non-string · the model-scoped presence flag (`forecastPresent` for forecast-driven, `salesBasisPresent` for sales-driven) missing or non-boolean · `snapshotAgeDays` or `stalenessThresholdDays` non-number (evaluated only when `snapshotPresent===true`).
+- **`RangeError`** — `replenishmentModel` is a string but not one of the two allowed enums · `snapshotAgeDays` or `stalenessThresholdDays` is `NaN` / `Infinity` / `-Infinity` / **negative** (evaluated only when `snapshotPresent===true`).
+
+Validation is **branch-scoped** (mirrors §27A/§32A): `snapshotAgeDays` / `stalenessThresholdDays` are validated only on the `snapshotPresent===true` path (they are ignored when the snapshot is absent); the demand-basis presence flag is validated only on its own model branch. Frozen prohibitions: **no** `parseFloat` / `Number` / `Boolean` coercion; **no** numeric-string acceptance; **no** system clock; **no** locale parsing; **no** fallback to `0` / `OK` / `sales_driven`; **no** input mutation.
+
+### 34A.6 Deterministic examples (spec only — no tests run this round)
+
+```text
+1. Missing snapshot
+   in:  { snapshotPresent:false, replenishmentModel:"forecast_driven", forecastPresent:true }
+   out: { state:"MISSING_SNAPSHOT", calculationAllowed:false }        (truth-table #1; snapshot absent, age ignored)
+
+2. Stale snapshot
+   in:  { snapshotPresent:true, snapshotAgeDays:10, stalenessThresholdDays:7, replenishmentModel:"sales_driven", salesBasisPresent:true }
+   out: { state:"STALE_SNAPSHOT", calculationAllowed:true }           (truth-table #5; 10 > 7 → warn-and-proceed)
+
+3. Current snapshot + forecast-driven + missing forecast
+   in:  { snapshotPresent:true, snapshotAgeDays:1, stalenessThresholdDays:7, replenishmentModel:"forecast_driven", forecastPresent:false }
+   out: { state:"MISSING_FORECAST", calculationAllowed:false }        (truth-table #2 / #9; blocked)
+
+4. Current snapshot + forecast-driven + forecast present
+   in:  { snapshotPresent:true, snapshotAgeDays:1, stalenessThresholdDays:7, replenishmentModel:"forecast_driven", forecastPresent:true }
+   out: { state:"OK", calculationAllowed:true }                       (truth-table #6)
+
+5. Current snapshot + sales-driven + forecast absent (ignored)
+   in:  { snapshotPresent:true, snapshotAgeDays:1, stalenessThresholdDays:7, replenishmentModel:"sales_driven", salesBasisPresent:true, forecastPresent:false }
+   out: { state:"OK", calculationAllowed:true }                       (truth-table #7; sales-driven ignores forecast)
+
+6. Exact staleness boundary
+   in:  { snapshotPresent:true, snapshotAgeDays:7, stalenessThresholdDays:7, replenishmentModel:"forecast_driven", forecastPresent:true }
+   out: { state:"OK", calculationAllowed:true }                       (age === threshold → fresh; strict ">")
+
+7. Invalid input → TypeError
+   in:  { snapshotPresent:"yes", replenishmentModel:"forecast_driven", forecastPresent:true }
+   out: throws TypeError                                              (non-boolean snapshotPresent)
+
+8. Invalid numeric boundary → RangeError
+   in:  { snapshotPresent:true, snapshotAgeDays:-1, stalenessThresholdDays:7, replenishmentModel:"forecast_driven", forecastPresent:true }
+   out: throws RangeError                                             (negative age on the snapshotPresent===true branch)
+```
+
+### 34A.7 Scenario #29 / #30 mapping (spec only — Matrix unchanged)
+
+- **Scenario #29 (Missing / stale snapshot)** → §34A branch 1 / 4: `snapshotPresent=false` ⇒ `MISSING_SNAPSHOT` (blocked); `snapshotPresent=true` and `snapshotAgeDays > stalenessThresholdDays` ⇒ `STALE_SNAPSHOT` (allowed + warning). **Never 0.** **EXECUTED_EXISTING_CORE (Round 8B).**
+- **Scenario #30 (Missing Forecast, forecast-driven SKU)** → §34A branch 2: `replenishmentModel="forecast_driven"` and `forecastPresent=false` ⇒ `MISSING_FORECAST` (blocked). **Never 0.** **EXECUTED_EXISTING_CORE (Round 8B).**
+
+Both scenarios are **EXECUTED_EXISTING_CORE (Round 8B)** against the implemented `classifyPlanningDataState`; the Golden Matrix is now **25 executed / 15 pending / 0 canonical-blocked**. Round 8A moved their blocker from *"exact pure-function contract not frozen"* to *"Canonical contract frozen; pure-core implementation pending"*; Round 8B closed the implementation and executed both.
+
+> **Status:** §34A is a **frozen contract; the pure classifier `classifyPlanningDataState` is IMPLEMENTED (Round 8B) exactly to it — 325 unit / 117 golden PASS, Golden #29/#30 executed.** Runtime (Line / Qualified Incoming / DB / API / UI) remains NOT IMPLEMENTED. The §34 business outcomes are unchanged; §34A only freezes the deterministic function contract that represents them.
 
 ---
 
@@ -1530,7 +1701,7 @@ System `recommended_qty` is always a full-carton CEILING (§14). The **user `ord
 
 ---
 
-**FINALIZED v4.3 Calculation Specification.** Header, Changelog, and footer versions are consistent (v4.3 — v4.2 Round 5A §27A classifier freeze + v4.3 Round 6A §32A reallocation-eligibility owner/contract freeze; Round 6 landed the §32A predicate as IMPLEMENTED with Golden #21/#22 executed). Golden Scenarios: 40 specified (§33); Golden #21/#22/#28/#33 and the §27A/§32A pure core are executed (23 executed / 17 pending / 0 canonical-blocked; 282 unit + 114 golden PASS); the full 40-scenario executable matrix remains PENDING.
+**FINALIZED v4.4 Calculation Specification.** Header, Changelog, and footer versions are consistent (v4.3 — v4.2 Round 5A §27A classifier freeze + v4.3 Round 6A §32A reallocation-eligibility owner/contract freeze; Round 6 landed the §32A predicate as IMPLEMENTED with Golden #21/#22 executed; **v4.4 — Round 8A §34A Missing / Stale Data pure-classifier `classifyPlanningDataState` contract freeze (documentation), then Round 8B implemented `classifyPlanningDataState` in the pure core, executed Golden #29/#30, and landed the verified pure core + suites into Main — §34 business outcomes unchanged, semantic version stays v4.4**). Golden Scenarios: 40 specified (§33); Golden #21/#22/#28/#29/#30/#31/#33 and the §27A/§32A/§34A pure core are executed (25 executed / 15 pending / 0 canonical-blocked; 325 unit + 117 golden PASS, run from Main); the full 40-scenario executable matrix remains PENDING (the 15 remaining scenarios need non-pure-core owners).
 ```text
 Specification finalized.
 Runtime not implemented.
