@@ -398,6 +398,33 @@ function procurementCurrentStock_(invMaps, sku, country, marketplace) {
   return invMaps.bySku[s.toLowerCase()] || 0;
 }
 
+/** B4-R1 (Canonical Shipment Quantity Source Repair): resolve one shipment line's On-the-Way quantity.
+ *  Canonical `shipment_lines.shipment_qty` is PRIMARY and authoritative; legacy `qty` is READ
+ *  COMPATIBILITY ONLY — used solely when the canonical column is absent OR the canonical cell is blank
+ *  for that row. A valid canonical 0 stays 0 (never falls back). A present-but-invalid or negative
+ *  canonical value resolves to 0 and does NOT fall back to legacy. Canonical and legacy are NEVER summed.
+ *  Pure + read-only: rowVals is never mutated and nothing is written back. Status qualification is NOT
+ *  decided here (canonical per-table allowlist remains B4-R4). */
+function procShipmentLineQty_(rowVals, cShipQty, cLegacyQty) {
+  if (cShipQty !== -1) {
+    var craw = rowVals[cShipQty];
+    var cBlank = (craw === '' || craw === null || craw === undefined || (typeof craw === 'string' && craw.trim() === ''));
+    if (!cBlank) {                                   // canonical present → authoritative, never falls back to legacy
+      var cn = parseFloat(craw);
+      return (isFinite(cn) && cn > 0) ? cn : 0;      // canonical 0 / invalid / negative → 0
+    }
+  }
+  if (cLegacyQty !== -1) {                            // canonical column absent OR canonical cell blank → legacy read-compat
+    var lraw = rowVals[cLegacyQty];
+    var lBlank = (lraw === '' || lraw === null || lraw === undefined || (typeof lraw === 'string' && lraw.trim() === ''));
+    if (!lBlank) {
+      var ln = parseFloat(lraw);
+      return (isFinite(ln) && ln > 0) ? ln : 0;
+    }
+  }
+  return 0;
+}
+
 /** shipment_lines → on_the_way_qty per sku, counting ONLY lines whose parent shipment is ACTIVE
  *  (status NOT in completed/received/closed/cancelled/delivered). When the line has country/marketplace
  *  and the parent shipment records them, they must match (best-effort narrowing). Missing-tab safe.
@@ -422,20 +449,20 @@ function procurementOnTheWayMaps_(ss) {
       }
     }
   }
-  // Sum active shipment_lines.qty into a per-(sku|country|marketplace) and per-sku structure.
+  // Sum active shipment_lines.shipment_qty (legacy `qty` read-fallback) into a per-(sku|country|marketplace) and per-sku structure.
   var exact = {}, bySku = {};
   var lnSh = ss.getSheetByName('shipment_lines');
   if (lnSh) {
     var ld = lnSh.getDataRange().getValues();
     if (ld.length >= 2) {
       var lh = ld[0].map(function (x) { return String(x).trim().toLowerCase(); });
-      var cSid = lh.indexOf('shipment_id'), cSku = lh.indexOf('sku'), cQty = lh.indexOf('qty');
-      if (cSid !== -1 && cSku !== -1 && cQty !== -1) {
+      var cSid = lh.indexOf('shipment_id'), cSku = lh.indexOf('sku'), cShipQty = lh.indexOf('shipment_qty'), cLegacyQty = lh.indexOf('qty');
+      if (cSid !== -1 && cSku !== -1 && (cShipQty !== -1 || cLegacyQty !== -1)) {
         for (var j = 1; j < ld.length; j++) {
           var sid = procSrcNorm_(ld[j][cSid]);
           if (!active[sid]) continue;   // parent not active (or status join unavailable)
           var sku = procSrcNorm_(ld[j][cSku]); if (!sku) continue;
-          var qty = parseFloat(ld[j][cQty]) || 0;
+          var qty = procShipmentLineQty_(ld[j], cShipQty, cLegacyQty);
           var ap = active[sid];
           var ek = sku.toLowerCase() + '|' + ap.country.toLowerCase() + '|' + ap.marketplace.toLowerCase();
           exact[ek] = (exact[ek] || 0) + qty;
