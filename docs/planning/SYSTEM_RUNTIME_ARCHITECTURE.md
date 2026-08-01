@@ -4,7 +4,7 @@
 > - **Document Role:** the **Runtime Mapping** layer — service boundary, triggers, cadence, read/calculate/snapshot/write ownership, idempotency, commit boundary.
 > - **Canonical Owner For:** service/trigger/cadence boundaries and runtime ownership classes.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), layer language (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`), the **Reserve Trigger** (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1).
-> - **Status:** Reviewed — B-1 Resolved (owner §8A.1; implementation not started); B-2…B-8 Blockers Remain.
+> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only; owners §8A.1 / `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1 / §3.1B); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED**; B-5 / B-6 / B-7 / B-8 UNRESOLVED.
 > - **Current Version:** Draft v1.5 (Round 4D-C: landed the **External-Origin Quarantine → Admission pipeline** + fail-closed authority rule + notification-as-future-Runtime-service + DTO-first/Ledger-later; architecture only, no code/DB). v1.4 (Batch B Round 1: B-1 Reserve Trigger resolved as the **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** — decision only, runtime not started).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** DB Map, System Flow, Calculation Rules (formulas), domain specs.

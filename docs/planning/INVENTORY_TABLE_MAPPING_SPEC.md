@@ -4,7 +4,7 @@
 > - **Document Role:** how the Inventory Replenishment page maps to data sources + display fields.
 > - **Canonical Owner For:** Inventory page field → source mapping and display labels.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md` — all Current Stock / Qualified Incoming / shortage / allocation math), schema (`DATABASE_RELATIONSHIP_MAP.md`), the **Qualified Incoming allowlist** (Batch B).
-> - **Status:** Reviewed — Batch B Blockers Remain.
+> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED; **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (On-the-Way + external-quarantine read model §22; Runtime / read-model pending); B-5 / B-6 / B-7 / B-8 UNRESOLVED.
 > - **Current Version:** v1.6.0 (Round 4D-C, 2026-08-01: added **§22 On-the-Way + External-Quarantine Read Model** — display mapping only, Runtime NOT implemented). v1.5.9 (Batch B Round 1: Factory Stock `fac_*` residual fix in §17.3A / display map + header/footer/changelog version reconciliation).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** Calculation Rules, Database Relationship Map, Amazon Snapshot Import, Runtime Architecture.
@@ -409,7 +409,7 @@ Top-level per-SKU summary row (scope: selected Company + Country + Marketplace).
 | **Engine Input Name** | **`Sellable Current Stock`** = currently sellable / available only (owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §8/§28) |
 | **UI-label Migration Status** | **NOT Implemented / Unverified** — the screen still reads "Current Stock"; renaming to "Inventory Position" is a future UI change (no code change in Batch A) |
 
-The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Processing, Recommendation Draft, Shipment Draft, or unqualified On-the-way. FC Transfer / FC Processing / On-the-way may offset demand only as **Qualified Incoming** when they satisfy the qualification rules owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` (exact DB status allowlist = **BLOCKED — Batch B**, `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). The Inventory Position display must never be fed to the Engine as sellable stock.
+The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Processing, Recommendation Draft, Shipment Draft, or unqualified On-the-way. FC Transfer / FC Processing / On-the-way may offset demand only as **Qualified Incoming** when they satisfy the qualification rules owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` (per-table qualification direction **RESOLVED — B-4 CONTRACT RESOLVED, RUNTIME NOT IMPLEMENTED**; Qualified Incoming Runtime pending, `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). The Inventory Position display must never be fed to the Engine as sellable stock.
 
 **Per-field tags** — `Engine Input?` = feeds the Engine's `Sellable Current Stock`; `Qual. Req?` = must pass Qualified-Incoming qualification before it can offset demand.
 
@@ -459,7 +459,7 @@ The engine output is the **Engine A live Demand / Shortage / Remaining Need** �
 
 ### 14.3 Formula ownership
 
-> **This document is a UI / data-mapping consumer only.** **Current Stock, Qualified Incoming, Approved / Committed Supply, Special Event Demand, timing eligibility, shortage, reallocation, and Net Order Need are governed exclusively by the active `SUPPLY_PLANNING_CALCULATION_RULES.md`** (the current canonical formula SSOT; §2C / §2D / §20 / §26 / §29E / §29F / §29G / §31). **Qualified Incoming status (B-4):** the business predicate + per-table qualification direction are **contract-repaired (PARTIALLY RESOLVED, 2026-08-01; `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4)** — but the **Qualified Incoming Runtime remains open**, and the `wh_on_the_way_qty` ↔ Shipment-derived incoming reconciliation is an **OPEN DEPENDENCY** (§21). This document is not blocked by a wholly-undecided allowlist; it is a display/mapping consumer only. This section owns no formula, adds **no** simplified shortage equation, does not restore any prior v4.0 formula, and never reverses ownership onto Inventory §14/§15; any quantity displayed here maps to the owner output.
+> **This document is a UI / data-mapping consumer only.** **Current Stock, Qualified Incoming, Approved / Committed Supply, Special Event Demand, timing eligibility, shortage, reallocation, and Net Order Need are governed exclusively by the active `SUPPLY_PLANNING_CALCULATION_RULES.md`** (the current canonical formula SSOT; §2C / §2D / §20 / §26 / §29E / §29F / §29G / §31). **Qualified Incoming status (B-4):** the business predicate + per-table qualification direction + external-origin admission gate are **RESOLVED (B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED, 2026-08-01; `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4)** — but the **Qualified Incoming Runtime + On-the-Way read model (§22) remain open**, and the `wh_on_the_way_qty` ↔ Shipment-derived incoming reconciliation is an **OPEN DEPENDENCY** (§21). This document is not blocked by a wholly-undecided allowlist; it is a display/mapping consumer only. This section owns no formula, adds **no** simplified shortage equation, does not restore any prior v4.0 formula, and never reverses ownership onto Inventory §14/§15; any quantity displayed here maps to the owner output.
 
 ---
 

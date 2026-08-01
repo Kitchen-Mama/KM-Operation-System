@@ -7,7 +7,7 @@
 > - **Canonical Owners (this doc restates none of them):** `SUPPLY_PLANNING_CALCULATION_RULES.md` (formulas) · `SYSTEM_RUNTIME_ARCHITECTURE.md` (cadence / service boundary) · `DATABASE_RELATIONSHIP_MAP.md` (schema) · `SUPPLY_CHAIN_SYSTEM_FLOW.md` (E2E flow).
 > - **Canonical Owner For:** nothing permanent (implementation sequencing only).
 > - **Not Owner For:** formulas, DB schema, Reserve Trigger (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1), cadence — all deferred to the owners above.
-> - **Status:** Reviewed — B-1 Resolved (decision only); B-4 / B-7 Blockers Remain.
+> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (Runtime prerequisites open — see the B-4 Minimal Runtime Plan §B4-Plan below); B-5 / B-6 / B-7 / B-8 UNRESOLVED.
 > - **Current Version:** Draft v1.1 (Round 4D-C: added the External-Origin-Aware Implementation Order + the Daily-Import / external-sync / scheduler no-auto-admit guards; work-tracker only, nothing implemented). Draft v1.0 (Batch B Round 1 registry sync — B-1 resolved).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** the four Canonical Owners above.
@@ -220,5 +220,32 @@ Temporary implementation sequence for B-4 Runtime (owner references §A–§K; `
 25. production verification
 
 **Explicit guards:** Daily Import does **not** automatically approve external records; external sync does **not** automatically admit planning supply; the scheduler must **not** count review-pending external records.
+
+---
+
+## §B4-Plan. B-4 Minimal Runtime Implementation Plan (CANONICAL 2026-08-01 Round 4D-D — planning only; NO Runtime; version retained Draft v1.1)
+
+Refines the External-Origin-Aware Implementation Order (above) into the **smallest dependency-ordered, independently-testable batches** that can truthfully execute Golden #12 / #13 / #14. **Nothing is implemented.** Main is the sole canonical repository. No schema migration, no scheduler, no receiving, no external API, no notification, no ledger.
+
+**Minimal target (must):** read canonical KM Shipment rows + canonical `shipment_lines.shipment_qty` → resolve destination identity → normalize deterministic supply candidates → B-4 authority / admission classification (exclude external-unlinked / quarantined, fail-closed) → per-table status allowlist → resolve ETA + Required-By → remaining qty → stable-lineage dedup → §2E ten-gate → qualified qty + excluded / late / review breakdown → one Line Runtime fixture path (feed the existing `calculateGap` `timelyQualifiedIncoming` input). Persistence / Scheduler / Receiving / external API deferred.
+
+**Schema boundary:** (A) sufficient now — `shipments.status` / `shipments.eta`, `shipment_lines.shipment_qty`, company / country / marketplace / sku; (B) writer/read alignment only (no new column) — `shipments.destination_warehouse_id` (accepted + mirrored, `12_shipment_handlers.gs:499/709`; legacy-row backfill = data, not schema); (C) future migration — none required for #12/#13/#14; (D) not needed — Supply Ledger / review / notification / receiving tables; (E) B-5 / B-8 — `request_order_line_sources` grain, cancellation-release. **No schema landed this round.**
+
+| Batch | Purpose | Expected files | Kind | Dependency class | Status after |
+|---|---|---|---|---|---|
+| **B4-R1** | Canonical Shipment source repair — read `shipment_lines.shipment_qty` primary, legacy `qty` explicit fallback | `13_procurement_handlers.gs` (`procurementOnTheWayMaps_`) + source test | I/O (source) | SOURCE EXISTS — REPAIR REQUIRED | shipment_qty primary |
+| **B4-R2** | Destination identity planning-read — `destination_warehouse_id` → compat `warehouse_id` fallback; missing → review/block | shipment reader + test | I/O (source) | SOURCE EXISTS — EXTEND REQUIRED (no new column) | destination read aligned |
+| **B4-R3** | Normalized supply candidate pure DTO — deterministic builder (authority type, source key, lineage key, status/qty/ETA); no persistence | new pure module + unit | pure | NEW PURE MODULE REQUIRED | candidate DTO pure |
+| **B4-R4** | KM Shipment Incoming Adapter — status allowlist, remaining qty, ETA, company/SKU/destination scope, exclusion reasons | adapter module + fixtures | adapter | NEW ADAPTER REQUIRED | shipment adapter |
+| **B4-R5** | External authority fail-closed adapter — linked evidence = 0 separately; unlinked/quarantined = 0; pure admission classification (no notification/review) | adapter module + fixtures | adapter | NEW ADAPTER REQUIRED | admission classifier |
+| **B4-R6** | Dedup + ten-gate Qualified Incoming engine — stable-key dedup, ownership precedence, Required-By, late/missing-ETA breakdown; no ledger | pure engine + unit | pure | NEW PURE MODULE REQUIRED | qualified-incoming engine |
+| **B4-R7** | Minimal Line Runtime integration — assemble one SKU/company/destination/window; feed Incoming → `calculateGap.timelyQualifiedIncoming`; no scheduler/writer/persistence | integration glue + fixture | orchestration (minimal) | NEW ORCHESTRATION REQUIRED | one line path |
+| **B4-R8** | Golden #12 / #13 / #14 promotion — executable fixtures; Matrix promotion only after all Runtime assertions pass | golden test file | test | EXTEND (tests) | #12/#13/#14 executed |
+
+**Merge/split:** R1 and R2 are both small source read-alignments and MAY merge if kept independently testable; R3 → R4 → R5 → R6 stay separate (distinct pure/adapter contracts); R7 and R8 stay separate (integration vs promotion). Do not merge any batch that would couple a source repair with an admission decision.
+
+**Gates (each batch):** syntax / import-export · unit assertions · adapter / lineage / dedup fixtures · no input mutation · no source write · no recommendation persistence · no external automatic admission · no schema drift · **Unit 325 / Golden 117 / Matrix 25-15-0 preserved until B4-R8**; post-B4-R8 Matrix + assertion counts are determined by the actual added tests, never invented in advance.
+
+**First implementation task = B4-R1** (source evidence confirmed: `procurementOnTheWayMaps_` reads legacy `qty` at `13_:432/438`; `shipment_qty` already exists / written / read-with-fallback in `12_:58/534/612`). Small, no product decision, no schema migration, independently testable, does not imply a complete Qualified Incoming Runtime, lands in Main. **Not executed in this round.**
 
 **End of Document**
