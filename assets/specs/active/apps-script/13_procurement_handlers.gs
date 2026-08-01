@@ -425,6 +425,29 @@ function procShipmentLineQty_(rowVals, cShipQty, cLegacyQty) {
   return 0;
 }
 
+/** B4-R2 (Canonical Shipment Destination Identity Planning-Read Alignment): resolve a shipment's canonical
+ *  DESTINATION identity for the B-4 planning read. `shipments.destination_warehouse_id` is PRIMARY; legacy
+ *  `shipments.warehouse_id` (the old destination identity, still mirrored by 12_shipment_handlers.gs §708-712)
+ *  is READ COMPATIBILITY ONLY — used solely when the canonical column is absent OR its cell is blank. A nonblank
+ *  canonical destination ALWAYS wins on conflict. `warehouse_code` / destination text / names / addresses are
+ *  NEVER identity; `origin_warehouse_id` / `source_warehouse_id` are NEVER a destination fallback (not passed in).
+ *  Warehouse IDs are strings — a nonblank id like "0" is a valid id, not "missing". Missing identity is honest,
+ *  not fabricated. Returns { id: <string>, legacyFallback: <bool>, missing: <bool> }. Pure + read-only.
+ *  Destination resolution does NOT itself make a Shipment qualified (canonical per-table allowlist = B4-R4). */
+function procShipmentDestId_(rowVals, cDest, cLegacy) {
+  if (cDest !== -1) {
+    var d = rowVals[cDest];
+    var dBlank = (d === '' || d === null || d === undefined || (typeof d === 'string' && d.trim() === ''));
+    if (!dBlank) return { id: procSrcNorm_(d), legacyFallback: false, missing: false };
+  }
+  if (cLegacy !== -1) {                               // canonical destination column absent OR blank → legacy read-compat
+    var w = rowVals[cLegacy];
+    var wBlank = (w === '' || w === null || w === undefined || (typeof w === 'string' && w.trim() === ''));
+    if (!wBlank) return { id: procSrcNorm_(w), legacyFallback: true, missing: false };
+  }
+  return { id: '', legacyFallback: false, missing: true };   // both absent/blank → honest missing, never fabricated
+}
+
 /** shipment_lines → on_the_way_qty per sku, counting ONLY lines whose parent shipment is ACTIVE
  *  (status NOT in completed/received/closed/cancelled/delivered). When the line has country/marketplace
  *  and the parent shipment records them, they must match (best-effort narrowing). Missing-tab safe.
@@ -438,19 +461,22 @@ function procurementOnTheWayMaps_(ss) {
     if (sd.length >= 2) {
       var sh = sd[0].map(function (x) { return String(x).trim().toLowerCase(); });
       var cId = sh.indexOf('shipment_id'), cStatus = sh.indexOf('status'),
-          cCo = sh.indexOf('country'), cM = sh.indexOf('marketplace');
+          cCo = sh.indexOf('country'), cM = sh.indexOf('marketplace'),
+          cDest = sh.indexOf('destination_warehouse_id'), cWid = sh.indexOf('warehouse_id');   // B4-R2: canonical destination + legacy warehouse_id
       if (cId !== -1) {
         for (var i = 1; i < sd.length; i++) {
           var id = procSrcNorm_(sd[i][cId]); if (!id) continue;
           var st = cStatus !== -1 ? String(sd[i][cStatus]).trim().toLowerCase() : '';
           if (CLOSED[st]) continue;   // not active
-          active[id] = { country: cCo !== -1 ? procSrcNorm_(sd[i][cCo]) : '', marketplace: cM !== -1 ? procSrcNorm_(sd[i][cM]) : '' };
+          var dest = procShipmentDestId_(sd[i], cDest, cWid);   // B4-R2: destination_warehouse_id primary, warehouse_id legacy fallback
+          active[id] = { country: cCo !== -1 ? procSrcNorm_(sd[i][cCo]) : '', marketplace: cM !== -1 ? procSrcNorm_(sd[i][cM]) : '',
+                         destId: dest.id, destLegacy: dest.legacyFallback, destMissing: dest.missing };
         }
       }
     }
   }
   // Sum active shipment_lines.shipment_qty (legacy `qty` read-fallback) into a per-(sku|country|marketplace) and per-sku structure.
-  var exact = {}, bySku = {};
+  var exact = {}, bySku = {}, byDest = {};   // B4-R2: byDest = additive destination-scoped On-the-Way (`sku|destWarehouseId`, or `sku|__MISSING_DEST__`); feeds B4-R3; does NOT alter exact/bySku or totals
   var lnSh = ss.getSheetByName('shipment_lines');
   if (lnSh) {
     var ld = lnSh.getDataRange().getValues();
@@ -467,11 +493,13 @@ function procurementOnTheWayMaps_(ss) {
           var ek = sku.toLowerCase() + '|' + ap.country.toLowerCase() + '|' + ap.marketplace.toLowerCase();
           exact[ek] = (exact[ek] || 0) + qty;
           bySku[sku.toLowerCase()] = (bySku[sku.toLowerCase()] || 0) + qty;
+          var dk = sku.toLowerCase() + '|' + (ap.destMissing ? '__MISSING_DEST__' : String(ap.destId).toLowerCase());   // B4-R2 destination-scoped aggregate
+          byDest[dk] = (byDest[dk] || 0) + qty;
         }
       }
     }
   }
-  return { exact: exact, bySku: bySku };
+  return { exact: exact, bySku: bySku, byDest: byDest };
 }
 
 /** on_the_way_qty for a line: narrow by country+marketplace when present (via parent shipment), else sum-by-sku. */

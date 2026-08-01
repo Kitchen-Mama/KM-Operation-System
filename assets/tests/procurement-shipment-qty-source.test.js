@@ -29,6 +29,7 @@ function extractFn(src, name) {
 // eval the real source functions into this scope (function declarations hoist into local scope).
 eval(extractFn(GS, 'procSrcNorm_'));
 eval(extractFn(GS, 'procShipmentLineQty_'));
+eval(extractFn(GS, 'procShipmentDestId_'));   // dependency of procurementOnTheWayMaps_ (added in B4-R2)
 eval(extractFn(GS, 'procurementOnTheWayMaps_'));
 
 var fail = 0, pass = 0;
@@ -118,8 +119,8 @@ var res4 = procurementOnTheWayMaps_(mkSS({ shipments: mkSheet(shipments4), shipm
 eq(res4.exact['sku-d|us|amazon_us'], undefined, 'closed statuses (delivered/completed) excluded → no entry');
 eq(res4.bySku['sku-d'] || 0, 0, 'closed statuses contribute 0 to bySku');
 
-// Return shape preserved.
-eq(Object.keys(res1).sort(), ['bySku', 'exact'], 'return shape preserved: { exact, bySku }');
+// Return shape: exact + bySku preserved (B4-R2 adds an additive `byDest` key; not exclusive — existing callers read .exact/.bySku).
+eq([res1.exact !== undefined, res1.bySku !== undefined], [true, true], 'return preserves exact + bySku (additive byDest allowed, keys not exclusive)');
 
 if (fail) { console.error('\n' + fail + ' ASSERTION(S) FAILED'); process.exit(1); }
 console.log('\nAll B4-R1 shipment-quantity-source assertions passed (' + pass + ' assertions).');
