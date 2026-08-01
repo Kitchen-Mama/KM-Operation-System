@@ -11,7 +11,7 @@
 > - **Blocked By:** Batch B — **B-4 Qualified Incoming Runtime prerequisites** (`destination_warehouse_id` planning-read / backfill · receiving layer · `shipment_events` ETA · `wh_on_the_way_qty` double-count owner; the **B-4 contract is RESOLVED**, §16 review/adoption lineage is PROPOSED / ADDITIVE) · `request_order_line_sources` grain (B-5) (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **B-1 Reserve Trigger, B-2 Shipping Group Key and B-3 Marketplace Header/Line placement no longer block — resolved (decision only; no schema/reserve write path is added — Runtime/Deployment Unverified).**
 
 **Status:** 🟢 v1.8 — Database Relationship Specification (documentation only; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30; Batch B Round 2 B-2 resolution 2026-07-31; Batch B Round 3 B-3 resolution 2026-07-31; Batch B Round 4D-C §16 external review/adoption lineage 2026-08-01)
-**Last Updated:** 2026-07-31
+**Last Updated:** 2026-08-01
 **Maintained By:** Development Team
 **Calculation authority:** formulas are owned by [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (the active canonical formula SSOT); this map only records tables/relationships.
 **Related:** [`SUPPLY_CHAIN_SYSTEM_FLOW.md`](./SUPPLY_CHAIN_SYSTEM_FLOW.md), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md), `assets/specs/active/SKU_MASTER_FLOW.md`

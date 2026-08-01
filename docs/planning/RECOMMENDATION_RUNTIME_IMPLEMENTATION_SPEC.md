@@ -11,7 +11,7 @@
 > - **Current Version:** Draft v1.1 (Round 4D-C: added the External-Origin-Aware Implementation Order + the Daily-Import / external-sync / scheduler no-auto-admit guards; work-tracker only, nothing implemented). Draft v1.0 (Batch B Round 1 registry sync — B-1 resolved).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** the four Canonical Owners above.
-> - **Blocked By:** Batch B (cycle-key persistence design B-7, Qualified Incoming allowlist B-4) — see the consolidated Batch B Handoff. **B-1 Reserve Trigger no longer blocks — resolved (decision only; Implementation Not Started; Runtime Not Verified). Next open decision = B-2 Shipping Group Key.**
+> - **Blocked By:** Batch B — **B-4 Runtime implementation prerequisites** (described in §B4-Plan) · **B-7** persisted recommendation-cycle / unique-key design · B-5 / B-6 / B-8 where applicable. **B-1 / B-2 / B-3 are RESOLVED (decision only); the B-4 contract is RESOLVED and B-4 Runtime is NOT IMPLEMENTED; there is no "next open decision = B-2". The first authorized implementation task after this checkpoint is B4-R1 (§B4-Plan).**
 
 **Status:** 🟡 Draft v1.1 — **SPECIFICATION ONLY.** No Runtime, Apps Script, frontend, trigger, DB column, or sheet tab is created here. Function-level runtime status below was **verified by read-only audit** (2026-07-20).
 **Last Updated:** 2026-08-01 (Round 4D-C — external-origin-aware implementation order; content-additive, nothing implemented)

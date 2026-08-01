@@ -10,8 +10,8 @@
 > - **Depends On:** Architecture Principles, Calculation Rules, Runtime Architecture, Database Relationship Map.
 > - **Blocked By:** Batch B — **B-4 Qualified Incoming Runtime prerequisites** (receiving layer · `shipment_events` ETA · `destination_warehouse_id` persistence · `wh_on_the_way_qty` double-count; the **B-4 business + external-origin admission contract is RESOLVED (CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED)** — §11 B-4 / `SUPPLY_PLANNING_CALCULATION_RULES.md` §2E / §38) · Request→PO atomicity (B-6) · B-5 / B-7 / B-8 (see §11 Batch B Blockers below). **B-1 Reserve Trigger and B-2 Shipping Group Key no longer block — resolved (decision only; implementation not started); the B-4 Qualified Incoming allowlist is no longer undecided — its business predicate + per-table direction are RESOLVED (B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED), only Runtime remains open.**
 
-**Status:** 🟡 Draft v1.6 — Architecture Specification (documentation only; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30; Batch B Round 2 B-2 resolution 2026-07-31; Batch B Round 3 B-3 resolution 2026-07-31)
-**Last Updated:** 2026-07-31
+**Status:** 🟡 Draft v1.7 — Architecture Specification (documentation only; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30; Batch B Round 2 B-2 resolution 2026-07-31; Batch B Round 3 B-3 resolution 2026-07-31; Round 4D-C external-origin quarantine/admission contract landing §12 + B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED; Round 4D-D B-4 Minimal Runtime Plan reference)
+**Last Updated:** 2026-08-01
 **Maintained By:** Development Team
 **Related:** [`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`](./SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md) (**authoritative architecture language**), [`SUPPLY_PLANNING_CALCULATION_RULES.md`](./SUPPLY_PLANNING_CALCULATION_RULES.md) (calculation logic), [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md) (Decision Layer / Submit Plan write contract), [`SHIPMENT_CENTER_SPEC.md`](./SHIPMENT_CENTER_SPEC.md), `assets/specs/active/SKU_MASTER_FLOW.md` (SKU/marketplace/pricing creation)
 

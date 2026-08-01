@@ -8,7 +8,7 @@
 > - **Current Version:** Draft v1.5 (Round 4D-C: landed the **External-Origin Quarantine → Admission pipeline** + fail-closed authority rule + notification-as-future-Runtime-service + DTO-first/Ledger-later; architecture only, no code/DB). v1.4 (Batch B Round 1: B-1 Reserve Trigger resolved as the **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** — decision only, runtime not started).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** DB Map, System Flow, Calculation Rules (formulas), domain specs.
-> - **Blocked By:** Batch B — Qualified Incoming allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11). **B-1 Reserve Trigger no longer blocks — resolved (decision only; Runtime implementation Not Started / Unverified).**
+> - **Blocked By:** Batch B — **B-4 Qualified Incoming Runtime prerequisites** — canonical Shipment quantity reader, destination identity read, normalized supply candidates, authority/admission classification, deduplication, ten-gate Runtime and Line Runtime integration; the B-4 **contract itself is resolved** (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). **B-1 / B-2 / B-3 RESOLVED (decision only); B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED; B-5 / B-6 / B-7 / B-8 UNRESOLVED.**
 
 **Status:** 🟡 Draft v1.5 — Runtime Architecture Specification (architecture only · NO code, NO Apps Script, NO API, NO SQL, NO DB change, NO implementation; Batch A canonical repair 2026-07-28; Batch B Round 1 B-1 resolution 2026-07-30; Round 4D-C External-Origin Quarantine/Admission pipeline 2026-08-01)
 **Last Updated:** 2026-08-01

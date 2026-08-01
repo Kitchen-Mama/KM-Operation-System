@@ -3,15 +3,15 @@
 > **Owner Boundary (reviewed 2026-07-28).**
 > - **Document Role:** how the Inventory Replenishment page maps to data sources + display fields.
 > - **Canonical Owner For:** Inventory page field → source mapping and display labels.
-> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md` — all Current Stock / Qualified Incoming / shortage / allocation math), schema (`DATABASE_RELATIONSHIP_MAP.md`), the **Qualified Incoming allowlist** (Batch B).
+> - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md` — all Current Stock / Qualified Incoming / shortage / allocation math), schema (`DATABASE_RELATIONSHIP_MAP.md`), the **Qualified Incoming allowlist** (owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §2E / §10 · Shipment `SHIPMENT_CENTER_SPEC.md` §10; B-4 contract resolved, Runtime pending).
 > - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED; **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (On-the-Way + external-quarantine read model §22; Runtime / read-model pending); B-5 / B-6 / B-7 / B-8 UNRESOLVED.
 > - **Current Version:** v1.6.0 (Round 4D-C, 2026-08-01: added **§22 On-the-Way + External-Quarantine Read Model** — display mapping only, Runtime NOT implemented). v1.5.9 (Batch B Round 1: Factory Stock `fac_*` residual fix in §17.3A / display map + header/footer/changelog version reconciliation).
 > - **Last Reviewed:** 2026-07-30.
 > - **Depends On:** Calculation Rules, Database Relationship Map, Amazon Snapshot Import, Runtime Architecture.
-> - **Blocked By:** Batch B — Qualified Incoming / On-the-way status allowlist (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). *(B-1 Reserve Trigger is resolved elsewhere — owner Architecture Principles §8A.1; not a blocker of this document.)*
+> - **Blocked By:** Batch B — **B-4 Qualified Incoming and On-the-Way Runtime / read-model implementation prerequisites**; the business predicate, per-table direction and external-origin admission contract are **resolved** (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4 / `SUPPLY_PLANNING_CALCULATION_RULES.md` §2E / §38). *(B-1 Reserve Trigger is resolved elsewhere — owner Architecture Principles §8A.1; not a blocker of this document.)*
 
 **Status:** 🟢 v1.6.0 — Inventory Table Mapping **finalized** (Spec only — this document does **NOT** own any calculation formula; all formulas are owned by `SUPPLY_PLANNING_CALCULATION_RULES.md` **the active canonical formula SSOT**)
-**Last Updated:** 2026-07-30
+**Last Updated:** 2026-08-01
 > **Changelog v1.5.8 → v1.5.9 (2026-07-30):** Batch B Round 1 residual cleanup — replaced the remaining unprefixed Factory Stock field names with the canonical `fac_*` namespace (`factory_stock.fac_current_stock` in the Factory CN/TW display map §17.3A; `fac_current_stock=0` / `fac_reserved_stock=0` in the lifecycle baseline + Runtime-status note), per the Inventory Field Namespace Rule (§3.0). Reconciled header/footer/changelog to the same version. Overseas `wh_*` and non-inventory entity fields deliberately left unchanged. No formula, mapping direction, or runtime change.
 > **Changelog v1.5.7 → v1.5.8 (2026-07-28):** Batch A repair — clarified **Engine Current Stock vs UI Inventory Position vs Qualified Incoming** separation (display vs engine-coverage). Documentation only; no formula redefined. *(Changelog entry backfilled 2026-07-30.)*
 > **Changelog v1.5.6 → v1.5.7 (2026-07-24):** documentation-only sync to calculation owner **v4.1** — Avg Sales/Day now sampled as the latest 30 eligible normal days within a 90-completed-day source window (§8/§13); §21 calculation Open Questions closed (resolved → owner sections, runtime mapping pending); §14/§15 restated as owner-pointing summaries. No formula redefined here. *(Round-3 residual cleanup, same v1.5.7: §13 "Suggested Qty" mapping now specifies its canonical meaning = Recommended Shipping Qty from `shipping_allocation_draft_lines.recommended_qty` per owner §2C.1/§31 — NOT raw Engine A shortage and NOT Request Order Suggested Order Qty; §16 restated as a UI/data-mapping summary that does not own the allocation rule — owner §20 is authoritative.)*
@@ -160,7 +160,7 @@ Scope: selected Company + Country + Marketplace, per SKU. Source: `amazon_invent
 | **Customer Orders** | `amazon_inventory_snapshot.customer_order_qty` |
 | **Unsellable** | `amazon_inventory_snapshot.unfulfillable_qty` (field already exists in DB) |
 
-> **Sellable vs in-transit (Batch A 2026-07-28):** only **Available** is currently sellable. **FC Transfer** and **FC Processing** are **in-transit-to-FBA** buckets — they roll up into the UI **Inventory Position** display (§13) but are **not** part of the Engine's sellable **Current Stock**; they offset demand only as **Qualified Incoming** when qualified (owner `SUPPLY_PLANNING_CALCULATION_RULES.md`; allowlist = Batch B). **Customer Orders** / **Unsellable** are never added to sellable stock.
+> **Sellable vs in-transit (Batch A 2026-07-28):** only **Available** is currently sellable. **FC Transfer** and **FC Processing** are **in-transit-to-FBA** buckets — they roll up into the UI **Inventory Position** display (§13) but are **not** part of the Engine's sellable **Current Stock**; they offset demand only as **Qualified Incoming** when qualified (owner `SUPPLY_PLANNING_CALCULATION_RULES.md`; qualification direction = B-4, contract resolved / Runtime pending). **Customer Orders** / **Unsellable** are never added to sellable stock.
 
 ---
 
@@ -417,7 +417,7 @@ The Engine `Sellable Current Stock` must **NOT** include FC Transfer, FC Process
 |---------------|---------------------|:---:|:---:|---|
 | **Inventory Position** *(screen label currently "Current Stock" — see §13.0)* | `Available + FC Transfer + FC Processing` (`amazon_inventory_snapshot`) — display total only | No | — | Current physical label = Legacy; Target label = Inventory Position |
 | **Sellable Current Stock** *(Engine input — owner Calc Rules §8/§28; not a screen column)* | destination sellable/available only; excludes FC Transfer / FC Processing / Draft / unqualified On-the-way | Yes | No | Target canonical (Engine semantics) |
-| **On The Way** | Shipping Shipment Total — **pending implementation** (§9); raw label only | No (unless qualified) | **Yes** | Current label; qualification allowlist = Batch B |
+| **On The Way** | Shipping Shipment Total — **pending implementation** (§9); raw label only | No (unless qualified) | **Yes** | Current label; qualification direction = B-4 (contract resolved; Runtime/read-model pending) |
 | **3rd Party Stock** | total **available stock** across eligible Overseas Warehouses (`overseas_inventory_snapshot.available_stock`, eligible warehouses only — see §16) | Yes (sellable overseas) | No | Current |
 | **Avg Sales / Day** | **Primary:** `normalized_avg_sales_per_day` (latest 30 eligible normal days within a 90-completed-day source window, this SKU's event/promotion days excluded; divide by actual normal-day count); **Fallback:** `amazon_weekly_sales_snapshot.sales_units_7d ÷ 7`. **Rounded to 1 decimal.** Runtime result (not persisted); adopted source + warning frozen only at Submit Plan. Owner `SUPPLY_PLANNING_CALCULATION_RULES.md` §22.2 / §22.6. | Yes (demand rate) | — | Current |
 | **60 Days FC** | `Forecast Month+1 + Forecast Month+2` (**Target Rule already applied**, §7) | Yes (demand) | — | Current |
