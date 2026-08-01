@@ -66,8 +66,28 @@ eq(run().quantityEligible, true, '26 positive remaining eligible');
 // -------- ETA presence --------
 eq(run().etaPresent, true, '32 ETA present');
 (function () { var r = run(function (ci) { ci.shipment.eta = ''; }); eq([r.etaPresent, r.sourceEligible, r.reviewReasons.indexOf('MISSING_ETA') >= 0], [false, false, true], '33 ETA missing → review + blocks eligibility'); })();
-eq(run(function (ci) { ci.shipment.eta = '2026-09-01'; }).candidate.status, 'in_transit', '34 ETA not parsed (raw candidate values retained)');
+// 34 (repaired): the ACTUAL ETA value is preserved in the snapshot, exactly as normalized by B4-R3 (not parsed).
+(function () { var r = run(function (ci) { ci.shipment.eta = '2026-10-01'; }); eq([r.candidate.eta, r.candidate.status, r.etaPresent], ['2026-10-01', 'in_transit', true], '34 actual ETA value preserved exactly (raw values retained, not parsed)'); })();
+// ETA whitespace-normalized by B4-R3 (trim) remains preserved as the trimmed string.
+eq(run(function (ci) { ci.shipment.eta = '  2026-10-01  '; }).candidate.eta, '2026-10-01', '34b B4-R3 whitespace-normalized ETA preserved');
+// Missing ETA remains null in the returned snapshot, and etaPresent is false.
+(function () { var r = run(function (ci) { ci.shipment.eta = ''; }); eq([r.candidate.eta, r.etaPresent], [null, false], '34c missing ETA → null in snapshot, etaPresent false'); })();
+// No parsed Date object is ever returned; eta stays a string (or null) — never an object.
+(function () { var r = run(); eq([typeof r.candidate.eta, r.candidate.eta instanceof Date], ['string', false], '34d ETA is a string, never a Date object'); })();
 (function () { var r = run(); eq([r.requiredByDate, r.lateRiskQty].every(function (v) { return v === undefined; }), true, '35 no Required-By comparison exists'); })();
+// -------- Downstream projection contract (B4-R4.1): normalized source metadata preserved for B4-R6 --------
+eq(run().candidate.company, 'KM', 'DS1 company preserved');
+eq(run().candidate.country, 'US', 'DS2 country preserved');
+eq(run().candidate.marketplace, 'amazon_us', 'DS3 marketplace preserved');
+eq(run(function (ci) { ci.line.siteSku = 'SITE-X'; }).candidate.siteSku, 'SITE-X', 'DS4 siteSku preserved when present');
+(function () { var c = build(baseCandInput()); c.sourceUpdatedAt = '2026-08-01T00:00:00Z'; var r = adapt({ candidate: c, scope: baseScope() }); eq(r.candidate.sourceUpdatedAt, '2026-08-01T00:00:00Z', 'DS5 sourceUpdatedAt preserved without evaluation'); })();
+eq(run().candidate.destinationIdentitySource, 'CANONICAL_DESTINATION_WAREHOUSE_ID', 'DS6 destinationIdentitySource preserved (owned by B4-R3)');
+eq(run(function (ci) { ci.shipment.destinationWarehouseId = ''; }).candidate.destinationIdentitySource, 'LEGACY_WAREHOUSE_ID_FALLBACK', 'DS6b destinationIdentitySource legacy fallback preserved');
+eq(run(function (ci) { ci.line.purchaseOrderLineId = 'PO-77'; }).candidate.linkedPurchaseOrderLineId, 'PO-77', 'DS7 linkedPurchaseOrderLineId preserved');
+eq(run(function (ci) { ci.line.shippingPlanLineId = 'SP-88'; }).candidate.linkedShippingPlanLineId, 'SP-88', 'DS8 linkedShippingPlanLineId preserved');
+(function () { var c = build(baseCandInput()); var r = adapt({ candidate: c, scope: baseScope() }); eq(r.candidate === c, false, 'DS9 returned candidate snapshot is a fresh reference, not the input candidate'); })();
+(function () { var c = build(baseCandInput()); var snap = JSON.stringify(c); var r = adapt({ candidate: c, scope: baseScope() }); r.candidate.eta = 'MUT'; r.candidate.company = 'MUT'; r.candidate.marketplace = 'MUT'; eq(JSON.stringify(c), snap, 'DS10 mutating returned ETA/scope metadata does not mutate input candidate'); })();
+(function () { var c = build(baseCandInput()); var a = adapt({ candidate: c, scope: baseScope() }), b = adapt({ candidate: c, scope: baseScope() }); a.candidate.eta = 'MUT'; a.candidate.company = 'MUT'; eq([b.candidate.eta, b.candidate.company], ['2026-09-01', 'KM'], 'DS11 mutating one result snapshot does not affect another'); })();
 
 // -------- Authority / source / domain (fail closed) --------
 eq(run().sourceEligible, true, '36 KM canonical Shipment candidate accepted');

@@ -152,7 +152,10 @@
     var adapterEligibleQuantity = sourceEligible ? qty : 0;
 
     return {
-      // Fresh shallow snapshot of immutable identity/reference fields (does not expose the input candidate ref).
+      // Fresh isolated snapshot of the normalized B4-R3 source candidate (does NOT expose the input candidate ref).
+      // Downstream (B4-R6) needs the actual source metadata (ETA value, scope, sourceUpdatedAt, destination source,
+      // PO/Plan lineage) without rereading the original candidate or source rows. All values are copied VERBATIM as
+      // normalized by B4-R3 — no parse, no clock, no locale, no freshness/Required-By evaluation here.
       candidate: {
         supplyCandidateId: candidate.supplyCandidateId,
         sourceRef: candidate.sourceRef,
@@ -160,9 +163,18 @@
         lineageKey: candidate.lineageKey,
         linkedShipmentId: candidate.linkedShipmentId,
         linkedShipmentLineId: candidate.linkedShipmentLineId,
+        linkedPurchaseOrderLineId: candidate.linkedPurchaseOrderLineId,
+        linkedShippingPlanLineId: candidate.linkedShippingPlanLineId,
+        company: candidate.company,
+        country: candidate.country,
+        marketplace: candidate.marketplace,
         sku: candidate.sku,
+        siteSku: candidate.siteSku,
         status: candidate.status, // raw status retained unchanged
+        eta: candidate.eta, // actual normalized ETA value preserved (presence is reported separately as etaPresent)
+        sourceUpdatedAt: candidate.sourceUpdatedAt, // preserved, NOT evaluated for freshness
         destinationWarehouseId: candidate.destinationWarehouseId,
+        destinationIdentitySource: candidate.destinationIdentitySource, // owned by B4-R3; not re-inferred here
         quantityRemaining: candidate.quantityRemaining,
         authorityType: candidate.authorityType,
         sourceType: candidate.sourceType,
