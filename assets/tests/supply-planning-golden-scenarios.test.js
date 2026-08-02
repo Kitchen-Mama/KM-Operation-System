@@ -25,14 +25,22 @@
 //   Expected result = a literal assertion derived from the frozen rule (never recomputed from runtime
 //   output). The §22/§29E normalized-sales tests are implemented — not pending.
 //   Pending scenarios are recorded (owner + blocker + decision dependency) and are NOT executed, NOT
-//   skipped/todo, and NOT faked as PASS. Result is a PARTIAL baseline checkpoint (25 executed / 15 pending /
-//   0 canonical-blocked; full 40-scenario Runtime remains incomplete), not 40/40.
+//   skipped/todo, and NOT faked as PASS. Result is a PARTIAL baseline checkpoint (28 executed / 12 pending /
+//   0 canonical-blocked; full 40-scenario Runtime remains incomplete), not 40/40. (B4-R8 promoted #12/#13/#14
+//   via the real B4 Minimal Pure Runtime chain; production source-read / Apps Script / persistence / deployment
+//   remain UNVERIFIED.)
 //
 //   Expected literals, e.g. §31 worked example: Gap 300 / Source 279 / UPC 40 → Raw 279 · Recommended
 //   Shipping 240 · Residual 60 · Suggested Order (from Net 60) 80. The forbidden Gap−RawSource (21) never
 //   appears.
 
 var C = require('../js/core/supply-planning-calculations.js');
+// B4-R8 promotion: #12/#13/#14 execute the REAL B4 Minimal Pure Runtime chain (no copied candidate / adapter /
+// ten-gate / dedup / Gap logic; no mocks; controlled fixtures only). Public production APIs only.
+var buildKm = require('../js/core/supply-planning-supply-candidates.js').buildKmShipmentSupplyCandidate;
+var adaptKm = require('../js/core/supply-planning-incoming-adapters.js').adaptKmShipmentIncomingCandidate;
+var adaptExternal = require('../js/core/supply-planning-external-incoming-adapters.js').adaptExternalIncomingAuthority;
+var runSupplyPlanningLine = require('../js/core/supply-planning-line-runtime.js').runSupplyPlanningLine;
 
 var fail = 0, pass = 0;
 function assert(cond, label) { if (!cond) { fail++; console.error('FAIL ' + label); } else { pass++; console.log('ok   ' + label); } }
@@ -81,24 +89,53 @@ function mkDays(sku, startIso, n, units, scope) {
 // Round 8B promotion: 23 → 25 executed. Added #29 and #30 via classifyPlanningDataState (§34A):
 //   #29 tests missing / stale snapshot (MISSING_SNAPSHOT / STALE_SNAPSHOT, never 0); #30 tests a
 //   forecast-driven SKU with a missing forecast (MISSING_FORECAST, never 0).
-var EXECUTED_IDS = [1, 2, 3, 4, 5, 6, 18, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31, 33, 35, 36, 37, 38, 39, 40];
+// Round B4-R8 promotion: 25 → 28 executed. Added #12 / #13 / #14 through the REAL B4 Minimal Pure Runtime chain
+//   (supply candidate → KM adapter → external authority → Qualified Incoming → Line Runtime): #12 Draft excluded
+//   (timely 0, gap not reduced); #13 on-time canonical incoming covers demand exactly once (linked external = 0);
+//   #14 late incoming visible as Late Risk (timely 0, gap not reduced).
+var EXECUTED_IDS = [1, 2, 3, 4, 5, 6, 12, 13, 14, 18, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31, 33, 35, 36, 37, 38, 39, 40];
 
 // ---------------------------------------------------------------------------
-// Full §33 inventory (all 40 IDs, one-to-one). canonicalStatus is FROZEN for every scenario. The 15
-// not-yet-executed carry the missing implementation owner + blocker; only #12/#13/#14 carry a Batch B
-// decision dependency (B-4 for DB-record qualification), and #34 belongs to the UI/state/persistence lane.
-// B-2 / B-5 / B-6 are NOT dependencies of any of the 25 executed pure-core scenarios and are not applied
-// here as blanket blockers.
+// Full §33 inventory (all 40 IDs, one-to-one). canonicalStatus is FROZEN for every scenario. The 12
+// not-yet-executed carry the missing implementation owner + blocker; #34 belongs to the UI/state/persistence
+// lane. #12/#13/#14 are now EXECUTED (B4-R8) through the real B4 Minimal Pure Runtime chain — their former
+// "B-4 for DB-record qualification" decision dependency is resolved and removed via the executed inventory shape.
+// B-2 / B-5 / B-6 are NOT dependencies of any of the 28 executed scenarios and are not applied here as blanket
+// blockers.
 // ---------------------------------------------------------------------------
 function pending(id, sourceSection, title, implementationOwner, blocker, decisionDependencies) {
   return { id: id, sourceSection: sourceSection, title: title, canonicalStatus: 'FROZEN',
     executionStatus: 'IMPLEMENTATION_PENDING', implementationOwner: implementationOwner, blocker: blocker,
     decisionDependencies: decisionDependencies || [] };
 }
-function executed(id, sourceSection, title) {
+function executed(id, sourceSection, title, implementationOwner) {
   return { id: id, sourceSection: sourceSection, title: title, canonicalStatus: 'FROZEN',
-    executionStatus: 'EXECUTED_EXISTING_CORE', implementationOwner: 'Current pure calculation core (supply-planning-calculations.js)',
+    executionStatus: 'EXECUTED_EXISTING_CORE',
+    implementationOwner: implementationOwner || 'Current pure calculation core (supply-planning-calculations.js)',
     blocker: null, decisionDependencies: [] };
+}
+// B4-R8 controlled fixture helpers (real chain only; the helper makes NO qualification / status / Late-Risk / Gap
+// decision — it only assembles controlled raw inputs and calls the real public B4-R3/R4/R5/R7 functions).
+var B4R8_OWNER = 'B4 Minimal Pure Runtime chain: supply candidate → KM adapter → external authority → Qualified Incoming → Line Runtime';
+function _ext(base, over) { var o = {}; for (var k in base) o[k] = base[k]; if (over) for (var j in over) o[j] = over[j]; return o; }
+function gKmResult(shOver, lnOver, scOver) {
+  var shipment = _ext({ shipmentId: 'GS1', status: 'in_transit', company: 'KM', country: 'US', marketplace: 'amazon_us', eta: '2026-10-01', destinationWarehouseId: 'WH-G' }, shOver);
+  var line = _ext({ shipmentLineId: 'GSL-1', sku: 'SKU-G', shipmentQty: 200 }, lnOver);
+  var scope = _ext({ company: 'KM', sku: 'SKU-G', destinationWarehouseId: 'WH-G', country: 'US', marketplace: 'amazon_us' }, scOver);
+  return adaptKm({ candidate: buildKm({ shipment: shipment, line: line }), scope: scope });
+}
+function gExtResult(over) {
+  return adaptExternal({ candidate: _ext({
+    externalCandidateId: 'external_inbound:gp:GA:GO:GL', sourceType: 'EXTERNAL_WMS_INBOUND', supplyDomain: 'EXTERNAL_3PL_OVERSEAS',
+    authorityState: 'EXTERNAL_UNLINKED_QUARANTINED', provider: 'gp', externalAccountRef: 'GA', externalOperationRef: 'GO', externalLineRef: 'GL',
+    company: 'KM', country: 'US', marketplace: 'amazon_us', sku: 'SKU-G', siteSku: 'SITE-G', destinationWarehouseId: 'WH-G',
+    quantityObserved: 200, eta: '2026-10-01', sourceUpdatedAt: '2026-08-01T00:00:00Z',
+    linkedShipmentId: null, linkedShipmentLineId: null, linkedOperationId: null, reviewStatus: null, reconciliationState: null
+  }, over) });
+}
+function gLineInput(over) {
+  return _ext({ lineScope: { company: 'KM', sku: 'SKU-G', destinationWarehouseId: 'WH-G' }, requiredByDate: '2026-12-31',
+    demand: 1000, destinationCurrentStock: 300, timelyApprovedCommittedSupply: 100, kmShipmentResults: [], externalAuthorityResults: [] }, over);
 }
 
 var SCENARIO_INVENTORY = [
@@ -113,9 +150,9 @@ var SCENARIO_INVENTORY = [
   pending(9,  '§33 #9 · §24.5–24.7', 'Overseas SHORTAGE_ALLOCATION', 'overseas allocation engine (§24.5–24.7)', 'deterministic largest-remainder allocator not implemented'),
   pending(10, '§33 #10 · §24.9', 'FBA Current Stock vs 3PL reserve separation', 'inventory bucket/ledger owner (§24.9)', 'FBA/3PL distinct-lineage bucket owner not implemented'),
   pending(11, '§33 #11 · §24.9', 'Platform site participates in 3PL reserve', 'inventory bucket/ledger owner (§24.9)', '3PL reserve bucket (separate from FBA) not implemented'),
-  pending(12, '§33 #12 · §2E', 'Draft incoming not counted', 'Demand/Supply Ledger + Qualified-Incoming integration', 'Qualified-Incoming DB-record qualification not implemented', ['B-4 for DB-record qualification/integration']),
-  pending(13, '§33 #13 · §10.1', 'On-time incoming covers demand', 'Qualified-Incoming ETA qualifier (§10.1)', 'ETA≤required DB-record qualification not implemented', ['B-4 for DB-record qualification/integration']),
-  pending(14, '§33 #14 · §10.1', 'Late incoming visible not covering', 'Qualified-Incoming ETA/Late-Risk qualifier (§10.1)', 'ETA>required Late-Risk DB-record qualification not implemented', ['B-4 for DB-record qualification/integration']),
+  executed(12, '§33 #12 · §2E', 'Draft incoming not counted', B4R8_OWNER),
+  executed(13, '§33 #13 · §10.1', 'On-time incoming covers demand', B4R8_OWNER),
+  executed(14, '§33 #14 · §10.1', 'Late incoming visible not covering', B4R8_OWNER),
   pending(15, '§33 #15 · §30', 'Delivered-not-received', 'Supply Ledger count-once owner (§30)', 'Delivered≠Received lifecycle ledger not implemented'),
   pending(16, '§33 #16 · §30', 'Receipt posted', 'Supply Ledger count-once owner (§30)', 'receipt-posted count-once ledger not implemented'),
   pending(17, '§33 #17 · §30', 'Same supply lifecycle count once', 'Supply Ledger count-once owner (§30)', '100-unit count-once ledger not implemented'),
@@ -148,6 +185,66 @@ var SCENARIO_INVENTORY = [
 // EXECUTABLE golden scenarios — Canonical LITERAL expected values only (no in-test recomputation).
 // ---------------------------------------------------------------------------
 var GOLDEN_SCENARIOS = [
+  // ---- B4-R8 promotion: #12 / #13 / #14 executed via the REAL B4 Minimal Pure Runtime chain. Expected values are
+  //      canonical LITERALS (never recomputed from Runtime output). Gap literals: demand 1000 − stock 300 −
+  //      committed 100 = 600 baseline; a timely qualifying 200 reduces it to 400. ----
+  {
+    id: 12, sourceSection: '§33 #12 · §2E', title: 'Draft incoming not counted',
+    run: function () {
+      var input = gLineInput({ kmShipmentResults: [gKmResult({ status: 'draft' }, { shipmentQty: 200 })] });
+      var frozen = JSON.stringify(input);
+      var line = runSupplyPlanningLine(input);
+      var cr = line.qualifiedIncomingResult.candidateResults[0];
+      eq(cr.qualificationState, 'EXCLUDED', '#12 draft candidate qualificationState = EXCLUDED');
+      eq(cr.gateResults.TABLE_STATUS_QUALIFIED, 'FAIL', '#12 Gate 4 TABLE_STATUS_QUALIFIED = FAIL');
+      eq(cr.gateResults.NOT_EXCLUDED_LIFECYCLE_STATE, 'FAIL', '#12 Gate 8 NOT_EXCLUDED_LIFECYCLE_STATE = FAIL');
+      eq(line.timelyQualifiedIncoming, 0, '#12 timelyQualifiedIncoming = 0');
+      eq(line.calculatedGap, 600, '#12 calculatedGap = 600 (canonical literal; draft does not reduce Gap)');
+      eq(line.incomingBreakdown.excludedIncomingQuantity, 200, '#12 draft 200 remains visible in excluded breakdown');
+      eq(JSON.stringify(input), frozen, '#12 input fixture not mutated');
+    }
+  },
+  {
+    id: 13, sourceSection: '§33 #13 · §10.1', title: 'On-time incoming covers demand',
+    run: function () {
+      var input = gLineInput({
+        kmShipmentResults: [gKmResult({}, { shipmentQty: 200 })],
+        externalAuthorityResults: [gExtResult({ authorityState: 'LINKED_EXTERNAL_EVIDENCE', linkedShipmentId: 'GS1', quantityObserved: 200 })]
+      });
+      var frozen = JSON.stringify(input);
+      var line = runSupplyPlanningLine(input);
+      var cr = line.qualifiedIncomingResult.candidateResults[0];
+      var allGatesPass = Object.keys(cr.gateResults).every(function (g) { return cr.gateResults[g] === 'PASS'; });
+      eq(cr.qualificationState, 'QUALIFIED', '#13 candidate qualificationState = QUALIFIED');
+      eq(allGatesPass, true, '#13 all ten B4-R6 gates = PASS');
+      eq(line.timelyQualifiedIncoming, 200, '#13 timelyQualifiedIncoming = 200');
+      eq(line.qualifiedIncomingResult.qualifiedIncomingQuantity, 200, '#13 qualifiedIncomingQuantity = 200');
+      eq(line.incomingBreakdown.externalObservedQuantity, 200, '#13 externalObservedQuantity = 200 visible separately');
+      eq(line.qualifiedIncomingResult.externalResults[0].adapterEligibleQuantity, 0, '#13 external adapter contribution = 0');
+      eq(cr.informationalReasons.indexOf('LINKED_EXTERNAL_EVIDENCE_PRESENT') >= 0, true, '#13 LINKED_EXTERNAL_EVIDENCE_PRESENT is informational only');
+      eq(line.calculatedGap, 400, '#13 calculatedGap = 400 (canonical literal; incoming counted once)');
+      eq(line.calculatedGap !== 200, true, '#13 Shipment counted once, not 400 (Gap not reduced twice to 200)');
+      eq(JSON.stringify(input), frozen, '#13 input fixture not mutated');
+    }
+  },
+  {
+    id: 14, sourceSection: '§33 #14 · §10.1', title: 'Late incoming visible not covering',
+    run: function () {
+      var input = gLineInput({ kmShipmentResults: [gKmResult({ eta: '2027-06-01' }, { shipmentQty: 200 })] });
+      var frozen = JSON.stringify(input);
+      var line = runSupplyPlanningLine(input);
+      var cr = line.qualifiedIncomingResult.candidateResults[0];
+      eq(cr.qualificationState, 'LATE_RISK', '#14 candidate qualificationState = LATE_RISK');
+      eq(cr.gateResults.ETA_RESOLVED, 'PASS', '#14 Gate 5 ETA_RESOLVED = PASS');
+      eq(cr.gateResults.ETA_ON_OR_BEFORE_REQUIRED_BY, 'FAIL', '#14 Gate 6 ETA_ON_OR_BEFORE_REQUIRED_BY = FAIL');
+      eq(line.timelyQualifiedIncoming, 0, '#14 timelyQualifiedIncoming = 0');
+      eq(line.incomingBreakdown.lateRiskQuantity, 200, '#14 lateRiskQuantity = 200');
+      eq(line.qualifiedIncomingResult.qualifiedIncomingQuantity, 0, '#14 qualifiedIncomingQuantity = 0');
+      eq(line.calculatedGap, 600, '#14 calculatedGap = 600 (canonical literal; late does not reduce Gap)');
+      eq(cr.informationalReasons.indexOf('ETA_AFTER_REQUIRED_BY') >= 0, true, '#14 ETA_AFTER_REQUIRED_BY remains visible');
+      eq(JSON.stringify(input), frozen, '#14 input fixture not mutated');
+    }
+  },
   {
     id: 23, sourceSection: '§33 #23 · §31/§2C.1', title: 'Shipment carton FLOOR (never exceeds available)',
     run: function () {
@@ -455,8 +552,10 @@ var GOLDEN_SCENARIOS = [
   }
 ];
 
-// ---- Inventory integrity (5 assertions): 40 unique IDs 1..40; executed = exactly the 25; pending = 15;
-//      canonical-blocked = 0. (Total suite = 117 assertions: 5 inventory integrity + the executed-scenario
+// ---- Inventory integrity (5 assertions): 40 unique IDs 1..40; executed = exactly the 28; pending = 12;
+//      canonical-blocked = 0. (Post-B4-R8 promotion the suite runs 28 executed scenarios; the actual total
+//      assertion count is printed at the end as "Assertion count = N" from the passing run — do not assume it.
+//      Legacy pre-promotion baseline was 117; the executed-scenario
 //      assertions [incl. Round 5 #28 Engine B + #33 Engine A sweep, Round 6 #21 SKU gate + #22 tier ordering,
 //      Round 8B #29 missing/stale snapshot + #30 missing forecast via classifyPlanningDataState]
 //      + the cross-scenario invariant/determinism checks.)
@@ -472,9 +571,9 @@ eq(SCENARIO_INVENTORY.length, 40, 'inventory count = 40 (one-to-one)');
 var execInInventory = SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'EXECUTED_EXISTING_CORE'; }).map(function (s) { return s.id; }).sort(function (a, b) { return a - b; });
 var goldenIds = GOLDEN_SCENARIOS.map(function (s) { return s.id; }).sort(function (a, b) { return a - b; });
 eq([execInInventory.join(','), goldenIds.join(',')], [EXECUTED_IDS.join(','), EXECUTED_IDS.join(',')],
-   'executed scenarios are EXACTLY [1,2,3,4,5,6,18,20,21,22,23,24,25,26,28,29,30,31,33,35,36,37,38,39,40] in both inventory and the runnable set (⇒ executed count = 25)');
-eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 15,
-   'implementation-pending count = 15 (frozen canonical rule, missing implementation owner)');
+   'executed scenarios are EXACTLY [1,2,3,4,5,6,12,13,14,18,20,21,22,23,24,25,26,28,29,30,31,33,35,36,37,38,39,40] in both inventory and the runnable set (⇒ executed count = 28)');
+eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 12,
+   'implementation-pending count = 12 (frozen canonical rule, missing implementation owner)');
 eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'CANONICAL-BLOCKED' || s.canonicalStatus !== 'FROZEN'; }).length, 0,
    'canonical-blocked count = 0 (every scenario canonicalStatus = FROZEN)');
 
