@@ -5,7 +5,7 @@
 > - **Canonical Owner For:** Engine A / Engine B; **T1–T4** (T4 = display-only, never in Request/PO payload); **Normal Sales Days** (latest 30 eligible normal days within a 90-completed-day window); Forecast Adjustment; Inventory Projection; Shortage; Reallocation; Net Order Need; **Shipping carton = FLOOR**; **Ordering carton = CEILING**; Engine `Current Stock` semantics.
 > - **Not Owner For:** DB schema (`DATABASE_RELATIONSHIP_MAP.md`), UI/layout (`INVENTORY_TABLE_MAPPING_SPEC.md`), runtime cadence (`SYSTEM_RUNTIME_ARCHITECTURE.md`), Shipment/PO lifecycle (respective specs). No other doc may restate a divergent formula.
 > - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED; **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (Qualified Incoming business predicate §2E + external-origin admission gate §38 resolved; Qualified Incoming **Runtime** pending); B-5 / B-6 / B-7 / B-8 UNRESOLVED (formulas finalized).
-> - **Current Version:** v4.5 (v4.1 base — Batch A header, Batch B Round 1 B-1 reserve cross-reference, Phase 2B Pre-Engine §22/§29E/§33 reconciliation, all no-formula-change — **plus the Round 6B dependency catch-up landing (2026-07-31): Round 5A §27A Required-By classifier (v4.2) + Round 6A §32A reallocation-eligibility contract (v4.3) + Round 6 implementation status. `evaluateReallocationEligibility` IMPLEMENTED; Golden #21/#22 executed; Matrix 23 executed / 17 pending / 0 canonical-blocked; Unit 282 / Golden 114 PASS. Line Runtime / Qualified Incoming Runtime NOT IMPLEMENTED; B-4~B-8 unchanged** — **plus Round 8A (2026-08-01): §34A Missing / Stale Data pure-classifier `classifyPlanningDataState` canonical contract freeze (documentation only) — then Round 8B (2026-08-01): `classifyPlanningDataState` IMPLEMENTED in the pure core and landed to Main; Scenario #29/#30 executed; Matrix 25 executed / 15 pending / 0 canonical-blocked; Unit 325 / Golden 117 PASS (run from Main); Line Runtime / Qualified Incoming Runtime / DB / API / UI remain NOT IMPLEMENTED; B-4~B-8 unchanged** — **plus Round 4D-C (2026-08-01): landed §38 External-Origin Planning Admission Gate; B-4 = CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED (registry owner `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11); documentation only, no formula/runtime/test change; Matrix 25/15/0; Unit 325 / Golden 117 unchanged; B-5~B-8 unchanged**).
+> - **Current Version:** v4.6 (**Round 9A (2026-08-02): §39 Demand/Supply Ledger Runtime public-contract freeze — froze the two authorized pure builders `buildDemandLedger` / `buildSupplyLedger` (decomposition audit selected two builders over a unified/over-decomposed shape), their input/output schemas, demand-type + lifecycle-bucket + poolType tokens, event-ID demand count-once, lifecycle + physical-pool supply count-once, FBA-vs-3PL pool separation, immutable effective-quantity output with `remaining*` reserved for the future allocator, stable ordering, fail-closed non-throwing conflict records, and TypeError/RangeError types. Documentation only — NOT IMPLEMENTED; no JS/test change; Golden #15/#16/#17/#27/#32 remain IMPLEMENTATION_PENDING; Matrix unchanged 28 executed / 12 pending / 0 canonical-blocked; Unit 325 / Golden 143 verified from Main; B-5/B-6/B-7/B-8 unchanged.** v4.1 base — Batch A header, Batch B Round 1 B-1 reserve cross-reference, Phase 2B Pre-Engine §22/§29E/§33 reconciliation, all no-formula-change — **plus the Round 6B dependency catch-up landing (2026-07-31): Round 5A §27A Required-By classifier (v4.2) + Round 6A §32A reallocation-eligibility contract (v4.3) + Round 6 implementation status. `evaluateReallocationEligibility` IMPLEMENTED; Golden #21/#22 executed; Matrix 23 executed / 17 pending / 0 canonical-blocked; Unit 282 / Golden 114 PASS. Line Runtime / Qualified Incoming Runtime NOT IMPLEMENTED; B-4~B-8 unchanged** — **plus Round 8A (2026-08-01): §34A Missing / Stale Data pure-classifier `classifyPlanningDataState` canonical contract freeze (documentation only) — then Round 8B (2026-08-01): `classifyPlanningDataState` IMPLEMENTED in the pure core and landed to Main; Scenario #29/#30 executed; Matrix 25 executed / 15 pending / 0 canonical-blocked; Unit 325 / Golden 117 PASS (run from Main); Line Runtime / Qualified Incoming Runtime / DB / API / UI remain NOT IMPLEMENTED; B-4~B-8 unchanged** — **plus Round 4D-C (2026-08-01): landed §38 External-Origin Planning Admission Gate; B-4 = CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED (registry owner `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11); documentation only, no formula/runtime/test change; Matrix 25/15/0; Unit 325 / Golden 117 unchanged; B-5~B-8 unchanged**).
 > - **Last Reviewed:** 2026-08-01.
 > - **Depends On:** none (upstream formula authority).
 > - **Blocked By:** Batch B — **B-4 Qualified Incoming Runtime implementation prerequisites**; the §2E predicate, per-table direction and §38 Planning Admission Gate are **resolved** (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4).
@@ -965,6 +965,8 @@ Every supply entry must identify: **Stable supply lineage / source reference · 
 - `Remaining unconsumed quantity` is decremented after each allocation; non-negative invariant.
 - Runtime-derived ledger fields are **NOT** written as new DB columns; they are recomputed each cycle (Analysis Layer) and only frozen into existing snapshot columns at Submit Plan / Decision Commit.
 
+> **Deterministic public-function contract:** the pure builders that construct these two ledgers — `buildDemandLedger` / `buildSupplyLedger` — are frozen in **§39** (Round 9A, v4.6; **NOT IMPLEMENTED**). §25 owns the *grain*; §39 owns the *function boundary* (names, schemas, count-once keys, immutable effective-quantity output; `remaining*` consumption is allocator-owned).
+
 ---
 
 ## 26. Exact-Date Window Freeze (Engine A) (CANONICAL v4.1)
@@ -1748,7 +1750,163 @@ System `recommended_qty` is always a full-carton CEILING (§14). The **user `ord
 
 ---
 
-**FINALIZED v4.5 Calculation Specification.** Header, Changelog, and footer versions are consistent (v4.5 — Round 4D-C External-Origin Planning Admission Gate §38 landed, B-4 = CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED; v4.3 — v4.2 Round 5A §27A classifier freeze + v4.3 Round 6A §32A reallocation-eligibility owner/contract freeze; Round 6 landed the §32A predicate as IMPLEMENTED with Golden #21/#22 executed; **v4.4 — Round 8A §34A Missing / Stale Data pure-classifier `classifyPlanningDataState` contract freeze (documentation), then Round 8B implemented `classifyPlanningDataState` in the pure core, executed Golden #29/#30, and landed the verified pure core + suites into Main — §34 business outcomes unchanged, semantic version stays v4.4**). Golden Scenarios: 40 specified (§33); Golden #21/#22/#28/#29/#30/#31/#33 and the §27A/§32A/§34A pure core are executed (25 executed / 15 pending / 0 canonical-blocked; 325 unit + 117 golden PASS, run from Main); the full 40-scenario executable matrix remains PENDING (the 15 remaining scenarios need non-pure-core owners).
+## 39. Demand / Supply Ledger Runtime Public-Contract Freeze — `buildDemandLedger` / `buildSupplyLedger` (CANONICAL v4.6 — Round 9A freeze; NOT IMPLEMENTED)
+
+This subsection is the **single canonical owner** of the deterministic pure-function shape that prepares the §25 Demand Ledger and Supply Ledger. It **changes no §25 grain, no §30 count-once rule, no §23 physical-pool rule, no §10.1/§29F(event) event rule, and no §33 expected business outcome** — it freezes only the *public function decomposition, names, signatures, input/output schemas, identity/pool keys, lifecycle bucket tokens, count-once precedence, stable ordering, duplicate/conflict behaviour, error types, and purity guarantees*, so Golden #15/#16/#17/#27/#32 can later be implemented and a future allocator can consume a stable Ledger output for #7/#8/#9/#10/#11/#19. No prior authoritative Ledger builder exists in the canonical (Round 8C-R grep confirmed absence); these names are therefore authorized and **no second alias may be created**. **The Ledger normalizes; it never allocates.**
+
+### 39.1 Decomposition decision (audit result — frozen)
+Architectures evaluated: **(A)** two public builders; **(B)** one unified typed-entry builder; **(C)** classifiers/normalizers + separate reducers; **(D)** any smaller decomposition. **Selected = (A) two public builders** — `buildDemandLedger` and `buildSupplyLedger` — because §25 defines two ledgers with **distinct grains** (demand-entry grain vs physical-supply/lifecycle grain) and **distinct count-once vocabularies** (stable **event-ID** demand count-once vs **lifecycle-bucket + physical-pool** supply count-once). **(B) rejected** — one builder mixing both grains and both count-once vocabularies is a god-function and duplicates state vocabulary. **(C) rejected** — over-decomposition; no Golden scenario requires an intermediate normalizer/reducer as a *public* boundary, and the shared "dedup-identical / conflict-block" logic is a private implementation helper, not a frozen public contract. **(D)** — nothing smaller is supported by the evidence. The names mirror the §25 canonical nouns and the house verb+noun convention (`classifyRequiredByWindow` / `evaluateReallocationEligibility` / `classifyPlanningDataState`).
+
+### 39.2 Owner boundary (frozen)
+The Ledger builders own **only deterministic preparation** of demand/supply entries and physical pools: validation, lifecycle-bucket count-once, physical-pool de-duplication, event-identity count-once, stable ordering, and emission of **immutable** count-once effective quantities.
+They **MUST NOT** own: DB/API reads · current time/clock · locale · Shipment/PO status policy · receiving business policy · warehouse/SKU identity joins · external-status→lifecycle mapping · event acquisition · source-candidate discovery · **any allocation** (weighted / largest-remainder / factory / cross-company reallocation) · carton rounding · Draft persistence · scheduler/retry/resume · LockService · writes · Submit · Request→PO conversion · inventory posting.
+**Caller / adapter** supplies already-resolved facts: raw-row acquisition · canonical Master SKU / company / warehouse identity · **external-status → `lifecycleBucket` mapping** · stable `supplyLineageRef` / `sourceRef` / **`eventId`** · event data · the applicable `planningCycle`.
+**Allocator** (future) owns: consuming the Ledger pools · seeding & decrementing `remaining*` quantity · distributing across candidates · deterministic tie-breaking · producing allocation records.
+
+### 39.3 `buildDemandLedger` — signature + schemas (AUTHORIZED — frozen)
+```js
+buildDemandLedger({
+  entries: [
+    {
+      demandType:             "SPECIAL_EVENT",   // enum: "REGULAR" | "SALES_RUN_RATE" | "SPECIAL_EVENT" | "SAFETY" (§25.1/§29)
+      masterSku:              "GA0450",          // non-empty string
+      company:                "KM",              // non-empty string
+      country:                "US",              // string | null (provenance)
+      marketplace:            "AMAZON_US",       // string | null — demand-provenance dimension; NEVER a supply-pool key
+      destinationWarehouseId: "US-3PL-1",        // non-empty string
+      planningCycle:          "2026-08",         // non-empty string (owner-supplied cycle label)
+      requiredByDate:         "2026-08-20",      // strict real YYYY-MM-DD (reuses §27A.7 date contract)
+      eventId:                "EVT-BF-2026",     // non-empty string — REQUIRED when demandType==="SPECIAL_EVENT"; ignored otherwise
+      sourceRef:              "FC-ROW-99",       // non-empty string — stable demand-source identity
+      quantity:               300                // finite number >= 0
+    }
+  ]
+})
+```
+**Output (exact shape, immutable):**
+```js
+{
+  ledgerType: "DEMAND_LEDGER",
+  entries: [
+    { demandKey, demandType, masterSku, company, country, marketplace, destinationWarehouseId,
+      planningCycle, requiredByDate, eventId,        // eventId is null for non-event entries
+      effectiveDemandQty,                            // count-once demand (never remainingUnmetQty — see §39.7)
+      state,                                         // "COUNTED" | "BLOCKED_CONFLICT"
+      reason }                                       // null | "DEMAND_EVENT_QTY_CONFLICT" | "DEMAND_SOURCE_QTY_CONFLICT"
+  ],
+  totalEffectiveDemandQty,                           // sum of COUNTED effectiveDemandQty
+  blockedCount
+}
+```
+- **Demand count-once key (`demandKey`):** SPECIAL_EVENT → `company + destinationWarehouseId + masterSku + planningCycle + eventId`; REGULAR / SALES_RUN_RATE / SAFETY → `company + destinationWarehouseId + masterSku + planningCycle + demandType + sourceRef`. `marketplace` is **never** part of `demandKey`.
+- **Special Event stable-identity rule (frozen, #27):** `eventId` is **caller-supplied and opaque**. Two rows merge (count once) **only** when they carry the **same `eventId`** on the same `demandKey`. The Ledger **never** derives event identity from display name, from array index/order, or from a `(month + SKU)` coincidence; **distinct `eventId`s in the same month stay distinct** and are never silently merged. Event **Preparation Date is not itself event demand** (§10.1) — callers pass event demand rows, not preparation markers.
+
+### 39.4 `buildSupplyLedger` — signature + schemas (AUTHORIZED — frozen)
+```js
+buildSupplyLedger({
+  entries: [
+    {
+      supplyLineageRef: "SHIP-1001",             // non-empty string — stable physical-quantity lineage identity
+      masterSku:        "GA0450",                // non-empty string
+      company:          "KM",                    // non-empty string
+      warehouseId:      "US-3PL-1",              // non-empty string (physical location; FACTORY = origin warehouse_id, §35)
+      poolType:         "THREE_PL",              // enum: "FBA" | "THREE_PL" | "FACTORY" (§24.9 FBA vs 3PL; §13/§35 factory)
+      lifecycleBucket:  "SHIPPED_IN_TRANSIT",    // enum (§39.5 tokens) — caller maps external status → this token
+      quantity:         100                      // finite number >= 0
+      // marketplace / site_sku are DELIBERATELY absent from supply identity (§23.1 — never a physical-pool key)
+    }
+  ]
+})
+```
+**Output (exact shape, immutable):**
+```js
+{
+  ledgerType: "SUPPLY_LEDGER",
+  pools: [
+    { poolKey,                                   // "company|warehouseId|masterSku|poolType"
+      company, warehouseId, masterSku, poolType,
+      byLifecycleBucket,                         // { <bucketToken>: countOnceQty, ... } — dedup + count-once applied
+      effectiveSupplyQty,                        // sum across NON-excluded buckets (never remainingUnconsumedQty — §39.7)
+      lineageRefs,                               // stable-sorted array of contributing supplyLineageRef
+      state,                                     // "COUNTED" | "BLOCKED_CONFLICT"
+      reason }                                   // null | "PHYSICAL_POOL_QTY_CONFLICT" | "SUPPLY_LINEAGE_CONFLICT"
+  ],
+  totalEffectiveSupplyQty,                        // sum of COUNTED effectiveSupplyQty
+  blockedCount
+}
+```
+- **Physical Pool Key (`poolKey`) = `company + warehouseId + masterSku + poolType`** (§23.1 grain, extended by `poolType`). **`marketplace` is excluded on purpose** — multiple marketplace copies of one physical pool must dedup, not sum (#32).
+
+### 39.5 Lifecycle bucket tokens + Delivered vs Received (frozen)
+**Active (count-once progression, §30/§2E):** `COMMITTED_PRODUCTION` → `APPROVED_SHIPPING_PLAN` → `SHIPPED_IN_TRANSIT` → `DELIVERED_NOT_RECEIVED` → `RECEIVED_NOT_REFLECTED` → `CURRENT_STOCK`.
+**Excluded / non-qualifying (visible, contribute 0):** `DRAFT` (Draft is never Qualified Incoming) · `CANCELLED_INVALID` · `CORRECTION_REVERSAL`.
+- The **same `supplyLineageRef` exists in exactly ONE active bucket** (§30). `DELIVERED_NOT_RECEIVED` is **kept distinct from** `CURRENT_STOCK`: a carrier-delivered lineage is **never** emitted as `CURRENT_STOCK`; only `RECEIVED_NOT_REFLECTED` / `CURRENT_STOCK` represent posted current stock. Delivered ≠ Received (§10.1/§2E). The Ledger receives a **current lifecycle-state token per lineage** (not raw external events) — per §8 it does **not** derive operational status from raw payloads.
+- Canonical 100-unit lifecycle (§30 table) holds unchanged: at every stage `totalEffectiveSupplyQty` for that lineage = **100**, never 200/300/400.
+
+### 39.6 Physical-pool dedup (#32) + FBA vs 3PL boundary (#10/#11) (frozen)
+- **#32 dedup:** rows with the **same `poolKey` and the same quantity snapshot** (e.g. one 3PL pool copied across Marketplaces / site_skus / demand lines) **dedup to ONE** (count once, never summed — §23.1 PROHIBITED). Site/marketplace provenance stays traceable via the **Demand** Ledger (`marketplace` lives on demand, not supply), so quantity is never duplicated.
+- **#10/#11 FBA vs 3PL:** `poolType` discriminates the pool key, so `FBA` and `THREE_PL` for the **same** `company + warehouseId + masterSku` remain **separate pools and are never merged**. A platform (FBA) marketplace may participate in a `THREE_PL` reserve pool (§23.6/§24.9) **without** that reserve being reclassified as FBA current stock — they are two distinct `poolKey`s. Bucket/pool tokens are **caller-supplied** (adapter-mapped), never derived by the Ledger.
+
+### 39.7 Remaining-pool boundary (frozen)
+The Ledger result is **immutable** and exposes only **count-once effective truth**: `effectiveDemandQty` (demand) and `effectiveSupplyQty` / `byLifecycleBucket` (supply). **`remainingUnmetQty` and `remainingUnconsumedQty` are NOT Ledger fields** — they are **allocator-owned mutable state**, seeded by the future allocator from the Ledger's effective quantities and decremented during allocation (§25.1/§25.2 consumption). The pure Ledger exposes **no** mutable shared state that a caller could mutate across runs; Ledger normalization and allocation consumption are never blurred.
+
+### 39.8 Stable ordering (frozen)
+Output is **deterministic and input-order-independent**. Demand `entries` sort by `requiredByDate` → `demandType` → `demandKey`; Supply `pools` sort by `poolKey`, and each pool's `lineageRefs` sort ascending. Same input (in any row order) ⇒ identical output.
+
+### 39.9 Duplicate / conflict behaviour (frozen — fail-closed, non-throwing)
+Mirrors the B4-R6 precedent (DUPLICATE_STABLE_LINEAGE vs DUPLICATE_LINEAGE_CONFLICT):
+- **Exact duplicate** (same identity key, same quantity) → **dedup to one** (count once); not an error.
+- **Conflict** (same identity key, **differing** quantity) → the whole conflicting group is emitted as a **`BLOCKED_CONFLICT`** entry/pool contributing **0** (`reason` = `DEMAND_EVENT_QTY_CONFLICT` / `DEMAND_SOURCE_QTY_CONFLICT` / `PHYSICAL_POOL_QTY_CONFLICT` / `SUPPLY_LINEAGE_CONFLICT`). Conflicts are **never silently summed and never silently picked**; they do **not** throw (the rest of the ledger is still returned with the conflict quarantined).
+- **Empty `entries`** → a valid empty ledger (`totalEffective… = 0`, `blockedCount = 0`), not an error.
+
+### 39.10 Validation / error contract (frozen — error *types* only; message literals NOT frozen, per §27A.7/§32A.9/§34A.5)
+- **`TypeError`** — `input` not a non-null non-array object · `entries` not an array · an entry not a non-null non-array object · any required identity (`masterSku`, `company`, `destinationWarehouseId`/`warehouseId`, `sourceRef`, `supplyLineageRef`, and `eventId` when `demandType==="SPECIAL_EVENT"`) missing / non-string / empty-or-whitespace · `demandType` / `poolType` / `lifecycleBucket` missing or non-string · `quantity` non-number · `requiredByDate` non-string.
+- **`RangeError`** — `quantity` is `NaN` / `Infinity` / `-Infinity` / **negative** · `demandType` / `poolType` / `lifecycleBucket` a string but not an allowed enum token · `requiredByDate` not a strict real `YYYY-MM-DD` (datetime/timezone/slash/non-padded/auto-rolled rejected — delegated to the §27A.7 date contract).
+- **No coercion** (`parseFloat` / `Number` / `Boolean` / numeric string) · **no** `trim`/case normalization of identities beyond the empty/whitespace check · **no** system clock · **no** locale · **no** hidden fallback to `0` · **no** input mutation. `quantity === 0` is **valid** (contributes 0), not an error.
+
+### 39.11 Purity / immutability (frozen)
+`no DB/API · no Date.now()/clock · no timezone/locale · no implicit default data · same input ⇒ identical output · input never mutated · a freshly-created result object every call · mutating one output never pollutes a later call · no shared mutable state`.
+
+### 39.12 Deterministic examples (spec only — no tests run this round)
+```text
+1. Same physical 3PL pool copied to 3 Marketplaces (#32)
+   supply in: 3 rows poolKey KM|US-3PL-1|GA0450|THREE_PL, lifecycleBucket CURRENT_STOCK, quantity 1000 each
+   out: pools=[{poolKey:"KM|US-3PL-1|GA0450|THREE_PL", byLifecycleBucket:{CURRENT_STOCK:1000},
+        effectiveSupplyQty:1000, state:"COUNTED"}]  totalEffectiveSupplyQty=1000   (dedup, NOT 3000)
+
+2. FBA vs 3PL same warehouse+SKU (#10/#11)
+   supply in: {…poolType:"FBA", CURRENT_STOCK, 200}, {…poolType:"THREE_PL", CURRENT_STOCK, 500}
+   out: two separate pools (FBA 200, THREE_PL 500); never merged; totalEffectiveSupplyQty=700
+
+3. One lineage across the whole lifecycle (#17) — counted once = 100
+   supply in: {SHIP-1001 … SHIPPED_IN_TRANSIT 100}
+   out: effectiveSupplyQty 100  (never 200/300)
+
+4. Delivered-not-received (#15/#16)
+   supply in: {SHIP-9 … DELIVERED_NOT_RECEIVED 100}
+   out: byLifecycleBucket:{DELIVERED_NOT_RECEIVED:100}, CURRENT_STOCK absent  (delivered never becomes current stock)
+
+5. Two distinct Special Events, same month (#27)
+   demand in: {SPECIAL_EVENT eventId:"EVT-A" 300}, {SPECIAL_EVENT eventId:"EVT-B" 200} (same SKU/cycle/dest)
+   out: two COUNTED entries; totalEffectiveDemandQty=500  (distinct eventIds never merged)
+
+6. Same event duplicated with conflicting qty (#27 conflict)
+   demand in: {eventId:"EVT-A" 300}, {eventId:"EVT-A" 250}  (same demandKey)
+   out: one BLOCKED_CONFLICT entry reason "DEMAND_EVENT_QTY_CONFLICT", effectiveDemandQty 0
+
+7. Negative quantity → RangeError ;  8. non-string masterSku → TypeError
+```
+
+### 39.13 Golden mapping, future-consumer mapping, non-goals, status
+- **Direct (unlocked after implementation of these contracts):** **#15** Delivered-not-received → §39.5 (`DELIVERED_NOT_RECEIVED` kept out of `CURRENT_STOCK`); **#16** Receipt posted → §39.5 (`RECEIVED_NOT_REFLECTED`/`CURRENT_STOCK` only); **#17** Same lifecycle count once → §39.5 (one bucket / lineage); **#27** Multiple Special Events same month → §39.3 (stable `eventId` count-once); **#32** One Master SKU, many Marketplaces → §39.6 (`poolKey` excludes marketplace).
+- **Future-consumer (allocator reads this Ledger; NOT built here):** **#7/#8/#9** Overseas allocation (§20/§24) consume `effectiveSupplyQty` + `effectiveDemandQty`; **#10/#11** consume the separate FBA / THREE_PL pools; **#19** Factory deterministic allocation (§35) consumes `poolType:"FACTORY"` pools. The allocator seeds `remaining*` (§39.7) and performs all distribution/tie-breaking.
+- **Non-goals (frozen):** implements no JS; builds no Demand/Supply Ledger runtime; no lifecycle adapter / receiving integration; no allocation of any kind; no persistence / scheduler / writer / LockService; promotes **no** Golden scenario; changes **no** Matrix count; decides **no** B-5/B-6/B-8 and does not reopen B-7.
+
+> **Status:** §39 is a **frozen public pure-function contract; `buildDemandLedger` / `buildSupplyLedger` are NOT IMPLEMENTED.** The §25/§30/§23 business grain/invariants already existed; §39 only freezes the deterministic function boundary that represents them. Golden **#15/#16/#17/#27/#32 remain IMPLEMENTATION_PENDING**; Allocation Runtime, DB/adapter/persistence, and production integration remain **NOT IMPLEMENTED**; **B-5/B-6/B-7/B-8 status unchanged**. Verified this round (documentation only, no behaviour change): Unit 325 · Golden 143 · Matrix **28 executed / 12 pending / 0 canonical-blocked** · Qualified Incoming 106 · Line Runtime 88.
+
+---
+
+**FINALIZED v4.6 Calculation Specification.** Header, Changelog, and footer versions are consistent (**v4.6 — Round 9A §39 Demand/Supply Ledger Runtime public-contract freeze — `buildDemandLedger` / `buildSupplyLedger` frozen (documentation only; NOT IMPLEMENTED); no formula/runtime/test change; Matrix unchanged 28/12/0**; v4.5 — Round 4D-C External-Origin Planning Admission Gate §38 landed, B-4 = CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED; v4.3 — v4.2 Round 5A §27A classifier freeze + v4.3 Round 6A §32A reallocation-eligibility owner/contract freeze; Round 6 landed the §32A predicate as IMPLEMENTED with Golden #21/#22 executed; **v4.4 — Round 8A §34A Missing / Stale Data pure-classifier `classifyPlanningDataState` contract freeze (documentation), then Round 8B implemented `classifyPlanningDataState` in the pure core, executed Golden #29/#30, and landed the verified pure core + suites into Main — §34 business outcomes unchanged, semantic version stays v4.4**). Golden Scenarios: 40 specified (§33); Golden #12/#13/#14/#21/#22/#28/#29/#30/#31/#33 and the §27A/§32A/§34A pure core are executed (**28 executed / 12 pending / 0 canonical-blocked; 325 unit + 143 golden PASS, run from Main**); the full 40-scenario executable matrix remains PENDING (the 12 remaining scenarios need non-pure-core owners — §39 freezes the Ledger boundary for #15/#16/#17/#27/#32 and the allocator input for #7/#8/#9/#10/#11/#19).
 ```text
 Specification finalized.
 Runtime not implemented.
