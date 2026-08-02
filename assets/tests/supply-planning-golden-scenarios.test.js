@@ -41,6 +41,11 @@ var buildKm = require('../js/core/supply-planning-supply-candidates.js').buildKm
 var adaptKm = require('../js/core/supply-planning-incoming-adapters.js').adaptKmShipmentIncomingCandidate;
 var adaptExternal = require('../js/core/supply-planning-external-incoming-adapters.js').adaptExternalIncomingAuthority;
 var runSupplyPlanningLine = require('../js/core/supply-planning-line-runtime.js').runSupplyPlanningLine;
+// Round 9B promotion: #15/#16/#17/#27/#32 execute the real §39 Demand/Supply Ledger pure runtime (no copied
+// count-once / dedup / conflict logic; no mocks). Public production APIs only.
+var buildDemandLedger = require('../js/core/supply-planning-ledgers.js').buildDemandLedger;
+var buildSupplyLedger = require('../js/core/supply-planning-ledgers.js').buildSupplyLedger;
+var LEDGER_OWNER = 'Demand/Supply Ledger pure runtime (supply-planning-ledgers.js, §39)';
 
 var fail = 0, pass = 0;
 function assert(cond, label) { if (!cond) { fail++; console.error('FAIL ' + label); } else { pass++; console.log('ok   ' + label); } }
@@ -93,7 +98,12 @@ function mkDays(sku, startIso, n, units, scope) {
 //   (supply candidate → KM adapter → external authority → Qualified Incoming → Line Runtime): #12 Draft excluded
 //   (timely 0, gap not reduced); #13 on-time canonical incoming covers demand exactly once (linked external = 0);
 //   #14 late incoming visible as Late Risk (timely 0, gap not reduced).
-var EXECUTED_IDS = [1, 2, 3, 4, 5, 6, 12, 13, 14, 18, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31, 33, 35, 36, 37, 38, 39, 40];
+// Round 9B promotion: 28 → 33 executed. Added #15/#16/#17/#27/#32 via the real §39 Demand/Supply Ledger pure
+//   runtime (buildDemandLedger / buildSupplyLedger): #15 delivered-not-received never becomes Current Stock;
+//   #16 receipt-posted counted once; #17 same lifecycle counted once (conflict blocks, never 200/300);
+//   #27 stable event-ID demand count-once (distinct events sum, duplicate counts once, conflict blocks);
+//   #32 one physical pool across many Marketplaces counted once (conflict blocks). Matrix 33 / 7 / 0.
+var EXECUTED_IDS = [1, 2, 3, 4, 5, 6, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40];
 
 // ---------------------------------------------------------------------------
 // Full §33 inventory (all 40 IDs, one-to-one). canonicalStatus is FROZEN for every scenario. The 12
@@ -153,9 +163,9 @@ var SCENARIO_INVENTORY = [
   executed(12, '§33 #12 · §2E', 'Draft incoming not counted', B4R8_OWNER),
   executed(13, '§33 #13 · §10.1', 'On-time incoming covers demand', B4R8_OWNER),
   executed(14, '§33 #14 · §10.1', 'Late incoming visible not covering', B4R8_OWNER),
-  pending(15, '§33 #15 · §30', 'Delivered-not-received', 'Supply Ledger count-once owner (§30)', 'Delivered≠Received lifecycle ledger not implemented'),
-  pending(16, '§33 #16 · §30', 'Receipt posted', 'Supply Ledger count-once owner (§30)', 'receipt-posted count-once ledger not implemented'),
-  pending(17, '§33 #17 · §30', 'Same supply lifecycle count once', 'Supply Ledger count-once owner (§30)', '100-unit count-once ledger not implemented'),
+  executed(15, '§33 #15 · §30', 'Delivered-not-received', LEDGER_OWNER),
+  executed(16, '§33 #16 · §30', 'Receipt posted', LEDGER_OWNER),
+  executed(17, '§33 #17 · §30', 'Same supply lifecycle count once', LEDGER_OWNER),
   executed(18, '§33 #18 · §31', 'Factory Stock = 0 but Production Required > 0'),
   pending(19, '§33 #19 · §35', 'Factory quantity allocated once', 'factory deterministic allocator (§35)', 'warehouse_id+SKU deterministic factory allocator not implemented'),
   executed(20, '§33 #20 · §12/§32', 'Cross-company same-SKU/same-tier timely reallocation'),
@@ -165,12 +175,12 @@ var SCENARIO_INVENTORY = [
   executed(24, '§33 #24 · §14/§31', 'Order carton CEILING'),
   executed(25, '§33 #25 · §31', 'Source remainder → residual production recompute'),
   executed(26, '§33 #26 · §10', 'Preparation Date crosses month'),
-  pending(27, '§33 #27 · §10/§29E', 'Multiple Special Events same month', 'event identity / count-once owner (§10/§29E)', 'stable event-ID + count-once owner not implemented'),
+  executed(27, '§33 #27 · §10/§29E', 'Multiple Special Events same month', LEDGER_OWNER),
   executed(28, '§33 #28 · §27/§27A', 'T4 visible, no allocation/payload'),
   executed(29, '§33 #29 · §34A', 'Missing / stale snapshot'),
   executed(30, '§33 #30 · §34A', 'Missing Forecast (forecast-driven SKU)'),
   executed(31, '§33 #31 · §14/§34', 'Missing units_per_carton → Calculation Blocked'),
-  pending(32, '§33 #32 · §23', 'One Master SKU, many Marketplaces', 'physical-pool dedup owner (§23)', 'company+warehouse_id+Master-SKU pool dedup owner not implemented'),
+  executed(32, '§33 #32 · §23', 'One Master SKU, many Marketplaces', LEDGER_OWNER),
   executed(33, '§33 #33 · §26/§27A', 'Engine A bucket boundary sweep'),
   pending(34, '§33 #34 · §37', 'User partial-carton Order Qty', 'UI/state/persistence lane (§37)', 'partial-carton override is a UI/state/persistence acceptance, not a Phase 2A pure calc'),
   executed(35, '§33 #35 · §22.2', '90-day window contains a joined Campaign'),
@@ -549,10 +559,102 @@ var GOLDEN_SCENARIOS = [
          { state: 'MISSING_FORECAST', calculationAllowed: false },
          '#30 forecast-driven + forecast missing → MISSING_FORECAST, calculation blocked (never 0)');
     }
+  },
+  // ---- Round 9B promotion: #15/#16/#17/#27/#32 via the real §39 Demand/Supply Ledger pure runtime.
+  //      Expected values are canonical LITERALS (never recomputed from engine output). ----
+  {
+    id: 15, sourceSection: '§33 #15 · §30', title: 'Delivered-not-received (never becomes Current Stock)',
+    run: function () {
+      // Real production call (§39). A carrier-delivered lineage stays Incoming supply; it never enters CURRENT_STOCK.
+      var out = buildSupplyLedger({ entries: [
+        { supplyLineageRef: 'SHIP-DNR', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'DELIVERED_NOT_RECEIVED', quantity: 100 }
+      ] });
+      eq(out.pools.length, 1, '#15 one physical pool');
+      eq(out.pools[0].byLifecycleBucket.DELIVERED_NOT_RECEIVED, 100, '#15 delivered-not-received bucket = 100');
+      eq(out.pools[0].byLifecycleBucket.CURRENT_STOCK, undefined, '#15 delivered does NOT become Current Stock');
+      eq(out.totalEffectiveSupplyQty, 100, '#15 delivered contributes as supply once (100), non-current-stock');
+    }
+  },
+  {
+    id: 16, sourceSection: '§33 #16 · §30', title: 'Receipt posted (received/current, no duplicate supply)',
+    run: function () {
+      // Received-not-reflected and Current Stock each represent the same physical quantity ONCE (no double count).
+      var recv = buildSupplyLedger({ entries: [
+        { supplyLineageRef: 'SHIP-RCV', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'RECEIVED_NOT_REFLECTED', quantity: 100 }
+      ] });
+      eq(recv.pools[0].byLifecycleBucket.RECEIVED_NOT_REFLECTED, 100, '#16 received-not-reflected = 100');
+      eq(recv.totalEffectiveSupplyQty, 100, '#16 receipt-posted lineage counted once (100)');
+      var cur = buildSupplyLedger({ entries: [
+        { supplyLineageRef: 'SHIP-CUR', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'CURRENT_STOCK', quantity: 100 }
+      ] });
+      eq(cur.totalEffectiveSupplyQty, 100, '#16 posted current-stock counted once (100)');
+    }
+  },
+  {
+    id: 17, sourceSection: '§33 #17 · §30', title: 'Same supply lifecycle counted once (never 200/300)',
+    run: function () {
+      // One physical lineage in ONE bucket = 100.
+      var once = buildSupplyLedger({ entries: [
+        { supplyLineageRef: 'L100', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'SHIPPED_IN_TRANSIT', quantity: 100 }
+      ] });
+      eq(once.totalEffectiveSupplyQty, 100, '#17 single-bucket lineage = 100 (count once)');
+      // Same lineage simultaneously in two active buckets = fail-closed conflict (0), never 200/300.
+      var conflict = buildSupplyLedger({ entries: [
+        { supplyLineageRef: 'L100', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'SHIPPED_IN_TRANSIT', quantity: 100 },
+        { supplyLineageRef: 'L100', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'CURRENT_STOCK', quantity: 100 }
+      ] });
+      eq(conflict.pools[0].state, 'BLOCKED_CONFLICT', '#17 same lineage in two buckets → blocked');
+      eq(conflict.pools[0].reason, 'SUPPLY_LINEAGE_CONFLICT', '#17 reason = SUPPLY_LINEAGE_CONFLICT');
+      eq(conflict.totalEffectiveSupplyQty, 0, '#17 conflict blocks rather than counting 200/300');
+    }
+  },
+  {
+    id: 27, sourceSection: '§33 #27 · §10/§29E', title: 'Multiple Special Events same month (stable event-ID count-once)',
+    run: function () {
+      // Two distinct eventIds in the same planning cycle remain two demand entries and sum.
+      var out = buildDemandLedger({ entries: [
+        { demandType: 'SPECIAL_EVENT', masterSku: 'GA0450', company: 'KM', country: 'US', marketplace: 'AMAZON_US', destinationWarehouseId: 'US-3PL-1', planningCycle: '2026-08', requiredByDate: '2026-08-10', eventId: 'EVT-A', sourceRef: 'FC-A', quantity: 300 },
+        { demandType: 'SPECIAL_EVENT', masterSku: 'GA0450', company: 'KM', country: 'US', marketplace: 'AMAZON_US', destinationWarehouseId: 'US-3PL-1', planningCycle: '2026-08', requiredByDate: '2026-08-20', eventId: 'EVT-B', sourceRef: 'FC-B', quantity: 200 }
+      ] });
+      eq(out.entries.length, 2, '#27 two distinct events remain two entries');
+      eq(out.totalEffectiveDemandQty, 500, '#27 distinct events summed (500)');
+      // A duplicate copy of one event counts once; a same-eventId conflicting quantity blocks.
+      var dup = buildDemandLedger({ entries: [
+        { demandType: 'SPECIAL_EVENT', masterSku: 'GA0450', company: 'KM', country: 'US', marketplace: 'AMAZON_US', destinationWarehouseId: 'US-3PL-1', planningCycle: '2026-08', requiredByDate: '2026-08-10', eventId: 'EVT-A', sourceRef: 'FC-A', quantity: 300 },
+        { demandType: 'SPECIAL_EVENT', masterSku: 'GA0450', company: 'KM', country: 'US', marketplace: 'SHOPIFY', destinationWarehouseId: 'US-3PL-1', planningCycle: '2026-08', requiredByDate: '2026-08-10', eventId: 'EVT-A', sourceRef: 'FC-A', quantity: 300 }
+      ] });
+      eq(dup.totalEffectiveDemandQty, 300, '#27 duplicate copy of one event counts once (300)');
+      var conflict = buildDemandLedger({ entries: [
+        { demandType: 'SPECIAL_EVENT', masterSku: 'GA0450', company: 'KM', country: 'US', marketplace: 'AMAZON_US', destinationWarehouseId: 'US-3PL-1', planningCycle: '2026-08', requiredByDate: '2026-08-10', eventId: 'EVT-A', sourceRef: 'FC-A', quantity: 300 },
+        { demandType: 'SPECIAL_EVENT', masterSku: 'GA0450', company: 'KM', country: 'US', marketplace: 'AMAZON_US', destinationWarehouseId: 'US-3PL-1', planningCycle: '2026-08', requiredByDate: '2026-08-10', eventId: 'EVT-A', sourceRef: 'FC-A', quantity: 250 }
+      ] });
+      eq(conflict.entries[0].reason, 'DEMAND_EVENT_QTY_CONFLICT', '#27 same eventId conflicting qty → blocked');
+      eq(conflict.totalEffectiveDemandQty, 0, '#27 event conflict contributes 0');
+    }
+  },
+  {
+    id: 32, sourceSection: '§33 #32 · §23', title: 'One Master SKU, many Marketplaces (physical pool counted once)',
+    run: function () {
+      // One physical 3PL pool copied across three Marketplace rows (same physical lineage) stays 1000, not 3000.
+      var out = buildSupplyLedger({ entries: [
+        { supplyLineageRef: 'POOL-3PL', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'CURRENT_STOCK', quantity: 1000 },
+        { supplyLineageRef: 'POOL-3PL', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'CURRENT_STOCK', quantity: 1000 },
+        { supplyLineageRef: 'POOL-3PL', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'CURRENT_STOCK', quantity: 1000 }
+      ] });
+      eq(out.pools.length, 1, '#32 one physical pool (marketplace excluded from identity)');
+      eq(out.totalEffectiveSupplyQty, 1000, '#32 physical pool counted once (1000, not 3000)');
+      // Conflicting snapshots of the same physical pool are fail-closed.
+      var conflict = buildSupplyLedger({ entries: [
+        { supplyLineageRef: 'POOL-C', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'CURRENT_STOCK', quantity: 1000 },
+        { supplyLineageRef: 'POOL-C', masterSku: 'GA0450', company: 'KM', warehouseId: 'US-3PL-1', poolType: 'THREE_PL', lifecycleBucket: 'CURRENT_STOCK', quantity: 900 }
+      ] });
+      eq(conflict.pools[0].reason, 'PHYSICAL_POOL_QTY_CONFLICT', '#32 conflicting snapshots → PHYSICAL_POOL_QTY_CONFLICT');
+      eq(conflict.totalEffectiveSupplyQty, 0, '#32 conflicting pool contributes 0 (not summed/picked)');
+    }
   }
 ];
 
-// ---- Inventory integrity (5 assertions): 40 unique IDs 1..40; executed = exactly the 28; pending = 12;
+// ---- Inventory integrity (5 assertions): 40 unique IDs 1..40; executed = exactly the 33; pending = 7;
 //      canonical-blocked = 0. (Post-B4-R8 promotion the suite runs 28 executed scenarios; the actual total
 //      assertion count is printed at the end as "Assertion count = N" from the passing run — do not assume it.
 //      Legacy pre-promotion baseline was 117; the executed-scenario
@@ -571,9 +673,9 @@ eq(SCENARIO_INVENTORY.length, 40, 'inventory count = 40 (one-to-one)');
 var execInInventory = SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'EXECUTED_EXISTING_CORE'; }).map(function (s) { return s.id; }).sort(function (a, b) { return a - b; });
 var goldenIds = GOLDEN_SCENARIOS.map(function (s) { return s.id; }).sort(function (a, b) { return a - b; });
 eq([execInInventory.join(','), goldenIds.join(',')], [EXECUTED_IDS.join(','), EXECUTED_IDS.join(',')],
-   'executed scenarios are EXACTLY [1,2,3,4,5,6,12,13,14,18,20,21,22,23,24,25,26,28,29,30,31,33,35,36,37,38,39,40] in both inventory and the runnable set (⇒ executed count = 28)');
-eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 12,
-   'implementation-pending count = 12 (frozen canonical rule, missing implementation owner)');
+   'executed scenarios are EXACTLY [1,2,3,4,5,6,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,28,29,30,31,32,33,35,36,37,38,39,40] in both inventory and the runnable set (⇒ executed count = 33)');
+eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 7,
+   'implementation-pending count = 7 (frozen canonical rule, missing implementation owner: #7/#8/#9/#10/#11/#19 allocation, #34 UI/state)');
 eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'CANONICAL-BLOCKED' || s.canonicalStatus !== 'FROZEN'; }).length, 0,
    'canonical-blocked count = 0 (every scenario canonicalStatus = FROZEN)');
 
