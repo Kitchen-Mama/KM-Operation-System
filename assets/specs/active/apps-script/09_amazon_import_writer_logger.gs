@@ -73,12 +73,25 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
   var keyCols = (naturalKey || []).map(function (k) { return colIndex[String(k).toLowerCase()]; });
   var dateColKey = dateField ? String(dateField).toLowerCase() : '';
   var dateCol = (dateColKey && colIndex[dateColKey] != null) ? colIndex[dateColKey] : -1;
+  // Which natural-key positions are the date field — those MUST be canonicalized to yyyy-MM-dd so that a
+  // Google-Sheets Date cell and an incoming 'yyyy-MM-dd' string produce a byte-identical key (root cause of
+  // duplicate appends). Non-date key parts keep the prior trim-only behavior.
+  var keyIsDate = (naturalKey || []).map(function (k) { return dateColKey !== '' && String(k).toLowerCase() === dateColKey; });
+
+  // Single shared canonical rule (delegates to amazonNormalizeDate_ — the one date normalizer): Date value
+  // and valid date string for the same calendar day collapse to the same yyyy-MM-dd. Blank/invalid values
+  // fall back to the prior trim-only representation so nothing else changes.
+  function dateKeyPart_(v) {
+    var nd = amazonNormalizeDate_(v);
+    return nd.ok ? nd.value : String(v == null ? '' : v).trim();
+  }
 
   function keyOfRowArr(rowArr) {
     var parts = [];
     for (var i = 0; i < keyCols.length; i++) {
       var ci = keyCols[i];
-      parts.push((ci == null) ? '' : String(rowArr[ci] == null ? '' : rowArr[ci]).trim());
+      var raw = (ci == null) ? '' : rowArr[ci];
+      parts.push(keyIsDate[i] ? dateKeyPart_(raw) : String(raw == null ? '' : raw).trim());
     }
     return parts.join('||');
   }
@@ -88,7 +101,7 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
     var parts = [];
     for (var i = 0; i < naturalKey.length; i++) {
       var v = lower[String(naturalKey[i]).toLowerCase()];
-      parts.push(String(v == null ? '' : v).trim());
+      parts.push(keyIsDate[i] ? dateKeyPart_(v) : String(v == null ? '' : v).trim());
     }
     return parts.join('||');
   }
@@ -147,7 +160,10 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
   if (dateCol >= 0 && cutoff) {
     var kept = [];
     for (var m = 0; m < merged.length; m++) {
-      var dval = String(merged[m][dateCol] == null ? '' : merged[m][dateCol]).trim().slice(0, 10);
+      // Canonicalize the stored date (Date cell OR string) before the lexical window compare — a raw
+      // String(Date) would never match yyyy-MM-dd and would silently defeat retention.
+      var ndv = amazonNormalizeDate_(merged[m][dateCol]);
+      var dval = ndv.ok ? ndv.value : ''; // blank/invalid → treated as "cannot judge" → kept
       if (!dval || dval >= cutoff) kept.push(merged[m]); // blank kept; >= cutoff kept
       else pruned++;
     }

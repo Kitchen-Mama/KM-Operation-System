@@ -182,7 +182,10 @@ function amazonReadDestDateCoverage_(config, start, end) {
   var data = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
   var seenByDate = {};
   for (var i = 0; i < data.length; i++) {
-    var d = String(data[i][dateCol] == null ? '' : data[i][dateCol]).trim().slice(0, 10);
+    // Canonicalize the destination date cell (Date OR string) so an existing Date-typed row is NOT
+    // mis-classified as missing (which forces a needless re-fetch → re-append). Same one normalizer.
+    var ndv = amazonNormalizeDate_(data[i][dateCol]);
+    var d = ndv.ok ? ndv.value : '';
     if (!d || d < start || d > end) continue;
     if (!cov[d]) { cov[d] = { cnt: 0, keycnt: 0, dup: 0 }; seenByDate[d] = {}; }
     cov[d].cnt++;
