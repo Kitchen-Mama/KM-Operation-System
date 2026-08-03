@@ -12,9 +12,14 @@
  * write the mutated tables back. In the Apps Script project the pure module is provided as a deploy-time port
  * exposed on the global `KMPR` namespace (that port is NOT created in Round 1D — deploy is out of scope).
  *
- * Round 1D implements Slice 1 (schema + readers + plan validation/application + run journal). It does NOT
- * implement: LockService (next round), Scheduler/Trigger, the recommendation calc engine, the B-5 Request
- * writer, Weekly-Plan promotion, or Submit. WITHOUT LockService, applyPersistencePlan is NOT race-safe.
+ * Round 1D implements Slice 1 (schema + readers + plan validation/application + run journal). Round 1E adds
+ * the LockService + optimistic-concurrency write boundary (`applyPersistencePlanWithLock`, below), delegating
+ * the race-safe reload → revalidate → apply → release sequence to the CANONICAL, fake-lock TEST-VERIFIED pure
+ * module `assets/js/core/supply-planning-persistence-locking.js` (Node tests:
+ * assets/tests/supply-planning-persistence-locking.test.js, 96 assertions), exposed on the global `KMPL`
+ * namespace at deploy time. It still does NOT implement: Scheduler/Trigger, the recommendation calc engine,
+ * the B-5 Request writer, Weekly-Plan promotion, or Submit. The unlocked `applyPersistencePlan` remains and is
+ * NOT race-safe on its own — production callers MUST use `applyPersistencePlanWithLock`.
  */
 
 // ---- additive / new schema (Round 1D §Persist-Adapter PA-5/PA-6) ------------
@@ -94,8 +99,65 @@ function applyPersistencePlan(plan, expectedToken, opts) {
   var cfg = K.TABLES[plan && plan.recommendationType]; if (!cfg) return jsonResponse_({ success: false, error: 'unknown recommendationType' });
   var tables = [cfg.header, cfg.lines, K.RUN_JOURNAL_TABLE];
   var built = rprBuildSheetSet_(ss, tables);
-  // NOTE: no LockService yet (Round 1D) — this read→apply→write is NOT race-safe. LockService = next round.
+  // NOTE: UNLOCKED path — this read→apply→write is NOT race-safe. Production callers MUST use
+  // applyPersistencePlanWithLock (below). Kept for tests / single-writer contexts only.
   var result = K.applyPersistencePlan(built.set, plan, expectedToken, opts || {});
   if (!result.conflict && result.runStatus !== 'FAILED') { rprWriteBack_(built.meta, built.set, tables); }
   return jsonResponse_({ success: !result.conflict && result.runStatus !== 'FAILED', data: result });
+}
+
+// ---- Round 1E: LockService + optimistic-concurrency write boundary (PA-9/PA-10) ---------------------------
+// Guard for the pure locking orchestrator (deploy-time port of supply-planning-persistence-locking.js).
+function rprLockingModule_() {
+  if (typeof KMPL === 'undefined') {
+    throw new Error('Recommendation persistence locking pure module (KMPL) is not present in this Apps Script ' +
+      'project — Round 1E is a source mirror; deploy-time port of supply-planning-persistence-locking.js is pending.');
+  }
+  return KMPL;
+}
+
+// Race-safe production write path. Acquires the project ScriptLock, RELOADS the Active-Draft context + snapshot
+// UNDER the lock, revalidates the {draft_version, userEditFingerprint} token, applies the Persistence Plan only
+// on a successful revalidation, and releases the lock in a finally (exactly once). The pure calculation that
+// produced `plan` MUST already have run OUTSIDE this call (PA-10) to keep the critical section short.
+function applyPersistencePlanWithLock(plan, expectedToken, opts) {
+  var K = rprPureModule_(), L = rprLockingModule_(), ss = SpreadsheetApp.getActiveSpreadsheet();
+  var cfg = K.TABLES[plan && plan.recommendationType];
+  if (!cfg) return jsonResponse_({ success: false, error: 'unknown recommendationType', stage: 'input' });
+  var tables = [cfg.header, cfg.lines, K.RUN_JOURNAL_TABLE];
+  var lock = LockService.getScriptLock();   // Apps Script offers only Script/Document/User locks — NO per-key lock.
+  var built = null;                          // the under-lock reload (reused for the write; never the pre-lock read).
+  var deps = {
+    validatePlan: function (p) { return K.validatePersistencePlan(p); },
+    // 30 000 ms is the established project convention (see 05_/07_/21_/22_*.gs).
+    acquireLock: function () { return lock.tryLock(30000); },
+    releaseLock: function () { lock.releaseLock(); },
+    loadActiveDraftContext: function () {
+      var s = rprBuildSheetSet_(ss, [cfg.header]);
+      return K.loadActiveDraftContext(s.set, {
+        recommendationType: plan.recommendationType,
+        planningCycle: (plan.runMeta && plan.runMeta.planning_cycle) || '',
+        businessScope: plan.businessScope || {}
+      });
+    },
+    reloadSnapshot: function () {
+      built = rprBuildSheetSet_(ss, tables);   // reloaded UNDER the lock
+      return K.loadDraftSnapshot(built.set, plan.draftId, plan.recommendationType);
+    },
+    recomputeToken: function (snap) {
+      var tuples = (snap.lines || []).map(function (l) { return { lineKey: l.lineKey, userQty: l.userQty, userEdited: l.userEdited }; });
+      var dv = snap.draft ? snap.draft.draft_version : plan.draftVersion;
+      return { draft_version: dv, userEditFingerprint: K.buildUserEditFingerprint(tuples) };
+    },
+    applyPlan: function (tok, o) {
+      var res = K.applyPersistencePlan(built.set, plan, tok, o || opts || {});
+      if (!res.conflict && res.runStatus !== 'FAILED') { rprWriteBack_(built.meta, built.set, tables); }
+      return res;
+    }
+  };
+  var result = L.executeLockedPersistence({
+    plan: plan, expectedToken: expectedToken, opts: opts || {},
+    generationType: (opts && opts.generationType) || 'SCHEDULED_REFRESH', deps: deps
+  });
+  return jsonResponse_({ success: result.success, data: result });
 }
