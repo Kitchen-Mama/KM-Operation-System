@@ -101,6 +101,8 @@ The **Execution Plan Working Draft** is the **pre-Submit temporary decision** in
 
 > **Naming:** "Shipping Allocation" is a **legacy name**. The block is now the **Execution Plan**; its backing state is the **Execution Plan Working Draft** (`window.KM.shippingAllocationDraft`, key kept for back-compat). The **Recommendation Summary** (system suggestion) is separate and is **never submitted** — Submit Plan reads only the Execution Plan.
 
+> **Recommendation → Weekly Plan handoff boundary (cross-reference).** The upstream `shipping_allocation_drafts` recommendation workspace and its Persistence / Orchestration contract are owned by `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §Persist-Orch (PO-18) / `SYSTEM_RUNTIME_ARCHITECTURE.md` §7C (FROZEN — Decision Only, 2026-08-03; NOT IMPLEMENTED). Canonical invariant: **"Allocation Draft recommends; Weekly Plan decides; Shipment executes."** The Allocation Draft never selects Carrier/Rate and never reserves stock; **"Create / Update Weekly Plan"** (promotes eligible `planned_qty` + auto-Combine, §3.2A) is a **distinct** command from **"Submit for Approval"** (§3.2); user-edited `planned_qty` is protected and `recommended_qty` is immutable within a `draft_version` at the upstream draft. Reservation happens only at the Shipment Ready-to-Ship transition (B-1), never at Draft or Plan.
+
 **Rules:**
 - Exists **only inside Inventory Replenishment, before Submit Plan**.
 - May be stored in **JS State** and **sessionStorage** (recovery only).

@@ -7,9 +7,9 @@
 > - **Canonical Owners (this doc restates none of them):** `SUPPLY_PLANNING_CALCULATION_RULES.md` (formulas) · `SYSTEM_RUNTIME_ARCHITECTURE.md` (cadence / service boundary) · `DATABASE_RELATIONSHIP_MAP.md` (schema) · `SUPPLY_CHAIN_SYSTEM_FLOW.md` (E2E flow).
 > - **Canonical Owner For:** nothing permanent (implementation sequencing only).
 > - **Not Owner For:** formulas, DB schema, Reserve Trigger (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1), cadence — all deferred to the owners above.
-> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (Runtime prerequisites open — see the B-4 Minimal Runtime Plan §B4-Plan below); **B-7 RESOLVED (2026-08-02, decision only — recommendation-cycle Composite Natural Key / Submit commitment boundary, §G; Runtime not implemented)**; **B-5 RESOLVED (2026-08-03, decision only — `request_order_lines` / `request_order_line_sources` grain + quantity authority + Monthly SKU split (`company` × `request_bucket`) + Recommendation→Request writer input/output/idempotency identity; owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.9; writer / persistence / Runtime NOT implemented)**; B-6 / B-8 UNRESOLVED. **Phase 2B Calculation Pure Runtime = FUNCTIONALLY COMPLETE / TEST VERIFIED (2026-08-03, Round 11A closure — see §Calc-Closure below): the entire pure calculation lane (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22/§27A/§32A/§34A + §39 Ledger + §40 Allocation + the B-4 Minimal Pure Runtime chain) is implemented and test-verified from Main; §33 Golden Matrix = 39 executed / 1 pending / 0 canonical-blocked (only #34, downstream). This is DISTINCT from — and does NOT imply — the Recommendation Persistence / Orchestration Runtime tracked by §A–§K below, which remains Not Started / Pending. This tracker is NOT retired.**
+> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (Runtime prerequisites open — see the B-4 Minimal Runtime Plan §B4-Plan below); **B-7 RESOLVED (2026-08-02, decision only — recommendation-cycle Composite Natural Key / Submit commitment boundary, §G; Runtime not implemented)**; **B-5 RESOLVED (2026-08-03, decision only — `request_order_lines` / `request_order_line_sources` grain + quantity authority + Monthly SKU split (`company` × `request_bucket`) + Recommendation→Request writer input/output/idempotency identity; owner `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.9; writer / persistence / Runtime NOT implemented)**; B-6 / B-8 UNRESOLVED. **Phase 2B Calculation Pure Runtime = FUNCTIONALLY COMPLETE / TEST VERIFIED (2026-08-03, Round 11A closure — see §Calc-Closure below): the entire pure calculation lane (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22/§27A/§32A/§34A + §39 Ledger + §40 Allocation + the B-4 Minimal Pure Runtime chain) is implemented and test-verified from Main; §33 Golden Matrix = 39 executed / 1 pending / 0 canonical-blocked (only #34, downstream). This is DISTINCT from — and does NOT imply — the Recommendation Persistence / Orchestration Runtime tracked by §A–§K below, which remains Not Started / Pending. This tracker is NOT retired.** **Recommendation Persistence / Orchestration Contract = FROZEN (2026-08-03, Phase 2C Round 1A — decision only; see §Persist-Orch): public commands, Active-Draft key, `calculation_run_id`, `draft_version`, user-edit protection, lock/logical-transaction, Submit boundary, B-5 Request handoff, Weekly-Plan handoff, idempotency, failure/recovery. Implementation = NOT STARTED (writer / scheduler / LockService / persistence NOT IMPLEMENTED).**
 > - **Current Version:** Draft v1.2 (Batch B B-7 Landing Round 5C, 2026-08-02: landed the USER-CONFIRMED recommendation-cycle identity contract — Composite Natural Key (Option B), one Active Draft per `recommendation_type + planning_cycle + business scope`, Scheduler/Retry/Resume reuse + never overwrite user quantity, Manual Regenerate rebuild-with-confirmation, and the permanent Submit commitment boundary (a Recommendation Engine shall never mutate a Submitted Business Record). B-7 marked RESOLVED (Decision Only); §G status flipped from Blocked to Decision-completed / Implementation-pending. No Runtime / composite-lookup / LockService / scheduler / writer implemented.) Draft v1.1 (Round 4D-C: added the External-Origin-Aware Implementation Order + the Daily-Import / external-sync / scheduler no-auto-admit guards. The B-4 Minimal Pure Runtime plan B4-R1–B4-R8 is now COMPLETE and test-verified at its truthful source / pure-module / pure-orchestration / test-promotion levels: B4-R1/R2 source repairs, B4-R3 candidate, B4-R4 (+R4.1) KM adapter, B4-R5 external authority adapter, B4-R6 ten-gate Qualified-Incoming engine, B4-R7 Line-Runtime → calculateGap, and B4-R8 promoting Golden #12/#13/#14 through the real chain (Matrix now 28 executed / 12 implementation-pending / 0 canonical-blocked). Apps Script deployment / live Runtime / source-read / external ingestion / review actions / recommendation-writer / persistence / scheduler UNVERIFIED or NOT IMPLEMENTED. Next work returns to the Batch B registry.) Draft v1.0 (Batch B Round 1 registry sync — B-1 resolved).
-> - **Last Reviewed:** 2026-08-03 (Batch B B-5 Decision Round — line/source grain + Monthly SKU split + Recommendation→Request writer boundary RESOLVED (decision only, owner RO&PO §3.9); B-5 removed from blockers; next boundary = Recommendation Persistence / Orchestration Contract. Prior: Round 11A Calculation Pure Runtime closure sync).
+> - **Last Reviewed:** 2026-08-03 (Phase 2C Round 1A — Recommendation Persistence / Orchestration Contract FROZEN (decision only, §Persist-Orch): public command decomposition, Active-Draft key, calculation_run_id, draft_version, user-edit protection, lock/logical-transaction, Submit boundary, B-5 Request handoff, Weekly-Plan handoff, idempotency, failure/recovery; implementation NOT STARTED. Prior: Batch B B-5 Decision Round (grain + writer boundary, RO&PO §3.9); Round 11A Calculation Pure Runtime closure).
 > - **Depends On:** the four Canonical Owners above.
 > - **Blocked By:** Batch B — **B-4 Runtime implementation prerequisites** (described in §B4-Plan) · B-6 / B-8 where applicable. **B-5 line/source grain + Recommendation→Request writer boundary is RESOLVED (2026-08-03, decision only — owner RO&PO §3.9; Runtime not implemented) and no longer blocks — the writer's target grain + input/output/idempotency identity are now frozen (the writer itself remains Not Started).** **B-7 persisted recommendation-cycle / unique-key design is RESOLVED (2026-08-02, decision only — Composite Natural Key, §G; Runtime not implemented) and no longer blocks.** **B-1 / B-2 / B-3 are RESOLVED (decision only); the B-4 contract is RESOLVED and B-4 Runtime implementation is IN PROGRESS (B4-R1 + B4-R2 SOURCE IMPLEMENTED — TEST VERIFIED at source level; B4-R3 PURE MODULE IMPLEMENTED — UNIT TEST VERIFIED; B4-R4 PURE ADAPTER IMPLEMENTED — UNIT / INTEGRATION-FIXTURE / DOWNSTREAM-PROJECTION-CONTRACT VERIFIED; B4-R5 PURE EXTERNAL-AUTHORITY ADAPTER IMPLEMENTED — UNIT / CROSS-ADAPTER-FIXTURE VERIFIED; B4-R6 PURE QUALIFIED-INCOMING ENGINE IMPLEMENTED — UNIT / CROSS-ADAPTER / TEN-GATE / DEDUP / REQUIRED-BY FIXTURES VERIFIED; B4-R7 PURE MINIMAL LINE-RUNTIME ORCHESTRATION IMPLEMENTED — QUALIFIED-INCOMING → CALCULATEGAP INTEGRATION / ONE-LINE FIXTURES VERIFIED; B4-R8 GOLDEN #12/#13/#14 PROMOTED — REAL B4 MINIMAL PURE RUNTIME CHAIN EXECUTED, MATRIX 28 EXECUTED / 12 IMPLEMENTATION_PENDING / 0 CANONICAL-BLOCKED; Apps Script deployment / live runtime / integration / external ingestion / review actions / source-read / recommendation-writer / persistence UNVERIFIED); there is no "next open decision = B-2". **The B-4 Minimal Pure Runtime plan (B4-R1–B4-R8) is COMPLETE; there is no next B4 Minimal Runtime batch. B-5 (line/source grain + writer boundary) and B-7 (cycle identity) are now RESOLVED (decision only); the next authorized work is the **Recommendation Persistence / Orchestration Contract** (now unblocked — its grain = B-5 §3.9, its cycle identity = B-7 §G), sequenced ahead of the remaining B-6 / B-8 decisions — none of which is implemented here.**
 
@@ -51,7 +51,160 @@
 
 > **PERMANENT CANONICAL RULE (see `SYSTEM_RUNTIME_ARCHITECTURE.md` §7B):** Calculation Pure Runtime completion does **NOT** imply Recommendation Persistence, Production Integration, Deployment, or Business Execution completion. Everything in §A–§K below (recommendation calculation engine, no-arg schedulers, persistence writer, source-readiness batch identity, trigger installation) and B-7 Active-Draft enforcement remains **Not Started / Pending**.
 
-**Next authorized boundary (documentation-round recommendation only — NOT authorized to implement here):** **Recommendation Persistence / Orchestration Contract** — now **unblocked** (its persisted line/source grain = **B-5 RESOLVED, RO&PO §3.9**; its cycle identity = **B-7 RESOLVED, §G**), sequenced ahead of the still-open **B-6** (Request→PO atomicity) and **B-8** (cancellation-release). This tracker is **NOT retired**; retirement still requires the recommendation persistence/orchestration implementation, scheduler/retry/idempotency verification, permanent-rule absorption, and `project-current-state` synchronization.
+**Recommendation Persistence / Orchestration Contract = FROZEN (2026-08-03 — Decision Only, see §Persist-Orch below).** The complete public contract (commands, DTOs, Active-Draft key, `calculation_run_id`, `draft_version`, user-edit protection, lock/logical-transaction, Submit boundary, B-5 Request handoff, Weekly-Plan handoff, idempotency, failure/recovery) is now frozen on top of B-5 (grain, RO&PO §3.9) + B-7 (cycle identity, §G). **The next authorized boundary is IMPLEMENTATION** of that contract (§J phases), sequenced ahead of the still-open **B-6** (Request→PO atomicity) and **B-8** (cancellation-release) — **NOT authorized here**. This tracker is **NOT retired**; retirement still requires the recommendation persistence/orchestration **implementation**, scheduler/retry/idempotency verification, permanent-rule absorption, and `project-current-state` synchronization.
+
+---
+
+## §Persist-Orch. Recommendation Persistence / Orchestration Contract (FROZEN — Decision Only, 2026-08-03)
+
+> **Status: CONTRACT FROZEN — NOT IMPLEMENTED.** This section freezes the complete public contract for the Recommendation Persistence / Orchestration Runtime that §A–§K sequence. It builds on the frozen inputs (grain = **B-5 RESOLVED**, RO&PO §3.9; cycle identity + Submit boundary = **B-7 RESOLVED**, §G / ARCH §7A) and the pure Calculation Runtime (§39/§40, test-verified). **No scheduler / writer / LockService / persistence / API / UI / trigger is implemented or authorized here.** It does **not** decide **B-6** (Request→PO atomicity) or **B-8** (cancel/reopen/release), and does **not** reopen B-7. The permanent boundary owners are `SYSTEM_RUNTIME_ARCHITECTURE.md` §7A/§7B (command + lock + Submit), `DATABASE_RELATIONSHIP_MAP.md` §7.5 (identities), `SUPPLY_CHAIN_SYSTEM_FLOW.md` §5.5 (flow).
+
+### PO-1. Selected public architecture (decomposition audit)
+Evaluated: **(A)** one god-orchestrator; **(B)** four flat public functions (resolve/upsert/regenerate/submit); **(C)** command-oriented orchestrator with a single shared core + one public entry per business command; **(D)** other. **Selected = C.** Rationale: the two no-arg scheduled entry points already exist by name (`runWeeklyShippingRecommendation` / `runMonthlyOrderRecommendation`, §B/§E/§I) and the manual "Recommend/Regenerate" UI action must produce the **identical** result (scheduler/manual parity) — so both funnel through **one** shared generation core rather than duplicating logic (rejects A's god-function and B's parity drift). `resolveActiveDraft` / `resolveCalculationRun` / user-edit detection are **internal helpers**, not public surface (rejects B's over-exposure). The result is the **smallest coherent** public set: 2 scheduled adapters + 1 generation core + 1 submit = 4 public commands; the downstream handoffs (Send Request = B-5 writer; Create/Update Weekly Plan = logistics layer) are owned by their downstream specs, not this orchestration.
+
+### PO-2. Public commands (side-effecting; NOT pure)
+1. `runWeeklyShippingRecommendation()` — no-arg scheduled adapter (Weekly); resolves in-scope cycles and calls the core per cycle+scope.
+2. `runMonthlyOrderRecommendation()` — no-arg scheduled adapter (Monthly); same shape.
+3. `generateRecommendationDraft(command)` — the shared generation/refresh/regenerate core (used by both schedulers **and** the manual Recommend/Regenerate action).
+4. `submitRecommendationDraft(command)` — Draft → Submitted commitment boundary (B-7).
+
+**Downstream handoff commands (owned elsewhere; referenced, not defined here):** monthly `Send Request` → the B-5 §3.9 Recommendation→Request writer; weekly `Create/Update Weekly Plan` → `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`. **Internal helpers** (private, named for the contract; realized later): `resolveActiveDraft`, `resolveOrCreateCalculationRun`, `checkSourceReadiness`, `buildRecommendationLines` (pure calc invocation), `upsertDraftHeader`, `upsertDraftLines`, `reconcileSupersededLines`, `detectUserEdits`, `acquireCycleLock`/`releaseCycleLock`, `markRunCompleted`.
+
+### PO-3. Signatures & DTOs (contract-level, language-neutral; NOT implemented)
+```
+runWeeklyShippingRecommendation(): RunSummary
+runMonthlyOrderRecommendation():   RunSummary
+generateRecommendationDraft(cmd: GenerateCommand): DraftResult
+submitRecommendationDraft(cmd: SubmitCommand):     SubmitResult
+
+GenerateCommand = {
+  recommendationType,          // "WEEKLY_SHIPPING" | "MONTHLY_ORDER"
+  planningCycle,               // Weekly ISO "YYYY-Www" | Monthly "YYYY-MM" (Asia/Taipei)
+  businessScope,               // per PO-5
+  mode,                        // "SCHEDULED_REFRESH" | "MANUAL_REGENERATE"
+  actor,                       // audit identity (system vs user actor class)
+  confirmRegenerateOverUserEdits // bool; required true to regenerate when user edits exist
+}
+DraftResult = {
+  status,                      // "COMPLETED" | "PARTIAL" | "FAILED" | "SKIPPED" | "BLOCKED"
+  draftId, draftVersion, calculationRunId,
+  counts: { created, updated, resumed, skipped, blocked },
+  issues: [ { code, scope, detail } ]
+}
+SubmitCommand = { recommendationType, draftId /* or planningCycle+businessScope */, actor }
+SubmitResult  = { status, draftId, submittedAt, immutable: true, issues: [] }
+RunSummary    = { success, skipped, resumed, failed, issues }   // matches §B.10
+```
+All calculation is delegated to the pure §39/§40 + Engine A/B runtime (no formula here). These DTOs are in-memory contract shapes — **no DB column, table, or index is created**.
+
+### PO-4. recommendation_type enum
+`{ "WEEKLY_SHIPPING", "MONTHLY_ORDER" }` — exactly the two families with existing draft tables + schedulers. **Emergency Manual Order (§36.4) is NOT a separate type** — it is a `MONTHLY_ORDER` produced on-demand, distinguished only by `generation_type` (`manual_refresh`/`user_created`) and provenance, using the same tables + formulas. No new type is invented.
+
+### PO-5. Business scope schema per type (B-7 §G, verbatim)
+- **WEEKLY_SHIPPING:** `planning_cycle` (ISO `YYYY-Www`, Asia/Taipei) + `company` + `country` + `marketplace` + `source_page` (+ `draft_version`). Destination is line-level.
+- **MONTHLY_ORDER:** `planning_cycle` (`YYYY-MM`, Asia/Taipei) + `company` + `country` + `marketplace` + `draft_purpose` (+ `draft_version`). Persisted request grain = `company` × `sku` × `request_bucket` → 1..N sources (B-5 §3.9). No `recommendation_cycle_id` now (future surrogate = DB hardening only).
+
+### PO-6. Active Draft composite key & lookup
+- **Full natural identity** = `recommendation_type + planning_cycle + <scope fields> + draft_version`.
+- **Active-lookup key** = `recommendation_type + planning_cycle + <scope fields>` (WITHOUT `draft_version`). **Invariant: at most ONE Active Draft per Active-lookup key.** Among versions, only the latest is Active; prior versions are superseded (PO-11).
+- **Active status set** = `{ draft, site_confirmed }` (non-terminal, editable). **Excluded (non-Active)** = `{ submitted, cancelled }` (+ any future completed/replaced).
+- **Zero Active** → create a new draft (`draft_version = 1`). **One Active** → reuse it (resume/refresh). **>1 Active** → **CONFLICT: the run BLOCKS (fail-closed)** — no silent pick, **no latest-created-wins, no automatic repair**; surfaced for human resolution. Duplicate-active state blocks the run and never proceeds.
+
+### PO-7. calculation_run_id contract
+Business-meaningful run identity (**never a timestamp alone**). Generated per **new calculation run** (a scheduled run that (re)computes, or a manual Regenerate). **Retry/Resume of the SAME operation reuses the same `calculation_run_id`** (idempotent). **Manual Regenerate mints a NEW `calculation_run_id` and increments `draft_version`.** One `draft_version` ↔ one `calculation_run_id` (the run that produced that version's `recommended_qty`). `formula_version` + `source_data_as_of` are immutable lineage attributes of the run. Completed runs are immutable. (`calculation_run_id` exists on `shipping_allocation_drafts` and on the `15_*` request-draft header; not added anywhere here.)
+
+### PO-8. draft_version contract
+Initial `1` on first successful write. **Increments ONLY on a successful Manual Regenerate** (deliberate recalculation) — **never** on scheduler first-run / retry / resume / refresh (those reuse the current version and idempotently repair it). A **failed** regeneration does **not** consume a version (increment commits only after the regenerated snapshot is persisted → no version inflation from retries). Exactly **one** version is Active at a time; `draft_version` doubles as the optimistic-concurrency token under the lock. A Submitted record's `draft_version` is frozen.
+
+### PO-9. Create / Update / Retry / Resume / Regenerate matrix
+| Case | Lookup | Create/Update | calc_run_id | draft_version | recommended_qty | planned/order_qty | Confirm | Idempotency |
+|---|---|---|---|---|---|---|---|---|
+| A Scheduler first run | none found | create v1 | new | 1 | write (system) | init = recommended | no | Active-lookup key |
+| B Scheduler retry after failure | reuse Active | update (repair) | **reuse** | unchanged | repair missing/incomplete system lines only | preserved | no | same run |
+| C Scheduler resume after partial | reuse Active | update (finish) | **reuse** | unchanged | complete missing lines | preserved | no | same run |
+| D Scheduler refresh, Active exists | reuse Active | update (repair only) | reuse | unchanged | **not recomputed** (immutable in version) | preserved | no | Active-lookup key |
+| E Manual Recommend, no Active | create v1 | create | new | 1 | write | init = recommended | no | Active-lookup key |
+| F Manual Recommend, Active exists, no user edits | reuse Active | regenerate | new | +1 | recompute | re-init = recommended | no | Active-lookup key |
+| G Manual Recommend, Active exists, user edits present | reuse Active | regenerate **only if `confirmRegenerateOverUserEdits`** | new | +1 | recompute | **user edits preserved unless user confirms overwrite** | **YES (whole-draft)** | Active-lookup key |
+| H Regenerate after source/formula change | reuse Active | regenerate | new | +1 | recompute | preserved-or-confirmed | YES if edits | Active-lookup key |
+Blocked/conflict inputs in any case follow PO-13; a duplicate Active blocks all cases (PO-6).
+
+### PO-10. User-edit detection & protection
+- **Authoritative user fields:** Weekly = `planned_qty` (+ user `selected_*` logistics on the line); Monthly = `order_qty` (+ `carton_qty` + the partial-carton override, §37).
+- **Detection MUST use explicit provenance — NOT bare value comparison.** A user field is "edited" when written by a user action (an explicit `user_edited` marker, or `updated_by` actor-class = user, or a user line generation). `planned_qty == recommended_qty` alone is **insufficient** (a user may deliberately keep the recommended value). Where no explicit signal exists today, an additive `user_edited`/actor-class signal is **REQUIRED at implementation** (no column added by this contract).
+- **`updated_by`/actor metadata is required** to classify system vs user writes. `draft_version` comparison alone is **not** sufficient for line-level edit detection.
+- **Untouched (system-owned, never user-edited) lines MAY be refreshed**; **user-edited quantities are NEVER auto-overwritten** by scheduled refresh (§D/§F). **Confirmation before overwrite** applies at **Regenerate** only, and is a **whole-draft gate** (if ANY user edit exists → confirm once before recomputing planning quantities, §G line 145).
+- **Cancelled lines** are excluded from refresh and from the roll-up; never reactivated. **No scheduled refresh may overwrite user-edited `planned_qty`/`order_qty`.**
+
+### PO-11. recommended_qty snapshot
+Immutable within one `draft_version`; recomputed **only** when `draft_version` increments (Regenerate). Bound to `calculation_run_id` + `formula_version` + `source_data_as_of` of the producing run. **Versioning model = supersede-in-place at the line grain** (the Active header carries the current `draft_version`; system-owned line rows are updated to the new version's values on Regenerate, user fields preserved-or-confirmed). Prior `recommended_qty` is auditable via the immutable `calculation_run` lineage. **Physical per-version row retention (append versioned rows) is an OPTIONAL additive deferred to implementation — no DB migration is decided here.** Stale/removed lines are **superseded/cancelled, never silently deleted** (PO-15).
+
+### PO-12. Lock & logical transaction
+- **Lock scope key** = the Active-lookup key (`recommendation_type + planning_cycle + <scope>`); a coarser `recommendation_type + planning_cycle` lock is permitted. Realized via project `LockService` (pattern already used in `05/07/21/22_*.gs`; **absent** in the recommendation modules today).
+- **Acquire BEFORE lookup.** The **critical section** = lookup → second-validation → header/line upsert → totals → mark run complete. **Calculation MAY run outside the lock** (expensive/pure), but a **second Active-draft validation under the lock is mandatory before any write**. **Release after the run is marked complete.**
+- **No write on lock failure** — if another run holds the lock, abort safely (§B.1), never create a duplicate draft. Concurrent scheduler/manual runs serialize; concurrent Submit/Regenerate serialize on the same lock. Lock **timeout seconds are NOT frozen** (implementation detail; evidence does not require a specific value).
+- **Logical transaction (Sheets has no ACID — do not pretend it does):** write order = (1) run metadata RUNNING → (2) resolve/create draft header → (3) upsert draft lines → (4) reconcile removed/superseded lines → (5) write lineage/snapshot refs (`calculation_run_id`, `source_data_as_of`, and for Monthly the `demand_key` lineage, B-5 §3.9) → (6) recompute header totals → (7) mark run COMPLETED → (8) release lock. **No success response before all required rows are consistent** (§B.11). Partial write → run stays `RUNNING`/`PARTIAL` and is resumable by reusing the same `calculation_run_id` and re-driving idempotent upserts.
+
+### PO-13. Draft-line upsert keys & reconciliation
+- **`shipping_allocation_draft_lines` natural upsert key** = `(allocation_draft_id, sku, site_sku, window_code)` (surrogate `allocation_draft_line_id` = PK). Current runtime upserts by line-id (`16_*`) — the contract freezes the **deterministic natural key** so retry resolves the same line without a client surrogate.
+- **`request_order_allocation_draft_lines` natural upsert key** = `(request_allocation_draft_id, request_month, request_bucket)` (line carries **no** `sku`; sku is on the parent draft; surrogate `request_allocation_line_id` = PK).
+- **Upsert-by-natural-key is canonical — NOT delete+replace.** (The current `15_*` request-draft handler delete+appends lines; that is superseded by this contract so user edits survive retry. The `16_*` shipping handler already upserts.)
+- **recommended_qty update:** only on Regenerate (new version); untouched within a version. **planned/order_qty:** protected (PO-10). **New line:** insert, user qty init = recommended. **Missing line** (in draft, absent from new calc): mark superseded/cancelled — if user-edited, preserve + flag for review, never silently drop. **Blocked line** (PO-13 input conflict): written with `line_status = BLOCKED` + reason token, **never a fabricated quantity**. **Zero qty:** a genuine `0` recommendation may be written with `0` + reason or omitted; a BLOCKED/MISSING input is **never** converted to `0`. **Source lineage:** Monthly lines carry `demand_key` (B-5) when available; shipping lines carry the calc-snapshot refs. **Stable ordering** by natural key.
+
+### PO-14. Blocked / conflict handling (ownership: §34A / §39 / §40)
+| Input state | Scope | Behavior |
+|---|---|---|
+| `MISSING_SNAPSHOT` / `MISSING_FORECAST` / `MISSING_SALES_BASIS` (§34A) | line | line BLOCKED (calculation blocked/review), **never auto-0**; if the whole scope lacks inputs → Analysis Readiness fails → **no draft** (fail-closed, §H) |
+| `STALE_SNAPSHOT` (§34A) | line | proceed **with staleness warning**, never auto-0 |
+| `BLOCKED_CONFLICT` Demand (`DEMAND_EVENT_QTY_CONFLICT` / `DEMAND_SOURCE_QTY_CONFLICT`) | line | conflicting group contributes 0 and is quarantined; line BLOCKED with the §39 reason; never summed/picked |
+| `BLOCKED_CONFLICT` Supply (`PHYSICAL_POOL_QTY_CONFLICT` / `SUPPLY_LINEAGE_CONFLICT`) | line/pool | pool excluded; line BLOCKED with the §39 reason |
+| Allocation `blockedInputs[] {kind,key,reason}` / `PROTECTION_FLOOR_BLOCKED` (§40) | line | surfaced verbatim; affected demand/pool excluded; shortfall reported, never auto-0 |
+| Duplicate Active Drafts | run | whole run BLOCKS (PO-6) — no silent pick |
+| Malformed persisted row | row | fail-closed for that row; surface; never overwrite |
+| Source data unavailable | run | readiness fails → no draft (§H) |
+| Partial write detected | run | run `PARTIAL`/`FAILED`; resumable; no empty-success |
+- **Whole-run blocks** only for: inputs unavailable / readiness fail / duplicate-active / structural violation. Otherwise **only the affected line blocks**; the Draft **can be saved with blocked lines**. **Submit is blocked** while unresolved BLOCKED lines remain (PO-16). The **previous Active Draft remains usable** and **user edits remain preserved**. Status/reason ownership: §34A owns missing/stale tokens, §39 owns ledger-conflict tokens, §40 owns `blockedInputs`; the persistence layer owns `line_status = BLOCKED` + an echoed reason. **Never convert unknown/blocked to 0.**
+
+### PO-15. Failure / retry / resume matrix
+| Outcome | Run status | Resume point | Idempotency key | Reused rows | Superseded | User action? | Prior Active visible |
+|---|---|---|---|---|---|---|---|
+| Calc failed before write | FAILED | re-run calc | Active-lookup key | none | none | after fixing source | yes (unchanged) |
+| Header written, lines incomplete | PARTIAL | resume at lines | same calc_run_id | header + written lines | none | no (auto-resume) | yes |
+| Lines written, totals incomplete | PARTIAL | resume at totals | same calc_run_id | header + lines | none | no | yes |
+| Handoff (Send Request / Create Plan) failed | COMPLETED (draft) / handoff FAILED | retry handoff | handoff identity (PO-17) | draft intact | none | maybe | yes |
+| Submit validation failed | draft stays Active | fix + resubmit | draft id | draft intact | none | yes (resolve blocked) | yes |
+| Duplicate request | SKIPPED | — | Active-lookup key | existing draft | none | no | yes |
+| Lock unavailable | SKIPPED | next run | lock key | — | none | no | yes |
+| Source data stale | COMPLETED + warning | — | — | — | none | optional | yes |
+| Source data missing | BLOCKED | fix source | — | — | none | yes | yes |
+| Retry after partial | resumes to COMPLETED | last incomplete step | same calc_run_id | all consistent rows | none | no | yes |
+**No empty-success ever** (§B.11 / §G). A failed/blocked new run **never destroys the prior good Active Draft**.
+
+### PO-16. Submit boundary (B-7 permanent rule)
+- **PERMANENT RULE: a Recommendation Engine (manual or automatic) shall NEVER mutate a Submitted Business Record** (ARCH §7A/§7B). After Submit → change follows Reject / Cancel / Reopen / New Revision (release mechanics = **B-8**, not decided).
+- **Eligible pre-submit statuses** = `{ draft, site_confirmed }`. **Validation before Submit:** no unresolved BLOCKED lines (PO-14); required per-type completeness (Weekly manual line: from + to + `planned_qty>0` + method; Monthly: `order_qty` decided). Logistics/quote validation for shipping happens **downstream at the Weekly Plan**, not at allocation-draft submit.
+- **Transition** `draft/site_confirmed → submitted`; writes `submitted_by`/`submitted_at`. **Immutable after Submit:** all quantities + grain + source rows.
+- **The Submitted Draft REMAINS in the recommendation tables** (marked `submitted`, as audit lineage); the **official downstream record is COPIED** (request_orders / shipping_plans) by the **separate handoff command** — Recommendation Draft Submit does **not** itself create the Request Order or Weekly Plan (matches the amendment's "Create/Update Weekly Plan ≠ Submit"). For Monthly, the existing runtime couples "Send Request" (= B-5 write) with marking the source draft submitted in one logical transaction; the contract keeps that coupling for Monthly and keeps Weekly separated.
+- **Failure:** fail-closed, no partial official record, resumable. **Idempotent repeated Submit:** a re-submit of an already-submitted/handed-off draft is a **no-op** — never a duplicate downstream record, never a mutation of the existing submitted record. **Interaction with B-5:** the Monthly handoff uses the B-5 §3.9 writer contract. **Excluded:** B-6 (Request→PO atomic conversion), B-8 (cancel/reopen/release).
+
+### PO-17. Recommendation → Request Order handoff (uses B-5 §3.9 exactly)
+- **Eligibility:** `submitted`/`site_confirmed` allocation-draft lines with `order_qty > 0`.
+- **Input projection → output (B-5 §3.9-13/-14):** draft (`company, country, marketplace, sku, planning_cycle`) + lines (`request_month, request_bucket, order_qty`) → **aggregate to request lines at `company + sku + request_bucket`**, demoting site dims to **1..N `request_order_line_sources`**. `approved_qty = order_qty` at creation (single authority). **Partial-carton preserved** (§37 — never re-rounded). **Zero-qty excluded**; **BLOCKED_CONFLICT excluded**.
+- **Idempotency identity (B-5 §3.9-15):** `(planning_cycle, recommendation_type, business_scope, draft_version)` → ≤1 non-cancelled `request_order`; line key `(request_order_id, company, sku, request_bucket)`; source natural key. **Successful-handoff marker:** `request_order` created + source draft marked `submitted` + linkage (`request_orders.source_ref_*` → draft). **Repeated handoff = idempotent no-op** (no duplicate request_order). **Request snapshot immutable; existing Submitted request rows never mutated.** The B-5 writer itself is **NOT implemented here**.
+
+### PO-18. Shipping Recommendation → Weekly Plan handoff
+- Boundary owner = `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` + `SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md`. Canonical invariant: **"Allocation Draft recommends; Weekly Plan decides; Shipment executes."**
+- The Allocation Draft (recommendation workspace) **does NOT choose actual carrier/rate** and **does NOT reserve stock**. **"Create/Update Weekly Plan"** (promotes eligible `planned_qty` into `shipping_plans`/`_lines` + automatic Combine) is a **DISTINCT** command from **"Submit for Approval"** (draft → pending_approval) — both owned by the Weekly Plan layer, **outside** this orchestration.
+- User-edited `planned_qty` preserved; the **Approved plan is immutable** (no later Combine/Submit alters it; explicit audited reopen only). The **Shipment Draft is the hard-reservation boundary** (reserve = the B-1 Ready-to-Ship transition, owner Architecture Principles §8A.1) — **no reservation at Draft or Plan**. This round does **not** re-decide B-2/B-3 or shipment execution.
+
+### PO-19. Idempotency contract (summary)
+Draft resolution = **Active-lookup key** (reuse existing Active). Lines = **natural upsert key** (PO-13). Calc run = **`calculation_run_id`** (retry reuses). Monthly handoff = **B-5 three-level identity** (PO-17). Weekly promotion = the Weekly Plan promotion key (downstream). Submit = **already-submitted → no-op**. The `note` field is **never** an idempotency key (§G line 148).
+
+### PO-20. Purity vs side-effect boundary
+The **calculation** (Engine A/B, §39 Ledgers, §40 Allocation, §34A classification) is **PURE / test-verified** — no I/O, no clock, no DB. The **orchestration** (lock, resolve, upsert, submit, handoff, readiness I/O) is **SIDE-EFFECTING**. The contract cleanly separates them: `buildRecommendationLines` invokes the pure core and returns immutable DTOs; the persistence helpers perform all side effects under the lock. `generateRecommendationDraft` is the only place calc-output meets persistence.
+
+### PO-21. Non-goals (explicit)
+No implementation of: scheduler, no-arg runners, writer, LockService, persistence, retry/resume, regenerate, user-confirmation dialog, API, UI, Request handoff (B-5 writer), Weekly Plan handoff, Submit guard. No Apps Script / JS / test / DB-header / column / table / index change. No data migration. No B-6 / B-8 decision. No B-7 reopen. No Scenario #34. No Calculation Runtime change. **Implementation status = NOT IMPLEMENTED / NOT STARTED.**
 
 ---
 
