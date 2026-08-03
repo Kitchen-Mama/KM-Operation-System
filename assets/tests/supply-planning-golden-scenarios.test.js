@@ -46,6 +46,10 @@ var runSupplyPlanningLine = require('../js/core/supply-planning-line-runtime.js'
 var buildDemandLedger = require('../js/core/supply-planning-ledgers.js').buildDemandLedger;
 var buildSupplyLedger = require('../js/core/supply-planning-ledgers.js').buildSupplyLedger;
 var LEDGER_OWNER = 'Demand/Supply Ledger pure runtime (supply-planning-ledgers.js, §39)';
+// Round 10B promotion: #7/#8/#9/#10/#11/#19 execute the real §40 Allocation pure runtime. Public production APIs only.
+var allocateOverseasSharedPool = require('../js/core/supply-planning-allocations.js').allocateOverseasSharedPool;
+var allocateFactoryDeterministic = require('../js/core/supply-planning-allocations.js').allocateFactoryDeterministic;
+var ALLOC_OWNER = 'Allocation pure runtime (supply-planning-allocations.js, §40)';
 
 var fail = 0, pass = 0;
 function assert(cond, label) { if (!cond) { fail++; console.error('FAIL ' + label); } else { pass++; console.log('ok   ' + label); } }
@@ -103,7 +107,11 @@ function mkDays(sku, startIso, n, units, scope) {
 //   #16 receipt-posted counted once; #17 same lifecycle counted once (conflict blocks, never 200/300);
 //   #27 stable event-ID demand count-once (distinct events sum, duplicate counts once, conflict blocks);
 //   #32 one physical pool across many Marketplaces counted once (conflict blocks). Matrix 33 / 7 / 0.
-var EXECUTED_IDS = [1, 2, 3, 4, 5, 6, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40];
+// Round 10B promotion: 33 → 39 executed. Added #7/#8/#9/#10/#11/#19 via the real §40 Allocation pure runtime
+//   (allocateOverseasSharedPool / allocateFactoryDeterministic): #7 NORMAL weighted; #8 PROTECTED 18-day floor;
+//   #9 SHORTAGE largest-remainder; #10 FBA vs THREE_PL separation; #11 platform THREE_PL reserve; #19 factory
+//   FIFO by Required-By, allocated once. Only #34 (UI/state/persistence, §37) remains. Matrix 39 / 1 / 0.
+var EXECUTED_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 39, 40];
 
 // ---------------------------------------------------------------------------
 // Full §33 inventory (all 40 IDs, one-to-one). canonicalStatus is FROZEN for every scenario. The 12
@@ -155,11 +163,11 @@ var SCENARIO_INVENTORY = [
   executed(4,  '§33 #4 · §22.3', 'Normal days 3–6 (low-sample warning)'),
   executed(5,  '§33 #5 · §22.3', 'Normal days <3 (weekly_7d fallback)'),
   executed(6,  '§33 #6 · §2D/§29F/§29G', 'Platform × Forecast-Driven + Target Rule + Special Event'),
-  pending(7,  '§33 #7 · §20/§24', 'Overseas NORMAL_ALLOCATION', 'overseas allocation engine (§20/§24)', 'weighted allocation engine not implemented'),
-  pending(8,  '§33 #8 · §20/§24', 'Overseas PROTECTED_REALLOCATION', 'overseas allocation engine (§20/§24)', '18-day-floor protected reallocation not implemented'),
-  pending(9,  '§33 #9 · §24.5–24.7', 'Overseas SHORTAGE_ALLOCATION', 'overseas allocation engine (§24.5–24.7)', 'deterministic largest-remainder allocator not implemented'),
-  pending(10, '§33 #10 · §24.9', 'FBA Current Stock vs 3PL reserve separation', 'inventory bucket/ledger owner (§24.9)', 'FBA/3PL distinct-lineage bucket owner not implemented'),
-  pending(11, '§33 #11 · §24.9', 'Platform site participates in 3PL reserve', 'inventory bucket/ledger owner (§24.9)', '3PL reserve bucket (separate from FBA) not implemented'),
+  executed(7,  '§33 #7 · §20/§24', 'Overseas NORMAL_ALLOCATION', ALLOC_OWNER),
+  executed(8,  '§33 #8 · §20/§24', 'Overseas PROTECTED_REALLOCATION', ALLOC_OWNER),
+  executed(9,  '§33 #9 · §24.5–24.7', 'Overseas SHORTAGE_ALLOCATION', ALLOC_OWNER),
+  executed(10, '§33 #10 · §24.9', 'FBA Current Stock vs 3PL reserve separation', ALLOC_OWNER),
+  executed(11, '§33 #11 · §24.9', 'Platform site participates in 3PL reserve', ALLOC_OWNER),
   executed(12, '§33 #12 · §2E', 'Draft incoming not counted', B4R8_OWNER),
   executed(13, '§33 #13 · §10.1', 'On-time incoming covers demand', B4R8_OWNER),
   executed(14, '§33 #14 · §10.1', 'Late incoming visible not covering', B4R8_OWNER),
@@ -167,7 +175,7 @@ var SCENARIO_INVENTORY = [
   executed(16, '§33 #16 · §30', 'Receipt posted', LEDGER_OWNER),
   executed(17, '§33 #17 · §30', 'Same supply lifecycle count once', LEDGER_OWNER),
   executed(18, '§33 #18 · §31', 'Factory Stock = 0 but Production Required > 0'),
-  pending(19, '§33 #19 · §35', 'Factory quantity allocated once', 'factory deterministic allocator (§35)', 'warehouse_id+SKU deterministic factory allocator not implemented'),
+  executed(19, '§33 #19 · §35', 'Factory quantity allocated once', ALLOC_OWNER),
   executed(20, '§33 #20 · §12/§32', 'Cross-company same-SKU/same-tier timely reallocation'),
   executed(21, '§33 #21 · §32A', 'Different SKUs cannot reallocate'),
   executed(22, '§33 #22 · §32A', 'Later surplus cannot cover earlier shortage'),
@@ -651,10 +659,121 @@ var GOLDEN_SCENARIOS = [
       eq(conflict.pools[0].reason, 'PHYSICAL_POOL_QTY_CONFLICT', '#32 conflicting snapshots → PHYSICAL_POOL_QTY_CONFLICT');
       eq(conflict.totalEffectiveSupplyQty, 0, '#32 conflicting pool contributes 0 (not summed/picked)');
     }
+  },
+  // ---- Round 10B promotion: #7/#8/#9/#10/#11/#19 via the real §40 Allocation pure runtime.
+  //      Expected values are canonical LITERALS (never recomputed from engine output). ----
+  {
+    id: 7, sourceSection: '§33 #7 · §20/§24', title: 'Overseas NORMAL_ALLOCATION (weighted after survival)',
+    run: function () {
+      var out = allocateOverseasSharedPool({
+        company: 'KM', country: 'US', masterSku: 'GA0450',
+        supplyPools: [{ poolKey: 'P1', poolType: 'THREE_PL', warehouseId: 'US-3PL-1', effectiveSupplyQty: 1000 }],
+        receivers: [
+          { receiverKey: 'A', demandKey: 'D-A', marketplace: 'amazon_us', destinationWarehouseId: 'US-3PL-1', fulfillmentModel: 'self_fulfilled', demandQty: 600, survivalNeedQty: 100, allocationPriority: 5, demandWeight: 2, eligiblePoolTypes: ['THREE_PL'] },
+          { receiverKey: 'B', demandKey: 'D-B', marketplace: 'shopify', destinationWarehouseId: 'US-3PL-1', fulfillmentModel: 'self_fulfilled', demandQty: 600, survivalNeedQty: 100, allocationPriority: 5, demandWeight: 1, eligiblePoolTypes: ['THREE_PL'] }
+        ]
+      });
+      var byd = {}; out.allocations.forEach(function (a) { byd[a.demandKey] = (byd[a.demandKey] || 0) + a.allocatedQty; });
+      eq(out.allocationMode, 'NORMAL_ALLOCATION', '#7 mode NORMAL_ALLOCATION');
+      eq(byd['D-A'], 600, '#7 A survival+weighted = 600 (capped)');
+      eq(byd['D-B'], 400, '#7 B absorbs cap overflow = 400');
+      eq(out.totalUnusedSupplyQty, 0, '#7 pool fully used');
+      assert(out.totalAllocatedQty + out.totalUnallocatedDemandQty === out.totalDemandQty, '#7 demand conservation');
+      assert(out.totalAllocatedQty + out.totalUnusedSupplyQty === out.totalSupplyQty, '#7 supply conservation');
+    }
+  },
+  {
+    id: 8, sourceSection: '§33 #8 · §20/§24', title: 'Overseas PROTECTED_REALLOCATION (18-day floor preserved)',
+    run: function () {
+      var out = allocateOverseasSharedPool({
+        company: 'KM', country: 'US', masterSku: 'GA0450',
+        supplyPools: [{ poolKey: 'P1', poolType: 'THREE_PL', warehouseId: 'US-3PL-1', effectiveSupplyQty: 1000 }],
+        receivers: [
+          { receiverKey: 'A', demandKey: 'D-A', marketplace: 'amazon_us', destinationWarehouseId: 'US-3PL-1', fulfillmentModel: 'self_fulfilled', demandQty: 900, survivalNeedQty: 100, allocationPriority: 5, demandWeight: 9, eligiblePoolTypes: ['THREE_PL'] },
+          { receiverKey: 'B', demandKey: 'D-B', marketplace: 'shopify', destinationWarehouseId: 'US-3PL-1', fulfillmentModel: 'self_fulfilled', demandQty: 900, survivalNeedQty: 200, allocationPriority: 5, demandWeight: 1, eligiblePoolTypes: ['THREE_PL'] }
+        ]
+      });
+      var byd = {}; out.allocations.forEach(function (a) { byd[a.demandKey] = (byd[a.demandKey] || 0) + a.allocatedQty; });
+      eq(out.allocationMode, 'PROTECTED_REALLOCATION', '#8 mode PROTECTED_REALLOCATION');
+      assert(byd['D-B'] >= 200, '#8 low-weight receiver B reaches its 18-day floor 200 (pure-weight would starve it)');
+      assert(byd['D-A'] >= 100, '#8 donor A never drops below its own survival floor 100');
+      eq(out.totalAllocatedQty, 1000, '#8 pool conserved');
+      assert(out.allocations.some(function (a) { return a.allocationReason === 'PROTECTION_REALLOCATION'; }), '#8 protection reason present');
+    }
+  },
+  {
+    id: 9, sourceSection: '§33 #9 · §24.5–24.7', title: 'Overseas SHORTAGE_ALLOCATION (deterministic largest-remainder)',
+    run: function () {
+      var out = allocateOverseasSharedPool({
+        company: 'KM', country: 'US', masterSku: 'GA0450',
+        supplyPools: [{ poolKey: 'P1', poolType: 'THREE_PL', warehouseId: 'US-3PL-1', effectiveSupplyQty: 150 }],
+        receivers: [
+          { receiverKey: 'A', demandKey: 'D-A', marketplace: 'amazon_us', destinationWarehouseId: 'US-3PL-1', fulfillmentModel: 'self_fulfilled', demandQty: 500, survivalNeedQty: 150, allocationPriority: 2, demandWeight: 1, eligiblePoolTypes: ['THREE_PL'] },
+          { receiverKey: 'B', demandKey: 'D-B', marketplace: 'shopify', destinationWarehouseId: 'US-3PL-1', fulfillmentModel: 'self_fulfilled', demandQty: 500, survivalNeedQty: 150, allocationPriority: 1, demandWeight: 1, eligiblePoolTypes: ['THREE_PL'] }
+        ]
+      });
+      var byd = {}; out.allocations.forEach(function (a) { byd[a.demandKey] = (byd[a.demandKey] || 0) + a.allocatedQty; });
+      eq(out.allocationMode, 'SHORTAGE_ALLOCATION', '#9 mode SHORTAGE_ALLOCATION');
+      eq(byd['D-A'], 100, '#9 higher-priority A weighted share 100');
+      eq(byd['D-B'], 50, '#9 lower-priority B weighted share 50 (not dropped)');
+      eq(out.totalAllocatedQty, 150, '#9 no lost or duplicated units (Σ = pool 150)');
+    }
+  },
+  {
+    id: 10, sourceSection: '§33 #10 · §24.9', title: 'FBA Current Stock vs 3PL reserve separation',
+    run: function () {
+      var out = allocateOverseasSharedPool({
+        company: 'KM', country: 'US', masterSku: 'GA0450',
+        supplyPools: [
+          { poolKey: 'FBA1', poolType: 'FBA', warehouseId: 'US-FBA', effectiveSupplyQty: 200 },
+          { poolKey: 'TPL1', poolType: 'THREE_PL', warehouseId: 'US-3PL-1', effectiveSupplyQty: 500 }
+        ],
+        receivers: [
+          { receiverKey: 'A', demandKey: 'D-A', marketplace: 'shopify', destinationWarehouseId: 'US-3PL-1', fulfillmentModel: 'self_fulfilled', demandQty: 400, survivalNeedQty: 100, allocationPriority: 5, demandWeight: 1, eligiblePoolTypes: ['THREE_PL'] }
+        ]
+      });
+      assert(out.allocations.every(function (a) { return a.sourcePoolType === 'THREE_PL' && a.sourcePoolKey === 'TPL1'; }), '#10 THREE_PL receiver draws only THREE_PL (records preserve source type)');
+      assert(out.unusedSupply.some(function (u) { return u.poolKey === 'FBA1' && u.unusedQty === 200; }), '#10 FBA pool untouched (never merged into THREE_PL)');
+      assert(out.totalAllocatedQty + out.totalUnusedSupplyQty === out.totalSupplyQty, '#10 no quantity double count (supply conservation)');
+    }
+  },
+  {
+    id: 11, sourceSection: '§33 #11 · §24.9', title: 'Platform site participates in 3PL reserve',
+    run: function () {
+      var out = allocateOverseasSharedPool({
+        company: 'KM', country: 'US', masterSku: 'GA0450',
+        supplyPools: [{ poolKey: 'TPL1', poolType: 'THREE_PL', warehouseId: 'US-3PL-1', effectiveSupplyQty: 500 }],
+        receivers: [
+          { receiverKey: 'P', demandKey: 'D-P', marketplace: 'amazon_us', destinationWarehouseId: 'US-FBA', fulfillmentModel: 'platform_fulfilled', demandQty: 300, survivalNeedQty: 100, allocationPriority: 5, demandWeight: 1, eligiblePoolTypes: ['THREE_PL'] }
+        ]
+      });
+      assert(out.allocations.length > 0, '#11 platform receiver receives a THREE_PL reserve allocation');
+      assert(out.allocations.every(function (a) { return a.sourcePoolType === 'THREE_PL'; }), '#11 reserve source stays THREE_PL (FBA not reclassified/merged)');
+      assert(out.allocations.every(function (a) { return a.allocationReason === 'THREE_PL_REPLENISHMENT_RESERVE'; }), '#11 reserve reason THREE_PL_REPLENISHMENT_RESERVE');
+    }
+  },
+  {
+    id: 19, sourceSection: '§33 #19 · §35', title: 'Factory quantity allocated once (deterministic FIFO)',
+    run: function () {
+      var out = allocateFactoryDeterministic({
+        masterSku: 'GA0450',
+        factoryPools: [{ poolKey: 'FP-CN', poolType: 'FACTORY', warehouseId: 'CN_YOUXIN', effectiveSupplyQty: 100 }],
+        demands: [
+          { demandKey: 'D-KM', company: 'KM', marketplace: 'amazon_us', destinationWarehouseId: 'US-3PL-1', requiredByDate: '2026-09-01', allocationPriority: 5, demandQty: 80, eligibleFactoryWarehouseIds: ['CN_YOUXIN'] },
+          { demandKey: 'D-RES', company: 'ResearchUS', marketplace: 'amazon_us', destinationWarehouseId: 'US-3PL-2', requiredByDate: '2026-10-01', allocationPriority: 5, demandQty: 80, eligibleFactoryWarehouseIds: ['CN_YOUXIN'] }
+        ]
+      });
+      var byd = {}; out.allocations.forEach(function (a) { byd[a.demandKey] = (byd[a.demandKey] || 0) + a.allocatedQty; });
+      eq(byd['D-KM'], 80, '#19 earliest Required-By (KM) consumes first = 80');
+      eq(byd['D-RES'], 20, '#19 later Required-By (ResearchUS) gets remainder = 20');
+      eq(out.totalAllocatedQty, 100, '#19 each factory unit allocated exactly once (Σ = pool 100)');
+      assert(out.totalAllocatedQty + out.totalUnallocatedDemandQty === out.totalDemandQty, '#19 demand conservation');
+      assert(out.allocations.every(function (a) { return a.allocationReason === 'FACTORY_FIFO'; }), '#19 factory FIFO reason');
+    }
   }
 ];
 
-// ---- Inventory integrity (5 assertions): 40 unique IDs 1..40; executed = exactly the 33; pending = 7;
+// ---- Inventory integrity (5 assertions): 40 unique IDs 1..40; executed = exactly the 39; pending = 1;
 //      canonical-blocked = 0. (Post-B4-R8 promotion the suite runs 28 executed scenarios; the actual total
 //      assertion count is printed at the end as "Assertion count = N" from the passing run — do not assume it.
 //      Legacy pre-promotion baseline was 117; the executed-scenario
@@ -673,9 +792,9 @@ eq(SCENARIO_INVENTORY.length, 40, 'inventory count = 40 (one-to-one)');
 var execInInventory = SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'EXECUTED_EXISTING_CORE'; }).map(function (s) { return s.id; }).sort(function (a, b) { return a - b; });
 var goldenIds = GOLDEN_SCENARIOS.map(function (s) { return s.id; }).sort(function (a, b) { return a - b; });
 eq([execInInventory.join(','), goldenIds.join(',')], [EXECUTED_IDS.join(','), EXECUTED_IDS.join(',')],
-   'executed scenarios are EXACTLY [1,2,3,4,5,6,12,13,14,15,16,17,18,20,21,22,23,24,25,26,27,28,29,30,31,32,33,35,36,37,38,39,40] in both inventory and the runnable set (⇒ executed count = 33)');
-eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 7,
-   'implementation-pending count = 7 (frozen canonical rule, missing implementation owner: #7/#8/#9/#10/#11/#19 allocation, #34 UI/state)');
+   'executed scenarios are EXACTLY [1..33,35..40] (all except #34) in both inventory and the runnable set (⇒ executed count = 39)');
+eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'IMPLEMENTATION_PENDING'; }).length, 1,
+   'implementation-pending count = 1 (only #34 — downstream Request-Order/PO/UI-state/persistence, §37)');
 eq(SCENARIO_INVENTORY.filter(function (s) { return s.executionStatus === 'CANONICAL-BLOCKED' || s.canonicalStatus !== 'FROZEN'; }).length, 0,
    'canonical-blocked count = 0 (every scenario canonicalStatus = FROZEN)');
 
