@@ -241,6 +241,15 @@ function doPost(e) {
       return handleUpsertRequestOrderSiteConfirmations_(body);
     }
 
+    // Phase 2C Round 1G — LOCKED recommendation generation bridge: Plan Builder → Persistence Core → Persistence
+    // Plan Builder → LockService keyed-delta repository apply. The ONLY recommendation persistence write that is
+    // lock-enforced; delegates entirely to the generated bundle (90_generated_supply_planning_bundle.gs) via
+    // 24_recommendation_orchestrator.gs. Source mirror / NOT deployed; guarded (fails closed if the bundle is
+    // absent). Legacy 15_/16_ unlocked writers remain for compatibility (enforcement is a later round).
+    if (action === 'generateRecommendationDraftLocked') {
+      return handleGenerateRecommendationDraftLocked_(body);
+    }
+
     // One-time migration (2026-07-28): retire the display-label snapshot columns from shipping_plans /
     // shipments (shipping_method_label / customs_type_label / shipments_customs_type_label). Backfill-safe:
     // dry_run reports; live deletes only when every code cell is populated (else blocked_needs_review).
