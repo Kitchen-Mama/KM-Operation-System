@@ -126,5 +126,32 @@ var r2 = JSON.stringify(DD.analyzeAmazonDailySalesDuplicates({ headers: HEADER, 
 ok(r1 === r2, 'D1 identical input → byte-identical JSON output (deterministic)');
 ok(r1.indexOf('getRange') < 0 && r1.indexOf('[object') < 0, 'D2 output contains no Sheet/Range objects');
 
+console.log('\n-- T. Authorized derived-field numeric tolerance (HOTFIX A3-PREP §7, opt-in) --');
+// buy_box_percentage "$100.00" vs "100": currency-format only, core identical.
+function bboxRow(sku, bbox, units) { // header order: ...,unit_session_percentage,buy_box_percentage,...
+  return ['2026-07-30', 'US', 'Amazon', 'Amazon', sku, 'USD', units, units * 10, units, 'H', 'B', 't', 't'];
+}
+// Extend header to carry the two derived fields explicitly.
+var HDR2 = ['snapshot_date', 'country', 'marketplace', 'channel', 'sku', 'currency', 'sales_units', 'sales_amount', 'unit_session_percentage', 'buy_box_percentage', 'source_row_hash', 'sync_batch_id', 'synced_at'];
+function drow(sku, units, usp, bbox, hash, batch) {
+  return ['2026-07-30', 'US', 'Amazon', 'Amazon', sku, 'USD', units, units * 10, usp, bbox, hash, batch, 't'];
+}
+// OFF (default): $-format vs plain → CONFLICTING.
+var TOFF = DD.analyzeAmazonDailySalesDuplicates({ headers: HDR2, rows: [drow('CO1100-R', 5, '33.33', '$100.00', 'H1', 'B1'), drow('CO1100-R', 5, '33', '100', 'H1', 'B2')] });
+eq({ conf: TOFF.conflictingFactGroups, review: TOFF.reviewRequiredGroups, auth: TOFF.authorizedDerivedFormatGroups }, { conf: 1, review: 1, auth: 0 }, 'T1 tolerance OFF → derived-field diff stays CONFLICTING (A2 behaviour preserved)');
+// ON: same rows → AUTO (METADATA_ONLY), authorized-derived-format group counted.
+var TON = DD.analyzeAmazonDailySalesDuplicates({ headers: HDR2, rows: [drow('CO1100-R', 5, '33.33', '$100.00', 'H1', 'B1'), drow('CO1100-R', 5, '33', '100', 'H1', 'B2')], tolerantDerivedFields: true });
+eq({ conf: TON.conflictingFactGroups, meta: TON.metadataOnlyGroups, auto: TON.autoEligibleGroups, review: TON.reviewRequiredGroups, auth: TON.authorizedDerivedFormatGroups, applied: TON.tolerantDerivedFieldsApplied }, { conf: 0, meta: 1, auto: 1, review: 0, auth: 1, applied: ['buy_box_percentage', 'unit_session_percentage'] }, 'T2 tolerance ON → derived-field-only diff becomes AUTO_ELIGIBLE (authorized)');
+ok(TON.groups[0].toleranceApplied === true, 'T2b group flagged toleranceApplied');
+// Core measure difference is NEVER tolerated, even with tolerance ON.
+var TCORE = DD.analyzeAmazonDailySalesDuplicates({ headers: HDR2, rows: [drow('CO1100-R', 5, '33', '100', 'H1', 'B1'), drow('CO1100-R', 9, '33', '100', 'H2', 'B2')], tolerantDerivedFields: true });
+eq({ conf: TCORE.conflictingFactGroups, review: TCORE.reviewRequiredGroups }, { conf: 1, review: 1 }, 'T3 core sales_units difference stays CONFLICTING despite tolerance');
+// Non-numeric derived value → strict fallback → CONFLICTING even with tolerance ON.
+var TNAN = DD.analyzeAmazonDailySalesDuplicates({ headers: HDR2, rows: [drow('CO1100-R', 5, 'N/A', '100', 'H1', 'B1'), drow('CO1100-R', 5, '33', '100', 'H1', 'B2')], tolerantDerivedFields: true });
+eq({ conf: TNAN.conflictingFactGroups }, { conf: 1 }, 'T4 non-numeric derived value → strict fallback → CONFLICTING (not silently tolerated)');
+// A caller CANNOT make a core field tolerant.
+var TGUARD = DD.analyzeAmazonDailySalesDuplicates({ headers: HDR2, rows: [drow('CO1100-R', 5, '33', '100', 'H1', 'B1'), drow('CO1100-R', 9, '33', '100', 'H2', 'B2')], tolerantDerivedFields: ['sales_units'] });
+eq({ conf: TGUARD.conflictingFactGroups, applied: TGUARD.tolerantDerivedFieldsApplied }, { conf: 1, applied: [] }, 'T5 core field cannot be forced tolerant (guard ignores it)');
+
 if (fail === 0) console.log('\nAll Amazon daily-sales dedup dry-run assertions passed (' + pass + ' assertions)');
 else { console.error('\n' + fail + ' FAILURE(S) of ' + (pass + fail) + ' assertions'); process.exit(1); }

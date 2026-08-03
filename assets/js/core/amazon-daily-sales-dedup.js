@@ -38,6 +38,17 @@
     'buy_box_percentage', 'browser_session', 'browser_page_views', 'app_session', 'app_page_view'
   ];
 
+  // Core sales measures — NEVER eligible for the derived-field numeric tolerance below.
+  var CORE_SALES_FIELDS = [
+    'currency', 'sales_units', 'sales_amount', 'sales_amount_usd', 'return_units', 'total_orders', 'session'
+  ];
+
+  // The ONLY two fields for which a numeric-meaning (not string) comparison may be enabled, per the
+  // HOTFIX A3-PREP §7 user authorization. Differences here are display/precision artifacts of derived
+  // Amazon metrics; they are tolerated ONLY when both sides parse to finite numbers. Opt-in via
+  // input.tolerantDerivedFields — DEFAULT OFF, so the conservative A2 classification is unchanged.
+  var TOLERANT_DERIVED_FIELDS = ['buy_box_percentage', 'unit_session_percentage'];
+
   var GROUP_CLASS = {
     IDENTICAL: 'IDENTICAL_FACTS',
     METADATA_ONLY: 'METADATA_ONLY_DIFFERENCE',
@@ -116,11 +127,37 @@
     return { key: parts.join('||'), valid: valid, reason: reason, dateRaw: dateRaw, dateNorm: nd.value };
   }
 
-  function factsEqual(a, b, colIndex) {
+  // Canonical numeric meaning of a derived-percentage cell: strip ONE optional leading currency
+  // symbol and a trailing %, then parse. Returns a finite Number or null (non-numeric/blank).
+  function derivedNumeric(v) {
+    var s = trimStr(v);
+    if (s === '') return null;
+    s = s.replace(/^[^0-9.\-]+/, '').replace(/%\s*$/, '').replace(/,/g, '');
+    if (s === '') return null;
+    var n = Number(s);
+    return isFinite(n) ? n : null;
+  }
+
+  // Compare one business field between two rows. For a tolerant derived field (only when enabled),
+  // equality is by numeric meaning — "$100.00" == "100", and a precision-only gap like 33 vs 33.33 is
+  // tolerated — BUT ONLY if BOTH sides parse to finite numbers; otherwise it falls back to strict
+  // string compare (so a non-numeric derived value stays a real conflict). Core fields are ALWAYS strict.
+  function fieldEqual(a, b, colIndex, field, tolerantSet) {
+    var av = cellByName(a, colIndex, field), bv = cellByName(b, colIndex, field);
+    if (tolerantSet[field]) {
+      var an = derivedNumeric(av), bn = derivedNumeric(bv);
+      if (an !== null && bn !== null) return true; // both numeric → tolerate representation/precision
+      return trimStr(av) === trimStr(bv);          // else strict (invalid/nonnumeric → conflict preserved)
+    }
+    return trimStr(av) === trimStr(bv);
+  }
+
+  function factsEqual(a, b, colIndex, tolerantSet) {
+    tolerantSet = tolerantSet || {};
     for (var i = 0; i < BUSINESS_FACT_FIELDS.length; i++) {
       var f = BUSINESS_FACT_FIELDS[i];
       if (colIndex[f] == null) continue; // field absent in this export → skip
-      if (trimStr(cellByName(a, colIndex, f)) !== trimStr(cellByName(b, colIndex, f))) return false;
+      if (!fieldEqual(a, b, colIndex, f, tolerantSet)) return false;
     }
     return true;
   }
@@ -181,6 +218,19 @@
     var metaFields = metadataFields(headers, colIndex);
     var issues = [];
 
+    // Opt-in derived-field numeric tolerance (HOTFIX A3-PREP §7). true → the two authorized fields;
+    // an array → intersect with the authorized set (a caller can NEVER make a core measure tolerant).
+    var tolerantSet = {};
+    if (input.tolerantDerivedFields) {
+      var requested = (input.tolerantDerivedFields === true) ? TOLERANT_DERIVED_FIELDS : input.tolerantDerivedFields;
+      var coreGuard = {}; CORE_SALES_FIELDS.forEach(function (f) { coreGuard[f] = true; });
+      requested.forEach(function (f) {
+        var fl = String(f).toLowerCase();
+        if (TOLERANT_DERIVED_FIELDS.indexOf(fl) >= 0 && !coreGuard[fl]) tolerantSet[fl] = true;
+      });
+    }
+    var derivedFormatGroups = 0; // groups AUTO only because of the derived-field tolerance
+
     // Bucket rows by normalized key (preserving input order → index order == sheet order).
     var buckets = {};        // key -> [rowIndex,...]
     var order = [];          // key first-seen order for determinism
@@ -218,15 +268,21 @@
       affectedChannels.push(parts[3]);
       affectedSkus.push(parts[4]);
 
-      // classify
-      var allFactsEqual = true;
-      for (var a = 1; a < groupRows.length; a++) { if (!factsEqual(groupRows[0], groupRows[a], colIndex)) { allFactsEqual = false; break; } }
+      // classify. allFactsEqual uses the (possibly) tolerant comparator; strictFactsEqual ignores
+      // tolerance — a group that is equal ONLY under tolerance is an authorized derived-format group.
+      var allFactsEqual = true, strictFactsEqual = true;
+      for (var a = 1; a < groupRows.length; a++) {
+        if (allFactsEqual && !factsEqual(groupRows[0], groupRows[a], colIndex, tolerantSet)) allFactsEqual = false;
+        if (strictFactsEqual && !factsEqual(groupRows[0], groupRows[a], colIndex, {})) strictFactsEqual = false;
+      }
       var allMetaEqual = true;
       for (var b = 1; b < groupRows.length; b++) { if (!metaEqual(groupRows[0], groupRows[b], metaFields, colIndex)) { allMetaEqual = false; break; } }
+      var toleranceApplied = (allFactsEqual && !strictFactsEqual);
+      if (toleranceApplied) derivedFormatGroups++;
 
       var klass, elig;
       if (!allFactsEqual) { klass = GROUP_CLASS.CONFLICTING; elig = ELIGIBILITY.REVIEW; }
-      else if (!allMetaEqual) { klass = GROUP_CLASS.METADATA_ONLY; elig = ELIGIBILITY.AUTO; }
+      else if (!allMetaEqual || toleranceApplied) { klass = GROUP_CLASS.METADATA_ONLY; elig = ELIGIBILITY.AUTO; }
       else { klass = GROUP_CLASS.IDENTICAL; elig = ELIGIBILITY.AUTO; }
       countByClass[klass]++; countByElig[elig]++;
 
@@ -257,6 +313,7 @@
         proposedRemoveSheetRows: removeIndexes.map(function (ix) { return ix + 2; }),
         winnerReason: 'later-row-order (max input index) — mirrors importer 09_ last-wins',
         sourceRowHash: { distinct: distinctHashes, distinctCount: distinctHashes.length, hasBlank: blankHash, allSame: distinctHashes.length <= 1 && !blankHash },
+        toleranceApplied: toleranceApplied, // AUTO only because of the authorized derived-field tolerance
         confidence: (klass === GROUP_CLASS.IDENTICAL) ? 'high' : (klass === GROUP_CLASS.METADATA_ONLY ? 'high' : 'manual-review'),
         cleanupEligible: (elig === ELIGIBILITY.AUTO)
       });
@@ -284,8 +341,10 @@
       maxRowsPerKey: maxRowsPerKey,
       identicalFactGroups: countByClass.IDENTICAL_FACTS,
       metadataOnlyGroups: countByClass.METADATA_ONLY_DIFFERENCE,
+      authorizedDerivedFormatGroups: derivedFormatGroups,
       conflictingFactGroups: countByClass.CONFLICTING_FACTS,
       invalidKeyRows: countByClass.INVALID_KEY,
+      tolerantDerivedFieldsApplied: Object.keys(tolerantSet).sort(),
       autoEligibleGroups: countByElig.AUTO_ELIGIBLE,
       reviewRequiredGroups: countByElig.REVIEW_REQUIRED,
       blockedGroups: countByElig.BLOCKED,
