@@ -7,14 +7,14 @@
 > - **Canonical Owners (this doc restates none of them):** `SUPPLY_PLANNING_CALCULATION_RULES.md` (formulas) · `SYSTEM_RUNTIME_ARCHITECTURE.md` (cadence / service boundary) · `DATABASE_RELATIONSHIP_MAP.md` (schema) · `SUPPLY_CHAIN_SYSTEM_FLOW.md` (E2E flow).
 > - **Canonical Owner For:** nothing permanent (implementation sequencing only).
 > - **Not Owner For:** formulas, DB schema, Reserve Trigger (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1), cadence — all deferred to the owners above.
-> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (Runtime prerequisites open — see the B-4 Minimal Runtime Plan §B4-Plan below); **B-7 RESOLVED (2026-08-02, decision only — recommendation-cycle Composite Natural Key / Submit commitment boundary, §G; Runtime not implemented)**; B-5 / B-6 / B-8 UNRESOLVED.
+> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED** (Runtime prerequisites open — see the B-4 Minimal Runtime Plan §B4-Plan below); **B-7 RESOLVED (2026-08-02, decision only — recommendation-cycle Composite Natural Key / Submit commitment boundary, §G; Runtime not implemented)**; B-5 / B-6 / B-8 UNRESOLVED. **Phase 2B Calculation Pure Runtime = FUNCTIONALLY COMPLETE / TEST VERIFIED (2026-08-03, Round 11A closure — see §Calc-Closure below): the entire pure calculation lane (`SUPPLY_PLANNING_CALCULATION_RULES.md` §22/§27A/§32A/§34A + §39 Ledger + §40 Allocation + the B-4 Minimal Pure Runtime chain) is implemented and test-verified from Main; §33 Golden Matrix = 39 executed / 1 pending / 0 canonical-blocked (only #34, downstream). This is DISTINCT from — and does NOT imply — the Recommendation Persistence / Orchestration Runtime tracked by §A–§K below, which remains Not Started / Pending. This tracker is NOT retired.**
 > - **Current Version:** Draft v1.2 (Batch B B-7 Landing Round 5C, 2026-08-02: landed the USER-CONFIRMED recommendation-cycle identity contract — Composite Natural Key (Option B), one Active Draft per `recommendation_type + planning_cycle + business scope`, Scheduler/Retry/Resume reuse + never overwrite user quantity, Manual Regenerate rebuild-with-confirmation, and the permanent Submit commitment boundary (a Recommendation Engine shall never mutate a Submitted Business Record). B-7 marked RESOLVED (Decision Only); §G status flipped from Blocked to Decision-completed / Implementation-pending. No Runtime / composite-lookup / LockService / scheduler / writer implemented.) Draft v1.1 (Round 4D-C: added the External-Origin-Aware Implementation Order + the Daily-Import / external-sync / scheduler no-auto-admit guards. The B-4 Minimal Pure Runtime plan B4-R1–B4-R8 is now COMPLETE and test-verified at its truthful source / pure-module / pure-orchestration / test-promotion levels: B4-R1/R2 source repairs, B4-R3 candidate, B4-R4 (+R4.1) KM adapter, B4-R5 external authority adapter, B4-R6 ten-gate Qualified-Incoming engine, B4-R7 Line-Runtime → calculateGap, and B4-R8 promoting Golden #12/#13/#14 through the real chain (Matrix now 28 executed / 12 implementation-pending / 0 canonical-blocked). Apps Script deployment / live Runtime / source-read / external ingestion / review actions / recommendation-writer / persistence / scheduler UNVERIFIED or NOT IMPLEMENTED. Next work returns to the Batch B registry.) Draft v1.0 (Batch B Round 1 registry sync — B-1 resolved).
-> - **Last Reviewed:** 2026-08-02.
+> - **Last Reviewed:** 2026-08-03 (Round 11A — Calculation Pure Runtime closure sync).
 > - **Depends On:** the four Canonical Owners above.
 > - **Blocked By:** Batch B — **B-4 Runtime implementation prerequisites** (described in §B4-Plan) · B-5 / B-6 / B-8 where applicable. **B-7 persisted recommendation-cycle / unique-key design is RESOLVED (2026-08-02, decision only — Composite Natural Key, §G; Runtime not implemented) and no longer blocks.** **B-1 / B-2 / B-3 are RESOLVED (decision only); the B-4 contract is RESOLVED and B-4 Runtime implementation is IN PROGRESS (B4-R1 + B4-R2 SOURCE IMPLEMENTED — TEST VERIFIED at source level; B4-R3 PURE MODULE IMPLEMENTED — UNIT TEST VERIFIED; B4-R4 PURE ADAPTER IMPLEMENTED — UNIT / INTEGRATION-FIXTURE / DOWNSTREAM-PROJECTION-CONTRACT VERIFIED; B4-R5 PURE EXTERNAL-AUTHORITY ADAPTER IMPLEMENTED — UNIT / CROSS-ADAPTER-FIXTURE VERIFIED; B4-R6 PURE QUALIFIED-INCOMING ENGINE IMPLEMENTED — UNIT / CROSS-ADAPTER / TEN-GATE / DEDUP / REQUIRED-BY FIXTURES VERIFIED; B4-R7 PURE MINIMAL LINE-RUNTIME ORCHESTRATION IMPLEMENTED — QUALIFIED-INCOMING → CALCULATEGAP INTEGRATION / ONE-LINE FIXTURES VERIFIED; B4-R8 GOLDEN #12/#13/#14 PROMOTED — REAL B4 MINIMAL PURE RUNTIME CHAIN EXECUTED, MATRIX 28 EXECUTED / 12 IMPLEMENTATION_PENDING / 0 CANONICAL-BLOCKED; Apps Script deployment / live runtime / integration / external ingestion / review actions / source-read / recommendation-writer / persistence UNVERIFIED); there is no "next open decision = B-2". **The B-4 Minimal Pure Runtime plan (B4-R1–B4-R8) is COMPLETE; there is no next B4 Minimal Runtime batch. The next authorized work returns to the Batch B registry to determine the next dependency (B-5 / B-6 / B-7 / B-8) per the accepted plan — none of which is decided here.**
 
 **Status:** 🟡 Draft v1.2 — **SPECIFICATION ONLY.** No Runtime, Apps Script, frontend, trigger, DB column, or sheet tab is created here. Function-level runtime status below was **verified by read-only audit** (2026-07-20).
-**Last Updated:** 2026-08-02 (Batch B B-7 Landing Round 5C — landed the recommendation-cycle Composite Natural Key contract + permanent Submit commitment boundary; B-7 RESOLVED (Decision Only); documentation-only, nothing implemented)
+**Last Updated:** 2026-08-03 (Round 11A — Calculation Pure Runtime closure sync: recorded §39 Ledger + §40 Allocation + Line Runtime + Qualified Incoming pure runtimes TEST_VERIFIED, Golden Matrix 39/1/0, #34 downstream; the Recommendation Persistence / Orchestration Runtime tracked here remains Not Started / Pending; documentation-only, no code change). Prior: 2026-08-02 (Round 5C — B-7 Composite Natural Key + Submit commitment boundary landed, Decision Only)
 **Maintained By:** Development Team
 **Related / Authority chain:**
 - [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md) §7A — canonical cadence (this spec is its implementation contract).
@@ -26,6 +26,32 @@
 > **Scope.** Implementation-ready Runtime contract for the recommendation pipeline: the existing Daily entry point, two **future** no-arg scheduler entry points, source-readiness, cycle idempotency, recommendation-vs-user-quantity protection, Draft persistence, and future trigger installation. **No formulas are redefined** (owned by `SUPPLY_PLANNING_CALCULATION_RULES.md`).
 
 > **Canonical cadence is owned by [`SYSTEM_RUNTIME_ARCHITECTURE.md`](./SYSTEM_RUNTIME_ARCHITECTURE.md) §7A** (Daily · validation buffer · Weekly · Monthly windows, Asia/Taipei — the exact times are defined there). This spec does **not** re-define or restate the cadence times — it references the §7A owner and sequences the implementation work against it.
+
+---
+
+## §Calc-Closure. Calculation Pure Runtime — CLOSED (CANONICAL 2026-08-03 — Round 11A; documentation only)
+
+> This subsection records the **current** state and is the authority over any older matrix count that appears in the round-stamped historical headers below (§External-Origin-Aware Implementation Order, §B4-Plan). Those older headers are **historical snapshots** of their round and are preserved as-is.
+
+**Calculation Pure Runtime = FUNCTIONALLY COMPLETE / TEST VERIFIED / CANONICALLY CLOSED for all currently frozen contracts.** Owner `SUPPLY_PLANNING_CALCULATION_RULES.md` (v4.7). Verified from Main:
+
+| Layer | Module | Assertions |
+|---|---|---|
+| Calculation core (§22/§27A/§32A/§34A + primitives) | `supply-planning-calculations.js` | 325 |
+| Supply candidate DTO (B4-R3) | `supply-planning-supply-candidates.js` | 54 |
+| KM incoming adapter (B4-R4) | `supply-planning-incoming-adapters.js` | 80 |
+| External incoming adapter (B4-R5) | `supply-planning-external-incoming-adapters.js` | 82 |
+| §2E Qualified Incoming evaluator (B4-R6) | `supply-planning-qualified-incoming.js` | 106 |
+| Line Runtime orchestration (B4-R7) | `supply-planning-line-runtime.js` | 88 |
+| §39 Demand / Supply Ledger (R9B) | `supply-planning-ledgers.js` | 133 |
+| §40 Overseas / Factory Allocation (R10B) | `supply-planning-allocations.js` | 112 |
+| §33 Golden Matrix | `supply-planning-golden-scenarios.test.js` | 189 (**39 executed / 1 pending / 0 canonical-blocked**) |
+
+**The single remaining §33 Pending is #34** (User partial-carton Order Qty) — a **downstream Request-Order / PO / UI-state / persistence acceptance** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §37), **NOT** a Calculation Pure Runtime blocker; owned by `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` / `PURCHASE_ORDER_SPEC.md` + the Request/PO UI-state lane.
+
+> **PERMANENT CANONICAL RULE (see `SYSTEM_RUNTIME_ARCHITECTURE.md` §7B):** Calculation Pure Runtime completion does **NOT** imply Recommendation Persistence, Production Integration, Deployment, or Business Execution completion. Everything in §A–§K below (recommendation calculation engine, no-arg schedulers, persistence writer, source-readiness batch identity, trigger installation) and B-7 Active-Draft enforcement remains **Not Started / Pending**.
+
+**Next authorized boundary (documentation-round recommendation only — NOT authorized to implement here):** **Recommendation Persistence / Orchestration preparation**, sequenced against the unresolved **B-5 / B-6 / B-8** dependency order (source grain / Request→PO atomicity / cancellation-release). This tracker is **NOT retired**; retirement still requires the recommendation persistence/orchestration implementation, scheduler/retry/idempotency verification, permanent-rule absorption, and `project-current-state` synchronization.
 
 ---
 

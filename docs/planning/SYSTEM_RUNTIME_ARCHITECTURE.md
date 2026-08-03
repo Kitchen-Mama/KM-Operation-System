@@ -4,9 +4,9 @@
 > - **Document Role:** the **Runtime Mapping** layer — service boundary, triggers, cadence, read/calculate/snapshot/write ownership, idempotency, commit boundary.
 > - **Canonical Owner For:** service/trigger/cadence boundaries and runtime ownership classes.
 > - **Not Owner For:** formulas (`SUPPLY_PLANNING_CALCULATION_RULES.md`), schema (`DATABASE_RELATIONSHIP_MAP.md`), E2E flow (`SUPPLY_CHAIN_SYSTEM_FLOW.md`), layer language (`SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md`), the **Reserve Trigger** (B-1 owner = `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1).
-> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only; owners §8A.1 / `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1 / §3.1B); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED**; **B-7 RESOLVED (2026-08-02, decision only — recommendation-cycle Composite Natural Key / Submit commitment boundary, §7A; Runtime not implemented)**; B-5 / B-6 / B-8 UNRESOLVED.
+> - **Status:** Reviewed — B-1 / B-2 / B-3 RESOLVED (decision only; owners §8A.1 / `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1 / §3.1B); **B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED**; **B-7 RESOLVED (2026-08-02, decision only — recommendation-cycle Composite Natural Key / Submit commitment boundary, §7A; Runtime not implemented)**; B-5 / B-6 / B-8 UNRESOLVED. **Phase 2B Calculation Pure Runtime = FUNCTIONALLY COMPLETE / TEST VERIFIED (2026-08-03, Round 11A closure — see §7B); Production Integration (data acquisition / persistence / scheduler / LockService / Submit-guard / deployment) = PENDING; the whole Recommendation Runtime is NOT complete.**
 > - **Current Version:** Draft v1.5 (Round 4D-C: landed the **External-Origin Quarantine → Admission pipeline** + fail-closed authority rule + notification-as-future-Runtime-service + DTO-first/Ledger-later; architecture only, no code/DB). v1.4 (Batch B Round 1: B-1 Reserve Trigger resolved as the **Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** — decision only, runtime not started).
-> - **Last Reviewed:** 2026-07-30.
+> - **Last Reviewed:** 2026-08-03 (Round 11A — Calculation Pure Runtime closure sync; §7B added).
 > - **Depends On:** DB Map, System Flow, Calculation Rules (formulas), domain specs.
 > - **Blocked By:** Batch B — **B-4 Qualified Incoming Runtime prerequisites** — canonical Shipment quantity reader, destination identity read, normalized supply candidates, authority/admission classification, deduplication, ten-gate Runtime and Line Runtime integration; the B-4 **contract itself is resolved** (see `SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-4). **B-1 / B-2 / B-3 RESOLVED (decision only); B-4 CONTRACT RESOLVED — RUNTIME NOT IMPLEMENTED; B-7 RESOLVED (decision only — recommendation-cycle Composite Natural Key / Submit commitment boundary, §7A); B-5 / B-6 / B-8 UNRESOLVED.**
 
@@ -343,6 +343,41 @@ Authoritative schedule for the recommendation pipeline. **Spec only — no Apps 
 **Invariant:** the Draft persistence table + body-driven CRUD **source exist**; the recommendation engine, scheduler and automatic generation may still be **Not Implemented**; and **source existence does not prove deployment or production behaviour**. (Supersedes the earlier "Persistence remains spec/DB-design only — no writer in code" wording, which was factually incorrect about the writer source.)
 
 **Risk / Danger Alerts:** **FUTURE ADD-ON / NOT IMPLEMENTED.** Future scope may include Homepage risk display, notification dedup, severity changes, unresolved reminders, resolved state, Exception Shipping Draft, Exception Order Draft. **No notification table/workflow/permission/trigger is defined now.**
+
+---
+
+## 7B. Calculation Pure Runtime vs Production Integration (CANONICAL 2026-08-03 — Round 11A closure; documentation only)
+
+> **PERMANENT CANONICAL RULE:** **Calculation Pure Runtime completion does NOT imply Recommendation Persistence, Production Integration, Deployment, or Business Execution completion.** The pure calculation lane is deterministic, side-effect-free, and test-verified in Node; it reads no DB/API, persists nothing, installs no trigger, and is not proof of any deployed or production behaviour.
+
+**Calculation Pure Runtime — FUNCTIONALLY COMPLETE / TEST VERIFIED** (formula owner `SUPPLY_PLANNING_CALCULATION_RULES.md`; §33 Golden Matrix = **39 executed / 1 pending / 0 canonical-blocked**, run from Main):
+
+| Runtime layer | Source module | Status |
+|---|---|---|
+| Calculation core (primitives · §22/§29E normalized sales · §2D forecast · §26/§27A Required-By · §32A reallocation eligibility · §34A missing/stale) | `assets/js/core/supply-planning-calculations.js` | **TEST_VERIFIED** (325 unit) |
+| Normalized supply candidate DTO (B4-R3) | `supply-planning-supply-candidates.js` | **TEST_VERIFIED** (54) |
+| KM Incoming adapter (B4-R4) | `supply-planning-incoming-adapters.js` | **TEST_VERIFIED / ADAPTER_FIXTURE_VERIFIED** (80) |
+| External incoming authority adapter (B4-R5) | `supply-planning-external-incoming-adapters.js` | **TEST_VERIFIED / ADAPTER_FIXTURE_VERIFIED** (82) |
+| §2E Qualified Incoming pure evaluator (B4-R6) | `supply-planning-qualified-incoming.js` | **TEST_VERIFIED** (106) |
+| Line Runtime pure orchestration (B4-R7) | `supply-planning-line-runtime.js` | **TEST_VERIFIED** (88) |
+| §39 Demand / Supply Ledger | `supply-planning-ledgers.js` | **TEST_VERIFIED / GOLDEN_VERIFIED** (133 unit; Golden #15/#16/#17/#27/#32) |
+| §40 Overseas / Factory Allocation | `supply-planning-allocations.js` | **TEST_VERIFIED / GOLDEN_VERIFIED** (112 unit; Golden #7/#8/#9/#10/#11/#19) |
+
+**Production Integration — PENDING** (none of the following exists / is verified; each is a distinct future task):
+
+| Capability | Status |
+|---|---|
+| Real DB / live-source acquisition; lifecycle/status projection from live records | **PRODUCTION_INTEGRATION_PENDING** |
+| Recommendation Draft persistence writer | **PENDING** (schema + body-driven handler source exist — §7A table — but no recommendation calc engine / no automatic write path) |
+| Allocation / Ledger output persistence | **PENDING** (Ledger/Allocation outputs are immutable in-memory DTOs; they persist nothing and pre-create no DB table) |
+| No-arg scheduler / retry / resume | **PENDING** (`runWeeklyShippingRecommendation` / `runMonthlyOrderRecommendation` do not exist — §B/§E) |
+| LockService / concurrency; B-7 Active-Draft deterministic lookup/upsert | **PENDING** (B-7 identity is Decision Only — §7A) |
+| Submit / business-record mutation guard | **DECIDED, ENFORCEMENT PENDING** — see the Submit rule below |
+| Apps Script / API integration; deployment; browser / production verification | **DEPLOYMENT_PENDING / PRODUCTION_VERIFICATION_PENDING** |
+
+> **Submit rule (B-7, decided; enforcement runtime NOT yet implemented):** **A Recommendation Engine shall never mutate a Submitted Business Record.** Submit is the business commitment boundary; after Submit, further change follows Reject / Cancel / Reopen / New Revision (release mechanics = B-8). This rule is **canonically decided** (§7A B-7 contract) but its **runtime enforcement (LockService + writer guard) is PENDING** — no code enforces it yet.
+
+> **Scenario #34** (User partial-carton Order Qty) is a **downstream Request-Order / PO / UI-state / persistence acceptance scenario** (`SUPPLY_PLANNING_CALCULATION_RULES.md` §37) and is **NOT a Calculation Pure Runtime closure blocker.**
 
 ---
 
