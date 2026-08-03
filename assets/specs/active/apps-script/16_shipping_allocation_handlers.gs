@@ -60,7 +60,8 @@ var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   'selected_rate_card_id', 'selected_lead_time_id', 'selected_carrier_id', 'selected_shipping_method',
   'selected_last_mile_delivery', 'expected_arrival', 'units_per_carton', 'route_no',
   // status / audit
-  'line_status', 'override_reason', 'note', 'created_at', 'updated_at'
+  'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
+  'user_edited', 'user_edited_by'   // additive (Phase 2C Round 1D) — explicit user-edit provenance (§Persist-Adapter)
 ];
 
 var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1 };
@@ -223,7 +224,8 @@ function handleUpsertShippingAllocationDraftLines_(body) {
   var EXEC_FIELDS = ['planned_qty', 'selected_source_warehouse_id', 'selected_destination_warehouse_id',
     'selected_source_warehouse_code_snapshot', 'selected_destination_warehouse_code_snapshot',
     'selected_rate_card_id', 'selected_lead_time_id', 'selected_carrier_id', 'selected_shipping_method',
-    'selected_last_mile_delivery', 'expected_arrival', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
+    'selected_last_mile_delivery', 'expected_arrival', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note',
+    'user_edited', 'user_edited_by'];   // additive (Round 1D) — explicit user-edit provenance, written only when provided
 
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i];

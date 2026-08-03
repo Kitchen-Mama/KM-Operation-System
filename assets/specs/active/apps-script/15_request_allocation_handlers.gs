@@ -43,7 +43,8 @@ var REQUEST_ORDER_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   'reallocation_in_qty_snapshot', 'reallocation_out_qty_snapshot', 'net_order_need_snapshot',
   'recommended_qty', 'order_qty', 'carton_qty', 'units_per_carton', 'allocation_method',
   'recommendation_reason', 'recommendation_flags', 'line_status', 'submitted_by', 'submitted_at',
-  'note', 'created_at', 'updated_at'
+  'note', 'created_at', 'updated_at',
+  'user_edited', 'user_edited_by'   // additive (Phase 2C Round 1D) — explicit user-edit provenance (§Persist-Adapter)
 ];
 
 var RA_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, partially_submitted: 1, cancelled: 1 };
@@ -195,43 +196,84 @@ function handleUpsertRequestOrderAllocationDraftLines_(body) {
   if (!draftId) return jsonResponse_({ success: false, error: 'request_allocation_draft_id required' });
   var lines = (body && body.lines) || [];
 
+  var actor = String((body && body.updated_by) || (body && body.actor) || 'request-order').trim();
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'request_order_allocation_draft_lines', REQUEST_ORDER_ALLOCATION_DRAFT_LINES_HEADERS_);
-  raDeleteLinesByDraft_(sh, draftId);   // replace this draft's lines only
 
+  // Natural-key upsert (request_allocation_draft_id + request_month + request_bucket) — replaces the prior
+  // delete+replace (Phase 2C Round 1D, §Persist-Adapter). Preserves rows; supersedes removed ones (never
+  // deletes); persists explicit user-edit provenance. Canonical/tested logic mirror:
+  // assets/js/core/supply-planning-persistence-repository.js (fake-sheet verified).
   var now = procurementTimestamp_();
-  var count = 0;
+  var data = sh.getDataRange().getValues();
+  var H = data[0].map(function (h) { return String(h).trim(); });
+  var cD = H.indexOf('request_allocation_draft_id'), cM = H.indexOf('request_month'), cB = H.indexOf('request_bucket'),
+      cS = H.indexOf('line_status'), cUE = H.indexOf('user_edited');
+  function raFindLineRow_(month, bucket) {
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][cD]).trim() === draftId && String(data[r][cM]).trim() === String(month) && String(data[r][cB]).trim() === String(bucket)) return r;
+    }
+    return -1;
+  }
+  var seen = {}, count = 0;
   for (var i = 0; i < lines.length; i++) {
     var l = raApplyLineAliases_(lines[i] || {});
     var bucket = String(l.request_bucket || '').trim();
     if (bucket === 'T4') continue;   // T4 is visibility-only — never a draft-line order commitment
+    var month = String(l.request_month || '').trim();
     var lineStatus = String(l.line_status || 'draft').trim();
-    if (!RA_LINE_STATUSES_[lineStatus]) lineStatus = 'draft';
+    if (!RA_LINE_STATUSES_[lineStatus] && ['active', 'blocked', 'superseded', 'superseded_user_review'].indexOf(lineStatus) === -1) lineStatus = 'draft';
+    // Explicit user-edit provenance ONLY — never inferred by order_qty != recommended_qty (§Persist-Adapter PA-13).
+    var userEdited = (l.user_edited === true || String(l.user_edited).toUpperCase() === 'TRUE');
+    seen[month + '|' + bucket] = 1;
 
     var rowObj = {
-      request_allocation_line_id: 'RAL-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
       request_allocation_draft_id: draftId,
-      request_month: String(l.request_month || '').trim(),
+      request_month: month,
       request_bucket: bucket,
-      order_qty: procurementNum_(l.order_qty),
+      order_qty: procurementNum_(l.order_qty),   // exact — never re-rounded (partial-carton preserved)
       allocation_method: String(l.allocation_method || '').trim(),
       recommendation_reason: String(l.recommendation_reason || '').trim(),
       recommendation_flags: String(l.recommendation_flags || '').trim(),
       line_status: lineStatus,
-      submitted_by: '',
-      submitted_at: '',
-      note: String(l.note || '').trim(),
-      created_at: now,
+      user_edited: userEdited ? 'TRUE' : 'FALSE',
+      user_edited_by: userEdited ? actor : '',
       updated_at: now
     };
-    // Snapshot columns: write ONLY when a real value is present (blank otherwise — never faked).
     RA_LINE_SNAPSHOT_FIELDS_.forEach(function (f) {
-      rowObj[f] = (l[f] != null && l[f] !== '') ? procurementNum_(l[f]) : '';
+      if (l[f] != null && l[f] !== '') rowObj[f] = procurementNum_(l[f]);
     });
-    procurementAppendByHeader_(sh, rowObj);
+
+    var existing = raFindLineRow_(month, bucket);
+    if (existing === -1) {
+      rowObj.request_allocation_line_id = 'RAL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+      rowObj.submitted_by = '';
+      rowObj.submitted_at = '';
+      rowObj.note = String(l.note || '').trim();
+      rowObj.created_at = now;
+      procurementAppendByHeader_(sh, rowObj);
+    } else {
+      var row = data[existing].slice();
+      Object.keys(rowObj).forEach(function (k) { var c = H.indexOf(k); if (c !== -1) row[c] = rowObj[k]; });
+      if (String(l.note || '').trim() !== '') { var cN = H.indexOf('note'); if (cN !== -1) row[cN] = String(l.note).trim(); }
+      sh.getRange(existing + 1, 1, 1, row.length).setValues([row]);
+      data[existing] = row;
+    }
     count++;
   }
-  return jsonResponse_({ success: true, data: { request_allocation_draft_id: draftId, line_count: count } });
+  // Supersede rows removed from the incoming set — never hard-delete; terminal rows are untouched.
+  var superseded = 0;
+  for (var r2 = 1; r2 < data.length; r2++) {
+    if (String(data[r2][cD]).trim() !== draftId) continue;
+    if (seen[String(data[r2][cM]).trim() + '|' + String(data[r2][cB]).trim()]) continue;
+    var st = String(data[r2][cS]).trim();
+    if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(st) !== -1) continue;
+    var wasEdited = cUE !== -1 && String(data[r2][cUE]).toUpperCase() === 'TRUE';
+    if (cS !== -1) sh.getRange(r2 + 1, cS + 1).setValue(wasEdited ? 'superseded_user_review' : 'superseded');
+    superseded++;
+  }
+  return jsonResponse_({ success: true, data: { request_allocation_draft_id: draftId, line_count: count, superseded: superseded } });
 }
 
 // ---- submitRequestOrderAllocationDrafts ---------------------------
