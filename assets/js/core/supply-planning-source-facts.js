@@ -23,11 +23,12 @@
     req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations)),
     req ? req('./supply-planning-ledgers.js') : (root.KMLEDGER || (root.KM && root.KM.ledgers)),
     req ? req('./supply-planning-supply-candidates.js') : (root.KMCAND || (root.KM && root.KM.supplyCandidates)),
-    req ? req('./supply-planning-incoming-adapters.js') : (root.KMINC || (root.KM && root.KM.incomingAdapters))
+    req ? req('./supply-planning-incoming-adapters.js') : (root.KMINC || (root.KM && root.KM.incomingAdapters)),
+    req ? req('./supply-planning-qualified-incoming.js') : (root.KMQI || (root.KM && root.KM.qualifiedIncoming))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceFacts = api; }
-})(this, function (CALC, LEDGER, CAND, INC) {
+})(this, function (CALC, LEDGER, CAND, INC, QI) {
   'use strict';
 
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -49,7 +50,61 @@
     IDENTITY_CONFLICT: 1, DUPLICATE_SOURCE: 1, BLOCKED_CONFLICT: 1, SOURCE_NOT_AVAILABLE: 1
   };
   var CURRENT_STOCK_POOL_TYPES = { FBA: 1, THREE_PL: 1, FACTORY: 1 };
+  var POOL_TYPES = { FBA: 1, THREE_PL: 1, FACTORY: 1 };
   var DEMAND_TYPES = { REGULAR: 1, SALES_RUN_RATE: 1, SPECIAL_EVENT: 1, SAFETY: 1 };
+
+  // ---- §39.5 lifecycle buckets (tokens owned by supply-planning-ledgers; NOT redefined) ----------
+  // §39.5 freezes only the tokens + progression; §39.2/§39.4 explicitly assign the source-status →
+  // lifecycleBucket mapping to the ADAPTER (this projector). buildSupplyLedger owns count-once/conflict.
+  var ACTIVE_BUCKETS = {
+    COMMITTED_PRODUCTION: 1, APPROVED_SHIPPING_PLAN: 1, SHIPPED_IN_TRANSIT: 1,
+    DELIVERED_NOT_RECEIVED: 1, RECEIVED_NOT_REFLECTED: 1, CURRENT_STOCK: 1
+  };
+  var EXCLUDED_BUCKETS = { DRAFT: 1, CANCELLED_INVALID: 1, CORRECTION_REVERSAL: 1 };
+
+  // OMIT sentinels: the lineage is real but is NOT this source's to count (count-once, §30) → surfaced as an
+  // issue, never an entry. OMIT_TRANSFERRED = ownership moved down-lineage (PO→shipment, plan→shipment).
+  // OMIT_POSTED = closed/posted shipment belongs to the CURRENT_STOCK inventory authority, not the shipment feed.
+  var OMIT_TRANSFERRED = 'OMIT_TRANSFERRED', OMIT_POSTED = 'OMIT_POSTED';
+
+  // Production / PO (REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC §1 — the one Canonically written-out status list).
+  var PRODUCTION_STATUS_MAP = {
+    draft: 'DRAFT',
+    issued: 'COMMITTED_PRODUCTION', in_production: 'COMMITTED_PRODUCTION',
+    partial_completed: 'COMMITTED_PRODUCTION', completed: 'COMMITTED_PRODUCTION',
+    partial_shipped: OMIT_TRANSFERRED, shipped: OMIT_TRANSFERRED,   // Shipment becomes the incoming owner
+    closure: 'CANCELLED_INVALID', cancelled: 'CANCELLED_INVALID'
+  };
+  // Weekly Shipping Plan (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.2A / §9).
+  var SHIPPING_PLAN_STATUS_MAP = {
+    draft: 'DRAFT', pending_approval: 'DRAFT',
+    approved: 'APPROVED_SHIPPING_PLAN',
+    cancelled: 'CANCELLED_INVALID',
+    completed: OMIT_TRANSFERRED   // transferred to a Shipment (count-once)
+  };
+  // Shipment header (SHIPMENT_CENTER_SPEC §3/§4/§15.1 + §535 QI allowlist). ready_to_ship = pre-dispatch
+  // commit (reserved, NOT yet physically shipped) → APPROVED_SHIPPING_PLAN (pre-SHIPPED_IN_TRANSIT, active,
+  // not DRAFT). arrived/received are canonical-but-NOT-YET-EMITTED (fixtures only; production reads empty).
+  var SHIPMENT_STATUS_MAP = {
+    draft: 'DRAFT',
+    ready_to_ship: 'APPROVED_SHIPPING_PLAN',
+    shipped: 'SHIPPED_IN_TRANSIT', in_transit: 'SHIPPED_IN_TRANSIT',
+    arrived: 'DELIVERED_NOT_RECEIVED',
+    received: 'RECEIVED_NOT_REFLECTED',
+    closed: OMIT_POSTED,
+    cancelled: 'CANCELLED_INVALID'
+  };
+  // Route/event ledger (SHIPMENT_ROUTE_AND_EVENT_SPEC §4.5/§5.4 — spec-only, NOT emitted; fixtures only).
+  var ROUTE_EVENT_MAP = {
+    arrived: 'DELIVERED_NOT_RECEIVED', arrived_port: 'DELIVERED_NOT_RECEIVED', delivered: 'DELIVERED_NOT_RECEIVED',
+    received: 'RECEIVED_NOT_REFLECTED',
+    correction: 'CORRECTION_REVERSAL', reversal: 'CORRECTION_REVERSAL'
+  };
+  // Warehouse receiving (OVERSEAS_INBOUND_SPEC §10.3/§10.6/§10.7 — NOT emitted; fixtures only). A confirmed
+  // receipt not yet posted to the snapshot = RECEIVED_NOT_REFLECTED; a reversing receipt = CORRECTION_REVERSAL.
+  var RECEIVING_STATUS_MAP = {
+    draft: 'DRAFT', confirmed: 'RECEIVED_NOT_REFLECTED', reversed: 'CORRECTION_REVERSAL'
+  };
 
   // ---- readiness (§34A reuse; never reimplemented) --------------------------
   function classifySourceReadiness(input) {
@@ -135,10 +190,10 @@
   // input = { masterSku, company, stockRows:[{ poolType, warehouseId, quantity, supplyLineageRef }] }
   // Inventory tables are the CURRENT_STOCK authority (§24.2/§24.3/§17); incoming/in-transit supply lifecycle
   // mapping is the deferred allocation-input projector, NOT invented here.
-  function projectCurrentStockSupplyLedger(input) {
-    aType(isObj(input), 'projectCurrentStockSupplyLedger: input must be an object');
-    aType(nonEmpty(input.masterSku) && nonEmpty(input.company), 'projectCurrentStockSupplyLedger: masterSku/company required');
-    var rows = input.stockRows || [], entries = [], issues = [];
+  // Shared CURRENT_STOCK entry builder (§39 CURRENT_STOCK from inventory authority). Used by both the
+  // Round 1J current-stock projector AND the Round 1K lifecycle projector — never duplicated.
+  function buildCurrentStockEntries(masterSku, company, rows, issues) {
+    var entries = [];
     for (var i = 0; i < rows.length; i++) {
       var s = rows[i] || {}, pt = str(s.poolType);
       if (CURRENT_STOCK_POOL_TYPES[pt] !== 1) { issues.push({ i: i, reason: 'UNKNOWN_POOL_TYPE:' + pt }); continue; }
@@ -146,11 +201,19 @@
       var qr = readQty(s.quantity);
       if (qr.missing) { issues.push({ i: i, reason: 'MISSING_STOCK_QUANTITY:' + str(s.warehouseId) }); continue; }  // never 0
       entries.push({
-        supplyLineageRef: nonEmpty(s.supplyLineageRef) ? str(s.supplyLineageRef) : ('stock:' + pt + ':' + str(s.warehouseId) + ':' + str(input.masterSku)),
-        masterSku: str(input.masterSku), company: str(input.company), warehouseId: str(s.warehouseId),
+        supplyLineageRef: nonEmpty(s.supplyLineageRef) ? str(s.supplyLineageRef) : ('stock:' + pt + ':' + str(s.warehouseId) + ':' + str(masterSku)),
+        masterSku: str(masterSku), company: str(company), warehouseId: str(s.warehouseId),
         poolType: pt, lifecycleBucket: 'CURRENT_STOCK', quantity: qr.qty
       });
     }
+    return entries;
+  }
+
+  function projectCurrentStockSupplyLedger(input) {
+    aType(isObj(input), 'projectCurrentStockSupplyLedger: input must be an object');
+    aType(nonEmpty(input.masterSku) && nonEmpty(input.company), 'projectCurrentStockSupplyLedger: masterSku/company required');
+    var issues = [];
+    var entries = buildCurrentStockEntries(input.masterSku, input.company, input.stockRows || [], issues);
     var ledger = LEDGER.buildSupplyLedger({ entries: entries });   // §39 frozen builder (physical count-once)
     return { entries: entries, ledger: ledger, issues: issues };
   }
@@ -170,14 +233,150 @@
     return { results: results, issues: issues };
   }
 
+  // ---- supply-lifecycle projection (Round 1K; §39.5 buckets; buildSupplyLedger owns count-once) --------
+  // PURE. Accepts already-resolved canonical source facts, maps each via its TABLE-SPECIFIC status→bucket
+  // owner (§39.2/§39.4 assign this to the adapter), and calls the REAL buildSupplyLedger. Shipments reuse the
+  // REAL B4-R3/R4/R6 chain (never duplicated). No allocation, no recommendedQty, no Sheet read, no persistence.
+  function projectSupplyLifecycle(input) {
+    aType(isObj(input), 'projectSupplyLifecycle: input must be an object');
+    var entries = [], issues = [];
+    function addIssue(domain, i, reason) { issues.push({ domain: domain, i: i, reason: reason }); }
+
+    // Generic explicit-canonical-row projector. Each row carries its OWN identity (§7). fixedBucket, when set,
+    // bypasses statusMap (correctionFacts → CORRECTION_REVERSAL). statusKeyField = 'status' | 'eventType'.
+    function projectRows(domain, rows, statusMap, statusKeyField, fixedBucket) {
+      rows = rows || [];
+      aType(Array.isArray(rows), 'projectSupplyLifecycle: input.' + domain + ' must be an array');
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i]; aType(isObj(r), 'projectSupplyLifecycle: input.' + domain + '[' + i + '] must be an object');
+        var bucket;
+        if (fixedBucket) { bucket = fixedBucket; }
+        else {
+          var st = str(r[statusKeyField]).toLowerCase();
+          if (!st) { addIssue(domain, i, 'MISSING_STATUS'); continue; }
+          bucket = statusMap[st];
+          if (bucket === undefined) { addIssue(domain, i, 'UNKNOWN_STATUS:' + st); continue; }          // fail-closed
+          if (bucket === OMIT_TRANSFERRED) { addIssue(domain, i, 'LINEAGE_TRANSFERRED_DOWNSTREAM:' + st); continue; }
+          if (bucket === OMIT_POSTED) { addIssue(domain, i, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + st); continue; }
+        }
+        if (!nonEmpty(r.supplyLineageRef)) { addIssue(domain, i, 'MISSING_SUPPLY_LINEAGE_REF'); continue; }
+        if (!nonEmpty(r.company)) { addIssue(domain, i, 'MISSING_COMPANY'); continue; }
+        if (!nonEmpty(r.masterSku)) { addIssue(domain, i, 'MISSING_MASTER_SKU'); continue; }
+        if (!nonEmpty(r.warehouseId)) { addIssue(domain, i, 'MISSING_WAREHOUSE_ID'); continue; }
+        var pt = str(r.poolType);
+        if (POOL_TYPES[pt] !== 1) { addIssue(domain, i, 'UNKNOWN_POOL_TYPE:' + pt); continue; }
+        var qr = readQty(r.quantity);
+        if (qr.missing) { addIssue(domain, i, 'MISSING_QUANTITY:' + str(r.supplyLineageRef)); continue; }  // never 0 (NaN/Inf too)
+        if (qr.qty < 0) { addIssue(domain, i, 'NEGATIVE_QUANTITY:' + str(r.supplyLineageRef)); continue; }   // fail-closed, no throw
+        entries.push({
+          supplyLineageRef: str(r.supplyLineageRef), masterSku: str(r.masterSku), company: str(r.company),
+          warehouseId: str(r.warehouseId), poolType: pt, lifecycleBucket: bucket, quantity: qr.qty
+        });
+      }
+    }
+
+    // A. Production / PO   B. Approved Shipping Plan   (explicit canonical status rows)
+    projectRows('committedProduction', input.committedProduction, PRODUCTION_STATUS_MAP, 'status', null);
+    projectRows('approvedShippingPlans', input.approvedShippingPlans, SHIPPING_PLAN_STATUS_MAP, 'status', null);
+
+    // C. Shipment — reuse the REAL B4-R3/R4 candidate/adapter chain + B4-R6 Qualified Incoming authority.
+    var shp = input.shipments;
+    if (shp !== undefined && shp !== null) {
+      aType(isObj(shp) && Array.isArray(shp.shipmentInputs) && isObj(shp.scope),
+        'projectSupplyLifecycle: input.shipments requires { shipmentInputs:[], scope:{} }');
+      var adapted = adaptIncomingSupplyCandidates({ shipmentInputs: shp.shipmentInputs, scope: shp.scope });
+      adapted.issues.forEach(function (x) { addIssue('shipment', x.i, x.reason); });
+      var qi = QI.evaluateQualifiedIncoming({
+        requiredByDate: shp.requiredByDate,
+        kmShipmentResults: adapted.results,
+        externalAuthorityResults: shp.externalResults || [],
+        postedToCurrentStockLineageKeys: shp.postedToCurrentStockLineageKeys || [],
+        activeOtherBucketLineageKeys: shp.activeOtherBucketLineageKeys || []
+      });
+      for (var k = 0; k < qi.candidateResults.length; k++) {
+        var cr = qi.candidateResults[k], c = cr.candidate;
+        // Count-once: a lineage already posted to Current Stock (Gate 9) or active in another bucket is NOT the
+        // shipment feed's to count. Duplicate/qty conflicts are LEFT for buildSupplyLedger (§18/§26).
+        var posted = cr.gateResults && cr.gateResults.NOT_POSTED_TO_CURRENT_STOCK === 'FAIL';
+        var otherBucket = (cr.exclusionReasons || []).indexOf('ACTIVE_IN_OTHER_BUCKET') >= 0;
+        if (posted || otherBucket) { addIssue('shipment', k, 'COUNT_ONCE_OWNED_ELSEWHERE:' + c.lineageKey); continue; }
+        var sst = str(c.status).toLowerCase();
+        if (!sst) { addIssue('shipment', k, 'MISSING_STATUS:' + c.lineageKey); continue; }
+        var sbucket = SHIPMENT_STATUS_MAP[sst];
+        if (sbucket === undefined) { addIssue('shipment', k, 'UNKNOWN_STATUS:' + sst); continue; }        // fail-closed
+        if (sbucket === OMIT_POSTED) { addIssue('shipment', k, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + sst); continue; }
+        if (!nonEmpty(c.company)) { addIssue('shipment', k, 'MISSING_COMPANY:' + c.lineageKey); continue; }
+        if (!nonEmpty(c.sku)) { addIssue('shipment', k, 'MISSING_MASTER_SKU:' + c.lineageKey); continue; }
+        if (!nonEmpty(c.destinationWarehouseId)) { addIssue('shipment', k, 'MISSING_WAREHOUSE_ID:' + c.lineageKey); continue; }
+        var spt = 'THREE_PL'; // canonical KM shipments are 3PL-overseas inbound (candidate.supplyDomain KM_3PL_OVERSEAS)
+        var sqr = readQty(c.quantityRemaining);
+        if (sqr.missing) { addIssue('shipment', k, 'MISSING_QUANTITY:' + c.lineageKey); continue; }        // never 0 (NaN/Inf too)
+        if (sqr.qty < 0) { addIssue('shipment', k, 'NEGATIVE_QUANTITY:' + c.lineageKey); continue; }        // fail-closed, no throw
+        entries.push({
+          supplyLineageRef: str(c.lineageKey), masterSku: str(c.sku), company: str(c.company),
+          warehouseId: str(c.destinationWarehouseId), poolType: spt, lifecycleBucket: sbucket, quantity: sqr.qty
+        });
+      }
+    }
+
+    // D. Route/event   E. Receiving   (canonical-but-NOT-YET-EMITTED; explicit fixtures only)
+    projectRows('routeEvents', input.routeEvents, ROUTE_EVENT_MAP, 'eventType', null);
+    projectRows('receivingFacts', input.receivingFacts, RECEIVING_STATUS_MAP, 'status', null);
+
+    // F. Current stock — reuse the Round 1J shared builder (never duplicated).
+    if (input.currentStockFacts !== undefined && input.currentStockFacts !== null) {
+      aType(Array.isArray(input.currentStockFacts), 'projectSupplyLifecycle: input.currentStockFacts must be an array');
+      aType(nonEmpty(input.masterSku) && nonEmpty(input.company), 'projectSupplyLifecycle: masterSku/company required for currentStockFacts');
+      var csIssues = [];
+      var csEntries = buildCurrentStockEntries(input.masterSku, input.company, input.currentStockFacts, csIssues);
+      csIssues.forEach(function (x) { addIssue('currentStock', x.i, x.reason); });
+      for (var ce = 0; ce < csEntries.length; ce++) entries.push(csEntries[ce]);
+    }
+
+    // G. Correction / reversal — always CORRECTION_REVERSAL (visible, contributes 0).
+    projectRows('correctionFacts', input.correctionFacts, null, null, 'CORRECTION_REVERSAL');
+
+    // Final §39 count-once via the REAL builder (never reimplemented).
+    var ledger = LEDGER.buildSupplyLedger({ entries: entries });
+
+    // Deterministic output ordering (permutation-invariant).
+    var sortedEntries = entries.slice().sort(function (a, b) {
+      return cmpStr(a.company, b.company) || cmpStr(a.warehouseId, b.warehouseId) || cmpStr(a.masterSku, b.masterSku)
+        || cmpStr(a.poolType, b.poolType) || cmpStr(a.lifecycleBucket, b.lifecycleBucket)
+        || cmpStr(a.supplyLineageRef, b.supplyLineageRef) || (a.quantity - b.quantity);
+    });
+    issues.sort(function (a, b) { return cmpStr(a.domain, b.domain) || (a.i - b.i) || cmpStr(a.reason, b.reason); });
+    var lineageSet = {}, lineage = [];
+    sortedEntries.forEach(function (e) { if (!lineageSet[e.supplyLineageRef]) { lineageSet[e.supplyLineageRef] = 1; lineage.push(e.supplyLineageRef); } });
+    lineage.sort(cmpStr);
+
+    var blocked = ledger.blockedCount > 0;
+    var reason = null;
+    if (blocked) { for (var p = 0; p < ledger.pools.length; p++) { if (ledger.pools[p].state === 'BLOCKED_CONFLICT') { reason = ledger.pools[p].reason; break; } } }
+
+    return {
+      ready: !blocked,
+      status: blocked ? 'BLOCKED_CONFLICT' : 'OK',
+      reason: reason,
+      entries: sortedEntries,
+      ledger: ledger,
+      issues: issues,
+      lineage: lineage,
+      sourceDataAsOf: (input.sourceDataAsOf === undefined ? null : input.sourceDataAsOf)
+    };
+  }
+
   return {
     READINESS_STATES: (function () { var o = {}; for (var k in READINESS_STATES) o[k] = 1; return o; })(),
     CURRENT_STOCK_POOL_TYPES: (function () { var o = {}; for (var k in CURRENT_STOCK_POOL_TYPES) o[k] = 1; return o; })(),
     DEMAND_TYPES: (function () { var o = {}; for (var k in DEMAND_TYPES) o[k] = 1; return o; })(),
+    ACTIVE_LIFECYCLE_BUCKETS: (function () { var o = {}; for (var k in ACTIVE_BUCKETS) o[k] = 1; return o; })(),
+    EXCLUDED_LIFECYCLE_BUCKETS: (function () { var o = {}; for (var k in EXCLUDED_BUCKETS) o[k] = 1; return o; })(),
     classifySourceReadiness: classifySourceReadiness,
     resolveSourceIdentity: resolveSourceIdentity,
     projectDemandLedger: projectDemandLedger,
     projectCurrentStockSupplyLedger: projectCurrentStockSupplyLedger,
-    adaptIncomingSupplyCandidates: adaptIncomingSupplyCandidates
+    adaptIncomingSupplyCandidates: adaptIncomingSupplyCandidates,
+    projectSupplyLifecycle: projectSupplyLifecycle
   };
 });
