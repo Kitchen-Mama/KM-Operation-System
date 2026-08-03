@@ -30,7 +30,8 @@ var MODULE_ORDER = [
   'supply-planning-persistence-locking',
   'supply-planning-plan-builder',              // requires persistence-repository
   'supply-planning-persistence-plan-builder',  // requires persistence-repository + plan-builder
-  'supply-planning-recommendation-orchestrator' // requires persistence + plan-builder + persistence-plan-builder + repository
+  'supply-planning-recommendation-orchestrator', // requires persistence + plan-builder + persistence-plan-builder + repository
+  'supply-planning-user-edit'                  // requires persistence-repository
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
@@ -48,7 +49,8 @@ var GLOBALS = [
   ['KMPL', 'supply-planning-persistence-locking'],
   ['KMPB', 'supply-planning-plan-builder'],
   ['KMPPB', 'supply-planning-persistence-plan-builder'],
-  ['KMORCH', 'supply-planning-recommendation-orchestrator']
+  ['KMORCH', 'supply-planning-recommendation-orchestrator'],
+  ['KMUE', 'supply-planning-user-edit']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }

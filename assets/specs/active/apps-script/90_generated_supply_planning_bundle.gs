@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 22cd59e130b035c4903e03790d8195b6a8833d141dac9b49f5140ac847349d98
+// bundle_sha256 = 69296550705b3eabb8243e672bb5c47e833a5d1558ae37bd4cc622541c84cb9f
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7
@@ -14,11 +14,12 @@
 //   supply-planning-external-incoming-adapters  ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93
 //   supply-planning-supply-candidates  c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79
 //   supply-planning-persistence  e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6
-//   supply-planning-persistence-repository  74792c63b3521e0d42753632b54132afddb5931e91797c867bfb7d1fc8ff9505
+//   supply-planning-persistence-repository  f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6
 //   supply-planning-persistence-locking  ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b
 //   supply-planning-plan-builder  7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914
 //   supply-planning-persistence-plan-builder  c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304
-//   supply-planning-recommendation-orchestrator  1a134544ff1c8745adf575bc5ad2ca613327927bc1dcf1fee1aef85ad092037a
+//   supply-planning-recommendation-orchestrator  23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192
+//   supply-planning-user-edit  365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693
 // ============================================================================
 
 var __kmModules = {};
@@ -3438,7 +3439,110 @@ function __kmRequire(p) {
     return s;
   }
 
+  // ---- Round 1H: canonical terminal-status vocabulary (SINGLE SOURCE) --------
+  // Header fully-terminal — block ALL mutation (generation + user edit) through the locked boundary.
+  var TERMINAL_DRAFT_STATUSES = { submitted: 1, cancelled: 1 };
+  // Line-terminal — a line in one of these states is committed/retired and is NEVER mutated.
+  var LINE_TERMINAL_STATUSES = { submitted: 1, cancelled: 1, superseded: 1, superseded_user_review: 1 };
+  // Generation-blocked header — the engine must not (re)generate over a header carrying committed lines.
+  // `partially_submitted` (owner: 15_ handler — a header state where SOME lines are submitted, others still
+  // draft) is generation-blocked but line-level editable on its remaining non-terminal lines.
+  var GENERATION_BLOCKED_STATUSES = { submitted: 1, cancelled: 1, partially_submitted: 1 };
+  function nstat(s) { return String(s === undefined || s === null ? '' : s).trim().toLowerCase(); }
+  function isTerminalDraftStatus(s) { return TERMINAL_DRAFT_STATUSES[nstat(s)] === 1; }
+  function isLineTerminalStatus(s) { return LINE_TERMINAL_STATUSES[nstat(s)] === 1; }
+  function isGenerationBlockedStatus(s) { return GENERATION_BLOCKED_STATUSES[nstat(s)] === 1; }
+
+  // Editable decision-field allowlist per type. recommended_qty + calculation lineage + status are NOT editable
+  // through a user decision edit (frozen boundary: recommended_qty is an immutable per-version snapshot).
+  var EDITABLE_DECISION_FIELDS = {
+    WEEKLY_SHIPPING: { planned_qty: 1, selected_source_warehouse_id: 1, selected_destination_warehouse_id: 1, selected_shipping_method: 1, expected_arrival: 1, note: 1 },
+    MONTHLY_ORDER: { order_qty: 1, carton_qty: 1, allocation_method: 1, note: 1 }
+  };
+
+  // applyUserDecisionEdits(sheetSet, command, opts) — targeted natural-key line edits, applied UNDER a lock held
+  // by the caller (the KMUE user-edit orchestrator). Supports INSERT (new manual line + initial recommended
+  // snapshot), UPDATE (allowlisted decision fields + provenance; recommended_qty + lineage PRESERVED), and
+  // optional SUPERSEDE-reconcile (draft lines absent from the edit set → superseded / _user_review; line-terminal
+  // rows are NEVER touched). Writes NO run journal. Fail-closed: an out-of-allowlist field or a duplicate natural
+  // key returns a conflict status with ZERO mutation. command = { recommendationType, draftId, edits:[{ naturalKey,
+  // fields, recommendedSnapshot? }], reconcile? }.
+  function applyUserDecisionEdits(sheetSet, command, opts) {
+    opts = opts || {};
+    aType(isObj(command), 'command must be an object');
+    var cfg = tableCfg(command.recommendationType);
+    aType(typeof command.draftId === 'string' && command.draftId.length > 0, 'command.draftId required');
+    aType(Array.isArray(command.edits) && command.edits.length > 0, 'command.edits must be a non-empty array');
+    var allow = EDITABLE_DECISION_FIELDS[command.recommendationType];
+    var lT = getTable(sheetSet, cfg.lines);
+    var now = opts.now !== undefined ? opts.now : '', actor = opts.actor !== undefined ? opts.actor : 'user';
+    var counts = { inserted: 0, updated: 0, superseded: 0, skippedTerminal: 0 };
+
+    // ---- validate ALL edits first (fail closed → zero writes on any invalid field / duplicate key) ----------
+    var seen = {}, i, k;
+    for (i = 0; i < command.edits.length; i++) {
+      var e = command.edits[i];
+      aType(isObj(e) && isObj(e.naturalKey), 'edits[' + i + '] needs a naturalKey object');
+      cfg.lineKey.forEach(function (kc) { aType(e.naturalKey[kc] !== undefined && e.naturalKey[kc] !== null && String(e.naturalKey[kc]).length > 0, 'edits[' + i + '] missing natural-key part: ' + kc); });
+      var nk = naturalKeyStr(cfg.lineKey, e.naturalKey);
+      if (seen[nk] === 1) return { status: 'DUPLICATE_LINE_KEY', reason: 'DUPLICATE_LINE_KEY:' + nk, counts: counts };
+      seen[nk] = 1;
+      var fields = isObj(e.fields) ? e.fields : {};
+      for (k in fields) { if (fields.hasOwnProperty(k) && allow[k] !== 1) return { status: 'INVALID_EDIT_FIELD', reason: 'INVALID_EDIT_FIELD:' + k, counts: counts }; }
+    }
+    var editByKey = {};
+    command.edits.forEach(function (e2) { editByKey[naturalKeyStr(cfg.lineKey, e2.naturalKey)] = e2; });
+    function findRows(nk) { var idxs = []; for (var r = 0; r < lT.rows.length; r++) { var o = rowObj(lT.headers, lT.rows[r]); if (String(o[cfg.lineDraftId]) === String(command.draftId) && naturalKeyStr(cfg.lineKey, o) === nk) idxs.push(r); } return idxs; }
+
+    // ---- INSERT / UPDATE ------------------------------------------------------
+    for (i = 0; i < command.edits.length; i++) {
+      var ed = command.edits[i], nk2 = naturalKeyStr(cfg.lineKey, ed.naturalKey), rowsFound = findRows(nk2);
+      if (rowsFound.length > 1) return { status: 'DUPLICATE_LINE_KEY', reason: 'DUPLICATE_LINE_KEY:' + nk2, counts: counts };
+      var f = isObj(ed.fields) ? ed.fields : {};
+      if (rowsFound.length === 0) {
+        // a focused edit of a non-existent line is a conflict; only the batch adapter (allowInsert) may INSERT.
+        if (command.allowInsert !== true) return { status: 'LINE_NOT_FOUND', reason: 'LINE_NOT_FOUND:' + nk2, counts: counts };
+        var ins = {}; cfg.lineKey.forEach(function (c) { ins[c] = ed.naturalKey[c]; }); ins[cfg.lineDraftId] = command.draftId;
+        if (isObj(ed.recommendedSnapshot)) for (k in ed.recommendedSnapshot) if (ed.recommendedSnapshot.hasOwnProperty(k)) ins[k] = ed.recommendedSnapshot[k];
+        for (k in f) if (f.hasOwnProperty(k)) ins[k] = f[k];
+        ins.line_status = 'active';
+        if (lT.headers.indexOf('user_edited') !== -1) { ins.user_edited = 'TRUE'; ins.user_edited_by = actor; }
+        if (lT.headers.indexOf('updated_at') !== -1) ins.updated_at = now;
+        if (lT.headers.indexOf('created_at') !== -1) ins.created_at = now;
+        lT.rows.push(objRow(lT.headers, ins)); counts.inserted++;
+      } else {
+        var ri = rowsFound[0], cur = rowObj(lT.headers, lT.rows[ri]);
+        if (isLineTerminalStatus(cur.line_status)) { counts.skippedTerminal++; continue; }  // NEVER mutate a terminal line
+        for (k in f) if (f.hasOwnProperty(k)) cur[k] = f[k];            // allowlisted decision fields only → recommended_qty + lineage preserved
+        if (lT.headers.indexOf('user_edited') !== -1) { cur.user_edited = 'TRUE'; cur.user_edited_by = actor; }
+        if (lT.headers.indexOf('updated_at') !== -1) cur.updated_at = now;
+        lT.rows[ri] = objRow(lT.headers, cur); counts.updated++;
+      }
+    }
+    // ---- SUPERSEDE-reconcile (optional; never hard-deletes; terminal lines untouched) ----------------------
+    if (command.reconcile === true) {
+      for (var r3 = 0; r3 < lT.rows.length; r3++) {
+        var o3 = rowObj(lT.headers, lT.rows[r3]);
+        if (String(o3[cfg.lineDraftId]) !== String(command.draftId)) continue;
+        if (editByKey[naturalKeyStr(cfg.lineKey, o3)]) continue;
+        if (isLineTerminalStatus(o3.line_status)) continue;
+        o3.line_status = isBool(o3.user_edited) ? 'superseded_user_review' : 'superseded';
+        if (lT.headers.indexOf('updated_at') !== -1) o3.updated_at = now;
+        lT.rows[r3] = objRow(lT.headers, o3); counts.superseded++;
+      }
+    }
+    return { status: 'APPLIED', counts: counts };
+  }
+
   return {
+    TERMINAL_DRAFT_STATUSES: (function () { var o = {}; for (var k in TERMINAL_DRAFT_STATUSES) o[k] = 1; return o; })(),
+    LINE_TERMINAL_STATUSES: (function () { var o = {}; for (var k in LINE_TERMINAL_STATUSES) o[k] = 1; return o; })(),
+    GENERATION_BLOCKED_STATUSES: (function () { var o = {}; for (var k in GENERATION_BLOCKED_STATUSES) o[k] = 1; return o; })(),
+    EDITABLE_DECISION_FIELDS: EDITABLE_DECISION_FIELDS,
+    isTerminalDraftStatus: isTerminalDraftStatus,
+    isLineTerminalStatus: isLineTerminalStatus,
+    isGenerationBlockedStatus: isGenerationBlockedStatus,
+    applyUserDecisionEdits: applyUserDecisionEdits,
     LINE_ADDITIVE_HEADERS: LINE_ADDITIVE_HEADERS.slice(),
     RUN_JOURNAL_HEADERS: RUN_JOURNAL_HEADERS.slice(),
     RUN_JOURNAL_TABLE: RUN_JOURNAL_TABLE,
@@ -4093,8 +4197,12 @@ function __kmRequire(p) {
     // cancelled) draft occupying the canonical id is never silently mutated by a header UPSERT (fail-closed).
     var priorSnapshot = typeof deps.loadPriorSnapshot === 'function' ? deps.loadPriorSnapshot(canonicalDraftId) : null;
     var priorDraft = priorSnapshot && priorSnapshot.draft ? priorSnapshot.draft : null;
-    if (priorDraft && TERMINAL[String(priorDraft.status || '').trim().toLowerCase()] === 1) {
-      return res('BLOCKED_CONFLICT', { reason: 'IMMUTABLE_TERMINAL_STATUS:' + String(priorDraft.status).trim().toLowerCase(), draftId: canonicalDraftId });
+    // Generation must not (re)generate over a header carrying committed lines. Shared KMPR vocabulary:
+    // submitted/cancelled = fully terminal; partially_submitted = generation-blocked (has committed lines).
+    if (priorDraft && KMPR.isGenerationBlockedStatus(priorDraft.status)) {
+      var ps = String(priorDraft.status).trim().toLowerCase();
+      var rsn = KMPR.isTerminalDraftStatus(ps) ? ('IMMUTABLE_TERMINAL_STATUS:' + ps) : ('GENERATION_BLOCKED_STATUS:' + ps);
+      return res('BLOCKED_CONFLICT', { reason: rsn, draftId: canonicalDraftId });
     }
     var reuse = !!priorDraft;
     var priorVersion = priorSnapshot && priorSnapshot.draft ? (num(priorSnapshot.draft.draft_version) === null ? 1 : num(priorSnapshot.draft.draft_version)) : 1;
@@ -4147,6 +4255,109 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-recommendation-orchestrator", module.exports);
 })();
 
+// ----- module: supply-planning-user-edit (verbatim from assets/js/core/supply-planning-user-edit.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Recommendation USER DECISION EDIT (locked) command (Phase 2C, Round 1H).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC orchestrator for the FOCUSED user-decision-edit command (edit planned_qty / order_qty /
+// carton / method / note / ETA on an existing Recommendation Draft). It is deliberately SEPARATE from engine
+// generation (a simple quantity edit must NEVER be mapped to a full recalculation): it does NOT build a
+// PersistencePlan, does NOT create a calculation run, and does NOT change draft_version.
+//
+// It enforces the canonical write boundary shared with the generation path: acquire ScriptLock → reload the
+// Draft + lines UNDER the lock → terminal-status guard (submitted/cancelled block ALL) → optimistic-token
+// revalidation → targeted natural-key edit via KMPR.applyUserDecisionEdits (allowlisted decision fields +
+// explicit user_edited/user_edited_by; recommended_qty snapshot + lineage preserved; terminal lines never
+// touched) → release in finally (exactly once after acquisition). The lock primitive + Sheet I/O are INJECTED
+// (deps.*): the Apps Script wrapper wires LockService + the KMPR bundle + a keyed-delta write; Node tests wire a
+// fake lock + fake sheet. Shares KMPR's SINGLE terminal-status helper — no terminal token list is duplicated.
+// No clock / no random. Result DTO shares the frozen vocabulary { COMPLETED | LOCK_UNAVAILABLE | CONFLICT |
+// BLOCKED_CONFLICT | FAILED }.
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(req ? req('./supply-planning-persistence-repository.js') : (root.KMPR || (root.KM && root.KM.persistenceRepository)));
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.userEdit = api; }
+})(this, function (KMPR) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function cmpStr(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }
+  function errMsg(e) { return (e && e.message !== undefined && e.message !== null) ? String(e.message) : String(e); }
+  function tokenEq(a, b) { return !!a && !!b && String(a.draft_version) === String(b.draft_version) && String(a.userEditFingerprint) === String(b.userEditFingerprint); }
+
+  var STATUS = { COMPLETED: 'COMPLETED', LOCK_UNAVAILABLE: 'LOCK_UNAVAILABLE', CONFLICT: 'CONFLICT', BLOCKED_CONFLICT: 'BLOCKED_CONFLICT', FAILED: 'FAILED' };
+  var REQUIRED_DEPS = ['acquireLock', 'releaseLock', 'reloadSnapshot', 'recomputeToken', 'applyEdits'];
+
+  // runUserDecisionEdit(command, deps)
+  //   command = { recommendationType, draftId, edits:[{naturalKey, fields, recommendedSnapshot?}], reconcile?,
+  //               expectedToken:{draft_version,userEditFingerprint}, actor?, now? }
+  //   deps = { acquireLock():bool, releaseLock(), reloadSnapshot():{draft,lines}, recomputeToken(snap):token,
+  //            applyEdits(command):{status,counts}, audit? }
+  function runUserDecisionEdit(command, deps) {
+    aType(isObj(command), 'command must be an object');
+    aType(KMPR.TABLES[command.recommendationType], 'unknown recommendationType');
+    aType(typeof command.draftId === 'string' && command.draftId.length > 0, 'command.draftId required');
+    aType(Array.isArray(command.edits) && command.edits.length > 0, 'command.edits must be a non-empty array');
+    aType(isObj(command.expectedToken) && command.expectedToken.draft_version !== undefined && typeof command.expectedToken.userEditFingerprint === 'string', 'command.expectedToken required (pre-edit)');
+    aType(isObj(deps), 'deps required');
+    REQUIRED_DEPS.forEach(function (fn) { aType(typeof deps[fn] === 'function', 'deps.' + fn + ' required'); });
+
+    var issues = [];
+    var draftId = command.draftId, expected = command.expectedToken;
+    function audit(ev) { if (typeof deps.audit === 'function') { try { deps.audit(ev); } catch (ae) { issues.push('AUDIT_FAILED:' + errMsg(ae)); } } }
+    function dto(status, extra) {
+      var d = { success: status === STATUS.COMPLETED, status: status, reason: null, draftId: draftId, applied: false, conflict: false, counts: null, issues: [] };
+      if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) d[k] = extra[k];
+      return d;
+    }
+    function finish(d) { d.issues = issues.slice().sort(cmpStr); audit({ event: 'user_decision_edit_result', status: d.status, reason: d.reason, draftId: draftId }); return d; }
+
+    // acquire (outside try: no release if not acquired)
+    var acquired = false, acqErr = null;
+    try { acquired = deps.acquireLock() === true; } catch (e) { acqErr = e; }
+    if (acqErr) return finish(dto(STATUS.LOCK_UNAVAILABLE, { reason: 'LOCK_ERROR:' + errMsg(acqErr) }));
+    if (!acquired) return finish(dto(STATUS.LOCK_UNAVAILABLE, { reason: 'LOCK_UNAVAILABLE' }));
+
+    var result = null;
+    try {
+      var snap = deps.reloadSnapshot();
+      if (!snap || !snap.draft) { result = dto(STATUS.CONFLICT, { reason: 'DRAFT_NOT_FOUND', conflict: true }); }
+      else if (KMPR.isTerminalDraftStatus(snap.draft.status)) { result = dto(STATUS.BLOCKED_CONFLICT, { reason: 'IMMUTABLE_TERMINAL_STATUS:' + String(snap.draft.status).trim().toLowerCase(), conflict: true }); }
+      else {
+        var live = deps.recomputeToken(snap);
+        if (!tokenEq(live, expected)) { result = dto(STATUS.CONFLICT, { reason: 'CONCURRENCY_TOKEN_MISMATCH', conflict: true, expectedToken: expected, liveToken: live }); }
+        else {
+          var r = deps.applyEdits(command);
+          if (r && r.status === 'APPLIED') { result = dto(STATUS.COMPLETED, { reason: null, applied: r.counts || true, counts: r.counts || null }); }
+          else if (r && (r.status === 'DUPLICATE_LINE_KEY' || r.status === 'INVALID_EDIT_FIELD' || r.status === 'LINE_NOT_FOUND')) { result = dto(STATUS.CONFLICT, { reason: r.reason || r.status, conflict: true, counts: r.counts || null }); }
+          else { result = dto(STATUS.FAILED, { reason: (r && (r.reason || r.status)) || 'APPLY_EDITS_FAILED' }); }
+        }
+      }
+    } catch (e2) {
+      result = dto(STATUS.FAILED, { reason: 'EXCEPTION:' + errMsg(e2) });
+    } finally {
+      try { deps.releaseLock(); } catch (re) { issues.push('RELEASE_FAILED:' + errMsg(re)); }
+    }
+    if (!result) result = dto(STATUS.FAILED, { reason: 'NO_RESULT' });
+    return finish(result);
+  }
+
+  return {
+    STATUS: { COMPLETED: 'COMPLETED', LOCK_UNAVAILABLE: 'LOCK_UNAVAILABLE', CONFLICT: 'CONFLICT', BLOCKED_CONFLICT: 'BLOCKED_CONFLICT', FAILED: 'FAILED' },
+    REQUIRED_DEPS: REQUIRED_DEPS.slice(),
+    runUserDecisionEdit: runUserDecisionEdit
+  };
+});
+  __kmRegister("supply-planning-user-edit", module.exports);
+})();
+
 // ----- Apps Script global namespace exposure -----
 var KMCALC = __kmModules["supply-planning-calculations"];
 var KMQI = __kmModules["supply-planning-qualified-incoming"];
@@ -4162,6 +4373,7 @@ var KMPL = __kmModules["supply-planning-persistence-locking"];
 var KMPB = __kmModules["supply-planning-plan-builder"];
 var KMPPB = __kmModules["supply-planning-persistence-plan-builder"];
 var KMORCH = __kmModules["supply-planning-recommendation-orchestrator"];
+var KMUE = __kmModules["supply-planning-user-edit"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"22cd59e130b035c4903e03790d8195b6a8833d141dac9b49f5140ac847349d98","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"74792c63b3521e0d42753632b54132afddb5931e91797c867bfb7d1fc8ff9505"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"1a134544ff1c8745adf575bc5ad2ca613327927bc1dcf1fee1aef85ad092037a"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"69296550705b3eabb8243e672bb5c47e833a5d1558ae37bd4cc622541c84cb9f","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"}]};

@@ -111,8 +111,12 @@
     // cancelled) draft occupying the canonical id is never silently mutated by a header UPSERT (fail-closed).
     var priorSnapshot = typeof deps.loadPriorSnapshot === 'function' ? deps.loadPriorSnapshot(canonicalDraftId) : null;
     var priorDraft = priorSnapshot && priorSnapshot.draft ? priorSnapshot.draft : null;
-    if (priorDraft && TERMINAL[String(priorDraft.status || '').trim().toLowerCase()] === 1) {
-      return res('BLOCKED_CONFLICT', { reason: 'IMMUTABLE_TERMINAL_STATUS:' + String(priorDraft.status).trim().toLowerCase(), draftId: canonicalDraftId });
+    // Generation must not (re)generate over a header carrying committed lines. Shared KMPR vocabulary:
+    // submitted/cancelled = fully terminal; partially_submitted = generation-blocked (has committed lines).
+    if (priorDraft && KMPR.isGenerationBlockedStatus(priorDraft.status)) {
+      var ps = String(priorDraft.status).trim().toLowerCase();
+      var rsn = KMPR.isTerminalDraftStatus(ps) ? ('IMMUTABLE_TERMINAL_STATUS:' + ps) : ('GENERATION_BLOCKED_STATUS:' + ps);
+      return res('BLOCKED_CONFLICT', { reason: rsn, draftId: canonicalDraftId });
     }
     var reuse = !!priorDraft;
     var priorVersion = priorSnapshot && priorSnapshot.draft ? (num(priorSnapshot.draft.draft_version) === null ? 1 : num(priorSnapshot.draft.draft_version)) : 1;

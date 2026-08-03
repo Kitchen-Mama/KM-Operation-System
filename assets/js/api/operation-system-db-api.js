@@ -2827,14 +2827,34 @@ window.KM.DB.upsertRequestOrderAllocationDraft = async function(payload) {
     return json.data;
 };
 
-// Replace the lines of ONE draft. { request_allocation_draft_id, lines: [ ... ] } → { line_count }.
+// Round 1H — read-only concurrency-token getter for a Recommendation Draft. Returns
+// { success, data:{ expectedToken:{draft_version,userEditFingerprint}, status } }.
+window.KM.DB.getRecommendationDraftToken = async function(recommendationType, draftId) {
+    if (!isOperationDbApiConfigured()) { return { success: false, error: 'API not configured' }; }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'getRecommendationDraftToken', recommendationType: recommendationType, draftId: draftId }) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    return await resp.json();
+};
+
+// Persist the lines of ONE draft. { request_allocation_draft_id, lines: [ ... ] } → { line_count }.
+// Round 1H: this now hits the LOCKED, terminal-guarded, optimistic-concurrency write boundary. It performs a
+// read-before-write: if the caller did not supply an expectedToken, the current Draft token is fetched and
+// attached, so a concurrent edit that changed the Draft since it was read surfaces as a CONFLICT (never a
+// silent overwrite). The recommended_qty snapshot + user decisions are preserved server-side.
 window.KM.DB.upsertRequestOrderAllocationDraftLines = async function(payload) {
     if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertRequestOrderAllocationDraftLines skipped'); return { success: false, error: 'API not configured' }; }
+    if (payload && payload.expectedToken === undefined && payload.request_allocation_draft_id) {
+        try {
+            var tok = await window.KM.DB.getRecommendationDraftToken('MONTHLY_ORDER', payload.request_allocation_draft_id);
+            if (tok && tok.success && tok.data && tok.data.expectedToken) payload = Object.assign({}, payload, { expectedToken: tok.data.expectedToken });
+        } catch (e) { /* token fetch failed → the server fails closed with a CONFLICT (concurrency never silently disabled) */ }
+    }
     var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(Object.assign({ action: 'upsertRequestOrderAllocationDraftLines' }, payload)) });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Upsert allocation draft lines failed');
+    if (!json.success) throw new Error((json.data && json.data.reason) || json.error || 'Upsert allocation draft lines failed');
     await loadOperationDb({ force: true });
     return json.data;
 };

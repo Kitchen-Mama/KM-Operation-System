@@ -112,7 +112,30 @@ function raDeleteLinesByDraft_(sheet, draftId) {
  * are written ONLY when the body supplies a real value — never faked.
  * Returns { request_allocation_draft_id }.
  */
+// Round 1H enforcement: the PUBLIC header route now acquires the ScriptLock + terminal-guards an existing
+// header before delegating to the (private) single-keyed-row upsert core. No unlocked/terminal-bypass path.
 function handleUpsertRequestOrderAllocationDraft_(body) {
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try {
+    var ss0 = SpreadsheetApp.getActiveSpreadsheet();
+    var id0 = String((body && body.request_allocation_draft_id) || '').trim();
+    if (id0) {
+      var sh0 = procurementEnsureSheet_(ss0, 'request_order_allocation_drafts', REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_);
+      var f0 = procurementFindRow_(sh0, 'request_allocation_draft_id', id0);
+      if (f0) {
+        var cS0 = f0.col('status');
+        var st0 = cS0 !== -1 ? String(sh0.getRange(f0.row, cS0 + 1).getValue()).trim().toLowerCase() : '';
+        if (st0 === 'submitted' || st0 === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st0, stage: 'terminal' });
+      }
+    }
+    return raUpsertDraftHeaderCore_(body);
+  } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+}
+
+// Private single-keyed-row header upsert core (reached ONLY under lock via the public handler above).
+function raUpsertDraftHeaderCore_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'request_order_allocation_drafts', REQUEST_ORDER_ALLOCATION_DRAFTS_HEADERS_);
   var now = procurementTimestamp_();
@@ -191,89 +214,34 @@ function handleUpsertRequestOrderAllocationDraft_(body) {
  * New lines start line_status = draft. Legacy snapshot aliases are accepted read-only.
  * Deletes existing lines for that draft_id, then appends the provided lines. Returns { line_count }.
  */
+// Round 1H ENFORCEMENT: this PUBLIC route is now a thin compatibility ADAPTER that maps the legacy batch payload
+// into the canonical LOCKED user-decision-edit command (allowInsert + reconcile) handled by 25_ (KMUE + KMPR +
+// LockService + keyed-delta). No unlocked Sheet write remains behind this route. Order_qty is preserved exactly
+// (partial carton), recommended_qty snapshot is preserved on UPDATE, provenance is explicit, terminal lines are
+// never touched, removed lines supersede (never delete). Requires body.expectedToken (§14) — fails closed
+// (CONFLICT) without it. The prior unlocked delete/upsert body is RETIRED (its canonical, tested equivalent is
+// KMPR.applyUserDecisionEdits). T4 remains visibility-only and is dropped here.
 function handleUpsertRequestOrderAllocationDraftLines_(body) {
   var draftId = String((body && body.request_allocation_draft_id) || '').trim();
   if (!draftId) return jsonResponse_({ success: false, error: 'request_allocation_draft_id required' });
   var lines = (body && body.lines) || [];
-
-  var actor = String((body && body.updated_by) || (body && body.actor) || 'request-order').trim();
-
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sh = procurementEnsureSheet_(ss, 'request_order_allocation_draft_lines', REQUEST_ORDER_ALLOCATION_DRAFT_LINES_HEADERS_);
-
-  // Natural-key upsert (request_allocation_draft_id + request_month + request_bucket) — replaces the prior
-  // delete+replace (Phase 2C Round 1D, §Persist-Adapter). Preserves rows; supersedes removed ones (never
-  // deletes); persists explicit user-edit provenance. Canonical/tested logic mirror:
-  // assets/js/core/supply-planning-persistence-repository.js (fake-sheet verified).
-  var now = procurementTimestamp_();
-  var data = sh.getDataRange().getValues();
-  var H = data[0].map(function (h) { return String(h).trim(); });
-  var cD = H.indexOf('request_allocation_draft_id'), cM = H.indexOf('request_month'), cB = H.indexOf('request_bucket'),
-      cS = H.indexOf('line_status'), cUE = H.indexOf('user_edited');
-  function raFindLineRow_(month, bucket) {
-    for (var r = 1; r < data.length; r++) {
-      if (String(data[r][cD]).trim() === draftId && String(data[r][cM]).trim() === String(month) && String(data[r][cB]).trim() === String(bucket)) return r;
-    }
-    return -1;
-  }
-  var seen = {}, count = 0;
+  var edits = [];
   for (var i = 0; i < lines.length; i++) {
     var l = raApplyLineAliases_(lines[i] || {});
     var bucket = String(l.request_bucket || '').trim();
     if (bucket === 'T4') continue;   // T4 is visibility-only — never a draft-line order commitment
-    var month = String(l.request_month || '').trim();
-    var lineStatus = String(l.line_status || 'draft').trim();
-    if (!RA_LINE_STATUSES_[lineStatus] && ['active', 'blocked', 'superseded', 'superseded_user_review'].indexOf(lineStatus) === -1) lineStatus = 'draft';
-    // Explicit user-edit provenance ONLY — never inferred by order_qty != recommended_qty (§Persist-Adapter PA-13).
-    var userEdited = (l.user_edited === true || String(l.user_edited).toUpperCase() === 'TRUE');
-    seen[month + '|' + bucket] = 1;
-
-    var rowObj = {
-      request_allocation_draft_id: draftId,
-      request_month: month,
-      request_bucket: bucket,
-      order_qty: procurementNum_(l.order_qty),   // exact — never re-rounded (partial-carton preserved)
-      allocation_method: String(l.allocation_method || '').trim(),
-      recommendation_reason: String(l.recommendation_reason || '').trim(),
-      recommendation_flags: String(l.recommendation_flags || '').trim(),
-      line_status: lineStatus,
-      user_edited: userEdited ? 'TRUE' : 'FALSE',
-      user_edited_by: userEdited ? actor : '',
-      updated_at: now
-    };
-    RA_LINE_SNAPSHOT_FIELDS_.forEach(function (f) {
-      if (l[f] != null && l[f] !== '') rowObj[f] = procurementNum_(l[f]);
-    });
-
-    var existing = raFindLineRow_(month, bucket);
-    if (existing === -1) {
-      rowObj.request_allocation_line_id = 'RAL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
-      rowObj.submitted_by = '';
-      rowObj.submitted_at = '';
-      rowObj.note = String(l.note || '').trim();
-      rowObj.created_at = now;
-      procurementAppendByHeader_(sh, rowObj);
-    } else {
-      var row = data[existing].slice();
-      Object.keys(rowObj).forEach(function (k) { var c = H.indexOf(k); if (c !== -1) row[c] = rowObj[k]; });
-      if (String(l.note || '').trim() !== '') { var cN = H.indexOf('note'); if (cN !== -1) row[cN] = String(l.note).trim(); }
-      sh.getRange(existing + 1, 1, 1, row.length).setValues([row]);
-      data[existing] = row;
-    }
-    count++;
+    var fields = { order_qty: procurementNum_(l.order_qty) };
+    if (l.carton_qty != null && l.carton_qty !== '') fields.carton_qty = procurementNum_(l.carton_qty);
+    if (l.allocation_method != null && String(l.allocation_method).trim() !== '') fields.allocation_method = String(l.allocation_method).trim();
+    if (l.note != null && String(l.note).trim() !== '') fields.note = String(l.note).trim();
+    var snap = {};
+    RA_LINE_SNAPSHOT_FIELDS_.forEach(function (f) { if (l[f] != null && l[f] !== '') snap[f] = procurementNum_(l[f]); });
+    edits.push({ naturalKey: { request_month: String(l.request_month || '').trim(), request_bucket: bucket }, fields: fields, recommendedSnapshot: snap });
   }
-  // Supersede rows removed from the incoming set — never hard-delete; terminal rows are untouched.
-  var superseded = 0;
-  for (var r2 = 1; r2 < data.length; r2++) {
-    if (String(data[r2][cD]).trim() !== draftId) continue;
-    if (seen[String(data[r2][cM]).trim() + '|' + String(data[r2][cB]).trim()]) continue;
-    var st = String(data[r2][cS]).trim();
-    if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(st) !== -1) continue;
-    var wasEdited = cUE !== -1 && String(data[r2][cUE]).toUpperCase() === 'TRUE';
-    if (cS !== -1) sh.getRange(r2 + 1, cS + 1).setValue(wasEdited ? 'superseded_user_review' : 'superseded');
-    superseded++;
-  }
-  return jsonResponse_({ success: true, data: { request_allocation_draft_id: draftId, line_count: count, superseded: superseded } });
+  return handleUpdateRecommendationDecisionLocked_({
+    recommendationType: 'MONTHLY_ORDER', draftId: draftId, edits: edits, reconcile: true, allowInsert: true,
+    expectedToken: (body && body.expectedToken), actor: String((body && body.updated_by) || (body && body.actor) || 'request-order').trim()
+  });
 }
 
 // ---- submitRequestOrderAllocationDrafts ---------------------------

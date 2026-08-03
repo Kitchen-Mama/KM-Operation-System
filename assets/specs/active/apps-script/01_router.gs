@@ -250,6 +250,18 @@ function doPost(e) {
       return handleGenerateRecommendationDraftLocked_(body);
     }
 
+    // Phase 2C Round 1H — LOCKED user-decision-edit boundary (25_): edit planned_qty/order_qty/etc under
+    // ScriptLock + terminal guard + optimistic token, separate from engine generation and from Submit.
+    if (action === 'updateRecommendationDecisionLocked') {
+      return handleUpdateRecommendationDecisionLocked_(body);
+    }
+
+    // Read-only concurrency-token getter for a Recommendation Draft (client obtains {draft_version,
+    // userEditFingerprint} to send back on an edit write).
+    if (action === 'getRecommendationDraftToken') {
+      return handleGetRecommendationDraftToken_(body);
+    }
+
     // One-time migration (2026-07-28): retire the display-label snapshot columns from shipping_plans /
     // shipments (shipping_method_label / customs_type_label / shipments_customs_type_label). Backfill-safe:
     // dry_run reports; live deletes only when every code cell is populated (else blocked_needs_review).

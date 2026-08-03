@@ -31,7 +31,7 @@ section('A. deterministic / reproducible output');
   eq(b1.code, b2.code, 'A: same sources → byte-identical bundle');
   eq(b1.hash, b2.hash, 'A: same sources → identical bundle hash');
   ok(/^[0-9a-f]{64}$/.test(b1.hash), 'A: bundle hash is a sha256 hex');
-  eq(b1.manifest.length, 14, 'A: manifest lists all 14 canonical modules');
+  eq(b1.manifest.length, 15, 'A: manifest lists all 15 canonical modules');
   ok(b1.manifest.every(function (m) { return /^[0-9a-f]{64}$/.test(m.sha256); }), 'A: each manifest entry has a sha256');
 })();
 
@@ -46,7 +46,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
 (function () {
   var code = BUILD.buildBundleFromDisk(CORE_DIR).code;
   var ctx = loadBundle(code);
-  ['KMCALC', 'KMQI', 'KMLEDGER', 'KMALLOC', 'KMLINE', 'KMPC', 'KMPR', 'KMPL', 'KMPB', 'KMPPB', 'KMORCH'].forEach(function (ns) {
+  ['KMCALC', 'KMQI', 'KMLEDGER', 'KMALLOC', 'KMLINE', 'KMPC', 'KMPR', 'KMPL', 'KMPB', 'KMPPB', 'KMORCH', 'KMUE'].forEach(function (ns) {
     ok(ctx[ns] && typeof ctx[ns] === 'object', 'C: ' + ns + ' exposed');
   });
   ok(typeof ctx.KMORCH.runRecommendationGeneration === 'function', 'C: KMORCH.runRecommendationGeneration available');
@@ -55,7 +55,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   ok(typeof ctx.KMPR.applyPersistencePlan === 'function' && typeof ctx.KMPR.loadActiveDraftContext === 'function', 'C: KMPR repository API available');
   ok(typeof ctx.KMPL.executeLockedPersistence === 'function', 'C: KMPL.executeLockedPersistence available');
   ok(typeof ctx.KMPC.generateRecommendationDraft === 'function', 'C: KMPC Persistence Core available');
-  eq(ctx.KM_BUNDLE_INFO.modules.length, 14, 'C: KM_BUNDLE_INFO manifest present in runtime');
+  eq(ctx.KM_BUNDLE_INFO.modules.length, 15, 'C: KM_BUNDLE_INFO manifest present in runtime');
 })();
 
 section('D. ported modules actually RUN end-to-end inside the bundle context');

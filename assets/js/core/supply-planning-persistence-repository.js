@@ -371,7 +371,110 @@
     return s;
   }
 
+  // ---- Round 1H: canonical terminal-status vocabulary (SINGLE SOURCE) --------
+  // Header fully-terminal — block ALL mutation (generation + user edit) through the locked boundary.
+  var TERMINAL_DRAFT_STATUSES = { submitted: 1, cancelled: 1 };
+  // Line-terminal — a line in one of these states is committed/retired and is NEVER mutated.
+  var LINE_TERMINAL_STATUSES = { submitted: 1, cancelled: 1, superseded: 1, superseded_user_review: 1 };
+  // Generation-blocked header — the engine must not (re)generate over a header carrying committed lines.
+  // `partially_submitted` (owner: 15_ handler — a header state where SOME lines are submitted, others still
+  // draft) is generation-blocked but line-level editable on its remaining non-terminal lines.
+  var GENERATION_BLOCKED_STATUSES = { submitted: 1, cancelled: 1, partially_submitted: 1 };
+  function nstat(s) { return String(s === undefined || s === null ? '' : s).trim().toLowerCase(); }
+  function isTerminalDraftStatus(s) { return TERMINAL_DRAFT_STATUSES[nstat(s)] === 1; }
+  function isLineTerminalStatus(s) { return LINE_TERMINAL_STATUSES[nstat(s)] === 1; }
+  function isGenerationBlockedStatus(s) { return GENERATION_BLOCKED_STATUSES[nstat(s)] === 1; }
+
+  // Editable decision-field allowlist per type. recommended_qty + calculation lineage + status are NOT editable
+  // through a user decision edit (frozen boundary: recommended_qty is an immutable per-version snapshot).
+  var EDITABLE_DECISION_FIELDS = {
+    WEEKLY_SHIPPING: { planned_qty: 1, selected_source_warehouse_id: 1, selected_destination_warehouse_id: 1, selected_shipping_method: 1, expected_arrival: 1, note: 1 },
+    MONTHLY_ORDER: { order_qty: 1, carton_qty: 1, allocation_method: 1, note: 1 }
+  };
+
+  // applyUserDecisionEdits(sheetSet, command, opts) — targeted natural-key line edits, applied UNDER a lock held
+  // by the caller (the KMUE user-edit orchestrator). Supports INSERT (new manual line + initial recommended
+  // snapshot), UPDATE (allowlisted decision fields + provenance; recommended_qty + lineage PRESERVED), and
+  // optional SUPERSEDE-reconcile (draft lines absent from the edit set → superseded / _user_review; line-terminal
+  // rows are NEVER touched). Writes NO run journal. Fail-closed: an out-of-allowlist field or a duplicate natural
+  // key returns a conflict status with ZERO mutation. command = { recommendationType, draftId, edits:[{ naturalKey,
+  // fields, recommendedSnapshot? }], reconcile? }.
+  function applyUserDecisionEdits(sheetSet, command, opts) {
+    opts = opts || {};
+    aType(isObj(command), 'command must be an object');
+    var cfg = tableCfg(command.recommendationType);
+    aType(typeof command.draftId === 'string' && command.draftId.length > 0, 'command.draftId required');
+    aType(Array.isArray(command.edits) && command.edits.length > 0, 'command.edits must be a non-empty array');
+    var allow = EDITABLE_DECISION_FIELDS[command.recommendationType];
+    var lT = getTable(sheetSet, cfg.lines);
+    var now = opts.now !== undefined ? opts.now : '', actor = opts.actor !== undefined ? opts.actor : 'user';
+    var counts = { inserted: 0, updated: 0, superseded: 0, skippedTerminal: 0 };
+
+    // ---- validate ALL edits first (fail closed → zero writes on any invalid field / duplicate key) ----------
+    var seen = {}, i, k;
+    for (i = 0; i < command.edits.length; i++) {
+      var e = command.edits[i];
+      aType(isObj(e) && isObj(e.naturalKey), 'edits[' + i + '] needs a naturalKey object');
+      cfg.lineKey.forEach(function (kc) { aType(e.naturalKey[kc] !== undefined && e.naturalKey[kc] !== null && String(e.naturalKey[kc]).length > 0, 'edits[' + i + '] missing natural-key part: ' + kc); });
+      var nk = naturalKeyStr(cfg.lineKey, e.naturalKey);
+      if (seen[nk] === 1) return { status: 'DUPLICATE_LINE_KEY', reason: 'DUPLICATE_LINE_KEY:' + nk, counts: counts };
+      seen[nk] = 1;
+      var fields = isObj(e.fields) ? e.fields : {};
+      for (k in fields) { if (fields.hasOwnProperty(k) && allow[k] !== 1) return { status: 'INVALID_EDIT_FIELD', reason: 'INVALID_EDIT_FIELD:' + k, counts: counts }; }
+    }
+    var editByKey = {};
+    command.edits.forEach(function (e2) { editByKey[naturalKeyStr(cfg.lineKey, e2.naturalKey)] = e2; });
+    function findRows(nk) { var idxs = []; for (var r = 0; r < lT.rows.length; r++) { var o = rowObj(lT.headers, lT.rows[r]); if (String(o[cfg.lineDraftId]) === String(command.draftId) && naturalKeyStr(cfg.lineKey, o) === nk) idxs.push(r); } return idxs; }
+
+    // ---- INSERT / UPDATE ------------------------------------------------------
+    for (i = 0; i < command.edits.length; i++) {
+      var ed = command.edits[i], nk2 = naturalKeyStr(cfg.lineKey, ed.naturalKey), rowsFound = findRows(nk2);
+      if (rowsFound.length > 1) return { status: 'DUPLICATE_LINE_KEY', reason: 'DUPLICATE_LINE_KEY:' + nk2, counts: counts };
+      var f = isObj(ed.fields) ? ed.fields : {};
+      if (rowsFound.length === 0) {
+        // a focused edit of a non-existent line is a conflict; only the batch adapter (allowInsert) may INSERT.
+        if (command.allowInsert !== true) return { status: 'LINE_NOT_FOUND', reason: 'LINE_NOT_FOUND:' + nk2, counts: counts };
+        var ins = {}; cfg.lineKey.forEach(function (c) { ins[c] = ed.naturalKey[c]; }); ins[cfg.lineDraftId] = command.draftId;
+        if (isObj(ed.recommendedSnapshot)) for (k in ed.recommendedSnapshot) if (ed.recommendedSnapshot.hasOwnProperty(k)) ins[k] = ed.recommendedSnapshot[k];
+        for (k in f) if (f.hasOwnProperty(k)) ins[k] = f[k];
+        ins.line_status = 'active';
+        if (lT.headers.indexOf('user_edited') !== -1) { ins.user_edited = 'TRUE'; ins.user_edited_by = actor; }
+        if (lT.headers.indexOf('updated_at') !== -1) ins.updated_at = now;
+        if (lT.headers.indexOf('created_at') !== -1) ins.created_at = now;
+        lT.rows.push(objRow(lT.headers, ins)); counts.inserted++;
+      } else {
+        var ri = rowsFound[0], cur = rowObj(lT.headers, lT.rows[ri]);
+        if (isLineTerminalStatus(cur.line_status)) { counts.skippedTerminal++; continue; }  // NEVER mutate a terminal line
+        for (k in f) if (f.hasOwnProperty(k)) cur[k] = f[k];            // allowlisted decision fields only → recommended_qty + lineage preserved
+        if (lT.headers.indexOf('user_edited') !== -1) { cur.user_edited = 'TRUE'; cur.user_edited_by = actor; }
+        if (lT.headers.indexOf('updated_at') !== -1) cur.updated_at = now;
+        lT.rows[ri] = objRow(lT.headers, cur); counts.updated++;
+      }
+    }
+    // ---- SUPERSEDE-reconcile (optional; never hard-deletes; terminal lines untouched) ----------------------
+    if (command.reconcile === true) {
+      for (var r3 = 0; r3 < lT.rows.length; r3++) {
+        var o3 = rowObj(lT.headers, lT.rows[r3]);
+        if (String(o3[cfg.lineDraftId]) !== String(command.draftId)) continue;
+        if (editByKey[naturalKeyStr(cfg.lineKey, o3)]) continue;
+        if (isLineTerminalStatus(o3.line_status)) continue;
+        o3.line_status = isBool(o3.user_edited) ? 'superseded_user_review' : 'superseded';
+        if (lT.headers.indexOf('updated_at') !== -1) o3.updated_at = now;
+        lT.rows[r3] = objRow(lT.headers, o3); counts.superseded++;
+      }
+    }
+    return { status: 'APPLIED', counts: counts };
+  }
+
   return {
+    TERMINAL_DRAFT_STATUSES: (function () { var o = {}; for (var k in TERMINAL_DRAFT_STATUSES) o[k] = 1; return o; })(),
+    LINE_TERMINAL_STATUSES: (function () { var o = {}; for (var k in LINE_TERMINAL_STATUSES) o[k] = 1; return o; })(),
+    GENERATION_BLOCKED_STATUSES: (function () { var o = {}; for (var k in GENERATION_BLOCKED_STATUSES) o[k] = 1; return o; })(),
+    EDITABLE_DECISION_FIELDS: EDITABLE_DECISION_FIELDS,
+    isTerminalDraftStatus: isTerminalDraftStatus,
+    isLineTerminalStatus: isLineTerminalStatus,
+    isGenerationBlockedStatus: isGenerationBlockedStatus,
+    applyUserDecisionEdits: applyUserDecisionEdits,
     LINE_ADDITIVE_HEADERS: LINE_ADDITIVE_HEADERS.slice(),
     RUN_JOURNAL_HEADERS: RUN_JOURNAL_HEADERS.slice(),
     RUN_JOURNAL_TABLE: RUN_JOURNAL_TABLE,

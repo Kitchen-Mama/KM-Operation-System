@@ -113,7 +113,26 @@ function sadApplyLineAliases_(l) {
  * header matching planning_cycle+company+country+marketplace+draft_version is reused (idempotent);
  * a repeated calculation_run_id is treated as the same draft. Returns { allocation_draft_id }.
  */
+// Round 1H enforcement: PUBLIC header route now acquires the ScriptLock + terminal-guards an existing header
+// before delegating to the (private) single-keyed-row upsert core. Shipping stays DEPLOYMENT-GATED (scaffold).
 function handleUpsertShippingAllocationDraft_(body) {
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try {
+    var ss0 = SpreadsheetApp.getActiveSpreadsheet();
+    var id0 = String((body && body.allocation_draft_id) || '').trim();
+    if (id0) {
+      var sh0 = procurementEnsureSheet_(ss0, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+      var f0 = procurementFindRow_(sh0, 'allocation_draft_id', id0);
+      if (f0) { var cS0 = f0.col('status'); var st0 = cS0 !== -1 ? String(sh0.getRange(f0.row, cS0 + 1).getValue()).trim().toLowerCase() : ''; if (st0 === 'submitted' || st0 === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st0, stage: 'terminal' }); }
+    }
+    return sadUpsertDraftHeaderCore_(body);
+  } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+}
+
+// Private single-keyed-row shipping header upsert core (reached ONLY under lock via the public handler above).
+function sadUpsertDraftHeaderCore_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
   var now = procurementTimestamp_();
@@ -197,7 +216,28 @@ function handleUpsertShippingAllocationDraft_(body) {
  * MUST NOT persist uncovered_qty / coverage_status / window_label / display strings (§C).
  * Returns { line_count, created, updated }.
  */
+// Round 1H enforcement: PUBLIC shipping-lines route now acquires the ScriptLock + header terminal-guard before
+// delegating to the (private) keyed (allocation_draft_line_id) upsert core, which additionally skips any
+// line-terminal row. Shipping remains DEPLOYMENT-GATED (source-mirror scaffold); full optimistic-token + KMUE
+// natural-key unification for shipping is a documented pending item (the live procurement path uses KMUE today).
 function handleUpsertShippingAllocationDraftLines_(body) {
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try {
+    var ss0 = SpreadsheetApp.getActiveSpreadsheet();
+    var did = String((body && body.allocation_draft_id) || '').trim();
+    if (did) {
+      var hsh = procurementEnsureSheet_(ss0, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+      var hf = procurementFindRow_(hsh, 'allocation_draft_id', did);
+      if (hf) { var cs = hf.col('status'); var stt = cs !== -1 ? String(hsh.getRange(hf.row, cs + 1).getValue()).trim().toLowerCase() : ''; if (stt === 'submitted' || stt === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + stt, stage: 'terminal' }); }
+    }
+    return sadUpsertLinesKeyedCore_(body);
+  } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+}
+
+// Private keyed shipping-line upsert core (reached ONLY under lock via the public handler above).
+function sadUpsertLinesKeyedCore_(body) {
   var draftId = String((body && body.allocation_draft_id) || '').trim();
   if (!draftId) return jsonResponse_({ success: false, error: 'allocation_draft_id required' });
   var rawLines = (body && body.lines) || [];
@@ -235,6 +275,10 @@ function handleUpsertShippingAllocationDraftLines_(body) {
     // cleared before it was ever persisted) must NOT append a spurious cancelled row — skip it.
     if (!found && String(l.line_status || '').trim().toLowerCase() === 'cancelled') { skipped++; continue; }
     if (found) {
+      // Round 1H: NEVER mutate a line-terminal row (submitted/cancelled/superseded) — skip it.
+      var cLS = found.col('line_status');
+      var curLS = cLS !== -1 ? String(sh.getRange(found.row, cLS + 1).getValue()).trim().toLowerCase() : '';
+      if (['submitted', 'cancelled', 'superseded', 'superseded_user_review'].indexOf(curLS) !== -1) { skipped++; continue; }
       function setU(name) { if (l[name] != null) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(String(l[name])); } }
       // Execution-Plan (user) fields — always update when provided.
       EXEC_FIELDS.forEach(setU);
