@@ -267,6 +267,43 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 > Submit remain NOT IMPLEMENTED / NOT VERIFIED; no deploy; no live Google Sheet verification. Golden Matrix
 > unchanged **39 / 1 / 0**; Scenario #34 Pending.
 >
+> **Round 1S-P2 APPS SCRIPT PRODUCTION SOURCE WIRING (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED):** the
+> production READ-ONLY recommendation source path is wired end-to-end and the orchestrator `SOURCE_READER_PENDING`
+> stub is REPLACED. NEW pure module `assets/js/core/supply-planning-production-source.js` (`window.KM.productionSource`
+> / bundle `KMPS`; `…production-source.test.js`, **43 assertions**) + NEW thin `.gs`
+> `assets/specs/active/apps-script/27_recommendation_production_source.gs`. **Architecture (READ-ONLY, all math
+> reused):** `existing Canonical Operation DB Sheets → KMPS.readCanonicalSnapshots (inject-testable raw getValues;
+> the `.gs` passes SpreadsheetApp, tests pass a fake) → the frozen Projection Runtime (KMSP) → the frozen Production
+> Reader (KMSRP) → KMSR → KMSI → Ledger → Allocation → Weekly/Monthly Resolver → Plan Builder Bridge → Plan
+> Builder (read-only)`. **NO physical `recommendation_source_*` Sheets are read** (the DTO snapshots are assembled in
+> memory). `KMPS` owns ONLY the canonical Sheet-name registry, the inject-testable reader, the orchestrator
+> `computeFacts` shape (`resolveProductionFacts`), and the read-only RecommendationPlan result
+> (`buildProductionRecommendationSource` → `{…, recommendationPlan, persistenceStatus:'NOT_EXECUTED'}`) — it authors
+> NO Calculation/Ledger/Allocation/lifecycle/recommendation formula and **NEVER writes** (no setValues/appendRow/
+> insertRow/deleteRow/clear/LockService/CacheService/PersistencePlan/repository/draft). **Bundle:** the deterministic
+> bundle now ports **22** modules (added `KMSP` + `KMPS`), reproducible byte-for-byte (hash `bb0d44ce…`), full VM
+> load verified (bundle test **49**; `KMSP`/`KMPS` namespaces + API asserted). **Orchestrator seam REPLACED:**
+> `24_recommendation_orchestrator.gs` `rpoResolveFacts_` now delegates to `KMPS.resolveProductionFacts(
+> SpreadsheetApp.getActiveSpreadsheet(), body)` (bundled pure runtime; no `.gs` formula) — **the active
+> `SOURCE_READER_PENDING` return is REMOVED** (only a historical comment reference remains); the bundle guard now
+> requires `KMPS`/`KMSP`. **TEST VERIFIED (read-only, fake Sheets):** Weekly `recommendedQty 96` + Monthly
+> CEILING(13/12)×12 = `24` reach the Plan Builder from fake CANONICAL Sheets (not DTO-convention Sheets); the
+> production facts flow through the REAL `KMORCH.runRecommendationGeneration` with a fake locked-apply that CAPTURES
+> the plan (recommended_qty 96 in the captured plan) with **ZERO Sheet writes**; `persistenceStatus:'NOT_EXECUTED'`;
+> no draft id fabricated. Frozen decisions preserved via the reused runtime: **D-1** FACTORY pool `FACTORY_SHARED`
+> (one factory_stock row → one pool; warehouse owner change does not alter it); **D-2** factory as-of missing →
+> `SOURCE_AS_OF_MISSING`; **D-3** missing destination → `MISSING_DESTINATION_WAREHOUSE`; **D-4** legacy shipment
+> status → `UNSUPPORTED_LEGACY_STATUS` (issues propagate fail-closed, never swallowed). **No router route added**
+> (production source path is internal to the orchestrator; §20). Pure `KMPS` source-scanned (no SpreadsheetApp/
+> LockService/Cache/clock/random/locale); `27_.gs` source-scanned (no write/lock/persistence method, no business
+> formula). **STATUS: Projection Contract = FROZEN; Projection Runtime = SOURCE PRESENT / TEST VERIFIED; Apps Script
+> canonical-table read wrapper = SOURCE PRESENT / TEST VERIFIED; Projection bundle integration = TEST VERIFIED;
+> Production orchestrator source seam = SOURCE PRESENT / TEST VERIFIED; `SOURCE_READER_PENDING` active stub =
+> REMOVED / REPLACED; read-only Weekly + Monthly production paths = TEST VERIFIED; Production Persistence Writer /
+> LockService production write enforcement / Submit / Scheduler / Trigger = NOT IMPLEMENTED / NOT VERIFIED;
+> deployment / live Google Sheet verification = NOT PERFORMED.** Golden Matrix unchanged **39 / 1 / 0**; Scenario
+> #34 Pending.
+>
 > **Round 1S-P1.5B PRODUCTION SOURCE PROJECTION RUNTIME (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED):** the
 > frozen Production Source Projection Contract (SC-10/SC-11) is IMPLEMENTED as ONE new pure module
 > `assets/js/core/supply-planning-source-projection.js` (`window.KM.sourceProjection`; `…source-projection.test.js`,

@@ -327,6 +327,18 @@ override). No override is required if the projection emits the default names.
 > REQUIRED**, so per Round-spec §12/§23 this is a **HALT**. See **SC-10** for the full evidence + decision list;
 > **Round 1S-P2 stays BLOCKED**; `24_…` untouched.
 >
+> **SC-STATUS (Round 1S-P2, 2026-08-04):** the **Apps Script production source wiring** (SC-9 #2 / SC-6 wrapper) is
+> IMPLEMENTED / TEST VERIFIED — pure `assets/js/core/supply-planning-production-source.js` (`KMPS`;
+> `readCanonicalSnapshots` / `resolveProductionFacts` / `buildProductionRecommendationSource`; 43 assertions) + thin
+> `.gs` `27_recommendation_production_source.gs`. It reads the existing canonical Operation DB Sheets (getValues
+> only; **no `recommendation_source_*` Sheets**) → KMSP Projection → KMSRP Reader → whole chain → Plan Builder,
+> READ-ONLY (Weekly 96 / Monthly 24 from fake canonical Sheets; `persistenceStatus:'NOT_EXECUTED'`; zero writes).
+> **`24_recommendation_orchestrator.gs` `SOURCE_READER_PENDING` active stub is REPLACED** by
+> `KMPS.resolveProductionFacts` (the seam now flows through the REAL orchestrator to a captured plan with no write).
+> Bundle now 22 modules (KMSP + KMPS; hash `bb0d44ce…`). D-1..D-4 preserved via the reused runtime. **Production
+> Writer / LockService write enforcement / Submit / Scheduler = NOT IMPLEMENTED; no deploy.** SC-9 #3 remaining
+> (Option B replay; live receiving authority for delivered/received buckets) is future.
+>
 > **SC-STATUS (Round 1S-P1.5B, 2026-08-04):** the **Recommendation Source Projection Runtime** (SC-9 #1 / SC-5
 > Option C) is IMPLEMENTED / TEST VERIFIED — pure `assets/js/core/supply-planning-source-projection.js`
 > (`projectRecommendationProductionSources` / `projectAndRead`; 63 assertions). It projects canonical Operation DB

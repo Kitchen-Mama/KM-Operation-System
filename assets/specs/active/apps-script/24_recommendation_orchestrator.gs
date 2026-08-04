@@ -20,7 +20,8 @@
 // Guard: every bundle namespace the orchestrator needs must be present (fails closed when the bundle is absent).
 function rpoBundle_() {
   if (typeof KMORCH === 'undefined' || typeof KMPR === 'undefined' || typeof KMPL === 'undefined' ||
-      typeof KMPB === 'undefined' || typeof KMPPB === 'undefined' || typeof KMPC === 'undefined') {
+      typeof KMPB === 'undefined' || typeof KMPPB === 'undefined' || typeof KMPC === 'undefined' ||
+      typeof KMPS === 'undefined' || typeof KMSP === 'undefined') {
     throw new Error('Recommendation bundle (KMORCH/KMPR/KMPL/KMPB/KMPPB/KMPC) is not present in this Apps Script ' +
       'project — Round 1G is a source mirror; the generated bundle 90_generated_supply_planning_bundle.gs must be ' +
       'loaded into the project. No algorithm is duplicated in this file.');
@@ -36,15 +37,17 @@ function rpoEnsureSchema_(ss, type) {
   procurementEnsureSheet_(ss, KMPR.RUN_JOURNAL_TABLE, RECOMMENDATION_CALCULATION_RUNS_HEADERS_);
 }
 
-// Production source-fact reader — PENDING (§22). Until the calc/ledger/allocation → resolved-facts reader is
-// wired, resolved facts must be supplied by the caller (preview/generate) via body.facts; otherwise the run
-// BLOCKS with SOURCE_READER_PENDING. It NEVER fabricates data (no zero-filled draft).
+// Production source-fact reader — WIRED (Round 1S-P2). Resolved facts come from the bundled read-only production
+// source path: canonical Sheets → KMPS.readCanonicalSnapshots → KMSP Projection Runtime → KMSRP Production Reader
+// → Reader/Integration/Ledger/Allocation/Resolver/Bridge. Caller-supplied `body.facts` still short-circuits
+// (preview/manual). READ-ONLY: no write is invoked here — the historical `SOURCE_READER_PENDING` stub is replaced;
+// it BLOCKS fail-closed (never fabricates data) only when the projection itself reports not-ready.
 function rpoResolveFacts_(body) {
   if (body && body.facts && body.facts.lines) {
     return { lines: body.facts.lines, ready: body.facts.ready !== false, reason: body.facts.reason,
       formulaVersion: body.facts.formulaVersion, sourceDataAsOf: body.facts.sourceDataAsOf };
   }
-  return { lines: [], ready: false, reason: 'SOURCE_READER_PENDING' };
+  return KMPS.resolveProductionFacts(SpreadsheetApp.getActiveSpreadsheet(), body);   // bundled pure runtime; no formula here
 }
 
 // Router action: generateRecommendationDraftLocked.
