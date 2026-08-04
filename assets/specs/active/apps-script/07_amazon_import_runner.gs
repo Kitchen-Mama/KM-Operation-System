@@ -67,6 +67,11 @@ function clearAmazonImportTestLogs() {
 
 function runAmazonSnapshotImport_(config, triggeredBy, options) {
   options = options || {};
+  // Production Safety Round S0.5 (RULE S0-5): exact destination-id gate BEFORE any Amazon write. Fails closed
+  // (WRONG_SPREADSHEET_TARGET) if the configured Amazon destination id is blank or this run targets a different
+  // spreadsheet than configured. Amazon writes only data rows (row >= 2), never creates a Sheet, never rewrites a
+  // Header (see 09_ amazonWriteSnapshot_/amazonUpsertRollingSnapshot_) — this gate adds the missing id assertion.
+  prodAssertAmazonTarget_(config && config.destinationSpreadsheetId);
   var startedAt = amazonTimestamp_();
   var syncRunId = 'RUN-' + Utilities.getUuid().substring(0, 12);
   var syncBatchId = 'SYNC-' + config.destinationSheetName + '-' + Utilities.getUuid().substring(0, 8);

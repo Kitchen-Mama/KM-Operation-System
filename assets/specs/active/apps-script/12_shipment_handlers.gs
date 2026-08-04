@@ -137,17 +137,10 @@ function shipmentMarketplaceAbbrev_(marketplace) {
 }
 
 /** Get (or create with the documented header row) an Execution-Layer tab. */
+// Production Safety Round S0.5 (RULE S0-2/S0-5): VALIDATE-ONLY (no auto-create / no Header write). Delegates to the
+// shared safety adapter (29_); create is migration-only (prodMigrateCreateSheet_), unreachable from Runtime.
 function shipmentEnsureSheet_(ss, name, headers) {
-  var sh = ss.getSheetByName(name);
-  if (!sh) {
-    sh = ss.insertSheet(name);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    return sh;
-  }
-  if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) {
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-  return sh;
+  return prodRequireSheet_(ss, name, headers);
 }
 
 /** Append a row using the sheet's existing header row (writes only known columns). */

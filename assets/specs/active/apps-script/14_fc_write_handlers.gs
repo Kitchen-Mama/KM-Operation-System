@@ -50,34 +50,20 @@ function fcWriteTimestamp_() {
 }
 
 /** Get (or create with the documented header row) an FC write tab. */
+// Production Safety Round S0.5 (RULE S0-2/S0-5): VALIDATE-ONLY (no auto-create / no Header write). Delegates to the
+// shared safety adapter (29_); create is migration-only (prodMigrateCreateSheet_), unreachable from Runtime.
 function fcWriteEnsureSheet_(ss, name, headers) {
-  var sh = ss.getSheetByName(name);
-  if (!sh) {
-    sh = ss.insertSheet(name);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    return sh;
-  }
-  if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) {
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-  return sh;
+  return prodRequireSheet_(ss, name, headers);
 }
 
 /**
- * ADDITIVE column migration: ensure every header in `headers` exists in the live sheet's header row.
- * Missing headers are APPENDED to the end of row 1 (existing columns keep their position and data).
- * Never renames, reorders, or drops a live column. Safe to call on every write. Returns the count
- * of columns added. This is what lets new fields (campaign_id, marketplace_id, event_start_date, …)
- * persist on a sheet that predates them without a manual migration.
+ * Production Safety Round S0.5 (RULE S0-2): VALIDATE-ONLY. Normal Runtime no longer appends missing Header columns
+ * on write — any missing REQUIRED column fails closed (MISSING_REQUIRED_HEADER) with ZERO mutation. Additive column
+ * migration is migration-only (prodMigrateAppendColumns_ in 29_). Returns 0 (validate passed → nothing appended).
  */
 function fcWriteEnsureColumns_(sheet, headers) {
-  var lastCol = Math.max(1, sheet.getLastColumn());
-  var live = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
-  var missing = [];
-  headers.forEach(function (h) { if (h && live.indexOf(h) === -1 && missing.indexOf(h) === -1) missing.push(h); });
-  if (!missing.length) return 0;
-  sheet.getRange(1, live.length + 1, 1, missing.length).setValues([missing]);
-  return missing.length;
+  prodRequireColumns_(sheet, (headers || []).filter(function (h) { return !!h; }));
+  return 0;
 }
 
 /** Read a sheet as { headers, rows(values), col(name) }. */

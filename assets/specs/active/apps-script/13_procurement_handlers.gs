@@ -170,19 +170,12 @@ function procurementTierGroup_(buckets) {
 }
 
 /** Get (or create with the documented header row) a procurement tab in the operation DB. */
+// Production Safety Round S0.5 (RULE S0-2/S0-5): VALIDATE-ONLY. Normal Runtime no longer auto-creates the Sheet or
+// appends Header columns — it asserts the exact db target, requires the exact Sheet, validates the Header, and
+// returns it (or throws a deterministic safety token with ZERO mutation). Create/append is migration-only
+// (prodMigrateCreateSheet_ / prodMigrateAppendColumns_ in 29_production_safety_adapter.gs), unreachable from here.
 function procurementEnsureSheet_(ss, name, headers) {
-  var sh = ss.getSheetByName(name);
-  if (!sh) {
-    sh = ss.insertSheet(name);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    return sh;
-  }
-  if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) {
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-  // Ensure any newer columns exist on an already-created tab (uses shared global helper).
-  sheetEnsureColumns_(sh, headers);
-  return sh;
+  return prodRequireSheet_(ss, name, headers);
 }
 
 /** Append a row to a sheet using its existing header row (writes only known columns). */

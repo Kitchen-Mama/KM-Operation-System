@@ -62,34 +62,19 @@ function shippingPlanToday_() {
 }
 
 /** Get (or create with the documented header row) a Decision-Layer tab in the operation DB. */
+// Production Safety Round S0.5 (RULE S0-2/S0-5): VALIDATE-ONLY (no auto-create / no Header write). Delegates to the
+// shared safety adapter (29_); create is migration-only (prodMigrateCreateSheet_), unreachable from Runtime.
 function shippingPlanEnsureSheet_(ss, name, headers) {
-  var sh = ss.getSheetByName(name);
-  if (!sh) {
-    sh = ss.insertSheet(name);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    return sh;
-  }
-  // Tab exists; if it has no header row yet, write one.
-  if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) {
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-  return sh;
+  return prodRequireSheet_(ss, name, headers);
 }
 
 /**
- * Ensure the given column names exist in a sheet's header row; append any that are missing.
- * Lets new fields (e.g. completed_at / transferred_* / external_shipment_id) persist on an
- * already-created tab without a manual migration. Shared across handlers (single global scope).
+ * Production Safety Round S0.5 (RULE S0-2): shared VALIDATE-ONLY column guard (single global scope). Normal Runtime
+ * no longer appends missing Header columns — any missing REQUIRED column fails closed (MISSING_REQUIRED_HEADER) with
+ * ZERO mutation. Additive column migration is migration-only (prodMigrateAppendColumns_ in 29_), never on a write.
  */
 function sheetEnsureColumns_(sheet, names) {
-  if (!sheet || !names || !names.length) return;
-  var lastCol = sheet.getLastColumn();
-  var headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); }) : [];
-  var toAdd = [];
-  for (var i = 0; i < names.length; i++) {
-    if (headers.indexOf(names[i]) === -1 && toAdd.indexOf(names[i]) === -1) toAdd.push(names[i]);
-  }
-  if (toAdd.length) sheet.getRange(1, lastCol + 1, 1, toAdd.length).setValues([toAdd]);
+  return prodRequireColumns_(sheet, names);
 }
 
 /** Append a row to a sheet using its existing header row (writes only known columns). */

@@ -655,7 +655,42 @@ External Ingestion
 
 ---
 
-## §SAFE — Production Schema and Header Safety Contract (Production Safety Round S0, 2026-08-04)
+## §SAFE — Production Schema and Header Safety Contract (Production Safety Round S0 → S0.5, 2026-08-04)
+
+**Status: SYSTEM-WIDE ACTIVE RUNTIME INTEGRATION — SOURCE PRESENT / TEST VERIFIED (S0.5). Live generation/execution remains DISABLED; Submit remains BLOCKED; the live data incident remains OPEN pending verification-copy evidence.**
+
+### §SAFE.INT — Active Runtime Integration status (Production Safety Round S0.5)
+
+The six residual auto-create/auto-append ensure helpers were converted to **validate-only** delegators to a shared Apps Script safety adapter (`29_production_safety_adapter.gs`) around `KMSAFE`. Because these six are the **sole** Canonical-Sheet creation + Header-write chokepoint for every bound-database domain (proven: the only four `insertSheet` calls and every row-1 `setValues` lived inside them — zero direct bypass), refactoring them transitively secures every domain that routes through them:
+
+| Domain | Active path | Integration | Proof |
+|---|---|---|---|
+| Shared Safety Core (`KMSAFE`) | `supply-planning-production-safety.js` (bundled) | TEST VERIFIED | S0 (67) + S0.5 adapter |
+| Recommendation | `24_` generate → `KMPW.assertAuthorizedSchemasReady` | TEST VERIFIED | S0 (21) |
+| Shipping | `shippingPlanEnsureSheet_` / `sheetEnsureColumns_` → adapter | TEST VERIFIED | S0.5 write-spy (real source) |
+| Procurement | `procurementEnsureSheet_` / `sheetEnsureColumns_` → adapter | TEST VERIFIED | S0.5 write-spy (real source) |
+| Shipment | `shipmentEnsureSheet_` → adapter | TEST VERIFIED | S0.5 write-spy (real source) |
+| Inventory (factory/overseas) | `fcWriteEnsureSheet_` / `procurementEnsureSheet_` → adapter | TEST VERIFIED | S0.5 write-spy (real source) |
+| Forecast/FC + Campaign | `fcWriteEnsureSheet_` / `fcWriteEnsureColumns_` → adapter | TEST VERIFIED | S0.5 write-spy (real source) |
+| Amazon Import | `07_ runAmazonSnapshotImport_` → `prodAssertAmazonTarget_` (own proven-separate id) | TEST VERIFIED (exact-id gate; writers already row-≥2 / header-preserving / missing-fail-closed) | S0.5 + existing Amazon suites |
+
+- **Exact Spreadsheet-ID gate** now precedes every ensure-helper Canonical access (bound-db id `PRODUCTION_DB_SPREADSHEET_ID_`, intentionally EMPTY → fail closed until the verification-copy id is set; Amazon uses its own `AMAZON_DESTINATION_SPREADSHEET_ID_`). Recommendation's id was unified onto `PRODUCTION_DB_SPREADSHEET_ID_`.
+- **Auto-create REMOVED** from normal Runtime: missing Sheet → `SCHEMA_NOT_PROVISIONED`, zero writes, no `insertSheet`.
+- **Auto-repair REMOVED**: missing/blank/duplicate/reordered Header or missing required column → deterministic token (`HEADER_MISSING`/`HEADER_BLANK`/`HEADER_DUPLICATE`/`HEADER_ORDER_MISMATCH`/`MISSING_REQUIRED_HEADER`), zero writes, byte-identical, no row-1 `setValues`, no column append.
+- **Data-row writes preserved**: authorized upserts at row ≥ 2 still work unchanged.
+
+### §SAFE.MIG — Migration-only registry (RULE S0-3; NOT executed this round)
+
+Legitimate schema setup capability is retained ONLY behind explicit Migration authorization, unreachable from any router action (proven: no handler file invokes them):
+
+| Helper | File | Capability | Authorization | Runtime-reachable | Status |
+|---|---|---|---|---|---|
+| `prodMigrateCreateSheet_` | `29_` | `insertSheet` + write Header | valid Migration DTO (8 fields) | **false** | KEEP_MIGRATION_ONLY |
+| `prodMigrateAppendColumns_` | `29_` | append missing Header columns | valid Migration DTO | **false** | KEEP_MIGRATION_ONLY |
+
+Legacy tables that predate a newer column now surface `MISSING_REQUIRED_HEADER` (migrate-first) instead of self-healing — this is intended. No migration was authored or executed this round; a versioned Migration engine remains a later round.
+
+---
 
 **Status: LANDED / SOURCE PRESENT / TEST VERIFIED (pure layer + recommendation path); live generation remains DISABLED; Submit remains BLOCKED; the live data incident remains OPEN pending verification-copy evidence.**
 
