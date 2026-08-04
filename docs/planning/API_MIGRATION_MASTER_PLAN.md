@@ -128,7 +128,7 @@ Cache suitability: master-data sections (sku_details, marketplaces, carriers) ar
 ## 10. Functional gap checkpoints (part of the API roadmap)
 
 - **F1 — Post-Inventory Functional Gap Baseline** — *produced by this round* (`FUNCTIONAL_REACHABILITY_AUDIT.md`).
-- **F2 — After API Foundation (API-2):** re-run the F1 matrix; confirm **no currently-connected function lost** (parity with `KM.DB.*`).
+- **F2 — After API Foundation:** re-run the F1 matrix; confirm **no currently-connected function lost** (parity with `KM.DB.*`). **✅ ESTABLISHED (source/test-proven) 2026-08-04, Round API-1.5** — `API_FUNCTIONAL_COVERAGE_F2.md` + `API_FOUNDATION_COMPATIBILITY_AUDIT.md`: Foundation inert/zero-I/O, `KM.DB` authority preserved via **call-time resolution** (one stale-capture defect found + fixed), flag-off legacy parity, flag-on unimplemented workspaces fail-closed, no dual execution, no false-success (rejection→`success:false`; resolved `{success:false}` preserved in `data`), 62/62 Router actions guard-allowed, all pages source-proven unaffected (live rendering = browser-smoke, OPEN). New tests: `km-api-foundation-compat.test.js` 41/0 (+ API-1 56/0 = 97). Browser-smoke + per-slice flag + requestId/timing remain API-2 items.
 - **F3 — After each Vertical Slice (API-3/4…):** diff old vs new reachability for the migrated page; every FULLY_CONNECTED control must remain FULLY_CONNECTED.
 - **F4 — Before Legacy Retirement:** prove every retired action has a working replacement (SOURCE- or TEST-PROVEN).
 - **F5 — Before Production Cutover:** full page-by-page functional verification on the **Verification Copy** (S0.5 gate; before/after diff + rollback).

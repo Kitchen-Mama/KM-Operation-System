@@ -110,7 +110,14 @@
     (function () { for (var k in FEATURE_FLAGS_DEFAULT) flags[k] = FEATURE_FLAGS_DEFAULT[k]; })();
     if (isObj(deps.flags)) { for (var f in deps.flags) flags[f] = deps.flags[f]; }
 
-    var legacy = deps.legacy || (typeof window !== 'undefined' && window.KM && window.KM.DB) || {};
+    // Legacy authority is resolved at CALL TIME (never captured once) unless a fixed instance is injected
+    // (tests). This prevents a stale-KM.DB reference if window.KM.DB is attached/replaced after the
+    // Foundation loads — the LegacyAdapter always delegates to the currently-active KM.DB. (API-1.5 fix.)
+    var injectedLegacy = deps.legacy || null;
+    function resolveLegacy() {
+      if (injectedLegacy) return injectedLegacy;
+      return (typeof window !== 'undefined' && window.KM && window.KM.DB) || {};
+    }
 
     // ---- forbidden set (frozen mirror + optional injected extras) --------------------------------------
     var _forbidden = {};
@@ -190,17 +197,18 @@
 
     // ---- LegacyAdapter — the backward-compatibility bridge to KM.DB.* / WEB_APP_FETCH ------------------
     var legacyAdapter = {
-      hasCommand: function (action) { return typeof legacy[normName(action)] === 'function'; },
+      resolve: resolveLegacy,
+      hasCommand: function (action) { return typeof resolveLegacy()[normName(action)] === 'function'; },
       command: function (action, payload) {
-        var a = normName(action);
-        if (typeof legacy[a] !== 'function') { var e = new Error('legacy command not found: ' + a); e.apiCode = API_ERROR_CODES.UNKNOWN_ACTION; throw e; }
-        return Promise.resolve(legacy[a](payload));
+        var lg = resolveLegacy(), a = normName(action);
+        if (typeof lg[a] !== 'function') { var e = new Error('legacy command not found: ' + a); e.apiCode = API_ERROR_CODES.UNKNOWN_ACTION; return Promise.reject(e); }
+        try { return Promise.resolve(lg[a](payload)); } catch (err) { return Promise.reject(err); }   // preserve a legacy throw as a rejection (→ structured error)
       },
       read: function (name, params) {
-        var d = getWorkspace(name);
+        var lg = resolveLegacy(), d = getWorkspace(name);
         var reader = (d && d.legacyRead) || 'getOperationDb';
-        if (typeof legacy[reader] !== 'function') { var e = new Error('legacy reader not found: ' + reader); e.apiCode = API_ERROR_CODES.LEGACY_ADAPTER_MISSING; throw e; }
-        return Promise.resolve(legacy[reader](params));
+        if (typeof lg[reader] !== 'function') { var e = new Error('legacy reader not found: ' + reader); e.apiCode = API_ERROR_CODES.LEGACY_ADAPTER_MISSING; return Promise.reject(e); }
+        try { return Promise.resolve(lg[reader](params)); } catch (err) { return Promise.reject(err); }
       }
     };
 

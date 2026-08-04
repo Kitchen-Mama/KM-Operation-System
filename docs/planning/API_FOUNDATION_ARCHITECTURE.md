@@ -114,6 +114,14 @@ Uniform for every current and future API response. `meta.cached` is always `fals
 ```
 **A raw String is never thrown across the boundary.** Any thrown value (Error, safety token, even a bare string) is mapped by `errorFromException` into a structured `errors[]` entry. Canonical `code` taxonomy: `INVALID_REQUEST`, `UNKNOWN_ACTION`, `UNKNOWN_WORKSPACE`, `WORKSPACE_NOT_IMPLEMENTED`, `FORBIDDEN_OPERATION`, `LEGACY_ADAPTER_MISSING`, `TRANSPORT_NOT_CONFIGURED`, `TRANSPORT_ERROR`, `INTERNAL_ERROR`. A KMSAFE `safetyToken` maps to `FORBIDDEN_OPERATION` with the token preserved in `details`.
 
+### 8.1 Contract clarifications (Round API-1.5, 2026-08-04)
+
+- **`apiVersion` is the string `"1"`** (canonical) — not `"v1"`. `errors[]` (array) is canonical — there is no singular-`error` variant.
+- **`envelope.success` is transport-level** — it means "the delegated/dispatched call resolved without throwing", **not** a reinterpretation of business status (that would be business logic). A **resolved** legacy `{success:false}` is preserved **verbatim in `data`** (business status intact); a legacy **rejection/throw** becomes `envelope.success:false`. When API-2 cuts a page over to `executeCommand`, that slice must map a resolved business `{success:false}` into `errors` (or read `data.success`).
+- **Legacy authority is resolved at CALL TIME.** The LegacyAdapter no longer captures `window.KM.DB` once at construction; it resolves the currently-active `KM.DB` on each call (unless a fixed legacy is injected for tests). This removes any stale-reference risk if `KM.DB` is attached/replaced after the Foundation loads (API-1.5 fix; `API_FOUNDATION_COMPATIBILITY_AUDIT.md` §4).
+- **`requestId` / server timing are NOT emitted** by the Foundation and are not claimed — deferred to API-2 hardening (`requestId` is a correlation id, **not** an idempotency key; server timing is never fabricated on the client).
+- **Feature flag is a single GLOBAL boolean today.** Per-workspace enablement (enable Weekly Shipping alone) is a **frozen API-2 requirement**, not implemented here — see `API_FUNCTIONAL_COVERAGE_F2.md` §4.
+
 ---
 
 ## 9. Security — KMSAFE forbidden-operation guard
