@@ -37,7 +37,8 @@
 | **RETIRE_AFTER_API_CUTOVER** | `createShipmentFromPlan` (retry twin), `updatePurchaseOrderLine` (superseded by header edit until UI decided) |
 | **DO_NOT_API_YET** | `generateRecommendationDraftLocked`, `submitRequestOrderAllocationDrafts`, `submitShippingAllocationDrafts`, admin one-offs (audit/backfill/retire/seed) — Submit & engine boundaries unresolved |
 | **REMOVE_DEAD_CODE_LATER** | fc `saveNewSku`/`openAddSkuModal` (dead), home Add-Todo dead render, legacy fc Edit buttons |
-| **REQUIRES_MAPPING_DECISION** | `getWeeklyPlanRateCandidates`, `updateShippingPlanRationale`, `selectShippingPlanCarrier`, `combineShippingPlans`, `uncombineShippingPlans` (handler missing in mirror; owner + UI undecided) |
+| **CONTRACT_PENDING_IMPLEMENTATION** | `getWeeklyPlanRateCandidates` (engine `shippingRoughRateCandidates_` exists, orphaned — needs handler), `updateShippingPlanRationale`, `selectShippingPlanCarrier` — WSR-1 reconciled: never committed, contract canonical (`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §3.1A); land as a later Weekly **advanced** slice |
+| **DEAD_OR_LEGACY_CANDIDATE** | `combineShippingPlans`, `uncombineShippingPlans` — WSR-1: **SPEC-SUPERSEDED** by the derived-`MULTI` model (B-2); do not implement; retire stubs later (user decision). See `WEEKLY_SHIPPING_PLAN_HANDLER_RECONCILIATION.md` |
 
 ---
 
