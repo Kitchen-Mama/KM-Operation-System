@@ -6,6 +6,27 @@
 
 ---
 
+## Entry — 2026-08-04 · RG-1 Manual Release Control (audit + guardrail)
+
+```
+Release ID:                  RG-2026-08-04-manual-release-control
+Environment:                 (none — NOT DEPLOYED, NOT PUSHED)
+Git branch:                  main
+Git state:                   local ahead 41 / behind 0 vs last-known origin/main 0ea7838 (all local-only, unpushed)
+Auto-push found:             NO (LOCAL_COMMIT_ONLY) — no hooks / no Actions / no clasp / no scripts / no VS Code task / no push alias
+External candidates:         GitHub Desktop, VS Code "Sync" or user-level git.postCommitCommand, cloud folder sync (user-machine, not in repo)
+Ownership frozen:            AUTOMATIC_REMOTE_WRITE=PROHIBITED · DEFAULT_BOUNDARY=LOCAL_COMMIT_ONLY · PUSH_OWNER=USER · APPS_SCRIPT_SYNC_OWNER=USER · DEPLOYMENT_OWNER=USER
+Changed files:              CLAUDE.md (new — REMOTE WRITE PROHIBITION); DEPLOYMENT_RELEASE_GOVERNANCE.md §0; DEPLOYMENT_RELEASE_LOG.md   → all GIT_ONLY / DOCUMENTATION_ONLY
+Apps Script files synced:    NONE
+Deployment:                  NONE
+Smoke-test result:           n/a — governance/instruction only; no business code changed
+Notes:                       No remote command executed this round. User next action = review, then manually `git push origin main` if desired (see CLAUDE.md / §0).
+```
+
+**STATUS: NOT DEPLOYED · NOT PUSHED.**
+
+---
+
 ## Reusable entry template
 
 ```

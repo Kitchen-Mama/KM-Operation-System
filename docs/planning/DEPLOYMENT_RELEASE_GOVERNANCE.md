@@ -5,6 +5,24 @@
 
 ---
 
+## 0. Manual-release control + automation audit (RG-1, 2026-08-04)
+
+**Frozen ownership:** `AUTOMATIC_REMOTE_WRITE = PROHIBITED` · `DEFAULT_BOUNDARY = LOCAL_COMMIT_ONLY` · `PUSH_OWNER = USER` · `APPS_SCRIPT_SYNC_OWNER = USER` · `DEPLOYMENT_OWNER = USER`. The agent's maximum default action is one **local commit**; it never pushes or deploys without a separate explicit user command (enforced by the repo-root `CLAUDE.md` **REMOTE WRITE PROHIBITION**).
+
+**Repository automation audit result (read-only, no remote command executed):** **no repository-level auto-push or auto-deploy exists.** Verified:
+- **Git hooks:** `core.hooksPath` unset; `.git/hooks/` holds only `*.sample` (inactive) — **no active post-commit / pre-push / post-merge hook**.
+- **Git config:** only `remote.origin.url` (https) + standard fetch refspec + `branch.main.remote/merge=origin/main`; **no `push.default` combining, no commit-and-push alias, no `remote.pushDefault`**; global config has no push/alias directives.
+- **GitHub Actions:** **none** (no `.github/` directory).
+- **clasp / Apps Script:** **no `.clasp.json`**, no `appsscript.json`, no deploy config in the repo.
+- **VS Code:** `.vscode/settings.json` = `{kiroAgent.configureMCP:Disabled}` only; `Oeration.code-workspace` = a folder reference only; **no task, `git.postCommitCommand`, or auto-sync directive**.
+- **Agent config:** `.claude/settings*.json` are Bash **permission allowlists only** — no hooks, no push/deploy.
+- **Scripts / CI:** no `package.json`, no `Makefile`, no `*.ps1/*.sh/*.bat/*.cmd`, no `netlify/vercel/gitlab/azure/firebase` config; **zero `git push` / `gh` / `clasp` remote-write commands** anywhere in code/config.
+- **Git state:** local `main` is **ahead 41 / behind 0**; last-known `origin/main` = `0ea7838` — i.e. **every commit of this work stream is local-only, unpushed**.
+
+**Conclusion / classification = `LOCAL_COMMIT_ONLY`.** From repository + local Git evidence, **auto-push is not present and not provable**. If GitHub nonetheless appears to update, the cause is **external to the repo** (`UNKNOWN_REQUIRES_USER_EVIDENCE`) — candidate sources the user should check: **GitHub Desktop** (auto-push habit / the Push button), **VS Code Source Control "Sync"** or a **user-level `git.postCommitCommand: "sync"/"push"`** setting (outside `.vscode`), the **VS Code Git `git.autofetch`** (fetch only, not push), or **cloud folder sync** (OneDrive/Google Drive/Dropbox) mirroring the working folder (not a Git push). None of these live in the repository, so none can be disabled from here — they are user-machine settings.
+
+---
+
 ## 1. Source of truth (frozen)
 
 | Authority | Role | Rule |
