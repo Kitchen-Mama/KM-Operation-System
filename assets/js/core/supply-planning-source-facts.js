@@ -527,6 +527,182 @@
     };
   }
 
+  // ---- Weekly Recommendation Facts resolver (Round 1M; §2C.1/§31; calls the named helpers) --------------
+  // PURE. Consumes the REAL projectAllocationInputs output + caller Weekly planning facts, derives the Weekly
+  // recommendedQty via the named calculateShippingAndResidual FLOOR helper (§31/§2C.1 — never reimplemented) and
+  // calculatedGap via calculateGap, and returns deterministic Weekly line facts for the FUTURE Plan Builder.
+  // No Monthly carton CEILING, no order_qty, no planned_qty, no Plan Builder call, no persistence, no Sheet read.
+  var WEEKLY_LINE_KEY = ['sku', 'site_sku', 'window_code']; // frozen §WEEKLY_SHIPPING grain (persistence repo)
+  var KEY_SEP = '';
+
+  function projectAllocationRecords(alloc, source, mode) {
+    // returns { byDemand: {demandKey:[records]}, unalloc: {demandKey: qty} }
+    var byDemand = {}, unalloc = {};
+    if (!alloc) return { byDemand: byDemand, unalloc: unalloc };
+    (alloc.allocations || []).forEach(function (a) {
+      var k = str(a.demandKey);
+      if (!byDemand[k]) byDemand[k] = [];
+      byDemand[k].push({
+        allocationKey: str(a.allocationKey), sourcePoolKey: str(a.sourcePoolKey), sourcePoolType: str(a.sourcePoolType),
+        sourceWarehouseId: str(a.sourceWarehouseId), allocatedQty: a.allocatedQty, allocationSequence: a.allocationSequence,
+        allocationReason: str(a.allocationReason), allocationSource: source, allocationMode: mode
+      });
+    });
+    (alloc.unallocatedDemand || []).forEach(function (u) { var k = str(u.demandKey); unalloc[k] = (unalloc[k] || 0) + u.unallocatedQty; });
+    return { byDemand: byDemand, unalloc: unalloc };
+  }
+
+  function resolveWeeklyRecommendationFacts(input) {
+    aType(isObj(input), 'resolveWeeklyRecommendationFacts: input must be an object');
+    aType(typeof input.planningCycle === 'string' && input.planningCycle.length > 0, 'resolveWeeklyRecommendationFacts: planningCycle required');
+    aType(isObj(input.businessScope), 'resolveWeeklyRecommendationFacts: businessScope required');
+    var ap = input.allocationProjection; aType(isObj(ap), 'resolveWeeklyRecommendationFacts: allocationProjection required');
+    var facts = input.weeklyPlanningFacts == null ? [] : input.weeklyPlanningFacts;
+    aType(Array.isArray(facts), 'resolveWeeklyRecommendationFacts: weeklyPlanningFacts must be an array');
+    var planningCycle = str(input.planningCycle);
+    var scope = input.businessScope;
+    var formulaVersion = input.formulaVersion == null ? null : input.formulaVersion;
+    var sourceDataAsOf = input.sourceDataAsOf === undefined ? (ap.sourceDataAsOf === undefined ? null : ap.sourceDataAsOf) : input.sourceDataAsOf;
+
+    var issues = [];
+    function addIssue(key, reason) { issues.push({ key: key, reason: reason }); }
+
+    // Index REAL allocation records by demandKey (overseas + factory; kept distinguishable).
+    var ov = projectAllocationRecords(ap.overseasAllocation, 'OVERSEAS', ap.overseasAllocation ? ap.overseasAllocation.allocationMode : null);
+    var fa = projectAllocationRecords(ap.factoryAllocation, 'FACTORY', 'FACTORY_DETERMINISTIC');
+    var blockedDemandKeys = {};
+    (ap.blockedInputs || []).forEach(function (b) { if (b.kind === 'DEMAND') blockedDemandKeys[str(b.key)] = str(b.reason); });
+
+    // calculatedGap: caller value OR the named calculateGap owner (never UI fields).
+    function resolveGap(f) {
+      if (f.calculatedGap !== undefined && f.calculatedGap !== null) {
+        return (typeof f.calculatedGap === 'number' && isFinite(f.calculatedGap) && f.calculatedGap >= 0) ? f.calculatedGap : NaN;
+      }
+      if (f.demand !== undefined && f.destinationCurrentStock !== undefined && f.timelyQualifiedIncoming !== undefined && f.timelyApprovedCommittedSupply !== undefined) {
+        try { return CALC.calculateGap({ demand: f.demand, destinationCurrentStock: f.destinationCurrentStock, timelyQualifiedIncoming: f.timelyQualifiedIncoming, timelyApprovedCommittedSupply: f.timelyApprovedCommittedSupply }); }
+        catch (e) { return NaN; }
+      }
+      return undefined; // missing
+    }
+    function validUpc(v) { return (typeof v === 'number' && isFinite(v) && v > 0 && Math.floor(v) === v); }
+
+    var lines = [], seenLineKey = {};
+    for (var i = 0; i < facts.length; i++) {
+      var f = facts[i]; aType(isObj(f), 'resolveWeeklyRecommendationFacts: weeklyPlanningFacts[' + i + '] must be an object');
+      var recType = nonEmpty(f.recommendationType) ? str(f.recommendationType) : 'WEEKLY_SHIPPING';
+      if (recType !== 'WEEKLY_SHIPPING') { addIssue(str(f.demandKey), 'NOT_WEEKLY_RECOMMENDATION_TYPE:' + recType); continue; } // Monthly distinguishable
+      var sku = str(f.sku !== undefined ? f.sku : f.masterSku), siteSku = str(f.siteSku), windowCode = str(f.windowCode), demandKey = str(f.demandKey);
+      // structural key parts (line-blocking issues, not throws)
+      var blockedReason = null;
+      if (!nonEmpty(sku)) blockedReason = 'MISSING_SKU';
+      else if (!nonEmpty(windowCode)) blockedReason = 'MISSING_WINDOW_CODE';
+      else if (windowCode.indexOf(KEY_SEP) !== -1 || siteSku.indexOf(KEY_SEP) !== -1 || sku.indexOf(KEY_SEP) !== -1) blockedReason = 'INVALID_NATURAL_KEY_PART';
+      else if (!nonEmpty(demandKey)) blockedReason = 'MISSING_DEMAND_KEY';
+
+      var lineKey = [sku, siteSku, windowCode].join(KEY_SEP);
+      if (nonEmpty(sku) && nonEmpty(windowCode) && windowCode.indexOf(KEY_SEP) === -1) {
+        if (seenLineKey[lineKey] === 1) throw new RangeError('resolveWeeklyRecommendationFacts: duplicate Weekly line key: ' + sku + '|' + siteSku + '|' + windowCode);
+        seenLineKey[lineKey] = 1;
+      }
+
+      // gather REAL allocation records for this demand (overseas OR factory)
+      var recs = (blockedReason ? [] : (ov.byDemand[demandKey] || []).concat(fa.byDemand[demandKey] || []));
+      var unallocatedQty = blockedReason ? 0 : ((ov.unalloc[demandKey] || 0) + (fa.unalloc[demandKey] || 0));
+      var totalAllocated = 0; recs.forEach(function (r) { totalAllocated += r.allocatedQty; });
+      var breakdown = recs.slice().sort(function (a, b) { return cmpStr(a.sourcePoolKey, b.sourcePoolKey) || (a.allocationSequence - b.allocationSequence); });
+      var lineMode = null;
+      if (recs.length) { lineMode = recs[0].allocationSource === 'OVERSEAS' ? recs[0].allocationMode : 'FACTORY_DETERMINISTIC'; }
+
+      // blocked demand from Ledger/Allocation
+      if (!blockedReason && blockedDemandKeys[demandKey]) blockedReason = blockedDemandKeys[demandKey];
+
+      // gap + UPC (line-blocking if missing/invalid)
+      var gap = blockedReason ? undefined : resolveGap(f);
+      if (!blockedReason) {
+        if (gap === undefined) blockedReason = 'MISSING_CALCULATED_GAP';
+        else if (typeof gap !== 'number' || isNaN(gap)) blockedReason = 'INVALID_CALCULATED_GAP';
+        else if (!validUpc(f.unitsPerCarton)) blockedReason = 'MISSING_OR_INVALID_UNITS_PER_CARTON';
+      }
+
+      var recommendedQty = null;
+      if (!blockedReason) {
+        // Weekly recommendedQty = named FLOOR helper over the ALLOCATED source (never Monthly CEILING).
+        var shipRes = CALC.calculateShippingAndResidual({
+          calculatedGap: gap, eligibleSourceAvailable: totalAllocated,
+          otherLegallyAllocatedTimelySupply: (typeof f.otherLegallyAllocatedTimelySupply === 'number' ? f.otherLegallyAllocatedTimelySupply : 0),
+          unitsPerCarton: f.unitsPerCarton
+        });
+        recommendedQty = shipRes.recommendedShippingQty; // FLOOR to whole cartons; ≤ allocated ≤ gap
+      }
+
+      // "single source" = ONE distinct source pool (the allocator may emit >1 record per pool: survival + weighted).
+      var poolSet = {}, distinctPools = [];
+      breakdown.forEach(function (b) { if (!poolSet[b.sourcePoolKey]) { poolSet[b.sourcePoolKey] = 1; distinctPools.push(b.sourcePoolKey); } });
+      var single = (distinctPools.length === 1);
+      var lineage = [];
+      if (nonEmpty(demandKey)) lineage.push('demand:' + demandKey);
+      breakdown.forEach(function (b) { lineage.push('alloc:' + b.allocationKey); });
+      lineage.sort(cmpStr);
+
+      var line = {
+        lineKey: lineKey,
+        recommendationType: 'WEEKLY_SHIPPING',
+        planningCycle: planningCycle,
+        businessScope: scope,
+        company: nonEmpty(f.company) ? str(f.company) : (scope.company == null ? null : str(scope.company)),
+        country: nonEmpty(f.country) ? str(f.country) : (scope.country == null ? null : str(scope.country)),
+        marketplace: nonEmpty(f.marketplace) ? str(f.marketplace) : (scope.marketplace == null ? null : str(scope.marketplace)),
+        masterSku: sku, siteSku: siteSku, destinationWarehouseId: nonEmpty(f.destinationWarehouseId) ? str(f.destinationWarehouseId) : null,
+        windowCode: windowCode, demandKey: demandKey,
+        calculatedGap: (blockedReason && (gap === undefined || typeof gap !== 'number' || isNaN(gap))) ? null : gap,
+        recommendedQty: recommendedQty,
+        allocationMode: lineMode,
+        allocationBreakdown: breakdown,
+        unallocatedQty: unallocatedQty,
+        sourcePoolKey: single ? breakdown[0].sourcePoolKey : null,
+        sourcePoolType: single ? breakdown[0].sourcePoolType : null,
+        sourceWarehouseId: single ? breakdown[0].sourceWarehouseId : null,
+        blockedReason: blockedReason,
+        formulaVersion: formulaVersion,
+        sourceDataAsOf: sourceDataAsOf,
+        lineage: lineage
+      };
+      if (f.liveAnalysis !== undefined) line.liveAnalysis = f.liveAnalysis; // non-authoritative passthrough (§19)
+      lines.push(line);
+    }
+
+    lines.sort(function (a, b) { return cmpStr(a.lineKey, b.lineKey); });
+    issues.sort(function (a, b) { return cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+
+    var totalRecommendedQty = 0; lines.forEach(function (l) { if (typeof l.recommendedQty === 'number') totalRecommendedQty += l.recommendedQty; });
+    var lineageSet = {}, lineage = [];
+    lines.forEach(function (l) { l.lineage.forEach(function (k) { if (!lineageSet[k]) { lineageSet[k] = 1; lineage.push(k); } }); });
+    lineage.sort(cmpStr);
+
+    var clean = (issues.length === 0);
+    return {
+      ready: clean,
+      status: clean ? 'OK' : 'ISSUES_PRESENT',
+      reason: clean ? null : issues[0].reason,
+      issues: issues,
+      recommendationType: 'WEEKLY_SHIPPING',
+      planningCycle: planningCycle,
+      businessScope: scope,
+      lines: lines,
+      allocationSummary: {
+        overseasAllocationMode: ap.overseasAllocation ? ap.overseasAllocation.allocationMode : null,
+        factoryPresent: !!ap.factoryAllocation,
+        lineCount: lines.length,
+        blockedLineCount: lines.filter(function (l) { return l.blockedReason !== null; }).length,
+        totalRecommendedQty: totalRecommendedQty
+      },
+      blockedInputs: (ap.blockedInputs || []).slice(),
+      sourceDataAsOf: sourceDataAsOf,
+      formulaVersion: formulaVersion,
+      lineage: lineage
+    };
+  }
+
   return {
     READINESS_STATES: (function () { var o = {}; for (var k in READINESS_STATES) o[k] = 1; return o; })(),
     CURRENT_STOCK_POOL_TYPES: (function () { var o = {}; for (var k in CURRENT_STOCK_POOL_TYPES) o[k] = 1; return o; })(),
@@ -539,6 +715,7 @@
     projectCurrentStockSupplyLedger: projectCurrentStockSupplyLedger,
     adaptIncomingSupplyCandidates: adaptIncomingSupplyCandidates,
     projectSupplyLifecycle: projectSupplyLifecycle,
-    projectAllocationInputs: projectAllocationInputs
+    projectAllocationInputs: projectAllocationInputs,
+    resolveWeeklyRecommendationFacts: resolveWeeklyRecommendationFacts
   };
 });
