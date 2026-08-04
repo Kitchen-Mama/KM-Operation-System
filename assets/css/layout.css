@@ -241,8 +241,55 @@
     display: none !important;
 }
 
+/* ========================================
+   Sidebar visual hierarchy (FC hotfix 2026-08-04)
+   Level 1 (group headers / standalone items) must read distinctly from Level 2
+   (expanded children). Uses existing brand tokens (--soft-green / --warm-orange)
+   + the established zinc neutrals. Non-color cues (weight, indent, guide rail,
+   caret, surface tone) carry the hierarchy so it is not conveyed by color alone.
+======================================== */
+
+/* Level 1 — standalone first-level items share the group-header weight */
+.sidebar > .menu-item {
+    font-weight: var(--font-weight-semibold);
+}
+
+/* Level 1 EXPANDED — subtle brand-green inset accent + brighter label */
+.menu-parent.is-open {
+    background: #202024;
+    color: #fafafa;
+    box-shadow: inset 3px 0 0 0 var(--soft-green);
+}
+
+/* Level 2 — expanded children sit on a slightly lighter, recessed surface */
+.menu-children.is-open {
+    background: #1c1c20;
+}
+
+/* Level 2 items — smaller, lighter weight, muted, stronger indent, continuous
+   left guide rail; clearly subordinate to Level 1 */
 .menu-children .menu-item {
-    font-weight: 400;
+    font-weight: var(--font-weight-normal);
+    font-size: var(--font-size-small);
+    color: #a1a1aa;
+    padding-left: 1.6rem;
+    border-bottom-color: #232327;
+    border-left: 2px solid #3f3f46;
+}
+
+.menu-children .menu-item:hover {
+    background: var(--warm-orange);
+    color: #ffffff;
+}
+
+/* Level 2 ACTIVE — brand green, high-contrast, distinct from a Level-1 active
+   item (which keeps the warm-orange left border); child active uses a white
+   inset guide so parent-active and child-active never look identical */
+.menu-children .menu-item.active {
+    background: var(--soft-green);
+    color: #ffffff;
+    font-weight: var(--font-weight-semibold);
+    border-left: 3px solid #ffffff;
 }
 
 /* ========================================

@@ -584,7 +584,9 @@ window.initFcSummaryPage = function() {
 // BASE FC EDITING FUNCTIONALITY
 // ========================================
 
-// Edit state
+// Edit state. `dirty` is an identity-keyed overlay (never mutates the live source): key -> { identity,
+// base:{months:[12]}, months:{monthIdx:intVal}, invalid:Set }. `editRows` = the immutable snapshot of the exact
+// rows currently loaded under the active filter/search scope when edit mode was entered (§6 editable scope).
 const fcEditState = {
   isEditing: false,
   isEditingEvent: false,
@@ -592,167 +594,283 @@ const fcEditState = {
   modifiedRows: new Map(),
   modifiedEventRows: new Map(),
   originalData: null,
-  originalEventData: null
+  originalEventData: null,
+  dirty: new Map(),
+  editRows: null
 };
+
+function _fcUp(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+
+// The SAME Regular source the read view uses (Demo -> demo mapping; else Google Sheet fc_regular_forecast).
+function _fcRegularEditSource() {
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    return _getDemoFcRegularData();
+  }
+  return _getDbFcRegularData();
+}
+
+// PURE — canonical full business identity for a Regular Forecast row (never SKU alone, never row index).
+function fcRowIdentityKey(row) {
+  row = row || {};
+  return [_fcUp(row.year), _fcUp(row.company), _fcUp(row.country), _fcUp(row.marketplace), _fcUp(row.sku)].join('|');
+}
+
+// PURE — validate one Base-FC month input. fc_regular_forecast months are whole non-negative units. Explicit "0"
+// is valid; blank is INVALID (never silently 0); decimals/negatives/non-numbers are rejected visibly. No locale.
+function fcValidateMonthRaw(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (s === '') return { valid: false, reason: 'blank', value: null };
+  if (!/^\d+$/.test(s)) return { valid: false, reason: 'not-a-nonneg-integer', value: null };
+  var n = Number(s);
+  if (!isFinite(n)) return { valid: false, reason: 'not-finite', value: null };
+  return { valid: true, value: n };
+}
+
+// PURE — build the canonical write payload from dirty entries. ROW-level delta (only changed rows), each row a
+// FULL 12-month upsert vector = original months with edited months replaced (unchanged months preserved exactly).
+// dirtyEntries: Array<{ identity:{year,company,country,marketplace,sku}, base:{months:[12]}, months:{idx:int} }>.
+function fcBuildRegularWriteRows(dirtyEntries) {
+  var out = [];
+  (dirtyEntries || []).forEach(function (e) {
+    var id = e.identity || {};
+    var row = { sku: id.sku, year: id.year, company: id.company, country: id.country, marketplace: id.marketplace };
+    for (var i = 0; i < REG_MONTH_KEYS.length; i++) {
+      var override = e.months && Object.prototype.hasOwnProperty.call(e.months, i) ? e.months[i] : null;
+      var baseVal = (e.base && e.base.months && e.base.months[i] != null) ? e.base.months[i] : 0;
+      row[REG_MONTH_KEYS[i]] = (override == null) ? baseVal : override;
+    }
+    out.push(row);
+  });
+  return out;
+}
 
 // Enter edit mode
 function enterFcEditMode() {
-  // Show confirmation modal
+  // Show confirmation modal (existing UX preserved)
   showFcModal('fc-edit-confirm-modal');
 }
 
-// Confirm edit mode
+// Confirm edit mode — snapshot the exact currently-loaded Regular rows, lock scope-changing controls, render editable.
 function confirmFcEdit() {
   closeFcModal();
   fcEditState.isEditing = true;
-  fcEditState.originalData = JSON.parse(JSON.stringify(fcRegularMock));
-  
-  // Update UI
-  document.getElementById('fc-edit-btn').style.display = 'none';
-  document.getElementById('fc-add-btn').style.display = 'none';
-  document.getElementById('fc-save-btn').style.display = 'inline-block';
-  document.getElementById('fc-cancel-btn').style.display = 'inline-block';
-  
-  // Re-render with editable cells
+  fcEditState.dirty = new Map();
+  // Immutable snapshot of the currently-loaded (filtered + paginated) live rows.
+  var filters = getFcFilters();
+  var src = _fcRegularEditSource();
+  var filtered = filterFcRegular(src, filters);
+  var startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
+  var endIdx = startIdx + fcPaginationState.pageSize;
+  fcEditState.editRows = JSON.parse(JSON.stringify(filtered.slice(startIdx, endIdx)));
+
+  _fcSetEditLock(true);
   renderFcRegularTableEditable();
 }
 
-// Render editable table
+// Render editable table over the immutable edit-scope snapshot. Identity columns are read-only; only Jan–Dec are
+// numeric inputs. Any dirty override is re-applied on render (so validation re-renders never lose user input).
 function renderFcRegularTableEditable() {
   const fixedBody = document.getElementById('fc-regular-fixed-body');
   const scrollBody = document.getElementById('fc-regular-scroll-body');
-  const filters = getFcFilters();
-  
-  if (!filters.year) {
+  const MONTH_LBL = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const rows = fcEditState.editRows || [];
+
+  if (!rows.length) {
     fixedBody.innerHTML = '';
-    scrollBody.innerHTML = '<div class="empty-row">Please select a year to view data</div>';
+    scrollBody.innerHTML = '<div class="empty-row">No Regular Forecast rows in the current scope to edit</div>';
+    _fcUpdateEditStatus();
     return;
   }
-  
-  const filteredData = filterFcRegular(fcRegularMock, filters);
-  const startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
-  const endIdx = startIdx + fcPaginationState.pageSize;
-  const paginatedData = filteredData.slice(startIdx, endIdx);
 
-  // Calculate FC占比
-  const fcPercentages = calculateFcPercentages(filteredData);
+  const fcPercentages = calculateFcPercentages(rows);
 
-  // Render fixed column (SKU - readonly)
-  fixedBody.innerHTML = paginatedData.map(item => `
+  fixedBody.innerHTML = rows.map(item => `
     <div class="fixed-row">
       <div class="fixed-cell fc-cell-readonly">${item.sku}</div>
     </div>
   `).join('');
 
-  // Render scrollable columns with editable months only
-  scrollBody.innerHTML = paginatedData.map((item, idx) => {
-    const total = item.months.reduce((sum, val) => sum + val, 0);
-    const key = `${item.company}-${item.sku}-${item.marketplace}`;
-    const percentage = fcPercentages[key] || 0;
+  scrollBody.innerHTML = rows.map((item, idx) => {
+    const key = fcRowIdentityKey(item);
+    const entry = fcEditState.dirty.get(key);
+    const effMonths = item.months.map((m, i) => (entry && entry.months && Object.prototype.hasOwnProperty.call(entry.months, i)) ? entry.months[i] : m);
+    const total = effMonths.reduce((sum, val) => sum + (Number(val) || 0), 0);
+    const pctKey = `${item.company}-${item.sku}-${item.marketplace}`;
+    const percentage = fcPercentages[pctKey] || 0;
     return `
-      <div class="scroll-row" data-row-idx="${idx}">
+      <div class="scroll-row" data-row-idx="${idx}" data-fckey="${key}">
         <div class="scroll-cell fc-cell-readonly">${item.year}</div>
         <div class="scroll-cell fc-cell-readonly">${item.company}</div>
         <div class="scroll-cell fc-cell-readonly">${_fcMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
         <div class="scroll-cell fc-cell-readonly">${item.country}</div>
         <div class="scroll-cell fc-cell-readonly">${item.category}</div>
         <div class="scroll-cell fc-cell-readonly">${item.series}</div>
-        ${item.months.map((m, mIdx) => `
+        ${item.months.map((m, mIdx) => {
+          const dirtyVal = (entry && entry.months && Object.prototype.hasOwnProperty.call(entry.months, mIdx)) ? entry.months[mIdx] : null;
+          const shown = dirtyVal == null ? m : dirtyVal;
+          const invalid = entry && entry.invalid && entry.invalid[mIdx];
+          return `
           <div class="scroll-cell cell-month fc-cell-editable">
-            <input type="number" value="${m}" onchange="updateFcMonth(${idx}, ${mIdx}, this.value)">
-          </div>
-        `).join('')}
+            <input type="number" step="1" min="0" inputmode="numeric"
+                   class="fc-month-input${invalid ? ' fc-cell-invalid' : ''}"
+                   value="${shown}"
+                   data-fckey="${key}" data-midx="${mIdx}"
+                   aria-label="${item.sku} ${MONTH_LBL[mIdx]} forecast"
+                   aria-invalid="${invalid ? 'true' : 'false'}"
+                   oninput="updateFcMonth(this)">
+          </div>`;
+        }).join('')}
         <div class="scroll-cell cell-total">${total.toLocaleString()}</div>
         <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
       </div>
     `;
   }).join('');
 
+  _fcUpdateEditStatus();
   syncFcScroll('regular');
 }
 
-// Update cell value
-function updateFcCell(rowIdx, field, value) {
-  const filters = getFcFilters();
-  const filteredData = filterFcRegular(fcRegularMock, filters);
-  const startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
-  const item = filteredData[startIdx + rowIdx];
-  
-  item[field] = value;
-  fcEditState.modifiedRows.set(item.sku, item);
+// Update one month cell. Tracks dirty per (identity, month); explicit 0 valid, blank invalid, preserves unchanged.
+function updateFcMonth(inputEl) {
+  const key = inputEl.getAttribute('data-fckey');
+  const mIdx = parseInt(inputEl.getAttribute('data-midx'), 10);
+  const base = (fcEditState.editRows || []).find(r => fcRowIdentityKey(r) === key);
+  if (!base) return;
+
+  let entry = fcEditState.dirty.get(key);
+  if (!entry) { entry = { identity: { year: base.year, company: base.company, country: base.country, marketplace: base.marketplace, sku: base.sku }, base: { months: base.months.slice() }, months: {}, invalid: {} }; }
+
+  const v = fcValidateMonthRaw(inputEl.value);
+  const baseVal = Number(base.months[mIdx]) || 0;
+  if (!v.valid) {
+    entry.invalid[mIdx] = true;
+    inputEl.classList.add('fc-cell-invalid');
+    inputEl.setAttribute('aria-invalid', 'true');
+    // keep a placeholder override so the row is treated as dirty (blocks save) but never coerces blank->0
+    entry.months[mIdx] = null;
+    fcEditState.dirty.set(key, entry);
+  } else {
+    delete entry.invalid[mIdx];
+    inputEl.classList.remove('fc-cell-invalid');
+    inputEl.setAttribute('aria-invalid', 'false');
+    if (v.value === baseVal) { delete entry.months[mIdx]; } else { entry.months[mIdx] = v.value; }
+    // prune a fully-clean entry
+    if (Object.keys(entry.months).length === 0 && Object.keys(entry.invalid).length === 0) { fcEditState.dirty.delete(key); }
+    else { fcEditState.dirty.set(key, entry); }
+  }
+
+  // Live row total from base + overrides (valid only).
+  const eff = base.months.map((m, i) => {
+    const cur = fcEditState.dirty.get(key);
+    if (cur && cur.months && Object.prototype.hasOwnProperty.call(cur.months, i) && cur.months[i] != null) return cur.months[i];
+    return Number(m) || 0;
+  });
+  const row = inputEl.closest('.scroll-row');
+  if (row) { const tc = row.querySelector('.cell-total'); if (tc) tc.textContent = eff.reduce((s, x) => s + (Number(x) || 0), 0).toLocaleString(); }
+
+  _fcUpdateEditStatus();
 }
 
-// Update month value
-function updateFcMonth(rowIdx, monthIdx, value) {
-  const filters = getFcFilters();
-  const filteredData = filterFcRegular(fcRegularMock, filters);
-  const startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
-  const item = filteredData[startIdx + rowIdx];
-  
-  item.months[monthIdx] = parseInt(value) || 0;
-  fcEditState.modifiedRows.set(item.sku, item);
-  
-  // Update total
-  const total = item.months.reduce((sum, val) => sum + val, 0);
-  const row = document.querySelector(`[data-row-idx="${rowIdx}"]`);
-  const totalCell = row.querySelector('.cell-total');
-  totalCell.textContent = total.toLocaleString();
+// Count changed cells + any invalid cells across dirty entries.
+function _fcEditCounts() {
+  let changed = 0, invalid = 0;
+  fcEditState.dirty.forEach(e => {
+    Object.keys(e.months || {}).forEach(k => { if (e.months[k] != null) changed++; });
+    invalid += Object.keys(e.invalid || {}).length;
+  });
+  return { changed: changed, invalid: invalid };
 }
 
-// Save changes
+// Edit-mode status banner + Save enablement (Save disabled while any cell is invalid or nothing changed).
+function _fcUpdateEditStatus() {
+  const c = _fcEditCounts();
+  const el = document.getElementById('fc-edit-status');
+  if (el) {
+    el.textContent = fcEditState.isEditing
+      ? (c.invalid ? ('Edit Mode — ' + c.invalid + ' invalid cell(s)') : ('Edit Mode — ' + c.changed + ' cell(s) changed'))
+      : '';
+  }
+  const save = document.getElementById('fc-save-btn');
+  if (save) save.disabled = !fcEditState.isEditing || c.invalid > 0;
+}
+
+// Lock/unlock all scope-changing controls during edit mode (Policy A — smallest, cannot silently lose edits).
+function _fcSetEditLock(on) {
+  const ids = ['fc-year-select', 'fc-sku-input', 'fc-page-size'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) { el.disabled = !!on; } });
+  document.querySelectorAll('.fc-filter-mount, .fc-tab, .fc-page-controls, #fc-edit-btn, #fc-add-btn, #fc-import-btn')
+    .forEach(el => { el.classList.toggle('fc-scope-locked', !!on); if ('disabled' in el) el.disabled = !!on; el.setAttribute('aria-disabled', on ? 'true' : 'false'); });
+  const sec = document.getElementById('fc-summary-section');
+  if (sec) sec.classList.toggle('fc-editing', !!on);
+  // Save/Cancel visibility
+  const save = document.getElementById('fc-save-btn'), cancel = document.getElementById('fc-cancel-btn'), edit = document.getElementById('fc-edit-btn');
+  if (save) save.style.display = on ? 'inline-flex' : 'none';
+  if (cancel) cancel.style.display = on ? 'inline-flex' : 'none';
+  if (edit) edit.style.display = on ? 'none' : 'inline-flex';
+  // Edit-mode status banner
+  let banner = document.getElementById('fc-edit-status');
+  if (on && !banner) {
+    banner = document.createElement('span');
+    banner.id = 'fc-edit-status';
+    banner.className = 'fc-edit-status';
+    banner.setAttribute('role', 'status');
+    banner.setAttribute('aria-live', 'polite');
+    const bar = document.getElementById('fc-action-buttons');
+    if (bar) bar.appendChild(banner);
+  } else if (!on && banner) { banner.remove(); }
+}
+
+// Save changes — one safe batch upsert through the canonical FC authority. No hardcoded success; readback-verified.
 function saveFcChanges() {
-  if (fcEditState.modifiedRows.size === 0) {
-    alert('No changes to save');
+  if (!fcEditState.isEditing) return;
+  const counts = _fcEditCounts();
+  if (counts.invalid > 0) { alert('Please fix invalid month values (whole numbers ≥ 0; blank is not allowed) before saving.'); return; }
+
+  // Collect ONLY changed rows (row-level delta); each row carries full identity + a full 12-month vector.
+  const entries = [];
+  fcEditState.dirty.forEach(e => { if (Object.keys(e.months || {}).some(k => e.months[k] != null)) entries.push(e); });
+  if (entries.length === 0) { exitEditMode(); return; }   // no changes → no DB call
+  const toWrite = fcBuildRegularWriteRows(entries);
+
+  const useDb = (typeof _fcUseDb === 'function' && _fcUseDb());
+  if (useDb) {
+    if (!(window.KM && window.KM.DB && window.KM.DB.importFcRegularForecastBatch)) { alert('Regular forecast write API is not available.'); return; }
+    _fcSetSaveEnabled(false);
+    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_base_edit' })
+      .then(function (res) {
+        if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _fcSetSaveEnabled(true); return; }
+        // Success — the adapter has reloaded the canonical DB; reconcile the view from it.
+        var s = (res && res.summary) || {};
+        exitEditMode();   // clears dirty, unlocks scope, re-renders from canonical cache
+        alert('Base Forecast saved — ' + toWrite.length + ' row(s), ' + counts.changed + ' cell(s) updated' +
+          (s.created != null ? ('.\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : '.'));
+      })
+      .catch(function (err) { alert('Save failed: ' + (err && err.message ? err.message : err)); _fcSetSaveEnabled(true); });
     return;
   }
-  
-  // Validate data
-  let hasError = false;
-  fcEditState.modifiedRows.forEach((item, sku) => {
-    if (item.months.some(m => isNaN(m) || m < 0)) {
-      alert(`Invalid month value for SKU: ${sku}`);
-      hasError = true;
-    }
-  });
-  
-  if (hasError) return;
-  
-  // Save to data (in real app, would call API)
-  console.log('Saving changes:', Array.from(fcEditState.modifiedRows.values()));
-  alert(`Successfully saved ${fcEditState.modifiedRows.size} changes`);
-  
-  // Exit edit mode
+
+  // Demo / not-configured: in-memory only, clearly labeled (never a false "saved to DB").
+  alert('Base Forecast — DEMO (in-memory only, NOT written to DB).\n' + toWrite.length + ' row(s), ' + counts.changed + ' cell(s).');
   exitEditMode();
 }
 
-// Cancel edit
+function _fcSetSaveEnabled(on) { const b = document.getElementById('fc-save-btn'); if (b) b.disabled = !on; }
+
+// Cancel edit — zero backend calls; restore originals by dropping the dirty overlay and re-rendering the view.
 function cancelFcEdit() {
-  if (fcEditState.modifiedRows.size > 0) {
-    if (!confirm('Discard all changes?')) return;
-  }
-  
-  // Restore original data
-  if (fcEditState.originalData) {
-    fcRegularMock.length = 0;
-    fcRegularMock.push(...fcEditState.originalData);
-  }
-  
+  const c = _fcEditCounts();
+  if ((c.changed > 0 || c.invalid > 0) && !confirm('Discard all unsaved Base Forecast changes?')) return;
   exitEditMode();
 }
 
-// Exit edit mode
+// Exit edit mode — clear dirty overlay, unlock controls, re-render the canonical read view.
 function exitEditMode() {
   fcEditState.isEditing = false;
+  fcEditState.dirty = new Map();
+  fcEditState.editRows = null;
   fcEditState.modifiedRows.clear();
   fcEditState.originalData = null;
-  
-  // Update UI
-  document.getElementById('fc-edit-btn').style.display = 'inline-block';
-  document.getElementById('fc-add-btn').style.display = 'inline-block';
-  document.getElementById('fc-save-btn').style.display = 'none';
-  document.getElementById('fc-cancel-btn').style.display = 'none';
-  
-  // Re-render normal view
+  _fcSetEditLock(false);
   renderFcRegularTable();
 }
 
