@@ -82,7 +82,8 @@ function makeLegacy() {
   var legacyCallsAfter = lg._calls.filter(function (x) { return x[0] === 'updateShippingPlanStatus'; }).length;
   ok(legacyCallsAfter === 1, 'FF3 exactly ONE legacy invocation (no dual execution)');
   api.setWorkspaceApiEnabled(true);
-  var w1 = await run(api.client.getWorkspace('weeklyShipping'));
+  // requestOrder remains REGISTERED-only (weeklyShipping graduated to IMPLEMENTED in API-2) → master ON fails closed.
+  var w1 = await run(api.client.getWorkspace('requestOrder'));
   ok(w1.success === false && w1.errors[0].code === 'WORKSPACE_NOT_IMPLEMENTED', 'FF4 flag true + unimplemented → fail-closed WORKSPACE_NOT_IMPLEMENTED');
   var legacyReadCalls = lg._calls.filter(function (x) { return x[0] === 'getOperationDb'; }).length;
   ok(legacyReadCalls === 0, 'FF5 workspace-mode did NOT fall back to legacy (no silent dual/fallback execution)');
@@ -91,7 +92,8 @@ function makeLegacy() {
   api.setWorkspaceApiEnabled(false);
 
   // per-slice flag readiness classification: the flag is currently a single GLOBAL boolean
-  ok(typeof api.flags.USE_WORKSPACE_API === 'boolean' && Object.keys(api.getFlags()).length === 1, 'FF7 flag model is GLOBAL boolean today (per-workspace map is an API-2 requirement — documented)');
+  ok(typeof api.flags.USE_WORKSPACE_API === 'boolean' && Object.keys(api.getFlags()).length === 1, 'FF7 global master remains a single boolean; per-workspace map is separate (getWorkspaceFlags)');
+  ok(Object.keys(api.getWorkspaceFlags()).length === 7 && api.getWorkspaceFlags().weeklyShipping === false, 'FF8 per-workspace flag map present, all default false (API-2)');
 
   // =====================================================================================================
   section('§5/§6 Legacy parity + error visibility — NO false success');

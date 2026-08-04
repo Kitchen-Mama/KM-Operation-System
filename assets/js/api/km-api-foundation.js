@@ -229,6 +229,73 @@
       }
     };
 
+    // ---- API-2 · per-workspace feature flag (global master AND per-workspace enable; default all false) --
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: false, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false };
+    var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
+    if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
+    function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
+    function setWorkspaceEnabled(name, on) { var n = normName(name); wsEnabled[n] = !!on; return wsEnabled[n]; }
+    function workspaceApiActive(name) { var d = getWorkspace(name); var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function'; return flags.USE_WORKSPACE_API === true && !!impl && wsEnabled[normName(name)] === true; }
+    // Hybrid gate: master OFF → legacy always. master ON + IMPLEMENTED → needs the per-workspace flag (else legacy →
+    // "disabling Weekly restores Legacy"). master ON + UNIMPLEMENTED → workspace path (→ WORKSPACE_NOT_IMPLEMENTED,
+    // no silent legacy fallback). No dual execution: exactly one branch runs.
+    function effectiveMode(name) {
+      if (flags.USE_WORKSPACE_API !== true) return SOURCE.LEGACY;
+      var d = getWorkspace(name);
+      var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function';
+      if (!impl) return SOURCE.WORKSPACE;
+      return wsEnabled[normName(name)] === true ? SOURCE.WORKSPACE : SOURCE.LEGACY;
+    }
+
+    // ---- API-2 · requestId (correlation, NOT idempotency) + call sequence (stale-response protection) ---
+    var _idSeq = 0, _callSeq = 0;
+    var _idGen = (typeof deps.idGen === 'function') ? deps.idGen : function () { _idSeq++; return 'REQ-C' + ('000000' + _idSeq).slice(-6); };
+    function makeRequestId(provided) { var p = normName(provided); return /^REQ-[A-Za-z0-9_-]{1,40}$/.test(p) ? p : _idGen(); }
+
+    // ---- API-2 · workspace transport invoke → parsed canonical envelope (tests inject deps.workspaceInvoke) --
+    var _workspaceInvoke = (typeof deps.workspaceInvoke === 'function') ? deps.workspaceInvoke : function (action, dto, signal) {
+      if (!transport.configured()) { var e = new Error('workspace transport not configured'); e.apiCode = API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED; return Promise.reject(e); }
+      return transport.post(dto, signal).then(function (resp) { return (resp && typeof resp.json === 'function') ? resp.json() : resp; });
+    };
+
+    // ---- API-2 · Weekly Shipping READ workspace resolver (the FIRST implemented workspace) ---------------
+    function buildWeeklyRequestDTO(params) {
+      params = params || {};
+      return {
+        apiVersion: API_VERSION, action: 'weeklyShipping.workspace.get', requestId: makeRequestId(params.requestId),
+        payload: {
+          filters: isObj(params.filters) ? params.filters : {},
+          search: (params.search == null || params.search === '') ? null : String(params.search),
+          sort: (Array.isArray(params.sort) && params.sort.length) ? params.sort : [{ field: 'updated_at', direction: 'desc' }],
+          page: { number: (params.page && params.page.number) || 1, size: (params.page && params.page.size) || 25 },
+          include: Object.assign({ summary: true, plans: true, details: true, filterOptions: true }, isObj(params.include) ? params.include : {})
+        },
+        context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
+      };
+    }
+    function normalizeWorkspaceEnvelope(serverEnv, dto, seq) {
+      var meta = { source: SOURCE.WORKSPACE, mode: SOURCE.WORKSPACE, workspace: 'weeklyShipping', action: dto.action, requestId: dto.requestId, sequence: seq, cached: false };
+      if (!isObj(serverEnv) || serverEnv.success === undefined) {
+        return buildError(API_ERROR_CODES.TRANSPORT_ERROR, 'malformed workspace response', { received: (serverEnv === undefined ? null : serverEnv) }, meta);
+      }
+      var outMeta = buildMeta(meta);
+      if (isObj(serverEnv.meta)) { for (var k in serverEnv.meta) { if (outMeta[k] === null || outMeta[k] === undefined) outMeta[k] = serverEnv.meta[k]; } }
+      outMeta.requestId = dto.requestId; outMeta.source = SOURCE.WORKSPACE; outMeta.workspace = 'weeklyShipping'; outMeta.action = dto.action; outMeta.sequence = seq;
+      // A server business failure MUST stay success:false (never masked); a nested {success:false} is not a success.
+      if (serverEnv.success !== true) {
+        return { success: false, data: null, meta: outMeta, errors: (Array.isArray(serverEnv.errors) && serverEnv.errors.length) ? serverEnv.errors : [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: null }] };
+      }
+      return { success: true, data: (serverEnv.data === undefined ? null : serverEnv.data), meta: outMeta, errors: [] };
+    }
+    function weeklyShippingResolver(params, helpers, opts) {
+      var signal = opts && opts.signal, seq = opts && opts.sequence;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildWeeklyRequestDTO(params);
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) { return normalizeWorkspaceEnvelope(serverEnv, dto, seq); });
+    }
+    // graduate weeklyShipping from REGISTERED → IMPLEMENTED (keeps its seeded table set)
+    register('weeklyShipping', { label: 'Weekly Shipping', tables: getWorkspace('weeklyShipping').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: weeklyShippingResolver });
+
     // ---- ApiDispatcher — routes a normalized request → envelope. Catches EVERYTHING (never throws). ----
     function dispatchCommand(req) {
       var action = normName(req.name);
@@ -266,9 +333,9 @@
             'workspace registered but not implemented (API-1 foundation): ' + name, { workspace: name },
             Object.assign(baseMeta, { source: SOURCE.WORKSPACE })));
         }
-        return Promise.resolve().then(function () { return d.resolver(req.params, { buildResponse: buildResponse, buildError: buildError }); })
+        return Promise.resolve().then(function () { return d.resolver(req.params, { buildResponse: buildResponse, buildError: buildError }, { signal: req.signal, sequence: req.sequence }); })
           .then(function (data) { return (data && data.success !== undefined) ? data : buildResponse(data, { source: SOURCE.WORKSPACE, workspace: name, mode: req.mode }); })
-          .catch(function (err) { return errorFromException(err, Object.assign(baseMeta, { source: SOURCE.WORKSPACE })); });
+          .catch(function (err) { return errorFromException(err, Object.assign(baseMeta, { source: SOURCE.WORKSPACE, sequence: req.sequence })); });
       }
       // legacy mode → preserve today's behavior (whole-DB read via legacy reader)
       return legacyAdapter.read(name, req.params)
@@ -284,14 +351,18 @@
       } catch (err) { return Promise.resolve(errorFromException(err, null)); }
     }
 
-    // ---- ApiClient — the public facade. Feature-flag decides legacy vs workspace. ----------------------
-    function currentMode() { return flags.USE_WORKSPACE_API ? SOURCE.WORKSPACE : SOURCE.LEGACY; }
+    // ---- ApiClient — the public facade. Per-workspace flag decides legacy vs workspace (§effectiveMode). --
+    function commandMode() { return flags.USE_WORKSPACE_API ? SOURCE.WORKSPACE : SOURCE.LEGACY; }   // no workspace command implemented yet
     var client = {
-      getWorkspace: function (name, params) {
+      getWorkspace: function (name, params, opts) {
         if (!hasWorkspace(name)) {
           return Promise.resolve(buildError(API_ERROR_CODES.UNKNOWN_WORKSPACE, 'unknown workspace: ' + normName(name), { workspace: normName(name) }, { workspace: normName(name) }));
         }
-        return dispatch({ kind: REQUEST_KIND.WORKSPACE, name: name, params: params, mode: currentMode() });
+        var seq = ++_callSeq, signal = opts && opts.signal;
+        if (signal && signal.aborted) {
+          return Promise.resolve(buildError('ABORTED', 'request aborted before dispatch', { workspace: normName(name) }, { workspace: normName(name), sequence: seq, source: SOURCE.GUARD }));
+        }
+        return dispatch({ kind: REQUEST_KIND.WORKSPACE, name: name, params: params, mode: effectiveMode(name), signal: signal, sequence: seq });
       },
       executeCommand: function (action, payload) {
         // SECURITY: forbidden schema/structural ops are refused in BOTH modes, before anything runs.
@@ -300,7 +371,7 @@
             'forbidden schema/structural operation refused at the API boundary (KMSAFE mirror): ' + normName(action),
             { action: normName(action) }, { action: normName(action), source: SOURCE.GUARD }));
         }
-        return dispatch({ kind: REQUEST_KIND.COMMAND, name: action, payload: payload, mode: currentMode() });
+        return dispatch({ kind: REQUEST_KIND.COMMAND, name: action, payload: payload, mode: commandMode() });
       }
     };
 
@@ -312,8 +383,12 @@
       // constants / enums
       API_VERSION: API_VERSION, WORKSPACE_STATUS: WORKSPACE_STATUS, REQUEST_KIND: REQUEST_KIND, SOURCE: SOURCE,
       API_ERROR_CODES: API_ERROR_CODES, FORBIDDEN_ACTIONS: FORBIDDEN_ACTIONS.slice(),
-      // flags
+      // flags (global master + per-workspace map — API-2)
       flags: flags, getFlags: getFlags, setWorkspaceApiEnabled: setWorkspaceApiEnabled,
+      getWorkspaceFlags: getWorkspaceFlags, setWorkspaceEnabled: setWorkspaceEnabled,
+      workspaceApiActive: workspaceApiActive, effectiveMode: effectiveMode,
+      // Weekly workspace helpers (API-2)
+      weekly: { buildRequestDTO: buildWeeklyRequestDTO, normalizeEnvelope: normalizeWorkspaceEnvelope, makeRequestId: makeRequestId },
       // ApiClient (facade)
       client: client, getWorkspace: client.getWorkspace, executeCommand: client.executeCommand,
       // independent layers (each testable in isolation)

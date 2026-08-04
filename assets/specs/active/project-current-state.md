@@ -3134,3 +3134,25 @@ Next slice: API-2 getWeeklyShippingPlanWorkspace
 - **Backward compatibility:** additive `<script>` in `index.html`; constructing/loading the module mutates nothing and issues no legacy call until invoked; with the flag off every request routes to the existing legacy transport unchanged.
 - **Files changed (API-1):** NEW `assets/js/api/km-api-foundation.js`, NEW `assets/tests/km-api-foundation.test.js`, `index.html` (one inert script tag), NEW `docs/planning/API_FOUNDATION_ARCHITECTURE.md`, and doc updates to `API_MIGRATION_MASTER_PLAN.md` §6 / `SYSTEM_RUNTIME_ARCHITECTURE.md` §14.1 / this entry. **Unchanged:** all `assets/js/core/*.js`, all `.gs`, the generated bundle, DB schema, formulas, recommendation/submit/allocation/persistence/shipment runtimes.
 - **Deployment classification:** `km-api-foundation.js` + `index.html` = `FRONTEND_GITHUB_PAGES_REQUIRED`; docs = `DOCUMENTATION_ONLY`; **no** `APPS_SCRIPT_SYNC_REQUIRED`, **no** `BUNDLE_REBUILD_REQUIRED`. Governed by `DEPLOYMENT_RELEASE_GOVERNANCE.md` (manual, user-controlled). Not deployed; not pushed.
+
+---
+
+## API v1 — Weekly Shipping READ Workspace (Phase API-2) SOURCE-PRESENT / TEST-VERIFIED, NOT DEPLOYED (2026-08-04)
+
+First real Workspace resolver; **read-only, no page cutover, no business change, not deployed.**
+
+```text
+Resolver weeklyShipping.workspace.get: SOURCE-PRESENT / TEST-VERIFIED / NOT DEPLOYED
+weeklyShipping registry status: IMPLEMENTED (the other six remain REGISTERED)
+Per-workspace flag: USE_WORKSPACE_API=false (global) + WORKSPACE_API_ENABLED all false (default)
+Weekly active page: STILL ON LEGACY (no cutover)
+Tables read per request: 4 (shipping_plans, shipping_plan_lines, warehouses, carriers) — never getOperationDb (44)
+Business logic changed: NONE (read-only view model; multi-currency never aggregated; no status/qty change)
+Safety: S0/S0.5 preserved (exact Spreadsheet-ID gate + validate-only sheet/column; fail-closed; no repair)
+Tests: km-api-weekly-workspace.test.js 64/0; API-1 57/0 + F2 compat 42/0 (updated for weeklyShipping graduation)
+Golden 39/1/0; Scenario #34 Pending; pre-existing replen-draft-completeness P29–P31 still failing (unrelated)
+Next: API-3 Weekly page read cutover + write slice (after a new authorized round + Verification Copy)
+```
+
+- **Files (API-2):** NEW `assets/specs/active/apps-script/40_api_v1_weekly_workspace.gs` (`APPS_SCRIPT_SYNC_REQUIRED`), `assets/specs/active/apps-script/01_router.gs` (thin dispatch, `APPS_SCRIPT_SYNC_REQUIRED`), `assets/js/api/km-api-foundation.js` (per-workspace flag + Weekly resolver, `FRONTEND_GITHUB_PAGES_REQUIRED`), NEW `assets/tests/km-api-weekly-workspace.test.js`, updated `km-api-foundation.test.js` + `km-api-foundation-compat.test.js` (GIT_ONLY), NEW `API_WEEKLY_SHIPPING_WORKSPACE_SPEC.md` + `API_WEEKLY_SHIPPING_PARITY_REPORT.md`, updated `API_MIGRATION_MASTER_PLAN.md` + this entry (DOCUMENTATION_ONLY). **`BUNDLE_REBUILD_REQUIRED=false`** (no `assets/js/core/*.js` changed). **Unchanged:** generated bundle, Recommendation/Submit runtimes, DB schema, all Weekly business handlers (11_/17_ etc.), formulas.
+- **Deployment:** manual, user-controlled (`DEPLOYMENT_RELEASE_GOVERNANCE.md`). Apps Script sync-required = `40_api_v1_weekly_workspace.gs` + `01_router.gs`. Not pushed, not deployed. Live/browser parity = OPEN (API-3 / Verification Copy).

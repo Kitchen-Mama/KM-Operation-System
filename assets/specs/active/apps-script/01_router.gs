@@ -105,6 +105,12 @@ function doPost(e) {
       return handleCompleteShippingPlan_(body);
     }
 
+    // API v1 · Weekly Shipping Plan READ-ONLY Workspace (Phase API-2). A body-carrying READ (no write); owner =
+    // 40_api_v1_weekly_workspace.gs. Reads only the Weekly tables (never getOperationDb). No business logic here.
+    if (action === 'weeklyShipping.workspace.get') {
+      return jsonResponse_(handleWeeklyShippingWorkspaceGet_(body));
+    }
+
     // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
     if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
       return handleGetShippingMethodCandidates_(body);
