@@ -968,6 +968,22 @@ PO committed supply (§P1-B) is a **KM canonical** admission-eligible source: it
 
 ---
 
+---
+
+## §SC-1M. Phase-1 Monthly Submit Contract — Allocation Draft → Request Order (FROZEN — Decision Only, 2026-08-04, Round SC-1)
+
+> **Status: FROZEN — NOT IMPLEMENTED.** Domain mapping only; canonical owner = `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` **§SC-1** (scope, quantity authority, blocked/carton gates, idempotency, logical transaction, immutability, command DTO, tokens, Phase-2 deferrals). Builds on **B-5 §3.9** (line grain). No Submit endpoint / writer / reservation / UI is implemented or authorized here.
+
+- **Source → Target:** `request_order_allocation_drafts` / `request_order_allocation_draft_lines` → `request_orders` / `request_order_lines`. Active-lookup key (never `draft_version`): `MONTHLY_ORDER + planning_cycle(YYYY-MM) + company + country + marketplace + draft_purpose`. **Active-Draft count: 0 → NO_ACTIVE_DRAFT; 1 → proceed; >1 → BLOCKED_CONFLICT**; submitted/superseded/cancelled excluded.
+- **Quantity authority:** per latest Active line, `submit_qty = order_qty` when explicit + valid, else `recommended_qty`; current version only (no cross-version carry-forward); non-negative integer; null recommendation never becomes 0; valid `line_status` only.
+- **Full-carton gate (whole-draft block):** every submitted line — `units_per_carton` present and `> 0`, `submit_qty` divisible by `units_per_carton`, `carton_qty` derived/validated by the formula owner (`SUPPLY_PLANNING_CALCULATION_RULES.md`); never assume `units_per_carton = 1`; never silently round. Failure → `UNITS_PER_CARTON_MISSING` / `FULL_CARTON_REQUIRED` / `INVALID_CARTON_QUANTITY`.
+- **Header grouping = Series × Supplier/Factory:** one `request_orders` header per (`request_order_lines.series` × `request_orders.supplier_id`/`factory_id`); multiple SKUs → multiple lines. **Company provenance is retained at line level** (`request_order_lines.company`, one company per line; B-5 line key `(request_order_id, company, sku, request_bucket)`, §3.9); **company is recorded but does NOT auto-split the header** — a shared factory may consolidate multiple companies' demand under one header (per-company detail also lives in `request_order_line_sources`, §3.8). Group by the schema identity (`supplier_id`/`factory_id`), never display name; different factories/suppliers → different Request Orders.
+- **Month / bucket stay line-level:** `request_month` (`YYYY-MM`) + `request_bucket` (`T1`/`T2`/`T3`; never `tier_type`) remain on `request_order_lines`; Phase-1 does **not** create one header per month; `tier_group` (`T1`/`T2_T3`/`mixed`/blank) summarizes buckets; T1/T2/T3 are preserved through the Request Order (PO tier split is the existing §F rule, unchanged).
+- **Whole-draft only + idempotency + transaction:** no line selection / no partial success; any blocking/carton/identity issue blocks the entire Submit. One `draft_id + draft_version` → at most one set of Request Orders (deterministic downstream identity; retry never duplicates); all-or-nothing build-all-headers+lines → verify → then mark Draft submitted (logical transaction; Sheets is not ACID). **Submitted Recommendation Allocation Draft is immutable; the resulting Request Order Draft keeps its own edit/Cancel lifecycle** (approved qty / inspection & ready & ship dates / note / cancel per current rules) and its edits never rewrite the submitted Draft snapshot.
+- **Reservation:** Monthly Submit reserves/deducts nothing (procurement demand only). **Remaining uncertainty:** `request_orders.company` semantics under multi-company factory consolidation — see §SC-1.17(1) (owner: B-5 / §3.9; do not invent a column).
+
+---
+
 **Phase 1 — UI + mapping + DB handler foundation. API-ready. No auto-procurement engine, supplier API, payment flow, or formal document generation.**
 
 **End of Document**

@@ -2054,4 +2054,14 @@ Executable golden tests pending.
 No production behavior changed in this task.
 ```
 
+## §SC-1A. Three-layer availability boundary (concise amendment, 2026-08-04, Round SC-1)
+
+> Documentation only; **no formula change**. This clarifies where availability is *enforced* across the Submit lifecycle; the availability/allocation formulas remain owned here (§39 Supply Ledger / §40 Allocation). Full Submit contract: `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §SC-1.
+
+- **Layer 1 — Recommendation Allocation (this document, §39/§40):** total allocation ≤ calculated available supply; **integer output, no fractional remainder**; Phase-1 does **not** borrow stock (cross-company borrowing / priority reallocation / allocation above the current pool = Phase 2). This is the only layer that computes allocation quantities.
+- **Layer 2 — Submit revalidation (owned by §SC-1.7, enforcement only):** under LockService, aggregate Submit quantities by **source warehouse + SKU** across all Submit lines + other authoritative commitments consuming the same pool, and verify `Σ requested ≤ available`; reject stale/over-allocated Submit (`SOURCE_AVAILABLE_QTY_EXCEEDED`). This **re-checks** Layer-1 availability at commit time; it does **not** recompute or change the Layer-1 formula.
+- **Layer 3 — Reservation revalidation (owned by §SC-1.8, enforcement only):** at the B-1 Shipment Ready-to-Ship reserve transition, reread stock and reverify; never negative stock, never reserved above available. **Submit does not reserve; reservation is B-1 Ready-to-Ship; `current_stock` deducts at Confirm & Ship.**
+
+The exact set of "other authoritative commitments" that Layer 2 aggregates against the same source pool is to be frozen with the §39 Supply-Ledger owner at implementation (§SC-1.17(4)). No new column, table, or formula is introduced by this amendment.
+
 **End of Document**
