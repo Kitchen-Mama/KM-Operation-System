@@ -596,7 +596,9 @@ const fcEditState = {
   originalData: null,
   originalEventData: null,
   dirty: new Map(),
-  editRows: null
+  editRows: null,
+  dirtyEvent: new Map(),
+  editEventRows: null
 };
 
 function _fcUp(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
@@ -879,52 +881,77 @@ function exitEditMode() {
 // ========================================
 
 // Enter event edit mode
+// The SAME Special-Event source the read view uses (Demo -> demo mapping; else Google Sheet fc_special_events).
+function _fcEventEditSource() {
+  if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
+    return _getDemoFcEventData();
+  }
+  return _getDbFcEventData();
+}
+
+// PURE — dedup key for a Special-Event row. Canonical PK is event_fc_id; fall back to a company-safe composite
+// ONLY for legacy rows with a blank id (those still fail closed on save without a campaign_id — never merged).
+function fcEventIdentityKey(row) {
+  row = row || {};
+  var id = _fcUp(row.eventId);
+  if (id) return 'EFC:' + id;
+  return 'K:' + [_fcUp(row.company), _fcUp(row.country), _fcUp(row.marketplace), _fcUp(row.sku), _fcUp(row.event), _fcUp(row.year)].join('|');
+}
+
+// PURE — build the canonical Special-Event write payload (only changed rows). Each row carries the FULL identity the
+// write authority requires (event_fc_id for exact targeting + campaign_id + event_name + sku) plus the edited fc_qty.
+function fcBuildEventWriteRows(dirtyEntries) {
+  return (dirtyEntries || []).map(function (e) {
+    var id = e.identity || {};
+    return { event_fc_id: id.eventId || '', campaign_id: id.campaignId || '', event_name: id.eventName || '', sku: id.sku || '', fc_qty: e.qty };
+  });
+}
+
+// Enter Special-Event edit mode — snapshot the currently-loaded rows, lock scope controls, render editable.
 function enterEventEditMode() {
   fcEditState.isEditingEvent = true;
-  fcEditState.originalEventData = JSON.parse(JSON.stringify(fcEventMock));
-  
-  // Update UI
-  document.getElementById('fc-event-edit-btn').style.display = 'none';
-  document.getElementById('fc-event-save-btn').style.display = 'inline-block';
-  document.getElementById('fc-event-cancel-btn').style.display = 'inline-block';
-  
-  // Re-render with editable cells
+  fcEditState.dirtyEvent = new Map();
+  var filters = getFcFilters();
+  var src = _fcEventEditSource();
+  var filtered = filterFcEvent(src, filters);
+  var startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
+  var endIdx = startIdx + fcPaginationState.pageSize;
+  fcEditState.editEventRows = JSON.parse(JSON.stringify(filtered.slice(startIdx, endIdx)));
+  _fcEventSetEditLock(true);
   renderFcEventTableEditable();
 }
 
-// Render editable event table
+// Render editable event table — only FC Qty is a numeric input; identity/period columns are read-only.
 function renderFcEventTableEditable() {
   const fixedBody = document.getElementById('fc-event-fixed-body');
   const scrollBody = document.getElementById('fc-event-scroll-body');
-  const filters = getFcFilters();
-  
-  if (!filters.year) {
+  const rows = fcEditState.editEventRows || [];
+
+  if (!rows.length) {
     fixedBody.innerHTML = '';
-    scrollBody.innerHTML = '<div class="empty-row">Please select a year to view data</div>';
+    scrollBody.innerHTML = '<div class="empty-row">No Special Event rows in the current scope to edit</div>';
+    _fcEventUpdateStatus();
     return;
   }
-  
-  const filteredData = filterFcEvent(fcEventMock, filters);
-  const startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
-  const endIdx = startIdx + fcPaginationState.pageSize;
-  const paginatedData = filteredData.slice(startIdx, endIdx);
 
-  // Calculate FC占比
-  const eventFcPercentages = calculateEventFcPercentages(filteredData);
+  const eventFcPercentages = calculateEventFcPercentages(rows);
 
-  // Render fixed column (SKU - readonly)
-  fixedBody.innerHTML = paginatedData.map(item => `
+  fixedBody.innerHTML = rows.map(item => `
     <div class="fixed-row">
       <div class="fixed-cell fc-cell-readonly">${item.sku}</div>
     </div>
   `).join('');
 
-  // Render scrollable columns with editable FC Qty only
-  scrollBody.innerHTML = paginatedData.map((item, idx) => {
-    const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
-    const percentage = eventFcPercentages[key] || 0;
+  scrollBody.innerHTML = rows.map((item, idx) => {
+    const key = fcEventIdentityKey(item);
+    const entry = fcEditState.dirtyEvent.get(key);
+    const shown = (entry && entry.qty != null) ? entry.qty : item.fcQty;
+    const invalid = entry && entry.invalid;
+    const pctKey = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
+    const percentage = eventFcPercentages[pctKey] || 0;
+    const noId = !String(item.eventId || '').trim() || !String(item.campaignId || '').trim();
     return `
-      <div class="scroll-row" data-row-idx="${idx}">
+      <div class="scroll-row" data-row-idx="${idx}" data-fckey="${key}">
         <div class="scroll-cell fc-cell-readonly">${item.year}</div>
         <div class="scroll-cell fc-cell-readonly">${item.company}</div>
         <div class="scroll-cell fc-cell-readonly">${_fcMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
@@ -934,80 +961,132 @@ function renderFcEventTableEditable() {
         <div class="scroll-cell fc-cell-readonly">${item.event}</div>
         <div class="scroll-cell fc-cell-readonly">${item.eventPeriod}</div>
         <div class="scroll-cell cell-qty fc-cell-editable">
-          <input type="number" value="${item.fcQty}" onchange="updateEventFcQty(${idx}, this.value)">
+          <input type="number" step="1" min="0" inputmode="numeric"
+                 class="fc-event-qty-input${invalid ? ' fc-cell-invalid' : ''}"
+                 value="${shown}"
+                 data-fckey="${key}"
+                 aria-label="${item.sku} ${item.event} forecast quantity"
+                 aria-invalid="${invalid ? 'true' : 'false'}"
+                 title="${noId ? 'This legacy event is missing event_fc_id / campaign_id — editing it will fail closed until it is backfilled.' : ''}"
+                 oninput="updateEventFcQty(this)">
         </div>
         <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
       </div>
     `;
   }).join('');
 
+  _fcEventUpdateStatus();
   syncFcScroll('event');
 }
 
-// Update event FC Qty
-function updateEventFcQty(rowIdx, value) {
-  const filters = getFcFilters();
-  const filteredData = filterFcEvent(fcEventMock, filters);
-  const startIdx = (fcPaginationState.currentPage - 1) * fcPaginationState.pageSize;
-  const item = filteredData[startIdx + rowIdx];
-  
-  item.fcQty = parseInt(value) || 0;
-  fcEditState.modifiedEventRows.set(`${item.sku}-${item.year}-${item.event}`, item);
+// Update one event FC Qty cell. Explicit 0 valid, blank invalid, preserves unchanged; identity keyed by event_fc_id.
+function updateEventFcQty(inputEl) {
+  const key = inputEl.getAttribute('data-fckey');
+  const base = (fcEditState.editEventRows || []).find(r => fcEventIdentityKey(r) === key);
+  if (!base) return;
+  const v = fcValidateMonthRaw(inputEl.value);   // fc_qty rule = non-negative integer (same as Base FC month)
+  const baseVal = Number(base.fcQty) || 0;
+  let entry = fcEditState.dirtyEvent.get(key) || { identity: { eventId: base.eventId, campaignId: base.campaignId, eventName: base.eventName, sku: base.sku }, base: { fcQty: baseVal }, qty: null, invalid: false };
+  if (!v.valid) {
+    entry.invalid = true; entry.qty = null;
+    inputEl.classList.add('fc-cell-invalid'); inputEl.setAttribute('aria-invalid', 'true');
+    fcEditState.dirtyEvent.set(key, entry);
+  } else {
+    entry.invalid = false;
+    inputEl.classList.remove('fc-cell-invalid'); inputEl.setAttribute('aria-invalid', 'false');
+    if (v.value === baseVal) { fcEditState.dirtyEvent.delete(key); }
+    else { entry.qty = v.value; fcEditState.dirtyEvent.set(key, entry); }
+  }
+  _fcEventUpdateStatus();
 }
 
-// Save event changes
+function _fcEventCounts() {
+  let changed = 0, invalid = 0;
+  fcEditState.dirtyEvent.forEach(e => { if (e.invalid) invalid++; else if (e.qty != null) changed++; });
+  return { changed: changed, invalid: invalid };
+}
+
+function _fcEventUpdateStatus() {
+  const c = _fcEventCounts();
+  const el = document.getElementById('fc-event-edit-status');
+  if (el) el.textContent = fcEditState.isEditingEvent ? (c.invalid ? ('Edit Mode — ' + c.invalid + ' invalid') : ('Edit Mode — ' + c.changed + ' changed')) : '';
+  const save = document.getElementById('fc-event-save-btn');
+  if (save) save.disabled = !fcEditState.isEditingEvent || c.invalid > 0;
+}
+
+// Lock/unlock scope-changing controls during Special-Event edit (Policy A, shared with Base FC scope guard).
+function _fcEventSetEditLock(on) {
+  const ids = ['fc-year-select', 'fc-sku-input', 'fc-page-size'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!on; });
+  document.querySelectorAll('.fc-filter-mount, .fc-tab, .fc-page-controls, #fc-event-edit-btn')
+    .forEach(el => { el.classList.toggle('fc-scope-locked', !!on); if ('disabled' in el) el.disabled = !!on; el.setAttribute('aria-disabled', on ? 'true' : 'false'); });
+  const sec = document.getElementById('fc-summary-section');
+  if (sec) sec.classList.toggle('fc-editing', !!on);
+  const save = document.getElementById('fc-event-save-btn'), cancel = document.getElementById('fc-event-cancel-btn'), edit = document.getElementById('fc-event-edit-btn');
+  if (save) save.style.display = on ? 'inline-flex' : 'none';
+  if (cancel) cancel.style.display = on ? 'inline-flex' : 'none';
+  if (edit) edit.style.display = on ? 'none' : 'inline-flex';
+  let banner = document.getElementById('fc-event-edit-status');
+  if (on && !banner) {
+    banner = document.createElement('span');
+    banner.id = 'fc-event-edit-status'; banner.className = 'fc-edit-status';
+    banner.setAttribute('role', 'status'); banner.setAttribute('aria-live', 'polite');
+    const bar = document.getElementById('fc-action-buttons'); if (bar) bar.appendChild(banner);
+  } else if (!on && banner) { banner.remove(); }
+}
+
+// Save Special-Event changes — one safe batch upsert through the canonical FC authority; no false success.
 function saveEventChanges() {
-  if (fcEditState.modifiedEventRows.size === 0) {
-    alert('No changes to save');
+  if (!fcEditState.isEditingEvent) return;
+  const counts = _fcEventCounts();
+  if (counts.invalid > 0) { alert('Please fix invalid FC Qty values (whole numbers ≥ 0; blank is not allowed) before saving.'); return; }
+  const entries = [];
+  fcEditState.dirtyEvent.forEach(e => { if (e.qty != null) entries.push(e); });
+  if (entries.length === 0) { exitEventEditMode(); return; }   // no changes → no DB call
+  const toWrite = fcBuildEventWriteRows(entries);
+  // Guard: a row missing event_fc_id or campaign_id cannot be safely targeted — the backend fails it closed, but
+  // block it up front with a clear message rather than a silent skip.
+  const blocked = toWrite.filter(r => !String(r.event_fc_id).trim() || !String(r.campaign_id).trim());
+  if (blocked.length) { alert(blocked.length + ' selected event(s) are missing event_fc_id / campaign_id and cannot be edited until backfilled. Fix or revert those rows before saving.'); return; }
+
+  const useDb = (typeof _fcUseDb === 'function' && _fcUseDb());
+  if (useDb) {
+    if (!(window.KM && window.KM.DB && window.KM.DB.importFcSpecialEventsBatch)) { alert('Special event write API is not available.'); return; }
+    _fcEventSetSaveEnabled(false);
+    window.KM.DB.importFcSpecialEventsBatch(toWrite, { source: 'fc_summary_event_edit' })
+      .then(function (res) {
+        if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _fcEventSetSaveEnabled(true); return; }
+        var s = (res && res.data && res.data.summary) || (res && res.summary) || {};
+        if (s.skipped) { alert('Save failed for ' + s.skipped + ' of ' + toWrite.length + ' event(s) — see per-row reasons; edits preserved.'); _fcEventSetSaveEnabled(true); return; }
+        exitEventEditMode();   // adapter reloaded canonical DB → reconcile view
+        alert('Special Events saved — ' + toWrite.length + ' event(s), ' + counts.changed + ' updated.' +
+          (s.updated != null ? ('\nUpdated: ' + s.updated + '  Created: ' + s.created + '  Skipped: ' + s.skipped) : ''));
+      })
+      .catch(function (err) { alert('Save failed: ' + (err && err.message ? err.message : err)); _fcEventSetSaveEnabled(true); });
     return;
   }
-  
-  // Validate data
-  let hasError = false;
-  fcEditState.modifiedEventRows.forEach((item, key) => {
-    if (isNaN(item.fcQty) || item.fcQty < 0) {
-      alert(`Invalid FC Qty for ${key}`);
-      hasError = true;
-    }
-  });
-  
-  if (hasError) return;
-  
-  // Save to data (in real app, would call API)
-  console.log('Saving event changes:', Array.from(fcEditState.modifiedEventRows.values()));
-  alert(`Successfully saved ${fcEditState.modifiedEventRows.size} changes`);
-  
-  // Exit edit mode
+
+  alert('Special Events — DEMO (in-memory only, NOT written to DB).\n' + toWrite.length + ' event(s), ' + counts.changed + ' updated.');
   exitEventEditMode();
 }
 
-// Cancel event edit
+function _fcEventSetSaveEnabled(on) { const b = document.getElementById('fc-event-save-btn'); if (b) b.disabled = !on; }
+
+// Cancel Special-Event edit — zero backend calls; drop the dirty overlay and re-render the canonical view.
 function cancelEventEdit() {
-  if (fcEditState.modifiedEventRows.size > 0) {
-    if (!confirm('Discard all changes?')) return;
-  }
-  
-  // Restore original data
-  if (fcEditState.originalEventData) {
-    fcEventMock.length = 0;
-    fcEventMock.push(...fcEditState.originalEventData);
-  }
-  
+  const c = _fcEventCounts();
+  if ((c.changed > 0 || c.invalid > 0) && !confirm('Discard all unsaved Special Event changes?')) return;
   exitEventEditMode();
 }
 
-// Exit event edit mode
+// Exit event edit mode — clear dirty overlay, unlock controls, re-render the canonical read view.
 function exitEventEditMode() {
   fcEditState.isEditingEvent = false;
+  fcEditState.dirtyEvent = new Map();
+  fcEditState.editEventRows = null;
   fcEditState.modifiedEventRows.clear();
   fcEditState.originalEventData = null;
-  
-  // Update UI
-  document.getElementById('fc-event-edit-btn').style.display = 'inline-block';
-  document.getElementById('fc-event-save-btn').style.display = 'none';
-  document.getElementById('fc-event-cancel-btn').style.display = 'none';
-  
-  // Re-render normal view
+  _fcEventSetEditLock(false);
   renderFcEventTable();
 }
 
@@ -3357,7 +3436,8 @@ function _getDbFcEventData() {
     return rows.map(function(r) {
         var raw = r.raw || {};
         return {
-            eventId: r.eventId || raw.event_id || '',
+            eventId: r.eventId || raw.event_fc_id || raw.event_id || '',   // canonical PK (event_fc_id)
+            campaignId: r.campaignId || raw.campaign_id || '',             // REQUIRED by the write authority
             sku: r.sku,
             year: raw.year || r.year || '',
             company: r.company,
@@ -3366,6 +3446,7 @@ function _getDbFcEventData() {
             category: r.category,
             series: r.series,
             event: r.event,                 // normalizer: event || event_name
+            eventName: r.event || raw.event_name || '',                    // write payload event_name
             eventPeriod: r.eventPeriod,      // normalizer: event_period || period
             fcQty: Number(r.fcQty) || 0
         };

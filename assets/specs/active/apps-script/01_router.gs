@@ -182,6 +182,10 @@ function doPost(e) {
       return handleUpsertFcSpecialEvent_(body);
     }
 
+    if (action === 'importFcSpecialEventsBatch') {
+      return handleImportFcSpecialEventsBatch_(body);
+    }
+
     if (action === 'deleteFcSpecialEvent') {
       return handleDeleteFcSpecialEvent_(body);
     }

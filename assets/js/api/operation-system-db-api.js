@@ -3261,6 +3261,25 @@ window.KM.DB.upsertFcSpecialEvent = async function(payload) {
     return json.data;
 };
 
+// Batch upsert of special-event forecasts (Special-Event inline edit). One request; reloads on success.
+// payload rows: [{ event_fc_id, campaign_id, event_name, sku, fc_qty }]
+window.KM.DB.importFcSpecialEventsBatch = async function(rows, options) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, importFcSpecialEventsBatch skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'importFcSpecialEventsBatch', rows: rows || [], options: options || {} })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (json && json.success) { await loadOperationDb({ force: true }); }
+    return json;
+};
+
 // { event_id }
 window.KM.DB.deleteFcSpecialEvent = async function(payload) {
     if (!isOperationDbApiConfigured()) {

@@ -278,6 +278,39 @@ function handleUpsertFcSpecialEvent_(body) {
   return jsonResponse_({ success: true, data: result });
 }
 
+/**
+ * Batch upsert of special-event forecasts (Special-Event inline edit — FC hotfix). Body: { rows:[{event_fc_id,
+ * campaign_id, event_name, sku|scope_id, fc_qty, ...}], options? }. Reuses the SAME canonical row upsert
+ * (fcSpecialEventUpsert_) as the single-event path — NO competing implementation. Each row is validated exactly
+ * like handleUpsertFcSpecialEvent_ (campaign_id + event_name + sku/scope_id + numeric fc_qty ≥ 0); invalid rows are
+ * SKIPPED with a reason (never a partial silent success). No Sheet/Header mutation beyond the shared writer.
+ */
+function handleImportFcSpecialEventsBatch_(body) {
+  body = body || {};
+  var rows = Array.isArray(body.rows) ? body.rows : [];
+  var actor = String(body.updated_by || body.actor || 'fc-summary').trim();
+  if (!rows.length) return jsonResponse_({ success: false, error: 'No rows to save' });
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var results = [], created = 0, updated = 0, skipped = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i] || {};
+    var reason = '';
+    if (!String(r.campaign_id || '').trim()) reason = 'missing_campaign_id';
+    else if (!String(r.sku || '').trim() && !String(r.scope_id || '').trim()) reason = 'missing_sku_or_scope_id';
+    else if (!String(r.event_name || '').trim()) reason = 'missing_event_name';
+    else { var q = Number(r.fc_qty); if (r.fc_qty === '' || r.fc_qty == null || isNaN(q) || q < 0) reason = 'invalid_fc_qty'; }
+    if (reason) { skipped++; results.push({ index: i, event_fc_id: r.event_fc_id || '', skipped: true, reason: reason }); continue; }
+    try {
+      var res = fcSpecialEventUpsert_(ss, r, actor);   // canonical row upsert (event_fc_id exact, else business key)
+      if (res && res.created) created++; else updated++;
+      results.push({ index: i, event_fc_id: res && res.event_fc_id, created: !!(res && res.created) });
+    } catch (e) {
+      skipped++; results.push({ index: i, event_fc_id: r.event_fc_id || '', skipped: true, reason: String(e && e.message ? e.message : e) });
+    }
+  }
+  return jsonResponse_({ success: true, data: { summary: { created: created, updated: updated, skipped: skipped, total: rows.length }, results: results } });
+}
+
 /** Delete a special event by event_fc_id (accepts legacy event_id). Body: { event_fc_id? | event_id? }. */
 function handleDeleteFcSpecialEvent_(body) {
   var id = String((body && (body.event_fc_id || body.event_id)) || '').trim();

@@ -1673,17 +1673,20 @@
 }
 
 /* --- Base FC inline edit mode (FC hotfix 2026-08-04) --- */
-/* invalid month input — communicated by border + background, not color alone (also carries aria-invalid) */
-#fc-summary-section .fc-month-input.fc-cell-invalid {
+/* invalid input (Base FC month + Special Event qty) — border + background, not color alone (+ aria-invalid) */
+#fc-summary-section .fc-month-input.fc-cell-invalid,
+#fc-summary-section .fc-event-qty-input.fc-cell-invalid {
     border: 1.5px solid var(--text-error, #EF4444);
     background: #FEF2F2;
     outline: none;
 }
-#fc-summary-section .fc-month-input:focus {
+#fc-summary-section .fc-month-input:focus,
+#fc-summary-section .fc-event-qty-input:focus {
     border-color: var(--soft-green, #7FB069);
     outline: 2px solid rgba(127, 176, 105, 0.35);
     outline-offset: 0;
 }
+#fc-summary-section .fc-btn--cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 /* scope-changing controls are locked while editing (Policy A) — visibly disabled, non-color cue via opacity+cursor */
 #fc-summary-section .fc-scope-locked,
 #fc-summary-section .fc-editing .fc-scope-locked {

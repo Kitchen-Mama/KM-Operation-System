@@ -266,13 +266,17 @@
     background: #1c1c20;
 }
 
-/* Level 2 items — smaller, lighter weight, muted, stronger indent, continuous
-   left guide rail; clearly subordinate to Level 1 */
+/* Level 2 items — READABLE body font (not shrunk); hierarchy comes from normal
+   weight + stronger indent + a continuous left guide rail + the recessed surface
+   + a muted-but-accessible tone + consistent row height, NOT from a small font. */
 .menu-children .menu-item {
     font-weight: var(--font-weight-normal);
-    font-size: var(--font-size-small);
-    color: #a1a1aa;
-    padding-left: 1.6rem;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-normal);
+    color: #cbcbd2;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+    padding-left: 2rem;
     border-bottom-color: #232327;
     border-left: 2px solid #3f3f46;
 }

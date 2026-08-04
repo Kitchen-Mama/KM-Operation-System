@@ -132,6 +132,10 @@ Cache suitability: master-data sections (sku_details, marketplaces, carriers) ar
 
 ---
 
+## 10a. Release governance (added 2026-08-04)
+
+All API migration releases (API-1 onward) follow the **manual, user-controlled** deployment process frozen in `DEPLOYMENT_RELEASE_GOVERNANCE.md` + `DEPLOYMENT_RELEASE_LOG.md`: Git push and Apps Script deployment are separate explicit user steps; only Completion-Report-approved `APPS_SCRIPT_SYNC_REQUIRED` files are synced; the generated bundle is never manually edited; each release records commit ↔ deployment version ↔ bundle hash ↔ smoke-test result. Nothing auto-deploys because code changed. (This note only; API-0 findings above are unchanged.)
+
 ## 11. Verification Copy gate (inherited from S0.5)
 
 No live API verification touches Production. API-5 and F5 run on a **duplicated verification Spreadsheet** with `PRODUCTION_DB_SPREADSHEET_ID_` set to the copy (currently empty → fail-closed). Only after F5 passes on the copy is a **separate** Production authorization considered. The live data incident remains OPEN until then.
