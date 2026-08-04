@@ -2328,23 +2328,60 @@ function _evtRoundMoney(value, currency) {
   return Math.round(Number(value) * f) / f;
 }
 
-// Resolve regular price + canonical identity for a SKU in the selected scope. Regular price is
-// resolved by marketplace_sku_id against pricing_list (canonical), then marketplace_skus. Returns
-// { inScope, marketplaceSkuId, regularPrice(number|null — null = MISSING, never fabricated 0), currency }.
+// ---- CANONICAL regional pricing resolver (the SINGLE lookup shared by Add Regular FC + Add Special
+// Event FC). Regular Price AND Currency come from ONE pricing_list row: matched by marketplace_sku_id
+// (preferred canonical identity), else by full business identity company|country|marketplace|sku|site_sku
+// (only when marketplace_sku_id is not held). pricing_list is the sole price source of truth
+// (PRICING_DATABASE_MAPPING §33; effective field = `regular_price`). NEVER: first-match by master SKU,
+// cross-country / cross-marketplace fallback, another site's price, marketplace_skus / sku_details price,
+// hardcoded USD, or a fabricated 0 (MISSING → regularPrice/currency = null). Returns
+// { marketplaceSkuId, sku, regularPrice(number|null), currency(string|null), source:'pricing_list', found }.
+function resolveRegionalPricingContext(ctx) {
+  ctx = ctx || {};
+  function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
+  var out = { marketplaceSkuId: String(ctx.marketplaceSkuId==null?'':ctx.marketplaceSkuId).trim(),
+    sku: String(ctx.sku==null?'':ctx.sku).trim(), regularPrice: null, currency: null,
+    source: 'pricing_list', found: false };
+  var DB = (typeof window !== 'undefined') && window.KM && window.KM.DB;
+  var pl = (DB && DB.getPricingList) ? DB.getPricingList() : [];
+  var mkey = (typeof _fcResolveMarketplaceKey === 'function') ? _fcResolveMarketplaceKey(ctx.marketplace) : ctx.marketplace;
+  var row = null;
+  // 1) canonical: exact marketplace_sku_id match.
+  if (out.marketplaceSkuId) {
+    row = pl.filter(function(x){ return up(x.marketplaceSkuId) === up(out.marketplaceSkuId); })[0] || null;
+  }
+  // 2) only if no marketplace_sku_id held: full business identity (NO cross country/marketplace).
+  if (!row && !out.marketplaceSkuId && out.sku) {
+    row = pl.filter(function(x){
+      return (up(x.sku) === up(out.sku) || up(x.siteSku) === up(out.sku)) &&
+        (!ctx.country || up(x.country) === up(ctx.country)) &&
+        (!mkey || up(x.marketplace) === up(mkey));
+    })[0] || null;
+  }
+  if (row) {
+    out.found = true;
+    if (!out.marketplaceSkuId) out.marketplaceSkuId = String(row.marketplaceSkuId==null?'':row.marketplaceSkuId).trim();
+    // pricing_list normalizer coerces a missing regular_price to 0 — read raw to tell "missing" from "0".
+    var rawPrice = row.raw ? row.raw.regular_price : row.regularPrice;
+    var num = parseFloat(rawPrice);
+    out.regularPrice = (rawPrice === '' || rawPrice == null || isNaN(num) || num <= 0) ? null : num;
+    var cur = String(row.currency==null?'':row.currency).trim();
+    out.currency = cur || null;
+  }
+  return out;
+}
+
+// Scope-aware wrapper for the Special Event Builder. Delegates the price/currency to the canonical
+// resolver (pricing_list only — never marketplace_skus). `inScope` = the SKU exists in the selected
+// Company/Country/Marketplace marketplace_skus scope. MISSING price → regularPrice/currency null.
 function _evtSkuPricing(sku) {
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   var m = _evtScopedMskus().filter(function(x){ return up(x.sku) === up(sku); })[0];
-  var out = { inScope: !!m, marketplaceSkuId: m ? m.marketplaceSkuId : '', regularPrice: null, currency: (m && m.currency) || 'USD' };
-  if (!m) return out;
-  var pl = (window.KM && window.KM.DB && window.KM.DB.getPricingList) ? window.KM.DB.getPricingList() : [];
-  var p = m.marketplaceSkuId ? pl.filter(function(x){ return up(x.marketplaceSkuId) === up(m.marketplaceSkuId); })[0] : null;
-  // pricing_list normalizer coerces a missing regular_price to 0 — read raw to tell "missing" from "0".
-  var rawPrice;
-  if (p) { rawPrice = p.raw ? p.raw.regular_price : p.regularPrice; if (p.currency) out.currency = p.currency; }
-  else { rawPrice = (m.raw ? m.raw.regular_price : undefined); if (rawPrice === undefined) rawPrice = m.regularPrice; }
-  var num = parseFloat(rawPrice);
-  out.regularPrice = (rawPrice === '' || rawPrice == null || isNaN(num) || num <= 0) ? null : num;
-  return out;
+  var site = _evtSelectedSite();
+  var ctx = resolveRegionalPricingContext({ company: site.company, country: site.country,
+    marketplace: site.marketplace, sku: sku, marketplaceSkuId: m ? m.marketplaceSkuId : '' });
+  return { inScope: !!m, marketplaceSkuId: ctx.marketplaceSkuId || (m ? m.marketplaceSkuId : ''),
+    regularPrice: ctx.regularPrice, currency: ctx.currency };
 }
 // Back-compat: legacy callers expect a bare number (0 when missing).
 function _evtRegularPrice(sku) {
@@ -2476,6 +2513,7 @@ function _evtAddSingleRow() {
     '<input type="number" class="evt-disc" placeholder="%" min="0" max="100" step="0.1" onchange="_evtSingleRowDiscChange(this)">' +
     '<input type="number" class="evt-deal" placeholder="Deal" step="0.01">' +
     '<input type="number" class="evt-fc" placeholder="Qty" min="0">' +
+    '<span class="evt-cur" title="pricing_list currency (applies to Regular + Deal)">—</span>' +
     '<button type="button" class="fc-evt-row-remove" title="Remove" onclick="_evtRemoveSingleRow(this)">×</button>';
   wrap.appendChild(row);
   _evtUpdateAddRowBtn();
@@ -2501,7 +2539,10 @@ function _evtApplyRowPricing(row) {
   row.dataset.priceState = '';
   if (!sku) { if (regEl) regEl.value = ''; if (skuEl) skuEl.classList.remove('is-invalid'); return; }
   var pr = _evtSkuPricing(sku);
+  var curEl = row.querySelector('.evt-cur');
   row.dataset.marketplaceSkuId = pr.marketplaceSkuId || '';
+  row.dataset.currency = '';
+  if (curEl) { curEl.textContent = '—'; curEl.classList.remove('fc-evt-warn'); }
   if (!pr.inScope) {
     if (regEl) { regEl.value = ''; regEl.placeholder = 'Out of scope'; }
     if (skuEl) skuEl.classList.add('is-invalid');
@@ -2512,11 +2553,14 @@ function _evtApplyRowPricing(row) {
   if (pr.regularPrice == null) {
     if (regEl) { regEl.value = ''; regEl.placeholder = 'Missing Regular Price'; }
     row.dataset.priceState = 'missing_price';
+    if (curEl) { curEl.textContent = '—'; curEl.classList.add('fc-evt-warn'); }
     return;
   }
   if (regEl) regEl.value = pr.regularPrice;
   row.dataset.priceState = 'ok';
-  row.dataset.currency = pr.currency || 'USD';
+  // Currency = the SAME pricing_list row's currency (auxiliary visual only; input stays pure numeric).
+  row.dataset.currency = pr.currency || '';
+  if (curEl) curEl.textContent = pr.currency || '—';
   _evtRecalcRowDeal(row);
 }
 // Recompute a row's Deal Price from its Discount % (deal = regular × (1 − disc/100)); blank disc leaves deal.
@@ -2548,6 +2592,7 @@ function _evtReadSingleRows() {
       sku: ((row.querySelector('.evt-sku') || {}).value || '').trim(),
       marketplaceSkuId: row.dataset.marketplaceSkuId || '',
       priceState: row.dataset.priceState || '',
+      currency: row.dataset.currency || '',
       regularPrice: (regRaw === '' || regRaw == null) ? null : (parseFloat(regRaw) || 0),
       discountPercent: parseFloat((row.querySelector('.evt-disc') || {}).value),
       dealPrice: parseFloat((row.querySelector('.evt-deal') || {}).value),
@@ -2581,7 +2626,7 @@ function _evtCandidateRows() {
     var d = detBySku[up(m.sku)] || {};
     var pr = _evtSkuPricing(m.sku);
     return { sku: m.sku, category: d.category || '', series: d.series || '',
-      marketplaceSkuId: pr.marketplaceSkuId || m.marketplaceSkuId || '', regularPrice: pr.regularPrice };
+      marketplaceSkuId: pr.marketplaceSkuId || m.marketplaceSkuId || '', regularPrice: pr.regularPrice, currency: pr.currency };
   }).filter(function(r){
     if (!r.sku || seen[up(r.sku)]) return false;
     var cOk = !cats || cats.indexOf(r.category) >= 0;
@@ -2608,7 +2653,7 @@ function _evtBuildGroups() {
     if (byKey[key].rows.some(function(x){ return String(x.sku).toUpperCase() === String(r.sku).toUpperCase(); })) return;
     var p = prev[key + '::' + String(r.sku).toUpperCase()];
     byKey[key].rows.push({
-      sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, regularPrice: r.regularPrice,
+      sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, regularPrice: r.regularPrice, currency: r.currency,
       discountPct: p ? p.discountPct : NaN,
       dealPrice: p ? p.dealPrice : NaN,
       baseFc: p ? p.baseFc : null,
@@ -2631,16 +2676,25 @@ function _evtRenderGroupCards() {
   var method = _evtAssistMethod();
   var editable = (method === 'manual');
   wrap.innerHTML = _evtGroups.map(function(g, i){
+    // Group currency = distinct non-empty pricing_list currencies across the card's SKU rows.
+    var curSet = {}; g.rows.forEach(function(r){ if (r.currency) curSet[r.currency] = 1; });
+    var curs = Object.keys(curSet);
+    var curBadge = (curs.length === 1)
+      ? '<span class="fc-evt-cur-badge" title="pricing_list currency for this group">' + curs[0] + '</span>'
+      : (curs.length > 1 ? '<span class="fc-evt-cur-badge fc-evt-warn" title="SKUs in this group use different pricing_list currencies — no cross-currency aggregate">MIXED CURRENCY</span>' : '');
     var head =
       '<div class="fc-evt-card-head">' +
         '<span class="fc-evt-tag">' + (g.category || '—') + '</span>' +
         '<span class="fc-evt-tag">' + (g.series || '—') + '</span>' +
+        curBadge +
         '<label class="fc-evt-card-disc">Discount % <input type="number" min="0" max="100" step="0.1" value="' + (isNaN(g.discountPct) ? '' : g.discountPct) + '" onchange="_evtCardDiscount(' + i + ',this.value)"></label>' +
         '<button type="button" class="fc-evt-row-remove" title="Remove group" onclick="_evtRemoveGroup(' + i + ')">×</button>' +
       '</div>';
     var colHead = '<div class="fc-evt-line fc-evt-line--head"><span>SKU</span><span>Regular</span><span>Disc %</span><span>Deal</span><span>Base FC</span><span>New Event FC</span><span>Diff</span><span></span></div>';
     var body = g.rows.map(function(r, ri){
-      var regTxt = (r.regularPrice == null) ? '<span class="fc-evt-warn">Missing</span>' : r.regularPrice;
+      // Regular + Deal share the SAME pricing_list currency; shown as an auxiliary suffix (never a cross-country substitute).
+      var cur = r.currency ? (' <small class="fc-evt-cur">' + r.currency + '</small>') : '';
+      var regTxt = (r.regularPrice == null) ? '<span class="fc-evt-warn">Missing</span>' : (r.regularPrice + cur);
       var base = (r.baseFc == null) ? null : r.baseFc;
       var diff = (!isNaN(r.newFc) && base != null) ? (r.newFc - base) : null;
       var diffTxt = (diff == null) ? '—' : ((diff > 0 ? '+' : '') + diff.toLocaleString());
@@ -2667,10 +2721,10 @@ function _evtCardDiscount(i, val) {
   var g = _evtGroups[i]; if (!g) return;
   var pct = (val === '' ? NaN : parseFloat(val));
   g.discountPct = pct;
-  var site = _evtSelectedSite();
   g.rows.forEach(function(r){
     r.discountPct = pct;
-    if (!isNaN(pct) && r.regularPrice != null) r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - pct / 100), site.currency);
+    // Deal Price uses the SAME pricing_list currency as its Regular Price (per-row) — no FX, no site guess.
+    if (!isNaN(pct) && r.regularPrice != null) r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - pct / 100), r.currency);
   });
   _evtRenderGroupCards();
 }
@@ -2681,7 +2735,7 @@ function _evtLineField(gi, ri, field, val) {
   var num = (val === '' ? NaN : parseFloat(val));
   r[field] = num;
   if (field === 'discountPct' && !isNaN(num) && r.regularPrice != null) {
-    r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - num / 100), _evtSelectedSite().currency);
+    r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - num / 100), r.currency);
   }
   _evtRenderGroupCards();
 }
@@ -2860,13 +2914,14 @@ async function saveEventUpdate() {
       var r = rows[i];
       if (!r.sku) { alert('Row ' + (i + 1) + ': SKU is required.'); return; }
       if (r.priceState === 'out_of_scope' || !r.marketplaceSkuId) { alert('Row ' + (i + 1) + ' (' + r.sku + '): SKU is not in the selected Company / Country / Marketplace scope (marketplace_sku_id unresolved).'); return; }
-      if (r.priceState === 'missing_price' || r.regularPrice == null) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Missing Regular Price — set the price in pricing_list before saving (not substituted with 0).'); return; }
+      if (r.priceState === 'missing_price' || r.regularPrice == null) { alert('Row ' + (i + 1) + ' (' + r.sku + '): MISSING_PRICING_LIST_ROW — no pricing_list price for company=' + company + ' / country=' + country + ' / marketplace=' + mkey + ' / marketplace_sku_id=' + (r.marketplaceSkuId || '(unresolved)') + ' / sku=' + r.sku + '. Set the price in pricing_list before saving (never substituted with 0).'); return; }
+      if (!r.currency) { alert('Row ' + (i + 1) + ' (' + r.sku + '): MISSING_PRICING_LIST_ROW currency — the pricing_list row has no currency; cannot snapshot price_units.'); return; }
       if (isNaN(r.dealPrice)) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Deal Price is required.'); return; }
       if (isNaN(r.fcQty) || r.fcQty <= 0) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Forecast Qty is required (> 0).'); return; }
       var meta = _fcDeriveSkuMeta(r.sku);
       var disc = isNaN(r.discountPercent) ? (r.regularPrice > 0 ? Math.round((1 - r.dealPrice / r.regularPrice) * 1000) / 10 : 0) : r.discountPercent;
       lines.push({ sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, category: meta.category, series: meta.series,
-        regularPrice: r.regularPrice, dealPrice: r.dealPrice, discountPercent: disc, fcQty: r.fcQty });
+        regularPrice: r.regularPrice, dealPrice: r.dealPrice, discountPercent: disc, currency: r.currency, fcQty: r.fcQty });
     }
   } else {
     if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
@@ -2880,12 +2935,13 @@ async function saveEventUpdate() {
         if (isNaN(gr.newFc) || gr.newFc <= 0) { skipped++; continue; }
         // Hard errors only for SKUs that DO have a forecast to write.
         if (!gr.marketplaceSkuId) { alert(tag + ': marketplace_sku_id unresolved (out of scope).'); return; }
-        if (gr.regularPrice == null) { alert(tag + ': Missing Regular Price — set it in pricing_list (not substituted with 0).'); return; }
+        if (gr.regularPrice == null) { alert(tag + ': MISSING_PRICING_LIST_ROW — no pricing_list price for company=' + company + ' / country=' + country + ' / marketplace=' + mkey + ' / marketplace_sku_id=' + (gr.marketplaceSkuId || '(unresolved)') + ' / sku=' + gr.sku + ' (never substituted with 0).'); return; }
+        if (!gr.currency) { alert(tag + ': MISSING_PRICING_LIST_ROW currency — the pricing_list row has no currency; cannot snapshot price_units.'); return; }
         if (isNaN(gr.dealPrice)) { alert(tag + ': Deal Price is required.'); return; }
         var meta2 = _fcDeriveSkuMeta(gr.sku);
         var disc2 = isNaN(gr.discountPct) ? (gr.regularPrice > 0 ? Math.round((1 - gr.dealPrice / gr.regularPrice) * 1000) / 10 : 0) : gr.discountPct;
         lines.push({ sku: gr.sku, marketplaceSkuId: gr.marketplaceSkuId, category: meta2.category, series: meta2.series,
-          regularPrice: gr.regularPrice, dealPrice: gr.dealPrice, discountPercent: disc2, fcQty: gr.newFc });
+          regularPrice: gr.regularPrice, dealPrice: gr.dealPrice, discountPercent: disc2, currency: gr.currency, fcQty: gr.newFc });
       }
     }
     if (!lines.length) { alert('No SKU lines to save — every card row is blank / has no base forecast (all skipped).'); return; }
@@ -2931,8 +2987,10 @@ async function saveEventUpdate() {
 
     // 2) campaign_sku_lines (idempotent per line).
     var linePayloads = lines.map(function(l){
+      // price_units = the SAME pricing_list row's currency snapshot (never re-guessed from country at save).
       return { marketplace_sku_id: l.marketplaceSkuId, sku: l.sku, regular_price: l.regularPrice,
-        deal_price: l.dealPrice, discount_percent: l.discountPercent, line_status: 'active', source: 'fc_summary_builder' };
+        deal_price: l.dealPrice, discount_percent: l.discountPercent, price_units: l.currency,
+        line_status: 'active', source: 'fc_summary_builder' };
     });
     var lineRes = await DB.upsertCampaignSkuLines({ campaign_id: campaignId, lines: linePayloads });
     var lineIdBySku = {};

@@ -1312,7 +1312,11 @@
 
 /* Single-SKU rows (6 cols: SKU · Regular · Discount% · Deal · Qty · remove) */
 .fc-evt-rows-head, .fc-evt-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 28px; gap: 8px; align-items: center; box-sizing: border-box; }
-.fc-evt-rows-head--single, .fc-evt-row--single { grid-template-columns: 2fr 1fr 0.8fr 1fr 1fr 28px; }
+.fc-evt-rows-head--single, .fc-evt-row--single { grid-template-columns: 2fr 1fr 0.8fr 1fr 1fr 44px 28px; }
+.fc-evt-row .evt-cur { font-size: 11px; font-weight: 700; color: #64748B; text-align: center; letter-spacing: 0.02em; }
+.fc-evt-cur-badge { font-size: 11px; font-weight: 700; color: #0f766e; background: #ecfdf5; border: 1px solid #99f6e4; border-radius: 4px; padding: 1px 6px; }
+.fc-evt-cur-badge.fc-evt-warn { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+.fc-evt-line small.fc-evt-cur { font-size: 10px; font-weight: 700; color: #64748B; }
 .fc-evt-rows-head { font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em; margin: 6px 0 4px; }
 .fc-evt-row { margin-bottom: 6px; }
 /* Out-of-scope SKU input marker (searchable datalist may still accept free text; we flag + block). */

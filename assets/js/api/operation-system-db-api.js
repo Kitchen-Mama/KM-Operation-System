@@ -226,6 +226,8 @@ function normalizeCampaignSkuLineRecord(raw) {
         sku: String(r.sku || '').trim(),
         promoPrice: String(r.promo_price || ''),
         regularPrice: String(r.regular_price || ''),
+        // pricing_list currency snapshot for this line's Regular / Deal price (USD/CAD/AUD/…). NOT a sales value.
+        priceUnits: String(r.price_units || ''),
         discountPercent: String(r.discount_percent || ''),
         specialCondition: String(r.special_condition || ''),
         lps: String(r.lps || ''),

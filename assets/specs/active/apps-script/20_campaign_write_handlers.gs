@@ -32,11 +32,14 @@ var CAMPAIGNS_HEADERS_ = [
   'total_ad_cost', 'total_acos', 'source', 'created_by', 'created_at', 'updated_by', 'updated_at'
 ];
 
-// campaign_sku_lines canonical header (existing columns + additive `marketplace_sku_id`).
+// campaign_sku_lines canonical header (existing columns + additive `marketplace_sku_id`, `price_units`).
 // promo_price = the deal/promotional price (the Special Event Builder's "Deal Price").
+// price_units = the currency snapshot of the SAME pricing_list row that supplied regular_price / promo_price
+//   (e.g. USD / CAD / AUD / GBP / EUR / JPY). It is a display/audit currency snapshot only — NOT a sales
+//   amount and NOT an FX rate; sales_amount / sales_units local-vs-USD canonicalization is undecided elsewhere.
 var CAMPAIGN_SKU_LINES_HEADERS_ = [
   'campaign_sku_line_id', 'campaign_id', 'marketplace_sku_id', 'sku', 'promo_price', 'regular_price',
-  'discount_percent', 'special_condition', 'lps', 'line_status', 'source',
+  'price_units', 'discount_percent', 'special_condition', 'lps', 'line_status', 'source',
   'created_by', 'created_at', 'updated_by', 'updated_at'
 ];
 
@@ -163,6 +166,8 @@ function handleUpsertCampaignSkuLines_(body) {
       // promo_price = deal price (accept either key).
       promo_price: (l.deal_price != null && l.deal_price !== '') ? l.deal_price : l.promo_price,
       regular_price: l.regular_price,
+      // price_units = pricing_list currency snapshot (accept price_units or legacy currency key).
+      price_units: (l.price_units != null && l.price_units !== '') ? l.price_units : l.currency,
       discount_percent: l.discount_percent,
       special_condition: l.special_condition,
       line_status: String(l.line_status || 'active').trim(),
