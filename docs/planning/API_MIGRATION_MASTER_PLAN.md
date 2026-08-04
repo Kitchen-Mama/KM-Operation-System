@@ -78,12 +78,15 @@ Cache suitability: master-data sections (sku_details, marketplaces, carriers) ar
 
 ## 6. Phased implementation plan
 
-- **API-1 — Foundation Contract Freeze.** Freeze: one envelope `{success,data,error,meta?}`; the canonical action registry (reconcile the 5 missing handlers mirror↔deploy); transport contract (`text/plain` POST or successor); error taxonomy (incl. the S0/S0.5 safety tokens); readback/invalidation contract; Submit explicitly OUT. Deliverable: a frozen `api-contract` doc + the endpoint-name decisions (names NOT frozen before evidence — e.g. workspace names above are proposals).
-- **API-2 — Foundation Implementation.** Build the API client wrapper + server envelope normalizer + targeted-invalidation cache, behind a flag, with **zero behavior change** (parity with `KM.DB.*`).
-- **API-3 — First Read-Only Vertical Slice.** Implement one `get…Workspace` read + its page cutover behind a flag. **Recommended first slice: `getWeeklyShippingPlanWorkspace`** (see §7).
-- **API-4 — First Draft Write Vertical Slice.** Wrap that slice's writes (status/qty/note) with the frozen envelope + targeted invalidation.
-- **API-5 — Verification Copy End-to-End.** Run API-3/4 against a **duplicated verification Spreadsheet** (set `PRODUCTION_DB_SPREADSHEET_ID_`), full before/after diff + rollback — the S0.5 gate. **No Production.**
-- **API-6+ — Remaining domains** in dependency order: SKU/Tax → FC/Campaign → Inventory/Overseas → Request Order/PO → Shipment → (Recommendation LAST, after Submit boundary freeze).
+> **Reconciliation (2026-08-04):** the **contract freeze** and the **dormant foundation implementation** were delivered together in the round issued as **"API-1 — Foundation Implementation (Round A)"** — see `API_FOUNDATION_ARCHITECTURE.md`. The two bullets below are therefore folded into a single completed **API-1**, and the first vertical slice becomes **API-2** (matching that round's own "Next Slice"). Later phase numbers shift by one accordingly.
+
+- **API-1 — Foundation Contract Freeze + Implementation (✅ SOURCE-PRESENT / TEST-VERIFIED, DORMANT — 2026-08-04).** Frozen: one envelope `{success,data,meta,errors}`; error taxonomy (incl. `FORBIDDEN_OPERATION` mapping the S0/S0.5 safety tokens); the 7-workspace Registry (REGISTERED only); transport contract (`text/plain` POST + GET action, configured-guarded `ApiTransport`); feature flag `USE_WORKSPACE_API=false`; memory Cache interface (TTL=0). Built: `assets/js/api/km-api-foundation.js` (ApiClient → ApiTransport → ApiDispatcher → WorkspaceResolver → ResponseEnvelope/ErrorEnvelope/Cache/LegacyAdapter), **zero business logic**, 100% backward-compatible (legacy delegation, additive `<script>`, inert while flag off), 56/0 tests. Action-registry reconciliation of the 5 missing handlers mirror↔deploy stays a **live-deploy** task (not resolvable from source) — deferred to the Verification-Copy phase.
+- **API-2 — First Read-Only Vertical Slice.** Implement one `get…Workspace` read (flip a Registry entry `status → IMPLEMENTED`) + its page cutover behind the flag. **Recommended first slice: `getWeeklyShippingPlanWorkspace`** (see §7).
+- **API-3 — First Draft Write Vertical Slice.** Wrap that slice's writes (status/qty/note) with the frozen envelope + targeted invalidation (the Cache seam, currently TTL=0).
+- **API-4 — Verification Copy End-to-End.** Run API-2/3 against a **duplicated verification Spreadsheet** (set `PRODUCTION_DB_SPREADSHEET_ID_`), full before/after diff + rollback — the S0.5 gate; reconcile the 5 missing-handler actions mirror↔deploy here. **No Production.**
+- **API-5+ — Remaining domains** in dependency order: SKU/Tax → FC/Campaign → Inventory/Overseas → Request Order/PO → Shipment → (Recommendation LAST, after Submit boundary freeze).
+
+*(Legacy pre-reconciliation numbering: the old API-1/API-2 split is now API-1; old API-3/4/5/6 are API-2/3/4/5+. The F1–F6 checkpoint names in §10 are unchanged — they are keyed to events, not phase numbers.)*
 
 ---
 

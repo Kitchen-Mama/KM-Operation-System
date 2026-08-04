@@ -3111,3 +3111,26 @@ Because gates 2–3 require a browser/live session that this environment cannot 
 - **Files changed (Round 4):** `assets/js/utils/inventory-compat.js`, `assets/js/pages/inventory-replenishment.js`, `assets/tests/inventory-compat.test.js` (rewritten to Round 4 contract), NEW `assets/tests/shipping-allocation-draft-persistence.test.js`, this entry. **Unchanged:** all 8 Batch A docs + SYSTEM_RUNTIME_ARCHITECTURE, adapter `operation-system-db-api.js`, `16_shipping_allocation_handlers.gs`, `01_router.gs`, `index.html`, formulas, schema, warehouse master, raw data.
 - **Local test:** `node assets/tests/inventory-compat.test.js` + `shipping-allocation-draft-persistence.test.js` pass; full `assets/tests/*` (20 files) exit 0; `node --check` clean.
 - **BROWSER-UNVERIFIED items (operator):** UK 240/240 render; Amazon To single-logical dropdown; EU/DE/FR candidate lists; Manual-Add → context-switch/reload persistence round-trip (the DOM-level stable line-id binding + full reload restoration are source-implemented at the data layer but not runtime-verified here). Not production verified; System Repair 1 not formally accepted.
+
+---
+
+## API Foundation — Phase API-1 (Round A) SOURCE-PRESENT / TEST-VERIFIED, DORMANT (2026-08-04)
+
+The client-side base of the future API layer now exists and is loaded, but is **inert in production**.
+
+```text
+API Foundation (assets/js/api/km-api-foundation.js): SOURCE-PRESENT / TEST-VERIFIED / DORMANT
+Feature flag USE_WORKSPACE_API: false (production default → legacy transport)
+Business logic changed: NONE (zero-business-logic transport foundation)
+Workspace Registry: 7 domains REGISTERED only (none implemented)
+Legacy transport (KM.DB.* / WEB_APP_FETCH): 100% preserved, no page rewired
+Apps Script / .gs / generated bundle / DB / schema: UNCHANGED (no APPS_SCRIPT_SYNC, no BUNDLE_REBUILD)
+Tests: assets/tests/km-api-foundation.test.js = 56/0; full suite unchanged (Golden 39/1/0; #34 Pending)
+Pre-existing replen-draft-completeness P29–P31: still failing (honestly reported; unrelated)
+Next slice: API-2 getWeeklyShippingPlanWorkspace
+```
+
+- **What was built:** `ApiClient → ApiTransport → ApiDispatcher → WorkspaceResolver → ResponseEnvelope`, plus ErrorEnvelope, a memory Cache (TTL=0, interface only), and a LegacyAdapter that delegates to `window.KM.DB.*` / `getOperationDb`. Response `{success,data,meta,errors}`; error `errors[]{code,message,details}` (never a bare thrown string). A KMSAFE-mirror forbidden-op guard refuses create-sheet / append-header / modify-schema / migrate in both modes.
+- **Backward compatibility:** additive `<script>` in `index.html`; constructing/loading the module mutates nothing and issues no legacy call until invoked; with the flag off every request routes to the existing legacy transport unchanged.
+- **Files changed (API-1):** NEW `assets/js/api/km-api-foundation.js`, NEW `assets/tests/km-api-foundation.test.js`, `index.html` (one inert script tag), NEW `docs/planning/API_FOUNDATION_ARCHITECTURE.md`, and doc updates to `API_MIGRATION_MASTER_PLAN.md` §6 / `SYSTEM_RUNTIME_ARCHITECTURE.md` §14.1 / this entry. **Unchanged:** all `assets/js/core/*.js`, all `.gs`, the generated bundle, DB schema, formulas, recommendation/submit/allocation/persistence/shipment runtimes.
+- **Deployment classification:** `km-api-foundation.js` + `index.html` = `FRONTEND_GITHUB_PAGES_REQUIRED`; docs = `DOCUMENTATION_ONLY`; **no** `APPS_SCRIPT_SYNC_REQUIRED`, **no** `BUNDLE_REBUILD_REQUIRED`. Governed by `DEPLOYMENT_RELEASE_GOVERNANCE.md` (manual, user-controlled). Not deployed; not pushed.

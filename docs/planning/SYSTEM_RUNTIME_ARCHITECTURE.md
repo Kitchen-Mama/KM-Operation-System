@@ -551,6 +551,20 @@ BigQuery                (analytics / raw daily sales / future warehouse)
 - Clients must **not** bypass services to touch the database directly.
 - Today's Apps Script bridge is the **interim** stand-in for the API layer; the migration target is a formal backend API + cloud DB (per `project-current-state.md` positioning).
 
+### 14.1 API Foundation — Phase API-1 (SOURCE-PRESENT / TEST-VERIFIED, DORMANT — 2026-08-04)
+
+The **client-side base** of the future API layer now exists: `assets/js/api/km-api-foundation.js` (`window.KM.api`), a pure, dependency-free, **zero-business-logic** transport foundation. It is loaded by `index.html` but **inert in production** — the feature flag `USE_WORKSPACE_API` defaults to `false`, so every request delegates to the existing legacy surface (`window.KM.DB.*` / `WEB_APP_FETCH`) unchanged.
+
+```
+ApiClient → ApiTransport → ApiDispatcher → WorkspaceResolver → ResponseEnvelope
+                       ↘ ErrorEnvelope ↘ Cache(memory,TTL=0) ↘ LegacyAdapter → KM.DB.* / WEB_APP_FETCH
+```
+
+- **Response contract** `{success,data,meta,errors}`; **error contract** `errors[]{code,message,details}` — never a bare thrown string.
+- **Workspace Registry**: 7 domains (`weeklyShipping`, `inventoryReplenishment`, `requestOrder`, `purchaseOrder`, `shipment`, `fcSummary`, `skuDetails`) **REGISTERED only** — not implemented.
+- **Security**: a redundant client-side forbidden-op guard mirrors **§SAFE / KMSAFE** `STRUCTURAL_OPS` + header-write/schema-migration verbs — no workspace may create a sheet, append a header, modify schema, or migrate; the server-side KMSAFE gate remains the ultimate authority.
+- **Backward compatible**: additive module, delegates while dormant, no page rewired, `WEB_APP_FETCH` still live. First real slice = **API-2 `getWeeklyShippingPlanWorkspace`**. Full detail: `API_FOUNDATION_ARCHITECTURE.md`; roadmap: `API_MIGRATION_MASTER_PLAN.md` §6.
+
 ---
 
 ## 14A. Overseas Warehouse Operation — Runtime Classification (CANONICAL 2026-07-21 — NOT implemented)
