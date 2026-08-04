@@ -74,6 +74,8 @@ function makeLegacy() { var calls = []; return { _calls: calls, getOperationDb: 
   ok(sp1.sourceWarehouse.name === 'Shenzhen' && sp1.destinationWarehouse.name === 'AMZ US', 'VM4 warehouse JOIN by id');
   ok(sp1.carrier.name === 'Sinotrans' && sp1.status === 'draft' && sp1.statusLabel === 'Draft', 'VM5 carrier join + raw status + label');
   ok(vm.plans[0].planVersion === 2, 'VM6 numeric plan_version coerced');
+  ok(vm.plans[2].raw && vm.plans[2].raw.shipping_plan_id === 'SP-1', 'VM6b §22 read-only raw passthrough on plan (page adapter parity)');
+  ok(vm.detailsByPlanId['SP-1'].lines[0].raw && vm.detailsByPlanId['SP-1'].lines[0].raw.shipping_plan_id === 'SP-1', 'VM6c §22 raw passthrough on line');
 
   section('Filter / sort / pagination determinism');
   ok(weeklyWorkspaceBuild_(fixtureTables(), { filters: { status: 'approved' } }).plans.length === 1, 'FS1 status filter');

@@ -3156,3 +3156,25 @@ Next: API-3 Weekly page read cutover + write slice (after a new authorized round
 
 - **Files (API-2):** NEW `assets/specs/active/apps-script/40_api_v1_weekly_workspace.gs` (`APPS_SCRIPT_SYNC_REQUIRED`), `assets/specs/active/apps-script/01_router.gs` (thin dispatch, `APPS_SCRIPT_SYNC_REQUIRED`), `assets/js/api/km-api-foundation.js` (per-workspace flag + Weekly resolver, `FRONTEND_GITHUB_PAGES_REQUIRED`), NEW `assets/tests/km-api-weekly-workspace.test.js`, updated `km-api-foundation.test.js` + `km-api-foundation-compat.test.js` (GIT_ONLY), NEW `API_WEEKLY_SHIPPING_WORKSPACE_SPEC.md` + `API_WEEKLY_SHIPPING_PARITY_REPORT.md`, updated `API_MIGRATION_MASTER_PLAN.md` + this entry (DOCUMENTATION_ONLY). **`BUNDLE_REBUILD_REQUIRED=false`** (no `assets/js/core/*.js` changed). **Unchanged:** generated bundle, Recommendation/Submit runtimes, DB schema, all Weekly business handlers (11_/17_ etc.), formulas.
 - **Deployment:** manual, user-controlled (`DEPLOYMENT_RELEASE_GOVERNANCE.md`). Apps Script sync-required = `40_api_v1_weekly_workspace.gs` + `01_router.gs`. Not pushed, not deployed. Live/browser parity = OPEN (API-3 / Verification Copy).
+
+---
+
+## API v1 — Weekly READ page cutover (Phase API-3A) SOURCE-PRESENT / TEST-VERIFIED, NOT DEPLOYED, DEFAULT LEGACY (2026-08-04)
+
+The Weekly Shipping Plan page's **read** path is now reversibly connectable to the Workspace API; **production default is Legacy**, all writes stay Legacy.
+
+```text
+Weekly page READ: reversible — Legacy (default) ↔ Workspace API (when per-workspace flag effective)
+Boundary: loadWeeklyShippingReadModel_ (one normalized model; _spEffectiveWorkspace gate)
+Flags: USE_WORKSPACE_API=false + WORKSPACE_API_ENABLED.weeklyShipping=false (unchanged; no default enablement)
+Weekly WRITES: all Legacy KM.DB (updateShippingPlanLineQty/Status, completeShippingPlan, appendShippingPlanNote) — unchanged
+Dual read: NONE (Workspace mode does not call getShippingPlans); no silent Workspace→Legacy fallback
+Workspace render: snapshot-primary (live=null); cross-domain live fallback stays Legacy-only (documented, tested)
+§22 extension: 40_api_v1_weekly_workspace.gs adds read-only raw passthrough on plan+line (same 4 tables)
+Planning-cycle: outcome B (field absent, UI not dependent) — no control wired, no column added
+Tests: km-api-weekly-page-cutover.test.js 27/0; km-api-weekly-workspace.test.js 66/0; compat 43/0; foundation 57/0
+Golden 39/1/0; #34 Pending; replen P29–P31 still failing (unrelated)
+Next: API-3B Verification-Copy browser validation (checklist frozen, not run)
+```
+
+- **Files (API-3A):** `assets/js/pages/shipping-plan.js` (read boundary + adapter, `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/specs/active/apps-script/40_api_v1_weekly_workspace.gs` (§22 raw passthrough, `APPS_SCRIPT_SYNC_REQUIRED`), NEW `assets/tests/km-api-weekly-page-cutover.test.js` + updated `km-api-weekly-workspace.test.js` / `km-api-foundation-compat.test.js` (GIT_ONLY), NEW `API_WEEKLY_SHIPPING_CUTOVER_SPEC.md` + `API_WEEKLY_SHIPPING_F3A_REPORT.md`, updated `API_MIGRATION_MASTER_PLAN.md` + this entry (DOCUMENTATION_ONLY). `BUNDLE_REBUILD_REQUIRED=false`. **Unchanged:** `01_router.gs`, generated bundle, Recommendation/Submit runtimes, DB schema, all Weekly write handlers, formulas. Not pushed, not deployed; live/browser parity = OPEN (API-3B).

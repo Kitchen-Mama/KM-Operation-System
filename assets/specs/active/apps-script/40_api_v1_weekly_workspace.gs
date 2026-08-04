@@ -104,7 +104,8 @@ function weeklyMapLine_(r) {
     cartonQty: weeklyWsNum_((r.plan_carton_qty === '' || r.plan_carton_qty == null) ? r.carton_qty : r.plan_carton_qty) || 0,
     unitsPerCarton: weeklyWsNum_(r.units_per_carton) || 0,
     status: weeklyWsStr_(r.line_status || r.status), statusLabel: weeklyStatusLabel_(r.line_status || r.status),
-    note: weeklyWsStr_(r.note), flags: []
+    note: weeklyWsStr_(r.note), flags: [],
+    raw: r   // API-3A §22 read-only passthrough (same shipping_plan_lines table already read)
   };
 }
 // display total = sum of the line's effective qty (approved when present else requested). NOT a recommendation.
@@ -128,7 +129,10 @@ function weeklyMapPlan_(r, whIndex, carrierIndex, linesByPlan) {
     estimatedCost: weeklyWsNum_(r.estimated_total_cost),
     currency: weeklyWsStr_(r.currency) || null,
     updatedAt: weeklyWsStr_(r.updated_at) || null,
-    lineCount: lines.length, flags: []
+    lineCount: lines.length, flags: [],
+    // API-3A §22 read-only passthrough: the source row (same shipping_plans table already read). Lets a page
+    // adapter reproduce the existing render's canonical fields without broadening table scope. Read-only.
+    raw: r
   };
 }
 

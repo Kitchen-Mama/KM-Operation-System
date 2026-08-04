@@ -133,8 +133,13 @@ function makeLegacy() {
   section('§10 Active-page source non-impact (all page modules)');
   var pagesDir = path.join(__dirname, '..', 'js', 'pages');
   var pageFiles = fs.readdirSync(pagesDir).filter(function (f) { return /\.js$/.test(f); });
-  var referencing = pageFiles.filter(function (f) { return /KM\.api\b|apiFoundation|km-api-foundation/.test(fs.readFileSync(path.join(pagesDir, f), 'utf8')); });
-  ok(referencing.length === 0, 'PG1 NO page module references KM.api / the Foundation (' + pageFiles.length + ' pages source-proven independent)');
+  // API-3A: shipping-plan.js is the ONLY page cut over to KM.api (READ path). Every OTHER page stays independent.
+  var CUTOVER_PAGES = { 'shipping-plan.js': 1 };
+  var referencing = pageFiles.filter(function (f) { return !CUTOVER_PAGES[f] && /KM\.api\b|apiFoundation|km-api-foundation/.test(fs.readFileSync(path.join(pagesDir, f), 'utf8')); });
+  ok(referencing.length === 0, 'PG1 only the API-3A cutover page uses KM.api; the other ' + (pageFiles.length - 1) + ' pages remain independent (' + (referencing.join(',') || 'clean') + ')');
+  // and the cutover page uses KM.api for READ only (getWorkspace/workspaceApiActive) — never a write command
+  var spSrc = fs.readFileSync(path.join(pagesDir, 'shipping-plan.js'), 'utf8');
+  ok(/KM\.api\.getWorkspace/.test(spSrc) && spSrc.indexOf('KM.api.executeCommand') < 0, 'PG1b the cutover page uses KM.api for READ only (no executeCommand / no workspace write)');
   var appSrc = read('js/app.js');
   ok(!/KM\.api\b|apiFoundation/.test(appSrc), 'PG2 app.js does not reference the Foundation');
 

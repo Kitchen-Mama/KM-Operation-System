@@ -14,10 +14,18 @@ function _spSetSectionCount(id, n) {
     if (el) el.textContent = n;
 }
 
+// API-3A — reversible READ cutover. Weekly read routes to window.KM.api.getWorkspace("weeklyShipping")
+// ONLY when the Foundation reports the per-workspace flag effective (global master AND weeklyShipping AND
+// IMPLEMENTED). Production defaults are false → Legacy. Writes ALWAYS stay on Legacy KM.DB (below).
+function _spEffectiveWorkspace() {
+    return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+        window.KM.api.workspaceApiActive('weeklyShipping'));
+}
+
 function renderShippingPlan() {
-    // Cloud (DB) path: read shipping_plans / shipping_plan_lines. Falls back to the legacy
-    // sessionStorage rendering only when cloud write is not enabled (Demo / unconfigured).
-    if (_spUseDb()) { renderShippingPlanFromDb(); return; }
+    // Cloud (DB) path: read shipping_plans / shipping_plan_lines (Legacy) OR the Weekly Workspace API when its
+    // flag is effective. Falls back to the legacy sessionStorage rendering only when neither is available (Demo).
+    if (_spUseDb() || _spEffectiveWorkspace()) { renderShippingPlanFromDb(); return; }
 
     console.log('=== Render Shipping Plan ===');
     const allPlansStr = sessionStorage.getItem('allShippingPlans');
@@ -596,31 +604,138 @@ function _spCompleted(p) {
     return !!(p.completedAt && String(p.completedAt).trim());
 }
 
-function renderShippingPlanFromDb() {
-    _spSkuLogiCache = null;   // rebuild the sku logistics lookup from the freshest cache each render
-    var plans = window.KM.DB.getShippingPlans() || [];
-    var lines = window.KM.DB.getShippingPlanLines() || [];
-    // Map which plans already have a shipment (robust Done-button detection).
-    _spPlanHasShipment = {};
-    ((window.KM.DB.getShipments && window.KM.DB.getShipments()) || []).forEach(function(sh) {
-        if (sh.shippingPlanId) _spPlanHasShipment[sh.shippingPlanId] = true;
-    });
-    var linesByPlan = {};
-    lines.forEach(function(l) {
-        (linesByPlan[l.shippingPlanId] = linesByPlan[l.shippingPlanId] || []).push(l);
-    });
+// ---- API-3A page read-source boundary ---------------------------------------------------------------
+// ONE predictable read model regardless of source. Legacy → getShippingPlans/Lines (+ live enrichment maps).
+// Workspace → KM.api.getWorkspace("weeklyShipping") adapted to the SAME normalized record shape (live=null:
+// Workspace mode renders the canonical persisted Decision Snapshot; the cross-domain live fallback is a
+// Legacy-only display aid). No dual read; no silent fallback after a Workspace request starts.
+var _spReadSeq = 0;   // stale-response guard: only the newest load may update the page
 
-    // Live fallback sources (Current Stock / Avg Sales) — used only when a line snapshot is absent.
+function _spCurrentFilters_() {
+    // The current Weekly UI filters client-side (grouped-by-status view); server-side filter/sort/pagination
+    // wiring is deferred until the UI gains those controls. Request the (bounded) full set and filter locally.
+    return {};
+}
+
+// Map one Workspace View-Model plan (typed + §22 raw) → the normalized record the existing render consumes.
+function _spWorkspacePlanRecord(p) {
+    var raw = (p && p.raw) || {};
+    return {
+        shippingPlanId: p.planId, shippingPlanNo: p.planNo, planName: p.planName,
+        company: p.company, country: p.country, marketplace: p.marketplace,
+        status: p.status, planVersion: _spNum(p.planVersion) || 1,
+        shippingMethod: p.shippingMethod, lastMileDelivery: p.lastMileDelivery, customsType: p.customsType,
+        carrierId: (p.carrier && p.carrier.id) || '',
+        estimatedTotalCost: (raw.estimated_total_cost == null ? '' : raw.estimated_total_cost),
+        estimatedFreightCost: (raw.estimated_freight_cost == null ? '' : raw.estimated_freight_cost),
+        estimatedDuty: (raw.estimated_duty == null ? '' : raw.estimated_duty),
+        currency: p.currency || '',
+        createdAt: String(raw.created_at || ''), note: String(raw.note || ''),
+        completedAt: String(raw.completed_at || ''),
+        transferredShipmentId: String(raw.transferred_shipment_id || ''),
+        transferredToShipmentAt: String(raw.transferred_to_shipment_at || ''),
+        updatedAt: p.updatedAt || '',
+        raw: raw
+    };
+}
+function _spWorkspaceLineRecord(l, planId) {
+    var raw = (l && l.raw) || {};
+    return {
+        shippingPlanLineId: l.lineId, shippingPlanId: l.planId || planId, sku: l.sku, siteSku: l.siteSku, marketplace: l.marketplace,
+        requestedQty: _spNum(l.requestedQty), approvedQty: _spNum(l.approvedQty),
+        cartonQty: _spNum(l.cartonQty), planCartonQty: _spNum(l.cartonQty), unitsPerCarton: _spNum(l.unitsPerCarton),
+        cbm: _spNum(raw.cbm), grossWeight: _spNum(raw.gross_weight), netWeight: _spNum(raw.net_weight),
+        snapshotCurrentStock: _spNum(raw.snapshot_current_stock), snapshotAvgSalesPerDay: _spNum(raw.snapshot_avg_sales_per_day),
+        snapshotDaysOfSupply: (raw.snapshot_days_of_supply == null ? '' : raw.snapshot_days_of_supply),
+        snapshotTargetDays: _spNum(raw.snapshot_target_days),
+        note: l.note || '', raw: raw
+    };
+}
+function _spAdaptWorkspaceToRecords(data) {
+    var wsPlans = (data && data.plans) || [];
+    var detailsByPlanId = (data && data.detailsByPlanId) || {};
+    var plans = wsPlans.map(_spWorkspacePlanRecord);
+    var lines = [];
+    wsPlans.forEach(function(p) {
+        var d = detailsByPlanId[p.planId];
+        ((d && d.lines) || []).forEach(function(l) { lines.push(_spWorkspaceLineRecord(l, p.planId)); });
+    });
+    return { plans: plans, lines: lines };
+}
+function _spBuildLegacyLiveMaps_() {
+    var shipmentMap = {};
+    ((window.KM.DB.getShipments && window.KM.DB.getShipments()) || []).forEach(function(sh) {
+        if (sh.shippingPlanId) shipmentMap[sh.shippingPlanId] = true;
+    });
     var invMap = _spLatestMap((window.KM.DB.getAmazonInventorySnapshot && window.KM.DB.getAmazonInventorySnapshot()) || []);
     var weeklyMap = _spLatestMap((window.KM.DB.getAmazonWeeklySalesSnapshot && window.KM.DB.getAmazonWeeklySalesSnapshot()) || []);
-    // Company live-join map (country||marketplace → company). LEGACY DISPLAY FALLBACK ONLY —
-    // new rows persist shipping_plans.company at Submit Plan (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.3).
     var mpCompany = {};
     ((window.KM.DB.getMarketplaces && window.KM.DB.getMarketplaces()) || []).forEach(function(m) {
         var k = String(m.country || '').trim().toLowerCase() + '||' + String(m.marketplace || '').trim().toLowerCase();
         if (m.company && !mpCompany[k]) mpCompany[k] = m.company;
     });
-    var live = { inv: invMap, weekly: weeklyMap, mpCompany: mpCompany };
+    return { shipmentMap: shipmentMap, live: { inv: invMap, weekly: weeklyMap, mpCompany: mpCompany } };
+}
+function loadWeeklyShippingReadModel_() {
+    if (_spEffectiveWorkspace()) {
+        if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+            // Flag says Workspace but the API is missing → fail VISIBLY (never silently pretend success).
+            return Promise.resolve({ source: 'workspace', error: { code: 'WORKSPACE_UNAVAILABLE', message: 'Weekly Workspace is enabled but the API client is unavailable.' } });
+        }
+        var params = { filters: _spCurrentFilters_(), sort: [{ field: 'updated_at', direction: 'desc' }],
+            page: { number: 1, size: 100 }, include: { summary: true, plans: true, details: true, filterOptions: true } };
+        return Promise.resolve(window.KM.api.getWorkspace('weeklyShipping', params)).then(function(env) {
+            if (env && env.success) {
+                var rec = _spAdaptWorkspaceToRecords(env.data);
+                // Workspace mode: shipmentMap empty (plan transferred_* drives Done) + live=null (snapshot-primary).
+                return { source: 'workspace', plans: rec.plans, lines: rec.lines, shipmentMap: {}, live: null, meta: env.meta };
+            }
+            return { source: 'workspace', error: (env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Weekly Workspace request failed.' }, meta: env && env.meta };
+        });
+    }
+    var maps = _spBuildLegacyLiveMaps_();
+    return Promise.resolve({ source: 'legacy',
+        plans: (window.KM.DB.getShippingPlans && window.KM.DB.getShippingPlans()) || [],
+        lines: (window.KM.DB.getShippingPlanLines && window.KM.DB.getShippingPlanLines()) || [],
+        shipmentMap: maps.shipmentMap, live: maps.live });
+}
+function _spRenderReadError_(err) {
+    var ids = ['shippingPlanCards', 'pendingApprovalCards', 'approvedCards', 'completedCards', 'cancelledCards'];
+    var code = _spEsc((err && err.code) || 'READ_FAILED');
+    var msg = _spEsc((err && err.message) || 'Failed to load shipping plans.');
+    var reqId = err && err.requestId ? (' <span style="color:#94A3B8;">[' + _spEsc(err.requestId) + ']</span>') : '';
+    // Show a structured error — NEVER a "No records" empty-state — and do not fall back to Legacy.
+    var banner = '<p class="sp-read-error" style="color:#B91C1C; background:#FEF2F2; border-left:3px solid #EF4444; padding:8px;">' +
+        'Workspace read error: ' + msg + ' <code>' + code + '</code>' + reqId + '</p>';
+    ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.innerHTML = (id === 'shippingPlanCards') ? banner : ''; });
+}
+
+function renderShippingPlanFromDb() {
+    var mySeq = ++_spReadSeq;
+    Promise.resolve(loadWeeklyShippingReadModel_()).then(function(model) {
+        if (mySeq !== _spReadSeq) return;   // a newer load superseded this one → ignore stale response
+        _spRenderReadModel_(model);
+    }).catch(function(err) {
+        if (mySeq !== _spReadSeq) return;
+        _spRenderReadModel_({ source: 'error', error: { code: 'PAGE_READ_FAILED', message: String(err && err.message || err) } });
+    });
+}
+
+function _spRenderReadModel_(model) {
+    _spSkuLogiCache = null;   // rebuild the sku logistics lookup from the freshest cache each render
+    if (model.error) { _spRenderReadError_(model.error); return; }
+    var plans = model.plans || [];
+    var lines = model.lines || [];
+    // Map which plans already have a shipment (robust Done-button detection). Legacy populates this;
+    // Workspace mode leaves it empty and relies on the plan's persisted transferred_* fields.
+    _spPlanHasShipment = model.shipmentMap || {};
+    var linesByPlan = {};
+    lines.forEach(function(l) {
+        (linesByPlan[l.shippingPlanId] = linesByPlan[l.shippingPlanId] || []).push(l);
+    });
+
+    // live = enrichment maps (Legacy) or null (Workspace snapshot-primary — no cross-domain live fallback).
+    var live = model.live || null;
 
     var countryFilter = (document.getElementById('spCountryFilter') || {}).value || '';
     var inScope = plans.filter(function(p) {
