@@ -51,3 +51,24 @@ function auditActiveDraftForScope_(query) {
   Logger.log(JSON.stringify(report));
   return report;
 }
+
+// -----------------------------------------------------------------------------
+// PUBLIC editor entrypoints (no trailing underscore → selectable in the Apps Script Run menu). Thin delegators to
+// the private helpers above; they add NO business logic and remain READ-ONLY (no generation / write / persistence).
+// -----------------------------------------------------------------------------
+
+// PUBLIC: namespace + bundle-load smoke (READ-ONLY). Run FIRST after deploying the bundle.
+function verifyRecommendationRuntimeNamespaces() {
+  return verifyRecommendationRuntimeNamespaces_();
+}
+
+// PUBLIC: five-table readiness + Active-Draft Composite-Key audit (READ-ONLY). Run BEFORE any generation.
+function auditRecommendationDraftTables() {
+  return auditRecommendationDraftTables_();
+}
+
+// PUBLIC: single controlled-scope Composite-Key audit (READ-ONLY). query = {recommendationType, planningCycle,
+// businessScope}. In the editor, set `query` in a wrapper or call from another function; returns the audit report.
+function auditActiveDraftForScope(query) {
+  return auditActiveDraftForScope_(query);
+}

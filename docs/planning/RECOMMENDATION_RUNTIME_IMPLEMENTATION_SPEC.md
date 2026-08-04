@@ -279,8 +279,10 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 > namespaces + public functions + module count), `auditDraftTables(spreadsheet)` (five authorized tables exist with
 > the exact frozen §2 headers; row counts; Active-Draft grouping by the B-7 Composite Natural Key; duplicate-active
 > conflicts; submitted/cancelled counts), `activeDraftAudit(spreadsheet, query)` (single-scope
-> CREATE/REUSE/BLOCKED_CONFLICT decision). The `.gs` (`verifyRecommendationRuntimeNamespaces_` /
-> `auditRecommendationDraftTables_` / `auditActiveDraftForScope_`) is editor-callable and NEVER writes (no
+> CREATE/REUSE/BLOCKED_CONFLICT decision). The `.gs` exposes **PUBLIC editor entrypoints (no trailing underscore →
+> selectable in the Apps Script Run menu, Round 1S-P4-U-ENTRYPOINT hotfix):** `verifyRecommendationRuntimeNamespaces()`
+> / `auditRecommendationDraftTables()` / `auditActiveDraftForScope(query)` — thin read-only delegators to the private
+> `…_` helpers — and NEVER write (no
 > setValues/appendRow/insertRow/deleteRow/clear/LockService/persistence; no router route added). **Bundle:** now
 > **24** modules (added `KMVD`), reproducible byte-for-byte (hash `7b5ae11e…`), VM load verified (bundle test
 > **53**). **LIVE VERIFICATION STATUS — unchanged / NOT PERFORMED:** Production Read Path / Projection Runtime /

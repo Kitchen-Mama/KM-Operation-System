@@ -137,6 +137,25 @@ section('E. Purity / non-write / boundary source scans');
   ok(!/setValues|setValue\b|appendRow|deleteRow|insertRow|clearContent|LockService|applyPersistencePlan|runRecommendationGeneration|persistProductionRecommendation/.test(gs), 'E6 28_.gs invokes no write/lock/generation method (read-only diagnostics)');
 })();
 
+section('F. PUBLIC editor entrypoints present in the .gs (no trailing underscore) + delegate + read-only');
+(function () {
+  var raw = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '28_recommendation_verification_diagnostics.gs'), 'utf8');
+  // public (no trailing underscore) declarations exist
+  ok(/function\s+verifyRecommendationRuntimeNamespaces\s*\(\s*\)/.test(raw), 'F1 public verifyRecommendationRuntimeNamespaces() present');
+  ok(/function\s+auditRecommendationDraftTables\s*\(\s*\)/.test(raw), 'F2 public auditRecommendationDraftTables() present');
+  ok(/function\s+auditActiveDraftForScope\s*\(\s*query\s*\)/.test(raw), 'F3 public auditActiveDraftForScope(query) present');
+  // private helpers retained
+  ok(/function\s+verifyRecommendationRuntimeNamespaces_\s*\(/.test(raw) && /function\s+auditRecommendationDraftTables_\s*\(/.test(raw) && /function\s+auditActiveDraftForScope_\s*\(/.test(raw), 'F4 underscore-suffixed private helpers unchanged/retained');
+  // public wrappers delegate to the private helpers
+  ok(/function\s+verifyRecommendationRuntimeNamespaces\s*\(\s*\)\s*\{\s*return\s+verifyRecommendationRuntimeNamespaces_\s*\(\s*\)\s*;?\s*\}/.test(raw), 'F5 namespace wrapper delegates to private helper');
+  ok(/function\s+auditRecommendationDraftTables\s*\(\s*\)\s*\{\s*return\s+auditRecommendationDraftTables_\s*\(\s*\)\s*;?\s*\}/.test(raw), 'F6 table-audit wrapper delegates to private helper');
+  ok(/function\s+auditActiveDraftForScope\s*\(\s*query\s*\)\s*\{\s*return\s+auditActiveDraftForScope_\s*\(\s*query\s*\)\s*;?\s*\}/.test(raw), 'F7 active-draft wrapper delegates to private helper');
+  // public wrappers contain no write/generation/persistence (read-only)
+  function code(src) { return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1'); }
+  var gs = code(raw);
+  ok(!/setValues|setValue\b|appendRow|deleteRow|insertRow|clearContent|LockService|applyPersistencePlan|runRecommendationGeneration|persistProductionRecommendation/.test(gs), 'F8 28_.gs (incl. public wrappers) invokes no write/lock/generation method');
+})();
+
 // ==========================================================================
 if (fail === 0) console.log('\nAll Round 1S-P4-U Verification Diagnostics assertions passed (' + pass + ' assertions).');
 else { console.error('\n' + fail + ' FAILURE(S) of ' + (pass + fail) + ' assertions'); process.exit(1); }
