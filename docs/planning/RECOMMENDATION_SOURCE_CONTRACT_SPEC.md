@@ -327,6 +327,17 @@ override). No override is required if the projection emits the default names.
 > REQUIRED**, so per Round-spec §12/§23 this is a **HALT**. See **SC-10** for the full evidence + decision list;
 > **Round 1S-P2 stays BLOCKED**; `24_…` untouched.
 >
+> **SC-STATUS (Round 1S-P1.5B, 2026-08-04):** the **Recommendation Source Projection Runtime** (SC-9 #1 / SC-5
+> Option C) is IMPLEMENTED / TEST VERIFIED — pure `assets/js/core/supply-planning-source-projection.js`
+> (`projectRecommendationProductionSources` / `projectAndRead`; 63 assertions). It projects canonical Operation DB
+> snapshots into the in-memory DTO-convention snapshots (origin PROJECTION_RUNTIME; **NO persisted
+> `recommendation_source_*` Sheets**) and reuses the frozen Production Reader (KMSRP) → whole chain → Plan Builder
+> (Weekly 96 / Monthly 24). Frozen decisions D-1 `FACTORY_SHARED` / D-2 factory as-of / D-3 destination ownership /
+> D-4 status→bucket map all TEST VERIFIED. Assembles facts only — duplicates no Calculation/Ledger/Allocation
+> formula. Orchestrator `SOURCE_READER_PENDING` UNCHANGED (Round 1S-P2 owns replacement); not bundled (not yet on
+> the Apps Script path); no writes / no LockService / no Submit / no deploy. SC-9 #2 (Apps Script wrapper wiring) +
+> #3 remaining are Round 1S-P2.
+>
 > **SC-STATUS (Round 1S-P1.5A-D, 2026-08-04):** D-1..D-4 are now **user-confirmed and LANDED** → **Production Source
 > Projection Contract = FROZEN** (see **SC-11**): D-1 `FACTORY_SHARED` sentinel; D-2 factory as-of
 > `last_transaction_at`→`updated_at` (else `SOURCE_AS_OF_MISSING`); D-3 caller/planning-scope destination ownership

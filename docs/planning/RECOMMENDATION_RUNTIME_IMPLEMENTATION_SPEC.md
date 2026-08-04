@@ -267,6 +267,50 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 > Submit remain NOT IMPLEMENTED / NOT VERIFIED; no deploy; no live Google Sheet verification. Golden Matrix
 > unchanged **39 / 1 / 0**; Scenario #34 Pending.
 >
+> **Round 1S-P1.5B PRODUCTION SOURCE PROJECTION RUNTIME (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED):** the
+> frozen Production Source Projection Contract (SC-10/SC-11) is IMPLEMENTED as ONE new pure module
+> `assets/js/core/supply-planning-source-projection.js` (`window.KM.sourceProjection`; `…source-projection.test.js`,
+> **63 assertions**). It is a PURE / DETERMINISTIC in-memory projection: `canonical Operation DB snapshots →
+> projectRecommendationProductionSources → in-memory DTO-convention snapshots (origin PROJECTION_RUNTIME) →` the
+> frozen Round 1S-P1 Production Reader (`KMSRP.buildRecommendationSourceFacts`, REUSED UNCHANGED) `→ KMSR → KMSI →
+> Ledger → Allocation → Weekly/Monthly Resolver → Plan Builder Bridge → Plan Builder`. **NO persisted
+> `recommendation_source_*` Sheets are created** (the convention snapshots exist only in memory); **no writes / no
+> SpreadsheetApp / DB / Cache / LockService**; it ASSEMBLES facts and **duplicates NO Calculation / Ledger /
+> Allocation formula** (the caller-owned planning facts with no stored column — survivalNeedQty / dailyDemand /
+> demandWeight / eligiblePoolTypes / eligibleFactoryWarehouseIds / windowCode / requestMonth / requestBucket /
+> calculatedGap / netOrderNeed — are ROUTED, not computed; `units_per_carton`/`allocation_priority`/
+> `fulfillment_model` are joined from `sku_details`/`marketplaces`/`marketplace_skus`). **Public API:**
+> `projectRecommendationProductionSources({recommendationType, planningCycle, businessScope, sourceSnapshots,
+> planningFacts?, receiverFacts?, factoryDemandFacts?, routing?, requiredByDate?, forecastMonth?, formulaVersion?,
+> sourceDataAsOf?})` → `{ready, status, reason, issues, …, sourceReaderInput, demandSourceEntries,
+> supplySourceEntries, receiverFacts, factoryDemandFacts, planningFacts, sourceDataAsOf, sourceAsOfByType,
+> lineage}`; plus `projectAndRead(input)` (projection → frozen KMSRP → whole chain, in memory). **Frozen decisions
+> TEST VERIFIED:** **D-1** FACTORY current-stock pool `company = FACTORY_SHARED` (one factory row → ONE shared pool,
+> never duplicated per receiver company; `warehouses.company` does not change pool ownership; lineage
+> `stock:FACTORY:<wh>:<sku>` carries no company); **D-2** factory `source_data_as_of` = `last_transaction_at` →
+> `updated_at` → `SOURCE_AS_OF_MISSING` (never the clock); **D-3** demand/receiver/factory `destination_warehouse_id`
+> = explicit routing → frozen-scope destination → else `MISSING_DESTINATION_WAREHOUSE` (demand excluded, never
+> inferred from country/marketplace/code/first-match); **D-4** table-specific status maps (`shipping_plans`:
+> draft→DRAFT, site_confirmed→APPROVED_SHIPPING_PLAN, cancelled→CANCELLED_INVALID; `shipments`: draft→DRAFT,
+> ready_to_ship→APPROVED_SHIPPING_PLAN, shipped/in_transit/arrived→SHIPPED_IN_TRANSIT, received→
+> RECEIVED_NOT_REFLECTED only with receiving authority, closed→no bucket, cancelled→CANCELLED_INVALID; arrived +
+> delivery-event→DELIVERED_NOT_RECEIVED; correction→CORRECTION_REVERSAL; legacy planned/completed/partial_received/
+> partially_received/stuck + unknown → `UNSUPPORTED_LEGACY_STATUS`; **CURRENT_STOCK never derived from shipment
+> status**). **Full pure-runtime paths TEST VERIFIED (no writes):** Weekly `recommendedQty 96` and Monthly
+> CEILING(13/12)×12 = `24` reach the existing Plan Builder from schema-accurate fake canonical snapshots. **Current
+> stock** FBA (`amazon_inventory_snapshot.available_qty`, run company) / THREE_PL (`overseas_inventory_snapshot.
+> wh_available_stock`, company via `warehouse_id`→`warehouses`) / FACTORY (`factory_stock.fac_current_stock`,
+> FACTORY_SHARED); same physical 3PL pool across marketplace rows shares lineage (Ledger dedups count-once). Pure /
+> deterministic (input never mutated; deep-equal repeat; fresh objects; no clock/random/locale — source-scanned).
+> **Bundle:** NOT added this round (the projection is not yet on the Apps Script path — orchestrator not wired;
+> bundle inclusion is deferred to Round 1S-P2; bundle hash `2d0b276f…` unchanged). **Orchestrator NON-integration:**
+> `24_recommendation_orchestrator.gs` `SOURCE_READER_PENDING` UNCHANGED (Round 1S-P2 owns the stub replacement); no
+> `.gs`/router change. **STATUS: Production Source Projection Contract = FROZEN; Production Source Projection Runtime
+> = SOURCE PRESENT / TEST VERIFIED; Production Source Reader = SOURCE PRESENT / TEST VERIFIED; Orchestrator
+> `SOURCE_READER_PENDING` = STILL PRESENT; Production Writer / LockService production enforcement / Submit = NOT
+> IMPLEMENTED / NOT VERIFIED; deployment / live verification = NOT PERFORMED.** Golden Matrix unchanged
+> **39 / 1 / 0**; Scenario #34 Pending.
+>
 > **Round 1S-P1.5A-D PRODUCTION SOURCE PROJECTION DECISIONS LANDED (DOCUMENTATION LANDING — CONTRACT FROZEN):** the
 > user confirmed the Round 1S-P1.5A HALT decisions D-1..D-4; this documentation-landing round freezes them as
 > canonical contract in `RECOMMENDATION_SOURCE_CONTRACT_SPEC.md` **SC-11** (+ SC-STATUS) and the `FACTORY_SHARED`
