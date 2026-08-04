@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = bb0d44cefa3b4bec8e22e1daf0fbcdbcf0098c60c16cd59bd8e02f6294949ae0
+// bundle_sha256 = 5aaf070be06a86caf4654276783117f4beb334e0cefe9b12b5f38a109a9f668a
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7
@@ -27,6 +27,7 @@
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
 //   supply-planning-source-projection  77413eb7121bc0bef7412533ff0bd2cf58ea64d175e02735eaded688d7561da5
 //   supply-planning-production-source  905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326
+//   supply-planning-production-writer  5f8f16210dcdf3202bf661db8a97c9573a5700c8906184a02a46a3be4741bbc4
 // ============================================================================
 
 var __kmModules = {};
@@ -6880,6 +6881,159 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-production-source", module.exports);
 })();
 
+// ----- module: supply-planning-production-writer (verbatim from assets/js/core/supply-planning-production-writer.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — PRODUCTION Recommendation Draft Writer composition (Phase 2C, Round 1S-P3).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC composition that completes the production WRITE path by binding the frozen production source
+// facts to the frozen LOCKED persistence pipeline — WITHOUT authoring any new business/persistence logic:
+//   production facts (KMPS.resolveProductionFacts) → the frozen Orchestrator (KMORCH.runRecommendationGeneration:
+//     active-draft lookup → Core replay → Plan Builder → Persistence Plan Builder → LOCKED apply via KMPL + KMPR)
+//   → the four editable Recommendation Draft tables (shipping_allocation_drafts/_lines,
+//     request_order_allocation_drafts/_lines). It writes ONLY those Draft workspaces.
+//
+// It owns NO Calculation / Ledger / Allocation / recommendation / carton formula, NO active-draft resolution
+// (KMPR), NO lock policy (KMPL), NO plan diffing (KMPPB), NO reconcile/user-edit rule (KMPC/KMPR) — every decision
+// is delegated to the already-frozen, test-verified modules. It NEVER Submits, NEVER promotes a Weekly Plan,
+// NEVER creates a Request Order / PO / Shipment, NEVER reserves/deducts inventory, and NEVER populates
+// submitted_by/submitted_at. No SpreadsheetApp / LockService / Date.now / Math.random / locale here (the `.gs`
+// injects SpreadsheetApp + LockService; tests inject fakes); input never mutated.
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-recommendation-orchestrator.js') : (root.KMORCH || (root.KM && root.KM.recommendationOrchestrator)),
+    req ? req('./supply-planning-persistence-locking.js') : (root.KMPL || (root.KM && root.KM.persistenceLocking)),
+    req ? req('./supply-planning-persistence-repository.js') : (root.KMPR || (root.KM && root.KM.persistenceRepository)),
+    req ? req('./supply-planning-production-source.js') : (root.KMPS || (root.KM && root.KM.productionSource))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.productionWriter = api; }
+})(this, function (KMORCH, KMPL, KMPR, KMPS) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+
+  // ---- exact frozen Draft-table schemas (Round 1S-P3 §2) — canonical header order; used only to SEED an -----
+  // in-memory sheet-set for tests / node callers (the `.gs` ensures the same headers via its ensure-table path).
+  var DRAFT_HEADERS = {
+    WEEKLY_SHIPPING: {
+      header: ['allocation_draft_id', 'planning_cycle', 'source_page', 'company', 'country', 'marketplace', 'status',
+        'recommended_source_warehouse_id', 'recommended_destination_warehouse_id', 'recommended_source_warehouse_code_snapshot',
+        'recommended_destination_warehouse_code_snapshot', 'recommendation_group_no', 'recommended_shipping_method',
+        'recommended_last_mile_delivery', 'generation_type', 'calculation_run_id', 'formula_version', 'calculated_at',
+        'source_data_as_of', 'draft_version', 'created_by', 'created_at', 'updated_by', 'updated_at', 'submitted_by',
+        'submitted_at', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'note'],
+      lines: ['allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku', 'window_code', 'window_start_date',
+        'window_end_date', 'required_by_date', 'regular_demand_snapshot', 'special_event_demand_snapshot',
+        'destination_stock_snapshot', 'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
+        'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
+        'recommendation_reason', 'recommendation_flags', 'recommended_qty', 'planned_qty', 'units_per_carton',
+        'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at']
+    },
+    MONTHLY_ORDER: {
+      header: ['request_allocation_draft_id', 'planning_cycle', 'company', 'country', 'marketplace', 'sku',
+        'category_snapshot', 'series_snapshot', 'status', 'generation_type', 'draft_purpose', 'calculation_run_id',
+        'formula_version', 'calculated_at', 'source_data_as_of', 'draft_version', 'created_by', 'created_at',
+        'updated_by', 'updated_at', 'submitted_by', 'submitted_at', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'note'],
+      lines: ['request_allocation_line_id', 'request_allocation_draft_id', 'request_month', 'request_bucket',
+        'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot',
+        'third_party_available_qty_snapshot', 'qualified_incoming_snapshot', 'approved_supply_snapshot',
+        'factory_available_qty_snapshot', 'target_pct_snapshot', 'calculated_gap_qty_snapshot',
+        'recommended_shipping_qty_snapshot', 'residual_production_required_snapshot', 'reallocation_in_qty_snapshot',
+        'reallocation_out_qty_snapshot', 'net_order_need_snapshot', 'recommended_qty', 'order_qty', 'carton_qty',
+        'units_per_carton', 'allocation_method', 'recommendation_reason', 'recommendation_flags', 'line_status',
+        'submitted_by', 'submitted_at', 'note', 'created_at', 'updated_at']
+    }
+  };
+
+  // Seed a fresh in-memory sheet-set with the canonical Draft + run-journal headers (rows empty). Deterministic.
+  function seedSheetSet(type) {
+    aType(DRAFT_HEADERS[type], 'seedSheetSet: unknown recommendationType: ' + type);
+    var cfg = KMPR.TABLES[type];
+    var seed = {};
+    seed[cfg.header] = { headers: DRAFT_HEADERS[type].header.slice(), rows: [] };
+    seed[cfg.lines] = { headers: DRAFT_HEADERS[type].lines.slice(), rows: [] };
+    seed[KMPR.RUN_JOURNAL_TABLE] = { headers: KMPR.RUN_JOURNAL_HEADERS.slice(), rows: [] };
+    return KMPR.createSheetSet(seed);
+  }
+
+  // Build the Orchestrator deps over an in-memory sheet-set + injected lock + canonical spreadsheet (the node /
+  // test twin of the `.gs` handler). Every stage delegates to a frozen module; NO new logic. The lock is
+  // re-read UNDER the lock (never the pre-lock snapshot) via KMPL's revalidation contract.
+  //   env = { sheetSet, canonicalSpreadsheet, request, lock:{ acquire():bool, release():void } }
+  function sheetSetDeps(env) {
+    aType(isObj(env) && isObj(env.sheetSet), 'sheetSetDeps: env.sheetSet required');
+    aType(isObj(env.request), 'sheetSetDeps: env.request required');
+    aType(isObj(env.lock) && typeof env.lock.acquire === 'function' && typeof env.lock.release === 'function', 'sheetSetDeps: env.lock.acquire/release required');
+    var type = env.request.recommendationType;
+    var query = { recommendationType: type, planningCycle: env.request.planningCycle, businessScope: env.request.businessScope };
+    return {
+      loadActiveContext: function (q) { return KMPR.loadActiveDraftContext(env.sheetSet, q || query); },
+      loadPriorSnapshot: function (id) { return KMPR.loadDraftSnapshot(env.sheetSet, id, type); },
+      computeFacts: function () { return KMPS.resolveProductionFacts(env.canonicalSpreadsheet, env.request); },
+      lockedApply: function (plan, expectedToken, opts) {
+        return KMPL.executeLockedPersistence({
+          plan: plan, expectedToken: expectedToken, opts: opts, generationType: opts.generationType,
+          deps: {
+            validatePlan: function (p) { return KMPR.validatePersistencePlan(p); },
+            acquireLock: function () { return env.lock.acquire() === true; },
+            releaseLock: function () { return env.lock.release(); },
+            loadActiveDraftContext: function () { return KMPR.loadActiveDraftContext(env.sheetSet, query); },
+            reloadSnapshot: function () { return KMPR.loadDraftSnapshot(env.sheetSet, plan.draftId, type); },
+            recomputeToken: function (snap) {
+              var dv = snap.draft ? snap.draft.draft_version : plan.draftVersion;
+              return KMPR.computeExpectedToken(dv, (snap.lines || []).map(function (l) { return { lineKey: l.lineKey, userQty: l.userQty, userEdited: l.userEdited }; }));
+            },
+            applyPlan: function (tok, o) { return KMPR.applyPersistencePlan(env.sheetSet, plan, tok, o || opts || {}); }
+          }
+        });
+      }
+    };
+  }
+
+  // Public writer API: run the frozen locked generation and shape a JSON-safe production persistence result.
+  // `deps` is the injected orchestrator dependency set (the `.gs` builds it over real Sheets + LockService;
+  // tests build it via sheetSetDeps over an in-memory set + a fake lock). This function adds NO algorithm — it
+  // delegates to KMORCH and only labels the persistence outcome (READ-only callers use KMPS, not this).
+  function persistProductionRecommendation(command, deps) {
+    aType(isObj(command), 'persistProductionRecommendation: command required');
+    aType(isObj(deps) && typeof deps.computeFacts === 'function' && typeof deps.lockedApply === 'function', 'persistProductionRecommendation: deps.computeFacts/lockedApply required');
+    var result = KMORCH.runRecommendationGeneration(command, deps);
+    var wrote = result.wrote === true && result.status === 'COMPLETED';
+    var cfg = KMPR.TABLES[command.recommendationType];
+    result.persistenceStatus = wrote ? 'COMPLETED' : 'NOT_EXECUTED';
+    result.writtenTables = wrote && cfg ? [cfg.header, cfg.lines, KMPR.RUN_JOURNAL_TABLE] : [];
+    return result;
+  }
+
+  // Convenience end-to-end entry for node/test callers: seed nothing (caller supplies sheetSet), run the write.
+  function persistToSheetSet(env) {
+    var deps = sheetSetDeps(env);
+    return persistProductionRecommendation({
+      recommendationType: env.request.recommendationType, mode: env.request.mode,
+      planningCycle: env.request.planningCycle, businessScope: env.request.businessScope,
+      confirmRegenerateOverUserEdits: env.request.confirmRegenerateOverUserEdits === true,
+      actor: env.request.actor || 'system', now: env.request.now || ''
+    }, deps);
+  }
+
+  return {
+    DRAFT_HEADERS: DRAFT_HEADERS,
+    seedSheetSet: seedSheetSet,
+    sheetSetDeps: sheetSetDeps,
+    persistProductionRecommendation: persistProductionRecommendation,
+    persistToSheetSet: persistToSheetSet
+  };
+});
+  __kmRegister("supply-planning-production-writer", module.exports);
+})();
+
 // ----- Apps Script global namespace exposure -----
 var KMCALC = __kmModules["supply-planning-calculations"];
 var KMQI = __kmModules["supply-planning-qualified-incoming"];
@@ -6903,6 +7057,7 @@ var KMSI = __kmModules["supply-planning-recommendation-source-integration"];
 var KMSRP = __kmModules["supply-planning-source-reader-production"];
 var KMSP = __kmModules["supply-planning-source-projection"];
 var KMPS = __kmModules["supply-planning-production-source"];
+var KMPW = __kmModules["supply-planning-production-writer"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"bb0d44cefa3b4bec8e22e1daf0fbcdbcf0098c60c16cd59bd8e02f6294949ae0","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"f680207e1e181bd3561e62b8b577cca05cfbb10790b60979e96b13e8a7f342fe"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"77413eb7121bc0bef7412533ff0bd2cf58ea64d175e02735eaded688d7561da5"},{"module":"supply-planning-production-source","sha256":"905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"5aaf070be06a86caf4654276783117f4beb334e0cefe9b12b5f38a109a9f668a","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"f680207e1e181bd3561e62b8b577cca05cfbb10790b60979e96b13e8a7f342fe"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"77413eb7121bc0bef7412533ff0bd2cf58ea64d175e02735eaded688d7561da5"},{"module":"supply-planning-production-source","sha256":"905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326"},{"module":"supply-planning-production-writer","sha256":"5f8f16210dcdf3202bf661db8a97c9573a5700c8906184a02a46a3be4741bbc4"}]};

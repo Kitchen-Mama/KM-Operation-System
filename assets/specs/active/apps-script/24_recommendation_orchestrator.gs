@@ -21,7 +21,7 @@
 function rpoBundle_() {
   if (typeof KMORCH === 'undefined' || typeof KMPR === 'undefined' || typeof KMPL === 'undefined' ||
       typeof KMPB === 'undefined' || typeof KMPPB === 'undefined' || typeof KMPC === 'undefined' ||
-      typeof KMPS === 'undefined' || typeof KMSP === 'undefined') {
+      typeof KMPS === 'undefined' || typeof KMSP === 'undefined' || typeof KMPW === 'undefined') {
     throw new Error('Recommendation bundle (KMORCH/KMPR/KMPL/KMPB/KMPPB/KMPC) is not present in this Apps Script ' +
       'project — Round 1G is a source mirror; the generated bundle 90_generated_supply_planning_bundle.gs must be ' +
       'loaded into the project. No algorithm is duplicated in this file.');
@@ -89,7 +89,9 @@ function handleGenerateRecommendationDraftLocked_(body) {
     }
   };
 
-  var result = KMORCH.runRecommendationGeneration({
+  // Delegate to the bundled production writer composition (KMPW) — the SAME entry the Round 1S-P3 tests exercise
+  // (KMPW wraps KMORCH.runRecommendationGeneration + labels the persistence outcome). No algorithm is authored here.
+  var result = KMPW.persistProductionRecommendation({
     recommendationType: type, mode: body.mode, planningCycle: body.planningCycle, businessScope: body.businessScope,
     confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
     actor: (body.actor || body.updated_by || 'system'), now: procurementTimestamp_()

@@ -38,7 +38,8 @@ var MODULE_ORDER = [
   'supply-planning-recommendation-source-integration', // requires source-reader + ledgers + source-facts + plan-bridge
   'supply-planning-source-reader-production',  // requires source-reader + source-integration (Round 1S-P1 production reader)
   'supply-planning-source-projection',         // requires source-reader-production (Round 1S-P1.5B projection runtime)
-  'supply-planning-production-source'          // requires source-projection + plan-builder (Round 1S-P2 production wiring)
+  'supply-planning-production-source',         // requires source-projection + plan-builder (Round 1S-P2 production wiring)
+  'supply-planning-production-writer'          // requires production-source + orchestrator + locking + repository (Round 1S-P3 writer)
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
@@ -64,7 +65,8 @@ var GLOBALS = [
   ['KMSI', 'supply-planning-recommendation-source-integration'],
   ['KMSRP', 'supply-planning-source-reader-production'],
   ['KMSP', 'supply-planning-source-projection'],
-  ['KMPS', 'supply-planning-production-source']
+  ['KMPS', 'supply-planning-production-source'],
+  ['KMPW', 'supply-planning-production-writer']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }

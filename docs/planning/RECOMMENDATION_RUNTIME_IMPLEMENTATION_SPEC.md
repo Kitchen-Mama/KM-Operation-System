@@ -267,6 +267,44 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 > Submit remain NOT IMPLEMENTED / NOT VERIFIED; no deploy; no live Google Sheet verification. Golden Matrix
 > unchanged **39 / 1 / 0**; Scenario #34 Pending.
 >
+> **Round 1S-P3 PRODUCTION RECOMMENDATION DRAFT WRITER (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED):** the
+> LOCKED production WRITE path is completed and TEST VERIFIED end-to-end — it persists ONLY the four editable
+> Recommendation Draft workspaces (NO Submit, NO downstream business record). NEW pure module
+> `assets/js/core/supply-planning-production-writer.js` (`window.KM.productionWriter` / bundle `KMPW`;
+> `…production-writer.test.js`, **49 assertions**). **Architecture (all persistence reused, none reimplemented):**
+> `production facts (KMPS.resolveProductionFacts) → KMORCH.runRecommendationGeneration (active-draft lookup → Core
+> replay → Plan Builder → Persistence Plan Builder → LOCKED apply via KMPL + KMPR) → shipping_allocation_drafts/
+> _lines (Weekly) | request_order_allocation_drafts/_lines (Monthly)`. `KMPW` authors NO Calculation/Ledger/
+> Allocation/recommendation/carton formula, NO active-draft resolution, NO lock policy, NO plan diffing, NO
+> reconcile/user-edit rule — every decision is delegated to the frozen, test-verified modules; it only (1) seeds an
+> in-memory sheet-set with the exact frozen §2 Draft schemas, (2) builds the Orchestrator deps over an injected
+> sheet-set + lock + canonical spreadsheet (the node/test twin of the `.gs`), and (3) labels the persistence
+> outcome. **`24_recommendation_orchestrator.gs` now delegates the generate action to
+> `KMPW.persistProductionRecommendation(...)`** (the SAME entry the tests exercise) — the locked write, reread-under-
+> lock, keyed-delta write-back, and LockService boundary are unchanged (Round 1G). **Public API:**
+> `persistProductionRecommendation(command, deps)` (wraps KMORCH + adds `persistenceStatus`/`writtenTables`),
+> `sheetSetDeps(env)`, `seedSheetSet(type)`, `persistToSheetSet(env)`. **TEST VERIFIED end-to-end (fake canonical
+> Sheets → locked writer → Draft tables; NO SpreadsheetApp, fake lock):** Weekly CREATE → one
+> `shipping_allocation_drafts` header + one line `recommended_qty 96`, `draft_version 1`, `calculation_run_id`
+> persisted, submitted fields empty, lock acquired+released, only Draft + run-journal tables written; Monthly CREATE
+> → one `request_order_allocation_drafts` header (per-sku) + line `recommended_qty 24`, `order_qty` initialized from
+> recommendation per the frozen contract; **REUSE/REFRESH** (second scheduled run → coreAction `REFRESH`, same draft
+> id, no duplicate header/line); **MANUAL_REGENERATE** (no user edits → `draft_version` increments, one Active
+> Draft, `generationType manual_refresh`); **LOCKING** (lock unavailable → not completed, `persistenceStatus:
+> 'NOT_EXECUTED'`, zero header rows written; released exactly once on success); **IDEMPOTENCY** (retry creates no
+> duplicate rows); **schema** (seeded headers match the frozen §2 four-table schema); **no-downstream** (no
+> shipping_plans/shipments/shipment_line_allocations/factory_stock/PO/inventory table present or written; no
+> submitted/cancelled fields populated); **end-to-end reread** (persisted rows reconstruct the SAME single Active
+> Draft via `KMPR.loadActiveDraftContext`/`loadDraftSnapshot`); **purity** (input immutable; deterministic; pure
+> `KMPW` source-scanned — no SpreadsheetApp/LockService/clock/random/locale, no recommendation/carton formula).
+> **Bundle:** now **23** modules (added `KMPW`), reproducible byte-for-byte (hash `5aaf070b…`), VM load verified
+> (bundle test **51**). **STATUS: Production Read Path = SOURCE PRESENT / TEST VERIFIED; Production Persistence
+> Writer = SOURCE PRESENT / TEST VERIFIED; Active Draft create/reuse = TEST VERIFIED; user-edit protection =
+> TEST VERIFIED (via reused KMPC/KMPR); retry/resume/idempotency = TEST VERIFIED; LockService write enforcement =
+> SOURCE PRESENT / TEST VERIFIED (via reused KMPL boundary); Weekly + Monthly Draft persistence = TEST VERIFIED;
+> Submit / Weekly-Plan promotion / Request writer / PO creation / Scheduler / Trigger = NOT IMPLEMENTED; deployment
+> / live Google Sheet verification = NOT PERFORMED.** Golden Matrix unchanged **39 / 1 / 0**; Scenario #34 Pending.
+>
 > **Round 1S-P2 APPS SCRIPT PRODUCTION SOURCE WIRING (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED):** the
 > production READ-ONLY recommendation source path is wired end-to-end and the orchestrator `SOURCE_READER_PENDING`
 > stub is REPLACED. NEW pure module `assets/js/core/supply-planning-production-source.js` (`window.KM.productionSource`

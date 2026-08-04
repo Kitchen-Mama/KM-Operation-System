@@ -31,7 +31,7 @@ section('A. deterministic / reproducible output');
   eq(b1.code, b2.code, 'A: same sources → byte-identical bundle');
   eq(b1.hash, b2.hash, 'A: same sources → identical bundle hash');
   ok(/^[0-9a-f]{64}$/.test(b1.hash), 'A: bundle hash is a sha256 hex');
-  eq(b1.manifest.length, 22, 'A: manifest lists all 22 canonical modules');
+  eq(b1.manifest.length, 23, 'A: manifest lists all 23 canonical modules');
   ok(b1.manifest.every(function (m) { return /^[0-9a-f]{64}$/.test(m.sha256); }), 'A: each manifest entry has a sha256');
 })();
 
@@ -47,20 +47,21 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   var code = BUILD.buildBundleFromDisk(CORE_DIR).code;
   var ctx = loadBundle(code);
   ['KMCALC', 'KMQI', 'KMLEDGER', 'KMALLOC', 'KMLINE', 'KMPC', 'KMPR', 'KMPL', 'KMPB', 'KMPPB', 'KMORCH', 'KMUE',
-   'KMSF', 'KMBRIDGE', 'KMSR', 'KMSI', 'KMSRP', 'KMSP', 'KMPS'].forEach(function (ns) {
+   'KMSF', 'KMBRIDGE', 'KMSR', 'KMSI', 'KMSRP', 'KMSP', 'KMPS', 'KMPW'].forEach(function (ns) {
     ok(ctx[ns] && typeof ctx[ns] === 'object', 'C: ' + ns + ' exposed');
   });
   ok(typeof ctx.KMSRP.readRecommendationSourceFacts === 'function' && typeof ctx.KMSRP.readRawTableSnapshot === 'function', 'C: KMSRP production source reader available in bundle');
   ok(typeof ctx.KMSR.readWeeklyRecommendationSource === 'function' && typeof ctx.KMSI.resolveRecommendationFactsFromSource === 'function', 'C: KMSR/KMSI source pipeline available in bundle');
   ok(typeof ctx.KMSP.projectRecommendationProductionSources === 'function' && typeof ctx.KMSP.projectAndRead === 'function', 'C: KMSP projection runtime available in bundle');
   ok(typeof ctx.KMPS.readCanonicalSnapshots === 'function' && typeof ctx.KMPS.resolveProductionFacts === 'function' && typeof ctx.KMPS.buildProductionRecommendationSource === 'function', 'C: KMPS production source wiring available in bundle');
+  ok(typeof ctx.KMPW.persistProductionRecommendation === 'function' && typeof ctx.KMPW.sheetSetDeps === 'function' && typeof ctx.KMPW.seedSheetSet === 'function', 'C: KMPW production writer available in bundle');
   ok(typeof ctx.KMORCH.runRecommendationGeneration === 'function', 'C: KMORCH.runRecommendationGeneration available');
   ok(typeof ctx.KMPB.buildRecommendation === 'function', 'C: KMPB.buildRecommendation available');
   ok(typeof ctx.KMPPB.buildPersistencePlan === 'function', 'C: KMPPB.buildPersistencePlan available');
   ok(typeof ctx.KMPR.applyPersistencePlan === 'function' && typeof ctx.KMPR.loadActiveDraftContext === 'function', 'C: KMPR repository API available');
   ok(typeof ctx.KMPL.executeLockedPersistence === 'function', 'C: KMPL.executeLockedPersistence available');
   ok(typeof ctx.KMPC.generateRecommendationDraft === 'function', 'C: KMPC Persistence Core available');
-  eq(ctx.KM_BUNDLE_INFO.modules.length, 22, 'C: KM_BUNDLE_INFO manifest present in runtime');
+  eq(ctx.KM_BUNDLE_INFO.modules.length, 23, 'C: KM_BUNDLE_INFO manifest present in runtime');
 })();
 
 section('D. ported modules actually RUN end-to-end inside the bundle context');
