@@ -267,6 +267,39 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 > Submit remain NOT IMPLEMENTED / NOT VERIFIED; no deploy; no live Google Sheet verification. Golden Matrix
 > unchanged **39 / 1 / 0**; Scenario #34 Pending.
 >
+> **Round 1S-P1.5A-D PRODUCTION SOURCE PROJECTION DECISIONS LANDED (DOCUMENTATION LANDING — CONTRACT FROZEN):** the
+> user confirmed the Round 1S-P1.5A HALT decisions D-1..D-4; this documentation-landing round freezes them as
+> canonical contract in `RECOMMENDATION_SOURCE_CONTRACT_SPEC.md` **SC-11** (+ SC-STATUS) and the `FACTORY_SHARED`
+> Supply-Ledger company-sentinel amendment in `SUPPLY_PLANNING_CALCULATION_RULES.md` §39.6 (no formula / no
+> allocation change). **Documentation landing only — no JS / Apps Script / test / bundle / DB / schema / migration /
+> km-lb change; no writes; `24_…` `SOURCE_READER_PENDING` UNCHANGED; no deploy.** Full regression re-run green
+> (Golden **39/1/0**, bundle `2d0b276f…` unchanged, Production Reader **38**, Source Reader **48**, Source
+> Integration **29**, Source Facts **37**, Lifecycle **68**, Ledger **133**, Allocation **112**, Bundle **45**,
+> Orchestrator **37**, all PASS). **Decisions frozen:** **D-1** FACTORY supply company = canonical sentinel
+> **`FACTORY_SHARED`** (company-agnostic cross-company shared pool; identity `FACTORY_SHARED|source_factory_
+> warehouse_id|masterSku|FACTORY`; receiver demand keeps its real company; allocation formulas unchanged). **D-2**
+> factory `source_data_as_of` = primary `factory_stock.last_transaction_at`, fallback `updated_at`, else
+> **`SOURCE_AS_OF_MISSING`** (never clock/read-time; no dated factory snapshot required — future optional hardening).
+> **D-3** demand `destination_warehouse_id` = caller/planning-scope-owned (explicit `destinationWarehouseId` →
+> persisted same-scope Draft/Plan destination → else **`MISSING_DESTINATION_WAREHOUSE`** fail-closed; never inferred
+> from country/marketplace/code/first-match/display/prev-shipment/array-order/default-FC; Manual Recommend needs
+> explicit selection, Automatic needs pre-resolved routing). **D-4** table-specific shipment status→lifecycle map
+> (`shipping_plans`: draft→DRAFT, site_confirmed→APPROVED_SHIPPING_PLAN, cancelled→CANCELLED_INVALID; `shipments`:
+> draft→DRAFT, ready_to_ship→APPROVED_SHIPPING_PLAN, shipped/in_transit/arrived→SHIPPED_IN_TRANSIT, received→
+> RECEIVED_NOT_REFLECTED [receiving-authority-backed only], closed→no direct bucket [CURRENT_STOCK only from
+> inventory authority], cancelled→CANCELLED_INVALID; DELIVERED_NOT_RECEIVED only from a real delivery-event
+> authority; Delivered ≠ Received; CURRENT_STOCK only from inventory authority; legacy `planned/completed/
+> partial_received/partially_received/stuck` → fail-closed **`UNSUPPORTED_LEGACY_STATUS`**; correction/reversal →
+> **`CORRECTION_REVERSAL`** visible-but-zero). **D-5** = implementation-availability gap (DELIVERED/RECEIVED emitted
+> only when a real authority exists; missing support → source-unavailable issues, never synthetic facts) — NOT a
+> contract blocker. **D-6** = production-readiness risk (no test-data marker; strict business-scope filtering only,
+> no SKU/name filter, duplicate identity fail-closed; cleanup deferred) — NOT a contract blocker. **STATUS:
+> Production Source Projection Contract = FROZEN; Projection Runtime = NOT IMPLEMENTED; Production Source Reader =
+> SOURCE PRESENT / TEST VERIFIED; Orchestrator `SOURCE_READER_PENDING` = STILL PRESENT; Round 1S-P1.5B = AUTHORIZED
+> NEXT TASK (build the Projection Runtime per the frozen contract); Round 1S-P2 = BLOCKED UNTIL P1.5B PASSES;
+> Production Writer / LockService / Submit = NOT IMPLEMENTED; Deployment / Live Verification = NOT PERFORMED.**
+> Golden Matrix unchanged **39 / 1 / 0**; Scenario #34 Pending.
+>
 > **Round 1S-P1.5A PRODUCTION SOURCE PROJECTION CONTRACT CLOSURE (DOCUMENTATION + READ-ONLY EVIDENCE — HALT, NOT
 > FROZEN):** a Database-First read-only closure round for the mapping `Canonical DB tables → Projection Runtime →
 > Recommendation Source DTOs → the frozen production Reader`. **No Runtime / Apps Script / bundle / DB / schema /

@@ -326,6 +326,14 @@ override). No override is required if the projection emits the default names.
 > destination-routing owner (D-3), and the `shipments.status` §12 vocabulary conflict (D-4) remain **DECISION-
 > REQUIRED**, so per Round-spec §12/§23 this is a **HALT**. See **SC-10** for the full evidence + decision list;
 > **Round 1S-P2 stays BLOCKED**; `24_…` untouched.
+>
+> **SC-STATUS (Round 1S-P1.5A-D, 2026-08-04):** D-1..D-4 are now **user-confirmed and LANDED** → **Production Source
+> Projection Contract = FROZEN** (see **SC-11**): D-1 `FACTORY_SHARED` sentinel; D-2 factory as-of
+> `last_transaction_at`→`updated_at` (else `SOURCE_AS_OF_MISSING`); D-3 caller/planning-scope destination ownership
+> (else `MISSING_DESTINATION_WAREHOUSE`); D-4 table-specific shipment status→lifecycle map. D-5 = implementation-
+> availability gap, D-6 = production-readiness risk (neither blocks the contract). **Round 1S-P1.5B AUTHORIZED**
+> (build the Projection Runtime); **Round 1S-P2 BLOCKED until P1.5B passes**; Projection Runtime NOT IMPLEMENTED;
+> `24_…` `SOURCE_READER_PENDING` untouched. Documentation landing only — no code/test/bundle/DB change.
 
 ## SC-9. Next implementation dependency (ordered)
 
@@ -482,3 +490,139 @@ canonical source matrix (SC-10.3) and the exact HALT decision list (SC-10.4). **
 field lineage, SC-2 value semantics, SC-3 run-level ownership, SC-5 contract, SC-6 wrapper contract, SC-7 override
 map, SC-8 `SOURCE_READER_PENDING` scope, the Round 1P/1Q/1S-P1 runtimes, the bundle, and `24_…`. No Runtime / Apps
 Script / bundle / DB / schema / migration change; Golden Matrix **39/1/0**; Scenario #34 Pending.
+
+> **SC-10 DECISION STATUS (superseded by SC-11):** SC-10.4's D-1..D-4 were HALT-listed as unresolved. They are now
+> **RESOLVED (user-confirmed)** and LANDED in **SC-11**; SC-10.5's gate is updated there. SC-10 remains as the
+> evidence record; SC-11 is the authoritative resolution.
+
+---
+
+## SC-11. Projection Contract — Decisions LANDED (FROZEN — Phase 2C Round 1S-P1.5A-D, 2026-08-04)
+
+> **STATUS: PRODUCTION SOURCE PROJECTION CONTRACT = FROZEN.** The user has confirmed D-1..D-4; this section lands
+> them as canonical contract. **Documentation landing only** — no Runtime / Apps Script / bundle / DB / schema /
+> migration / test / km-lb change; no writes; `SOURCE_READER_PENDING` untouched. D-5 is an implementation-
+> availability gap and D-6 a production-readiness risk (neither blocks the FROZEN contract). **Projection Runtime
+> remains NOT IMPLEMENTED** (Round 1S-P1.5B is the authorized next task); **Round 1S-P2 stays BLOCKED until P1.5B
+> passes.**
+
+### SC-11.1 D-1 RESOLVED — Factory shared-company authority (`FACTORY_SHARED`)
+
+Factory stock is a **company-agnostic, cross-company shared physical supply pool**. The canonical `company` token for
+`pool_type = FACTORY` Supply Ledger entries is the sentinel **`FACTORY_SHARED`**.
+
+- FACTORY supply entries use `company = FACTORY_SHARED` (never per-receiver-company duplication; never execution
+  `scope.company`; `warehouses.company` stays owner/administrative context only).
+- Receiver demand keeps its **real** company; the Factory Allocation Runtime allocates the shared physical pool
+  across companies (allocation formulas UNCHANGED).
+- **Canonical Factory pool identity:** `FACTORY_SHARED | source_factory_warehouse_id | masterSku | FACTORY` — i.e.
+  the frozen supply `poolKey` grain `company|warehouse_id|master_sku|pool_type` with `company = FACTORY_SHARED` and
+  `warehouse_id = source_factory_warehouse_id`.
+- **Rule (amends SC-1.B / SC-2 count-once identity):** ordinary supply pools (FBA / THREE_PL) use their **real**
+  company; the cross-company shared FACTORY pool uses the `FACTORY_SHARED` sentinel. Mirror amendment landed in
+  `SUPPLY_PLANNING_CALCULATION_RULES.md` (Supply Ledger §39.6 company sentinel note) — no formula / allocation change.
+- **Supersedes:** SC-1.B row `company` "SPEC-CONFIRMED / NOT-IMPLEMENTED — resolved from `warehouse_id`" — for
+  FACTORY rows the company is now the fixed `FACTORY_SHARED` sentinel, not a join result.
+
+### SC-11.2 D-2 RESOLVED — Factory source-as-of authority
+
+For `factory_stock` supply, `source_data_as_of` = **primary `factory_stock.last_transaction_at`**, **fallback
+`factory_stock.updated_at`**.
+
+- Never the current clock; never the Reader-observed read time.
+- Both fields missing → emit **`SOURCE_AS_OF_MISSING`** (severity follows the existing Source Facts readiness
+  contract — SC-2 / SC-3.1).
+- No dated Factory snapshot table is required for the current implementation; a future Factory inventory snapshot is
+  an **optional hardening** improvement only.
+- **Supersedes:** SC-3.1 factory note (`updated_at` summary) — factory as-of is now `last_transaction_at` primary /
+  `updated_at` fallback, with the explicit `SOURCE_AS_OF_MISSING` token.
+
+### SC-11.3 D-3 RESOLVED — Demand destination-warehouse ownership
+
+`destination_warehouse_id` is **caller / planning-scope-owned** (never inferred). Authority order:
+
+1. explicit canonical planning fact `destinationWarehouseId`;
+2. an already-persisted Draft / Shipping Plan destination identity when **regenerating the same frozen business
+   scope**;
+3. otherwise **missing → fail-closed** with **`MISSING_DESTINATION_WAREHOUSE`**.
+
+- The Projection Runtime must **NOT** infer destination from country / marketplace / `warehouse_code` / first-matching
+  warehouse / display name / previous shipment / array order / a default Amazon FC.
+- Warehouse identity remains `warehouse_id`; `warehouse_code` is display snapshot only.
+- **Manual Recommend** requires explicit destination selection before generation; **Automatic Recommend** requires a
+  pre-resolved routing / warehouse assignment.
+- **Supersedes:** SC-1.A `destination_warehouse_id` "SPEC-CONFIRMED / NOT-IMPLEMENTED (routing)" — routing ownership
+  is now caller/planning-scope with the fail-closed `MISSING_DESTINATION_WAREHOUSE` token.
+
+### SC-11.4 D-4 RESOLVED — Table-specific shipment status → lifecycle mapping
+
+Status mapping is **table-specific** (no cross-table merged enum). Frozen maps:
+
+**A. `shipping_plans.status`:** `draft → DRAFT`; `site_confirmed → APPROVED_SHIPPING_PLAN`; `cancelled →
+CANCELLED_INVALID`. (`approved` is NOT added as an alias unless active source evidence separately proves it is a
+current canonical token.)
+
+**B. `shipments.status`** (canonical active vocabulary `draft, ready_to_ship, shipped, in_transit, arrived, received,
+closed, cancelled`):
+
+| source token | lifecycle bucket |
+|---|---|
+| `draft` | `DRAFT` |
+| `ready_to_ship` | `APPROVED_SHIPPING_PLAN` |
+| `shipped` | `SHIPPED_IN_TRANSIT` |
+| `in_transit` | `SHIPPED_IN_TRANSIT` |
+| `arrived` | `SHIPPED_IN_TRANSIT` |
+| `received` | `RECEIVED_NOT_REFLECTED` — **only** when backed by canonical warehouse receiving authority |
+| `closed` | **no** active lifecycle supply bucket directly; `CURRENT_STOCK` must come from canonical inventory posting/snapshot authority |
+| `cancelled` | `CANCELLED_INVALID` |
+
+**C. Delivered boundary:** `DELIVERED_NOT_RECEIVED` may be produced **only** from a canonical carrier/route delivery
+event — never inferred from `arrived` / `closed` / `completed`. **Delivered remains distinct from Received.**
+
+**D. Current-stock boundary:** `CURRENT_STOCK` may come **only** from canonical inventory authorities
+(`amazon_inventory_snapshot` / `overseas_inventory_snapshot` / `factory_stock`) — never derived from shipment status.
+
+**E. Legacy tokens** `planned`, `completed`, `partial_received`, `partially_received`, `stuck` remain **unsupported
+until migrated** → the projection **fails closed** with **`UNSUPPORTED_LEGACY_STATUS`** (never silently mapped to an
+active bucket).
+
+**F. Correction/reversal:** explicit correction/reversal facts map to **`CORRECTION_REVERSAL`** — they remain visible
+and contribute **zero** effective supply.
+
+- **Supersedes:** SC-10.4 D-4 (the `shipments.status` vocabulary conflict). The §39.5 status→lifecycle-bucket map is
+  now **frozen** as the table-specific maps above; the competing `shipments.status` architecture/Overview
+  vocabularies and the origin `origin_warehouse_id` vs `source_warehouse_id` naming are **not** the projection's
+  status source — the canonical active vocabulary in (B) is. Reserve-release (B-8) stays out of scope.
+
+### SC-11.5 D-5 classification — implementation-availability gap (NOT a contract blocker)
+
+- `CURRENT_STOCK` projectable from current inventory authorities.
+- `APPROVED_SHIPPING_PLAN` and `SHIPPED_IN_TRANSIT` projectable from currently-supported sources.
+- `DELIVERED_NOT_RECEIVED` emitted only when a real delivery-event authority exists.
+- `RECEIVED_NOT_REFLECTED` emitted only when a real receiving authority exists.
+- Missing source support does **not** authorize synthetic lifecycle facts — the Projection Runtime returns
+  source-unavailable issues where facts do not exist, and still supports the frozen DTO. **D-5 does not block the
+  contract.**
+
+### SC-11.6 D-6 classification — production-readiness risk (NOT a contract blocker)
+
+- No canonical test-data marker currently exists.
+- The Projection Runtime must **not** filter by SKU/name convention; strict **business-scope** filtering is
+  permitted; duplicate production identity **fails closed**.
+- Suspected test/legacy cleanup occurs in a separate readiness round; **no cleanup now.** **D-6 does not block the
+  contract.**
+
+### SC-11.7 Updated readiness gate + contract status (supersedes SC-10.5)
+
+All gate conditions now hold: architecture selected (✔); tables/headers/grains/keys fixed (✔); identity joins fixed
+(✔); **D-1..D-4 resolved (✔ SC-11.1–11.4)**; supply company + warehouse authority fixed (✔ `FACTORY_SHARED`);
+demand/supply/planning DTO mappings implementable without business invention (✔); convention sheet names retired
+(✔); source-as-of authority fixed per domain incl. factory (✔ SC-11.2); status→bucket map frozen (✔ SC-11.4);
+test/legacy filtering rule not required for the contract (✔ SC-11.6 — readiness risk only); Projection Runtime
+implementable without inventing business decisions (✔).
+
+**Contract status:** **Production Source Projection Contract = FROZEN.** Projection Runtime = NOT IMPLEMENTED.
+Production Source Reader = SOURCE PRESENT / TEST VERIFIED. Orchestrator `SOURCE_READER_PENDING` = STILL PRESENT.
+**Round 1S-P1.5B = AUTHORIZED** (implement the Projection Runtime per this frozen contract). **Round 1S-P2 = BLOCKED
+UNTIL P1.5B PASSES.** Production Writer / LockService / Submit = NOT IMPLEMENTED. Deployment / Live Verification =
+NOT PERFORMED. Golden Matrix **39/1/0**; Scenario #34 Pending.
