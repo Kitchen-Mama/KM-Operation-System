@@ -28,13 +28,14 @@ function rpoBundle_() {
   }
 }
 
-// Ensure additive line-provenance columns + the run-journal table exist (ADDITIVE only; never reorders/deletes).
-function rpoEnsureSchema_(ss, type) {
-  var cfg = KMPR.TABLES[type];
-  procurementEnsureSheet_(ss, cfg.header, RPR_TABLE_HEADERS_[cfg.header]);
-  var linesSheet = procurementEnsureSheet_(ss, cfg.lines, RPR_TABLE_HEADERS_[cfg.lines]);
-  sheetEnsureColumns_(linesSheet, KMPR.LINE_ADDITIVE_HEADERS);            // user_edited, user_edited_by (idempotent)
-  procurementEnsureSheet_(ss, KMPR.RUN_JOURNAL_TABLE, RECOMMENDATION_CALCULATION_RUNS_HEADERS_);
+// Production Safety Round S0 (RULE S0-2 / RULE S0-5, §8-B/§9): VALIDATE the authorized schemas — never create or
+// repair. Enforces the exact configured Spreadsheet-ID gate, then validates all five authorized tables read-only
+// via the bundled KMPW/KMSAFE. Throws fail-closed (RECOMMENDATION_SCHEMA_NOT_READY / WRONG_SPREADSHEET_TARGET) so
+// the generate path performs ZERO mutation when the target is wrong or any table is missing/blank/malformed. The
+// old auto-creating ensure helpers are INTENTIONALLY removed from this path (validate, never repair).
+function rpoValidateSchema_(ss) {
+  var expectedId = (typeof RECOMMENDATION_TARGET_SPREADSHEET_ID_ !== 'undefined') ? RECOMMENDATION_TARGET_SPREADSHEET_ID_ : '';
+  return KMPW.assertAuthorizedSchemasReady(ss, { expectedSpreadsheetId: expectedId });   // throws if not provisioned/valid
 }
 
 // Production source-fact reader — WIRED (Round 1S-P2). Resolved facts come from the bundled read-only production
@@ -56,7 +57,10 @@ function handleGenerateRecommendationDraftLocked_(body) {
   var type = body && body.recommendationType;
   if (!KMPR.TABLES[type]) return jsonResponse_({ success: false, error: 'unknown recommendationType', stage: 'input' });
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  rpoEnsureSchema_(ss, type);
+  // Production Safety Round S0: fail closed BEFORE any lock/write if the target Spreadsheet is wrong or any
+  // authorized table schema is missing/blank/malformed. Never creates or repairs a Sheet (RULE S0-2/S0-5).
+  try { rpoValidateSchema_(ss); }
+  catch (e) { return jsonResponse_({ success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null }); }
   var cfg = KMPR.TABLES[type], tables = [cfg.header, cfg.lines, KMPR.RUN_JOURNAL_TABLE];
   var query = { recommendationType: type, planningCycle: body.planningCycle, businessScope: body.businessScope };
 

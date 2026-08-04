@@ -655,6 +655,26 @@ External Ingestion
 
 ---
 
+## §SAFE — Production Schema and Header Safety Contract (Production Safety Round S0, 2026-08-04)
+
+**Status: LANDED / SOURCE PRESENT / TEST VERIFIED (pure layer + recommendation path); live generation remains DISABLED; Submit remains BLOCKED; the live data incident remains OPEN pending verification-copy evidence.**
+
+Permanent, code-enforced boundary that makes Canonical production schema unbreakable in normal Runtime. Owner of the enforcement primitive = the shared pure module `assets/js/core/supply-planning-production-safety.js` (namespace `KMSAFE`, bundled into `90_generated_supply_planning_bundle.gs`). Rules:
+
+- **S0-1 — Canonical Header immutability.** No Runtime / Reader / Writer / API handler / Import / Recommendation / Shipment / Procurement / Inventory / Forecast / Diagnostic / Save / Generation / ensure helper may modify an existing Canonical Header. Header changes require a separately authorized, versioned Schema Migration.
+- **S0-2 — Validate, never repair.** Normal code may verify existence, read the Header, compare actual vs expected, report missing/blank/duplicate/unexpected/reordered, and **fail closed** — it may **not** auto-create a Sheet, rewrite/append/reorder/remove Header columns, or clear/rebuild. `SCHEMA_VALID` → continue; any mismatch → stop the affected operation, return a deterministic issue, make **zero mutations**.
+- **S0-3 — Explicit Migration only.** Only a versioned Migration (DTO: `migrationId`, `expectedSpreadsheetId`, `expectedSheetName`, `expectedOldHeaderHash`, `expectedNewHeaderHash`, `backupReference`, `execute` (default false), `actor`, plus dry-run diff + rollback + audit) may create a table or add/remove/rename/reorder Header columns. A boolean flag alone is **insufficient**; migration privileges are **never inferred**.
+- **S0-4 — Dangerous mutation control.** Structural destructive APIs (`clear*`, `delete/insert Row(s)/Column(s)`, `deleteSheet`, `insertSheet` for Canonical tables, whole-Sheet `setValues`, `copyTo`/`moveTo`/`setName`, reset/reinitialize) are prohibited in normal Runtime; only row-level upserts at row ≥ 2 through authorized Writer paths are allowed.
+- **S0-5 — Exact Spreadsheet target.** Every production read/write/diagnostic entrypoint must verify the exact configured Spreadsheet ID before Canonical access. No fallback to active/first-open/first-Sheet/fuzzy/display-name. Mismatch or missing/blank configured ID → `WRONG_SPREADSHEET_TARGET`, fail closed, zero writes. Config constant `RECOMMENDATION_TARGET_SPREADSHEET_ID_` (00_config.gs) is intentionally EMPTY → the recommendation generate path fails closed until the **verification-copy** id is set (never Production first).
+- **S0-6 — Header-row write barrier.** `headerRow = 1`; any write intersecting row 1 throws `HEADER_WRITE_PROHIBITED`; writers update data rows (row ≥ 2) only. Enforced by code, not comments.
+- **S0-7 — Zero-side-effect diagnostics.** Diagnostics use a dedicated read-only adapter (`getSheetByName` + `getDataRange().getValues()` only), reuse no ensure/create/repair, execute no PersistencePlan, initialize no Sheet, and are byte-identical before/after (proven by the write-spy tests).
+
+**Execution modes:** `RUNTIME_READ` · `RUNTIME_WRITE` · `DIAGNOSTIC_READ` · `SCHEMA_MIGRATION` (never inferred). **Fail-closed tokens:** `SCHEMA_VALID` · `SHEET_MISSING` · `HEADER_MISSING` · `HEADER_BLANK` · `HEADER_DUPLICATE` · `HEADER_ORDER_MISMATCH` · `HEADER_UNEXPECTED` · `ROW_WIDTH_MISMATCH` · `WRONG_SPREADSHEET_TARGET` · `SCHEMA_NOT_PROVISIONED` · `HEADER_WRITE_PROHIBITED` · `STRUCTURAL_MUTATION_PROHIBITED` · `WHOLE_SHEET_REPLACEMENT_PROHIBITED` · `MIGRATION_AUTHORIZATION_REQUIRED`.
+
+**Recommendation path adoption:** the locked generate handler (`24_recommendation_orchestrator.gs`) now calls `KMPW.assertAuthorizedSchemasReady` (validate-only, via `KMSAFE`) and **fails closed before any lock/write** — the auto-creating ensure (`procurementEnsureSheet_`/`sheetEnsureColumns_`) is removed from that path. Missing `recommendation_calculation_runs` → `SCHEMA_NOT_PROVISIONED` (not created); blank line Header → `HEADER_BLANK` (not repaired); duplicate Active Draft → `BLOCKED_CONFLICT` (not cleaned). Diagnostics (`KMVD`) remain read-only. **Residual migration-only debt:** the shared legacy ensure helpers (`procurementEnsureSheet_`, `shippingPlanEnsureSheet_`, `shipmentEnsureSheet_`, `fcWriteEnsureSheet_`, `sheetEnsureColumns_`, `fcWriteEnsureColumns_`) remain auto-create/additive on all NON-recommendation write paths (procurement/shipping/shipment/fc/tax/sku/carrier/campaign/factory) and are classified `REWRITE_LATER` — gating them is a separate authorized migration, out of scope for this incident-safety round.
+
+---
+
 **Draft v1.5 — Runtime Architecture Specification. Architecture only. No code, Apps Script, API, SQL, DB, frontend, or existing-spec changes are implied by this document. B-1 Reserve Trigger resolved (the Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit; owner §8A.1) — decision only, Runtime / trigger / writer Not Started / Unverified. Domain specs remain authoritative for their domains.**
 
 **End of Document**

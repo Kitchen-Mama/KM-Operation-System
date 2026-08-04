@@ -126,8 +126,12 @@ section('E. Confirm the ONLY write-capable recommendation path is the GENERATE a
   var gs28 = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '28_recommendation_verification_diagnostics.gs'), 'utf8');
   var code = gs28.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   ok(!/insertSheet|setValues|appendRow|deleteRow|clearContent|\.clear\(|procurementEnsureSheet_|sheetEnsureColumns_|rpoEnsureSchema_|handleGenerateRecommendationDraftLocked_|runRecommendationGeneration|persistProductionRecommendation/.test(code), 'E1 28_.gs (diagnostics) reaches no ensure/write/generation function');
-  var gs24 = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '24_recommendation_orchestrator.gs'), 'utf8');
-  ok(/rpoEnsureSchema_\(ss, type\)/.test(gs24) && /handleGenerateRecommendationDraftLocked_/.test(gs24), 'E2 ensure-table write path lives ONLY in 24_ generate handler (separate from diagnostics)');
+  var gs24raw = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '24_recommendation_orchestrator.gs'), 'utf8');
+  var gs24 = gs24raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');   // strip comments (executable only)
+  // Production Safety Round S0: the recommendation generate path no longer auto-creates schema — it VALIDATES
+  // (fail-closed) via KMPW.assertAuthorizedSchemasReady, and the auto-creating ensure helpers were removed from it.
+  ok(/rpoValidateSchema_/.test(gs24) && /assertAuthorizedSchemasReady/.test(gs24) && /handleGenerateRecommendationDraftLocked_/.test(gs24), 'E2 generate handler validates schema (no auto-create) before lock/write');
+  ok(!/procurementEnsureSheet_|sheetEnsureColumns_|rpoEnsureSchema_/.test(gs24), 'E2b auto-creating ensure helpers removed from the recommendation generate path (validate, never repair)');
 })();
 
 // ==========================================================================

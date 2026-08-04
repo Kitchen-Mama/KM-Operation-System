@@ -21,11 +21,12 @@
     req ? req('./supply-planning-recommendation-orchestrator.js') : (root.KMORCH || (root.KM && root.KM.recommendationOrchestrator)),
     req ? req('./supply-planning-persistence-locking.js') : (root.KMPL || (root.KM && root.KM.persistenceLocking)),
     req ? req('./supply-planning-persistence-repository.js') : (root.KMPR || (root.KM && root.KM.persistenceRepository)),
-    req ? req('./supply-planning-production-source.js') : (root.KMPS || (root.KM && root.KM.productionSource))
+    req ? req('./supply-planning-production-source.js') : (root.KMPS || (root.KM && root.KM.productionSource)),
+    req ? req('./supply-planning-production-safety.js') : (root.KMSAFE || (root.KM && root.KM.productionSafety))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.productionWriter = api; }
-})(this, function (KMORCH, KMPL, KMPR, KMPS) {
+})(this, function (KMORCH, KMPL, KMPR, KMPS, KMSAFE) {
   'use strict';
 
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -109,6 +110,57 @@
     };
   }
 
+  // ---- Production Safety Round S0 — pre-write schema validation (validate, NEVER repair/create) -------------
+  // The five authorized Recommendation persistence tables, each with its frozen expected Header. Line tables carry
+  // ADDITIVE columns (user_edited/user_edited_by) beyond DRAFT_HEADERS.lines, so extra columns are ALLOWed (the
+  // table's additive contract) while missing/blank/duplicate/reordered required Headers still fail closed.
+  function authorizedTableSpecs() {
+    return [
+      { sheetName: KMPR.TABLES.WEEKLY_SHIPPING.header, expectedHeaders: DRAFT_HEADERS.WEEKLY_SHIPPING.header, required: true, extraColumnsPolicy: 'ALLOW' },
+      { sheetName: KMPR.TABLES.WEEKLY_SHIPPING.lines, expectedHeaders: DRAFT_HEADERS.WEEKLY_SHIPPING.lines, required: true, extraColumnsPolicy: 'ALLOW' },
+      { sheetName: KMPR.TABLES.MONTHLY_ORDER.header, expectedHeaders: DRAFT_HEADERS.MONTHLY_ORDER.header, required: true, extraColumnsPolicy: 'ALLOW' },
+      { sheetName: KMPR.TABLES.MONTHLY_ORDER.lines, expectedHeaders: DRAFT_HEADERS.MONTHLY_ORDER.lines, required: true, extraColumnsPolicy: 'ALLOW' },
+      { sheetName: KMPR.RUN_JOURNAL_TABLE, expectedHeaders: KMPR.RUN_JOURNAL_HEADERS, required: true, extraColumnsPolicy: 'ALLOW' }
+    ];
+  }
+
+  // Validate all five authorized Draft/journal table schemas against a live-shaped Spreadsheet BEFORE any
+  // lock/write. Read-only via KMSAFE (getSheetByName + getValues); performs ZERO mutation and NEVER creates or
+  // repairs a Sheet. A missing REQUIRED table → SCHEMA_NOT_PROVISIONED (the writer must never provision it). A
+  // blank required Header → HEADER_BLANK. Returns a JSON-safe {ready, spreadsheetId, tables, blockers}.
+  function validateAuthorizedRecommendationSchemas(spreadsheet, opts) {
+    aType(isObj(opts) && str(opts.expectedSpreadsheetId) !== '', 'validateAuthorizedRecommendationSchemas: opts.expectedSpreadsheetId required (exact-ID gate)');
+    var idCheck = KMSAFE.checkExpectedSpreadsheetId(spreadsheet, opts.expectedSpreadsheetId);
+    var tables = {}, blockers = [];
+    authorizedTableSpecs().forEach(function (spec) {
+      var report;
+      if (!idCheck.ok) {
+        report = { ready: false, sheetName: spec.sheetName, schemaStatus: KMSAFE.SCHEMA_STATUS.WRONG_SPREADSHEET_TARGET, issues: [{ reason: KMSAFE.SCHEMA_STATUS.WRONG_SPREADSHEET_TARGET }] };
+      } else {
+        report = KMSAFE.validateCanonicalTable(spreadsheet, {
+          sheetName: spec.sheetName, expectedHeaders: spec.expectedHeaders,
+          expectedSpreadsheetId: opts.expectedSpreadsheetId, extraColumnsPolicy: spec.extraColumnsPolicy
+        });
+        // a missing authorized table is a provisioning gap the writer must NOT fix — normalize to SCHEMA_NOT_PROVISIONED.
+        if (report.schemaStatus === KMSAFE.SCHEMA_STATUS.SHEET_MISSING) { report.schemaStatus = KMSAFE.SCHEMA_STATUS.SCHEMA_NOT_PROVISIONED; report.issues = [{ reason: KMSAFE.SCHEMA_STATUS.SCHEMA_NOT_PROVISIONED }]; report.ready = false; }
+      }
+      report.required = spec.required;
+      tables[spec.sheetName] = report;
+      if (spec.required && !report.ready) blockers.push({ table: spec.sheetName, schemaStatus: report.schemaStatus });
+    });
+    return { ready: blockers.length === 0, spreadsheetId: idCheck.spreadsheetId || '', tables: tables, blockers: blockers };
+  }
+
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+
+  // Hard gate for the live generate handler: throw fail-closed BEFORE acquiring the lock when any authorized table
+  // schema is not provisioned/valid or the Spreadsheet target is wrong. Never mutates.
+  function assertAuthorizedSchemasReady(spreadsheet, opts) {
+    var v = validateAuthorizedRecommendationSchemas(spreadsheet, opts);
+    if (!v.ready) { var e = new Error('RECOMMENDATION_SCHEMA_NOT_READY: ' + v.blockers.map(function (b) { return b.table + '=' + b.schemaStatus; }).join('; ')); e.schemaValidation = v; throw e; }
+    return v;
+  }
+
   // Public writer API: run the frozen locked generation and shape a JSON-safe production persistence result.
   // `deps` is the injected orchestrator dependency set (the `.gs` builds it over real Sheets + LockService;
   // tests build it via sheetSetDeps over an in-memory set + a fake lock). This function adds NO algorithm — it
@@ -140,6 +192,9 @@
     seedSheetSet: seedSheetSet,
     sheetSetDeps: sheetSetDeps,
     persistProductionRecommendation: persistProductionRecommendation,
-    persistToSheetSet: persistToSheetSet
+    persistToSheetSet: persistToSheetSet,
+    authorizedTableSpecs: authorizedTableSpecs,
+    validateAuthorizedRecommendationSchemas: validateAuthorizedRecommendationSchemas,
+    assertAuthorizedSchemasReady: assertAuthorizedSchemasReady
   };
 });
