@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 69296550705b3eabb8243e672bb5c47e833a5d1558ae37bd4cc622541c84cb9f
+// bundle_sha256 = 2d0b276f35795f82e51f4c3f253a2cfa050b65fd043ca4564e8d5a57340930f7
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7
@@ -20,6 +20,11 @@
 //   supply-planning-persistence-plan-builder  c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304
 //   supply-planning-recommendation-orchestrator  23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192
 //   supply-planning-user-edit  365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693
+//   supply-planning-source-facts  f680207e1e181bd3561e62b8b577cca05cfbb10790b60979e96b13e8a7f342fe
+//   supply-planning-plan-bridge  c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44
+//   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
+//   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
+//   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
 // ============================================================================
 
 var __kmModules = {};
@@ -4358,6 +4363,1974 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-user-edit", module.exports);
 })();
 
+// ----- module: supply-planning-source-facts (verbatim from assets/js/core/supply-planning-source-facts.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Production SOURCE-FACTS reader, CLEAN SLICE (Phase 2C, Round 1J).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC read-only bridge from canonical source rows → the frozen pure-runtime inputs, for the
+// subset of the Source-Facts Reader contract whose derivation is UNAMBIGUOUSLY Canonically owned and safely
+// test-verifiable now (Round 1J decomposition — the allocation-input projector + Weekly/Monthly recommendedQty
+// assembly + Apps Script reader + locked-orchestrator integration are frozen in the §Source-Facts CONTRACT and
+// deferred to the following implementation round).
+//
+// This module REUSES the frozen runtime — it never reimplements it:
+//   • readiness  → supply-planning-calculations.js `classifyPlanningDataState` (§34A)
+//   • demand     → supply-planning-ledgers.js `buildDemandLedger` (§39)
+//   • supply     → supply-planning-ledgers.js `buildSupplyLedger` (§39)  [CURRENT_STOCK from inventory authority]
+//   • incoming   → supply-planning-supply-candidates.js + supply-planning-incoming-adapters.js (B4-R3/R4)
+//
+// Invariants: read-only; JSON-safe; deterministic (no clock/random/locale); MISSING is never silently 0 (only an
+// explicit source value of 0 yields 0); identity ambiguity BLOCKS (never first/latest); no persistence; never
+// writes a decision value. No Sheet/Range objects.
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations)),
+    req ? req('./supply-planning-ledgers.js') : (root.KMLEDGER || (root.KM && root.KM.ledgers)),
+    req ? req('./supply-planning-supply-candidates.js') : (root.KMCAND || (root.KM && root.KM.supplyCandidates)),
+    req ? req('./supply-planning-incoming-adapters.js') : (root.KMINC || (root.KM && root.KM.incomingAdapters)),
+    req ? req('./supply-planning-qualified-incoming.js') : (root.KMQI || (root.KM && root.KM.qualifiedIncoming)),
+    req ? req('./supply-planning-allocations.js') : (root.KMALLOC || (root.KM && root.KM.allocations))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceFacts = api; }
+})(this, function (CALC, LEDGER, CAND, INC, QI, ALLOC) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function cmpStr(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function nonEmpty(v) { return str(v).length > 0; }
+  // MISSING vs ZERO: return {qty:number, missing:bool}. Only an explicit finite value (incl. 0) is a quantity.
+  function readQty(v) {
+    if (v === undefined || v === null || v === '') return { qty: null, missing: true };
+    var n = Number(v); if (!isFinite(n)) return { qty: null, missing: true, invalid: true };
+    return { qty: n, missing: false };
+  }
+
+  // Readiness vocabulary (Round 1J §11). §34A owns OK/MISSING_SNAPSHOT/MISSING_FORECAST/MISSING_SALES_BASIS/
+  // STALE_SNAPSHOT; identity/duplicate states are owned here (source-adapter layer).
+  var READINESS_STATES = {
+    OK: 1, STALE_SNAPSHOT: 1, MISSING_SNAPSHOT: 1, MISSING_FORECAST: 1, MISSING_SALES_BASIS: 1,
+    IDENTITY_CONFLICT: 1, DUPLICATE_SOURCE: 1, BLOCKED_CONFLICT: 1, SOURCE_NOT_AVAILABLE: 1
+  };
+  var CURRENT_STOCK_POOL_TYPES = { FBA: 1, THREE_PL: 1, FACTORY: 1 };
+  var POOL_TYPES = { FBA: 1, THREE_PL: 1, FACTORY: 1 };
+  var DEMAND_TYPES = { REGULAR: 1, SALES_RUN_RATE: 1, SPECIAL_EVENT: 1, SAFETY: 1 };
+
+  // ---- §39.5 lifecycle buckets (tokens owned by supply-planning-ledgers; NOT redefined) ----------
+  // §39.5 freezes only the tokens + progression; §39.2/§39.4 explicitly assign the source-status →
+  // lifecycleBucket mapping to the ADAPTER (this projector). buildSupplyLedger owns count-once/conflict.
+  var ACTIVE_BUCKETS = {
+    COMMITTED_PRODUCTION: 1, APPROVED_SHIPPING_PLAN: 1, SHIPPED_IN_TRANSIT: 1,
+    DELIVERED_NOT_RECEIVED: 1, RECEIVED_NOT_REFLECTED: 1, CURRENT_STOCK: 1
+  };
+  var EXCLUDED_BUCKETS = { DRAFT: 1, CANCELLED_INVALID: 1, CORRECTION_REVERSAL: 1 };
+
+  // OMIT sentinels: the lineage is real but is NOT this source's to count (count-once, §30) → surfaced as an
+  // issue, never an entry. OMIT_TRANSFERRED = ownership moved down-lineage (PO→shipment, plan→shipment).
+  // OMIT_POSTED = closed/posted shipment belongs to the CURRENT_STOCK inventory authority, not the shipment feed.
+  var OMIT_TRANSFERRED = 'OMIT_TRANSFERRED', OMIT_POSTED = 'OMIT_POSTED';
+
+  // Production / PO (REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC §1 — the one Canonically written-out status list).
+  var PRODUCTION_STATUS_MAP = {
+    draft: 'DRAFT',
+    issued: 'COMMITTED_PRODUCTION', in_production: 'COMMITTED_PRODUCTION',
+    partial_completed: 'COMMITTED_PRODUCTION', completed: 'COMMITTED_PRODUCTION',
+    partial_shipped: OMIT_TRANSFERRED, shipped: OMIT_TRANSFERRED,   // Shipment becomes the incoming owner
+    closure: 'CANCELLED_INVALID', cancelled: 'CANCELLED_INVALID'
+  };
+  // Weekly Shipping Plan (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.2A / §9).
+  var SHIPPING_PLAN_STATUS_MAP = {
+    draft: 'DRAFT', pending_approval: 'DRAFT',
+    approved: 'APPROVED_SHIPPING_PLAN',
+    cancelled: 'CANCELLED_INVALID',
+    completed: OMIT_TRANSFERRED   // transferred to a Shipment (count-once)
+  };
+  // Shipment header (SHIPMENT_CENTER_SPEC §3/§4/§15.1 + §535 QI allowlist). ready_to_ship = pre-dispatch
+  // commit (reserved, NOT yet physically shipped) → APPROVED_SHIPPING_PLAN (pre-SHIPPED_IN_TRANSIT, active,
+  // not DRAFT). arrived/received are canonical-but-NOT-YET-EMITTED (fixtures only; production reads empty).
+  var SHIPMENT_STATUS_MAP = {
+    draft: 'DRAFT',
+    ready_to_ship: 'APPROVED_SHIPPING_PLAN',
+    shipped: 'SHIPPED_IN_TRANSIT', in_transit: 'SHIPPED_IN_TRANSIT',
+    arrived: 'DELIVERED_NOT_RECEIVED',
+    received: 'RECEIVED_NOT_REFLECTED',
+    closed: OMIT_POSTED,
+    cancelled: 'CANCELLED_INVALID'
+  };
+  // Route/event ledger (SHIPMENT_ROUTE_AND_EVENT_SPEC §4.5/§5.4 — spec-only, NOT emitted; fixtures only).
+  var ROUTE_EVENT_MAP = {
+    arrived: 'DELIVERED_NOT_RECEIVED', arrived_port: 'DELIVERED_NOT_RECEIVED', delivered: 'DELIVERED_NOT_RECEIVED',
+    received: 'RECEIVED_NOT_REFLECTED',
+    correction: 'CORRECTION_REVERSAL', reversal: 'CORRECTION_REVERSAL'
+  };
+  // Warehouse receiving (OVERSEAS_INBOUND_SPEC §10.3/§10.6/§10.7 — NOT emitted; fixtures only). A confirmed
+  // receipt not yet posted to the snapshot = RECEIVED_NOT_REFLECTED; a reversing receipt = CORRECTION_REVERSAL.
+  var RECEIVING_STATUS_MAP = {
+    draft: 'DRAFT', confirmed: 'RECEIVED_NOT_REFLECTED', reversed: 'CORRECTION_REVERSAL'
+  };
+
+  // ---- readiness (§34A reuse; never reimplemented) --------------------------
+  function classifySourceReadiness(input) {
+    aType(isObj(input), 'classifySourceReadiness: input must be an object');
+    var r = CALC.classifyPlanningDataState(input);   // §34A frozen classifier
+    return { ready: r.calculationAllowed === true, status: r.state, reason: r.state === 'OK' ? null : r.state };
+  }
+
+  // ---- identity resolution (deterministic; ambiguity BLOCKS) ----------------
+  // input = { rawScope:{company,country,marketplace,sku}, marketplaceSkuRows:[], skuDetailRows:[],
+  //           warehouseRows:[], destinationWarehouseId?, sourceWarehouseId? }
+  function resolveSourceIdentity(input) {
+    aType(isObj(input) && isObj(input.rawScope), 'resolveSourceIdentity: input.rawScope required');
+    var q = input.rawScope, issues = [];
+    var company = str(q.company), country = str(q.country), marketplace = str(q.marketplace), masterSku = str(q.sku);
+    function block(status, reason) { return { status: status, reason: reason, identity: null, issues: issues.concat([reason]) }; }
+    if (!nonEmpty(masterSku)) return block('BLOCKED_CONFLICT', 'MISSING_MASTER_SKU');
+    if (!nonEmpty(company)) return block('BLOCKED_CONFLICT', 'MISSING_COMPANY');
+
+    // master SKU existence (no display-name identity; exact id)
+    var skuRows = (input.skuDetailRows || []).filter(function (r) { return str(r.sku) === masterSku; });
+    if (skuRows.length === 0) return block('SOURCE_NOT_AVAILABLE', 'MASTER_SKU_NOT_FOUND:' + masterSku);
+    if (skuRows.length > 1) return block('DUPLICATE_SOURCE', 'DUPLICATE_MASTER_SKU:' + masterSku);
+
+    // marketplace SKU resolution: exactly one row for (company,country,marketplace,sku)
+    var msRows = (input.marketplaceSkuRows || []).filter(function (r) {
+      return str(r.company) === company && str(r.country) === country && str(r.marketplace) === marketplace && str(r.sku) === masterSku;
+    });
+    var marketplaceSkuId = null, siteSku = null, fulfillmentModel = null;
+    if (msRows.length > 1) return block('IDENTITY_CONFLICT', 'DUPLICATE_MARKETPLACE_SKU:' + [company, country, marketplace, masterSku].join('|'));
+    if (msRows.length === 1) {
+      marketplaceSkuId = str(msRows[0].marketplace_sku_id) || null;
+      siteSku = str(msRows[0].site_sku) || null;
+      fulfillmentModel = str(msRows[0].fulfillment_model) || null;   // §24.1 SKU-level; null → unresolved (deferred projector decides)
+    } else { issues.push('MARKETPLACE_SKU_NOT_FOUND:' + [company, country, marketplace, masterSku].join('|')); }
+
+    // warehouse identity = warehouse_id ONLY (never warehouse_code); resolve destination if supplied
+    var destinationWarehouseId = nonEmpty(input.destinationWarehouseId) ? str(input.destinationWarehouseId) : null;
+    var sourceWarehouseId = nonEmpty(input.sourceWarehouseId) ? str(input.sourceWarehouseId) : null;
+    if (destinationWarehouseId && (input.warehouseRows || []).length) {
+      var wh = (input.warehouseRows || []).filter(function (r) { return str(r.warehouse_id) === destinationWarehouseId; });
+      if (wh.length === 0) issues.push('DESTINATION_WAREHOUSE_NOT_FOUND:' + destinationWarehouseId);
+      else if (wh.length > 1) return block('DUPLICATE_SOURCE', 'DUPLICATE_WAREHOUSE_ID:' + destinationWarehouseId);
+    }
+
+    return {
+      status: 'RESOLVED', reason: null,
+      identity: {
+        masterSku: masterSku, marketplaceSkuId: marketplaceSkuId, company: company, country: country || null,
+        marketplace: marketplace || null, siteSku: siteSku, fulfillmentModel: fulfillmentModel,
+        destinationWarehouseId: destinationWarehouseId, sourceWarehouseId: sourceWarehouseId
+      },
+      issues: issues
+    };
+  }
+
+  // ---- demand-ledger projection (§39 reuse; missing≠zero) --------------------
+  // input = { masterSku, company, country, marketplace, destinationWarehouseId, planningCycle,
+  //           demandRows:[{ demandType, sourceRef, requiredByDate, quantity, eventId? }] }
+  function projectDemandLedger(input) {
+    aType(isObj(input), 'projectDemandLedger: input must be an object');
+    aType(nonEmpty(input.masterSku) && nonEmpty(input.company) && nonEmpty(input.destinationWarehouseId) && nonEmpty(input.planningCycle), 'projectDemandLedger: masterSku/company/destinationWarehouseId/planningCycle required');
+    var rows = input.demandRows || [], entries = [], issues = [];
+    for (var i = 0; i < rows.length; i++) {
+      var d = rows[i] || {}, dt = str(d.demandType);
+      if (DEMAND_TYPES[dt] !== 1) { issues.push({ i: i, reason: 'UNKNOWN_DEMAND_TYPE:' + dt }); continue; }
+      var qr = readQty(d.quantity);
+      if (qr.missing) { issues.push({ i: i, reason: 'MISSING_DEMAND_QUANTITY:' + str(d.sourceRef) }); continue; }  // never 0
+      var entry = {
+        demandType: dt, masterSku: str(input.masterSku), company: str(input.company),
+        country: input.country == null ? null : str(input.country), marketplace: input.marketplace == null ? null : str(input.marketplace),
+        destinationWarehouseId: str(input.destinationWarehouseId), planningCycle: str(input.planningCycle),
+        requiredByDate: str(d.requiredByDate), sourceRef: str(d.sourceRef), quantity: qr.qty
+      };
+      if (dt === 'SPECIAL_EVENT') entry.eventId = str(d.eventId);   // §39 count-once identity
+      entries.push(entry);
+    }
+    var ledger = LEDGER.buildDemandLedger({ entries: entries });   // §39 frozen builder (validates + count-once)
+    return { entries: entries, ledger: ledger, issues: issues };
+  }
+
+  // ---- current-stock supply-ledger projection (§39 reuse; CURRENT_STOCK) -----
+  // input = { masterSku, company, stockRows:[{ poolType, warehouseId, quantity, supplyLineageRef }] }
+  // Inventory tables are the CURRENT_STOCK authority (§24.2/§24.3/§17); incoming/in-transit supply lifecycle
+  // mapping is the deferred allocation-input projector, NOT invented here.
+  // Shared CURRENT_STOCK entry builder (§39 CURRENT_STOCK from inventory authority). Used by both the
+  // Round 1J current-stock projector AND the Round 1K lifecycle projector — never duplicated.
+  function buildCurrentStockEntries(masterSku, company, rows, issues) {
+    var entries = [];
+    for (var i = 0; i < rows.length; i++) {
+      var s = rows[i] || {}, pt = str(s.poolType);
+      if (CURRENT_STOCK_POOL_TYPES[pt] !== 1) { issues.push({ i: i, reason: 'UNKNOWN_POOL_TYPE:' + pt }); continue; }
+      if (!nonEmpty(s.warehouseId)) { issues.push({ i: i, reason: 'MISSING_WAREHOUSE_ID' }); continue; }
+      var qr = readQty(s.quantity);
+      if (qr.missing) { issues.push({ i: i, reason: 'MISSING_STOCK_QUANTITY:' + str(s.warehouseId) }); continue; }  // never 0
+      entries.push({
+        supplyLineageRef: nonEmpty(s.supplyLineageRef) ? str(s.supplyLineageRef) : ('stock:' + pt + ':' + str(s.warehouseId) + ':' + str(masterSku)),
+        masterSku: str(masterSku), company: str(company), warehouseId: str(s.warehouseId),
+        poolType: pt, lifecycleBucket: 'CURRENT_STOCK', quantity: qr.qty
+      });
+    }
+    return entries;
+  }
+
+  function projectCurrentStockSupplyLedger(input) {
+    aType(isObj(input), 'projectCurrentStockSupplyLedger: input must be an object');
+    aType(nonEmpty(input.masterSku) && nonEmpty(input.company), 'projectCurrentStockSupplyLedger: masterSku/company required');
+    var issues = [];
+    var entries = buildCurrentStockEntries(input.masterSku, input.company, input.stockRows || [], issues);
+    var ledger = LEDGER.buildSupplyLedger({ entries: entries });   // §39 frozen builder (physical count-once)
+    return { entries: entries, ledger: ledger, issues: issues };
+  }
+
+  // ---- incoming candidate adaptation (B4-R3/R4 reuse; NO lifecycle invention)-
+  // input = { shipmentInputs:[{ shipment:{...}, line:{...} }], scope:{...} }
+  function adaptIncomingSupplyCandidates(input) {
+    aType(isObj(input) && Array.isArray(input.shipmentInputs), 'adaptIncomingSupplyCandidates: input.shipmentInputs[] required');
+    aType(isObj(input.scope), 'adaptIncomingSupplyCandidates: input.scope required');
+    var results = [], issues = [];
+    for (var i = 0; i < input.shipmentInputs.length; i++) {
+      try {
+        var candidate = CAND.buildKmShipmentSupplyCandidate(input.shipmentInputs[i]);  // B4-R3 (accepts raw cells)
+        results.push(INC.adaptKmShipmentIncomingCandidate({ candidate: candidate, scope: input.scope }));  // B4-R4
+      } catch (e) { issues.push({ i: i, reason: 'ADAPT_FAILED:' + (e && e.message ? e.message : e) }); }
+    }
+    return { results: results, issues: issues };
+  }
+
+  // ---- supply-lifecycle projection (Round 1K; §39.5 buckets; buildSupplyLedger owns count-once) --------
+  // PURE. Accepts already-resolved canonical source facts, maps each via its TABLE-SPECIFIC status→bucket
+  // owner (§39.2/§39.4 assign this to the adapter), and calls the REAL buildSupplyLedger. Shipments reuse the
+  // REAL B4-R3/R4/R6 chain (never duplicated). No allocation, no recommendedQty, no Sheet read, no persistence.
+  function projectSupplyLifecycle(input) {
+    aType(isObj(input), 'projectSupplyLifecycle: input must be an object');
+    var entries = [], issues = [];
+    function addIssue(domain, i, reason) { issues.push({ domain: domain, i: i, reason: reason }); }
+
+    // Generic explicit-canonical-row projector. Each row carries its OWN identity (§7). fixedBucket, when set,
+    // bypasses statusMap (correctionFacts → CORRECTION_REVERSAL). statusKeyField = 'status' | 'eventType'.
+    function projectRows(domain, rows, statusMap, statusKeyField, fixedBucket) {
+      rows = rows || [];
+      aType(Array.isArray(rows), 'projectSupplyLifecycle: input.' + domain + ' must be an array');
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i]; aType(isObj(r), 'projectSupplyLifecycle: input.' + domain + '[' + i + '] must be an object');
+        var bucket;
+        if (fixedBucket) { bucket = fixedBucket; }
+        else {
+          var st = str(r[statusKeyField]).toLowerCase();
+          if (!st) { addIssue(domain, i, 'MISSING_STATUS'); continue; }
+          bucket = statusMap[st];
+          if (bucket === undefined) { addIssue(domain, i, 'UNKNOWN_STATUS:' + st); continue; }          // fail-closed
+          if (bucket === OMIT_TRANSFERRED) { addIssue(domain, i, 'LINEAGE_TRANSFERRED_DOWNSTREAM:' + st); continue; }
+          if (bucket === OMIT_POSTED) { addIssue(domain, i, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + st); continue; }
+        }
+        if (!nonEmpty(r.supplyLineageRef)) { addIssue(domain, i, 'MISSING_SUPPLY_LINEAGE_REF'); continue; }
+        if (!nonEmpty(r.company)) { addIssue(domain, i, 'MISSING_COMPANY'); continue; }
+        if (!nonEmpty(r.masterSku)) { addIssue(domain, i, 'MISSING_MASTER_SKU'); continue; }
+        if (!nonEmpty(r.warehouseId)) { addIssue(domain, i, 'MISSING_WAREHOUSE_ID'); continue; }
+        var pt = str(r.poolType);
+        if (POOL_TYPES[pt] !== 1) { addIssue(domain, i, 'UNKNOWN_POOL_TYPE:' + pt); continue; }
+        var qr = readQty(r.quantity);
+        if (qr.missing) { addIssue(domain, i, 'MISSING_QUANTITY:' + str(r.supplyLineageRef)); continue; }  // never 0 (NaN/Inf too)
+        if (qr.qty < 0) { addIssue(domain, i, 'NEGATIVE_QUANTITY:' + str(r.supplyLineageRef)); continue; }   // fail-closed, no throw
+        entries.push({
+          supplyLineageRef: str(r.supplyLineageRef), masterSku: str(r.masterSku), company: str(r.company),
+          warehouseId: str(r.warehouseId), poolType: pt, lifecycleBucket: bucket, quantity: qr.qty
+        });
+      }
+    }
+
+    // A. Production / PO   B. Approved Shipping Plan   (explicit canonical status rows)
+    projectRows('committedProduction', input.committedProduction, PRODUCTION_STATUS_MAP, 'status', null);
+    projectRows('approvedShippingPlans', input.approvedShippingPlans, SHIPPING_PLAN_STATUS_MAP, 'status', null);
+
+    // C. Shipment — reuse the REAL B4-R3/R4 candidate/adapter chain + B4-R6 Qualified Incoming authority.
+    var shp = input.shipments;
+    if (shp !== undefined && shp !== null) {
+      aType(isObj(shp) && Array.isArray(shp.shipmentInputs) && isObj(shp.scope),
+        'projectSupplyLifecycle: input.shipments requires { shipmentInputs:[], scope:{} }');
+      var adapted = adaptIncomingSupplyCandidates({ shipmentInputs: shp.shipmentInputs, scope: shp.scope });
+      adapted.issues.forEach(function (x) { addIssue('shipment', x.i, x.reason); });
+      var qi = QI.evaluateQualifiedIncoming({
+        requiredByDate: shp.requiredByDate,
+        kmShipmentResults: adapted.results,
+        externalAuthorityResults: shp.externalResults || [],
+        postedToCurrentStockLineageKeys: shp.postedToCurrentStockLineageKeys || [],
+        activeOtherBucketLineageKeys: shp.activeOtherBucketLineageKeys || []
+      });
+      for (var k = 0; k < qi.candidateResults.length; k++) {
+        var cr = qi.candidateResults[k], c = cr.candidate;
+        // Count-once: a lineage already posted to Current Stock (Gate 9) or active in another bucket is NOT the
+        // shipment feed's to count. Duplicate/qty conflicts are LEFT for buildSupplyLedger (§18/§26).
+        var posted = cr.gateResults && cr.gateResults.NOT_POSTED_TO_CURRENT_STOCK === 'FAIL';
+        var otherBucket = (cr.exclusionReasons || []).indexOf('ACTIVE_IN_OTHER_BUCKET') >= 0;
+        if (posted || otherBucket) { addIssue('shipment', k, 'COUNT_ONCE_OWNED_ELSEWHERE:' + c.lineageKey); continue; }
+        var sst = str(c.status).toLowerCase();
+        if (!sst) { addIssue('shipment', k, 'MISSING_STATUS:' + c.lineageKey); continue; }
+        var sbucket = SHIPMENT_STATUS_MAP[sst];
+        if (sbucket === undefined) { addIssue('shipment', k, 'UNKNOWN_STATUS:' + sst); continue; }        // fail-closed
+        if (sbucket === OMIT_POSTED) { addIssue('shipment', k, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + sst); continue; }
+        if (!nonEmpty(c.company)) { addIssue('shipment', k, 'MISSING_COMPANY:' + c.lineageKey); continue; }
+        if (!nonEmpty(c.sku)) { addIssue('shipment', k, 'MISSING_MASTER_SKU:' + c.lineageKey); continue; }
+        if (!nonEmpty(c.destinationWarehouseId)) { addIssue('shipment', k, 'MISSING_WAREHOUSE_ID:' + c.lineageKey); continue; }
+        var spt = 'THREE_PL'; // canonical KM shipments are 3PL-overseas inbound (candidate.supplyDomain KM_3PL_OVERSEAS)
+        var sqr = readQty(c.quantityRemaining);
+        if (sqr.missing) { addIssue('shipment', k, 'MISSING_QUANTITY:' + c.lineageKey); continue; }        // never 0 (NaN/Inf too)
+        if (sqr.qty < 0) { addIssue('shipment', k, 'NEGATIVE_QUANTITY:' + c.lineageKey); continue; }        // fail-closed, no throw
+        entries.push({
+          supplyLineageRef: str(c.lineageKey), masterSku: str(c.sku), company: str(c.company),
+          warehouseId: str(c.destinationWarehouseId), poolType: spt, lifecycleBucket: sbucket, quantity: sqr.qty
+        });
+      }
+    }
+
+    // D. Route/event   E. Receiving   (canonical-but-NOT-YET-EMITTED; explicit fixtures only)
+    projectRows('routeEvents', input.routeEvents, ROUTE_EVENT_MAP, 'eventType', null);
+    projectRows('receivingFacts', input.receivingFacts, RECEIVING_STATUS_MAP, 'status', null);
+
+    // F. Current stock — reuse the Round 1J shared builder (never duplicated).
+    if (input.currentStockFacts !== undefined && input.currentStockFacts !== null) {
+      aType(Array.isArray(input.currentStockFacts), 'projectSupplyLifecycle: input.currentStockFacts must be an array');
+      aType(nonEmpty(input.masterSku) && nonEmpty(input.company), 'projectSupplyLifecycle: masterSku/company required for currentStockFacts');
+      var csIssues = [];
+      var csEntries = buildCurrentStockEntries(input.masterSku, input.company, input.currentStockFacts, csIssues);
+      csIssues.forEach(function (x) { addIssue('currentStock', x.i, x.reason); });
+      for (var ce = 0; ce < csEntries.length; ce++) entries.push(csEntries[ce]);
+    }
+
+    // G. Correction / reversal — always CORRECTION_REVERSAL (visible, contributes 0).
+    projectRows('correctionFacts', input.correctionFacts, null, null, 'CORRECTION_REVERSAL');
+
+    // Final §39 count-once via the REAL builder (never reimplemented).
+    var ledger = LEDGER.buildSupplyLedger({ entries: entries });
+
+    // Deterministic output ordering (permutation-invariant).
+    var sortedEntries = entries.slice().sort(function (a, b) {
+      return cmpStr(a.company, b.company) || cmpStr(a.warehouseId, b.warehouseId) || cmpStr(a.masterSku, b.masterSku)
+        || cmpStr(a.poolType, b.poolType) || cmpStr(a.lifecycleBucket, b.lifecycleBucket)
+        || cmpStr(a.supplyLineageRef, b.supplyLineageRef) || (a.quantity - b.quantity);
+    });
+    issues.sort(function (a, b) { return cmpStr(a.domain, b.domain) || (a.i - b.i) || cmpStr(a.reason, b.reason); });
+    var lineageSet = {}, lineage = [];
+    sortedEntries.forEach(function (e) { if (!lineageSet[e.supplyLineageRef]) { lineageSet[e.supplyLineageRef] = 1; lineage.push(e.supplyLineageRef); } });
+    lineage.sort(cmpStr);
+
+    var blocked = ledger.blockedCount > 0;
+    var reason = null;
+    if (blocked) { for (var p = 0; p < ledger.pools.length; p++) { if (ledger.pools[p].state === 'BLOCKED_CONFLICT') { reason = ledger.pools[p].reason; break; } } }
+
+    return {
+      ready: !blocked,
+      status: blocked ? 'BLOCKED_CONFLICT' : 'OK',
+      reason: reason,
+      entries: sortedEntries,
+      ledger: ledger,
+      issues: issues,
+      lineage: lineage,
+      sourceDataAsOf: (input.sourceDataAsOf === undefined ? null : input.sourceDataAsOf)
+    };
+  }
+
+  // ---- allocation-input projection (Round 1L; builds §40 DTOs; calls the REAL allocators) --------------
+  // PURE. Consumes REAL Demand/Supply Ledger outputs (quantity authorities, never recomputed) + caller-supplied
+  // planning facts (survivalNeedQty/allocationPriority/demandWeight/fulfillmentModel/eligiblePoolTypes/
+  // eligibleFactoryWarehouseIds — DB/§22-owned, so REQUIRED explicitly in a Sheet-free round, never fabricated),
+  // forms the exact allocator DTOs, and calls allocateOverseasSharedPool / allocateFactoryDeterministic (never
+  // reimplemented). No recommendedQty, no Plan Builder, no persistence, no Sheet read.
+  var OVERSEAS_POOL_TYPES = { FBA: 1, THREE_PL: 1 };
+  var FULFILLMENT_MODELS = { self_fulfilled: 1, platform_fulfilled: 1, hybrid: 1 };
+  var SURVIVAL_HORIZON_DAYS = 18; // §20.3/§24.4 frozen survival horizon (cited, not invented)
+
+  function finiteNonNeg(v) { return (typeof v === 'number' && isFinite(v) && v >= 0) ? v : null; }
+  function isoDateOk(s) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if (!m) return false; var mo = +m[2], d = +m[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= 31; }
+  function normalizeIdList(v, validate) {
+    if (!Array.isArray(v)) return { ok: false, list: null };
+    var seen = {}, out = [];
+    for (var i = 0; i < v.length; i++) { var t = str(v[i]); if (validate && validate(t) !== true) return { ok: false, list: null, bad: t }; if (t === '' && !validate) return { ok: false, list: null }; if (!seen[t]) { seen[t] = 1; out.push(t); } }
+    out.sort(cmpStr);
+    return { ok: true, list: out };
+  }
+
+  function projectAllocationInputs(input) {
+    aType(isObj(input), 'projectAllocationInputs: input must be an object');
+    var identity = input.identity; aType(isObj(identity), 'projectAllocationInputs: input.identity must be an object');
+    var company = str(identity.company), country = identity.country == null ? null : str(identity.country), masterSku = str(identity.masterSku);
+    aType(nonEmpty(company) && nonEmpty(masterSku), 'projectAllocationInputs: identity.company/masterSku required');
+    var demandLedger = input.demandLedger; aType(isObj(demandLedger) && Array.isArray(demandLedger.entries), 'projectAllocationInputs: input.demandLedger.entries required');
+    var supplyLedger = input.supplyLedger; aType(isObj(supplyLedger) && Array.isArray(supplyLedger.pools), 'projectAllocationInputs: input.supplyLedger.pools required');
+    var receiverFacts = input.receiverFacts == null ? [] : input.receiverFacts;
+    var factoryDemandFacts = input.factoryDemandFacts == null ? [] : input.factoryDemandFacts;
+    aType(Array.isArray(receiverFacts), 'projectAllocationInputs: input.receiverFacts must be an array');
+    aType(Array.isArray(factoryDemandFacts), 'projectAllocationInputs: input.factoryDemandFacts must be an array');
+
+    var issues = [], blockedInputs = [];
+    function addIssue(kind, key, reason) { issues.push({ kind: kind, key: key, reason: reason }); }
+
+    // Index Demand Ledger + surface blocked demand (never recomputed; effectiveDemandQty is the authority).
+    var demandByKey = {};
+    demandLedger.entries.forEach(function (e) {
+      demandByKey[e.demandKey] = e;
+      if (e.state === 'BLOCKED_CONFLICT') blockedInputs.push({ kind: 'DEMAND', key: e.demandKey, reason: e.reason || 'BLOCKED_CONFLICT' });
+    });
+
+    // Split Supply Ledger pools (blocked surfaced+excluded; FBA/THREE_PL vs FACTORY kept separate; no reclassification).
+    var overseasPools = [], factoryPools = [];
+    supplyLedger.pools.forEach(function (p) {
+      if (p.state === 'BLOCKED_CONFLICT') { blockedInputs.push({ kind: 'SUPPLY', key: p.poolKey, reason: p.reason || 'BLOCKED_CONFLICT' }); return; }
+      var base = { poolKey: str(p.poolKey), poolType: str(p.poolType), warehouseId: str(p.warehouseId), effectiveSupplyQty: p.effectiveSupplyQty };
+      if (p.poolType === 'FACTORY') factoryPools.push(base);
+      else if (OVERSEAS_POOL_TYPES[p.poolType] === 1) overseasPools.push(base);
+      else addIssue('SUPPLY', str(p.poolKey), 'UNSUPPORTED_POOL_TYPE:' + str(p.poolType));
+    });
+
+    // ---- overseas receivers (join by demandKey; planning facts caller-supplied) ----
+    var overseasReceivers = [], seenRecv = {}, seenDemO = {};
+    for (var ri = 0; ri < receiverFacts.length; ri++) {
+      var rf = receiverFacts[ri]; aType(isObj(rf), 'projectAllocationInputs: input.receiverFacts[' + ri + '] must be an object');
+      var receiverKey = str(rf.receiverKey), demandKey = str(rf.demandKey);
+      if (!nonEmpty(receiverKey)) { addIssue('DEMAND', '@' + ri, 'MISSING_RECEIVER_KEY'); continue; }
+      if (!nonEmpty(demandKey)) { addIssue('DEMAND', receiverKey, 'MISSING_DEMAND_KEY'); continue; }
+      if (seenRecv[receiverKey]) { addIssue('DEMAND', receiverKey, 'DUPLICATE_RECEIVER_KEY'); continue; }
+      if (seenDemO[demandKey]) { addIssue('DEMAND', demandKey, 'DUPLICATE_DEMAND_KEY'); continue; }
+      var e = demandByKey[demandKey];
+      if (!e) { addIssue('DEMAND', demandKey, 'DEMAND_KEY_NOT_IN_LEDGER'); continue; }
+      if (e.state === 'BLOCKED_CONFLICT') { seenRecv[receiverKey] = 1; seenDemO[demandKey] = 1; continue; } // already surfaced
+      if (str(e.company) !== company) { addIssue('DEMAND', demandKey, 'COMPANY_SCOPE_MISMATCH'); continue; }
+      if (str(e.masterSku) !== masterSku) { addIssue('DEMAND', demandKey, 'MASTER_SKU_SCOPE_MISMATCH'); continue; }
+      if (country !== null && e.country != null && str(e.country) !== country) { addIssue('DEMAND', demandKey, 'COUNTRY_SCOPE_MISMATCH'); continue; }
+      var mkt = nonEmpty(rf.marketplace) ? str(rf.marketplace) : str(e.marketplace);
+      var dest = nonEmpty(rf.destinationWarehouseId) ? str(rf.destinationWarehouseId) : str(e.destinationWarehouseId);
+      if (!nonEmpty(mkt)) { addIssue('DEMAND', demandKey, 'MISSING_MARKETPLACE'); continue; }
+      if (!nonEmpty(dest)) { addIssue('DEMAND', demandKey, 'MISSING_DESTINATION_WAREHOUSE'); continue; }
+      var fm = nonEmpty(rf.fulfillmentModel) ? str(rf.fulfillmentModel) : (identity.fulfillmentModel == null ? '' : str(identity.fulfillmentModel));
+      if (FULFILLMENT_MODELS[fm] !== 1) { addIssue('DEMAND', demandKey, 'INVALID_FULFILLMENT_MODEL:' + fm); continue; }
+      var survival;
+      if (rf.survivalNeedQty !== undefined && rf.survivalNeedQty !== null) { survival = finiteNonNeg(rf.survivalNeedQty); if (survival === null) { addIssue('DEMAND', demandKey, 'INVALID_SURVIVAL_NEED'); continue; } }
+      else if (rf.dailyDemand !== undefined && rf.dailyDemand !== null) { var dd = finiteNonNeg(rf.dailyDemand); if (dd === null) { addIssue('DEMAND', demandKey, 'INVALID_DAILY_DEMAND'); continue; } survival = Math.ceil(SURVIVAL_HORIZON_DAYS * dd); } // §20.3/§24.4
+      else { addIssue('DEMAND', demandKey, 'MISSING_SURVIVAL_NEED'); continue; }
+      var pr = finiteNonNeg(rf.allocationPriority); if (pr === null) { addIssue('DEMAND', demandKey, 'MISSING_OR_INVALID_ALLOCATION_PRIORITY'); continue; }
+      var wt = finiteNonNeg(rf.demandWeight); if (wt === null) { addIssue('DEMAND', demandKey, 'MISSING_OR_INVALID_DEMAND_WEIGHT'); continue; }
+      var el = normalizeIdList(rf.eligiblePoolTypes, function (t) { return OVERSEAS_POOL_TYPES[t] === 1; });
+      if (!el.ok) { addIssue('DEMAND', demandKey, 'INVALID_ELIGIBLE_POOL_TYPES' + (el.bad ? ':' + el.bad : '')); continue; }
+      seenRecv[receiverKey] = 1; seenDemO[demandKey] = 1;
+      overseasReceivers.push({
+        receiverKey: receiverKey, demandKey: demandKey, marketplace: mkt, destinationWarehouseId: dest,
+        fulfillmentModel: fm, demandQty: e.effectiveDemandQty, survivalNeedQty: survival,
+        allocationPriority: pr, demandWeight: wt, eligiblePoolTypes: el.list
+      });
+    }
+
+    var overseasInput = null, overseasAllocation = null;
+    if (overseasReceivers.length) {
+      if (!nonEmpty(country)) { addIssue('DEMAND', '', 'MISSING_COUNTRY_FOR_OVERSEAS_SCOPE'); }
+      else {
+        overseasInput = { company: company, country: country, masterSku: masterSku, supplyPools: overseasPools, receivers: overseasReceivers };
+        overseasAllocation = ALLOC.allocateOverseasSharedPool(overseasInput); // REAL §40 allocator (never reimplemented)
+      }
+    }
+
+    // ---- factory demands (join by demandKey; caller-supplied eligibility + priority) ----
+    var factoryDemands = [], seenDemF = {};
+    for (var fi = 0; fi < factoryDemandFacts.length; fi++) {
+      var ff = factoryDemandFacts[fi]; aType(isObj(ff), 'projectAllocationInputs: input.factoryDemandFacts[' + fi + '] must be an object');
+      var fdKey = str(ff.demandKey);
+      if (!nonEmpty(fdKey)) { addIssue('DEMAND', '@' + fi, 'MISSING_DEMAND_KEY'); continue; }
+      if (seenDemF[fdKey]) { addIssue('DEMAND', fdKey, 'DUPLICATE_DEMAND_KEY'); continue; }
+      var fe = demandByKey[fdKey];
+      if (!fe) { addIssue('DEMAND', fdKey, 'DEMAND_KEY_NOT_IN_LEDGER'); continue; }
+      if (fe.state === 'BLOCKED_CONFLICT') { seenDemF[fdKey] = 1; continue; }
+      if (str(fe.company) !== company) { addIssue('DEMAND', fdKey, 'COMPANY_SCOPE_MISMATCH'); continue; }
+      if (str(fe.masterSku) !== masterSku) { addIssue('DEMAND', fdKey, 'MASTER_SKU_SCOPE_MISMATCH'); continue; }
+      var fmkt = nonEmpty(ff.marketplace) ? str(ff.marketplace) : str(fe.marketplace);
+      var fdest = nonEmpty(ff.destinationWarehouseId) ? str(ff.destinationWarehouseId) : str(fe.destinationWarehouseId);
+      var rbd = nonEmpty(ff.requiredByDate) ? str(ff.requiredByDate) : str(fe.requiredByDate);
+      if (!nonEmpty(fmkt)) { addIssue('DEMAND', fdKey, 'MISSING_MARKETPLACE'); continue; }
+      if (!nonEmpty(fdest)) { addIssue('DEMAND', fdKey, 'MISSING_DESTINATION_WAREHOUSE'); continue; }
+      if (!isoDateOk(rbd)) { addIssue('DEMAND', fdKey, 'MISSING_OR_INVALID_REQUIRED_BY_DATE'); continue; }
+      var fpr = finiteNonNeg(ff.allocationPriority); if (fpr === null) { addIssue('DEMAND', fdKey, 'MISSING_OR_INVALID_ALLOCATION_PRIORITY'); continue; }
+      var few = normalizeIdList(ff.eligibleFactoryWarehouseIds, null);
+      if (!few.ok) { addIssue('DEMAND', fdKey, 'INVALID_ELIGIBLE_FACTORY_WAREHOUSES'); continue; }
+      seenDemF[fdKey] = 1;
+      factoryDemands.push({
+        demandKey: fdKey, company: company, marketplace: fmkt, destinationWarehouseId: fdest, requiredByDate: rbd,
+        allocationPriority: fpr, demandQty: fe.effectiveDemandQty, eligibleFactoryWarehouseIds: few.list
+      });
+    }
+
+    var factoryInput = null, factoryAllocation = null;
+    if (factoryDemands.length) {
+      factoryInput = { masterSku: masterSku, factoryPools: factoryPools, demands: factoryDemands };
+      factoryAllocation = ALLOC.allocateFactoryDeterministic(factoryInput); // REAL §35/§40 allocator (never reimplemented)
+    }
+
+    // Deterministic ordering.
+    issues.sort(function (a, b) { return cmpStr(a.kind, b.kind) || cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+    blockedInputs.sort(function (a, b) { return cmpStr(a.kind, b.kind) || cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+    var lineageSet = {}, lineage = [];
+    function addLineage(k) { if (nonEmpty(k) && !lineageSet[k]) { lineageSet[k] = 1; lineage.push(k); } }
+    overseasReceivers.forEach(function (r) { addLineage(r.demandKey); });
+    factoryDemands.forEach(function (d) { addLineage(d.demandKey); });
+    overseasPools.forEach(function (p) { addLineage(p.poolKey); });
+    factoryPools.forEach(function (p) { addLineage(p.poolKey); });
+    lineage.sort(cmpStr);
+
+    var clean = (issues.length === 0 && blockedInputs.length === 0);
+    var reason = blockedInputs.length ? blockedInputs[0].reason : (issues.length ? issues[0].reason : null);
+    return {
+      ready: clean,
+      status: clean ? 'OK' : (blockedInputs.length ? 'BLOCKED_INPUTS_PRESENT' : 'ISSUES_PRESENT'),
+      reason: reason,
+      issues: issues,
+      overseasInput: overseasInput,
+      factoryInput: factoryInput,
+      overseasAllocation: overseasAllocation,
+      factoryAllocation: factoryAllocation,
+      blockedInputs: blockedInputs,
+      lineage: lineage,
+      sourceDataAsOf: (input.sourceDataAsOf === undefined ? null : input.sourceDataAsOf)
+    };
+  }
+
+  // ---- Weekly Recommendation Facts resolver (Round 1M; §2C.1/§31; calls the named helpers) --------------
+  // PURE. Consumes the REAL projectAllocationInputs output + caller Weekly planning facts, derives the Weekly
+  // recommendedQty via the named calculateShippingAndResidual FLOOR helper (§31/§2C.1 — never reimplemented) and
+  // calculatedGap via calculateGap, and returns deterministic Weekly line facts for the FUTURE Plan Builder.
+  // No Monthly carton CEILING, no order_qty, no planned_qty, no Plan Builder call, no persistence, no Sheet read.
+  var WEEKLY_LINE_KEY = ['sku', 'site_sku', 'window_code']; // frozen §WEEKLY_SHIPPING grain (persistence repo)
+  var KEY_SEP = '';
+
+  function projectAllocationRecords(alloc, source, mode) {
+    // returns { byDemand: {demandKey:[records]}, unalloc: {demandKey: qty} }
+    var byDemand = {}, unalloc = {};
+    if (!alloc) return { byDemand: byDemand, unalloc: unalloc };
+    (alloc.allocations || []).forEach(function (a) {
+      var k = str(a.demandKey);
+      if (!byDemand[k]) byDemand[k] = [];
+      byDemand[k].push({
+        allocationKey: str(a.allocationKey), sourcePoolKey: str(a.sourcePoolKey), sourcePoolType: str(a.sourcePoolType),
+        sourceWarehouseId: str(a.sourceWarehouseId), allocatedQty: a.allocatedQty, allocationSequence: a.allocationSequence,
+        allocationReason: str(a.allocationReason), allocationSource: source, allocationMode: mode
+      });
+    });
+    (alloc.unallocatedDemand || []).forEach(function (u) { var k = str(u.demandKey); unalloc[k] = (unalloc[k] || 0) + u.unallocatedQty; });
+    return { byDemand: byDemand, unalloc: unalloc };
+  }
+
+  function resolveWeeklyRecommendationFacts(input) {
+    aType(isObj(input), 'resolveWeeklyRecommendationFacts: input must be an object');
+    aType(typeof input.planningCycle === 'string' && input.planningCycle.length > 0, 'resolveWeeklyRecommendationFacts: planningCycle required');
+    aType(isObj(input.businessScope), 'resolveWeeklyRecommendationFacts: businessScope required');
+    var ap = input.allocationProjection; aType(isObj(ap), 'resolveWeeklyRecommendationFacts: allocationProjection required');
+    var facts = input.weeklyPlanningFacts == null ? [] : input.weeklyPlanningFacts;
+    aType(Array.isArray(facts), 'resolveWeeklyRecommendationFacts: weeklyPlanningFacts must be an array');
+    var planningCycle = str(input.planningCycle);
+    var scope = input.businessScope;
+    var formulaVersion = input.formulaVersion == null ? null : input.formulaVersion;
+    var sourceDataAsOf = input.sourceDataAsOf === undefined ? (ap.sourceDataAsOf === undefined ? null : ap.sourceDataAsOf) : input.sourceDataAsOf;
+
+    var issues = [];
+    function addIssue(key, reason) { issues.push({ key: key, reason: reason }); }
+
+    // Index REAL allocation records by demandKey (overseas + factory; kept distinguishable).
+    var ov = projectAllocationRecords(ap.overseasAllocation, 'OVERSEAS', ap.overseasAllocation ? ap.overseasAllocation.allocationMode : null);
+    var fa = projectAllocationRecords(ap.factoryAllocation, 'FACTORY', 'FACTORY_DETERMINISTIC');
+    var blockedDemandKeys = {};
+    (ap.blockedInputs || []).forEach(function (b) { if (b.kind === 'DEMAND') blockedDemandKeys[str(b.key)] = str(b.reason); });
+
+    // calculatedGap: caller value OR the named calculateGap owner (never UI fields).
+    function resolveGap(f) {
+      if (f.calculatedGap !== undefined && f.calculatedGap !== null) {
+        return (typeof f.calculatedGap === 'number' && isFinite(f.calculatedGap) && f.calculatedGap >= 0) ? f.calculatedGap : NaN;
+      }
+      if (f.demand !== undefined && f.destinationCurrentStock !== undefined && f.timelyQualifiedIncoming !== undefined && f.timelyApprovedCommittedSupply !== undefined) {
+        try { return CALC.calculateGap({ demand: f.demand, destinationCurrentStock: f.destinationCurrentStock, timelyQualifiedIncoming: f.timelyQualifiedIncoming, timelyApprovedCommittedSupply: f.timelyApprovedCommittedSupply }); }
+        catch (e) { return NaN; }
+      }
+      return undefined; // missing
+    }
+    function validUpc(v) { return (typeof v === 'number' && isFinite(v) && v > 0 && Math.floor(v) === v); }
+
+    var lines = [], seenLineKey = {};
+    for (var i = 0; i < facts.length; i++) {
+      var f = facts[i]; aType(isObj(f), 'resolveWeeklyRecommendationFacts: weeklyPlanningFacts[' + i + '] must be an object');
+      var recType = nonEmpty(f.recommendationType) ? str(f.recommendationType) : 'WEEKLY_SHIPPING';
+      if (recType !== 'WEEKLY_SHIPPING') { addIssue(str(f.demandKey), 'NOT_WEEKLY_RECOMMENDATION_TYPE:' + recType); continue; } // Monthly distinguishable
+      var sku = str(f.sku !== undefined ? f.sku : f.masterSku), siteSku = str(f.siteSku), windowCode = str(f.windowCode), demandKey = str(f.demandKey);
+      // structural key parts (line-blocking issues, not throws)
+      var blockedReason = null;
+      if (!nonEmpty(sku)) blockedReason = 'MISSING_SKU';
+      else if (!nonEmpty(windowCode)) blockedReason = 'MISSING_WINDOW_CODE';
+      else if (windowCode.indexOf(KEY_SEP) !== -1 || siteSku.indexOf(KEY_SEP) !== -1 || sku.indexOf(KEY_SEP) !== -1) blockedReason = 'INVALID_NATURAL_KEY_PART';
+      else if (!nonEmpty(demandKey)) blockedReason = 'MISSING_DEMAND_KEY';
+
+      var lineKey = [sku, siteSku, windowCode].join(KEY_SEP);
+      if (nonEmpty(sku) && nonEmpty(windowCode) && windowCode.indexOf(KEY_SEP) === -1) {
+        if (seenLineKey[lineKey] === 1) throw new RangeError('resolveWeeklyRecommendationFacts: duplicate Weekly line key: ' + sku + '|' + siteSku + '|' + windowCode);
+        seenLineKey[lineKey] = 1;
+      }
+
+      // gather REAL allocation records for this demand (overseas OR factory)
+      var recs = (blockedReason ? [] : (ov.byDemand[demandKey] || []).concat(fa.byDemand[demandKey] || []));
+      var unallocatedQty = blockedReason ? 0 : ((ov.unalloc[demandKey] || 0) + (fa.unalloc[demandKey] || 0));
+      var totalAllocated = 0; recs.forEach(function (r) { totalAllocated += r.allocatedQty; });
+      var breakdown = recs.slice().sort(function (a, b) { return cmpStr(a.sourcePoolKey, b.sourcePoolKey) || (a.allocationSequence - b.allocationSequence); });
+      var lineMode = null;
+      if (recs.length) { lineMode = recs[0].allocationSource === 'OVERSEAS' ? recs[0].allocationMode : 'FACTORY_DETERMINISTIC'; }
+
+      // blocked demand from Ledger/Allocation
+      if (!blockedReason && blockedDemandKeys[demandKey]) blockedReason = blockedDemandKeys[demandKey];
+
+      // gap + UPC (line-blocking if missing/invalid)
+      var gap = blockedReason ? undefined : resolveGap(f);
+      if (!blockedReason) {
+        if (gap === undefined) blockedReason = 'MISSING_CALCULATED_GAP';
+        else if (typeof gap !== 'number' || isNaN(gap)) blockedReason = 'INVALID_CALCULATED_GAP';
+        else if (!validUpc(f.unitsPerCarton)) blockedReason = 'MISSING_OR_INVALID_UNITS_PER_CARTON';
+      }
+
+      var recommendedQty = null;
+      if (!blockedReason) {
+        // Weekly recommendedQty = named FLOOR helper over the ALLOCATED source (never Monthly CEILING).
+        var shipRes = CALC.calculateShippingAndResidual({
+          calculatedGap: gap, eligibleSourceAvailable: totalAllocated,
+          otherLegallyAllocatedTimelySupply: (typeof f.otherLegallyAllocatedTimelySupply === 'number' ? f.otherLegallyAllocatedTimelySupply : 0),
+          unitsPerCarton: f.unitsPerCarton
+        });
+        recommendedQty = shipRes.recommendedShippingQty; // FLOOR to whole cartons; ≤ allocated ≤ gap
+      }
+
+      // "single source" = ONE distinct source pool (the allocator may emit >1 record per pool: survival + weighted).
+      var poolSet = {}, distinctPools = [];
+      breakdown.forEach(function (b) { if (!poolSet[b.sourcePoolKey]) { poolSet[b.sourcePoolKey] = 1; distinctPools.push(b.sourcePoolKey); } });
+      var single = (distinctPools.length === 1);
+      var lineage = [];
+      if (nonEmpty(demandKey)) lineage.push('demand:' + demandKey);
+      breakdown.forEach(function (b) { lineage.push('alloc:' + b.allocationKey); });
+      lineage.sort(cmpStr);
+
+      var line = {
+        lineKey: lineKey,
+        recommendationType: 'WEEKLY_SHIPPING',
+        planningCycle: planningCycle,
+        businessScope: scope,
+        company: nonEmpty(f.company) ? str(f.company) : (scope.company == null ? null : str(scope.company)),
+        country: nonEmpty(f.country) ? str(f.country) : (scope.country == null ? null : str(scope.country)),
+        marketplace: nonEmpty(f.marketplace) ? str(f.marketplace) : (scope.marketplace == null ? null : str(scope.marketplace)),
+        masterSku: sku, siteSku: siteSku, destinationWarehouseId: nonEmpty(f.destinationWarehouseId) ? str(f.destinationWarehouseId) : null,
+        windowCode: windowCode, demandKey: demandKey,
+        calculatedGap: (blockedReason && (gap === undefined || typeof gap !== 'number' || isNaN(gap))) ? null : gap,
+        recommendedQty: recommendedQty,
+        allocationMode: lineMode,
+        allocationBreakdown: breakdown,
+        unallocatedQty: unallocatedQty,
+        sourcePoolKey: single ? breakdown[0].sourcePoolKey : null,
+        sourcePoolType: single ? breakdown[0].sourcePoolType : null,
+        sourceWarehouseId: single ? breakdown[0].sourceWarehouseId : null,
+        blockedReason: blockedReason,
+        formulaVersion: formulaVersion,
+        sourceDataAsOf: sourceDataAsOf,
+        lineage: lineage
+      };
+      if (f.liveAnalysis !== undefined) line.liveAnalysis = f.liveAnalysis; // non-authoritative passthrough (§19)
+      lines.push(line);
+    }
+
+    lines.sort(function (a, b) { return cmpStr(a.lineKey, b.lineKey); });
+    issues.sort(function (a, b) { return cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+
+    var totalRecommendedQty = 0; lines.forEach(function (l) { if (typeof l.recommendedQty === 'number') totalRecommendedQty += l.recommendedQty; });
+    var lineageSet = {}, lineage = [];
+    lines.forEach(function (l) { l.lineage.forEach(function (k) { if (!lineageSet[k]) { lineageSet[k] = 1; lineage.push(k); } }); });
+    lineage.sort(cmpStr);
+
+    var clean = (issues.length === 0);
+    return {
+      ready: clean,
+      status: clean ? 'OK' : 'ISSUES_PRESENT',
+      reason: clean ? null : issues[0].reason,
+      issues: issues,
+      recommendationType: 'WEEKLY_SHIPPING',
+      planningCycle: planningCycle,
+      businessScope: scope,
+      lines: lines,
+      allocationSummary: {
+        overseasAllocationMode: ap.overseasAllocation ? ap.overseasAllocation.allocationMode : null,
+        factoryPresent: !!ap.factoryAllocation,
+        lineCount: lines.length,
+        blockedLineCount: lines.filter(function (l) { return l.blockedReason !== null; }).length,
+        totalRecommendedQty: totalRecommendedQty
+      },
+      blockedInputs: (ap.blockedInputs || []).slice(),
+      sourceDataAsOf: sourceDataAsOf,
+      formulaVersion: formulaVersion,
+      lineage: lineage
+    };
+  }
+
+  // ---- Monthly Recommendation Facts resolver (Round 1N; §12/§14/§32; carton CEILING) -------------------
+  // PURE. Consumes the REAL projectAllocationInputs output (factory allocation lineage) + caller Monthly
+  // planning facts, derives Net Order Need via the named owner (calculateGap Engine-A remaining need §10 /
+  // sumRemainingShortages §12/§32 — or accepted explicit), and the Monthly recommendedQty via the named
+  // calculateSuggestedOrderQty carton CEILING helper (§14/§31 — never reimplemented, never Weekly FLOOR).
+  // recommendedQty is demand-based (CEILING of Net Order Need), rounded ONCE over the line total; the factory
+  // allocation is preserved as lineage only, NOT an order cap. No user order_qty, no Plan Builder, no persist.
+  var MONTHLY_LINE_KEY = ['master_sku', 'request_month', 'request_bucket']; // frozen §MONTHLY_ORDER grain (sku in scope)
+
+  function resolveMonthlyRecommendationFacts(input) {
+    aType(isObj(input), 'resolveMonthlyRecommendationFacts: input must be an object');
+    aType(typeof input.planningCycle === 'string' && input.planningCycle.length > 0, 'resolveMonthlyRecommendationFacts: planningCycle required');
+    aType(isObj(input.businessScope), 'resolveMonthlyRecommendationFacts: businessScope required');
+    var ap = input.allocationProjection; aType(isObj(ap), 'resolveMonthlyRecommendationFacts: allocationProjection required');
+    var facts = input.monthlyPlanningFacts == null ? [] : input.monthlyPlanningFacts;
+    aType(Array.isArray(facts), 'resolveMonthlyRecommendationFacts: monthlyPlanningFacts must be an array');
+    var planningCycle = str(input.planningCycle);
+    var scope = input.businessScope;
+    var formulaVersion = input.formulaVersion == null ? null : input.formulaVersion;
+    var sourceDataAsOf = input.sourceDataAsOf === undefined ? (ap.sourceDataAsOf === undefined ? null : ap.sourceDataAsOf) : input.sourceDataAsOf;
+
+    var issues = [];
+    function addIssue(key, reason) { issues.push({ key: key, reason: reason }); }
+    function finiteNonNeg(v) { return (typeof v === 'number' && isFinite(v) && v >= 0) ? v : null; }
+    function validUpc(v) { return (typeof v === 'number' && isFinite(v) && v > 0 && Math.floor(v) === v); }
+
+    // REAL factory allocation records by demandKey (Monthly is factory/production sourced; overseas kept out).
+    var fa = projectAllocationRecords(ap.factoryAllocation, 'FACTORY', 'FACTORY_DETERMINISTIC');
+    var demandByKeyLedger = {};
+    if (isObj(input.demandLedger) && Array.isArray(input.demandLedger.entries)) input.demandLedger.entries.forEach(function (e) { demandByKeyLedger[e.demandKey] = e; });
+    var blockedDemandKeys = {};
+    (ap.blockedInputs || []).forEach(function (b) { if (b.kind === 'DEMAND') blockedDemandKeys[str(b.key)] = str(b.reason); });
+
+    // Net Order Need: explicit OR sumRemainingShortages(§12/§32) OR calculateGap Engine-A remaining need (§10).
+    function resolveNeed(f) {
+      if (f.netOrderNeed !== undefined && f.netOrderNeed !== null) { var n = finiteNonNeg(f.netOrderNeed); return n === null ? NaN : n; }
+      if (Array.isArray(f.remainingShortages)) { try { return CALC.sumRemainingShortages(f.remainingShortages); } catch (e) { return NaN; } }
+      if (f.demand !== undefined && f.destinationCurrentStock !== undefined && f.timelyQualifiedIncoming !== undefined && f.timelyApprovedCommittedSupply !== undefined) {
+        try { return CALC.calculateGap({ demand: f.demand, destinationCurrentStock: f.destinationCurrentStock, timelyQualifiedIncoming: f.timelyQualifiedIncoming, timelyApprovedCommittedSupply: f.timelyApprovedCommittedSupply }); }
+        catch (e) { return NaN; }
+      }
+      return undefined; // missing
+    }
+
+    var lines = [], seenLineKey = {};
+    for (var i = 0; i < facts.length; i++) {
+      var f = facts[i]; aType(isObj(f), 'resolveMonthlyRecommendationFacts: monthlyPlanningFacts[' + i + '] must be an object');
+      var recType = nonEmpty(f.recommendationType) ? str(f.recommendationType) : 'MONTHLY_ORDER';
+      if (recType !== 'MONTHLY_ORDER') { addIssue(str(f.demandKey), 'NOT_MONTHLY_RECOMMENDATION_TYPE:' + recType); continue; } // Weekly distinguishable
+      var masterSku = str(f.masterSku !== undefined ? f.masterSku : f.sku), requestMonth = str(f.requestMonth), requestBucket = str(f.requestBucket), demandKey = str(f.demandKey);
+
+      var blockedReason = null;
+      if (!nonEmpty(masterSku)) blockedReason = 'MISSING_MASTER_SKU';
+      else if (!nonEmpty(requestMonth)) blockedReason = 'MISSING_REQUEST_MONTH';
+      else if (!nonEmpty(requestBucket)) blockedReason = 'MISSING_REQUEST_BUCKET';
+      else if (masterSku.indexOf(KEY_SEP) !== -1 || requestMonth.indexOf(KEY_SEP) !== -1 || requestBucket.indexOf(KEY_SEP) !== -1) blockedReason = 'INVALID_NATURAL_KEY_PART';
+      else if (!nonEmpty(demandKey)) blockedReason = 'MISSING_DEMAND_KEY';
+
+      var lineKey = [masterSku, requestMonth, requestBucket].join(KEY_SEP);
+      if (nonEmpty(masterSku) && nonEmpty(requestMonth) && nonEmpty(requestBucket) && masterSku.indexOf(KEY_SEP) === -1 && requestMonth.indexOf(KEY_SEP) === -1 && requestBucket.indexOf(KEY_SEP) === -1) {
+        if (seenLineKey[lineKey] === 1) throw new RangeError('resolveMonthlyRecommendationFacts: duplicate Monthly line key: ' + masterSku + '|' + requestMonth + '|' + requestBucket);
+        seenLineKey[lineKey] = 1;
+      }
+
+      // blocked Ledger demand
+      if (!blockedReason && blockedDemandKeys[demandKey]) blockedReason = blockedDemandKeys[demandKey];
+
+      // factory allocation lineage (breakdown ONLY — never an order cap; recommendedQty is demand-based)
+      var recs = (blockedReason ? [] : (fa.byDemand[demandKey] || []));
+      var unallocatedQty = blockedReason ? 0 : (fa.unalloc[demandKey] || 0);
+      var breakdown = recs.slice().sort(function (a, b) { return cmpStr(a.sourcePoolKey, b.sourcePoolKey) || (a.allocationSequence - b.allocationSequence); });
+      var poolSet = {}, distinctPools = [];
+      breakdown.forEach(function (b) { if (!poolSet[b.sourcePoolKey]) { poolSet[b.sourcePoolKey] = 1; distinctPools.push(b.sourcePoolKey); } });
+      var single = (distinctPools.length === 1);
+      var lineMode = recs.length ? 'FACTORY_DETERMINISTIC' : null;
+
+      // Net Order Need (owner helpers) + carton size
+      var need = blockedReason ? undefined : resolveNeed(f);
+      var needResolved = (typeof need === 'number' && !isNaN(need));
+      if (!blockedReason) {
+        if (need === undefined) blockedReason = 'MISSING_NET_ORDER_NEED';
+        else if (!needResolved) blockedReason = 'INVALID_NET_ORDER_NEED';
+        else if (!validUpc(f.unitsPerCarton)) blockedReason = 'MISSING_OR_INVALID_UNITS_PER_CARTON';
+      }
+
+      var recommendedQty = null, cartonQty = null;
+      if (!blockedReason) {
+        // Monthly recommendedQty = named carton-CEILING helper over Net Order Need (rounded ONCE; never FLOOR).
+        recommendedQty = CALC.calculateSuggestedOrderQty({ netOrderNeed: need, unitsPerCarton: f.unitsPerCarton });
+        cartonQty = recommendedQty / f.unitsPerCarton; // whole cartons (display fact)
+      }
+
+      var eDemand = demandByKeyLedger[demandKey];
+      var monthlyDemandQty = null;
+      if (eDemand && eDemand.state === 'COUNTED') monthlyDemandQty = eDemand.effectiveDemandQty;
+      else if (typeof f.monthlyDemandQty === 'number' && isFinite(f.monthlyDemandQty)) monthlyDemandQty = f.monthlyDemandQty;
+
+      var lineage = [];
+      if (nonEmpty(demandKey)) lineage.push('demand:' + demandKey);
+      breakdown.forEach(function (b) { lineage.push('alloc:' + b.allocationKey); });
+      lineage.sort(cmpStr);
+
+      var line = {
+        lineKey: lineKey,
+        recommendationType: 'MONTHLY_ORDER',
+        planningCycle: planningCycle,
+        businessScope: scope,
+        company: nonEmpty(f.company) ? str(f.company) : (scope.company == null ? null : str(scope.company)),
+        country: nonEmpty(f.country) ? str(f.country) : (scope.country == null ? null : str(scope.country)),
+        marketplace: nonEmpty(f.marketplace) ? str(f.marketplace) : (scope.marketplace == null ? null : str(scope.marketplace)),
+        masterSku: masterSku, siteSku: str(f.siteSku), destinationWarehouseId: nonEmpty(f.destinationWarehouseId) ? str(f.destinationWarehouseId) : null,
+        requestMonth: requestMonth, requestBucket: requestBucket, demandKey: demandKey,
+        monthlyDemandQty: monthlyDemandQty,
+        netOrderNeed: needResolved ? need : null,
+        unitsPerCarton: validUpc(f.unitsPerCarton) ? f.unitsPerCarton : null,
+        recommendedQty: recommendedQty,
+        cartonQty: cartonQty,
+        allocationMode: lineMode,
+        allocationBreakdown: breakdown,
+        unallocatedQty: unallocatedQty,
+        sourcePoolKey: single ? breakdown[0].sourcePoolKey : null,
+        sourceWarehouseId: single ? breakdown[0].sourceWarehouseId : null,
+        blockedReason: blockedReason,
+        formulaVersion: formulaVersion,
+        sourceDataAsOf: sourceDataAsOf,
+        lineage: lineage
+      };
+      if (f.liveAnalysis !== undefined) line.liveAnalysis = f.liveAnalysis; // non-authoritative passthrough (§22)
+      lines.push(line);
+    }
+
+    lines.sort(function (a, b) { return cmpStr(a.lineKey, b.lineKey); });
+    issues.sort(function (a, b) { return cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+
+    var totalRecommendedQty = 0, totalNetOrderNeed = 0;
+    lines.forEach(function (l) { if (typeof l.recommendedQty === 'number') totalRecommendedQty += l.recommendedQty; if (typeof l.netOrderNeed === 'number') totalNetOrderNeed += l.netOrderNeed; });
+    var lineageSet = {}, lineage = [];
+    lines.forEach(function (l) { l.lineage.forEach(function (k) { if (!lineageSet[k]) { lineageSet[k] = 1; lineage.push(k); } }); });
+    lineage.sort(cmpStr);
+
+    var clean = (issues.length === 0);
+    return {
+      ready: clean,
+      status: clean ? 'OK' : 'ISSUES_PRESENT',
+      reason: clean ? null : issues[0].reason,
+      issues: issues,
+      recommendationType: 'MONTHLY_ORDER',
+      planningCycle: planningCycle,
+      businessScope: scope,
+      lines: lines,
+      allocationSummary: {
+        factoryPresent: !!ap.factoryAllocation,
+        lineCount: lines.length,
+        blockedLineCount: lines.filter(function (l) { return l.blockedReason !== null; }).length,
+        totalNetOrderNeed: totalNetOrderNeed,
+        totalRecommendedQty: totalRecommendedQty
+      },
+      blockedInputs: (ap.blockedInputs || []).slice(),
+      sourceDataAsOf: sourceDataAsOf,
+      formulaVersion: formulaVersion,
+      lineage: lineage
+    };
+  }
+
+  return {
+    READINESS_STATES: (function () { var o = {}; for (var k in READINESS_STATES) o[k] = 1; return o; })(),
+    CURRENT_STOCK_POOL_TYPES: (function () { var o = {}; for (var k in CURRENT_STOCK_POOL_TYPES) o[k] = 1; return o; })(),
+    DEMAND_TYPES: (function () { var o = {}; for (var k in DEMAND_TYPES) o[k] = 1; return o; })(),
+    ACTIVE_LIFECYCLE_BUCKETS: (function () { var o = {}; for (var k in ACTIVE_BUCKETS) o[k] = 1; return o; })(),
+    EXCLUDED_LIFECYCLE_BUCKETS: (function () { var o = {}; for (var k in EXCLUDED_BUCKETS) o[k] = 1; return o; })(),
+    classifySourceReadiness: classifySourceReadiness,
+    resolveSourceIdentity: resolveSourceIdentity,
+    projectDemandLedger: projectDemandLedger,
+    projectCurrentStockSupplyLedger: projectCurrentStockSupplyLedger,
+    adaptIncomingSupplyCandidates: adaptIncomingSupplyCandidates,
+    projectSupplyLifecycle: projectSupplyLifecycle,
+    projectAllocationInputs: projectAllocationInputs,
+    resolveWeeklyRecommendationFacts: resolveWeeklyRecommendationFacts,
+    resolveMonthlyRecommendationFacts: resolveMonthlyRecommendationFacts
+  };
+});
+  __kmRegister("supply-planning-source-facts", module.exports);
+})();
+
+// ----- module: supply-planning-plan-bridge (verbatim from assets/js/core/supply-planning-plan-bridge.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Recommendation Facts → Plan Builder BRIDGE (Phase 2C, Round 1O).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC schema translation ONLY. Converts the RESOLVED Weekly / Monthly recommendation facts
+// (produced by `supply-planning-source-facts.js` → resolveWeeklyRecommendationFacts /
+// resolveMonthlyRecommendationFacts) into the exact input shape the existing Plan Builder
+// (`supply-planning-plan-builder.js` → buildRecommendation) accepts, WITHOUT recomputing any business value.
+//
+// FROZEN boundary (RRIS §Source-Facts Round 1M/1N Plan-Builder-compatibility notes; REQ_PO / WEEKLY grain):
+//   • NO recalculation of calculatedGap / netOrderNeed / recommendedQty; NO re-run of Allocation.
+//   • NO Persistence, NO Sheet/DB/API read, NO orchestrator, NO Scheduler / Trigger, NO PO / Request writer.
+//   • Line identity is REMAPPED mechanically camelCase → the persistence-repo snake_case natural-key columns
+//     (Weekly: masterSku/siteSku/windowCode → sku/site_sku/window_code;
+//      Monthly: requestMonth/requestBucket → request_month/request_bucket; masterSku validated against scope.sku).
+//   • `blockedReason !== null` → Plan Builder `blocked = true` + `reason`; a valid zero recommendedQty stays 0;
+//     a missing/null recommendedQty stays null (never fabricated 0).
+//   • Run-level `mode` / `calculationRunId` / `draftVersion` are CALLER / orchestrator / persistence owned —
+//     NEVER generated here (no clock, no random ID). `recommendationType` / `planningCycle` / `businessScope` /
+//     `formulaVersion` / `sourceDataAsOf` come from — and are propagated verbatim out of — the resolved facts.
+//   • A resolver line whose Plan Builder natural key would be incomplete (structurally-blocked identity, e.g.
+//     MISSING_SKU / empty site_sku) CANNOT be a Plan Builder line; it is surfaced as DATA in
+//     metadata.unmappableBlockedLines (never thrown, never silently dropped). Business-blocked lines that DO
+//     carry a full natural key are emitted as Plan Builder blocked line facts.
+//   • Allocation breakdown + full runtime lineage + preserved calc values (calculatedGap / netOrderNeed /
+//     cartonQty / unallocatedQty …) are kept in NON-authoritative bridge metadata — never re-persisted as
+//     authority, never used as Plan Builder natural identity.
+//
+// Determinism is a hard invariant: no clock / no random / no locale; input never mutated; fresh output;
+// permutation-invariant (lines sorted by mapped natural key); duplicate mapped key fails closed.
+
+(function (root, factory) {
+  'use strict';
+  var api = factory();
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.planBridge = api; }
+})(this, function () {
+  'use strict';
+
+  var SEP = String.fromCharCode(1); // reserved natural-key separator (mirrors Plan Builder / Source-Facts)
+  // Supported execution intents — a faithful mirror of Plan Builder MODE_TO_GENERATION_TYPE (not a new rule).
+  var SUPPORTED_MODES = { SCHEDULED_REFRESH: 1, MANUAL_REGENERATE: 1 };
+  var SUPPORTED_TYPES = { WEEKLY_SHIPPING: 1, MONTHLY_ORDER: 1 };
+  // Per recommendation type: the ordered Plan Builder natural-key columns + which resolver (camelCase) field
+  // supplies each. SINGLE SOURCE OF TRUTH for the mechanical remap (matches persistence-repository TABLES grain).
+  var LINE_KEY_MAP = {
+    WEEKLY_SHIPPING: [
+      { col: 'sku', from: 'masterSku' },
+      { col: 'site_sku', from: 'siteSku' },
+      { col: 'window_code', from: 'windowCode' }
+    ],
+    MONTHLY_ORDER: [
+      { col: 'request_month', from: 'requestMonth' },
+      { col: 'request_bucket', from: 'requestBucket' }
+    ]
+  };
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function aRange(c, m) { if (!c) throw new RangeError(m); }
+  function cmpStr(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }
+  function isFiniteNum(v) { return typeof v === 'number' && isFinite(v); }
+  function nonEmptyStr(v) { return typeof v === 'string' && v.length > 0; }
+  function str(v) { return String(v === undefined || v === null ? '' : v); }
+
+  // A non-empty natural-key part free of the reserved separator (mirrors Plan Builder buildLineKey rules).
+  function validKeyPart(v) { var s = str(v); return s.length > 0 && s.indexOf(SEP) === -1; }
+
+  // Compare a run-level scope value against a line value; a genuine conflict fails closed (structural).
+  function scopeAgrees(scopeVal, lineVal) {
+    if (scopeVal === undefined || scopeVal === null) return true;   // scope does not constrain this axis
+    if (lineVal === undefined || lineVal === null) return true;     // line does not assert this axis
+    return str(scopeVal) === str(lineVal);
+  }
+
+  // ---- public: bridge resolved facts → Plan Builder-compatible input -----------------------------------
+  // input = { recommendationFacts, mode, calculationRunId, draftVersion?, recommendationType? }
+  // recommendationFacts = the EXACT output of resolveWeeklyRecommendationFacts / resolveMonthlyRecommendationFacts.
+  function bridgeRecommendationFactsToPlan(input) {
+    aType(isObj(input), 'bridgeRecommendationFactsToPlan: input must be an object');
+    var facts = input.recommendationFacts;
+    aType(isObj(facts), 'bridgeRecommendationFactsToPlan: recommendationFacts must be an object');
+    aType(Array.isArray(facts.lines), 'bridgeRecommendationFactsToPlan: recommendationFacts.lines must be an array');
+
+    // --- recommendation type (from facts; supported set only) ---
+    var type = facts.recommendationType;
+    aRange(SUPPORTED_TYPES[type] === 1, 'bridgeRecommendationFactsToPlan: unsupported recommendationType: ' + type);
+    if (input.recommendationType !== undefined && input.recommendationType !== null) {
+      aRange(str(input.recommendationType) === str(type),
+        'bridgeRecommendationFactsToPlan: recommendationType mismatch (input ' + input.recommendationType + ' vs facts ' + type + ')');
+    }
+
+    // --- run-level ownership (facts-owned propagated; caller-owned required, never generated) ---
+    aType(nonEmptyStr(facts.planningCycle), 'bridgeRecommendationFactsToPlan: planningCycle required (facts)');
+    aType(isObj(facts.businessScope), 'bridgeRecommendationFactsToPlan: businessScope required (facts)');
+    aType(nonEmptyStr(input.mode), 'bridgeRecommendationFactsToPlan: mode required (caller-owned)');
+    aRange(SUPPORTED_MODES[input.mode] === 1, 'bridgeRecommendationFactsToPlan: unsupported mode: ' + input.mode);
+    aType(nonEmptyStr(input.calculationRunId), 'bridgeRecommendationFactsToPlan: calculationRunId required (caller-owned)');
+    var draftVersion = null;
+    if (input.draftVersion !== undefined && input.draftVersion !== null) {
+      aRange(isFiniteNum(input.draftVersion) && input.draftVersion > 0 && Math.floor(input.draftVersion) === input.draftVersion,
+        'bridgeRecommendationFactsToPlan: invalid draftVersion (must be a positive integer): ' + input.draftVersion);
+      draftVersion = input.draftVersion;
+    }
+    var planningCycle = str(facts.planningCycle);
+    var scope = facts.businessScope;
+    var formulaVersion = facts.formulaVersion === undefined ? null : facts.formulaVersion;
+    var sourceDataAsOf = facts.sourceDataAsOf === undefined ? null : facts.sourceDataAsOf;
+
+    var keyMap = LINE_KEY_MAP[type];
+
+    var mappable = [];          // { mappedKey, planFact, meta }
+    var unmappable = [];        // { blockedReason, partialIdentity, demandKey }
+    var seen = {};
+
+    for (var i = 0; i < facts.lines.length; i++) {
+      var line = facts.lines[i];
+      aType(isObj(line), 'bridgeRecommendationFactsToPlan: recommendationFacts.lines[' + i + '] must be an object');
+      var blocked = (line.blockedReason !== undefined && line.blockedReason !== null);
+
+      // --- scope agreement (fail closed on a genuine conflict) ---
+      aRange(scopeAgrees(scope.company, line.company), 'bridgeRecommendationFactsToPlan: line company conflicts with scope: ' + line.company);
+      aRange(scopeAgrees(scope.country, line.country), 'bridgeRecommendationFactsToPlan: line country conflicts with scope: ' + line.country);
+      aRange(scopeAgrees(scope.marketplace, line.marketplace), 'bridgeRecommendationFactsToPlan: line marketplace conflicts with scope: ' + line.marketplace);
+      if (type === 'MONTHLY_ORDER') {
+        aRange(scopeAgrees(scope.sku, line.masterSku), 'bridgeRecommendationFactsToPlan: line masterSku conflicts with scope.sku: ' + line.masterSku);
+      }
+
+      // --- mechanical natural-key remap ---
+      var nk = {}, parts = [], complete = true;
+      for (var k = 0; k < keyMap.length; k++) {
+        var v = str(line[keyMap[k].from]);
+        nk[keyMap[k].col] = v;
+        if (!validKeyPart(v)) complete = false;
+        parts.push(v);
+      }
+
+      // preserved (non-authoritative) per-line metadata — verbatim, no recompute
+      var meta = {
+        recommendationType: type,
+        demandKey: line.demandKey === undefined ? null : line.demandKey,
+        recommendedQty: line.recommendedQty === undefined ? null : line.recommendedQty,
+        unallocatedQty: line.unallocatedQty === undefined ? null : line.unallocatedQty,
+        allocationMode: line.allocationMode === undefined ? null : line.allocationMode,
+        allocationBreakdown: Array.isArray(line.allocationBreakdown) ? line.allocationBreakdown.slice() : [],
+        sourcePoolKey: line.sourcePoolKey === undefined ? null : line.sourcePoolKey,
+        sourceWarehouseId: line.sourceWarehouseId === undefined ? null : line.sourceWarehouseId,
+        lineage: Array.isArray(line.lineage) ? line.lineage.slice() : [],
+        blockedReason: blocked ? line.blockedReason : null
+      };
+      if (type === 'WEEKLY_SHIPPING') {
+        meta.calculatedGap = line.calculatedGap === undefined ? null : line.calculatedGap;
+        meta.sourcePoolType = line.sourcePoolType === undefined ? null : line.sourcePoolType;
+      } else {
+        meta.netOrderNeed = line.netOrderNeed === undefined ? null : line.netOrderNeed;
+        meta.cartonQty = line.cartonQty === undefined ? null : line.cartonQty;
+        meta.monthlyDemandQty = line.monthlyDemandQty === undefined ? null : line.monthlyDemandQty;
+        meta.unitsPerCarton = line.unitsPerCarton === undefined ? null : line.unitsPerCarton;
+      }
+      if (line.liveAnalysis !== undefined) meta.liveAnalysis = line.liveAnalysis; // non-authoritative echo only
+
+      if (!complete) {
+        // No valid Plan Builder natural key → data, never a Plan Builder line, never thrown.
+        unmappable.push({
+          blockedReason: blocked ? str(line.blockedReason) : 'INCOMPLETE_NATURAL_KEY',
+          partialIdentity: nk,
+          demandKey: line.demandKey === undefined ? null : line.demandKey
+        });
+        continue;
+      }
+
+      var mappedKey = parts.join(SEP);
+      aRange(seen[mappedKey] !== 1, 'bridgeRecommendationFactsToPlan: duplicate mapped Plan Builder line key: ' + parts.join('|'));
+      seen[mappedKey] = 1;
+
+      // Plan Builder line fact — runtime-only lineage carried in the OBJECT slot Plan Builder accepts.
+      var lineageObj = {
+        demandKey: line.demandKey === undefined ? null : line.demandKey,
+        allocationMode: line.allocationMode === undefined ? null : line.allocationMode,
+        sourcePoolKey: line.sourcePoolKey === undefined ? null : line.sourcePoolKey,
+        sourceWarehouseId: line.sourceWarehouseId === undefined ? null : line.sourceWarehouseId,
+        keys: Array.isArray(line.lineage) ? line.lineage.slice() : []
+      };
+      var planFact = {};
+      for (var c = 0; c < keyMap.length; c++) planFact[keyMap[c].col] = nk[keyMap[c].col];
+      if (blocked) {
+        planFact.blocked = true;
+        planFact.reason = str(line.blockedReason);
+        planFact.recommendedQty = null; // stays null — never a fabricated 0
+      } else {
+        aType(isFiniteNum(line.recommendedQty), 'bridgeRecommendationFactsToPlan: non-blocked line recommendedQty must be a number');
+        aRange(line.recommendedQty >= 0, 'bridgeRecommendationFactsToPlan: recommendedQty must be finite ≥ 0');
+        planFact.blocked = false;
+        planFact.recommendedQty = line.recommendedQty; // preserved verbatim — no round/floor/ceiling/clamp
+      }
+      if (line.demandKey !== undefined && str(line.demandKey).length > 0) planFact.demandKey = line.demandKey;
+      planFact.lineage = lineageObj;
+
+      mappable.push({ mappedKey: mappedKey, planFact: planFact, meta: meta });
+    }
+
+    // deterministic stable ordering by mapped natural key (independent of input order)
+    mappable.sort(function (a, b) { return cmpStr(a.mappedKey, b.mappedKey); });
+    unmappable.sort(function (a, b) {
+      return cmpStr(a.blockedReason, b.blockedReason) || cmpStr(str(a.demandKey), str(b.demandKey));
+    });
+
+    var lines = [], lineMetaByKey = {};
+    mappable.forEach(function (m) { lines.push(m.planFact); lineMetaByKey[m.mappedKey] = m.meta; });
+
+    return {
+      recommendationType: type,
+      mode: input.mode,
+      planningCycle: planningCycle,
+      businessScope: scope,
+      calculationRunId: input.calculationRunId,
+      formulaVersion: formulaVersion,
+      sourceDataAsOf: sourceDataAsOf,
+      draftVersion: draftVersion,
+      lines: lines,
+      lineage: Array.isArray(facts.lineage) ? facts.lineage.slice() : [],
+      metadata: {
+        lineMetaByKey: lineMetaByKey,
+        unmappableBlockedLines: unmappable,
+        blockedInputs: Array.isArray(facts.blockedInputs) ? facts.blockedInputs.slice() : [],
+        allocationSummary: isObj(facts.allocationSummary) ? facts.allocationSummary : null,
+        mappedLineCount: lines.length,
+        unmappableLineCount: unmappable.length
+      }
+    };
+  }
+
+  return {
+    SEP: SEP,
+    SUPPORTED_MODES: (function () { var o = {}; for (var k in SUPPORTED_MODES) o[k] = 1; return o; })(),
+    SUPPORTED_TYPES: (function () { var o = {}; for (var k in SUPPORTED_TYPES) o[k] = 1; return o; })(),
+    LINE_KEY_MAP: (function () { var o = {}; for (var t in LINE_KEY_MAP) o[t] = LINE_KEY_MAP[t].map(function (m) { return { col: m.col, from: m.from }; }); return o; })(),
+    bridgeRecommendationFactsToPlan: bridgeRecommendationFactsToPlan
+  };
+});
+  __kmRegister("supply-planning-plan-bridge", module.exports);
+})();
+
+// ----- module: supply-planning-source-reader (verbatim from assets/js/core/supply-planning-source-reader.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Apps Script RECOMMENDATION SOURCE READER Runtime (Phase 2C, Round 1P).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC. The ONE canonical Source for the Recommendation Runtime. It owns exactly:
+//   Google Sheet Row → Domain Object → Runtime DTO
+// and NOTHING else. It performs ONLY: sheet-row mapping, null-normalize, type-normalize, enum-normalize,
+// identity-normalize, column rename, DTO build. It owns NO business logic:
+//   × Gap / Demand / Forecast / Allocation / Recommendation / Priority / 18-day / Company-allocation /
+//     Factory-decision / any Runtime decision. It never DERIVES a value — it reads whatever a source column
+//     already holds (raw or upstream-computed) and renames/normalizes it.
+//
+// It produces the exact inputs the FROZEN runtimes consume (never reimplemented):
+//   • demandLedgerInput  → supply-planning-ledgers.js buildDemandLedger  (§39 demand entries)
+//   • supplyLedgerInput  → supply-planning-ledgers.js buildSupplyLedger  (§39 supply entries)
+//   • receiverFacts / factoryDemandFacts → supply-planning-source-facts.js projectAllocationInputs (§40)
+//   • weeklyPlanningFacts / monthlyPlanningFacts → resolveWeekly/MonthlyRecommendationFacts (§31/§14)
+// The Ledger-owned `demandKey` is NOT computed here (that is Ledger business logic); the reader emits each
+// fact's natural `demandRef` and `resolveDemandKeys(dto, demandLedger)` LINKS them to the ledger-EMITTED
+// demandKey by identity (never recomputing the key).
+//
+// Invariants: read-only; JSON-safe; deterministic (No Date.now / No Math.random / No locale / No
+// SpreadsheetApp / No LockService / No Cache / No DB / No Browser); input never mutated; fresh output;
+// MISSING is never silently 0 (only an explicit source 0 yields 0); identity ambiguity / duplicate identity
+// / invalid enum / missing-required all FAIL CLOSED (no fallback).
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceReader = api; }
+})(this, function (SF) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function aRange(c, m) { if (!c) throw new RangeError(m); }
+  function cmpStr(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function nonEmpty(v) { return str(v).length > 0; }
+
+  var DEMAND_TYPES = { REGULAR: 1, SALES_RUN_RATE: 1, SPECIAL_EVENT: 1, SAFETY: 1 };
+  var POOL_TYPES = { FBA: 1, THREE_PL: 1, FACTORY: 1 };
+  var FULFILLMENT_MODELS = { self_fulfilled: 1, platform_fulfilled: 1, hybrid: 1 };
+  var KEY_SEP = String.fromCharCode(1); // the Ledger demandKey separator (read-only; used only to READ emitted keys)
+
+  // ---- CANONICAL COLUMN MAP (Database First) --------------------------------------------------------------
+  // snake_case source column → runtime DTO field. Overridable via createRecommendationSourceReader({ columns }).
+  // These are pure RENAME targets (allowed); the reader never invents a VALUE, only maps a column NAME.
+  //
+  // Two grounding tiers (Round 1P Database-First survey — see RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC §1P):
+  //   [DB-CONFIRMED] a real canonical Sheet column exists and is cited:
+  //     `sku` (the Master SKU — DATABASE_RELATIONSHIP_MAP §sku_details), `site_sku`, `units_per_carton`,
+  //     `window_code`, `calculated_gap_qty`, `request_month`, `request_bucket`, `net_order_need_snapshot`
+  //     (16_/15_ draft-line headers), `warehouse_id`, `allocation_priority` (marketplaces), `fulfillment_model`
+  //     (marketplace_skus), `company`, `country`, `marketplace`, `planning_cycle`, `formula_version`,
+  //     `source_data_as_of`, `recommendation_type`, `source_page`, `draft_purpose`.
+  //   [CONVENTION] NO canonical Sheet column is defined yet (the runtime deliberately requires these as
+  //     caller-supplied facts — source-facts.js projectAllocationInputs header): `demand_type`, `source_ref`,
+  //     `pool_type`, `supply_lineage_ref`, `quantity`, `destination_warehouse_id`, `demand_source_ref`,
+  //     `survival_need_qty`, `daily_demand`, `demand_weight`, `eligible_pool_types`,
+  //     `eligible_factory_warehouse_ids`, `event_id`, `lifecycle_bucket`. These defaults are the DTO-field
+  //     snake_case rendering — OVERRIDE them via `columns` once the canonical recommendation-SOURCE sheet is
+  //     defined. The reader never DERIVES them (Forecast→Demand / inventory→Supply projection is out of scope).
+  var DEFAULT_COLUMNS = {
+    demand: {
+      demandType: 'demand_type', sourceRef: 'source_ref', requiredByDate: 'required_by_date',
+      quantity: 'quantity', eventId: 'event_id',
+      masterSku: 'sku', company: 'company', country: 'country', marketplace: 'marketplace',
+      destinationWarehouseId: 'destination_warehouse_id', planningCycle: 'planning_cycle'
+    },
+    supply: {
+      supplyLineageRef: 'supply_lineage_ref', masterSku: 'sku', company: 'company',
+      warehouseId: 'warehouse_id', poolType: 'pool_type', lifecycleBucket: 'lifecycle_bucket', quantity: 'quantity'
+    },
+    receiver: {
+      receiverKey: 'receiver_key', demandRef: 'demand_source_ref', marketplace: 'marketplace',
+      destinationWarehouseId: 'destination_warehouse_id', fulfillmentModel: 'fulfillment_model',
+      survivalNeedQty: 'survival_need_qty', dailyDemand: 'daily_demand',
+      allocationPriority: 'allocation_priority', demandWeight: 'demand_weight', eligiblePoolTypes: 'eligible_pool_types'
+    },
+    factory: {
+      demandRef: 'demand_source_ref', marketplace: 'marketplace', destinationWarehouseId: 'destination_warehouse_id',
+      requiredByDate: 'required_by_date', allocationPriority: 'allocation_priority',
+      eligibleFactoryWarehouseIds: 'eligible_factory_warehouse_ids'
+    },
+    weeklyFact: {
+      recommendationType: 'recommendation_type', masterSku: 'sku', siteSku: 'site_sku',
+      windowCode: 'window_code', demandRef: 'demand_source_ref', company: 'company', country: 'country',
+      marketplace: 'marketplace', destinationWarehouseId: 'destination_warehouse_id',
+      calculatedGap: 'calculated_gap_qty', unitsPerCarton: 'units_per_carton',
+      formulaVersion: 'formula_version', sourceDataAsOf: 'source_data_as_of'
+    },
+    monthlyFact: {
+      recommendationType: 'recommendation_type', masterSku: 'sku', siteSku: 'site_sku',
+      requestMonth: 'request_month', requestBucket: 'request_bucket', demandRef: 'demand_source_ref',
+      company: 'company', country: 'country', marketplace: 'marketplace',
+      destinationWarehouseId: 'destination_warehouse_id', netOrderNeed: 'net_order_need_snapshot',
+      unitsPerCarton: 'units_per_carton', formulaVersion: 'formula_version', sourceDataAsOf: 'source_data_as_of'
+    }
+  };
+
+  // ---- sheet-values normalization (2D header rows OR array of row-objects) ---------------------------------
+  function normalizeRows(values, where) {
+    if (values === undefined || values === null) return [];
+    aType(Array.isArray(values), where + ' must be an array (2D values or row objects)');
+    if (values.length === 0) return [];
+    if (Array.isArray(values[0])) {
+      // Apps Script getValues(): first row is the header.
+      var header = values[0].map(function (h) { return str(h); });
+      var out = [];
+      for (var r = 1; r < values.length; r++) {
+        var rowArr = values[r];
+        aType(Array.isArray(rowArr), where + '[' + r + '] must be an array row');
+        var o = {};
+        for (var c = 0; c < header.length; c++) { if (header[c] !== '') o[header[c]] = rowArr[c]; }
+        out.push(o);
+      }
+      return out;
+    }
+    // Array of row objects.
+    return values.map(function (o, i) { aType(isObj(o), where + '[' + i + '] must be a row object'); var n = {}; for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) n[k] = o[k]; return n; });
+  }
+
+  // ---- value normalizers (MISSING ≠ ZERO; no coercion of invalids to defaults) ----------------------------
+  function pick(row, col) { return row[col]; }
+  function normStr(v) { return nonEmpty(v) ? str(v) : null; }
+  function normQty(v) {
+    if (v === undefined || v === null || v === '') return { ok: false, missing: true };
+    var n = Number(v); if (typeof v === 'boolean' || !isFinite(n)) return { ok: false, invalid: true };
+    return { ok: true, qty: n };
+  }
+  function normList(v) {
+    // array OR comma-separated string → trimmed, de-duped, sorted id list. Empty → [].
+    var raw = [];
+    if (Array.isArray(v)) raw = v;
+    else if (typeof v === 'string') raw = v.split(',');
+    else if (v === undefined || v === null || v === '') return { ok: true, list: [] };
+    else return { ok: false };
+    var seen = {}, out = [];
+    for (var i = 0; i < raw.length; i++) { var t = str(raw[i]); if (t === '') continue; if (!seen[t]) { seen[t] = 1; out.push(t); } }
+    out.sort(cmpStr);
+    return { ok: true, list: out };
+  }
+
+  // ---- run-level scope / metadata (caller-owned; row columns must AGREE, never override) -------------------
+  function readRunMeta(input, fn) {
+    aType(isObj(input), fn + ': input must be an object');
+    aType(isObj(input.scope), fn + ': input.scope required');
+    aType(nonEmpty(input.planningCycle), fn + ': planningCycle required');
+    return {
+      scope: input.scope,
+      planningCycle: str(input.planningCycle),
+      formulaVersion: input.formulaVersion === undefined ? null : input.formulaVersion,
+      sourceDataAsOf: input.sourceDataAsOf === undefined ? null : input.sourceDataAsOf
+    };
+  }
+
+  // identity-normalize: reuse the FROZEN resolveSourceIdentity when identity tables are supplied (duplicate /
+  // ambiguity fail-closed); otherwise a minimal scope-derived identity. Never invents identity.
+  function readIdentity(input, scope, fn) {
+    if (input.identityTables && SF && typeof SF.resolveSourceIdentity === 'function') {
+      var it = input.identityTables;
+      var res = SF.resolveSourceIdentity({
+        rawScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: scope.sku },
+        marketplaceSkuRows: normalizeRows(it.marketplaceSkus, fn + ': identityTables.marketplaceSkus'),
+        skuDetailRows: normalizeRows(it.skuDetails, fn + ': identityTables.skuDetails'),
+        warehouseRows: normalizeRows(it.warehouses, fn + ': identityTables.warehouses'),
+        destinationWarehouseId: input.destinationWarehouseId
+      });
+      aRange(res.status === 'RESOLVED', fn + ': identity not resolved (' + res.status + ':' + res.reason + ')');
+      return res.identity;
+    }
+    return {
+      company: normStr(scope.company), country: normStr(scope.country), marketplace: normStr(scope.marketplace),
+      masterSku: normStr(scope.sku), fulfillmentModel: normStr(scope.fulfillmentModel)
+    };
+  }
+
+  // ---- demand ledger input (§39 demand entries; missing → issue+exclude, never 0) --------------------------
+  function readDemandEntries(rows, cols, meta, issues) {
+    var entries = [];
+    for (var i = 0; i < rows.length; i++) {
+      var d = rows[i];
+      var dt = str(pick(d, cols.demandType));
+      if (DEMAND_TYPES[dt] !== 1) { issues.push({ domain: 'demand', i: i, reason: 'INVALID_DEMAND_TYPE:' + dt }); continue; }
+      var sourceRef = normStr(pick(d, cols.sourceRef));
+      if (!sourceRef) { issues.push({ domain: 'demand', i: i, reason: 'MISSING_SOURCE_REF' }); continue; }
+      var masterSku = normStr(pick(d, cols.masterSku)) || normStr(meta.scope.sku);
+      if (!masterSku) { issues.push({ domain: 'demand', i: i, reason: 'MISSING_MASTER_SKU' }); continue; }
+      var company = normStr(pick(d, cols.company)) || normStr(meta.scope.company);
+      if (!company) { issues.push({ domain: 'demand', i: i, reason: 'MISSING_COMPANY' }); continue; }
+      var dest = normStr(pick(d, cols.destinationWarehouseId));
+      if (!dest) { issues.push({ domain: 'demand', i: i, reason: 'MISSING_DESTINATION_WAREHOUSE_ID' }); continue; }
+      var pc = normStr(pick(d, cols.planningCycle)) || meta.planningCycle;
+      if (pc !== meta.planningCycle) { issues.push({ domain: 'demand', i: i, reason: 'PLANNING_CYCLE_MISMATCH:' + pc }); continue; }
+      var qr = normQty(pick(d, cols.quantity));
+      if (!qr.ok) { issues.push({ domain: 'demand', i: i, reason: (qr.missing ? 'MISSING_DEMAND_QUANTITY:' : 'INVALID_DEMAND_QUANTITY:') + sourceRef }); continue; }
+      var entry = {
+        demandType: dt, masterSku: masterSku, company: company,
+        country: normStr(pick(d, cols.country)) != null ? normStr(pick(d, cols.country)) : (normStr(meta.scope.country)),
+        marketplace: normStr(pick(d, cols.marketplace)) != null ? normStr(pick(d, cols.marketplace)) : (normStr(meta.scope.marketplace)),
+        destinationWarehouseId: dest, planningCycle: pc,
+        requiredByDate: str(pick(d, cols.requiredByDate)), sourceRef: sourceRef, quantity: qr.qty
+      };
+      if (dt === 'SPECIAL_EVENT') { var ev = normStr(pick(d, cols.eventId)); if (!ev) { issues.push({ domain: 'demand', i: i, reason: 'MISSING_EVENT_ID:' + sourceRef }); continue; } entry.eventId = ev; }
+      entries.push(entry);
+    }
+    return entries;
+  }
+
+  // ---- supply ledger input (§39 supply entries) -----------------------------------------------------------
+  function readSupplyEntries(rows, cols, meta, issues) {
+    var entries = [];
+    for (var i = 0; i < rows.length; i++) {
+      var s = rows[i];
+      var pt = str(pick(s, cols.poolType));
+      if (POOL_TYPES[pt] !== 1) { issues.push({ domain: 'supply', i: i, reason: 'INVALID_POOL_TYPE:' + pt }); continue; }
+      var wh = normStr(pick(s, cols.warehouseId));
+      if (!wh) { issues.push({ domain: 'supply', i: i, reason: 'MISSING_WAREHOUSE_ID' }); continue; }
+      var masterSku = normStr(pick(s, cols.masterSku)) || normStr(meta.scope.sku);
+      if (!masterSku) { issues.push({ domain: 'supply', i: i, reason: 'MISSING_MASTER_SKU' }); continue; }
+      var company = normStr(pick(s, cols.company)) || normStr(meta.scope.company);
+      if (!company) { issues.push({ domain: 'supply', i: i, reason: 'MISSING_COMPANY' }); continue; }
+      var qr = normQty(pick(s, cols.quantity));
+      if (!qr.ok) { issues.push({ domain: 'supply', i: i, reason: (qr.missing ? 'MISSING_STOCK_QUANTITY:' : 'INVALID_STOCK_QUANTITY:') + wh }); continue; }
+      var lineage = normStr(pick(s, cols.supplyLineageRef)) || ('stock:' + pt + ':' + wh + ':' + masterSku);
+      var bucket = normStr(pick(s, cols.lifecycleBucket)) || 'CURRENT_STOCK';
+      entries.push({ supplyLineageRef: lineage, masterSku: masterSku, company: company, warehouseId: wh, poolType: pt, lifecycleBucket: bucket, quantity: qr.qty });
+    }
+    return entries;
+  }
+
+  // ---- overseas receiver facts (weekly allocation input) --------------------------------------------------
+  function readReceiverFacts(rows, cols, issues) {
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var receiverKey = normStr(pick(r, cols.receiverKey));
+      if (!receiverKey) { issues.push({ domain: 'receiver', i: i, reason: 'MISSING_RECEIVER_KEY' }); continue; }
+      var demandRef = normStr(pick(r, cols.demandRef));
+      if (!demandRef) { issues.push({ domain: 'receiver', i: i, reason: 'MISSING_DEMAND_SOURCE_REF:' + receiverKey }); continue; }
+      var fm = normStr(pick(r, cols.fulfillmentModel));
+      if (fm !== null && FULFILLMENT_MODELS[fm] !== 1) { issues.push({ domain: 'receiver', i: i, reason: 'INVALID_FULFILLMENT_MODEL:' + fm }); continue; }
+      var el = normList(pick(r, cols.eligiblePoolTypes));
+      if (!el.ok) { issues.push({ domain: 'receiver', i: i, reason: 'INVALID_ELIGIBLE_POOL_TYPES' }); continue; }
+      var fact = { receiverKey: receiverKey, demandRef: demandRef, eligiblePoolTypes: el.list };
+      var mkt = normStr(pick(r, cols.marketplace)); if (mkt !== null) fact.marketplace = mkt;
+      var dest = normStr(pick(r, cols.destinationWarehouseId)); if (dest !== null) fact.destinationWarehouseId = dest;
+      if (fm !== null) fact.fulfillmentModel = fm;
+      var sv = normQty(pick(r, cols.survivalNeedQty)); if (sv.ok) fact.survivalNeedQty = sv.qty;
+      var dd = normQty(pick(r, cols.dailyDemand)); if (dd.ok) fact.dailyDemand = dd.qty;
+      var pr = normQty(pick(r, cols.allocationPriority)); if (pr.ok) fact.allocationPriority = pr.qty;
+      var wt = normQty(pick(r, cols.demandWeight)); if (wt.ok) fact.demandWeight = wt.qty;
+      out.push(fact);
+    }
+    return out;
+  }
+
+  // ---- factory demand facts (monthly allocation input) ----------------------------------------------------
+  function readFactoryFacts(rows, cols, issues) {
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var demandRef = normStr(pick(r, cols.demandRef));
+      if (!demandRef) { issues.push({ domain: 'factory', i: i, reason: 'MISSING_DEMAND_SOURCE_REF' }); continue; }
+      var few = normList(pick(r, cols.eligibleFactoryWarehouseIds));
+      if (!few.ok) { issues.push({ domain: 'factory', i: i, reason: 'INVALID_ELIGIBLE_FACTORY_WAREHOUSES' }); continue; }
+      var fact = { demandRef: demandRef, eligibleFactoryWarehouseIds: few.list };
+      var mkt = normStr(pick(r, cols.marketplace)); if (mkt !== null) fact.marketplace = mkt;
+      var dest = normStr(pick(r, cols.destinationWarehouseId)); if (dest !== null) fact.destinationWarehouseId = dest;
+      var rbd = normStr(pick(r, cols.requiredByDate)); if (rbd !== null) fact.requiredByDate = rbd;
+      var pr = normQty(pick(r, cols.allocationPriority)); if (pr.ok) fact.allocationPriority = pr.qty;
+      out.push(fact);
+    }
+    return out;
+  }
+
+  // ---- weekly planning facts ------------------------------------------------------------------------------
+  function readWeeklyFacts(rows, cols, meta, issues) {
+    var out = [], seen = {};
+    for (var i = 0; i < rows.length; i++) {
+      var f = rows[i];
+      var rt = normStr(pick(f, cols.recommendationType)) || 'WEEKLY_SHIPPING';
+      if (rt !== 'WEEKLY_SHIPPING') { issues.push({ domain: 'weeklyFact', i: i, reason: 'NOT_WEEKLY_RECOMMENDATION_TYPE:' + rt }); continue; }
+      var demandRef = normStr(pick(f, cols.demandRef));
+      if (!demandRef) { issues.push({ domain: 'weeklyFact', i: i, reason: 'MISSING_DEMAND_SOURCE_REF' }); continue; }
+      var fv = pick(f, cols.formulaVersion); if (fv !== undefined && fv !== null && str(fv) !== '' && meta.formulaVersion != null && str(fv) !== str(meta.formulaVersion)) { issues.push({ domain: 'weeklyFact', i: i, reason: 'FORMULA_VERSION_MISMATCH:' + str(fv) }); continue; }
+      var fact = { recommendationType: 'WEEKLY_SHIPPING', demandRef: demandRef };
+      var sku = normStr(pick(f, cols.masterSku)) || normStr(meta.scope.sku); if (sku !== null) fact.sku = sku;
+      var site = normStr(pick(f, cols.siteSku)); if (site !== null) fact.siteSku = site;
+      var win = normStr(pick(f, cols.windowCode)); if (win !== null) fact.windowCode = win;
+      var comp = normStr(pick(f, cols.company)) || normStr(meta.scope.company); if (comp !== null) fact.company = comp;
+      var ctry = normStr(pick(f, cols.country)) || normStr(meta.scope.country); if (ctry !== null) fact.country = ctry;
+      var mkt = normStr(pick(f, cols.marketplace)) || normStr(meta.scope.marketplace); if (mkt !== null) fact.marketplace = mkt;
+      var dest = normStr(pick(f, cols.destinationWarehouseId)); if (dest !== null) fact.destinationWarehouseId = dest;
+      var gap = normQty(pick(f, cols.calculatedGap)); if (gap.ok) fact.calculatedGap = gap.qty;
+      var upc = normQty(pick(f, cols.unitsPerCarton)); if (upc.ok) fact.unitsPerCarton = upc.qty;
+      // duplicate natural identity (sku|site_sku|window_code) → fail closed (matches resolver grain)
+      var nk = str(fact.sku) + KEY_SEP + str(fact.siteSku) + KEY_SEP + str(fact.windowCode);
+      if (nonEmpty(fact.sku) && nonEmpty(fact.windowCode)) { aRange(seen[nk] !== 1, 'readWeeklyRecommendationSource: duplicate Weekly line identity: ' + str(fact.sku) + '|' + str(fact.siteSku) + '|' + str(fact.windowCode)); seen[nk] = 1; }
+      out.push(fact);
+    }
+    return out;
+  }
+
+  // ---- monthly planning facts -----------------------------------------------------------------------------
+  function readMonthlyFacts(rows, cols, meta, issues) {
+    var out = [], seen = {};
+    for (var i = 0; i < rows.length; i++) {
+      var f = rows[i];
+      var rt = normStr(pick(f, cols.recommendationType)) || 'MONTHLY_ORDER';
+      if (rt !== 'MONTHLY_ORDER') { issues.push({ domain: 'monthlyFact', i: i, reason: 'NOT_MONTHLY_RECOMMENDATION_TYPE:' + rt }); continue; }
+      var demandRef = normStr(pick(f, cols.demandRef));
+      if (!demandRef) { issues.push({ domain: 'monthlyFact', i: i, reason: 'MISSING_DEMAND_SOURCE_REF' }); continue; }
+      var fv = pick(f, cols.formulaVersion); if (fv !== undefined && fv !== null && str(fv) !== '' && meta.formulaVersion != null && str(fv) !== str(meta.formulaVersion)) { issues.push({ domain: 'monthlyFact', i: i, reason: 'FORMULA_VERSION_MISMATCH:' + str(fv) }); continue; }
+      var fact = { recommendationType: 'MONTHLY_ORDER', demandRef: demandRef };
+      var sku = normStr(pick(f, cols.masterSku)) || normStr(meta.scope.sku); if (sku !== null) fact.masterSku = sku;
+      var site = normStr(pick(f, cols.siteSku)); if (site !== null) fact.siteSku = site;
+      var rm = normStr(pick(f, cols.requestMonth)); if (rm !== null) fact.requestMonth = rm;
+      var rb = normStr(pick(f, cols.requestBucket)); if (rb !== null) fact.requestBucket = rb;
+      var comp = normStr(pick(f, cols.company)) || normStr(meta.scope.company); if (comp !== null) fact.company = comp;
+      var ctry = normStr(pick(f, cols.country)) || normStr(meta.scope.country); if (ctry !== null) fact.country = ctry;
+      var mkt = normStr(pick(f, cols.marketplace)) || normStr(meta.scope.marketplace); if (mkt !== null) fact.marketplace = mkt;
+      var dest = normStr(pick(f, cols.destinationWarehouseId)); if (dest !== null) fact.destinationWarehouseId = dest;
+      var need = normQty(pick(f, cols.netOrderNeed)); if (need.ok) fact.netOrderNeed = need.qty;
+      var upc = normQty(pick(f, cols.unitsPerCarton)); if (upc.ok) fact.unitsPerCarton = upc.qty;
+      var nk = str(fact.masterSku) + KEY_SEP + str(fact.requestMonth) + KEY_SEP + str(fact.requestBucket);
+      if (nonEmpty(fact.masterSku) && nonEmpty(fact.requestMonth) && nonEmpty(fact.requestBucket)) { aRange(seen[nk] !== 1, 'readMonthlyRecommendationSource: duplicate Monthly line identity: ' + str(fact.masterSku) + '|' + str(fact.requestMonth) + '|' + str(fact.requestBucket)); seen[nk] = 1; }
+      out.push(fact);
+    }
+    return out;
+  }
+
+  // ---- the two public readers (share one core) ------------------------------------------------------------
+  function makeReader(config) {
+    var COLS = mergeColumns(config && config.columns);
+
+    function readWeekly(input) {
+      var meta = readRunMeta(input, 'readWeeklyRecommendationSource');
+      var sheets = isObj(input.sheets) ? input.sheets : {};
+      var issues = [];
+      var identity = readIdentity(input, meta.scope, 'readWeeklyRecommendationSource');
+      var demandEntries = readDemandEntries(normalizeRows(sheets.demand, 'sheets.demand'), COLS.demand, meta, issues);
+      var supplyEntries = readSupplyEntries(normalizeRows(sheets.supply, 'sheets.supply'), COLS.supply, meta, issues);
+      var receiverFacts = readReceiverFacts(normalizeRows(sheets.receivers, 'sheets.receivers'), COLS.receiver, issues);
+      var weeklyFacts = readWeeklyFacts(normalizeRows(sheets.planningFacts, 'sheets.planningFacts'), COLS.weeklyFact, meta, issues);
+      issues.sort(sortIssue);
+      return {
+        recommendationType: 'WEEKLY_SHIPPING', planningCycle: meta.planningCycle, businessScope: meta.scope,
+        identity: identity, formulaVersion: meta.formulaVersion, sourceDataAsOf: meta.sourceDataAsOf,
+        demandLedgerInput: { entries: demandEntries }, supplyLedgerInput: { entries: supplyEntries },
+        receiverFacts: receiverFacts, weeklyPlanningFacts: weeklyFacts, issues: issues
+      };
+    }
+
+    function readMonthly(input) {
+      var meta = readRunMeta(input, 'readMonthlyRecommendationSource');
+      var sheets = isObj(input.sheets) ? input.sheets : {};
+      var issues = [];
+      var identity = readIdentity(input, meta.scope, 'readMonthlyRecommendationSource');
+      var demandEntries = readDemandEntries(normalizeRows(sheets.demand, 'sheets.demand'), COLS.demand, meta, issues);
+      var supplyEntries = readSupplyEntries(normalizeRows(sheets.supply, 'sheets.supply'), COLS.supply, meta, issues);
+      var factoryFacts = readFactoryFacts(normalizeRows(sheets.factoryDemands, 'sheets.factoryDemands'), COLS.factory, issues);
+      var monthlyFacts = readMonthlyFacts(normalizeRows(sheets.planningFacts, 'sheets.planningFacts'), COLS.monthlyFact, meta, issues);
+      issues.sort(sortIssue);
+      return {
+        recommendationType: 'MONTHLY_ORDER', planningCycle: meta.planningCycle, businessScope: meta.scope,
+        identity: identity, formulaVersion: meta.formulaVersion, sourceDataAsOf: meta.sourceDataAsOf,
+        demandLedgerInput: { entries: demandEntries }, supplyLedgerInput: { entries: supplyEntries },
+        factoryDemandFacts: factoryFacts, monthlyPlanningFacts: monthlyFacts, issues: issues
+      };
+    }
+
+    return { readWeeklyRecommendationSource: readWeekly, readMonthlyRecommendationSource: readMonthly };
+  }
+
+  function sortIssue(a, b) { return cmpStr(a.domain, b.domain) || (a.i - b.i) || cmpStr(a.reason, b.reason); }
+
+  function mergeColumns(over) {
+    var out = {};
+    for (var group in DEFAULT_COLUMNS) {
+      out[group] = {};
+      for (var k in DEFAULT_COLUMNS[group]) out[group][k] = DEFAULT_COLUMNS[group][k];
+      if (over && over[group]) for (var o in over[group]) out[group][o] = str(over[group][o]);
+    }
+    return out;
+  }
+
+  // ---- demandKey linker: fact.demandRef → ledger-EMITTED demandKey (identity normalize; never recomputed) --
+  // The Ledger owns demandKey (§39). This reads the ledger's emitted keys and maps each fact's natural
+  // demandRef (= the demand's trailing key segment: sourceRef for non-event, eventId for SPECIAL_EVENT) to its
+  // demandKey. Ambiguous ref (two demandKeys share the trailing segment) → fail closed (RangeError).
+  function buildRefIndex(demandLedger, fn) {
+    aType(isObj(demandLedger) && Array.isArray(demandLedger.entries), fn + ': demandLedger.entries required');
+    var byRef = {}, dup = {};
+    demandLedger.entries.forEach(function (e) {
+      var key = str(e.demandKey); var parts = key.split(KEY_SEP); var ref = parts[parts.length - 1];
+      if (byRef[ref] !== undefined && byRef[ref] !== key) dup[ref] = 1;
+      byRef[ref] = key;
+    });
+    return { byRef: byRef, dup: dup };
+  }
+  function linkFactList(list, idx, fn) {
+    return list.map(function (f) {
+      var ref = str(f.demandRef);
+      var copy = {}; for (var k in f) if (k !== 'demandRef') copy[k] = f[k];
+      if (ref !== '' && idx.byRef[ref] !== undefined) {
+        aRange(idx.dup[ref] !== 1, fn + ': ambiguous demandRef (multiple demandKeys share trailing segment): ' + ref);
+        copy.demandKey = idx.byRef[ref];
+      }
+      // ref not found → demandKey omitted; downstream resolver blocks the line fail-closed (never fabricated).
+      return copy;
+    });
+  }
+  function resolveDemandKeys(dto, demandLedger) {
+    aType(isObj(dto), 'resolveDemandKeys: dto must be an object');
+    var fn = 'resolveDemandKeys';
+    var idx = buildRefIndex(demandLedger, fn);
+    var out = {};
+    for (var k in dto) out[k] = dto[k];
+    if (Array.isArray(dto.receiverFacts)) out.receiverFacts = linkFactList(dto.receiverFacts, idx, fn);
+    if (Array.isArray(dto.factoryDemandFacts)) out.factoryDemandFacts = linkFactList(dto.factoryDemandFacts, idx, fn);
+    if (Array.isArray(dto.weeklyPlanningFacts)) out.weeklyPlanningFacts = linkFactList(dto.weeklyPlanningFacts, idx, fn);
+    if (Array.isArray(dto.monthlyPlanningFacts)) out.monthlyPlanningFacts = linkFactList(dto.monthlyPlanningFacts, idx, fn);
+    return out;
+  }
+
+  var DEFAULT = makeReader(null);
+
+  return {
+    DEMAND_TYPES: (function () { var o = {}; for (var k in DEMAND_TYPES) o[k] = 1; return o; })(),
+    POOL_TYPES: (function () { var o = {}; for (var k in POOL_TYPES) o[k] = 1; return o; })(),
+    DEFAULT_COLUMNS: mergeColumns(null),
+    createRecommendationSourceReader: function (config) { return makeReader(config); },
+    readWeeklyRecommendationSource: DEFAULT.readWeeklyRecommendationSource,
+    readMonthlyRecommendationSource: DEFAULT.readMonthlyRecommendationSource,
+    resolveDemandKeys: resolveDemandKeys
+  };
+});
+  __kmRegister("supply-planning-source-reader", module.exports);
+})();
+
+// ----- module: supply-planning-recommendation-source-integration (verbatim from assets/js/core/supply-planning-recommendation-source-integration.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Recommendation ORCHESTRATOR ↔ SOURCE READER integration (Phase 2C, Round 1Q).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC wiring that REPLACES the `SOURCE_READER_PENDING` stub: it composes the Round 1P Source
+// Reader with the frozen Ledger / Allocation-Input / Weekly-Monthly Resolver / Bridge runtimes into the exact
+// `computeFacts(query)` seam the locked Recommendation Orchestrator already injects
+// (`runRecommendationGeneration(input, { computeFacts, ... })`). It REIMPLEMENTS NOTHING — every stage is the
+// real frozen module, called in order:
+//
+//   caller-supplied source input
+//     → readWeeklyRecommendationSource / readMonthlyRecommendationSource   (KMSR — the ONLY reader; §1P)
+//     → buildDemandLedger / buildSupplyLedger                              (KMLEDGER — §39)
+//     → resolveDemandKeys                                                  (KMSR — Ledger-owned key, never recomputed)
+//     → projectAllocationInputs                                           (KMSF — §40)
+//     → resolveWeeklyRecommendation / resolveMonthlyRecommendation        (KMSF — §31/§14)
+//     → bridgeRecommendationFactsToPlan                                   (KMBRIDGE — Plan-Builder-ready lines)
+//   → the Orchestrator's own Plan Builder → Core → Persistence Plan Builder → LOCKED apply (unchanged).
+//
+// This module owns NO business logic: no mapping/normalize/identity/demandKey (Reader-owned), no Gap / Net Order
+// Need / recommendedQty (Resolver-owned), no allocation (Allocator-owned), no persistence. It routes by
+// recommendationType and NEVER calls the other reader, NEVER fabricates a missing source, NEVER silences Reader
+// issues, NEVER turns MISSING into 0, NEVER supplies sourceDataAsOf/formulaVersion/planningCycle itself, and uses
+// no clock / random / locale / SpreadsheetApp / LockService / Cache. Reader-thrown TypeError / RangeError
+// (invalid enum, duplicate line identity, ambiguous demandRef, unresolved identity, structural failure) are NOT
+// caught here — they propagate fail-closed. Insufficient valid input → ready:false (Orchestrator BLOCKS; never a
+// blank-but-successful plan).
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-source-reader.js') : (root.KMSR || (root.KM && root.KM.sourceReader)),
+    req ? req('./supply-planning-ledgers.js') : (root.KMLEDGER || (root.KM && root.KM.ledgers)),
+    req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts)),
+    req ? req('./supply-planning-plan-bridge.js') : (root.KMBRIDGE || (root.KM && root.KM.planBridge))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.recommendationSourceIntegration = api; }
+})(this, function (KMSR_D, KMLEDGER_D, KMSF_D, KMBRIDGE_D) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function aRange(c, m) { if (!c) throw new RangeError(m); }
+  function str(v) { return String(v === undefined || v === null ? '' : v); }
+
+  // recommendationType → the ONE reader + the allocation-fact / planning-fact / resolver binding. No second reader.
+  var ROUTES = {
+    WEEKLY_SHIPPING: { readFn: 'readWeeklyRecommendationSource', allocKey: 'receiverFacts', factsKey: 'weeklyPlanningFacts', resolveFn: 'resolveWeeklyRecommendationFacts' },
+    MONTHLY_ORDER: { readFn: 'readMonthlyRecommendationSource', allocKey: 'factoryDemandFacts', factsKey: 'monthlyPlanningFacts', resolveFn: 'resolveMonthlyRecommendationFacts' }
+  };
+
+  function selectReaderName(recommendationType) {
+    var r = ROUTES[recommendationType];
+    aRange(!!r, 'recommendation source integration: unsupported recommendationType: ' + recommendationType);
+    return r.readFn;
+  }
+
+  function makeIntegration(overrides) {
+    var KMSR = (overrides && overrides.KMSR) || KMSR_D;
+    var KMLEDGER = (overrides && overrides.KMLEDGER) || KMLEDGER_D;
+    var KMSF = (overrides && overrides.KMSF) || KMSF_D;
+    var KMBRIDGE = (overrides && overrides.KMBRIDGE) || KMBRIDGE_D;
+
+    // Full source→facts pipeline. Returns a rich, testable integration result (the Orchestrator itself consumes
+    // only the computeFacts-shaped subset). Reader errors propagate; nothing is fabricated.
+    function resolveRecommendationFactsFromSource(sourceInput, opts) {
+      aType(isObj(sourceInput), 'resolveRecommendationFactsFromSource: sourceInput must be an object');
+      opts = opts || {};
+      var type = opts.recommendationType != null ? str(opts.recommendationType) : str(sourceInput.recommendationType);
+      var route = ROUTES[type];
+      aRange(!!route, 'resolveRecommendationFactsFromSource: unsupported recommendationType: ' + type);
+
+      // 1) Source Reader (the ONLY reader; the other route is never called).
+      var dto = KMSR[route.readFn](sourceInput);
+
+      // 2) Ledgers (frozen §39 — count-once owned by the Ledger).
+      var demandLedger = KMLEDGER.buildDemandLedger(dto.demandLedgerInput);
+      var supplyLedger = KMLEDGER.buildSupplyLedger(dto.supplyLedgerInput);
+
+      // 3) demandKey identity link (Ledger-EMITTED key; never recomputed here).
+      var linked = KMSR.resolveDemandKeys(dto, demandLedger);
+
+      // 4) Allocation input projection (frozen §40 — real allocators).
+      var apInput = { identity: dto.identity, demandLedger: demandLedger, supplyLedger: supplyLedger };
+      apInput[route.allocKey] = linked[route.allocKey];
+      var allocationInput = KMSF.projectAllocationInputs(apInput);
+
+      // 5) Weekly / Monthly recommendation resolver (frozen §31/§14).
+      var resolverInput = {
+        planningCycle: dto.planningCycle, businessScope: dto.businessScope,
+        allocationProjection: allocationInput, formulaVersion: dto.formulaVersion,
+        sourceDataAsOf: dto.sourceDataAsOf, demandLedger: demandLedger
+      };
+      resolverInput[route.factsKey] = linked[route.factsKey];
+      var resolverResult = KMSF[route.resolveFn](resolverInput);
+
+      // 6) Bridge → Plan-Builder-ready lines (mode/runId are Orchestrator-owned; only lines/version propagate).
+      var bridgeResult = KMBRIDGE.bridgeRecommendationFactsToPlan({
+        recommendationFacts: resolverResult,
+        mode: opts.mode != null ? opts.mode : 'SCHEDULED_REFRESH',
+        calculationRunId: opts.calculationRunId != null ? opts.calculationRunId : 'PENDING',
+        draftVersion: opts.draftVersion != null ? opts.draftVersion : 1
+      });
+
+      // Aggregate every stage's issues — Reader issues are NEVER cleared; nothing is silently dropped.
+      var sourceIssues = [];
+      (dto.issues || []).forEach(function (x) { sourceIssues.push({ stage: 'reader', domain: x.domain, i: x.i, reason: x.reason }); });
+      (allocationInput.issues || []).forEach(function (x) { sourceIssues.push({ stage: 'allocation', kind: x.kind, key: x.key, reason: x.reason }); });
+      (allocationInput.blockedInputs || []).forEach(function (x) { sourceIssues.push({ stage: 'allocationBlocked', kind: x.kind, key: x.key, reason: x.reason }); });
+      (resolverResult.issues || []).forEach(function (x) { sourceIssues.push({ stage: 'resolver', key: x.key, reason: x.reason }); });
+      ((bridgeResult.metadata && bridgeResult.metadata.unmappableBlockedLines) || []).forEach(function (x) { sourceIssues.push({ stage: 'bridge', reason: x.blockedReason }); });
+
+      var lines = bridgeResult.lines;
+      // ready = the resolver was clean AND at least one recommendation line survives. Insufficient valid input
+      // (all rows excluded) → NOT ready → Orchestrator BLOCKS (no blank-but-successful plan). No fallback.
+      var ready = resolverResult.ready === true && lines.length > 0;
+      var reason = resolverResult.ready !== true
+        ? (resolverResult.reason || 'SOURCE_ISSUES_PRESENT')
+        : (lines.length > 0 ? null : 'NO_RECOMMENDATION_LINES');
+
+      return {
+        recommendationType: type,
+        planningCycle: dto.planningCycle,
+        businessScope: dto.businessScope,
+        formulaVersion: bridgeResult.formulaVersion,
+        sourceDataAsOf: bridgeResult.sourceDataAsOf,
+        sourceIssues: sourceIssues,
+        ledgerResult: { demandLedger: demandLedger, supplyLedger: supplyLedger },
+        allocationInput: allocationInput,
+        resolverResult: resolverResult,
+        bridgeResult: bridgeResult,
+        lines: lines,
+        ready: ready,
+        reason: reason
+      };
+    }
+
+    // Adapt to the Orchestrator's injected `deps.computeFacts(query)` seam. Routes by the query's recommendationType
+    // (the value the Orchestrator already validated). Returns ONLY the computeFacts-shaped subset the Orchestrator
+    // consumes ({ lines, ready, reason, formulaVersion, sourceDataAsOf }) + sourceIssues for visibility.
+    function createComputeFacts(sourceInput, opts) {
+      opts = opts || {};
+      return function computeFacts(query) {
+        var type = (query && query.recommendationType != null) ? query.recommendationType : opts.recommendationType;
+        var full = resolveRecommendationFactsFromSource(sourceInput, {
+          recommendationType: type, mode: opts.mode, calculationRunId: opts.calculationRunId, draftVersion: opts.draftVersion
+        });
+        return {
+          lines: full.lines, ready: full.ready, reason: full.reason,
+          formulaVersion: full.formulaVersion, sourceDataAsOf: full.sourceDataAsOf,
+          sourceIssues: full.sourceIssues
+        };
+      };
+    }
+
+    return {
+      selectReaderName: selectReaderName,
+      resolveRecommendationFactsFromSource: resolveRecommendationFactsFromSource,
+      createComputeFacts: createComputeFacts
+    };
+  }
+
+  var DEFAULT = makeIntegration(null);
+
+  return {
+    ROUTES: (function () { var o = {}; for (var t in ROUTES) { o[t] = {}; for (var k in ROUTES[t]) o[t][k] = ROUTES[t][k]; } return o; })(),
+    selectReaderName: selectReaderName,
+    createRecommendationSourceIntegration: makeIntegration,
+    resolveRecommendationFactsFromSource: DEFAULT.resolveRecommendationFactsFromSource,
+    createComputeFacts: DEFAULT.createComputeFacts
+  };
+});
+  __kmRegister("supply-planning-recommendation-source-integration", module.exports);
+})();
+
+// ----- module: supply-planning-source-reader-production (verbatim from assets/js/core/supply-planning-source-reader-production.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — PRODUCTION Recommendation Source Reader boundary (Phase 2C, Round 1S-P1).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC production read-only boundary that turns raw Google-Sheet table snapshots into the
+// Recommendation Source Facts DTO, by REUSING the frozen pipeline (never reimplementing it):
+//   raw table snapshot (headers+rows) → structural header/schema validation → row-objects (value-preserving)
+//     → the Round 1P Source Reader (KMSR) → the Round 1Q Source Integration (KMSI: ledgers → resolveDemandKeys
+//       → projectAllocationInputs → Weekly/Monthly resolver → bridge).
+//
+// This module owns ONLY structural facts: a read-only source-table registry, an INJECT-testable Sheet reader
+// (`readRawTableSnapshot(spreadsheet, entry)` — the `.gs` passes SpreadsheetApp, tests pass a fake), header/
+// schema validation (fail-closed), value-preserving raw-row → object mapping, and the DTO assembly that hands
+// the row collections to the frozen reader/integration. It owns NO business logic (× Gap / Forecast /
+// survivalNeedQty / allocationPriority / demandWeight / recommendedQty / Net Order Need / carton / demand
+// assembly / lifecycle derivation) and never writes. No SpreadsheetApp / LockService / CacheService here (the
+// `.gs` wrapper injects the spreadsheet); no Date.now / Math.random / locale; input never mutated; fresh output.
+//
+// SCOPE NOTE (Round 1R contract SC-5/SC-9): this reads the Recommendation SOURCE INPUT sheets whose columns are
+// the frozen reader DTO convention. The UPSTREAM projection that SHAPES raw DB tables (fc_regular_forecast
+// jan..dec, inventory snapshots, calc-engine gap/net-order-need) INTO those source sheets is the separate
+// `Recommendation Source Projection Runtime` (SC-9 #1) — deliberately NOT implemented here (forbidden business
+// logic). Registry `sheetName`s are convention (overridable via config), grounded in real names where they exist.
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-source-reader.js') : (root.KMSR || (root.KM && root.KM.sourceReader)),
+    req ? req('./supply-planning-recommendation-source-integration.js') : (root.KMSI || (root.KM && root.KM.recommendationSourceIntegration))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceReaderProduction = api; }
+})(this, function (KMSR, KMSI) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function aRange(c, m) { if (!c) throw new RangeError(m); }
+  function cmpStr(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function nonEmpty(v) { return str(v).length > 0; }
+
+  // ---- READ-ONLY source-table registry (STRUCTURAL facts only; no business formula) --------------------
+  // sourceType: logical role the reader/integration consumes. sheetName: convention (overridable via config).
+  // required/optional/identity Headers: structural schema. asOfHeader: source-supported as-of evidence column
+  // (never the clock). applicability: WEEKLY | MONTHLY | BOTH. required: whole-run vs optional source.
+  var REGISTRY = [
+    // identity / master (real canonical sheet names; feed resolveSourceIdentity structurally)
+    { sourceType: 'skuDetails', role: 'identity', sheetName: 'sku_details', requiredHeaders: ['sku'], optionalHeaders: ['category', 'series', 'units_per_carton'], identityHeaders: ['sku'], asOfHeader: 'updated_at', applicability: 'BOTH', required: false },
+    { sourceType: 'marketplaceSkus', role: 'identity', sheetName: 'marketplace_skus', requiredHeaders: ['marketplace_sku_id', 'sku', 'company', 'country', 'marketplace'], optionalHeaders: ['site_sku', 'fulfillment_model'], identityHeaders: ['marketplace_sku_id'], asOfHeader: 'updated_at', applicability: 'BOTH', required: false },
+    { sourceType: 'warehouses', role: 'identity', sheetName: 'warehouses', requiredHeaders: ['warehouse_id'], optionalHeaders: ['warehouse_type', 'is_factory_warehouse', 'is_active', 'company', 'country'], identityHeaders: ['warehouse_id'], asOfHeader: 'updated_at', applicability: 'BOTH', required: false },
+    // recommendation source input sheets (DTO-convention columns; populated by the deferred Projection Runtime)
+    { sourceType: 'demand', role: 'demand', sheetName: 'recommendation_source_demand', requiredHeaders: ['demand_type', 'source_ref', 'quantity'], optionalHeaders: ['required_by_date', 'sku', 'company', 'country', 'marketplace', 'destination_warehouse_id', 'planning_cycle', 'event_id'], identityHeaders: ['source_ref'], asOfHeader: 'source_data_as_of', applicability: 'BOTH', required: true },
+    { sourceType: 'supply', role: 'supply', sheetName: 'recommendation_source_supply', requiredHeaders: ['pool_type', 'warehouse_id', 'quantity'], optionalHeaders: ['supply_lineage_ref', 'sku', 'company', 'lifecycle_bucket'], identityHeaders: ['supply_lineage_ref'], asOfHeader: 'source_data_as_of', applicability: 'BOTH', required: true },
+    { sourceType: 'receivers', role: 'receivers', sheetName: 'recommendation_source_receivers', requiredHeaders: ['receiver_key', 'demand_source_ref'], optionalHeaders: ['eligible_pool_types', 'survival_need_qty', 'daily_demand', 'allocation_priority', 'demand_weight', 'fulfillment_model', 'marketplace', 'destination_warehouse_id'], identityHeaders: ['receiver_key'], asOfHeader: 'source_data_as_of', applicability: 'WEEKLY', required: false },
+    { sourceType: 'factoryDemands', role: 'factoryDemands', sheetName: 'recommendation_source_factory_demands', requiredHeaders: ['demand_source_ref'], optionalHeaders: ['eligible_factory_warehouse_ids', 'allocation_priority', 'marketplace', 'destination_warehouse_id', 'required_by_date'], identityHeaders: ['demand_source_ref'], asOfHeader: 'source_data_as_of', applicability: 'MONTHLY', required: false },
+    { sourceType: 'planningFacts', role: 'planningFacts', sheetName: 'recommendation_source_planning_facts', requiredHeaders: ['recommendation_type', 'demand_source_ref'], optionalHeaders: ['sku', 'site_sku', 'window_code', 'request_month', 'request_bucket', 'calculated_gap_qty', 'net_order_need_snapshot', 'units_per_carton', 'company', 'country', 'marketplace', 'formula_version', 'source_data_as_of'], identityHeaders: ['demand_source_ref'], asOfHeader: 'source_data_as_of', applicability: 'BOTH', required: true }
+  ];
+
+  function registryFor(recommendationType, config) {
+    var over = (config && config.sheetNames) || {};
+    var applies = recommendationType === 'WEEKLY_SHIPPING' ? 'WEEKLY' : (recommendationType === 'MONTHLY_ORDER' ? 'MONTHLY' : null);
+    aRange(applies !== null, 'source-reader-production: unsupported recommendationType: ' + recommendationType);
+    return REGISTRY.filter(function (e) { return e.applicability === 'BOTH' || e.applicability === applies; })
+      .map(function (e) { var c = {}; for (var k in e) c[k] = e[k]; if (over[e.sourceType]) c.sheetName = str(over[e.sourceType]); return c; });
+  }
+
+  // ---- INJECT-testable raw Sheet reader (the `.gs` wrapper passes SpreadsheetApp; tests pass a fake) ------
+  // `spreadsheet` = any object exposing getSheetByName(name) → sheet | null; sheet exposes getLastRow(),
+  // getLastColumn(), getDataRange().getValues() (2D). READ-ONLY. Never writes. Returns a JSON-safe snapshot.
+  function readRawTableSnapshot(spreadsheet, entry) {
+    aType(isObj(spreadsheet) && typeof spreadsheet.getSheetByName === 'function', 'readRawTableSnapshot: spreadsheet.getSheetByName required');
+    aType(isObj(entry) && nonEmpty(entry.sheetName), 'readRawTableSnapshot: entry.sheetName required');
+    var out = { sourceType: entry.sourceType, sheetName: entry.sheetName, headers: [], rows: [], rowCount: 0, sourceDataAsOfEvidence: null, found: false, issues: [] };
+    var sheet = spreadsheet.getSheetByName(entry.sheetName);
+    if (!sheet) { out.issues.push('SOURCE_NOT_AVAILABLE'); return out; }
+    out.found = true;
+    var lastRow = typeof sheet.getLastRow === 'function' ? sheet.getLastRow() : null;
+    if (lastRow === 0) { out.issues.push('MISSING_SNAPSHOT'); return out; }        // empty sheet (no header row)
+    var values = sheet.getDataRange().getValues();                                 // raw values (numbers/Date/bool preserved)
+    if (!values || !values.length) { out.issues.push('MISSING_SNAPSHOT'); return out; }
+    out.headers = values[0].map(function (h) { return str(h); });
+    for (var r = 1; r < values.length; r++) out.rows.push(values[r].slice());       // preserve raw cell values verbatim
+    out.rowCount = out.rows.length;
+    // as-of evidence: read the registry as-of column's first non-empty value (never the clock).
+    if (entry.asOfHeader) {
+      var ai = out.headers.indexOf(entry.asOfHeader);
+      if (ai >= 0) { for (var i = 0; i < out.rows.length; i++) { if (nonEmpty(out.rows[i][ai])) { out.sourceDataAsOfEvidence = str(out.rows[i][ai]); break; } } }
+    }
+    return out;
+  }
+
+  // Read every registry table for a recommendationType (read-only). Returns a snapshots-by-sourceType map.
+  function readAllSnapshots(spreadsheet, recommendationType, config) {
+    var entries = registryFor(recommendationType, config);
+    var snapshots = {};
+    entries.forEach(function (e) { snapshots[e.sourceType] = readRawTableSnapshot(spreadsheet, e); });
+    return snapshots;
+  }
+
+  // ---- structural header/schema validation (fail-closed; deterministic issue tokens) ---------------------
+  function validateSnapshot(snapshot, entry) {
+    var issues = [];
+    if (!snapshot || snapshot.found === false) { issues.push({ sourceType: entry.sourceType, reason: 'SOURCE_NOT_AVAILABLE' }); return issues; }
+    var headers = snapshot.headers || [];
+    if (!headers.length) { issues.push({ sourceType: entry.sourceType, reason: 'MISSING_REQUIRED_HEADER' }); return issues; }
+    var seen = {};
+    headers.forEach(function (h) { if (h === '') issues.push({ sourceType: entry.sourceType, reason: 'MISSING_REQUIRED_HEADER:blank' }); else if (seen[h]) issues.push({ sourceType: entry.sourceType, reason: 'DUPLICATE_HEADER:' + h }); else seen[h] = 1; });
+    (entry.requiredHeaders || []).forEach(function (h) { if (!seen[h]) issues.push({ sourceType: entry.sourceType, reason: 'MISSING_REQUIRED_HEADER:' + h }); });
+    (snapshot.rows || []).forEach(function (row, i) { if (row.length !== headers.length) issues.push({ sourceType: entry.sourceType, reason: 'INVALID_ROW_WIDTH:@' + i }); });
+    return issues;
+  }
+
+  // ---- build the Recommendation Source Facts DTO by REUSING KMSR + KMSI ---------------------------------
+  // input = { recommendationType, planningCycle, businessScope, snapshots:{sourceType→snapshot}, formulaVersion?,
+  //           sourceDataAsOf?, config? }. Structural validation fails closed; the row collections are handed to
+  //           the frozen reader/integration (which own ALL mapping + math). No business logic here.
+  function buildRecommendationSourceFacts(input) {
+    aType(isObj(input), 'buildRecommendationSourceFacts: input must be an object');
+    aType(nonEmpty(input.planningCycle), 'buildRecommendationSourceFacts: planningCycle required');
+    aType(isObj(input.businessScope), 'buildRecommendationSourceFacts: businessScope required');
+    var type = str(input.recommendationType);
+    var entries = registryFor(type, input.config);
+    var snapshots = isObj(input.snapshots) ? input.snapshots : {};
+
+    var schemaIssues = [];
+    entries.forEach(function (e) {
+      var snap = snapshots[e.sourceType];
+      if (e.required && (!snap || snap.found === false)) { schemaIssues.push({ sourceType: e.sourceType, reason: 'SOURCE_NOT_AVAILABLE' }); return; }
+      if (snap && snap.found !== false) validateSnapshot(snap, e).forEach(function (x) { schemaIssues.push(x); });
+    });
+
+    // 2D passthrough (the frozen reader's normalizeRows accepts [headers, ...rows]); value-preserving.
+    function sheet2D(sourceType) { var s = snapshots[sourceType]; return (s && s.found !== false && s.headers.length) ? [s.headers.slice()].concat(s.rows.map(function (r) { return r.slice(); })) : []; }
+
+    // as-of authority = caller-supplied OR the demand/planning-fact snapshot evidence (never the clock).
+    var asOf = input.sourceDataAsOf !== undefined ? input.sourceDataAsOf
+      : ((snapshots.demand && snapshots.demand.sourceDataAsOfEvidence) || (snapshots.planningFacts && snapshots.planningFacts.sourceDataAsOfEvidence) || null);
+
+    var sourceInput = {
+      recommendationType: type, planningCycle: str(input.planningCycle), scope: input.businessScope,
+      formulaVersion: input.formulaVersion === undefined ? null : input.formulaVersion, sourceDataAsOf: asOf,
+      identityTables: { skuDetails: sheet2D('skuDetails'), marketplaceSkus: sheet2D('marketplaceSkus'), warehouses: sheet2D('warehouses') },
+      sheets: {
+        demand: sheet2D('demand'), supply: sheet2D('supply'), planningFacts: sheet2D('planningFacts')
+      }
+    };
+    if (type === 'WEEKLY_SHIPPING') sourceInput.sheets.receivers = sheet2D('receivers');
+    if (type === 'MONTHLY_ORDER') sourceInput.sheets.factoryDemands = sheet2D('factoryDemands');
+    // only pass identityTables when at least one identity sheet is present (else the reader keeps scope identity)
+    if (!sourceInput.identityTables.skuDetails.length && !sourceInput.identityTables.marketplaceSkus.length && !sourceInput.identityTables.warehouses.length) delete sourceInput.identityTables;
+
+    // Structural schema failure on a REQUIRED source → fail closed (do not run the pipeline on a broken schema).
+    var hardSchema = schemaIssues.filter(function (x) {
+      var e = entries.filter(function (z) { return z.sourceType === x.sourceType; })[0];
+      return e && e.required;
+    });
+    if (hardSchema.length) {
+      return { recommendationType: type, planningCycle: str(input.planningCycle), businessScope: input.businessScope,
+        formulaVersion: sourceInput.formulaVersion, sourceDataAsOf: asOf, ready: false, reason: hardSchema[0].reason,
+        schemaIssues: schemaIssues, sourceIssues: [], lines: [], bridgeResult: null, resolverResult: null,
+        ledgerResult: null, allocationInput: null };
+    }
+
+    // Hand off to the frozen integration (KMSI) — it owns reader → ledgers → allocation → resolver → bridge.
+    var full = KMSI.resolveRecommendationFactsFromSource(sourceInput, { mode: 'SCHEDULED_REFRESH', recommendationType: type });
+    var out = {};
+    for (var k in full) out[k] = full[k];
+    out.schemaIssues = schemaIssues;                 // structural (non-fatal) schema notes surfaced, never dropped
+    return out;
+  }
+
+  // Full production entry (the `.gs` wrapper calls this with SpreadsheetApp). READ-ONLY end-to-end.
+  function readRecommendationSourceFacts(spreadsheet, cmd, config) {
+    aType(isObj(cmd), 'readRecommendationSourceFacts: cmd required');
+    var snapshots = readAllSnapshots(spreadsheet, str(cmd.recommendationType), config);
+    return buildRecommendationSourceFacts({
+      recommendationType: cmd.recommendationType, planningCycle: cmd.planningCycle, businessScope: cmd.businessScope,
+      snapshots: snapshots, formulaVersion: cmd.formulaVersion, sourceDataAsOf: cmd.sourceDataAsOf, config: config
+    });
+  }
+
+  return {
+    SOURCE_TABLE_REGISTRY: REGISTRY.map(function (e) { var c = {}; for (var k in e) c[k] = Array.isArray(e[k]) ? e[k].slice() : e[k]; return c; }),
+    registryFor: registryFor,
+    readRawTableSnapshot: readRawTableSnapshot,
+    readAllSnapshots: readAllSnapshots,
+    validateSnapshot: validateSnapshot,
+    buildRecommendationSourceFacts: buildRecommendationSourceFacts,
+    readRecommendationSourceFacts: readRecommendationSourceFacts
+  };
+});
+  __kmRegister("supply-planning-source-reader-production", module.exports);
+})();
+
 // ----- Apps Script global namespace exposure -----
 var KMCALC = __kmModules["supply-planning-calculations"];
 var KMQI = __kmModules["supply-planning-qualified-incoming"];
@@ -4374,6 +6347,11 @@ var KMPB = __kmModules["supply-planning-plan-builder"];
 var KMPPB = __kmModules["supply-planning-persistence-plan-builder"];
 var KMORCH = __kmModules["supply-planning-recommendation-orchestrator"];
 var KMUE = __kmModules["supply-planning-user-edit"];
+var KMSF = __kmModules["supply-planning-source-facts"];
+var KMBRIDGE = __kmModules["supply-planning-plan-bridge"];
+var KMSR = __kmModules["supply-planning-source-reader"];
+var KMSI = __kmModules["supply-planning-recommendation-source-integration"];
+var KMSRP = __kmModules["supply-planning-source-reader-production"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"69296550705b3eabb8243e672bb5c47e833a5d1558ae37bd4cc622541c84cb9f","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"2d0b276f35795f82e51f4c3f253a2cfa050b65fd043ca4564e8d5a57340930f7","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"f680207e1e181bd3561e62b8b577cca05cfbb10790b60979e96b13e8a7f342fe"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"}]};

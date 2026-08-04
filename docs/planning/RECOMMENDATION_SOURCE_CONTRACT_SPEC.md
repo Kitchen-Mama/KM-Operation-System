@@ -311,6 +311,15 @@ override). No override is required if the projection emits the default names.
 - **Full-project removal:** only after the next round wires the Projection Runtime + wrapper (SC-5/SC-6) may
   `SOURCE_READER_PENDING` be declared fully removed. **Do not modify `24_…` before then.**
 
+> **SC-STATUS (Round 1S-P1, 2026-08-04):** the **Apps Script production Sheet reader + projection boundary** is
+> IMPLEMENTED / TEST VERIFIED (pure `supply-planning-source-reader-production.js` `KMSRP` + thin `.gs`
+> `26_recommendation_source_reader.gs`; 38 assertions; bundled). It reads the SC-6 tables as raw snapshots
+> (read-only, value-preserving, fail-closed schema validation) and drives the frozen KMSR→KMSI→Plan Builder
+> pipeline (Weekly 96 / Monthly 24 in tests). **The `Recommendation Source Projection Runtime` of SC-5 (that SHAPES
+> raw DB tables — fc_regular_forecast jan..dec / inventory snapshots / calc-engine gap+net-order-need — INTO the
+> DTO-convention source sheets) remains NOT IMPLEMENTED (SC-9 #1).** The `24_…` `SOURCE_READER_PENDING` stub is
+> unchanged (SC-8; replacement = Round 1S-P2). No writes / no LockService / no Submit / no deploy.
+
 ## SC-9. Next implementation dependency (ordered)
 
 1. **Recommendation Source Projection Runtime** (Option C) — compose frozen projectors + Engine A/B → Reader rows;

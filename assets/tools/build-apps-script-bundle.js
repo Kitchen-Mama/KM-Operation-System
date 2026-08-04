@@ -31,7 +31,12 @@ var MODULE_ORDER = [
   'supply-planning-plan-builder',              // requires persistence-repository
   'supply-planning-persistence-plan-builder',  // requires persistence-repository + plan-builder
   'supply-planning-recommendation-orchestrator', // requires persistence + plan-builder + persistence-plan-builder + repository
-  'supply-planning-user-edit'                  // requires persistence-repository
+  'supply-planning-user-edit',                 // requires persistence-repository
+  'supply-planning-source-facts',              // requires calculations + ledgers + candidates + incoming + qualified-incoming + allocations
+  'supply-planning-plan-bridge',               // standalone (no deps)
+  'supply-planning-source-reader',             // requires source-facts
+  'supply-planning-recommendation-source-integration', // requires source-reader + ledgers + source-facts + plan-bridge
+  'supply-planning-source-reader-production'   // requires source-reader + source-integration (Round 1S-P1 production reader)
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
@@ -50,7 +55,12 @@ var GLOBALS = [
   ['KMPB', 'supply-planning-plan-builder'],
   ['KMPPB', 'supply-planning-persistence-plan-builder'],
   ['KMORCH', 'supply-planning-recommendation-orchestrator'],
-  ['KMUE', 'supply-planning-user-edit']
+  ['KMUE', 'supply-planning-user-edit'],
+  ['KMSF', 'supply-planning-source-facts'],
+  ['KMBRIDGE', 'supply-planning-plan-bridge'],
+  ['KMSR', 'supply-planning-source-reader'],
+  ['KMSI', 'supply-planning-recommendation-source-integration'],
+  ['KMSRP', 'supply-planning-source-reader-production']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }
