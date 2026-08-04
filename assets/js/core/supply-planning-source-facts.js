@@ -24,11 +24,12 @@
     req ? req('./supply-planning-ledgers.js') : (root.KMLEDGER || (root.KM && root.KM.ledgers)),
     req ? req('./supply-planning-supply-candidates.js') : (root.KMCAND || (root.KM && root.KM.supplyCandidates)),
     req ? req('./supply-planning-incoming-adapters.js') : (root.KMINC || (root.KM && root.KM.incomingAdapters)),
-    req ? req('./supply-planning-qualified-incoming.js') : (root.KMQI || (root.KM && root.KM.qualifiedIncoming))
+    req ? req('./supply-planning-qualified-incoming.js') : (root.KMQI || (root.KM && root.KM.qualifiedIncoming)),
+    req ? req('./supply-planning-allocations.js') : (root.KMALLOC || (root.KM && root.KM.allocations))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceFacts = api; }
-})(this, function (CALC, LEDGER, CAND, INC, QI) {
+})(this, function (CALC, LEDGER, CAND, INC, QI, ALLOC) {
   'use strict';
 
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -366,6 +367,166 @@
     };
   }
 
+  // ---- allocation-input projection (Round 1L; builds §40 DTOs; calls the REAL allocators) --------------
+  // PURE. Consumes REAL Demand/Supply Ledger outputs (quantity authorities, never recomputed) + caller-supplied
+  // planning facts (survivalNeedQty/allocationPriority/demandWeight/fulfillmentModel/eligiblePoolTypes/
+  // eligibleFactoryWarehouseIds — DB/§22-owned, so REQUIRED explicitly in a Sheet-free round, never fabricated),
+  // forms the exact allocator DTOs, and calls allocateOverseasSharedPool / allocateFactoryDeterministic (never
+  // reimplemented). No recommendedQty, no Plan Builder, no persistence, no Sheet read.
+  var OVERSEAS_POOL_TYPES = { FBA: 1, THREE_PL: 1 };
+  var FULFILLMENT_MODELS = { self_fulfilled: 1, platform_fulfilled: 1, hybrid: 1 };
+  var SURVIVAL_HORIZON_DAYS = 18; // §20.3/§24.4 frozen survival horizon (cited, not invented)
+
+  function finiteNonNeg(v) { return (typeof v === 'number' && isFinite(v) && v >= 0) ? v : null; }
+  function isoDateOk(s) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if (!m) return false; var mo = +m[2], d = +m[3]; return mo >= 1 && mo <= 12 && d >= 1 && d <= 31; }
+  function normalizeIdList(v, validate) {
+    if (!Array.isArray(v)) return { ok: false, list: null };
+    var seen = {}, out = [];
+    for (var i = 0; i < v.length; i++) { var t = str(v[i]); if (validate && validate(t) !== true) return { ok: false, list: null, bad: t }; if (t === '' && !validate) return { ok: false, list: null }; if (!seen[t]) { seen[t] = 1; out.push(t); } }
+    out.sort(cmpStr);
+    return { ok: true, list: out };
+  }
+
+  function projectAllocationInputs(input) {
+    aType(isObj(input), 'projectAllocationInputs: input must be an object');
+    var identity = input.identity; aType(isObj(identity), 'projectAllocationInputs: input.identity must be an object');
+    var company = str(identity.company), country = identity.country == null ? null : str(identity.country), masterSku = str(identity.masterSku);
+    aType(nonEmpty(company) && nonEmpty(masterSku), 'projectAllocationInputs: identity.company/masterSku required');
+    var demandLedger = input.demandLedger; aType(isObj(demandLedger) && Array.isArray(demandLedger.entries), 'projectAllocationInputs: input.demandLedger.entries required');
+    var supplyLedger = input.supplyLedger; aType(isObj(supplyLedger) && Array.isArray(supplyLedger.pools), 'projectAllocationInputs: input.supplyLedger.pools required');
+    var receiverFacts = input.receiverFacts == null ? [] : input.receiverFacts;
+    var factoryDemandFacts = input.factoryDemandFacts == null ? [] : input.factoryDemandFacts;
+    aType(Array.isArray(receiverFacts), 'projectAllocationInputs: input.receiverFacts must be an array');
+    aType(Array.isArray(factoryDemandFacts), 'projectAllocationInputs: input.factoryDemandFacts must be an array');
+
+    var issues = [], blockedInputs = [];
+    function addIssue(kind, key, reason) { issues.push({ kind: kind, key: key, reason: reason }); }
+
+    // Index Demand Ledger + surface blocked demand (never recomputed; effectiveDemandQty is the authority).
+    var demandByKey = {};
+    demandLedger.entries.forEach(function (e) {
+      demandByKey[e.demandKey] = e;
+      if (e.state === 'BLOCKED_CONFLICT') blockedInputs.push({ kind: 'DEMAND', key: e.demandKey, reason: e.reason || 'BLOCKED_CONFLICT' });
+    });
+
+    // Split Supply Ledger pools (blocked surfaced+excluded; FBA/THREE_PL vs FACTORY kept separate; no reclassification).
+    var overseasPools = [], factoryPools = [];
+    supplyLedger.pools.forEach(function (p) {
+      if (p.state === 'BLOCKED_CONFLICT') { blockedInputs.push({ kind: 'SUPPLY', key: p.poolKey, reason: p.reason || 'BLOCKED_CONFLICT' }); return; }
+      var base = { poolKey: str(p.poolKey), poolType: str(p.poolType), warehouseId: str(p.warehouseId), effectiveSupplyQty: p.effectiveSupplyQty };
+      if (p.poolType === 'FACTORY') factoryPools.push(base);
+      else if (OVERSEAS_POOL_TYPES[p.poolType] === 1) overseasPools.push(base);
+      else addIssue('SUPPLY', str(p.poolKey), 'UNSUPPORTED_POOL_TYPE:' + str(p.poolType));
+    });
+
+    // ---- overseas receivers (join by demandKey; planning facts caller-supplied) ----
+    var overseasReceivers = [], seenRecv = {}, seenDemO = {};
+    for (var ri = 0; ri < receiverFacts.length; ri++) {
+      var rf = receiverFacts[ri]; aType(isObj(rf), 'projectAllocationInputs: input.receiverFacts[' + ri + '] must be an object');
+      var receiverKey = str(rf.receiverKey), demandKey = str(rf.demandKey);
+      if (!nonEmpty(receiverKey)) { addIssue('DEMAND', '@' + ri, 'MISSING_RECEIVER_KEY'); continue; }
+      if (!nonEmpty(demandKey)) { addIssue('DEMAND', receiverKey, 'MISSING_DEMAND_KEY'); continue; }
+      if (seenRecv[receiverKey]) { addIssue('DEMAND', receiverKey, 'DUPLICATE_RECEIVER_KEY'); continue; }
+      if (seenDemO[demandKey]) { addIssue('DEMAND', demandKey, 'DUPLICATE_DEMAND_KEY'); continue; }
+      var e = demandByKey[demandKey];
+      if (!e) { addIssue('DEMAND', demandKey, 'DEMAND_KEY_NOT_IN_LEDGER'); continue; }
+      if (e.state === 'BLOCKED_CONFLICT') { seenRecv[receiverKey] = 1; seenDemO[demandKey] = 1; continue; } // already surfaced
+      if (str(e.company) !== company) { addIssue('DEMAND', demandKey, 'COMPANY_SCOPE_MISMATCH'); continue; }
+      if (str(e.masterSku) !== masterSku) { addIssue('DEMAND', demandKey, 'MASTER_SKU_SCOPE_MISMATCH'); continue; }
+      if (country !== null && e.country != null && str(e.country) !== country) { addIssue('DEMAND', demandKey, 'COUNTRY_SCOPE_MISMATCH'); continue; }
+      var mkt = nonEmpty(rf.marketplace) ? str(rf.marketplace) : str(e.marketplace);
+      var dest = nonEmpty(rf.destinationWarehouseId) ? str(rf.destinationWarehouseId) : str(e.destinationWarehouseId);
+      if (!nonEmpty(mkt)) { addIssue('DEMAND', demandKey, 'MISSING_MARKETPLACE'); continue; }
+      if (!nonEmpty(dest)) { addIssue('DEMAND', demandKey, 'MISSING_DESTINATION_WAREHOUSE'); continue; }
+      var fm = nonEmpty(rf.fulfillmentModel) ? str(rf.fulfillmentModel) : (identity.fulfillmentModel == null ? '' : str(identity.fulfillmentModel));
+      if (FULFILLMENT_MODELS[fm] !== 1) { addIssue('DEMAND', demandKey, 'INVALID_FULFILLMENT_MODEL:' + fm); continue; }
+      var survival;
+      if (rf.survivalNeedQty !== undefined && rf.survivalNeedQty !== null) { survival = finiteNonNeg(rf.survivalNeedQty); if (survival === null) { addIssue('DEMAND', demandKey, 'INVALID_SURVIVAL_NEED'); continue; } }
+      else if (rf.dailyDemand !== undefined && rf.dailyDemand !== null) { var dd = finiteNonNeg(rf.dailyDemand); if (dd === null) { addIssue('DEMAND', demandKey, 'INVALID_DAILY_DEMAND'); continue; } survival = Math.ceil(SURVIVAL_HORIZON_DAYS * dd); } // §20.3/§24.4
+      else { addIssue('DEMAND', demandKey, 'MISSING_SURVIVAL_NEED'); continue; }
+      var pr = finiteNonNeg(rf.allocationPriority); if (pr === null) { addIssue('DEMAND', demandKey, 'MISSING_OR_INVALID_ALLOCATION_PRIORITY'); continue; }
+      var wt = finiteNonNeg(rf.demandWeight); if (wt === null) { addIssue('DEMAND', demandKey, 'MISSING_OR_INVALID_DEMAND_WEIGHT'); continue; }
+      var el = normalizeIdList(rf.eligiblePoolTypes, function (t) { return OVERSEAS_POOL_TYPES[t] === 1; });
+      if (!el.ok) { addIssue('DEMAND', demandKey, 'INVALID_ELIGIBLE_POOL_TYPES' + (el.bad ? ':' + el.bad : '')); continue; }
+      seenRecv[receiverKey] = 1; seenDemO[demandKey] = 1;
+      overseasReceivers.push({
+        receiverKey: receiverKey, demandKey: demandKey, marketplace: mkt, destinationWarehouseId: dest,
+        fulfillmentModel: fm, demandQty: e.effectiveDemandQty, survivalNeedQty: survival,
+        allocationPriority: pr, demandWeight: wt, eligiblePoolTypes: el.list
+      });
+    }
+
+    var overseasInput = null, overseasAllocation = null;
+    if (overseasReceivers.length) {
+      if (!nonEmpty(country)) { addIssue('DEMAND', '', 'MISSING_COUNTRY_FOR_OVERSEAS_SCOPE'); }
+      else {
+        overseasInput = { company: company, country: country, masterSku: masterSku, supplyPools: overseasPools, receivers: overseasReceivers };
+        overseasAllocation = ALLOC.allocateOverseasSharedPool(overseasInput); // REAL §40 allocator (never reimplemented)
+      }
+    }
+
+    // ---- factory demands (join by demandKey; caller-supplied eligibility + priority) ----
+    var factoryDemands = [], seenDemF = {};
+    for (var fi = 0; fi < factoryDemandFacts.length; fi++) {
+      var ff = factoryDemandFacts[fi]; aType(isObj(ff), 'projectAllocationInputs: input.factoryDemandFacts[' + fi + '] must be an object');
+      var fdKey = str(ff.demandKey);
+      if (!nonEmpty(fdKey)) { addIssue('DEMAND', '@' + fi, 'MISSING_DEMAND_KEY'); continue; }
+      if (seenDemF[fdKey]) { addIssue('DEMAND', fdKey, 'DUPLICATE_DEMAND_KEY'); continue; }
+      var fe = demandByKey[fdKey];
+      if (!fe) { addIssue('DEMAND', fdKey, 'DEMAND_KEY_NOT_IN_LEDGER'); continue; }
+      if (fe.state === 'BLOCKED_CONFLICT') { seenDemF[fdKey] = 1; continue; }
+      if (str(fe.company) !== company) { addIssue('DEMAND', fdKey, 'COMPANY_SCOPE_MISMATCH'); continue; }
+      if (str(fe.masterSku) !== masterSku) { addIssue('DEMAND', fdKey, 'MASTER_SKU_SCOPE_MISMATCH'); continue; }
+      var fmkt = nonEmpty(ff.marketplace) ? str(ff.marketplace) : str(fe.marketplace);
+      var fdest = nonEmpty(ff.destinationWarehouseId) ? str(ff.destinationWarehouseId) : str(fe.destinationWarehouseId);
+      var rbd = nonEmpty(ff.requiredByDate) ? str(ff.requiredByDate) : str(fe.requiredByDate);
+      if (!nonEmpty(fmkt)) { addIssue('DEMAND', fdKey, 'MISSING_MARKETPLACE'); continue; }
+      if (!nonEmpty(fdest)) { addIssue('DEMAND', fdKey, 'MISSING_DESTINATION_WAREHOUSE'); continue; }
+      if (!isoDateOk(rbd)) { addIssue('DEMAND', fdKey, 'MISSING_OR_INVALID_REQUIRED_BY_DATE'); continue; }
+      var fpr = finiteNonNeg(ff.allocationPriority); if (fpr === null) { addIssue('DEMAND', fdKey, 'MISSING_OR_INVALID_ALLOCATION_PRIORITY'); continue; }
+      var few = normalizeIdList(ff.eligibleFactoryWarehouseIds, null);
+      if (!few.ok) { addIssue('DEMAND', fdKey, 'INVALID_ELIGIBLE_FACTORY_WAREHOUSES'); continue; }
+      seenDemF[fdKey] = 1;
+      factoryDemands.push({
+        demandKey: fdKey, company: company, marketplace: fmkt, destinationWarehouseId: fdest, requiredByDate: rbd,
+        allocationPriority: fpr, demandQty: fe.effectiveDemandQty, eligibleFactoryWarehouseIds: few.list
+      });
+    }
+
+    var factoryInput = null, factoryAllocation = null;
+    if (factoryDemands.length) {
+      factoryInput = { masterSku: masterSku, factoryPools: factoryPools, demands: factoryDemands };
+      factoryAllocation = ALLOC.allocateFactoryDeterministic(factoryInput); // REAL §35/§40 allocator (never reimplemented)
+    }
+
+    // Deterministic ordering.
+    issues.sort(function (a, b) { return cmpStr(a.kind, b.kind) || cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+    blockedInputs.sort(function (a, b) { return cmpStr(a.kind, b.kind) || cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+    var lineageSet = {}, lineage = [];
+    function addLineage(k) { if (nonEmpty(k) && !lineageSet[k]) { lineageSet[k] = 1; lineage.push(k); } }
+    overseasReceivers.forEach(function (r) { addLineage(r.demandKey); });
+    factoryDemands.forEach(function (d) { addLineage(d.demandKey); });
+    overseasPools.forEach(function (p) { addLineage(p.poolKey); });
+    factoryPools.forEach(function (p) { addLineage(p.poolKey); });
+    lineage.sort(cmpStr);
+
+    var clean = (issues.length === 0 && blockedInputs.length === 0);
+    var reason = blockedInputs.length ? blockedInputs[0].reason : (issues.length ? issues[0].reason : null);
+    return {
+      ready: clean,
+      status: clean ? 'OK' : (blockedInputs.length ? 'BLOCKED_INPUTS_PRESENT' : 'ISSUES_PRESENT'),
+      reason: reason,
+      issues: issues,
+      overseasInput: overseasInput,
+      factoryInput: factoryInput,
+      overseasAllocation: overseasAllocation,
+      factoryAllocation: factoryAllocation,
+      blockedInputs: blockedInputs,
+      lineage: lineage,
+      sourceDataAsOf: (input.sourceDataAsOf === undefined ? null : input.sourceDataAsOf)
+    };
+  }
+
   return {
     READINESS_STATES: (function () { var o = {}; for (var k in READINESS_STATES) o[k] = 1; return o; })(),
     CURRENT_STOCK_POOL_TYPES: (function () { var o = {}; for (var k in CURRENT_STOCK_POOL_TYPES) o[k] = 1; return o; })(),
@@ -377,6 +538,7 @@
     projectDemandLedger: projectDemandLedger,
     projectCurrentStockSupplyLedger: projectCurrentStockSupplyLedger,
     adaptIncomingSupplyCandidates: adaptIncomingSupplyCandidates,
-    projectSupplyLifecycle: projectSupplyLifecycle
+    projectSupplyLifecycle: projectSupplyLifecycle,
+    projectAllocationInputs: projectAllocationInputs
   };
 });
