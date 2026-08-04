@@ -267,6 +267,42 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 > Submit remain NOT IMPLEMENTED / NOT VERIFIED; no deploy; no live Google Sheet verification. Golden Matrix
 > unchanged **39 / 1 / 0**; Scenario #34 Pending.
 >
+> **Round 1S-P1.5A PRODUCTION SOURCE PROJECTION CONTRACT CLOSURE (DOCUMENTATION + READ-ONLY EVIDENCE — HALT, NOT
+> FROZEN):** a Database-First read-only closure round for the mapping `Canonical DB tables → Projection Runtime →
+> Recommendation Source DTOs → the frozen production Reader`. **No Runtime / Apps Script / bundle / DB / schema /
+> migration / km-lb change; no writes; no orchestrator integration; no deploy.** Full regression re-run green
+> (Golden **39/1/0**, bundle up-to-date `2d0b276f…`, Production Reader **38**, Source Reader **48**, Source
+> Integration **29**, Orchestrator **37**, Bundle **45**, all suites PASS; `24_…` `SOURCE_READER_PENDING` UNCHANGED).
+> **Delivered:** (1) **Architecture SELECTED = Option C** (upgraded from *recommended*): a `Recommendation Source
+> Projection Runtime` that COMPOSES the frozen calc engine (`KMCALC`/`KMLEDGER`/`KMALLOC`) + source-facts projectors
+> in memory — proven the *only* viable option because the demand/supply/planning-facts DTOs **cannot** be produced
+> by reading tables alone (Option A impossible): `survival_need_qty`/`daily_demand`/`demand_weight`/`eligible_pool_
+> types`/`eligible_factory_warehouse_ids`/`calculated_gap_qty`/`net_order_need_snapshot` and the whole demand-entry
+> assembly are calc-engine OUTPUTS with NO stored column, and the Reader is forbidden from deriving them. Read-only
+> STORED-CANONICAL (directly readable): `sku_details.units_per_carton`, `marketplaces.allocation_priority`,
+> `marketplace_skus.fulfillment_model`, identity (`sku`/`site_sku`/`warehouse_id`), raw inventory quantities, raw
+> forecast/sales/shipment/PO rows. (2) **Physical DTO source-sheet question RESOLVED = RETIRED:** the convention
+> names `recommendation_source_*` are **NOT** adopted as canonical persisted tables — retained ONLY as the
+> production reader's overridable registry defaults + a test-fixture convention (Option C assembles Reader input in
+> memory; nothing new persisted; audit/replay = existing OUTPUT snapshot). (3) **Canonical source matrix** (identity
+> / demand basis / supply basis / lifecycle) recorded with exact tables, keys, quantity + as-of authorities, and the
+> frozen count-once boundary (confirmed Overseas Inbound Receipt = sole crossing into on-hand; **Delivered ≠
+> Received**). **HALT — the contract is NOT declared FROZEN** because Round-spec §12 (status-conflict) and §23
+> Final-Gate conditions are unmet. **DECISION-REQUIRED (exact list, now in `RECOMMENDATION_SOURCE_CONTRACT_SPEC.md`
+> SC-10.4):** **D-1** `factory_stock` supply-company authority (no `company` column; company-agnostic *shared pool* —
+> what `company` does a `FACTORY` supply row carry, given the Ledger `poolKey` requires one); **D-2** `factory_stock`
+> source-as-of (no `snapshot_date`; live-balance table — is `updated_at`/`last_transaction_at` an acceptable
+> `source_data_as_of`); **D-3** demand `destination_warehouse_id` routing owner (no source column, no routing
+> runtime); **D-4** `shipments.status` §12 vocabulary conflict (three divergent canonical enums; `received`/
+> `completed`/`partial_received` overloaded; origin `origin_warehouse_id` vs `source_warehouse_id`; reserve-release
+> B-8 BLOCKED) → the §39.5 status→lifecycle-bucket map cannot be frozen. **Bounded by** **D-5** the receiving/
+> incoming layer (`shipment_events` / `overseas_inbound_*` / structured `shipping_plans` cols) is SPEC-ONLY / NOT
+> IMPLEMENTED (no `received_qty` column) → today only CURRENT_STOCK + on-the-way supply is producible; and **D-6**
+> no canonical test/legacy data-class marker exists (residual; strict scope-key projection mitigates, no cleanup).
+> **Round 1S-P2 (orchestrator `SOURCE_READER_PENDING` replacement) stays BLOCKED** until D-1..D-4 resolve. Two docs
+> updated (this tracker + the source-contract spec SC-10/SC-STATUS); nothing else touched. Golden Matrix unchanged
+> **39 / 1 / 0**; Scenario #34 Pending.
+>
 > **Round 1R CANONICAL RECOMMENDATION SOURCE CONTRACT (FROZEN — DECISION / DOCUMENTATION ONLY):** the canonical
 > *source* contract for the Recommendation Runtime is investigated (Database-First), defined, and frozen in the new
 > **`docs/planning/RECOMMENDATION_SOURCE_CONTRACT_SPEC.md`** (canonical owner; this tracker links to it — the two

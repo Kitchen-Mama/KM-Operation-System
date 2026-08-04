@@ -319,6 +319,13 @@ override). No override is required if the projection emits the default names.
 > raw DB tables — fc_regular_forecast jan..dec / inventory snapshots / calc-engine gap+net-order-need — INTO the
 > DTO-convention source sheets) remains NOT IMPLEMENTED (SC-9 #1).** The `24_…` `SOURCE_READER_PENDING` stub is
 > unchanged (SC-8; replacement = Round 1S-P2). No writes / no LockService / no Submit / no deploy.
+>
+> **SC-STATUS (Round 1S-P1.5A, 2026-08-04):** the Projection-contract **closure** round ran (documentation +
+> read-only evidence only). Architecture **SELECTED = Option C** and the physical DTO-sheet question **RESOLVED
+> (RETIRED)** — but the contract is **NOT declared FROZEN**: `factory_stock` company (D-1) + as-of (D-2), demand
+> destination-routing owner (D-3), and the `shipments.status` §12 vocabulary conflict (D-4) remain **DECISION-
+> REQUIRED**, so per Round-spec §12/§23 this is a **HALT**. See **SC-10** for the full evidence + decision list;
+> **Round 1S-P2 stays BLOCKED**; `24_…` untouched.
 
 ## SC-9. Next implementation dependency (ordered)
 
@@ -329,3 +336,149 @@ override). No override is required if the projection emits the default names.
 3. **DECISION-REQUIRED items to resolve before/with #1:** `factory_stock` missing `company`/`snapshot_date`
    (needed for supply company scope + as-of); `destination_warehouse_id` routing owner for demand; whether to adopt
    Option B input snapshot for stronger replay.
+
+---
+
+## SC-10. Projection Contract Closure — Evidence + HALT (Phase 2C Round 1S-P1.5A, 2026-08-04)
+
+> **STATUS: PROJECTION CONTRACT *NOT* DECLARED FROZEN — HALT (decisions required).** This is a **documentation +
+> read-only evidence** closure round (no Runtime / Apps Script / bundle / DB / schema / migration / km-lb change; no
+> writes; no orchestrator integration). It **selects the architecture** and **resolves the physical-sheet question**
+> on evidence, and it freezes a **precise, cited list of the remaining user decisions** that block the Projection
+> Runtime. The Round-spec §12 status-conflict gate and §23 Final-Gate conditions are **not** all satisfied → the
+> contract stays **PARTIALLY FROZEN**; **Round 1S-P2 remains BLOCKED**. `24_…` `SOURCE_READER_PENDING` untouched.
+
+### SC-10.1 Architecture — SELECTED (evidence-locked)
+
+**SELECTED = OPTION C** (the SC-5 recommendation, now upgraded from *recommended* to *selected*), Option B reserved
+as a future audit/replay upgrade only. **Database-First proof that Option A ("Reader reads tables") is impossible:**
+the demand / supply / planning-facts DTOs **cannot** be produced by reading tables alone — a substantial set of
+required facts have **no stored canonical column** and the Reader/wrapper are contractually forbidden from deriving
+them, so the producer **must compose the frozen calc engine** (`KMCALC` / `KMLEDGER` / `KMALLOC`) + the frozen
+source-facts projectors (`projectDemandLedger` / `projectCurrentStockSupplyLedger` / `projectSupplyLifecycle` /
+`projectAllocationInputs`). Read-only survey classification:
+
+- **STORED-CANONICAL (read directly):** `sku_details.units_per_carton`; `marketplaces.allocation_priority` (§20.4);
+  `marketplace_skus.fulfillment_model` (§24.1); master `sku` / `site_sku` identity; `warehouses.warehouse_id`
+  identity; raw inventory quantities (`overseas_inventory_snapshot.wh_available_stock`,
+  `factory_stock.fac_current_stock`, `amazon_inventory_snapshot.available_qty`); raw
+  `fc_regular_forecast` / `fc_special_events` / `amazon_daily_sales_snapshot` / shipment / PO rows.
+- **CALC-ENGINE OUTPUT (no stored column — MUST run calc):** `survivalNeedQty` (§20.3/§24.4 `CEILING(18×daily_demand)`),
+  `dailyDemand` (§22/§2D), `demandWeight` (§7/§24.5), `eligiblePoolTypes` (§23.6/§24.9),
+  `eligibleFactoryWarehouseIds` (§40/§35), `calculated_gap_qty` (Engine A `calculateGap`),
+  `net_order_need_snapshot` (Engine A→B `sumRemainingShortages`), the demand-entry assembly
+  (`fc_regular_forecast.jan..dec` / `fc_special_events.fc_qty` / `amazon_daily_sales` run-rate → demand rows with
+  `demand_type` + `required_by_date`), `pool_type` / `lifecycle_bucket` bucket assignment, and the §39.5 lifecycle
+  facts (Qualified Incoming / committed-production — **NOT tables**).
+- **DERIVED-IDENTITY / DECISION-REQUIRED:** per-demand `destination_warehouse_id` routing (see SC-10.4 D-3).
+
+### SC-10.2 Physical DTO source-sheet decision — RESOLVED (given Option C)
+
+The convention names `recommendation_source_demand` / `_supply` / `_receivers` / `_factory_demands` /
+`_planning_facts` are **RETIRED as production-canonical tables** — they are **NOT** adopted as persisted
+sheets/tables. They are **RETAINED only** as (a) the production reader's overridable registry defaults
+(`supply-planning-source-reader-production.js` `SOURCE_TABLE_REGISTRY`, overridable via `config.sheetNames`) and
+(b) a test-fixture convention. Under Option C the Projection Runtime assembles the Reader-input `sheets` **in
+memory** per generation; nothing is persisted long-term (audit/replay served by the existing recommendation OUTPUT
+snapshot per `draft_version`/`calculation_run_id`). No new canonical table / sheet / migration is created or
+specified. (If Option B is ever adopted, its schema is specified here first — schema-only, in a decision round.)
+
+### SC-10.3 Canonical source-table matrix (read-only evidence — one row per source table)
+
+Identity/master (read directly; `company`/`country` resolved by join where not stored):
+
+| Table | Owner | Status | W/M/Both | Req | Grain / natural key | As-of | Authoritative for |
+|---|---|---|---|---|---|---|---|
+| `sku_details` | Product master | live | Both | opt | one per Master `sku` | `updated_at` | `masterSku` (`sku`), `units_per_carton`, `lifecycle` |
+| `marketplace_skus` | Operational SKU | live | Both | opt | `company+country+marketplace+sku` (PK `marketplace_sku_id`) | `updated_at` | `marketplaceSkuId`, effective `fulfillment_model`, operational `company` |
+| `sku_regional_details` | Regional master | **SPEC-ONLY / not migrated** | Both | opt | `sku+company+country+marketplace` | `updated_at` | `site_sku`/`marketplace_product_id` (SSOT on conflict) |
+| `warehouses` | Warehouse master | live | Both | opt | one per `warehouse_id` | `updated_at` | `warehouseId`, `is_factory_warehouse`, `is_active`, `company` (owner context) |
+| `marketplaces` | Marketplace master | live | Both | opt | one per `marketplace_id` | `updated_at` | `allocation_priority`, default `fulfillment_model` |
+
+Demand basis (read raw; demand entries are DERIVED-UPSTREAM outputs):
+
+| Table | Status | W/M/Both | Grain / key | Qty col | As-of | Note |
+|---|---|---|---|---|---|---|
+| `fc_regular_forecast` | live (Runtime UNVERIFIED) | Both | `year+company+country+marketplace+sku` | 12 fixed month cols `jan..dec` (+`total_fc`) | `updated_at` (**no `source_data_as_of` col**) | month-col → single qty is DERIVED; explicit 0 valid, blank stays blank |
+| `fc_special_events` | live (Runtime UNVERIFIED) | Both | per-SKU event-FC (PK `event_fc_id`; idem `campaign_id+campaign_sku_line_id`) | `fc_qty` | `updated_at` | canonical special-event FC SSOT; `event_month`(1–12)+`year`; 100% (no target adj) |
+| `fc_target_rules` | live | Both | `year+scope` | `jan_pct..dec_pct` / `target_percentage` | `updated_at` | adjusts Regular FC only |
+| `amazon_daily_sales_snapshot` | import-only | Both | `snapshot_date+…+sku` | `sales_units` | `snapshot_date`/`synced_at` | run-rate demand basis (§22) |
+
+Supply basis (read raw quantities; `pool_type`/lifecycle buckets DERIVED):
+
+| Table | pool_type | Status | Company col | As-of | Qty cols | Key |
+|---|---|---|---|---|---|---|
+| `amazon_inventory_snapshot` | FBA | live | **absent (grain only)** | `snapshot_date`/`synced_at` | `available_qty` (sellable) + in-transit buckets | `snapshot_date+country+marketplace+sku(+asin)` |
+| `overseas_inventory_snapshot` | THREE_PL | live | **absent → via `warehouse_id`→`warehouses`** | `snapshot_date` | `wh_available_stock`/`wh_physical_stock`/`wh_reserved_stock`; `wh_on_the_way_*` | `warehouse_id+sku` |
+| `factory_stock` | FACTORY | live (live-balance, not a snapshot) | **absent → via `warehouse_id`→`warehouses` (shared pool)** | **none — `updated_at`/`last_transaction_at` only** | `fac_current_stock`/`fac_reserved_stock` | `warehouse_id+sku` (PK `factory_stock_id`) |
+
+Lifecycle / incoming (mostly SPEC-ONLY; supply lifecycle = §39.5 projection, **NOT tables**):
+
+| Table | Layer | Status | Auth qty | Status col |
+|---|---|---|---|---|
+| `shipping_plans`/`_lines` | decision (soft commitment) | structured cols PLANNED | `approved_qty` | `status {draft,pending_approval,approved,rejected,cancelled}` |
+| `shipments`/`shipment_lines` | in-transit execution | live (naming gaps) | `shipment_qty` | `shipments.status` — **CONFLICTED (SC-10.4 D-4)** |
+| `shipment_events`/`shipment_routes` | enrichment | **SPEC-ONLY** | none | `event_type` = OPEN DECISION |
+| `purchase_orders`/`_lines`, `production_schedule` | committed production | live (partial) | `MAX(completed_qty−shipped_qty,0)` | `order_status` (target vs runtime subset unreconciled) |
+| `overseas_inbound_*` (receipts) | received→on-hand boundary | **SPEC-ONLY (no `received_qty` col)** | `received_good_qty` | `receipt_status {draft,confirmed,reversed}` |
+
+**Count-once boundary (frozen doctrine, cited):** plan qty = soft-commit (no stock write) → PO committed until units
+board a Shipment → Shipment owns the shipped qty in-transit → **confirmed Overseas Inbound Receipt** is the *sole*
+crossing into on-hand `overseas_inventory_snapshot` (good qty only, idempotent). **Delivered ≠ Received.** Because
+the receiving layer is SPEC-ONLY, today only `CURRENT_STOCK` (inventory snapshots) + shipment on-the-way statuses
+are producible; delivered/received buckets read empty (FBA on-hand is the report-driven live stand-in).
+
+### SC-10.4 DECISION-REQUIRED (the HALT list — exact user decisions before Projection Runtime)
+
+- **D-1 · `factory_stock` supply-company authority.** `factory_stock` has **no `company` column** and is doctrinally
+  a **company-agnostic shared pool** (BLUEPRINT L65; DRM L254). The Ledger supply `poolKey` = `company|warehouse_id|
+  master_sku|pool_type` **requires** a `company` segment. **DECIDE** what a `pool_type=FACTORY` supply row's
+  `company` is: (a) the run's `businessScope.company`; (b) `warehouses.company` via `warehouse_id` (owner context,
+  not exclusive ownership); or (c) a shared-pool sentinel. *No evidence resolves this — a business decision.*
+- **D-2 · `factory_stock` source-as-of authority.** `factory_stock` has **no `snapshot_date`** (live-balance table;
+  nearest = `updated_at`/`last_transaction_at`), while overseas + amazon snapshots DO carry `snapshot_date`.
+  **DECIDE** whether `updated_at`/`last_transaction_at` is an acceptable `source_data_as_of` for FACTORY supply
+  (SC-3.1 permits an `updated_at` fallback) or whether factory supply needs a dated-snapshot mechanism first.
+- **D-3 · Demand `destination_warehouse_id` routing owner.** The demand DTO requires `destinationWarehouseId` (a
+  `demandKey` segment), but **no forecast/demand source row stores it and no routing runtime is implemented**
+  (SPEC-CONFIRMED / NOT-IMPLEMENTED, SC-1.A). **DECIDE** who owns the `(company,country,marketplace,sku)` →
+  destination `warehouse_id` routing rule.
+- **D-4 · Lifecycle status vocabulary reconciliation (Round-spec §12 MANDATORY HALT).** `shipments.status` has
+  **three divergent canonical vocabularies** (runtime enum `{draft,planned,ready_to_ship,in_transit,
+  partial_received,completed,cancelled,stuck}` vs architecture lifecycle `Draft→Booked→…→Received→Closed` vs
+  Overview membership `{shipped,in_transit,arrived,received,closed}`; `shipped` used in the flow but absent from the
+  section's own enum). Additional conflicts: `received`/`completed`/`partial_received` vs `partially_received`
+  overloaded across shipment/PO/inbound layers; PO `order_status` target enum vs implemented runtime subset
+  unreconciled; origin identity `origin_warehouse_id` (SHIPMENT_CENTER/DRM) vs `source_warehouse_id` (2026-07-27
+  amendment) competing canonical claims; reserve-release `stock_reservation_released` = **B-8 BLOCKED**. The §39.5
+  supply-lifecycle status→bucket map **cannot be frozen** until `shipments.status` is reconciled to one canonical
+  enum. *(Current runtime is unaffected — it emits only CURRENT_STOCK + on-the-way; delivered/received buckets are
+  empty because the receiving layer is SPEC-ONLY.)*
+- **D-5 · Incoming/receiving producer gap (implementation prerequisite, not a free decision).**
+  `shipment_events` / `overseas_inbound_*` receiving tables / `shipping_plans` structured columns are
+  **SPEC-ONLY / NOT IMPLEMENTED**; **no `received_qty` column exists**. Full lifecycle supply beyond CURRENT_STOCK +
+  on-the-way has no producer; the Projection Runtime's supply lifecycle is bounded accordingly until these land.
+- **D-6 · Test/legacy data marker (residual — UNKNOWN).** No canonical environment / data-class marker was found in
+  the schema owners; the live production spreadsheet may hold test/demo/legacy rows. A suspected-row audit requires
+  reading the live DB (out of scope for a read-only doc round). Mitigation: strict scope-key projection
+  (`company+country+marketplace+planning_cycle` / natural keys) excludes off-scope rows **by scope, not by marker** —
+  but if a stray row shares a production natural identity, no marker distinguishes it. **No cleanup this round; no
+  row excluded by name.** A filtering rule may be required if a marker is later confirmed absent.
+
+### SC-10.5 Orchestrator readiness gate (objective conditions before replacing `SOURCE_READER_PENDING`)
+
+Round 1S-P2 stays BLOCKED until ALL hold: architecture selected (**✔ SC-10.1**); every required table + header + grain
++ natural key fixed (**✔ SC-10.3 / SC-1 / SC-2**); identity joins fixed (**✔**); **D-1..D-4 resolved (✘)**; company +
+warehouse authority fixed for supply (**✘ D-1**); demand/supply/planning DTO mappings implementable without inventing
+business decisions (**✘ D-3, D-4**); convention sheet names accepted/retired (**✔ SC-10.2 — RETIRED**); source-as-of
+authority fixed per domain (**partial — ✘ D-2 factory**); status→bucket map frozen (**✘ D-4**); test/legacy filtering
+rule not required OR defined (**residual D-6**); Projection Runtime implementable without business invention (**✘**).
+**Gate result: BLOCKED.**
+
+### SC-10.6 What this round changed vs left frozen
+
+Selected Option C (SC-10.1); retired the convention sheet names as production tables (SC-10.2); recorded the
+canonical source matrix (SC-10.3) and the exact HALT decision list (SC-10.4). **Unchanged / still frozen:** SC-1
+field lineage, SC-2 value semantics, SC-3 run-level ownership, SC-5 contract, SC-6 wrapper contract, SC-7 override
+map, SC-8 `SOURCE_READER_PENDING` scope, the Round 1P/1Q/1S-P1 runtimes, the bundle, and `24_…`. No Runtime / Apps
+Script / bundle / DB / schema / migration change; Golden Matrix **39/1/0**; Scenario #34 Pending.
