@@ -267,6 +267,28 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 > Submit remain NOT IMPLEMENTED / NOT VERIFIED; no deploy; no live Google Sheet verification. Golden Matrix
 > unchanged **39 / 1 / 0**; Scenario #34 Pending.
 >
+> **Round 1S-P4 / 1S-P4-U PRODUCTION LIVE VERIFICATION (NOT PERFORMED — read-only diagnostics prepared):** live
+> Google Sheet + real LockService verification of the persistence path is **NOT PERFORMED** (the implementation
+> environment has no Apps Script / Sheets / clasp / gcloud / deployment / credential access; Round 1S-P4 correctly
+> HALTED). Round 1S-P4-U prepared the **user-operated verification package** (documentation + READ-ONLY diagnostics
+> only — no business/persistence logic change; no writes). NEW pure module
+> `assets/js/core/supply-planning-verification-diagnostics.js` (`window.KM.verificationDiagnostics` / bundle `KMVD`;
+> `…verification-diagnostics.test.js`, **27 assertions**) + NEW thin READ-ONLY `.gs`
+> `assets/specs/active/apps-script/28_recommendation_verification_diagnostics.gs`. `KMVD` exposes (all read-only,
+> reusing the frozen KMPR/KMPW as the single source of truth): `namespaceReport(env)` (bundle-load smoke —
+> namespaces + public functions + module count), `auditDraftTables(spreadsheet)` (five authorized tables exist with
+> the exact frozen §2 headers; row counts; Active-Draft grouping by the B-7 Composite Natural Key; duplicate-active
+> conflicts; submitted/cancelled counts), `activeDraftAudit(spreadsheet, query)` (single-scope
+> CREATE/REUSE/BLOCKED_CONFLICT decision). The `.gs` (`verifyRecommendationRuntimeNamespaces_` /
+> `auditRecommendationDraftTables_` / `auditActiveDraftForScope_`) is editor-callable and NEVER writes (no
+> setValues/appendRow/insertRow/deleteRow/clear/LockService/persistence; no router route added). **Bundle:** now
+> **24** modules (added `KMVD`), reproducible byte-for-byte (hash `7b5ae11e…`), VM load verified (bundle test
+> **53**). **LIVE VERIFICATION STATUS — unchanged / NOT PERFORMED:** Production Read Path / Projection Runtime /
+> Production Writer / LockService write enforcement / Weekly + Monthly Draft persistence remain **TEST VERIFIED
+> (local, fake Sheets + fake lock)** — NOT LIVE VERIFIED; deployment / live Google Sheet verification / rollback =
+> NOT PERFORMED; Submit = NOT IMPLEMENTED. Submit Contract Closure stays BLOCKED pending returned live evidence.
+> Golden Matrix unchanged **39 / 1 / 0**; Scenario #34 Pending.
+>
 > **Round 1S-P3 PRODUCTION RECOMMENDATION DRAFT WRITER (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED):** the
 > LOCKED production WRITE path is completed and TEST VERIFIED end-to-end — it persists ONLY the four editable
 > Recommendation Draft workspaces (NO Submit, NO downstream business record). NEW pure module
