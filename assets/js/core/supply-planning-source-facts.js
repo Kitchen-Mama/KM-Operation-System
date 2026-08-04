@@ -703,6 +703,170 @@
     };
   }
 
+  // ---- Monthly Recommendation Facts resolver (Round 1N; §12/§14/§32; carton CEILING) -------------------
+  // PURE. Consumes the REAL projectAllocationInputs output (factory allocation lineage) + caller Monthly
+  // planning facts, derives Net Order Need via the named owner (calculateGap Engine-A remaining need §10 /
+  // sumRemainingShortages §12/§32 — or accepted explicit), and the Monthly recommendedQty via the named
+  // calculateSuggestedOrderQty carton CEILING helper (§14/§31 — never reimplemented, never Weekly FLOOR).
+  // recommendedQty is demand-based (CEILING of Net Order Need), rounded ONCE over the line total; the factory
+  // allocation is preserved as lineage only, NOT an order cap. No user order_qty, no Plan Builder, no persist.
+  var MONTHLY_LINE_KEY = ['master_sku', 'request_month', 'request_bucket']; // frozen §MONTHLY_ORDER grain (sku in scope)
+
+  function resolveMonthlyRecommendationFacts(input) {
+    aType(isObj(input), 'resolveMonthlyRecommendationFacts: input must be an object');
+    aType(typeof input.planningCycle === 'string' && input.planningCycle.length > 0, 'resolveMonthlyRecommendationFacts: planningCycle required');
+    aType(isObj(input.businessScope), 'resolveMonthlyRecommendationFacts: businessScope required');
+    var ap = input.allocationProjection; aType(isObj(ap), 'resolveMonthlyRecommendationFacts: allocationProjection required');
+    var facts = input.monthlyPlanningFacts == null ? [] : input.monthlyPlanningFacts;
+    aType(Array.isArray(facts), 'resolveMonthlyRecommendationFacts: monthlyPlanningFacts must be an array');
+    var planningCycle = str(input.planningCycle);
+    var scope = input.businessScope;
+    var formulaVersion = input.formulaVersion == null ? null : input.formulaVersion;
+    var sourceDataAsOf = input.sourceDataAsOf === undefined ? (ap.sourceDataAsOf === undefined ? null : ap.sourceDataAsOf) : input.sourceDataAsOf;
+
+    var issues = [];
+    function addIssue(key, reason) { issues.push({ key: key, reason: reason }); }
+    function finiteNonNeg(v) { return (typeof v === 'number' && isFinite(v) && v >= 0) ? v : null; }
+    function validUpc(v) { return (typeof v === 'number' && isFinite(v) && v > 0 && Math.floor(v) === v); }
+
+    // REAL factory allocation records by demandKey (Monthly is factory/production sourced; overseas kept out).
+    var fa = projectAllocationRecords(ap.factoryAllocation, 'FACTORY', 'FACTORY_DETERMINISTIC');
+    var demandByKeyLedger = {};
+    if (isObj(input.demandLedger) && Array.isArray(input.demandLedger.entries)) input.demandLedger.entries.forEach(function (e) { demandByKeyLedger[e.demandKey] = e; });
+    var blockedDemandKeys = {};
+    (ap.blockedInputs || []).forEach(function (b) { if (b.kind === 'DEMAND') blockedDemandKeys[str(b.key)] = str(b.reason); });
+
+    // Net Order Need: explicit OR sumRemainingShortages(§12/§32) OR calculateGap Engine-A remaining need (§10).
+    function resolveNeed(f) {
+      if (f.netOrderNeed !== undefined && f.netOrderNeed !== null) { var n = finiteNonNeg(f.netOrderNeed); return n === null ? NaN : n; }
+      if (Array.isArray(f.remainingShortages)) { try { return CALC.sumRemainingShortages(f.remainingShortages); } catch (e) { return NaN; } }
+      if (f.demand !== undefined && f.destinationCurrentStock !== undefined && f.timelyQualifiedIncoming !== undefined && f.timelyApprovedCommittedSupply !== undefined) {
+        try { return CALC.calculateGap({ demand: f.demand, destinationCurrentStock: f.destinationCurrentStock, timelyQualifiedIncoming: f.timelyQualifiedIncoming, timelyApprovedCommittedSupply: f.timelyApprovedCommittedSupply }); }
+        catch (e) { return NaN; }
+      }
+      return undefined; // missing
+    }
+
+    var lines = [], seenLineKey = {};
+    for (var i = 0; i < facts.length; i++) {
+      var f = facts[i]; aType(isObj(f), 'resolveMonthlyRecommendationFacts: monthlyPlanningFacts[' + i + '] must be an object');
+      var recType = nonEmpty(f.recommendationType) ? str(f.recommendationType) : 'MONTHLY_ORDER';
+      if (recType !== 'MONTHLY_ORDER') { addIssue(str(f.demandKey), 'NOT_MONTHLY_RECOMMENDATION_TYPE:' + recType); continue; } // Weekly distinguishable
+      var masterSku = str(f.masterSku !== undefined ? f.masterSku : f.sku), requestMonth = str(f.requestMonth), requestBucket = str(f.requestBucket), demandKey = str(f.demandKey);
+
+      var blockedReason = null;
+      if (!nonEmpty(masterSku)) blockedReason = 'MISSING_MASTER_SKU';
+      else if (!nonEmpty(requestMonth)) blockedReason = 'MISSING_REQUEST_MONTH';
+      else if (!nonEmpty(requestBucket)) blockedReason = 'MISSING_REQUEST_BUCKET';
+      else if (masterSku.indexOf(KEY_SEP) !== -1 || requestMonth.indexOf(KEY_SEP) !== -1 || requestBucket.indexOf(KEY_SEP) !== -1) blockedReason = 'INVALID_NATURAL_KEY_PART';
+      else if (!nonEmpty(demandKey)) blockedReason = 'MISSING_DEMAND_KEY';
+
+      var lineKey = [masterSku, requestMonth, requestBucket].join(KEY_SEP);
+      if (nonEmpty(masterSku) && nonEmpty(requestMonth) && nonEmpty(requestBucket) && masterSku.indexOf(KEY_SEP) === -1 && requestMonth.indexOf(KEY_SEP) === -1 && requestBucket.indexOf(KEY_SEP) === -1) {
+        if (seenLineKey[lineKey] === 1) throw new RangeError('resolveMonthlyRecommendationFacts: duplicate Monthly line key: ' + masterSku + '|' + requestMonth + '|' + requestBucket);
+        seenLineKey[lineKey] = 1;
+      }
+
+      // blocked Ledger demand
+      if (!blockedReason && blockedDemandKeys[demandKey]) blockedReason = blockedDemandKeys[demandKey];
+
+      // factory allocation lineage (breakdown ONLY — never an order cap; recommendedQty is demand-based)
+      var recs = (blockedReason ? [] : (fa.byDemand[demandKey] || []));
+      var unallocatedQty = blockedReason ? 0 : (fa.unalloc[demandKey] || 0);
+      var breakdown = recs.slice().sort(function (a, b) { return cmpStr(a.sourcePoolKey, b.sourcePoolKey) || (a.allocationSequence - b.allocationSequence); });
+      var poolSet = {}, distinctPools = [];
+      breakdown.forEach(function (b) { if (!poolSet[b.sourcePoolKey]) { poolSet[b.sourcePoolKey] = 1; distinctPools.push(b.sourcePoolKey); } });
+      var single = (distinctPools.length === 1);
+      var lineMode = recs.length ? 'FACTORY_DETERMINISTIC' : null;
+
+      // Net Order Need (owner helpers) + carton size
+      var need = blockedReason ? undefined : resolveNeed(f);
+      var needResolved = (typeof need === 'number' && !isNaN(need));
+      if (!blockedReason) {
+        if (need === undefined) blockedReason = 'MISSING_NET_ORDER_NEED';
+        else if (!needResolved) blockedReason = 'INVALID_NET_ORDER_NEED';
+        else if (!validUpc(f.unitsPerCarton)) blockedReason = 'MISSING_OR_INVALID_UNITS_PER_CARTON';
+      }
+
+      var recommendedQty = null, cartonQty = null;
+      if (!blockedReason) {
+        // Monthly recommendedQty = named carton-CEILING helper over Net Order Need (rounded ONCE; never FLOOR).
+        recommendedQty = CALC.calculateSuggestedOrderQty({ netOrderNeed: need, unitsPerCarton: f.unitsPerCarton });
+        cartonQty = recommendedQty / f.unitsPerCarton; // whole cartons (display fact)
+      }
+
+      var eDemand = demandByKeyLedger[demandKey];
+      var monthlyDemandQty = null;
+      if (eDemand && eDemand.state === 'COUNTED') monthlyDemandQty = eDemand.effectiveDemandQty;
+      else if (typeof f.monthlyDemandQty === 'number' && isFinite(f.monthlyDemandQty)) monthlyDemandQty = f.monthlyDemandQty;
+
+      var lineage = [];
+      if (nonEmpty(demandKey)) lineage.push('demand:' + demandKey);
+      breakdown.forEach(function (b) { lineage.push('alloc:' + b.allocationKey); });
+      lineage.sort(cmpStr);
+
+      var line = {
+        lineKey: lineKey,
+        recommendationType: 'MONTHLY_ORDER',
+        planningCycle: planningCycle,
+        businessScope: scope,
+        company: nonEmpty(f.company) ? str(f.company) : (scope.company == null ? null : str(scope.company)),
+        country: nonEmpty(f.country) ? str(f.country) : (scope.country == null ? null : str(scope.country)),
+        marketplace: nonEmpty(f.marketplace) ? str(f.marketplace) : (scope.marketplace == null ? null : str(scope.marketplace)),
+        masterSku: masterSku, siteSku: str(f.siteSku), destinationWarehouseId: nonEmpty(f.destinationWarehouseId) ? str(f.destinationWarehouseId) : null,
+        requestMonth: requestMonth, requestBucket: requestBucket, demandKey: demandKey,
+        monthlyDemandQty: monthlyDemandQty,
+        netOrderNeed: needResolved ? need : null,
+        unitsPerCarton: validUpc(f.unitsPerCarton) ? f.unitsPerCarton : null,
+        recommendedQty: recommendedQty,
+        cartonQty: cartonQty,
+        allocationMode: lineMode,
+        allocationBreakdown: breakdown,
+        unallocatedQty: unallocatedQty,
+        sourcePoolKey: single ? breakdown[0].sourcePoolKey : null,
+        sourceWarehouseId: single ? breakdown[0].sourceWarehouseId : null,
+        blockedReason: blockedReason,
+        formulaVersion: formulaVersion,
+        sourceDataAsOf: sourceDataAsOf,
+        lineage: lineage
+      };
+      if (f.liveAnalysis !== undefined) line.liveAnalysis = f.liveAnalysis; // non-authoritative passthrough (§22)
+      lines.push(line);
+    }
+
+    lines.sort(function (a, b) { return cmpStr(a.lineKey, b.lineKey); });
+    issues.sort(function (a, b) { return cmpStr(a.key, b.key) || cmpStr(a.reason, b.reason); });
+
+    var totalRecommendedQty = 0, totalNetOrderNeed = 0;
+    lines.forEach(function (l) { if (typeof l.recommendedQty === 'number') totalRecommendedQty += l.recommendedQty; if (typeof l.netOrderNeed === 'number') totalNetOrderNeed += l.netOrderNeed; });
+    var lineageSet = {}, lineage = [];
+    lines.forEach(function (l) { l.lineage.forEach(function (k) { if (!lineageSet[k]) { lineageSet[k] = 1; lineage.push(k); } }); });
+    lineage.sort(cmpStr);
+
+    var clean = (issues.length === 0);
+    return {
+      ready: clean,
+      status: clean ? 'OK' : 'ISSUES_PRESENT',
+      reason: clean ? null : issues[0].reason,
+      issues: issues,
+      recommendationType: 'MONTHLY_ORDER',
+      planningCycle: planningCycle,
+      businessScope: scope,
+      lines: lines,
+      allocationSummary: {
+        factoryPresent: !!ap.factoryAllocation,
+        lineCount: lines.length,
+        blockedLineCount: lines.filter(function (l) { return l.blockedReason !== null; }).length,
+        totalNetOrderNeed: totalNetOrderNeed,
+        totalRecommendedQty: totalRecommendedQty
+      },
+      blockedInputs: (ap.blockedInputs || []).slice(),
+      sourceDataAsOf: sourceDataAsOf,
+      formulaVersion: formulaVersion,
+      lineage: lineage
+    };
+  }
+
   return {
     READINESS_STATES: (function () { var o = {}; for (var k in READINESS_STATES) o[k] = 1; return o; })(),
     CURRENT_STOCK_POOL_TYPES: (function () { var o = {}; for (var k in CURRENT_STOCK_POOL_TYPES) o[k] = 1; return o; })(),
@@ -716,6 +880,7 @@
     adaptIncomingSupplyCandidates: adaptIncomingSupplyCandidates,
     projectSupplyLifecycle: projectSupplyLifecycle,
     projectAllocationInputs: projectAllocationInputs,
-    resolveWeeklyRecommendationFacts: resolveWeeklyRecommendationFacts
+    resolveWeeklyRecommendationFacts: resolveWeeklyRecommendationFacts,
+    resolveMonthlyRecommendationFacts: resolveMonthlyRecommendationFacts
   };
 });
