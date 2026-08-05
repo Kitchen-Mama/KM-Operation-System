@@ -357,6 +357,13 @@
 .km-mode-note:empty,
 .global-notice:empty { display: none; }
 
+/* Secondary fail-safe (Round 4) — the Allocation Draft persistence panel is page-owned: its JS mounts it inside the
+   Inventory page root (#opsSection) and removes it on unmount. A body-LEVEL instance can therefore only be a stale
+   node from previously-loaded code; collapse it so a legacy body-level insertion can never reserve layout / push the
+   app down. This targets ONLY a direct-child-of-body node — a legitimate page-local .alloc-draft-panel is untouched.
+   This is a fail-safe AFTER the JS ownership fix (inventory-replenishment.js), never the primary fix. */
+body > #alloc-draft-persistence-panel { display: none !important; }
+
 /* ========================================
    World Time Bar
 ======================================== */

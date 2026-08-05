@@ -2287,11 +2287,25 @@ function _allocStateLabel(state) {
     var map = { NOT_SAVED: 'Not Saved', SAVING: 'Saving…', SAVED: 'Saved to DB', SAVE_FAILED: 'Save Failed', CONFLICT: 'Conflict', CANCELLED: 'Cancelled', SUBMITTED: 'Submitted' };
     return '● ' + (map[state] || state);   // glyph + text (non-color indicator, accessibility)
 }
+// Migration: remove ONLY a body-level panel wrongly attached by previously-loaded code (never a page-local one).
+function _removeLegacyBodyAllocPanel() {
+    var legacy = document.querySelector('body > #alloc-draft-persistence-panel');
+    if (legacy && legacy.remove) legacy.remove();
+}
 function _ensureAllocDraftPanel() {
+    // The Allocation Draft persistence panel belongs to the Inventory Replenishment page ONLY. Its host is the page
+    // content root (#opsSection, inside the #ops-section module-section) — NEVER document.body. A body-level panel
+    // stays in document flow on every page and pushes the whole app-layout down (the persistent cream top strip).
+    // The previous host lookup targeted #inventory-replenishment / .inventory-replenishment which DO NOT EXIST, so
+    // it silently fell back to <body>. Fail closed (return null) when the page root is absent so the panel is never
+    // orphaned onto <body>; while the panel is page-owned it is hidden with the section on non-Inventory pages.
+    var host = document.getElementById('opsSection') || document.getElementById('ops-section');
+    if (!host) { _removeLegacyBodyAllocPanel(); return null; }
     var el = document.getElementById('alloc-draft-persistence-panel');
-    if (el) return el;
-    var host = document.getElementById('inventory-replenishment') || document.querySelector('.inventory-replenishment') || document.body;
-    if (!host) return null;
+    if (el) {
+        if (el.parentElement !== host) host.insertBefore(el, host.firstChild);   // migrate a stale/body-level node into the page root
+        return el;
+    }
     el = document.createElement('div');
     el.id = 'alloc-draft-persistence-panel';
     el.className = 'alloc-draft-panel';
@@ -2336,10 +2350,18 @@ function _allocDraftCancel() {
     ws.cancel(_allocWorkspaceScope(), { reason: reason });
 }
 window._allocDraftCancel = _allocDraftCancel;
+// A complete K3 planning scope. An incomplete/unselected initial scope is NOT a persistence failure — it must never
+// trigger a readback (a failed/empty read is classified SAVE_FAILED, line ~403), and must never open the panel with
+// a scary global SAVE_FAILED before the user has picked a valid Country/Marketplace.
+function _allocDraftScopeComplete(scope) {
+    return !!(scope && scope.planning_cycle && scope.company && scope.country && scope.marketplace);
+}
 // Initial targeted load for the current scope (ONE request; stale-guarded inside the controller). Never getOperationDb.
 function _allocDraftInitialLoad() {
     var ws = _getAllocWorkspace();
-    if (ws && typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) ws.load(_allocWorkspaceScope());
+    var scope = _allocWorkspaceScope();
+    if (!ws || !_allocDraftScopeComplete(scope)) return;   // incomplete scope → no DB read, no panel, no false SAVE_FAILED (stays NOT_SAVED)
+    if (typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) ws.load(scope);
 }
 window._allocDraftInitialLoad = _allocDraftInitialLoad;
 
@@ -4438,6 +4460,9 @@ if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('ops-section', {
         mount() {
             console.log('[Replenishment] mount');
+            // Migration compat: sweep any stale body-level Allocation Draft panel created by previously-loaded
+            // (pre-fix) code before this page (re)owns it inside its own root.
+            _removeLegacyBodyAllocPanel();
             // Markup is partial-loaded (Phase 3-12). Ensure it exists, then (re)apply the .active
             // class (showSection ran before the async injection on first open), wire the once-only
             // listeners, and run the existing initialization unchanged.
@@ -4460,6 +4485,12 @@ if (window.KM && window.KM.lifecycle) {
         },
         unmount() {
             console.log('[Replenishment] unmount');
+            // Allocation Draft persistence panel is page-owned — drop its DOM node so it never lingers in layout on
+            // other pages (the controller state in _allocWorkspace is retained; re-entering Inventory re-renders it
+            // in-page). Also sweep any legacy body-level node.
+            var _allocPanel = document.getElementById('alloc-draft-persistence-panel');
+            if (_allocPanel && _allocPanel.remove) _allocPanel.remove();
+            _removeLegacyBodyAllocPanel();
             // Release the sticky-header toolbar observer (ResizeObserver + resize listener).
             if (_replenStickyHeaderHandle && _replenStickyHeaderHandle.destroy) {
                 _replenStickyHeaderHandle.destroy();
