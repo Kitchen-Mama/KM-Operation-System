@@ -3351,3 +3351,38 @@ HEADLESS CAVEAT: no browser/GPU here — FPS/memory/screenshots UNMEASURABLE; us
 ```
 
 - **Files (UI-GLOBE-02):** `assets/js/lib/km-globe.js` (`buildEarthCanvas` premium texture + `FS_PTS` marker constants — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/css/pages/global-logistics-map.css` (premium chrome rewrite — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/tests/globe-visual-guard.test.js` (updated visual markers + new guards — GIT_ONLY), this entry (DOCUMENTATION_ONLY). **No `.gs` / router / DB / bundle change; `BUNDLE_REBUILD_REQUIRED=false`; no `APPS_SCRIPT_SYNC_REQUIRED`.** Frontend-only (GitHub Pages redeploy of `km-globe.js` + `global-logistics-map.css`). Not pushed, not deployed, no live DB accessed.
+
+---
+
+## Phase F1-3 — Qualified Incoming → Supply Ledger Production Connection HALTED / PARTIAL (read-only Phase A; NO runtime change) (2026-08-05)
+
+Executed Phase A (read + root-cause) of the first F1 implementation slice. **HALTED before any code connection** per the round's HALT protocol, on a genuine, code+doc-verified reconciliation conflict. **No formula / DB / schema / Apps Script / router / adapter / frontend / bundle change; no live DB; no push/deploy.**
+
+```text
+Root cause: source-projection.js:projectRecommendationProductionSources builds shipping_plans+shipments supply
+  via its OWN status maps (SHIPPING_PLAN_STATUS/SHIPMENT_STATUS/LEGACY_STATUS, lines 50-56) — never calls the
+  canonical §2E path. The canonical QI→ledger bridge source-facts.js:projectSupplyLifecycle (line 241; routes
+  shipments through the REAL evaluateQualifiedIncoming + count-once + buildSupplyLedger) EXISTS + is tested (68)
+  but has NO production caller (grep-verified).
+GENUINE BLOCKER: the canonical bridge is itself NON-CONFORMING to frozen SC-11.4 and diverges from the already-
+  conforming production projector:
+  • arrived: bridge = DELIVERED_NOT_RECEIVED (source-facts:93, TESTED) vs SC-11.4-B/C = SHIPPED_IN_TRANSIT
+    (delivered only from a delivery-event authority, never inferred from arrived). source-projection:53 conforms.
+  • shipping_plans vocab: source-projection 'site_confirmed' vs bridge/handlers/spec canonical 'approved'.
+  • delivered/received: source-projection uses non-canonical delivery_event/receiving_authority flags; the bridge
+    uses canonical routeEvents/receivingFacts inputs (which the production path does not feed).
+  • lineage format differs (ship:<lineId> vs canonical B4-R3 shipment:<shipmentId>:<shipmentLineId>).
+  → wiring production→bridge as-is would REGRESS SC-11.4 conformance + change multiple frozen, test-locked
+    semantics; a correct connection requires reconciling the bridge to SC-11.4 FIRST (a decision, not a wiring).
+RESOLVED / NOT blocking: PO→Shipment ownership (PRODUCTION_STATUS_MAP shipped→OMIT_TRANSFERRED, REQUEST_ORDER §1);
+  count-once identity present (B4-R3 lineageKey + buildSupplyLedger by lineageRef); no DB/schema need; the ETA-
+  coverage gate correctly lives in the GAP path (evaluateQualifiedIncoming→calculateGap), so late supply is
+  ledger-VISIBLE but contributes 0 to coverage per §2F "visible, not covering" (correct, not a defect).
+Recommendation: Option B — F1-3a (conform the bridge's arrived to SC-11.4-B/C + update its cited test + rebuild
+  bundle; requires explicit authorization as it changes a test-locked frozen semantic) THEN F1-3b (wire the
+  production path to the now-conforming bridge). Full analysis + options A/B/C: PHASE_F1_..._PLAN.md §"F1-3
+  Execution Status".
+Tests: no test added/changed this round; full suite unaffected (80/80). Golden Matrix 39/1/0 (unchanged). #34 Pending.
+```
+
+- **Files (F1-3, read-only outcome):** `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` (appended F1-3 Execution Status + options A/B/C + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No production code, no `.gs`, no bundle, no test, no DB.** Not pushed, not deployed, no live DB accessed. Next authorized step: **F1-3a** (SC-11.4 `arrived` bridge conformance) pending authorization, then **F1-3b** (production wiring).

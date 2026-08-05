@@ -153,3 +153,43 @@ The round's preferred candidate is *Inventory Projection Runtime Integration* (F
 - **Is fully Node-testable with zero live-DB, zero deploy, zero schema change, read-only** — the **lowest business risk** and it needs no Verification-Copy decision to begin.
 
 The first *user-visible* value (a real Suggested Qty on screen) arrives at **F1-4**, but F1-4 depends on F1-3 (correct input) and F1-7 (a place to persist), and F1-7 depends on **Decision D-1** (Verification-Copy deployment target). Starting at F1-3 makes real progress immediately while the D-1 deployment decision is taken in parallel.
+
+---
+
+## F1-3 Execution Status — HALTED / PARTIAL (2026-08-05, read-only Phase-A outcome)
+
+> This section records the verified Phase-A root-cause map and the **genuine reconciliation conflict** that F1-3 must resolve before any code connection is safe. Per the round's HALT protocol, no frozen-semantics change and no runtime connection were landed; the analysis + options + recommendation are below. Evidence is code-verified (file:line) and doc-verified (SC-11.4 quoted).
+
+### A. Root cause (single bypass, precisely located)
+- The **sole** production supply-entry builder is `supply-planning-source-projection.js:projectRecommendationProductionSources` (line 109), reached via `production-source.js:resolveProductionFacts/buildProductionRecommendationSource` → `KMSP.projectAndRead`.
+- **Current Stock** (FBA/THREE_PL/FACTORY, lines 196–238) reads inventory snapshots directly → `lifecycle_bucket:'CURRENT_STOCK'`. Legitimate; must stay.
+- **shipping_plans** (240–257) and **shipments** (259–285) are mapped to lifecycle buckets by source-projection's **own** `SHIPPING_PLAN_STATUS` / `SHIPMENT_STATUS` / `LEGACY_STATUS` maps (lines 50–56). This is the bypass: raw status alone decides inclusion + bucket; the §2E `evaluateQualifiedIncoming` ten-gate (external-admission, ETA, count-once Gate 9/10) is never called on the ledger path.
+- The **canonical QI→ledger bridge already exists**: `supply-planning-source-facts.js:projectSupplyLifecycle` (line 241) routes shipments through the REAL `evaluateQualifiedIncoming` (283–296) for count-once, encodes PO/plan count-once via `OMIT_TRANSFERRED` (lines 76/84), and calls the REAL `buildSupplyLedger`. It is exported (line 881) and test-covered (`supply-planning-supply-lifecycle.test.js`, 68 assertions) — but **no production caller invokes it** (grep: only source-facts + its test + the generated bundle).
+
+The "obvious" F1-3 fix = make source-projection delegate shipments+plans to `projectSupplyLifecycle`. **That is blocked by the conflict below.**
+
+### B. The genuine blocker (why a mechanical wiring is unsafe)
+The existing canonical bridge (`projectSupplyLifecycle`) is **itself non-conforming to the frozen SC-11.4**, and **diverges from the already-conforming production projector** on several axes. Wiring the production path to it as-is would *regress* conformance and/or silently change frozen, test-locked semantics on multiple axes:
+
+| Axis | `source-projection.js` (production, current) | `source-facts.js:projectSupplyLifecycle` (canonical bridge) | Frozen authority | Verdict |
+|---|---|---|---|---|
+| `arrived` status | `SHIPPED_IN_TRANSIT` (line 53); `DELIVERED_NOT_RECEIVED` only w/ `delivery_event` (270) | **`DELIVERED_NOT_RECEIVED`** unconditionally (line 93) — TESTED (supply-lifecycle.test.js:70,154) | **SC-11.4-B/C**: `arrived → SHIPPED_IN_TRANSIT`; DELIVERED only from a delivery-event authority, **never inferred from arrived** | **bridge VIOLATES SC-11.4**; source-projection conforms |
+| `shipping_plans` status vocab | `site_confirmed → APPROVED_SHIPPING_PLAN` (line 50) | `approved → APPROVED_SHIPPING_PLAN` (line 82); no `site_confirmed` | `approved` (11_ handlers draft→pending_approval→approved; WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.2A) | `approved` canonical; source-projection's `site_confirmed` is the outlier; wiring → a live `site_confirmed` plan fails closed |
+| delivered/received authority | gated on `delivery_event` / `receiving_authority` **flags** on the raw row (270–272) | delivered/received only via **separate** `routeEvents` / `receivingFacts` inputs (canonical authorities) — not shipment flags | SC-11.4-C/11.5: bucket requires a real delivery/receiving authority | source-projection's flags are a *non-canonical mechanism*; the bridge's separate-authority model is canonical, but source-projection does not feed those inputs → delivered/received would disappear from the production path |
+| shipment lineage key | `ship:<shipment_line_id>` (+ synthetic `ship:wh:sku@i` fallback) | canonical B4-R3 `shipment:<shipmentId>:<shipmentLineId>` (supply-candidates.js:117) | B4-R3 lineage | different format; wiring changes every shipment lineage ref |
+
+Also confirmed **not** blocking (resolved): PO→Shipment ownership (`PRODUCTION_STATUS_MAP` shipped/partial_shipped → `OMIT_TRANSFERRED`, REQUEST_ORDER §1); count-once identity exists (B4-R3 `lineageKey`); no DB/schema change needed; ETA-coverage gate correctly lives in the GAP path (`evaluateQualifiedIncoming`→`calculateGap` via line-runtime), so late supply is ledger-*visible* but contributes 0 to coverage per **§2F "visible, not covering"** — this is correct and is not a defect.
+
+### C. Options (with impact on quantity / count-once / DB / F1-7)
+- **Option A — wire source-projection → `projectSupplyLifecycle` as-is.** Eliminates the bypass + adds §2E count-once ✓. **Cost:** *regresses* SC-11.4 conformance on `arrived` (→DELIVERED); changes lineage format; drops the (non-canonical) delivery/receiving flag path; a live `site_confirmed` plan fails closed. Quantity-neutral among active buckets; count-once ✓; no DB change; forward-compatible with F1-7. **Rejected** — knowingly propagates a frozen-contract (SC-11.4) violation.
+- **Option B (RECOMMENDED) — two clean, cited, individually-verifiable slices:**
+  - **F1-3a — conform the canonical bridge to SC-11.4 first** (edit `source-facts.js` `SHIPMENT_STATUS_MAP` `arrived: DELIVERED_NOT_RECEIVED → SHIPPED_IN_TRANSIT`, cite SC-11.4-B/C; update the 3 `supply-lifecycle.test.js` `arrived` assertions with the citation; regenerate the bundle since source-facts is bundled). Small, surgical, quantity-neutral, verifiable via the suite. This is a frozen-semantics change and therefore requires explicit authorization (it corrects a test-locked contract violation).
+  - **F1-3b — then wire** source-projection's shipments+plans to the now-conforming `projectSupplyLifecycle`, keep Current Stock direct, remove source-projection's status maps, adopt canonical `approved` plan vocab + B4-R3 lineage, drop the non-canonical delivery/receiving flags, update `source-projection.test.js` (F/G) with citations, add `supply-planning-qualified-ledger-connection-f1-3.test.js`, regenerate the bundle. Larger but built on a conforming bridge.
+  - **Impact:** full SC-11.4 conformance + single canonical §2E/lifecycle path + count-once; no DB change; feeds F1-7 unchanged.
+- **Option C — add only the §2E count-once signals to source-projection** (call `evaluateQualifiedIncoming` for Gate 9/10, keep source-projection's conforming status map). **Cost:** violates the round's "no second status allowlist" (criterion 1) — source-projection keeps a status map. **Rejected.**
+
+### D. Recommendation
+**Proceed with Option B, but F1-3a (the SC-11.4 `arrived` conformance fix to the canonical bridge) requires explicit authorization** because it changes a frozen, test-locked semantic (even though it is a cited correction to the frozen SC-11.4-B/C and is quantity-neutral). Once F1-3a is authorized + landed + verified, F1-3b (the production wiring) becomes a clean connection to a conforming bridge. **No code was changed in this round** (Phase A read-only); the bypass, the bridge non-conformance, and the divergences are documented above for the authorizing decision.
+
+### E. Exact next authorized step
+`F1-3a`: conform `source-facts.js:projectSupplyLifecycle` `SHIPMENT_STATUS_MAP.arrived` to SC-11.4-B/C (`SHIPPED_IN_TRANSIT`), update the cited `supply-lifecycle.test.js` assertions, regenerate the generated bundle, verify full suite green + Golden 39/1/0. Then `F1-3b` (production wiring) per Option B.
