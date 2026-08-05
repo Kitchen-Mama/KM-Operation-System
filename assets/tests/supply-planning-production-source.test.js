@@ -160,10 +160,11 @@ section('F. Factory as-of / destination / status propagation (fail-closed issues
   var noRoute = weeklyRequest(); noRoute.routing = {};
   var r2 = KMPS.buildProductionRecommendationSource(fakeSpreadsheet(weeklySheets()), noRoute);
   ok(r2.issues.some(function (x) { return x.reason === 'MISSING_DESTINATION_WAREHOUSE'; }), 'F2 missing destination → MISSING_DESTINATION_WAREHOUSE');
-  // unsupported legacy shipment status → UNSUPPORTED_LEGACY_STATUS
-  var legacy = weeklySheets(); legacy.shipments = [['status', 'sku', 'company', 'shipment_qty', 'destination_warehouse_id', 'shipment_line_id', 'source_data_as_of'], ['completed', 'CO1100-R', 'KM', 30, 'WH-3PL', 'S1', '2026-08-01']];
+  // non-canonical (legacy) shipment status → UNKNOWN_STATUS fail-closed via the canonical bridge (F1-3b; SC-11.4-B
+  // vocab = draft/ready_to_ship/shipped/in_transit/arrived/received/closed/cancelled; `completed` is not canonical).
+  var legacy = weeklySheets(); legacy.shipments = [['status', 'sku', 'company', 'shipment_qty', 'destination_warehouse_id', 'shipment_id', 'shipment_line_id', 'source_data_as_of'], ['completed', 'CO1100-R', 'KM', 30, 'WH-3PL', 'SH9', 'SL9', '2026-08-01']];
   var r3 = KMPS.buildProductionRecommendationSource(fakeSpreadsheet(legacy), weeklyRequest());
-  ok(r3.issues.some(function (x) { return x.reason === 'UNSUPPORTED_LEGACY_STATUS'; }), 'F3 legacy shipment status → UNSUPPORTED_LEGACY_STATUS (not silently mapped)');
+  ok(r3.issues.some(function (x) { return String(x.reason).indexOf('UNKNOWN_STATUS') >= 0; }), 'F3 non-canonical shipment status → UNKNOWN_STATUS fail-closed (not silently mapped)');
 })();
 
 section('G. Failure paths (fail-closed; no empty-success)');

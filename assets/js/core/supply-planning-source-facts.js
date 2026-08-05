@@ -66,7 +66,10 @@
   // OMIT sentinels: the lineage is real but is NOT this source's to count (count-once, §30) → surfaced as an
   // issue, never an entry. OMIT_TRANSFERRED = ownership moved down-lineage (PO→shipment, plan→shipment).
   // OMIT_POSTED = closed/posted shipment belongs to the CURRENT_STOCK inventory authority, not the shipment feed.
-  var OMIT_TRANSFERRED = 'OMIT_TRANSFERRED', OMIT_POSTED = 'OMIT_POSTED';
+  // OMIT_RECEIVING_AUTHORITY = a `received` shipment header status defers to the canonical warehouse receiving
+  // authority (receivingFacts 'confirmed'); raw status alone never emits RECEIVED_NOT_REFLECTED (F1-3b, SC-11.4-B/
+  // SC-11.5: "RECEIVED_NOT_REFLECTED emitted only when a real receiving authority exists").
+  var OMIT_TRANSFERRED = 'OMIT_TRANSFERRED', OMIT_POSTED = 'OMIT_POSTED', OMIT_RECEIVING_AUTHORITY = 'OMIT_RECEIVING_AUTHORITY';
 
   // Production / PO (REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC §1 — the one Canonically written-out status list).
   var PRODUCTION_STATUS_MAP = {
@@ -86,20 +89,24 @@
   // Shipment header (SHIPMENT_CENTER_SPEC §3/§4/§15.1 + §535 QI allowlist). ready_to_ship = pre-dispatch commit
   // (reserved, NOT yet physically shipped) → APPROVED_SHIPPING_PLAN. F1-3a — SC-11.4-B: arrived → SHIPPED_IN_TRANSIT
   // (in-transit; NOT delivered, NOT received). DELIVERED_NOT_RECEIVED arises ONLY from a canonical delivery-event
-  // authority (routeEvents 'delivered'), never inferred from arrived (SC-11.4-C); RECEIVED_NOT_REFLECTED only from a
-  // canonical receiving authority — both authority pathways are unchanged by this fix.
+  // authority (routeEvents 'delivered'), never inferred from arrived (SC-11.4-C). F1-3b — SC-11.4-B/SC-11.5: a raw
+  // `received` header status alone does NOT authorize RECEIVED_NOT_REFLECTED (SHIPMENT_CENTER §535 excludes `received`;
+  // OVERSEAS_INBOUND §10.6/§303 make a confirmed Warehouse Receipt the sole receiving authority) → OMIT_RECEIVING_AUTHORITY;
+  // RECEIVED_NOT_REFLECTED is emitted only from the canonical receiving authority (receivingFacts 'confirmed').
   var SHIPMENT_STATUS_MAP = {
     draft: 'DRAFT',
     ready_to_ship: 'APPROVED_SHIPPING_PLAN',
     shipped: 'SHIPPED_IN_TRANSIT', in_transit: 'SHIPPED_IN_TRANSIT',
     arrived: 'SHIPPED_IN_TRANSIT',        // F1-3a SC-11.4-B (was DELIVERED_NOT_RECEIVED — that inferred delivery from arrived, violating SC-11.4-C)
-    received: 'RECEIVED_NOT_REFLECTED',
+    received: OMIT_RECEIVING_AUTHORITY,   // F1-3b SC-11.4-B/SC-11.5 (was RECEIVED_NOT_REFLECTED — raw status never itself a receiving authority)
     closed: OMIT_POSTED,
     cancelled: 'CANCELLED_INVALID'
   };
-  // Route/event ledger (SHIPMENT_ROUTE_AND_EVENT_SPEC §4.5/§5.4 — spec-only, NOT emitted; fixtures only).
+  // Route/event ledger (SHIPMENT_ROUTE_AND_EVENT_SPEC §5.4; CARRIER_AND_ROUTE_SPEC §6A — spec-only, NOT emitted; fixtures only).
+  // F1-3b — SC-11.4-C: `arrived`/`arrived_port` are ARRIVAL milestones (reached port/region), NOT delivery → SHIPPED_IN_TRANSIT;
+  // DELIVERED_NOT_RECEIVED comes ONLY from the distinct canonical `delivered` carrier/route event, "never inferred from arrived".
   var ROUTE_EVENT_MAP = {
-    arrived: 'DELIVERED_NOT_RECEIVED', arrived_port: 'DELIVERED_NOT_RECEIVED', delivered: 'DELIVERED_NOT_RECEIVED',
+    arrived: 'SHIPPED_IN_TRANSIT', arrived_port: 'SHIPPED_IN_TRANSIT', delivered: 'DELIVERED_NOT_RECEIVED',
     received: 'RECEIVED_NOT_REFLECTED',
     correction: 'CORRECTION_REVERSAL', reversal: 'CORRECTION_REVERSAL'
   };
@@ -261,6 +268,7 @@
           if (bucket === undefined) { addIssue(domain, i, 'UNKNOWN_STATUS:' + st); continue; }          // fail-closed
           if (bucket === OMIT_TRANSFERRED) { addIssue(domain, i, 'LINEAGE_TRANSFERRED_DOWNSTREAM:' + st); continue; }
           if (bucket === OMIT_POSTED) { addIssue(domain, i, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + st); continue; }
+          if (bucket === OMIT_RECEIVING_AUTHORITY) { addIssue(domain, i, 'RECEIVING_AUTHORITY_REQUIRED:' + st); continue; }
         }
         if (!nonEmpty(r.supplyLineageRef)) { addIssue(domain, i, 'MISSING_SUPPLY_LINEAGE_REF'); continue; }
         if (!nonEmpty(r.company)) { addIssue(domain, i, 'MISSING_COMPANY'); continue; }
@@ -308,6 +316,7 @@
         var sbucket = SHIPMENT_STATUS_MAP[sst];
         if (sbucket === undefined) { addIssue('shipment', k, 'UNKNOWN_STATUS:' + sst); continue; }        // fail-closed
         if (sbucket === OMIT_POSTED) { addIssue('shipment', k, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + sst); continue; }
+        if (sbucket === OMIT_RECEIVING_AUTHORITY) { addIssue('shipment', k, 'RECEIVING_AUTHORITY_REQUIRED:' + sst); continue; }
         if (!nonEmpty(c.company)) { addIssue('shipment', k, 'MISSING_COMPANY:' + c.lineageKey); continue; }
         if (!nonEmpty(c.sku)) { addIssue('shipment', k, 'MISSING_MASTER_SKU:' + c.lineageKey); continue; }
         if (!nonEmpty(c.destinationWarehouseId)) { addIssue('shipment', k, 'MISSING_WAREHOUSE_ID:' + c.lineageKey); continue; }

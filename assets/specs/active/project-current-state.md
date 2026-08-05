@@ -3441,3 +3441,37 @@ Next authorized: F1-3b — wire source-projection production path to the now-con
 ```
 
 - **Files (F1-3a):** `assets/js/core/supply-planning-source-facts.js` (arrived mapping — bundled pure module), `assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs` (regenerated via canonical build tool — `APPS_SCRIPT_SYNC_REQUIRED` = generated bundle only, if/when user later deploys), `assets/tests/supply-planning-supply-lifecycle.test.js` (cited arrived assertions + A–F block — GIT_ONLY), `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` (§F F1-3a COMPLETED — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **`FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
+
+### Checkpoint — F1-3b COMPLETED → F1-3 = COMPLETED (2026-08-05)
+```
+F1-3b — Qualified Incoming → Supply Ledger PRODUCTION connection (wiring/reconciliation, NOT formula work).
+Production supply builder (source-projection.js:projectRecommendationProductionSources) now has TWO paths:
+  A. Current Stock (FBA/THREE_PL/FACTORY inventory) → DIRECT CURRENT_STOCK (never through Qualified Incoming).
+  B. shipping_plans + shipments → canonical KMSF.projectSupplyLifecycle (§2E evaluateQualifiedIncoming ten-gate
+     + §39.5 lifecycle + buildSupplyLedger). Canonical entries reused VERBATIM (shape adapter only; bucket never
+     re-translated). evaluateQualifiedIncoming is NOW on the production incoming-supply path.
+Removed source-projection's own SHIPPING_PLAN_STATUS/SHIPMENT_STATUS/LEGACY_STATUS maps (single canonical
+     authority). Canonical `approved` plan vocab (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.2A; 11_ handlers — NOT the
+     stale `site_confirmed`, which is the allocation-draft family). Canonical B4-R3 shipment lineage
+     shipment:<shipment_id>:<shipment_line_id> (was ship:<line_id>); plan lineage shipping_plan:<id>:<line_id>.
+Two residual SC-11.4 bridge corrections (§9-permitted, cited): (§4.1) ROUTE_EVENT_MAP arrived/arrived_port
+     DELIVERED_NOT_RECEIVED→SHIPPED_IN_TRANSIT (SC-11.4-C: arrival≠delivery; delivered still→DELIVERED_NOT_RECEIVED);
+     (§4.2) SHIPMENT_STATUS_MAP.received RECEIVED_NOT_REFLECTED→OMIT_RECEIVING_AUTHORITY (SC-11.4-B/SC-11.5:
+     raw status never a receiving authority; RECEIVED_NOT_REFLECTED only from receivingFacts 'confirmed'). Spec
+     owners unanimous (code-only contradictions) → conformance fix, not HALT.
+Count-once proven: plan→shipment (OMIT_TRANSFERRED), duplicate lineage (ledger dedup), cross-bucket conflict
+     (SUPPLY_LINEAGE_CONFLICT fail-closed), posted-to-current-stock (Gate 9). Late supply (ETA>Required-By)
+     ledger-VISIBLE but 0 coverage (§2F). External quarantine preserved (0; no production external table).
+Reachable production buckets: APPROVED_SHIPPING_PLAN, SHIPPED_IN_TRANSIT, CURRENT_STOCK. NOT reachable (separate
+     slices; canonical authorities not wired): COMMITTED_PRODUCTION (PO), DELIVERED_NOT_RECEIVED (routeEvents),
+     RECEIVED_NOT_REFLECTED (receivingFacts). Non-canonical delivery_event/receiving_authority/correction_reversal
+     raw-row flags dropped (operational source writes none today — SHIPMENT_CENTER §273 — quantity-neutral).
+Bundle: source-facts + source-projection are bundled → regenerated (hash 5795e29…, --check reproducible);
+     parity 56 PASS. BUNDLE_REBUILD_REQUIRED=true (generated 90_*.gs only; NO handler/router sync).
+Tests: NEW supply-planning-qualified-ledger-connection-f1-3.test.js (23; 22 §12 proofs); supply-lifecycle 74→76;
+     source-projection F/G re-based canonical (64); production-source F3 (43); recommendation-source-integration
+     29. FULL SUITE 81/81; Golden 39/1/0; #34 Pending. NO formula/DB/schema/API/frontend change; no live DB.
+F1-3 = COMPLETED. Next: F1-7 (recommendation persistence/journal — gated by Decision D-1 Verification-Copy target).
+```
+
+- **Files (F1-3b):** `assets/js/core/supply-planning-source-projection.js` (production rewire — bundled pure module), `assets/js/core/supply-planning-source-facts.js` (two SC-11.4 bridge corrections — bundled pure module), `assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs` (regenerated via canonical build tool — `APPS_SCRIPT_SYNC_REQUIRED` = generated bundle only, if/when user later deploys), `assets/tests/supply-planning-qualified-ledger-connection-f1-3.test.js` (NEW — GIT_ONLY), `assets/tests/supply-planning-supply-lifecycle.test.js` + `assets/tests/supply-planning-source-projection.test.js` + `assets/tests/supply-planning-production-source.test.js` (canonical re-base + citations — GIT_ONLY), `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` (§G F1-3b COMPLETED — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **`FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

@@ -126,36 +126,51 @@ section('E. D-3 Destination ownership (caller/planning-scope; else MISSING_DESTI
   eq(SP.projectRecommendationProductionSources(regen).demandSourceEntries[0].destination_warehouse_id, 'WH-3PL', 'E5 persisted/frozen-scope destination honored');
 })();
 
-section('F. D-4 shipping_plans status mapping');
+section('F. shipping_plans → canonical bridge (F1-3b; approved vocab; canonical lineage)');
 (function () {
-  function withPlan(status) { var i = weeklyCanonical(); i.sourceSnapshots.shippingPlans = [{ status: status, sku: 'CO1100-R', company: 'KM', approved_qty: 40, destination_warehouse_id: 'WH-3PL', plan_line_id: 'PL1', source_data_as_of: '2026-08-01' }]; return SP.projectRecommendationProductionSources(i); }
-  var conf = withPlan('site_confirmed').supplySourceEntries.filter(function (r) { return r.lifecycle_bucket === 'APPROVED_SHIPPING_PLAN'; });
-  eq([conf.length, conf[0].quantity], [1, 40], 'F1 site_confirmed → APPROVED_SHIPPING_PLAN');
-  eq(withPlan('draft').supplySourceEntries.filter(function (r) { return r.lifecycle_bucket !== 'CURRENT_STOCK'; }).length, 0, 'F2 draft → DRAFT (no incoming supply row)');
-  eq(withPlan('cancelled').supplySourceEntries.filter(function (r) { return r.supply_lineage_ref.indexOf('plan:') === 0; }).length, 0, 'F3 cancelled → CANCELLED_INVALID (excluded)');
-  ok(issueReasons(withPlan('approved')).indexOf('UNSUPPORTED_LEGACY_STATUS') >= 0, 'F4 approved is NOT a canonical shipping_plans token → fail closed');
+  // Canonical shipping_plans identity: shipping_plan_id + shipping_plan_line_id (11_ handlers); status `approved`
+  // (WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.2A). Classification is now delegated to KMSF.projectSupplyLifecycle.
+  function withPlan(status) { var i = weeklyCanonical(); i.sourceSnapshots.shippingPlans = [{ status: status, sku: 'CO1100-R', company: 'KM', approved_qty: 40, destination_warehouse_id: 'WH-3PL', shipping_plan_id: 'SP1', shipping_plan_line_id: 'SPL1', source_data_as_of: '2026-08-01' }]; return SP.projectRecommendationProductionSources(i); }
+  var conf = withPlan('approved').supplySourceEntries.filter(function (r) { return r.lifecycle_bucket === 'APPROVED_SHIPPING_PLAN'; });
+  eq([conf.length, conf[0].quantity, conf[0].supply_lineage_ref], [1, 40, 'shipping_plan:SP1:SPL1'], 'F1 approved → APPROVED_SHIPPING_PLAN via canonical bridge + canonical lineage (11_ handlers; WEEKLY_SHIPPING_PLAN_MAPPING_SPEC §3.2A)');
+  eq(withPlan('draft').supplySourceEntries.filter(function (r) { return r.lifecycle_bucket === 'APPROVED_SHIPPING_PLAN'; }).length, 0, 'F2 draft → DRAFT bucket (visible, 0 effective — never APPROVED)');
+  // site_confirmed is NOT a canonical shipping_plans status (it belongs to the allocation-draft family) → fail closed
+  var sc = withPlan('site_confirmed');
+  eq(sc.supplySourceEntries.filter(function (r) { return r.supply_lineage_ref.indexOf('shipping_plan:') === 0; }).length, 0, 'F3 site_confirmed is NOT a canonical shipping_plans token → no plan supply row');
+  ok(issueReasons(sc).some(function (r) { return r.indexOf('UNKNOWN_STATUS') >= 0; }), 'F4 site_confirmed → UNKNOWN_STATUS fail-closed (approved is canonical; the source-projection outlier is removed)');
+  // completed → OMIT_TRANSFERRED (transferred down-lineage to a Shipment; count-once)
+  ok(issueReasons(withPlan('completed')).some(function (r) { return r.indexOf('LINEAGE_TRANSFERRED_DOWNSTREAM') >= 0; }), 'F5 completed → OMIT_TRANSFERRED (canonical plan→shipment count-once)');
 })();
 
-section('G. D-4 shipments status mapping + boundaries');
+section('G. shipments → canonical bridge (F1-3b; B4-R3 lineage; SC-11.4 authorities)');
 (function () {
-  function withShip(extra) { var i = weeklyCanonical(); i.sourceSnapshots.shipments = [Object.assign({ sku: 'CO1100-R', company: 'KM', shipment_qty: 30, destination_warehouse_id: 'WH-3PL', shipment_line_id: 'S1', source_data_as_of: '2026-08-01' }, extra)]; return SP.projectRecommendationProductionSources(i); }
-  function bucketOf(p) { var r = p.supplySourceEntries.filter(function (x) { return x.supply_lineage_ref.indexOf('ship:') === 0; }); return r.length ? r[0].lifecycle_bucket : null; }
-  eq(bucketOf(withShip({ status: 'shipped' })), 'SHIPPED_IN_TRANSIT', 'G1 shipped → SHIPPED_IN_TRANSIT');
+  // Canonical shipment identity: shipment_id + shipment_line_id → B4-R3 lineage shipment:<id>:<lineId>. eta before
+  // requiredByDate (2026-09-01). Classification delegated to KMSF.projectSupplyLifecycle (evaluateQualifiedIncoming).
+  function withShip(extra) { var i = weeklyCanonical(); i.sourceSnapshots.shipments = [Object.assign({ sku: 'CO1100-R', company: 'KM', shipment_qty: 30, destination_warehouse_id: 'WH-3PL', shipment_id: 'SH1', shipment_line_id: 'SL1', eta: '2026-08-20', source_data_as_of: '2026-08-01' }, extra)]; return SP.projectRecommendationProductionSources(i); }
+  function shipEntry(p) { var r = p.supplySourceEntries.filter(function (x) { return x.supply_lineage_ref.indexOf('shipment:') === 0; }); return r.length ? r[0] : null; }
+  function bucketOf(p) { var e = shipEntry(p); return e ? e.lifecycle_bucket : null; }
+  eq([bucketOf(withShip({ status: 'shipped' })), (shipEntry(withShip({ status: 'shipped' })) || {}).supply_lineage_ref], ['SHIPPED_IN_TRANSIT', 'shipment:SH1:SL1'], 'G1 shipped → SHIPPED_IN_TRANSIT + canonical B4-R3 lineage shipment:SH1:SL1');
   eq(bucketOf(withShip({ status: 'in_transit' })), 'SHIPPED_IN_TRANSIT', 'G2 in_transit → SHIPPED_IN_TRANSIT');
-  eq(bucketOf(withShip({ status: 'arrived' })), 'SHIPPED_IN_TRANSIT', 'G3 arrived → SHIPPED_IN_TRANSIT');
+  eq(bucketOf(withShip({ status: 'arrived' })), 'SHIPPED_IN_TRANSIT', 'G3 arrived → SHIPPED_IN_TRANSIT (SC-11.4-B; not delivered)');
   eq(bucketOf(withShip({ status: 'ready_to_ship' })), 'APPROVED_SHIPPING_PLAN', 'G4 ready_to_ship → APPROVED_SHIPPING_PLAN');
-  eq(bucketOf(withShip({ status: 'received', receiving_authority: true })), 'RECEIVED_NOT_REFLECTED', 'G5 received + authority → RECEIVED_NOT_REFLECTED');
-  ok(issueReasons(withShip({ status: 'received' })).indexOf('SOURCE_NOT_AVAILABLE') >= 0 && bucketOf(withShip({ status: 'received' })) === null, 'G6 received WITHOUT authority → not emitted');
-  eq(bucketOf(withShip({ status: 'closed' })), null, 'G7 closed → no active lifecycle supply bucket');
-  eq(bucketOf(withShip({ status: 'arrived', delivery_event: true })), 'DELIVERED_NOT_RECEIVED', 'G8 arrived + delivery event → DELIVERED_NOT_RECEIVED');
-  eq(bucketOf(withShip({ status: 'shipped', correction_reversal: true })), 'CORRECTION_REVERSAL', 'G9 correction/reversal → CORRECTION_REVERSAL (visible)');
-  ['planned', 'completed', 'partial_received', 'partially_received', 'stuck'].forEach(function (s) {
-    ok(issueReasons(withShip({ status: s })).indexOf('UNSUPPORTED_LEGACY_STATUS') >= 0, 'G10 legacy ' + s + ' → UNSUPPORTED_LEGACY_STATUS');
+  // received: raw status alone never a receiving authority → OMIT (SC-11.4-B/SC-11.5); not emitted, no bucket
+  var recv = withShip({ status: 'received' });
+  ok(bucketOf(recv) === null && issueReasons(recv).some(function (r) { return r.indexOf('RECEIVING_AUTHORITY_REQUIRED') >= 0; }), 'G5 received → OMIT (SC-11.4-B/SC-11.5: RECEIVED_NOT_REFLECTED only from receivingFacts, never raw status)');
+  // closed → OMIT (belongs to the CURRENT_STOCK inventory authority)
+  var closed = withShip({ status: 'closed' });
+  ok(bucketOf(closed) === null && issueReasons(closed).some(function (r) { return r.indexOf('POSTED_TO_CURRENT_STOCK_AUTHORITY') >= 0; }), 'G6 closed → OMIT (posted to CURRENT_STOCK authority)');
+  eq(bucketOf(withShip({ status: 'draft' })), 'DRAFT', 'G7 draft → DRAFT bucket (visible, 0 effective)');
+  eq(bucketOf(withShip({ status: 'cancelled' })), 'CANCELLED_INVALID', 'G8 cancelled → CANCELLED_INVALID (visible, 0 effective)');
+  // legacy + unknown tokens → UNKNOWN_STATUS fail-closed (canonical bridge; no second allowlist here)
+  ['planned', 'completed', 'partial_received', 'partially_received', 'stuck', 'weird_token'].forEach(function (s) {
+    ok(issueReasons(withShip({ status: s })).some(function (r) { return r.indexOf('UNKNOWN_STATUS') >= 0; }), 'G9 non-canonical ' + s + ' → UNKNOWN_STATUS fail-closed');
   });
-  ok(issueReasons(withShip({ status: 'weird_token' })).indexOf('UNSUPPORTED_LEGACY_STATUS') >= 0, 'G11 unknown token → fail closed');
-  // CURRENT_STOCK is never created from shipment status
-  var cs = withShip({ status: 'received', receiving_authority: true }).supplySourceEntries.filter(function (x) { return x.supply_lineage_ref.indexOf('ship:') === 0 && x.lifecycle_bucket === 'CURRENT_STOCK'; });
-  eq(cs.length, 0, 'G12 CURRENT_STOCK never derived from shipment status');
+  // malformed row lacking canonical shipment identity → fail closed via the B4-R3 adapter (never a synthetic lineage)
+  var i2 = weeklyCanonical(); i2.sourceSnapshots.shipments = [{ status: 'shipped', sku: 'CO1100-R', company: 'KM', shipment_qty: 30, destination_warehouse_id: 'WH-3PL', shipment_line_id: 'SL1', source_data_as_of: '2026-08-01' }];
+  var noId = SP.projectRecommendationProductionSources(i2);
+  ok(shipEntry(noId) === null && issueReasons(noId).some(function (r) { return r.indexOf('ADAPT_FAILED') >= 0; }), 'G10 missing shipment_id → fail closed (ADAPT_FAILED; no unstable synthetic lineage)');
+  // CURRENT_STOCK is never derived from shipment status
+  eq(withShip({ status: 'shipped' }).supplySourceEntries.filter(function (x) { return x.supply_lineage_ref.indexOf('shipment:') === 0 && x.lifecycle_bucket === 'CURRENT_STOCK'; }).length, 0, 'G11 CURRENT_STOCK never derived from shipment status');
 })();
 
 section('H. Current-stock projection FBA / 3PL / FACTORY');

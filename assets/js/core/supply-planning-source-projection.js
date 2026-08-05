@@ -14,9 +14,12 @@
 //   D-2 Factory source-as-of = factory_stock.last_transaction_at → updated_at → SOURCE_AS_OF_MISSING.
 //   D-3 destinationWarehouseId = caller/planning-scope-owned (explicit routing → else MISSING_DESTINATION_WAREHOUSE;
 //       never inferred from country/marketplace/code/first-match/display/prev-shipment/array-order/default-FC).
-//   D-4 table-specific shipping_plans / shipments status → lifecycle-bucket map; legacy → UNSUPPORTED_LEGACY_STATUS;
-//       Delivered only from a delivery-event authority; CURRENT_STOCK only from inventory authority; correction →
-//       CORRECTION_REVERSAL (visible, zero effective supply).
+//   D-4 (F1-3b) shipping_plans + shipments lifecycle classification is DELEGATED to the canonical bridge
+//       KMSF.projectSupplyLifecycle (§2E evaluateQualifiedIncoming ten-gate + §39.5 lifecycle + buildSupplyLedger);
+//       this runtime keeps NO second status/lifecycle authority. Canonical `approved` plan vocabulary + B4-R3
+//       shipment lineage (shipment:<id>:<lineId>). CURRENT_STOCK stays direct from inventory authority; Delivered /
+//       Received / COMMITTED_PRODUCTION require their own canonical authorities (routeEvents / receivingFacts /
+//       committedProduction — separate slices, not wired here). Unknown/omitted/transferred → structured issues.
 // No Date.now / Math.random / locale; input never mutated; fresh output. The planning facts with no canonical
 // stored column (survivalNeedQty / dailyDemand / demandWeight / eligiblePoolTypes / eligibleFactoryWarehouseIds /
 // windowCode / requestMonth / requestBucket / calculatedGap / netOrderNeed) are CALLER-OWNED (frozen contract) —
@@ -27,11 +30,12 @@
   'use strict';
   var req = (typeof require !== 'undefined') ? require : null;
   var api = factory(
-    req ? req('./supply-planning-source-reader-production.js') : (root.KMSRP || (root.KM && root.KM.sourceReaderProduction))
+    req ? req('./supply-planning-source-reader-production.js') : (root.KMSRP || (root.KM && root.KM.sourceReaderProduction)),
+    req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceProjection = api; }
-})(this, function (KMSRP) {
+})(this, function (KMSRP, KMSF) {
   'use strict';
 
   // ---- primitives (fail-closed; no coercion of MISSING to a default) --------------------------------------
@@ -46,14 +50,19 @@
   var FACTORY_SHARED = 'FACTORY_SHARED';                 // D-1 canonical shared-pool company sentinel
   var MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-  // Frozen D-4 table-specific status → lifecycle-bucket maps (never a cross-table merged enum).
-  var SHIPPING_PLAN_STATUS = { draft: 'DRAFT', site_confirmed: 'APPROVED_SHIPPING_PLAN', cancelled: 'CANCELLED_INVALID' };
-  var SHIPMENT_STATUS = {
-    draft: 'DRAFT', ready_to_ship: 'APPROVED_SHIPPING_PLAN', shipped: 'SHIPPED_IN_TRANSIT',
-    in_transit: 'SHIPPED_IN_TRANSIT', arrived: 'SHIPPED_IN_TRANSIT', received: 'RECEIVED_NOT_REFLECTED',
-    closed: 'CLOSED_NO_BUCKET', cancelled: 'CANCELLED_INVALID'
-  };
-  var LEGACY_STATUS = { planned: 1, completed: 1, partial_received: 1, partially_received: 1, stuck: 1 };
+  // F1-3b: this runtime NO LONGER owns any shipping_plans / shipments status→lifecycle-bucket authority. Incoming
+  // supply (shipping_plans + shipments) is classified ONLY by the canonical bridge KMSF.projectSupplyLifecycle
+  // (§2E evaluateQualifiedIncoming → §39.5 lifecycle → buildSupplyLedger). Current Stock stays direct (inventory
+  // authority) below. See projectRecommendationProductionSources' lifecycle section.
+
+  // Strict real-calendar YYYY-MM-DD guard (mirrors the §2F contract; no Date constructor / clock / locale) — used
+  // only to fail-closed BEFORE the canonical Qualified-Incoming shipment gate (which requires a strict Required-By).
+  function isStrictDate(v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str(v)); if (!m) return false;
+    var y = +m[1], mo = +m[2], d = +m[3]; if (mo < 1 || mo > 12 || d < 1) return false;
+    var dim = [31, ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return d <= dim[mo - 1];
+  }
 
   // ---- canonical snapshot normalization (accept 2D getValues OR row-objects; value-preserving) ------------
   function normalizeCanonical(snapshot, where) {
@@ -237,52 +246,100 @@
     });
     if (fac.length) asOfByType.factoryStock = facAsOf.length ? maxAsOf(facAsOf) : null;
 
-    // Lifecycle — shipping_plans (D-4 table-specific map; unknown fails closed)
-    var planAsOf = [];
-    plans.forEach(function (r, i) {
-      var raw = str(r.status).toLowerCase();
-      var bucket = SHIPPING_PLAN_STATUS[raw];
-      if (LEGACY_STATUS[raw]) { addIssue('SUPPLY', 'plan@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      if (!bucket) { addIssue('SUPPLY', 'plan@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      if (bucket === 'DRAFT' || bucket === 'CANCELLED_INVALID') return;               // excluded/non-qualifying (visible-zero handled by ledger; skip supply)
-      if (r.approved_qty === undefined || r.approved_qty === null || r.approved_qty === '') return;
-      var sku = nonEmpty(r.sku) ? str(r.sku) : str(scope.sku);
-      var wh = str(r.destination_warehouse_id) || str(r.ship_from_warehouse_id);
-      if (!nonEmpty(wh)) { addIssue('SUPPLY', 'plan@' + i, 'SOURCE_NOT_AVAILABLE'); return; }
+    // ---- Incoming/committed lifecycle supply — shipping_plans + shipments via the CANONICAL bridge (F1-3b) -----
+    // NO local status/lifecycle authority here. shipping_plans + shipments are shaped into the canonical
+    // KMSF.projectSupplyLifecycle input and classified by the frozen §2E Qualified-Incoming ten-gate +
+    // §39.5 lifecycle map + buildSupplyLedger (evaluateQualifiedIncoming is now on the production supply path).
+    // The canonical lifecycle entries are reused VERBATIM (a camelCase→snake_case shape adapter only; the
+    // lifecycle_bucket value is NEVER re-translated). Current Stock stays direct (Path A above). DELIVERED /
+    // RECEIVED / COMMITTED_PRODUCTION require their own canonical authorities (routeEvents / receivingFacts /
+    // committedProduction) — separate slices, not wired here (like the PO read).
+    var planAsOf = [], shipAsOf = [];
+
+    // A run-level planning destination for the canonical shipment scope (company+sku+destination). It does NOT
+    // decide inclusion (the emitted warehouse is each shipment's OWN canonical destination); it satisfies the
+    // B4-R4 adapter's required scope. Caller/planning-scope owned (never inferred from country/marketplace/code).
+    function resolveRunDestination() {
+      if (nonEmpty(scope.destinationWarehouseId)) return str(scope.destinationWarehouseId);
+      for (var k in routing) { if (has(routing, k) && nonEmpty(routing[k])) return str(routing[k]); }
+      return null;
+    }
+
+    // shipping_plans → canonical approvedShippingPlans[] (canonical `approved` vocabulary owned by the bridge;
+    // canonical lineage from shipping_plan_line_id; approved_qty; canonical destination/source warehouse; THREE_PL).
+    var approvedShippingPlans = plans.map(function (r) {
       planAsOf.push(r.source_data_as_of);
-      supplyRows.push({ pool_type: 'THREE_PL', warehouse_id: wh, quantity: r.approved_qty, sku: sku,
-        company: str(r.company) || str(scope.company), lifecycle_bucket: bucket,
-        supply_lineage_ref: nonEmpty(r.plan_line_id) ? 'plan:' + str(r.plan_line_id) : 'plan:' + wh + ':' + sku + '@' + i });
+      var lineId = str(r.shipping_plan_line_id), planId = str(r.shipping_plan_id);
+      return {
+        status: r.status,
+        supplyLineageRef: lineId ? (planId ? 'shipping_plan:' + planId + ':' + lineId : 'shipping_plan:' + lineId) : '',
+        company: str(r.company) || str(scope.company),
+        masterSku: nonEmpty(r.sku) ? str(r.sku) : str(scope.sku),
+        warehouseId: str(r.destination_warehouse_id) || str(r.source_warehouse_id),
+        poolType: 'THREE_PL',
+        quantity: r.approved_qty
+      };
     });
     if (plans.length) asOfByType.shippingPlans = maxAsOf(planAsOf);
 
-    // Lifecycle — shipments (D-4 table-specific map; received→bucket only with receiving authority; closed→no bucket;
-    // legacy→UNSUPPORTED_LEGACY_STATUS; delivered only from a delivery-event authority; CURRENT_STOCK never here).
-    var shipAsOf = [];
-    ships.forEach(function (r, i) {
-      var raw = str(r.status).toLowerCase();
-      if (LEGACY_STATUS[raw]) { addIssue('SUPPLY', 'ship@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      // explicit correction/reversal fact → CORRECTION_REVERSAL (visible, zero effective supply)
-      var isCorrection = r.correction_reversal === true || str(r.correction_reversal) === 'true';
-      var bucket = isCorrection ? 'CORRECTION_REVERSAL' : SHIPMENT_STATUS[raw];
-      if (!bucket) { addIssue('SUPPLY', 'ship@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      // DELIVERED_NOT_RECEIVED only from a real carrier/route delivery-event authority (never inferred from arrived/closed)
-      if (bucket === 'SHIPPED_IN_TRANSIT' && raw === 'arrived' && (r.delivery_event === true || str(r.delivery_event) === 'true')) bucket = 'DELIVERED_NOT_RECEIVED';
-      if (bucket === 'RECEIVED_NOT_REFLECTED' && !(r.receiving_authority === true || str(r.receiving_authority) === 'true')) {
-        addIssue('SUPPLY', 'ship@' + i, 'SOURCE_NOT_AVAILABLE'); return;              // received without canonical receiving authority → not emitted
-      }
-      if (bucket === 'CLOSED_NO_BUCKET') return;                                       // closed → no active lifecycle supply bucket (CURRENT_STOCK from inventory only)
-      if (bucket === 'DRAFT' || bucket === 'CANCELLED_INVALID') return;
-      if (r.shipment_qty === undefined || r.shipment_qty === null || r.shipment_qty === '') return;
-      var sku = nonEmpty(r.sku) ? str(r.sku) : str(scope.sku);
-      var wh = str(r.destination_warehouse_id) || str(r.warehouse_id);
-      if (!nonEmpty(wh)) { addIssue('SUPPLY', 'ship@' + i, 'SOURCE_NOT_AVAILABLE'); return; }
+    // shipments → canonical B4-R3 shipmentInputs [{shipment,line}] (canonical shipment_id/shipment_line_id identity
+    // → lineage shipment:<id>:<lineId>; shipment_qty; destination_warehouse_id w/ legacy warehouse_id fallback; eta;
+    // raw status preserved for the bridge). Malformed rows lacking canonical identity fail closed via ADAPT_FAILED.
+    var shipmentInputs = ships.map(function (r) {
       shipAsOf.push(r.source_data_as_of);
-      supplyRows.push({ pool_type: 'THREE_PL', warehouse_id: wh, quantity: r.shipment_qty, sku: sku,
-        company: str(r.company) || str(scope.company), lifecycle_bucket: bucket,
-        supply_lineage_ref: nonEmpty(r.shipment_line_id) ? 'ship:' + str(r.shipment_line_id) : 'ship:' + wh + ':' + sku + '@' + i });
+      return {
+        shipment: {
+          shipmentId: nonEmpty(r.shipment_id) ? str(r.shipment_id) : undefined,
+          company: str(r.company) || str(scope.company),
+          country: nonEmpty(r.country) ? str(r.country) : (nonEmpty(scope.country) ? str(scope.country) : undefined),
+          marketplace: nonEmpty(r.marketplace) ? str(r.marketplace) : (nonEmpty(scope.marketplace) ? str(scope.marketplace) : undefined),
+          destinationWarehouseId: nonEmpty(r.destination_warehouse_id) ? str(r.destination_warehouse_id) : undefined,
+          legacyWarehouseId: nonEmpty(r.warehouse_id) ? str(r.warehouse_id) : undefined,
+          eta: has(r, 'eta') ? r.eta : undefined,
+          status: has(r, 'status') ? r.status : undefined,
+          sourceUpdatedAt: nonEmpty(r.source_data_as_of) ? str(r.source_data_as_of) : undefined
+        },
+        line: {
+          shipmentLineId: nonEmpty(r.shipment_line_id) ? str(r.shipment_line_id) : undefined,
+          sku: nonEmpty(r.sku) ? str(r.sku) : str(scope.sku),
+          shipmentQty: has(r, 'shipment_qty') ? r.shipment_qty : undefined,
+          siteSku: nonEmpty(r.site_sku) ? str(r.site_sku) : undefined
+        }
+      };
     });
     if (ships.length) asOfByType.shipments = maxAsOf(shipAsOf);
+
+    // Canonical lifecycle bridge. Shipments require a strict Required-By (evaluateQualifiedIncoming §2F) + a run
+    // destination for the canonical scope; if either is absent they fail closed (issue) and plans still project.
+    // Gate 9/10 count-once evidence sets pass through when the caller supplies them (production default: empty).
+    var lifecycleInput = { approvedShippingPlans: approvedShippingPlans, sourceDataAsOf: input.sourceDataAsOf };
+    if (shipmentInputs.length) {
+      var runDest = resolveRunDestination();
+      if (!isStrictDate(requiredByDate)) { addIssue('SUPPLY', 'shipments', 'MISSING_REQUIRED_BY_DATE'); }
+      else if (!runDest) { addIssue('SUPPLY', 'shipments', 'MISSING_DESTINATION_FOR_SHIPMENT_SCOPE'); }
+      else {
+        lifecycleInput.shipments = {
+          shipmentInputs: shipmentInputs,
+          scope: { company: str(scope.company), sku: str(scope.sku), destinationWarehouseId: runDest,
+            country: nonEmpty(scope.country) ? str(scope.country) : undefined,
+            marketplace: nonEmpty(scope.marketplace) ? str(scope.marketplace) : undefined },
+          requiredByDate: str(requiredByDate),
+          postedToCurrentStockLineageKeys: Array.isArray(input.postedToCurrentStockLineageKeys) ? input.postedToCurrentStockLineageKeys : [],
+          activeOtherBucketLineageKeys: Array.isArray(input.activeOtherBucketLineageKeys) ? input.activeOtherBucketLineageKeys : []
+        };
+      }
+    }
+
+    var lifecycle = KMSF.projectSupplyLifecycle(lifecycleInput);
+    // Surface every canonical structured issue (UNKNOWN_STATUS / LINEAGE_TRANSFERRED_DOWNSTREAM / MISSING_* /
+    // RECEIVING_AUTHORITY_REQUIRED / POSTED_TO_CURRENT_STOCK_AUTHORITY / ADAPT_FAILED …) — nothing silently dropped.
+    (lifecycle.issues || []).forEach(function (x) { addIssue('SUPPLY', x.domain + '@' + x.i, x.reason); });
+    if (lifecycle.ready === false) addIssue('SUPPLY', 'lifecycle', lifecycle.reason || 'BLOCKED_CONFLICT');
+    // Reuse the canonical lifecycle entries VERBATIM (shape adapter only; lifecycle_bucket carried through unchanged).
+    (lifecycle.entries || []).forEach(function (e) {
+      supplyRows.push({ pool_type: e.poolType, warehouse_id: e.warehouseId, quantity: e.quantity,
+        supply_lineage_ref: e.supplyLineageRef, sku: e.masterSku, company: e.company, lifecycle_bucket: e.lifecycleBucket });
+    });
 
     // ---- caller-owned planning facts → DTO rows (ROUTE, never compute) --------------------------------------
     var callerFacts = Array.isArray(input.planningFacts) ? input.planningFacts : [];
@@ -385,8 +442,6 @@
 
   return {
     FACTORY_SHARED: FACTORY_SHARED,
-    SHIPPING_PLAN_STATUS: SHIPPING_PLAN_STATUS,
-    SHIPMENT_STATUS: SHIPMENT_STATUS,
     projectRecommendationProductionSources: projectRecommendationProductionSources,
     projectAndRead: projectAndRead
   };

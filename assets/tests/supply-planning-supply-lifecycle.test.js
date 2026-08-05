@@ -68,7 +68,8 @@ section('S. status mapping — Shipment (real B4-R3/R4/R6 chain)');
   eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S2', 'in_transit', 100)]) }), 'SHIPPED_IN_TRANSIT') !== null, true, 'S: shipment in_transit → SHIPPED_IN_TRANSIT');
   eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S3', 'ready_to_ship', 100)]) }), 'APPROVED_SHIPPING_PLAN') !== null, true, 'S: shipment ready_to_ship → APPROVED_SHIPPING_PLAN (pre-dispatch, evidence SHIPMENT_CENTER §4/§15.1)');
   eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S4', 'arrived', 100)]) }), 'SHIPPED_IN_TRANSIT') !== null, true, 'S: shipment arrived → SHIPPED_IN_TRANSIT (F1-3a SC-11.4-B; DELIVERED_NOT_RECEIVED only from a delivery-event authority per SC-11.4-C)');
-  eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S5', 'received', 100)]) }), 'RECEIVED_NOT_REFLECTED') !== null, true, 'S: shipment received → RECEIVED_NOT_REFLECTED');
+  var shipRecv = SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S5', 'received', 100)]) });
+  eq([shipRecv.entries.length, shipRecv.issues.filter(function (x) { return x.reason.indexOf('RECEIVING_AUTHORITY_REQUIRED') === 0; }).length], [0, 1], 'S: shipment received → OMIT (F1-3b SC-11.4-B/SC-11.5: raw status never itself a receiving authority; RECEIVED_NOT_REFLECTED only from receivingFacts)');
   eq(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S6', 'draft', 100)]) }).entries[0].lifecycleBucket, 'DRAFT', 'S: shipment draft → DRAFT (excluded, visible)');
   eq(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S7', 'cancelled', 100)]) }).entries[0].lifecycleBucket, 'CANCELLED_INVALID', 'S: shipment cancelled → CANCELLED_INVALID');
   var closed = SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S8', 'closed', 100)]) });
@@ -79,6 +80,8 @@ section('S. status mapping — Route event / Receiving / Correction');
 (function () {
   eq(SF.projectSupplyLifecycle({ routeEvents: [eventRow('e:1', 'delivered', 100)] }).entries[0].lifecycleBucket, 'DELIVERED_NOT_RECEIVED', 'S: route delivered → DELIVERED_NOT_RECEIVED');
   eq(SF.projectSupplyLifecycle({ routeEvents: [eventRow('e:2', 'received', 100)] }).entries[0].lifecycleBucket, 'RECEIVED_NOT_REFLECTED', 'S: route received → RECEIVED_NOT_REFLECTED');
+  eq(SF.projectSupplyLifecycle({ routeEvents: [eventRow('e:3', 'arrived', 100)] }).entries[0].lifecycleBucket, 'SHIPPED_IN_TRANSIT', 'S: route arrived → SHIPPED_IN_TRANSIT (F1-3b SC-11.4-C: arrival milestone ≠ delivery; DELIVERED only from a real delivered event)');
+  eq(SF.projectSupplyLifecycle({ routeEvents: [eventRow('e:4', 'arrived_port', 100)] }).entries[0].lifecycleBucket, 'SHIPPED_IN_TRANSIT', 'S: route arrived_port → SHIPPED_IN_TRANSIT (F1-3b SC-11.4-C: arrival milestone ≠ delivery)');
   eq(SF.projectSupplyLifecycle({ receivingFacts: [recvRow('r:1', 'confirmed', 100)] }).entries[0].lifecycleBucket, 'RECEIVED_NOT_REFLECTED', 'S: receiving confirmed → RECEIVED_NOT_REFLECTED');
   eq(SF.projectSupplyLifecycle({ receivingFacts: [recvRow('r:2', 'reversed', 100)] }).entries[0].lifecycleBucket, 'CORRECTION_REVERSAL', 'S: receiving reversed → CORRECTION_REVERSAL');
   eq(SF.projectSupplyLifecycle({ correctionFacts: [corrRow('c:1', 100)] }).entries[0].lifecycleBucket, 'CORRECTION_REVERSAL', 'S: correction → CORRECTION_REVERSAL');

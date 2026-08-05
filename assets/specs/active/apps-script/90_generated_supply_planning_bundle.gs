@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 6f0b654fa37b463f5710ccfaf97b41d73a6d2ac3c1f4ffd878f4494465192f8d
+// bundle_sha256 = 5795e29574f497be5c4db6e7aa21cc304efd09f67a08fd1c3f960953aedd3666
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7
@@ -20,12 +20,12 @@
 //   supply-planning-persistence-plan-builder  c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304
 //   supply-planning-recommendation-orchestrator  23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192
 //   supply-planning-user-edit  365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693
-//   supply-planning-source-facts  30d956aaa405d59e6d881e3aa8e82df26fe9a5a72f77be733b011ce6d81894f9
+//   supply-planning-source-facts  259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687
 //   supply-planning-plan-bridge  c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
-//   supply-planning-source-projection  77413eb7121bc0bef7412533ff0bd2cf58ea64d175e02735eaded688d7561da5
+//   supply-planning-source-projection  1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4
 //   supply-planning-production-source  905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326
 //   supply-planning-production-safety  7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6
 //   supply-planning-production-writer  1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364
@@ -4441,7 +4441,10 @@ function __kmRequire(p) {
   // OMIT sentinels: the lineage is real but is NOT this source's to count (count-once, §30) → surfaced as an
   // issue, never an entry. OMIT_TRANSFERRED = ownership moved down-lineage (PO→shipment, plan→shipment).
   // OMIT_POSTED = closed/posted shipment belongs to the CURRENT_STOCK inventory authority, not the shipment feed.
-  var OMIT_TRANSFERRED = 'OMIT_TRANSFERRED', OMIT_POSTED = 'OMIT_POSTED';
+  // OMIT_RECEIVING_AUTHORITY = a `received` shipment header status defers to the canonical warehouse receiving
+  // authority (receivingFacts 'confirmed'); raw status alone never emits RECEIVED_NOT_REFLECTED (F1-3b, SC-11.4-B/
+  // SC-11.5: "RECEIVED_NOT_REFLECTED emitted only when a real receiving authority exists").
+  var OMIT_TRANSFERRED = 'OMIT_TRANSFERRED', OMIT_POSTED = 'OMIT_POSTED', OMIT_RECEIVING_AUTHORITY = 'OMIT_RECEIVING_AUTHORITY';
 
   // Production / PO (REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC §1 — the one Canonically written-out status list).
   var PRODUCTION_STATUS_MAP = {
@@ -4461,20 +4464,24 @@ function __kmRequire(p) {
   // Shipment header (SHIPMENT_CENTER_SPEC §3/§4/§15.1 + §535 QI allowlist). ready_to_ship = pre-dispatch commit
   // (reserved, NOT yet physically shipped) → APPROVED_SHIPPING_PLAN. F1-3a — SC-11.4-B: arrived → SHIPPED_IN_TRANSIT
   // (in-transit; NOT delivered, NOT received). DELIVERED_NOT_RECEIVED arises ONLY from a canonical delivery-event
-  // authority (routeEvents 'delivered'), never inferred from arrived (SC-11.4-C); RECEIVED_NOT_REFLECTED only from a
-  // canonical receiving authority — both authority pathways are unchanged by this fix.
+  // authority (routeEvents 'delivered'), never inferred from arrived (SC-11.4-C). F1-3b — SC-11.4-B/SC-11.5: a raw
+  // `received` header status alone does NOT authorize RECEIVED_NOT_REFLECTED (SHIPMENT_CENTER §535 excludes `received`;
+  // OVERSEAS_INBOUND §10.6/§303 make a confirmed Warehouse Receipt the sole receiving authority) → OMIT_RECEIVING_AUTHORITY;
+  // RECEIVED_NOT_REFLECTED is emitted only from the canonical receiving authority (receivingFacts 'confirmed').
   var SHIPMENT_STATUS_MAP = {
     draft: 'DRAFT',
     ready_to_ship: 'APPROVED_SHIPPING_PLAN',
     shipped: 'SHIPPED_IN_TRANSIT', in_transit: 'SHIPPED_IN_TRANSIT',
     arrived: 'SHIPPED_IN_TRANSIT',        // F1-3a SC-11.4-B (was DELIVERED_NOT_RECEIVED — that inferred delivery from arrived, violating SC-11.4-C)
-    received: 'RECEIVED_NOT_REFLECTED',
+    received: OMIT_RECEIVING_AUTHORITY,   // F1-3b SC-11.4-B/SC-11.5 (was RECEIVED_NOT_REFLECTED — raw status never itself a receiving authority)
     closed: OMIT_POSTED,
     cancelled: 'CANCELLED_INVALID'
   };
-  // Route/event ledger (SHIPMENT_ROUTE_AND_EVENT_SPEC §4.5/§5.4 — spec-only, NOT emitted; fixtures only).
+  // Route/event ledger (SHIPMENT_ROUTE_AND_EVENT_SPEC §5.4; CARRIER_AND_ROUTE_SPEC §6A — spec-only, NOT emitted; fixtures only).
+  // F1-3b — SC-11.4-C: `arrived`/`arrived_port` are ARRIVAL milestones (reached port/region), NOT delivery → SHIPPED_IN_TRANSIT;
+  // DELIVERED_NOT_RECEIVED comes ONLY from the distinct canonical `delivered` carrier/route event, "never inferred from arrived".
   var ROUTE_EVENT_MAP = {
-    arrived: 'DELIVERED_NOT_RECEIVED', arrived_port: 'DELIVERED_NOT_RECEIVED', delivered: 'DELIVERED_NOT_RECEIVED',
+    arrived: 'SHIPPED_IN_TRANSIT', arrived_port: 'SHIPPED_IN_TRANSIT', delivered: 'DELIVERED_NOT_RECEIVED',
     received: 'RECEIVED_NOT_REFLECTED',
     correction: 'CORRECTION_REVERSAL', reversal: 'CORRECTION_REVERSAL'
   };
@@ -4636,6 +4643,7 @@ function __kmRequire(p) {
           if (bucket === undefined) { addIssue(domain, i, 'UNKNOWN_STATUS:' + st); continue; }          // fail-closed
           if (bucket === OMIT_TRANSFERRED) { addIssue(domain, i, 'LINEAGE_TRANSFERRED_DOWNSTREAM:' + st); continue; }
           if (bucket === OMIT_POSTED) { addIssue(domain, i, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + st); continue; }
+          if (bucket === OMIT_RECEIVING_AUTHORITY) { addIssue(domain, i, 'RECEIVING_AUTHORITY_REQUIRED:' + st); continue; }
         }
         if (!nonEmpty(r.supplyLineageRef)) { addIssue(domain, i, 'MISSING_SUPPLY_LINEAGE_REF'); continue; }
         if (!nonEmpty(r.company)) { addIssue(domain, i, 'MISSING_COMPANY'); continue; }
@@ -4683,6 +4691,7 @@ function __kmRequire(p) {
         var sbucket = SHIPMENT_STATUS_MAP[sst];
         if (sbucket === undefined) { addIssue('shipment', k, 'UNKNOWN_STATUS:' + sst); continue; }        // fail-closed
         if (sbucket === OMIT_POSTED) { addIssue('shipment', k, 'POSTED_TO_CURRENT_STOCK_AUTHORITY:' + sst); continue; }
+        if (sbucket === OMIT_RECEIVING_AUTHORITY) { addIssue('shipment', k, 'RECEIVING_AUTHORITY_REQUIRED:' + sst); continue; }
         if (!nonEmpty(c.company)) { addIssue('shipment', k, 'MISSING_COMPANY:' + c.lineageKey); continue; }
         if (!nonEmpty(c.sku)) { addIssue('shipment', k, 'MISSING_MASTER_SKU:' + c.lineageKey); continue; }
         if (!nonEmpty(c.destinationWarehouseId)) { addIssue('shipment', k, 'MISSING_WAREHOUSE_ID:' + c.lineageKey); continue; }
@@ -6359,9 +6368,12 @@ function __kmRequire(p) {
 //   D-2 Factory source-as-of = factory_stock.last_transaction_at → updated_at → SOURCE_AS_OF_MISSING.
 //   D-3 destinationWarehouseId = caller/planning-scope-owned (explicit routing → else MISSING_DESTINATION_WAREHOUSE;
 //       never inferred from country/marketplace/code/first-match/display/prev-shipment/array-order/default-FC).
-//   D-4 table-specific shipping_plans / shipments status → lifecycle-bucket map; legacy → UNSUPPORTED_LEGACY_STATUS;
-//       Delivered only from a delivery-event authority; CURRENT_STOCK only from inventory authority; correction →
-//       CORRECTION_REVERSAL (visible, zero effective supply).
+//   D-4 (F1-3b) shipping_plans + shipments lifecycle classification is DELEGATED to the canonical bridge
+//       KMSF.projectSupplyLifecycle (§2E evaluateQualifiedIncoming ten-gate + §39.5 lifecycle + buildSupplyLedger);
+//       this runtime keeps NO second status/lifecycle authority. Canonical `approved` plan vocabulary + B4-R3
+//       shipment lineage (shipment:<id>:<lineId>). CURRENT_STOCK stays direct from inventory authority; Delivered /
+//       Received / COMMITTED_PRODUCTION require their own canonical authorities (routeEvents / receivingFacts /
+//       committedProduction — separate slices, not wired here). Unknown/omitted/transferred → structured issues.
 // No Date.now / Math.random / locale; input never mutated; fresh output. The planning facts with no canonical
 // stored column (survivalNeedQty / dailyDemand / demandWeight / eligiblePoolTypes / eligibleFactoryWarehouseIds /
 // windowCode / requestMonth / requestBucket / calculatedGap / netOrderNeed) are CALLER-OWNED (frozen contract) —
@@ -6372,11 +6384,12 @@ function __kmRequire(p) {
   'use strict';
   var req = (typeof require !== 'undefined') ? require : null;
   var api = factory(
-    req ? req('./supply-planning-source-reader-production.js') : (root.KMSRP || (root.KM && root.KM.sourceReaderProduction))
+    req ? req('./supply-planning-source-reader-production.js') : (root.KMSRP || (root.KM && root.KM.sourceReaderProduction)),
+    req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceProjection = api; }
-})(this, function (KMSRP) {
+})(this, function (KMSRP, KMSF) {
   'use strict';
 
   // ---- primitives (fail-closed; no coercion of MISSING to a default) --------------------------------------
@@ -6391,14 +6404,19 @@ function __kmRequire(p) {
   var FACTORY_SHARED = 'FACTORY_SHARED';                 // D-1 canonical shared-pool company sentinel
   var MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-  // Frozen D-4 table-specific status → lifecycle-bucket maps (never a cross-table merged enum).
-  var SHIPPING_PLAN_STATUS = { draft: 'DRAFT', site_confirmed: 'APPROVED_SHIPPING_PLAN', cancelled: 'CANCELLED_INVALID' };
-  var SHIPMENT_STATUS = {
-    draft: 'DRAFT', ready_to_ship: 'APPROVED_SHIPPING_PLAN', shipped: 'SHIPPED_IN_TRANSIT',
-    in_transit: 'SHIPPED_IN_TRANSIT', arrived: 'SHIPPED_IN_TRANSIT', received: 'RECEIVED_NOT_REFLECTED',
-    closed: 'CLOSED_NO_BUCKET', cancelled: 'CANCELLED_INVALID'
-  };
-  var LEGACY_STATUS = { planned: 1, completed: 1, partial_received: 1, partially_received: 1, stuck: 1 };
+  // F1-3b: this runtime NO LONGER owns any shipping_plans / shipments status→lifecycle-bucket authority. Incoming
+  // supply (shipping_plans + shipments) is classified ONLY by the canonical bridge KMSF.projectSupplyLifecycle
+  // (§2E evaluateQualifiedIncoming → §39.5 lifecycle → buildSupplyLedger). Current Stock stays direct (inventory
+  // authority) below. See projectRecommendationProductionSources' lifecycle section.
+
+  // Strict real-calendar YYYY-MM-DD guard (mirrors the §2F contract; no Date constructor / clock / locale) — used
+  // only to fail-closed BEFORE the canonical Qualified-Incoming shipment gate (which requires a strict Required-By).
+  function isStrictDate(v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str(v)); if (!m) return false;
+    var y = +m[1], mo = +m[2], d = +m[3]; if (mo < 1 || mo > 12 || d < 1) return false;
+    var dim = [31, ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return d <= dim[mo - 1];
+  }
 
   // ---- canonical snapshot normalization (accept 2D getValues OR row-objects; value-preserving) ------------
   function normalizeCanonical(snapshot, where) {
@@ -6582,52 +6600,100 @@ function __kmRequire(p) {
     });
     if (fac.length) asOfByType.factoryStock = facAsOf.length ? maxAsOf(facAsOf) : null;
 
-    // Lifecycle — shipping_plans (D-4 table-specific map; unknown fails closed)
-    var planAsOf = [];
-    plans.forEach(function (r, i) {
-      var raw = str(r.status).toLowerCase();
-      var bucket = SHIPPING_PLAN_STATUS[raw];
-      if (LEGACY_STATUS[raw]) { addIssue('SUPPLY', 'plan@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      if (!bucket) { addIssue('SUPPLY', 'plan@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      if (bucket === 'DRAFT' || bucket === 'CANCELLED_INVALID') return;               // excluded/non-qualifying (visible-zero handled by ledger; skip supply)
-      if (r.approved_qty === undefined || r.approved_qty === null || r.approved_qty === '') return;
-      var sku = nonEmpty(r.sku) ? str(r.sku) : str(scope.sku);
-      var wh = str(r.destination_warehouse_id) || str(r.ship_from_warehouse_id);
-      if (!nonEmpty(wh)) { addIssue('SUPPLY', 'plan@' + i, 'SOURCE_NOT_AVAILABLE'); return; }
+    // ---- Incoming/committed lifecycle supply — shipping_plans + shipments via the CANONICAL bridge (F1-3b) -----
+    // NO local status/lifecycle authority here. shipping_plans + shipments are shaped into the canonical
+    // KMSF.projectSupplyLifecycle input and classified by the frozen §2E Qualified-Incoming ten-gate +
+    // §39.5 lifecycle map + buildSupplyLedger (evaluateQualifiedIncoming is now on the production supply path).
+    // The canonical lifecycle entries are reused VERBATIM (a camelCase→snake_case shape adapter only; the
+    // lifecycle_bucket value is NEVER re-translated). Current Stock stays direct (Path A above). DELIVERED /
+    // RECEIVED / COMMITTED_PRODUCTION require their own canonical authorities (routeEvents / receivingFacts /
+    // committedProduction) — separate slices, not wired here (like the PO read).
+    var planAsOf = [], shipAsOf = [];
+
+    // A run-level planning destination for the canonical shipment scope (company+sku+destination). It does NOT
+    // decide inclusion (the emitted warehouse is each shipment's OWN canonical destination); it satisfies the
+    // B4-R4 adapter's required scope. Caller/planning-scope owned (never inferred from country/marketplace/code).
+    function resolveRunDestination() {
+      if (nonEmpty(scope.destinationWarehouseId)) return str(scope.destinationWarehouseId);
+      for (var k in routing) { if (has(routing, k) && nonEmpty(routing[k])) return str(routing[k]); }
+      return null;
+    }
+
+    // shipping_plans → canonical approvedShippingPlans[] (canonical `approved` vocabulary owned by the bridge;
+    // canonical lineage from shipping_plan_line_id; approved_qty; canonical destination/source warehouse; THREE_PL).
+    var approvedShippingPlans = plans.map(function (r) {
       planAsOf.push(r.source_data_as_of);
-      supplyRows.push({ pool_type: 'THREE_PL', warehouse_id: wh, quantity: r.approved_qty, sku: sku,
-        company: str(r.company) || str(scope.company), lifecycle_bucket: bucket,
-        supply_lineage_ref: nonEmpty(r.plan_line_id) ? 'plan:' + str(r.plan_line_id) : 'plan:' + wh + ':' + sku + '@' + i });
+      var lineId = str(r.shipping_plan_line_id), planId = str(r.shipping_plan_id);
+      return {
+        status: r.status,
+        supplyLineageRef: lineId ? (planId ? 'shipping_plan:' + planId + ':' + lineId : 'shipping_plan:' + lineId) : '',
+        company: str(r.company) || str(scope.company),
+        masterSku: nonEmpty(r.sku) ? str(r.sku) : str(scope.sku),
+        warehouseId: str(r.destination_warehouse_id) || str(r.source_warehouse_id),
+        poolType: 'THREE_PL',
+        quantity: r.approved_qty
+      };
     });
     if (plans.length) asOfByType.shippingPlans = maxAsOf(planAsOf);
 
-    // Lifecycle — shipments (D-4 table-specific map; received→bucket only with receiving authority; closed→no bucket;
-    // legacy→UNSUPPORTED_LEGACY_STATUS; delivered only from a delivery-event authority; CURRENT_STOCK never here).
-    var shipAsOf = [];
-    ships.forEach(function (r, i) {
-      var raw = str(r.status).toLowerCase();
-      if (LEGACY_STATUS[raw]) { addIssue('SUPPLY', 'ship@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      // explicit correction/reversal fact → CORRECTION_REVERSAL (visible, zero effective supply)
-      var isCorrection = r.correction_reversal === true || str(r.correction_reversal) === 'true';
-      var bucket = isCorrection ? 'CORRECTION_REVERSAL' : SHIPMENT_STATUS[raw];
-      if (!bucket) { addIssue('SUPPLY', 'ship@' + i, 'UNSUPPORTED_LEGACY_STATUS'); return; }
-      // DELIVERED_NOT_RECEIVED only from a real carrier/route delivery-event authority (never inferred from arrived/closed)
-      if (bucket === 'SHIPPED_IN_TRANSIT' && raw === 'arrived' && (r.delivery_event === true || str(r.delivery_event) === 'true')) bucket = 'DELIVERED_NOT_RECEIVED';
-      if (bucket === 'RECEIVED_NOT_REFLECTED' && !(r.receiving_authority === true || str(r.receiving_authority) === 'true')) {
-        addIssue('SUPPLY', 'ship@' + i, 'SOURCE_NOT_AVAILABLE'); return;              // received without canonical receiving authority → not emitted
-      }
-      if (bucket === 'CLOSED_NO_BUCKET') return;                                       // closed → no active lifecycle supply bucket (CURRENT_STOCK from inventory only)
-      if (bucket === 'DRAFT' || bucket === 'CANCELLED_INVALID') return;
-      if (r.shipment_qty === undefined || r.shipment_qty === null || r.shipment_qty === '') return;
-      var sku = nonEmpty(r.sku) ? str(r.sku) : str(scope.sku);
-      var wh = str(r.destination_warehouse_id) || str(r.warehouse_id);
-      if (!nonEmpty(wh)) { addIssue('SUPPLY', 'ship@' + i, 'SOURCE_NOT_AVAILABLE'); return; }
+    // shipments → canonical B4-R3 shipmentInputs [{shipment,line}] (canonical shipment_id/shipment_line_id identity
+    // → lineage shipment:<id>:<lineId>; shipment_qty; destination_warehouse_id w/ legacy warehouse_id fallback; eta;
+    // raw status preserved for the bridge). Malformed rows lacking canonical identity fail closed via ADAPT_FAILED.
+    var shipmentInputs = ships.map(function (r) {
       shipAsOf.push(r.source_data_as_of);
-      supplyRows.push({ pool_type: 'THREE_PL', warehouse_id: wh, quantity: r.shipment_qty, sku: sku,
-        company: str(r.company) || str(scope.company), lifecycle_bucket: bucket,
-        supply_lineage_ref: nonEmpty(r.shipment_line_id) ? 'ship:' + str(r.shipment_line_id) : 'ship:' + wh + ':' + sku + '@' + i });
+      return {
+        shipment: {
+          shipmentId: nonEmpty(r.shipment_id) ? str(r.shipment_id) : undefined,
+          company: str(r.company) || str(scope.company),
+          country: nonEmpty(r.country) ? str(r.country) : (nonEmpty(scope.country) ? str(scope.country) : undefined),
+          marketplace: nonEmpty(r.marketplace) ? str(r.marketplace) : (nonEmpty(scope.marketplace) ? str(scope.marketplace) : undefined),
+          destinationWarehouseId: nonEmpty(r.destination_warehouse_id) ? str(r.destination_warehouse_id) : undefined,
+          legacyWarehouseId: nonEmpty(r.warehouse_id) ? str(r.warehouse_id) : undefined,
+          eta: has(r, 'eta') ? r.eta : undefined,
+          status: has(r, 'status') ? r.status : undefined,
+          sourceUpdatedAt: nonEmpty(r.source_data_as_of) ? str(r.source_data_as_of) : undefined
+        },
+        line: {
+          shipmentLineId: nonEmpty(r.shipment_line_id) ? str(r.shipment_line_id) : undefined,
+          sku: nonEmpty(r.sku) ? str(r.sku) : str(scope.sku),
+          shipmentQty: has(r, 'shipment_qty') ? r.shipment_qty : undefined,
+          siteSku: nonEmpty(r.site_sku) ? str(r.site_sku) : undefined
+        }
+      };
     });
     if (ships.length) asOfByType.shipments = maxAsOf(shipAsOf);
+
+    // Canonical lifecycle bridge. Shipments require a strict Required-By (evaluateQualifiedIncoming §2F) + a run
+    // destination for the canonical scope; if either is absent they fail closed (issue) and plans still project.
+    // Gate 9/10 count-once evidence sets pass through when the caller supplies them (production default: empty).
+    var lifecycleInput = { approvedShippingPlans: approvedShippingPlans, sourceDataAsOf: input.sourceDataAsOf };
+    if (shipmentInputs.length) {
+      var runDest = resolveRunDestination();
+      if (!isStrictDate(requiredByDate)) { addIssue('SUPPLY', 'shipments', 'MISSING_REQUIRED_BY_DATE'); }
+      else if (!runDest) { addIssue('SUPPLY', 'shipments', 'MISSING_DESTINATION_FOR_SHIPMENT_SCOPE'); }
+      else {
+        lifecycleInput.shipments = {
+          shipmentInputs: shipmentInputs,
+          scope: { company: str(scope.company), sku: str(scope.sku), destinationWarehouseId: runDest,
+            country: nonEmpty(scope.country) ? str(scope.country) : undefined,
+            marketplace: nonEmpty(scope.marketplace) ? str(scope.marketplace) : undefined },
+          requiredByDate: str(requiredByDate),
+          postedToCurrentStockLineageKeys: Array.isArray(input.postedToCurrentStockLineageKeys) ? input.postedToCurrentStockLineageKeys : [],
+          activeOtherBucketLineageKeys: Array.isArray(input.activeOtherBucketLineageKeys) ? input.activeOtherBucketLineageKeys : []
+        };
+      }
+    }
+
+    var lifecycle = KMSF.projectSupplyLifecycle(lifecycleInput);
+    // Surface every canonical structured issue (UNKNOWN_STATUS / LINEAGE_TRANSFERRED_DOWNSTREAM / MISSING_* /
+    // RECEIVING_AUTHORITY_REQUIRED / POSTED_TO_CURRENT_STOCK_AUTHORITY / ADAPT_FAILED …) — nothing silently dropped.
+    (lifecycle.issues || []).forEach(function (x) { addIssue('SUPPLY', x.domain + '@' + x.i, x.reason); });
+    if (lifecycle.ready === false) addIssue('SUPPLY', 'lifecycle', lifecycle.reason || 'BLOCKED_CONFLICT');
+    // Reuse the canonical lifecycle entries VERBATIM (shape adapter only; lifecycle_bucket carried through unchanged).
+    (lifecycle.entries || []).forEach(function (e) {
+      supplyRows.push({ pool_type: e.poolType, warehouse_id: e.warehouseId, quantity: e.quantity,
+        supply_lineage_ref: e.supplyLineageRef, sku: e.masterSku, company: e.company, lifecycle_bucket: e.lifecycleBucket });
+    });
 
     // ---- caller-owned planning facts → DTO rows (ROUTE, never compute) --------------------------------------
     var callerFacts = Array.isArray(input.planningFacts) ? input.planningFacts : [];
@@ -6730,8 +6796,6 @@ function __kmRequire(p) {
 
   return {
     FACTORY_SHARED: FACTORY_SHARED,
-    SHIPPING_PLAN_STATUS: SHIPPING_PLAN_STATUS,
-    SHIPMENT_STATUS: SHIPMENT_STATUS,
     projectRecommendationProductionSources: projectRecommendationProductionSources,
     projectAndRead: projectAndRead
   };
@@ -7532,4 +7596,4 @@ var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"6f0b654fa37b463f5710ccfaf97b41d73a6d2ac3c1f4ffd878f4494465192f8d","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"30d956aaa405d59e6d881e3aa8e82df26fe9a5a72f77be733b011ce6d81894f9"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"77413eb7121bc0bef7412533ff0bd2cf58ea64d175e02735eaded688d7561da5"},{"module":"supply-planning-production-source","sha256":"905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"5795e29574f497be5c4db6e7aa21cc304efd09f67a08fd1c3f960953aedd3666","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-production-source","sha256":"905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
