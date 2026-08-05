@@ -67,7 +67,7 @@ section('S. status mapping — Shipment (real B4-R3/R4/R6 chain)');
   eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S1', 'shipped', 100)]) }), 'SHIPPED_IN_TRANSIT') !== null, true, 'S: shipment shipped → SHIPPED_IN_TRANSIT');
   eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S2', 'in_transit', 100)]) }), 'SHIPPED_IN_TRANSIT') !== null, true, 'S: shipment in_transit → SHIPPED_IN_TRANSIT');
   eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S3', 'ready_to_ship', 100)]) }), 'APPROVED_SHIPPING_PLAN') !== null, true, 'S: shipment ready_to_ship → APPROVED_SHIPPING_PLAN (pre-dispatch, evidence SHIPMENT_CENTER §4/§15.1)');
-  eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S4', 'arrived', 100)]) }), 'DELIVERED_NOT_RECEIVED') !== null, true, 'S: shipment arrived → DELIVERED_NOT_RECEIVED');
+  eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S4', 'arrived', 100)]) }), 'SHIPPED_IN_TRANSIT') !== null, true, 'S: shipment arrived → SHIPPED_IN_TRANSIT (F1-3a SC-11.4-B; DELIVERED_NOT_RECEIVED only from a delivery-event authority per SC-11.4-C)');
   eq(poolBucket(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S5', 'received', 100)]) }), 'RECEIVED_NOT_REFLECTED') !== null, true, 'S: shipment received → RECEIVED_NOT_REFLECTED');
   eq(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S6', 'draft', 100)]) }).entries[0].lifecycleBucket, 'DRAFT', 'S: shipment draft → DRAFT (excluded, visible)');
   eq(SF.projectSupplyLifecycle({ shipments: shipments([shipInput('S7', 'cancelled', 100)]) }).entries[0].lifecycleBucket, 'CANCELLED_INVALID', 'S: shipment cancelled → CANCELLED_INVALID');
@@ -152,7 +152,7 @@ section('Q. Qualified Incoming integration (real modules, not bypassed)');
   eq([noqty.entries.length, noqty.entries[0].quantity, noqty.ledger.totalEffectiveSupplyQty], [1, 0, 0], 'Q: absent shipment qty → B4-R3 explicit 0 entry, 0 effective (projector does not re-derive qty)');
   // delivered-not-received (arrived) remains incoming, not current stock
   var arrived = SF.projectSupplyLifecycle({ shipments: shipments([shipInput('Q6', 'arrived', 100)]) });
-  eq([poolBucket(arrived, 'DELIVERED_NOT_RECEIVED') !== null, poolBucket(arrived, 'CURRENT_STOCK') === null], [true, true], 'Q: arrived shipment → DELIVERED_NOT_RECEIVED, still incoming (not current stock)');
+  eq([poolBucket(arrived, 'SHIPPED_IN_TRANSIT') !== null, poolBucket(arrived, 'CURRENT_STOCK') === null], [true, true], 'Q: arrived shipment → SHIPPED_IN_TRANSIT (F1-3a SC-11.4-B), still incoming (not current stock)');
 })();
 
 // ==========================================================================
@@ -203,6 +203,28 @@ section('P. determinism / purity');
   eq(SF.projectSupplyLifecycle(input).entries.length, 3, 'P: mutating a prior result does not leak into a fresh call');
   // no Sheet objects / lineage stable-sorted
   eq(r1.lineage.slice().sort(), r1.lineage, 'P: lineage is stable-sorted');
+})();
+
+// ==========================================================================
+// ==========================================================================
+section('F1-3a. arrived SC-11.4-B/C conformance (canonical bridge; no formula change)');
+(function () {
+  // A. raw arrived (no delivery event, no receiving fact) → SHIPPED_IN_TRANSIT; never DELIVERED/RECEIVED/CURRENT_STOCK
+  var a = SF.projectSupplyLifecycle({ shipments: shipments([shipInput('A1', 'arrived', 100)]) });
+  eq([poolBucket(a, 'SHIPPED_IN_TRANSIT') !== null, poolBucket(a, 'DELIVERED_NOT_RECEIVED') === null, poolBucket(a, 'RECEIVED_NOT_REFLECTED') === null, poolBucket(a, 'CURRENT_STOCK') === null],
+     [true, true, true, true], 'F1-3a.A arrived → SHIPPED_IN_TRANSIT; raw arrived alone never creates DELIVERED/RECEIVED/CURRENT_STOCK');
+  // B. delivery authority stays explicit: a canonical route delivery event still → DELIVERED_NOT_RECEIVED
+  eq(poolBucket(SF.projectSupplyLifecycle({ routeEvents: [eventRow('B1', 'delivered', 100)] }), 'DELIVERED_NOT_RECEIVED') !== null, true, 'F1-3a.B canonical delivery-event authority still → DELIVERED_NOT_RECEIVED (unchanged)');
+  // C. receiving authority stays explicit: a canonical receiving fact still → RECEIVED_NOT_REFLECTED
+  eq(poolBucket(SF.projectSupplyLifecycle({ receivingFacts: [recvRow('C1', 'confirmed', 100)] }), 'RECEIVED_NOT_REFLECTED') !== null, true, 'F1-3a.C canonical receiving authority still → RECEIVED_NOT_REFLECTED (unchanged)');
+  // D. quantity neutrality: only the bucket label changed; effective supply is still 100 (no formula change)
+  eq(a.ledger.totalEffectiveSupplyQty, 100, 'F1-3a.D quantity-neutral: arrived qty 100 unchanged by the bucket correction');
+  // E. Current Stock unchanged: inventory snapshot → CURRENT_STOCK directly (not via the shipment arrived path)
+  var cs = SF.projectSupplyLifecycle({ masterSku: 'CO1100-R', company: 'KM', currentStockFacts: [{ poolType: 'THREE_PL', warehouseId: 'WH1', quantity: 100, supplyLineageRef: 'E-stk' }] });
+  eq([poolBucket(cs, 'CURRENT_STOCK') !== null, cs.ledger.totalEffectiveSupplyQty], [true, 100], 'F1-3a.E Current Stock path unchanged (inventory → CURRENT_STOCK, 100)');
+  // F. external quarantine unchanged: an external authority result contributes 0 + is never emitted as a supply entry
+  var ext = SF.projectSupplyLifecycle({ shipments: shipments([shipInput('F1', 'shipped', 100)], { externalResults: [{ adapterType: 'EXTERNAL_INCOMING_AUTHORITY', planningEligible: false, adapterEligibleQuantity: 0, observedQuantity: 100, stateClass: 'QUARANTINED_UNLINKED', linkedEvidence: false, quarantined: true, adoptedToKm: false, requiresHumanReview: true, exclusionReasons: [], reviewReasons: [], candidate: { sku: 'CO1100-R' } }] }) });
+  eq([ext.entries.length, ext.ledger.totalEffectiveSupplyQty], [1, 100], 'F1-3a.F external quarantine unchanged: external contributes 0 (only the KM shipment 100 counts, one entry)');
 })();
 
 // ==========================================================================

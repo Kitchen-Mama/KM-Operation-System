@@ -3417,3 +3417,27 @@ HEADLESS: no browser/GPU here — before/after screenshots UNMEASURABLE; user mu
 ```
 
 - **Files (UI-GLOBE-02B):** `assets/js/lib/km-globe.js` (FS_SPHERE lighting/rim constants + `buildEarthCanvas` ocean/land/biome/patch/relief/cloud calibration — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/css/pages/global-logistics-map.css` (`.glm-globe-host::before` de-milk — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/tests/globe-visual-guard.test.js` (calibrated V-markers — GIT_ONLY), this entry (DOCUMENTATION_ONLY). **No `.gs` / router / DB / bundle / supply-planning change; `BUNDLE_REBUILD_REQUIRED=false`; no `APPS_SCRIPT_SYNC_REQUIRED`.** Not pushed, not deployed, no live DB accessed.
+
+---
+
+## Phase F1-3a — Canonical Qualified-Incoming Bridge SC-11.4 `arrived` Conformance Fix COMPLETED (2026-08-05)
+
+Surgical, cited conformance fix to the canonical QI→ledger bridge. **No formula / DB / schema / Apps Script handler / router / API / frontend / UI change; no production wiring (F1-3b NOT started); no live DB; no push/deploy.**
+
+```text
+Fix: supply-planning-source-facts.js projectSupplyLifecycle SHIPMENT_STATUS_MAP.arrived
+     DELIVERED_NOT_RECEIVED → SHIPPED_IN_TRANSIT (SC-11.4-B, RECOMMENDATION_SOURCE_CONTRACT_SPEC.md:597;
+     SC-11.4-C:602-603 — DELIVERED_NOT_RECEIVED never inferred from arrived). ONLY this mapping changed.
+Preserved (unchanged): received→RECEIVED_NOT_REFLECTED; routeEvents 'delivered'→DELIVERED_NOT_RECEIVED (the
+     canonical delivery-event authority); receivingFacts 'confirmed'→RECEIVED_NOT_REFLECTED (receiving authority);
+     Current Stock (inventory→CURRENT_STOCK) direct path; external quarantine (contribution 0). Quantity-NEUTRAL
+     (both SHIPPED_IN_TRANSIT + DELIVERED_NOT_RECEIVED are active buckets → same effectiveSupplyQty).
+Bundle: source-facts is bundled → regenerated via assets/tools/build-apps-script-bundle.js (hash 6f0b654…,
+     --check reproducible). BUNDLE_REBUILD_REQUIRED=true (generated 90_*.gs only; no handler/router sync).
+Tests: supply-lifecycle 68→74 (+6 focused F1-3a A–F: arrived→SHIPPED_IN_TRANSIT + delivery/receiving authority
+     intact + quantity-neutral + Current-Stock + external quarantine); source-facts/qualified-incoming/ledgers/
+     source-projection PASS; bundle parity 56 PASS; FULL SUITE 80/80; Golden 39/1/0; #34 Pending.
+Next authorized: F1-3b — wire source-projection production path to the now-conforming projectSupplyLifecycle.
+```
+
+- **Files (F1-3a):** `assets/js/core/supply-planning-source-facts.js` (arrived mapping — bundled pure module), `assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs` (regenerated via canonical build tool — `APPS_SCRIPT_SYNC_REQUIRED` = generated bundle only, if/when user later deploys), `assets/tests/supply-planning-supply-lifecycle.test.js` (cited arrived assertions + A–F block — GIT_ONLY), `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` (§F F1-3a COMPLETED — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **`FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

@@ -83,14 +83,16 @@
     cancelled: 'CANCELLED_INVALID',
     completed: OMIT_TRANSFERRED   // transferred to a Shipment (count-once)
   };
-  // Shipment header (SHIPMENT_CENTER_SPEC §3/§4/§15.1 + §535 QI allowlist). ready_to_ship = pre-dispatch
-  // commit (reserved, NOT yet physically shipped) → APPROVED_SHIPPING_PLAN (pre-SHIPPED_IN_TRANSIT, active,
-  // not DRAFT). arrived/received are canonical-but-NOT-YET-EMITTED (fixtures only; production reads empty).
+  // Shipment header (SHIPMENT_CENTER_SPEC §3/§4/§15.1 + §535 QI allowlist). ready_to_ship = pre-dispatch commit
+  // (reserved, NOT yet physically shipped) → APPROVED_SHIPPING_PLAN. F1-3a — SC-11.4-B: arrived → SHIPPED_IN_TRANSIT
+  // (in-transit; NOT delivered, NOT received). DELIVERED_NOT_RECEIVED arises ONLY from a canonical delivery-event
+  // authority (routeEvents 'delivered'), never inferred from arrived (SC-11.4-C); RECEIVED_NOT_REFLECTED only from a
+  // canonical receiving authority — both authority pathways are unchanged by this fix.
   var SHIPMENT_STATUS_MAP = {
     draft: 'DRAFT',
     ready_to_ship: 'APPROVED_SHIPPING_PLAN',
     shipped: 'SHIPPED_IN_TRANSIT', in_transit: 'SHIPPED_IN_TRANSIT',
-    arrived: 'DELIVERED_NOT_RECEIVED',
+    arrived: 'SHIPPED_IN_TRANSIT',        // F1-3a SC-11.4-B (was DELIVERED_NOT_RECEIVED — that inferred delivery from arrived, violating SC-11.4-C)
     received: 'RECEIVED_NOT_REFLECTED',
     closed: OMIT_POSTED,
     cancelled: 'CANCELLED_INVALID'
