@@ -3202,3 +3202,27 @@ Next: API-3B READ-ONLY browser verification on the primary DB (write/readback = 
 ```
 
 - **Files (T1):** `assets/js/api/operation-system-db-api.js` (read-only `getApiBaseUrl` getter, `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/api/km-api-foundation.js` (call-time transport resolution + `TRANSPORT_URL_INVALID` + `getTransportStatus`, `FRONTEND_GITHUB_PAGES_REQUIRED`), NEW `assets/tests/km-api-transport-wiring.test.js` (GIT_ONLY), updated `API_FOUNDATION_ARCHITECTURE.md` §8.2 + `API_WEEKLY_SHIPPING_F3A_REPORT.md` §5a/§6 + this entry (DOCUMENTATION_ONLY). **No `APPS_SCRIPT_SYNC_REQUIRED`; `BUNDLE_REBUILD_REQUIRED=false`.** Not pushed, not deployed.
+
+---
+
+## Weekly Command Reliability Hotfix (Round C1) SOURCE-PRESENT / TEST-VERIFIED, NOT DEPLOYED (2026-08-05)
+
+Fixes the "write-succeeded / acknowledgement-failed" defects on Weekly commands (Submit/Approve/Reject/Cancel/Complete/Save/Add Note). **Frontend-only; no business logic, no lifecycle change, no `.gs` change, no allocation-draft bridge, not deployed.**
+
+```text
+Root cause: the adapter awaited a whole-DB readback AFTER the handler committed → a reload hiccup rejected a committed write (false failure)
+Fix: canonical command runner _kmWeeklyCommand_ — result derived ONLY from the handler response; NEVER throws; readback decoupled
+Classification: HTTP_TRANSPORT_ERROR · NON_JSON_RESPONSE · BUSINESS_COMMAND_ERROR · ALREADY_IN_TARGET_STATE · TRANSPORT_NOT_CONFIGURED
+Idempotency: retry after a committed transition → ALREADY_IN_TARGET_STATE → benign refresh (no scary error, no duplicate side effect)
+Single readback: page _spReadbackAfterWrite_ via the ACTIVE path (Workspace when enabled, else Legacy) — never both; stale-seq guarded
+Committed-readback-failed: shows "已提交，正在重新確認狀態…" + reconciliation render (no blind-retry prompt)
+Double-click guard: per-planId:command in-flight flag → second click IN_FLIGHT (no dual write)
+Submit sequencing: qty-save failure now STOPS the submit (no "qty error while already Pending")
+Apps Script: UNCHANGED · Bundle rebuild: false · Safety (S0/S0.5) preserved: production-safety 85/85
+Tests: km-weekly-command-reliability.test.js 28/0; page cutover 27/0; transport 30/0; foundation 57/0; compat 43/0; weekly workspace 66/0
+Golden 39/1/0; #34 Pending; replen P29–P31 still failing (unrelated)
+Environment: primary DB in use → live write retest READ-first; write/readback = LIVE_WRITE_READBACK_NOT_VERIFIED unless authorized/copy-bound
+Next: Round C2 = shipping_allocation_drafts bridge (explicitly deferred; not started)
+```
+
+- **Files (C1):** `assets/js/api/operation-system-db-api.js` (canonical Weekly command runner; the 4 write adapters delegate to it, no internal readback — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/pages/shipping-plan.js` (guarded `_spRunCommand_` + single active-path readback + committed/readback-failed handling — `FRONTEND_GITHUB_PAGES_REQUIRED`), NEW `assets/tests/km-weekly-command-reliability.test.js` (GIT_ONLY), NEW `docs/planning/WEEKLY_COMMAND_RELIABILITY_C1.md` + this entry (DOCUMENTATION_ONLY). **No `APPS_SCRIPT_SYNC_REQUIRED`; `BUNDLE_REBUILD_REQUIRED=false`.** Not pushed, not deployed.

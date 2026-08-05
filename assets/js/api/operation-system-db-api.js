@@ -2644,83 +2644,58 @@ window.KM.DB.createShippingPlansBatch = async function(payload) {
     return json.data;
 };
 
-// Status transitions: { shipping_plan_id, transition: submit|approve|reject|cancel, rejected_reason?, actor? }
-window.KM.DB.updateShippingPlanStatus = async function(payload) {
-    if (!isOperationDbApiConfigured()) {
-        console.warn('[KM.DB] API not configured, updateShippingPlanStatus skipped');
-        return { success: false, error: 'API not configured' };
+// ---- Weekly command reliability (Round C1) ----------------------------------------------------------
+// ONE canonical command runner for the Weekly mutations. It fixes WRITE_SUCCEEDED_BUT_ACK_FAILED by
+// DECOUPLING the acknowledgement from the readback: the command result is determined ONLY by the handler
+// response, and the post-write readback is the PAGE's single responsibility (never coupled here, so a slow/
+// failed reload can no longer flip a committed write into a displayed failure). Responses are read TEXT-FIRST
+// and classified distinctly (HTTP_TRANSPORT_ERROR / NON_JSON_RESPONSE / BUSINESS_COMMAND_ERROR); a
+// "cannot submit / already / not in state" business error maps to the idempotent-benign ALREADY_IN_TARGET_STATE.
+// Returns a canonical { success, data, error } result and NEVER throws — callers check result.success.
+var KM_ALREADY_IN_TARGET_PATTERNS = [
+    /already/i, /cannot\s+(submit|approve|reject|cancel|complete)/i, /not\s+(a\s+)?(draft|pending|approved)/i,
+    /must\s+be\s+(a\s+)?(draft|pending|approved)/i, /invalid\s+(status|transition)/i, /pending_approval/i,
+    /no\s+longer/i, /current\s+status/i
+];
+function _kmClassifyBusinessError_(msg) {
+    var s = String(msg == null ? '' : msg);
+    for (var i = 0; i < KM_ALREADY_IN_TARGET_PATTERNS.length; i++) { if (KM_ALREADY_IN_TARGET_PATTERNS[i].test(s)) return 'ALREADY_IN_TARGET_STATE'; }
+    return 'BUSINESS_COMMAND_ERROR';
+}
+function _kmCmdOk_(command, data) { return { success: true, data: Object.assign({ command: command, committed: true }, data || {}), error: null }; }
+function _kmCmdErr_(command, code, message, details) {
+    return { success: false, data: null, error: { code: code || 'BUSINESS_COMMAND_ERROR', message: String(message == null ? code : message), details: (details == null ? { command: command } : Object.assign({ command: command }, details)) } };
+}
+async function _kmWeeklyCommand_(command, payload) {
+    if (!isOperationDbApiConfigured()) return _kmCmdErr_(command, 'TRANSPORT_NOT_CONFIGURED', 'Operation DB API not configured');
+    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var resp;
+    try {
+        resp = await fetch(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(Object.assign({ action: command }, payload || {})) });
+    } catch (netErr) {
+        // Network/redirect failure with NO acknowledged response → transport error (not an ack of a commit).
+        return _kmCmdErr_(command, 'HTTP_TRANSPORT_ERROR', 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr));
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'updateShippingPlanStatus' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Update status failed');
-    await loadOperationDb({ force: true });
-    return json.data;
-};
+    var text = '';
+    try { text = await resp.text(); } catch (e) { text = ''; }
+    if (!resp.ok) return _kmCmdErr_(command, 'HTTP_TRANSPORT_ERROR', 'API HTTP ' + resp.status, { httpStatus: resp.status });
+    var trimmed = String(text || '').trim();
+    if (trimmed.charCodeAt(0) !== 123) return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Non-JSON response from Web App', { snippet: trimmed.slice(0, 80) });   // 123 = open-brace char code (JSON object start)
+    var json; try { json = JSON.parse(trimmed); } catch (pe) { return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Malformed JSON response', { snippet: trimmed.slice(0, 80) }); }
+    if (!json.success) return _kmCmdErr_(command, _kmClassifyBusinessError_(json.error), json.error || (command + ' failed'));
+    return _kmCmdOk_(command, json.data);   // COMMITTED — the page performs the single readback via the active path
+}
 
-// Edit approved_qty (Draft only): { lines: [ { shipping_plan_line_id, approved_qty } ] }
-window.KM.DB.updateShippingPlanLineQty = async function(payload) {
-    if (!isOperationDbApiConfigured()) {
-        console.warn('[KM.DB] API not configured, updateShippingPlanLineQty skipped');
-        return { success: false, error: 'API not configured' };
-    }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'updateShippingPlanLineQty' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Update qty failed');
-    await loadOperationDb({ force: true });
-    return json.data;
-};
-
+// Status transitions: { shipping_plan_id, transition: submit|approve|reject|cancel, rejected_reason?, actor? }.
+// Returns the canonical C1 command result (never throws; no internal readback — the page reads back once).
+window.KM.DB.updateShippingPlanStatus = function(payload) { return _kmWeeklyCommand_('updateShippingPlanStatus', payload); };
+// Edit approved_qty (Draft only): { lines: [ { shipping_plan_line_id, approved_qty } ] }.
+window.KM.DB.updateShippingPlanLineQty = function(payload) { return _kmWeeklyCommand_('updateShippingPlanLineQty', payload); };
 // Append a note to shipping_plans.note (append-only history): { shipping_plan_id, note, actor? }.
-// Never overwrites existing notes and never touches rejected_reason.
-window.KM.DB.appendShippingPlanNote = async function(payload) {
-    if (!isOperationDbApiConfigured()) {
-        console.warn('[KM.DB] API not configured, appendShippingPlanNote skipped');
-        return { success: false, error: 'API not configured' };
-    }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'appendShippingPlanNote' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Append note failed');
-    await loadOperationDb({ force: true });
-    return json.data;
-};
-
-// Decision Layer Completion (Done): mark an Approved + transferred plan completed. Writes only
-// completed_at / completed_by. { shipping_plan_id, actor? }. Does NOT touch shipments.
-window.KM.DB.completeShippingPlan = async function(payload) {
-    if (!isOperationDbApiConfigured()) {
-        console.warn('[KM.DB] API not configured, completeShippingPlan skipped');
-        return { success: false, error: 'API not configured' };
-    }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'completeShippingPlan' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Complete shipping plan failed');
-    await loadOperationDb({ force: true });
-    return json.data;
-};
+window.KM.DB.appendShippingPlanNote = function(payload) { return _kmWeeklyCommand_('appendShippingPlanNote', payload); };
+// Decision Layer Completion (Done): mark an Approved + transferred plan completed { shipping_plan_id, actor? }.
+window.KM.DB.completeShippingPlan = function(payload) { return _kmWeeklyCommand_('completeShippingPlan', payload); };
 
 // ---- Weekly Plan Layer-1/2 + Combined Plan + Method Recommendation adapters (2026-07-28) ----
 // All matching is CODE/ID based server-side. Weekly Plan NEVER persists rate_card_id; carrier_name is

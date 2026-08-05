@@ -1046,48 +1046,96 @@ function _spPatchLocalQty(savedLines) {
     });
 }
 
+// ---- C1 command reliability: double-click guard · single readback · committed/readback-failed handling ----
+var _spInFlight = {};
+function _spNotify_(msg) { try { alert(msg); } catch (e) { /* headless */ } }
+// Exactly ONE readback via the ACTIVE read path (Workspace when enabled, else Legacy loadOperationDb). If the
+// readback fails AFTER a committed write, it is flagged (readbackFailed) — the command itself already succeeded.
+function _spReadbackAfterWrite_() {
+    if (_spEffectiveWorkspace()) {
+        try { renderShippingPlan(); return Promise.resolve({ readbackFailed: false }); }
+        catch (e) { return Promise.resolve({ readbackFailed: true }); }
+    }
+    if (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) {
+        return Promise.resolve(window.KM.DB.loadOperationDb({ force: true })).then(function () {
+            try { renderShippingPlan(); } catch (e) { /* render only */ }
+            return { readbackFailed: false };
+        }, function () {
+            // committed write, but the reload hiccuped → reconciliation attempt + flag (do NOT prompt a blind retry)
+            try { renderShippingPlan(); } catch (e) { /* best effort */ }
+            return { readbackFailed: true };
+        });
+    }
+    try { renderShippingPlan(); } catch (e) { /* best effort */ }
+    return Promise.resolve({ readbackFailed: false });
+}
+function _spHandleCommandResult_(res, opts) {
+    opts = opts || {};
+    if (res && res.success) {
+        return _spReadbackAfterWrite_().then(function (rb) {
+            if (rb && rb.readbackFailed) { _spNotify_(opts.commitMsg || '已提交，正在重新確認狀態…'); return; }
+            var msg = (typeof opts.onSuccess === 'function') ? opts.onSuccess(res) : opts.successMsg;
+            if (msg) _spNotify_(msg);
+        });
+    }
+    var err = (res && res.error) || { code: 'UNKNOWN', message: 'Command failed' };
+    if (err.code === 'ALREADY_IN_TARGET_STATE') {
+        // benign idempotent replay: the transition was (probably) already applied — refresh to the truth, gentle note.
+        return _spReadbackAfterWrite_().then(function () { _spNotify_('狀態已是最新（先前的操作可能已成功）。'); });
+    }
+    // genuine failure BEFORE/without a committed mutation → retain the current cards, show structured error, allow retry.
+    _spNotify_((opts.failPrefix || '操作失敗') + ': ' + err.message + ' [' + err.code + ']');
+    return Promise.resolve();
+}
+// Run one Weekly command with a per-key in-flight guard (double-click protection) + a single active-path readback.
+function _spRunCommand_(key, invokeFn, opts) {
+    if (_spInFlight[key]) return Promise.resolve({ success: false, error: { code: 'IN_FLIGHT', message: 'A command is already running.' } });
+    _spInFlight[key] = true;
+    return Promise.resolve().then(invokeFn).then(function (res) {
+        return res || { success: false, error: { code: 'NO_RESULT', message: 'No result returned' } };
+    }, function (err) {
+        return { success: false, error: { code: (err && err.apiCode) || 'HTTP_TRANSPORT_ERROR', message: (err && err.message) || String(err) } };
+    }).then(function (res) {
+        return _spHandleCommandResult_(res, opts).then(function () { _spInFlight[key] = false; return res; });
+    }, function (e) { _spInFlight[key] = false; throw e; });
+}
+
 function spDbSaveQty(planId) {
     var lines = _spCollectQtyLines(planId);
     if (!lines.length) { renderShippingPlan(); return; }
-    window.KM.DB.updateShippingPlanLineQty({ lines: lines }).then(function() {
-        // Write persisted. Patch the local cache so the re-render keeps the card in the Draft section
-        // with the new qty/cartons/totals (status stays 'draft'; no navigation, no state clear).
-        _spPatchLocalQty(lines);
-        alert('Shipping Qty saved.');
-        renderShippingPlan();
-    }).catch(function(err) {
-        // Write failed → keep the current cards on screen; just report the error (no destructive render).
-        alert('Save failed: ' + (err && err.message ? err.message : err));
-    });
+    _spRunCommand_(planId + ':saveqty', function () {
+        return window.KM.DB.updateShippingPlanLineQty({ lines: lines }).then(function (res) { if (res && res.success) _spPatchLocalQty(lines); return res; });
+    }, { successMsg: 'Shipping Qty saved.', failPrefix: 'Save failed' });
 }
 
 function spDbSubmit(planId) {
-    // Persist any qty edits first, then move Draft → Pending Approval.
+    // One guarded flow: persist qty (if any) then Submit; ONE readback after Submit. A genuine qty-save failure
+    // is surfaced and STOPS the Submit — no more "qty error shown while the plan already became Pending".
     var lines = _spCollectQtyLines(planId);
-    var doSubmit = function() {
-        window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system' })
-            .then(function() { alert('Submitted for approval.'); renderShippingPlan(); })
-            .catch(function(err) { alert('Submit failed: ' + (err && err.message ? err.message : err)); });
-    };
-    if (lines.length) {
-        window.KM.DB.updateShippingPlanLineQty({ lines: lines }).then(doSubmit).catch(doSubmit);
-    } else { doSubmit(); }
+    _spRunCommand_(planId + ':submit', function () {
+        var pre = lines.length ? window.KM.DB.updateShippingPlanLineQty({ lines: lines }) : Promise.resolve({ success: true });
+        return Promise.resolve(pre).then(function (qtyRes) {
+            if (qtyRes && qtyRes.success === false && qtyRes.error && qtyRes.error.code !== 'ALREADY_IN_TARGET_STATE') return qtyRes; // stop
+            if (lines.length && qtyRes && qtyRes.success) _spPatchLocalQty(lines);
+            return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system' });
+        });
+    }, { successMsg: 'Submitted for approval.', failPrefix: 'Submit failed' });
 }
 
 function spDbApprove(planId) {
-    // Approve = Execution Commit: the backend also creates the Shipment Draft (shipments +
-    // shipment_lines), copying the Decision Snapshot into the Execution Snapshot.
-    window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'approve', actor: 'operation-system' })
-        .then(function(data) {
-            var sh = data && data.shipment;
-            var msg = 'Plan approved.';
+    // Approve = Execution Commit: the backend also creates the Shipment Draft (shipments + shipment_lines).
+    _spRunCommand_(planId + ':approve', function () {
+        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'approve', actor: 'operation-system' });
+    }, {
+        failPrefix: 'Approve failed',
+        onSuccess: function (res) {
+            var sh = res.data && res.data.shipment; var msg = 'Plan approved.';
             if (sh && sh.created) msg += '\nShipment Draft created: ' + (sh.shipment_no || sh.shipment_id) + ' (' + (sh.line_count || 0) + ' lines).';
             else if (sh && sh.reason === 'already_exists') msg += '\nShipment Draft already exists (' + (sh.shipment_id || '') + ').';
             else if (sh && (sh.error || (sh.created === false && sh.reason))) msg += '\nNote: Shipment Draft not created (' + (sh.error || sh.reason) + '). You can retry from Shipment Overview.';
-            alert(msg);
-            renderShippingPlan();
-        })
-        .catch(function(err) { alert('Approve failed: ' + (err && err.message ? err.message : err)); });
+            return msg;
+        }
+    });
 }
 
 function spDbReject(planId) {
@@ -1095,25 +1143,25 @@ function spDbReject(planId) {
     if (reason == null) return;            // cancelled the prompt
     reason = String(reason).trim();
     if (!reason) { alert('Rejection reason is required.'); return; }
-    window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'reject', rejected_reason: reason, actor: 'operation-system' })
-        .then(function() { alert('Plan rejected and returned to Draft.'); renderShippingPlan(); })
-        .catch(function(err) { alert('Reject failed: ' + (err && err.message ? err.message : err)); });
+    _spRunCommand_(planId + ':reject', function () {
+        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'reject', rejected_reason: reason, actor: 'operation-system' });
+    }, { successMsg: 'Plan rejected and returned to Draft.', failPrefix: 'Reject failed' });
 }
 
 // Decision Layer Completion (Done). Allowed only on an Approved + transferred plan. Writes
 // completed_at / completed_by; the card then leaves the Active view (preserved in DB).
 function spDbDone(planId) {
     if (!confirm('This shipping plan has already been transferred to Shipment Draft.\n\nMark this planning task as completed?')) return;
-    window.KM.DB.completeShippingPlan({ shipping_plan_id: planId, actor: 'system_user' })
-        .then(function() { alert('Planning task marked as completed.'); renderShippingPlan(); })
-        .catch(function(err) { alert('Done failed: ' + (err && err.message ? err.message : err)); });
+    _spRunCommand_(planId + ':done', function () {
+        return window.KM.DB.completeShippingPlan({ shipping_plan_id: planId, actor: 'system_user' });
+    }, { successMsg: 'Planning task marked as completed.', failPrefix: 'Done failed' });
 }
 
 function spDbCancel(planId) {
     if (!confirm('Cancel this shipping plan?')) return;
-    window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'cancel', actor: 'operation-system' })
-        .then(function() { renderShippingPlan(); })
-        .catch(function(err) { alert('Cancel failed: ' + (err && err.message ? err.message : err)); });
+    _spRunCommand_(planId + ':cancel', function () {
+        return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'cancel', actor: 'operation-system' });
+    }, { failPrefix: 'Cancel failed' });   // silent success (matches prior UX: Cancel just refreshes)
 }
 
 // ---- Plan Rationale: Add Note (append-only to shipping_plans.note) ----
@@ -1133,9 +1181,9 @@ function spDbSaveNote(planId) {
     if (!note) { alert('Please enter a note.'); return; }
     if (!window.KM.DB.appendShippingPlanNote) { alert('Add Note is not available.'); return; }
     // Append-only: the backend preserves existing note history and never touches rejected_reason.
-    window.KM.DB.appendShippingPlanNote({ shipping_plan_id: planId, note: note, actor: 'operation-system' })
-        .then(function() { alert('Note added.'); renderShippingPlan(); })
-        .catch(function(err) { alert('Add note failed: ' + (err && err.message ? err.message : err)); });
+    _spRunCommand_(planId + ':note', function () {
+        return window.KM.DB.appendShippingPlanNote({ shipping_plan_id: planId, note: note, actor: 'operation-system' });
+    }, { successMsg: 'Note added.', failPrefix: 'Add note failed' });
 }
 
 window.renderShippingPlanFromDb = renderShippingPlanFromDb;
