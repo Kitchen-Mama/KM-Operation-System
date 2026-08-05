@@ -3298,3 +3298,29 @@ Tests: allocation-draft-ui-c2d2a 36/0; full suite 79/79 files green; C1 28/0; Go
 ```
 
 - **Files (C2-D2A-UI):** `assets/js/utils/inventory-compat.js` (IRDraftWorkspace state machine + orchestration — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/pages/inventory-replenishment.js` (controller wiring + truthful persistence panel + cancel/refresh + initial targeted load — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/api/operation-system-db-api.js` (canonical-code + conflictIds response-contract correction — `FRONTEND_GITHUB_PAGES_REQUIRED`), `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` §10 (DOCUMENTATION_ONLY), NEW `assets/tests/allocation-draft-ui-c2d2a.test.js` + updated `km-weekly-command-reliability.test.js` (GIT_ONLY), this entry. **No `APPS_SCRIPT_SYNC_REQUIRED`; `BUNDLE_REBUILD_REQUIRED=false`.** The persistence panel self-injects via JS (no CSS added — functional, unstyled; optional CSS is a follow-up). Not pushed, not deployed, no live DB accessed.
+
+---
+
+## Supply Planning Formula Runtime — Current-State Reconciliation (Phase F1-0) READ-ONLY AUDIT, NO IMPLEMENTATION (2026-08-05)
+
+Full read-only reconciliation of the supply-planning formula runtime (documentation ↔ code ↔ DB ↔ UI) before Formula-Runtime implementation begins. **No formula invented, no business logic / DB schema / Apps Script / frontend change, no deployment, no live Spreadsheet access.** Four audit documents created; this entry is the verified status summary.
+
+```text
+Verified central finding — TWO runtime lanes:
+  Lane 1 Calculation Pure Runtime = FUNCTIONALLY COMPLETE / TEST-VERIFIED (Golden 39/1/0; #34 Pending downstream)
+  Lane 2 Recommendation/Persistence/Orchestration Runtime = NOT WIRED / NOT DEPLOYED / fail-closed
+Browser reach of the canonical core: 0 of 8 Phase-1 pages (index.html loads ZERO supply-planning-*.js)
+Deployed supply writer: ONLY 21_factory_inventory_handlers.gs (physical factory_stock + movements)
+Recommendation output columns (recommended_qty / calculated_gap_qty / net_order_need_snapshot): BLANK in production (no deployed writer; never faked)
+calculation_run_id: DETERMINISTIC (RUN::<draftId>::v<version>, persistence.js) — NOT the random-UUID of the shipping_plans Submit path
+recommendation_calculation_runs journal: schema+writer implemented as pure modules (test-verified), NOT migrated live
+RECOMMENDATION_TARGET_SPREADSHEET_ID_: unified to PRODUCTION_DB_SPREADSHEET_ID_ (00_config.gs:25); live gate now = schema-not-provisioned fail-closed (not empty id)
+Pooling: correctly bounded — NO accidental Phase-2 cross-company borrowing; reallocation_in/out_qty_snapshot are blank Engine-B placeholders
+Tests (run from Main): 80/80 test files PASS; Golden Matrix 39 executed / 1 pending / 0 canonical-blocked; Scenario #34 Pending
+Note: pre-existing replen-draft-completeness P29–P31 are RESOLVED (C2-D1R retargeted to sadUpsertLinesKeyedCore_); file PASSES — older API-1/API-2 "still failing" ledger lines are STALE
+```
+
+- **First missing end-to-end link (verified):** primary = the deployed **Recommendation Runtime seam** (live-source → complete pure calc → persisted output → UI readback) — everything upstream (source reads, pure calc) and everything downstream of a *decided* quantity (draft save/readback, request-order decision layer, PO convert/receive, shipment, current-stock deduction) is present/wired; the calc→persist→UI bridge is the single severed edge. Adjacent gaps: no §8/§9 month-by-month projection engine (DOCUMENT_ONLY); §2E Qualified-Incoming ten-gate **bypassed** in the production ledger path (status-map shortcut; 3 divergent status vocabularies; `arrived` conflict). Secondary (execution lane) = **Allocation Draft Submit → Weekly Shipping Plan HALTED** (`16_…:352`, HALT `:359-365`).
+- **Selected first implementation slice:** **F1-3 Qualified-Incoming → Supply-Ledger Production Connection** (pure, test-first, no deploy, read-only) — uses only frozen+implemented+tested pieces, resolves the highest-severity active conflict, is a prerequisite for truthful projection + replenishment, lowest rework/business risk. The spec's preferred *Inventory Projection Runtime Integration* is NOT ready (no engine + status-mapping blocker + no writer + not deployed).
+- **Genuine open decisions (register):** D-1 Verification-Copy deploy target (🔴 blocks live), D-2 provision `factory_stock_allocation_plans` (🟠 blocks F1-5), D-3 Submit lineage/idempotency + additive lineage column (🔴 blocks Submit), D-4 B-8 cancel/release (🔴 blocks reservation), D-5 B-4 residual QI double-count owner (🟠 affects F1-3), D-6 B-6 Request→PO atomicity (🟢 non-blocking), D-7 Forecast Target% apply-vs-retire (🟠 blocks F1-1). Already-frozen rules NOT re-opened.
+- **Files (F1-0):** NEW `docs/planning/SUPPLY_PLANNING_FORMULA_RUNTIME_RECONCILIATION.md`, NEW `docs/planning/SUPPLY_PLANNING_FIELD_OWNERSHIP_MATRIX.md`, NEW `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md`, NEW `docs/planning/SUPPLY_PLANNING_DECISION_REGISTER.md` (all DOCUMENTATION_ONLY), this entry. **No production code, no test, no `.gs`, no DB schema, no bundle change. `BUNDLE_REBUILD_REQUIRED=false`; no `APPS_SCRIPT_SYNC_REQUIRED`.** Not pushed, not deployed, no live DB accessed. Next: F1-3 (first slice) after the round's authorization.
