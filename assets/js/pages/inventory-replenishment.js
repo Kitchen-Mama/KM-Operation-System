@@ -2142,6 +2142,15 @@ function _flushDraftDbPersist(sku) {
         // No valid line left → never keep an empty header (§5.3).
         if (!complete.length) { _cancelAllocationDraftHeader(); return; }
 
+        // C2-D2 §7: Phase-1 = ONE route context per Draft. If the complete lines carry >1 distinct
+        // From/To/Method/Last-mile route context, BLOCK (MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1) — never
+        // silently persist only route0. Genuinely different routes → separate Submit cycles / Drafts (§3/§4).
+        var _routeKeys = (window.IRDraft && window.IRDraft.distinctRouteContexts) ? window.IRDraft.distinctRouteContexts(complete) : [];
+        if (_routeKeys.length > 1) {
+            if (typeof _irShowDraftSaveError === 'function') _irShowDraftSaveError(sku, { message: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1 — ' + _routeKeys.length + ' distinct From/To/Method routes in one Draft; Phase-1 persists one route per Draft (use separate Submit cycles). NOT SAVED TO DB.' });
+            return;
+        }
+
         _draftDbInFlight[sku] = true;
         // C2-D1R: route context (From/To/Method) is HEADER-level in the approved 30-col schema. Phase-1 persists
         // ONE route per Draft — the shared route of this scope's complete lines (route0). Genuinely different

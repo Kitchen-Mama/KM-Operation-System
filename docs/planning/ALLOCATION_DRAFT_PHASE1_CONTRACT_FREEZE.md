@@ -117,3 +117,22 @@ Because source is now reconciled to the approved 30/28 schema, the expected outc
 - Live persistence: the handler now validates the live 30-col header against a **30-col** expectation, so the prior `HEADER_ORDER_MISMATCH` should no longer fire — **NOT LIVE VERIFIED** (no live write this round; primary DB in use).
 - The three allocation-draft adapters (`upsertShippingAllocationDraft` / `…Lines` / `submitShippingAllocationDrafts`) still use the pre-C1 pattern — **C1-reliability alignment remains deferred** (post-verification).
 - Read-only evidence tool `41_shipping_allocation_schema_audit.gs` remains valid; its canonical is now the reconciled 30/28 constants, so the user can run it to **prove live == 30/28 → `NO_MIGRATION_REQUIRED`.**
+
+---
+
+## 9. C2-D2 runtime completion + Submit HALT (2026-08-05)
+
+**Completed (source/test-verified, LIVE NOT VERIFIED):**
+- **K3 hard enforcement** — a single centralized resolver `sadResolveActiveDraft_(sh, scope)` (key = `planning_cycle + company + country + marketplace + source_page`; **never** `draft_version`, **never** `recommendation_group_no`) used by Save, Cancel and the targeted readback. **`0` → CREATE · `1` → REUSE/UPDATE · `>1` → `BLOCKED_CONFLICT`** (zero mutation, returns all conflicting Draft ids).
+- **One route per Draft (§7)** — the frontend blocks **`MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1`** when the complete lines carry >1 distinct From/To/Method/Last-mile context (never silently persists only route0; `IRDraft.distinctRouteContexts`).
+- **Targeted read-only readback** — `getShippingAllocationDraftWorkspace` (`handleGetShippingAllocationDraftWorkspace_`) reads **only** the two draft tables (never `getOperationDb`) → `{ status: NO_ACTIVE_DRAFT | ACTIVE_DRAFT_FOUND | BLOCKED_CONFLICT, draft, lines, issues }`.
+- **Whole-Draft Cancel** — `cancelShippingAllocationDraft` (`handleCancelShippingAllocationDraft_`): soft-cancel (`status`/`cancelled_by`/`cancelled_at`/`cancel_reason` + `updated_*`), **preserves Header + Lines**, idempotent (repeat → benign `already_cancelled`), submitted Draft not cancellable (SC-1 not inferred).
+- **C1 reliability alignment** — the Save/Cancel/Submit adapters delegate to the canonical `_kmWeeklyCommand_` runner (ack decoupled from readback, structured error codes, never throw, **no internal whole-DB `loadOperationDb`**); the readback adapter is text-first.
+
+**HALTED — Submit → Weekly Shipping Plan handoff (§14–§19):** deferred by design because the required authority is **unresolved in source/spec**, per the round's §17/§25 HALT conditions:
+1. **Source-availability / L2 commitment authority is unresolved.** `handleCreateShippingPlansBatch_` performs **no** source-stock reread, aggregation, or availability check, and the supply-planning calculation engines are **NOT IMPLEMENTED** — there is no authoritative available-qty / L2-commitment set to validate `requested ≤ available` under lock. Inventing one is prohibited.
+2. **No deterministic downstream identity.** The existing writer generates **random-UUID** `shipping_plan_id` / `shipping_plan_line_id` / `submit_batch_id` (`Utilities.getUuid()`), so idempotent retry (same `draftId + draftVersion` → the same downstream ids, no duplicates) cannot be guaranteed.
+3. **Idempotency would require a new lineage column.** `shipping_plans` / `shipping_plan_lines` carry **no** `allocation_draft_id` / `allocation_draft_line_id` lineage column, so a retry-safe Draft→Plan link cannot be recorded without **adding a DB column** — prohibited (§24, no schema expansion).
+4. **No logical transaction / compensation** exists in the writer (§18): a plain append loop with no downstream verify-then-mark-source or rollback.
+
+**Also flagged:** an existing "Submit Plan" control (`inventory-replenishment.js`) submits **local Execution-Plan UI state** directly to `createShippingPlansBatch` — this predates C2-D2 and does **not** satisfy §14 (DB-authoritative reread under lock) / §12 (no local-only submit). It was **not** modified this round (ripping out a working pre-existing control is an unverifiable live-behavior change); the DB-authoritative Submit that would replace it stays HALTed until (1)–(3) are resolved by a separate authorized decision (supply authority + a deterministic id/lineage scheme, potentially a user-approved additive lineage column).

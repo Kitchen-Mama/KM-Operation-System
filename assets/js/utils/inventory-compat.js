@@ -322,11 +322,32 @@
   function buildCancelLinePayload(allocationDraftId, lineId) {
     return { allocation_draft_id: allocationDraftId, lines: [{ allocation_draft_line_id: lineId, line_status: 'cancelled' }] };
   }
+  // C2-D2 §4/§7: Phase-1 = ONE route context per Draft. The route-context key is From / To / Method / Last-mile
+  // (an Amazon logical To is keyed by its marketplace token). distinctRouteContexts returns the DISTINCT complete
+  // route-context keys among the given routes — length > 1 means the UI holds multiple route contexts, which is
+  // UNSUPPORTED in Phase-1: the caller must BLOCK (never silently persist only the first route).
+  function routeContextKey(route) {
+    route = route || {};
+    var from = String(route.source_warehouse_id == null ? '' : route.source_warehouse_id).trim();
+    var to = (route.destination_type === 'MARKETPLACE_DESTINATION')
+      ? ('MK:' + String(route.destination_marketplace || route.destination_country || '').trim())
+      : String(route.destination_warehouse_id == null ? '' : route.destination_warehouse_id).trim();
+    var method = String(route.shipping_method == null ? '' : route.shipping_method).trim();
+    var lastMile = String(route.last_mile_delivery == null ? '' : route.last_mile_delivery).trim();
+    return [from, to, method, lastMile].join('||');
+  }
+  function distinctRouteContexts(routes) {
+    var seen = {}, keys = [];
+    (routes || []).forEach(function (r) { if (!isRouteComplete(r)) return; var k = routeContextKey(r); if (!seen[k]) { seen[k] = 1; keys.push(k); } });
+    return keys;
+  }
   var IRDraft = {
     buildDraftHeaderPayload: buildDraftHeaderPayload,
     buildDraftLinePayload: buildDraftLinePayload,
     buildCancelLinePayload: buildCancelLinePayload,
-    isRouteComplete: isRouteComplete
+    isRouteComplete: isRouteComplete,
+    routeContextKey: routeContextKey,
+    distinctRouteContexts: distinctRouteContexts
   };
 
   return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft };

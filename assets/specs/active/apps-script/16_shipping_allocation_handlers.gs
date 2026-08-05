@@ -153,24 +153,16 @@ function sadUpsertDraftHeaderCore_(body) {
   var id = String((body && body.allocation_draft_id) || '').trim();
   var found = id ? procurementFindRow_(sh, 'allocation_draft_id', id) : null;
 
-  // Idempotent match on the uniqueness key when no id was supplied.
+  // C2-D2 §3: centralized K3 Active-Draft resolution when no explicit id (key = planning_cycle + company +
+  // country + marketplace + source_page; NEVER draft_version, NEVER recommendation_group_no).
+  //   0 Active → CREATE · 1 Active → REUSE/UPDATE · >1 Active → BLOCKED_CONFLICT (zero mutation, conflict IDs).
   if (!id) {
-    var pc = String((body && body.planning_cycle) || '').trim();
-    var co = String((body && body.company) || '').trim();
-    var cy = String((body && body.country) || '').trim();
-    var mk = String((body && body.marketplace) || '').trim();
-    var data = sh.getDataRange().getValues();
-    if (data.length >= 2 && pc) {
-      var h = data[0].map(function (x) { return String(x).trim(); });
-      var ci = { pc: h.indexOf('planning_cycle'), co: h.indexOf('company'), cy: h.indexOf('country'), mk: h.indexOf('marketplace'), dv: h.indexOf('draft_version'), id: h.indexOf('allocation_draft_id') };
-      for (var r = 1; r < data.length; r++) {
-        if (String(data[r][ci.pc]).trim() === pc && String(data[r][ci.co]).trim() === co &&
-            String(data[r][ci.cy]).trim() === cy && String(data[r][ci.mk]).trim() === mk &&
-            String(data[r][ci.dv]).trim() === draftVersion) {
-          id = String(data[r][ci.id]).trim(); found = procurementFindRow_(sh, 'allocation_draft_id', id); break;
-        }
-      }
+    var k3 = sadResolveActiveDraft_(sh, { planning_cycle: (body && body.planning_cycle), company: (body && body.company),
+      country: (body && body.country), marketplace: (body && body.marketplace), source_page: (body && body.source_page) });
+    if (k3.status === 'BLOCKED_CONFLICT') {
+      return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT — more than one Active Draft for this scope; resolve manually (zero rows written)', data: { status: 'BLOCKED_CONFLICT', conflictIds: k3.conflictIds } });
     }
+    if (k3.status === 'ACTIVE_DRAFT_FOUND') { id = k3.id; found = procurementFindRow_(sh, 'allocation_draft_id', id); }
   }
 
   if (found) {
@@ -362,4 +354,128 @@ function handleSubmitShippingAllocationDrafts_(body) {
     n++;
   }
   return jsonResponse_({ success: true, data: { submitted: n } });
+}
+
+// ============================================================
+// C2-D2 — K3 Active-Draft resolver + targeted read-only readback + whole-Draft Cancel.
+// The Submit → shipping_plans / shipping_plan_lines handoff is DEFERRED (HALT): the source-availability /
+// L2 commitment authority is unresolved in source/spec, createShippingPlansBatch produces random-UUID (non
+// deterministic) downstream IDs, and idempotent retry would require a NEW allocation_draft lineage column on
+// shipping_plans (prohibited). See docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md.
+// ============================================================
+
+// Centralized K3 Active-Draft resolver (single lookup rule for Save / Cancel / Readback). Active = status not
+// submitted/cancelled matching the K3 scope (planning_cycle + company + country + marketplace + source_page) —
+// NEVER draft_version, NEVER recommendation_group_no. Returns
+//   { status:'NO_ACTIVE_DRAFT'|'ACTIVE_DRAFT_FOUND'|'BLOCKED_CONFLICT', id, row, conflictIds }.
+function sadResolveActiveDraft_(sh, scope) {
+  scope = scope || {};
+  var want = {
+    pc: String(scope.planning_cycle == null ? '' : scope.planning_cycle).trim(),
+    co: String(scope.company == null ? '' : scope.company).trim(),
+    cy: String(scope.country == null ? '' : scope.country).trim(),
+    mk: String(scope.marketplace == null ? '' : scope.marketplace).trim(),
+    sp: String(scope.source_page == null || scope.source_page === '' ? 'inventory_replenishment' : scope.source_page).trim()
+  };
+  var empty = { status: 'NO_ACTIVE_DRAFT', id: '', row: 0, conflictIds: [] };
+  if (!want.pc) return empty;
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return empty;
+  var h = data[0].map(function (x) { return String(x).trim(); });
+  var ci = { pc: h.indexOf('planning_cycle'), co: h.indexOf('company'), cy: h.indexOf('country'),
+    mk: h.indexOf('marketplace'), sp: h.indexOf('source_page'), st: h.indexOf('status'), id: h.indexOf('allocation_draft_id') };
+  var matches = [];
+  for (var r = 1; r < data.length; r++) {
+    var st = String(data[r][ci.st] == null ? '' : data[r][ci.st]).trim().toLowerCase();
+    if (st === 'submitted' || st === 'cancelled') continue;   // active = not terminal
+    if (String(data[r][ci.pc]).trim() === want.pc && String(data[r][ci.co]).trim() === want.co &&
+        String(data[r][ci.cy]).trim() === want.cy && String(data[r][ci.mk]).trim() === want.mk &&
+        String(data[r][ci.sp]).trim() === want.sp) {
+      matches.push({ id: String(data[r][ci.id]).trim(), row: r + 1 });
+    }
+  }
+  if (!matches.length) return empty;
+  if (matches.length > 1) return { status: 'BLOCKED_CONFLICT', id: '', row: 0, conflictIds: matches.map(function (m) { return m.id; }) };
+  return { status: 'ACTIVE_DRAFT_FOUND', id: matches[0].id, row: matches[0].row, conflictIds: [] };
+}
+
+// Read one sheet row (1-based) into a header-keyed object (read-only).
+function sadRowToObject_(sh, rowNum) {
+  var lastCol = sh.getLastColumn();
+  var hdr = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (x) { return String(x).trim(); });
+  var row = sh.getRange(rowNum, 1, 1, lastCol).getValues()[0];
+  var o = {};
+  for (var i = 0; i < hdr.length; i++) if (hdr[i]) o[hdr[i]] = row[i];
+  return o;
+}
+
+// Read the non-cancelled lines for one Draft id (read-only join by allocation_draft_id).
+function sadReadLinesForDraft_(lsh, draftId) {
+  var data = lsh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var hdr = data[0].map(function (x) { return String(x).trim(); });
+  var di = hdr.indexOf('allocation_draft_id'), si = hdr.indexOf('line_status');
+  var out = [];
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][di]).trim() !== draftId) continue;
+    if (si !== -1 && String(data[r][si] == null ? '' : data[r][si]).trim().toLowerCase() === 'cancelled') continue;
+    var o = {};
+    for (var c = 0; c < hdr.length; c++) if (hdr[c]) o[hdr[c]] = data[r][c];
+    out.push(o);
+  }
+  return out;
+}
+
+// C2-D2 §9: targeted READ-ONLY Allocation-Draft readback. Reads ONLY shipping_allocation_drafts +
+// shipping_allocation_draft_lines (never getOperationDb). Body: { planning_cycle, company, country, marketplace,
+// source_page }. Returns { success, data:{ status, draft, lines, issues }, errors }.
+function handleGetShippingAllocationDraftWorkspace_(body) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+    var k3 = sadResolveActiveDraft_(sh, { planning_cycle: (body && body.planning_cycle), company: (body && body.company),
+      country: (body && body.country), marketplace: (body && body.marketplace), source_page: (body && body.source_page) });
+    if (k3.status === 'NO_ACTIVE_DRAFT') return jsonResponse_({ success: true, data: { status: 'NO_ACTIVE_DRAFT', draft: null, lines: [], issues: [] }, errors: [] });
+    if (k3.status === 'BLOCKED_CONFLICT') return jsonResponse_({ success: true, data: { status: 'BLOCKED_CONFLICT', draft: null, lines: [], issues: [{ code: 'BLOCKED_CONFLICT', conflictIds: k3.conflictIds }] }, errors: [] });
+    var draft = sadRowToObject_(sh, k3.row);
+    var lsh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
+    var lines = sadReadLinesForDraft_(lsh, k3.id);
+    return jsonResponse_({ success: true, data: { status: 'ACTIVE_DRAFT_FOUND', draft: draft, lines: lines, issues: [] }, errors: [] });
+  } catch (e) {
+    return jsonResponse_({ success: false, data: null, errors: [{ code: 'READBACK_ERROR', message: String(e && e.message ? e.message : e) }] });
+  }
+}
+
+// C2-D2 §13: whole-Draft Cancel. Resolves the exact Draft (explicit id, else K3), soft-cancels the header
+// (status + cancelled_* audit), PRESERVES header + lines, idempotent (repeat → benign ALREADY_CANCELLED). A
+// submitted Draft is NOT cancelled (SC-1 not inferred). Under ScriptLock.
+function handleCancelShippingAllocationDraft_(body) {
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
+    var id = String((body && body.allocation_draft_id) || '').trim();
+    var found = id ? procurementFindRow_(sh, 'allocation_draft_id', id) : null;
+    if (!id) {
+      var k3 = sadResolveActiveDraft_(sh, { planning_cycle: (body && body.planning_cycle), company: (body && body.company),
+        country: (body && body.country), marketplace: (body && body.marketplace), source_page: (body && body.source_page) });
+      if (k3.status === 'BLOCKED_CONFLICT') return jsonResponse_({ success: false, error: 'BLOCKED_CONFLICT', data: { status: 'BLOCKED_CONFLICT', conflictIds: k3.conflictIds } });
+      if (k3.status === 'NO_ACTIVE_DRAFT') return jsonResponse_({ success: false, error: 'NO_ACTIVE_DRAFT' });
+      id = k3.id; found = procurementFindRow_(sh, 'allocation_draft_id', id);
+    }
+    if (!found) return jsonResponse_({ success: false, error: 'NO_ACTIVE_DRAFT' });
+    function get(name) { var c = found.col(name); return c !== -1 ? String(sh.getRange(found.row, c + 1).getValue()).trim() : ''; }
+    function setCol(name, val) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(val); }
+    var st = get('status').toLowerCase();
+    if (st === 'cancelled') return jsonResponse_({ success: true, data: { allocation_draft_id: id, status: 'cancelled', already_cancelled: true } });
+    if (st === 'submitted') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:submitted' });
+    var now = procurementTimestamp_();
+    var actor = String((body && body.cancelled_by) || (body && body.actor) || 'inventory-replenishment').trim();
+    setCol('status', 'cancelled'); setCol('cancelled_by', actor); setCol('cancelled_at', now);
+    setCol('cancel_reason', String((body && body.cancel_reason) || '').trim());
+    setCol('updated_by', actor); setCol('updated_at', now);
+    return jsonResponse_({ success: true, data: { allocation_draft_id: id, status: 'cancelled', already_cancelled: false } });
+  } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
 }

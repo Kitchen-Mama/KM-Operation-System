@@ -3264,3 +3264,20 @@ Golden 39/1/0; #34 Pending; production-safety 67 + 85 green; C1 28/0
 ```
 
 - **Files (C2-D1R):** `assets/specs/active/apps-script/16_shipping_allocation_handlers.gs` (30/28 constants + header-route write + completeness gates — `APPS_SCRIPT_SYNC_REQUIRED`, `BUNDLE_REBUILD_REQUIRED=false`), `assets/js/utils/inventory-compat.js` + `assets/js/pages/inventory-replenishment.js` (IRDraft header-route payload + flush — `FRONTEND_GITHUB_PAGES_REQUIRED`), `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` + `SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md` + `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` (DOCUMENTATION_ONLY), NEW `assets/tests/allocation-draft-30-28-reconcile.test.js` + updated `allocation-draft-schema-audit.test.js` / `shipping-allocation-draft-persistence.test.js` / `replen-draft-completeness.test.js` (GIT_ONLY), this entry. **P29–P31 resolved (test scanned the public wrapper, not the private `sadUpsertLinesKeyedCore_` core; retargeted).** Not pushed, not deployed, no live DB accessed.
+
+## Allocation Draft runtime completion — reliable Save/Cancel/Readback + K3 hard enforcement (Round C2-D2) SOURCE + TEST-VERIFIED, SUBMIT HALTED, NOT LIVE-VERIFIED (2026-08-05)
+
+Completes the safe C2-D2 runtime gaps on the approved 30/28 schema and **HALTs the Submit → Weekly Shipping Plan handoff** per the round's §17/§25 (unresolved supply authority). **No schema change, no reservation/deduction/stock-movement, no live DB access, no push/deploy.**
+
+```text
+K3 hard enforcement: sadResolveActiveDraft_(sh, scope) — key = planning_cycle+company+country+marketplace+source_page (NO draft_version, NO recommendation_group_no); 0→CREATE, 1→REUSE, >1→BLOCKED_CONFLICT (zero mutation, conflict ids). Used by Save/Cancel/Readback.
+Multi-route block (§7): IRDraft.distinctRouteContexts + flush → >1 distinct From/To/Method/Last-mile → MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1 (never silently persists route0)
+Targeted readback (§9): getShippingAllocationDraftWorkspace / handleGetShippingAllocationDraftWorkspace_ — reads ONLY the 2 draft tables (never getOperationDb); statuses NO_ACTIVE_DRAFT / ACTIVE_DRAFT_FOUND / BLOCKED_CONFLICT
+Cancel (§13): cancelShippingAllocationDraft / handleCancelShippingAllocationDraft_ — soft-cancel (status+cancelled_*), preserves Header/Lines, idempotent already_cancelled, submitted-blocked, no hard delete
+C1 alignment (§10): the 3 allocation adapters delegate to _kmWeeklyCommand_ (ack decoupled, structured errors, never throw, NO internal loadOperationDb); readback adapter text-first
+Router (§20): +getShippingAllocationDraftWorkspace +cancelShippingAllocationDraft (thin)
+SUBMIT HALT (§14-§19): createShippingPlansBatch has NO source-availability/L2 authority (engines NOT IMPLEMENTED), random-UUID (non-deterministic) IDs, and shipping_plans/lines have NO allocation_draft lineage column → idempotent retry would need a new column (prohibited §24); existing local-state "Submit Plan" UI predates C2-D2 and does not meet §14 (not modified)
+Tests: allocation-draft-runtime-c2d2 29/0; full suite 78/78 files green; C1 28/0; Weekly WS 66/0; cutover 27/0; production-safety 67+85; Golden 39/1/0; #34 Pending; replen ALL PASS
+```
+
+- **Files (C2-D2):** `16_shipping_allocation_handlers.gs` (K3 resolver + BLOCKED_CONFLICT + targeted readback + whole-Draft cancel — `APPS_SCRIPT_SYNC_REQUIRED` + **new deployment version** for the doPost readback/cancel actions), `01_router.gs` (2 thin actions — `APPS_SCRIPT_SYNC_REQUIRED`), `assets/js/api/operation-system-db-api.js` + `assets/js/utils/inventory-compat.js` + `assets/js/pages/inventory-replenishment.js` (C1 adapters + readback adapter + multi-route block — `FRONTEND_GITHUB_PAGES_REQUIRED`), `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` §9 (DOCUMENTATION_ONLY), NEW `assets/tests/allocation-draft-runtime-c2d2.test.js` (GIT_ONLY), this entry. **`BUNDLE_REBUILD_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed. **Submit → Weekly Plan handoff remains forward (HALTed).**

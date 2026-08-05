@@ -2858,36 +2858,30 @@ window.KM.DB.submitRequestOrderAllocationDrafts = async function(payload) {
 // Backend handler/table = source-complete (assets/specs/active/apps-script/16_shipping_allocation_handlers.gs);
 // LIVE persistence activates on an authorized redeploy. Until then these return {success:false} when the
 // API is unconfigured and the UI falls back to transient sessionStorage recovery (never SSOT).
-window.KM.DB.upsertShippingAllocationDraft = async function(payload) {
-    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertShippingAllocationDraft skipped'); return { success: false, error: 'API not configured' }; }
-    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'upsertShippingAllocationDraft' }, payload)) });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Upsert shipping allocation draft failed');
-    await loadOperationDb({ force: true });
-    return json.data;
-};
+// C2-D2: Allocation-Draft Save/Cancel adapters aligned to the C1 canonical command runner (_kmWeeklyCommand_):
+// ack decoupled from readback, structured error codes (HTTP_TRANSPORT_ERROR / NON_JSON_RESPONSE /
+// BUSINESS_COMMAND_ERROR / ALREADY_IN_TARGET_STATE / TRANSPORT_NOT_CONFIGURED), NEVER throws, and NO internal
+// whole-DB loadOperationDb — the page performs exactly one targeted readback via getShippingAllocationDraftWorkspace.
+window.KM.DB.upsertShippingAllocationDraft = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraft', payload); };
 // UPSERT lines by allocation_draft_line_id (protects recommended_qty; §D). { allocation_draft_id, lines }.
-window.KM.DB.upsertShippingAllocationDraftLines = async function(payload) {
-    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, upsertShippingAllocationDraftLines skipped'); return { success: false, error: 'API not configured' }; }
-    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'upsertShippingAllocationDraftLines' }, payload)) });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Upsert shipping allocation draft lines failed');
-    await loadOperationDb({ force: true });
-    return json.data;
-};
-window.KM.DB.submitShippingAllocationDrafts = async function(payload) {
-    if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, submitShippingAllocationDrafts skipped'); return { success: false, error: 'API not configured' }; }
-    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'submitShippingAllocationDrafts' }, payload)) });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Submit shipping allocation drafts failed');
-    await loadOperationDb({ force: true });
-    return json.data;
+window.KM.DB.upsertShippingAllocationDraftLines = function(payload) { return _kmWeeklyCommand_('upsertShippingAllocationDraftLines', payload); };
+window.KM.DB.submitShippingAllocationDrafts = function(payload) { return _kmWeeklyCommand_('submitShippingAllocationDrafts', payload); };
+// C2-D2 §13: whole-Draft Cancel (soft-cancel; idempotent — repeat returns benign already-cancelled).
+window.KM.DB.cancelShippingAllocationDraft = function(payload) { return _kmWeeklyCommand_('cancelShippingAllocationDraft', payload); };
+// C2-D2 §9: targeted READ-ONLY Allocation-Draft readback — reads ONLY the two draft tables server-side (never
+// getOperationDb). Text-first classification; never throws. Returns { success, data:{status, draft, lines, issues}, errors }.
+window.KM.DB.getShippingAllocationDraftWorkspace = async function(params) {
+    if (!isOperationDbApiConfigured()) { return { success: false, data: null, error: { code: 'TRANSPORT_NOT_CONFIGURED', message: 'API not configured' } }; }
+    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var resp;
+    try { resp = await fetch(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: 'getShippingAllocationDraftWorkspace' }, params || {})) }); }
+    catch (netErr) { return { success: false, data: null, error: { code: 'HTTP_TRANSPORT_ERROR', message: String((netErr && netErr.message) || netErr) } }; }
+    var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
+    if (!resp.ok) return { success: false, data: null, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'API HTTP ' + resp.status, details: { httpStatus: resp.status } } };
+    var trimmed = String(text || '').trim();
+    if (trimmed.charCodeAt(0) !== 123) return { success: false, data: null, error: { code: 'NON_JSON_RESPONSE', message: trimmed.slice(0, 120) } };
+    var json; try { json = JSON.parse(trimmed); } catch (pe) { return { success: false, data: null, error: { code: 'NON_JSON_RESPONSE', message: 'parse error' } }; }
+    return json;
 };
 
 // Batch upsert Site Confirmations. { confirmations: [ { planning_cycle, company, country,
