@@ -3226,3 +3226,22 @@ Next: Round C2 = shipping_allocation_drafts bridge (explicitly deferred; not sta
 ```
 
 - **Files (C1):** `assets/js/api/operation-system-db-api.js` (canonical Weekly command runner; the 4 write adapters delegate to it, no internal readback — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/pages/shipping-plan.js` (guarded `_spRunCommand_` + single active-path readback + committed/readback-failed handling — `FRONTEND_GITHUB_PAGES_REQUIRED`), NEW `assets/tests/km-weekly-command-reliability.test.js` (GIT_ONLY), NEW `docs/planning/WEEKLY_COMMAND_RELIABILITY_C1.md` + this entry (DOCUMENTATION_ONLY). **No `APPS_SCRIPT_SYNC_REQUIRED`; `BUNDLE_REBUILD_REQUIRED=false`.** Not pushed, not deployed.
+
+## Phase-1 Allocation Draft Contract Decision Landing (Round C2-D1) DOCS + READ-ONLY DIAGNOSTIC, NO MIGRATION APPLY (2026-08-05)
+
+Lands the user-confirmed Phase-1 allocation-draft contract (D-C2-1…D-C2-4) after Round C2 correctly HALTed on a Header source-of-truth + Active-Draft key conflict. **No migration applied; no runtime/handler/router/page/schema/bundle change; no live DB accessed; no persistence/Submit implemented.**
+
+```text
+D-C2-1 Header = Model 1 (running-stack 23-col shipping_allocation_drafts); no recommendation_group_no; recommended method/last-mile NOT header
+D-C2-2 Active-Draft/Submit key = K3 (WEEKLY_SHIPPING + planning_cycle + company + country + marketplace + source_page); draft_version = version/concurrency, not a natural key
+D-C2-3 Route grain = line-level: selected_source/destination_warehouse_id (From/To), selected_shipping_method (Method), route_no, planned_qty, recommended_qty snapshot
+D-C2-4 2026-07-27 Model-2 Amendment (group_no/26-col/K2/air-sea split) = PHASE_2_DEFERRED, retained as design reference, not Phase-1 runtime authority
+Source-of-truth gate: §3.6 (design) == running-stack handler constant for the 23-col DRAFTS header (no conflict); LINE table had a minor override_reason/line_status doc-order drift → running stack governs (reconciled, no HALT)
+Freeze: byte-for-byte Model-1 headers (drafts 23 / lines 52) from SHIPPING_ALLOCATION_DRAFT(S)_HEADERS_
+Diagnostic: 41_shipping_allocation_schema_audit.gs auditShippingAllocationSchemaReadOnly() — READ ONLY, exact-ID guard, zero mutation, not routed, editor-run only; no live apply function
+Migration: PLAN-ONLY classifier (NO_MIGRATION_REQUIRED / REORDER_ONLY_SAFE_CANDIDATE / EXTRA_EMPTY_.. / EXTRA_POPULATED_REQUIRES_MAPPING_DECISION / MISSING_CANONICAL_.. / DUPLICATE_OR_BLANK_BLOCKED / UNKNOWN_BLOCKED); never emits DELETE
+Running stack: bridge SOURCE PRESENT; LIVE BLOCKED BY SCHEMA MISMATCH; NOT LIVE VERIFIED; 3 adapters await C1 alignment post-migration (C2-D2)
+Tests: allocation-draft-schema-audit.test.js; Golden 39/1/0; #34 Pending; replen P29–P31 unchanged (unrelated); production-safety + C1 remain green
+```
+
+- **Files (C2-D1):** NEW `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` (Phase-1 authority — DOCUMENTATION_ONLY), `docs/planning/SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md` (Phase-2-deferred banner — DOCUMENTATION_ONLY), `docs/planning/REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` (§3.6 Phase-1 landing annotation — DOCUMENTATION_ONLY), NEW `assets/specs/active/apps-script/41_shipping_allocation_schema_audit.gs` (read-only editor-run diagnostic — `APPS_SCRIPT_SYNC_REQUIRED` only to run the audit; not routed; no deployment version), NEW `assets/tests/allocation-draft-schema-audit.test.js` (GIT_ONLY), this entry (DOCUMENTATION_ONLY). **No `BUNDLE_REBUILD_REQUIRED` (false). No frontend/runtime/route change.** Not pushed, not deployed.

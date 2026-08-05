@@ -570,6 +570,8 @@ Records per-site confirmation before Series aggregation (site-level review → c
 
 **Purpose:** persist the **Inventory Replenishment second-layer** recommendation cycle + its editable Execution Plan. The **system recommendation snapshot** and the **user execution value** are **separate columns on the same Draft Line** — there is **NO separate `shipping_allocation_suggestions` table** (do not create one). **This table does NOT reserve or deduct stock; a Draft is NOT Qualified Incoming.** Only **Submit Plan** creates formal `shipping_plans` / `shipping_plan_lines`. Spec + DB design only — **not implemented in code.**
 
+> **PHASE-1 LANDING (Round C2-D1, 2026-08-05):** This §3.6 model is the **Model-1** Phase-1 authority (confirmed D-C2-1). The **Active-Draft / Submit key is K3** — `WEEKLY_SHIPPING + planning_cycle + company + country + marketplace + source_page` (D-C2-2); the `draft_version`-based "Cycle/scope uniqueness" line below is **version / concurrency lineage, NOT the Active-Draft natural key** (superseded for Phase-1 Active lookup by K3). `recommendation_group_no` / Model-2 (the 2026-07-27 Amendment) is **PHASE_2_DEFERRED**. For `shipping_allocation_draft_lines`, the **byte-for-byte Phase-1 column order is the running-stack handler constant** (`SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_`) — where this section's prose orders `override_reason` / `line_status` differently, the running stack governs. Owner: `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md`.
+
 ### `shipping_allocation_drafts` (header — CANONICAL)
 
 | Column | Note |
@@ -591,7 +593,7 @@ Records per-site confirmation before Series aggregation (site-level review → c
 | `note` | free note |
 
 - **REMOVED from the header (canonical):** `sku` (grain moved to lines — a Draft covers many SKUs), `target_window` (per-line, not header), `source_type` (replaced by `generation_type`).
-- **Cycle/scope uniqueness:** `planning_cycle + company + country + marketplace + draft_version` is unique. **A retry of the same `calculation_run_id` must be idempotent** (resume/upsert the existing Draft, never duplicate).
+- **Cycle/scope uniqueness:** `planning_cycle + company + country + marketplace + draft_version` is unique. **A retry of the same `calculation_run_id` must be idempotent** (resume/upsert the existing Draft, never duplicate). *(PHASE-1 C2-D1: `draft_version` here is version/lineage — the Active-Draft/Submit **natural key is K3** without `draft_version`; see `ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md`.)*
 
 ### `shipping_allocation_draft_lines` (CANONICAL)
 

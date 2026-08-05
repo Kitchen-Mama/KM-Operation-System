@@ -18,6 +18,16 @@ It does not claim that the corresponding Runtime, DB migration, API, UI, stock m
 
 ---
 
+> ## ⛔ PHASE-1 DISPOSITION — SUPERSEDED FOR PHASE 1 BY D-C2-1 / D-C2-2 / D-C2-3 (Round C2-D1, 2026-08-05)
+>
+> **`PHASE_2_DEFERRED` — NOT ACTIVE FOR PHASE-1 RUNTIME.** This amendment's Model-2 `shipping_allocation_drafts` design — the inserted **`recommendation_group_no`** column, the **26-column** header, the **header-level** `recommended_shipping_method` / `recommended_last_mile_delivery`, the **K2** uniqueness key (`… + recommendation_group_no + draft_version`), and the **air/sea multiple-Draft-Header split** — is **SUPERSEDED FOR PHASE 1** and is **NOT** current Phase-1 runtime authority.
+>
+> **Current Phase-1 runtime authority** (user-confirmed C2-D1) = the **Model-1 23-column** header + the **K3** Active-Draft/Submit key (`WEEKLY_SHIPPING + planning_cycle + company + country + marketplace + source_page`; `draft_version` = version/concurrency, never a natural key; no `recommendation_group_no`). Owner: **`docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md`**.
+>
+> This document is **retained in full** as **PHASE 2 DESIGN REFERENCE ONLY** — nothing here is deleted; the air/sea multi-head model may return only through a separately authorized Phase-2 migration. Any wording in this file (e.g. §2.1 / §2.2 below) that presents the Model-2 header / `recommendation_group_no` / K2 as the *current* schema is **SUPERSEDED FOR PHASE 1** by this banner.
+
+---
+
 **PARTIALLY SUPERSEDED — 2026-07-31 (Batch B · B-2 / B-3 precedence).**
 
 The 2026-07-31 B-2 / B-3 decision supersedes this amendment **only** where this document prohibits `shipping_plans.marketplace = MULTI` or treats the Shipping Plan header as incapable of storing a derived Marketplace scope marker. Those specific clauses (originally §4.2 "Do not write a fake canonical value such as MULTI" and the §15 Final Canonical Invariant "No fake marketplace = MULTI") are **SUPERSEDED — B-2 / B-3 2026-07-31** and are corrected in-place below.
