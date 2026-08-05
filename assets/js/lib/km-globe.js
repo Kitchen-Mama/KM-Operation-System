@@ -91,35 +91,112 @@
 
   // ---------------- earth texture (rasterized from vendored land outline) ----------------
   // Returns a 2D canvas (equirectangular, north at top) or null if land data is unavailable.
+  //
+  // UI-GLOBE-02 (VISUAL ONLY): a premium, control-tower-grade Earth painted ENTIRELY from the existing
+  // vendored land outline (window.KM_WORLD_LAND) with pure canvas-2D — NO external asset, NO network, NO new
+  // dependency. Adds latitude biome banding (snow / taiga / temperate / desert / tropical), geographically
+  // anchored desert/forest/ice patches, two-octave relief mottling (mountain/terrain feel with no elevation
+  // data), an ocean depth gradient + a soft continental-shelf halo, a faint baked graticule (lat/long grid),
+  // and a restrained baked cloud layer. Everything is composed ONCE at globe creation from a deterministic
+  // seeded PRNG (identical every load, no per-frame cost, no Math.random, no setInterval, no extra draw pass),
+  // at the SAME 2048×1024 dimensions → texture memory unchanged. Nothing here touches geometry, coordinates,
+  // markers, arcs, projection, interaction, or the render loop — it only paints the texture image.
   function buildEarthCanvas(tw, th) {
     var land = window.KM_WORLD_LAND;
     if (!land || !land.rings || !land.rings.length) return null;
     var cv = document.createElement('canvas'); cv.width = tw; cv.height = th;
     var ctx = cv.getContext('2d'); if (!ctx) return null;
-    // Ocean base — richer multi-stop vertical gradient (deep polar water → brighter tropical band → deep) for a
-    // cleaner sense of depth. Same 2048×1024 dimensions → texture memory unchanged (UI-GLOBE-01, visual only).
-    var g = ctx.createLinearGradient(0, 0, 0, th);
-    g.addColorStop(0.00, '#071f39'); g.addColorStop(0.22, '#0e3e6b'); g.addColorStop(0.50, '#155a8c');
-    g.addColorStop(0.78, '#0e3e6b'); g.addColorStop(1.00, '#071f39');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, tw, th);
+
+    // Deterministic seeded PRNG (LCG) — same Earth every load, no flicker, no clock/Math.random.
+    var _seed = 0x9e3779b1 >>> 0;
+    function rnd() { _seed = (Math.imul(_seed, 1664525) + 1013904223) >>> 0; return _seed / 4294967296; }
     function px(lng) { return (lng + 180) / 360 * tw; }
     function py(lat) { return (90 - lat) / 180 * th; }
-    // Land — subtle vertical gradient (a touch lighter toward the top) for a hint of relief depth + a softer,
-    // lower-contrast coastline for cleaner land/water separation. Purely cosmetic; no coordinates/geometry change.
-    var lg = ctx.createLinearGradient(0, 0, 0, th);
-    lg.addColorStop(0.00, '#4c8a4f'); lg.addColorStop(0.50, '#3f7a43'); lg.addColorStop(1.00, '#356b3a');
-    ctx.fillStyle = lg;                          // natural green land (mid-tone unchanged)
-    ctx.strokeStyle = 'rgba(28,64,38,0.7)';      // softer, low-contrast coastline
-    ctx.lineWidth = Math.max(1, tw / 2048);
-    ctx.lineJoin = 'round';
-    land.rings.forEach(function (ring) {
+    // Low-res grayscale value-noise tile (built once) → scaled up for cheap, soft relief mottling.
+    function noiseTile(w, h) {
+      var nc = document.createElement('canvas'); nc.width = w; nc.height = h;
+      var nx = nc.getContext('2d'); if (!nx) return nc;
+      var img = nx.createImageData(w, h), d = img.data;
+      for (var i = 0; i < w * h; i++) { var g = (110 + rnd() * 150) | 0; d[i*4] = g; d[i*4+1] = g; d[i*4+2] = g; d[i*4+3] = 255; }
+      nx.putImageData(img, 0, 0); return nc;
+    }
+    // Trace the vendored land outline into the current path (reused for shelf halo, fill, clip, coastline).
+    function traceLand() {
       ctx.beginPath();
-      for (var i = 0; i < ring.length; i++) {
-        var x = px(ring[i][0]), y = py(ring[i][1]);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-    });
+      land.rings.forEach(function (ring) {
+        for (var i = 0; i < ring.length; i++) { var x = px(ring[i][0]), y = py(ring[i][1]); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+        ctx.closePath();
+      });
+    }
+
+    // ---- OCEAN: latitude depth gradient (deep polar → bright tropical → deep) + very faint texture ----
+    var og = ctx.createLinearGradient(0, 0, 0, th);
+    og.addColorStop(0.00, '#0a1a30'); og.addColorStop(0.16, '#0d3358'); og.addColorStop(0.34, '#12557f');
+    og.addColorStop(0.50, '#166b96'); og.addColorStop(0.66, '#12557f'); og.addColorStop(0.84, '#0d3358'); og.addColorStop(1.00, '#0a1a30');
+    ctx.fillStyle = og; ctx.fillRect(0, 0, tw, th);
+    ctx.save(); ctx.globalAlpha = 0.05; ctx.globalCompositeOperation = 'overlay'; ctx.drawImage(noiseTile(256, 128), 0, 0, tw, th); ctx.restore();
+
+    // ---- Continental-shelf halo: a soft lighter ring hugging coasts → shallow-water depth cue ----
+    ctx.save(); traceLand();
+    ctx.strokeStyle = 'rgba(92,168,205,0.45)'; ctx.lineWidth = Math.max(3, tw / 320); ctx.lineJoin = 'round';
+    try { ctx.filter = 'blur(' + Math.max(1, (tw / 900) | 0) + 'px)'; } catch (e) {}   // soft shelf; ignored if unsupported
+    ctx.stroke(); ctx.restore();
+
+    // ---- LAND base ----
+    traceLand(); ctx.fillStyle = '#43733f'; ctx.fill();
+
+    // ---- LAND biomes + relief (clipped to land) ----
+    ctx.save(); traceLand(); ctx.clip();
+    // latitude biome band: snow → ice → taiga → temperate → desert → tropical (mirrored across the equator)
+    var bg = ctx.createLinearGradient(0, 0, 0, th);
+    bg.addColorStop(0.00, '#e9f0f4'); bg.addColorStop(0.09, '#dbe6ec'); bg.addColorStop(0.15, '#5c7c60');
+    bg.addColorStop(0.26, '#4f7a48'); bg.addColorStop(0.35, '#b3a069'); bg.addColorStop(0.44, '#3f7a3f');
+    bg.addColorStop(0.50, '#357439'); bg.addColorStop(0.56, '#3f7a3f'); bg.addColorStop(0.65, '#ad9a62');
+    bg.addColorStop(0.74, '#4f7a48'); bg.addColorStop(0.85, '#5c7c60'); bg.addColorStop(0.92, '#dbe6ec'); bg.addColorStop(1.00, '#e9f0f4');
+    ctx.globalAlpha = 0.9; ctx.fillStyle = bg; ctx.fillRect(0, 0, tw, th); ctx.globalAlpha = 1;
+    // geographically anchored soft patches so it reads as real biomes, not just latitude stripes
+    function patch(lat, lng, degR, color, a) {
+      var cx = px(lng), cy = py(lat), rad = degR / 180 * th;
+      var rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      rg.addColorStop(0, color); rg.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = a; ctx.fillStyle = rg; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); ctx.globalAlpha = 1;
+    }
+    var TAN = 'rgba(198,172,108,0.9)', ARID = 'rgba(172,152,98,0.85)', FOR = 'rgba(38,90,52,0.7)', ICE = 'rgba(236,243,247,0.92)';
+    patch(23, 13, 22, TAN, 0.85); patch(24, 45, 15, TAN, 0.8); patch(41, 100, 16, ARID, 0.6);   // Sahara, Arabian, Gobi
+    patch(-25, 133, 18, TAN, 0.82); patch(-22, 21, 12, TAN, 0.6); patch(-24, -69, 6, TAN, 0.7);  // Australia, Kalahari, Atacama
+    patch(37, -112, 9, ARID, 0.55); patch(41, 63, 9, ARID, 0.5);                                 // SW-US, Kazakh steppe
+    patch(-3, -62, 20, FOR, 0.55); patch(1, 22, 13, FOR, 0.5); patch(2, 113, 12, FOR, 0.5);      // Amazon, Congo, Borneo
+    patch(72, -40, 16, ICE, 0.88); patch(30, 82, 7, ICE, 0.5);                                   // Greenland, Himalaya
+    // two-octave relief mottling (soft-light) → mountain/terrain texture without any elevation data
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = 0.34; ctx.drawImage(noiseTile(384, 192), 0, 0, tw, th);
+    ctx.globalAlpha = 0.20; ctx.drawImage(noiseTile(128, 64), 0, 0, tw, th);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
+
+    // ---- coastline (soft, low-contrast) ----
+    traceLand(); ctx.strokeStyle = 'rgba(24,52,32,0.55)'; ctx.lineWidth = Math.max(1, tw / 2048); ctx.lineJoin = 'round'; ctx.stroke();
+
+    // ---- faint graticule (lat/long grid) — ~10% presence, a quiet coordinate reference ----
+    ctx.save(); ctx.globalAlpha = 0.5; ctx.lineWidth = Math.max(0.75, tw / 2400);
+    for (var glng = -150; glng <= 180; glng += 30) { var gx = px(glng); ctx.strokeStyle = (glng === 0) ? 'rgba(210,228,240,0.16)' : 'rgba(200,220,235,0.09)'; ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, th); ctx.stroke(); }
+    for (var glat = -60; glat <= 60; glat += 30) { var gy = py(glat); ctx.strokeStyle = (glat === 0) ? 'rgba(210,228,240,0.18)' : 'rgba(200,220,235,0.09)'; ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(tw, gy); ctx.stroke(); }
+    ctx.restore();
+
+    // ---- restrained baked cloud layer: faint white wisps clustered in the ITCZ + mid-latitude storm bands ----
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    for (var ci = 0; ci < 96; ci++) {
+      var clat = rnd() * 180 - 90, band = Math.abs(clat);
+      var keep = (band < 12) ? 0.9 : (band > 38 && band < 62) ? 0.75 : 0.3;   // clouds cluster near equator + mid-latitudes
+      if (rnd() > keep) continue;
+      var cx = px(rnd() * 360 - 180), cy = py(clat), rw = 30 + rnd() * 85, rh = rw * (0.32 + rnd() * 0.3);
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(1, rh / rw);
+      var cgr = ctx.createRadialGradient(0, 0, 0, 0, 0, rw);
+      cgr.addColorStop(0, 'rgba(255,255,255,' + (0.08 + rnd() * 0.11).toFixed(3) + ')'); cgr.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = cgr; ctx.beginPath(); ctx.arc(0, 0, rw, 0, 6.2832); ctx.fill(); ctx.restore();
+    }
+    ctx.restore();
+
     return cv;
   }
 
@@ -167,7 +244,10 @@
   // structure, attributes and uniforms are byte-for-byte identical to before (no new terms/uniforms).
   var FS_SPHERE = 'precision mediump float;uniform sampler2D uTex;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){vec3 n=normalize(vN);vec3 v=normalize(vView);vec3 l=normalize(vec3(0.35,0.25,1.0));float diff=max(dot(n,l),0.0);float shade=0.66+0.42*diff;vec4 tex=texture2D(uTex,vUV);vec3 col=tex.rgb*shade;float rim=pow(1.0-max(dot(n,v),0.0),2.4);col+=vec3(0.14,0.28,0.50)*rim;gl_FragColor=vec4(col,1.0);}';
   var VS_PTS = 'attribute vec3 aPos;attribute vec4 aColor;attribute float aSize;attribute float aRing;uniform mat4 uMVP;varying vec4 vColor;varying float vRing;void main(){gl_Position=uMVP*vec4(aPos,1.0);gl_PointSize=aSize;vColor=aColor;vRing=aRing;}';
-  var FS_PTS = 'precision mediump float;varying vec4 vColor;varying float vRing;void main(){vec2 c=gl_PointCoord-vec2(0.5);float d=length(c);if(d>0.5)discard;vec4 col=vColor;if(d>0.36)col=vec4(1.0,1.0,1.0,1.0);if(vRing>0.5&&d>0.40)col=vec4(1.0,0.82,0.2,1.0);gl_FragColor=col;}';
+  // UI-GLOBE-02 (visual only): layered marker — colored core → white halo → status ring → crisp dark rim, for
+  // clean definition on the brighter Earth. CONSTANT-ONLY (thresholds/colors); still fully opaque (no blend),
+  // same attributes/varyings, same geometry, same picking. Data-driven marker color (vColor) is untouched.
+  var FS_PTS = 'precision mediump float;varying vec4 vColor;varying float vRing;void main(){vec2 c=gl_PointCoord-vec2(0.5);float d=length(c);if(d>0.5)discard;vec4 col=vColor;if(d>0.34)col=vec4(1.0,1.0,1.0,1.0);if(vRing>0.5&&d>0.40)col=vec4(1.0,0.82,0.2,1.0);if(d>0.46)col=vec4(0.05,0.09,0.16,1.0);gl_FragColor=col;}';
   var VS_LINE = 'attribute vec3 aPos;attribute vec4 aColor;uniform mat4 uMVP;varying vec4 vColor;void main(){gl_Position=uMVP*vec4(aPos,1.0);vColor=aColor;}';
   var FS_LINE = 'precision mediump float;varying vec4 vColor;void main(){gl_FragColor=vColor;}';
 

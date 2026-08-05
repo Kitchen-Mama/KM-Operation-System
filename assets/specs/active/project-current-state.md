@@ -3324,3 +3324,30 @@ Note: pre-existing replen-draft-completeness P29–P31 are RESOLVED (C2-D1R reta
 - **Selected first implementation slice:** **F1-3 Qualified-Incoming → Supply-Ledger Production Connection** (pure, test-first, no deploy, read-only) — uses only frozen+implemented+tested pieces, resolves the highest-severity active conflict, is a prerequisite for truthful projection + replenishment, lowest rework/business risk. The spec's preferred *Inventory Projection Runtime Integration* is NOT ready (no engine + status-mapping blocker + no writer + not deployed).
 - **Genuine open decisions (register):** D-1 Verification-Copy deploy target (🔴 blocks live), D-2 provision `factory_stock_allocation_plans` (🟠 blocks F1-5), D-3 Submit lineage/idempotency + additive lineage column (🔴 blocks Submit), D-4 B-8 cancel/release (🔴 blocks reservation), D-5 B-4 residual QI double-count owner (🟠 affects F1-3), D-6 B-6 Request→PO atomicity (🟢 non-blocking), D-7 Forecast Target% apply-vs-retire (🟠 blocks F1-1). Already-frozen rules NOT re-opened.
 - **Files (F1-0):** NEW `docs/planning/SUPPLY_PLANNING_FORMULA_RUNTIME_RECONCILIATION.md`, NEW `docs/planning/SUPPLY_PLANNING_FIELD_OWNERSHIP_MATRIX.md`, NEW `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md`, NEW `docs/planning/SUPPLY_PLANNING_DECISION_REGISTER.md` (all DOCUMENTATION_ONLY), this entry. **No production code, no test, no `.gs`, no DB schema, no bundle change. `BUNDLE_REBUILD_REQUIRED=false`; no `APPS_SCRIPT_SYNC_REQUIRED`.** Not pushed, not deployed, no live DB accessed. Next: F1-3 (first slice) after the round's authorization.
+
+---
+
+## Global Logistics Map — Premium Control-Tower Visual Pass (Batch UI-GLOBE-02) VISUAL ONLY (2026-08-05)
+
+Enterprise Supply-Chain-Control-Tower visual upgrade of the On-the-Way / Global Logistics Map (the persistent 3D WebGL globe + its page chrome). **Visual only — no business logic / data mapping / API / event handler / route projection / marker / shipment / state change.** User confirmed direction "Elevate the globe + full chrome" (kept the existing `KMGlobe` architecture; did NOT rebuild as SVG/flat map).
+
+```text
+Globe surface (km-globe.js, buildEarthCanvas — pure canvas-2D, one-time, deterministic seeded PRNG):
+  richer terrain painted from the SAME vendored land outline (window.KM_WORLD_LAND) — NO new asset, NO dependency:
+  latitude biome banding (snow/taiga/temperate/desert/tropical) + anchored desert/forest/ice patches +
+  two-octave relief mottling (mountain feel, no elevation data) + ocean depth gradient + continental-shelf halo +
+  faint baked lat/long graticule + restrained baked cloud layer. Texture STILL 2048×1024 (memory unchanged).
+Shader: FS_PTS constant-only marker layering (core→white halo→status ring→dark rim; opaque, same picking).
+  FS_SPHERE atmosphere UNCHANGED (UI-GLOBE-01). Arcs UNCHANGED (40-step smooth). Data-driven marker/arc colors UNCHANGED.
+Render model: NO new draw pass (clouds baked into the texture, not a 2nd sphere), NO setInterval, exactly 3 rAF sites,
+  on-demand render preserved → runtime FPS unchanged. Honest WebGL-unavailable error card + prefers-reduced-motion kept.
+Chrome (global-logistics-map.css, full premium rewrite; ALL class names preserved): design-token system, glass
+  floating panels (backdrop-filter), refined typography hierarchy + tabular-nums, premium KPI stat rail, Apple-card
+  shipment cards / drawer / tooltip / tray, taller immersive map hero (clamp(600px,80vh,1000px)), restrained
+  150–300ms motion, ultra-wide/laptop/mobile responsive. Kitchen Mama brand blue + neutral slate; no neon/glow/gaming.
+Tests: globe-visual-guard 44/0 (all UI-GLOBE-01 runtime/structure/data-binding guards STILL green + new V5–V12);
+  globe-math ALL PASS; global-logistics-map ALL PASS; FULL SUITE 80/80 files green.
+HEADLESS CAVEAT: no browser/GPU here — FPS/memory/screenshots UNMEASURABLE; user must verify in a browser. Revert = this one commit.
+```
+
+- **Files (UI-GLOBE-02):** `assets/js/lib/km-globe.js` (`buildEarthCanvas` premium texture + `FS_PTS` marker constants — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/css/pages/global-logistics-map.css` (premium chrome rewrite — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/tests/globe-visual-guard.test.js` (updated visual markers + new guards — GIT_ONLY), this entry (DOCUMENTATION_ONLY). **No `.gs` / router / DB / bundle change; `BUNDLE_REBUILD_REQUIRED=false`; no `APPS_SCRIPT_SYNC_REQUIRED`.** Frontend-only (GitHub Pages redeploy of `km-globe.js` + `global-logistics-map.css`). Not pushed, not deployed, no live DB accessed.

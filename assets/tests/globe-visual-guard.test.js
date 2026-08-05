@@ -1,4 +1,4 @@
-// Globe visual-enhancement guard — Batch UI-GLOBE-01 (VISUAL ONLY).
+// Globe visual-enhancement guard — Batch UI-GLOBE-01 + UI-GLOBE-02 (VISUAL ONLY).
 // The globe is raw WebGL + a runtime-rasterized canvas texture; neither WebGL nor a DOM canvas can run in
 // headless Node, so this test does NOT render. It asserts, at the source level, that the visual enhancement
 // (texture colors, shader lighting/rim constants, arc smoothness, CSS atmosphere overlay) did NOT change any
@@ -53,15 +53,25 @@ ok(/latLngToVec3\(m\.lat, m\.lng/.test(G) && /latLngToVec3\(p\[0\], p\[1\]/.test
 
 // =====================================================================================================
 section('Visual enhancements present (the actual change)');
-ok(/float shade=0\.66\+0\.42\*diff;/.test(G) && /pow\(1\.0-max\(dot\(n,v\),0\.0\),2\.4\)/.test(G) && /col\+=vec3\(0\.14,0\.28,0\.50\)\*rim;/.test(G), 'V1 FS_SPHERE softer lighting + wider/bluer rim atmosphere (constant-only)');
-ok(/addColorStop\(0\.50, '#155a8c'\)/.test(G) && /var lg = ctx\.createLinearGradient/.test(G), 'V2 richer ocean gradient + land relief gradient in the texture');
-ok(/var steps = 40;/.test(G), 'V3 smoother great-circle arcs (40 subdivisions)');
-ok(/\.glm-globe-host::before/.test(CSS) && /\.glm-globe-host::after/.test(CSS) && /mix-blend-mode: screen/.test(CSS), 'V4 CSS atmosphere glow + depth vignette overlay added');
+ok(/float shade=0\.66\+0\.42\*diff;/.test(G) && /pow\(1\.0-max\(dot\(n,v\),0\.0\),2\.4\)/.test(G) && /col\+=vec3\(0\.14,0\.28,0\.50\)\*rim;/.test(G), 'V1 FS_SPHERE softer lighting + wider/bluer rim atmosphere (constant-only, UNCHANGED from UI-GLOBE-01)');
+// UI-GLOBE-02 premium Earth — all painted in buildEarthCanvas from the vendored land outline (pure canvas-2D)
+ok(/og\.addColorStop\(0\.50, '#166b96'\)/.test(G) && /var bg = ctx\.createLinearGradient/.test(G), 'V2 ocean depth gradient + latitude biome band gradient (snow/taiga/temperate/desert/tropical)');
+ok(/var steps = 40;/.test(G), 'V3 smoother great-circle arcs (40 subdivisions, UNCHANGED)');
+ok(/\.glm-globe-host::before/.test(CSS) && /\.glm-globe-host::after/.test(CSS) && /mix-blend-mode: screen/.test(CSS), 'V4 CSS atmosphere glow + depth vignette overlay (UNCHANGED)');
+ok(/function noiseTile\(/.test(G) && /function patch\(/.test(G) && /'soft-light'/.test(G), 'V5 relief mottling + anchored biome patches (mountain/desert/forest/snow variation, no elevation data)');
+ok(/graticule/.test(G) && /for \(var glng =/.test(G) && /for \(var glat =/.test(G), 'V6 faint baked lat/long graticule grid (~10% presence)');
+ok(/baked cloud layer/.test(G) && /ci < 96/.test(G), 'V7 restrained baked cloud layer (static; rotates WITH Earth — no separate animated sphere, no extra draw pass)');
+ok(/[Ss]helf halo/.test(G), 'V8 continental-shelf ocean-depth halo (shallow-water cue)');
+ok(/if\(d>0\.46\)col=vec4\(0\.05,0\.09,0\.16,1\.0\)/.test(G), 'V9 layered marker with crisp dark rim (FS_PTS constant-only; opaque, same attributes + same picking)');
+ok(/Math\.imul\(_seed/.test(G) && /function rnd\(\)/.test(G), 'V10 deterministic seeded PRNG (Math.imul LCG) — same Earth every load, no per-frame cost (determinism; no-loop proven by R1/R4)');
+// premium Control-Tower chrome (global-logistics-map.css) — design tokens + glass + motion, all class names preserved
+ok(/--glm-brand:/.test(CSS) && /backdrop-filter:/.test(CSS) && /--glm-ease:/.test(CSS), 'V11 chrome design-system: brand token + glass (backdrop-filter) + motion easing token');
+ok(/height: clamp\(600px, 80vh, 1000px\)/.test(CSS), 'V12 taller immersive map hero (map is the visual centre)');
 
 // =====================================================================================================
 section('CSS overlay cannot break interaction or cover UI');
 ok(/\.glm-globe-host::before,\s*\n\.glm-globe-host::after \{ content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 2;/.test(CSS), 'X1 overlay is pointer-events:none + z-index:2 (above canvas, below all UI z>=4)');
 
 console.log('\n----------------------------------------');
-console.log('GLOBE VISUAL GUARD (UI-GLOBE-01): ' + pass + ' passed, ' + fail + ' failed');
+console.log('GLOBE VISUAL GUARD (UI-GLOBE-01/02): ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { process.exitCode = 1; }
