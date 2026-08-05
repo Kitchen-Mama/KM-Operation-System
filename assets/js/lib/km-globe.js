@@ -129,30 +129,31 @@
       });
     }
 
-    // ---- OCEAN: latitude depth gradient (deep polar → bright tropical → deep) + very faint texture ----
+    // ---- OCEAN: latitude depth gradient — UI-GLOBE-02B darker + calmer (deeper navy, less cyan, restrained coastal) ----
     var og = ctx.createLinearGradient(0, 0, 0, th);
-    og.addColorStop(0.00, '#0a1a30'); og.addColorStop(0.16, '#0d3358'); og.addColorStop(0.34, '#12557f');
-    og.addColorStop(0.50, '#166b96'); og.addColorStop(0.66, '#12557f'); og.addColorStop(0.84, '#0d3358'); og.addColorStop(1.00, '#0a1a30');
+    og.addColorStop(0.00, '#081627'); og.addColorStop(0.16, '#0b2b48'); og.addColorStop(0.34, '#104465');
+    og.addColorStop(0.50, '#134f70'); og.addColorStop(0.66, '#104465'); og.addColorStop(0.84, '#0b2b48'); og.addColorStop(1.00, '#081627');
     ctx.fillStyle = og; ctx.fillRect(0, 0, tw, th);
     ctx.save(); ctx.globalAlpha = 0.05; ctx.globalCompositeOperation = 'overlay'; ctx.drawImage(noiseTile(256, 128), 0, 0, tw, th); ctx.restore();
 
     // ---- Continental-shelf halo: a soft lighter ring hugging coasts → shallow-water depth cue ----
     ctx.save(); traceLand();
-    ctx.strokeStyle = 'rgba(92,168,205,0.45)'; ctx.lineWidth = Math.max(3, tw / 320); ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(74,132,165,0.32)'; ctx.lineWidth = Math.max(3, tw / 320); ctx.lineJoin = 'round';
     try { ctx.filter = 'blur(' + Math.max(1, (tw / 900) | 0) + 'px)'; } catch (e) {}   // soft shelf; ignored if unsupported
     ctx.stroke(); ctx.restore();
 
     // ---- LAND base ----
-    traceLand(); ctx.fillStyle = '#43733f'; ctx.fill();
+    traceLand(); ctx.fillStyle = '#4a6a48'; ctx.fill();
 
     // ---- LAND biomes + relief (clipped to land) ----
     ctx.save(); traceLand(); ctx.clip();
     // latitude biome band: snow → ice → taiga → temperate → desert → tropical (mirrored across the equator)
     var bg = ctx.createLinearGradient(0, 0, 0, th);
-    bg.addColorStop(0.00, '#e9f0f4'); bg.addColorStop(0.09, '#dbe6ec'); bg.addColorStop(0.15, '#5c7c60');
-    bg.addColorStop(0.26, '#4f7a48'); bg.addColorStop(0.35, '#b3a069'); bg.addColorStop(0.44, '#3f7a3f');
-    bg.addColorStop(0.50, '#357439'); bg.addColorStop(0.56, '#3f7a3f'); bg.addColorStop(0.65, '#ad9a62');
-    bg.addColorStop(0.74, '#4f7a48'); bg.addColorStop(0.85, '#5c7c60'); bg.addColorStop(0.92, '#dbe6ec'); bg.addColorStop(1.00, '#e9f0f4');
+    // UI-GLOBE-02B: desaturated toward natural satellite tones (muted olive-greens + muted tan/ochre, not vivid); regional variation kept.
+    bg.addColorStop(0.00, '#e2e8ec'); bg.addColorStop(0.09, '#d2dce2'); bg.addColorStop(0.15, '#5a6f55');
+    bg.addColorStop(0.26, '#556b46'); bg.addColorStop(0.35, '#a2915f'); bg.addColorStop(0.44, '#436340');
+    bg.addColorStop(0.50, '#3b6039'); bg.addColorStop(0.56, '#436340'); bg.addColorStop(0.65, '#9c8b5b');
+    bg.addColorStop(0.74, '#556b46'); bg.addColorStop(0.85, '#5a6f55'); bg.addColorStop(0.92, '#d2dce2'); bg.addColorStop(1.00, '#e2e8ec');
     ctx.globalAlpha = 0.9; ctx.fillStyle = bg; ctx.fillRect(0, 0, tw, th); ctx.globalAlpha = 1;
     // geographically anchored soft patches so it reads as real biomes, not just latitude stripes
     function patch(lat, lng, degR, color, a) {
@@ -161,16 +162,16 @@
       rg.addColorStop(0, color); rg.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.globalAlpha = a; ctx.fillStyle = rg; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); ctx.globalAlpha = 1;
     }
-    var TAN = 'rgba(198,172,108,0.9)', ARID = 'rgba(172,152,98,0.85)', FOR = 'rgba(38,90,52,0.7)', ICE = 'rgba(236,243,247,0.92)';
+    var TAN = 'rgba(176,156,110,0.62)', ARID = 'rgba(158,142,104,0.55)', FOR = 'rgba(46,74,50,0.5)', ICE = 'rgba(224,232,236,0.8)';  // UI-GLOBE-02B: muted + lower alpha (natural, not vivid)
     patch(23, 13, 22, TAN, 0.85); patch(24, 45, 15, TAN, 0.8); patch(41, 100, 16, ARID, 0.6);   // Sahara, Arabian, Gobi
     patch(-25, 133, 18, TAN, 0.82); patch(-22, 21, 12, TAN, 0.6); patch(-24, -69, 6, TAN, 0.7);  // Australia, Kalahari, Atacama
     patch(37, -112, 9, ARID, 0.55); patch(41, 63, 9, ARID, 0.5);                                 // SW-US, Kazakh steppe
     patch(-3, -62, 20, FOR, 0.55); patch(1, 22, 13, FOR, 0.5); patch(2, 113, 12, FOR, 0.5);      // Amazon, Congo, Borneo
     patch(72, -40, 16, ICE, 0.88); patch(30, 82, 7, ICE, 0.5);                                   // Greenland, Himalaya
     // two-octave relief mottling (soft-light) → mountain/terrain texture without any elevation data
-    ctx.globalCompositeOperation = 'soft-light';
-    ctx.globalAlpha = 0.34; ctx.drawImage(noiseTile(384, 192), 0, 0, tw, th);
-    ctx.globalAlpha = 0.20; ctx.drawImage(noiseTile(128, 64), 0, 0, tw, th);
+    ctx.globalCompositeOperation = 'soft-light';   // UI-GLOBE-02B: mild local-contrast lift (0.34→0.40 / 0.20→0.24)
+    ctx.globalAlpha = 0.40; ctx.drawImage(noiseTile(384, 192), 0, 0, tw, th);
+    ctx.globalAlpha = 0.24; ctx.drawImage(noiseTile(128, 64), 0, 0, tw, th);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
 
@@ -183,16 +184,17 @@
     for (var glat = -60; glat <= 60; glat += 30) { var gy = py(glat); ctx.strokeStyle = (glat === 0) ? 'rgba(210,228,240,0.18)' : 'rgba(200,220,235,0.09)'; ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(tw, gy); ctx.stroke(); }
     ctx.restore();
 
-    // ---- restrained baked cloud layer: faint white wisps clustered in the ITCZ + mid-latitude storm bands ----
+    // ---- baked cloud layer — UI-GLOBE-02B minimized to a faint hint (fewer, smaller, much lower opacity) so it
+    //      must NOT haze terrain detail; clouds still cluster in the ITCZ + mid-latitude storm bands ----
     ctx.save(); ctx.globalCompositeOperation = 'screen';
-    for (var ci = 0; ci < 96; ci++) {
+    for (var ci = 0; ci < 54; ci++) {
       var clat = rnd() * 180 - 90, band = Math.abs(clat);
-      var keep = (band < 12) ? 0.9 : (band > 38 && band < 62) ? 0.75 : 0.3;   // clouds cluster near equator + mid-latitudes
+      var keep = (band < 12) ? 0.85 : (band > 38 && band < 62) ? 0.65 : 0.22;   // clouds cluster near equator + mid-latitudes
       if (rnd() > keep) continue;
-      var cx = px(rnd() * 360 - 180), cy = py(clat), rw = 30 + rnd() * 85, rh = rw * (0.32 + rnd() * 0.3);
+      var cx = px(rnd() * 360 - 180), cy = py(clat), rw = 26 + rnd() * 66, rh = rw * (0.32 + rnd() * 0.3);
       ctx.save(); ctx.translate(cx, cy); ctx.scale(1, rh / rw);
       var cgr = ctx.createRadialGradient(0, 0, 0, 0, 0, rw);
-      cgr.addColorStop(0, 'rgba(255,255,255,' + (0.08 + rnd() * 0.11).toFixed(3) + ')'); cgr.addColorStop(1, 'rgba(255,255,255,0)');
+      cgr.addColorStop(0, 'rgba(255,255,255,' + (0.035 + rnd() * 0.05).toFixed(3) + ')'); cgr.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = cgr; ctx.beginPath(); ctx.arc(0, 0, rw, 0, 6.2832); ctx.fill(); ctx.restore();
     }
     ctx.restore();
@@ -239,10 +241,11 @@
   }
 
   var VS_SPHERE = 'attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;uniform mat4 uMVP;uniform mat4 uMV;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){gl_Position=uMVP*vec4(aPos,1.0);vUV=aUV;vN=mat3(uMV)*aNormal;vView=-(uMV*vec4(aPos,1.0)).xyz;}';
-  // UI-GLOBE-01 (visual only): softer lighting (higher ambient floor, gentler diffuse → less harsh terminator)
-  // and a wider, bluer — but still subtle, edge-only — rim/atmosphere. CONSTANT-ONLY changes; the shader
-  // structure, attributes and uniforms are byte-for-byte identical to before (no new terms/uniforms).
-  var FS_SPHERE = 'precision mediump float;uniform sampler2D uTex;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){vec3 n=normalize(vN);vec3 v=normalize(vView);vec3 l=normalize(vec3(0.35,0.25,1.0));float diff=max(dot(n,l),0.0);float shade=0.66+0.42*diff;vec4 tex=texture2D(uTex,vUV);vec3 col=tex.rgb*shade;float rim=pow(1.0-max(dot(n,v),0.0),2.4);col+=vec3(0.14,0.28,0.50)*rim;gl_FragColor=vec4(col,1.0);}';
+  // UI-GLOBE-02B (visual only): calibrated lighting — LOWER ambient (0.66→0.46) + stronger diffuse (0.42→0.52) to
+  // de-fog and lift terrain contrast (readable shadow side, no overexposure since 0.46+0.52=0.98); NARROWER, subtler
+  // rim (pow 2.4→3.4, colour 0.14/0.28/0.50→0.10/0.20/0.38) so the atmosphere is an edge-only silhouette that never
+  // milks the surface. CONSTANT-ONLY changes; the shader structure, attributes and uniforms are byte-for-byte identical.
+  var FS_SPHERE = 'precision mediump float;uniform sampler2D uTex;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){vec3 n=normalize(vN);vec3 v=normalize(vView);vec3 l=normalize(vec3(0.35,0.25,1.0));float diff=max(dot(n,l),0.0);float shade=0.46+0.52*diff;vec4 tex=texture2D(uTex,vUV);vec3 col=tex.rgb*shade;float rim=pow(1.0-max(dot(n,v),0.0),3.4);col+=vec3(0.10,0.20,0.38)*rim;gl_FragColor=vec4(col,1.0);}';
   var VS_PTS = 'attribute vec3 aPos;attribute vec4 aColor;attribute float aSize;attribute float aRing;uniform mat4 uMVP;varying vec4 vColor;varying float vRing;void main(){gl_Position=uMVP*vec4(aPos,1.0);gl_PointSize=aSize;vColor=aColor;vRing=aRing;}';
   // UI-GLOBE-02 (visual only): layered marker — colored core → white halo → status ring → crisp dark rim, for
   // clean definition on the brighter Earth. CONSTANT-ONLY (thresholds/colors); still fully opaque (no blend),

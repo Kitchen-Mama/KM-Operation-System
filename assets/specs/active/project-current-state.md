@@ -3386,3 +3386,34 @@ Tests: no test added/changed this round; full suite unaffected (80/80). Golden M
 ```
 
 - **Files (F1-3, read-only outcome):** `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` (appended F1-3 Execution Status + options A/B/C + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No production code, no `.gs`, no bundle, no test, no DB.** Not pushed, not deployed, no live DB accessed. Next authorized step: **F1-3a** (SC-11.4 `arrived` bridge conformance) pending authorization, then **F1-3b** (production wiring).
+
+---
+
+## Global Logistics Map — Globe Material & Color Calibration (Batch UI-GLOBE-02B) VISUAL ONLY (2026-08-05)
+
+Restrained material/lighting/color-calibration pass on the existing 3D WebGL globe (which looked washed-out / foggy / over-saturated after UI-GLOBE-02). **NOT a redesign, no added complexity.** Visual only — **no shipment / marker / route / filter / click / hover / zoom / camera / state / API / DB / business-logic change.** The globe is **raw WebGL (custom GLSL + procedural canvas texture), NOT Three.js** — there is no toneMapping / toneMappingExposure / outputColorSpace / metalness / roughness / normalScale; the calibration touches their raw-WebGL equivalents.
+
+```text
+Lighting (FS_SPHERE, constant-only): ambient 0.66→0.46, diffuse 0.42→0.52 (day 0.98 = no overexposure; night floor
+  0.46 = readable, not black; more terrain contrast, less washed-out). Light dir vec3(0.35,0.25,1.0) unchanged.
+Atmosphere: in-shader rim narrowed + softened (pow 2.4→3.4; colour 0.14/0.28/0.50 → 0.10/0.20/0.38) → edge-only
+  silhouette that never milks the surface. CSS .glm-globe-host::before central glow opacity ~3x down (0.15→0.05)
+  = no milky overlay over land; ::after depth vignette unchanged; mix-blend-mode/pointer-events preserved.
+Ocean (texture): darker + calmer, less cyan — deep #0a1a30→#081627, tropical peak #166b96→#134f70; shelf halo
+  rgba(92,168,205,0.45)→rgba(74,132,165,0.32) (restrained coastal depth cue).
+Land colour (texture): biome palette desaturated toward natural satellite tones (muted olive-greens + muted
+  tan/ochre, less vivid); anchored biome patches muted + lower alpha; base #43733f→#4a6a48. Regional variation kept
+  (NOT globally desaturated to gray). Relief mottling soft-light 0.34/0.20→0.40/0.24 (mild local-contrast lift).
+Clouds (texture): MINIMIZED — count 96→54, size 30-115→26-92, per-blob alpha 0.08-0.19→0.035-0.085 (a faint hint,
+  must not haze terrain). Baked into the texture (rotates WITH Earth); no separate cloud sphere.
+Material/colour-space: raw WebGL, non-metallic diffuse (no metalness/roughness); canvas texture authored in display
+  space, uploaded gl.RGB, sampled gl.LINEAR/CLAMP_TO_EDGE (filtering unchanged); NO tone-mapping / NO gamma pass →
+  no double gamma; colours calibrated in the texture/shader directly, NOT via CSS filters (none added).
+Perf: texture built ONCE (cheaper: fewer clouds), NO new render loop, NO setInterval, exactly 3 rAF sites, on-demand
+  render preserved (FPS unchanged), texture still 2048x1024 (memory stable), honest WebGL-unavailable fallback kept.
+Tests: globe-visual-guard 44/0 (all runtime/structure/data-binding guards green + calibrated V1/V2/V7); globe-math +
+  global-logistics-map ALL PASS; FULL SUITE 80/80.
+HEADLESS: no browser/GPU here — before/after screenshots UNMEASURABLE; user must capture at the SAME camera angle. Revert = this one commit.
+```
+
+- **Files (UI-GLOBE-02B):** `assets/js/lib/km-globe.js` (FS_SPHERE lighting/rim constants + `buildEarthCanvas` ocean/land/biome/patch/relief/cloud calibration — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/css/pages/global-logistics-map.css` (`.glm-globe-host::before` de-milk — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/tests/globe-visual-guard.test.js` (calibrated V-markers — GIT_ONLY), this entry (DOCUMENTATION_ONLY). **No `.gs` / router / DB / bundle / supply-planning change; `BUNDLE_REBUILD_REQUIRED=false`; no `APPS_SCRIPT_SYNC_REQUIRED`.** Not pushed, not deployed, no live DB accessed.
