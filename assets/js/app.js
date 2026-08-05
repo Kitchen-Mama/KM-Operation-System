@@ -54,12 +54,17 @@ function showSection(section) {
         return;
     }
 
-    // 隱藏所有區塊
-    // home-section is partial-loaded (Phase 1) and may not be in the DOM yet — null-guard it.
+    // ---- Normalize the shared shell BEFORE mounting the next page (UI lifecycle ownership) --------------
+    // The global shell owns the header, sidebar, content viewport, world-time bar and the Home mount; a page
+    // must never inherit stale shell state. EVERY reset below is null-guarded so a missing shell node can never
+    // throw mid-normalize and abort showSection — an abort would leave a previous section still `.active`, which
+    // then stacks in the content flow between the header and the new page (the persistent top gap). No colours,
+    // margins, offsets or overflow tricks — this only clears leftover layout ownership.
     var _homeSection = document.getElementById('home-section');
-    if (_homeSection) _homeSection.style.display = 'none';
-    document.getElementById('world-time-bar').style.display = 'none';
-    document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
+    if (_homeSection) _homeSection.style.display = 'none';               // Home is not a .module-section — hide explicitly
+    var _worldBar = document.getElementById('world-time-bar');
+    if (_worldBar) _worldBar.style.display = 'none';                     // world-time bar is Home-only shell chrome
+    document.querySelectorAll('.module-section').forEach(function (sec) { sec.classList.remove('active'); });
     
     // 呼叫生命週期切換（如果已註冊）
     if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {

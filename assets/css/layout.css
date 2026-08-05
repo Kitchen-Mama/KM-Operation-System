@@ -326,6 +326,21 @@
     display: block;
 }
 
+/* ========================================================================
+   UI lifecycle safety net — persistent top-gap hotfix (fix lifecycle ownership,
+   not appearance). A shared / global note or notification region must occupy
+   ZERO layout space when it holds no message. `:empty` matches ONLY when the
+   element has no child nodes, so a populated (real) warning / error / demo
+   banner is NEVER hidden — this collapses leftover EMPTY containers WITHOUT any
+   colour override, negative margin, absolute overlay or overflow trick.
+   ======================================================================== */
+#home-mount:empty { display: none; }
+.srd-note:empty,
+.crc-note:empty,
+.procurement-page__note:empty,
+.km-mode-note:empty,
+.global-notice:empty { display: none; }
+
 /* ========================================
    World Time Bar
 ======================================== */
