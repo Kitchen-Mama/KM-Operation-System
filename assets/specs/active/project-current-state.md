@@ -3178,3 +3178,27 @@ Next: API-3B Verification-Copy browser validation (checklist frozen, not run)
 ```
 
 - **Files (API-3A):** `assets/js/pages/shipping-plan.js` (read boundary + adapter, `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/specs/active/apps-script/40_api_v1_weekly_workspace.gs` (§22 raw passthrough, `APPS_SCRIPT_SYNC_REQUIRED`), NEW `assets/tests/km-api-weekly-page-cutover.test.js` + updated `km-api-weekly-workspace.test.js` / `km-api-foundation-compat.test.js` (GIT_ONLY), NEW `API_WEEKLY_SHIPPING_CUTOVER_SPEC.md` + `API_WEEKLY_SHIPPING_F3A_REPORT.md`, updated `API_MIGRATION_MASTER_PLAN.md` + this entry (DOCUMENTATION_ONLY). `BUNDLE_REBUILD_REQUIRED=false`. **Unchanged:** `01_router.gs`, generated bundle, Recommendation/Submit runtimes, DB schema, all Weekly write handlers, formulas. Not pushed, not deployed; live/browser parity = OPEN (API-3B).
+
+---
+
+## API Workspace Transport Hotfix (Round T1) SOURCE-PRESENT / TEST-VERIFIED, NOT DEPLOYED (2026-08-05)
+
+Root cause of the browser `TRANSPORT_NOT_CONFIGURED`: the Workspace `ApiTransport` had no Web App URL (`deps.baseUrl` never injected). **Fixed** by reusing the existing canonical endpoint via call-time resolution — no duplicate URL, no `.gs` change.
+
+```text
+URL authority: window.KM.DB.getApiBaseUrl() (reuses OP_DB_API_BASE_URL; read-only getter) — SINGLE authority
+Resolution: call-time (deps.baseUrl/getBaseUrl → KM.DB.getApiBaseUrl → KM.config.operationDbWebAppUrl); no stale capture
+Codes: blank → TRANSPORT_NOT_CONFIGURED; malformed → TRANSPORT_URL_INVALID; no silent Legacy fallback
+Contract: POST canonical exec URL, text/plain, body {apiVersion,action:weeklyShipping.workspace.get,requestId,payload,context}
+Diagnostic: KM.api.getTransportStatus() → {configured,source,maskedEndpoint(no Script ID),urlStatus,weeklyEnabled}
+Apps Script: UNCHANGED (doPost already accepts the body action) · Bundle rebuild: false
+Legacy: getOperationDb + all KM.DB writes UNCHANGED · Production flags remain false
+Global bootstrap: getOperationDb STILL loads at startup — GLOBAL_BOOTSTRAP_OPTIMIZATION_NOT_STARTED
+Status flags: TRANSPORT_WIRING_VERIFIED · GLOBAL_LEGACY_BOOTSTRAP_STILL_ACTIVE · VERIFICATION_COPY_WRITE_READBACK_NOT_PERFORMED
+Tests: km-api-transport-wiring.test.js 30/0; foundation 57/0; compat 43/0; weekly workspace 66/0; page cutover 27/0
+Golden 39/1/0; #34 Pending; replen P29–P31 still failing (unrelated)
+Environment: primary DB actively bound (copy = emergency rollback only) → browser verification READ-ONLY, no live write test
+Next: API-3B READ-ONLY browser verification on the primary DB (write/readback = LIVE_WRITE_READBACK_NOT_VERIFIED)
+```
+
+- **Files (T1):** `assets/js/api/operation-system-db-api.js` (read-only `getApiBaseUrl` getter, `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/api/km-api-foundation.js` (call-time transport resolution + `TRANSPORT_URL_INVALID` + `getTransportStatus`, `FRONTEND_GITHUB_PAGES_REQUIRED`), NEW `assets/tests/km-api-transport-wiring.test.js` (GIT_ONLY), updated `API_FOUNDATION_ARCHITECTURE.md` §8.2 + `API_WEEKLY_SHIPPING_F3A_REPORT.md` §5a/§6 + this entry (DOCUMENTATION_ONLY). **No `APPS_SCRIPT_SYNC_REQUIRED`; `BUNDLE_REBUILD_REQUIRED=false`.** Not pushed, not deployed.

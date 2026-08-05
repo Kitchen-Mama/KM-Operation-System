@@ -122,6 +122,15 @@ Uniform for every current and future API response. `meta.cached` is always `fals
 - **`requestId` / server timing are NOT emitted** by the Foundation and are not claimed — deferred to API-2 hardening (`requestId` is a correlation id, **not** an idempotency key; server timing is never fabricated on the client).
 - **Feature flag is a single GLOBAL boolean today.** Per-workspace enablement (enable Weekly Shipping alone) is a **frozen API-2 requirement**, not implemented here — see `API_FUNCTIONAL_COVERAGE_F2.md` §4.
 
+### 8.2 ApiTransport wiring (Hotfix T1, 2026-08-04)
+
+- **Single URL authority.** The Workspace `ApiTransport` sends over the **existing canonical Web App endpoint** — the same exec URL Legacy uses. `operation-system-db-api.js` exposes a read-only getter `window.KM.DB.getApiBaseUrl()` (reuses the existing `OP_DB_API_BASE_URL` const; returns `''` when unconfigured). **No duplicate literal URL** lives in the Foundation.
+- **Call-time resolution.** `transport.resolveBaseUrl()` resolves the URL **on each request** — priority `deps.baseUrl`/`deps.getBaseUrl` (tests) → `window.KM.DB.getApiBaseUrl()` → `window.KM.config.operationDbWebAppUrl`. This mirrors the F2 stale-`KM.DB` fix: the Foundation may load before or after `KM.DB`; a URL that becomes available later works on the next request. The browser location is never inspected; no runtime discovery; no secrets.
+- **Validation + codes.** Blank/absent URL → `TRANSPORT_NOT_CONFIGURED`; present-but-malformed (non-https non-localhost, or not URL-shaped) → `TRANSPORT_URL_INVALID`. `transport.post` rejects with the specific code (surfaced verbatim via `errorFromException`); there is **no** silent Legacy fallback once the Workspace request starts.
+- **Contract.** `POST <canonical exec URL>`, `Content-Type: text/plain`, body = the canonical DTO `{apiVersion, action:"weeklyShipping.workspace.get", requestId, payload, context}` — the exact `doPost` body contract API-2 already accepts (**no `.gs` change**). The server returns the canonical `{success,data,meta,errors}` envelope; the client normalizes `meta` only (never double-wraps `data`). `AbortSignal` is threaded through `post(body,{signal})`.
+- **Diagnostic.** `KM.api.getTransportStatus()` → `{ configured, source, maskedEndpoint, urlStatus, weeklyEnabled }` — the endpoint is masked (`https://script.google.com/.../exec`), **never** exposing the Script ID; writes nothing.
+- **Scope truthfulness.** T1 fixes **only** Workspace transport wiring. The global app bootstrap still issues Legacy `getOperationDb` (`GLOBAL_LEGACY_BOOTSTRAP_STILL_ACTIVE`); API-2 reduces only the Weekly Workspace request itself (44-table → 4-table). `GLOBAL_BOOTSTRAP_OPTIMIZATION_NOT_STARTED`.
+
 ---
 
 ## 9. Security — KMSAFE forbidden-operation guard

@@ -41,7 +41,29 @@ Page load, filter/status grouping, detail expansion, summary/cost — all route 
 
 Source/test-proven only. **OPEN (API-3B / F5-class, deployment required):** live browser render parity between Legacy and Workspace on the Verification Copy; confirming zero writes from read-only interactions against live data; snapshot-primary vs live-fallback visual diff for any pre-snapshot legacy rows. No live Spreadsheet accessed, no Apps Script executed this round.
 
-## 6. API-3B manual Verification-Copy checklist (DO NOT RUN THIS ROUND)
+## 5a. Transport wiring (Hotfix T1, 2026-08-04)
+
+The browser previously showed `TRANSPORT_NOT_CONFIGURED` in Workspace mode because `ApiTransport` had no Web App URL. **Fixed:** the transport now resolves the **existing canonical** exec URL at call time via `window.KM.DB.getApiBaseUrl()` (no duplicate literal, no `.gs` change). With the flag enabled and a valid URL, the Weekly page issues `weeklyShipping.workspace.get` (POST, text/plain, canonical body) and no longer fails with `TRANSPORT_NOT_CONFIGURED`; malformed URL → `TRANSPORT_URL_INVALID`; missing → `TRANSPORT_NOT_CONFIGURED`; no silent Legacy fallback. Status flags for this environment:
+
+- `TRANSPORT_WIRING_VERIFIED` (source/test — `km-api-transport-wiring.test.js` 30/0).
+- `GLOBAL_LEGACY_BOOTSTRAP_STILL_ACTIVE` — the app still loads `getOperationDb` at startup (not this round's scope). `WEEKLY_TARGETED_READ_READY`; `GLOBAL_BOOTSTRAP_OPTIMIZATION_NOT_STARTED`.
+- Primary DB is the actively bound target; the copy is an emergency rollback backup only → **all live write/readback verification is `LIVE_WRITE_READBACK_NOT_VERIFIED` / `VERIFICATION_COPY_WRITE_READBACK_NOT_PERFORMED`** until the copy is actively bound.
+
+## 6. API-3B manual verification checklist — READ-ONLY on the primary DB (DO NOT RUN THIS ROUND)
+
+> **Environment constraint (2026-08-05):** the user is testing against the **primary** bound Database; the copy is only an emergency rollback backup. Therefore browser verification is **READ-ONLY**; **no** controlled Legacy write test may run against the primary DB, and any write/readback result is marked `LIVE_WRITE_READBACK_NOT_VERIFIED`.
+
+1. Confirm `01_router.gs` dispatches `weeklyShipping.workspace.get` and `40_api_v1_weekly_workspace.gs` (incl. §22 `raw`) is synced; create a deployment version. **Do not change the configured Spreadsheet ID; do not create/repair any Sheet/Header.**
+2. Push the approved frontend commit; redeploy GitHub Pages (`shipping-plan.js` + `km-api-foundation.js` + `operation-system-db-api.js`).
+3. **Before** verification, record: `shipping_plans` row count, `shipping_plan_lines` row count, Header rows, and confirm no shipments/stock-movement baseline changes expected.
+4. In the browser, enable the Weekly workspace flag (global + `weeklyShipping`) for this session only; confirm `KM.api.getTransportStatus().configured === true` and the masked endpoint (no Script ID).
+5. Confirm the Weekly page issues `weeklyShipping.workspace.get` (POST) and **no** `TRANSPORT_NOT_CONFIGURED`; confirm the Weekly read boundary triggers **no** `getOperationDb` (the global bootstrap `getOperationDb` is separate/expected).
+6. **READ-ONLY compare** Legacy vs Workspace displays (counts, status, qty, warehouse/carrier, notes, summary/currency) by toggling the flag — **no writes**.
+7. Exercise ONLY read interactions: filters/status grouping, detail expansion, refresh. **Do NOT run** Add Note / Qty / Status / Submit / Approve / Reject / Complete / Cancel / Shipment creation / reservation / stock deduction.
+8. **After** verification, re-confirm: `shipping_plans` + `shipping_plan_lines` row counts unchanged; Headers unchanged; no shipments or stock-movement records created.
+9. Mark live write→readback as `LIVE_WRITE_READBACK_NOT_VERIFIED` (deferred until the copy is the actively bound verification target).
+10. Capture `requestId` / `serverDurationMs` / `tablesRead` from the response meta.
+11. Toggle the Weekly flag **off**; confirm the next load returns to Legacy (rollback). **No Production enablement persisted.** Do **not** claim full API-3B PASS from read-only production evidence.
 
 1. Manually sync the API-2 `.gs` files into the Apps Script project: **`40_api_v1_weekly_workspace.gs`** (incl. the §22 `raw` passthrough) + confirm `01_router.gs` already dispatches `weeklyShipping.workspace.get`.
 2. Create a new Apps Script **deployment version**; confirm the bound **Verification Copy** Spreadsheet ID (`PRODUCTION_DB_SPREADSHEET_ID_` set to the copy — never Production).

@@ -2108,6 +2108,12 @@ async function loadOperationDb(options) {
 if (!window.KM) window.KM = {};
 if (!window.KM.DB) window.KM.DB = {};
 
+// SINGLE canonical frontend Web App endpoint authority (READ-ONLY getter, API Transport Hotfix T1). The API
+// Foundation's ApiTransport resolves the Web App URL through this at call time — it does NOT duplicate the
+// literal URL. Returns '' when unconfigured (→ fail-closed TRANSPORT_NOT_CONFIGURED). Exposes no new secret:
+// the same exec URL Legacy already uses; the Script ID is masked in any Foundation diagnostic/error surface.
+window.KM.DB.getApiBaseUrl = function() { return isOperationDbApiConfigured() ? OP_DB_API_BASE_URL : ''; };
+
 window.KM.DB.loadOperationDb = loadOperationDb;
 
 window.KM.DB.getSkuDetails = function() {

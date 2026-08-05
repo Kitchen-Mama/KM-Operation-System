@@ -54,6 +54,7 @@
     FORBIDDEN_OPERATION: 'FORBIDDEN_OPERATION',
     LEGACY_ADAPTER_MISSING: 'LEGACY_ADAPTER_MISSING',
     TRANSPORT_NOT_CONFIGURED: 'TRANSPORT_NOT_CONFIGURED',
+    TRANSPORT_URL_INVALID: 'TRANSPORT_URL_INVALID',
     TRANSPORT_ERROR: 'TRANSPORT_ERROR',
     INTERNAL_ERROR: 'INTERNAL_ERROR'
   };
@@ -212,22 +213,64 @@
       }
     };
 
-    // ---- ApiTransport — formal transport for FUTURE workspace impl (text/plain POST + GET action). -----
-    // Foundation delegates live traffic through LegacyAdapter; this is a configured-guarded stand-in.
+    // ---- ApiTransport (Hotfix T1) — Workspace POST/GET over the EXISTING canonical Web App endpoint. --------
+    // The URL is resolved AT CALL TIME (never captured once) from the single frontend authority — no duplicate
+    // literal URL lives here. Priority: injected deps.baseUrl / deps.getBaseUrl (tests) → window.KM.DB.getApiBaseUrl()
+    // → window.KM.config.operationDbWebAppUrl. Blank → TRANSPORT_NOT_CONFIGURED; present-but-malformed → TRANSPORT_URL_INVALID.
     var _fetcher = (typeof deps.fetch === 'function') ? deps.fetch : (typeof fetch !== 'undefined' ? fetch : null);
+    function txErr(code, msg) { var e = new Error(msg || code); e.apiCode = code; return e; }
+    function resolveBaseUrl() {
+      if (typeof deps.baseUrl === 'string' && deps.baseUrl) return deps.baseUrl;
+      if (typeof deps.getBaseUrl === 'function') { try { var u0 = deps.getBaseUrl(); if (u0) return String(u0); } catch (e) { /* fall through */ } }
+      if (typeof window !== 'undefined' && window.KM) {
+        if (window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function') { try { var u1 = window.KM.DB.getApiBaseUrl(); if (u1) return String(u1); } catch (e2) { /* fall through */ } }
+        if (window.KM.config && window.KM.config.operationDbWebAppUrl) return String(window.KM.config.operationDbWebAppUrl);
+      }
+      return '';
+    }
+    function classifyUrl(u) {
+      var s = (typeof u === 'string') ? u.trim() : '';
+      if (s === '') return { ok: false, code: API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED };
+      var isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(s);
+      var isHttps = s.indexOf('https://') === 0;
+      if (!isHttps && !isLocal) return { ok: false, code: API_ERROR_CODES.TRANSPORT_URL_INVALID };
+      if (!/^https?:\/\/[^\s]+$/.test(s)) return { ok: false, code: API_ERROR_CODES.TRANSPORT_URL_INVALID };
+      return { ok: true, url: s };
+    }
+    function maskEndpoint(u) {
+      if (!u) return '';
+      var m = String(u).match(/^(https?:\/\/[^/]+)\//);
+      var origin = m ? m[1] : String(u);
+      return /script\.google\.com/.test(u) ? (origin + '/.../exec') : (origin + '/...');   // never expose the Script ID
+    }
     var transport = {
-      configured: function () { return typeof _fetcher === 'function' && !!deps.baseUrl; },
+      resolveBaseUrl: resolveBaseUrl,
+      configured: function () { return typeof _fetcher === 'function' && classifyUrl(resolveBaseUrl()).ok; },
       get: function (params) {
-        if (!this.configured()) { var e = new Error('ApiTransport not configured'); e.apiCode = API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED; return Promise.reject(e); }
+        if (typeof _fetcher !== 'function') return Promise.reject(txErr(API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED, 'no fetch available'));
+        var c = classifyUrl(resolveBaseUrl());
+        if (!c.ok) return Promise.reject(txErr(c.code));
         var qs = isObj(params) ? params : {};
-        var url = deps.baseUrl + '?' + Object.keys(qs).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(qs[k]); }).join('&');
+        var url = c.url + (c.url.indexOf('?') < 0 ? '?' : '&') + Object.keys(qs).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(qs[k]); }).join('&');
         return _fetcher(url, { method: 'GET', cache: 'no-store' });
       },
-      post: function (body) {
-        if (!this.configured()) { var e = new Error('ApiTransport not configured'); e.apiCode = API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED; return Promise.reject(e); }
-        return _fetcher(deps.baseUrl, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(isObj(body) ? body : {}) });
+      post: function (body, opts) {
+        if (typeof _fetcher !== 'function') return Promise.reject(txErr(API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED, 'no fetch available'));
+        var c = classifyUrl(resolveBaseUrl());
+        if (!c.ok) return Promise.reject(txErr(c.code));
+        var init = { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(isObj(body) ? body : {}) };
+        if (opts && opts.signal) init.signal = opts.signal;   // AbortSignal end-to-end (no client double-request)
+        return _fetcher(c.url, init);
       }
     };
+    function getTransportStatus() {
+      var u = resolveBaseUrl(), c = classifyUrl(u);
+      var source = (typeof deps.baseUrl === 'string' && deps.baseUrl) ? 'deps'
+        : (typeof deps.getBaseUrl === 'function') ? 'deps.getBaseUrl'
+        : (typeof window !== 'undefined' && window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function') ? 'KM.DB'
+        : (typeof window !== 'undefined' && window.KM && window.KM.config && window.KM.config.operationDbWebAppUrl) ? 'KM.config' : 'none';
+      return { configured: (typeof _fetcher === 'function') && c.ok, source: source, maskedEndpoint: c.ok ? maskEndpoint(c.url) : '', urlStatus: c.ok ? 'ok' : c.code, weeklyEnabled: workspaceApiActive('weeklyShipping') };
+    }
 
     // ---- API-2 · per-workspace feature flag (global master AND per-workspace enable; default all false) --
     var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: false, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false };
@@ -254,8 +297,9 @@
 
     // ---- API-2 · workspace transport invoke → parsed canonical envelope (tests inject deps.workspaceInvoke) --
     var _workspaceInvoke = (typeof deps.workspaceInvoke === 'function') ? deps.workspaceInvoke : function (action, dto, signal) {
-      if (!transport.configured()) { var e = new Error('workspace transport not configured'); e.apiCode = API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED; return Promise.reject(e); }
-      return transport.post(dto, signal).then(function (resp) { return (resp && typeof resp.json === 'function') ? resp.json() : resp; });
+      // transport.post resolves the canonical URL at call time and rejects with the specific transport code
+      // (TRANSPORT_NOT_CONFIGURED / TRANSPORT_URL_INVALID) — surfaced verbatim via errorFromException.
+      return transport.post(dto, { signal: signal }).then(function (resp) { return (resp && typeof resp.json === 'function') ? resp.json() : resp; });
     };
 
     // ---- API-2 · Weekly Shipping READ workspace resolver (the FIRST implemented workspace) ---------------
@@ -392,7 +436,7 @@
       // ApiClient (facade)
       client: client, getWorkspace: client.getWorkspace, executeCommand: client.executeCommand,
       // independent layers (each testable in isolation)
-      transport: transport,
+      transport: transport, getTransportStatus: getTransportStatus,
       dispatcher: { dispatch: dispatch, dispatchCommand: dispatchCommand, dispatchWorkspace: dispatchWorkspace },
       workspaceResolver: { resolve: resolveWorkspace, register: register, get: getWorkspace, has: hasWorkspace, list: listWorkspaces },
       registry: { register: register, get: getWorkspace, has: hasWorkspace, list: listWorkspaces },
