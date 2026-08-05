@@ -3475,3 +3475,28 @@ F1-3 = COMPLETED. Next: F1-7 (recommendation persistence/journal — gated by De
 ```
 
 - **Files (F1-3b):** `assets/js/core/supply-planning-source-projection.js` (production rewire — bundled pure module), `assets/js/core/supply-planning-source-facts.js` (two SC-11.4 bridge corrections — bundled pure module), `assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs` (regenerated via canonical build tool — `APPS_SCRIPT_SYNC_REQUIRED` = generated bundle only, if/when user later deploys), `assets/tests/supply-planning-qualified-ledger-connection-f1-3.test.js` (NEW — GIT_ONLY), `assets/tests/supply-planning-supply-lifecycle.test.js` + `assets/tests/supply-planning-source-projection.test.js` + `assets/tests/supply-planning-production-source.test.js` (canonical re-base + citations — GIT_ONLY), `docs/planning/PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` (§G F1-3b COMPLETED — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **`FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
+
+### Checkpoint — F1-4A Recommendation Runtime Connection = AUDIT / HALTED (2026-08-05)
+```
+F1-4A — connect Inventory Replenishment to the existing runtime (connection only, NO formula rewrite).
+Read-only audit → HALTED (dependency graph delivered; no code connection landed). Blockers:
+  1. Runtime is SERVER-SIDE only — index.html loads ZERO supply-planning-*.js scripts; the runtime lives only in
+     90_generated_supply_planning_bundle.gs. No recommendation READ-API exists (operation-system-db-api.js has
+     allocation-draft persistence + getRecommendationDraftToken, nothing that returns computed recommendations).
+     Connecting needs API + Apps Script work → FORBIDDEN this round (and F1-4 depends on F1-7, D-1 gated).
+  2. Coverage / Days-of-Supply-as-runtime / Projected-Inventory / business Reason (ORDER/TRANSFER/BORROW/NO_ACTION)
+     + per-SKU Status/Level are produced by NO runtime — emitting them is a formula/runtime BUILD → FORBIDDEN.
+Runtime DOES produce: Current Stock (echo/ledger), Qualified Incoming (qualifiedIncomingQuantity), Suggested Qty
+     (resolver recommendedQty). calculateGap returns a BARE number (no coverage/DOS/reason). Read entry point =
+     KM.recommendationSourceIntegration.resolveRecommendationFactsFromSource (needs a rich source DTO the page
+     doesn't build). Page is fully DISCONNECTED (0 runtime refs); live outputs are stubs (onTheWay:0, suggestedQty
+     via needBuckets()=0, status='Sufficient', needsAlert:false); DOS is a UI calc; no Projected/Coverage column.
+A minimal client-side calculateGap wire would emit a WRONG number (QI pipeline not loaded → incoming=0) — worse
+     than the honest stub; so the stubs must remain until a real connection slice.
+Recommended next slices (each needs its own authorization — crosses a forbidden boundary): F1-4B = a read-only
+     recommendation API seam (server-side compute via existing runtime → read endpoint; the page consumes
+     recommendedQty); F1-5 = a Coverage/DOS/Projected-Inventory engine (the genuine formula build for the 4 gaps).
+No formula/runtime/API/DB/schema/Apps Script/UI/bundle change. No live DB. Full suite 83/83; Golden 39/1/0; #34 Pending.
+```
+
+- **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
