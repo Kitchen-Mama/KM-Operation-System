@@ -3499,4 +3499,34 @@ Recommended next slices (each needs its own authorization — crosses a forbidde
 No formula/runtime/API/DB/schema/Apps Script/UI/bundle change. No live DB. Full suite 83/83; Golden 39/1/0; #34 Pending.
 ```
 
+### Checkpoint — F1-4B Read-Only Recommendation Workspace API Seam = READINESS AUDIT / HALTED (2026-08-05)
+```
+F1-4B — one bounded read-only recommendation.workspace.get seam invoking the existing runtime (NO new formula).
+§2 readiness audit → HALTED (HALT condition #2). The API/Apps-Script seam is NOW in scope (dissolves F1-4A blocker
+  #1) and in fact already stubbed server-side: 27_recommendation_production_source.gs buildProductionRecommendationSource_
+  is "kept for a future authorized read-only route". BUT wiring it would return BLOCKED for every real page scope:
+Root blocker — the production projection ROUTES, never COMPUTES, the planning facts a recommendation needs:
+  • source-projection.js:25 — windowCode/requestMonth/requestBucket/calculatedGap/netOrderNeed are CALLER-OWNED.
+  • :345-356 planningRows are a pass-through of input.planningFacts (Weekly window_code+calculated_gap_qty; Monthly
+    net_order_need_snapshot). :358-377 receiver/factory facts (survival/daily_demand/demand_weight/eligible_*) are
+    caller-owned too. :403-407 fail-closed gate BLOCKS when planningRows (or demand/supply) is empty.
+  • :147-154/:174-175/:192-193 destination is caller-owned (D-3); no destination → MISSING_DESTINATION_WAREHOUSE.
+  • resolver CAN calculateGap from 4 raw inputs (source-facts.js:588-596) but NOTHING produces them from the DB for a
+    fresh scope — the SC-1 "single biggest freeze finding": no Forecast/Sales/warehouse → planning-facts projector.
+Only the TEST fixtures supply those facts (Weekly 96 / Monthly 24 from crafted planningFacts/receiverFacts). The
+  Inventory Replenishment page supplies scope only — no destination, window_code, gap, net-order-need, receiver facts.
+Net: recommendation.workspace.get for the page scope → ready:false SOURCE_NOT_AVAILABLE / MISSING_DESTINATION_WAREHOUSE
+  → no lines, no recommendedQty. Suggested Qty (the round's goal) is unobtainable without inventing gap/allocation/
+  destination facts → forbidden ("Do not create new formulas"; "no fake zeroes"). §2 HALT rule → make NO runtime/API/
+  page code changes; document; smallest next slice; docs checkpoint only.
+F1-3b supply lifecycle bridge confirmed landed at HEAD (source-projection.js:249-342; commit 97df611) → Current Stock
+  + Qualified Incoming ARE produced (supply ledger) but reachable only if the whole chain reaches ready (it won't).
+Smallest next slice: F1-4B-PRE = Recommendation Planning-Facts Projection Runtime (SC-1 convergent gap / SC-9 #1
+  remainder) — PRODUCE the caller-owned facts by INVOKING frozen owners (Engine-A calculateGap, sumRemainingShortages,
+  survival/weight/eligibility §20.3/§7/§23.6/§40) + D-3 destination selection; THEN this seam becomes meaningful.
+Doc: docs/planning/PHASE_F1_4B_RECOMMENDATION_WORKSPACE_BLOCKER.md (readiness table + cited blocker + next slice).
+No formula/runtime/API/router/Foundation/page/DB/schema/Apps Script/bundle/CSS change. No live DB. Full suite 83/83
+  (unchanged); Golden 39/1/0; #34 Pending. Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
