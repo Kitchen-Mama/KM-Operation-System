@@ -3529,4 +3529,33 @@ No formula/runtime/API/router/Foundation/page/DB/schema/Apps Script/bundle/CSS c
   (unchanged); Golden 39/1/0; #34 Pending. Not pushed, not deployed.
 ```
 
+### Checkpoint — F1-4B-PRE Recommendation Planning-Facts Projection Runtime = AUTHORITY AUDIT / HALTED (2026-08-05)
+```
+F1-4B-PRE — build a pure projector that DERIVES the caller-owned planning facts by INVOKING frozen owners (no new
+  formula). §2 authority matrix → HALTED (§3). Several required facts have NO callable frozen producer:
+IMPLEMENTED / DERIVABLE (invoke-only, exist): regular+special-event+safety demand (calculations.js:489-542
+  calculateForecastDrivenRemainingNeed), daily demand (normalizedAvgSalesPerDay run-rate ~:360-430), gap
+  (calculateGap :160-167), net order need (sumRemainingShortages :434-443), required-by CLASSIFIER (classifyRequiredByWindow
+  :572 — consumes a date, doesn't produce one), current stock + qualified incoming (already in projection, F1-3b).
+MISSING CANONICAL AUTHORITY (no producer; only spec formula or caller DTO field → building = new formula = §3/§15
+  FORBIDDEN): demand_weight (FC-share §7/§24.5 — source-facts.js:459 requires caller value); eligible_pool_types
+  (§23.6/§24.9 — :460 validates a caller list, no derivation); eligible_factory_warehouse_ids (§40/§35 — :498);
+  receiver decomposition (receiverFacts[] always caller-supplied — source-projection.js:358 / source-reader.js:347);
+  per-receiver dailyDemand→survival wiring (survival=CEILING(18×dailyDemand) :456 needs a caller dailyDemand;
+  SURVIVAL_HORIZON_DAYS=18 :389); destination_warehouse_id (D-3 caller-owned, SC-11.3 never inferred, no producer);
+  required_by_date (actual date) + window_code (Weekly grain :546) — no producer.
+Wall = the allocation stage: projectAllocationInputs (source-facts.js:401-505) VALIDATES caller receiver/factory facts
+  and fails closed when absent → allocators allocateOverseasSharedPool/allocateFactoryDeterministic can't run → Weekly
+  recommendedQty (FLOOR over ALLOCATED source :638-646) and Monthly factory path can't produce. §15: existing function
+  can't be called because inputs underspecified → HALT, don't reimplement. §12: defaulting weight=1/eligible=true/
+  guessed destination = fake default success → forbidden.
+Bounded decision request: authorize a dedicated FORMULA/producer round (F1-5-A Allocation-Fact Producer Runtime) to
+  implement the frozen-but-unimplemented §7/§24.5 weight, §23.6/§24.9 pool eligibility, §40/§35 factory eligibility,
+  §22 run-rate→receiver dailyDemand, receiver decomposition, D-3 destination, and window/required-by derivation — the
+  SC-1 "single biggest freeze finding" / SC-9 #1 remainder. (Chain reachability is ALREADY proven by test fixtures.)
+Doc: docs/planning/PHASE_F1_4B_PRE_PLANNING_FACTS_AUTHORITY_HALT.md (authority matrix + cited blocker + decision + next slice).
+No formula/runtime/API/router/Foundation/page/DB/schema/Apps Script/bundle/CSS/source-reader change. No live DB. Full
+  suite 83/83 (unchanged); Golden 39/1/0; #34 Pending. Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
