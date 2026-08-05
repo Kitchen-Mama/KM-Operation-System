@@ -4,6 +4,11 @@
 ======================================== */
 
 :root {
+    /* Canonical fixed-header height — the SINGLE owner of the global header offset. The fixed .top-header,
+       the .app-layout top offset, the fixed .sidebar top, and the .main-content viewport height ALL derive
+       from this one token, so the header offset can never be double-counted or drift between layers (layout.css). */
+    --header-height: 80px;
+
     /* ========================================
        Brand Colors
     ======================================== */

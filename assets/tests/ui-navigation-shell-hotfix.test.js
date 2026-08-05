@@ -24,6 +24,7 @@ var APP = read('js/app.js');
 var APP_CODE = stripComments(APP);
 var HOME = stripComments(read('js/pages/home.js'));
 var CSS = stripComments(read('css/layout.css'));
+var BASE = stripComments(read('css/base.css'));
 
 var fail = 0, pass = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
@@ -105,6 +106,42 @@ ok(isEmptyNode([]) === true, 'E1 an empty note IS :empty → collapses (zero lay
 ok(isEmptyNode([{ text: '⚠ Couldn’t load data. Retry' }]) === false, 'E2 a populated warning/error banner is NOT :empty → always preserved');
 
 // =====================================================================================================
+section('F. Single canonical header-offset owner — no duplicate top offset (Round 3, §4)');
+// The header offset must be owned by exactly one token so the fixed header, the app-layout offset, the fixed
+// sidebar top and the main-content viewport height can never double-count or drift.
+ok(/--header-height:\s*\d+px/.test(BASE), 'F1 base.css defines the canonical --header-height token exactly once');
+ok(/\.app-layout\s*\{[^}]*margin-top:\s*var\(--header-height\)/.test(CSS), 'F2 .app-layout top offset derives from --header-height');
+ok(/top:\s*var\(--header-height\)/.test(CSS), 'F3 fixed .sidebar top derives from --header-height');
+ok(/height:\s*calc\(100vh - var\(--header-height\)\)/.test(CSS), 'F4 viewport heights derive from --header-height (no literal calc(100vh - 80px))');
+ok(/\.top-header\s*\{[^}]*min-height:\s*var\(--header-height\)/.test(CSS), 'F5 .top-header fills the canonical offset (no body-cream shortfall below the fixed header)');
+// No bare duplicate offset literals survive → the offset cannot be double-counted.
+ok(!/margin-top:\s*80px/.test(CSS) && !/top:\s*80px/.test(CSS) && !/calc\(100vh - 80px\)/.test(CSS), 'F6 no bare 80px header-offset literals remain (single owner, no duplicate)');
+// .main-content carries NO second top offset of its own.
+ok(!/\.main-content\s*\{[^}]*(margin-top|padding-top)\s*:/.test(CSS), 'F7 .main-content carries no duplicate top margin/padding offset');
+// content-area keeps its intended internal 32px (2rem) padding — the real page-content spacing is preserved.
+ok(/\.content-area\s*\{[^}]*padding:\s*2rem/.test(CSS), 'F8 main.content-area keeps its intended internal 2rem (32px) content padding');
+// No masking hacks in the layout.
+ok(!/background:\s*(white|#fff\w*)\s*!important/i.test(CSS) && !/margin[^:]*:\s*-\d/.test(CSS), 'F9 no background-white mask / negative-margin hack in layout.css');
+
+section('G. renderRecords guards its orphaned target (no throw) — §5');
+// #recordsList exists in NO page markup; renderRecords must no-op instead of throwing "Cannot set properties of null".
+(function () {
+  var start = APP.indexOf('function renderRecords');
+  var end = APP.indexOf('\n}', start) + 2;
+  var src = APP.slice(start, end);
+  ok(/if \(!recordsList\) return;/.test(src), 'G1 renderRecords null-guards the orphaned #recordsList target (narrow guard, not broad try/catch)');
+  // Execute the REAL function against a fake DOM where getElementById returns null.
+  var calledGetRecords = false;
+  var fakeDoc = { getElementById: function () { return null; } };
+  var fakeWin = { DataRepo: { getRecords: function () { calledGetRecords = true; return []; } } };
+  var threw = false;
+  // Define AND invoke inside the same eval scope (a strict-mode function declaration in eval does not leak out).
+  try { (function (document, window) { eval(src + '\nrenderRecords();'); })(fakeDoc, fakeWin); } catch (e) { threw = true; }
+  ok(!threw, 'G2 renderRecords does NOT throw when #recordsList is absent (startup no longer logs the TypeError)');
+  ok(calledGetRecords === false, 'G3 it returns BEFORE touching data (clean no-op for the missing optional target)');
+})();
+
+// =====================================================================================================
 console.log('\n----------------------------------------');
-console.log('HOME SHELL HOTFIX GUARD (Round 2): ' + pass + ' passed, ' + fail + ' failed');
+console.log('UI NAV + LAYOUT HOTFIX GUARD (Rounds 2-3): ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { process.exitCode = 1; }

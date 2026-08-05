@@ -283,10 +283,16 @@ function renderForecastChart() {
 
 // 渲染紀錄列表 - 使用本地資料
 function renderRecords() {
+    // #recordsList is an ORPHANED optional target (the records-list UI was removed; it exists in no page markup).
+    // Guard it so this legacy startup helper no longer throws "Cannot set properties of null" — a narrow null
+    // guard (not broad try/catch): a missing optional mount is a clean no-op, a missing required mount would still
+    // surface elsewhere. Note: renderRecords runs at DOMContentLoaded startup, NOT in the navigation path, so it
+    // does not touch the SPA shell/layout — the console error was cosmetic, not the source of the top gap.
     const recordsList = document.getElementById('recordsList');
+    if (!recordsList) return;
     const records = window.DataRepo.getRecords();
-    
-    recordsList.innerHTML = records.map(record => 
+
+    recordsList.innerHTML = records.map(record =>
         `<li>SKU: ${record.sku}, 目標天數: ${record.targetDays}, 建議補貨量: ${record.recommendQty}, 時間: ${record.created_at}</li>`
     ).join('');
 }
