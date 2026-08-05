@@ -38,7 +38,8 @@ var MODULE_ORDER = [
   'supply-planning-recommendation-source-integration', // requires source-reader + ledgers + source-facts + plan-bridge
   'supply-planning-source-reader-production',  // requires source-reader + source-integration (Round 1S-P1 production reader)
   'supply-planning-source-projection',         // requires source-reader-production (Round 1S-P1.5B projection runtime)
-  'supply-planning-production-source',         // requires source-projection + plan-builder (Round 1S-P2 production wiring)
+  'supply-planning-allocation-facts',          // requires calculations (F1-5-A allocation-fact producer)
+  'supply-planning-production-source',         // requires source-projection + plan-builder + allocation-facts (Round 1S-P2 / F1-5-A)
   'supply-planning-production-safety',         // standalone safety layer (Production Safety Round S0) — before writer
   'supply-planning-production-writer',         // requires production-source + orchestrator + locking + repository + safety (Round 1S-P3 writer)
   'supply-planning-verification-diagnostics'   // requires repository + production-writer (Round 1S-P4-U read-only diagnostics)
@@ -67,6 +68,7 @@ var GLOBALS = [
   ['KMSI', 'supply-planning-recommendation-source-integration'],
   ['KMSRP', 'supply-planning-source-reader-production'],
   ['KMSP', 'supply-planning-source-projection'],
+  ['KMAF', 'supply-planning-allocation-facts'],
   ['KMPS', 'supply-planning-production-source'],
   ['KMSAFE', 'supply-planning-production-safety'],
   ['KMPW', 'supply-planning-production-writer'],

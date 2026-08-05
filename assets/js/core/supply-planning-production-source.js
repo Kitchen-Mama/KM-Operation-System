@@ -19,11 +19,12 @@
   var req = (typeof require !== 'undefined') ? require : null;
   var api = factory(
     req ? req('./supply-planning-source-projection.js') : (root.KMSP || (root.KM && root.KM.sourceProjection)),
-    req ? req('./supply-planning-plan-builder.js') : (root.KMPB || (root.KM && root.KM.planBuilder))
+    req ? req('./supply-planning-plan-builder.js') : (root.KMPB || (root.KM && root.KM.planBuilder)),
+    req ? req('./supply-planning-allocation-facts.js') : (root.KMAF || (root.KM && root.KM.allocationFacts))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.productionSource = api; }
-})(this, function (KMSP, KMPB) {
+})(this, function (KMSP, KMPB, KMAF) {
   'use strict';
 
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -88,15 +89,39 @@
     };
   }
 
+  // ---- F1-5-A Allocation-Fact Producer seam (planning-facts input, §11/§13) -------------------------------
+  // If the caller supplies `request.allocationFactsInput` (canonical receiver scope + demand driver/basis), run the
+  // frozen-owner-invoking KMAF producer to DERIVE the caller-owned planning facts (receiverFacts / factoryDemandFacts
+  // / planningFacts) instead of hand-supplied fixtures. Returns a NEW request with those facts populated + the
+  // producer result (issues surfaced downstream). When absent, the request is returned unchanged (backward compatible;
+  // existing fixture-supplied facts flow through untouched). No fabrication: a not-ready producer leaves its
+  // structured issues on the result for the caller/projection fail-closed gate.
+  function applyAllocationFacts(request) {
+    if (!isObj(request) || !isObj(request.allocationFactsInput)) return { request: request, facts: null };
+    aType(KMAF && typeof KMAF.projectAllocationFacts === 'function', 'applyAllocationFacts: KMAF.projectAllocationFacts unavailable');
+    var afInput = request.allocationFactsInput;
+    if (afInput.recommendationType === undefined) afInput = mergeShallow(afInput, { recommendationType: request.recommendationType });
+    if (afInput.businessScope === undefined) afInput = mergeShallow(afInput, { businessScope: request.businessScope });
+    if (afInput.planningCycle === undefined) afInput = mergeShallow(afInput, { planningCycle: request.planningCycle });
+    var facts = KMAF.projectAllocationFacts(afInput);
+    var merged = mergeShallow(request, {
+      receiverFacts: facts.receiverFacts, factoryDemandFacts: facts.factoryDemandFacts, planningFacts: facts.planningFacts
+    });
+    return { request: merged, facts: facts };
+  }
+  function mergeShallow(a, b) { var o = {}; for (var k in a) if (Object.prototype.hasOwnProperty.call(a, k)) o[k] = a[k]; for (var j in b) if (Object.prototype.hasOwnProperty.call(b, j)) o[j] = b[j]; return o; }
+  function producerIssues(facts) { return facts ? (facts.issues || []).map(function (x) { return { stage: 'allocationFacts', code: x.code, ref: x.ref, reason: x.message }; }) : []; }
+
   // ---- orchestrator computeFacts seam (replaces SOURCE_READER_PENDING; read-only) -------------------------
   // Returns EXACTLY the shape the frozen Orchestrator's deps.computeFacts contract expects:
   //   { lines, ready, reason, formulaVersion, sourceDataAsOf, sourceIssues }
   function resolveProductionFacts(spreadsheet, request) {
     aType(isObj(request), 'resolveProductionFacts: request required');
+    var af = applyAllocationFacts(request); request = af.request;
     var read = readCanonicalSnapshots(spreadsheet, request.config);
     var full = KMSP.projectAndRead(projectionInput(request, read.snapshots));
     var projIssues = (full.projection && full.projection.issues) || [];
-    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(projIssues);
+    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(projIssues).concat(producerIssues(af.facts));
     if (full.ready === false) {
       return { lines: [], ready: false, reason: full.reason, formulaVersion: request.formulaVersion,
         sourceDataAsOf: (full.projection && full.projection.sourceDataAsOf) || request.sourceDataAsOf, sourceIssues: srcIssues };
@@ -108,10 +133,11 @@
   // ---- read-only RecommendationPlan result (NO persistence; NO draft; NO write) ---------------------------
   function buildProductionRecommendationSource(spreadsheet, request) {
     aType(isObj(request), 'buildProductionRecommendationSource: request required');
+    var af = applyAllocationFacts(request); request = af.request;
     var read = readCanonicalSnapshots(spreadsheet, request.config);
     var full = KMSP.projectAndRead(projectionInput(request, read.snapshots));
     var proj = full.projection || {};
-    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(proj.issues || []);
+    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(proj.issues || []).concat(producerIssues(af.facts));
     var ready = full.ready !== false && !!full.bridgeResult;
     var recommendationPlan = ready ? KMPB.buildRecommendation(full.bridgeResult) : null;
     return {

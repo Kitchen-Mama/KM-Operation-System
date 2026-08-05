@@ -3558,4 +3558,37 @@ No formula/runtime/API/router/Foundation/page/DB/schema/Apps Script/bundle/CSS/s
   suite 83/83 (unchanged); Golden 39/1/0; #34 Pending. Not pushed, not deployed.
 ```
 
+### Checkpoint — F1-5-A Allocation-Fact Producer Runtime = IMPLEMENTED (2026-08-05)
+```
+F1-5-A — the previously-missing planning-facts producer is BUILT (formula/runtime round; invoke frozen owners only).
+NEW pure module supply-planning-allocation-facts.js (KMAF / window.KM.allocationFacts; projectAllocationFacts(input))
+  produces receiverFacts / factoryDemandFacts / planningFacts by INVOKING frozen owners — authors NO formula:
+  • dailyDemand = §22 normalizedAvgSalesPerDay (Sales) / §2D calculateForecastDrivenRemainingNeed.forecastDailyDemand
+    (Forecast) — from KMCALC.
+  • survival NOT recomputed: fact carries dailyDemand; §20.3 CEILING(18×dd) owner is the consumer projectAllocationInputs.
+  • demandWeight = §7/§24.5 SHARE basis_i÷Σ_group (company+country); Sales basis = run-rate, Forecast basis =
+    forecastShareQty (caller seam — §7 4-month anchor not canonically pinned).
+  • eligiblePoolTypes §23.6/§24.9 + eligibleFactoryWarehouseIds §35/§40 DERIVED from warehouses + fulfillment.
+  • gap/netOrderNeed NOT computed: planning fact carries the 4 raw inputs; resolver invokes calculateGap /
+    sumRemainingShortages.
+Caller-owned SEAMS fail-closed (structured issue, never guess/fake): destination D-3 → MISSING_DESTINATION_WAREHOUSE;
+  windowCode/requiredByDate §6; demand driver (no canonical classifier) → DEMAND_WEIGHT_UNRESOLVED; POOL_/FACTORY_
+  ELIGIBILITY_UNRESOLVED; DAILY_DEMAND_SOURCE_MISSING. MISSING never 0; eligibility never defaults true.
+Integration: production-source.js gains a backward-compatible request.allocationFactsInput seam → runs KMAF → injects
+  receiver/factory/planning facts into the projection request (producer issues → sourceIssues); absent = unchanged.
+Reachability TEST VERIFIED end-to-end: producer → REAL projectAllocationInputs (real overseas allocator) → REAL
+  resolveWeeklyRecommendationFacts → real carton-FLOOR recommendedQty; calculatedGap === calculateGap(...) proven.
+Tests: NEW supply-planning-allocation-facts-f1-5a.test.js (36). Bundle regenerated 25→26 modules (hash 710cdd36…,
+  --check reproducible); parity test updated 25→26. FULL SUITE 84 files / 0 failing; Golden 39/1/0; #34 Pending.
+Remaining upstream decision (NOT invented this round): demand-driver classifier (Sales vs Forecast) + §7 rolling-
+  4-month FC window anchor have no canonical owner → kept as caller seams (DEMAND_WEIGHT_UNRESOLVED when absent).
+Files: assets/js/core/supply-planning-allocation-facts.js (NEW, bundled), supply-planning-production-source.js (seam,
+  bundled), assets/tools/build-apps-script-bundle.js (KMAF registered), 90_generated_supply_planning_bundle.gs
+  (regenerated — APPS_SCRIPT_SYNC_REQUIRED = generated bundle only, if/when user later deploys), NEW test +
+  bundle-parity test (GIT_ONLY), PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md §H + this entry (DOCUMENTATION_ONLY).
+BUNDLE_REBUILD_REQUIRED=true (generated 90_*.gs only; NO handler/router sync). FRONTEND_GITHUB_PAGES_REQUIRED=false.
+No new business formula/DB/schema/header/API/router/page/CSS change. No live DB. Not pushed, not deployed.
+Next: F1-4B-PRE (feed producer facts through the production source builder) then F1-4B (read-only API seam).
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

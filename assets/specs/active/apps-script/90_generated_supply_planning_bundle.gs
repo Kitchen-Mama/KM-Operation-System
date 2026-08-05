@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 5795e29574f497be5c4db6e7aa21cc304efd09f67a08fd1c3f960953aedd3666
+// bundle_sha256 = 710cdd3603d4229b0ce8372d6346dc403212c22b000f04649a48beeaf1ba53cd
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7
@@ -26,7 +26,8 @@
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
 //   supply-planning-source-projection  1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4
-//   supply-planning-production-source  905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326
+//   supply-planning-allocation-facts  5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc
+//   supply-planning-production-source  faa6dc06560f498ae7d9fb6e567b7b31bf69c0dd10b813414aa7728fcfa0ecd0
 //   supply-planning-production-safety  7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6
 //   supply-planning-production-writer  1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364
 //   supply-planning-verification-diagnostics  efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea
@@ -6803,6 +6804,321 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-source-projection", module.exports);
 })();
 
+// ----- module: supply-planning-allocation-facts (verbatim from assets/js/core/supply-planning-allocation-facts.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Allocation-Fact Producer Runtime (Phase F1-5-A).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC producer of the previously-unimplemented CALLER-OWNED planning facts the frozen
+// Recommendation Runtime consumes (`receiverFacts` / `factoryDemandFacts` / `planningFacts` — the exact DTO shapes
+// read by `projectAllocationInputs` / `resolveWeeklyRecommendationFacts` / `resolveMonthlyRecommendationFacts`).
+//
+// It AUTHORS NO business formula. Every arithmetic value is produced by the ALREADY-FROZEN owner, invoked here:
+//   • daily demand  — §22 `normalizedAvgSalesPerDay` (Sales-Driven) / §2D `calculateForecastDrivenRemainingNeed`
+//                     `.forecastDailyDemand` (Forecast-Driven).  [KMCALC]
+//   • survival      — NOT recomputed here: the fact carries `dailyDemand`; the SINGLE owner of
+//                     `survivalNeedQty = CEILING(18 × dailyDemand)` (§20.3/§24.4) is the frozen consumer
+//                     `projectAllocationInputs` (source-facts.js). No second copy of that formula is created (§2).
+//   • demand weight — §7 / §24.5 proportional SHARE `basis_i ÷ Σ_group basis_i` over the allocation group
+//                     (company + country). Sales-Driven basis = the §22 run-rate; Forecast-Driven basis = the
+//                     rolling-4-month FC share quantity, which is a CALLER-OWNED seam (the §7 window anchor is not
+//                     pinned in the canonical spec — never guessed here).
+//   • gap / net-order-need — NOT computed here: the planning fact carries the four raw inputs (demand /
+//                     destinationCurrentStock / timelyQualifiedIncoming / timelyApprovedCommittedSupply) and the
+//                     frozen resolver invokes `calculateGap` (§31) / `sumRemainingShortages` (§12/§32) itself.
+// The producer OWNS only: warehouse-side eligibility PREDICATES (§23.6/§24.9 pool, §35/§40 factory), the share
+// normalization (§7/§24.5), receiver decomposition (§25.1 demand grain), caller-owned-seam resolution
+// (destination §D-3, required-by §6, demand driver, FC-share basis), fact-DTO assembly, and structured issues.
+//
+// CALLER-OWNED SEAMS (never inferred / never fake-defaulted — a missing seam is a structured issue, never 0/true):
+//   destinationWarehouseId (D-3 / SC-11.3) · requiredByDate + windowCode (§6) · demandDriver (Sales vs Forecast —
+//   no canonical classifier/column exists) · forecastShareQty (the §7 rolling-4-month FC basis anchor).
+// No clock / no Math.random / no locale / no SpreadsheetApp / no DB / no persistence. Input never mutated; JSON-safe
+// deterministic output; MISSING is never silently 0 (only an explicit source 0 is 0).
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.allocationFacts = api; }
+})(this, function (CALC) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function aType(c, m) { if (!c) throw new TypeError(m); }
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function nonEmpty(v) { return str(v).length > 0; }
+  function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function cmpStr(a, b) { a = str(a); b = str(b); return a < b ? -1 : a > b ? 1 : 0; }
+  function finiteNonNeg(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return (isFinite(n) && n >= 0) ? n : null; }
+
+  var DEMAND_DRIVERS = { SALES_DRIVEN: 1, FORECAST_DRIVEN: 1 };
+  var OVERSEAS_POOL_TYPES = { FBA: 1, THREE_PL: 1 };
+  // FBA composition (§24.1/§24.9): platform / hybrid marketplaces carry an FBA Current-Stock lane.
+  var FBA_FULFILLMENT = { platform_fulfilled: 1, hybrid: 1 };
+  var THREE_PL_FULFILLMENT = { self_fulfilled: 1, hybrid: 1 }; // self / hybrid participate in shared 3PL
+
+  // ---- warehouse-side eligibility predicates (OWNED here — §23.6/§24.9 pool, §35/§40 factory) ---------------
+  // §23.6/§24.9: THREE_PL reserve participation is warehouse-side: company + country + warehouse_type='3PL' + is_active.
+  function threePlEligible(warehouses, company, country) {
+    for (var i = 0; i < warehouses.length; i++) {
+      var w = warehouses[i];
+      if (str(w.warehouse_type).toUpperCase() === '3PL' && truthyFlag(w.is_active) &&
+        str(w.company) === company && (country === '' || str(w.country) === country)) return true;
+    }
+    return false;
+  }
+  // §35/§40: factory eligibility = is_factory_warehouse + is_active (shared source; company-agnostic per D-1).
+  function eligibleFactoryWarehouseIds(warehouses) {
+    var seen = {}, out = [];
+    for (var i = 0; i < warehouses.length; i++) {
+      var w = warehouses[i];
+      if (truthyFlag(w.is_factory_warehouse) && truthyFlag(w.is_active)) {
+        var id = str(w.warehouse_id);
+        if (nonEmpty(id) && !seen[id]) { seen[id] = 1; out.push(id); }
+      }
+    }
+    out.sort(cmpStr);
+    return out;
+  }
+  function truthyFlag(v) { if (v === true) return true; var s = str(v).toLowerCase(); return s === 'true' || s === '1' || s === 'yes' || s === 'y'; }
+
+  // §23.6/§24.9 pool eligibility for a receiver: FBA lane by fulfillment composition + THREE_PL by warehouse-side.
+  function eligiblePoolTypesFor(fulfillmentModel, threePlOk) {
+    var pools = [];
+    if (FBA_FULFILLMENT[fulfillmentModel] === 1) pools.push('FBA');
+    if (THREE_PL_FULFILLMENT[fulfillmentModel] === 1 && threePlOk) pools.push('THREE_PL');
+    // platform_fulfilled ALSO participates in the shared 3PL RESERVE when warehouse-eligible (§24 addendum 2026-07-22).
+    if (fulfillmentModel === 'platform_fulfilled' && threePlOk && pools.indexOf('THREE_PL') === -1) pools.push('THREE_PL');
+    var seen = {}, out = [];
+    pools.forEach(function (p) { if (OVERSEAS_POOL_TYPES[p] === 1 && !seen[p]) { seen[p] = 1; out.push(p); } });
+    out.sort(cmpStr);
+    return out;
+  }
+
+  // ---- daily demand — INVOKE the frozen owner (§22 sales / §2D forecast); never reimplemented -----------------
+  function deriveDailyDemand(r, driver, calculationDate, recvIssues, key) {
+    if (driver === 'SALES_DRIVEN') {
+      var sb = r.salesBasis;
+      if (!isObj(sb)) { recvIssues.push(issue('DAILY_DEMAND_SOURCE_MISSING', key, 'Sales-Driven receiver has no salesBasis for §22 run-rate')); return null; }
+      var res = CALC.normalizedAvgSalesPerDay({
+        calcDate: nonEmpty(sb.calcDate) ? str(sb.calcDate) : str(calculationDate),
+        scope: sb.scope, weekly7d: sb.weekly7d, dailySales: sb.dailySales || [],
+        campaigns: sb.campaigns || [], events: sb.events || []
+      });
+      var dd = finiteNonNeg(res.avgSalesPerDay);
+      if (dd === null) { recvIssues.push(issue('INVALID_DAILY_DEMAND', key, 'normalizedAvgSalesPerDay returned a non-finite avgSalesPerDay')); return null; }
+      return { dailyDemand: dd, runRateSource: res.source, runRateWarning: res.warning };
+    }
+    if (driver === 'FORECAST_DRIVEN') {
+      var fb = r.forecastBasis;
+      if (!isObj(fb)) { recvIssues.push(issue('DAILY_DEMAND_SOURCE_MISSING', key, 'Forecast-Driven receiver has no forecastBasis for §2D')); return null; }
+      var fres = CALC.calculateForecastDrivenRemainingNeed({
+        forecastMonth1: fb.forecastMonth1, forecastMonth2: fb.forecastMonth2, targetRules: fb.targetRules,
+        specialEventDemand: fb.specialEventDemand,
+        destinationCurrentStock: 0, timelyQualifiedIncoming: 0, timelyApprovedCommittedSupply: 0
+      });
+      var fdd = finiteNonNeg(fres.forecastDailyDemand);
+      if (fdd === null) { recvIssues.push(issue('INVALID_DAILY_DEMAND', key, 'calculateForecastDrivenRemainingNeed returned a non-finite forecastDailyDemand')); return null; }
+      return { dailyDemand: fdd, forecastTotalDemand: fres.totalForecastDrivenDemand };
+    }
+    // no valid driver → the weight/demand basis cannot be resolved without guessing the mode (no canonical classifier).
+    recvIssues.push(issue('DEMAND_WEIGHT_UNRESOLVED', key, 'receiver has no valid demandDriver (SALES_DRIVEN|FORECAST_DRIVEN); the Sales-vs-Forecast classifier is caller-owned and has no canonical column'));
+    return null;
+  }
+
+  // §7 / §24.5 weight BASIS per receiver: Sales-Driven = run-rate (dailyDemand); Forecast-Driven = caller-owned
+  // rolling-4-month FC share qty (`forecastBasis.forecastShareQty`) — the §7 window anchor is NOT canonically pinned,
+  // so it is a seam, never derived/guessed here.
+  function weightBasisFor(r, driver, dailyDemand, recvIssues, key) {
+    if (driver === 'SALES_DRIVEN') return dailyDemand; // run-rate share basis (§24.5)
+    if (driver === 'FORECAST_DRIVEN') {
+      var fb = r.forecastBasis || {};
+      var b = finiteNonNeg(fb.forecastShareQty);
+      if (b === null) { recvIssues.push(issue('DEMAND_WEIGHT_UNRESOLVED', key, 'Forecast-Driven weight needs forecastBasis.forecastShareQty (§7 rolling-4-month FC basis; window anchor caller-owned, never guessed)')); return null; }
+      return b;
+    }
+    return null;
+  }
+
+  function issue(code, ref, message) { return { code: code, ref: ref === undefined ? null : ref, message: message, details: {} }; }
+  function resolveDestination(r, routing, scope) {
+    if (nonEmpty(r.destinationWarehouseId)) return str(r.destinationWarehouseId);
+    if (nonEmpty(routing[str(r.demandRef)])) return str(routing[str(r.demandRef)]);
+    if (nonEmpty(scope.destinationWarehouseId)) return str(scope.destinationWarehouseId);
+    return null;
+  }
+
+  function projectAllocationFacts(input) {
+    aType(isObj(input), 'projectAllocationFacts: input must be an object');
+    aType(isObj(input.businessScope), 'projectAllocationFacts: input.businessScope required');
+    var type = str(input.recommendationType);
+    aType(type === 'WEEKLY_SHIPPING' || type === 'MONTHLY_ORDER', 'projectAllocationFacts: recommendationType must be WEEKLY_SHIPPING | MONTHLY_ORDER');
+    var scope = input.businessScope;
+    var company = str(scope.company);
+    var country = str(scope.country);
+    aType(nonEmpty(company), 'projectAllocationFacts: businessScope.company required');
+    var calculationDate = nonEmpty(input.calculationDate) ? str(input.calculationDate) : null;
+    var receivers = Array.isArray(input.receivers) ? input.receivers : [];
+    var warehouses = Array.isArray(input.warehouses) ? input.warehouses : [];
+    var routing = isObj(input.routing) ? input.routing : {};
+
+    var issues = [];
+    var threePlOk = threePlEligible(warehouses, company, country);
+    var factoryIds = eligibleFactoryWarehouseIds(warehouses);
+
+    if (type === 'MONTHLY_ORDER') return buildMonthly(input, scope, company, receivers, routing, factoryIds, issues);
+    return buildWeekly(input, scope, company, country, calculationDate, receivers, warehouses, routing, threePlOk, issues);
+  }
+
+  // ---- WEEKLY_SHIPPING: receiverFacts (overseas allocation) + weeklyPlanningFacts -----------------------------
+  function buildWeekly(input, scope, company, country, calculationDate, receivers, warehouses, routing, threePlOk, issues) {
+    var stage = []; // {r, key, dailyDemand, basis, pools, dest, fulfillmentModel, priority, recvIssues, extra}
+    for (var i = 0; i < receivers.length; i++) {
+      var r = receivers[i]; aType(isObj(r), 'projectAllocationFacts: receivers[' + i + '] must be an object');
+      var key = nonEmpty(r.receiverKey) ? str(r.receiverKey) : ('@' + i);
+      var recvIssues = [];
+      if (!nonEmpty(r.receiverKey)) recvIssues.push(issue('RECEIVER_IDENTITY_INCOMPLETE', key, 'receiverKey required'));
+      if (!nonEmpty(r.demandRef)) recvIssues.push(issue('RECEIVER_IDENTITY_INCOMPLETE', key, 'demandRef required'));
+      var driver = str(r.demandDriver).toUpperCase();
+      if (!DEMAND_DRIVERS[driver]) driver = '';
+      var dd = deriveDailyDemand(r, driver, calculationDate, recvIssues, key);
+      var dailyDemand = dd ? dd.dailyDemand : null;
+      var basis = (dailyDemand !== null || driver === 'FORECAST_DRIVEN') ? weightBasisFor(r, driver, dailyDemand, recvIssues, key) : null;
+      var fulfillmentModel = str(r.fulfillmentModel);
+      var pools = eligiblePoolTypesFor(fulfillmentModel, threePlOk);
+      if (!pools.length) recvIssues.push(issue('POOL_ELIGIBILITY_UNRESOLVED', key, 'no eligible pool type (fulfillment_model=' + (fulfillmentModel || '∅') + '; 3PL warehouse-eligible=' + threePlOk + ')'));
+      var dest = resolveDestination(r, routing, scope);
+      if (dest === null) recvIssues.push(issue('MISSING_DESTINATION_WAREHOUSE', key, 'no canonical destination (fact / routing / frozen scope); D-3 caller-owned, never inferred'));
+      var windowCode = nonEmpty(r.windowCode) ? str(r.windowCode) : null;
+      if (windowCode === null) recvIssues.push(issue('MISSING_WINDOW_CODE', key, 'windowCode is a caller-owned planning-window fact (§6)'));
+      var priority = finiteNonNeg(r.allocationPriority);
+      var upc = r.unitsPerCarton;
+      stage.push({ r: r, key: key, driver: driver, dailyDemand: dailyDemand, basis: basis, pools: pools, dest: dest,
+        windowCode: windowCode, fulfillmentModel: fulfillmentModel, priority: priority, upc: upc, recvIssues: recvIssues, extra: dd || {} });
+    }
+
+    // §7/§24.5 SHARE normalization over the allocation group (company + country). Denominator = Σ eligible basis.
+    var totalBasis = 0; stage.forEach(function (s) { if (!s.recvIssues.length && typeof s.basis === 'number') totalBasis += s.basis; });
+
+    var receiverFacts = [], planningFacts = [];
+    stage.forEach(function (s) {
+      var demandWeight = null;
+      if (!s.recvIssues.length) {
+        if (totalBasis > 0 && typeof s.basis === 'number') demandWeight = s.basis / totalBasis; // §7 SKU FC/Sales Share = basis_i ÷ Σ
+        else s.recvIssues.push(issue('DEMAND_WEIGHT_UNRESOLVED', s.key, 'group demand basis total is 0 — no proportional share is defined (never averaged/faked)'));
+      }
+      if (s.recvIssues.length) { s.recvIssues.forEach(function (x) { issues.push(x); }); return; }
+      // receiverFact — the exact shape projectAllocationInputs consumes. Emit dailyDemand (frozen consumer derives
+      // survival = CEILING(18 × dailyDemand)); NEVER duplicate that §20.3 formula here.
+      receiverFacts.push({
+        receiverKey: s.key, demandKey: str(s.r.demandKey) || str(s.r.demandRef), demandRef: str(s.r.demandRef),
+        marketplace: str(s.r.marketplace), destinationWarehouseId: s.dest, fulfillmentModel: s.fulfillmentModel,
+        dailyDemand: s.dailyDemand, allocationPriority: s.priority, demandWeight: demandWeight, eligiblePoolTypes: s.pools
+      });
+      // weeklyPlanningFact — carries the FOUR raw gap inputs; the frozen resolver invokes calculateGap itself.
+      planningFacts.push(weeklyPlanningFact(s, scope, company, country, input));
+    });
+
+    receiverFacts.sort(function (a, b) { return cmpStr(a.receiverKey, b.receiverKey); });
+    planningFacts.sort(function (a, b) { return cmpStr(a.demandRef, b.demandRef); });
+    issues.sort(function (a, b) { return cmpStr(a.code, b.code) || cmpStr(a.ref, b.ref); });
+    var ready = issues.length === 0 && receiverFacts.length > 0;
+    return {
+      ready: ready, reason: ready ? null : (issues.length ? issues[0].code : 'PLANNING_FACTS_NOT_READY'),
+      recommendationType: 'WEEKLY_SHIPPING', receiverFacts: receiverFacts, factoryDemandFacts: [], planningFacts: planningFacts,
+      issues: issues, meta: { formulaVersion: input.formulaVersion == null ? null : input.formulaVersion, sourceDataAsOf: input.sourceDataAsOf == null ? null : input.sourceDataAsOf, deterministic: true }
+    };
+  }
+
+  function weeklyPlanningFact(s, scope, company, country, input) {
+    var r = s.r;
+    var f = {
+      recommendationType: 'WEEKLY_SHIPPING', demandRef: str(r.demandRef), demandKey: str(r.demandKey) || str(r.demandRef),
+      sku: nonEmpty(r.masterSku) ? str(r.masterSku) : str(r.sku), siteSku: str(r.siteSku), windowCode: s.windowCode,
+      company: nonEmpty(r.company) ? str(r.company) : company, country: nonEmpty(r.country) ? str(r.country) : country,
+      marketplace: str(r.marketplace), destinationWarehouseId: s.dest, unitsPerCarton: r.unitsPerCarton
+    };
+    // The four raw gap inputs (§31) — resolver invokes calculateGap; supply EXACTLY what the caller/ledger provides.
+    if (has(r, 'demand')) f.demand = r.demand;
+    else if (s.extra && has(s.extra, 'forecastTotalDemand')) f.demand = s.extra.forecastTotalDemand; // §2D total (owner output)
+    if (has(r, 'destinationCurrentStock')) f.destinationCurrentStock = r.destinationCurrentStock;
+    if (has(r, 'timelyQualifiedIncoming')) f.timelyQualifiedIncoming = r.timelyQualifiedIncoming;
+    if (has(r, 'timelyApprovedCommittedSupply')) f.timelyApprovedCommittedSupply = r.timelyApprovedCommittedSupply;
+    if (has(r, 'requiredByDate')) f.requiredByDate = r.requiredByDate;
+    return f;
+  }
+
+  // ---- MONTHLY_ORDER: factoryDemandFacts (factory allocation) + monthlyPlanningFacts --------------------------
+  function buildMonthly(input, scope, company, receivers, routing, factoryIds, issues) {
+    var factoryDemandFacts = [], planningFacts = [];
+    for (var i = 0; i < receivers.length; i++) {
+      var r = receivers[i]; aType(isObj(r), 'projectAllocationFacts: receivers[' + i + '] must be an object');
+      var key = nonEmpty(r.receiverKey) ? str(r.receiverKey) : ('@' + i);
+      var recvIssues = [];
+      if (!nonEmpty(r.demandRef)) recvIssues.push(issue('RECEIVER_IDENTITY_INCOMPLETE', key, 'demandRef required'));
+      var dest = resolveDestination(r, routing, scope);
+      if (dest === null) recvIssues.push(issue('MISSING_DESTINATION_WAREHOUSE', key, 'no canonical destination; D-3 caller-owned'));
+      var requiredByDate = nonEmpty(r.requiredByDate) ? str(r.requiredByDate) : null;
+      if (requiredByDate === null) recvIssues.push(issue('MISSING_REQUIRED_BY_DATE', key, 'factory FIFO requires a required-by date (§6 caller-owned)'));
+      if (!factoryIds.length) recvIssues.push(issue('FACTORY_ELIGIBILITY_UNRESOLVED', key, 'no is_factory_warehouse eligible warehouse (§35/§40)'));
+      var priority = finiteNonNeg(r.allocationPriority);
+      if (priority === null) recvIssues.push(issue('FACTORY_ELIGIBILITY_UNRESOLVED', key, 'allocationPriority missing/invalid (§20.4/§35 ordering)'));
+      var requestMonth = nonEmpty(r.requestMonth) ? str(r.requestMonth) : null;
+      var requestBucket = nonEmpty(r.requestBucket) ? str(r.requestBucket) : null;
+      if (requestMonth === null || requestBucket === null) recvIssues.push(issue('PLANNING_FACTS_NOT_READY', key, 'requestMonth/requestBucket are caller-owned Monthly grain facts'));
+      if (recvIssues.length) { recvIssues.forEach(function (x) { issues.push(x); }); continue; }
+      factoryDemandFacts.push({
+        demandKey: str(r.demandKey) || str(r.demandRef), demandRef: str(r.demandRef), company: nonEmpty(r.company) ? str(r.company) : company,
+        marketplace: str(r.marketplace), destinationWarehouseId: dest, requiredByDate: requiredByDate,
+        allocationPriority: priority, eligibleFactoryWarehouseIds: factoryIds.slice()
+      });
+      planningFacts.push(monthlyPlanningFact(r, scope, company, dest, requestMonth, requestBucket));
+    }
+    factoryDemandFacts.sort(function (a, b) { return cmpStr(a.demandRef, b.demandRef); });
+    planningFacts.sort(function (a, b) { return cmpStr(a.demandRef, b.demandRef); });
+    issues.sort(function (a, b) { return cmpStr(a.code, b.code) || cmpStr(a.ref, b.ref); });
+    var ready = issues.length === 0 && factoryDemandFacts.length > 0;
+    return {
+      ready: ready, reason: ready ? null : (issues.length ? issues[0].code : 'PLANNING_FACTS_NOT_READY'),
+      recommendationType: 'MONTHLY_ORDER', receiverFacts: [], factoryDemandFacts: factoryDemandFacts, planningFacts: planningFacts,
+      issues: issues, meta: { formulaVersion: input.formulaVersion == null ? null : input.formulaVersion, sourceDataAsOf: input.sourceDataAsOf == null ? null : input.sourceDataAsOf, deterministic: true }
+    };
+  }
+
+  function monthlyPlanningFact(r, scope, company, dest, requestMonth, requestBucket) {
+    var f = {
+      recommendationType: 'MONTHLY_ORDER', demandRef: str(r.demandRef), demandKey: str(r.demandKey) || str(r.demandRef),
+      masterSku: nonEmpty(r.masterSku) ? str(r.masterSku) : str(r.sku), siteSku: str(r.siteSku),
+      requestMonth: requestMonth, requestBucket: requestBucket, company: nonEmpty(r.company) ? str(r.company) : company,
+      country: str(r.country), marketplace: str(r.marketplace), destinationWarehouseId: dest, unitsPerCarton: r.unitsPerCarton
+    };
+    // Net Order Need inputs — resolver invokes sumRemainingShortages / calculateGap; supply what the caller provides.
+    if (Array.isArray(r.remainingShortages)) f.remainingShortages = r.remainingShortages.slice();
+    if (has(r, 'netOrderNeed')) f.netOrderNeed = r.netOrderNeed;
+    if (has(r, 'demand')) f.demand = r.demand;
+    if (has(r, 'destinationCurrentStock')) f.destinationCurrentStock = r.destinationCurrentStock;
+    if (has(r, 'timelyQualifiedIncoming')) f.timelyQualifiedIncoming = r.timelyQualifiedIncoming;
+    if (has(r, 'timelyApprovedCommittedSupply')) f.timelyApprovedCommittedSupply = r.timelyApprovedCommittedSupply;
+    return f;
+  }
+
+  return {
+    projectAllocationFacts: projectAllocationFacts,
+    // exposed for focused testing of the owned predicates (not business math — eligibility/share helpers only)
+    _eligiblePoolTypesFor: eligiblePoolTypesFor,
+    _eligibleFactoryWarehouseIds: eligibleFactoryWarehouseIds,
+    _threePlEligible: threePlEligible
+  };
+});
+  __kmRegister("supply-planning-allocation-facts", module.exports);
+})();
+
 // ----- module: supply-planning-production-source (verbatim from assets/js/core/supply-planning-production-source.js) -----
 (function () {
   var require = __kmRequire;
@@ -6829,11 +7145,12 @@ function __kmRequire(p) {
   var req = (typeof require !== 'undefined') ? require : null;
   var api = factory(
     req ? req('./supply-planning-source-projection.js') : (root.KMSP || (root.KM && root.KM.sourceProjection)),
-    req ? req('./supply-planning-plan-builder.js') : (root.KMPB || (root.KM && root.KM.planBuilder))
+    req ? req('./supply-planning-plan-builder.js') : (root.KMPB || (root.KM && root.KM.planBuilder)),
+    req ? req('./supply-planning-allocation-facts.js') : (root.KMAF || (root.KM && root.KM.allocationFacts))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.productionSource = api; }
-})(this, function (KMSP, KMPB) {
+})(this, function (KMSP, KMPB, KMAF) {
   'use strict';
 
   function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
@@ -6898,15 +7215,39 @@ function __kmRequire(p) {
     };
   }
 
+  // ---- F1-5-A Allocation-Fact Producer seam (planning-facts input, §11/§13) -------------------------------
+  // If the caller supplies `request.allocationFactsInput` (canonical receiver scope + demand driver/basis), run the
+  // frozen-owner-invoking KMAF producer to DERIVE the caller-owned planning facts (receiverFacts / factoryDemandFacts
+  // / planningFacts) instead of hand-supplied fixtures. Returns a NEW request with those facts populated + the
+  // producer result (issues surfaced downstream). When absent, the request is returned unchanged (backward compatible;
+  // existing fixture-supplied facts flow through untouched). No fabrication: a not-ready producer leaves its
+  // structured issues on the result for the caller/projection fail-closed gate.
+  function applyAllocationFacts(request) {
+    if (!isObj(request) || !isObj(request.allocationFactsInput)) return { request: request, facts: null };
+    aType(KMAF && typeof KMAF.projectAllocationFacts === 'function', 'applyAllocationFacts: KMAF.projectAllocationFacts unavailable');
+    var afInput = request.allocationFactsInput;
+    if (afInput.recommendationType === undefined) afInput = mergeShallow(afInput, { recommendationType: request.recommendationType });
+    if (afInput.businessScope === undefined) afInput = mergeShallow(afInput, { businessScope: request.businessScope });
+    if (afInput.planningCycle === undefined) afInput = mergeShallow(afInput, { planningCycle: request.planningCycle });
+    var facts = KMAF.projectAllocationFacts(afInput);
+    var merged = mergeShallow(request, {
+      receiverFacts: facts.receiverFacts, factoryDemandFacts: facts.factoryDemandFacts, planningFacts: facts.planningFacts
+    });
+    return { request: merged, facts: facts };
+  }
+  function mergeShallow(a, b) { var o = {}; for (var k in a) if (Object.prototype.hasOwnProperty.call(a, k)) o[k] = a[k]; for (var j in b) if (Object.prototype.hasOwnProperty.call(b, j)) o[j] = b[j]; return o; }
+  function producerIssues(facts) { return facts ? (facts.issues || []).map(function (x) { return { stage: 'allocationFacts', code: x.code, ref: x.ref, reason: x.message }; }) : []; }
+
   // ---- orchestrator computeFacts seam (replaces SOURCE_READER_PENDING; read-only) -------------------------
   // Returns EXACTLY the shape the frozen Orchestrator's deps.computeFacts contract expects:
   //   { lines, ready, reason, formulaVersion, sourceDataAsOf, sourceIssues }
   function resolveProductionFacts(spreadsheet, request) {
     aType(isObj(request), 'resolveProductionFacts: request required');
+    var af = applyAllocationFacts(request); request = af.request;
     var read = readCanonicalSnapshots(spreadsheet, request.config);
     var full = KMSP.projectAndRead(projectionInput(request, read.snapshots));
     var projIssues = (full.projection && full.projection.issues) || [];
-    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(projIssues);
+    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(projIssues).concat(producerIssues(af.facts));
     if (full.ready === false) {
       return { lines: [], ready: false, reason: full.reason, formulaVersion: request.formulaVersion,
         sourceDataAsOf: (full.projection && full.projection.sourceDataAsOf) || request.sourceDataAsOf, sourceIssues: srcIssues };
@@ -6918,10 +7259,11 @@ function __kmRequire(p) {
   // ---- read-only RecommendationPlan result (NO persistence; NO draft; NO write) ---------------------------
   function buildProductionRecommendationSource(spreadsheet, request) {
     aType(isObj(request), 'buildProductionRecommendationSource: request required');
+    var af = applyAllocationFacts(request); request = af.request;
     var read = readCanonicalSnapshots(spreadsheet, request.config);
     var full = KMSP.projectAndRead(projectionInput(request, read.snapshots));
     var proj = full.projection || {};
-    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(proj.issues || []);
+    var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(proj.issues || []).concat(producerIssues(af.facts));
     var ready = full.ready !== false && !!full.bridgeResult;
     var recommendationPlan = ready ? KMPB.buildRecommendation(full.bridgeResult) : null;
     return {
@@ -7590,10 +7932,11 @@ var KMSR = __kmModules["supply-planning-source-reader"];
 var KMSI = __kmModules["supply-planning-recommendation-source-integration"];
 var KMSRP = __kmModules["supply-planning-source-reader-production"];
 var KMSP = __kmModules["supply-planning-source-projection"];
+var KMAF = __kmModules["supply-planning-allocation-facts"];
 var KMPS = __kmModules["supply-planning-production-source"];
 var KMSAFE = __kmModules["supply-planning-production-safety"];
 var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"5795e29574f497be5c4db6e7aa21cc304efd09f67a08fd1c3f960953aedd3666","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-production-source","sha256":"905fe8feaa3fa579a5cdddc606182187e19733333ada61f7b169dda3d6374326"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"710cdd3603d4229b0ce8372d6346dc403212c22b000f04649a48beeaf1ba53cd","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-production-source","sha256":"faa6dc06560f498ae7d9fb6e567b7b31bf69c0dd10b813414aa7728fcfa0ecd0"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
