@@ -2143,9 +2143,21 @@ function _flushDraftDbPersist(sku) {
         if (!complete.length) { _cancelAllocationDraftHeader(); return; }
 
         _draftDbInFlight[sku] = true;
+        // C2-D1R: route context (From/To/Method) is HEADER-level in the approved 30-col schema. Phase-1 persists
+        // ONE route per Draft — the shared route of this scope's complete lines (route0). Genuinely different
+        // routes in the same week are handled via separate Submit cycles / subsequent Drafts (§3), never a
+        // multi-route single header. From/To ids + display-name snapshots map onto the header recommended_* fields.
+        var route0 = complete[0] || {};
         var header = window.IRDraft.buildDraftHeaderPayload({
             allocation_draft_id: replenAllocationDraft.allocationDraftId,
-            company: ctx.company, country: ctx.country, marketplace: ctx.marketplace
+            company: ctx.company, country: ctx.country, marketplace: ctx.marketplace,
+            source_warehouse_id: route0.source_warehouse_id,
+            source_warehouse_code: route0.ship_from,                       // Execution Plan has no separate code → display-name snapshot
+            destination_warehouse_id: route0.destination_warehouse_id,     // '' for an Amazon logical destination
+            destination_warehouse_code: route0.destination,
+            shipping_method: route0.shipping_method,
+            last_mile_delivery: route0.last_mile_delivery,                 // undefined → header blank (no last-mile field in the Execution Plan)
+            destination_marketplace: (route0.destination_type === 'MARKETPLACE_DESTINATION') ? (route0.destination_marketplace || route0.destination_country || ctx.marketplace) : undefined
         });
         return window.KM.DB.upsertShippingAllocationDraft(header).then(function (hres) {
             if (!hres || hres.success === false) throw new Error((hres && hres.error) || 'draft header upsert failed');

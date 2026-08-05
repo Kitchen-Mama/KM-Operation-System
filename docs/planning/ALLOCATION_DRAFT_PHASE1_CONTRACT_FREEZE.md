@@ -1,91 +1,69 @@
-# Phase-1 Shipping Allocation Draft — Contract Freeze (Round C2-D1, 2026-08-05)
+# Phase-1 Shipping Allocation Draft — Contract Freeze (Round C2-D1 → reconciled C2-D1R, 2026-08-05)
 
-> **Status: DECISION LANDED / SOURCE-FROZEN. NO MIGRATION APPLIED. NO RUNTIME CHANGED. NO LIVE DB ACCESSED.**
-> This document is the **single Phase-1 authority** for the `shipping_allocation_drafts` / `shipping_allocation_draft_lines`
-> schema, the Active-Draft / Submit key, and the (future, user-operated) header migration. It lands the user-confirmed
-> decisions **D-C2-1 … D-C2-4** and freezes the byte-for-byte Model-1 headers taken from the running-stack owner.
+> **Status: DECISION LANDED / SOURCE RECONCILED TO THE EXISTING LIVE DB. NO MIGRATION APPLIED. NO LIVE DB ACCESSED.**
+> The **existing user-approved live DB schema is the Phase-1 canonical authority**: `shipping_allocation_drafts` = **30 columns** (header-level route grain), `shipping_allocation_draft_lines` = **28 columns** (SKU + qty grain). This round aligns the system Header constants, handler write logic, frontend payload bridge, and documentation to that schema **byte-for-byte** — it does **not** redesign the DB and does **not** expand the line to 52 columns.
 
-Owner-of-record for Phase-1 runtime schema. Companion owners (now annotated to agree): `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §807. Demoted to Phase-2 design reference: `SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md`.
+Owner-of-record for Phase-1 runtime schema. Companion owners (annotated to agree): `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6, `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §807, `SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md` (its 30-col header shape is now the live Phase-1 schema; only its air/sea multi-head behavior + K2 key remain Phase-2-deferred).
 
 ---
 
-## 1. User-confirmed decisions (landed)
+## 0. Correction history (why this file was reconciled)
 
-| ID | Decision | Landing |
-|---|---|---|
-| **D-C2-1** | `shipping_allocation_drafts` uses **Model 1** (running-stack 23-column header). No `recommendation_group_no`; `recommended_shipping_method` / `recommended_last_mile_delivery` are **not** header columns; route/method/source/destination are **line-level**. | Frozen in §3 |
-| **D-C2-2** | Phase-1 Active-Draft / Submit business key = **K3** (see §4). `draft_version` is **not** a natural key. `recommendation_group_no` is **not** in the Phase-1 key. | Frozen in §4 |
-| **D-C2-3** | **Line-level route grain**: selected source/destination warehouse, selected shipping method + last-mile, `route_no`, `planned_qty`, `recommended_qty` snapshot, route-specific note/status. | Frozen in §3.2 / §5 |
-| **D-C2-4** | The 2026-07-27 **Model-2 Amendment** (`recommendation_group_no`, 26-col header, header-level recommended method/last-mile, K2 key, air/sea multi-head) is **`PHASE_2_DEFERRED` — NOT ACTIVE FOR PHASE-1 RUNTIME — SUPERSEDED FOR PHASE-1 IMPLEMENTATION**. Retained as history + Phase-2 design reference; never runtime authority for Phase 1. | §6 |
+C2-D1 froze a **23-col header / 52-col line (Model-1)** taken from the repository handler *constant*. The user then confirmed the **live DB does not match that** — it is the **30-col header / 28-col line** schema, and the DB is business-approved and canonical. The stale 23/52 constant was in fact the **root cause of `PRODUCTION_SAFETY:HEADER_ORDER_MISMATCH`** (the handler validated the live 30-col header against a 23-col expectation → order mismatch at index 7 → fail-closed). **C2-D1R (this revision) reconciles source → the approved 30/28 schema.** No live DB was read or written by the agent in either round.
 
 ---
 
-## 2. Source-of-truth verification (§3 gate — did the Model-1 owners agree?)
+## 1. User-confirmed decisions (C2-D1R)
 
-Two Model-1 owners were compared field-by-field:
-
-- **A — Running stack (authoritative):** `16_shipping_allocation_handlers.gs` constants `SHIPPING_ALLOCATION_DRAFTS_HEADERS_` / `SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_`. This is what the write path validates against (`procurementEnsureSheet_` → `prodRequireSheet_` → `classifySchemaMismatch`) and what the file's `CANONICAL SYNC (2026-07-27)` note says matches the manually-adjusted live DB.
-- **B — Design doc:** `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6 "FINALIZED canonical Draft model".
-
-**Result:**
-- `shipping_allocation_drafts` header — **identical** (23 columns, same order) in A and B. **No conflict.**
-- `shipping_allocation_draft_lines` — one **minor doc-order drift**: §3.6 (B) lists `… route_no · override_reason · line_status …`, whereas the running stack (A) is `… route_no · line_status · override_reason …`, and A additionally carries the two **additive trailing** provenance columns `user_edited · user_edited_by` (documented in-code as *Phase-2C additive*). Per **D-C2-1** the **running stack (A) is canonical**; §3.6 (B) is annotated to defer to A for Phase-1 column order. This is a **reconciled** drift, **not** an open source conflict — no HALT.
-
-Therefore the frozen Phase-1 header order below is taken **byte-for-byte from the running-stack owner (A)**.
+| ID | Decision |
+|---|---|
+| **D-C2-1** | Existing DB is canonical. `shipping_allocation_drafts` = **Model-2 30-col** header. Route context (`recommended_source_warehouse_id`, `recommended_destination_warehouse_id`, code snapshots, `recommended_shipping_method`, `recommended_last_mile_delivery`) is **header-level**. `recommendation_group_no` is present on the header but **Phase-1 does not use it** for multiple active drafts / multiple vessels. |
+| **D-C2-2** | Active-Draft / Submit key = **K3** (§4). `draft_version` is version/concurrency lineage, **not** a natural key. `recommendation_group_no` is **not** in the key. |
+| **D-C2-3** | **Line grain = SKU + qty.** All active lines under a Draft share the Draft header's single route context. No `selected_*` on the 28-col line. |
+| **D-C2-4** | The 2026-07-27 Amendment's **30-col header shape is now the live Phase-1 schema**; its **air/sea multiple-Draft-Header split, `recommendation_group_no` multi-draft usage, and K2 key remain `PHASE_2_DEFERRED`**. Retained; nothing deleted. |
 
 ---
 
-## 3. FROZEN Phase-1 headers (byte-for-byte, from the running-stack owner)
+## 2. Phase-1 grain (header owns one route; line owns SKU + qty)
 
-### 3.1 `shipping_allocation_drafts` — Model 1, 23 columns
-
-| # | Column | Owner | Class | Normal Runtime writes? | Null/blank policy | Migration-only may move position? |
-|---|---|---|---|---|---|---|
-| 1 | `allocation_draft_id` | Header | identity (PK) | yes (create) | never blank | yes (name-based) |
-| 2 | `planning_cycle` | Header | scope / **K3** | yes | never blank | yes |
-| 3 | `source_page` | Header | scope / **K3** | yes | never blank | yes |
-| 4 | `company` | Header | scope / **K3** | yes | may be blank (legacy) | yes |
-| 5 | `country` | Header | scope / **K3** | yes | never blank | yes |
-| 6 | `marketplace` | Header | scope / **K3** | yes | never blank | yes |
-| 7 | `status` | Header | lifecycle | yes | default `draft` | yes |
-| 8 | `generation_type` | Header | provenance enum | yes | `scheduled`/`manual_refresh`/`user_created` | yes |
-| 9 | `calculation_run_id` | Header | engine snapshot / idempotency | engine only | blank in manual flow (never faked) | yes |
-| 10 | `formula_version` | Header | engine snapshot | engine only | blank until engine | yes |
-| 11 | `calculated_at` | Header | engine snapshot | engine only | blank until engine | yes |
-| 12 | `source_data_as_of` | Header | engine snapshot | engine only | blank until engine | yes |
-| 13 | `draft_version` | Header | **version / concurrency (NOT a natural key)** | yes | default `1` | yes |
-| 14 | `created_by` | Header | audit | yes (create) | set on create | yes |
-| 15 | `created_at` | Header | audit | yes (create) | set on create | yes |
-| 16 | `updated_by` | Header | audit | yes | set on write | yes |
-| 17 | `updated_at` | Header | audit | yes | set on write | yes |
-| 18 | `submitted_by` | Header | lifecycle (Submit) | yes (on submit) | blank until submit | yes |
-| 19 | `submitted_at` | Header | lifecycle (Submit) | yes (on submit) | blank until submit | yes |
-| 20 | `cancelled_by` | Header | lifecycle (soft-cancel) | yes (on cancel) | blank until cancel | yes |
-| 21 | `cancelled_at` | Header | lifecycle (soft-cancel) | yes (on cancel) | blank until cancel | yes |
-| 22 | `cancel_reason` | Header | lifecycle (soft-cancel) | yes (on cancel) | blank until cancel | yes |
-| 23 | `note` | Header | free text | yes | may be blank | yes |
-
-**No `recommendation_group_no`. No header-level `recommended_shipping_method` / `recommended_last_mile_delivery`.** Those are Phase-2 (§6) or line-level (§3.2).
-
-### 3.2 `shipping_allocation_draft_lines` — 52 columns (running-stack order)
-
-Grouped by classification (exact order = the running-stack constant; positions are frozen):
-
-1. **Identity (1-4):** `allocation_draft_line_id` (PK) · `allocation_draft_id` (FK) · `sku` · `site_sku`.
-2. **Window (5-8):** `window_code` · `window_start_date` · `window_end_date` · `required_by_date`.
-3. **Engine input snapshots (9-14):** `regular_demand_snapshot` · `special_event_demand_snapshot` · `destination_stock_snapshot` · `qualified_incoming_snapshot` · `approved_supply_snapshot` · `calculated_gap_qty`.
-4. **Engine recommendation — source/destination + sequence, immutable (15-21):** `recommended_source_warehouse_id` · `recommended_destination_warehouse_id` · `recommended_source_warehouse_code_snapshot` · `recommended_destination_warehouse_code_snapshot` · `source_initial_available_qty_snapshot` · `source_available_before_allocation_snapshot` · `allocation_sequence`.
-5. **Engine recommendation — route/carrier/cost, immutable (22-31):** `recommended_route_rule_id` · `recommended_rate_card_id` · `recommended_lead_time_id` · `recommended_carrier_id` · `recommended_shipping_method` · `recommended_last_mile_delivery` · `recommended_expected_arrival` · `recommended_estimated_cost` · `recommendation_reason` · `recommendation_flags`.
-6. **Engine recommended qty snapshot (32):** `recommended_qty` — immutable snapshot; **written only when the incoming line supplies it** (an Execution-Plan save that omits it PRESERVES the snapshot).
-7. **User Execution Plan — the LINE-LEVEL route authority (33-45):** `planned_qty` · **`selected_source_warehouse_id`** (From) · **`selected_destination_warehouse_id`** (To) · `selected_source_warehouse_code_snapshot` · `selected_destination_warehouse_code_snapshot` · `selected_rate_card_id` · `selected_lead_time_id` · `selected_carrier_id` · **`selected_shipping_method`** (Method) · `selected_last_mile_delivery` · `expected_arrival` · `units_per_carton` · **`route_no`**.
-8. **Lifecycle / audit (46-50):** `line_status` (terminal soft-cancel value = `cancelled`) · `override_reason` · `note` · `created_at` · `updated_at`.
-9. **Additive provenance (51-52):** `user_edited` · `user_edited_by` — additive trailing columns; tolerated by the `ALLOW` extra-columns policy.
-
-**Route / From / To / Shipping Method are line-level authorities (D-C2-3):** multiple routes of the same SKU are distinct lines, each with its own `selected_source_warehouse_id` / `selected_destination_warehouse_id` / `selected_shipping_method` / `route_no` and a stable `allocation_draft_line_id`. Phase-1 **must not** compress differing routes into a single header route. Legacy read-only aliases (`ship_from`→`selected_source_warehouse_id`, `destination`→`selected_destination_warehouse_id`, `source_warehouse_id`→`recommended_source_warehouse_id`) remain read-only; new writes use canonical names.
+- One `shipping_allocation_drafts` row owns **one** From / To / Method / Last-mile route context.
+- All active `shipping_allocation_draft_lines` under that Draft **share** that header route context; each line owns `sku` / `site_sku` + `planned_qty` (+ immutable `recommended_qty` snapshot).
+- `recommended_qty` = system recommendation snapshot (immutable; written only when supplied). `planned_qty` = explicit user override. **Submit uses `planned_qty` when valid, else `recommended_qty`** (SC-1 authority preserved).
+- **Two different routes in the same week** → Phase-1 handles via **separate Submit cycles / subsequent Drafts** (never a simultaneous multi-route Active Draft). Phase-2 may later activate `recommendation_group_no` / a split model.
 
 ---
 
-## 4. FROZEN Active-Draft / Submit business key — K3
+## 3. FROZEN Phase-1 headers (byte-for-byte, from the reconciled running-stack constants)
+
+### 3.1 `shipping_allocation_drafts` — 30 columns
+
+`allocation_draft_id · planning_cycle · source_page · company · country · marketplace · status · recommended_source_warehouse_id · recommended_destination_warehouse_id · recommended_source_warehouse_code_snapshot · recommended_destination_warehouse_code_snapshot · recommendation_group_no · recommended_shipping_method · recommended_last_mile_delivery · generation_type · calculation_run_id · formula_version · calculated_at · source_data_as_of · draft_version · created_by · created_at · updated_by · updated_at · submitted_by · submitted_at · cancelled_by · cancelled_at · cancel_reason · note`
+
+| Group | Columns | Class | Normal Runtime writes? |
+|---|---|---|---|
+| identity / scope (K3) | `allocation_draft_id`, `planning_cycle`, `source_page`, `company`, `country`, `marketplace` | identity / scope | yes |
+| lifecycle | `status` | lifecycle | yes |
+| **header route context** | `recommended_source_warehouse_id` (From), `recommended_destination_warehouse_id` (To), `recommended_source_warehouse_code_snapshot`, `recommended_destination_warehouse_code_snapshot`, `recommendation_group_no`, `recommended_shipping_method` (Method), `recommended_last_mile_delivery` (Last-mile) | route snapshot (**header-level**) | yes — on the Draft header |
+| generation / calc provenance | `generation_type`, `calculation_run_id`, `formula_version`, `calculated_at`, `source_data_as_of` | engine snapshot | engine only (blank in manual flow) |
+| version | `draft_version` | **version / concurrency (NOT a natural key)** | yes (default `1`) |
+| audit | `created_by`, `created_at`, `updated_by`, `updated_at` | audit | yes |
+| lifecycle | `submitted_by`, `submitted_at`, `cancelled_by`, `cancelled_at`, `cancel_reason`, `note` | lifecycle / audit | yes |
+
+`recommendation_group_no` is a stored column but Phase-1 **never** writes >1 Active Draft per K3 by varying it.
+
+### 3.2 `shipping_allocation_draft_lines` — 28 columns
+
+`allocation_draft_line_id · allocation_draft_id · sku · site_sku · window_code · window_start_date · window_end_date · required_by_date · regular_demand_snapshot · special_event_demand_snapshot · destination_stock_snapshot · qualified_incoming_snapshot · approved_supply_snapshot · calculated_gap_qty · source_initial_available_qty_snapshot · source_available_before_allocation_snapshot · allocation_sequence · recommendation_reason · recommendation_flags · recommended_qty · planned_qty · units_per_carton · route_no · line_status · override_reason · note · created_at · updated_at`
+
+- **Identity:** `allocation_draft_line_id` (PK) · `allocation_draft_id` (FK) · `sku` · `site_sku`.
+- **Engine snapshots (immutable, written only when supplied):** window fields · demand/stock/supply snapshots · `calculated_gap_qty` · `source_initial_available_qty_snapshot` · `source_available_before_allocation_snapshot` · `allocation_sequence` · `recommendation_reason` · `recommendation_flags` · `recommended_qty`.
+- **User Execution Plan (qty grain):** `planned_qty` · `units_per_carton` · `route_no`.
+- **Lifecycle / audit:** `line_status` (terminal soft-cancel value = `cancelled`) · `override_reason` · `note` · `created_at` · `updated_at`.
+- **No `selected_source_warehouse_id` / `selected_destination_warehouse_id` / `selected_shipping_method` / `selected_last_mile_delivery` / carrier-cost / `user_edited` / `user_edited_by` columns** — route context is on the header (D-C2-1/D-C2-3). Do **not** add them without a separate user-authorized migration.
+
+---
+
+## 4. FROZEN Active-Draft / Submit business key — K3 (unchanged)
 
 <!-- K3-KEY-BEGIN -->
 K3 (Phase-1 unique Active-Draft / Submit lookup key):
@@ -97,77 +75,45 @@ K3 (Phase-1 unique Active-Draft / Submit lookup key):
   + source_page
 <!-- K3-KEY-END -->
 
-- **Count semantics:** `0` Active → CREATE · `1` Active → REUSE/UPDATE · `>1` Active → **BLOCKED_CONFLICT** (never latest-wins, never auto-merge, never auto-cleanup, never write).
-- **`draft_version` is a version / concurrency / lineage field, NOT part of the natural key.** A retry of the same `calculation_run_id` is idempotent (resume/upsert the same Active Draft).
-- **`recommendation_group_no` is NOT part of the Phase-1 key** (Phase-2, §6).
-- This matches `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §807 ("Active-lookup key (never `draft_version`): `WEEKLY_SHIPPING + planning_cycle + company + country + marketplace + source_page`"). No change needed to that spec — it already agrees with K3.
+- Count semantics: `0` → CREATE · `1` → REUSE/UPDATE · `>1` → **BLOCKED_CONFLICT** (never latest-wins / auto-merge / auto-cleanup).
+- **`draft_version` is version / concurrency / lineage, NOT part of the natural key.** `recommendation_group_no` is **not** in the Phase-1 key. Matches `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §807 ("never `draft_version`").
 
 ---
 
-## 5. Migration classification taxonomy (PLAN-ONLY this round)
+## 5. Persistence bridge mapping (C2-D1R §7 — reconciled)
 
-The read-only diagnostic (§8) + the pure plan builder classify the live header into exactly one of:
+| Execution Plan input | Persisted to |
+|---|---|
+| From | `shipping_allocation_drafts.recommended_source_warehouse_id` (+ `_code_snapshot`) — **header** |
+| To | `shipping_allocation_drafts.recommended_destination_warehouse_id` (+ `_code_snapshot`); Amazon logical → `destination_marketplace`, blank id — **header** |
+| Method | `shipping_allocation_drafts.recommended_shipping_method` — **header** |
+| Last-mile | `shipping_allocation_drafts.recommended_last_mile_delivery` — **header** |
+| Qty | `shipping_allocation_draft_lines.planned_qty` — **line** |
+| System recommendation | `shipping_allocation_draft_lines.recommended_qty` (system line only; preserved on user edits) — **line** |
+| SKU | `shipping_allocation_draft_lines.sku` / `site_sku` — **line** |
+| Route sequence | `shipping_allocation_draft_lines.route_no` / `allocation_sequence` (where supplied) — **line** |
 
-| Token | Meaning | Safe to auto-plan? |
-|---|---|---|
-| `NO_MIGRATION_REQUIRED` | live header == canonical (exact) | n/a |
-| `REORDER_ONLY_SAFE_CANDIDATE` | all canonical present, no populated extras, order differs | yes — name-based reorder |
-| `EXTRA_EMPTY_COLUMNS_SAFE_CANDIDATE` | canonical is an exact prefix; only empty extra columns trail | yes — preserve legacy empties |
-| `EXTRA_POPULATED_COLUMNS_REQUIRES_MAPPING_DECISION` | non-canonical column(s) carry data | **no — user decision** |
-| `MISSING_CANONICAL_COLUMN_REQUIRES_MIGRATION` | a canonical column is absent | needs add-column migration |
-| `DUPLICATE_OR_BLANK_HEADER_BLOCKED` | duplicate or blank header cell | **blocked** |
-| `UNKNOWN_BLOCKED` | sheet missing / indeterminate | **blocked** |
-
-**Proposed-mapping actions:** `KEEP` · `MOVE` · `ADD_BLANK` · `PRESERVE_LEGACY` · `DECISION_REQUIRED`. **`DELETE` is never emitted** — dropping any column is a later, explicit, separately-authorized user decision.
-
----
-
-## 6. Row-preservation rules for the FUTURE user-operated migration (frozen; no apply this round)
-
-A live header re-order/align migration (when authorized in a later round) **must**:
-
-1. take an immutable full-Spreadsheet backup **and** a per-sheet backup tab first;
-2. record PRE exact header, PRE row count, PRE row-content hash;
-3. map values **by header name**, never by current column position alone;
-4. **block** if any unknown populated column exists (`EXTRA_POPULATED_COLUMNS_REQUIRES_MAPPING_DECISION`);
-5. keep **dry-run and apply as separate steps**; apply requires the exact expected current-header hash and aborts on any drift after the dry-run;
-6. prove `POST row count == PRE row count` and a name-based-remapped `POST business-data hash == PRE` (value preservation);
-7. carry a rollback reference; have **no** normal-Runtime reachability and **no** automatic execution from page load / Save / Submit / router / trigger.
-
-**This round ships no apply function.** Only the read-only evidence tool and the pure plan classifier exist.
+Frontend owners: `IRDraft.buildDraftHeaderPayload` (adds header route context), `IRDraft.buildDraftLinePayload` (28-col line, no `selected_*`), `inventory-replenishment.js` `_flushDraftDbPersist` (derives the header route from the scope's complete routes — Phase-1 single-route). Backend owner: `16_shipping_allocation_handlers.gs` (`sadUpsertDraftHeaderCore_` writes the header route; `sadHeaderRouteIsComplete_` gate → `PLAN_HEADER_INCOMPLETE`; `sadLineIsComplete_` = SKU + Qty>0 gate → `PLAN_LINE_INCOMPLETE`).
 
 ---
 
-## 7. Running-stack status (accurate)
+## 6. Save / Cancel / Submit rules
 
-- Inventory Replenishment → Allocation Draft **frontend + handler bridge: SOURCE PRESENT.** `inventory-replenishment.js` (`_flushDraftDbPersist`, `_newDraftLineId`, soft-cancel, `_hydrateAllocationDraftFromDb`) + `16_shipping_allocation_handlers.gs` (`upsertShippingAllocationDraft` / `…Lines` / `submitShippingAllocationDrafts`, with recommended-snapshot quantity protection) already exist.
-- Current live persistence: **LIVE BLOCKED BY SCHEMA MISMATCH** — the live `shipping_allocation_drafts` header order fails the production-safety prefix check (`HEADER_ORDER_MISMATCH`), which fails closed (no runtime auto-repair, S0-2). The UI keeps a `sessionStorage` recovery buffer labeled *not saved to DB* (never canonical).
-- **NOT LIVE VERIFIED**: no draft has been confirmed persisted against the live DB this round.
-- The three allocation-draft adapters still use the pre-C1 pattern (`await loadOperationDb({force:true})`); **C1-reliability alignment is deferred** to a post-migration round (C2-D2).
-- Submit handoff to Weekly Shipping Plan remains **incomplete** until persistence + schema verification pass.
+- **Save (batch):** persistable when the header route context is complete (From + To + Method) **and** ≥1 line has valid Qty. Partial header route → `PLAN_HEADER_INCOMPLETE`; partial line → `PLAN_LINE_INCOMPLETE`; neither silently skipped; zero mutation on rejection. One batch command (header, then lines).
+- **Cancel:** writes `status` + `cancelled_by` + `cancelled_at` + `cancel_reason` + `updated_by/at`; never deletes header or lines; idempotent (repeat cancel is benign).
+- **Submit:** whole-Draft only; validates unique K3 Active Draft + complete header route + complete lines + integer qty + source availability under LockService; all-or-nothing; deterministic downstream; **no reservation, no stock deduction.** *(The full Submit → `shipping_plans`/`shipping_plan_lines` handoff is not yet built — the current handler marks the Draft `submitted`; the deterministic Weekly-Plan creation is forward work, C2-D2, and requires live verification.)*
 
 ---
 
-## 8. Read-only live header evidence tool
+## 7. Migration decision
 
-`assets/specs/active/apps-script/41_shipping_allocation_schema_audit.gs` → `auditShippingAllocationSchemaReadOnly()`:
-
-- **editor-run only; NOT routed** (no `doGet`/`doPost`/router/trigger/page reference; no Runtime function calls it);
-- exact Production-DB-ID guard (fail closed; masked id in output; no active/fuzzy fallback);
-- inspects only `shipping_allocation_drafts` + `shipping_allocation_draft_lines`;
-- **zero mutation** (no insert/delete/move/setValues/clear/create/repair — physically read-path only);
-- returns per table: `table, exists, rowCount, columnCount, actualHeaders, canonicalHeaders, actualHeaderHash, canonicalHeaderHash, exactMatch, prefixMatch, firstMismatchIndex, mismatchAt, missingHeaders, extraHeaders, duplicateHeaders, blankHeaderIndexes, reorderedHeaders, populatedExtraColumns` (name + index + **non-blank count only**, never values), `dataRowContentHash` (deterministic; never raw contents), `migrationClassification`, `proposedMigrationPlan`.
-
-### 8.1 User execution steps (user-owned; no agent live access)
-1. Manually copy `41_shipping_allocation_schema_audit.gs` into the bound Apps Script project (it needs `16_…` present for the canonical constants; **no new deployment version** — it is an editor function, not a web-app change).
-2. In the editor, run `auditShippingAllocationSchemaReadOnly` against the configured Production DB.
-3. Copy the logged JSON (it contains **no** business values).
-
-### 8.2 Evidence to return for C2-D2
-Per table: `actualHeaders`, `actualHeaderHash`, `exactMatch`, `firstMismatchIndex`/`mismatchAt`, `missingHeaders`, `extraHeaders`, `duplicateHeaders`, `blankHeaderIndexes`, `populatedExtraColumns` (with counts), `migrationClassification`, and PRE `rowCount` + `dataRowContentHash`. That output feeds the C2-D2 migration decision (reorder-only vs mapping-decision vs blocked).
+Because source is now reconciled to the approved 30/28 schema, the expected outcome of the read-only audit against the live DB is **`NO_MIGRATION_REQUIRED`** (live headers should exactly match the frozen 30/28 order). **No migration is created and none is applied.** If the audit instead reports drift, use the C2-D1 read-only evidence tool + the plan-only classifier (`REORDER_ONLY_SAFE_CANDIDATE` / `EXTRA_*` / `MISSING_CANONICAL_COLUMN_REQUIRES_MIGRATION`) to decide a separate, user-operated migration (never auto-apply, never DELETE).
 
 ---
 
-## 9. Release classification
+## 8. Running-stack status (accurate)
 
-New diagnostic `41_shipping_allocation_schema_audit.gs` = `APPS_SCRIPT_SYNC_REQUIRED` **only to run the audit** (additive, not routed, no runtime reachability, no deployment version). Docs = `DOCUMENTATION_ONLY`. Test = `GIT_ONLY`. **No `BUNDLE_REBUILD_REQUIRED` (false). No frontend change. No `.gs` runtime/route change.** Not pushed, not deployed, no live DB accessed.
+- Handler constants + write logic + frontend payload builders + docs: **SOURCE RECONCILED to 30/28 (header-route grain).**
+- Live persistence: the handler now validates the live 30-col header against a **30-col** expectation, so the prior `HEADER_ORDER_MISMATCH` should no longer fire — **NOT LIVE VERIFIED** (no live write this round; primary DB in use).
+- The three allocation-draft adapters (`upsertShippingAllocationDraft` / `…Lines` / `submitShippingAllocationDrafts`) still use the pre-C1 pattern — **C1-reliability alignment remains deferred** (post-verification).
+- Read-only evidence tool `41_shipping_allocation_schema_audit.gs` remains valid; its canonical is now the reconciled 30/28 constants, so the user can run it to **prove live == 30/28 → `NO_MIGRATION_REQUIRED`.**

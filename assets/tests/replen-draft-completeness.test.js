@@ -64,8 +64,12 @@ ok(/status: ctx\.status \|\| 'draft'/.test(compat), 'P27: header payload honors 
 // ---- Part 4: backend completeness guard source-scan (16_shipping_allocation_handlers.gs) -----------
 console.log('\n-- backend completeness guard (source contract) --');
 var gs = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '16_shipping_allocation_handlers.gs'), 'utf8');
-ok(/function sadLineIsComplete_\(l\)/.test(gs), 'P28: backend has a sadLineIsComplete_ four-field guard (§4)');
-var handler = (gs.match(/function handleUpsertShippingAllocationDraftLines_\(body\)[\s\S]*?\n}/) || [''])[0];
+ok(/function sadLineIsComplete_\(l\)/.test(gs), 'P28: backend has a sadLineIsComplete_ line guard (C2-D1R: SKU + Qty>0; route completeness is header-level via sadHeaderRouteIsComplete_)');
+ok(/function sadHeaderRouteIsComplete_\(b\)/.test(gs), 'P28b: backend has a header-route completeness guard (From + To + Method)');
+// C2-D1R: the up-front batch validation lives in the PRIVATE core sadUpsertLinesKeyedCore_ (the public
+// handler only locks + terminal-guards + delegates). Earlier this scan targeted the public wrapper, so
+// P29–P31 reported false failures; retargeting to the core verifies the real zero-mutation contract.
+var handler = (gs.match(/function sadUpsertLinesKeyedCore_\(body\)[\s\S]*?\n}/) || [''])[0];
 ok(/for \(var v = 0[\s\S]*?sadLineIsComplete_\(lv\)[\s\S]*?return jsonResponse_\(\{ success: false/.test(handler), 'P29: incomplete line rejected BEFORE any write → zero mutation (§8)');
 ok(/for \(var m = 0[\s\S]*?sadApplyLineAliases_/.test(handler) && handler.indexOf('sadLineIsComplete_') < handler.indexOf('created++'), 'P30: batch is validated up-front, before the create/update loop');
 ok(/line_status[\s\S]{0,60}=== 'cancelled'[\s\S]{0,80}skipped\+\+; continue/.test(handler), 'P31: a soft-cancel for a never-stored line does not append a spurious cancelled row');

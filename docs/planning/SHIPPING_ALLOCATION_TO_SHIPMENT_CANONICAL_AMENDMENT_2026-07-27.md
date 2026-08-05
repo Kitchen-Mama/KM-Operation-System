@@ -18,13 +18,13 @@ It does not claim that the corresponding Runtime, DB migration, API, UI, stock m
 
 ---
 
-> ## ⛔ PHASE-1 DISPOSITION — SUPERSEDED FOR PHASE 1 BY D-C2-1 / D-C2-2 / D-C2-3 (Round C2-D1, 2026-08-05)
+> ## ⚠️ PHASE-1 DISPOSITION — RECONCILED BY D-C2-1 / D-C2-2 / D-C2-3 (Round C2-D1R, 2026-08-05)
 >
-> **`PHASE_2_DEFERRED` — NOT ACTIVE FOR PHASE-1 RUNTIME.** This amendment's Model-2 `shipping_allocation_drafts` design — the inserted **`recommendation_group_no`** column, the **26-column** header, the **header-level** `recommended_shipping_method` / `recommended_last_mile_delivery`, the **K2** uniqueness key (`… + recommendation_group_no + draft_version`), and the **air/sea multiple-Draft-Header split** — is **SUPERSEDED FOR PHASE 1** and is **NOT** current Phase-1 runtime authority.
+> **The 30-column `shipping_allocation_drafts` header shape described here IS the approved live Phase-1 schema** — header-level route context (`recommended_source_warehouse_id`, `recommended_destination_warehouse_id`, code snapshots, `recommendation_group_no`, `recommended_shipping_method`, `recommended_last_mile_delivery`), with `shipping_allocation_draft_lines` as the **28-column** SKU+qty line.
 >
-> **Current Phase-1 runtime authority** (user-confirmed C2-D1) = the **Model-1 23-column** header + the **K3** Active-Draft/Submit key (`WEEKLY_SHIPPING + planning_cycle + company + country + marketplace + source_page`; `draft_version` = version/concurrency, never a natural key; no `recommendation_group_no`). Owner: **`docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md`**.
+> **`PHASE_2_DEFERRED` (NOT active for Phase-1 runtime):** the **air/sea multiple-Draft-Header split**, any use of **`recommendation_group_no` to create >1 Active Draft / multiple vessels**, and the **K2** uniqueness key (`… + recommendation_group_no + draft_version`). Phase-1 uses the **K3** key (`WEEKLY_SHIPPING + planning_cycle + company + country + marketplace + source_page`; `draft_version` = version/concurrency, never a natural key; `recommendation_group_no` is present but **unused** for multi-draft).
 >
-> This document is **retained in full** as **PHASE 2 DESIGN REFERENCE ONLY** — nothing here is deleted; the air/sea multi-head model may return only through a separately authorized Phase-2 migration. Any wording in this file (e.g. §2.1 / §2.2 below) that presents the Model-2 header / `recommendation_group_no` / K2 as the *current* schema is **SUPERSEDED FOR PHASE 1** by this banner.
+> Owner of the reconciled Phase-1 contract: **`docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md`**. This document is **retained in full**; nothing is deleted. Where §2.1 / §2.2 below define the K2 key or air/sea multi-head **behavior** as current, that behavior is `PHASE_2_DEFERRED`.
 
 ---
 

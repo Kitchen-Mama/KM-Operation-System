@@ -260,7 +260,7 @@
   // line_status='cancelled' (canonical repo enum). These builders produce those exact payloads.
   function buildDraftHeaderPayload(ctx) {
     ctx = ctx || {};
-    return {
+    var p = {
       allocation_draft_id: ctx.allocation_draft_id || undefined,   // omit → handler idempotent-matches/creates
       planning_cycle: ctx.planning_cycle || '',
       source_page: 'inventory_replenishment',
@@ -269,6 +269,17 @@
       // last valid line is gone (System Repair 2 §5.3 — never leave an orphan/empty Draft Header).
       status: ctx.status || 'draft'
     };
+    // C2-D1R: route context (From/To/Method/Last-mile) is HEADER-level (recommended_*) in the approved 30-col
+    // schema. Send it only when a route is supplied (a soft-cancel of an empty header carries no route). An
+    // Amazon logical destination sets destination_marketplace and leaves recommended_destination_warehouse_id ''.
+    if (ctx.source_warehouse_id != null) p.recommended_source_warehouse_id = ctx.source_warehouse_id || '';
+    if (ctx.destination_warehouse_id != null) p.recommended_destination_warehouse_id = ctx.destination_warehouse_id || '';
+    if (ctx.source_warehouse_code != null) p.recommended_source_warehouse_code_snapshot = ctx.source_warehouse_code || '';
+    if (ctx.destination_warehouse_code != null) p.recommended_destination_warehouse_code_snapshot = ctx.destination_warehouse_code || '';
+    if (ctx.shipping_method != null) p.recommended_shipping_method = ctx.shipping_method || '';
+    if (ctx.last_mile_delivery != null) p.recommended_last_mile_delivery = ctx.last_mile_delivery || '';
+    if (ctx.destination_marketplace != null) p.destination_marketplace = ctx.destination_marketplace || '';
+    return p;
   }
   // ---- Four-field completeness predicate (System Repair 2 §4 / §7) -----------------------------------
   // A working-draft route is a COMPLETE, persistable Execution Plan line ONLY when From + To + Qty(>0) +
@@ -293,20 +304,16 @@
   // system-recommended line (sends recommended_qty), false for a user edit / manual add.
   function buildDraftLinePayload(sku, row, opts) {
     row = row || {}; opts = opts || {};
-    var destValue = (row.destination_type === 'MARKETPLACE_DESTINATION')
-      ? amazonLogicalToken(row.destination_country || (opts.scope && opts.scope.country))
-      : (row.destination_warehouse_id || '');
-    var dest = resolveDestinationPayload(destValue, opts.scope);
+    // C2-D1R: the approved 28-col line carries SKU + qty (route context is on the header). No selected_*.
     var p = {
       allocation_draft_line_id: row.allocation_draft_line_id || undefined,  // omit → new line (Manual Add)
       sku: sku,
       planned_qty: (row.planned_qty != null ? Number(row.planned_qty) : (Number(row.qty) || 0)),
-      selected_source_warehouse_id: row.source_warehouse_id || null,
-      selected_destination_warehouse_id: dest.selected_destination_warehouse_id,   // null for Amazon logical
-      selected_shipping_method: row.shipping_method || '',
       generation_type: opts.system ? 'system_generated' : (row.generation_type || 'user_created')
     };
-    if (dest.marketplace) p.destination_marketplace = dest.marketplace;   // Amazon logical context
+    if (row.site_sku != null) p.site_sku = row.site_sku;
+    if (row.route_no != null) p.route_no = row.route_no;
+    if (row.units_per_carton != null) p.units_per_carton = row.units_per_carton;
     // recommended_qty ONLY for a system-generated line — never on a user edit (protects the snapshot).
     if (opts.system && row.recommended_qty != null) p.recommended_qty = Number(row.recommended_qty);
     return p;

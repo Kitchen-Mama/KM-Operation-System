@@ -33,32 +33,36 @@ function draftsReport(actualHeaders, rows) { return sadAuditBuildTableReport_('s
 function planActions(plan) { return plan.map(function (p) { return p.action; }); }
 
 // =====================================================================================================
-section('Model-1 exact canonical → NO_MIGRATION_REQUIRED (T1, T4)');
+section('Approved 30/28 exact canonical → NO_MIGRATION_REQUIRED (T1, T4)');
 var r1 = draftsReport(DRAFTS_CANON.slice(), []);
-ok(r1.exactMatch === true && r1.prefixMatch === true, 'T1 Model-1 exact drafts header → exactMatch true');
+ok(r1.exactMatch === true && r1.prefixMatch === true, 'T1 approved 30-col drafts header → exactMatch true');
 ok(r1.migrationClassification === 'NO_MIGRATION_REQUIRED', 'T1b classification NO_MIGRATION_REQUIRED');
 ok(r1.firstMismatchIndex === -1 && r1.missingHeaders.length === 0 && r1.extraHeaders.length === 0, 'T1c no mismatch/missing/extra');
 
 var rLine = sadAuditBuildTableReport_('shipping_allocation_draft_lines', true, LINES_CANON.slice(), [], LINES_CANON);
-ok(rLine.exactMatch === true && rLine.migrationClassification === 'NO_MIGRATION_REQUIRED', 'T4 recommended_shipping_method/etc ON THE LINE → exact match accepted (line-level ownership)');
-ok(LINES_CANON.indexOf('selected_source_warehouse_id') >= 0 && LINES_CANON.indexOf('selected_destination_warehouse_id') >= 0 &&
-   LINES_CANON.indexOf('selected_shipping_method') >= 0 && LINES_CANON.indexOf('route_no') >= 0, 'T4b From/To/Method/route_no are LINE columns');
-ok(DRAFTS_CANON.indexOf('recommendation_group_no') < 0 && DRAFTS_CANON.length === 23, 'T4c Model-1 drafts header = 23 cols, no recommendation_group_no');
+ok(rLine.exactMatch === true && rLine.migrationClassification === 'NO_MIGRATION_REQUIRED', 'T4 approved 28-col line → exact match, NO_MIGRATION_REQUIRED');
+ok(DRAFTS_CANON.indexOf('recommended_source_warehouse_id') >= 0 && DRAFTS_CANON.indexOf('recommended_destination_warehouse_id') >= 0 &&
+   DRAFTS_CANON.indexOf('recommended_shipping_method') >= 0 && DRAFTS_CANON.indexOf('recommendation_group_no') >= 0, 'T4b route (From/To/Method) + group_no are HEADER columns');
+ok(DRAFTS_CANON.length === 30 && LINES_CANON.length === 28, 'T4c approved schema = 30-col header / 28-col line');
+ok(LINES_CANON.indexOf('selected_source_warehouse_id') < 0 && LINES_CANON.indexOf('selected_shipping_method') < 0 && LINES_CANON.indexOf('user_edited') < 0, 'T4d NO selected_*/user_edited on the 28-col line');
 
 // =====================================================================================================
-section('Model-2 drift detection (T2, T3)');
-// Model-2 header: insert recommendation_group_no after planning_cycle, and recommended_* method fields after draft_version.
-var m2 = DRAFTS_CANON.slice();
-m2.splice(2, 0, 'recommendation_group_no');                         // after planning_cycle
-var dvi = m2.indexOf('draft_version');
-m2.splice(dvi + 1, 0, 'recommended_shipping_method', 'recommended_last_mile_delivery');
-var r2 = draftsReport(m2, []);
-ok(r2.exactMatch === false && r2.firstMismatchIndex === 2, 'T2 Model-2 group_no inserted → first mismatch at index 2');
-ok(r2.mismatchAt && r2.mismatchAt.expected === 'source_page' && r2.mismatchAt.actual === 'recommendation_group_no', 'T2b mismatchAt reports expected source_page vs actual recommendation_group_no');
-ok(r2.extraHeaders.indexOf('recommendation_group_no') >= 0 &&
-   r2.extraHeaders.indexOf('recommended_shipping_method') >= 0 &&
-   r2.extraHeaders.indexOf('recommended_last_mile_delivery') >= 0, 'T3 Model-2 recommended method fields on Header → reported as EXTRA');
-ok(r2.reorderedHeaders.length > 0, 'T3b downstream canonical fields reported as reordered');
+section('Stale-expectation drift detection: old 23-col header / 52-col line (T2, T3)');
+// The prior (incorrect) 23-col Model-1 header — no header-route fields — is DRIFT vs the approved 30-col canonical.
+var HDR_ROUTE = ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+  'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+  'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery'];
+var old23 = DRAFTS_CANON.filter(function (h) { return HDR_ROUTE.indexOf(h) < 0; });
+ok(old23.length === 23, 'T2-pre old Model-1 header = 23 cols');
+var r2 = draftsReport(old23, []);
+ok(r2.exactMatch === false && r2.firstMismatchIndex === 7, 'T2 old 23-col header → first mismatch at index 7 (canonical has recommended_source_warehouse_id there)');
+ok(r2.missingHeaders.indexOf('recommendation_group_no') >= 0 && r2.missingHeaders.indexOf('recommended_shipping_method') >= 0, 'T2b old header MISSING the header-route fields');
+ok(r2.migrationClassification === 'MISSING_CANONICAL_COLUMN_REQUIRES_MIGRATION', 'T2c old 23-col → MISSING_CANONICAL_COLUMN_REQUIRES_MIGRATION');
+// The prior 52-col line (selected_* + user_edited) has EXTRA columns vs the approved 28-col line.
+var old52line = LINES_CANON.concat(['selected_source_warehouse_id', 'selected_destination_warehouse_id', 'selected_shipping_method', 'user_edited', 'user_edited_by']);
+var rL2 = sadAuditBuildTableReport_('shipping_allocation_draft_lines', true, old52line, [], LINES_CANON);
+ok(rL2.extraHeaders.indexOf('selected_source_warehouse_id') >= 0 && rL2.extraHeaders.indexOf('user_edited') >= 0, 'T3 old 52-col line → selected_*/user_edited reported as EXTRA vs the 28-col canonical');
+ok(rL2.migrationClassification === 'EXTRA_EMPTY_COLUMNS_SAFE_CANDIDATE', 'T3b extra line columns (empty fixture) → safe candidate, never auto-delete');
 
 // =====================================================================================================
 section('Structural fault detection (T5, T6, T7, T8)');
@@ -112,7 +116,7 @@ ok(missPlan && missPlan.action === 'ADD_BLANK', 'T17c a missing canonical column
 // =====================================================================================================
 section('Deterministic hashes (T15, T16)');
 ok(sadAuditHeaderHash_(DRAFTS_CANON) === sadAuditHeaderHash_(DRAFTS_CANON.slice()), 'T15 header hash deterministic (same input → same hash)');
-ok(sadAuditHeaderHash_(DRAFTS_CANON) !== sadAuditHeaderHash_(m2), 'T15b header hash differs for a different header');
+ok(sadAuditHeaderHash_(DRAFTS_CANON) !== sadAuditHeaderHash_(old23), 'T15b header hash differs for a different header');
 var rowsA = [['a', 'b', 'c'], ['d', 'e', 'f']];
 var rowsB = [['a', 'b', 'c'], ['d', 'e', 'X']];
 ok(sadAuditRowsHash_(rowsA) === sadAuditRowsHash_([['a', 'b', 'c'], ['d', 'e', 'f']]), 'T16 data-row hash deterministic');
@@ -197,8 +201,8 @@ ok(k3.indexOf('draft_version') < 0, 'T20 K3 key block excludes draft_version');
 ok(k3.indexOf('recommendation_group_no') < 0, 'T21 K3 key block excludes recommendation_group_no');
 ok(k3.indexOf('source_page') >= 0 && k3.indexOf('planning_cycle') >= 0, 'T21b K3 key includes source_page + planning_cycle');
 ok(/draft_version[\s\S]{0,80}(version|concurrency)/i.test(FREEZE), 'T7-doc draft_version classified as version/concurrency (not a natural key)');
-ok(FREEZE.indexOf('selected_source_warehouse_id') >= 0 && FREEZE.indexOf('selected_destination_warehouse_id') >= 0 && /line-level/i.test(FREEZE), 'T22 line-level route ownership (From/To/Method) documented');
-ok(AMEND.indexOf('PHASE_2_DEFERRED') >= 0 && /SUPERSEDED FOR PHASE 1/i.test(AMEND), 'T23 amendment marked PHASE_2_DEFERRED / SUPERSEDED FOR PHASE 1');
+ok(FREEZE.indexOf('recommended_source_warehouse_id') >= 0 && FREEZE.indexOf('recommended_destination_warehouse_id') >= 0 && /header-level/i.test(FREEZE), 'T22 header-level route ownership (From/To/Method) documented');
+ok(AMEND.indexOf('PHASE_2_DEFERRED') >= 0, 'T23 amendment air/sea multi-head + K2 key marked PHASE_2_DEFERRED');
 ok(AMEND.indexOf('recommendation_group_no') >= 0, 'T23b amendment content retained (not deleted)');
 
 // =====================================================================================================

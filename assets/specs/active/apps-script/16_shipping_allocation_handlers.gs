@@ -21,18 +21,25 @@
 // DO NOT persist uncovered_qty / coverage_status / window_label / route-display / source-display (§C).
 // ============================================================
 
-// CANONICAL SYNC (2026-07-27): headers below MATCH the manually-adjusted Live DB header exactly (name
-// + order). Shipping remains DB + Spec Ready — this task syncs the SCHEMA only; it does NOT build the
-// Shipping Recommendation writer, Engine A, route/rate/carrier resolution, Submit-Plan runtime, or any
-// UI (those stay NOT IMPLEMENTED). The writer functions here are the existing UNWIRED scaffold; the
-// live persistence path is still gated off in the adapter (returns {success:false} until an authorized
-// redeploy). Line renames vs the previous code header: source_warehouse_id→recommended_source_warehouse_id ·
-// source_available_qty_snapshot→source_initial_available_qty_snapshot · ship_from→selected_source_warehouse_id ·
-// destination→selected_destination_warehouse_id. Added header: shipping_allocation_drafts.formula_version.
+// SCHEMA AUTHORITY = the EXISTING user-approved live DB (30-col header / 28-col line). Route context is
+// header-level; the line is SKU + qty grain. No selected_* / carrier-cost / user_edited columns on the line
+// (those were a prior 52-col SOURCE assumption, not the live DB). Do NOT expand the schema without a separate
+// user-authorized migration.
+// C2-D1R (2026-08-05): reconciled BYTE-FOR-BYTE to the user-approved EXISTING live DB schema (30-col header
+// route grain / 28-col line). The prior 23-col header + 52-col line (Model-1) was a SOURCE expectation that did
+// NOT match the live DB — it was the root cause of the PRODUCTION_SAFETY:HEADER_ORDER_MISMATCH. Route context
+// (From/To/Method/Last-mile) is HEADER-level here (recommended_* on the Draft header); the line owns SKU + qty.
+// recommendation_group_no exists on the header but Phase-1 does NOT use it for multi-active-draft / multi-vessel
+// (K3 excludes it). Owner: docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md.
 var SHIPPING_ALLOCATION_DRAFTS_HEADERS_ = [
-  'allocation_draft_id', 'planning_cycle', 'source_page', 'company', 'country', 'marketplace',
-  'status', 'generation_type', 'calculation_run_id', 'formula_version', 'calculated_at',
-  'source_data_as_of', 'draft_version',
+  'allocation_draft_id', 'planning_cycle', 'source_page', 'company', 'country', 'marketplace', 'status',
+  // header-level route context (system recommendation snapshot for this Draft's single route)
+  'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+  'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+  'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery',
+  // generation / calculation provenance
+  'generation_type', 'calculation_run_id', 'formula_version', 'calculated_at', 'source_data_as_of', 'draft_version',
+  // audit / lifecycle
   'created_by', 'created_at', 'updated_by', 'updated_at',
   'submitted_by', 'submitted_at', 'cancelled_by', 'cancelled_at', 'cancel_reason', 'note'
 ];
@@ -45,23 +52,14 @@ var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   // recommendation input snapshots
   'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot',
   'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
-  // system recommendation snapshot — source/destination warehouse + allocation sequence (immutable)
-  'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
-  'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+  // source-availability snapshots + allocation sequence (immutable)
   'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
-  // system recommendation snapshot — route / carrier / cost (immutable per generation)
-  'recommended_route_rule_id', 'recommended_rate_card_id', 'recommended_lead_time_id',
-  'recommended_carrier_id', 'recommended_shipping_method', 'recommended_last_mile_delivery',
-  'recommended_expected_arrival', 'recommended_estimated_cost', 'recommendation_reason', 'recommendation_flags',
-  'recommended_qty',
-  // user Execution Plan
-  'planned_qty', 'selected_source_warehouse_id', 'selected_destination_warehouse_id',
-  'selected_source_warehouse_code_snapshot', 'selected_destination_warehouse_code_snapshot',
-  'selected_rate_card_id', 'selected_lead_time_id', 'selected_carrier_id', 'selected_shipping_method',
-  'selected_last_mile_delivery', 'expected_arrival', 'units_per_carton', 'route_no',
+  // recommendation reason/flags + immutable recommended qty snapshot
+  'recommendation_reason', 'recommendation_flags', 'recommended_qty',
+  // user Execution Plan (qty grain — route context is on the Draft header)
+  'planned_qty', 'units_per_carton', 'route_no',
   // status / audit
-  'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
-  'user_edited', 'user_edited_by'   // additive (Phase 2C Round 1D) — explicit user-edit provenance (§Persist-Adapter)
+  'line_status', 'override_reason', 'note', 'created_at', 'updated_at'
 ];
 
 var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1 };
@@ -70,13 +68,13 @@ var SAD_GENERATION_TYPES_ = { scheduled: 1, manual_refresh: 1, user_created: 1 }
 // The recommendation-snapshot fields — written only when the incoming line supplies them, so an
 // Execution-Plan save (which omits them) never clobbers the immutable recommendation (§D). Canonical
 // names (2026-07-27 sync).
+// C2-D1R: reconciled to the 28-col LINE snapshot fields ONLY. The recommended route fields
+// (recommended_source/destination_warehouse_id/code, recommended_shipping_method/last_mile) are HEADER-level
+// now, so they are NOT line snapshot-protected fields.
 var SAD_RECOMMENDATION_FIELDS_ = [
-  'recommended_qty', 'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
-  'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+  'recommended_qty',
   'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
-  'recommended_route_rule_id', 'recommended_rate_card_id', 'recommended_lead_time_id',
-  'recommended_carrier_id', 'recommended_shipping_method', 'recommended_last_mile_delivery',
-  'recommended_expected_arrival', 'recommended_estimated_cost', 'recommendation_reason', 'recommendation_flags',
+  'recommendation_reason', 'recommendation_flags',
   'regular_demand_snapshot', 'special_event_demand_snapshot', 'destination_stock_snapshot',
   'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
   'window_code', 'window_start_date', 'window_end_date', 'required_by_date'
@@ -85,11 +83,11 @@ var SAD_RECOMMENDATION_FIELDS_ = [
 // Read-only legacy aliases accepted on the incoming shipping-draft line payload → canonical column.
 // Keeps the existing (not-yet-migrated, still gated) Inventory Replenishment caller working without
 // editing it; new writes always use the canonical key.
+// C2-D1R: the only LINE-level legacy alias that still targets an existing 28-col line column. Route aliases
+// (ship_from/destination/source_warehouse_id) belonged to the removed selected_* line grain — route is now a
+// HEADER field and the frontend header payload uses the canonical recommended_* names directly.
 var SAD_LINE_LEGACY_ALIASES_ = {
-  source_warehouse_id: 'recommended_source_warehouse_id',
-  source_available_qty_snapshot: 'source_initial_available_qty_snapshot',
-  ship_from: 'selected_source_warehouse_id',
-  destination: 'selected_destination_warehouse_id'
+  source_available_qty_snapshot: 'source_initial_available_qty_snapshot'
 };
 
 // Copy legacy alias keys to their canonical name when the canonical key is absent (never overwrites an
@@ -143,6 +141,15 @@ function sadUpsertDraftHeaderCore_(body) {
   if (!SAD_GENERATION_TYPES_[genType]) genType = 'user_created';
   var draftVersion = String((body && body.draft_version) || '1').trim();
 
+  // C2-D1R header-route completeness gate (§8): when the header carries route intent, From + To + Method must
+  // all be present (unless this is a soft-cancel). A partial route rejects with PLAN_HEADER_INCOMPLETE and
+  // writes nothing. Route context is HEADER-level in the approved 30-col schema.
+  var hasRouteIntent = !!(body && (String(body.recommended_source_warehouse_id || '').trim() ||
+    String(body.recommended_shipping_method || '').trim() || String(body.recommended_destination_warehouse_id || '').trim()));
+  if (hasRouteIntent && status !== 'cancelled' && !sadHeaderRouteIsComplete_(body)) {
+    return jsonResponse_({ success: false, error: 'PLAN_HEADER_INCOMPLETE — a Draft route context requires From + To + Method (zero rows written)' });
+  }
+
   var id = String((body && body.allocation_draft_id) || '').trim();
   var found = id ? procurementFindRow_(sh, 'allocation_draft_id', id) : null;
 
@@ -169,6 +176,12 @@ function sadUpsertDraftHeaderCore_(body) {
   if (found) {
     function setCol(name, val) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(val); }
     setCol('status', status);
+    // header-level route context (recommended_*) — update only when explicitly provided (C2-D1R).
+    ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+      'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
+      'recommendation_group_no', 'recommended_shipping_method', 'recommended_last_mile_delivery'].forEach(function (f) {
+      if (body && body[f] != null) setCol(f, String(body[f]));
+    });
     if (body && body.calculation_run_id != null) setCol('calculation_run_id', String(body.calculation_run_id));
     if (body && body.calculated_at != null) setCol('calculated_at', String(body.calculated_at));
     if (body && body.source_data_as_of != null) setCol('source_data_as_of', String(body.source_data_as_of));
@@ -187,8 +200,17 @@ function sadUpsertDraftHeaderCore_(body) {
     country: String((body && body.country) || '').trim(),
     marketplace: String((body && body.marketplace) || '').trim(),
     status: status,
+    // header-level route context (C2-D1R — recommended_* on the 30-col header)
+    recommended_source_warehouse_id: String((body && body.recommended_source_warehouse_id) || '').trim(),
+    recommended_destination_warehouse_id: String((body && body.recommended_destination_warehouse_id) || '').trim(),
+    recommended_source_warehouse_code_snapshot: String((body && body.recommended_source_warehouse_code_snapshot) || '').trim(),
+    recommended_destination_warehouse_code_snapshot: String((body && body.recommended_destination_warehouse_code_snapshot) || '').trim(),
+    recommendation_group_no: String((body && body.recommendation_group_no) || '').trim(),
+    recommended_shipping_method: String((body && body.recommended_shipping_method) || '').trim(),
+    recommended_last_mile_delivery: String((body && body.recommended_last_mile_delivery) || '').trim(),
     generation_type: genType,
     calculation_run_id: String((body && body.calculation_run_id) || '').trim(),
+    formula_version: String((body && body.formula_version) || '').trim(),
     calculated_at: String((body && body.calculated_at) || '').trim(),
     source_data_as_of: String((body && body.source_data_as_of) || '').trim(),
     draft_version: draftVersion,
@@ -203,12 +225,11 @@ function sadUpsertDraftHeaderCore_(body) {
 /**
  * UPSERT lines by allocation_draft_line_id (NOT a blanket replace — that would wipe the immutable
  * recommendation snapshot). Body:
- *   { allocation_draft_id, lines: [ { allocation_draft_line_id?, sku, planned_qty?,
- *     selected_source_warehouse_id?, selected_destination_warehouse_id?, selected_*?, expected_arrival?,
- *     override_reason?, recommended_qty?, recommended_*?, calculated_gap_qty?, window_code?,
- *     required_by_date?, units_per_carton?, ... } ] }
- *   (legacy ship_from / destination / source_warehouse_id / source_available_qty_snapshot are accepted
- *    as read-only aliases via sadApplyLineAliases_ and mapped onto the canonical columns.)
+ *   { allocation_draft_id, lines: [ { allocation_draft_line_id?, sku, site_sku?, planned_qty?,
+ *     recommended_qty?, route_no?, units_per_carton?, override_reason?, note?, line_status?,
+ *     calculated_gap_qty?, window_code?, required_by_date?, ... } ] }
+ *   (C2-D1R: route context — From/To/Method — is HEADER-level; the 28-col line carries SKU + qty only.
+ *    legacy source_available_qty_snapshot is accepted as a read-only alias via sadApplyLineAliases_.)
  * Rules (§D quantity protection):
  *   - Existing line (id matches): update planned_qty + Execution-Plan fields always; update a
  *     recommendation-snapshot field ONLY if the incoming line supplies it (else preserved).
@@ -247,9 +268,9 @@ function sadUpsertLinesKeyedCore_(body) {
   var created = 0, updated = 0, skipped = 0;
 
   // Alias-map every line up front, then validate the whole batch BEFORE any write so an incomplete
-  // manual line rejects the request with ZERO mutation (System Repair 2 §4/§8). A soft-cancel line
-  // (line_status='cancelled') and a system-generated recommendation snapshot are exempt from the
-  // four-field gate; only a manual execution line must carry From + To + Qty>0 + Method.
+  // manual line rejects the request with ZERO mutation (System Repair 2 §4/§8; C2-D1R). A soft-cancel line
+  // (line_status='cancelled') and a system-generated recommendation snapshot are exempt; only a manual
+  // execution line must carry SKU + Qty>0 (route context is HEADER-level in the 28-col line grain).
   var lines = [];
   for (var m = 0; m < rawLines.length; m++) lines.push(sadApplyLineAliases_(rawLines[m] || {}));
   for (var v = 0; v < lines.length; v++) {
@@ -257,15 +278,10 @@ function sadUpsertLinesKeyedCore_(body) {
     var isCancelV = String(lv.line_status || '').trim().toLowerCase() === 'cancelled';
     var isSystemV = String(lv.generation_type || '').trim().toLowerCase() === 'system_generated';
     if (isCancelV || isSystemV) continue;
-    if (!sadLineIsComplete_(lv)) return jsonResponse_({ success: false, error: 'incomplete draft line rejected — a manual Execution Plan line requires From + To + Qty>0 + Method (zero rows written)' });
+    if (!sadLineIsComplete_(lv)) return jsonResponse_({ success: false, error: 'PLAN_LINE_INCOMPLETE — a manual Execution Plan line requires SKU + Qty>0 (zero rows written); route context is on the Draft header' });
   }
 
-  function isRec(name) { for (var i = 0; i < SAD_RECOMMENDATION_FIELDS_.length; i++) if (SAD_RECOMMENDATION_FIELDS_[i] === name) return true; return false; }
-  var EXEC_FIELDS = ['planned_qty', 'selected_source_warehouse_id', 'selected_destination_warehouse_id',
-    'selected_source_warehouse_code_snapshot', 'selected_destination_warehouse_code_snapshot',
-    'selected_rate_card_id', 'selected_lead_time_id', 'selected_carrier_id', 'selected_shipping_method',
-    'selected_last_mile_delivery', 'expected_arrival', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note',
-    'user_edited', 'user_edited_by'];   // additive (Round 1D) — explicit user-edit provenance, written only when provided
+  var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note'];
 
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i];
@@ -305,18 +321,24 @@ function sadUpsertLinesKeyedCore_(body) {
   return jsonResponse_({ success: true, data: { allocation_draft_id: draftId, line_count: created + updated, created: created, updated: updated, skipped: skipped } });
 }
 
-// Four-field completeness gate (System Repair 2 §4/§8) — the backend mirror of IRDraft.isRouteComplete.
-// A manual Execution Plan line is valid ONLY with From + To + Qty>0 + Method. An Amazon logical
-// destination (destination_marketplace set, selected_destination_warehouse_id null) is a valid To.
+// C2-D1R line completeness (§8) — route context is HEADER-level, so a manual Execution Plan LINE is valid
+// with SKU + Qty>0. From/To/Method completeness is enforced on the header via sadHeaderRouteIsComplete_.
 function sadLineIsComplete_(l) {
   l = l || {};
-  var from = String(l.selected_source_warehouse_id == null ? '' : l.selected_source_warehouse_id).trim();
-  var toReal = String(l.selected_destination_warehouse_id == null ? '' : l.selected_destination_warehouse_id).trim();
-  var hasTo = !!toReal || !!String(l.destination_marketplace == null ? '' : l.destination_marketplace).trim();
+  var sku = String(l.sku == null ? '' : l.sku).trim();
   var qty = Number(l.planned_qty); if (isNaN(qty)) qty = 0;
-  var method = String(l.selected_shipping_method == null ? '' : l.selected_shipping_method).trim();
+  return !!sku && qty > 0;
+}
+// Header route completeness (§8, C2-D1R): From + To + Method on the Draft header (recommended_*). An Amazon
+// logical destination (destination_marketplace set) counts as a valid To.
+function sadHeaderRouteIsComplete_(b) {
+  b = b || {};
+  var from = String(b.recommended_source_warehouse_id == null ? '' : b.recommended_source_warehouse_id).trim();
+  var toReal = String(b.recommended_destination_warehouse_id == null ? '' : b.recommended_destination_warehouse_id).trim();
+  var hasTo = !!toReal || !!String(b.destination_marketplace == null ? '' : b.destination_marketplace).trim();
+  var method = String(b.recommended_shipping_method == null ? '' : b.recommended_shipping_method).trim();
   var methodOk = !!method && method.toLowerCase().indexOf('no available') === -1;
-  return !!from && hasTo && qty > 0 && methodOk;
+  return !!from && hasTo && methodOk;
 }
 
 // ---- submitShippingAllocationDrafts -------------------------------

@@ -3245,3 +3245,22 @@ Tests: allocation-draft-schema-audit.test.js; Golden 39/1/0; #34 Pending; replen
 ```
 
 - **Files (C2-D1):** NEW `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` (Phase-1 authority — DOCUMENTATION_ONLY), `docs/planning/SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md` (Phase-2-deferred banner — DOCUMENTATION_ONLY), `docs/planning/REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` (§3.6 Phase-1 landing annotation — DOCUMENTATION_ONLY), NEW `assets/specs/active/apps-script/41_shipping_allocation_schema_audit.gs` (read-only editor-run diagnostic — `APPS_SCRIPT_SYNC_REQUIRED` only to run the audit; not routed; no deployment version), NEW `assets/tests/allocation-draft-schema-audit.test.js` (GIT_ONLY), this entry (DOCUMENTATION_ONLY). **No `BUNDLE_REBUILD_REQUIRED` (false). No frontend/runtime/route change.** Not pushed, not deployed.
+
+## Allocation Draft reconciled to the APPROVED 30/28 live DB schema (Round C2-D1R) SOURCE + TEST-VERIFIED, NOT LIVE-VERIFIED (2026-08-05)
+
+**SUPERSEDES the C2-D1 Model-1 23/52 freeze.** The user confirmed the EXISTING live DB is canonical and is **30-col header (header-level route grain) / 28-col line (SKU+qty)** — NOT the 23/52 the C2-D1 handler *constant* claimed. That stale 23/52 constant was the actual root cause of `PRODUCTION_SAFETY:HEADER_ORDER_MISMATCH`. This round aligns SOURCE (handler constants + write logic + frontend payload bridge + docs + tests) to the approved 30/28 schema. **No live DB read/written; no migration applied; no column expansion; NO_MIGRATION_REQUIRED expected once source == live.**
+
+```text
+Draft header (30): ...marketplace, status, recommended_source_warehouse_id, recommended_destination_warehouse_id, *_code_snapshot x2, recommendation_group_no, recommended_shipping_method, recommended_last_mile_delivery, generation_type, calculation_run_id, formula_version, ... note
+Line (28): ...calculated_gap_qty, source_initial_available_qty_snapshot, source_available_before_allocation_snapshot, allocation_sequence, recommendation_reason, recommendation_flags, recommended_qty, planned_qty, units_per_carton, route_no, line_status, override_reason, note, created_at, updated_at  (NO selected_*/carrier-cost/user_edited)
+Grain: route (From/To/Method/Last-mile) = HEADER recommended_*; line = SKU + qty; one route per Draft (multi-route → separate Drafts, §3)
+Key: K3 (WEEKLY_SHIPPING + planning_cycle + company + country + marketplace + source_page); draft_version = version/concurrency; group_no present but Phase-1-unused
+Handler: sadUpsertDraftHeaderCore_ writes recommended_* route + PLAN_HEADER_INCOMPLETE gate (sadHeaderRouteIsComplete_); sadLineIsComplete_ = SKU + Qty>0 → PLAN_LINE_INCOMPLETE; EXEC_FIELDS/SAD_RECOMMENDATION_FIELDS_/SAD_LINE_LEGACY_ALIASES_ reconciled to 28-col
+Frontend: IRDraft.buildDraftHeaderPayload adds header route context; buildDraftLinePayload = 28-col (no selected_*); _flushDraftDbPersist derives header route from complete[0]
+Submit → Weekly Plan handoff: NOT built (handler marks submitted only) — forward (C2-D2); live write NOT VERIFIED
+Amendment 2026-07-27: 30-col header shape IS the live Phase-1 schema; air/sea multi-head + group_no multi-draft + K2 key = PHASE_2_DEFERRED
+Tests: allocation-draft-30-28-reconcile 24/0; audit 51/0; persistence ALL PASS; replen-draft-completeness ALL PASS (P29–P31 RESOLVED via correct core-targeting); full suite 77/77 files green
+Golden 39/1/0; #34 Pending; production-safety 67 + 85 green; C1 28/0
+```
+
+- **Files (C2-D1R):** `assets/specs/active/apps-script/16_shipping_allocation_handlers.gs` (30/28 constants + header-route write + completeness gates — `APPS_SCRIPT_SYNC_REQUIRED`, `BUNDLE_REBUILD_REQUIRED=false`), `assets/js/utils/inventory-compat.js` + `assets/js/pages/inventory-replenishment.js` (IRDraft header-route payload + flush — `FRONTEND_GITHUB_PAGES_REQUIRED`), `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` + `SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md` + `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` (DOCUMENTATION_ONLY), NEW `assets/tests/allocation-draft-30-28-reconcile.test.js` + updated `allocation-draft-schema-audit.test.js` / `shipping-allocation-draft-persistence.test.js` / `replen-draft-completeness.test.js` (GIT_ONLY), this entry. **P29–P31 resolved (test scanned the public wrapper, not the private `sadUpsertLinesKeyedCore_` core; retargeted).** Not pushed, not deployed, no live DB accessed.
