@@ -19,7 +19,7 @@
 (function (root, factory) {
   var mod = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = mod;
-  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; }
+  if (root) { root.IRCountry = mod.IRCountry; root.IRWarehouse = mod.IRWarehouse; root.IRDraft = mod.IRDraft; root.IRDraftWorkspace = mod.IRDraftWorkspace; }
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   'use strict';
 
@@ -350,5 +350,169 @@
     distinctRouteContexts: distinctRouteContexts
   };
 
-  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft };
+  // ===== C2-D2A-UI: Allocation Draft persistence STATE MACHINE + Save/Cancel/Load orchestration =====
+  // Pure, DOM-free and deps-injected so the exact workflow is deterministically unit-testable in Node. The page
+  // wires real deps (adapters + a render callback); tests inject fakes. This controller NEVER calls
+  // loadOperationDb / getOperationDb — reads go ONLY through deps.readback (getShippingAllocationDraftWorkspace).
+  var IR_DRAFT_STATES = ['NOT_SAVED', 'SAVING', 'SAVED', 'SAVE_FAILED', 'CONFLICT', 'CANCELLED', 'SUBMITTED'];
+
+  // Map a canonical error code out of a structured adapter/command result (never message-string parsing when a code exists).
+  function draftErrorCode(res) {
+    if (!res) return 'UNKNOWN_ERROR';
+    if (res.error && res.error.code) return res.error.code;
+    if (res.data && res.data.status === 'BLOCKED_CONFLICT') return 'BLOCKED_CONFLICT';
+    if (typeof res.error === 'string' && res.error) return res.error.split(/[\s:]/)[0] || 'UNKNOWN_ERROR';
+    return 'UNKNOWN_ERROR';
+  }
+
+  // Header route completeness for the Save gate → { ok, missing:[From/To/Method] }.
+  function draftHeaderRouteComplete(header) {
+    header = header || {};
+    var from = String(header.recommended_source_warehouse_id == null ? '' : header.recommended_source_warehouse_id).trim();
+    var toReal = String(header.recommended_destination_warehouse_id == null ? '' : header.recommended_destination_warehouse_id).trim();
+    var hasTo = !!toReal || !!String(header.destination_marketplace == null ? '' : header.destination_marketplace).trim();
+    var method = String(header.recommended_shipping_method == null ? '' : header.recommended_shipping_method).trim();
+    var missing = [];
+    if (!from) missing.push('From');
+    if (!hasTo) missing.push('To');
+    if (!method || method.toLowerCase().indexOf('no available') !== -1) missing.push('Method');
+    return { ok: missing.length === 0, missing: missing };
+  }
+
+  // Client-side Save validation → { ok, code, issues }. Multi-route BLOCK > header route > line qty.
+  function draftValidateSave(payload) {
+    payload = payload || {};
+    var keys = distinctRouteContexts(payload.routes || []);
+    if (keys.length > 1) return { ok: false, code: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', issues: [{ code: 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', routeContexts: keys }] };
+    var hr = draftHeaderRouteComplete(payload.header);
+    if (!hr.ok) return { ok: false, code: 'PLAN_HEADER_INCOMPLETE', issues: [{ code: 'PLAN_HEADER_INCOMPLETE', missing: hr.missing }] };
+    var lines = payload.lines || [];
+    if (!lines.length) return { ok: false, code: 'PLAN_LINE_INCOMPLETE', issues: [{ code: 'PLAN_LINE_INCOMPLETE', missing: ['at least one Line'] }] };
+    var lineIssues = [];
+    lines.forEach(function (l, i) {
+      var sku = String((l && l.sku) == null ? '' : l.sku).trim();
+      var qty = Number(l && l.planned_qty); if (isNaN(qty)) qty = 0;
+      if (!sku || qty <= 0) lineIssues.push({ code: 'PLAN_LINE_INCOMPLETE', index: i, allocation_draft_line_id: (l && l.allocation_draft_line_id) || null, sku: sku, missing: (!sku ? ['SKU'] : []).concat(qty <= 0 ? ['Qty'] : []) });
+    });
+    if (lineIssues.length) return { ok: false, code: 'PLAN_LINE_INCOMPLETE', issues: lineIssues };
+    return { ok: true, issues: [] };
+  }
+
+  // Map a targeted-readback result → { state, draft, lines, conflictIds, source, code }.
+  function draftStateFromReadback(res, hasLocalBuffer) {
+    if (!res || res.success === false) return { state: 'SAVE_FAILED', code: draftErrorCode(res), draft: null, lines: [], conflictIds: [], source: hasLocalBuffer ? 'LOCAL' : 'DB' };
+    var d = res.data || {};
+    if (d.status === 'BLOCKED_CONFLICT') return { state: 'CONFLICT', code: 'BLOCKED_CONFLICT', conflictIds: (d.issues && d.issues[0] && d.issues[0].conflictIds) || [], draft: null, lines: [], source: 'DB' };
+    if (d.status === 'NO_ACTIVE_DRAFT') return { state: 'NOT_SAVED', draft: null, lines: [], conflictIds: [], source: hasLocalBuffer ? 'LOCAL' : 'DB' };
+    var st = String((d.draft && d.draft.status) == null ? '' : (d.draft && d.draft.status)).trim().toLowerCase();
+    if (st === 'submitted') return { state: 'SUBMITTED', draft: d.draft, lines: d.lines || [], conflictIds: [], source: 'DB' };
+    if (st === 'cancelled') return { state: 'CANCELLED', draft: d.draft, lines: d.lines || [], conflictIds: [], source: 'DB' };
+    return { state: 'SAVED', draft: d.draft, lines: d.lines || [], conflictIds: [], source: 'DB' };
+  }
+
+  // Local-vs-DB comparison over a normalized { routeKey, lines:[{sku,site_sku,planned_qty,route_no}] } signature.
+  function _draftLineSig(l) { l = l || {}; return [String(l.sku || '').trim(), String(l.site_sku || '').trim(), Number(l.planned_qty) || 0, String(l.route_no || '').trim()].join('~'); }
+  function draftNormalizeSignature(x) { x = x || {}; return String(x.routeKey == null ? '' : x.routeKey) + '||' + (x.lines || []).map(_draftLineSig).sort().join('|'); }
+  function draftCompareLocalVsDb(local, db) {
+    if (!db && !local) return 'NONE';
+    if (!db) return 'NO_DB';
+    if (!local) return 'NO_LOCAL';
+    return draftNormalizeSignature(local) === draftNormalizeSignature(db) ? 'IDENTICAL' : 'DIFFERENT';
+  }
+
+  // Restore/Discard decision. Default = Use DB (no overwrite). SUBMITTED/CANCELLED DB drafts are never overwritten.
+  function resolveLocalDecision(choice, db) {
+    var dbState = db ? String(db.status || '').trim().toLowerCase() : '';
+    if (choice === 'RESTORE_LOCAL') {
+      if (dbState === 'submitted' || dbState === 'cancelled') return { applied: false, reason: 'DB_TERMINAL_LOCKED', state: dbState === 'submitted' ? 'SUBMITTED' : 'CANCELLED' };
+      return { applied: true, restored: true, state: 'NOT_SAVED' };
+    }
+    if (choice === 'USE_DB') return { applied: true, restored: false, state: 'SAVED' };
+    return { applied: false, reason: 'REVIEW' };
+  }
+
+  // The controller. deps = { readback(scope), save(header), saveLines({allocation_draft_id,lines}), cancel(payload),
+  // onState(stateSnapshot), getLocalBuffer() }. Single in-flight guard + stale-load sequence guard.
+  function createDraftWorkspace(deps) {
+    deps = deps || {};
+    var state = { state: 'NOT_SAVED', draft: null, lines: [], code: null, conflictIds: [], issues: [], source: 'LOCAL', savedAt: null, transient: null };
+    var loadSeq = 0, inFlight = false;
+    function set(patch) { for (var k in patch) if (patch.hasOwnProperty(k)) state[k] = patch[k]; if (typeof deps.onState === 'function') { var snap = {}; for (var j in state) if (state.hasOwnProperty(j)) snap[j] = state[j]; deps.onState(snap); } }
+    function getState() { var s = {}; for (var k in state) if (state.hasOwnProperty(k)) s[k] = state[k]; return s; }
+
+    async function load(scope) {
+      var mySeq = ++loadSeq;
+      set({ transient: 'LOADING_DRAFT' });
+      var rb;
+      try { rb = await deps.readback(scope); } catch (e) { rb = { success: false, error: { code: 'HTTP_TRANSPORT_ERROR' } }; }
+      if (mySeq !== loadSeq) return { stale: true };
+      var hasLocal = !!(deps.getLocalBuffer && deps.getLocalBuffer());
+      var m = draftStateFromReadback(rb, hasLocal);
+      set({ state: m.state, draft: m.draft, lines: m.lines || [], conflictIds: m.conflictIds || [], code: m.code || null, source: m.source || (m.draft ? 'DB' : 'LOCAL'), savedAt: (m.draft && (m.draft.updated_at || m.draft.updatedAt)) || null, transient: null });
+      return { stale: false, state: state.state };
+    }
+
+    async function save(payload) {
+      if (inFlight) return { ok: false, blocked: true, code: 'IN_FLIGHT' };
+      var v = draftValidateSave(payload);
+      if (!v.ok) { set({ state: 'SAVE_FAILED', code: v.code, issues: v.issues }); return { ok: false, code: v.code, issues: v.issues }; }
+      inFlight = true; set({ state: 'SAVING', code: null, issues: [] });
+      var hres;
+      try { hres = await deps.save(payload.header); } catch (e) { hres = { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: String((e && e.message) || e) } }; }
+      if (!hres || hres.success === false) {
+        inFlight = false; var c = draftErrorCode(hres);
+        var conflictIds = (hres && hres.error && hres.error.details && hres.error.details.conflictIds) || [];
+        set({ state: c === 'BLOCKED_CONFLICT' ? 'CONFLICT' : 'SAVE_FAILED', code: c, conflictIds: conflictIds, issues: [{ code: c }] });
+        return { ok: false, code: c, conflictIds: conflictIds };
+      }
+      var draftId = (hres.data && hres.data.allocation_draft_id) || (payload.header && payload.header.allocation_draft_id) || '';
+      var lres;
+      try { lres = await deps.saveLines({ allocation_draft_id: draftId, lines: payload.lines }); } catch (e2) { lres = { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: String((e2 && e2.message) || e2) } }; }
+      if (!lres || lres.success === false) { inFlight = false; var lc = draftErrorCode(lres); set({ state: lc === 'BLOCKED_CONFLICT' ? 'CONFLICT' : 'SAVE_FAILED', code: lc, issues: [{ code: lc }] }); return { ok: false, code: lc }; }
+      var rb;
+      try { rb = await deps.readback(payload.scope); } catch (e3) { rb = { success: false, error: { code: 'HTTP_TRANSPORT_ERROR' } }; }
+      inFlight = false;
+      if (!rb || rb.success === false) { set({ state: 'SAVED', code: 'WRITE_COMMITTED_READBACK_FAILED', draft: { allocation_draft_id: draftId }, source: 'DB' }); return { ok: true, committed: true, code: 'WRITE_COMMITTED_READBACK_FAILED', draftId: draftId }; }
+      var m = draftStateFromReadback(rb, false);
+      var finalState = (m.state === 'NOT_SAVED') ? 'SAVED' : m.state;   // never downgrade a committed save below SAVED
+      set({ state: finalState, draft: m.draft || { allocation_draft_id: draftId }, lines: m.lines || [], conflictIds: m.conflictIds || [], source: 'DB', savedAt: (m.draft && (m.draft.updated_at || m.draft.updatedAt)) || null, code: null });
+      return { ok: true, committed: true, draftId: draftId, state: finalState };
+    }
+
+    async function cancel(scope, opts) {
+      if (inFlight) return { ok: false, blocked: true, code: 'IN_FLIGHT' };
+      inFlight = true; set({ state: 'SAVING', code: null });
+      var cres;
+      try { cres = await deps.cancel(Object.assign({}, scope, { cancel_reason: (opts && opts.reason) || '' })); } catch (e) { cres = { success: false, error: { code: 'HTTP_TRANSPORT_ERROR' } }; }
+      if (!cres || cres.success === false) { inFlight = false; var c = draftErrorCode(cres); set({ state: c === 'BLOCKED_CONFLICT' ? 'CONFLICT' : 'SAVE_FAILED', code: c }); return { ok: false, code: c }; }
+      var alreadyCancelled = !!(cres.data && cres.data.already_cancelled);
+      var rb;
+      try { rb = await deps.readback(scope); } catch (e2) { rb = { success: false, error: { code: 'HTTP_TRANSPORT_ERROR' } }; }
+      inFlight = false;
+      var m = draftStateFromReadback(rb, false);
+      var finalState = (m.state === 'NOT_SAVED' || m.state === 'CANCELLED') ? 'CANCELLED' : m.state;
+      // A cancelled Draft is excluded from the active readback → keep the pre-cancel Header/Lines as read-only history.
+      var keepDraft = (m.draft != null) ? m.draft : state.draft;
+      var keepLines = (m.lines && m.lines.length) ? m.lines : state.lines;
+      set({ state: finalState, draft: keepDraft, lines: keepLines, source: 'DB', code: alreadyCancelled ? 'ALREADY_CANCELLED' : null });
+      return { ok: true, cancelled: true, alreadyCancelled: alreadyCancelled };
+    }
+
+    function refresh(scope) { return load(scope); }
+    return { load: load, save: save, cancel: cancel, refresh: refresh, getState: getState };
+  }
+
+  var IRDraftWorkspace = {
+    STATES: IR_DRAFT_STATES,
+    create: createDraftWorkspace,
+    stateFromReadback: draftStateFromReadback,
+    validateSave: draftValidateSave,
+    errorCode: draftErrorCode,
+    headerRouteComplete: draftHeaderRouteComplete,
+    normalizeSignature: draftNormalizeSignature,
+    compareLocalVsDb: draftCompareLocalVsDb,
+    resolveLocalDecision: resolveLocalDecision
+  };
+
+  return { IRCountry: IRCountry, IRWarehouse: IRWarehouse, IRDraft: IRDraft, IRDraftWorkspace: IRDraftWorkspace };
 });

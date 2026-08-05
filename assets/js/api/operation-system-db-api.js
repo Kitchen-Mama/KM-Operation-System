@@ -2662,6 +2662,16 @@ function _kmClassifyBusinessError_(msg) {
     for (var i = 0; i < KM_ALREADY_IN_TARGET_PATTERNS.length; i++) { if (KM_ALREADY_IN_TARGET_PATTERNS[i].test(s)) return 'ALREADY_IN_TARGET_STATE'; }
     return 'BUSINESS_COMMAND_ERROR';
 }
+// C2-D2A-UI: canonical business codes some handlers emit as the LEADING token of the error string
+// (allocation-draft workflow). When present, surface the exact code so the UI maps state by code, never by
+// parsing the message (§12). Weekly command errors do not start with these tokens, so C1 classification is unchanged.
+var KM_CANONICAL_CODES = ['BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PLAN_HEADER_INCOMPLETE',
+    'PLAN_LINE_INCOMPLETE', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'IMMUTABLE_TERMINAL_STATUS', 'SOURCE_AVAILABLE_QTY_EXCEEDED'];
+function _kmExtractCanonicalCode_(msg) {
+    var s = String(msg == null ? '' : msg).trim();
+    for (var i = 0; i < KM_CANONICAL_CODES.length; i++) { if (s.indexOf(KM_CANONICAL_CODES[i]) === 0) return KM_CANONICAL_CODES[i]; }
+    return '';
+}
 function _kmCmdOk_(command, data) { return { success: true, data: Object.assign({ command: command, committed: true }, data || {}), error: null }; }
 function _kmCmdErr_(command, code, message, details) {
     return { success: false, data: null, error: { code: code || 'BUSINESS_COMMAND_ERROR', message: String(message == null ? code : message), details: (details == null ? { command: command } : Object.assign({ command: command }, details)) } };
@@ -2683,7 +2693,11 @@ async function _kmWeeklyCommand_(command, payload) {
     var trimmed = String(text || '').trim();
     if (trimmed.charCodeAt(0) !== 123) return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Non-JSON response from Web App', { snippet: trimmed.slice(0, 80) });   // 123 = open-brace char code (JSON object start)
     var json; try { json = JSON.parse(trimmed); } catch (pe) { return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Malformed JSON response', { snippet: trimmed.slice(0, 80) }); }
-    if (!json.success) return _kmCmdErr_(command, _kmClassifyBusinessError_(json.error), json.error || (command + ' failed'));
+    if (!json.success) {
+        var _canon = _kmExtractCanonicalCode_(json.error);
+        // Preserve the handler's structured data (e.g. conflictIds) into error.details so the UI can render it.
+        return _kmCmdErr_(command, _canon || _kmClassifyBusinessError_(json.error), json.error || (command + ' failed'), (json.data && typeof json.data === 'object') ? json.data : null);
+    }
     return _kmCmdOk_(command, json.data);   // COMMITTED — the page performs the single readback via the active path
 }
 

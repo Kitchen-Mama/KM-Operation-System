@@ -2261,12 +2261,95 @@ function _clearAllocationDraft() {
     window.KM.shippingAllocationDraft = replenAllocationDraft;
     try { sessionStorage.removeItem(REPLEN_ALLOC_DRAFT_KEY); } catch (e) {}
 }
+// ===== C2-D2A-UI: Allocation Draft persistence UI workspace (truthful state machine + targeted readback) =====
+// One controller (IRDraftWorkspace, inventory-compat.js — deps-injected) owns the canonical persistence state; the
+// compact panel renders ONLY from committed DB acknowledgements + the targeted readback
+// (getShippingAllocationDraftWorkspace) — never from toast text and never via a whole-DB reload.
+var _allocWorkspace = null;
+function _allocWorkspaceScope() {
+    var ctx = _replenCtx() || {};
+    return { planning_cycle: ctx.planning_cycle || ctx.planningCycle || '', company: ctx.company || '', country: ctx.country || '', marketplace: ctx.marketplace || '', source_page: 'inventory_replenishment' };
+}
+function _getAllocWorkspace() {
+    if (_allocWorkspace) return _allocWorkspace;
+    if (!(window.IRDraftWorkspace && window.KM && window.KM.DB && window.KM.DB.getShippingAllocationDraftWorkspace)) return null;
+    _allocWorkspace = window.IRDraftWorkspace.create({
+        readback: function (scope) { return window.KM.DB.getShippingAllocationDraftWorkspace(scope); },
+        save: function (header) { return window.KM.DB.upsertShippingAllocationDraft(header); },
+        saveLines: function (payload) { return window.KM.DB.upsertShippingAllocationDraftLines(payload); },
+        cancel: function (payload) { return window.KM.DB.cancelShippingAllocationDraft(payload); },
+        onState: _renderAllocDraftPanel,
+        getLocalBuffer: function () { try { return !!sessionStorage.getItem(REPLEN_ALLOC_DRAFT_KEY); } catch (e) { return false; } }
+    });
+    return _allocWorkspace;
+}
+function _allocStateLabel(state) {
+    var map = { NOT_SAVED: 'Not Saved', SAVING: 'Saving…', SAVED: 'Saved to DB', SAVE_FAILED: 'Save Failed', CONFLICT: 'Conflict', CANCELLED: 'Cancelled', SUBMITTED: 'Submitted' };
+    return '● ' + (map[state] || state);   // glyph + text (non-color indicator, accessibility)
+}
+function _ensureAllocDraftPanel() {
+    var el = document.getElementById('alloc-draft-persistence-panel');
+    if (el) return el;
+    var host = document.getElementById('inventory-replenishment') || document.querySelector('.inventory-replenishment') || document.body;
+    if (!host) return null;
+    el = document.createElement('div');
+    el.id = 'alloc-draft-persistence-panel';
+    el.className = 'alloc-draft-panel';
+    el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+    host.insertBefore(el, host.firstChild);
+    return el;
+}
+// Truthful persistence panel — renders from the controller state snapshot only (never from toast text).
+function _renderAllocDraftPanel(s) {
+    var el = _ensureAllocDraftPanel(); if (!el) return;
+    var draftId = (s.draft && (s.draft.allocation_draft_id || s.draft.allocationDraftId)) || '—';
+    var version = (s.draft && (s.draft.draft_version || s.draft.draftVersion)) || '—';
+    var when = s.savedAt || '—';
+    var source = s.source === 'DB' ? 'Database' : 'Local Recovery';
+    var conflict = (s.conflictIds && s.conflictIds.length) ? (' [' + s.conflictIds.join(', ') + ']') : '';
+    var issues = (s.issues && s.issues.length) ? s.issues.map(function (i) { return String(i.code) + (i.missing ? (': ' + i.missing.join('/')) : (i.routeContexts ? (': ' + i.routeContexts.length + ' routes') : '')); }).join('; ') : '';
+    el.setAttribute('data-alloc-state', s.state);
+    var html = '<div class="alloc-draft-panel__row"><span class="alloc-draft-panel__label">Status</span>' +
+        '<span class="alloc-draft-panel__badge alloc-draft-panel__badge--' + String(s.state).toLowerCase() + '">' + _allocStateLabel(s.state) + conflict + '</span></div>' +
+        '<div class="alloc-draft-panel__row"><span>Draft</span><span>' + draftId + '</span></div>' +
+        '<div class="alloc-draft-panel__row"><span>Version</span><span>' + version + '</span></div>' +
+        '<div class="alloc-draft-panel__row"><span>Last DB confirmation</span><span>' + when + '</span></div>' +
+        '<div class="alloc-draft-panel__row"><span>Source</span><span>' + source + '</span></div>';
+    if (issues) html += '<div class="alloc-draft-panel__issues">' + issues + '</div>';
+    if (s.code === 'WRITE_COMMITTED_READBACK_FAILED') html += '<div class="alloc-draft-panel__issues">已寫入資料庫，正在重新確認狀態 <button type="button" onclick="_allocDraftRefresh()">Retry Readback</button></div>';
+    if (s.state === 'SAVED' && s.draft && (s.draft.allocation_draft_id || s.draft.allocationDraftId)) {
+        html += '<div class="alloc-draft-panel__row"><button type="button" class="alloc-draft-cancel-btn" onclick="_allocDraftCancel()">Cancel Draft</button></div>';
+    }
+    el.innerHTML = html;
+}
+function _allocDraftRefresh() { var ws = _getAllocWorkspace(); if (ws) ws.refresh(_allocWorkspaceScope()); }
+window._allocDraftRefresh = _allocDraftRefresh;
+function _allocDraftCancel() {
+    var ws = _getAllocWorkspace(); if (!ws) return;
+    var st = ws.getState();
+    var draftId = (st.draft && (st.draft.allocation_draft_id || st.draft.allocationDraftId)) || '';
+    var lineCount = (st.lines && st.lines.length) || 0;
+    var okGo = false;
+    try { okGo = window.confirm('Cancel Allocation Draft ' + draftId + '?\nScope: ' + JSON.stringify(_allocWorkspaceScope()) + '\nLines: ' + lineCount + '\nCancellation preserves history and cannot be edited afterward.'); } catch (e) { okGo = false; }
+    if (!okGo) return;
+    var reason = ''; try { reason = window.prompt('Cancel reason (optional):') || ''; } catch (e) { reason = ''; }
+    ws.cancel(_allocWorkspaceScope(), { reason: reason });
+}
+window._allocDraftCancel = _allocDraftCancel;
+// Initial targeted load for the current scope (ONE request; stale-guarded inside the controller). Never getOperationDb.
+function _allocDraftInitialLoad() {
+    var ws = _getAllocWorkspace();
+    if (ws && typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) ws.load(_allocWorkspaceScope());
+}
+window._allocDraftInitialLoad = _allocDraftInitialLoad;
+
 // Restore the working draft. SSOT = DB (Round 4 Decision E): try DB hydrate for the current scope
 // first (DB wins); sessionStorage is only a recovery cache used when the DB has nothing / is not
 // configured (headless). Never let a stale cache overwrite a successful DB load.
 function _restoreAllocationDraftFromSession() {
     try {
         var ctx = _replenCtx();
+        if (typeof _allocDraftInitialLoad === 'function') { try { _allocDraftInitialLoad(); } catch (e) {} }   // C2-D2A-UI: truthful targeted readback + persistence panel
         if (ctx && (ctx.country || ctx.marketplace) && typeof _hydrateAllocationDraftFromDb === 'function') {
             if (_hydrateAllocationDraftFromDb(ctx)) return;   // DB SSOT loaded → do not overlay the cache
         }

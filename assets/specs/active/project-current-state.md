@@ -3281,3 +3281,20 @@ Tests: allocation-draft-runtime-c2d2 29/0; full suite 78/78 files green; C1 28/0
 ```
 
 - **Files (C2-D2):** `16_shipping_allocation_handlers.gs` (K3 resolver + BLOCKED_CONFLICT + targeted readback + whole-Draft cancel — `APPS_SCRIPT_SYNC_REQUIRED` + **new deployment version** for the doPost readback/cancel actions), `01_router.gs` (2 thin actions — `APPS_SCRIPT_SYNC_REQUIRED`), `assets/js/api/operation-system-db-api.js` + `assets/js/utils/inventory-compat.js` + `assets/js/pages/inventory-replenishment.js` (C1 adapters + readback adapter + multi-route block — `FRONTEND_GITHUB_PAGES_REQUIRED`), `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` §9 (DOCUMENTATION_ONLY), NEW `assets/tests/allocation-draft-runtime-c2d2.test.js` (GIT_ONLY), this entry. **`BUNDLE_REBUILD_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed. **Submit → Weekly Plan handoff remains forward (HALTed).**
+
+## Allocation Draft UI workflow — truthful persistence state machine + targeted readback + cancel wiring (Round C2-D2A-UI) FRONTEND SOURCE + TEST-VERIFIED, NOT LIVE-VERIFIED (2026-08-05)
+
+Completes the C2-D2 UI gaps. **Frontend-only + one C1-runner response-contract correction; no `.gs` handler/router change, no schema change, no Submit, no whole-DB reload, no live DB access, no push/deploy.**
+
+```text
+State machine (IRDraftWorkspace, inventory-compat.js — pure, DOM-free, deps-injected, Node-tested): NOT_SAVED/SAVING/SAVED/SAVE_FAILED/CONFLICT/CANCELLED/SUBMITTED (+ LOADING_DRAFT). State from committed ack + targeted readback, never toast text.
+Save: validate (multi-route→header→line) → SAVING (double-click IN_FLIGHT) → adapter → exactly ONE getShippingAllocationDraftWorkspace readback → SAVED (id/version/timestamp/Saved to DB). Committed+readback-failed → stays SAVED + WRITE_COMMITTED_READBACK_FAILED (Retry Readback; never resends). recommended_qty + line ids pass through.
+Load/Refresh: one targeted readback per K3 scope; stale-load seq-guarded; NO_ACTIVE_DRAFT→NOT_SAVED, ACTIVE→DB status, BLOCKED_CONFLICT→CONFLICT (no guessed draft). Never getOperationDb/loadOperationDb.
+Cancel: gated control (eligible SAVED) + confirm (id/scope/lines) → one cancelShippingAllocationDraft → one readback → CANCELLED (Header/Lines kept as history); repeat benign ALREADY_CANCELLED; no delete.
+Local recovery: sessionStorage = unsaved buffer; compareLocalVsDb → DIFFERENT → explicit Use DB (default)/Restore Local/Review; restore→NOT_SAVED, no write, no merge; SUBMITTED/CANCELLED never overwritten (DB_TERMINAL_LOCKED).
+Adapter correction (§16-justified): _kmWeeklyCommand_ now surfaces canonical leading-token codes (BLOCKED_CONFLICT/PLAN_HEADER_INCOMPLETE/PLAN_LINE_INCOMPLETE/MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1/NO_ACTIVE_DRAFT/IMMUTABLE_TERMINAL_STATUS/…) + preserves conflictIds into error.details (C1 Weekly behavior unchanged).
+Legacy Submit Plan: classified as legacy/manual Shipping-Plan creation, kept separate, not wired to any Draft submit; workspace exposes NO submit; page never marks a Draft submitted from local. DB-authoritative Submit remains HALTed.
+Tests: allocation-draft-ui-c2d2a 36/0; full suite 79/79 files green; C1 28/0; Golden 39/1/0; #34 Pending.
+```
+
+- **Files (C2-D2A-UI):** `assets/js/utils/inventory-compat.js` (IRDraftWorkspace state machine + orchestration — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/pages/inventory-replenishment.js` (controller wiring + truthful persistence panel + cancel/refresh + initial targeted load — `FRONTEND_GITHUB_PAGES_REQUIRED`), `assets/js/api/operation-system-db-api.js` (canonical-code + conflictIds response-contract correction — `FRONTEND_GITHUB_PAGES_REQUIRED`), `docs/planning/ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` §10 (DOCUMENTATION_ONLY), NEW `assets/tests/allocation-draft-ui-c2d2a.test.js` + updated `km-weekly-command-reliability.test.js` (GIT_ONLY), this entry. **No `APPS_SCRIPT_SYNC_REQUIRED`; `BUNDLE_REBUILD_REQUIRED=false`.** The persistence panel self-injects via JS (no CSS added — functional, unstyled; optional CSS is a follow-up). Not pushed, not deployed, no live DB accessed.
