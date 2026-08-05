@@ -43,6 +43,26 @@ window.toggleSidebar = toggleSidebar;
 // ========================================
 // Homepage - 已搬移至 pages/home.js
 // ========================================
+
+// Centralized owner of the shared Home shell (Round 2 top-gap fix). The Home shell = the #home-mount WRAPPER, the
+// world-time bar, and the injected #home-section. On every non-Home page the ENTIRE wrapper must leave layout —
+// hiding only the inner #home-section left #home-mount in normal flow (it is never :empty; it holds #home-section),
+// which exposed the Home goal-card cream gradient (home.css .goal-container #fff7ed→#ffedd5) as a strip between the
+// header and the active page. Uses the native `hidden` attribute (guarantees display:none via the scoped
+// `[hidden]` rule in layout.css, which also beats author rules like `.world-time-bar { display:flex }`), and clears
+// any stale inline `display` so the attribute is authoritative. Every node is null-guarded (partial-loaded/optional).
+function setHomeShellVisible(isVisible) {
+    ['home-mount', 'world-time-bar', 'home-section'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.hidden = !isVisible;
+        el.style.display = '';   // drop any legacy inline display so `hidden` (not an inline style) governs layout
+    });
+    var mount = document.getElementById('home-mount');
+    if (mount) mount.setAttribute('aria-hidden', String(!isVisible));
+}
+window.setHomeShellVisible = setHomeShellVisible;
+
 // 區塊切換函式
 function showSection(section) {
     // TEMP Phase-2 disable: Overseas Inbound / Overseas Outbound sidebar nav is intentionally
@@ -55,15 +75,10 @@ function showSection(section) {
     }
 
     // ---- Normalize the shared shell BEFORE mounting the next page (UI lifecycle ownership) --------------
-    // The global shell owns the header, sidebar, content viewport, world-time bar and the Home mount; a page
-    // must never inherit stale shell state. EVERY reset below is null-guarded so a missing shell node can never
-    // throw mid-normalize and abort showSection — an abort would leave a previous section still `.active`, which
-    // then stacks in the content flow between the header and the new page (the persistent top gap). No colours,
-    // margins, offsets or overflow tricks — this only clears leftover layout ownership.
-    var _homeSection = document.getElementById('home-section');
-    if (_homeSection) _homeSection.style.display = 'none';               // Home is not a .module-section — hide explicitly
-    var _worldBar = document.getElementById('world-time-bar');
-    if (_worldBar) _worldBar.style.display = 'none';                     // world-time bar is Home-only shell chrome
+    // Remove the ENTIRE Home shell (mount wrapper + world-time bar + section) from layout — not just its inner
+    // children — so no Home wrapper stays in flow between the header and the active page. Then clear `.active`
+    // from every section so exactly one page owns layout space. No colours/margins/offsets/overflow tricks.
+    setHomeShellVisible(false);
     document.querySelectorAll('.module-section').forEach(function (sec) { sec.classList.remove('active'); });
     
     // 呼叫生命週期切換（如果已註冊）

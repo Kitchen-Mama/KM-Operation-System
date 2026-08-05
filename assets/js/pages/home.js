@@ -96,10 +96,9 @@ function showHome() {
     // Home markup is partial-loaded (Phase 1); ensure it exists, then show. Null-guarded so an
     // early click (before the partial resolves) cannot crash — markup re-renders when ready.
     _ensureHomeMarkup().then(function() {
-        var home = document.getElementById('home-section');
-        if (home) home.style.display = 'block';
-        var bar = document.getElementById('world-time-bar');
-        if (bar) bar.style.display = 'flex';
+        // Restore the ENTIRE Home shell (mount wrapper + world-time bar + section) — the exact mirror of
+        // setHomeShellVisible(false) in showSection, so Home ⇄ page navigation is symmetric and idempotent.
+        if (window.setHomeShellVisible) window.setHomeShellVisible(true);
         document.querySelectorAll('.module-section').forEach(sec => sec.classList.remove('active'));
         document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
         renderHomepage();
@@ -239,6 +238,7 @@ if (window.KM && window.KM.lifecycle) {
             // Ensure partial markup is injected before rendering (Phase 1). renderHomepage is
             // itself null-guarded, so the worst case (load failure) is an empty home, not a crash.
             _ensureHomeMarkup().then(function() {
+                if (window.setHomeShellVisible) window.setHomeShellVisible(true);   // canonical Home entry restores the shell
                 renderHomepage();
             });
         },

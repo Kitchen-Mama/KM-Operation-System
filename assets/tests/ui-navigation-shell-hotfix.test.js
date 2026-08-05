@@ -1,108 +1,110 @@
-// Kitchen Mama Operation System — Persistent Top-Gap navigation hotfix guard (UI lifecycle).
+// Kitchen Mama Operation System — Home-shell layout-ownership hotfix guard (UI navigation, Round 2).
 // Run: node assets/tests/ui-navigation-shell-hotfix.test.js
 // -----------------------------------------------------------------------------
-// The SPA renders every page into a shared shell (header + sidebar + main-content viewport). A page must never
-// leave stale shell state (a still-`active` section, an un-hidden Home region, or an empty note that keeps height)
-// between the header and the active page content. This guard proves the lifecycle-ownership hotfix WITHOUT relying
-// on a browser layout engine (none exists in this Node test env, per the round's §8 fallback): it (1) source-scans
-// the exact fix into `app.js` + `layout.css` and proves NO masking hack was used, and (2) exercises the two
-// invariants the fix guarantees on a tiny fake DOM: shell normalization is throw-safe, and empty note/regions
-// collapse while populated ones do not. No Sheet/DB/API, no network, no writes.
+// The persistent pale-cream top strip on non-Home pages was the Home shell WRAPPER (#home-mount) staying in the
+// main-content flow: hiding only the inner #home-section left #home-mount (never :empty) participating in layout and
+// exposing the Home goal-card cream gradient (home.css .goal-container #fff7ed→#ffedd5). Round 1's
+// `#home-mount:empty { display:none }` could never match and was ineffective.
+//
+// The fix: a single owner setHomeShellVisible(isVisible) that toggles the native `hidden` attribute on the WHOLE
+// shell (#home-mount + #world-time-bar + #home-section) — showSection(false) / showHome(true) — backed by a scoped
+// `[hidden] { display:none !important }` rule (authoritative even over `.world-time-bar { display:flex }`).
+//
+// No browser layout engine exists in this Node env (round §8 fallback): this guard (1) EXECUTES the real
+// setHomeShellVisible extracted from app.js against a fake DOM and asserts the `hidden` contract, and (2) source-scans
+// that the fix is wired end-to-end, the ineffective :empty rule is gone, and NO masking hack was used.
 
 'use strict';
 var fs = require('fs');
 var path = require('path');
 function read(rel) { return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8'); }
-// strip comments so source-scans assert on real CODE/CSS, not prose
-function code(src) { return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1'); }
+function stripComments(src) { return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1'); }
 
 var APP = read('js/app.js');
-var APP_CODE = code(APP);
-var CSS = read('css/layout.css');
-var CSS_CODE = code(CSS);
+var APP_CODE = stripComments(APP);
+var HOME = stripComments(read('js/pages/home.js'));
+var CSS = stripComments(read('css/layout.css'));
 
 var fail = 0, pass = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 // =====================================================================================================
-section('A. showSection normalizes the shared shell throw-safely (no stale section can stack)');
-// The world-time bar hide MUST be null-guarded — an unguarded getElementById(...).style would throw when the node
-// is absent and abort showSection before `.active` is cleared, leaving the previous section stacked in the flow.
-ok(!/getElementById\('world-time-bar'\)\.style/.test(APP_CODE),
-  'A1 world-time-bar is NOT dereferenced unguarded (no getElementById("world-time-bar").style.* that can throw)');
-ok(/var _worldBar = document\.getElementById\('world-time-bar'\);\s*if \(_worldBar\)/.test(APP_CODE),
-  'A2 world-time-bar hide is null-guarded (missing node cannot abort shell normalization)');
-ok(/var _homeSection = document\.getElementById\('home-section'\);\s*if \(_homeSection\)/.test(APP_CODE),
-  'A3 Home section hide stays null-guarded (Home is not a .module-section; hidden explicitly)');
-ok(/querySelectorAll\('\.module-section'\)\.forEach\([\s\S]*?classList\.remove\('active'\)/.test(APP_CODE),
-  'A4 every .module-section has `active` cleared before the next page mounts (exactly one active section)');
+section('A. setHomeShellVisible is the single owner, wired to both nav directions');
+ok(/function setHomeShellVisible\(isVisible\)/.test(APP_CODE), 'A1 app.js defines setHomeShellVisible(isVisible)');
+ok(/el\.hidden = !isVisible/.test(APP_CODE), 'A2 it toggles the native `hidden` attribute (not a child-only display)');
+ok(/'home-mount'[\s\S]{0,60}'world-time-bar'[\s\S]{0,60}'home-section'/.test(APP_CODE), 'A3 it targets the WHOLE shell (home-mount + world-time-bar + home-section)');
+ok(/setHomeShellVisible\(false\)/.test(APP_CODE), 'A4 showSection() removes the Home shell via setHomeShellVisible(false)');
+ok(/setHomeShellVisible\(true\)/.test(HOME), 'A5 showHome() restores the Home shell via setHomeShellVisible(true)');
+ok(!/getElementById\('world-time-bar'\)\.style/.test(APP_CODE) && !/getElementById\('home-section'\)\.style\.display\s*=/.test(APP_CODE),
+  'A6 no leftover child-only inline display writes fighting the attribute in showSection');
 
-section('B. layout.css collapses EMPTY shared note/notification regions (never masks real banners)');
-ok(/:empty\s*\{\s*display:\s*none/.test(CSS_CODE) || /:empty,[\s\S]*\{\s*display:\s*none/.test(CSS_CODE),
-  'B1 an :empty → display:none collapse rule exists (empty region reserves zero layout space)');
-['\\.srd-note:empty', '\\.crc-note:empty', '\\.procurement-page__note:empty', '#home-mount:empty'].forEach(function (sel) {
-  ok(new RegExp(sel).test(CSS_CODE), 'B2 collapse covers ' + sel.replace(/\\\\/g, ''));
-});
-// :empty only matches when there are NO child nodes, so a banner WITH a message is never collapsed — proven in D.
+section('B. layout.css makes `hidden` authoritative + drops the ineffective :empty rule');
+ok(/#home-mount\[hidden\][\s\S]*?display:\s*none\s*!important/.test(CSS), 'B1 #home-mount[hidden] → display:none !important (beats author display rules)');
+ok(/#world-time-bar\[hidden\]/.test(CSS) && /#home-section\[hidden\]/.test(CSS), 'B2 world-time-bar + home-section [hidden] covered (e.g. .world-time-bar{display:flex})');
+ok(!/#home-mount:empty/.test(CSS), 'B3 the ineffective #home-mount:empty rule is REMOVED (not left as misleading dead protection)');
+ok(/\.srd-note:empty/.test(CSS) && /\.crc-note:empty/.test(CSS), 'B4 legitimate note :empty collapses kept (containers that can actually become empty)');
 
-section('C. No forbidden "appearance-masking" fix was introduced (fix ownership, not paint)');
-ok(!/background:\s*white\s*!important/i.test(CSS_CODE) && !/background:\s*#fff\w*\s*!important/i.test(CSS_CODE),
-  'C1 no global background:white !important mask');
-ok(!/margin-top:\s*-|margin:\s*-|top:\s*-\d/.test(CSS_CODE.split('World Time Bar')[0].split('safety net')[1] || ''),
-  'C2 no negative-margin / negative-offset hack in the hotfix region');
-ok(!/overflow:\s*hidden/.test((CSS_CODE.split('safety net')[1] || '').split('World Time Bar')[0] || ''),
-  'C3 no overflow:hidden masking in the hotfix region');
-ok(!/position:\s*absolute/.test((CSS_CODE.split('safety net')[1] || '').split('World Time Bar')[0] || ''),
-  'C4 no absolute-position overlay hiding in the hotfix region');
+section('C. No appearance-masking hack (fix ownership, not paint)');
+var hotfixRegion = (CSS.split('Home shell layout ownership')[1] || '').split('World Time Bar')[0] || '';
+ok(!/background:\s*(white|#fff\w*)\s*!important/i.test(CSS), 'C1 no global background:white !important mask');
+ok(!/margin[^:]*:\s*-|top:\s*-\d/.test(hotfixRegion), 'C2 no negative margin/offset in the hotfix region');
+ok(!/overflow:\s*hidden/.test(hotfixRegion) && !/position:\s*absolute/.test(hotfixRegion), 'C3 no overflow:hidden / absolute-overlay masking in the hotfix region');
 
 // =====================================================================================================
-section('D. Invariants on a fake DOM (throw-safe normalize + empty-vs-populated collapse)');
-// Minimal fake element/document — models ONLY what the shell-normalization + :empty contract touch.
-function makeEl(childText) {
-  var cls = {};
-  return {
-    childNodes: (childText == null || childText === '') ? [] : [{ text: childText }],
-    style: {},
-    classList: {
-      _s: cls,
-      add: function (c) { cls[c] = 1; },
-      remove: function (c) { delete cls[c]; },
-      contains: function (c) { return !!cls[c]; }
-    },
-    get isEmpty() { return this.childNodes.length === 0; }
-  };
+section('D. Execute the REAL setHomeShellVisible against a fake DOM (hidden contract)');
+function loadSetHomeShellVisible(doc) {
+  var start = APP.indexOf('function setHomeShellVisible');
+  var marker = 'window.setHomeShellVisible = setHomeShellVisible;';
+  var end = APP.indexOf(marker) + marker.length;
+  var src = APP.slice(start, end);                 // the ACTUAL source, not a re-implementation
+  var win = {};
+  (function (document, window, String, Array) { eval(src); })(doc, win, String, Array);
+  return win.setHomeShellVisible;
 }
-// A section starts "active"; a stale previous section must be de-activated by normalize().
-var prevSection = makeEl('old page content'); prevSection.classList.add('active');
-var nextSection = makeEl('new page content');
-var homeSection = makeEl('home'); homeSection.style.display = 'block';
-var sectionsInDom = [prevSection, nextSection];
-// world-time-bar is DELIBERATELY absent to prove the guard (getElementById returns null for it).
-var fakeDoc = {
-  getElementById: function (id) { return id === 'home-section' ? homeSection : (id === 'world-time-bar' ? null : null); },
-  querySelectorAll: function (sel) { return sel === '.module-section' ? sectionsInDom : []; }
-};
-// Mirror of app.js showSection's guarded shell-reset (the code proven present in A):
-function normalizeShell(doc) {
-  var hs = doc.getElementById('home-section'); if (hs) hs.style.display = 'none';
-  var wb = doc.getElementById('world-time-bar'); if (wb) wb.style.display = 'none';
-  doc.querySelectorAll('.module-section').forEach(function (s) { s.classList.remove('active'); });
+function makeEl() { return { hidden: false, style: { display: 'block' }, attrs: {}, setAttribute: function (k, v) { this.attrs[k] = v; } }; }
+function makeDoc(withWorldBar) {
+  var els = { 'home-mount': makeEl(), 'home-section': makeEl() };
+  if (withWorldBar) els['world-time-bar'] = makeEl();
+  return { els: els, getElementById: function (id) { return Object.prototype.hasOwnProperty.call(els, id) ? els[id] : null; } };
 }
+var doc = makeDoc(true);
+var setHomeShellVisible = loadSetHomeShellVisible(doc);
+ok(typeof setHomeShellVisible === 'function', 'D0 real setHomeShellVisible extracted + evaluated');
+
+// Non-Home navigation → the WHOLE shell leaves layout.
+setHomeShellVisible(false);
+ok(doc.els['home-mount'].hidden === true, 'D1 #home-mount.hidden === true after non-Home navigation (wrapper leaves layout)');
+ok(doc.els['world-time-bar'].hidden === true && doc.els['home-section'].hidden === true, 'D2 world-time-bar + home-section also hidden');
+ok(doc.els['home-mount'].style.display === '', 'D3 stale inline display cleared so `hidden` governs');
+ok(doc.els['home-mount'].attrs['aria-hidden'] === 'true', 'D4 aria-hidden mirrors the hidden state');
+
+// Return Home → restored exactly.
+setHomeShellVisible(true);
+ok(doc.els['home-mount'].hidden === false && doc.els['world-time-bar'].hidden === false && doc.els['home-section'].hidden === false, 'D5 Home shell restored (hidden === false) after showHome');
+ok(doc.els['home-mount'].attrs['aria-hidden'] === 'false', 'D6 aria-hidden restored to false');
+
+// Three Home → non-Home → Home cycles are idempotent (no accumulated state).
+for (var i = 0; i < 3; i++) { setHomeShellVisible(false); setHomeShellVisible(true); }
+ok(doc.els['home-mount'].hidden === false, 'D7 three navigation cycles are idempotent (ends visible, no accumulation)');
+setHomeShellVisible(false);
+ok(doc.els['home-mount'].hidden === true, 'D8 idempotent hide (still exactly hidden after repeated cycles)');
+
+// Missing optional world-time node must not throw.
+var doc2 = makeDoc(false);   // no #world-time-bar
+var setHSV2 = loadSetHomeShellVisible(doc2);
 var threw = false;
-try { normalizeShell(fakeDoc); } catch (e) { threw = true; }
-ok(!threw, 'D1 normalize does NOT throw when a shell node (world-time-bar) is absent');
-ok(homeSection.style.display === 'none', 'D2 Home region hidden during normalize');
-ok(!prevSection.classList.contains('active'), 'D3 stale previous section de-activated (cannot stack above next page)');
-ok(sectionsInDom.filter(function (s) { return s.classList.contains('active'); }).length === 0,
-  'D4 after normalize no section is active (caller then activates exactly one)');
-// :empty contract — an empty note has zero child nodes; a populated one does not.
-var emptyNote = makeEl('');
-var realBanner = makeEl('⚠ Couldn’t load data. Retry');
-ok(emptyNote.isEmpty === true, 'D5 empty note IS :empty → the collapse rule applies (zero layout space)');
-ok(realBanner.isEmpty === false, 'D6 populated banner is NOT :empty → the collapse rule NEVER hides a real message');
+try { setHSV2(false); } catch (e) { threw = true; }
+ok(!threw, 'D9 missing optional world-time-bar node does not throw');
+ok(doc2.els['home-mount'].hidden === true && doc2.els['home-section'].hidden === true, 'D10 the present shell nodes are still hidden when an optional node is absent');
+
+section('E. Legitimate banner is never collapsed (contract)');
+// :empty matches only with zero child nodes — a populated note has content, so it is never hidden.
+function isEmptyNode(childNodes) { return childNodes.length === 0; }
+ok(isEmptyNode([]) === true, 'E1 an empty note IS :empty → collapses (zero layout space)');
+ok(isEmptyNode([{ text: '⚠ Couldn’t load data. Retry' }]) === false, 'E2 a populated warning/error banner is NOT :empty → always preserved');
 
 // =====================================================================================================
 console.log('\n----------------------------------------');
-console.log('UI NAV SHELL HOTFIX GUARD: ' + pass + ' passed, ' + fail + ' failed');
+console.log('HOME SHELL HOTFIX GUARD (Round 2): ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { process.exitCode = 1; }

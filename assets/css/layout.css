@@ -327,14 +327,23 @@
 }
 
 /* ========================================================================
-   UI lifecycle safety net — persistent top-gap hotfix (fix lifecycle ownership,
-   not appearance). A shared / global note or notification region must occupy
-   ZERO layout space when it holds no message. `:empty` matches ONLY when the
-   element has no child nodes, so a populated (real) warning / error / demo
-   banner is NEVER hidden — this collapses leftover EMPTY containers WITHOUT any
-   colour override, negative margin, absolute overlay or overflow trick.
+   Home shell layout ownership — persistent top-gap hotfix (Round 2).
+   On non-Home pages the ENTIRE Home shell must leave layout, not just its inner
+   content. Round 1's `#home-mount:empty { display:none }` was structurally
+   ineffective — #home-mount is never :empty (it holds the injected #home-section),
+   so it stayed in flow and exposed the Home goal-card cream gradient as a top
+   strip. showSection() now sets the native `hidden` attribute on the shell nodes;
+   this rule makes `hidden` AUTHORITATIVE even over author display rules (notably
+   `.world-time-bar { display:flex }`, which would otherwise defeat native hidden).
+   No colour override, negative margin, absolute overlay or overflow trick.
    ======================================================================== */
-#home-mount:empty { display: none; }
+#home-mount[hidden],
+#world-time-bar[hidden],
+#home-section[hidden] { display: none !important; }
+
+/* Legitimate note / notification regions collapse ONLY where their container can
+   actually become empty. `:empty` matches only with zero child nodes, so a
+   populated (real) warning / error / demo banner is NEVER hidden. */
 .srd-note:empty,
 .crc-note:empty,
 .procurement-page__note:empty,
