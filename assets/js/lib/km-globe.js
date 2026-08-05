@@ -96,15 +96,20 @@
     if (!land || !land.rings || !land.rings.length) return null;
     var cv = document.createElement('canvas'); cv.width = tw; cv.height = th;
     var ctx = cv.getContext('2d'); if (!ctx) return null;
-    // Ocean base (deep→mid blue vertical gradient for a little depth).
+    // Ocean base — richer multi-stop vertical gradient (deep polar water → brighter tropical band → deep) for a
+    // cleaner sense of depth. Same 2048×1024 dimensions → texture memory unchanged (UI-GLOBE-01, visual only).
     var g = ctx.createLinearGradient(0, 0, 0, th);
-    g.addColorStop(0, '#0b2f52'); g.addColorStop(0.5, '#12507f'); g.addColorStop(1, '#0b2f52');
+    g.addColorStop(0.00, '#071f39'); g.addColorStop(0.22, '#0e3e6b'); g.addColorStop(0.50, '#155a8c');
+    g.addColorStop(0.78, '#0e3e6b'); g.addColorStop(1.00, '#071f39');
     ctx.fillStyle = g; ctx.fillRect(0, 0, tw, th);
     function px(lng) { return (lng + 180) / 360 * tw; }
     function py(lat) { return (90 - lat) / 180 * th; }
-    // Land fill.
-    ctx.fillStyle = '#3f7a43';               // natural green land
-    ctx.strokeStyle = 'rgba(30,70,40,0.9)';  // low-contrast coastline
+    // Land — subtle vertical gradient (a touch lighter toward the top) for a hint of relief depth + a softer,
+    // lower-contrast coastline for cleaner land/water separation. Purely cosmetic; no coordinates/geometry change.
+    var lg = ctx.createLinearGradient(0, 0, 0, th);
+    lg.addColorStop(0.00, '#4c8a4f'); lg.addColorStop(0.50, '#3f7a43'); lg.addColorStop(1.00, '#356b3a');
+    ctx.fillStyle = lg;                          // natural green land (mid-tone unchanged)
+    ctx.strokeStyle = 'rgba(28,64,38,0.7)';      // softer, low-contrast coastline
     ctx.lineWidth = Math.max(1, tw / 2048);
     ctx.lineJoin = 'round';
     land.rings.forEach(function (ring) {
@@ -157,7 +162,10 @@
   }
 
   var VS_SPHERE = 'attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;uniform mat4 uMVP;uniform mat4 uMV;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){gl_Position=uMVP*vec4(aPos,1.0);vUV=aUV;vN=mat3(uMV)*aNormal;vView=-(uMV*vec4(aPos,1.0)).xyz;}';
-  var FS_SPHERE = 'precision mediump float;uniform sampler2D uTex;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){vec3 n=normalize(vN);vec3 v=normalize(vView);vec3 l=normalize(vec3(0.35,0.25,1.0));float diff=max(dot(n,l),0.0);float shade=0.62+0.5*diff;vec4 tex=texture2D(uTex,vUV);vec3 col=tex.rgb*shade;float rim=pow(1.0-max(dot(n,v),0.0),3.0);col+=vec3(0.10,0.16,0.30)*rim;gl_FragColor=vec4(col,1.0);}';
+  // UI-GLOBE-01 (visual only): softer lighting (higher ambient floor, gentler diffuse → less harsh terminator)
+  // and a wider, bluer — but still subtle, edge-only — rim/atmosphere. CONSTANT-ONLY changes; the shader
+  // structure, attributes and uniforms are byte-for-byte identical to before (no new terms/uniforms).
+  var FS_SPHERE = 'precision mediump float;uniform sampler2D uTex;varying vec2 vUV;varying vec3 vN;varying vec3 vView;void main(){vec3 n=normalize(vN);vec3 v=normalize(vView);vec3 l=normalize(vec3(0.35,0.25,1.0));float diff=max(dot(n,l),0.0);float shade=0.66+0.42*diff;vec4 tex=texture2D(uTex,vUV);vec3 col=tex.rgb*shade;float rim=pow(1.0-max(dot(n,v),0.0),2.4);col+=vec3(0.14,0.28,0.50)*rim;gl_FragColor=vec4(col,1.0);}';
   var VS_PTS = 'attribute vec3 aPos;attribute vec4 aColor;attribute float aSize;attribute float aRing;uniform mat4 uMVP;varying vec4 vColor;varying float vRing;void main(){gl_Position=uMVP*vec4(aPos,1.0);gl_PointSize=aSize;vColor=aColor;vRing=aRing;}';
   var FS_PTS = 'precision mediump float;varying vec4 vColor;varying float vRing;void main(){vec2 c=gl_PointCoord-vec2(0.5);float d=length(c);if(d>0.5)discard;vec4 col=vColor;if(d>0.36)col=vec4(1.0,1.0,1.0,1.0);if(vRing>0.5&&d>0.40)col=vec4(1.0,0.82,0.2,1.0);gl_FragColor=col;}';
   var VS_LINE = 'attribute vec3 aPos;attribute vec4 aColor;uniform mat4 uMVP;varying vec4 vColor;void main(){gl_Position=uMVP*vec4(aPos,1.0);vColor=aColor;}';
@@ -291,7 +299,7 @@
         for (var i = 0; i + 1 < world.length; i++) {
           // subdivide each leg along the great circle for a curved, on-surface arc
           var A = norm(world[i]), B = norm(world[i + 1]);
-          var steps = 24;
+          var steps = 40;   // UI-GLOBE-01: smoother great-circle arc (more interpolated points; SAME endpoints/coordinates/routing)
           for (var s = 0; s < steps; s++) {
             var p1 = slerp(A, B, s / steps), p2 = slerp(A, B, (s + 1) / steps);
             arr.push(p1[0] * 1.006, p1[1] * 1.006, p1[2] * 1.006, c[0], c[1], c[2], 1);
