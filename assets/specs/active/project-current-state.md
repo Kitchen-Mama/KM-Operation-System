@@ -3997,4 +3997,33 @@ Exact next slice: page/server wiring per WAREHOUSE destination (issue the existi
   Not pushed, not deployed.
 ```
 
+### Checkpoint — F1-4B-F Live Recommendation Workspace Warehouse Fanout = AUDIT / CONFLICT HALT (2026-08-06)
+```
+F1-4B-F — complete the live read-only wiring (server warehouse fanout + internal calc-month/planning-cycle authority)
+  so Inventory Replenishment can show real recommendation results. §0 mandates audit-first + HALT-on-conflict before
+  edits. Audit found a load-bearing conflict → HALTED. NO page/Apps-Script/router/bundle/core/API/DB/schema change.
+Audit (source-verified):
+  1. recommendation.workspace.get accepts ONE mandatory destinationWarehouseId (42_gs:60,63) — no fanout.
+  2. Demand-allocation rules NOT available in the Apps Script handler (reads only 11 canonical snapshots; the F1-4B-E
+     reader is browser-only KM.DB).
+  3. supply-planning-demand-allocation.js NOT bundled (not in MODULE_ORDER).
+  4. No non-UI calculationMonth/planningCycle authority (F1-4B-D SOURCE_MISSING; no RECOMMENDATION_CALCULATION_MONTH yet).
+  5. MARKETPLACE vs WAREHOUSE need different paths — and ONLY WAREHOUSE has an existing runtime path (THE CONFLICT).
+Conflict (§0 HALT): approved §1.1/§4/§7 require a MARKETPLACE destination (warehouseId=null, no fabricated Amazon
+  warehouse_id) to produce a marketplace-level result via the EXISTING KMPCX/KMAF/KMPS path. But the frozen runtime is
+  warehouse-destination-ONLY: KMPA (production-assembly.js:86) and KMPCX (planning-context.js:66) both require a
+  canonical warehouse_id (MISSING_DESTINATION_WAREHOUSE otherwise). A marketplace-level (warehouse-less) recommendation
+  has NO existing runtime; building one = a new engine/formula (forbidden §4) or a fabricated Amazon warehouse_id
+  (forbidden §1.1). The WAREHOUSE path has NO conflict (resolveScopeWarehouseDemandFacts already feeds the unchanged
+  runtime — proven in F1-4B-E integration test).
+Decision escalated: how to handle MARKETPLACE given the warehouse-only runtime. A (recommended) = implement WAREHOUSE-only
+  live fanout now (bundle the module; server Spreadsheet-ID-gated rule reader; RECOMMENDATION_CALCULATION_MONTH config;
+  planningCycle=RECO-{YYYY-MM}; per-warehouse fanout through the unchanged runtime; additive response identity; scope-only
+  page request; flags default-false), and return a structured honest MARKETPLACE_RECOMMENDATION_NOT_AVAILABLE_PHASE1 for
+  marketplace destinations (no fake). B = authorize a NEW marketplace-level runtime (formula round; contradicts "no second
+  engine"). C = stay dormant. Recommend A.
+Doc: docs/planning/PHASE_F1_4B_F_LIVE_FANOUT_AUDIT.md (call chain + 5 answers + conflict + A/B/C). No code/formula/API/
+  bundle/DB change; no live DB. Full suite unchanged (91 files / 0 failing); Golden 39/1/0; #34 Pending. Not pushed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
