@@ -3847,4 +3847,38 @@ Exact next slice: enabling the recommendation flag in a controlled environment f
   (separately authorized) Coverage/DOS/Projected Inventory, recommendation persistence, and Submit — all out of scope here.
 ```
 
+### Checkpoint — F1-4B-C Inventory Replenishment Recommendation Context UI Refactor (leak removal) = IMPLEMENTED (2026-08-06)
+```
+F1-4B-C — UI-only refactor. The "Recommendation Context" panel (Destination Warehouse / Calculation Month /
+  Planning Cycle + readiness indicator) surfaced in F1-4B-B-PRE was an implementation leak — users must not be
+  asked for Recommendation-Runtime internals. This round REMOVES that panel and makes the context INTERNAL/HIDDEN.
+  NO Runtime/API/Formula/Planning-Context/Recommendation-Engine/Apps-Script/Bundle/DB/Schema/Mapping change.
+HTML: removed the entire .replen-reco-context block (3 controls + status). The page's ONLY scope controls are again
+  Country / Marketplace / LTS Filter / Target Days / Search (original UX restored). No new popup/dialog/drawer/panel.
+CSS: deleted the dead .replen-reco-context* panel styles. Kept .replen-recsum-ws* (Recommendation Summary OUTPUT
+  state styles — not inputs).
+JS: the pure window.IRContext MODEL is RETAINED (frozen decisions unchanged). Replaced the DOM-bound panel wiring with
+  an INTERNAL hidden context: _irInternalContext {destinationWarehouseId, calculationMonth, planningCycle} defaults
+  null; updateReplenRecoContext() now builds the normalized model from scope + the internal inputs (no control read,
+  no status render); _irSetInternalRecommendationContext(ctx) is a NON-UI seam a future scheduler/config uses to supply
+  the runtime context (never the user). Removed panel-only helpers: refreshReplenRecoDestinationOptions,
+  bindReplenRecoContextControls, _irctxRenderStatus, _irctxRestoreFromSession, _irctxPersist, REPLEN_RECO_CONTEXT_KEY.
+  Kept _irctxScope/_irctxEligible/_irctxWarehouses (internal), _irRecoTrigger, and the entire F1-4B-B read cutover
+  (loadRecommendationWorkspace_ / read state / mapping / summary presentation) unchanged — the Runtime still receives
+  destinationWarehouseId/calculationMonth/planningCycle, now ONLY from the internal context via IRContext.toRequestContext.
+Behavior: with no internal populator + flags default-false, the context stays NOT_READY and the workspace is DISABLED,
+  so the Recommendation Summary keeps its honest legacy placeholder (No recommendation generated / AI Pending) until the
+  runtime is truly Ready — exactly as required. No user-facing recommendation-context state is shown.
+Tests: replen-recommendation-context-f1-4b-b-pre.test.js REWRITTEN to F1-4B-C (64 — retained pure-model sections A–H;
+  I internal-context wiring + removed-panel-function deletion + no control refs + no clock/API/whole-DB; J UI removal +
+  original filters restored + Summary intact; K dead panel CSS removed + summary-state CSS retained).
+  replen-recommendation-cutover-f1-4b-b.test.js (54) unchanged + green (read block untouched). FULL SUITE 89 files /
+  0 failing; Golden 39/1/0; #34 Pending.
+Files: inventory-replenishment.html (panel removed), inventory-replenishment.js (internal context refactor),
+  inventory-replenishment.css (dead panel CSS removed) — FRONTEND_GITHUB_PAGES_REQUIRED=true; PRE test rewritten
+  (GIT_ONLY); PHASE_F1_4B_RECOMMENDATION_WORKSPACE_BLOCKER.md §J + this entry (DOCUMENTATION_ONLY).
+No API/Apps-Script/router/Foundation/runtime/formula/bundle/DB/schema change. APPS_SCRIPT_SYNC_REQUIRED=false;
+  BUNDLE_REBUILD_REQUIRED=false. No live DB. Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

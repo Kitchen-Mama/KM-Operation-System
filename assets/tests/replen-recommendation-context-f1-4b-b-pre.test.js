@@ -159,62 +159,56 @@ section('H. Session restore — validated + scope-guarded (never restore an inva
 })();
 
 // =====================================================================================================
-section('I. Source-scan — DOM wiring honors the negative constraints');
+// F1-4B-C — the pure IRContext MODEL above is RETAINED, but the "Recommendation Context" INPUT UI was
+// removed (implementation leak). The context is now INTERNAL/HIDDEN. Sections I–K assert the removal +
+// the internal wiring.
+section('I. Internal context wiring (no UI binding; runtime seam preserved)');
 (function () {
-  // Strip comments so negative scans test CODE, not the explanatory prose (which legitimately names
-  // recommendation.workspace.get / getOperationDb when describing what the code must NOT do).
   function strip(s) { return s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1'); }
-  var wireStart = JS.indexOf('F1-4B-B-PRE DOM wiring');
-  var wireEnd = JS.indexOf('window.bindReplenRecoContextControls = bindReplenRecoContextControls;');
-  ok(wireStart > -1 && wireEnd > wireStart, 'I0 DOM wiring block present + bounded');
+  var wireStart = JS.indexOf('F1-4B-C — Recommendation Context is now INTERNAL');
+  var wireEnd = JS.indexOf('window._irSetInternalRecommendationContext = _irSetInternalRecommendationContext;');
+  ok(wireStart > -1 && wireEnd > wireStart, 'I0 internal-context wiring block present + bounded');
   var wire = strip(JS.slice(wireStart, wireEnd + 120));
-  var codeBlock = strip(BLOCK);
-  var scan = codeBlock + '\n' + wire;
-  // no Recommendation API / Foundation workspace call anywhere the context CODE lives
-  ok(!/getWorkspace\s*\(/.test(scan), 'I1 no KM.api.getWorkspace call in context code');
-  ok(!/\.workspace\.get/.test(scan) && !/executeCommand/.test(scan), 'I2 no workspace action / executeCommand in context code');
-  ok(!/KM\.api\b/.test(scan), 'I3 no KM.api reference in context code');
-  // no new Date() clock default for the calculation month
-  ok(!/new Date\s*\(/.test(scan), 'I4 no new Date() in the context module/wiring (no browser-clock anchor)');
-  // reads the existing cache only — no whole-DB reload / getOperationDb / fetch added
-  ok(/getWarehouses\s*\(/.test(wire) && !/getOperationDb/.test(scan) && !/fetch\s*\(/.test(scan), 'I5 reads getWarehouses cache; no getOperationDb / fetch');
-  // no DB write / no draft persistence in the context code (sessionStorage preference only)
-  ok(!/upsert|appendRow|setValue|importMarketplaceSkusBatch|ShippingAllocationDraft|saveAllocation/i.test(scan), 'I6 no DB write / draft persistence in context code');
-  ok(/sessionStorage\.setItem\(\s*REPLEN_RECO_CONTEXT_KEY/.test(wire) && !/localStorage/.test(scan), 'I7 explicit selection persisted to sessionStorage only (not localStorage)');
-  // no runtime/formula import added to the page
-  ok(!/require\(\s*['"]\.\.\/core\/supply-planning/.test(JS) && !/require\(\s*['"]\.\.\/api\/km-api-foundation/.test(JS), 'I8 no runtime/formula/Foundation module imported into the page');
-  // destination option value is warehouse_id, never the marketplace / display name
-  ok(/escapeReplenHtml\(w\.warehouseId\)/.test(wire), 'I9 destination <option> value = warehouse_id (identity)');
-  ok(!/escapeReplenHtml\(w\.marketplace/.test(wire), 'I10 marketplace is never used as the destination value');
-  // never auto-selects eligible[0]
-  ok(/sel\.value = keep/.test(wire) && !/eligible\[0\]/.test(wire), 'I11 destination never auto-selects eligible[0] (explicit keep-only)');
+  var scan = strip(BLOCK) + '\n' + wire;
+  // the context is INTERNAL: a hidden state object + a non-UI seam; no control element is read/written
+  ok(/_irInternalContext\s*=\s*\{/.test(wire), 'I1 internal hidden context object present');
+  ok(/_irSetInternalRecommendationContext/.test(wire), 'I2 non-UI internal seam supplies the runtime context');
+  ok(!/replenRecoDestination|replenRecoCalcMonth|replenRecoPlanningCycle|replenRecoContextStatus/.test(scan), 'I3 no reference to any removed Recommendation Context control');
+  ok(!/getElementById\('replenReco/.test(JS) && !/document\.getElementById\("replenReco/.test(JS), 'I4 no getElementById for a Recommendation Context control anywhere in the page');
+  // the removed panel helpers are gone
+  ok(!/function refreshReplenRecoDestinationOptions/.test(JS) && !/function bindReplenRecoContextControls/.test(JS) && !/function _irctxRenderStatus/.test(JS) && !/function _irctxRestoreFromSession/.test(JS), 'I5 removed panel functions (options/bind/renderStatus/restore) deleted');
+  ok(!/REPLEN_RECO_CONTEXT_KEY/.test(JS), 'I6 removed the context sessionStorage key (no user-selection persistence)');
+  // the context stays free of runtime/formula/clock — still no API call, no browser clock, no whole-DB
+  ok(!/new Date\s*\(/.test(scan), 'I7 no new Date() in the internal context (no browser-clock anchor)');
+  ok(!/getWorkspace\s*\(|\.workspace\.get|executeCommand/.test(scan), 'I8 the internal-context block itself issues no API/workspace call');
+  ok(!/getOperationDb|fetch\s*\(/.test(scan), 'I9 no whole-DB reload / fetch added');
+  // runtime still receives the three inputs FROM the internal context via the retained model
+  ok(/normalizeRecommendationContext\(/.test(wire) && /_irInternalContext\.destinationWarehouseId/.test(wire) && /_irInternalContext\.calculationMonth/.test(wire) && /_irInternalContext\.planningCycle/.test(wire), 'I10 internal context feeds the retained model (destination/month/cycle) — not user input');
 })();
 
 // =====================================================================================================
-section('J. Source-scan — HTML controls, accessibility, existing filters + placeholders preserved');
+section('J. UI removal — panel gone; original filters restored; Summary intact');
 (function () {
-  ok(/id="replenRecoDestination"/.test(HTML) && /<select id="replenRecoDestination"/.test(HTML), 'J1 destination <select> present');
-  ok(/id="replenRecoCalcMonth"[^>]*type="month"|type="month"[^>]*id="replenRecoCalcMonth"/.test(HTML), 'J2 calculation month uses <input type="month">');
-  ok(/id="replenRecoPlanningCycle"/.test(HTML), 'J3 planning cycle control present');
-  ok(!/id="replenRecoCalcMonth"[^>]*value=/.test(HTML) && !/id="replenRecoPlanningCycle"[^>]*value=/.test(HTML), 'J4 month + cycle start blank (no value= default)');
-  ok(/role="status"[^>]*aria-live="polite"|aria-live="polite"[^>]*role="status"/.test(HTML), 'J5 readiness indicator is role=status + aria-live=polite');
-  ok(/<label for="replenRecoDestination">/.test(HTML) && /<label for="replenRecoCalcMonth">/.test(HTML) && /<label for="replenRecoPlanningCycle">/.test(HTML), 'J6 every control has an associated <label for>');
-  ok((HTML.match(/id="replenRecoDestination"/g) || []).length === 1, 'J7 single destination control (one control set in the partial)');
-  ok(/id="replenCountry"/.test(HTML) && /id="replenMarketplace"/.test(HTML) && /id="replenLTSFilter"/.test(HTML) && /id="replenTargetDays"/.test(HTML), 'J8 existing Country/Marketplace/LTS/TargetDays filters preserved');
-  // controls are nested inside the page control panel, never a direct <body> child
-  ok(/replen-control-panel[\s\S]*replen-reco-context/.test(HTML), 'J9 context block lives inside the page control panel (page-local)');
-  // existing Recommendation Summary placeholders are NOT removed in this round
-  ok(/No recommendation generated/.test(JS) && /AI Pending/.test(JS), 'J10 existing Recommendation Summary placeholders left unchanged');
+  ok(!/replenRecoDestination|replenRecoCalcMonth|replenRecoPlanningCycle|replenRecoContextStatus/.test(HTML), 'J1 no Recommendation Context control in the HTML');
+  ok(!/replen-reco-context/.test(HTML), 'J2 no Recommendation Context panel container in the HTML');
+  ok(!/Recommendation Context/.test(HTML), 'J3 the "Recommendation Context" label no longer appears in the UI');
+  ok(/id="replenCountry"/.test(HTML) && /id="replenMarketplace"/.test(HTML) && /id="replenLTSFilter"/.test(HTML) && /id="replenTargetDays"/.test(HTML), 'J4 original Country/Marketplace/LTS/TargetDays filters restored/preserved');
+  ok(/onclick="searchReplenishment\(\)"/.test(HTML), 'J5 Search button preserved');
+  // Recommendation Summary is unaffected: legacy placeholders remain the honest not-ready state
+  ok(/No recommendation generated/.test(JS) && /AI Pending/.test(JS), 'J6 Recommendation Summary legacy placeholders intact (honest until runtime Ready)');
+  ok(/_irRecoSummaryCardBody\(skuData\)/.test(JS), 'J7 Recommendation Summary card body switch intact');
 })();
 
 // =====================================================================================================
-section('K. Source-scan — lifecycle hook + CSS');
+section('K. Dead CSS removed; Summary state CSS retained');
 (function () {
-  ok(/initReplenRecoContext\(\)/.test(JS), 'K1 mount initializes the context inputs');
-  ok(/onReplenRecoScopeChanged\(\)/.test(JS), 'K2 scope-change (country/marketplace) recomputes destination + context');
-  ok(/\.replen-reco-context\b/.test(CSS) && /data-status="READY"/.test(CSS) && /data-status="DESTINATION_BLOCKED"/.test(CSS), 'K3 CSS styles the context block + readiness states');
+  ok(!/\.replen-reco-context\b/.test(CSS) && !/replen-reco-context__status/.test(CSS), 'K1 dead Recommendation Context panel CSS removed');
+  ok(!/data-status="DESTINATION_BLOCKED"/.test(CSS) && !/data-status="NOT_READY"/.test(CSS), 'K2 context readiness-state CSS removed');
+  ok(/\.replen-recsum-ws--ready\b/.test(CSS) && /\.replen-recsum-ws--blocked\b/.test(CSS), 'K3 Recommendation Summary OUTPUT state CSS retained');
+  // lifecycle still initializes the internal context (no UI) and scope-change still recomputes it
+  ok(/initReplenRecoContext\(\)/.test(JS) && /onReplenRecoScopeChanged\(\)/.test(JS), 'K4 mount + scope-change still drive the internal context');
 })();
 
 console.log('\n----------------------------------------');
-console.log('REPLEN RECOMMENDATION CONTEXT (F1-4B-B-PRE): ' + pass + ' passed, ' + fail + ' failed');
+console.log('REPLEN RECOMMENDATION CONTEXT (F1-4B-C internal): ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { process.exitCode = 1; }

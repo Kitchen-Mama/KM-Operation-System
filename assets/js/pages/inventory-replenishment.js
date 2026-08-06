@@ -4468,16 +4468,27 @@ window.IRContext = (function () {
 })();
 // __IRCTX_END__ (test extraction marker — do not remove)
 
-// ---- F1-4B-B-PRE DOM wiring (thin; delegates to window.IRContext). NO API call. NO write. -----------
-var REPLEN_RECO_CONTEXT_KEY = 'replenRecoContext';
-var _irctxLastContext = null;   // last normalized context model (page-local; the next round reads IRContext.toRequestContext)
+// ---- F1-4B-C — Recommendation Context is now INTERNAL (no UI). ---------------------------------------
+// The three inputs the Recommendation Runtime requires (destinationWarehouseId / calculationMonth /
+// planningCycle) were briefly surfaced as page controls (F1-4B-B-PRE). That was an implementation leak —
+// users should never be asked for Recommendation-Runtime internals. F1-4B-C REMOVES the "Recommendation
+// Context" panel from the UI and keeps the context purely as INTERNAL, HIDDEN page state: no control, no
+// readiness indicator, no session-persisted user selection, no render. The pure IRContext MODEL is
+// retained (frozen decisions unchanged); the Runtime still receives the three inputs, but now ONLY from
+// this internal context (populated by a non-UI seam), never from user input. The Country / Marketplace
+// filters remain the ONLY scope controls. Absent an internal populator the context stays NOT_READY, so
+// the Recommendation Summary keeps its honest legacy placeholder until the runtime is truly Ready.
+var _irctxLastContext = null;   // last normalized context model (INTERNAL; read by loadRecommendationWorkspace_)
+// Internal (hidden) Recommendation-Runtime context. NOT user-entered, NOT rendered. Defaults empty; a
+// future authorized non-UI seam (scheduler/config) sets it via _irSetInternalRecommendationContext.
+var _irInternalContext = { destinationWarehouseId: null, calculationMonth: null, planningCycle: null };
 
 function _irctxWarehouses() {
   // Reads the ALREADY-loaded canonical warehouse cache (same accessor the page uses today). No new
   // fetch, no whole-DB reload, never getOperationDb.
   return (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? (window.KM.DB.getWarehouses() || []) : [];
 }
-// Recommendation Context scope = the page's selected scope + the marketplace's fulfillment model.
+// Internal context scope = the page's selected scope + the marketplace's fulfillment model.
 function _irctxScope() {
   var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope()
     : { company: '', country: '', marketplace: '', marketplaceId: '' };
@@ -4489,129 +4500,52 @@ function _irctxScope() {
 }
 function _irctxEligible(scope) { return window.IRContext.eligibleDestinationWarehouses(_irctxWarehouses(), scope || _irctxScope()); }
 
-// Rebuild the Destination Warehouse options for the current scope. Blank first option ALWAYS; the
-// current selection is preserved ONLY if still eligible; NEVER auto-selects the first/only option.
-function refreshReplenRecoDestinationOptions() {
-  var sel = document.getElementById('replenRecoDestination');
-  if (!sel) return;
-  var eligible = _irctxEligible(_irctxScope());
-  var prev = sel.value;
-  var keep = eligible.some(function (w) { return w.warehouseId === prev; }) ? prev : '';
-  sel.innerHTML = '<option value="">Select destination warehouse…</option>' + eligible.map(function (w) {
-    var label = (w.warehouseCode ? (w.warehouseCode + ' — ') : '') + (w.warehouseName || w.warehouseId);
-    return '<option value="' + escapeReplenHtml(w.warehouseId) + '">' + escapeReplenHtml(label) + '</option>';
-  }).join('');
-  sel.value = keep;   // explicit selection only — never eligible[0]
-}
-
-// Persist ONLY explicit user selections (a page-input preference; NOT a business result). No DB write.
-function _irctxPersist(model) {
-  try {
-    sessionStorage.setItem(REPLEN_RECO_CONTEXT_KEY, JSON.stringify({
-      scopeKey: window.IRContext.contextScopeKey(model),
-      destinationWarehouseId: model.destinationWarehouseId || '',
-      calculationMonth: model.calculationMonth || '',
-      planningCycle: model.planningCycle || ''
-    }));
-  } catch (e) { /* sessionStorage unavailable → in-memory only */ }
-}
-
-function _irctxRenderStatus(model) {
-  var el = document.getElementById('replenRecoContextStatus');
-  if (!el) return;
-  el.setAttribute('data-status', model.status);
-  var msg;
-  if (model.status === 'READY') {
-    msg = 'Recommendation Context: Ready';
-  } else if (model.status === 'DESTINATION_BLOCKED') {
-    msg = (model.destinationState === 'PLATFORM_DESTINATION_IDENTITY_UNRESOLVED')
-      ? 'Recommendation Context: Destination blocked — this platform-fulfilled marketplace has no canonical destination warehouse configured; a recommendation cannot run until one exists.'
-      : 'Recommendation Context: Destination blocked — no eligible destination warehouse for this scope.';
-  } else if (model.status === 'INVALID') {
-    var bad = [];
-    if (model.calculationMonthState === 'INVALID_FORMAT') bad.push('Calculation Month (use YYYY-MM)');
-    if (model.destinationState === 'SELECTED_INVALID') bad.push('Destination Warehouse (selection no longer valid)');
-    if (model.destinationState === 'DESTINATION_AUTHORITY_CONFLICT') bad.push('Destination Warehouse (conflicting selection)');
-    msg = 'Recommendation Context: Invalid — ' + bad.join(', ');
-  } else {
-    var labels = { destinationWarehouseId: 'Destination Warehouse', calculationMonth: 'Calculation Month',
-      planningCycle: 'Planning Cycle', company: 'Company', country: 'Country', marketplace: 'Marketplace' };
-    var miss = model.missing.map(function (k) { return labels[k] || k; });
-    msg = 'Recommendation Context: Not Ready' + (miss.length ? (' — Missing: ' + miss.join(', ')) : '');
-  }
-  el.textContent = msg;
-}
-
-// Build the model from live control values, render the readiness indicator, persist explicit selections.
-// NEVER calls the API and NEVER renders a recommendation value.
+// Recompute the INTERNAL normalized context from the current scope + the hidden internal inputs.
+// Renders NOTHING (the readiness indicator was removed). Never calls the API; never writes.
 function updateReplenRecoContext() {
-  if (!document.getElementById('replenRecoDestination')) return null;
   var scope = _irctxScope();
   var model = window.IRContext.normalizeRecommendationContext({
     scope: scope, eligibleWarehouses: _irctxEligible(scope),
-    destinationSelectedId: (document.getElementById('replenRecoDestination') || {}).value || '',
-    calculationMonthRaw: (document.getElementById('replenRecoCalcMonth') || {}).value || '',
-    planningCycleRaw: (document.getElementById('replenRecoPlanningCycle') || {}).value || ''
+    destinationSelectedId: _irInternalContext.destinationWarehouseId || '',
+    calculationMonthRaw: _irInternalContext.calculationMonth || '',
+    planningCycleRaw: _irInternalContext.planningCycle || ''
   });
   _irctxLastContext = model;
-  _irctxRenderStatus(model);
-  _irctxPersist(model);
   return model;
 }
 
-// Restore explicit session selections, VALIDATED against current scope/options, and DISPLAY them
-// (never silently restore an unshown value).
-function _irctxRestoreFromSession() {
-  var destSel = document.getElementById('replenRecoDestination');
-  if (!destSel) return;
-  var stored = null;
-  try { stored = JSON.parse(sessionStorage.getItem(REPLEN_RECO_CONTEXT_KEY) || 'null'); } catch (e) { stored = null; }
-  if (!stored) return;
-  var scope = _irctxScope();
-  var restore = window.IRContext.restoreContextSelection(stored, scope, _irctxEligible(scope));
-  if (restore.destinationSelectedId) destSel.value = restore.destinationSelectedId;         // visibly applied
-  var cmEl = document.getElementById('replenRecoCalcMonth'); if (cmEl && restore.calculationMonthRaw) cmEl.value = restore.calculationMonthRaw;
-  var pcEl = document.getElementById('replenRecoPlanningCycle'); if (pcEl && restore.planningCycleRaw) pcEl.value = restore.planningCycleRaw;
-}
-
-// Bind the three controls (idempotent via .onchange/.oninput property assignment).
-function bindReplenRecoContextControls() {
-  var d = document.getElementById('replenRecoDestination');
-  var m = document.getElementById('replenRecoCalcMonth');
-  var p = document.getElementById('replenRecoPlanningCycle');
-  // change → recompute context + (F1-4B-B) issue at most one Workspace request when READY; input → recompute
-  // context status only (no request per keystroke).
-  if (d) d.onchange = function () { updateReplenRecoContext(); _irRecoTrigger(); };
-  if (m) m.onchange = function () { updateReplenRecoContext(); _irRecoTrigger(); };
-  if (p) { p.oninput = function () { updateReplenRecoContext(); }; p.onchange = function () { updateReplenRecoContext(); _irRecoTrigger(); }; }
-}
-// Fire the read cutover if it exists (F1-4B-B). No-op in the F1-4B-B-PRE-only baseline.
+// Fire the read cutover if it exists (F1-4B-B). No-op unless Workspace mode is effective + context READY.
 function _irRecoTrigger() { if (typeof loadRecommendationWorkspace_ === 'function') loadRecommendationWorkspace_(); }
 
-// One-time-per-mount init: populate destination options, restore explicit session selections, bind, refresh status.
+// Non-UI internal seam: a scheduler/config (NOT the user) supplies the Runtime context. Recomputes the
+// internal model and re-triggers the (flag-gated) read. There is no control bound to this.
+function _irSetInternalRecommendationContext(ctx) {
+  ctx = ctx || {};
+  if (Object.prototype.hasOwnProperty.call(ctx, 'destinationWarehouseId')) _irInternalContext.destinationWarehouseId = ctx.destinationWarehouseId || null;
+  if (Object.prototype.hasOwnProperty.call(ctx, 'calculationMonth')) _irInternalContext.calculationMonth = ctx.calculationMonth || null;
+  if (Object.prototype.hasOwnProperty.call(ctx, 'planningCycle')) _irInternalContext.planningCycle = ctx.planningCycle || null;
+  updateReplenRecoContext();
+  _irRecoTrigger();
+  return _irctxLastContext;
+}
+
+// Per-mount init: compute the internal context + trigger the flag-gated read. No control/indicator init.
 function initReplenRecoContext() {
-  if (!document.getElementById('replenRecoDestination')) return;
-  refreshReplenRecoDestinationOptions();
-  _irctxRestoreFromSession();
-  bindReplenRecoContextControls();
   updateReplenRecoContext();
-  _irRecoTrigger();   // F1-4B-B: fetch once if Workspace mode is effective + context is READY
+  _irRecoTrigger();
 }
 
-// Scope change (Country/Marketplace) → recompute destination options, drop a now-invalid destination,
-// preserve valid month/cycle, refresh status. Invalidates + (F1-4B-B) refetches when READY.
+// Scope change (Country/Marketplace) → recompute the internal context + (F1-4B-B) invalidate/refetch when
+// the new scope is READY. No destination-option UI to rebuild (context is internal).
 function onReplenRecoScopeChanged() {
-  if (!document.getElementById('replenRecoDestination')) return;
-  refreshReplenRecoDestinationOptions();   // keeps the current selection only if still eligible
   updateReplenRecoContext();
-  _irRecoTrigger();   // scope change invalidates the prior request and refetches when the new scope is READY
+  _irRecoTrigger();
 }
 
-window.refreshReplenRecoDestinationOptions = refreshReplenRecoDestinationOptions;
 window.updateReplenRecoContext = updateReplenRecoContext;
 window.initReplenRecoContext = initReplenRecoContext;
 window.onReplenRecoScopeChanged = onReplenRecoScopeChanged;
-window.bindReplenRecoContextControls = bindReplenRecoContextControls;
+window._irSetInternalRecommendationContext = _irSetInternalRecommendationContext;
 
 // ============================================================================
 // F1-4B-B — Recommendation READ cutover (recommendation.workspace.get; default-false flags).

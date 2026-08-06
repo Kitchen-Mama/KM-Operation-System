@@ -284,3 +284,28 @@ The Recommendation Summary is now connected to `recommendation.workspace.get` be
 Tests: `replen-recommendation-cutover-f1-4b-b.test.js` (54) + compat PG1/PG1c updated (weekly + recommendation are the
 two READ cutover pages). No formula/runtime/API/Apps-Script/router/Foundation/DB/schema/bundle change; no write; full
 suite 89 files / 0 failing; Golden 39/1/0; #34 Pending. Flags remain default-false (dormant until enabled).
+
+---
+
+## J. F1-4B-C — Recommendation Context UI refactor (2026-08-06): the input panel was an implementation leak → removed
+
+F1-4B-B-PRE surfaced the three Recommendation-Runtime inputs (destination / calculation month / planning cycle) as a
+page **"Recommendation Context"** control panel. That exposed Runtime internals to the user — an implementation leak,
+not product UX. **F1-4B-C removes the panel and makes the context INTERNAL/HIDDEN** (UI-only; no Runtime/API/Formula/
+Planning-Context/Engine/Apps-Script/Bundle/DB/Mapping change):
+
+- **HTML** — the `.replen-reco-context` block (Destination `<select>`, Calculation-Month input, Planning-Cycle input,
+  readiness indicator) is deleted. The page's scope controls are again just Country / Marketplace / LTS / Target Days /
+  Search (original UX). No popup/dialog/drawer/floating panel added.
+- **CSS** — the now-dead panel styles are deleted; the Recommendation Summary OUTPUT-state styles remain.
+- **JS** — the pure `IRContext` model is **retained** (frozen decisions unchanged). The DOM-bound panel wiring is
+  replaced by an internal hidden `_irInternalContext` (all null by default) + a **non-UI** seam
+  `_irSetInternalRecommendationContext(ctx)` that a future scheduler/config (never the user) uses to supply the runtime
+  context. `updateReplenRecoContext()` now builds the normalized model from scope + the internal inputs, renders
+  nothing, calls no API. The entire F1-4B-B read cutover is unchanged — the Runtime still receives
+  destination/month/cycle, now **only** from the internal context via `IRContext.toRequestContext`.
+
+With no internal populator and the flags default-false, the context stays `NOT_READY` and the workspace is `DISABLED`,
+so the Recommendation Summary keeps its honest legacy placeholder ("No recommendation generated" / "AI Pending") until
+the runtime is truly Ready — exactly the required behavior. The PRE test was rewritten to F1-4B-C (retained pure-model
+sections + UI-removal + internal-wiring assertions; 64). Full suite 89 files / 0 failing; Golden 39/1/0; #34 Pending.
