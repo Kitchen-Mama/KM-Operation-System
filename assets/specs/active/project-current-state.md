@@ -4317,3 +4317,41 @@ Tests: sku-lifecycle-override-cleanup-f1-s1.test.js (NEW, 19 assertions — runs
 Governance: FRONTEND_GITHUB_PAGES_REQUIRED = sku-overrides.js, operation-system-db-api.js, sku-details.js. No
   APPS_SCRIPT_SYNC (no .gs/bundle change). DB/schema/API/import changes = none. No live DB; no push; no deploy.
 ```
+
+---
+
+### Checkpoint — F1-S2-UI Factory Inventory Import Visual Parity (2026-08-06) — IMPLEMENTED (UI-only)
+
+```
+Round: F1-S2-UI. Presentation-only — make the Factory Inventory Import button + modal visually match the
+  Overseas Inventory Import (the visual source of truth). NO behavior change: validation, parsing, template
+  generation, API payload, SET_CURRENT_STOCK semantics, idempotency, movement/audit, targeted readback, and
+  success/error handling are all byte-equivalent. No Apps Script / router / adapter / DB / schema change.
+Visual source of truth: Warehouse -> Overseas Inventory -> Import Inventory (ovs-modal* shell; btn btn-primary).
+Shared classes reused: the Factory import modal now uses the SAME canonical shell classes as Overseas —
+  ovs-modal-overlay / ovs-modal / ovs-modal-content(.--large) / ovs-modal-body / ovs-form-row / ovs-form-group /
+  ovs-modal-actions — and the global .btn/.btn-primary/.btn-secondary. The Overseas ovs-modal rules are hard-
+  scoped to #overseas-stock-section, so (following the repo's own ovs-date-* precedent) the shell values are
+  MIRRORED under #factory-stock-section in factory-stock.css with the exact Overseas values — overseas-stock.css
+  is left byte-unchanged (zero regression risk to the reference).
+Button parity: Factory "Import Inventory" changed btn-secondary -> btn btn-primary (matches Overseas); stays LEFT
+  of "Inventory Adjustment" (btn-secondary, unchanged); wrapper flex gap 8px.
+Modal parity: header <h3 id> (title association), ovs-modal-content--large + #factory-import-modal width
+  min(680px, 100vw-48px), Overseas help-text paragraph style, Download Template (.xlsx) as a link (color #0080bb),
+  file input in ovs-form-group with a <label for>, footer ovs-modal-actions flex-end with secondary "Close" +
+  primary "Import" (label 'Confirm Import' -> 'Import' in HTML + JS state strings). Backdrop rgba(15,23,42,0.45),
+  shadow 0 12px 40px rgba(15,23,42,0.25), radius 10px — all mirrored from Overseas. Old fia-modal shell + the
+  unused fii-step/fii-file/fii-mode-badge styles removed. Factory-specific preview/summary/blocknote/result kept
+  as fii-* modifier content; the result box mirrors the Overseas result-box container styling.
+Behavior kept: two-phase validate/preview/confirm retained (Factory has a real preview — not added/removed this
+  round); _fiiOnFileChosen / confirmFactoryImport / downloadFactoryImportTemplate wiring unchanged; double-click
+  guard intact; accessibility (role=dialog, aria-modal, aria-labelledby, label-for, Escape close) preserved.
+Safety wording retained: SET (not ADD), identity warehouse_id + sku, Supplier not required, reserved/in-production/
+  pending shipout not changed.
+Tests: factory-import-visual-parity-f1-s2-ui.test.js (NEW, 36 assertions — button+shell+header/body/footer class
+  parity vs Overseas, CSS values mirror Overseas, Overseas reference intact, safety wording + preview retained,
+  a11y retained, behavior wiring unchanged). Existing factory-inventory-import-f0-hotfix-fi1.test.js still 57/0.
+  Full suite 97 files / 0 failing; Golden 39/1/0; Scenario #34 Pending; bundle parity unchanged.
+Governance: FRONTEND_GITHUB_PAGES_REQUIRED = factory-stock.html, factory-stock.css, factory-stock.js. No
+  APPS_SCRIPT_SYNC. DB/schema/API/import changes = none. Overseas files untouched. No live DB; no push; no deploy.
+```

@@ -1157,7 +1157,7 @@ function openFactoryImportModal() {
   var fileEl = _fiiEl('factory-import-file'); if (fileEl) fileEl.value = '';
   _fiiSetText('factory-import-parsestat', '');
   _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap'); _fiiHide('factory-import-result');
-  var cb = _fiiEl('factory-import-confirm-btn'); if (cb) { cb.disabled = true; cb.textContent = 'Confirm Import'; }
+  var cb = _fiiEl('factory-import-confirm-btn'); if (cb) { cb.disabled = true; cb.textContent = 'Import'; }
   overlay.classList.add('is-open'); modal.classList.add('is-open');
   if (!_fiiKeyBound) {
     document.addEventListener('keydown', function (e) { var m = _fiiEl('factory-import-modal'); if (e.key === 'Escape' && m && m.classList.contains('is-open')) closeFactoryImportModal(); });
@@ -1385,7 +1385,7 @@ function _fiiRenderPreview(data) {
   // ATOMIC gate: any blocking (invalid) row disables Confirm; nothing-to-write also disables it.
   var canImport = (s.invalidRows || 0) === 0 && ((s.createRows || 0) + (s.updateRows || 0)) > 0;
   var cb = _fiiEl('factory-import-confirm-btn');
-  if (cb) { cb.disabled = !canImport; cb.textContent = 'Confirm Import'; }
+  if (cb) { cb.disabled = !canImport; cb.textContent = 'Import'; }
   var note = _fiiEl('factory-import-blocknote');
   if (note) note.textContent = (s.invalidRows || 0) > 0 ? ('Import blocked — ' + s.invalidRows + ' invalid row(s). Fix the file and re-upload. Nothing will be written.') :
     (((s.createRows || 0) + (s.updateRows || 0)) === 0 ? 'Nothing to import (all rows unchanged).' : 'This import will SET Factory Current Stock to the imported quantities. It will NOT add. It will NOT change reserved / in-production / pending shipout / orders / shipments.');
@@ -1400,7 +1400,7 @@ function confirmFactoryImport() {
   Promise.resolve(window.KM.DB.factoryInventoryImportCommit({ rows: _fiiRows, importBatchId: _fiiBatchId, created_by: 'operation-system' }))
     .then(function (resp) {
       if (!resp || resp.success === false) {
-        _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Confirm Import'; }
+        _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
         _fiiRenderResult(resp, true); return;
       }
       _fiiRenderResult(resp, false);
@@ -1409,7 +1409,7 @@ function confirmFactoryImport() {
     })
     .catch(function (err) {
       // Commit ACK unknown (transport error) — reassure, do NOT resend automatically.
-      _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Confirm Import'; }
+      _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
       _fiiRenderResult({ error: (err && err.message) ? err.message : String(err) }, true);
     });
 }

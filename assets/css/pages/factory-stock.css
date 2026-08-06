@@ -515,13 +515,31 @@
 }
 
 /* ============================================================
-   F0-HOTFIX-FI1 — Factory Inventory Import modal (reuses .fia-modal shell; adds preview/summary styles).
+   F1-S2-UI — Factory Inventory Import modal.
+   Visual SOURCE OF TRUTH = the Overseas Inventory Import modal. The shared import-modal shell uses the SAME
+   canonical class names (ovs-modal-overlay / ovs-modal / ovs-modal-content / ovs-modal-body / ovs-form-row /
+   ovs-form-group / ovs-modal-actions) and the EXACT values from overseas-stock.css, mirrored here under
+   #factory-stock-section (the Overseas rules are hard-scoped to #overseas-stock-section, so — following the
+   repo's own precedent for the ovs-date-* picker — the shell is duplicated per-section rather than de-scoped,
+   keeping the Overseas reference byte-unchanged). Factory-specific content (preview/summary/blocknote/result)
+   stays under fii-* modifier classes. Buttons use the global .btn/.btn-primary/.btn-secondary (auto parity).
    ============================================================ */
-#factory-stock-section .fii-modal { max-width: 860px; }
-#factory-stock-section .fii-step { margin: 8px 0; }
-#factory-stock-section .fii-step__row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-#factory-stock-section .fii-file { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #475569; }
-#factory-stock-section .fii-mode-badge { font-size: 11px; font-weight: 700; color: #0369A1; background: #E0F2FE; border: 1px solid #7DD3FC; border-radius: 999px; padding: 2px 10px; }
+/* ---- Shared import-modal shell (mirrors overseas-stock.css §Modals) ---- */
+#factory-stock-section .ovs-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 2000; }
+#factory-stock-section .ovs-modal-overlay.is-open { display: block; }
+#factory-stock-section .ovs-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2010; width: min(560px, calc(100vw - 48px)); max-height: calc(100vh - 64px); overflow-y: auto; }
+#factory-stock-section .ovs-modal.is-open { display: block; }
+#factory-stock-section .ovs-modal-content { background: #ffffff; border-radius: 10px; box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25); padding: 20px 22px; box-sizing: border-box; overflow-x: hidden; }
+#factory-stock-section .ovs-modal-content--large { width: 100%; }
+#factory-stock-section #factory-import-modal { width: min(680px, calc(100vw - 48px)); }
+#factory-stock-section .ovs-modal-content h3 { margin: 0 0 14px; font-size: 16px; color: #1f2937; }
+#factory-stock-section .ovs-form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+#factory-stock-section .ovs-form-group { flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px; }
+#factory-stock-section .ovs-form-group label { font-size: 12px; font-weight: 600; color: #475569; }
+#factory-stock-section .ovs-form-group input { height: 36px; padding: 6px 10px; border: 1px solid var(--filter-border-color, #cbd5e0); border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+#factory-stock-section .ovs-form-group input:disabled { background: #f1f5f9; color: #94a3b8; }
+#factory-stock-section .ovs-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+/* ---- Factory-specific content (modifier classes; not part of the shared shell) ---- */
 #factory-stock-section .fii-parsestat { margin-top: 6px; font-size: 12px; color: #64748B; }
 #factory-stock-section .fii-summary { margin: 8px 0; font-size: 12px; }
 #factory-stock-section .fii-summary .fii-mode code { font-size: 11px; }
@@ -538,6 +556,8 @@
 #factory-stock-section .fii-preview-table tr.fii-st-unchanged td:first-child { border-left: 3px solid #94A3B8; }
 #factory-stock-section .fii-preview-table tr.fii-st-duplicate_identical_row td:first-child { border-left: 3px solid #CA8A04; }
 #factory-stock-section .fii-blocknote { font-size: 11.5px; color: #475569; margin: 4px 0; }
+/* Result box mirrors the Overseas import result container (border/padding/scroll/font-size). */
+#factory-stock-section .fii-result { margin-top: 12px; max-height: 240px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 12px; font-size: 12px; }
 #factory-stock-section .fii-result .fii-ok { color: #16A34A; font-weight: 700; }
 #factory-stock-section .fii-result .fii-error { color: #B91C1C; font-weight: 700; }
 #factory-stock-section .fii-result .fii-reconfirm { color: #B45309; font-weight: 600; margin-top: 4px; }
