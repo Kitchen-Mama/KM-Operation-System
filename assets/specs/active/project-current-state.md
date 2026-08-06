@@ -3881,4 +3881,37 @@ No API/Apps-Script/router/Foundation/runtime/formula/bundle/DB/schema change. AP
   BUNDLE_REBUILD_REQUIRED=false. No live DB. Not pushed, not deployed.
 ```
 
+### Checkpoint — F1-4B-D Internal Recommendation Context Authority = AUTHORITY AUDIT / HALTED (2026-08-06)
+```
+F1-4B-D — establish a background, auditable, non-UI, non-guessed Internal Recommendation Context Authority to populate
+  the hidden _irInternalContext (destinationWarehouseId / calculationMonth / planningCycle) so recommendation.workspace.get
+  can be reached on the real page. Phase-1 authority audit (mandated FIRST) → HALTED. NO page-runtime/API/schema change.
+Authority matrix (live-repo + active-spec verified):
+  • destinationWarehouseId → SOURCE_NOT_IMPLEMENTED. The automated source replenishment_route_rules is "Spec only — no
+    runtime engine exists" (CARRIER_AND_ROUTE_SPEC §5A.4:555); no getReplenishmentRouteRules/route loader in
+    operation-system-db-api.js; ship_from/destination on shipments are human-readable snapshots, never identity
+    (DATABASE_RELATIONSHIP_MAP §599); warehouses.marketplace is an optional Movement-Log filter, not a unique mapping.
+    FBA/platform → PLATFORM_DESTINATION_UNRESOLVED (no warehouse row models a platform FC identity).
+  • calculationMonth → SOURCE_MISSING. No active_planning_context / planning-month config loader (grep: none); only
+    new Date() browser clock (forbidden as the anchor, D-F1-5B-3).
+  • planningCycle → SOURCE_MISSING (page). planning_cycle exists only as a caller/scheduler-supplied upsert key on
+    request_allocation_draft / site-confirmation headers; nothing derives it, and no scheduler injects it interactively.
+HALT conditions tripped: no unique canonical destination; destination only guessable from a candidate list; platform/FBA
+  identity unresolved; calc month only from browser clock; planning cycle no source/frozen derivation; a real authority
+  needs new table/column/config (schema forbidden this round). Any one suffices; all hold.
+Precise decision escalated (not a docs-only loop): "Where does the authoritative non-UI (destination, calcMonth,
+  planningCycle) for an interactive scope come from?" Recommended = ONE bounded active_recommendation_context config
+  (company+country+marketplace → {destination_warehouse_id, calculation_month, planning_cycle}), admin/scheduler-owned,
+  read by a pure injectable resolver — which requires a minimal config store (a schema/config round F1-4B-D forbids).
+  Until adjudicated: page stays dormant behind default-false flags; Recommendation Summary keeps its honest legacy
+  placeholder (no guess, no clock, no fake). A/B/C per authority in the audit doc.
+Exact next slice: F1-4B-E — provision active_recommendation_context (after the user picks the store) + a pure injectable
+  resolveInventoryRecommendationContext feeding _irSetInternalRecommendationContext; then the page can reach READY and
+  issue the one flag-gated recommendation.workspace.get per scope. No formula/runtime/API-contract change needed there.
+Doc: docs/planning/PHASE_F1_4B_D_INTERNAL_RECOMMENDATION_CONTEXT_AUTHORITY_AUDIT.md (matrix + HALT + A/B/C + decision);
+  PHASE_F1_4B_RECOMMENDATION_WORKSPACE_BLOCKER.md §K pointer. Corroborates PHASE_F1_5B_PLANNING_CONTEXT_AUTHORITY_HALT.md.
+No page/API/router/Apps-Script/bundle/DB/schema/formula change; no inventory-compat change; no write; no live DB. Full
+  suite unchanged (89 files / 0 failing — no code touched); Golden 39/1/0; #34 Pending. Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

@@ -309,3 +309,18 @@ With no internal populator and the flags default-false, the context stays `NOT_R
 so the Recommendation Summary keeps its honest legacy placeholder ("No recommendation generated" / "AI Pending") until
 the runtime is truly Ready — exactly the required behavior. The PRE test was rewritten to F1-4B-C (retained pure-model
 sections + UI-removal + internal-wiring assertions; 64). Full suite 89 files / 0 failing; Golden 39/1/0; #34 Pending.
+
+---
+
+## K. F1-4B-D — Internal context authority audit (2026-08-06): no source-proven authority → HALT
+
+F1-4B-D attempted to populate the hidden `_irInternalContext` from an active, non-UI, non-guessed authority so the
+context can reach READY. The Phase-1 authority audit found **none of the three inputs has a live source-proven
+authority** for the interactive page: destination = `replenishment_route_rules` is **spec-only, no runtime engine**
+(CARRIER_AND_ROUTE_SPEC §5A.4:555) → `SOURCE_NOT_IMPLEMENTED` (+ FBA/platform `PLATFORM_DESTINATION_UNRESOLVED`);
+calculation month has only the forbidden browser clock → `SOURCE_MISSING`; planning cycle is a scheduler/caller
+run-parameter nothing injects on the page → `SOURCE_MISSING`. A real authority needs new schema/config (forbidden this
+round). Multiple §HALT conditions trip → **audit-only; no page/API/schema change.** The precise decision escalated to
+the user (one bounded `active_recommendation_context` config vs. keeping the page dormant) and the A/B/C options are in
+[`PHASE_F1_4B_D_INTERNAL_RECOMMENDATION_CONTEXT_AUTHORITY_AUDIT.md`](PHASE_F1_4B_D_INTERNAL_RECOMMENDATION_CONTEXT_AUTHORITY_AUDIT.md).
+Corroborates the retained `PHASE_F1_5B_PLANNING_CONTEXT_AUTHORITY_HALT.md`. Full suite unchanged (89/0); Golden 39/1/0.
