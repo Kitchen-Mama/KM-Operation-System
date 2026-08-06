@@ -1118,6 +1118,331 @@ window.onFactoryAdjustRecordChange = onFactoryAdjustRecordChange;
 window.onFactoryAdjustQtyInput = onFactoryAdjustQtyInput;
 window.confirmFactoryInventoryAdjustment = confirmFactoryInventoryAdjustment;
 
+// ============================================================
+// F0-HOTFIX-FI1 — Factory Inventory Initial Stock Import (SET_CURRENT_STOCK). READ-then-write via the
+// two-phase factoryInventory.import.validate / .commit actions. Identity = warehouse_id + sku. Reuses the
+// generic ExcelJS template builder (KM.templateExport) for the .xlsx template and accepts .xlsx or .csv on
+// upload (browser parse). NO supplier, NO marketplace, NO site_sku. The importer SETS current stock (never
+// ADD), never writes reserved, never touches orders/shipments/forecast/recommendation. One request per phase;
+// double-click sends ONE commit; the committed ACK is decoupled from a TARGETED readback (never a whole-DB
+// reload). All authoritative validation is server-side; client checks are advisory only.
+// __FIIPAGE_START__ (test extraction marker — do not remove)
+var _FII_TEMPLATE_HEADERS = ['warehouse_id', 'warehouse_code', 'sku', 'current_stock_qty', 'effective_date', 'note'];
+var _FII_REQUIRED_HEADERS = ['warehouse_id', 'sku', 'current_stock_qty'];
+var _FII_MAX_ROWS = 5000;
+var _FII_MAX_BYTES = 5 * 1024 * 1024;   // 5 MB
+var _fiiRows = null;         // parsed rows (client)
+var _fiiValidated = null;    // last server validate response.data
+var _fiiBatchId = null;      // stable import batch id (generated at validate; REUSED on commit + retry — idempotency)
+var _fiiSubmitting = false;  // commit double-submit guard (one commit per click)
+var _fiiKeyBound = false;
+
+function _fiiEl(id) { return document.getElementById(id); }
+function _fiiSetText(id, t) { var e = _fiiEl(id); if (e) e.textContent = t; }
+function _fiiShow(id) { var e = _fiiEl(id); if (e) e.hidden = false; }
+function _fiiHide(id) { var e = _fiiEl(id); if (e) e.hidden = true; }
+function _fiiEsc(v) { return (typeof _fmvEscapeHtml === 'function') ? _fmvEscapeHtml(v == null ? '' : v) : String(v == null ? '' : v); }
+function _fiiParseError(msg) {
+  _fiiRows = null; _fiiValidated = null;
+  _fiiSetText('factory-import-parsestat', '');
+  _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap');
+  var r = _fiiEl('factory-import-result'); if (r) { r.hidden = false; r.innerHTML = '<div class="fii-error">' + _fiiEsc(msg) + '</div>'; }
+  var cb = _fiiEl('factory-import-confirm-btn'); if (cb) cb.disabled = true;
+}
+
+function openFactoryImportModal() {
+  var overlay = _fiiEl('factory-import-overlay'), modal = _fiiEl('factory-import-modal');
+  if (!modal || !overlay) return;
+  _fiiRows = null; _fiiValidated = null; _fiiBatchId = null; _fiiSubmitting = false;
+  var fileEl = _fiiEl('factory-import-file'); if (fileEl) fileEl.value = '';
+  _fiiSetText('factory-import-parsestat', '');
+  _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap'); _fiiHide('factory-import-result');
+  var cb = _fiiEl('factory-import-confirm-btn'); if (cb) { cb.disabled = true; cb.textContent = 'Confirm Import'; }
+  overlay.classList.add('is-open'); modal.classList.add('is-open');
+  if (!_fiiKeyBound) {
+    document.addEventListener('keydown', function (e) { var m = _fiiEl('factory-import-modal'); if (e.key === 'Escape' && m && m.classList.contains('is-open')) closeFactoryImportModal(); });
+    _fiiKeyBound = true;
+  }
+}
+function closeFactoryImportModal() { var o = _fiiEl('factory-import-overlay'), m = _fiiEl('factory-import-modal'); if (o) o.classList.remove('is-open'); if (m) m.classList.remove('is-open'); }
+
+// Download the .xlsx template via the shared generic builder. Helper reference SHEETS are not supported by
+// the builder, so canonical warehouse_id values are offered as a dropdown and both identity columns carry a
+// comment stating they must match canonical values (F0-HOTFIX-FI1 §5 fallback).
+function downloadFactoryImportTemplate() {
+  if (!(window.KM && window.KM.templateExport && window.KM.templateExport.buildAndDownload)) { alert('Template engine (ExcelJS) not available.'); return; }
+  var whs = ((window.KM.DB && window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])
+    .filter(function (w) { return w && w.isFactoryWarehouse === true && w.isActive !== false; });
+  var whIds = whs.map(function (w) { return w.warehouseId; }).filter(Boolean);
+  var skus = ((window.KM.DB && window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).map(function (s) { return s.sku; }).filter(Boolean);
+  var columns = [
+    { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 22, comment: 'REQUIRED. Canonical factory warehouse_id (dropdown). Identity — warehouse_code never overrides it.', dropdown: whIds.slice(0, 200) },
+    { key: 'warehouse_code', header: 'warehouse_code', kind: 'business', width: 18, comment: 'Optional human-readable check. Conflicting with warehouse_id rejects the row (WAREHOUSE_ID_CODE_MISMATCH).' },
+    { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. Canonical SKU from SKU Details (NOT site_sku).' },
+    { key: 'current_stock_qty', header: 'current_stock_qty', kind: 'business', width: 18, comment: 'REQUIRED non-negative whole number. 0 valid; BLANK = missing (not 0); negatives/decimals rejected. SETS current stock.' },
+    { key: 'effective_date', header: 'effective_date', kind: 'business', width: 15, comment: 'Optional ISO date YYYY-MM-DD (audit only). Blank → server write date.' },
+    { key: 'note', header: 'note', kind: 'business', width: 30, comment: 'Optional note (max 500 chars).' }
+  ];
+  var spec = {
+    filename: 'Factory_Inventory_Import_Template.xlsx',
+    sheetName: 'Factory Inventory Import',
+    instructionRow: 'SET_CURRENT_STOCK — imported current_stock_qty BECOMES the factory current stock for warehouse_id + sku (it does NOT add). Reserved / in-production / pending shipout / orders / shipments are never changed. warehouse_id and sku must match canonical values.',
+    masterTemplate: true,
+    columns: columns,
+    exampleRow: { warehouse_id: (whIds[0] || 'WH-FACTORY-CN'), warehouse_code: (whs[0] && whs[0].warehouseCode) || '', sku: (skus[0] || 'CO1100-R'), current_stock_qty: 0, effective_date: '', note: 'initial import' },
+    system: { template_id: 'factory_inventory_import', template_name: 'Factory Inventory Import', template_version: '1', module: 'factory_inventory', export_mode: 'import', source_system: 'operation-system' }
+  };
+  window.KM.templateExport.buildAndDownload(spec).catch(function (err) { alert('Template download failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// ---- Parsing (browser; .xlsx via ExcelJS, .csv hand-parsed). Reads cell VALUES only. ----
+function _fiiSplitCsvLine(line) {
+  var out = [], cur = '', q = false;
+  for (var i = 0; i < line.length; i++) {
+    var c = line[i];
+    if (q) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else { q = false; } } else { cur += c; } }
+    else { if (c === '"') { q = true; } else if (c === ',') { out.push(cur); cur = ''; } else { cur += c; } }
+  }
+  out.push(cur);
+  return out;
+}
+function _fiiAssertHeaders(headers) {
+  var seen = {};
+  headers.forEach(function (h) {
+    if (String(h).trim() === '') throw new Error('Blank column header in the file.');
+    if (seen[h]) throw new Error('Duplicate column header: ' + h);
+    seen[h] = 1;
+  });
+  for (var i = 0; i < _FII_REQUIRED_HEADERS.length; i++) {
+    if (headers.indexOf(_FII_REQUIRED_HEADERS[i]) < 0) throw new Error('Missing required column: ' + _FII_REQUIRED_HEADERS[i]);
+  }
+}
+function _fiiCsvToRows(text) {
+  var raw = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  while (raw.length && raw[raw.length - 1] === '') raw.pop();
+  if (!raw.length) throw new Error('Empty file.');
+  var headers = _fiiSplitCsvLine(raw[0]).map(function (h) { return String(h).trim().toLowerCase(); });
+  _fiiAssertHeaders(headers);
+  var rows = [];
+  for (var i = 1; i < raw.length; i++) {
+    if (raw[i] === '') continue;
+    var cells = _fiiSplitCsvLine(raw[i]);
+    var obj = { __row: i + 1 };
+    headers.forEach(function (h, ci) { obj[h] = cells[ci] != null ? String(cells[ci]).trim() : ''; });
+    if (String(obj.row_type || '').trim().toLowerCase() === 'example') continue;
+    rows.push(obj);
+    if (rows.length > _FII_MAX_ROWS) throw new Error('Too many rows (max ' + _FII_MAX_ROWS + ').');
+  }
+  return rows;
+}
+function _fiiParseCsv(file) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onerror = function () { reject(new Error('Could not read the file.')); };
+    reader.onload = function () { try { resolve(_fiiCsvToRows(String(reader.result || ''))); } catch (e) { reject(e); } };
+    reader.readAsText(file);
+  });
+}
+function _fiiCellText(cell) {
+  var v = cell ? cell.value : null;
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (v.result != null) return String(v.result);         // formula → computed result (never the formula text)
+    if (v.text != null) return String(v.text);
+    if (Array.isArray(v.richText)) return v.richText.map(function (t) { return t.text; }).join('');
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    return '';
+  }
+  return String(v);
+}
+function _fiiXlsxRowValues(row) {
+  var out = [];
+  var n = row && row.cellCount ? row.cellCount : (row && row.actualCellCount ? row.actualCellCount : 0);
+  var last = Math.max(n, (row && row._cells ? row._cells.length : 0), 32);
+  for (var c = 1; c <= last; c++) out.push(_fiiCellText(row.getCell(c)).trim());
+  return out;
+}
+function _fiiParseXlsx(file) {
+  return new Promise(function (resolve, reject) {
+    if (!(window.ExcelJS && window.ExcelJS.Workbook)) { reject(new Error('XLSX engine (ExcelJS) not loaded.')); return; }
+    var reader = new FileReader();
+    reader.onerror = function () { reject(new Error('Could not read the file.')); };
+    reader.onload = function () {
+      var wb = new window.ExcelJS.Workbook();
+      wb.xlsx.load(reader.result).then(function () {
+        var ws = null;
+        wb.eachSheet(function (sheet) { if (!ws && String(sheet.name) !== '_SYSTEM') ws = sheet; });
+        if (!ws) { reject(new Error('No worksheet found.')); return; }
+        var headerRowIdx = -1, headers = [];
+        for (var r = 1; r <= Math.min(ws.rowCount, 12); r++) {
+          var lc = _fiiXlsxRowValues(ws.getRow(r)).map(function (v) { return String(v).trim().toLowerCase(); });
+          if (lc.indexOf('warehouse_id') >= 0 && lc.indexOf('sku') >= 0) { headerRowIdx = r; headers = lc; break; }
+        }
+        if (headerRowIdx < 0) { reject(new Error('Header row (warehouse_id, sku, current_stock_qty) not found.')); return; }
+        // trim trailing blank header cells
+        while (headers.length && headers[headers.length - 1] === '') headers.pop();
+        try { _fiiAssertHeaders(headers); } catch (e) { reject(e); return; }
+        var rows = [];
+        for (var rr = headerRowIdx + 1; rr <= ws.rowCount; rr++) {
+          var cells = _fiiXlsxRowValues(ws.getRow(rr));
+          if (!cells.length || cells.every(function (c) { return String(c).trim() === ''; })) continue;
+          var obj = { __row: rr };
+          headers.forEach(function (h, ci) { obj[h] = cells[ci] != null ? String(cells[ci]).trim() : ''; });
+          if (String(obj.row_type || '').trim().toLowerCase() === 'example') continue;
+          rows.push(obj);
+          if (rows.length > _FII_MAX_ROWS) { reject(new Error('Too many rows (max ' + _FII_MAX_ROWS + ').')); return; }
+        }
+        resolve(rows);
+      }).catch(function (e) { reject(new Error('Could not parse the workbook: ' + (e && e.message ? e.message : e))); });
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function _fiiOnFileChosen() {
+  var fileEl = _fiiEl('factory-import-file');
+  var file = fileEl && fileEl.files && fileEl.files[0];
+  _fiiValidated = null; _fiiRows = null;
+  _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap'); _fiiHide('factory-import-result');
+  var cb = _fiiEl('factory-import-confirm-btn'); if (cb) cb.disabled = true;
+  if (!file) { _fiiSetText('factory-import-parsestat', ''); return; }
+  if (file.size > _FII_MAX_BYTES) { _fiiParseError('File too large (max 5 MB).'); return; }
+  var name = String(file.name || '').toLowerCase();
+  var isXlsx = /\.xlsx$/.test(name), isCsv = /\.csv$/.test(name);
+  if (!isXlsx && !isCsv) { _fiiParseError('Unsupported file type. Use .xlsx or .csv.'); return; }
+  _fiiSetText('factory-import-parsestat', 'Parsing…');
+  (isXlsx ? _fiiParseXlsx(file) : _fiiParseCsv(file))
+    .then(function (rows) { _fiiRows = rows; return _fiiValidate(); })
+    .catch(function (err) { _fiiParseError(err && err.message ? err.message : String(err)); });
+}
+
+// Advisory-only client duplicate check (server is authoritative). Returns {identical, conflict} counts.
+function _fiiClientDupScan(rows) {
+  var seen = {}, identical = 0, conflict = 0;
+  (rows || []).forEach(function (r) {
+    var wh = String(r.warehouse_id || '').trim(), sku = String(r.sku || '').trim(), q = String(r.current_stock_qty == null ? '' : r.current_stock_qty).trim();
+    if (!wh || !sku) return;
+    var k = wh + '||' + sku;
+    if (!seen.hasOwnProperty(k)) seen[k] = q;
+    else if (seen[k] === q) identical++; else conflict++;
+  });
+  return { identical: identical, conflict: conflict };
+}
+function _fiiMakeBatchId() {
+  var d = new Date();
+  var ymd = '' + d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
+  var suffix = (Math.abs((Date.now() % 0xffffffff)).toString(16) + '00000000').slice(0, 8).toUpperCase();
+  return 'FII-' + ymd + '-' + suffix;
+}
+function _fiiValidate() {
+  var rows = _fiiRows || [];
+  if (!rows.length) { _fiiParseError('No data rows found in the file.'); return Promise.resolve(); }
+  _fiiSetText('factory-import-parsestat', 'Validating ' + rows.length + ' row(s)…');
+  _fiiBatchId = _fiiMakeBatchId();
+  if (!(window.KM && window.KM.DB && window.KM.DB.factoryInventoryImportValidate)) { _fiiParseError('Import API not available.'); return Promise.resolve(); }
+  return Promise.resolve(window.KM.DB.factoryInventoryImportValidate({ rows: rows, importBatchId: _fiiBatchId, created_by: 'operation-system' }))
+    .then(function (resp) {
+      if (!resp || resp.success === false) { _fiiParseError((resp && resp.error) || 'Validation failed.'); return; }
+      _fiiValidated = resp.data || null;
+      if (_fiiValidated && _fiiValidated.importBatchId) _fiiBatchId = _fiiValidated.importBatchId;
+      _fiiRenderPreview(_fiiValidated);
+    })
+    .catch(function (err) { _fiiParseError(err && err.message ? err.message : String(err)); });
+}
+
+function _fiiRenderPreview(data) {
+  data = data || {}; var s = data.summary || {};
+  _fiiSetText('factory-import-parsestat', '');
+  var sumEl = _fiiEl('factory-import-summary');
+  if (sumEl) {
+    sumEl.hidden = false;
+    var affWh = {}, affSku = {}; (data.previewRows || []).forEach(function (p) { if (p.warehouse_id) affWh[p.warehouse_id] = 1; if (p.sku) affSku[p.sku] = 1; });
+    sumEl.innerHTML =
+      '<div class="fii-mode">Mode: <strong>SET_CURRENT_STOCK</strong> · Batch <code>' + _fiiEsc(data.importBatchId || '') + '</code></div>' +
+      '<div class="fii-counts">Total ' + (s.totalRows || 0) + ' · Valid ' + (s.validRows || 0) + ' · Invalid <strong class="' + ((s.invalidRows || 0) > 0 ? 'fii-bad' : '') + '">' + (s.invalidRows || 0) + '</strong>' +
+      ' · Create ' + (s.createRows || 0) + ' · Update ' + (s.updateRows || 0) + ' · Unchanged ' + (s.unchangedRows || 0) + ' · Duplicate ' + (s.duplicateRows || 0) +
+      ' · Factories ' + Object.keys(affWh).length + ' · SKUs ' + Object.keys(affSku).length + '</div>';
+  }
+  var wrap = _fiiEl('factory-import-preview-wrap'), body = _fiiEl('factory-import-preview-body');
+  if (wrap && body) {
+    wrap.hidden = false;
+    body.innerHTML = (data.previewRows || []).map(function (p) {
+      var cls = 'fii-st-' + String(p.status || '').toLowerCase();
+      var diff = (p.difference == null) ? '—' : (p.difference > 0 ? '+' + p.difference : String(p.difference));
+      return '<tr class="' + cls + '">' +
+        '<td>' + _fiiEsc(String(p.row)) + '</td>' +
+        '<td>' + _fiiEsc(p.warehouse_id) + '</td>' +
+        '<td>' + _fiiEsc(p.sku) + '</td>' +
+        '<td class="fii-num">' + (p.existingCurrentStock == null ? '—' : _fiiEsc(String(p.existingCurrentStock))) + '</td>' +
+        '<td class="fii-num">' + (p.importedCurrentStock == null ? '—' : _fiiEsc(String(p.importedCurrentStock))) + '</td>' +
+        '<td class="fii-num">' + _fiiEsc(diff) + '</td>' +
+        '<td>' + _fiiEsc(p.status) + '</td>' +
+        '<td>' + (p.issue ? '<code>' + _fiiEsc(p.issue) + '</code>' : '') + '</td>' +
+        '<td>' + _fiiEsc(p.note) + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+  // ATOMIC gate: any blocking (invalid) row disables Confirm; nothing-to-write also disables it.
+  var canImport = (s.invalidRows || 0) === 0 && ((s.createRows || 0) + (s.updateRows || 0)) > 0;
+  var cb = _fiiEl('factory-import-confirm-btn');
+  if (cb) { cb.disabled = !canImport; cb.textContent = 'Confirm Import'; }
+  var note = _fiiEl('factory-import-blocknote');
+  if (note) note.textContent = (s.invalidRows || 0) > 0 ? ('Import blocked — ' + s.invalidRows + ' invalid row(s). Fix the file and re-upload. Nothing will be written.') :
+    (((s.createRows || 0) + (s.updateRows || 0)) === 0 ? 'Nothing to import (all rows unchanged).' : 'This import will SET Factory Current Stock to the imported quantities. It will NOT add. It will NOT change reserved / in-production / pending shipout / orders / shipments.');
+}
+
+function confirmFactoryImport() {
+  if (_fiiSubmitting) return;                                     // double-click → ONE commit
+  if (!_fiiValidated || !_fiiBatchId) return;
+  if ((_fiiValidated.summary && _fiiValidated.summary.invalidRows) > 0) return;   // never commit a blocking batch
+  _fiiSubmitting = true;
+  var btn = _fiiEl('factory-import-confirm-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+  Promise.resolve(window.KM.DB.factoryInventoryImportCommit({ rows: _fiiRows, importBatchId: _fiiBatchId, created_by: 'operation-system' }))
+    .then(function (resp) {
+      if (!resp || resp.success === false) {
+        _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Confirm Import'; }
+        _fiiRenderResult(resp, true); return;
+      }
+      _fiiRenderResult(resp, false);
+      if (btn) btn.textContent = 'Done';
+      return _fiiRefreshAfterCommit();                            // decoupled targeted readback (never whole-DB reload)
+    })
+    .catch(function (err) {
+      // Commit ACK unknown (transport error) — reassure, do NOT resend automatically.
+      _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Confirm Import'; }
+      _fiiRenderResult({ error: (err && err.message) ? err.message : String(err) }, true);
+    });
+}
+function _fiiRenderResult(resp, isErr) {
+  var el = _fiiEl('factory-import-result'); if (!el) return;
+  el.hidden = false;
+  if (isErr) { el.innerHTML = '<div class="fii-error">Import failed: ' + _fiiEsc(resp && resp.error ? resp.error : 'unknown error') + '</div>'; return; }
+  var d = (resp && resp.data) || {};
+  el.innerHTML = '<div class="fii-ok">Import committed.</div>' +
+    '<div>Batch <code>' + _fiiEsc(d.importBatchId || '') + '</code></div>' +
+    '<div>Created ' + (d.createdRows || 0) + ' · Updated ' + (d.updatedRows || 0) + ' · Unchanged ' + (d.unchangedRows || 0) + ' · Movements ' + (d.movementRows || 0) + ' · Failed ' + (d.failedRows || 0) + '</div>';
+}
+function _fiiRefreshAfterCommit() {
+  var root = document.querySelector('#factory-stock-section');
+  if (!(window.KM && window.KM.DB && window.KM.DB.refreshFactoryStockTables)) { if (typeof renderFactoryStockTable === 'function') renderFactoryStockTable(root); return; }
+  return Promise.resolve(window.KM.DB.refreshFactoryStockTables())
+    .then(function () {
+      if (typeof renderFactoryStockTable === 'function') renderFactoryStockTable(root);
+      var movPanel = root && root.querySelector('[data-fs-panel="movement"]');
+      if (movPanel && movPanel.style.display !== 'none' && typeof renderFactoryMovementTable === 'function') { _factoryMovementSearched = true; renderFactoryMovementTable(root); }
+    })
+    .catch(function () {
+      var res = _fiiEl('factory-import-result'); if (res) res.innerHTML += '<div class="fii-reconfirm">Import committed. Reconfirming Factory Inventory…</div>';
+    });
+}
+// __FIIPAGE_END__ (test extraction marker — do not remove)
+
+window.openFactoryImportModal = openFactoryImportModal;
+window.closeFactoryImportModal = closeFactoryImportModal;
+window.downloadFactoryImportTemplate = downloadFactoryImportTemplate;
+window._fiiOnFileChosen = _fiiOnFileChosen;
+window.confirmFactoryImport = confirmFactoryImport;
+
 // ========================================
 // Lifecycle 註冊
 // ========================================

@@ -4251,3 +4251,40 @@ Files: assets/js/pages/request-order.js (+__OPRECO__ block, Block-3 subsection, 
 Governance: FRONTEND_GITHUB_PAGES_REQUIRED = request-order.js, request-order.css. No APPS_SCRIPT_SYNC (no .gs/bundle
   change). No live DB; no push; no deploy.
 ```
+
+---
+
+### Checkpoint — F0-HOTFIX-FI1 Factory Inventory Initial Stock Import (2026-08-06) — IMPLEMENTED
+
+```
+Round: F0-HOTFIX-FI1 (independent Factory Inventory write path). Adds "Import Inventory" (left of Inventory
+  Adjustment) → bulk SET_CURRENT_STOCK of Factory Current Stock from a validated .xlsx/.csv template. Identity =
+  warehouse_id + sku. No supplier / marketplace / site_sku. No DB/schema change, no formula change, no bundle,
+  no cross-module writes. Audit findings (14 pts) recorded before edits.
+Server (21_factory_inventory_handlers.gs): PURE factoryImportEvaluateBatch_ (SET semantics; ATOMIC_BATCH_VALIDATION —
+  any blocking issue ⇒ ok:false, zero writes) + two thin actions factoryInventory.import.validate (server-computed
+  preview; zero writes) / .commit (LockService + exact Spreadsheet-ID gate prodAssertDbTarget_ + validate-before-mutate +
+  drift re-read; SETs fac_current_stock only, reserved untouched; creates missing rows mirroring ensureFactoryStockBaseline_
+  defaults (fac_current_stock=imported, fac_reserved_stock=0, factory_stock_id='FS-'+wh+'-'+sku); one factory_stock_movements
+  row per CHANGED row using the REAL schema (movement_type='inventory_import', related_entity_type='factory_inventory_import',
+  related_entity_id=batchId); per-row idempotency via related_entity_id lookup (existing field, no schema expansion);
+  per-row compensation → IMPORT_AUDIT_WRITE_FAILED, never a false full success). Router (01_router.gs): two thin actions.
+Adapter (operation-system-db-api.js): factoryInventoryImportValidate / factoryInventoryImportCommit (text-first; commit ACK
+  DECOUPLED — no whole-DB reload) + refreshFactoryStockTables (TARGETED re-GET of factory_stock + factory_stock_movements via
+  getOperationDbTableFromSheet; patches cache; never loadOperationDb).
+Frontend (factory-stock.js __FIIPAGE__ + factory-stock.html + factory-stock.css): Import Inventory button LEFT of Inventory
+  Adjustment (grouped); modal Download Template (generic KM.templateExport ExcelJS builder; warehouse_id dropdown + comments;
+  helper sheets unsupported → documented) → upload .xlsx/.csv (browser parse, cell values only, _SYSTEM + example row skipped)
+  → server validate → preview (Existing/Imported/Difference presentational) → confirm (states SET not ADD) → result; double-
+  click sends ONE commit; targeted readback (never whole-DB); readback-fail shows "Import committed. Reconfirming…" (no resend).
+Tests: factory-inventory-import-f0-hotfix-fi1.test.js (NEW, 57 assertions — evals the PURE evaluator: SET/create/unchanged,
+  dup dedupe vs conflict, warehouse+sku authority, zero-valid/blank-missing/negative+decimal invalid, atomic, row limit; evals
+  the frontend CSV helpers; source scans: lock, ID gate, movement schema, idempotency, no supplier, SET-not-ADD, button LEFT,
+  decoupled ack, targeted readback, no whole-DB). Updated 01_router supported-actions string. FULL SUITE 95 files / 0 failing;
+  Golden 39/1/0; Scenario #34 Pending; supply-planning bundle parity unchanged.
+Governance: APPS_SCRIPT_SYNC_REQUIRED = 21_factory_inventory_handlers.gs, 01_router.gs. FRONTEND_GITHUB_PAGES_REQUIRED =
+  factory-stock.js, operation-system-db-api.js, factory-stock.html, factory-stock.css. DB/schema changes = none. Bundle rebuild
+  = none. No live DB; no push; no deploy.
+Not this round: supplier / ADD mode / reserved+in-production+pending-shipout import / transfer / Forecast / Recommendation /
+  Execution Plan / Allocation Draft / Submit / Request Order / PO / Shipment / document generation / whole-DB reload.
+```

@@ -107,10 +107,15 @@
                     </div>
                     </div>
 
-                    <!-- Inventory Adjustment (renamed from the old dead "Edit" placeholder, 2026-07-23).
-                         Opens a modal to adjust one record's Available quantity; writes factory_stock +
+                    <!-- Top action buttons. Import Inventory (F0-HOTFIX-FI1) sits to the LEFT of Inventory
+                         Adjustment; both are grouped so they stay together on the right of the space-between bar.
+                         Inventory Adjustment (2026-07-23) adjusts one record's Available; Import Inventory bulk-SETs
+                         Factory Current Stock from a validated template. Both write factory_stock +
                          factory_stock_movements atomically on the backend (no inline edit). -->
-                    <button class="btn btn-secondary" id="factory-stock-edit-btn" onclick="openFactoryInventoryAdjustModal()">Inventory Adjustment</button>
+                    <div class="fc-action-buttons" style="display: flex; gap: 8px; align-items: flex-end;">
+                        <button class="btn btn-secondary" id="factory-stock-import-btn" onclick="openFactoryImportModal()">Import Inventory</button>
+                        <button class="btn btn-secondary" id="factory-stock-edit-btn" onclick="openFactoryInventoryAdjustModal()">Inventory Adjustment</button>
+                    </div>
                 </div>
                 
                 <!-- Factory Stock Table -->
@@ -339,6 +344,45 @@
                         <div class="fia-modal-actions">
                             <button type="button" class="btn btn-secondary" onclick="closeFactoryInventoryAdjustModal()">Cancel</button>
                             <button type="button" class="btn btn-primary" id="factory-adjust-confirm-btn" onclick="confirmFactoryInventoryAdjustment()" disabled>Confirm Adjustment</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ Factory Inventory Import (F0-HOTFIX-FI1) ============
+                     Bulk SET of Factory Current Stock from a validated .xlsx/.csv template. Identity =
+                     warehouse_id + sku. Two-phase: validate (server-computed preview; zero writes) → confirm
+                     (atomic commit; one movement per changed row). SET_CURRENT_STOCK — never ADD; reserved /
+                     in-production / pending shipout / orders / shipments are never touched. No supplier. -->
+                <div class="fia-modal-overlay" id="factory-import-overlay" onclick="closeFactoryImportModal()"></div>
+                <div class="fia-modal fii-modal" id="factory-import-modal" role="dialog" aria-modal="true" aria-labelledby="factory-import-title">
+                    <div class="fia-modal-content">
+                        <h3 id="factory-import-title">Import Inventory</h3>
+                        <div class="fia-modal-body">
+                            <p class="fia-hint">Bulk-set beginning <strong>Factory Current Stock</strong> by <strong>warehouse_id + sku</strong>. Mode: <strong>Set Current Stock</strong> — the imported quantity <strong>becomes</strong> the current stock (it does not add). Reserved / in-production / pending shipout / orders / shipments are never changed. Supplier is not required.</p>
+                            <div class="fii-step">
+                                <div class="fii-step__row">
+                                    <button type="button" class="btn btn-secondary" onclick="downloadFactoryImportTemplate()">Download Template (.xlsx)</button>
+                                    <label class="fii-file">
+                                        <span>Upload completed file (.xlsx or .csv)</span>
+                                        <input type="file" id="factory-import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="_fiiOnFileChosen()">
+                                    </label>
+                                    <span class="fii-mode-badge">Mode: Set Current Stock</span>
+                                </div>
+                                <div class="fii-parsestat" id="factory-import-parsestat" aria-live="polite"></div>
+                            </div>
+                            <div class="fii-summary" id="factory-import-summary" hidden></div>
+                            <div class="fii-preview-wrap" id="factory-import-preview-wrap" hidden>
+                                <table class="fii-preview-table">
+                                    <thead><tr><th>Row</th><th>Factory</th><th>SKU</th><th class="fii-num">Existing</th><th class="fii-num">Imported</th><th class="fii-num">Diff</th><th>Status</th><th>Issue</th><th>Note</th></tr></thead>
+                                    <tbody id="factory-import-preview-body"></tbody>
+                                </table>
+                            </div>
+                            <div class="fii-blocknote" id="factory-import-blocknote" aria-live="polite"></div>
+                            <div class="fia-result fii-result" id="factory-import-result" hidden></div>
+                        </div>
+                        <div class="fia-modal-actions">
+                            <button type="button" class="btn btn-secondary" onclick="closeFactoryImportModal()">Cancel</button>
+                            <button type="button" class="btn btn-primary" id="factory-import-confirm-btn" onclick="confirmFactoryImport()" disabled>Confirm Import</button>
                         </div>
                     </div>
                 </div>

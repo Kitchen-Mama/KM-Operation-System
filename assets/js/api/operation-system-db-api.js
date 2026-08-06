@@ -3483,6 +3483,57 @@ window.KM.DB.adjustFactoryInventory = async function(payload) {
 };
 
 // ========================================
+// F0-HOTFIX-FI1 — Factory Inventory Initial Stock Import (SET_CURRENT_STOCK).
+// Two decoupled actions: validate (server-computed preview; ZERO writes) and commit (atomic write). Neither
+// auto-reloads the whole Operation DB — the ACK is decoupled from the READBACK (§16). After a committed ack
+// the page calls refreshFactoryStockTables() (a TARGETED per-table GET, never a whole-DB reload).
+// ========================================
+window.KM.DB.factoryInventoryImportValidate = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, factoryInventoryImportValidate skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'factoryInventory.import.validate' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    return await resp.json();   // preview only — NO cache reload (read-only validate)
+};
+
+window.KM.DB.factoryInventoryImportCommit = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, factoryInventoryImportCommit skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'factoryInventory.import.commit' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    // Decoupled: return the commit ACK verbatim. The caller performs a targeted readback separately, so a
+    // readback failure never masks a committed write and never triggers a blind resend.
+    return await resp.json();
+};
+
+// TARGETED readback (§16) — re-GET ONLY factory_stock + factory_stock_movements and patch the in-memory
+// cache in place. Never loadOperationDb({force:true}) (no whole-DB reload). Throws on fetch failure so the
+// caller can show "Import committed. Reconfirming Factory Inventory…" without resending the commit.
+window.KM.DB.refreshFactoryStockTables = async function() {
+    if (!isOperationDbApiConfigured()) return { success: false, error: 'API not configured' };
+    var stockRows = await getOperationDbTableFromSheet('factory_stock');
+    var movementRows = await getOperationDbTableFromSheet('factory_stock_movements');
+    if (!window._opDbCache) window._opDbCache = {};
+    window._opDbCache.factoryStock = (stockRows || []).map(normalizeFactoryStockRecord).filter(function(r) { return r.factoryStockId || r.sku; });
+    window._opDbCache.factoryStockMovements = (movementRows || []).map(normalizeFactoryStockMovementRecord).filter(function(r) { return r.movementId || r.sku; });
+    return { success: true, factoryStock: window._opDbCache.factoryStock.length, factoryStockMovements: window._opDbCache.factoryStockMovements.length };
+};
+
+// ========================================
 // Debug & Reload Helpers
 // ========================================
 
