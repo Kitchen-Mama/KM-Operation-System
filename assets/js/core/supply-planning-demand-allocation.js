@@ -88,6 +88,101 @@
     return [s(dto.destinationType), s(dto.company), s(dto.country), s(dto.marketplace), s(dto.destinationRefId)].join('||');
   }
 
+  // ---- Canonical DestinationNode normalizer (F1-4B-FM1 §3 — the ONE consolidated destination identity owner) ---
+  // Validates an explicit caller-owned destination against canonical authorities and returns a normalized node.
+  // MARKETPLACE identity = a unique ACTIVE marketplaces row (marketplace_id); warehouseId is ALWAYS null (never a
+  // fabricated Amazon warehouse). WAREHOUSE identity = an active same-company warehouses row (warehouse_id). Identity
+  // is NEVER a display label and is NEVER defaulted when missing. authorities = { marketplaces:[...] | marketplacesById,
+  // warehouses:[...] | warehousesById } (rows accepted in snake OR normalized shape). Returns { ok, destination, issues }.
+  function _norm(v) { return s(v).toLowerCase(); }
+  function _isActiveStatus(st) { var t = _norm(st); return t === 'active' || st === true || t === 'true'; }
+  function _rowsFrom(authorities, arrKey, mapKey) {
+    var a = authorities || {};
+    if (Array.isArray(a[arrKey])) return a[arrKey].slice();
+    if (isObj(a[mapKey])) { var out = []; for (var k in a[mapKey]) if (Object.prototype.hasOwnProperty.call(a[mapKey], k)) out.push(a[mapKey][k]); return out; }
+    return [];
+  }
+  function _mktRow(r) {
+    r = r || {};
+    return {
+      marketplaceId: s(r.marketplaceId || r.marketplace_id), company: s(r.company), country: s(r.country),
+      marketplace: s(r.marketplace), status: (r.status === undefined ? r.is_active : r.status),
+      code: s(r.marketplace || r.marketplaceAlias || r.marketplace_alias),
+      label: s(r.marketplaceDisplayName || r.marketplace_display_name) || s(r.marketplace)
+    };
+  }
+  function _whRow(r) {
+    r = r || {};
+    return {
+      warehouseId: s(r.warehouseId || r.warehouse_id), company: s(r.company), country: s(r.country),
+      isActive: (r.is_active !== undefined ? r.is_active : r.isActive),
+      code: s(r.warehouse_code || r.warehouseCode), name: s(r.warehouse_name || r.warehouseName)
+    };
+  }
+  function normalizeRecommendationDestination(input, authorities) {
+    input = input || {}; authorities = authorities || {};
+    var issues = [];
+    function fail(code, message, field) { issues.push(issue(code, message, field === undefined ? null : field)); return { ok: false, destination: null, issues: issues }; }
+    var company = s(input.company), country = s(input.country), marketplace = s(input.marketplace);
+    var type = s(input.destinationType).toUpperCase();
+    // legacy normalization: a bare destinationWarehouseId ⇒ WAREHOUSE (never a MARKETPLACE default)
+    var legacyWh = s(input.warehouseId) || s(input.destinationWarehouseId);
+    if (!type) type = legacyWh ? 'WAREHOUSE' : (input.marketplaceId || input.destinationRefId ? 'MARKETPLACE' : '');
+    if (DEST_TYPES[type] !== 1) return fail('DESTINATION_TYPE_UNSUPPORTED', 'unsupported destinationType: "' + s(input.destinationType) + '"', 'destinationType');
+
+    if (type === 'MARKETPLACE') {
+      var rows = _rowsFrom(authorities, 'marketplaces', 'marketplacesById').map(_mktRow);
+      var wantId = s(input.marketplaceId) || s(input.destinationRefId);
+      var row = null;
+      if (wantId) {
+        var byId = rows.filter(function (r) { return r.marketplaceId === wantId; });
+        if (byId.length === 0) return fail('MARKETPLACE_DESTINATION_NOT_FOUND', 'no canonical marketplaces row for marketplace_id: ' + wantId, 'marketplaceId');
+        if (byId.length > 1) return fail('MARKETPLACE_DESTINATION_CONFLICT', 'multiple marketplaces rows for marketplace_id: ' + wantId, 'marketplaceId');
+        row = byId[0];
+        if ((company && row.company && !eqv(row.company, company)) || (country && row.country && !eqv(row.country, country)) || (marketplace && row.marketplace && !eqv(row.marketplace, marketplace))) {
+          return fail('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', 'marketplace_id ' + wantId + ' scope (' + [row.company, row.country, row.marketplace].join('/') + ') ≠ requested (' + [company, country, marketplace].join('/') + ')', 'marketplaceId');
+        }
+        if (!_isActiveStatus(row.status)) return fail('MARKETPLACE_DESTINATION_INACTIVE', 'marketplace destination inactive: ' + wantId, 'marketplaceId');
+      } else {
+        // resolve by scope (fact 7): company + country + marketplace → unique active marketplaces row
+        if (!company || !country || !marketplace) return fail('MARKETPLACE_DESTINATION_NOT_FOUND', 'company/country/marketplace required to resolve a marketplace destination (no marketplace_id supplied)', 'marketplace');
+        var scoped = rows.filter(function (r) { return eqv(r.company, company) && eqv(r.country, country) && eqv(r.marketplace, marketplace); });
+        if (scoped.length === 0) return fail('MARKETPLACE_DESTINATION_NOT_FOUND', 'no marketplaces row for scope: ' + [company, country, marketplace].join('/'), 'marketplace');
+        var active = scoped.filter(function (r) { return _isActiveStatus(r.status); });
+        if (active.length === 0) return fail('MARKETPLACE_DESTINATION_INACTIVE', 'marketplace destination inactive for scope: ' + [company, country, marketplace].join('/'), 'marketplace');
+        if (active.length > 1) return fail('MARKETPLACE_DESTINATION_CONFLICT', 'ambiguous marketplace destination for scope: ' + [company, country, marketplace].join('/'), 'marketplace');
+        row = active[0];
+      }
+      var mDest = {
+        destinationType: 'MARKETPLACE', destinationRefId: row.marketplaceId,
+        destinationCode: row.code || marketplace || null, destinationLabel: row.label || marketplace || row.marketplaceId,
+        company: company || row.company, country: country || row.country, marketplace: marketplace || row.marketplace,
+        marketplaceId: row.marketplaceId, warehouseId: null
+      };
+      mDest.destinationKey = destinationKey(mDest);
+      return { ok: true, destination: mDest, issues: issues };
+    }
+
+    // WAREHOUSE
+    var whRows = _rowsFrom(authorities, 'warehouses', 'warehousesById').map(_whRow);
+    var whId = legacyWh || s(input.destinationRefId);
+    if (!whId) return fail('DESTINATION_WAREHOUSE_INVALID', 'destination warehouse_id is required (never defaulted)', 'warehouseId');
+    var whMatches = whRows.filter(function (r) { return r.warehouseId === whId; });
+    if (whMatches.length === 0) return fail('DESTINATION_WAREHOUSE_INVALID', 'warehouse_id not a canonical warehouse: ' + whId, 'warehouseId');
+    if (whMatches.length > 1) return fail('DESTINATION_WAREHOUSE_INVALID', 'duplicate canonical warehouse_id: ' + whId, 'warehouseId');
+    var w = whMatches[0];
+    if (!truthy(w.isActive)) return fail('DESTINATION_WAREHOUSE_INACTIVE', 'destination warehouse inactive: ' + whId, 'warehouseId');
+    if (company && w.company && !eqv(w.company, company)) return fail('DESTINATION_COMPANY_MISMATCH', 'destination warehouse company (' + w.company + ') ≠ requested (' + company + ') — no cross-company borrowing', 'warehouseId');
+    var wDest = {
+      destinationType: 'WAREHOUSE', destinationRefId: whId,
+      destinationCode: w.code || null, destinationLabel: w.name || w.code || whId,
+      company: company || w.company, country: country || w.country, marketplace: marketplace,
+      marketplaceId: s(input.marketplaceId) || null, warehouseId: whId
+    };
+    wDest.destinationKey = destinationKey(wDest);
+    return { ok: true, destination: wDest, issues: issues };
+  }
+
   // ---- Targeted rule reader (pure; rows INJECTED — no live DB) --------------------------------------------
   // Active rule for a scope = same company+country+marketplace, status active, effective period covering the
   // planning period. `effectiveDate` is an injected "YYYY-MM(-DD)" (NEVER a browser clock). Returns the matched
@@ -272,6 +367,7 @@
   return {
     BASIS: BASIS,
     buildDestinationDTO: buildDestinationDTO,
+    normalizeRecommendationDestination: normalizeRecommendationDestination,
     destinationKey: destinationKey,
     readActiveAllocationRules: readActiveAllocationRules,
     validateAllocationRules: validateAllocationRules,

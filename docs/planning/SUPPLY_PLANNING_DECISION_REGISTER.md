@@ -139,6 +139,36 @@
   remainder allocator **reusing the frozen §24.7 policy**). No wiring into KMPCX/KMAF/KMPA/KMPS; no UI/Submit/Shipment/
   persistence; config table is a user-owned provisioning prerequisite (no runtime table creation).
 
+## D-F1-4B-FM1 — Unified Destination-Node core runtime (MARKETPLACE order-need + WAREHOUSE replenishment) ✅ AUTHORIZED (2026-08-06)
+
+Resolves the three F1-4B-FM escalations (D-1/D-2/D-3). Core runtime ONLY — no page cutover, Workspace request
+redesign, Apps Script handler fanout, UI, persistence, Submit/Shipment/PO/Coverage (deferred to the transport round).
+
+- **D-F1-4B-FM1-1 — MARKETPLACE semantics = `MARKETPLACE_ORDER_NEED`.** "How much total additional supply this
+  marketplace still needs after confirmed marketplace stock + confirmed Qualified Incoming." Uses the **existing frozen
+  Monthly order-need owner** `KMCALC.calculateSuggestedOrderQty` (carton CEILING). **Never** the Weekly pool allocator;
+  **never** a fabricated Amazon warehouse. (Adopts the F1-4B-FM audit's recommended D-1 = A.)
+- **D-F1-4B-FM1-2 — WAREHOUSE semantics = `WAREHOUSE_REPLENISHMENT`.** "How much this overseas warehouse should
+  receive, subject to source-pool availability." Uses the **existing frozen Weekly resolver owner**
+  `KMCALC.calculateShippingAndResidual` (FLOOR, allocator-capped) over the frozen ratio fanout.
+- **D-F1-4B-FM1-3 — Qualified-Incoming uncertainty is NEVER a fake zero.** Only **source-proven** marketplace incoming
+  (identity resolved to a unique active `marketplaces` row) is summed, through the existing `KMQI` count-once
+  lifecycle. `incomingCompleteness ∈ {COMPLETE, PARTIAL, UNAVAILABLE}`; active potentially-relevant **unresolved**
+  incoming ⇒ PARTIAL ⇒ canonical `recommendedQty` is **BLOCKED**; a `provisionalOrderNeed` may be returned for
+  diagnostics but is never labeled/persisted as `recommendedQty`. Missing source ⇒ UNAVAILABLE (never a confirmed 0).
+- **D-F1-4B-FM1-4 — Identity refactor (NOT a formula change).** KMPCX destination validation is refactored to accept a
+  normalized DestinationNode (MARKETPLACE ⇒ `marketplace_id`, `warehouseId=null`, no warehouse eligibility / no
+  source-pool decomposition; WAREHOUSE/legacy ⇒ byte-identical). No frozen formula / allocator / count-once / QI gate /
+  carton rule rewritten. `MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED` persists as the honest disposition when shipments
+  carry no canonical `marketplace_id` (no source-proven shipment→marketplace mapping exists).
+- **Runtime (this round F1-4B-FM1):** NEW pure `assets/js/core/supply-planning-destination-runtime.js`
+  (`window.KM.destinationRuntime`: `normalizeRecommendationDestination` re-export, `resolveMarketplaceCurrentStock`,
+  `resolveMarketplaceIncomingIdentity`, `resolveMarketplaceQualifiedIncoming`, `resolveMarketplaceDemand`,
+  `resolveMarketplaceRecommendation`, `resolveWarehouseRecommendation`, `resolveUnifiedDestinationRecommendation`);
+  `normalizeRecommendationDestination` consolidated into `supply-planning-demand-allocation.js`; KMPCX (bundled)
+  refactored additively → bundle regenerated via the build tool (`--check` parity). The new runtime module is **not
+  bundled** (no server handler calls it yet — transport is the next round). No live DB; no page/handler/router change.
+
 ## Decisions explicitly NOT re-opened (already frozen — listed to prevent accidental re-litigation)
 
 - Formula set (Engine A/B, §2C.1/§31/§14/§22/§27A/§32A/§34A/§39/§40) — FROZEN v4.7.

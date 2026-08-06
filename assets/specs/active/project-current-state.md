@@ -4064,3 +4064,32 @@ Doc: PHASE_F1_4B_FM_UNIFIED_DESTINATION_AUDIT.md. Full suite unchanged (91 files
 ```
 
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
+
+---
+
+### Checkpoint — F1-4B-FM1 Unified Destination-Node Core Runtime (2026-08-06) — IMPLEMENTED
+
+```
+Round: F1-4B-FM1 (core runtime only; the three F1-4B-FM escalations now user-authorized as D-F1-4B-FM1-1..4).
+Implemented the pure unified destination-node recommendation core — dispatch by destinationType into the EXISTING
+frozen owners, no new business formula:
+  MARKETPLACE → MARKETPLACE_ORDER_NEED: demand = Σ Regular FC(M+1..M+4) via frozen KMPCX (marketplace node,
+    warehouseId=null); current stock = amazon_inventory_snapshot.available_qty ONLY (0 stays 0; missing≠0; overseas/
+    factory excluded; conflict fails closed); incoming = ONLY source-proven (identity → unique active marketplaces
+    row) through the frozen KMQI count-once lifecycle; gap = KMCALC.calculateGap; recommendedQty =
+    KMCALC.calculateSuggestedOrderQty (Monthly CEIL). Unresolved active incoming ⇒ incomingCompleteness PARTIAL ⇒
+    canonical recommendedQty BLOCKED (provisionalOrderNeed diagnostic only; never a fake zero).
+  WAREHOUSE → WAREHOUSE_REPLENISHMENT: demand fanned by the frozen configured ratio (resolveScopeWarehouseDemandFacts,
+    largest-remainder, conserved, never pooled); per-warehouse gap = KMCALC.calculateGap over that warehouse's own
+    stock/incoming; recommendedQty = KMCALC.calculateShippingAndResidual (Weekly FLOOR, allocator-capped).
+Files: NEW assets/js/core/supply-planning-destination-runtime.js (window.KM.destinationRuntime, NOT bundled);
+  supply-planning-demand-allocation.js (+normalizeRecommendationDestination §3 identity owner, structured failures);
+  supply-planning-planning-context.js (KMPCX §4 additive DestinationNode support — WAREHOUSE/legacy byte-identical);
+  NEW assets/tests/supply-planning-destination-runtime-f1-4b-fm1.test.js (50 assertions); regenerated
+  90_generated_supply_planning_bundle.gs (KMPCX bundled) sha256=28e18770…c2329, --check parity PASS.
+Tests: F1-4B-FM1 50/50; FULL SUITE 92 files / 0 failing; Golden Matrix 39/1/0; Scenario #34 Pending.
+Governance: no page/Workspace-DTO/Apps-Script-handler/router change; no live DB; APPS_SCRIPT_SYNC_REQUIRED=true
+  (regenerated bundle — behaviourally byte-identical for WAREHOUSE/legacy; user-owned sync); no push, no deploy.
+NOT this round (transport — next): Workspace handler fanout, scope-only page request, UI, feature-flag enablement,
+  persistence/Submit/Shipment/PO/Coverage/DOS.
+```

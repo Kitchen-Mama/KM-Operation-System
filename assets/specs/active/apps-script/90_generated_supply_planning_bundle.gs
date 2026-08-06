@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = a002c6a3274d2eefb52ed022df1d1a09ec03972fe27a40cfbb79d7797076a380
+// bundle_sha256 = 28e18770ea5d683202ebcc722e4017e2e45bded19d3f40ba768845c5b30c2329
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7
@@ -27,7 +27,7 @@
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
 //   supply-planning-source-projection  1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4
 //   supply-planning-allocation-facts  5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc
-//   supply-planning-planning-context  e1e6891bbc2fe0be8e21106da1544dff42a6ae1d13092e7eb18ef10c087c72c7
+//   supply-planning-planning-context  2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3
 //   supply-planning-production-assembly  de545f7865f3ac777d75e1b56f2f08ea81d0548a7d49cfdbd2e6c48bc1039338
 //   supply-planning-production-source  db7aeb9b93c593c37072839d222a30575946b5d2dae59b70c5b940ffd84c4cbe
 //   supply-planning-production-safety  7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6
@@ -7189,8 +7189,10 @@ function __kmRequire(p) {
     list.forEach(function (v) { var id = str(v); if (nonEmpty(id) && !seen[id]) { seen[id] = 1; distinct.push(id); } });
     return distinct;
   }
-  function validateDestination(r, whById, recvIssues, key) {
-    var distinct = normalizeDestination(r);
+  function validateDestination(r, whById, recvIssues, key, explicitId) {
+    // explicitId (F1-4B-FM1 §4): a WAREHOUSE DestinationNode routes its warehouse_id here; legacy callers (no
+    // node) fall through to normalizeDestination(r) so their behavior is byte-identical.
+    var distinct = (explicitId !== undefined && explicitId !== null && str(explicitId) !== '') ? [str(explicitId)] : normalizeDestination(r);
     if (distinct.length === 0) { recvIssues.push(issue('MISSING_DESTINATION_WAREHOUSE', key, 'destinationWarehouseId is a required caller-owned canonical warehouse_id (D-F1-5B-1; never inferred)')); return null; }
     if (distinct.length > 1) { recvIssues.push(issue('DESTINATION_AUTHORITY_CONFLICT', key, 'multiple distinct destination authorities supplied: ' + distinct.join(','))); return null; }
     var id = distinct[0];
@@ -7201,6 +7203,28 @@ function __kmRequire(p) {
       recvIssues.push(issue('DESTINATION_NOT_ELIGIBLE', key, 'destination warehouse company (' + str(w.company) + ') ≠ receiver company (' + str(r.company) + ') — no cross-company borrowing')); return null;
     }
     return { id: id, code: str(w.warehouse_code), type: str(w.warehouse_type) };
+  }
+
+  // ---- MARKETPLACE destination validation (F1-4B-FM1 §4) — marketplace_id identity; warehouseId is ALWAYS null ----
+  // Accepts a pre-normalized DestinationNode (identity already validated by the §3 owner) OR raw marketplace fields
+  // validated against an injected canonical `marketplaces` authority. Never fabricates an Amazon warehouse.
+  function validateMarketplaceDestination(r, destNode, mktById, recvIssues, key) {
+    var refId = destNode ? str(destNode.marketplaceId || destNode.destinationRefId) : str(r.marketplaceId || r.destinationRefId);
+    if (!nonEmpty(refId)) { recvIssues.push(issue('MISSING_DESTINATION_MARKETPLACE', key, 'MARKETPLACE destination requires a canonical marketplace_id (never inferred)')); return null; }
+    // A MARKETPLACE destination NEVER carries a warehouse identity (no fabricated Amazon warehouse) — reject early.
+    if ((destNode && nonEmpty(destNode.warehouseId)) || nonEmpty(r.destinationWarehouseId)) { recvIssues.push(issue('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', key, 'MARKETPLACE destination must not carry a warehouseId (no fabricated Amazon warehouse)')); return null; }
+    var hasAuth = mktById && Object.keys(mktById).length > 0;
+    if (hasAuth) {
+      var m = mktById[refId];
+      if (!m) { recvIssues.push(issue('MARKETPLACE_DESTINATION_NOT_FOUND', key, 'marketplace_id not in canonical marketplaces: ' + refId)); return null; }
+      var st = (m.status !== undefined ? m.status : m.is_active);
+      var active = (str(st).toLowerCase() === 'active' || st === true);
+      if (!active) { recvIssues.push(issue('MARKETPLACE_DESTINATION_INACTIVE', key, 'marketplace destination inactive: ' + refId)); return null; }
+      if (nonEmpty(m.company) && nonEmpty(r.company) && str(m.company) !== str(r.company)) { recvIssues.push(issue('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', key, 'marketplace company (' + str(m.company) + ') ≠ receiver company (' + str(r.company) + ')')); return null; }
+      return { refId: refId, code: str(m.marketplace || m.marketplace_alias) || null, label: str(m.marketplace_display_name) || str(m.marketplace) || refId, marketplaceId: refId };
+    }
+    if (destNode && nonEmpty(destNode.warehouseId)) { recvIssues.push(issue('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', key, 'MARKETPLACE destination must not carry a warehouseId (no fabricated Amazon warehouse)')); return null; }
+    return { refId: refId, code: destNode ? (str(destNode.destinationCode) || null) : null, label: destNode ? (str(destNode.destinationLabel) || refId) : refId, marketplaceId: refId };
   }
 
   // ---- forecast weight anchor + share (D-F1-5B-3) — Regular FC over M+1..M+4; Special Event NEVER folded in ----
@@ -7251,6 +7275,8 @@ function __kmRequire(p) {
     var recommendationType = nonEmpty(input.recommendationType) ? str(input.recommendationType) : null;
     var warehouses = Array.isArray(input.warehouses) ? input.warehouses : [];
     var whById = {}; warehouses.forEach(function (w) { var id = str(w.warehouse_id); if (nonEmpty(id) && !whById[id]) whById[id] = w; });
+    var marketplaces = Array.isArray(input.marketplaces) ? input.marketplaces : [];
+    var mktById = {}; marketplaces.forEach(function (m) { var id = str(m.marketplace_id || m.marketplaceId); if (nonEmpty(id) && !mktById[id]) mktById[id] = m; });
     var receivers = Array.isArray(input.receivers) ? input.receivers : [];
 
     var byContextId = {}; // dedupe equal; conflict on differing facts
@@ -7265,22 +7291,44 @@ function __kmRequire(p) {
       if (has(r, 'demandDriver') && nonEmpty(r.demandDriver) && str(r.demandDriver).toUpperCase() !== 'FORECAST') {
         recvIssues.push(issue('UNSUPPORTED_PHASE1_DEMAND_DRIVER', key, 'Phase-1 replenishment is FORECAST-driven only (D-F1-5B-2); got "' + str(r.demandDriver) + '"'));
       }
-      var dest = validateDestination(r, whById, recvIssues, key);
       var fw = resolveForecastWeight(r, M, recvIssues, key);
       var win = resolveWindow(r, M, planningCycle, recvIssues, key);
 
-      if (recvIssues.length) { recvIssues.forEach(function (x) { issues.push(x); }); continue; }
+      // Destination node (F1-4B-FM1 §4): a MARKETPLACE node (marketplace_id, warehouseId=null) skips warehouse
+      // validation/pool decomposition but still resolves the same window/forecast basis; a WAREHOUSE node OR a
+      // legacy bare destinationWarehouseId takes the unchanged warehouse path (byte-identical for legacy callers).
+      var destNode = isObj(r.destination) && nonEmpty(r.destination.destinationType) ? r.destination : null;
+      var destType = destNode ? str(destNode.destinationType).toUpperCase() : (nonEmpty(r.destinationType) ? str(r.destinationType).toUpperCase() : 'WAREHOUSE');
 
-      var ctx = {
-        contextId: [str(r.company), str(r.country), str(r.marketplace), key, dest.id, planningCycle, win.windowCode].join('|'),
-        company: str(r.company), country: str(r.country), marketplace: str(r.marketplace), sku: str(r.sku), siteSku: str(r.siteSku),
-        recommendationType: recommendationType,
-        destinationWarehouseId: dest.id, destinationWarehouseCode: dest.code, destinationWarehouseType: dest.type,
-        planningCycle: planningCycle,
-        windowCode: win.windowCode, windowStartDate: win.windowStartDate, windowEndDate: win.windowEndDate, requiredByDate: win.requiredByDate,
-        demandDriver: demandDriver, forecastWeightAnchor: ymStr(M), forecastWeightMonths: fw.months, forecastShareQty: fw.qty,
-        issues: []
-      };
+      var ctx;
+      if (destType === 'MARKETPLACE') {
+        var md = validateMarketplaceDestination(r, destNode, mktById, recvIssues, key);
+        if (recvIssues.length) { recvIssues.forEach(function (x) { issues.push(x); }); continue; }
+        ctx = {
+          contextId: [str(r.company), str(r.country), str(r.marketplace), key, md.refId, planningCycle, win.windowCode].join('|'),
+          company: str(r.company), country: str(r.country), marketplace: str(r.marketplace), sku: str(r.sku), siteSku: str(r.siteSku),
+          recommendationType: recommendationType,
+          destinationType: 'MARKETPLACE', destinationRefId: md.refId, marketplaceId: md.marketplaceId,
+          destinationWarehouseId: null, destinationWarehouseCode: null, destinationWarehouseType: null,
+          planningCycle: planningCycle,
+          windowCode: win.windowCode, windowStartDate: win.windowStartDate, windowEndDate: win.windowEndDate, requiredByDate: win.requiredByDate,
+          demandDriver: demandDriver, forecastWeightAnchor: ymStr(M), forecastWeightMonths: fw.months, forecastShareQty: fw.qty,
+          issues: []
+        };
+      } else {
+        var dest = validateDestination(r, whById, recvIssues, key, destNode ? destNode.warehouseId : null);
+        if (recvIssues.length) { recvIssues.forEach(function (x) { issues.push(x); }); continue; }
+        ctx = {
+          contextId: [str(r.company), str(r.country), str(r.marketplace), key, dest.id, planningCycle, win.windowCode].join('|'),
+          company: str(r.company), country: str(r.country), marketplace: str(r.marketplace), sku: str(r.sku), siteSku: str(r.siteSku),
+          recommendationType: recommendationType,
+          destinationWarehouseId: dest.id, destinationWarehouseCode: dest.code, destinationWarehouseType: dest.type,
+          planningCycle: planningCycle,
+          windowCode: win.windowCode, windowStartDate: win.windowStartDate, windowEndDate: win.windowEndDate, requiredByDate: win.requiredByDate,
+          demandDriver: demandDriver, forecastWeightAnchor: ymStr(M), forecastWeightMonths: fw.months, forecastShareQty: fw.qty,
+          issues: []
+        };
+      }
       var ser = JSON.stringify(ctx);
       if (has(byContextId, ctx.contextId)) {
         if (byContextId[ctx.contextId] !== ser) issues.push(issue('PLANNING_CONTEXT_NOT_READY', ctx.contextId, 'conflicting planning contexts share one identity with differing facts'));
@@ -8377,4 +8425,4 @@ var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"a002c6a3274d2eefb52ed022df1d1a09ec03972fe27a40cfbb79d7797076a380","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"e1e6891bbc2fe0be8e21106da1544dff42a6ae1d13092e7eb18ef10c087c72c7"},{"module":"supply-planning-production-assembly","sha256":"de545f7865f3ac777d75e1b56f2f08ea81d0548a7d49cfdbd2e6c48bc1039338"},{"module":"supply-planning-production-source","sha256":"db7aeb9b93c593c37072839d222a30575946b5d2dae59b70c5b940ffd84c4cbe"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"28e18770ea5d683202ebcc722e4017e2e45bded19d3f40ba768845c5b30c2329","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-production-assembly","sha256":"de545f7865f3ac777d75e1b56f2f08ea81d0548a7d49cfdbd2e6c48bc1039338"},{"module":"supply-planning-production-source","sha256":"db7aeb9b93c593c37072839d222a30575946b5d2dae59b70c5b940ffd84c4cbe"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};

@@ -61,8 +61,10 @@
     list.forEach(function (v) { var id = str(v); if (nonEmpty(id) && !seen[id]) { seen[id] = 1; distinct.push(id); } });
     return distinct;
   }
-  function validateDestination(r, whById, recvIssues, key) {
-    var distinct = normalizeDestination(r);
+  function validateDestination(r, whById, recvIssues, key, explicitId) {
+    // explicitId (F1-4B-FM1 §4): a WAREHOUSE DestinationNode routes its warehouse_id here; legacy callers (no
+    // node) fall through to normalizeDestination(r) so their behavior is byte-identical.
+    var distinct = (explicitId !== undefined && explicitId !== null && str(explicitId) !== '') ? [str(explicitId)] : normalizeDestination(r);
     if (distinct.length === 0) { recvIssues.push(issue('MISSING_DESTINATION_WAREHOUSE', key, 'destinationWarehouseId is a required caller-owned canonical warehouse_id (D-F1-5B-1; never inferred)')); return null; }
     if (distinct.length > 1) { recvIssues.push(issue('DESTINATION_AUTHORITY_CONFLICT', key, 'multiple distinct destination authorities supplied: ' + distinct.join(','))); return null; }
     var id = distinct[0];
@@ -73,6 +75,28 @@
       recvIssues.push(issue('DESTINATION_NOT_ELIGIBLE', key, 'destination warehouse company (' + str(w.company) + ') ≠ receiver company (' + str(r.company) + ') — no cross-company borrowing')); return null;
     }
     return { id: id, code: str(w.warehouse_code), type: str(w.warehouse_type) };
+  }
+
+  // ---- MARKETPLACE destination validation (F1-4B-FM1 §4) — marketplace_id identity; warehouseId is ALWAYS null ----
+  // Accepts a pre-normalized DestinationNode (identity already validated by the §3 owner) OR raw marketplace fields
+  // validated against an injected canonical `marketplaces` authority. Never fabricates an Amazon warehouse.
+  function validateMarketplaceDestination(r, destNode, mktById, recvIssues, key) {
+    var refId = destNode ? str(destNode.marketplaceId || destNode.destinationRefId) : str(r.marketplaceId || r.destinationRefId);
+    if (!nonEmpty(refId)) { recvIssues.push(issue('MISSING_DESTINATION_MARKETPLACE', key, 'MARKETPLACE destination requires a canonical marketplace_id (never inferred)')); return null; }
+    // A MARKETPLACE destination NEVER carries a warehouse identity (no fabricated Amazon warehouse) — reject early.
+    if ((destNode && nonEmpty(destNode.warehouseId)) || nonEmpty(r.destinationWarehouseId)) { recvIssues.push(issue('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', key, 'MARKETPLACE destination must not carry a warehouseId (no fabricated Amazon warehouse)')); return null; }
+    var hasAuth = mktById && Object.keys(mktById).length > 0;
+    if (hasAuth) {
+      var m = mktById[refId];
+      if (!m) { recvIssues.push(issue('MARKETPLACE_DESTINATION_NOT_FOUND', key, 'marketplace_id not in canonical marketplaces: ' + refId)); return null; }
+      var st = (m.status !== undefined ? m.status : m.is_active);
+      var active = (str(st).toLowerCase() === 'active' || st === true);
+      if (!active) { recvIssues.push(issue('MARKETPLACE_DESTINATION_INACTIVE', key, 'marketplace destination inactive: ' + refId)); return null; }
+      if (nonEmpty(m.company) && nonEmpty(r.company) && str(m.company) !== str(r.company)) { recvIssues.push(issue('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', key, 'marketplace company (' + str(m.company) + ') ≠ receiver company (' + str(r.company) + ')')); return null; }
+      return { refId: refId, code: str(m.marketplace || m.marketplace_alias) || null, label: str(m.marketplace_display_name) || str(m.marketplace) || refId, marketplaceId: refId };
+    }
+    if (destNode && nonEmpty(destNode.warehouseId)) { recvIssues.push(issue('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', key, 'MARKETPLACE destination must not carry a warehouseId (no fabricated Amazon warehouse)')); return null; }
+    return { refId: refId, code: destNode ? (str(destNode.destinationCode) || null) : null, label: destNode ? (str(destNode.destinationLabel) || refId) : refId, marketplaceId: refId };
   }
 
   // ---- forecast weight anchor + share (D-F1-5B-3) — Regular FC over M+1..M+4; Special Event NEVER folded in ----
@@ -123,6 +147,8 @@
     var recommendationType = nonEmpty(input.recommendationType) ? str(input.recommendationType) : null;
     var warehouses = Array.isArray(input.warehouses) ? input.warehouses : [];
     var whById = {}; warehouses.forEach(function (w) { var id = str(w.warehouse_id); if (nonEmpty(id) && !whById[id]) whById[id] = w; });
+    var marketplaces = Array.isArray(input.marketplaces) ? input.marketplaces : [];
+    var mktById = {}; marketplaces.forEach(function (m) { var id = str(m.marketplace_id || m.marketplaceId); if (nonEmpty(id) && !mktById[id]) mktById[id] = m; });
     var receivers = Array.isArray(input.receivers) ? input.receivers : [];
 
     var byContextId = {}; // dedupe equal; conflict on differing facts
@@ -137,22 +163,44 @@
       if (has(r, 'demandDriver') && nonEmpty(r.demandDriver) && str(r.demandDriver).toUpperCase() !== 'FORECAST') {
         recvIssues.push(issue('UNSUPPORTED_PHASE1_DEMAND_DRIVER', key, 'Phase-1 replenishment is FORECAST-driven only (D-F1-5B-2); got "' + str(r.demandDriver) + '"'));
       }
-      var dest = validateDestination(r, whById, recvIssues, key);
       var fw = resolveForecastWeight(r, M, recvIssues, key);
       var win = resolveWindow(r, M, planningCycle, recvIssues, key);
 
-      if (recvIssues.length) { recvIssues.forEach(function (x) { issues.push(x); }); continue; }
+      // Destination node (F1-4B-FM1 §4): a MARKETPLACE node (marketplace_id, warehouseId=null) skips warehouse
+      // validation/pool decomposition but still resolves the same window/forecast basis; a WAREHOUSE node OR a
+      // legacy bare destinationWarehouseId takes the unchanged warehouse path (byte-identical for legacy callers).
+      var destNode = isObj(r.destination) && nonEmpty(r.destination.destinationType) ? r.destination : null;
+      var destType = destNode ? str(destNode.destinationType).toUpperCase() : (nonEmpty(r.destinationType) ? str(r.destinationType).toUpperCase() : 'WAREHOUSE');
 
-      var ctx = {
-        contextId: [str(r.company), str(r.country), str(r.marketplace), key, dest.id, planningCycle, win.windowCode].join('|'),
-        company: str(r.company), country: str(r.country), marketplace: str(r.marketplace), sku: str(r.sku), siteSku: str(r.siteSku),
-        recommendationType: recommendationType,
-        destinationWarehouseId: dest.id, destinationWarehouseCode: dest.code, destinationWarehouseType: dest.type,
-        planningCycle: planningCycle,
-        windowCode: win.windowCode, windowStartDate: win.windowStartDate, windowEndDate: win.windowEndDate, requiredByDate: win.requiredByDate,
-        demandDriver: demandDriver, forecastWeightAnchor: ymStr(M), forecastWeightMonths: fw.months, forecastShareQty: fw.qty,
-        issues: []
-      };
+      var ctx;
+      if (destType === 'MARKETPLACE') {
+        var md = validateMarketplaceDestination(r, destNode, mktById, recvIssues, key);
+        if (recvIssues.length) { recvIssues.forEach(function (x) { issues.push(x); }); continue; }
+        ctx = {
+          contextId: [str(r.company), str(r.country), str(r.marketplace), key, md.refId, planningCycle, win.windowCode].join('|'),
+          company: str(r.company), country: str(r.country), marketplace: str(r.marketplace), sku: str(r.sku), siteSku: str(r.siteSku),
+          recommendationType: recommendationType,
+          destinationType: 'MARKETPLACE', destinationRefId: md.refId, marketplaceId: md.marketplaceId,
+          destinationWarehouseId: null, destinationWarehouseCode: null, destinationWarehouseType: null,
+          planningCycle: planningCycle,
+          windowCode: win.windowCode, windowStartDate: win.windowStartDate, windowEndDate: win.windowEndDate, requiredByDate: win.requiredByDate,
+          demandDriver: demandDriver, forecastWeightAnchor: ymStr(M), forecastWeightMonths: fw.months, forecastShareQty: fw.qty,
+          issues: []
+        };
+      } else {
+        var dest = validateDestination(r, whById, recvIssues, key, destNode ? destNode.warehouseId : null);
+        if (recvIssues.length) { recvIssues.forEach(function (x) { issues.push(x); }); continue; }
+        ctx = {
+          contextId: [str(r.company), str(r.country), str(r.marketplace), key, dest.id, planningCycle, win.windowCode].join('|'),
+          company: str(r.company), country: str(r.country), marketplace: str(r.marketplace), sku: str(r.sku), siteSku: str(r.siteSku),
+          recommendationType: recommendationType,
+          destinationWarehouseId: dest.id, destinationWarehouseCode: dest.code, destinationWarehouseType: dest.type,
+          planningCycle: planningCycle,
+          windowCode: win.windowCode, windowStartDate: win.windowStartDate, windowEndDate: win.windowEndDate, requiredByDate: win.requiredByDate,
+          demandDriver: demandDriver, forecastWeightAnchor: ymStr(M), forecastWeightMonths: fw.months, forecastShareQty: fw.qty,
+          issues: []
+        };
+      }
       var ser = JSON.stringify(ctx);
       if (has(byContextId, ctx.contextId)) {
         if (byContextId[ctx.contextId] !== ser) issues.push(issue('PLANNING_CONTEXT_NOT_READY', ctx.contextId, 'conflicting planning contexts share one identity with differing facts'));
