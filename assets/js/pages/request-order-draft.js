@@ -966,12 +966,19 @@
         set('supplier_sku', res.supplierSku != null ? res.supplierSku : '');
         set('unit_cost', res.unitCost != null ? res.unitCost : '');
         set('currency', res.currency != null ? res.currency : '');
+        // F1-S3-UI: inline helper text ONLY for a real actionable error. A valid (or empty) row shows NO text —
+        // optional Phase-1 values (supplier / supplier_sku / unit_cost / currency) are intentionally blank and
+        // must NEVER surface as info (this removes the old "Currency null" line that inflated the SKU column and
+        // misaligned the row). The empty .ro-c-line-msg collapses to zero height (CSS :empty), so the five inputs
+        // stay on one baseline; an error grows the row DOWNWARD (cells are vertical-align:top).
         var msg = tr.querySelector('.ro-c-line-msg');
+        var isError = !!sku && res.status !== 'ok';
         if (msg) {
-            if (!sku) { msg.textContent = ''; msg.className = 'ro-c-line-msg'; tr.classList.remove('is-error'); }
-            else if (res.status === 'ok') { msg.textContent = 'Currency ' + res.currency; msg.className = 'ro-c-line-msg ro-c-line-msg--ok'; tr.classList.remove('is-error'); }
-            else { msg.textContent = _roLineStatusText(res.status); msg.className = 'ro-c-line-msg ro-c-line-msg--error'; tr.classList.add('is-error'); }
+            if (isError) { msg.textContent = _roLineStatusText(res.status); msg.className = 'ro-c-line-msg ro-c-line-msg--error'; }
+            else { msg.textContent = ''; msg.className = 'ro-c-line-msg'; }
         }
+        tr.classList.toggle('is-error', isError);
+        if (skuEl) { if (isError) skuEl.setAttribute('aria-invalid', 'true'); else skuEl.removeAttribute('aria-invalid'); }
     }
     function _roResolveAllLines() {
         document.querySelectorAll('#ro-c-lines tbody tr').forEach(function (tr) { _roResolveLineRow(tr); });
@@ -1062,6 +1069,10 @@
             '<td><input class="pc-input" data-f="need_reason"></td>' +
             '<td><button class="pc-btn pc-btn--rm" onclick="roRemoveCreateLine(this)">×</button></td>';
         tbody.appendChild(tr);
+        // F1-S3-UI a11y: give the per-line error slot a stable id and link the SKU input to it (aria-describedby).
+        // aria-describedby to an empty (collapsed) slot announces nothing — only a real error is read out.
+        var _m = tr.querySelector('.ro-c-line-msg'), _s = tr.querySelector('[data-f="sku"]');
+        if (_m && _s) { tbody._roMsgSeq = (tbody._roMsgSeq || 0) + 1; _m.id = 'ro-c-line-msg-' + tbody._roMsgSeq; _s.setAttribute('aria-describedby', _m.id); }
         _roResolveLineRow(tr);
         _roUpdateCreateGate();
     }

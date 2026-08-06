@@ -4355,3 +4355,36 @@ Tests: factory-import-visual-parity-f1-s2-ui.test.js (NEW, 36 assertions — but
 Governance: FRONTEND_GITHUB_PAGES_REQUIRED = factory-stock.html, factory-stock.css, factory-stock.js. No
   APPS_SCRIPT_SYNC. DB/schema/API/import changes = none. Overseas files untouched. No live DB; no push; no deploy.
 ```
+
+---
+
+### Checkpoint — F1-S3-UI Request Order Manual Draft SKU-line alignment (2026-08-06) — IMPLEMENTED (UI-only)
+
+```
+Round: F1-S3-UI. Presentation-only repair of the Manual Request Order Draft SKU lines. NO business-logic /
+  data-mapping / draft-creation / supplier / SKU-authority / API / DB / persistence change.
+Exact source of "Currency null": request-order-draft.js _roResolveLineRow set the per-line message to
+  ('Currency ' + res.currency) on a VALID (status 'ok') row; with no supplier, res.currency is null -> the text
+  "Currency null" rendered in the .ro-c-line-msg slot inside the SKU <td>, inflating that column's height and
+  breaking the horizontal baseline of the five inputs (SKU / Requested Qty / Units/Ctn / Supplier SKU / Unit Cost).
+Classification applied: ERROR = shown inline (SKU not found / units-per-carton unavailable / etc. via
+  _roLineStatusText); OPTIONAL/UNAVAILABLE (supplier / supplier_sku / unit_cost / currency absent) = NOT shown;
+  DEBUG (raw null/undefined, "Currency null") = never shown. The 'ok' info branch was removed entirely.
+Fix (JS): _roResolveLineRow now renders text ONLY when (sku && status !== 'ok'); a valid/empty row clears the slot.
+  aria-invalid toggled on the SKU input; addCreateLine assigns the error slot a stable id + aria-describedby (an
+  empty, collapsed slot announces nothing). _roResolveCommercial / gate / authority UNCHANGED.
+Fix (CSS procurement.css): .ro-c-line-msg:empty { display:none } (zero reserved height in the normal state);
+  #ro-c-lines td { vertical-align:top } (an error grows the row DOWNWARD; the other inputs stay top-aligned);
+  base message color -> red; the unused --ok state removed.
+Layout before: valid row showed "Currency null" -> SKU cell taller -> inputs misaligned. After: valid row shows
+  nothing -> all five inputs share one baseline; error shows one concise red message under the affected field and
+  expands the row cleanly. Supplier Phase-1 preserved (Company+Factory gate only; Supplier optional; SKU authority
+  = sku_details; Units/Ctn from source; supplier_sku/unit_cost/currency may stay blank).
+Tests: request-order-draft-line-alignment-f1-s3-ui.test.js (NEW, 28 assertions — drives the REAL _roResolveLineRow
+  against a fake row: valid row no text / no "Currency null" / no raw null / aria-invalid off / Units-Ctn populated;
+  error row shows text + is-error + aria-invalid; clearing restores compact; empty SKU no text; source+CSS scans;
+  five controls share pc-input; Supplier-independent gate). Existing request-order-manual-draft-hotfix.test.js still
+  36/0. Full suite 98 files / 0 failing; Golden 39/1/0; Scenario #34 Pending; bundle parity unchanged.
+Governance: FRONTEND_GITHUB_PAGES_REQUIRED = request-order-draft.js, procurement.css. No APPS_SCRIPT_SYNC.
+  DB/schema/API/persistence changes = none. No live DB; no push; no deploy.
+```

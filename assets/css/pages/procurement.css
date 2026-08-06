@@ -198,10 +198,13 @@ select.pc-input:disabled {
 }
 .pc-input--locked { text-align: right; min-width: 80px; }
 .pc-modal__grid select.pc-input { min-width: 180px; }
-/* Per-line resolution status (currency ok / mapping-not-configured) + row error highlight. */
-.ro-c-line-msg { font-size: 11px; margin-top: 3px; color: #94a3b8; }
-.ro-c-line-msg--ok { color: #059669; }
+/* Per-line inline error slot + row error highlight (F1-S3-UI). The slot renders ONLY for a real error; when
+   empty it collapses to zero height (:empty → display:none) so the five SKU-line inputs stay on one baseline.
+   Cells are top-aligned so an error grows the row DOWNWARD without shifting the other inputs. */
+.ro-c-line-msg { font-size: 11px; margin-top: 3px; color: #dc2626; }
+.ro-c-line-msg:empty { display: none; margin: 0; }
 .ro-c-line-msg--error { color: #dc2626; }
+#ro-c-lines td { vertical-align: top; }
 #ro-c-lines tr.is-error td { background: #fef2f2; }
 /* Modal-level message (validation / create errors). */
 .pc-modal__msg { font-size: 12px; margin: 8px 0 0; min-height: 16px; color: #64748B; }
