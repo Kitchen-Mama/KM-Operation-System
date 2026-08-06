@@ -3961,4 +3961,40 @@ Exact next slice: F1-4B-E — provision replenishment_demand_allocation_rules (u
   warehouse. Not pushed, not deployed.
 ```
 
+### Checkpoint — F1-4B-E Demand Allocation Rule Provision + Runtime Integration = IMPLEMENTED (2026-08-06)
+```
+F1-4B-E — authority integration only: read the provisioned replenishment_demand_allocation_rules + consume it to fan
+  marketplace demand into per-warehouse demand facts for the EXISTING recommendation runtime. NO formula/resolver/
+  allocation-algorithm/UI/API-contract/Workspace-DTO/Execution-Plan/Shipment/Submit/Coverage/DOS/bundle/Apps-Script/
+  DB-schema change; NO runtime table creation/repair; NO whole-DB load; NO write; NO live DB.
+Reader (operation-system-db-api.js): NEW normalizeReplenishmentDemandAllocationRuleRecord + cache-assembly line
+  (replenishmentDemandAllocationRules ← db.replenishment_demand_allocation_rules; [] when the tab is absent) + NEW
+  getter window.KM.DB.getReplenishmentDemandAllocationRules() — targeted, READ-ONLY over the loaded cache, safe-[]
+  when unloaded/absent (→ DEMAND_ALLOCATION_RULE_NOT_CONFIGURED, never a default). Ratios normalize to number|null
+  (blank → null, never 0). No fetch / getOperationDb / sheet mutation in the getter.
+Integration adapter (supply-planning-demand-allocation.js, additive): resolveScopeWarehouseDemandFacts({scope,
+  allocationRules, warehousesById, effectiveDate, marketplaceForecastQty, marketplaceSalesQty}) — accepts snake OR
+  DB-normalized rows; composes the frozen F1-4B-E0R primitives (readActiveAllocationRules → validateAllocationRules →
+  buildWarehouseDemandFacts → WAREHOUSE destination DTO). Splits marketplace Forecast/Sales ONCE (30/70 → 300/700,
+  30/70); returns one INDEPENDENT WAREHOUSE destination per warehouse (A demand never in B). Missing/out-of-scope rule
+  → DEMAND_ALLOCATION_RULE_NOT_CONFIGURED (no default 100%/50-50/first-warehouse/guess/clock). Authors NO formula;
+  computes NO gap/recommendedQty (frozen owners).
+Existing runtime reused UNCHANGED: the adapter's per-warehouse WAREHOUSE destinations feed the EXISTING frozen KMPCX
+  (resolveRecommendationPlanningContext) — proven in-test: 2 warehouse facts → 2 ready contexts, each bound to its own
+  provisioned-rule warehouse_id, forecastShareQty 300/700 flowing through unchanged, contexts stay separate lines.
+Provisioning: replenishment_demand_allocation_rules stays USER-OWNED (REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md §5
+  updated — reader implemented; runtime never creates/repairs; manual DB setup prerequisite; exact Spreadsheet-ID gate).
+Tests: NEW supply-planning-demand-allocation-integration-f1-4b-e.test.js (19 — reader safe-empty/normalize/read-only +
+  cache line; adapter 300/700 split + WAREHOUSE DTO + independence + snake/camel input; missing/out-of-scope → not-
+  configured; KMPCX consumes both warehouse destinations unchanged → 2 independent contexts 300/700). F1-4B-E0R suite
+  (37) unchanged + green. FULL SUITE 91 files / 0 failing; Golden 39/1/0; #34 Pending.
+Files: operation-system-db-api.js (reader — FRONTEND_GITHUB_PAGES_REQUIRED=true), supply-planning-demand-allocation.js
+  (additive adapter; NOT bundled, NOT page-wired — GIT_ONLY/no-deploy-effect), NEW integration test (GIT_ONLY),
+  REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md §5 + this entry (DOCUMENTATION_ONLY). APPS_SCRIPT_SYNC_REQUIRED=false;
+  BUNDLE_REBUILD_REQUIRED=false. No live DB.
+Exact next slice: page/server wiring per WAREHOUSE destination (issue the existing recommendation.workspace.get per
+  warehouse with its allocated demand) — still gated on the F1-4B-D month/cycle authority; separately authorized.
+  Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

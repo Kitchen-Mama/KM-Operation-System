@@ -224,6 +224,51 @@
     return ['RDAR', s(company), s(country), s(marketplace), s(warehouseId)].join('-');
   }
 
+  function has(o, k) { return isObj(o) && Object.prototype.hasOwnProperty.call(o, k); }
+  // Accept an allocation-rule row in EITHER the canonical snake shape OR the DB-normalized camelCase shape
+  // (`getReplenishmentDemandAllocationRules` output) — map to the snake shape the reader/validator consume.
+  function _toRuleRow(rec) {
+    if (!isObj(rec)) return {};
+    if (has(rec, 'destination_warehouse_id') || has(rec, 'forecast_allocation_ratio')) return rec;   // already snake
+    return {
+      allocation_rule_id: rec.allocationRuleId, company: rec.company, country: rec.country, marketplace: rec.marketplace,
+      destination_warehouse_id: rec.destinationWarehouseId,
+      forecast_allocation_ratio: rec.forecastAllocationRatio, sales_allocation_ratio: rec.salesAllocationRatio,
+      status: rec.status, effective_from: rec.effectiveFrom, effective_to: rec.effectiveTo
+    };
+  }
+
+  // ---- Integration seam (F1-4B-E): provisioned rules → per-warehouse demand facts for the EXISTING runtime ---
+  // Composes the frozen primitives above (read active rules → validate → split marketplace Forecast/Sales once →
+  // attach the canonical WAREHOUSE destination DTO) into the "Warehouse Forecast" the existing recommendation
+  // runtime consumes — ONE independent WAREHOUSE destination per warehouse (A's demand never enters B). Authors
+  // NO formula and computes NO gap/recommendedQty (frozen owners). Missing rule → DEMAND_ALLOCATION_RULE_NOT_CONFIGURED
+  // (never a default). Accepts rule rows in either snake or DB-normalized shape.
+  function resolveScopeWarehouseDemandFacts(input) {
+    input = input || {};
+    var scope = input.scope || {};
+    var whById = input.warehousesById || {};
+    var rows = (Array.isArray(input.allocationRules) ? input.allocationRules : []).map(_toRuleRow);
+    var active = readActiveAllocationRules(rows, scope, input.effectiveDate);
+    var ruleset = validateAllocationRules(active, scope, whById);
+    if (!ruleset.ok) return { ready: false, scope: scope, warehouses: [], issues: ruleset.issues };
+    var facts = buildWarehouseDemandFacts({ ruleset: ruleset, marketplaceForecastQty: input.marketplaceForecastQty, marketplaceSalesQty: input.marketplaceSalesQty });
+    var warehouses = facts.perWarehouse.map(function (w) {
+      var wh = whById[w.warehouseId] || {};
+      return {
+        warehouseId: w.warehouseId,
+        destination: buildDestinationDTO({
+          destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace,
+          marketplaceId: scope.marketplaceId, warehouseId: w.warehouseId,
+          warehouseCode: s(wh.warehouse_code || wh.warehouseCode), warehouseName: s(wh.warehouse_name || wh.warehouseName)
+        }),
+        allocatedForecastQty: w.allocatedForecastQty,
+        allocatedSalesQty: w.allocatedSalesQty
+      };
+    });
+    return { ready: true, scope: scope, warehouses: warehouses, issues: [] };
+  }
+
   return {
     BASIS: BASIS,
     buildDestinationDTO: buildDestinationDTO,
@@ -234,6 +279,7 @@
     allocateMarketplaceDemand: allocateMarketplaceDemand,
     passthroughWarehouseDemand: passthroughWarehouseDemand,
     buildWarehouseDemandFacts: buildWarehouseDemandFacts,
+    resolveScopeWarehouseDemandFacts: resolveScopeWarehouseDemandFacts,
     allocationRuleId: allocationRuleId,
     // exposed for focused testing of the internal ratio→bp conversion
     _ratioToBp: ratioToBp

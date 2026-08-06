@@ -64,11 +64,17 @@ remainder, tie-break ascending `warehouse_id`). Forecast and Sales use the same 
    `replenishment_demand_allocation_rules` with the header row in §2 (exact column names).
 2. Seed the KM/US/Amazon rows, e.g. `RDAR-KM-US-AMAZON_US-{WH_A}` = `0.30`, `RDAR-KM-US-AMAZON_US-{WH_B}` = `0.70`
    (resolve `{WH_A}`/`{WH_B}` to the **canonical `warehouse_id`s**, never names). Ratios must sum to `1.00`.
-3. No auto-repair, no data deletion, no runtime table creation. A future authorized slice adds a targeted read
-   adapter (`getReplenishmentDemandAllocationRules`) + wires the resolver.
+3. No auto-repair, no data deletion, no runtime table creation.
 
-**Sync/deployment:** this round adds NO Apps Script handler / router / bundle change — the table is a **manual DB
-setup prerequisite** for the wiring slice. `APPS_SCRIPT_SYNC_REQUIRED = false`; `BUNDLE_REBUILD_REQUIRED = false`.
+**Reader (F1-4B-E — implemented):** `window.KM.DB.getReplenishmentDemandAllocationRules()` is a targeted, read-only
+getter over the already-loaded cache (`operation-system-db-api.js`) — never a whole-DB load, never a fetch, never a
+sheet mutation. It returns normalized rows, or `[]` when the cache is unloaded or the tab is absent (→ downstream
+`DEMAND_ALLOCATION_RULE_NOT_CONFIGURED`, never a default). The pure integration adapter
+`KM.demandAllocation.resolveScopeWarehouseDemandFacts(...)` consumes those rows to produce per-warehouse demand facts
+(Warehouse Forecast) that the EXISTING recommendation runtime (KMPCX/KMAF/KMPS) consumes unchanged.
+
+**Sync/deployment:** F1-4B-E adds NO Apps Script handler / router / bundle change — the table remains a **manual DB
+setup prerequisite** (user-owned). `APPS_SCRIPT_SYNC_REQUIRED = false`; `BUNDLE_REBUILD_REQUIRED = false`.
 
 ## 6. Not this round
 

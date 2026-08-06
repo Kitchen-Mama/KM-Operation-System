@@ -468,6 +468,32 @@ function normalizeFcRegularForecastRecord(raw) {
     };
 }
 
+// replenishment_demand_allocation_rules (Phase-1 multi-warehouse demand allocation authority, F1-4B-E).
+// Read-only normalization of the user-owned config sheet (REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md).
+// Ratios stay numbers (null when blank/non-numeric — never coerced to 0); `raw` is retained so the pure
+// demand-allocation runtime (KMDAL) can read the canonical snake_case fields directly.
+function normalizeReplenishmentDemandAllocationRuleRecord(raw) {
+    var r = raw || {};
+    function numOrNull(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
+    return {
+        allocationRuleId: String(r.allocation_rule_id || '').trim(),
+        company: String(r.company || '').trim(),
+        country: String(r.country || '').trim(),
+        marketplace: String(r.marketplace || '').trim(),
+        destinationWarehouseId: String(r.destination_warehouse_id || '').trim(),
+        forecastAllocationRatio: numOrNull(r.forecast_allocation_ratio),
+        salesAllocationRatio: numOrNull(r.sales_allocation_ratio),
+        status: String(r.status || '').trim(),
+        effectiveFrom: String(r.effective_from || '').trim(),
+        effectiveTo: String(r.effective_to || '').trim(),
+        version: String(r.version || '').trim(),
+        updatedBy: String(r.updated_by || '').trim(),
+        updatedAt: String(r.updated_at || '').trim(),
+        note: String(r.note || '').trim(),
+        raw: r
+    };
+}
+
 // Interpret a Sheet boolean-ish cell as a real tri-state: true / false / null (blank/unknown).
 // Never Boolean(value) — an "N"/"No"/"0"/"FALSE" string is truthy and would flip the flag.
 function _whBool(v) {
@@ -1428,6 +1454,8 @@ function normalizeOperationDb(rawDb) {
         pricingList: (db.pricing_list || []).map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; }),
         pricingChangeLog: (db.pricing_change_log || []).map(normalizePricingChangeLogRecord).filter(function(r) { return r.logId || r.pricingId; }),
         fcRegularForecast: (db.fc_regular_forecast || []).map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; }),
+        // Phase-1 multi-warehouse demand-allocation config (F1-4B-E). [] when the tab is absent (missing-source safe).
+        replenishmentDemandAllocationRules: (db.replenishment_demand_allocation_rules || []).map(normalizeReplenishmentDemandAllocationRuleRecord).filter(function(r) { return r.allocationRuleId || (r.destinationWarehouseId && r.marketplace); }),
         factoryStock: (db.factory_stock || []).map(normalizeFactoryStockRecord).filter(function(r) { return r.factoryStockId || r.sku; }),
         factoryStockMovements: (db.factory_stock_movements || []).map(normalizeFactoryStockMovementRecord).filter(function(r) { return r.movementId || r.sku; }),
         warehouses: (db.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; }),
@@ -2194,6 +2222,15 @@ window.KM.DB.getFactoryStockMovements = function() {
 window.KM.DB.getWarehouses = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.warehouses || [];
+};
+
+// replenishment_demand_allocation_rules — Phase-1 multi-warehouse demand-allocation authority (F1-4B-E).
+// TARGETED, READ-ONLY over the already-loaded cache — never a whole-DB load, never a fetch, and the runtime
+// NEVER creates/repairs the sheet. [] when the cache is unloaded or the tab is absent → downstream
+// DEMAND_ALLOCATION_RULE_NOT_CONFIGURED (never a default ratio).
+window.KM.DB.getReplenishmentDemandAllocationRules = function() {
+    if (!window._opDbCache) return [];
+    return window._opDbCache.replenishmentDemandAllocationRules || [];
 };
 
 window.KM.DB.getOverseasInventorySnapshot = function() {
