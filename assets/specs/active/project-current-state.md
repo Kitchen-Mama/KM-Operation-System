@@ -4093,3 +4093,39 @@ Governance: no page/Workspace-DTO/Apps-Script-handler/router change; no live DB;
 NOT this round (transport — next): Workspace handler fanout, scope-only page request, UI, feature-flag enablement,
   persistence/Submit/Shipment/PO/Coverage/DOS.
 ```
+
+---
+
+### Checkpoint — Request Order Phase-1 Hotfix: remove Supplier dependency from Manual Draft (2026-08-06) — IMPLEMENTED
+
+```
+Round: REQUEST ORDER PHASE-1 HOTFIX (bounded). Supplier is not implemented in Phase 1; the Manual Request Order
+modal blocked Factory + SKU behind Supplier ("Select supplier first" / "Supplier master not configured").
+Root cause = FRONTEND only: _roFillFactorySelect gated Factory on a supplier-chosen flag, and _roResolveCommercial
+required a supplier_price_list mapping (supplier_sku+unit_cost+currency) for a line to be 'ok'. The Apps Script
+handler already wrote supplier_id/name blank-safe → NO HALT (schema allows blank; no frozen spec makes it mandatory).
+Fix (D-RO-P1-1..4):
+  Frontend assets/js/pages/request-order-draft.js — Factory ID enabled once Company is chosen (no supplier gate);
+    Supplier retained + labeled "Supplier (Optional — Phase 2)", never blocks; _roResolveCommercial reworked so a
+    line is valid when SKU ∈ canonical sku_details + units_per_carton>0 (supplier_sku/unit_cost/currency enriched
+    only when a supplier mapping exists, else null — never fabricated); SKU datalist + resolver exclude only terminal
+    lifecycle (Closure/Discontinued/Inactive/Invalid/Deleted; Running-in-the-Market + Upcoming SKU eligible); Create
+    gate = company && factory; submit drops the Supplier requirement; currency optional (single-currency enforced only
+    across lines that carry one). DTO shape preserved (supplier_id/supplier_name/factory_id/warehouse_id/lines).
+  Backend assets/specs/active/apps-script/13_procurement_handlers.gs — NEW pure validateManualRequestOrderDraft_ +
+    procurementFactoryMap_ / procurementSkuLifecycleMap_; wired validate-before-mutate at the top of
+    handleCreateRequestOrderDraft_. MANUAL drafts (no source_ref_type) require Factory (canonical active factory
+    warehouse) + SKU∈sku_details (non-terminal) + requested_qty>0 + resolvable units_per_carton, with structured
+    tokens (FACTORY_REQUIRED/_NOT_FOUND/_INACTIVE, SKU_REQUIRED/_NOT_FOUND/_INACTIVE, REQUESTED_QTY_INVALID,
+    UNITS_PER_CARTON_MISSING). Supplier is NOT validated. The allocation "Send Request" path (source_ref_type set,
+    request-order.js:2311, company/factory deferred) is EXEMPT — no regression. No schema/header change; no sheet
+    creation/repair (still procurementEnsureSheet_).
+Tests: NEW assets/tests/request-order-manual-draft-hotfix.test.js (36 assertions: REAL extracted frontend resolver +
+  REAL extracted backend validator + source-scan guards + Golden health). FULL SUITE 93 files / 0 failing; Golden
+  39/1/0; Scenario #34 Pending. Bundle unchanged (no core module touched; --check parity OK).
+Governance: APPS_SCRIPT_SYNC_REQUIRED = true for 13_procurement_handlers.gs (user-owned sync; NOT a bundled core
+  module → no bundle rebuild). FRONTEND_GITHUB_PAGES_REQUIRED = true for request-order-draft.js. No live DB; no push;
+  no deploy.
+Separate follow-up (out of scope): over-broad Factory Stock initialization — see
+  docs/planning/REQUEST_ORDER_FACTORY_STOCK_INIT_FOLLOWUP.md.
+```

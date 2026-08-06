@@ -209,6 +209,96 @@ function procurementUpcMap_(ss) {
   return map;
 }
 
+/** sku -> lifecycle string from sku_details (existence = key present; '' when the column is absent). */
+function procurementSkuLifecycleMap_(ss) {
+  var map = {};
+  var sh = ss.getSheetByName('sku_details');
+  if (!sh) return map;
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return map;
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var cSku = h.indexOf('sku'), cLc = h.indexOf('lifecycle');
+  if (cSku === -1) return map;
+  for (var i = 1; i < data.length; i++) {
+    var s = String(data[i][cSku] || '').trim();
+    if (s) map[s.toLowerCase()] = cLc === -1 ? '' : String(data[i][cLc] || '').trim();
+  }
+  return map;
+}
+
+/** warehouse_id(lower) -> { warehouseId, isFactory, isActive, company } from the canonical warehouses table. */
+function procurementFactoryMap_(ss) {
+  var map = {};
+  var sh = ss.getSheetByName('warehouses');
+  if (!sh) return map;
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return map;
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var cId = h.indexOf('warehouse_id'), cFac = h.indexOf('is_factory_warehouse'), cAct = h.indexOf('is_active'), cCo = h.indexOf('company');
+  if (cId === -1) return map;
+  function truthy(v) { var t = String(v == null ? '' : v).trim().toLowerCase(); return v === true || t === 'true' || t === 'yes' || t === 'y' || t === '1'; }
+  function activeFlag(v) { if (v === false) return false; var t = String(v == null ? '' : v).trim().toLowerCase(); return !(t === 'false' || t === 'no' || t === 'n' || t === '0' || t === 'inactive'); }
+  for (var i = 1; i < data.length; i++) {
+    var id = String(data[i][cId] || '').trim();
+    if (!id) continue;
+    map[id.toLowerCase()] = {
+      warehouseId: id,
+      isFactory: cFac === -1 ? false : truthy(data[i][cFac]),
+      isActive: cAct === -1 ? true : activeFlag(data[i][cAct]),
+      company: cCo === -1 ? '' : String(data[i][cCo] || '').trim()
+    };
+  }
+  return map;
+}
+
+// Terminal/inactive sku_details lifecycle tokens excluded from a Manual Request Order (D-RO-P1-4). No frozen RO
+// SKU-eligibility restriction exists, so everything else (Running in the Market / Upcoming SKU / …) is eligible.
+var RO_TERMINAL_LIFECYCLE_ = { 'closure': 1, 'discontinued': 1, 'inactive': 1, 'invalid': 1, 'deleted': 1 };
+
+/**
+ * PURE Phase-1 Manual Request Order Draft validation (D-RO-P1-1/3/4). Supplier is NEVER validated (optional,
+ * D-RO-P1-2). Applies ONLY to MANUAL drafts (no source_ref_type) so the allocation "Send Request" path — which
+ * legitimately defers company/factory — is unaffected. Returns { ok:true } or { ok:false, error:TOKEN, detail }.
+ * maps = { factoryMap, skuLifecycle, upcMap }. No SpreadsheetApp / mutation here.
+ */
+function validateManualRequestOrderDraft_(body, maps) {
+  body = body || {}; maps = maps || {};
+  var factoryMap = maps.factoryMap || {}, skuLifecycle = maps.skuLifecycle || {}, upcMap = maps.upcMap || {};
+  // Non-manual (allocation-sourced) drafts keep the existing permissive behavior — factory/company deferred.
+  if (String(body.source_ref_type || '').trim()) return { ok: true };
+
+  // Factory authority (D-RO-P1-1): the canonical warehouse_id must resolve to an ACTIVE factory warehouse.
+  var whId = String(body.warehouse_id || '').trim();
+  var factoryId = String(body.factory_id || '').trim();
+  if (!whId && !factoryId) return { ok: false, error: 'FACTORY_REQUIRED' };
+  if (whId) {
+    var f = factoryMap[whId.toLowerCase()];
+    if (!f) return { ok: false, error: 'FACTORY_NOT_FOUND', detail: whId };
+    if (!f.isFactory) return { ok: false, error: 'FACTORY_NOT_FOUND', detail: whId + ' is not a factory warehouse' };
+    if (!f.isActive) return { ok: false, error: 'FACTORY_INACTIVE', detail: whId };
+    var co = String(body.company || '').trim();
+    if (co && f.company && f.company.toLowerCase() !== co.toLowerCase()) return { ok: false, error: 'FACTORY_NOT_FOUND', detail: 'cross-company factory ' + whId };
+  }
+
+  // SKU authority (D-RO-P1-3/4): each line's sku must be an ACTIVE canonical sku_details record; qty>0; upc resolvable.
+  var lines = body.lines || [], sawLine = false;
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i] || {};
+    var sku = String(l.sku || '').trim();
+    if (!sku) continue;
+    sawLine = true;
+    var lc = skuLifecycle[sku.toLowerCase()];
+    if (lc === undefined) return { ok: false, error: 'SKU_NOT_FOUND', detail: sku };      // not in sku_details — no free-text SKUs
+    if (RO_TERMINAL_LIFECYCLE_[String(lc).trim().toLowerCase()] === 1) return { ok: false, error: 'SKU_INACTIVE', detail: sku + ' (' + lc + ')' };
+    var qty = parseFloat(l.requested_qty);
+    if (!(qty > 0)) return { ok: false, error: 'REQUESTED_QTY_INVALID', detail: sku };
+    var upc = parseFloat(l.units_per_carton) || upcMap[sku] || 0;
+    if (!(upc > 0)) return { ok: false, error: 'UNITS_PER_CARTON_MISSING', detail: sku };
+  }
+  if (!sawLine) return { ok: false, error: 'SKU_REQUIRED' };
+  return { ok: true };
+}
+
 /** sku -> { product_name, series } from sku_details (blank when unavailable). */
 function procurementSkuInfoMap_(ss) {
   var map = {};
@@ -546,6 +636,14 @@ function handleCreateRequestOrderDraft_(body) {
   var srcSheet = procurementEnsureSheet_(ss, 'request_order_line_sources', REQUEST_ORDER_LINE_SOURCES_HEADERS_);
   var upcMap = procurementUpcMap_(ss);
   var infoMap = procurementSkuInfoMap_(ss);
+
+  // Phase-1 Manual Request Order Draft validation (RG hotfix): Supplier is optional; Factory + SKU + Qty are the
+  // required authorities. Validate-before-mutate — runs ONLY for manual drafts (allocation "Send Request" exempt).
+  var _roManualCheck = validateManualRequestOrderDraft_(body, {
+    factoryMap: procurementFactoryMap_(ss), skuLifecycle: procurementSkuLifecycleMap_(ss), upcMap: upcMap
+  });
+  if (!_roManualCheck.ok) return jsonResponse_({ success: false, error: _roManualCheck.error, detail: _roManualCheck.detail || '' });
+
   // request_order_line_sources mapping inputs (built once; all missing-tab / missing-header safe).
   var mskuMap = procurementMarketplaceSkuMap_(ss);
   var targetResolver = procurementTargetRuleResolver_(ss);

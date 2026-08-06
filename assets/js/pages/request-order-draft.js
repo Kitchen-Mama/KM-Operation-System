@@ -815,7 +815,7 @@
     // Supplier options — the ONLY trustworthy supplier provider today is the supplier_price_list master
     // (getSupplierPriceList: a maintained table with supplier identity + is_active, NOT PO-history dedup,
     // NOT hardcoded). It has no company column, so `company` cannot narrow it — all ACTIVE suppliers are
-    // returned. Empty master → [] (caller shows "Supplier master not configured" + disables Factory/Create).
+    // returned. Empty master → [] (Phase-1: Supplier is optional; an empty master never blocks Factory/SKU/Create).
     function getSupplierOptions(company) {
         var seen = {}, out = [];
         _roSupplierPriceList().forEach(function (r) {
@@ -847,34 +847,48 @@
         return out;
     }
 
-    // Resolve one SKU's commercial data for (company + supplier + factory + sku). units_per_carton from
-    // sku_details; supplier_sku / unit_cost / currency from supplier_price_list (matched by supplier NAME +
-    // sku, active). NEVER fabricates 0 / -- / N/A — a missing field yields status 'unresolved' → blocks Create.
-    // status: 'no-sku' | 'no-supplier' | 'unresolved' | 'ok'.
+    // D-RO-P1-4: no frozen Request-Order SKU lifecycle restriction exists in the spec → treat all sku_details
+    // records as eligible EXCEPT clearly terminal/inactive ones. 'Running in the Market' / 'Upcoming SKU' are eligible.
+    var RO_TERMINAL_LIFECYCLE = { 'closure': 1, 'discontinued': 1, 'inactive': 1, 'invalid': 1, 'deleted': 1 };
+    function _roSkuTerminal(skuRec) {
+        var lc = String(skuRec && skuRec.lifecycle != null ? skuRec.lifecycle : '').trim().toLowerCase();
+        return RO_TERMINAL_LIFECYCLE[lc] === 1;
+    }
+
+    // Resolve one SKU line for Phase-1 Manual Request Order (D-RO-P1-1/3). SKU authority = canonical sku_details;
+    // units_per_carton = sku_details. Supplier is OPTIONAL — supplier_sku / unit_cost / currency are enriched from
+    // supplier_price_list ONLY when a supplier + active mapping exist, and stay BLANK/null (NEVER a fabricated 0)
+    // otherwise. A line is 'ok' when the SKU is an active canonical record with a usable units_per_carton — supplier
+    // absence never blocks. status: 'no-sku' | 'sku-not-found' | 'sku-inactive' | 'no-upc' | 'ok'.
     function _roResolveCommercial(company, supplierName, factoryId, sku) {
         if (!sku) return { status: 'no-sku' };
-        if (!supplierName) return { status: 'no-supplier' };
         var skuRec = _roSkuMaster().filter(function (s) { return _roEq(s.sku, sku); })[0];
-        if (!skuRec) return { status: 'unresolved' };   // SKU not in sku_details
+        if (!skuRec) return { status: 'sku-not-found' };            // SKU not in canonical sku_details
+        if (_roSkuTerminal(skuRec)) return { status: 'sku-inactive' };
         var upc = parseInt(skuRec.unitsPerCarton, 10);
-        var priceRows = _roSupplierPriceList().filter(function (r) {
-            return _roActiveFlag(r.isActive) && _roEq(r.supplierName, supplierName) && _roEq(r.sku, sku);
-        });
-        priceRows.sort(function (a, b) { return String(b.effectiveFrom || '').localeCompare(String(a.effectiveFrom || '')); });
-        var price = priceRows[0];
-        var upcOk = upc > 0;
-        var supplierSku = (price && price.supplierSku != null && String(price.supplierSku).trim() !== '') ? String(price.supplierSku).trim() : null;
-        var unitCost = (price && price.unitCost != null && price.unitCost !== '' && !isNaN(parseFloat(price.unitCost))) ? parseFloat(price.unitCost) : null;
-        var currency = (price && price.currency) ? String(price.currency).trim() : null;
-        if (!upcOk || !supplierSku || unitCost == null || !currency) {
-            return { status: 'unresolved', unitsPerCarton: upcOk ? upc : null, supplierSku: supplierSku, unitCost: unitCost, currency: currency };
+        if (!(upc > 0)) return { status: 'no-upc', unitsPerCarton: null, supplierSku: null, unitCost: null, currency: null };
+        // Optional supplier enrichment — never required, never fabricated when absent.
+        var supplierSku = null, unitCost = null, currency = null;
+        if (supplierName) {
+            var priceRows = _roSupplierPriceList().filter(function (r) {
+                return _roActiveFlag(r.isActive) && _roEq(r.supplierName, supplierName) && _roEq(r.sku, sku);
+            });
+            priceRows.sort(function (a, b) { return String(b.effectiveFrom || '').localeCompare(String(a.effectiveFrom || '')); });
+            var price = priceRows[0];
+            if (price) {
+                supplierSku = (price.supplierSku != null && String(price.supplierSku).trim() !== '') ? String(price.supplierSku).trim() : null;
+                unitCost = (price.unitCost != null && price.unitCost !== '' && !isNaN(parseFloat(price.unitCost))) ? parseFloat(price.unitCost) : null;
+                currency = (price.currency) ? String(price.currency).trim() : null;
+            }
         }
         return { status: 'ok', unitsPerCarton: upc, supplierSku: supplierSku, unitCost: unitCost, currency: currency };
     }
     function _roLineStatusText(status) {
         if (status === 'no-sku') return 'Select a SKU';
-        if (status === 'no-supplier') return 'Select a Supplier first';
-        return 'Supplier SKU mapping not configured';   // 'unresolved'
+        if (status === 'sku-not-found') return 'SKU not found in SKU Details';
+        if (status === 'sku-inactive') return 'SKU is not active (terminal lifecycle)';
+        if (status === 'no-upc') return 'Units/Carton not configured for this SKU';
+        return 'Not available';
     }
     function _roCreateVal(id) { var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
 
@@ -885,21 +899,24 @@
         sel.innerHTML = '<option value="">Select company</option>' +
             getCompanyOptions().map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
     }
-    function _roFillSupplierSelect(company) {
+    // Supplier is OPTIONAL in Phase 1 (D-RO-P1-2) — it never gates anything. supplier_price_list has no company
+    // column, so options are company-independent. Empty master → disabled placeholder, but Factory/SKU/Create stay usable.
+    function _roFillSupplierSelect() {
         var sel = document.getElementById('ro-c-supplier');
         if (!sel) return;
-        if (!company) { sel.innerHTML = '<option value="">Select company first</option>'; sel.disabled = true; return; }
-        var opts = getSupplierOptions(company);
-        if (!opts.length) { sel.innerHTML = '<option value="">Supplier master not configured</option>'; sel.disabled = true; return; }
-        sel.innerHTML = '<option value="">Select supplier</option>' + opts.map(function (o) {
+        var opts = getSupplierOptions('');
+        if (!opts.length) { sel.innerHTML = '<option value="">Not configured — optional in Phase 1</option>'; sel.disabled = true; return; }
+        sel.innerHTML = '<option value="">— None (optional) —</option>' + opts.map(function (o) {
             return '<option value="' + esc(o.name) + '" data-id="' + esc(o.id) + '">' + esc(o.name) + '</option>';
         }).join('');
         sel.disabled = false;
     }
-    function _roFillFactorySelect(company, enabled) {
+    // Factory ID (D-RO-P1-1) — the required production authority. Enabled as soon as a Company is chosen; NEVER
+    // gated by Supplier. Options come from the canonical factory-warehouse authority; option value = warehouse_id.
+    function _roFillFactorySelect(company) {
         var sel = document.getElementById('ro-c-factory');
         if (!sel) return;
-        if (!enabled || !company) { sel.innerHTML = '<option value="">Select supplier first</option>'; sel.disabled = true; return; }
+        if (!company) { sel.innerHTML = '<option value="">Select company first</option>'; sel.disabled = true; return; }
         var opts = getFactoryOptions(company);
         if (!opts.length) { sel.innerHTML = '<option value="">No factory warehouse for this company</option>'; sel.disabled = true; return; }
         sel.innerHTML = '<option value="">Select factory</option>' + opts.map(function (o) {
@@ -912,7 +929,9 @@
         var seen = {}, opts = '';
         _roSkuMaster().forEach(function (s) {
             var sku = String(s.sku == null ? '' : s.sku).trim();
-            if (!sku || seen[sku]) return; seen[sku] = 1;
+            if (!sku || seen[sku]) return;
+            if (_roSkuTerminal(s)) return;               // D-RO-P1-4: hide only terminal/inactive SKUs
+            seen[sku] = 1;
             opts += '<option value="' + esc(sku) + '">' + esc(sku + (s.productName ? ' — ' + s.productName : '')) + '</option>';
         });
         return opts;
@@ -921,15 +940,12 @@
     // ---- cascading + per-line resolution ----
     function onCreateCompanyChange() {
         var company = _roCreateVal('ro-c-company');
-        _roFillSupplierSelect(company);           // Company → rebuild Supplier, reset Factory + line data
-        _roFillFactorySelect('', false);
+        _roFillFactorySelect(company);            // Company → Factory options (NO supplier dependency)
         _roResolveAllLines();
         _roUpdateCreateGate();
     }
     function onCreateSupplierChange() {
-        var company = _roCreateVal('ro-c-company');
-        var supplierChosen = !!_roCreateVal('ro-c-supplier');
-        _roFillFactorySelect(company, supplierChosen);   // Supplier → rebuild Factory, clear derived fields
+        // Supplier is optional: choosing/clearing it only re-enriches supplier_sku / unit_cost — never gates Factory/SKU.
         _roResolveAllLines();
         _roUpdateCreateGate();
     }
@@ -965,15 +981,16 @@
         _roResolveLineRow(tr);
         _roUpdateCreateGate();
     }
-    // Enable Create Draft only when Company + Supplier + Factory are chosen and every SKU line resolves
-    // cleanly (status ok + qty>0). Full validation (incl. single-currency) still runs on submit.
+    // Enable Create Draft when Company + Factory (the required production authority) are chosen and every SKU line
+    // resolves cleanly (canonical active sku_details + qty>0). Supplier is NOT required (D-RO-P1-2). Full validation
+    // (incl. single-currency across lines that carry a currency) still runs on submit.
     function _roUpdateCreateGate() {
         var btn = document.getElementById('ro-c-create-btn');
         if (!btn) return;
         var company = _roCreateVal('ro-c-company');
-        var supplier = _roCreateVal('ro-c-supplier');
+        var supplier = _roCreateVal('ro-c-supplier');   // optional
         var factory = _roCreateVal('ro-c-factory');
-        var ok = !!(company && supplier && factory);
+        var ok = !!(company && factory);
         if (ok) {
             var anyValid = false, anyError = false;
             document.querySelectorAll('#ro-c-lines tbody tr').forEach(function (tr) {
@@ -1003,8 +1020,8 @@
                 '<div class="pc-modal__body">' +
                     '<div class="pc-modal__grid">' +
                         '<label>Company<select id="ro-c-company" class="pc-input" onchange="roOnCreateCompanyChange()"></select></label>' +
-                        '<label>Supplier Name<select id="ro-c-supplier" class="pc-input" onchange="roOnCreateSupplierChange()" disabled></select></label>' +
                         '<label>Factory ID<select id="ro-c-factory" class="pc-input" onchange="roOnCreateFactoryChange()" disabled></select></label>' +
+                        '<label>Supplier (Optional — Phase 2)<select id="ro-c-supplier" class="pc-input" onchange="roOnCreateSupplierChange()"></select></label>' +
                     '</div>' +
                     '<div class="pc-modal__msg" id="ro-c-msg"></div>' +
                     '<h4 class="pc-modal__subtitle">SKU Lines</h4>' +
@@ -1022,8 +1039,8 @@
             '</div>';
         document.body.appendChild(overlay);
         _roFillCompanySelect();
-        _roFillSupplierSelect('');
-        _roFillFactorySelect('', false);
+        _roFillSupplierSelect();                  // optional; company-independent
+        _roFillFactorySelect('');                 // enabled once a Company is chosen (no supplier gate)
         addCreateLine();
         _roUpdateCreateGate();
     }
@@ -1074,8 +1091,7 @@
         var factoryCode = (factorySel && factorySel.selectedIndex >= 0 && factorySel.options[factorySel.selectedIndex]) ? (factorySel.options[factorySel.selectedIndex].getAttribute('data-code') || '') : '';
 
         if (!company) return fail('Select a Company.');
-        if (!supplierName) return fail('Select a Supplier.');
-        if (!warehouseId) return fail('Select a Factory.');
+        if (!warehouseId) return fail('Select a Factory.');   // Supplier is optional (D-RO-P1-2) — not required.
 
         var rows = Array.prototype.slice.call(document.querySelectorAll('#ro-c-lines tbody tr'));
         var lines = [], currencies = {}, sawSku = false;
@@ -1091,21 +1107,21 @@
             var qty = qtyEl ? parseInt(qtyEl.value, 10) : 0;
             if (!(qty > 0)) return fail('Line "' + sku + '": Requested Qty must be greater than 0.');
             var reasonEl = tr.querySelector('[data-f="need_reason"]');
-            currencies[res.currency] = 1;
+            if (res.currency) currencies[res.currency] = 1;   // only lines with a (supplier-sourced) currency count
             lines.push({
                 sku: sku,
                 requested_qty: qty,
                 units_per_carton: res.unitsPerCarton,
-                supplier_sku: res.supplierSku,
-                unit_cost: res.unitCost,
-                currency: res.currency,
+                supplier_sku: res.supplierSku,    // null when no supplier mapping — never a fabricated value
+                unit_cost: res.unitCost,          // null when no supplier mapping — never a fake 0
+                currency: res.currency,           // null when no supplier mapping
                 need_reason: reasonEl ? String(reasonEl.value || '').trim() : ''
             });
         }
         if (!sawSku || !lines.length) return fail('Add at least one SKU line (with a SKU).');
         var curKeys = Object.keys(currencies);
         if (curKeys.length > 1) return fail('Lines resolve to conflicting currencies (' + curKeys.join(', ') + '). All lines in a draft must share one currency.');
-        var currency = curKeys[0];
+        var currency = curKeys[0] || '';   // may be blank in Phase 1 (no supplier → no unit cost/currency)
 
         // Warehouse Name is display-only; warehouse_id (canonical) is auto-carried from the Factory choice.
         // factory_id keeps the factory's own readable code (not merged with warehouse_id). supplier_name is
