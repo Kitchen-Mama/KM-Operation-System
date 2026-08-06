@@ -3728,4 +3728,42 @@ BUNDLE_REBUILD_REQUIRED=true. No new formula/DB/schema/header change, no page co
 Not pushed, not deployed. Next: F1-4B-B — Inventory Replenishment page cutover behind the disabled-by-default flag.
 ```
 
+### Checkpoint — F1-4B-B Inventory Replenishment Recommendation Runtime Cutover = READINESS AUDIT / HALTED (2026-08-06)
+```
+F1-4B-B — replace the Recommendation Summary placeholders (AI Pending / No recommendation generated / Suggested Qty 0)
+  with the real recommendation.workspace.get API, behind the default-false recommendation flag. Readiness/authority
+  gate → HALTED. NO runtime/API/router/Foundation/page/HTML/CSS/DB/schema/Apps-Script/bundle change.
+The F1-4B RUNTIME blocker is RESOLVED: F1-4B-A endpoint returns a REAL recommendedQty (96 end-to-end from raw snapshots)
+  with source-proven currentStock/QI/gap. So the seam is meaningful — GIVEN its three mandatory caller-owned inputs.
+Distinct, still-open PAGE blocker: the read API validates (before any read) three CALLER-OWNED inputs the Inventory
+  Replenishment page does not own, and the frozen registry forbids synthesizing two of them:
+  • destinationWarehouseId — explicit canonical warehouse_id, NEVER auto-selected/inferred (D-F1-5B-1;
+    planning-context.js:54-76). Page has NO destination selector; auto-picking "the one 3PL" is the banned inference.
+  • calculationMonth (YYYY-MM) — injected anchor; NO browser-current-date (D-F1-5B-3; planning-context.js:118-119).
+    Page only has new Date().getMonth() (inventory-replenishment.js:3433 — the banned source).
+  • planningCycle — required caller/scheduler run parameter (planning-context.js:116-117). No page representation.
+Page controls (source-proven): only Country + Marketplace + LTS + Target Days (inventory-replenishment.html:16,32,44,52);
+  page scope = {company,country,marketplace,sku,marketplaceId,series,category} (inventory-replenishment.js:3450-3454).
+  Frontend DTO defaults each missing input to null (km-api-foundation.js:350-366) → server MISSING_* (never a value).
+Net: wiring the seam now → every row renders MISSING_DESTINATION_WAREHOUSE / MISSING_CALCULATION_MONTH /
+  MISSING_PLANNING_CYCLE — never a populated recommendation — failing the round GOAL + "Recommendation Summary
+  populated" acceptance test, while the honest legacy stubs already convey "not generated". Manufacturing the inputs
+  breaches the frozen registry AND the round's own "No fake zero / No placeholder values / No page calculation / pure
+  presentation layer"; building a destination/month/cycle input authority is new caller-context (decision-input)
+  semantics outside a pure-presentation cutover and adjacent to the DO-NOT list (Decision Engine / Allocation Runtime).
+  Either path breaks a hard constraint → HALT.
+Smallest next slice (separately authorized): F1-4B-B-PRE — Inventory Replenishment Planning-Context Input Authority
+  (page/UX only, NO formula/runtime/inference): (1) explicit destination-warehouse_id selection from canonical eligible
+  warehouses (validated, never auto-picked; incl. how platform-fulfilled/FBA destinations are represented as a
+  warehouse_id); (2) explicit injected calculationMonth (YYYY-MM) anchor — value sent to the API must be caller-explicit,
+  never the browser clock; (3) explicit planningCycle run-parameter. THEN F1-4B-B (this cutover) becomes meaningful:
+  Recommendation Summary calls recommendation.workspace.get behind the default-false flag and presents real
+  currentStockQty/qualifiedIncomingQty/calculatedGap/recommendedQty (+ blocked/blockedReason/formulaVersion/
+  sourceDataAsOf/diagnostics) with differentiated states (NO_DATA/BLOCKED/MISSING_FORECAST/MISSING_DESTINATION/
+  API_FAILURE/VALID_ZERO) replacing the AI-Pending / No-recommendation-generated placeholders.
+Doc: docs/planning/PHASE_F1_4B_RECOMMENDATION_WORKSPACE_BLOCKER.md §G (runtime-READY / page-inputs-ABSENT + next slice).
+No new formula/runtime/inference/fake value; docs-only checkpoint. No live DB. Full suite unchanged (87 files / 0
+  failing); Golden Matrix 39/1/0; Scenario #34 Pending. Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

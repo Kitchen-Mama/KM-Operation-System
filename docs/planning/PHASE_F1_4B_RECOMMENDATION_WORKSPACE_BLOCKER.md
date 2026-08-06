@@ -138,3 +138,88 @@ No new formula, no new runtime, no recommendation/planning-facts derivation; no 
 DB / schema / Apps Script / bundle / CSS change. F1-3b (supply lifecycle bridge) is confirmed landed at HEAD
 (`source-projection.js:249-342`; commit `97df611`). Read-only audit; docs-only checkpoint. No live DB accessed. No
 push, no deploy. Full suite unchanged (83/83); Golden Matrix 39/1/0; Scenario #34 Pending.
+
+---
+
+## G. F1-4B-B — Page cutover readiness (2026-08-06): runtime now READY, page-caller inputs ABSENT → HALT
+
+The §C runtime blocker is **RESOLVED**. F1-4B-PRE (assembly `supply-planning-production-assembly.js`, KMPA) + F1-5-A
+(KMAF) + F1-5-BD (KMPCX) now PRODUCE the caller-owned planning facts from canonical DB rows by invoking the frozen
+owners, and F1-4B-A exposes them through the bounded read endpoint `recommendation.workspace.get`
+([`42_api_v1_recommendation_workspace.gs`](../../assets/specs/active/apps-script/42_api_v1_recommendation_workspace.gs)).
+The F1-4B-A suite proves a REAL `recommendedQty = 96` end-to-end from raw snapshots, with source-proven
+`currentStockQty`/`qualifiedIncomingQty`/`calculatedGap`
+([`supply-planning-recommendation-workspace-f1-4b-a.test.js:69-72`](../../assets/tests/supply-planning-recommendation-workspace-f1-4b-a.test.js)).
+So the seam is meaningful now — **given the three caller-owned inputs**.
+
+**But the page-side INPUT AUTHORITY those inputs require does not exist**, and the frozen registry forbids
+synthesizing two of the three. This is the distinct, still-open blocker for the *page* cutover (the §E#4
+"small page/UX prerequisite … must be authorized on its own" — never built by any completed round).
+
+### G.1 The endpoint mandates three caller-owned inputs (validated before any read)
+
+| Input | Frozen rule (never synthesize) | Authority (file:line) |
+|---|---|---|
+| `destinationWarehouseId` | explicit canonical `warehouse_id`, VALIDATED; **NEVER auto-selected/inferred** (no first-row / display-name / country-default / latest-wins / cheapest-route / random) — D-F1-5B-1 | `supply-planning-planning-context.js:54-76` (`validateDestination` → `MISSING_DESTINATION_WAREHOUSE` when absent, `:66`) |
+| `calculationMonth` (`YYYY-MM`) | injected anchor; **NO Date.now / NO browser-current-date** — D-F1-5B-3 | `supply-planning-planning-context.js:118-119` |
+| `planningCycle` | required caller/scheduler run parameter (SC-3.3) | `supply-planning-planning-context.js:116-117` (`MISSING_PLANNING_CYCLE`) |
+
+The frontend DTO builder forwards exactly what the page passes and defaults each of these to `null`
+([`km-api-foundation.js:350-366`](../../assets/js/api/km-api-foundation.js)) — a `null` yields the corresponding
+server `MISSING_*` structured failure, never a value.
+
+### G.2 The Inventory Replenishment page owns NONE of the three
+
+- **Header controls (source-proven):** only Country + Marketplace + LTS Filter + Target Days
+  ([`inventory-replenishment.html:16,32,44,52`](../../assets/html/pages/inventory-replenishment.html)). There is **no
+  destination-warehouse selector, no calculation-month anchor, no planning-cycle control.**
+- **Page scope object (source-proven):** `{ company, country, marketplace, sku, marketplaceId, series, category }`
+  ([`inventory-replenishment.js:3450-3454`](../../assets/js/pages/inventory-replenishment.js)) — no
+  `destinationWarehouseId`, no injected `calculationMonth` (the page uses `new Date().getMonth()` for its *legacy*
+  display math at `:3433`, which is exactly the browser-current-date source the frozen decision forbids feeding the
+  API), no `planningCycle`.
+
+### G.3 Why this is HALT, not "wire it and show MISSING_* everywhere"
+
+To reach the round's stated GOAL — a **populated** Recommendation Summary ("Recommendation Summary populated" is a
+listed acceptance test) — the page must send a valid `destinationWarehouseId` + `calculationMonth` + `planningCycle`.
+It cannot:
+- Auto-selecting the destination (e.g. "the one eligible 3PL", `IRMap.eligible3plWarehouses`) is precisely the
+  inference D-F1-5B-1 bans; platform-fulfilled destinations aren't modeled as a page-selectable `warehouse_id` at all.
+- Deriving `calculationMonth` from the browser clock is banned by D-F1-5B-3.
+- `planningCycle` has no page representation to derive from.
+
+Wiring the seam to send `null`s would make **every** row render `MISSING_DESTINATION_WAREHOUSE` /
+`MISSING_CALCULATION_MONTH` / `MISSING_PLANNING_CYCLE` — never a real recommendation — which fails the GOAL and the
+"populated" acceptance test, while the honest legacy stubs already convey "not generated". Manufacturing the inputs to
+avoid that violates the frozen registry and the round's own "No fake zero / No placeholder values / No page
+calculation / pure presentation layer" constraints, and building a destination/month/cycle **input authority** is new
+caller-context (decision-input) semantics — outside a *pure presentation* cutover and adjacent to the round's DO-NOT
+list (Decision Engine / Allocation Runtime). Either path breaches a hard constraint → **HALT**.
+
+### G.4 Smallest next slice (separately authorized) — F1-4B-B-PRE · Inventory Replenishment Planning-Context Input Authority
+
+A page/UX-only slice that lets the page legitimately **own** the three caller inputs, so the F1-4B-A endpoint becomes
+callable with real values — authoring NO formula, NO runtime, NO inference:
+
+1. **Destination** — an explicit destination-`warehouse_id` selection surfaced from canonical eligible warehouses
+   (validated by the existing `validateDestination`, never auto-picked). Scope/UX decision: per-scope selector vs
+   per-row; how platform-fulfilled (FBA) destinations are represented as a canonical `warehouse_id`.
+2. **Calculation month** — an explicit injected `YYYY-MM` anchor control (default policy is a product decision, but the
+   *value sent to the API must be caller-explicit*, never the browser clock).
+3. **Planning cycle** — an explicit run-parameter control/echo (`YYYY-Www`-style), caller-owned.
+
+**Then F1-4B-B (this cutover) becomes meaningful:** the Recommendation Summary can call
+`recommendation.workspace.get` behind the default-false `recommendation` flag and present the real
+`currentStockQty` / `qualifiedIncomingQty` / `calculatedGap` / `recommendedQty` (+ blocked / blockedReason /
+formulaVersion / sourceDataAsOf / diagnostics), with differentiated structured states
+(NO_DATA / BLOCKED / MISSING_FORECAST / MISSING_DESTINATION / API_FAILURE / VALID_ZERO) replacing the
+"AI Pending" / "No recommendation generated" placeholders — a genuine pure-presentation layer.
+
+Until F1-4B-B-PRE lands, the page's honest legacy stubs must remain (a `MISSING_*`-for-everything wiring is not
+preferable to the honest "not generated" state).
+
+### G.5 Governance (F1-4B-B)
+Readiness/authority audit only. **No** runtime / API / router / Foundation / page / HTML / CSS / DB / schema / Apps
+Script / bundle change. No formula, no inference, no fake value. Docs-only checkpoint. No live DB accessed. No push,
+no deploy. Full suite unchanged; Golden Matrix 39/1/0; Scenario #34 Pending.
