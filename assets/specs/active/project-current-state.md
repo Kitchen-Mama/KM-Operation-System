@@ -4288,3 +4288,32 @@ Governance: APPS_SCRIPT_SYNC_REQUIRED = 21_factory_inventory_handlers.gs, 01_rou
 Not this round: supplier / ADD mode / reserved+in-production+pending-shipout import / transfer / Forecast / Recommendation /
   Execution Plan / Allocation Draft / Submit / Request Order / PO / Shipment / document generation / whole-DB reload.
 ```
+
+---
+
+### Checkpoint — F1-S1 SKU Lifecycle Override Cleanup (2026-08-06) — IMPLEMENTED
+
+```
+Round: F1-S1. Removes SKU lifecycle as a BROWSER authority. Root cause (verified previous turn): the client
+  localStorage override km_sku_lifecycle_overrides_v1 took precedence over sku_details.lifecycle (e.g. CO5600-RB
+  = Running in the sheet but Upcoming in the UI). Lifecycle authority is now sku_details.lifecycle ONLY. No
+  schema / DB / API / import change; behavior outside lifecycle unchanged.
+Removed (assets/js/utils/sku-overrides.js): functions getSkuLifecycleOverrides / getSkuLifecycleOverride /
+  setSkuLifecycleOverride; the override branch in getNormalizedSkuStatus (now just mapStatusToLifecycle(sheet
+  lifecycle)); the lcOverride merge in getAllSkuDataWithOverrides; the window.getSkuLifecycleOverride /
+  window.setSkuLifecycleOverride exposures. Added _skuPurgeLegacyLifecycleOverride() — a one-time idempotent purge
+  of the orphaned km_sku_lifecycle_overrides_v1 key on load (clears the stale CO5600-RB symptom). KEPT the image
+  override (km_sku_image_overrides_v1) and imported-SKU data override (km_sku_data_overrides_v1) capabilities intact.
+Adapter (operation-system-db-api.js): updateSkuLifecycle cloud path now just writes the sheet + force-reloads (no
+  override-clear block); mock/no-cloud path patches ONLY the in-memory _opDbCache.skuDetails record (no localStorage
+  persistence). debugSkuById now logs sku_details.lifecycle authority instead of the removed override read.
+Page (sku-details.js): handleSkuStatusChange no-DB fallback no longer writes a localStorage lifecycle override
+  (authority = sku_details only); it re-renders and reports "not saved" when the DB write path is unavailable.
+Grouping + status badge + Upcoming/Running all resolve through the same getNormalizedSkuStatus(sheet lifecycle).
+Tests: sku-lifecycle-override-cleanup-f1-s1.test.js (NEW, 19 assertions — runs sku-overrides.js in a stubbed
+  window/localStorage: purge on load; stale override ignored even when re-seeded; CO5600-RB groups under Running not
+  Upcoming; image + data overrides preserved; source-scans confirm removed persistence in adapter + page). Full suite
+  96 files / 0 failing; Golden 39/1/0; Scenario #34 Pending; bundle parity unchanged.
+Governance: FRONTEND_GITHUB_PAGES_REQUIRED = sku-overrides.js, operation-system-db-api.js, sku-details.js. No
+  APPS_SCRIPT_SYNC (no .gs/bundle change). DB/schema/API/import changes = none. No live DB; no push; no deploy.
+```

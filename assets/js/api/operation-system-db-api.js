@@ -2416,20 +2416,19 @@ window.KM.DB.isCloudWriteEnabled = function() {
 
 window.KM.DB.updateSkuLifecycle = async function(sku, lifecycle) {
     if (window.KM.DB.isCloudWriteEnabled()) {
-        // Cloud mode: write to Google Sheet
+        // Cloud mode: sku_details.lifecycle is the SINGLE authority — write the sheet, then re-read fresh.
+        // (F1-S1: no browser lifecycle override exists to clear anymore.)
         var result = await updateSkuLifecycleInSheet(sku, lifecycle);
-        // Clear localStorage override for this SKU so it doesn't conflict
-        var overrides = getSkuLifecycleOverrides();
-        if (overrides[sku]) {
-            delete overrides[sku];
-            localStorage.setItem(SKU_LIFECYCLE_KEY, JSON.stringify(overrides));
-        }
-        // Reload fresh data
         await loadOperationDb({ force: true });
         return result;
     } else {
-        // Mock mode: write to localStorage
-        setSkuLifecycleOverride(sku, lifecycle);
+        // Mock / no-cloud mode: lifecycle is NOT persisted to the browser (F1-S1 — authority = sku_details
+        // only). Patch the in-memory cache so the current session reflects the change; a refresh reloads the
+        // mock defaults. No localStorage override is written.
+        if (window._opDbCache && Array.isArray(window._opDbCache.skuDetails)) {
+            var rec = window._opDbCache.skuDetails.find(function(i) { return i.sku === sku; });
+            if (rec) rec.lifecycle = lifecycle;
+        }
         return { sku: sku, lifecycle: lifecycle };
     }
 };
@@ -3595,8 +3594,8 @@ window.debugSkuById = function(sku) {
     var dbItem = dbItems.find(function(i) { return i.sku === sku; });
     console.log('1. Normalized SKU data:', dbItem || 'NOT FOUND');
     if (!dbItem) { console.log('=== End Debug SKU ==='); return; }
-    var lcOverrides = getSkuLifecycleOverrides();
-    console.log('2. Lifecycle override:', lcOverrides[sku] || 'none');
+    // F1-S1: lifecycle authority = sku_details.lifecycle (no browser override).
+    console.log('2. Lifecycle (sku_details authority):', dbItem.lifecycle || 'none');
     var imgOverrides = getSkuImageOverrides();
     console.log('3. Image override:', imgOverrides[sku] || 'none');
     console.log('4. Final lifecycle:', getNormalizedSkuStatus(dbItem));

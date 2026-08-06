@@ -12,32 +12,20 @@ const VALID_LIFECYCLES = [
     'Closure'
 ];
 
-function getSkuLifecycleOverrides() {
-    try { return JSON.parse(localStorage.getItem(SKU_LIFECYCLE_KEY)) || {}; }
-    catch(e) { return {}; }
-}
+// F1-S1: SKU lifecycle override authority REMOVED. Lifecycle now comes ONLY from sku_details.lifecycle.
+// getSkuLifecycleOverrides / getSkuLifecycleOverride / setSkuLifecycleOverride were deleted. The stale
+// browser key (km_sku_lifecycle_overrides_v1) is purged once on load (see _skuPurgeLegacyLifecycleOverride).
+// Image overrides (km_sku_image_overrides_v1) and imported-SKU data overrides (km_sku_data_overrides_v1)
+// are UNCHANGED — this round removes lifecycle authority only.
 
 function getSkuImageOverrides() {
     try { return JSON.parse(localStorage.getItem(SKU_IMAGE_KEY)) || {}; }
     catch(e) { return {}; }
 }
 
-function getSkuLifecycleOverride(sku) {
-    const overrides = getSkuLifecycleOverrides();
-    return overrides[sku] ? overrides[sku].lifecycle : null;
-}
-
 function getSkuImageOverride(sku) {
     const overrides = getSkuImageOverrides();
     return overrides[sku] ? overrides[sku].image : null;
-}
-
-function setSkuLifecycleOverride(sku, lifecycle) {
-    if (!VALID_LIFECYCLES.includes(lifecycle)) return false;
-    const overrides = getSkuLifecycleOverrides();
-    overrides[sku] = { lifecycle: lifecycle, updatedAt: new Date().toISOString() };
-    localStorage.setItem(SKU_LIFECYCLE_KEY, JSON.stringify(overrides));
-    return true;
 }
 
 function setSkuImageOverride(sku, imageUrl) {
@@ -58,10 +46,9 @@ function mapStatusToLifecycle(status) {
     return 'Running in the Market';
 }
 
+// F1-S1: lifecycle authority = sku_details.lifecycle ONLY. No browser override is consulted.
 function getNormalizedSkuStatus(item) {
-    const override = getSkuLifecycleOverride(item.sku);
-    if (override) return override;
-    return mapStatusToLifecycle(item.status || item.lifecycle);
+    return mapStatusToLifecycle((item && (item.status || item.lifecycle)) || '');
 }
 
 function getNormalizedSkuImage(item) {
@@ -117,12 +104,10 @@ function getAllSkuDataWithOverrides() {
     };
 
     allRaw.forEach(item => {
-        // Apply ONLY lifecycle and image overrides from localStorage
-        // Do NOT spread entire dataOverrides object over Google Sheet data
-        const lcOverride = getSkuLifecycleOverride(item.sku);
+        // F1-S1: lifecycle is NEVER overridden from the browser — it comes only from sku_details.lifecycle.
+        // Apply ONLY the image override from localStorage (lifecycle override authority removed).
         const imgOverride = getSkuImageOverride(item.sku);
         const merged = Object.assign({}, item);
-        if (lcOverride) merged.lifecycle = lcOverride;
         if (imgOverride) merged.image = imgOverride;
         const lifecycle = getNormalizedSkuStatus(merged);
         if (groups[lifecycle]) {
@@ -295,7 +280,7 @@ function parseCSVLine(line) {
     return result;
 }
 
-// Reset all overrides
+// Reset all overrides. (Lifecycle key is also purged here as one-time cleanup — it is no longer an authority.)
 function resetSkuHandbookOverrides() {
     localStorage.removeItem(SKU_LIFECYCLE_KEY);
     localStorage.removeItem(SKU_IMAGE_KEY);
@@ -305,14 +290,20 @@ function resetSkuHandbookOverrides() {
     console.log('[SKU Overrides] All overrides cleared.');
 }
 
+// F1-S1: one-time purge of the now-orphaned lifecycle override key so any leftover stale browser value
+// (the CO5600-RB "Upcoming SKU" symptom) is removed. Idempotent; touches ONLY the lifecycle key. Image +
+// imported-SKU data overrides are left intact.
+function _skuPurgeLegacyLifecycleOverride() {
+    try { if (typeof localStorage !== 'undefined' && localStorage.getItem(SKU_LIFECYCLE_KEY) !== null) { localStorage.removeItem(SKU_LIFECYCLE_KEY); console.log('[SKU Overrides] Purged legacy lifecycle override (authority is now sku_details.lifecycle).'); } } catch (e) {}
+}
+_skuPurgeLegacyLifecycleOverride();
+
 // Expose
-window.getSkuLifecycleOverride = getSkuLifecycleOverride;
 window.getSkuImageOverride = getSkuImageOverride;
 window.getNormalizedSkuStatus = getNormalizedSkuStatus;
 window.getNormalizedSkuImage = getNormalizedSkuImage;
 window.resolveSkuImageUrl = resolveSkuImageUrl;
 window.getAllSkuDataWithOverrides = getAllSkuDataWithOverrides;
-window.setSkuLifecycleOverride = setSkuLifecycleOverride;
 window.setSkuImageOverride = setSkuImageOverride;
 window.exportSkuStatusTemplate = exportSkuStatusTemplate;
 window.importSkuStatusTemplate = importSkuStatusTemplate;

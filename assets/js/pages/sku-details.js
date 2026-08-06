@@ -216,11 +216,11 @@ function handleSkuStatusChange(sku, newLifecycle) {
             renderSkuDetailsTable();
         });
     } else {
-        // Fallback: localStorage only
-        if (window.setSkuLifecycleOverride) setSkuLifecycleOverride(sku, newLifecycle);
+        // F1-S1: no localStorage lifecycle persistence. Without the DB write path the change cannot be
+        // saved (authority = sku_details.lifecycle only); re-render from the current data and say so.
         renderSkuDetailsTable();
         if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
-        showSkuStatusToast('Lifecycle updated (local).');
+        showSkuStatusToast('Lifecycle not saved — database write unavailable.');
     }
 }
 
