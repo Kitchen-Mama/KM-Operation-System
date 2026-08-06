@@ -4169,3 +4169,38 @@ Governance: APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (
 Not this round (non-goals): persistence/Submit/Allocation-Draft/Shipment/Request-Order/PO/Coverage/DOS/Projected
   Inventory/Export; global API migration; Supplier; factory-stock cleanup.
 ```
+
+---
+
+### Checkpoint — F1-4B-FM1-V Controlled Live Recommendation Verification (2026-08-06) — LOCAL AUDIT PASS · LIVE PENDING (USER-OWNED)
+
+```
+Round: F1-4B-FM1-V (VERIFICATION ONLY — no feature build; non-goals unchanged from FM1-T). Result:
+  NO CODE DEFECT FOUND; no source change; no commit of code. Classification: LIVE_RECOMMENDATION_VERIFICATION_PENDING
+  (§8 live latency/behavior classes cannot be assigned by the agent — they require the deployed runtime + browser +
+  live Spreadsheet, all forbidden to the agent under RG-1).
+
+§2 deployment-readiness audit — LOCALLY PROVABLE STEPS (agent-verified):
+  (1) origin/main contains 96b4581 (remote-tracking tip = 96b4581; local...origin divergence 0/0). PASS.
+  (2) 3 frontend files + 2 .gs in the working tree match 96b4581 byte-for-byte (empty diff). PASS.
+  (3) bundle `--check` parity PASS (hash f803f73e...c82d4d, 30 modules).
+  (4) 42_api_v1_recommendation_workspace.gs references ONLY bundled owners (KMDR/KMDA/KMPS/KMPA/KMPCX); undefined-guard
+      returns RECOMMENDATION_RUNTIME_BLOCKED if the bundle is absent. PASS.
+  (5) 01_router.gs routes 'recommendation.workspace.get' -> handleRecommendationWorkspaceGet_(body). PASS.
+  (deploy-correctness) handler defaults io internally (io = io || recommendationWorkspaceDefaultIo_()) so the router's
+      single-arg live call is valid; default io = Script Property month + exact-ID openTarget + Date.now (diagnostic only).
+  (one-read) WAREHOUSE expander sets pr.preReadSnapshots = read.snapshots before KMPS.buildProductionRecommendationSource
+      (42_...gs:223) -> no per-SKU/per-warehouse re-open; single targeted read holds in the deployed source.
+  Suite rerun: FULL 93 files / 0 failing; Golden 39/1/0; Scenario #34 Pending; bundle parity PASS.
+
+§2 audit steps 6–10 — NOT AGENT-VERIFIABLE (require live/runtime access, deferred to the user):
+  (6) Apps Script deployment-version publication need; (7) Script Property RECOMMENDATION_CALCULATION_MONTH state;
+  (8) live Operation DB table presence (12 tables); (9) live rule-sheet header byte-equality vs frozen spec;
+  (10) live feature-flag state. The agent asserts NONE of these; they are the user's controlled-deployment gate.
+
+§4–§9 live tests — NOT PERFORMED (require deployed frontend + Apps Script + browser + live Spreadsheet; RG-1 forbids
+  push/deploy/live-write to the agent). Exact user-run scopes, evidence-capture, and calc-reconciliation steps handed
+  to the user in the round response. HALT conditions (§2) become the user's pre-flight gate.
+Governance: no code change; no commit of code; no push; no deploy; no live DB access. Only this verification-status
+  note appended to project-current-state.md.
+```
