@@ -111,6 +111,13 @@ function doPost(e) {
       return jsonResponse_(handleWeeklyShippingWorkspaceGet_(body));
     }
 
+    // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
+    // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
+    // never writes/persists/creates a draft). No business logic here.
+    if (action === 'recommendation.workspace.get') {
+      return jsonResponse_(handleRecommendationWorkspaceGet_(body));
+    }
+
     // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
     if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
       return handleGetShippingMethodCandidates_(body);

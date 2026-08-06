@@ -33,19 +33,20 @@ function makeLegacy() {
   ok(typeof KMAPI.createApiFoundation === 'function', 'S1 factory exported');
   ok(typeof KMAPI.createDefault === 'function', 'S2 createDefault exported');
   ok(KMAPI.FEATURE_FLAGS_DEFAULT.USE_WORKSPACE_API === false, 'S3 USE_WORKSPACE_API default is false (production = legacy)');
-  ok(KMAPI.DEFAULT_WORKSPACES.length === 7, 'S4 exactly 7 domain workspaces seeded');
+  ok(KMAPI.DEFAULT_WORKSPACES.length === 8, 'S4 exactly 8 domain workspaces seeded (7 + recommendation, F1-4B-A)');
   ok(KMAPI.API_ERROR_CODES.FORBIDDEN_OPERATION === 'FORBIDDEN_OPERATION', 'S5 error taxonomy present');
 
   // =====================================================================================================
   section('Workspace Registry');
   var api = KMAPI.createApiFoundation({ legacy: makeLegacy() });
   var names = api.registry.list().map(function (w) { return w.name; }).sort();
-  ok(JSON.stringify(names) === JSON.stringify(['fcSummary', 'inventoryReplenishment', 'purchaseOrder', 'requestOrder', 'shipment', 'skuDetails', 'weeklyShipping']),
-    'R1 the 7 canonical workspaces are registered');
+  ok(JSON.stringify(names) === JSON.stringify(['fcSummary', 'inventoryReplenishment', 'purchaseOrder', 'recommendation', 'requestOrder', 'shipment', 'skuDetails', 'weeklyShipping']),
+    'R1 the 8 canonical workspaces are registered (incl. recommendation, F1-4B-A)');
   ok(api.registry.has('weeklyShipping') && !api.registry.has('nope'), 'R2 has() works');
-  // API-2: weeklyShipping graduated to IMPLEMENTED; the other six remain REGISTERED-only.
+  // API-2 / F1-4B-A: weeklyShipping + recommendation are IMPLEMENTED; the other six remain REGISTERED-only.
   ok(api.registry.get('weeklyShipping').status === 'IMPLEMENTED', 'R3a weeklyShipping is IMPLEMENTED (API-2)');
-  ok(api.registry.list().filter(function (w) { return w.name !== 'weeklyShipping'; }).every(function (w) { return w.status === 'REGISTERED' && w.implemented === false; }), 'R3b the other six workspaces remain REGISTERED-only');
+  ok(api.registry.get('recommendation').status === 'IMPLEMENTED', 'R3a2 recommendation is IMPLEMENTED (F1-4B-A)');
+  ok(api.registry.list().filter(function (w) { return w.name !== 'weeklyShipping' && w.name !== 'recommendation'; }).every(function (w) { return w.status === 'REGISTERED' && w.implemented === false; }), 'R3b the other six workspaces remain REGISTERED-only');
   ok(api.registry.get('weeklyShipping').tables.indexOf('shipping_plans') >= 0, 'R4 registry carries the table set');
   api.registry.register('customWs', { tables: ['t'] });
   ok(api.registry.has('customWs'), 'R5 register() adds a new workspace');

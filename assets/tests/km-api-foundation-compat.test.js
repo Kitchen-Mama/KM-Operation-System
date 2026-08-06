@@ -93,7 +93,7 @@ function makeLegacy() {
 
   // per-slice flag readiness classification: the flag is currently a single GLOBAL boolean
   ok(typeof api.flags.USE_WORKSPACE_API === 'boolean' && Object.keys(api.getFlags()).length === 1, 'FF7 global master remains a single boolean; per-workspace map is separate (getWorkspaceFlags)');
-  ok(Object.keys(api.getWorkspaceFlags()).length === 7 && api.getWorkspaceFlags().weeklyShipping === false, 'FF8 per-workspace flag map present, all default false (API-2)');
+  ok(Object.keys(api.getWorkspaceFlags()).length === 8 && api.getWorkspaceFlags().weeklyShipping === false && api.getWorkspaceFlags().recommendation === false, 'FF8 per-workspace flag map present (8 incl. recommendation), all default false (API-2/F1-4B-A)');
 
   // =====================================================================================================
   section('§5/§6 Legacy parity + error visibility — NO false success');

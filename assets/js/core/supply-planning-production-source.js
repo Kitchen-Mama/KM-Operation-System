@@ -147,6 +147,12 @@
       recommendationPlan: recommendationPlan,
       lines: (full.bridgeResult && full.bridgeResult.lines) || [],
       issues: srcIssues,
+      // Read-only source-context passthrough (F1-4B-A): the projection's canonical lifecycle-bucketed supply source
+      // rows ({pool_type, warehouse_id, quantity, sku, company, lifecycle_bucket, …}) so a read API can surface
+      // source-proven Current Stock (CURRENT_STOCK bucket) + Qualified Incoming (SHIPPED_IN_TRANSIT bucket) per SKU.
+      // NOT a recommendation output; NOT persisted; the arrays are the same projection rows already counted in lineage.
+      supplySourceEntries: (proj.supplySourceEntries || []),
+      demandSourceEntries: (proj.demandSourceEntries || []),
       sourceDataAsOf: full.sourceDataAsOf !== undefined ? full.sourceDataAsOf : (proj.sourceDataAsOf || null),
       formulaVersion: full.formulaVersion !== undefined ? full.formulaVersion : (request.formulaVersion || null),
       lineage: { origin: 'PRODUCTION_SOURCE_READ_ONLY', demandCount: (proj.demandSourceEntries || []).length, supplyCount: (proj.supplySourceEntries || []).length },

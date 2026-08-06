@@ -3690,4 +3690,42 @@ No new formula/DB/schema/header/API/router/page/persistence change. No live DB. 
 Next: F1-4B — read-only recommendation.workspace.get API seam (separately authorized).
 ```
 
+### Checkpoint — F1-4B-A Read-Only Recommendation Workspace API = IMPLEMENTED (2026-08-06)
+```
+F1-4B-A — the F1-4B-PRE assembly is exposed through ONE bounded read endpoint: recommendation.workspace.get.
+NEW Apps Script handler 42_api_v1_recommendation_workspace.gs (routed from 01_router.gs doPost):
+  validate (mandatory scope + destinationWarehouseId + calculationMonth + planningCycle; size≤100; FAILS before any
+  read) → io.openTarget() exact-ID gate → KMPS.readCanonicalSnapshots (targeted 11 canonical tables ONCE; never
+  getOperationDb) → per in-scope SKU: KMPA.assembleProductionRecommendationFacts → KMPS.buildProductionRecommendationSource
+  (existing demand/supply ledger → allocator → resolver) → aggregate → map/filter/sort/paginate → canonical
+  {success,data,meta,errors} envelope. Injectable io → testable with zero SpreadsheetApp. Pure READ boundary; authors
+  NO formula; no write/persistence/draft/plan/order/reservation/inventory; no header/sheet creation/repair. Runtime is
+  per-SKU (shipment lifecycle scope = one masterSku) → internal SKU loop = ONE HTTP request, no per-SKU HTTP.
+Source-proven line outputs: currentStockQty (Σ CURRENT_STOCK supply source), qualifiedIncomingQty (Σ SHIPPED_IN_TRANSIT),
+  calculatedGap (frozen calculateGap owner via planning fact), recommendedQty (existing resolver carton-FLOOR). NO
+  Coverage/DOS/Projected/Reason/Status invented (omitted). Missing source → structured failure (never fake zero);
+  legitimate runtime zero → successful zero; filter miss → successful empty page; scope with no marketplace_skus →
+  MISSING_SKU_MAPPING. Tokens: VALIDATION_FAILED / MISSING_DESTINATION_WAREHOUSE / MISSING_CALCULATION_MONTH /
+  MISSING_PLANNING_CYCLE / UNSUPPORTED_PHASE1_DEMAND_DRIVER / MISSING_SKU_MAPPING / MISSING_FORECAST_WEIGHT_SOURCE /
+  WRONG_SPREADSHEET_TARGET / RECOMMENDATION_RUNTIME_BLOCKED / PRODUCTION_RECOMMENDATION_SOURCE_INCOMPLETE.
+Additive core change (to surface source-proven currentStock/QI): supply-planning-production-source.js
+  buildProductionRecommendationSource now also returns supplySourceEntries/demandSourceEntries (the projection's
+  lifecycle-bucketed rows; NOT a formula/recommendation change). Bundle regenerated (28 modules, hash a002c6a3…,
+  --check reproducible; parity 56).
+API Foundation: km-api-foundation.js registers recommendation (IMPLEMENTED + resolver + bounded DTO builder); master
+  USE_WORKSPACE_API=false + per-workspace recommendation=false remain DEFAULT FALSE (infrastructure-only; NO page
+  cutover; no dual execution; no silent legacy fallback).
+Tests: NEW supply-planning-recommendation-workspace-f1-4b-a.test.js (35 — end-to-end real recommendedQty 96 from raw
+  snapshots; source-proven currentStock 100 / QI 24 / gap 100; validation-before-read; wrong-ID fail-closed; zero
+  writes; pagination/filter; registration + default-false flags + no-fallback). km-api-foundation + -compat updated
+  7→8 workspaces. FULL SUITE 87 files / 0 failing; Golden 39/1/0; #34 Pending.
+Files: NEW 42_api_v1_recommendation_workspace.gs (APPS_SCRIPT_SYNC_REQUIRED — copy 42_ + 01_router.gs), 01_router.gs
+  (route), supply-planning-production-source.js (additive supplySourceEntries — bundled), 90_generated_supply_planning_bundle.gs
+  (regenerated — APPS_SCRIPT_SYNC_REQUIRED bundle), km-api-foundation.js (recommendation workspace — FRONTEND_GITHUB_PAGES_REQUIRED=true),
+  km-api-foundation.test.js + km-api-foundation-compat.test.js (7→8), NEW test (GIT_ONLY),
+  API_RECOMMENDATION_WORKSPACE_SPEC.md (NEW), PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md §K + this entry (DOCUMENTATION_ONLY).
+BUNDLE_REBUILD_REQUIRED=true. No new formula/DB/schema/header change, no page connection, no persistence, no live DB.
+Not pushed, not deployed. Next: F1-4B-B — Inventory Replenishment page cutover behind the disabled-by-default flag.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

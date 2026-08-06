@@ -93,7 +93,11 @@
     { name: 'fcSummary', label: 'FC Summary',
       tables: ['fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'campaigns', 'campaign_sku_lines', 'marketplace_skus'], legacyRead: 'getOperationDb' },
     { name: 'skuDetails', label: 'SKU Details',
-      tables: ['sku_details', 'marketplace_skus', 'tax_referral_rates', 'sku_regional_details'], legacyRead: 'getOperationDb' }
+      tables: ['sku_details', 'marketplace_skus', 'tax_referral_rates', 'sku_regional_details'], legacyRead: 'getOperationDb' },
+    // Recommendation READ-ONLY workspace (F1-4B-A) — targeted canonical tables consumed by KMPA/KMPS (never getOperationDb).
+    { name: 'recommendation', label: 'Recommendation',
+      tables: ['sku_details', 'marketplace_skus', 'warehouses', 'marketplaces', 'fc_regular_forecast', 'fc_special_events',
+        'amazon_inventory_snapshot', 'overseas_inventory_snapshot', 'factory_stock', 'shipping_plans', 'shipments'], legacyRead: 'getOperationDb' }
   ];
 
   // ---- small helpers -------------------------------------------------------------------------------------
@@ -273,7 +277,7 @@
     }
 
     // ---- API-2 · per-workspace feature flag (global master AND per-workspace enable; default all false) --
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: false, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: false, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false, recommendation: false };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
@@ -339,6 +343,39 @@
     }
     // graduate weeklyShipping from REGISTERED → IMPLEMENTED (keeps its seeded table set)
     register('weeklyShipping', { label: 'Weekly Shipping', tables: getWorkspace('weeklyShipping').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: weeklyShippingResolver });
+
+    // ---- F1-4B-A · Recommendation READ workspace resolver (read-only; server owner = 42_api_v1_recommendation_workspace.gs) --
+    // Bounded request: scope + explicit destination + injected calculationMonth + planningCycle. No client formula /
+    // demandDriver / forecast-weight override (Phase-1 driver stays FORECAST server-side). No auto destination/month.
+    function buildRecommendationRequestDTO(params) {
+      params = params || {};
+      var scope = isObj(params.scope) ? params.scope : {};
+      return {
+        apiVersion: API_VERSION, action: 'recommendation.workspace.get', requestId: makeRequestId(params.requestId),
+        payload: {
+          scope: { company: normName(scope.company) || null, country: normName(scope.country) || null, marketplace: normName(scope.marketplace) || null },
+          destinationWarehouseId: normName(params.destinationWarehouseId) || null,
+          calculationMonth: normName(params.calculationMonth) || null,
+          planningCycle: normName(params.planningCycle) || null,
+          filters: isObj(params.filters) ? params.filters : { sku: null, siteSku: null, category: null, series: null },
+          pagination: { page: (params.pagination && params.pagination.page) || 1, size: (params.pagination && params.pagination.size) || 50 },
+          include: Object.assign({ diagnostics: false }, isObj(params.include) ? params.include : {})
+        },
+        context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
+      };
+    }
+    function recommendationResolver(params, helpers, opts) {
+      var signal = opts && opts.signal, seq = opts && opts.sequence;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildRecommendationRequestDTO(params);
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
+        // reuse the canonical normalizer, then relabel the workspace/action for this resolver.
+        var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
+        env.meta.workspace = 'recommendation'; env.meta.action = dto.action;
+        return env;
+      });
+    }
+    register('recommendation', { label: 'Recommendation', tables: getWorkspace('recommendation').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: recommendationResolver });
 
     // ---- ApiDispatcher — routes a normalized request → envelope. Catches EVERYTHING (never throws). ----
     function dispatchCommand(req) {
@@ -433,6 +470,8 @@
       workspaceApiActive: workspaceApiActive, effectiveMode: effectiveMode,
       // Weekly workspace helpers (API-2)
       weekly: { buildRequestDTO: buildWeeklyRequestDTO, normalizeEnvelope: normalizeWorkspaceEnvelope, makeRequestId: makeRequestId },
+      // Recommendation workspace helpers (F1-4B-A)
+      recommendation: { buildRequestDTO: buildRecommendationRequestDTO, makeRequestId: makeRequestId },
       // ApiClient (facade)
       client: client, getWorkspace: client.getWorkspace, executeCommand: client.executeCommand,
       // independent layers (each testable in isolation)
