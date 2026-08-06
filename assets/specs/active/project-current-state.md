@@ -3591,4 +3591,32 @@ No new business formula/DB/schema/header/API/router/page/CSS change. No live DB.
 Next: F1-4B-PRE (feed producer facts through the production source builder) then F1-4B (read-only API seam).
 ```
 
+### Checkpoint — F1-5-B Planning Context Authority Runtime = AUTHORITY AUDIT / HALTED (2026-08-06)
+```
+F1-5-B — close the four F1-5-A caller seams (destination / window+required-by / demand driver / forecast anchor)
+  using existing canonical mapping + frozen rules. §3 authority matrix → HALTED (§4). Round premise does NOT hold:
+  3 of 4 seams have no live/frozen canonical source.
+BLOCKERS (each a distinct §4 HALT condition):
+  1. destinationWarehouseId (condition 4) — D-3/SC-11.3 freezes it caller-owned, "never inferred"; DATABASE_RELATIONSHIP_MAP
+     :599 destination fields are "human-readable snapshots only, identity NEVER inferred". The automated source
+     replenishment_route_rules (CARRIER_AND_ROUTE_SPEC §5A) is "the future source" / "Spec only — no runtime engine
+     exists" (INVENTORY_TABLE_MAPPING §11.2/:44; CARRIER_AND_ROUTE :537,555) — NOT live. Deriving it needs a new DB
+     table (forbidden §18) or a business routing decision. Every context needs a destination → central blocker.
+  2. demandDriver Sales-vs-Forecast (condition 6 / §9) — §2C/§2D/§20.5 USE it; no stored column (no demand_driver/
+     sales_driven/forecast_driven in DATABASE_RELATIONSHIP_MAP) and no frozen classifier rule (§589 treats it as a
+     pre-existing SKU property; data-presence is NOT the rule). → DEMAND_DRIVER_AUTHORITY_UNRESOLVED; never default.
+  3. forecastWeightAnchor (condition 7) — §7 "rolling future 4-month FC window" anchor NOT pinned (Month+1..+4 §27
+     tiers vs Month0..+3); §7 does not cite §27 as its window. Downstream of #2.
+Per §4/§19: multiple core authorities unresolved (destination needed by EVERY context) → NO partial public runtime;
+  docs-only HALT. F1-5-A seams remain the correct boundary; nothing guessed/defaulted.
+Safely-implementable-later (blocked only by 1-3): planningCycle (caller run-param), window start/end + Engine-A/B
+  classification via the already-implemented classifyRequiredByWindow (§27A), Regular required-by = window end.
+A/B/C options + recommendations (doc §D): Dest = keep caller-owned now (D-3) + authorize a replenishment_route_rules
+  schema-freeze path; Driver = add a stored demand_driver classifier (interim = seam); Anchor = confirm §7 == §27
+  T1-T4 Regular-only (interim = seam). Each needs an explicit business/schema decision — not derivable this round.
+Doc: docs/planning/PHASE_F1_5B_PLANNING_CONTEXT_AUTHORITY_HALT.md (authority matrix + cited blockers + A/B/C + recommendation).
+No runtime/API/page/persistence/DB/schema/header/formula/bundle/source-reader change. No live DB. Full suite unchanged
+  (84 files / 0 failing); Golden 39/1/0; #34 Pending. Not pushed, not deployed. F1-5-A (83afd10) unchanged.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
