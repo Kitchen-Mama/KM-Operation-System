@@ -4254,10 +4254,13 @@ function bindReplenFilterDependencies() {
         countrySel.onchange = function() {
             // Context (Country) changed → discard the Shipping Allocation Working Draft (both modes).
             _clearAllocationDraft();
-            if (_replenDemoOn()) return;
+            if (_replenDemoOn()) { if (typeof onReplenRecoScopeChanged === 'function') onReplenRecoScopeChanged(); return; }
             // Country changed -> re-scope Marketplace options; resets the marketplace_id selection if it
             // does not belong to the new country (no fallback to US / first marketplace).
             refreshReplenMarketplaceOptions();
+            // Recommendation Context (F1-4B-B-PRE): re-scope destination options + drop a now-invalid
+            // destination selection. Pure page-input recompute — NO API call.
+            if (typeof onReplenRecoScopeChanged === 'function') onReplenRecoScopeChanged();
         };
     }
     if (mpSel) {
@@ -4266,6 +4269,9 @@ function bindReplenFilterDependencies() {
             // The chosen marketplace_id already belongs to the selected Country (options are country-scoped),
             // so no further re-scoping is needed.
             _clearAllocationDraft();
+            // Recommendation Context (F1-4B-B-PRE): re-scope destination options for the new marketplace
+            // scope + drop a now-invalid destination. Pure page-input recompute — NO API call.
+            if (typeof onReplenRecoScopeChanged === 'function') onReplenRecoScopeChanged();
         };
     }
 }
@@ -4274,6 +4280,339 @@ window.populateReplenFiltersFromRegistry = populateReplenFiltersFromRegistry;
 window.refreshReplenCountryOptions = refreshReplenCountryOptions;
 window.refreshReplenMarketplaceOptions = refreshReplenMarketplaceOptions;
 window.bindReplenFilterDependencies = bindReplenFilterDependencies;
+
+// ============================================================================
+// F1-4B-B-PRE — Recommendation Context Input Authority (page-local; NO API call).
+// ----------------------------------------------------------------------------
+// Explicit, truthful page ownership of the THREE caller-owned inputs the read endpoint
+// recommendation.workspace.get (F1-4B-A) mandates and the frozen Phase-1 registry forbids
+// inferring:
+//   • destinationWarehouseId — D-F1-5B-1: an explicit canonical warehouse_id, VALIDATED
+//     (active + same company + compatible country); NEVER auto-selected/inferred.
+//   • calculationMonth        — D-F1-5B-3: explicit injected "YYYY-MM"; NEVER the browser clock.
+//   • planningCycle           — explicit caller/scheduler run identifier (opaque required string;
+//     the runtime echoes it as windowCode and never parses it — no strict format is frozen, so we
+//     require an explicit non-empty deterministic value and DO NOT invent a format validator).
+// This slice ONLY establishes the input authority + a validated normalized context. It does NOT
+// call the API, does NOT touch/replace any Recommendation Summary placeholder, authors NO
+// formula/runtime, imports no runtime module, and performs NO write (sessionStorage page-input
+// preference only). Pure helpers live in window.IRContext; DOM wiring below is thin.
+// __IRCTX_START__ (test extraction marker — do not remove)
+window.IRContext = (function () {
+  'use strict';
+  var MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+  function s(v) { return String(v == null ? '' : v).trim(); }
+  function eqv(a, b) { return s(a).toLowerCase() === s(b).toLowerCase(); }
+  // Country compatibility reuses the shared inventory-compat contract (UK ≡ GB alias) with a safe
+  // exact-match fallback — identical to how the rest of this page matches country. A blank country on
+  // EITHER side is not a proven mismatch (never over-exclude a valid destination on missing data).
+  function countryMatch(whCountry, scopeCountry) {
+    if (!s(whCountry) || !s(scopeCountry)) return true;
+    return (typeof window !== 'undefined' && window.IRCountry && window.IRCountry.matches)
+      ? window.IRCountry.matches(whCountry, scopeCountry) : eqv(whCountry, scopeCountry);
+  }
+
+  // Eligible destination options for a scope (§5): canonical warehouse_id, explicitly active, same
+  // company (no cross-company borrowing), compatible country. Identity is ALWAYS warehouse_id — never a
+  // display name. Returns a deterministic, sorted list. Does NOT select anything.
+  function eligibleDestinationWarehouses(warehouses, scope) {
+    scope = scope || {};
+    var out = (warehouses || []).filter(function (w) {
+      if (!w || !s(w.warehouseId)) return false;         // identity is warehouse_id (never name)
+      if (w.isActive !== true) return false;             // explicit active only (tri-state; blank/null excluded)
+      if (scope.company && !eqv(w.company, scope.company)) return false;   // same company only
+      if (!countryMatch(w.country, scope.country)) return false;          // compatible country scope
+      return true;
+    }).map(function (w) {
+      return { warehouseId: s(w.warehouseId), warehouseCode: s(w.warehouseCode),
+        warehouseName: s(w.warehouseName), warehouseType: s(w.warehouseType) };
+    });
+    out.sort(function (a, b) {
+      var ka = a.warehouseCode || a.warehouseId, kb = b.warehouseCode || b.warehouseId;
+      if (ka !== kb) return ka < kb ? -1 : 1;
+      return a.warehouseId < b.warehouseId ? -1 : (a.warehouseId > b.warehouseId ? 1 : 0);
+    });
+    return out;
+  }
+
+  // Explicit YYYY-MM only. Blank → UNSELECTED (never a browser-clock default); malformed → INVALID_FORMAT.
+  function validateCalculationMonth(v) {
+    var raw = s(v);
+    if (raw === '') return { value: null, state: 'UNSELECTED' };
+    if (!MONTH_RE.test(raw)) return { value: null, state: 'INVALID_FORMAT' };
+    return { value: raw, state: 'VALID' };
+  }
+
+  // Planning cycle: explicit non-empty run identifier (deterministic whitespace-normalized). No frozen
+  // strict format exists, so we do NOT invent one; blank → UNSELECTED, any non-empty value → VALID.
+  function validatePlanningCycle(v) {
+    var raw = s(v).replace(/\s+/g, ' ');
+    if (raw === '') return { value: null, state: 'UNSELECTED' };
+    return { value: raw, state: 'VALID' };
+  }
+
+  // Destination sub-state from an EXPLICIT selection over the eligible set — never auto-picks a first/
+  // only option. An array with >1 distinct id → DESTINATION_AUTHORITY_CONFLICT (mirrors the runtime).
+  function destinationState(scope, eligible, selected) {
+    scope = scope || {}; eligible = eligible || [];
+    var sel;
+    if (Array.isArray(selected)) {
+      var distinct = [], seen = {};
+      selected.forEach(function (x) { var id = s(x); if (id && !seen[id]) { seen[id] = 1; distinct.push(id); } });
+      if (distinct.length > 1) return { state: 'DESTINATION_AUTHORITY_CONFLICT', destinationWarehouseId: null };
+      sel = distinct[0] || '';
+    } else { sel = s(selected); }
+    if (eligible.length === 0) {
+      return { state: (s(scope.fulfillmentModel).toLowerCase() === 'platform_fulfilled')
+        ? 'PLATFORM_DESTINATION_IDENTITY_UNRESOLVED' : 'NO_ELIGIBLE_DESTINATION', destinationWarehouseId: null };
+    }
+    var ids = {}; eligible.forEach(function (w) { ids[w.warehouseId] = 1; });
+    if (sel === '') return { state: 'UNSELECTED', destinationWarehouseId: null };
+    if (ids[sel] === 1) return { state: 'SELECTED_VALID', destinationWarehouseId: sel };
+    return { state: 'SELECTED_INVALID', destinationWarehouseId: null };
+  }
+
+  function contextScopeKey(scope) {
+    scope = scope || {};
+    return [s(scope.company), s(scope.country), s(scope.marketplaceId) || s(scope.marketplace)].join('|');
+  }
+
+  // The ONE page-local normalized context model (the shape the next round reads via toRequestContext).
+  function normalizeRecommendationContext(input) {
+    input = input || {};
+    var scope = input.scope || {};
+    var eligible = input.eligibleWarehouses || eligibleDestinationWarehouses(input.warehouses, scope);
+    var dest = destinationState(scope, eligible, input.destinationSelectedId);
+    var cm = validateCalculationMonth(input.calculationMonthRaw);
+    var pc = validatePlanningCycle(input.planningCycleRaw);
+
+    var model = {
+      status: 'NOT_READY',
+      company: s(scope.company) || null,
+      country: s(scope.country) || null,
+      marketplace: s(scope.marketplace) || null,
+      marketplaceId: s(scope.marketplaceId) || null,
+      destinationWarehouseId: dest.destinationWarehouseId,
+      calculationMonth: cm.value,
+      planningCycle: pc.value,
+      destinationState: dest.state,
+      calculationMonthState: cm.state,
+      planningCycleState: pc.state,
+      missing: [],
+      issues: []
+    };
+    if (!model.company) model.missing.push('company');
+    if (!model.country) model.missing.push('country');
+    if (!model.marketplace) model.missing.push('marketplace');
+    if (!model.destinationWarehouseId) model.missing.push('destinationWarehouseId');
+    if (!model.calculationMonth) model.missing.push('calculationMonth');
+    if (!model.planningCycle) model.missing.push('planningCycle');
+
+    var hardInvalid = (cm.state === 'INVALID_FORMAT') || (dest.state === 'SELECTED_INVALID') || (dest.state === 'DESTINATION_AUTHORITY_CONFLICT');
+    var destBlocked = (dest.state === 'NO_ELIGIBLE_DESTINATION') || (dest.state === 'PLATFORM_DESTINATION_IDENTITY_UNRESOLVED');
+    if (cm.state === 'INVALID_FORMAT') model.issues.push('INVALID_CALCULATION_MONTH');
+    if (dest.state === 'SELECTED_INVALID') model.issues.push('SELECTED_INVALID_DESTINATION');
+    if (dest.state === 'DESTINATION_AUTHORITY_CONFLICT') model.issues.push('DESTINATION_AUTHORITY_CONFLICT');
+    if (dest.state === 'NO_ELIGIBLE_DESTINATION') model.issues.push('NO_ELIGIBLE_DESTINATION');
+    if (dest.state === 'PLATFORM_DESTINATION_IDENTITY_UNRESOLVED') model.issues.push('PLATFORM_DESTINATION_IDENTITY_UNRESOLVED');
+
+    if (hardInvalid) model.status = 'INVALID';
+    else if (destBlocked) model.status = 'DESTINATION_BLOCKED';
+    else if (model.missing.length === 0) model.status = 'READY';
+    else model.status = 'NOT_READY';
+    return model;
+  }
+
+  // Pure predicate re-derived from a normalized model (idempotent truth check).
+  function validateRecommendationContext(model) {
+    model = model || {};
+    var ready = !!(model.company && model.country && model.marketplace &&
+      model.destinationWarehouseId && model.calculationMonth && model.planningCycle) &&
+      model.status === 'READY';
+    return { ready: ready, status: model.status || 'NOT_READY',
+      missing: (model.missing || []).slice(), issues: (model.issues || []).slice() };
+  }
+
+  // The normalized context DTO the NEXT round (F1-4B-B) passes to recommendation.workspace.get.
+  // Returned ONLY when READY; null otherwise (never a partial/guessed context). The key set matches the
+  // F1-4B-A request contract (scope + explicit destination + injected month + planning cycle).
+  function toRequestContext(model) {
+    if (!validateRecommendationContext(model).ready) return null;
+    return {
+      company: model.company, country: model.country, marketplace: model.marketplace,
+      destinationWarehouseId: model.destinationWarehouseId,
+      calculationMonth: model.calculationMonth, planningCycle: model.planningCycle
+    };
+  }
+
+  // Validate a restored (session) selection against the CURRENT scope + options; drop anything invalid.
+  // Destination is kept only when the stored scope key matches AND the id is still eligible.
+  function restoreContextSelection(stored, scope, eligible) {
+    stored = stored || {};
+    var out = { destinationSelectedId: '', calculationMonthRaw: '', planningCycleRaw: '' };
+    var ids = {}; (eligible || []).forEach(function (w) { ids[w.warehouseId] = 1; });
+    if (s(stored.scopeKey) && s(stored.scopeKey) === contextScopeKey(scope) && ids[s(stored.destinationWarehouseId)] === 1) {
+      out.destinationSelectedId = s(stored.destinationWarehouseId);
+    }
+    if (validateCalculationMonth(stored.calculationMonth).state === 'VALID') out.calculationMonthRaw = s(stored.calculationMonth);
+    var pc = validatePlanningCycle(stored.planningCycle);
+    if (pc.state === 'VALID') out.planningCycleRaw = pc.value;
+    return out;
+  }
+
+  return {
+    eligibleDestinationWarehouses: eligibleDestinationWarehouses,
+    validateCalculationMonth: validateCalculationMonth,
+    validatePlanningCycle: validatePlanningCycle,
+    destinationState: destinationState,
+    contextScopeKey: contextScopeKey,
+    normalizeRecommendationContext: normalizeRecommendationContext,
+    validateRecommendationContext: validateRecommendationContext,
+    toRequestContext: toRequestContext,
+    restoreContextSelection: restoreContextSelection
+  };
+})();
+// __IRCTX_END__ (test extraction marker — do not remove)
+
+// ---- F1-4B-B-PRE DOM wiring (thin; delegates to window.IRContext). NO API call. NO write. -----------
+var REPLEN_RECO_CONTEXT_KEY = 'replenRecoContext';
+var _irctxLastContext = null;   // last normalized context model (page-local; the next round reads IRContext.toRequestContext)
+
+function _irctxWarehouses() {
+  // Reads the ALREADY-loaded canonical warehouse cache (same accessor the page uses today). No new
+  // fetch, no whole-DB reload, never getOperationDb.
+  return (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? (window.KM.DB.getWarehouses() || []) : [];
+}
+// Recommendation Context scope = the page's selected scope + the marketplace's fulfillment model.
+function _irctxScope() {
+  var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope()
+    : { company: '', country: '', marketplace: '', marketplaceId: '' };
+  var ff = '';
+  var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var rec = scope.marketplaceId ? list.find(function (m) { return String(m.marketplaceId) === String(scope.marketplaceId); }) : null;
+  if (rec) ff = rec.fulfillmentModel || '';
+  return { company: scope.company, country: scope.country, marketplace: scope.marketplace, marketplaceId: scope.marketplaceId, fulfillmentModel: ff };
+}
+function _irctxEligible(scope) { return window.IRContext.eligibleDestinationWarehouses(_irctxWarehouses(), scope || _irctxScope()); }
+
+// Rebuild the Destination Warehouse options for the current scope. Blank first option ALWAYS; the
+// current selection is preserved ONLY if still eligible; NEVER auto-selects the first/only option.
+function refreshReplenRecoDestinationOptions() {
+  var sel = document.getElementById('replenRecoDestination');
+  if (!sel) return;
+  var eligible = _irctxEligible(_irctxScope());
+  var prev = sel.value;
+  var keep = eligible.some(function (w) { return w.warehouseId === prev; }) ? prev : '';
+  sel.innerHTML = '<option value="">Select destination warehouse…</option>' + eligible.map(function (w) {
+    var label = (w.warehouseCode ? (w.warehouseCode + ' — ') : '') + (w.warehouseName || w.warehouseId);
+    return '<option value="' + escapeReplenHtml(w.warehouseId) + '">' + escapeReplenHtml(label) + '</option>';
+  }).join('');
+  sel.value = keep;   // explicit selection only — never eligible[0]
+}
+
+// Persist ONLY explicit user selections (a page-input preference; NOT a business result). No DB write.
+function _irctxPersist(model) {
+  try {
+    sessionStorage.setItem(REPLEN_RECO_CONTEXT_KEY, JSON.stringify({
+      scopeKey: window.IRContext.contextScopeKey(model),
+      destinationWarehouseId: model.destinationWarehouseId || '',
+      calculationMonth: model.calculationMonth || '',
+      planningCycle: model.planningCycle || ''
+    }));
+  } catch (e) { /* sessionStorage unavailable → in-memory only */ }
+}
+
+function _irctxRenderStatus(model) {
+  var el = document.getElementById('replenRecoContextStatus');
+  if (!el) return;
+  el.setAttribute('data-status', model.status);
+  var msg;
+  if (model.status === 'READY') {
+    msg = 'Recommendation Context: Ready';
+  } else if (model.status === 'DESTINATION_BLOCKED') {
+    msg = (model.destinationState === 'PLATFORM_DESTINATION_IDENTITY_UNRESOLVED')
+      ? 'Recommendation Context: Destination blocked — this platform-fulfilled marketplace has no canonical destination warehouse configured; a recommendation cannot run until one exists.'
+      : 'Recommendation Context: Destination blocked — no eligible destination warehouse for this scope.';
+  } else if (model.status === 'INVALID') {
+    var bad = [];
+    if (model.calculationMonthState === 'INVALID_FORMAT') bad.push('Calculation Month (use YYYY-MM)');
+    if (model.destinationState === 'SELECTED_INVALID') bad.push('Destination Warehouse (selection no longer valid)');
+    if (model.destinationState === 'DESTINATION_AUTHORITY_CONFLICT') bad.push('Destination Warehouse (conflicting selection)');
+    msg = 'Recommendation Context: Invalid — ' + bad.join(', ');
+  } else {
+    var labels = { destinationWarehouseId: 'Destination Warehouse', calculationMonth: 'Calculation Month',
+      planningCycle: 'Planning Cycle', company: 'Company', country: 'Country', marketplace: 'Marketplace' };
+    var miss = model.missing.map(function (k) { return labels[k] || k; });
+    msg = 'Recommendation Context: Not Ready' + (miss.length ? (' — Missing: ' + miss.join(', ')) : '');
+  }
+  el.textContent = msg;
+}
+
+// Build the model from live control values, render the readiness indicator, persist explicit selections.
+// NEVER calls the API and NEVER renders a recommendation value.
+function updateReplenRecoContext() {
+  if (!document.getElementById('replenRecoDestination')) return null;
+  var scope = _irctxScope();
+  var model = window.IRContext.normalizeRecommendationContext({
+    scope: scope, eligibleWarehouses: _irctxEligible(scope),
+    destinationSelectedId: (document.getElementById('replenRecoDestination') || {}).value || '',
+    calculationMonthRaw: (document.getElementById('replenRecoCalcMonth') || {}).value || '',
+    planningCycleRaw: (document.getElementById('replenRecoPlanningCycle') || {}).value || ''
+  });
+  _irctxLastContext = model;
+  _irctxRenderStatus(model);
+  _irctxPersist(model);
+  return model;
+}
+
+// Restore explicit session selections, VALIDATED against current scope/options, and DISPLAY them
+// (never silently restore an unshown value).
+function _irctxRestoreFromSession() {
+  var destSel = document.getElementById('replenRecoDestination');
+  if (!destSel) return;
+  var stored = null;
+  try { stored = JSON.parse(sessionStorage.getItem(REPLEN_RECO_CONTEXT_KEY) || 'null'); } catch (e) { stored = null; }
+  if (!stored) return;
+  var scope = _irctxScope();
+  var restore = window.IRContext.restoreContextSelection(stored, scope, _irctxEligible(scope));
+  if (restore.destinationSelectedId) destSel.value = restore.destinationSelectedId;         // visibly applied
+  var cmEl = document.getElementById('replenRecoCalcMonth'); if (cmEl && restore.calculationMonthRaw) cmEl.value = restore.calculationMonthRaw;
+  var pcEl = document.getElementById('replenRecoPlanningCycle'); if (pcEl && restore.planningCycleRaw) pcEl.value = restore.planningCycleRaw;
+}
+
+// Bind the three controls (idempotent via .onchange/.oninput property assignment).
+function bindReplenRecoContextControls() {
+  var d = document.getElementById('replenRecoDestination');
+  var m = document.getElementById('replenRecoCalcMonth');
+  var p = document.getElementById('replenRecoPlanningCycle');
+  if (d) d.onchange = function () { updateReplenRecoContext(); };
+  if (m) m.onchange = function () { updateReplenRecoContext(); };
+  if (p) { p.oninput = function () { updateReplenRecoContext(); }; p.onchange = function () { updateReplenRecoContext(); }; }
+}
+
+// One-time-per-mount init: populate destination options, restore explicit session selections, bind, refresh status.
+function initReplenRecoContext() {
+  if (!document.getElementById('replenRecoDestination')) return;
+  refreshReplenRecoDestinationOptions();
+  _irctxRestoreFromSession();
+  bindReplenRecoContextControls();
+  updateReplenRecoContext();
+}
+
+// Scope change (Country/Marketplace) → recompute destination options, drop a now-invalid destination,
+// preserve valid month/cycle, refresh status. NEVER makes a request.
+function onReplenRecoScopeChanged() {
+  if (!document.getElementById('replenRecoDestination')) return;
+  refreshReplenRecoDestinationOptions();   // keeps the current selection only if still eligible
+  updateReplenRecoContext();
+}
+
+window.refreshReplenRecoDestinationOptions = refreshReplenRecoDestinationOptions;
+window.updateReplenRecoContext = updateReplenRecoContext;
+window.initReplenRecoContext = initReplenRecoContext;
+window.onReplenRecoScopeChanged = onReplenRecoScopeChanged;
+window.bindReplenRecoContextControls = bindReplenRecoContextControls;
 
 // ============================================================================
 // Toolbar "More Options" dropdown (renamed 2026-07-23) — UI-only consolidation of the five data-management buttons
@@ -4480,6 +4819,10 @@ if (window.KM && window.KM.lifecycle) {
                 _restoreAllocationDraftFromSession();
                 if (typeof bindReplenFilterDependencies === 'function') bindReplenFilterDependencies();
                 if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+                // F1-4B-B-PRE: initialize the page-local Recommendation Context inputs (destination /
+                // calculation month / planning cycle). Populates options + restores explicit session
+                // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.
+                if (typeof initReplenRecoContext === 'function') initReplenRecoContext();
                 renderReplenishment();
             });
         },

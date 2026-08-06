@@ -3766,4 +3766,44 @@ No new formula/runtime/inference/fake value; docs-only checkpoint. No live DB. F
   failing); Golden Matrix 39/1/0; Scenario #34 Pending. Not pushed, not deployed.
 ```
 
+### Checkpoint — F1-4B-B-PRE Inventory Replenishment Planning-Context Input Authority = IMPLEMENTED (2026-08-06)
+```
+F1-4B-B-PRE — page-side input authority so Inventory Replenishment can OWN the three caller-owned inputs the read
+  endpoint recommendation.workspace.get (F1-4B-A) requires and the frozen registry forbids inferring. Page/UX only:
+  NO API call, NO Recommendation Summary placeholder replacement, NO formula/runtime change, NO write.
+NEW page-local pure module window.IRContext (inventory-replenishment.js, between __IRCTX_START__/__IRCTX_END__):
+  eligibleDestinationWarehouses (active + same company + compatible country via IRCountry UK≡GB; identity = warehouse_id,
+  never display name), validateCalculationMonth (explicit YYYY-MM; blank=UNSELECTED; no new Date()), validatePlanningCycle
+  (explicit non-empty run identifier; no invented format), destinationState (UNSELECTED/SELECTED_VALID/SELECTED_INVALID/
+  NO_ELIGIBLE_DESTINATION/PLATFORM_DESTINATION_IDENTITY_UNRESOLVED/DESTINATION_AUTHORITY_CONFLICT — NEVER auto-selects
+  first/only), normalizeRecommendationContext (one model: NOT_READY/READY/INVALID/DESTINATION_BLOCKED),
+  validateRecommendationContext, toRequestContext (returns {company,country,marketplace,destinationWarehouseId,
+  calculationMonth,planningCycle} ONLY when READY, else null — matches the F1-4B-A request contract),
+  restoreContextSelection (session restore validated + scope-guarded).
+NEW controls (HTML partial, inside the sticky control panel — page-local, not body children; separate from Execution
+  Plan From/To/Method): Destination Warehouse <select> (blank default, not auto-selected), Calculation Month
+  <input type=month> (blank), Planning Cycle <input type=text> (blank) + a role=status/aria-live=polite readiness
+  indicator (Not Ready/Ready/Invalid/Destination blocked). CSS: .replen-reco-context + data-status states.
+Wiring: mount → initReplenRecoContext (populate options + restore explicit session selections + bind + refresh);
+  Country/Marketplace onchange → onReplenRecoScopeChanged (recompute eligible options, drop a now-invalid destination,
+  preserve valid month/cycle). Reads the already-loaded getWarehouses/getMarketplaces cache (no new fetch, no
+  getOperationDb, no whole-DB reload). sessionStorage key 'replenRecoContext' persists explicit selections only.
+FBA/platform: destination appears only if a canonical warehouse_id exists; else PLATFORM_DESTINATION_IDENTITY_UNRESOLVED
+  (no fabricated id, marketplace never used as warehouse id). No canonical FBA-warehouse DB change made this round.
+Tests: NEW replen-recommendation-context-f1-4b-b-pre.test.js (67 — extract+eval IRContext + source-scan of DOM/HTML/CSS:
+  identity=warehouse_id, no auto-select, inactive/wrong-company/wrong-country excluded, platform-unresolved blocks with no
+  fake id, explicit YYYY-MM only + no new Date(), planning cycle explicit + not auto-copied, READY/NOT_READY/INVALID/
+  DESTINATION_BLOCKED truth, DTO matches F1-4B-A + fully-populates the Foundation DTO, session restore validated, no API
+  call/no Foundation workspace call/no whole-DB reload/no write, existing filters + Recommendation placeholders unchanged,
+  accessibility labels/role=status). FULL SUITE 88 files / 0 failing; Golden 39/1/0; #34 Pending.
+Files: inventory-replenishment.js (IRContext + wiring + mount/scope hooks), inventory-replenishment.html (context
+  controls), inventory-replenishment.css (context styles) — all FRONTEND_GITHUB_PAGES_REQUIRED=true; NEW test (GIT_ONLY);
+  PHASE_F1_4B_RECOMMENDATION_WORKSPACE_BLOCKER.md §H + this entry (DOCUMENTATION_ONLY).
+No API/Apps Script/router/Foundation/runtime/formula/bundle/DB/schema change. APPS_SCRIPT_SYNC_REQUIRED=false;
+  BUNDLE_REBUILD_REQUIRED=false. No live DB. Not pushed, not deployed.
+Exact F1-4B-B readiness: the page now produces a validated READY context + toRequestContext DTO; F1-4B-B may call
+  recommendation.workspace.get behind the default-false recommendation flag and present the real outputs + differentiated
+  structured states, replacing the AI-Pending / No-recommendation-generated placeholders.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

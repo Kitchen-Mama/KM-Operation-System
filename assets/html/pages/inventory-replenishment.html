@@ -52,6 +52,35 @@
                                 <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="Days">
                             </div>
                         </div>
+                        <!-- F1-4B-B-PRE — Recommendation Context (page-local input authority). The three
+                             explicit, caller-owned inputs the read endpoint recommendation.workspace.get
+                             requires and the frozen Phase-1 decisions forbid inferring. This block does NOT
+                             call the API and renders NO recommendation result — it only produces a validated,
+                             normalized context for the next round (F1-4B-B). Grouped separately from the
+                             Execution Plan From/To/Method fields. -->
+                        <div class="replen-reco-context" role="group" aria-label="Recommendation Context">
+                            <div class="replen-reco-context__title">Recommendation Context</div>
+                            <div class="replen-reco-context__fields">
+                                <div class="filter-group">
+                                    <label for="replenRecoDestination">Destination Warehouse</label>
+                                    <select id="replenRecoDestination" aria-describedby="replenRecoDestinationHint">
+                                        <option value="">Select destination warehouse…</option>
+                                    </select>
+                                    <small id="replenRecoDestinationHint" class="replen-reco-context__hint">Required and not auto-selected — pick an explicit canonical warehouse.</small>
+                                </div>
+                                <div class="filter-group">
+                                    <label for="replenRecoCalcMonth">Calculation Month</label>
+                                    <input type="month" id="replenRecoCalcMonth" aria-describedby="replenRecoCalcMonthHint" placeholder="YYYY-MM">
+                                    <small id="replenRecoCalcMonthHint" class="replen-reco-context__hint">The Forecast anchor. Explicit — never the current month.</small>
+                                </div>
+                                <div class="filter-group">
+                                    <label for="replenRecoPlanningCycle">Planning Cycle</label>
+                                    <input type="text" id="replenRecoPlanningCycle" aria-describedby="replenRecoPlanningCycleHint" placeholder="Run identifier" autocomplete="off">
+                                    <small id="replenRecoPlanningCycleHint" class="replen-reco-context__hint">Identifies this recommendation run.</small>
+                                </div>
+                            </div>
+                            <div id="replenRecoContextStatus" class="replen-reco-context__status" role="status" aria-live="polite" data-status="NOT_READY">Recommendation Context: Not Ready</div>
+                        </div>
                         <div class="replen-actions">
                             <div class="replen-actions__filter">
                                 <button class="replen-btn replen-btn--search" onclick="searchReplenishment()">Search</button>

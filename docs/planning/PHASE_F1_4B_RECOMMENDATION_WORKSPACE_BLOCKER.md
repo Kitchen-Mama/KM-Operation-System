@@ -223,3 +223,32 @@ preferable to the honest "not generated" state).
 Readiness/authority audit only. **No** runtime / API / router / Foundation / page / HTML / CSS / DB / schema / Apps
 Script / bundle change. No formula, no inference, no fake value. Docs-only checkpoint. No live DB accessed. No push,
 no deploy. Full suite unchanged; Golden Matrix 39/1/0; Scenario #34 Pending.
+
+---
+
+## H. F1-4B-B-PRE — Planning-Context Input Authority (2026-08-06): §G.4 slice IMPLEMENTED
+
+The §G.4 "smallest next slice" is now built (page/UX only; NO API call, NO formula, NO inference). The Inventory
+Replenishment page **owns** the three caller inputs the endpoint requires, via a new "Recommendation Context" control
+group + a pure `window.IRContext` module ([`inventory-replenishment.js`](../../assets/js/pages/inventory-replenishment.js) `__IRCTX_*`):
+
+- **Destination Warehouse** — explicit `<select>` whose option value is a canonical `warehouse_id` (display = code —
+  name; identity is never the display string). Options = `IRContext.eligibleDestinationWarehouses` (explicitly active +
+  same company + compatible country via the `IRCountry` UK≡GB contract). **Never auto-selects** the first/only option;
+  blank until the user picks. States: `UNSELECTED` / `SELECTED_VALID` / `SELECTED_INVALID` / `NO_ELIGIBLE_DESTINATION` /
+  `PLATFORM_DESTINATION_IDENTITY_UNRESOLVED` / `DESTINATION_AUTHORITY_CONFLICT`.
+- **Calculation Month** — `<input type="month">` → explicit `YYYY-MM`; blank start; **no `new Date()` default**;
+  malformed → `INVALID_FORMAT`.
+- **Planning Cycle** — explicit non-empty run identifier (deterministic whitespace normalization). The registry pins the
+  calc-month **anchor** (D-F1-5B-3, `YYYY-MM`) but not a strict cycle format, and the runtime treats `planningCycle` as
+  an opaque required string (echoed as `windowCode`); so the control requires an explicit value and does **not** invent
+  a format validator or silently copy the calculation month.
+
+`IRContext.normalizeRecommendationContext` → one page-local model (`NOT_READY` / `READY` / `INVALID` /
+`DESTINATION_BLOCKED`); `toRequestContext` returns the exact `{company,country,marketplace,destinationWarehouseId,
+calculationMonth,planningCycle}` DTO **only when READY** (else `null`) — proven to drive a fully-populated
+`recommendation.workspace.get` DTO with no `MISSING_*` nulls. FBA/platform destinations appear only if a canonical
+`warehouse_id` exists; otherwise the scope is honestly `PLATFORM_DESTINATION_IDENTITY_UNRESOLVED` (no fabricated id).
+**This slice makes NO API call and replaces NO Recommendation Summary placeholder** — that is F1-4B-B. Tests:
+`replen-recommendation-context-f1-4b-b-pre.test.js` (67). No formula/runtime/API/Apps-Script/DB/schema/bundle change;
+no write (sessionStorage page-input preference only); full suite 88 files / 0 failing; Golden 39/1/0; #34 Pending.

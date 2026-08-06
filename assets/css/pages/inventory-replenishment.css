@@ -1496,3 +1496,72 @@
 #ops-section .replen-btn.ro-btn--ai.is-success { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
 #ops-section .replen-btn.ro-btn--ai.is-error { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; }
 @keyframes replenAiSpin { to { transform: rotate(360deg); } }
+
+/* ========================================
+   F1-4B-B-PRE — Recommendation Context input authority (page-local; NOT a recommendation result).
+   Three explicit caller-owned inputs (Destination / Calculation Month / Planning Cycle) + a readiness
+   indicator. Sits on its own row inside the sticky control panel, visually separate from the filters
+   above and from the Execution Plan (From/To/Method) fields in the expanded row.
+======================================== */
+#ops-section .replen-reco-context {
+    flex: 1 1 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--km-filter-border);
+    border-radius: var(--km-filter-radius, 8px);
+    background: var(--km-filter-surface, #fff);
+}
+#ops-section .replen-reco-context__title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--filter-label-color, #475569);
+}
+#ops-section .replen-reco-context__fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+}
+#ops-section .replen-reco-context__fields .filter-group {
+    min-width: 200px;
+}
+#ops-section .replen-reco-context__hint {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.3;
+    color: #64748B;
+}
+#ops-section .replen-reco-context__status {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #94A3B8;
+    background: #F8FAFC;
+    color: #475569;
+}
+#ops-section .replen-reco-context__status[data-status="READY"] {
+    border-left-color: #10B981;
+    background: #ECFDF5;
+    color: #047857;
+}
+#ops-section .replen-reco-context__status[data-status="NOT_READY"] {
+    border-left-color: #94A3B8;
+    background: #F8FAFC;
+    color: #475569;
+}
+#ops-section .replen-reco-context__status[data-status="INVALID"] {
+    border-left-color: #EF4444;
+    background: #FEF2F2;
+    color: #B91C1C;
+}
+#ops-section .replen-reco-context__status[data-status="DESTINATION_BLOCKED"] {
+    border-left-color: #F59E0B;
+    background: #FFFBEB;
+    color: #B45309;
+}
