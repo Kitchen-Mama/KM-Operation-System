@@ -135,3 +135,29 @@ incoming ⇒ canonical `recommendedQty` withheld, `provisionalOrderNeed` diagnos
 Target: 1 HTTP / scope, 1 targeted snapshot read / request, 0 per-SKU/per-destination re-open, 0 `getOperationDb`, 0
 whole-DB load, 0 writes. Test-verified via a fake spreadsheet (`getSheetByName` called exactly 12× for a 2-destination
 fanout; write methods never invoked). Live latency **unverified** this round → `LIVE_LATENCY_UNVERIFIED`.
+
+---
+
+# F1-4B-FM2 ADDENDUM — Order Planning consumer (expanded-row READ; no endpoint change) (2026-08-06)
+
+> **Status: FRONTEND CONSUMER ADDED (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED). No server / DTO / bundle change.**
+> Order Planning (the `request-order` section) becomes a SECOND read-only consumer of the SAME
+> `recommendation.workspace.get` endpoint — the DTO, server flow, and response shape above are unchanged.
+
+## Consumer contract (Order Planning)
+- **Trigger:** expanding one SKU row issues **exactly one** scope-only request for that row's
+  `{company, country, marketplace, sku, siteSku?}` (`filters.sku` set so the server scopes the read to that SKU).
+  One request per expanded row; deduped on identical scope; aborted + stale-guarded on re-expand/scope change. **No
+  page-wide multi-scope request** (the page spans many marketplaces; only the expanded row is a single valid scope).
+- **Presentation:** a NEW read-only "Recommendation — Order Need" subsection inside the expanded panel's Block 3,
+  one compact row per canonical destination line (MARKETPLACE + each WAREHOUSE distinct; identity by
+  `recommendationLineId`, never merged). The existing **Demand Summary stays demand-only and byte-unchanged**; the
+  manual Order Allocation / Order Qty inputs are never overwritten.
+- **States distinguished:** canonical / valid-zero / blocked / partial-provisional / source-short / **unavailable**
+  (a non-blocked line with `recommendedQty == null` — a missing runtime output is *surfaced*, never recomputed in
+  the browser) / EMPTY / no-line (`RECOMMENDATION_LINE_NOT_FOUND`) / API-error / identity-conflict
+  (`meta.conflicts > 0`).
+- **Feature gate:** `workspaceApiActive('recommendation')` (the shared workspace flag — no redundant Foundation flag)
+  **AND** a page-local `_opRecoOptIn` (default **false**, console-toggle only, no UI control) so Order Planning is
+  enabled/verified INDEPENDENTLY of Inventory. Both OFF by default → the legacy panel is preserved verbatim.
+- **No** page-side formula, write, Send Request / Confirm Site / Submit, per-SKU HTTP loop, or `getOperationDb`.

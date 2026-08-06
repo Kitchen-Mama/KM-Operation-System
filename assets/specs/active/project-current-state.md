@@ -4204,3 +4204,50 @@ Round: F1-4B-FM1-V (VERIFICATION ONLY — no feature build; non-goals unchanged 
 Governance: no code change; no commit of code; no push; no deploy; no live DB access. Only this verification-status
   note appended to project-current-state.md.
 ```
+
+---
+
+### Checkpoint — F1-4B-FM2 Recommendation Live Cutover Diagnosis + Order Planning read cutover (2026-08-06) — IMPLEMENTED
+
+```
+Round: F1-4B-FM2 (diagnosis-first; READ-ONLY). Diagnosed BOTH recommendation consumers, then built the one proven
+  gap (Order Planning). No formula / allocation / schema / persistence / bundle / Apps-Script change. Flags default false.
+
+DIAGNOSIS (root cause per page):
+- Inventory Replenishment = FLAGS_DISABLED_EXPECTED_LEGACY (NO CODE DEFECT). The runtime/transport/mapping/identity/
+  per-destination presentation are correct and correctly wired (searchReplenishment -> renderReplenishment ->
+  loadRecommendationWorkspace_ -> flags ON -> ONE scope-only request; live company derived from the selected
+  marketplace; toScopeRequest needs only company/country/marketplace, NOT the legacy internal dest/month/cycle).
+  The legacy message at inventory-replenishment.js:1570 is reached ONLY when the workspace flag is OFF. User decision:
+  LEAVE INVENTORY AS-IS this round (no runtime change); wording polish DEFERRED to after live verification ->
+  docs/planning/INVENTORY_RECO_WORDING_POLISH_FOLLOWUP.md.
+- Order Planning (= the request-order section) = LEGACY_PATH_NOT_CUT_OVER: never called recommendation.workspace.get;
+  Suggested Order is a placeholder. User decision: BUILD the expanded-row read now.
+
+ORDER PLANNING CUTOVER (request-order.js __OPRECO__ block; READ-ONLY):
+- The page is MULTI-SCOPE (rows span many country/marketplace); the only clean single scope is the EXPANDED per-SKU
+  row. Expanding a row fires EXACTLY ONE scope-only recommendation.workspace.get for {company,country,marketplace,
+  sku,siteSku?} (filters.sku set). Dedupe on identical scope; abort + stale-guard on re-expand/scope change. NO
+  page-wide multi-scope request; NO per-SKU HTTP loop; NO whole-DB reload; NO getOperationDb.
+- NEW read-only "Recommendation — Order Need" subsection in the expanded Block 3: one row per canonical destination
+  line (MARKETPLACE + each WAREHOUSE distinct; identity by recommendationLineId, never merged). Demand Summary stays
+  DEMAND-ONLY and byte-unchanged; manual Order Qty inputs never overwritten; no Send Request / Confirm Site / Submit /
+  persistence / page-side formula (values passed through, never recomputed). A non-blocked line with recommendedQty
+  null renders "Unavailable" (missing runtime output surfaced, never recomputed).
+- States: canonical / valid-zero / blocked / partial-provisional / source-short / unavailable / EMPTY /
+  RECOMMENDATION_LINE_NOT_FOUND / API_ERROR / identity-conflict (meta.conflicts). Diagnostics collapsible.
+- Feature gate: workspaceApiActive('recommendation') (shared workspace flag — no redundant Foundation flag) AND a
+  page-local _opRecoOptIn (default false; window._opSetRecommendationOptIn console-toggle; no UI control) so Order
+  Planning is enabled INDEPENDENTLY of Inventory. Both OFF by default -> legacy panel preserved verbatim.
+Tests: order-planning-recommendation-cutover-f1-4b-fm2.test.js (41 assertions — extracts the __OPRECO__ block, drives
+  _opLoadRecommendation with a fake KM.api: one scope-only request, dedupe, OFF->ON permitted, stale-ignore, MARKETPLACE
+  + 2 WAREHOUSE distinct rows with own recommendedQty, all truthful states, and source scans proving no formula / write /
+  Send Request / whole-DB / Order-Qty overwrite / Demand-Summary change). FULL SUITE 94 files / 0 failing; Golden 39/1/0;
+  Scenario #34 Pending.
+Files: assets/js/pages/request-order.js (+__OPRECO__ block, Block-3 subsection, expand-trigger), assets/css/pages/
+  request-order.css (+op-reco styles), assets/tests/order-planning-recommendation-cutover-f1-4b-fm2.test.js (NEW),
+  docs/planning/INVENTORY_RECO_WORDING_POLISH_FOLLOWUP.md (NEW), docs/planning/API_RECOMMENDATION_WORKSPACE_SPEC.md
+  (FM2 addendum), this checkpoint. NO change to inventory-replenishment.js, core, bundle, Apps Script, or km-api-foundation.
+Governance: FRONTEND_GITHUB_PAGES_REQUIRED = request-order.js, request-order.css. No APPS_SCRIPT_SYNC (no .gs/bundle
+  change). No live DB; no push; no deploy.
+```

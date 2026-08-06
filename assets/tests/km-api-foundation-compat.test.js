@@ -133,10 +133,10 @@ function makeLegacy() {
   section('§10 Active-page source non-impact (all page modules)');
   var pagesDir = path.join(__dirname, '..', 'js', 'pages');
   var pageFiles = fs.readdirSync(pagesDir).filter(function (f) { return /\.js$/.test(f); });
-  // Cut-over pages that consume KM.api on a READ path: shipping-plan.js (API-3A, weeklyShipping) and
-  // inventory-replenishment.js (F1-4B-B, recommendation — behind default-false flags). Every OTHER page
-  // stays independent of the Foundation.
-  var CUTOVER_PAGES = { 'shipping-plan.js': 1, 'inventory-replenishment.js': 1 };
+  // Cut-over pages that consume KM.api on a READ path: shipping-plan.js (API-3A, weeklyShipping),
+  // inventory-replenishment.js (F1-4B-B, recommendation) and request-order.js (F1-4B-FM2, Order Planning
+  // recommendation — all behind default-false flags). Every OTHER page stays independent of the Foundation.
+  var CUTOVER_PAGES = { 'shipping-plan.js': 1, 'inventory-replenishment.js': 1, 'request-order.js': 1 };
   var referencing = pageFiles.filter(function (f) { return !CUTOVER_PAGES[f] && /KM\.api\b|apiFoundation|km-api-foundation/.test(fs.readFileSync(path.join(pagesDir, f), 'utf8')); });
   ok(referencing.length === 0, 'PG1 only the READ cutover pages use KM.api; the other ' + (pageFiles.length - Object.keys(CUTOVER_PAGES).length) + ' pages remain independent (' + (referencing.join(',') || 'clean') + ')');
   // and each cutover page uses KM.api for READ only (getWorkspace/workspaceApiActive) — never a write command
@@ -144,6 +144,8 @@ function makeLegacy() {
   ok(/KM\.api\.getWorkspace/.test(spSrc) && spSrc.indexOf('KM.api.executeCommand') < 0, 'PG1b the weekly cutover page uses KM.api for READ only (no executeCommand / no workspace write)');
   var irSrc = fs.readFileSync(path.join(pagesDir, 'inventory-replenishment.js'), 'utf8');
   ok(/KM\.api\.getWorkspace/.test(irSrc) && /KM\.api\.workspaceApiActive/.test(irSrc) && irSrc.indexOf('KM.api.executeCommand') < 0, 'PG1c the recommendation cutover page uses KM.api for READ only (getWorkspace/workspaceApiActive; no executeCommand / no workspace write)');
+  var roSrc = fs.readFileSync(path.join(pagesDir, 'request-order.js'), 'utf8');
+  ok(/KM\.api\.getWorkspace/.test(roSrc) && /KM\.api\.workspaceApiActive/.test(roSrc) && roSrc.indexOf('KM.api.executeCommand') < 0, 'PG1d the Order Planning cutover page uses KM.api for READ only (getWorkspace/workspaceApiActive; no executeCommand / no workspace write)');
   var appSrc = read('js/app.js');
   ok(!/KM\.api\b|apiFoundation/.test(appSrc), 'PG2 app.js does not reference the Foundation');
 

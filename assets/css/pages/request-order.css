@@ -2065,3 +2065,26 @@
 #request-order-section .ro-partial-badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 999px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
 #request-order-section .ro-invalid-tag { font-size: 9.5px; font-weight: 700; color: #B91C1C; }
 #request-order-section .ro-partial-warn { display: block; margin-top: 2px; font-size: 10px; font-weight: 700; color: #B45309; white-space: nowrap; }
+
+/* F1-4B-FM2 — Order Planning "Recommendation — Order Need" READ-ONLY subsection (flag-gated; default off).
+   Presentation only: one compact row per canonical destination line; distinct state classes. */
+#request-order-section .op-reco-block { margin-top: 8px; }
+#request-order-section .op-reco { font-size: 11.5px; }
+#request-order-section .op-reco--loading,
+#request-order-section .op-reco--info { color: #64748B; padding: 6px 2px; }
+#request-order-section .op-reco--error { color: #B91C1C; padding: 6px 2px; }
+#request-order-section .op-reco__table { width: 100%; }
+#request-order-section .op-reco__table td.ro-num,
+#request-order-section .op-reco__table th.ro-num { text-align: right; white-space: nowrap; }
+#request-order-section .op-reco__table tr.is-ok td:first-child { border-left: 3px solid #16A34A; }
+#request-order-section .op-reco__table tr.is-zero td:first-child { border-left: 3px solid #94A3B8; }
+#request-order-section .op-reco__table tr.is-short td:first-child { border-left: 3px solid #D97706; }
+#request-order-section .op-reco__table tr.is-partial td:first-child { border-left: 3px solid #CA8A04; }
+#request-order-section .op-reco__table tr.is-blocked td:first-child { border-left: 3px solid #DC2626; }
+#request-order-section .op-reco__table tr.is-unavail td:first-child { border-left: 3px solid #CBD5E1; }
+#request-order-section .op-reco__provisional { font-weight: 700; color: #B45309; }
+#request-order-section .op-reco__meta { margin-top: 4px; font-size: 10px; color: #94A3B8; }
+#request-order-section .op-reco__conflict { margin-top: 4px; font-size: 10.5px; font-weight: 700; color: #B91C1C; }
+#request-order-section .op-reco__reqid { color: #94A3B8; font-weight: 400; }
+#request-order-section .op-reco__diag { margin-top: 4px; font-size: 10.5px; color: #64748B; }
+#request-order-section .op-reco__diag code { font-size: 10px; }

@@ -1555,6 +1555,7 @@ function renderExpandPanel(item) {
             ${allocEmpty}
             <table class="ro-expand-table ro-rec-table"><thead><tr><th>Tier · Month</th><th>Suggested</th><th>Order Qty</th><th>Carton</th><th>Note</th></tr></thead><tbody>${allocRows}</tbody></table>
           </div>
+          ${_opRecoSubsectionHtml(item)}
         </div>
       </div>
     </div>
@@ -1657,6 +1658,14 @@ function _roToggleRowByKey(rowKey) {
   if (rowKey == null) return;
   requestOrderState.expandedRowKey = (requestOrderState.expandedRowKey === rowKey) ? null : rowKey;
   renderRequestOrderTable();
+  // F1-4B-FM2: fire (or invalidate) the flag-gated, READ-ONLY Order-Planning recommendation read for the
+  // newly-expanded row. One request per expanded scope; closing the row (or the feature OFF) invalidates +
+  // aborts. Dedupe inside _opLoadRecommendation prevents a duplicate request on a subsequent table re-render.
+  if (typeof _opLoadRecommendation === 'function') {
+    var _opItem = (typeof _opRecoExpandedItem === 'function') ? _opRecoExpandedItem() : null;
+    if (requestOrderState.expandedRowKey && _opItem) _opLoadRecommendation(_opItem);
+    else _opRecoInvalidate('DISABLED');
+  }
   // Sync heights after render with multiple attempts
   requestAnimationFrame(function () {
     syncExpandPanelHeights();
@@ -1722,6 +1731,246 @@ function syncExpandPanelHeights() {
     }
   }
 }
+
+// ============================================================================
+// F1-4B-FM2 — Order Planning Recommendation READ cutover (recommendation.workspace.get; READ-ONLY).
+// ----------------------------------------------------------------------------
+// When the recommendation Workspace is EFFECTIVE (Foundation workspaceApiActive('recommendation')) AND the
+// page-local Order-Planning opt-in is ON (BOTH default false), expanding a SKU row issues EXACTLY ONE
+// scope-only recommendation.workspace.get for that row's company/country/marketplace/sku/siteSku, and
+// renders the canonical destination lines in a NEW read-only "Recommendation — Order Need" subsection
+// inside Block 3. It authors NO formula, recomputes nothing, imports no runtime module, performs NO write,
+// triggers NO Send Request / Confirm Site / Submit, NEVER overwrites a manual Order Qty, and issues NO
+// per-SKU HTTP loop and NO whole-DB reload. The Demand Summary stays demand-only and byte-unchanged. When
+// either flag is OFF the subsection is omitted entirely and the legacy panel is preserved verbatim.
+// Feature-gate rationale (F1-4B-FM2 §6): Order Planning shares the SINGLE 'recommendation' workspace flag
+// with Inventory Replenishment (identical read endpoint + scope semantics → no redundant Foundation flag),
+// but layers a page-local default-false opt-in so Order Planning can be enabled/verified INDEPENDENTLY of
+// Inventory (turning Inventory's workspace flag on does NOT turn Order Planning on).
+// __OPRECO_START__ (test extraction marker — do not remove)
+var _opRecoOptIn = false;   // page-local Order-Planning opt-in (default OFF; console-toggle only, no UI control)
+var _opRecoSeq = 0;         // monotonic request sequence (stale-response guard)
+var _opRecoAbort = null;    // AbortController for the in-flight request (browser response invalidation)
+function _opRecoBlank(status) {
+  return { status: status || 'DISABLED', scopeKey: null, sku: null, lines: [], requestId: null,
+    errors: [], calcMonth: null, planningCycle: null, conflicts: 0, seq: _opRecoSeq, loadedOk: false };
+}
+var _opRecoState = _opRecoBlank('DISABLED');   // page-local read state (single slot — one row expands at a time)
+
+// Effective predicate — the Foundation recommendation Workspace is active AND the page-local opt-in is ON.
+function _opRecoEnabled() {
+  return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+    window.KM.api.workspaceApiActive('recommendation')) && _opRecoOptIn === true;
+}
+// Console-only enable/disable (NO UI control; never persisted; default OFF). Toggling it does NOT itself
+// fire a request — the next row expand (or re-expand) does, so a prior DISABLED state never suppresses it.
+function _opSetRecommendationOptIn(on) { _opRecoOptIn = (on === true); return _opRecoOptIn; }
+
+// explicit null/undefined/'' → null (preserve a legitimate 0; NEVER value || 0).
+function _opNumOrNull(v) { if (v === null || v === undefined || v === '') return null; var n = Number(v); return isFinite(n) ? n : null; }
+
+// The scope-only request identity for one expanded row. Requires the full business scope + SKU; null
+// otherwise (surfaced honestly as CONTEXT_NOT_READY — never a guessed/partial scope). NO destination /
+// month / cycle (the server owns those).
+function _opRecoScopeFor(item) {
+  if (!item) return null;
+  var company = String(item.company == null ? '' : item.company).trim();
+  var country = String(item.country == null ? '' : item.country).trim();
+  var marketplace = String(item.marketplace == null ? '' : item.marketplace).trim();
+  var sku = String(item.sku == null ? '' : item.sku).trim();
+  if (!company || !country || !marketplace || !sku) return null;
+  return { company: company, country: country, marketplace: marketplace, sku: sku,
+    siteSku: (item.siteSku != null && item.siteSku !== '') ? String(item.siteSku) : null };
+}
+function _opRecoKey(scope) { return scope ? JSON.stringify(scope) : null; }
+
+// Map ONE canonical destination-node API line → the fields the subsection renders (direct passthrough; no ||0).
+function _opRecoMapLine(L) {
+  L = L || {};
+  return {
+    recommendationLineId: L.recommendationLineId, recommendationMode: L.recommendationMode,
+    sku: L.sku, siteSku: L.siteSku, destinationType: L.destinationType, destinationKey: L.destinationKey,
+    destinationLabel: L.destinationLabel || L.destinationRefId || L.warehouseId || L.marketplaceId || null,
+    warehouseId: L.warehouseId || null, marketplaceId: L.marketplaceId || null,
+    allocatedForecastQty: _opNumOrNull(L.allocatedForecastQty),
+    currentStockQty: _opNumOrNull(L.currentStockQty), qualifiedIncomingQty: _opNumOrNull(L.qualifiedIncomingQty),
+    incomingCompleteness: (L.incomingCompleteness == null ? null : String(L.incomingCompleteness)),
+    calculatedGap: _opNumOrNull(L.calculatedGap), allocatedSupplyQty: _opNumOrNull(L.allocatedSupplyQty),
+    recommendedQty: _opNumOrNull(L.recommendedQty), provisionalOrderNeed: _opNumOrNull(L.provisionalOrderNeed),
+    residualShortageQty: _opNumOrNull(L.residualShortageQty),
+    blocked: L.blocked === true, blockedReason: (L.blockedReason == null ? null : String(L.blockedReason)),
+    formulaVersion: (L.formulaVersion == null ? null : String(L.formulaVersion)),
+    sourceDataAsOf: (L.sourceDataAsOf == null ? null : String(L.sourceDataAsOf)),
+    diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
+  };
+}
+// Apply a canonical envelope → state. Failure stays visible (never masked). Lines are filtered to the
+// expanded SKU and kept DISTINCT per destination (MARKETPLACE and/or one per WAREHOUSE — never merged).
+function _opRecoApplyEnvelope(env, scopeKey, scope) {
+  if (!env || env.success !== true) {
+    _opRecoState = _opRecoBlank('API_ERROR');
+    _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope && scope.sku;
+    _opRecoState.errors = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
+      : [{ code: 'WORKSPACE_ERROR', message: 'Recommendation workspace request failed.', details: null }];
+    _opRecoState.requestId = (env && env.meta && env.meta.requestId) || null;
+    return;
+  }
+  var data = env.data || {};
+  var raw = Array.isArray(data.lines) ? data.lines : [];
+  var mapped = raw.map(_opRecoMapLine).filter(function (m) { return String(m.sku) === String(scope.sku); });
+  _opRecoState = _opRecoBlank(raw.length ? (mapped.length ? 'READY' : 'NO_LINE') : 'EMPTY');
+  _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.lines = mapped;
+  _opRecoState.requestId = (env.meta && env.meta.requestId) || null;
+  _opRecoState.calcMonth = (env.meta && env.meta.calculationMonth) || null;
+  _opRecoState.planningCycle = (env.meta && env.meta.planningCycle) || null;
+  _opRecoState.conflicts = (env.meta && env.meta.conflicts) || 0;
+  _opRecoState.loadedOk = true;
+}
+// Invalidate any in-flight request (bump seq + abort the browser response) and reset to a clean status.
+function _opRecoInvalidate(status) {
+  _opRecoSeq++;
+  if (_opRecoAbort && _opRecoAbort.abort) { try { _opRecoAbort.abort(); } catch (e) {} }
+  _opRecoAbort = null;
+  _opRecoState = _opRecoBlank(status || 'DISABLED');
+}
+// The read: at most ONE scope-only recommendation.workspace.get per expanded row. Deduped, stale-guarded.
+function _opLoadRecommendation(item) {
+  if (!_opRecoEnabled()) { _opRecoInvalidate('DISABLED'); _opRecoRerender(); return null; }
+  var scope = _opRecoScopeFor(item);
+  if (!scope) { _opRecoInvalidate('CONTEXT_NOT_READY'); _opRecoRerender(); return null; }
+  var scopeKey = _opRecoKey(scope);
+  // dedupe: identical scope already loading or loaded → no duplicate request from a table re-render.
+  if (_opRecoState.scopeKey === scopeKey && (_opRecoState.status === 'LOADING' || _opRecoState.loadedOk)) return null;
+  if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+    _opRecoInvalidate('API_ERROR'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku;
+    _opRecoState.errors = [{ code: 'WORKSPACE_UNAVAILABLE', message: 'Recommendation Workspace is enabled but the API client is unavailable.', details: null }];
+    _opRecoRerender(); return null;
+  }
+  var my = ++_opRecoSeq;
+  if (_opRecoAbort && _opRecoAbort.abort) { try { _opRecoAbort.abort(); } catch (e) {} }
+  _opRecoAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var signal = _opRecoAbort ? _opRecoAbort.signal : undefined;
+  _opRecoState = _opRecoBlank('LOADING'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.seq = my;
+  _opRecoRerender();
+  // ONE scope-only request for the expanded row (server expands destinations internally — no per-destination HTTP).
+  var params = { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: scope.sku, siteSku: scope.siteSku },
+    filters: { sku: scope.sku, siteSku: scope.siteSku }, pagination: { page: 1, size: 100 }, include: { diagnostics: true } };
+  return Promise.resolve(window.KM.api.getWorkspace('recommendation', params, { signal: signal })).then(function (env) {
+    if (my !== _opRecoSeq) return;   // STALE_IGNORED — a newer expand superseded this response
+    _opRecoApplyEnvelope(env, scopeKey, scope); _opRecoRerender();
+  }).catch(function (err) {
+    if (my !== _opRecoSeq) return;
+    _opRecoState = _opRecoBlank('API_ERROR'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.seq = my;
+    _opRecoState.errors = [{ code: (err && err.apiCode) || 'PAGE_READ_FAILED', message: String(err && err.message || err), details: null }];
+    _opRecoRerender();
+  });
+}
+// ---- Presentation (READ-ONLY; distinguishes every state; no Send Request / Order-Qty write) ----------
+function _opRecoModeLabel(mode) {
+  if (mode === 'MARKETPLACE_ORDER_NEED') return 'Marketplace Order Need';
+  if (mode === 'WAREHOUSE_REPLENISHMENT') return 'Warehouse Replenishment';
+  return mode || '—';
+}
+function _opRecoDestRowHtml(line) {
+  function esc(v) { return _roEsc(v == null ? '' : v); }
+  function num(v) { return (v === null || v === undefined) ? '—' : esc(String(v)); }
+  var status, statusCls, recCell;
+  var reason = line.blockedReason ? ('<code>' + esc(line.blockedReason) + '</code>') : '';
+  if (line.blocked) {
+    if (line.incomingCompleteness === 'PARTIAL' || line.incomingCompleteness === 'UNAVAILABLE') {
+      status = 'Partial incoming — provisional'; statusCls = 'is-partial';
+      recCell = '<span class="op-reco__provisional">prov. ' + num(line.provisionalOrderNeed) + '</span>';
+    } else { status = 'Blocked'; statusCls = 'is-blocked'; recCell = '—'; }
+  } else if (line.recommendedQty === 0) {
+    status = 'No order needed'; statusCls = 'is-zero'; recCell = '0';
+  } else if (line.recommendedQty === null) {
+    status = 'Unavailable'; statusCls = 'is-unavail'; recCell = '—';   // missing runtime output — surfaced, never recomputed
+  } else {
+    var short = (typeof line.residualShortageQty === 'number' && line.residualShortageQty > 0);
+    status = short ? ('Source short by ' + num(line.residualShortageQty)) : 'OK';
+    statusCls = short ? 'is-short' : 'is-ok'; recCell = num(line.recommendedQty);
+  }
+  var demand = (line.recommendationMode === 'MARKETPLACE_ORDER_NEED') ? line.calculatedGap : line.allocatedForecastQty;
+  return '<tr class="' + statusCls + '">' +
+    '<td>' + esc(line.destinationLabel) + '</td>' +
+    '<td>' + esc(_opRecoModeLabel(line.recommendationMode)) + '</td>' +
+    '<td class="ro-num">' + num(demand) + ' / ' + num(line.calculatedGap) + '</td>' +
+    '<td class="ro-num">' + num(line.currentStockQty) + '</td>' +
+    '<td class="ro-num">' + num(line.qualifiedIncomingQty) + (line.incomingCompleteness && line.incomingCompleteness !== 'COMPLETE' ? (' <em>(' + esc(line.incomingCompleteness) + ')</em>') : '') + '</td>' +
+    '<td class="ro-num">' + recCell + '</td>' +
+    '<td>' + esc(status) + '</td>' +
+    '<td>' + reason + '</td>' +
+    '</tr>';
+}
+function _opRecoDiagnosticsHtml(line) {
+  if (!line) return '';
+  var items = [];
+  (line.diagnostics || []).forEach(function (d) {
+    var code = (d && d.code) ? '<code>' + _roEsc(d.code) + '</code> ' : '';
+    var msg = _roEsc((d && d.message) ? d.message : (typeof d === 'string' ? d : ''));
+    items.push('<li>' + code + msg + '</li>');
+  });
+  if (!items.length) return '';
+  return '<details class="op-reco__diag"><summary>Diagnostics</summary><ul>' + items.join('') + '</ul></details>';
+}
+// Inner body for one expanded row — rendered PURELY from _opRecoState (guarded so a stale other-SKU state
+// never leaks into a freshly-expanded row).
+function _opRecoInner(item) {
+  function wrap(cls, inner) { return '<div class="op-reco ' + cls + '" role="status" aria-live="polite">' + inner + '</div>'; }
+  var scope = _opRecoScopeFor(item);
+  if (!scope) return wrap('op-reco--info', 'Recommendation unavailable — scope incomplete (need Company / Country / Marketplace / SKU). <code>CONTEXT_NOT_READY</code>');
+  var st = _opRecoState;
+  if (st.scopeKey !== _opRecoKey(scope)) return wrap('op-reco--loading', 'Calculating recommendation…');
+  if (st.status === 'LOADING') return wrap('op-reco--loading', 'Calculating recommendation…');
+  if (st.status === 'API_ERROR') {
+    var e = (st.errors && st.errors[0]) || { code: 'API_ERROR', message: 'Recommendation request failed.' };
+    var rid = st.requestId ? (' <span class="op-reco__reqid">[' + _roEsc(st.requestId) + ']</span>') : '';
+    return wrap('op-reco--error', 'Recommendation request failed: ' + _roEsc(e.message || '') + ' <code>' + _roEsc(e.code || 'API_ERROR') + '</code>' + rid);
+  }
+  if (st.status === 'EMPTY') return wrap('op-reco--info', 'No SKU matched the recommendation scope. <code>EMPTY</code>');
+  if (st.status === 'NO_LINE') return wrap('op-reco--info', 'No recommendation line for this SKU in the current scope. <code>RECOMMENDATION_LINE_NOT_FOUND</code>');
+  if (st.status !== 'READY') return wrap('op-reco--info', 'Recommendation not loaded.');
+  var rows = st.lines.map(_opRecoDestRowHtml).join('');
+  var meta = [];
+  if (st.calcMonth) meta.push('month: ' + _roEsc(st.calcMonth));
+  if (st.planningCycle) meta.push('cycle: ' + _roEsc(st.planningCycle));
+  if (st.requestId) meta.push('requestId: ' + _roEsc(st.requestId));
+  var conflictNote = (st.conflicts > 0) ? '<div class="op-reco__conflict">Identity conflict: ' + _roEsc(String(st.conflicts)) + ' duplicate line(s) suppressed server-side. <code>RECOMMENDATION_LINE_IDENTITY_CONFLICT</code></div>' : '';
+  var table = '<table class="ro-expand-table op-reco__table"><thead><tr>' +
+    '<th>Destination</th><th>Mode</th><th class="ro-num">Demand / Gap</th>' +
+    '<th class="ro-num">Stock</th><th class="ro-num">Incoming</th><th class="ro-num">Recommended</th><th>Status</th><th>Reason</th></tr></thead><tbody>' +
+    rows + '</tbody></table>';
+  return wrap('op-reco--ready', table + conflictNote + (meta.length ? ('<div class="op-reco__meta">' + meta.join(' · ') + '</div>') : '')) + _opRecoDiagnosticsHtml(st.lines[0]);
+}
+// The Block-3 subsection markup. Returns '' when the feature is OFF → the legacy panel is byte-unchanged.
+function _opRecoHostId(item) { return 'op-reco-' + _roPanelId(_roRowKey(item)); }
+function _opRecoSubsectionHtml(item) {
+  if (!_opRecoEnabled()) return '';   // legacy panel preserved verbatim when either flag is OFF
+  return '<div class="ro-block-sub op-reco-block">' +
+    '<div class="ro-subtitle">Recommendation — Order Need</div>' +
+    '<div class="op-reco-host" id="' + _roEsc(_opRecoHostId(item)) + '">' + _opRecoInner(item) + '</div></div>';
+}
+// The currently-expanded row item (only one row expands at a time), resolved from state.
+function _opRecoExpandedItem() {
+  var key = requestOrderState.expandedRowKey; if (!key) return null;
+  var data = requestOrderState.data || [];
+  for (var i = 0; i < data.length; i++) { if (_roRowKey(data[i]) === key) return data[i]; }
+  return null;
+}
+// Re-render ONLY the open subsection host from the current read state (no table re-render → no focus loss,
+// no Order-Qty input reset). No-op when the feature is OFF (no host in the DOM).
+function _opRecoRerender() {
+  if (typeof document === 'undefined' || !document.getElementById) return;
+  var item = _opRecoExpandedItem(); if (!item) return;
+  var host = document.getElementById(_opRecoHostId(item)); if (!host) return;
+  host.innerHTML = _opRecoInner(item);
+}
+if (typeof window !== 'undefined') {
+  window._opSetRecommendationOptIn = _opSetRecommendationOptIn;
+  window._opRecoEnabled = _opRecoEnabled;
+  window._opLoadRecommendation = _opLoadRecommendation;
+}
+// __OPRECO_END__ (test extraction marker — do not remove)
 
 // ---- Second-layer modals (Part 9). Editable (2026-07-23): Edit Target % → canonical upsertFcTargetRule;
 // FC Update → canonical importFcRegularForecastBatch. Both reuse the SAME write path as FC Summary
