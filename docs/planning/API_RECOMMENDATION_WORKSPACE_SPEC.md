@@ -72,3 +72,66 @@ live DB in tests. Read-only over the existing bundled runtime.
 ## Not this round (F1-4B-B and later)
 Inventory Replenishment page cutover; Coverage/DOS/Projected Inventory; Reason/Status tokens; persistence; Submit;
 global bootstrap optimization.
+
+---
+
+# F1-4B-FM1-T ADDENDUM — Unified Destination Transport (SCOPE-ONLY read; server-owned destination + calc context) (2026-08-06)
+
+> **Status: IMPLEMENTED (SOURCE PRESENT / TEST VERIFIED — NOT DEPLOYED; `TARGETED_RECOMMENDATION_FANOUT_READY`,
+> `LIVE_LATENCY_UNVERIFIED`).** The endpoint is refactored from "one warehouse destination supplied by the client" to
+> a **scope-only** read where the SERVER expands destinations (MARKETPLACE vs WAREHOUSE) and owns the calculation
+> context. Supersedes the F1-4B-A request/response DTO above. Feature flags remain default **false**.
+
+## Request DTO (SCOPE-ONLY — supersedes the F1-4B-A DTO)
+```
+{ apiVersion:"1", action:"recommendation.workspace.get", requestId:"REQ-…",
+  payload:{ scope:{company,country,marketplace,sku?:null,siteSku?:null},
+            filters:{lts?,series?,category?,sku?,siteSku?}, pagination:{page,size(≤100,default 50→client 100)}, include:{diagnostics:true} },
+  context:{} }
+```
+Mandatory: `scope.company/country/marketplace`. The client NO LONGER sends `destinationWarehouseId`,
+`calculationMonth`, or `planningCycle` — a legacy value is accepted only as **deprecated compatibility input**
+(recorded, never drives fanout; no dual execution).
+
+## Calculation-month authority (server-owned; no clock)
+Injected configuration `RECOMMENDATION_CALCULATION_MONTH` (Script Property; DI in tests). `YYYY-MM`. Missing →
+`RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED`; malformed → `RECOMMENDATION_CALCULATION_MONTH_INVALID`.
+`planningCycle = RECO-{calculationMonth}`. **No `new Date()` / `Utilities.formatDate()` / current-month / latest-forecast
+fallback.** Returned in `meta.calculationMonth` / `meta.planningCycle`.
+
+## Server flow (destination expansion; ONE read)
+`validate (scope-only) → recoWsResolveCalcContext_(io) → io.openTarget() (exact-ID gate) → KMPS.readCanonicalSnapshots
+(targeted, ONCE, +replenishment_demand_allocation_rules = 12 tables) → resolve in-scope SKUs → resolve fulfillment
+(marketplaces.fulfillment_model) → per SKU × destination: MARKETPLACE ⇒ KMDR.resolveUnifiedDestinationRecommendation
+(order-need; no source-pool allocator); WAREHOUSE ⇒ per-month frozen ratio fanout (KMDA) → the FROZEN KMPA→KMPS Weekly
+path per warehouse (real allocator; `preReadSnapshots` injected so NO per-SKU/per-destination re-open) → KMDR normalizes
+each into the canonical line → dedup by stable identity → sort → filter → paginate → envelope`. **`allocatedSupplyQty`
+is produced ONLY by the frozen KMPS allocator — never reconstructed in transport.**
+
+## Response DTO (additive destination identity)
+```
+{ success:true, data:{ scope:{…,calculationMonth,planningCycle}, lines:[{
+    recommendationLineId, recommendationMode:"MARKETPLACE_ORDER_NEED"|"WAREHOUSE_REPLENISHMENT",
+    company,country,marketplace,marketplaceId, sku,siteSku,
+    destinationType,destinationRefId,destinationKey,destinationCode,destinationLabel,warehouseId,
+    allocatedForecastQty,allocatedSalesQty, currentStockQty,qualifiedIncomingQty,incomingCompleteness,
+    calculatedGap,allocatedSupplyQty,recommendedQty,provisionalOrderNeed,residualShortageQty,
+    blocked,blockedReason, formulaVersion,sourceDataAsOf, diagnostics }],
+  pagination:{…}, dataVersion:{…} },
+  meta:{ …, requestId, calculationMonth, planningCycle, tablesRead, sourceReadCount:1, conflicts, serverDurationMs }, errors:[] }
+```
+Stable identity: `recommendationMode | company | country | marketplace | sku | siteSku | destinationKey` (never row
+index / array position / label / SKU alone). Duplicate identity → `RECOMMENDATION_LINE_IDENTITY_CONFLICT` (no latest-win).
+
+## Added error/blocked tokens
+`RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED` · `RECOMMENDATION_CALCULATION_MONTH_INVALID` ·
+`DESTINATION_AUTHORITY_UNRESOLVED` (unknown/hybrid fulfillment) · `MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED` (PARTIAL
+incoming ⇒ canonical `recommendedQty` withheld, `provisionalOrderNeed` diagnostic only) · `DEMAND_ALLOCATION_RULE_NOT_CONFIGURED`
+/ `_RATIO_INVALID` / `_RATIO_TOTAL_INVALID` / `_PERIOD_CONFLICT` · `DESTINATION_WAREHOUSE_INVALID` ·
+`RECOMMENDATION_LINE_IDENTITY_CONFLICT`. Source insufficiency returns a canonical `recommendedQty` + `residualShortageQty`
+(never an API error). Missing source is never a fake 0; an explicit source 0 stays 0.
+
+## Performance classification
+Target: 1 HTTP / scope, 1 targeted snapshot read / request, 0 per-SKU/per-destination re-open, 0 `getOperationDb`, 0
+whole-DB load, 0 writes. Test-verified via a fake spreadsheet (`getSheetByName` called exactly 12× for a 2-destination
+fanout; write methods never invoked). Live latency **unverified** this round → `LIVE_LATENCY_UNVERIFIED`.

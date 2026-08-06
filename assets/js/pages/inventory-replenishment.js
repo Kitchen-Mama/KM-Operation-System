@@ -4439,6 +4439,16 @@ window.IRContext = (function () {
     };
   }
 
+  // F1-4B-FM1-T: the SCOPE-ONLY request context (company/country/marketplace). The server owns destination
+  // expansion + calculation month/cycle, so the request NO LONGER carries destination/month/cycle. Returned only
+  // when the business scope is complete; null otherwise (never a partial/guessed scope).
+  function toScopeRequest(model) {
+    model = model || {};
+    var company = s(model.company), country = s(model.country), marketplace = s(model.marketplace);
+    if (!company || !country || !marketplace) return null;
+    return { company: company, country: country, marketplace: marketplace };
+  }
+
   // Validate a restored (session) selection against the CURRENT scope + options; drop anything invalid.
   // Destination is kept only when the stored scope key matches AND the id is still eligible.
   function restoreContextSelection(stored, scope, eligible) {
@@ -4463,6 +4473,7 @@ window.IRContext = (function () {
     normalizeRecommendationContext: normalizeRecommendationContext,
     validateRecommendationContext: validateRecommendationContext,
     toRequestContext: toRequestContext,
+    toScopeRequest: toScopeRequest,
     restoreContextSelection: restoreContextSelection
   };
 })();
@@ -4565,9 +4576,9 @@ window._irSetInternalRecommendationContext = _irSetInternalRecommendationContext
 var _irRecoSeq = 0;              // monotonic request sequence (stale-response guard)
 var _irRecoAbort = null;         // AbortController for the in-flight request (browser response invalidation)
 function _irRecoBlank(status) {
-  return { status: status || 'DISABLED', contextKey: null, requestId: null, linesByKey: {}, conflictKeys: {},
+  return { status: status || 'DISABLED', contextKey: null, requestId: null, lines: [], linesBySku: {},
     pagination: null, dataVersion: null, errors: [], updatedAt: null, seq: _irRecoSeq, scope: null,
-    destinationWarehouseId: null, loadedOk: false };
+    calculationMonth: null, planningCycle: null, loadedOk: false };
 }
 var _irRecoState = _irRecoBlank('DISABLED');   // page-local read state (separate from Allocation Draft state)
 
@@ -4582,32 +4593,39 @@ function _irNumOrNull(v) {
   if (v === null || v === undefined || v === '') return null;
   var n = Number(v); return isFinite(n) ? n : null;
 }
-// canonical composite row-identity key (scope + sku + siteSku + destination) — never index/order/label.
-function _irRecoLineKey(company, country, marketplace, sku, siteSku, dest) {
-  function k(v) { return String(v == null ? '' : v).trim(); }
-  return [k(company), k(country), k(marketplace), k(sku), k(siteSku), k(dest)].join('||');
+// F1-4B-FM1-T: the SCOPE-ONLY request context (company/country/marketplace). The server owns destination expansion
+// + calculation month/cycle — the request NO LONGER depends on _irInternalContext destination/month/cycle.
+function _irRecoScopeRequest() {
+  var model = _irctxLastContext || ((typeof updateReplenRecoContext === 'function') ? updateReplenRecoContext() : null);
+  if (!model || !window.IRContext || typeof window.IRContext.toScopeRequest !== 'function') return null;
+  return window.IRContext.toScopeRequest(model);
 }
-// Map ONE canonical API line → the fields the summary renders (direct passthrough; no recompute, no ||0).
+// Map ONE canonical destination-node API line → the fields the summary renders (direct passthrough; no ||0).
 function _irRecoMapLine(L) {
   L = L || {};
   return {
-    sku: L.sku, siteSku: L.siteSku, destinationWarehouseId: L.destinationWarehouseId,
-    currentStockQty: _irNumOrNull(L.currentStockQty),
-    qualifiedIncomingQty: _irNumOrNull(L.qualifiedIncomingQty),
-    calculatedGap: _irNumOrNull(L.calculatedGap),
-    recommendedQty: _irNumOrNull(L.recommendedQty),
-    blocked: L.blocked === true,
-    blockedReason: (L.blockedReason == null ? null : String(L.blockedReason)),
+    recommendationLineId: L.recommendationLineId, recommendationMode: L.recommendationMode,
+    sku: L.sku, siteSku: L.siteSku, destinationType: L.destinationType, destinationKey: L.destinationKey,
+    destinationLabel: L.destinationLabel || L.destinationRefId || L.warehouseId || L.marketplaceId || null,
+    warehouseId: L.warehouseId || null, marketplaceId: L.marketplaceId || null,
+    allocatedForecastQty: _irNumOrNull(L.allocatedForecastQty), allocatedSalesQty: _irNumOrNull(L.allocatedSalesQty),
+    currentStockQty: _irNumOrNull(L.currentStockQty), qualifiedIncomingQty: _irNumOrNull(L.qualifiedIncomingQty),
+    incomingCompleteness: (L.incomingCompleteness == null ? null : String(L.incomingCompleteness)),
+    calculatedGap: _irNumOrNull(L.calculatedGap), allocatedSupplyQty: _irNumOrNull(L.allocatedSupplyQty),
+    recommendedQty: _irNumOrNull(L.recommendedQty), provisionalOrderNeed: _irNumOrNull(L.provisionalOrderNeed),
+    residualShortageQty: _irNumOrNull(L.residualShortageQty),
+    blocked: L.blocked === true, blockedReason: (L.blockedReason == null ? null : String(L.blockedReason)),
     formulaVersion: (L.formulaVersion == null ? null : String(L.formulaVersion)),
     sourceDataAsOf: (L.sourceDataAsOf == null ? null : String(L.sourceDataAsOf)),
     diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
   };
 }
-// Apply a canonical envelope → state. Success failure stays visible (never masked); success indexes lines.
-function _irRecoApplyEnvelope(env, ctxKey, reqScope, dest) {
+// Apply a canonical envelope → state. Failure stays visible (never masked); success indexes lines by SKU
+// (each SKU may carry MULTIPLE destination lines — MARKETPLACE and/or one per WAREHOUSE — kept distinct).
+function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
   if (!env || env.success !== true) {
     _irRecoState = _irRecoBlank('API_ERROR');
-    _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope; _irRecoState.destinationWarehouseId = dest;
+    _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope;
     _irRecoState.errors = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
       : [{ code: 'WORKSPACE_ERROR', message: 'Recommendation workspace request failed.', details: null }];
     _irRecoState.requestId = (env && env.meta && env.meta.requestId) || null;
@@ -4615,27 +4633,22 @@ function _irRecoApplyEnvelope(env, ctxKey, reqScope, dest) {
   }
   var data = env.data || {};
   var lines = Array.isArray(data.lines) ? data.lines : [];
-  var byKey = {}, conflict = {};
-  lines.forEach(function (L) {
-    var key = _irRecoLineKey(reqScope.company, reqScope.country, reqScope.marketplace, L.sku, L.siteSku, L.destinationWarehouseId);
-    if (Object.prototype.hasOwnProperty.call(byKey, key)) conflict[key] = true;   // conflict: never latest-win
-    byKey[key] = _irRecoMapLine(L);
-  });
+  var bySku = {}, mapped = [];
+  lines.forEach(function (L) { var m = _irRecoMapLine(L); mapped.push(m); (bySku[m.sku] = bySku[m.sku] || []).push(m); });
   _irRecoState = _irRecoBlank(lines.length ? 'READY' : 'EMPTY');
-  _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope; _irRecoState.destinationWarehouseId = dest;
-  _irRecoState.linesByKey = byKey; _irRecoState.conflictKeys = conflict;
+  _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope;
+  _irRecoState.lines = mapped; _irRecoState.linesBySku = bySku;
   _irRecoState.pagination = data.pagination || null; _irRecoState.dataVersion = data.dataVersion || null;
   _irRecoState.requestId = (env.meta && env.meta.requestId) || null;
+  _irRecoState.calculationMonth = (env.meta && env.meta.calculationMonth) || null;
+  _irRecoState.planningCycle = (env.meta && env.meta.planningCycle) || null;
   _irRecoState.updatedAt = (data.dataVersion && data.dataVersion.sourceDataAsOf) || null;   // server value, not browser clock
   _irRecoState.loadedOk = true;
 }
-// Resolve the API line for a page row by canonical key (undefined = NOT_FOUND; {__conflict} = CONFLICT).
-function _irRecoLineForSku(skuData) {
-  if (!skuData || !_irRecoState.scope) return undefined;
-  var key = _irRecoLineKey(_irRecoState.scope.company, _irRecoState.scope.country, _irRecoState.scope.marketplace,
-    skuData.sku, skuData.siteSku, _irRecoState.destinationWarehouseId);
-  if (_irRecoState.conflictKeys && _irRecoState.conflictKeys[key]) return { __conflict: true };
-  return Object.prototype.hasOwnProperty.call(_irRecoState.linesByKey, key) ? _irRecoState.linesByKey[key] : undefined;
+// All destination lines for one page SKU (null when scope not loaded; [] when the SKU has no line).
+function _irRecoLinesForSku(skuData) {
+  if (!skuData || !_irRecoState.scope) return null;
+  return _irRecoState.linesBySku[skuData.sku] || [];
 }
 // Invalidate any in-flight request (bump seq + abort browser response) and reset to a clean status.
 function _irRecoInvalidate(status) {
@@ -4645,15 +4658,14 @@ function _irRecoInvalidate(status) {
   _irRecoState = _irRecoBlank(status || 'CONTEXT_NOT_READY');
 }
 
-// The read cutover: at most ONE recommendation.workspace.get per READY context. Deduped, stale-guarded.
+// The read cutover: at most ONE scope-only recommendation.workspace.get per READY scope. Deduped, stale-guarded.
+// The server owns destination fanout + calc context, so a valid Country/Marketplace scope is the ONLY prerequisite.
 function loadRecommendationWorkspace_() {
   if (!_irRecommendationWorkspaceEnabled()) { _irRecoInvalidate('DISABLED'); _irRecoRerenderSummaries(); return null; }
-  var model = _irctxLastContext || ((typeof updateReplenRecoContext === 'function') ? updateReplenRecoContext() : null);
-  if (!model || model.status !== 'READY') { _irRecoInvalidate('CONTEXT_NOT_READY'); _irRecoRerenderSummaries(); return null; }
-  var reqCtx = window.IRContext.toRequestContext(model);
-  if (!reqCtx) { _irRecoInvalidate('CONTEXT_NOT_READY'); _irRecoRerenderSummaries(); return null; }
-  var ctxKey = JSON.stringify(reqCtx);
-  // dedupe: identical context already loading or loaded → no duplicate request from repeated calls / renders
+  var scopeReq = _irRecoScopeRequest();
+  if (!scopeReq) { _irRecoInvalidate('CONTEXT_NOT_READY'); _irRecoRerenderSummaries(); return null; }
+  var ctxKey = JSON.stringify(scopeReq);
+  // dedupe: identical scope already loading or loaded → no duplicate request from repeated calls / renders
   if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || _irRecoState.loadedOk)) return null;
   if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
     _irRecoInvalidate('API_ERROR'); _irRecoState.contextKey = ctxKey;
@@ -4664,18 +4676,16 @@ function loadRecommendationWorkspace_() {
   if (_irRecoAbort && _irRecoAbort.abort) { try { _irRecoAbort.abort(); } catch (e) {} }
   _irRecoAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   var signal = _irRecoAbort ? _irRecoAbort.signal : undefined;
-  var reqScope = { company: reqCtx.company, country: reqCtx.country, marketplace: reqCtx.marketplace };
   _irRecoState = _irRecoBlank('LOADING');
-  _irRecoState.contextKey = ctxKey; _irRecoState.seq = my; _irRecoState.scope = reqScope; _irRecoState.destinationWarehouseId = reqCtx.destinationWarehouseId;
+  _irRecoState.contextKey = ctxKey; _irRecoState.seq = my; _irRecoState.scope = scopeReq;
   _irRecoRerenderSummaries();
-  // ONE request for the whole scope (server loops SKUs internally — no per-SKU HTTP; size≤100 this round).
-  var params = { scope: reqScope, destinationWarehouseId: reqCtx.destinationWarehouseId,
-    calculationMonth: reqCtx.calculationMonth, planningCycle: reqCtx.planningCycle,
-    filters: { sku: null, siteSku: null, category: null, series: null },
+  // ONE scope-only request (server expands destinations + loops SKUs internally — no per-SKU HTTP, no dest/month/cycle).
+  var params = { scope: { company: scopeReq.company, country: scopeReq.country, marketplace: scopeReq.marketplace, sku: null, siteSku: null },
+    filters: { lts: null, series: null, category: null, sku: null, siteSku: null },
     pagination: { page: 1, size: 100 }, include: { diagnostics: true } };
   return Promise.resolve(window.KM.api.getWorkspace('recommendation', params, { signal: signal })).then(function (env) {
-    if (my !== _irRecoSeq) return;   // STALE_IGNORED — a newer context superseded this response
-    _irRecoApplyEnvelope(env, ctxKey, reqScope, reqCtx.destinationWarehouseId);
+    if (my !== _irRecoSeq) return;   // STALE_IGNORED — a newer scope superseded this response
+    _irRecoApplyEnvelope(env, ctxKey, scopeReq);
     _irRecoRerenderSummaries();
   }).catch(function (err) {
     if (my !== _irRecoSeq) return;
@@ -4710,18 +4720,49 @@ function _irRecoDiagnosticsHtml(line) {
     + (meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '')
     + '</details>';
 }
+// F1-4B-FM1-T minimal destination presentation — ONE compact row per response destination (MARKETPLACE and/or
+// each WAREHOUSE). Distinguishes canonical / valid-zero / blocked / partial-provisional / missing-rule /
+// source-insufficient (residual) / API-error / no-line. No Execution-Plan mutation, Submit, or persistence here.
+function _irRecoDestModeLabel(mode) {
+  if (mode === 'MARKETPLACE_ORDER_NEED') return 'Marketplace Order Need';
+  if (mode === 'WAREHOUSE_REPLENISHMENT') return 'Warehouse Replenishment';
+  return mode || '—';
+}
+function _irRecoDestRowHtml(line) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  function num(v) { return (v === null || v === undefined) ? '—' : esc(String(v)); }
+  var status, statusCls, recCell;
+  var reason = line.blockedReason ? ('<code>' + esc(line.blockedReason) + '</code>') : '';
+  if (line.blocked) {
+    if (line.incomingCompleteness === 'PARTIAL' || line.incomingCompleteness === 'UNAVAILABLE') {
+      status = 'Partial incoming — provisional'; statusCls = 'is-partial';
+      recCell = '<span class="replen-recsum-ws__provisional">prov. ' + num(line.provisionalOrderNeed) + '</span>';
+    } else { status = 'Blocked'; statusCls = 'is-blocked'; recCell = '—'; }
+  } else if (line.recommendedQty === 0) {
+    status = 'No replenishment needed'; statusCls = 'is-zero'; recCell = '0';
+  } else {
+    var short = (typeof line.residualShortageQty === 'number' && line.residualShortageQty > 0);
+    status = short ? ('Source short by ' + num(line.residualShortageQty)) : 'OK';
+    statusCls = short ? 'is-short' : 'is-ok'; recCell = num(line.recommendedQty);
+  }
+  var demand = (line.recommendationMode === 'MARKETPLACE_ORDER_NEED') ? line.calculatedGap : line.allocatedForecastQty;
+  return '<tr class="' + statusCls + '">'
+    + '<td>' + esc(line.destinationLabel) + '</td>'
+    + '<td>' + esc(_irRecoDestModeLabel(line.recommendationMode)) + '</td>'
+    + '<td class="replen-recsum-table__num">' + num(demand) + ' / ' + num(line.calculatedGap) + '</td>'
+    + '<td class="replen-recsum-table__num">' + num(line.currentStockQty) + '</td>'
+    + '<td class="replen-recsum-table__num">' + num(line.qualifiedIncomingQty) + (line.incomingCompleteness && line.incomingCompleteness !== 'COMPLETE' ? (' <em>(' + esc(line.incomingCompleteness) + ')</em>') : '') + '</td>'
+    + '<td class="replen-recsum-table__num">' + recCell + '</td>'
+    + '<td>' + esc(status) + '</td>'
+    + '<td>' + reason + '</td>'
+    + '</tr>';
+}
 function _irRecoWorkspaceBody(skuData) {
   function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
   function wrap(cls, inner) { return '<div class="replen-recsum-ws ' + cls + '" role="status" aria-live="polite">' + inner + '</div>'; }
-  function frow(label, val) { return '<div class="replen-card__row"><span class="replen-card__label">' + esc(label) + '</span><span class="replen-card__value">' + (val === null || val === undefined ? '—' : esc(String(val))) + '</span></div>'; }
   var st = _irRecoState;
   if (st.status === 'DISABLED') return _legacyRecSummaryTableHtml(skuData);   // safety net (should not reach when enabled)
-  if (st.status === 'CONTEXT_NOT_READY') {
-    var miss = (_irctxLastContext && _irctxLastContext.missing) || [];
-    var labels = { destinationWarehouseId: 'Destination Warehouse', calculationMonth: 'Calculation Month', planningCycle: 'Planning Cycle', company: 'Company', country: 'Country', marketplace: 'Marketplace' };
-    var names = miss.map(function (k) { return labels[k] || k; });
-    return wrap('replen-recsum-ws--info', 'Recommendation context is not ready. Select ' + (names.length ? esc(names.join(', ')) : 'the required inputs') + '.');
-  }
+  if (st.status === 'CONTEXT_NOT_READY') return wrap('replen-recsum-ws--info', 'Recommendation scope is not ready. Select a valid Country / Marketplace.');
   if (st.status === 'LOADING') return wrap('replen-recsum-ws--loading', 'Calculating recommendation…');
   if (st.status === 'API_ERROR') {
     var e = (st.errors && st.errors[0]) || { code: 'API_ERROR', message: 'Recommendation request failed.' };
@@ -4729,21 +4770,19 @@ function _irRecoWorkspaceBody(skuData) {
     return wrap('replen-recsum-ws--error', 'Recommendation request failed: ' + esc(e.message || '') + ' <code>' + esc(e.code || 'API_ERROR') + '</code>' + rid);
   }
   if (st.status === 'EMPTY') return wrap('replen-recsum-ws--info', 'No SKU matched the current recommendation scope.');
-  // READY (page level) → resolve this SKU's line
-  var line = _irRecoLineForSku(skuData);
-  if (line === undefined) return wrap('replen-recsum-ws--info', 'No recommendation line for this SKU in the current scope. <code>RECOMMENDATION_LINE_NOT_FOUND</code>');
-  if (line && line.__conflict) return wrap('replen-recsum-ws--error', 'Multiple conflicting recommendation lines for this SKU. <code>RECOMMENDATION_LINE_CONFLICT</code>');
-  if (line.blocked) {
-    var reason = line.blockedReason || 'RECOMMENDATION_RUNTIME_BLOCKED';
-    var binner = 'Recommendation could not be calculated for this SKU. <code>' + esc(reason) + '</code>'
-      + frow('Current Stock', line.currentStockQty) + frow('Qualified Incoming', line.qualifiedIncomingQty);
-    return wrap('replen-recsum-ws--blocked', binner) + _irRecoDiagnosticsHtml(line);
-  }
-  var zeroNote = (line.recommendedQty === 0)
-    ? '<div class="replen-recsum-ws__zero">Recommendation calculated successfully. No replenishment quantity is currently required.</div>' : '';
-  var body = frow('Current Stock', line.currentStockQty) + frow('Qualified Incoming', line.qualifiedIncomingQty)
-    + frow('Calculated Gap', line.calculatedGap) + frow('Recommended Qty', line.recommendedQty);
-  return wrap('replen-recsum-ws--ready' + (line.recommendedQty === 0 ? ' replen-recsum-ws--zero-state' : ''), body + zeroNote) + _irRecoDiagnosticsHtml(line);
+  var lines = _irRecoLinesForSku(skuData);
+  if (!lines || !lines.length) return wrap('replen-recsum-ws--info', 'No recommendation line for this SKU in the current scope. <code>RECOMMENDATION_LINE_NOT_FOUND</code>');
+  var rows = lines.map(_irRecoDestRowHtml).join('');
+  var meta = [];
+  if (st.calculationMonth) meta.push('month: ' + esc(st.calculationMonth));
+  if (st.planningCycle) meta.push('cycle: ' + esc(st.planningCycle));
+  if (st.requestId) meta.push('requestId: ' + esc(st.requestId));
+  var table = '<table class="replen-recsum-table replen-recsum-ws__table"><thead><tr>'
+    + '<th>Destination</th><th>Mode</th><th class="replen-recsum-table__num">Demand / Gap</th>'
+    + '<th class="replen-recsum-table__num">Stock</th><th class="replen-recsum-table__num">Incoming</th>'
+    + '<th class="replen-recsum-table__num">Recommended</th><th>Status</th><th>Reason</th></tr></thead><tbody>'
+    + rows + '</tbody></table>';
+  return wrap('replen-recsum-ws--ready', table + (meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '')) + _irRecoDiagnosticsHtml(lines[0]);
 }
 // The card body: Workspace presentation when the flag is EFFECTIVE, else the unchanged legacy table.
 function _irRecoSummaryCardBody(skuData) {

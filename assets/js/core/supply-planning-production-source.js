@@ -46,7 +46,9 @@
     { key: 'overseasInventorySnapshot', sheet: 'overseas_inventory_snapshot', required: false },
     { key: 'factoryStock', sheet: 'factory_stock', required: false },
     { key: 'shippingPlans', sheet: 'shipping_plans', required: false },
-    { key: 'shipments', sheet: 'shipments', required: false }
+    { key: 'shipments', sheet: 'shipments', required: false },
+    // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
+    { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false }
   ];
 
   function tablesFor(config) {
@@ -134,7 +136,10 @@
   function buildProductionRecommendationSource(spreadsheet, request) {
     aType(isObj(request), 'buildProductionRecommendationSource: request required');
     var af = applyAllocationFacts(request); request = af.request;
-    var read = readCanonicalSnapshots(spreadsheet, request.config);
+    // F1-4B-FM1-T transport-boundary: when the caller already read the canonical snapshots ONCE for the whole
+    // Workspace request, pass them via request.preReadSnapshots so this per-SKU × per-destination call does NOT
+    // re-open the spreadsheet. No calculation behavior change — identical snapshots, just not re-read.
+    var read = isObj(request.preReadSnapshots) ? { snapshots: request.preReadSnapshots, issues: [] } : readCanonicalSnapshots(spreadsheet, request.config);
     var full = KMSP.projectAndRead(projectionInput(request, read.snapshots));
     var proj = full.projection || {};
     var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(proj.issues || []).concat(producerIssues(af.facts));

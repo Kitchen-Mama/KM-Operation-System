@@ -301,8 +301,45 @@
     return { ready: !wrec.blocked, destination: dest, recommendationMode: 'WAREHOUSE_REPLENISHMENT', line: wrec, issues: wrec.issues || [], meta: meta };
   }
 
+  // ================================ Canonical response-line normalizer (F1-4B-FM1-T §9) =====================
+  // The unified runtime is the ONE owner of final line normalization + stable identity. Produces the additive
+  // destination-identity response line for BOTH a MARKETPLACE order-need result and a WAREHOUSE (frozen KMPS) line.
+  // Stable recommendationLineId = mode | company | country | marketplace | sku | siteSku | destinationKey (NEVER a
+  // row index / array position / label / SKU-alone). Callers dedupe by this id (duplicate ⇒ structured conflict).
+  function _numOrNull(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
+  function recommendationLineId(mode, company, country, marketplace, sku, siteSku, destinationKey) {
+    return [s(mode), s(company), s(country), s(marketplace), s(sku), s(siteSku), s(destinationKey)].join('|');
+  }
+  function buildRecommendationLine(input) {
+    input = input || {}; var d = input.destination || {};
+    var mode = s(input.recommendationMode);
+    var company = s(d.company) || s(input.company), country = s(d.country) || s(input.country), marketplace = s(d.marketplace) || s(input.marketplace);
+    var sku = s(input.sku), siteSku = s(input.siteSku);
+    var destinationKey = s(d.destinationKey) || DA.destinationKey(d);
+    return {
+      recommendationLineId: recommendationLineId(mode, company, country, marketplace, sku, siteSku, destinationKey),
+      recommendationMode: mode || null,
+      company: company || null, country: country || null, marketplace: marketplace || null, marketplaceId: d.marketplaceId || null,
+      sku: sku || null, siteSku: siteSku || null,
+      destinationType: d.destinationType || null, destinationRefId: d.destinationRefId || null, destinationKey: destinationKey || null,
+      destinationCode: d.destinationCode || null, destinationLabel: d.destinationLabel || null, warehouseId: d.warehouseId || null,
+      allocatedForecastQty: _numOrNull(input.allocatedForecastQty), allocatedSalesQty: _numOrNull(input.allocatedSalesQty),
+      currentStockQty: _numOrNull(input.currentStockQty), qualifiedIncomingQty: _numOrNull(input.qualifiedIncomingQty),
+      incomingCompleteness: input.incomingCompleteness == null ? null : s(input.incomingCompleteness),
+      calculatedGap: _numOrNull(input.calculatedGap), allocatedSupplyQty: _numOrNull(input.allocatedSupplyQty),
+      recommendedQty: _numOrNull(input.recommendedQty), provisionalOrderNeed: _numOrNull(input.provisionalOrderNeed),
+      residualShortageQty: _numOrNull(input.residualShortageQty),
+      blocked: input.blocked === true, blockedReason: input.blocked === true ? (s(input.blockedReason) || null) : null,
+      formulaVersion: input.formulaVersion == null ? null : s(input.formulaVersion),
+      sourceDataAsOf: input.sourceDataAsOf == null ? null : s(input.sourceDataAsOf),
+      diagnostics: (input.diagnostics && typeof input.diagnostics === 'object') ? input.diagnostics : { issues: [] }
+    };
+  }
+
   return {
     normalizeRecommendationDestination: normalizeRecommendationDestination,
+    buildRecommendationLine: buildRecommendationLine,
+    recommendationLineId: recommendationLineId,
     resolveMarketplaceCurrentStock: resolveMarketplaceCurrentStock,
     resolveMarketplaceIncomingIdentity: resolveMarketplaceIncomingIdentity,
     resolveMarketplaceQualifiedIncoming: resolveMarketplaceQualifiedIncoming,

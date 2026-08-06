@@ -51,18 +51,15 @@ function recoWsEnvelope_(ok, data, errors, meta) {
 }
 function recoWsErr_(code, message, details) { return { code: code, message: String(message == null ? code : message), details: (details === undefined ? null : details) }; }
 
-// Request validation — mandatory scope + destination + calc month + planning cycle; page size bounded. Runs BEFORE
-// any table read; returns { ok:true, request } or { ok:false, error }. No implicit company/site/warehouse/month.
+// F1-4B-FM1-T: SCOPE-ONLY request validation. The client owns ONLY the business scope + filters + pagination; the
+// SERVER owns destination expansion (MARKETPLACE vs WAREHOUSE) and the calculation context (month/cycle). A legacy
+// destinationWarehouseId / calculationMonth / planningCycle is accepted as DEPRECATED compatibility input, recorded
+// on the result, and NEVER used to drive fanout in scope-only mode (no dual execution). Runs BEFORE any table read.
 function validateRecommendationWorkspaceRequest_(payload) {
   payload = recoWsIsObj_(payload) ? payload : {};
   var scope = recoWsIsObj_(payload.scope) ? payload.scope : {};
   var company = recoWsStr_(scope.company), country = recoWsStr_(scope.country), marketplace = recoWsStr_(scope.marketplace);
-  var dest = recoWsStr_(payload.destinationWarehouseId);
-  var calcMonth = recoWsStr_(payload.calculationMonth), planningCycle = recoWsStr_(payload.planningCycle);
   if (!company || !country || !marketplace) return { ok: false, error: recoWsErr_('VALIDATION_FAILED', 'scope.company/country/marketplace are mandatory (no implicit first company/marketplace)', { scope: scope }) };
-  if (!dest) return { ok: false, error: recoWsErr_('MISSING_DESTINATION_WAREHOUSE', 'destinationWarehouseId is mandatory (no automatic destination selection)') };
-  if (!/^\d{4}-\d{2}$/.test(calcMonth)) return { ok: false, error: recoWsErr_('MISSING_CALCULATION_MONTH', 'calculationMonth ("YYYY-MM") is mandatory (no browser/current-month inference)') };
-  if (!planningCycle) return { ok: false, error: recoWsErr_('MISSING_PLANNING_CYCLE', 'planningCycle is mandatory') };
   if (recoWsIsObj_(payload.filters) && payload.filters.demandDriver && recoWsStr_(payload.filters.demandDriver).toUpperCase() !== 'FORECAST') {
     return { ok: false, error: recoWsErr_('UNSUPPORTED_PHASE1_DEMAND_DRIVER', 'Phase-1 demandDriver is FORECAST only; no client override') };
   }
@@ -72,14 +69,22 @@ function validateRecommendationWorkspaceRequest_(payload) {
   var page = recoWsNum_(pg.page); page = (page && page > 0) ? Math.floor(page) : 1;
   return {
     ok: true,
-    request: {
-      recommendationType: 'WEEKLY_SHIPPING', company: company, country: country, marketplace: marketplace,
-      sku: recoWsStr_(filters.sku) || null, destinationWarehouseId: dest, calculationMonth: calcMonth, planningCycle: planningCycle,
-      formulaVersion: recoWsStr_(payload.formulaVersion) || null, sourceDataAsOf: recoWsStr_(payload.sourceDataAsOf) || null
-    },
-    filters: { sku: recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(filters.siteSku) || null, category: recoWsStr_(filters.category) || null, series: recoWsStr_(filters.series) || null },
-    page: page, size: size, include: recoWsIsObj_(payload.include) ? payload.include : {}
+    scope: { company: company, country: country, marketplace: marketplace, sku: recoWsStr_(scope.sku) || recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(scope.siteSku) || recoWsStr_(filters.siteSku) || null },
+    filters: { sku: recoWsStr_(scope.sku) || recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(scope.siteSku) || recoWsStr_(filters.siteSku) || null, category: recoWsStr_(filters.category) || null, series: recoWsStr_(filters.series) || null },
+    page: page, size: size, include: recoWsIsObj_(payload.include) ? payload.include : {},
+    formulaVersion: recoWsStr_(payload.formulaVersion) || null, sourceDataAsOf: recoWsStr_(payload.sourceDataAsOf) || null,
+    deprecatedCompat: { destinationWarehouseId: recoWsStr_(payload.destinationWarehouseId) || null, calculationMonth: recoWsStr_(payload.calculationMonth) || null, planningCycle: recoWsStr_(payload.planningCycle) || null }
   };
+}
+
+// F1-4B-FM1-T calculation-month authority — the SERVER owns the calc context via an injected configuration value
+// (io.configMonth() → Script Property RECOMMENDATION_CALCULATION_MONTH). NO browser clock, NO server clock, NO
+// current-month / latest-forecast fallback. Missing → NOT_CONFIGURED; malformed → INVALID. planningCycle = RECO-{YYYY-MM}.
+function recoWsResolveCalcContext_(io) {
+  var raw = recoWsStr_((io && typeof io.configMonth === 'function') ? io.configMonth() : '');
+  if (!raw) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED', 'RECOMMENDATION_CALCULATION_MONTH is not configured (no clock fallback)') };
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_MONTH_INVALID', 'RECOMMENDATION_CALCULATION_MONTH must be YYYY-MM (got "' + raw + '")') };
+  return { ok: true, calculationMonth: raw, planningCycle: 'RECO-' + raw };
 }
 
 // Source-proven per-SKU supply context from the projection's lifecycle-bucketed rows (KMPS.supplySourceEntries).
@@ -103,21 +108,135 @@ function recoWsGapBySku_(planningFacts) {
   return by;
 }
 
-// Map one bridge/resolver line → response line. Only source-proven runtime outputs; NEVER invents coverage/DOS/etc.
-function recoWsMapLine_(line, ctx) {
-  var sku = recoWsStr_(line.sku || line.masterSku);
-  var supply = ctx.supplyBySku[sku] || { currentStockQty: 0, qualifiedIncomingQty: 0 };
-  var gap = (ctx.gapBySku[sku] === undefined) ? null : ctx.gapBySku[sku];
-  return {
-    sku: sku, siteSku: recoWsStr_(line.site_sku || line.siteSku),
-    destinationWarehouseId: ctx.destinationWarehouseId,
-    currentStockQty: supply.currentStockQty, qualifiedIncomingQty: supply.qualifiedIncomingQty,
-    calculatedGap: gap,
-    recommendedQty: (typeof line.recommendedQty === 'number') ? line.recommendedQty : null,
-    blocked: line.blocked === true, blockedReason: line.blocked === true ? (recoWsStr_(line.reason) || null) : null,
-    formulaVersion: ctx.formulaVersion, sourceDataAsOf: ctx.sourceDataAsOf,
-    diagnostics: { issues: [] }
-  };
+// ---- F1-4B-FM1-T pure transport helpers (row-object views + destination expansion; NO SpreadsheetApp) ----------
+var RECO_WS_MONTH_ABBR_ = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function recoWsToRowObjects_(snap) {
+  if (!recoWsIsObj_(snap) || !Array.isArray(snap.headers) || !Array.isArray(snap.rows)) return [];
+  var h = snap.headers.map(function (x) { return recoWsStr_(x); });
+  return snap.rows.map(function (r) { var o = {}; for (var c = 0; c < h.length; c++) o[h[c]] = r[c]; return o; });
+}
+function recoWsUpcBySku_(skuRows) { var m = {}; (skuRows || []).forEach(function (r) { var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsNum_(r.units_per_carton); }); return m; }
+function recoWsSiteSkuBySku_(mskRows, scope) {
+  var m = {};
+  (mskRows || []).forEach(function (r) {
+    if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) return;
+    var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsStr_(r.site_sku) || null;
+  });
+  return m;
+}
+// Fulfillment authority: the scope's canonical marketplaces row. platform_fulfilled → MARKETPLACE; self_fulfilled →
+// WAREHOUSE; hybrid/blank/unknown → null (transport returns DESTINATION_AUTHORITY_UNRESOLVED — never guessed).
+function recoWsResolveFulfillment_(mktRows, scope) {
+  var rows = (mktRows || []).filter(function (r) { return recoWsStr_(r.company) === scope.company && recoWsStr_(r.country) === scope.country && recoWsStr_(r.marketplace) === scope.marketplace; });
+  if (!rows.length) return { mode: null, row: null };
+  var active = rows.filter(function (r) { var st = recoWsStr_(r.status).toLowerCase(); return st === 'active' || r.status === true || st === ''; });
+  var pick = active.length ? active[0] : rows[0];
+  var fm = recoWsStr_(pick.fulfillment_model).toLowerCase();
+  if (fm === 'platform_fulfilled') return { mode: 'MARKETPLACE', row: pick };
+  if (fm === 'self_fulfilled') return { mode: 'WAREHOUSE', row: pick };
+  return { mode: null, row: pick };
+}
+// Σ Regular FC per month over M+1..M+4 for one sku+scope (month-abbrev columns + year). MISSING month → omitted
+// (KMPCX then emits MISSING_FORECAST_WEIGHT_SOURCE → a blocked line, never a fake 0). Conflicting values → omitted.
+function recoWsRegularForecastByMonth_(fcRows, scope, sku, months) {
+  var out = {};
+  (months || []).forEach(function (ym) {
+    var m = /^(\d{4})-(\d{2})$/.exec(ym); if (!m) return;
+    var year = Number(m[1]), abbr = RECO_WS_MONTH_ABBR_[Number(m[2]) - 1], vals = {};
+    (fcRows || []).forEach(function (r) {
+      if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace || recoWsStr_(r.sku) !== sku) return;
+      if (Number(r.year) !== year) return;
+      var v = r[abbr]; if (v !== '' && v !== null && v !== undefined && isFinite(Number(v))) vals[String(Number(v))] = Number(v);
+    });
+    var keys = Object.keys(vals);
+    if (keys.length === 1) out[ym] = vals[keys[0]];
+  });
+  return out;
+}
+
+// MARKETPLACE expansion → one canonical response line via the unified runtime (order-need; no source-pool allocator).
+function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
+  var snaps = read.snapshots || {};
+  var mktRows = recoWsToRowObjects_(snaps.marketplaces), whRows = recoWsToRowObjects_(snaps.warehouses);
+  var amazonRows = recoWsToRowObjects_(snaps.amazonInventorySnapshot);
+  var shipmentRows = recoWsToRowObjects_(snaps.shipments).filter(function (r) { return recoWsStr_(r.company) === scope.company && recoWsStr_(r.country) === scope.country; });
+  var fcRows = recoWsToRowObjects_(snaps.fcRegularForecast);
+  var upc = recoWsUpcBySku_(recoWsToRowObjects_(snaps.skuDetails))[sku];
+  var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'MARKETPLACE', company: scope.company, country: scope.country, marketplace: scope.marketplace }, { marketplaces: mktRows });
+  if (!nd.ok) {
+    var code = (nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_AUTHORITY_UNRESOLVED';
+    return KMDR.buildRecommendationLine({ destination: { destinationType: 'MARKETPLACE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, destinationKey: 'MARKETPLACE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: code, message: (nd.issues && nd.issues[0] && nd.issues[0].message) || '' }] } });
+  }
+  var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
+  var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
+  var demandQty = 0, haveAll = months.length === 4; months.forEach(function (mm) { if (fcByMonth[mm] == null) haveAll = false; else demandQty += fcByMonth[mm]; });
+  var requiredBy = (months[0] || calc.calculationMonth) + '-01';
+  var res = KMDR.resolveUnifiedDestinationRecommendation(
+    { marketplaces: mktRows, warehouses: whRows, amazonInventory: amazonRows, marketplaceIncomingCandidates: shipmentRows },
+    { recommendationType: 'MONTHLY_ORDER', scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku }, destination: { destinationType: 'MARKETPLACE' }, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf },
+    { regularForecastByMonth: fcByMonth, unitsPerCarton: upc, requiredByDate: requiredBy }
+  );
+  var L = res.line || {};
+  var partial = L.incomingCompleteness === 'PARTIAL' || L.incomingCompleteness === 'UNAVAILABLE';
+  var blockedReason = L.blocked ? (partial ? 'MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED' : (recoWsStr_(L.blockedReason) || null)) : null;
+  return KMDR.buildRecommendationLine({
+    destination: nd.destination, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku,
+    allocatedForecastQty: haveAll ? demandQty : (demandQty > 0 ? demandQty : null),
+    currentStockQty: L.currentStockQty, qualifiedIncomingQty: L.confirmedQualifiedIncomingQty, incomingCompleteness: L.incomingCompleteness,
+    calculatedGap: L.calculatedGap, recommendedQty: L.recommendedQty, provisionalOrderNeed: L.provisionalOrderNeed,
+    blocked: L.blocked === true, blockedReason: blockedReason, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
+    diagnostics: { issues: (res.issues || []).map(function (x) { return { code: x.code, message: x.message }; }) }
+  });
+}
+
+// WAREHOUSE expansion → one canonical line per configured warehouse. Demand is fanned per month by the FROZEN ratio;
+// each warehouse runs the FROZEN KMPA→KMPS Weekly path (real source-pool allocator) — the transport NEVER
+// reconstructs allocatedSupplyQty. Rule/warehouse problems fail closed as blocked lines with canonical tokens.
+function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
+  var snaps = read.snapshots || {}, lines = [];
+  var whRows = recoWsToRowObjects_(snaps.warehouses), ruleRows = recoWsToRowObjects_(snaps.replenishmentDemandAllocationRules), fcRows = recoWsToRowObjects_(snaps.fcRegularForecast);
+  var whById = {}; whRows.forEach(function (w) { var id = recoWsStr_(w.warehouse_id); if (id) whById[id] = w; });
+  var scopeObj = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
+  var active = KMDA.readActiveAllocationRules(ruleRows, scopeObj, calc.calculationMonth);
+  var ruleset = KMDA.validateAllocationRules(active, scopeObj, whById);
+  if (!ruleset.ok) {
+    var iss = (ruleset.issues && ruleset.issues[0]) || { code: 'DEMAND_ALLOCATION_RULE_NOT_CONFIGURED' };
+    lines.push(KMDR.buildRecommendationLine({ destination: { destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, warehouseId: null, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, blocked: true, blockedReason: iss.code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: iss.code, message: iss.message || '' }] } }));
+    return { lines: lines };
+  }
+  var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
+  var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
+  var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
+  months.forEach(function (mm) {
+    var fcMonth = fcByMonth[mm]; if (fcMonth == null) return;
+    var split = KMDA.allocateMarketplaceDemand(fcMonth, ruleset, 'forecast');
+    if (split && split.ready) ruleset.warehouses.forEach(function (w) { if (split.byKey && split.byKey[w.warehouseId] != null) override[w.warehouseId][mm] = split.byKey[w.warehouseId]; });
+  });
+  ruleset.warehouses.forEach(function (w) {
+    var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, warehouseId: w.warehouseId }, { warehouses: whRows });
+    var node = nd.ok ? nd.destination : { destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: w.warehouseId, warehouseId: w.warehouseId, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' + w.warehouseId };
+    var allocatedForecast = 0, cnt = 0; for (var k in override[w.warehouseId]) { allocatedForecast += override[w.warehouseId][k]; cnt++; }
+    if (!nd.ok) { lines.push(KMDR.buildRecommendationLine({ destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, allocatedForecastQty: cnt ? allocatedForecast : null, blocked: true, blockedReason: (nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_WAREHOUSE_INVALID', formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })); return; }
+    var skuReq = { recommendationType: 'WEEKLY_SHIPPING', company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku, destinationWarehouseId: w.warehouseId, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, regularForecastByMonthOverride: override[w.warehouseId], formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf };
+    var assembled = KMPA.assembleProductionRecommendationFacts(read, skuReq);
+    if (!assembled.ready) { var a0 = (assembled.issues && assembled.issues[0]) || { code: 'RECOMMENDATION_RUNTIME_BLOCKED' }; lines.push(KMDR.buildRecommendationLine({ destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, allocatedForecastQty: cnt ? allocatedForecast : null, blocked: true, blockedReason: a0.code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: a0.code, message: a0.message || '' }] } })); return; }
+    var pr = assembled.productionRequest; pr.preReadSnapshots = read.snapshots;
+    var src = KMPS.buildProductionRecommendationSource(ss, pr);
+    if (src.ready !== true) { var s0 = (src.issues && src.issues[0]) || {}; var code = s0.code || s0.reason || 'RECOMMENDATION_RUNTIME_BLOCKED'; lines.push(KMDR.buildRecommendationLine({ destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, allocatedForecastQty: cnt ? allocatedForecast : null, blocked: true, blockedReason: code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: code, message: s0.reason || s0.message || '' }] } })); return; }
+    var supply = recoWsSupplyBySku_(src.supplySourceEntries)[sku] || { currentStockQty: 0, qualifiedIncomingQty: 0 };
+    var gap = recoWsGapBySku_(pr.planningFacts)[sku]; if (gap === undefined) gap = null;
+    var wline = null; (src.lines || []).forEach(function (l) { if (!wline && recoWsStr_(l.masterSku || l.sku) === sku) wline = l; }); if (!wline) wline = (src.lines || [])[0] || null;
+    var allocatedSupply = 0; if (wline && wline.allocationBreakdown) wline.allocationBreakdown.forEach(function (b) { if (typeof b.allocatedQty === 'number') allocatedSupply += b.allocatedQty; });
+    lines.push(KMDR.buildRecommendationLine({
+      destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku,
+      allocatedForecastQty: cnt ? allocatedForecast : null, currentStockQty: supply.currentStockQty, qualifiedIncomingQty: supply.qualifiedIncomingQty, incomingCompleteness: 'COMPLETE',
+      calculatedGap: gap, allocatedSupplyQty: wline ? allocatedSupply : null, recommendedQty: (wline && typeof wline.recommendedQty === 'number') ? wline.recommendedQty : null,
+      residualShortageQty: (wline && typeof wline.unallocatedQty === 'number') ? wline.unallocatedQty : null,
+      blocked: !!(wline && wline.blockedReason), blockedReason: wline ? wline.blockedReason : null,
+      formulaVersion: src.formulaVersion || vmeta.formulaVersion, sourceDataAsOf: src.sourceDataAsOf || vmeta.sourceDataAsOf
+    }));
+  });
+  return { lines: lines };
 }
 
 function recoWsFilterLines_(lines, filters) {
@@ -163,24 +282,19 @@ function recoWsScopeSkus_(mskSnapshot, scope, skuFilter) {
   return out;
 }
 
-// PURE View-Model builder: validated request + AGGREGATED per-SKU runtime output → bounded page-oriented response.
-function recommendationWorkspaceBuild_(v, aggregated) {
-  var ctx = {
-    destinationWarehouseId: v.request.destinationWarehouseId,
-    supplyBySku: recoWsSupplyBySku_(aggregated.supplySourceEntries),
-    gapBySku: recoWsGapBySku_(aggregated.planningFacts),
-    formulaVersion: aggregated.formulaVersion || v.request.formulaVersion || null,
-    sourceDataAsOf: aggregated.sourceDataAsOf || v.request.sourceDataAsOf || null
-  };
-  var mapped = (aggregated.lines || []).map(function (l) { return recoWsMapLine_(l, ctx); });
-  var filtered = recoWsFilterLines_(mapped, v.filters);
-  var sorted = recoWsSortLines_(filtered, v.request);
+// PURE View-Model builder: validated request + canonical destination lines → bounded page-oriented response.
+// Stable sort by recommendationMode → sku → siteSku → destinationKey (never row index / array position / label).
+function recommendationWorkspaceBuild_(v, calc, lines) {
+  var filtered = recoWsFilterLines_(lines, v.filters);
+  var sorted = filtered.slice().sort(function (a, b) {
+    return recoWsCmp_(a.recommendationMode, b.recommendationMode) || recoWsCmp_(a.sku, b.sku) || recoWsCmp_(a.siteSku, b.siteSku) || recoWsCmp_(a.destinationKey, b.destinationKey);
+  });
   var pageRes = recoWsPaginate_(sorted, v.page, v.size);
   return {
-    scope: { company: v.request.company, country: v.request.country, marketplace: v.request.marketplace, destinationWarehouseId: v.request.destinationWarehouseId, calculationMonth: v.request.calculationMonth, planningCycle: v.request.planningCycle },
+    scope: { company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle },
     lines: pageRes.items,
     pagination: { page: pageRes.page, size: pageRes.size, total: pageRes.total, totalPages: pageRes.totalPages },
-    dataVersion: { formulaVersion: ctx.formulaVersion, sourceDataAsOf: ctx.sourceDataAsOf }
+    dataVersion: { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf }
   };
 }
 
@@ -191,6 +305,8 @@ function recommendationWorkspaceDefaultIo_() {
   return {
     now: function () { return Date.now(); },                            // API diagnostic layer only
     nextSeq: function () { RECO_WS_SEQ_++; return RECO_WS_SEQ_; },
+    // F1-4B-FM1-T calculation-month configuration authority (Script Property; NO clock). Injectable in tests.
+    configMonth: function () { try { return PropertiesService.getScriptProperties().getProperty('RECOMMENDATION_CALCULATION_MONTH'); } catch (e) { return null; } },
     openTarget: function () {
       var id = prodExpectedDbId_();
       if (!id) throw prodSchemaError_('WRONG_SPREADSHEET_TARGET', '', null);
@@ -205,44 +321,43 @@ function handleRecommendationWorkspaceGet_(body, io) {
   io = io || recommendationWorkspaceDefaultIo_();
   var t0 = io.now();
   var reqId = recoWsRequestId_(body && body.requestId, io);
-  var metaBase = { requestId: reqId };
   try {
-    if (typeof KMPA === 'undefined' || typeof KMPS === 'undefined') {
-      return recoWsEnvelope_(false, null, [recoWsErr_('RECOMMENDATION_RUNTIME_BLOCKED', 'recommendation runtime bundle (KMPA/KMPS) not present')], { requestId: reqId, serverDurationMs: (io.now() - t0) });
+    if (typeof KMPA === 'undefined' || typeof KMPS === 'undefined' || typeof KMDR === 'undefined' || typeof KMDA === 'undefined') {
+      return recoWsEnvelope_(false, null, [recoWsErr_('RECOMMENDATION_RUNTIME_BLOCKED', 'recommendation runtime bundle (KMPA/KMPS/KMDR/KMDA) not present')], { requestId: reqId, serverDurationMs: (io.now() - t0) });
     }
-    var v = validateRecommendationWorkspaceRequest_(body && body.payload);
-    if (!v.ok) return recoWsEnvelope_(false, null, [v.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0 });  // fail BEFORE any read
+    var v = validateRecommendationWorkspaceRequest_(body && body.payload);   // scope-only; fails BEFORE any read
+    if (!v.ok) return recoWsEnvelope_(false, null, [v.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0 });
+    var calc = recoWsResolveCalcContext_(io);                                // server-owned month/cycle (no clock)
+    if (!calc.ok) return recoWsEnvelope_(false, null, [calc.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0, calculationMonth: null, planningCycle: null });
 
-    var ss = io.openTarget();                                            // exact-ID validated / fail closed
-    var read = KMPS.readCanonicalSnapshots(ss, null);                    // targeted canonical tables ONCE (never getOperationDb)
+    var ss = io.openTarget();                                                // exact-ID validated / fail closed
+    var read = KMPS.readCanonicalSnapshots(ss, null);                        // ONE targeted read per request (never getOperationDb)
     var tablesRead = read && read.snapshots ? Object.keys(read.snapshots).length : 0;
+    var snaps = read.snapshots || {};
 
-    var scopeSkus = recoWsScopeSkus_(read.snapshots && read.snapshots.marketplaceSkus, v.request, null);
-    if (!scopeSkus.length) return recoWsEnvelope_(false, null, [recoWsErr_('MISSING_SKU_MAPPING', 'no marketplace_skus row for the scope (company/country/marketplace)')], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead });
-    // Optional SKU filter narrows which in-scope SKUs to compute; a filter that matches nothing → successful empty page.
-    var skus = v.request.sku ? scopeSkus.filter(function (s) { return s === v.request.sku; }) : scopeSkus;
+    var scopeSkus = recoWsScopeSkus_(snaps.marketplaceSkus, v.scope, v.scope.sku || null);
+    if (!scopeSkus.length) return recoWsEnvelope_(false, null, [recoWsErr_('MISSING_SKU_MAPPING', 'no marketplace_skus row for the scope (company/country/marketplace)')], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle });
+    var siteSkuBySku = recoWsSiteSkuBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope);
+    var ful = recoWsResolveFulfillment_(recoWsToRowObjects_(snaps.marketplaces), v.scope);
+    var vmeta = { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf };
 
-    // Per-SKU runtime (the shipment lifecycle scope is single-master-SKU). Aggregate lines; collect per-SKU issues.
-    var agg = { lines: [], supplySourceEntries: [], planningFacts: [], formulaVersion: null, sourceDataAsOf: null };
-    var issues = [];
-    for (var i = 0; i < skus.length; i++) {
-      var skuReq = {}; for (var k in v.request) skuReq[k] = v.request[k]; skuReq.sku = skus[i];
-      var assembled = KMPA.assembleProductionRecommendationFacts(read, skuReq);
-      if (!assembled.ready) { (assembled.issues || []).forEach(function (x) { issues.push(recoWsErr_(x.code, x.message, x.details)); }); continue; }
-      var src = KMPS.buildProductionRecommendationSource(ss, assembled.productionRequest);
-      if (src.ready !== true) { (src.issues || []).forEach(function (x) { issues.push(recoWsErr_(x.code || x.reason || 'RECOMMENDATION_RUNTIME_BLOCKED', x.reason || x.message || 'runtime blocked', null)); }); continue; }
-      (src.lines || []).forEach(function (l) { agg.lines.push(l); });
-      (src.supplySourceEntries || []).forEach(function (e) { agg.supplySourceEntries.push(e); });
-      (assembled.productionRequest.planningFacts || []).forEach(function (f) { agg.planningFacts.push(f); });
-      if (agg.formulaVersion === null) agg.formulaVersion = src.formulaVersion || null;
-      if (agg.sourceDataAsOf === null) agg.sourceDataAsOf = src.sourceDataAsOf || null;
+    // Server destination expansion → unified runtime per SKU × destination. Dedup by stable line identity.
+    var lines = [], seen = {}, issues = [];
+    for (var i = 0; i < scopeSkus.length; i++) {
+      var sku = scopeSkus[i], siteSku = siteSkuBySku[sku] || null, produced;
+      if (ful.mode === 'MARKETPLACE') produced = [recoWsExpandMarketplace_(read, v.scope, sku, siteSku, calc, vmeta)];
+      else if (ful.mode === 'WAREHOUSE') produced = recoWsExpandWarehouse_(read, ss, v.scope, sku, siteSku, calc, vmeta).lines;
+      else produced = [KMDR.buildRecommendationLine({ destination: { destinationType: null, company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, destinationKey: 'UNRESOLVED||' + v.scope.company + '||' + v.scope.country + '||' + v.scope.marketplace + '||' + sku }, recommendationMode: 'UNRESOLVED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: 'DESTINATION_AUTHORITY_UNRESOLVED', formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })];
+      for (var p = 0; p < produced.length; p++) {
+        var ln = produced[p]; if (!ln) continue;
+        if (seen[ln.recommendationLineId]) { issues.push(recoWsErr_('RECOMMENDATION_LINE_IDENTITY_CONFLICT', 'duplicate recommendation line identity: ' + ln.recommendationLineId)); continue; }
+        seen[ln.recommendationLineId] = 1; lines.push(ln);
+      }
     }
-    // No lines produced AND blocking issues present → structured failure (never a fake-zero success).
-    if (!agg.lines.length && issues.length) {
-      return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead });
-    }
-    var vm = recommendationWorkspaceBuild_(v, agg);
-    return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead });
+    if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle });
+
+    var vm = recommendationWorkspaceBuild_(v, calc, lines);
+    return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, conflicts: issues.length });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INTERNAL_ERROR';
     return recoWsEnvelope_(false, null, [recoWsErr_(code, String(e && e.message || e), (e && e.schemaDetail) || null)], { requestId: reqId, serverDurationMs: (io.now() - t0) });

@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 28e18770ea5d683202ebcc722e4017e2e45bded19d3f40ba768845c5b30c2329
+// bundle_sha256 = f803f73e9eef324fe057691054d37150a4c5ee2ecd87cb97cf2ad53f08c82d4d
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7
@@ -28,8 +28,10 @@
 //   supply-planning-source-projection  1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4
 //   supply-planning-allocation-facts  5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc
 //   supply-planning-planning-context  2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3
-//   supply-planning-production-assembly  de545f7865f3ac777d75e1b56f2f08ea81d0548a7d49cfdbd2e6c48bc1039338
-//   supply-planning-production-source  db7aeb9b93c593c37072839d222a30575946b5d2dae59b70c5b940ffd84c4cbe
+//   supply-planning-demand-allocation  06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed
+//   supply-planning-production-assembly  d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7
+//   supply-planning-destination-runtime  899ec9a711b76aacbff843ee8c94b39b594817d7c0ab7d79c9711233f9f4aaa5
+//   supply-planning-production-source  13adfc30f860a04c893ddcdcf91c64b45295a3d84ba211b5223eb300f146d22f
 //   supply-planning-production-safety  7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6
 //   supply-planning-production-writer  1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364
 //   supply-planning-verification-diagnostics  efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea
@@ -7381,6 +7383,397 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-planning-context", module.exports);
 })();
 
+// ----- module: supply-planning-demand-allocation (verbatim from assets/js/core/supply-planning-demand-allocation.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Recommendation Destination + Multi-Warehouse Demand Allocation (Phase F1-4B-E0R).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC building blocks for the authorized Phase-1 decision D-F1-4B-E0R-1..4: when one
+// company/country/marketplace demand scope serves MULTIPLE overseas warehouses and the canonical Forecast/Sales
+// source has NO warehouse_id dimension, marketplace-level demand is split to each warehouse by an EXPLICIT configured
+// fixed ratio (business config, not a formula constant). This module ONLY:
+//   • builds the canonical destination DTO/key (MARKETPLACE vs WAREHOUSE; never a fake warehouse identity for Amazon),
+//   • reads the ACTIVE allocation rules for a scope (pure; rows injected — no live DB),
+//   • validates the ruleset (canonical active same-company warehouse_id; ratios; integer-basis-points total = 10000),
+//   • allocates a marketplace-level demand quantity to warehouses via the FROZEN deterministic largest-remainder
+//     integer method (§24.7 `supply-planning-allocations.js`; IRMap `_allocateShared` fractional-remainder + stable
+//     key) — it REUSES that frozen policy and does NOT invent a rounding policy.
+//
+// It authors NO business formula (no gap / no recommendedQty / no forecast weight — those stay with the frozen
+// owners KMCALC/KMAF/KMPS), never pools destination stock/incoming, never transfers surplus, and performs NO
+// DB/clock/RNG/locale/DOM/persistence. Warehouse-level sources are passed through unchanged (never re-split). Same
+// input ⇒ identical output; MISSING is never silently 0 (only an explicit source 0 is 0).
+
+(function (root, factory) {
+  'use strict';
+  var api = factory();
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.demandAllocation = api; }
+})(this, function () {
+  'use strict';
+
+  var BASIS = 10000;                         // 100.00% in integer basis points (deterministic; no float drift)
+  var DEST_TYPES = { MARKETPLACE: 1, WAREHOUSE: 1 };
+
+  function s(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function eqv(a, b) { return s(a).toLowerCase() === s(b).toLowerCase(); }
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function cmpStr(a, b) { a = s(a); b = s(b); return a < b ? -1 : a > b ? 1 : 0; }
+  function truthy(v) { if (v === true) return true; var t = s(v).toLowerCase(); return t === 'true' || t === '1' || t === 'yes' || t === 'y'; }
+  function issue(code, message, field, source) { return { code: code, message: message, field: field === undefined ? null : field, source: source === undefined ? null : source }; }
+  // finite number in [0,1] → basis points (Math.round); else null. Never coerces a missing value to 0.
+  function ratioToBp(v) {
+    if (v === '' || v === null || v === undefined) return null;
+    if (typeof v !== 'number' && typeof v !== 'string') return null;
+    var n = Number(v);
+    if (!isFinite(n) || n < 0 || n > 1) return null;
+    return Math.round(n * BASIS);
+  }
+  // finite non-negative integer quantity, else null (MISSING). Explicit 0 → 0.
+  function qtyOrNull(v) {
+    if (v === '' || v === null || v === undefined) return null;
+    var n = Number(v);
+    if (!isFinite(n) || n < 0) return null;
+    return Math.round(n);
+  }
+
+  // ---- Canonical destination DTO/key (D-F1-4B-E0R-1 / §9) --------------------------------------------------
+  // MARKETPLACE → destinationRefId = canonical marketplace/site id, warehouseId = null (Amazon FC assigned later).
+  // WAREHOUSE   → destinationRefId = canonical warehouse_id, warehouseId = same. Legacy bare destinationWarehouseId
+  // normalizes to WAREHOUSE. NEVER a fake warehouse identity for a marketplace; identity is never a display name.
+  function buildDestinationDTO(input) {
+    input = input || {};
+    var company = s(input.company), country = s(input.country), marketplace = s(input.marketplace);
+    var marketplaceId = s(input.marketplaceId) || null;
+    // legacy normalization: a bare destinationWarehouseId (string) means a WAREHOUSE destination
+    var type = s(input.destinationType).toUpperCase();
+    var legacyWh = s(input.destinationWarehouseId);
+    if (!type) type = legacyWh ? 'WAREHOUSE' : (input.warehouseId ? 'WAREHOUSE' : 'MARKETPLACE');
+    if (DEST_TYPES[type] !== 1) type = 'MARKETPLACE';
+
+    if (type === 'WAREHOUSE') {
+      var whId = s(input.warehouseId) || legacyWh;
+      return {
+        destinationType: 'WAREHOUSE', destinationRefId: whId || null,
+        destinationCode: s(input.warehouseCode) || null,
+        destinationLabel: s(input.warehouseName) || s(input.warehouseCode) || whId || null,
+        company: company, country: country, marketplace: marketplace,
+        warehouseId: whId || null, marketplaceId: marketplaceId
+      };
+    }
+    // MARKETPLACE (Amazon stays MARKETPLACE — no warehouse identity fabricated)
+    var refId = marketplaceId || s(input.marketplaceRefId) || marketplace || null;
+    return {
+      destinationType: 'MARKETPLACE', destinationRefId: refId,
+      destinationCode: s(input.marketplaceCode) || null,
+      destinationLabel: s(input.marketplaceDisplayName) || marketplace || refId || null,
+      company: company, country: country, marketplace: marketplace,
+      warehouseId: null, marketplaceId: marketplaceId
+    };
+  }
+  function destinationKey(dto) {
+    dto = dto || {};
+    return [s(dto.destinationType), s(dto.company), s(dto.country), s(dto.marketplace), s(dto.destinationRefId)].join('||');
+  }
+
+  // ---- Canonical DestinationNode normalizer (F1-4B-FM1 §3 — the ONE consolidated destination identity owner) ---
+  // Validates an explicit caller-owned destination against canonical authorities and returns a normalized node.
+  // MARKETPLACE identity = a unique ACTIVE marketplaces row (marketplace_id); warehouseId is ALWAYS null (never a
+  // fabricated Amazon warehouse). WAREHOUSE identity = an active same-company warehouses row (warehouse_id). Identity
+  // is NEVER a display label and is NEVER defaulted when missing. authorities = { marketplaces:[...] | marketplacesById,
+  // warehouses:[...] | warehousesById } (rows accepted in snake OR normalized shape). Returns { ok, destination, issues }.
+  function _norm(v) { return s(v).toLowerCase(); }
+  function _isActiveStatus(st) { var t = _norm(st); return t === 'active' || st === true || t === 'true'; }
+  function _rowsFrom(authorities, arrKey, mapKey) {
+    var a = authorities || {};
+    if (Array.isArray(a[arrKey])) return a[arrKey].slice();
+    if (isObj(a[mapKey])) { var out = []; for (var k in a[mapKey]) if (Object.prototype.hasOwnProperty.call(a[mapKey], k)) out.push(a[mapKey][k]); return out; }
+    return [];
+  }
+  function _mktRow(r) {
+    r = r || {};
+    return {
+      marketplaceId: s(r.marketplaceId || r.marketplace_id), company: s(r.company), country: s(r.country),
+      marketplace: s(r.marketplace), status: (r.status === undefined ? r.is_active : r.status),
+      code: s(r.marketplace || r.marketplaceAlias || r.marketplace_alias),
+      label: s(r.marketplaceDisplayName || r.marketplace_display_name) || s(r.marketplace)
+    };
+  }
+  function _whRow(r) {
+    r = r || {};
+    return {
+      warehouseId: s(r.warehouseId || r.warehouse_id), company: s(r.company), country: s(r.country),
+      isActive: (r.is_active !== undefined ? r.is_active : r.isActive),
+      code: s(r.warehouse_code || r.warehouseCode), name: s(r.warehouse_name || r.warehouseName)
+    };
+  }
+  function normalizeRecommendationDestination(input, authorities) {
+    input = input || {}; authorities = authorities || {};
+    var issues = [];
+    function fail(code, message, field) { issues.push(issue(code, message, field === undefined ? null : field)); return { ok: false, destination: null, issues: issues }; }
+    var company = s(input.company), country = s(input.country), marketplace = s(input.marketplace);
+    var type = s(input.destinationType).toUpperCase();
+    // legacy normalization: a bare destinationWarehouseId ⇒ WAREHOUSE (never a MARKETPLACE default)
+    var legacyWh = s(input.warehouseId) || s(input.destinationWarehouseId);
+    if (!type) type = legacyWh ? 'WAREHOUSE' : (input.marketplaceId || input.destinationRefId ? 'MARKETPLACE' : '');
+    if (DEST_TYPES[type] !== 1) return fail('DESTINATION_TYPE_UNSUPPORTED', 'unsupported destinationType: "' + s(input.destinationType) + '"', 'destinationType');
+
+    if (type === 'MARKETPLACE') {
+      var rows = _rowsFrom(authorities, 'marketplaces', 'marketplacesById').map(_mktRow);
+      var wantId = s(input.marketplaceId) || s(input.destinationRefId);
+      var row = null;
+      if (wantId) {
+        var byId = rows.filter(function (r) { return r.marketplaceId === wantId; });
+        if (byId.length === 0) return fail('MARKETPLACE_DESTINATION_NOT_FOUND', 'no canonical marketplaces row for marketplace_id: ' + wantId, 'marketplaceId');
+        if (byId.length > 1) return fail('MARKETPLACE_DESTINATION_CONFLICT', 'multiple marketplaces rows for marketplace_id: ' + wantId, 'marketplaceId');
+        row = byId[0];
+        if ((company && row.company && !eqv(row.company, company)) || (country && row.country && !eqv(row.country, country)) || (marketplace && row.marketplace && !eqv(row.marketplace, marketplace))) {
+          return fail('MARKETPLACE_DESTINATION_SCOPE_MISMATCH', 'marketplace_id ' + wantId + ' scope (' + [row.company, row.country, row.marketplace].join('/') + ') ≠ requested (' + [company, country, marketplace].join('/') + ')', 'marketplaceId');
+        }
+        if (!_isActiveStatus(row.status)) return fail('MARKETPLACE_DESTINATION_INACTIVE', 'marketplace destination inactive: ' + wantId, 'marketplaceId');
+      } else {
+        // resolve by scope (fact 7): company + country + marketplace → unique active marketplaces row
+        if (!company || !country || !marketplace) return fail('MARKETPLACE_DESTINATION_NOT_FOUND', 'company/country/marketplace required to resolve a marketplace destination (no marketplace_id supplied)', 'marketplace');
+        var scoped = rows.filter(function (r) { return eqv(r.company, company) && eqv(r.country, country) && eqv(r.marketplace, marketplace); });
+        if (scoped.length === 0) return fail('MARKETPLACE_DESTINATION_NOT_FOUND', 'no marketplaces row for scope: ' + [company, country, marketplace].join('/'), 'marketplace');
+        var active = scoped.filter(function (r) { return _isActiveStatus(r.status); });
+        if (active.length === 0) return fail('MARKETPLACE_DESTINATION_INACTIVE', 'marketplace destination inactive for scope: ' + [company, country, marketplace].join('/'), 'marketplace');
+        if (active.length > 1) return fail('MARKETPLACE_DESTINATION_CONFLICT', 'ambiguous marketplace destination for scope: ' + [company, country, marketplace].join('/'), 'marketplace');
+        row = active[0];
+      }
+      var mDest = {
+        destinationType: 'MARKETPLACE', destinationRefId: row.marketplaceId,
+        destinationCode: row.code || marketplace || null, destinationLabel: row.label || marketplace || row.marketplaceId,
+        company: company || row.company, country: country || row.country, marketplace: marketplace || row.marketplace,
+        marketplaceId: row.marketplaceId, warehouseId: null
+      };
+      mDest.destinationKey = destinationKey(mDest);
+      return { ok: true, destination: mDest, issues: issues };
+    }
+
+    // WAREHOUSE
+    var whRows = _rowsFrom(authorities, 'warehouses', 'warehousesById').map(_whRow);
+    var whId = legacyWh || s(input.destinationRefId);
+    if (!whId) return fail('DESTINATION_WAREHOUSE_INVALID', 'destination warehouse_id is required (never defaulted)', 'warehouseId');
+    var whMatches = whRows.filter(function (r) { return r.warehouseId === whId; });
+    if (whMatches.length === 0) return fail('DESTINATION_WAREHOUSE_INVALID', 'warehouse_id not a canonical warehouse: ' + whId, 'warehouseId');
+    if (whMatches.length > 1) return fail('DESTINATION_WAREHOUSE_INVALID', 'duplicate canonical warehouse_id: ' + whId, 'warehouseId');
+    var w = whMatches[0];
+    if (!truthy(w.isActive)) return fail('DESTINATION_WAREHOUSE_INACTIVE', 'destination warehouse inactive: ' + whId, 'warehouseId');
+    if (company && w.company && !eqv(w.company, company)) return fail('DESTINATION_COMPANY_MISMATCH', 'destination warehouse company (' + w.company + ') ≠ requested (' + company + ') — no cross-company borrowing', 'warehouseId');
+    var wDest = {
+      destinationType: 'WAREHOUSE', destinationRefId: whId,
+      destinationCode: w.code || null, destinationLabel: w.name || w.code || whId,
+      company: company || w.company, country: country || w.country, marketplace: marketplace,
+      marketplaceId: s(input.marketplaceId) || null, warehouseId: whId
+    };
+    wDest.destinationKey = destinationKey(wDest);
+    return { ok: true, destination: wDest, issues: issues };
+  }
+
+  // ---- Targeted rule reader (pure; rows INJECTED — no live DB) --------------------------------------------
+  // Active rule for a scope = same company+country+marketplace, status active, effective period covering the
+  // planning period. `effectiveDate` is an injected "YYYY-MM(-DD)" (NEVER a browser clock). Returns the matched
+  // active rows (raw), unfiltered by validity — validation is a separate step so conflicts are reported, not hidden.
+  function readActiveAllocationRules(rows, scope, effectiveDate) {
+    scope = scope || {};
+    var ed = s(effectiveDate);
+    var out = [];
+    (rows || []).forEach(function (r) {
+      if (!isObj(r)) return;
+      if (scope.company && !eqv(r.company, scope.company)) return;
+      if (scope.country && !eqv(r.country, scope.country)) return;
+      if (scope.marketplace && !eqv(r.marketplace, scope.marketplace)) return;
+      // active only: explicit "active" status or a truthy boolean flag; blank/other → excluded (no silent default)
+      var st = s(r.status).toLowerCase();
+      if (!(st === 'active' || r.status === true)) return;
+      // effective period (inclusive from; exclusive/optional to). Missing bounds = open. ISO strings compare lexically.
+      if (ed) {
+        var from = s(r.effective_from), to = s(r.effective_to);
+        if (from && ed < from) return;
+        if (to && ed > to) return;
+      }
+      out.push(r);
+    });
+    return out;
+  }
+
+  // ---- Ratio validation (D-F1-4B-E0R-3 / §4) --------------------------------------------------------------
+  // warehousesById: { warehouse_id → canonical warehouse record } for identity/active/company checks.
+  function validateAllocationRules(rules, scope, warehousesById) {
+    scope = scope || {}; warehousesById = warehousesById || {};
+    var issues = [];
+    var active = Array.isArray(rules) ? rules.slice() : [];
+    if (active.length === 0) {
+      issues.push(issue('DEMAND_ALLOCATION_RULE_NOT_CONFIGURED', 'no active demand-allocation rule for scope', null, 'replenishment_demand_allocation_rules'));
+      return { ok: false, warehouses: [], forecastBpTotal: 0, salesBpTotal: 0, issues: issues };
+    }
+    var seenWh = {}, warehouses = [], fBpTotal = 0, sBpTotal = 0;
+    // deterministic order by warehouse_id so validation + downstream are permutation-invariant
+    active.sort(function (a, b) { return cmpStr(a.destination_warehouse_id, b.destination_warehouse_id); });
+    active.forEach(function (r) {
+      var whId = s(r.destination_warehouse_id);
+      if (!whId) { issues.push(issue('DESTINATION_WAREHOUSE_INVALID', 'rule missing destination_warehouse_id', 'destination_warehouse_id')); return; }
+      if (seenWh[whId]) { issues.push(issue('DEMAND_ALLOCATION_DESTINATION_CONFLICT', 'duplicate active destination warehouse: ' + whId, 'destination_warehouse_id')); return; }
+      seenWh[whId] = 1;
+      var w = warehousesById[whId];
+      if (!w) { issues.push(issue('DESTINATION_WAREHOUSE_INVALID', 'destination_warehouse_id not a canonical warehouse: ' + whId, 'destination_warehouse_id', 'warehouses')); return; }
+      if (!truthy(w.is_active !== undefined ? w.is_active : w.isActive)) { issues.push(issue('DESTINATION_WAREHOUSE_INVALID', 'destination warehouse inactive: ' + whId, 'destination_warehouse_id', 'warehouses')); return; }
+      if (scope.company && s(w.company) && !eqv(w.company, scope.company)) { issues.push(issue('DESTINATION_WAREHOUSE_INVALID', 'cross-company destination warehouse: ' + whId + ' (' + s(w.company) + ' ≠ ' + s(scope.company) + ')', 'destination_warehouse_id', 'warehouses')); return; }
+      var fBp = ratioToBp(r.forecast_allocation_ratio);
+      var sBp = ratioToBp(r.sales_allocation_ratio);
+      if (fBp === null) { issues.push(issue('DEMAND_ALLOCATION_RATIO_INVALID', 'forecast_allocation_ratio not a number in [0,1]: ' + whId, 'forecast_allocation_ratio')); return; }
+      if (sBp === null) { issues.push(issue('DEMAND_ALLOCATION_RATIO_INVALID', 'sales_allocation_ratio not a number in [0,1]: ' + whId, 'sales_allocation_ratio')); return; }
+      fBpTotal += fBp; sBpTotal += sBp;
+      warehouses.push({ warehouseId: whId, forecastBp: fBp, salesBp: sBp });
+    });
+    // period overlap ambiguity: >1 active row for the same warehouse in the covering window
+    // (duplicate-destination already flags exact dupes; distinct overlapping periods are the period conflict).
+    var byWh = {}; (active).forEach(function (r) { var k = s(r.destination_warehouse_id); if (!k) return; (byWh[k] = byWh[k] || []).push(r); });
+    Object.keys(byWh).forEach(function (k) {
+      if (byWh[k].length > 1) {
+        var periods = {};
+        byWh[k].forEach(function (r) { periods[s(r.effective_from) + '..' + s(r.effective_to)] = 1; });
+        if (Object.keys(periods).length > 1) issues.push(issue('DEMAND_ALLOCATION_PERIOD_CONFLICT', 'overlapping effective periods for warehouse ' + k, 'effective_from', 'replenishment_demand_allocation_rules'));
+      }
+    });
+    if (warehouses.length && fBpTotal !== BASIS) issues.push(issue('DEMAND_ALLOCATION_RATIO_TOTAL_INVALID', 'forecast ratios sum to ' + (fBpTotal / 100) + '% (must be exactly 100%)', 'forecast_allocation_ratio'));
+    if (warehouses.length && sBpTotal !== BASIS) issues.push(issue('DEMAND_ALLOCATION_RATIO_TOTAL_INVALID', 'sales ratios sum to ' + (sBpTotal / 100) + '% (must be exactly 100%)', 'sales_allocation_ratio'));
+    var ok = issues.length === 0 && warehouses.length > 0;
+    return { ok: ok, warehouses: warehouses, forecastBpTotal: fBpTotal, salesBpTotal: sBpTotal, issues: issues };
+  }
+
+  // ---- Deterministic integer allocation — FROZEN largest-remainder policy (§24.7 / _allocateShared), §5 -----
+  // weights: [{ key, bp }] with Σbp === BASIS. Returns { byKey, total } that conserves `qty` EXACTLY, or null if
+  // qty is MISSING (never 0). Leftover units go to the largest fractional remainder; ties break by ascending key.
+  function allocateByBasisPoints(qty, weights) {
+    var q = qtyOrNull(qty);
+    if (q === null) return null;                       // MISSING is not zero
+    weights = (weights || []).map(function (w) { return { key: s(w.key), bp: w.bp | 0 }; });
+    var byKey = {}, base = 0;
+    var ranked = weights.map(function (w) {
+      var prod = q * w.bp;                             // integer (q integer, bp integer)
+      var b = Math.floor(prod / BASIS);
+      byKey[w.key] = b; base += b;
+      return { key: w.key, frac: prod % BASIS };       // fractional-remainder ranking key (larger ⇒ higher)
+    });
+    var leftover = q - base;                            // 0 ≤ leftover < weights.length
+    ranked.sort(function (a, b) { return (b.frac - a.frac) || cmpStr(a.key, b.key); });  // largest remainder, then stable key
+    for (var i = 0; i < ranked.length && leftover > 0; i++) { byKey[ranked[i].key] += 1; leftover -= 1; }
+    return { byKey: byKey, total: q };
+  }
+
+  // ---- Demand allocation flow (§6/§7) ---------------------------------------------------------------------
+  // Splits a MARKETPLACE-level demand quantity across warehouses by the validated ratio (forecast OR sales basis).
+  // A WAREHOUSE-level source is NEVER re-split — pass it through unchanged (§7). kind: 'forecast' | 'sales'.
+  function allocateMarketplaceDemand(qty, ruleset, kind) {
+    if (!ruleset || ruleset.ok !== true) return { ready: false, byKey: null, issues: (ruleset && ruleset.issues) || [issue('DEMAND_ALLOCATION_RULE_NOT_CONFIGURED', 'ruleset not valid', null)] };
+    var bpKey = (s(kind).toLowerCase() === 'sales') ? 'salesBp' : 'forecastBp';
+    var weights = ruleset.warehouses.map(function (w) { return { key: w.warehouseId, bp: w[bpKey] }; });
+    var res = allocateByBasisPoints(qty, weights);
+    if (res === null) return { ready: false, byKey: null, missing: true, issues: [] };   // MISSING demand — not zero
+    return { ready: true, byKey: res.byKey, total: res.total, issues: [] };
+  }
+
+  // Warehouse-level source passthrough — the caller asserts the quantity is ALREADY warehouse-grained; return it
+  // keyed by its canonical warehouse_id with NO split (guards against double-allocation, §7/§28).
+  function passthroughWarehouseDemand(warehouseId, qty) {
+    var whId = s(warehouseId); var q = qtyOrNull(qty);
+    var byKey = {}; if (whId) byKey[whId] = q;   // q may be null (MISSING) — preserved, not zeroed
+    return { ready: !!whId, byKey: byKey, split: false };
+  }
+
+  // Per-warehouse demand facts (D-F1-4B-E0R-4): allocatedForecastQty + allocatedSalesQty per warehouse. Stock,
+  // incoming, gap, recommendedQty are NOT computed here (frozen owners) and are NEVER pooled across warehouses.
+  function buildWarehouseDemandFacts(input) {
+    input = input || {};
+    var ruleset = input.ruleset;
+    if (!ruleset || ruleset.ok !== true) return { ready: false, perWarehouse: [], issues: (ruleset && ruleset.issues) || [issue('DEMAND_ALLOCATION_RULE_NOT_CONFIGURED', 'ruleset not valid', null)] };
+    var fc = allocateMarketplaceDemand(input.marketplaceForecastQty, ruleset, 'forecast');
+    var sa = allocateMarketplaceDemand(input.marketplaceSalesQty, ruleset, 'sales');
+    var perWarehouse = ruleset.warehouses.map(function (w) {
+      return {
+        warehouseId: w.warehouseId,
+        allocatedForecastQty: (fc.byKey && Object.prototype.hasOwnProperty.call(fc.byKey, w.warehouseId)) ? fc.byKey[w.warehouseId] : null,
+        allocatedSalesQty: (sa.byKey && Object.prototype.hasOwnProperty.call(sa.byKey, w.warehouseId)) ? sa.byKey[w.warehouseId] : null,
+        forecastBp: w.forecastBp, salesBp: w.salesBp
+      };
+    });
+    return { ready: true, perWarehouse: perWarehouse, issues: [] };
+  }
+
+  // stable canonical rule id (D-F1-4B-E0R / §3): RDAR-{COMPANY}-{COUNTRY}-{MARKETPLACE}-{WAREHOUSE_ID}
+  function allocationRuleId(company, country, marketplace, warehouseId) {
+    return ['RDAR', s(company), s(country), s(marketplace), s(warehouseId)].join('-');
+  }
+
+  function has(o, k) { return isObj(o) && Object.prototype.hasOwnProperty.call(o, k); }
+  // Accept an allocation-rule row in EITHER the canonical snake shape OR the DB-normalized camelCase shape
+  // (`getReplenishmentDemandAllocationRules` output) — map to the snake shape the reader/validator consume.
+  function _toRuleRow(rec) {
+    if (!isObj(rec)) return {};
+    if (has(rec, 'destination_warehouse_id') || has(rec, 'forecast_allocation_ratio')) return rec;   // already snake
+    return {
+      allocation_rule_id: rec.allocationRuleId, company: rec.company, country: rec.country, marketplace: rec.marketplace,
+      destination_warehouse_id: rec.destinationWarehouseId,
+      forecast_allocation_ratio: rec.forecastAllocationRatio, sales_allocation_ratio: rec.salesAllocationRatio,
+      status: rec.status, effective_from: rec.effectiveFrom, effective_to: rec.effectiveTo
+    };
+  }
+
+  // ---- Integration seam (F1-4B-E): provisioned rules → per-warehouse demand facts for the EXISTING runtime ---
+  // Composes the frozen primitives above (read active rules → validate → split marketplace Forecast/Sales once →
+  // attach the canonical WAREHOUSE destination DTO) into the "Warehouse Forecast" the existing recommendation
+  // runtime consumes — ONE independent WAREHOUSE destination per warehouse (A's demand never enters B). Authors
+  // NO formula and computes NO gap/recommendedQty (frozen owners). Missing rule → DEMAND_ALLOCATION_RULE_NOT_CONFIGURED
+  // (never a default). Accepts rule rows in either snake or DB-normalized shape.
+  function resolveScopeWarehouseDemandFacts(input) {
+    input = input || {};
+    var scope = input.scope || {};
+    var whById = input.warehousesById || {};
+    var rows = (Array.isArray(input.allocationRules) ? input.allocationRules : []).map(_toRuleRow);
+    var active = readActiveAllocationRules(rows, scope, input.effectiveDate);
+    var ruleset = validateAllocationRules(active, scope, whById);
+    if (!ruleset.ok) return { ready: false, scope: scope, warehouses: [], issues: ruleset.issues };
+    var facts = buildWarehouseDemandFacts({ ruleset: ruleset, marketplaceForecastQty: input.marketplaceForecastQty, marketplaceSalesQty: input.marketplaceSalesQty });
+    var warehouses = facts.perWarehouse.map(function (w) {
+      var wh = whById[w.warehouseId] || {};
+      return {
+        warehouseId: w.warehouseId,
+        destination: buildDestinationDTO({
+          destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace,
+          marketplaceId: scope.marketplaceId, warehouseId: w.warehouseId,
+          warehouseCode: s(wh.warehouse_code || wh.warehouseCode), warehouseName: s(wh.warehouse_name || wh.warehouseName)
+        }),
+        allocatedForecastQty: w.allocatedForecastQty,
+        allocatedSalesQty: w.allocatedSalesQty
+      };
+    });
+    return { ready: true, scope: scope, warehouses: warehouses, issues: [] };
+  }
+
+  return {
+    BASIS: BASIS,
+    buildDestinationDTO: buildDestinationDTO,
+    normalizeRecommendationDestination: normalizeRecommendationDestination,
+    destinationKey: destinationKey,
+    readActiveAllocationRules: readActiveAllocationRules,
+    validateAllocationRules: validateAllocationRules,
+    allocateByBasisPoints: allocateByBasisPoints,
+    allocateMarketplaceDemand: allocateMarketplaceDemand,
+    passthroughWarehouseDemand: passthroughWarehouseDemand,
+    buildWarehouseDemandFacts: buildWarehouseDemandFacts,
+    resolveScopeWarehouseDemandFacts: resolveScopeWarehouseDemandFacts,
+    allocationRuleId: allocationRuleId,
+    // exposed for focused testing of the internal ratio→bp conversion
+    _ratioToBp: ratioToBp
+  };
+});
+  __kmRegister("supply-planning-demand-allocation", module.exports);
+})();
+
 // ----- module: supply-planning-production-assembly (verbatim from assets/js/core/supply-planning-production-assembly.js) -----
 (function () {
   var require = __kmRequire;
@@ -7475,7 +7868,11 @@ function __kmRequire(p) {
     if (!parseYM(request.calculationMonth)) issues.push(issue('MISSING_CALCULATION_MONTH', null, 'calculationMonth (injected "YYYY-MM") is mandatory (no browser/current-date inference)'));
     if (!nonEmpty(request.planningCycle)) issues.push(issue('MISSING_PLANNING_CYCLE', null, 'planningCycle is mandatory'));
     if (has(request, 'demandDriver') && nonEmpty(request.demandDriver) && str(request.demandDriver).toUpperCase() !== 'FORECAST') issues.push(issue('UNSUPPORTED_PHASE1_DEMAND_DRIVER', null, 'Phase-1 demandDriver is FORECAST only'));
-    return issues.length ? null : { recommendationType: recType, scope: scope, destinationWarehouseId: str(request.destinationWarehouseId), calculationMonth: str(request.calculationMonth), planningCycle: str(request.planningCycle), sourceDataAsOf: nonEmpty(request.sourceDataAsOf) ? str(request.sourceDataAsOf) : null, formulaVersion: nonEmpty(request.formulaVersion) ? str(request.formulaVersion) : null };
+    // F1-4B-FM1-T: optional caller-owned per-month Regular-FC override (the AUTHORIZED demand-fanout input for a
+    // WAREHOUSE destination — the per-warehouse ratio split). It replaces the marketplace-level FC projection for
+    // THIS receiver; it changes the demand INPUT only, never a formula. Ignored when absent (byte-identical legacy).
+    var fcOverride = has(request, 'regularForecastByMonthOverride') && isObj(request.regularForecastByMonthOverride) ? request.regularForecastByMonthOverride : null;
+    return issues.length ? null : { recommendationType: recType, scope: scope, destinationWarehouseId: str(request.destinationWarehouseId), calculationMonth: str(request.calculationMonth), planningCycle: str(request.planningCycle), sourceDataAsOf: nonEmpty(request.sourceDataAsOf) ? str(request.sourceDataAsOf) : null, formulaVersion: nonEmpty(request.formulaVersion) ? str(request.formulaVersion) : null, regularForecastByMonthOverride: fcOverride };
   }
 
   function assembleProductionRecommendationFacts(rawSnapshots, request, options) {
@@ -7509,7 +7906,9 @@ function __kmRequire(p) {
     receivers.forEach(function (m) {
       var sku = str(m.sku), key = sku;
       var recvIssues = [];
-      var fc = buildRegularForecastByMonth(fcRows, vr.scope, sku, monthsYm, recvIssues, key);
+      // Authorized per-warehouse demand-fanout override (F1-4B-FM1-T) → use it as the receiver's Regular-FC basis;
+      // else project the marketplace-level Regular FC from fc_regular_forecast (legacy, unchanged).
+      var fc = vr.regularForecastByMonthOverride ? { map: vr.regularForecastByMonthOverride, forecastId: null } : buildRegularForecastByMonth(fcRows, vr.scope, sku, monthsYm, recvIssues, key);
       recvIssues.forEach(function (x) { issues.push(x); });
       var events = evtRows.filter(function (r) { return inScope(r, vr.scope) && str(r.sku) === sku; })
         .map(function (r) { return { eventStartDate: str(r.event_start_date || r.start_date || r.eventStartDate) }; })
@@ -7597,6 +7996,365 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-production-assembly", module.exports);
 })();
 
+// ----- module: supply-planning-destination-runtime (verbatim from assets/js/core/supply-planning-destination-runtime.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Unified Destination-Node Recommendation Core Runtime (Phase F1-4B-FM1).
+// -----------------------------------------------------------------------------
+// PURE / DETERMINISTIC unified core that resolves ONE recommendation for a canonical DestinationNode, dispatching
+// by destinationType to the EXISTING frozen owners — it authors NO new business formula:
+//
+//   MARKETPLACE (Amazon / platform-fulfilled)  → MARKETPLACE_ORDER_NEED
+//     demand = marketplace Regular FC (via the frozen KMPCX planning context, warehouseId=null, no pool decomposition)
+//     stock  = amazon_inventory_snapshot.available_qty ONLY (marketplace-level; explicit 0 stays 0; missing ≠ 0)
+//     incoming = ONLY source-proven marketplace incoming (identity resolved to a unique active marketplaces row),
+//                counted through the EXISTING KMQI count-once lifecycle; unresolved active incoming is NEVER a fake
+//                zero — it forces incomingCompleteness = PARTIAL and BLOCKS the canonical recommendedQty
+//     gap    = KMCALC.calculateGap (frozen 4-scalar owner)
+//     recommendedQty = KMCALC.calculateSuggestedOrderQty — the frozen Monthly carton-CEILING order-need owner
+//                (NEVER the Weekly pool allocator; no fabricated Amazon warehouse)
+//
+//   WAREHOUSE (overseas)                        → WAREHOUSE_REPLENISHMENT
+//     demand = marketplace demand fanned to this warehouse by the frozen configured ratio
+//              (KM.demandAllocation.resolveScopeWarehouseDemandFacts — largest-remainder, conserved, never pooled)
+//     gap    = KMCALC.calculateGap over THIS warehouse's own stock/incoming (never pooled across warehouses)
+//     recommendedQty = KMCALC.calculateShippingAndResidual — the frozen Weekly FLOOR resolver, capped by the
+//                caller-supplied allocated source availability (frozen allocator-cap rule)
+//
+// Reuses (never reimplements): KM.demandAllocation (destination identity + fanout), KMPCX (planning context),
+// KMCALC (gap / Monthly CEILING / Weekly FLOOR), KMQI (Qualified-Incoming count-once). No clock / RNG / locale;
+// no SpreadsheetApp / getOperationDb / DB / persistence / Sheet write. Input never mutated; MISSING is never a
+// silent 0 (only an explicit source 0 is 0); JSON-safe deterministic output.
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-demand-allocation.js') : (root.KM && root.KM.demandAllocation),
+    req ? req('./supply-planning-planning-context.js') : (root.KMPCX || (root.KM && root.KM.planningContext)),
+    req ? req('./supply-planning-calculations.js') : (root.KMCALC || (root.KM && root.KM.core && root.KM.core.supplyPlanningCalculations)),
+    req ? req('./supply-planning-qualified-incoming.js') : (root.KMQI || (root.KM && root.KM.qualifiedIncoming))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.destinationRuntime = api; }
+})(this, function (DA, KMPCX, CALC, QI) {
+  'use strict';
+
+  function isObj(x) { return x && typeof x === 'object' && !Array.isArray(x); }
+  function s(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function eqv(a, b) { return s(a).toLowerCase() === s(b).toLowerCase(); }
+  function nonEmpty(v) { return s(v).length > 0; }
+  function has(o, k) { return isObj(o) && Object.prototype.hasOwnProperty.call(o, k); }
+  function cmpStr(a, b) { a = s(a); b = s(b); return a < b ? -1 : a > b ? 1 : 0; }
+  function iss(code, message, field) { return { code: code, message: message, field: field === undefined ? null : field }; }
+  // finite number, else null (MISSING). Explicit 0 → 0. Negative rejected (→ null, fail-closed upstream).
+  function qtyNum(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return (isFinite(n) && n >= 0) ? n : null; }
+  function validUpc(v) { return (typeof v === 'number' && isFinite(v) && v > 0 && v % 1 === 0); }
+
+  // ACTIVE incoming lifecycle statuses (source-proven, still in flight). Frozen SHIPMENT lifecycle vocabulary
+  // (SHIPMENT_CENTER_SPEC): draft/cancelled/received/closed are NOT active-in-flight incoming.
+  var ACTIVE_INCOMING_STATUS = { shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1, approved: 1 };
+
+  // ================================ §3 destination normalizer (single owner, re-exported) ====================
+  function normalizeRecommendationDestination(input, authorities) {
+    return DA.normalizeRecommendationDestination(input, authorities);
+  }
+
+  // ================================ §5.2 MARKETPLACE current stock (amazon_inventory_snapshot only) ==========
+  // Reads ONLY amazon_inventory_snapshot.available_qty for the (country, marketplace, sku) scope. Overseas /
+  // factory rows (any row carrying a warehouse identity, or lacking an available_qty field) are excluded. Explicit
+  // 0 stays 0; no matching row = missing (null), NEVER a fabricated 0; >1 distinct value = canonical conflict.
+  function resolveMarketplaceCurrentStock(input) {
+    input = input || {}; var scope = input.scope || {}; var issues = [];
+    if (input.rows === undefined || input.rows === null) {
+      return { ready: false, qty: null, missing: true, conflict: false, issues: [iss('MARKETPLACE_STOCK_SOURCE_UNAVAILABLE', 'amazon inventory source not provided (missing ≠ 0)')] };
+    }
+    var rows = Array.isArray(input.rows) ? input.rows : [];
+    var country = s(scope.country), marketplace = s(scope.marketplace), sku = s(scope.sku);
+    var vals = {}, matched = 0;
+    rows.forEach(function (r) {
+      if (!isObj(r)) return;
+      // exclude anything that is not the amazon FBA marketplace-level source (has a warehouse identity → overseas/factory)
+      if (nonEmpty(r.warehouseId) || nonEmpty(r.warehouse_id)) return;
+      var hasAvail = has(r, 'availableQty') || has(r, 'available_qty');
+      if (!hasAvail) return;
+      if (!(eqv(r.country, country) && eqv(r.marketplace, marketplace) && eqv(r.sku, sku))) return;
+      var raw = has(r, 'availableQty') ? r.availableQty : r.available_qty;
+      var q = qtyNum(raw);
+      if (q === null) return; // an unreadable available_qty is not a zero
+      matched++;
+      vals[String(q)] = q;
+    });
+    var distinct = Object.keys(vals);
+    if (matched === 0) return { ready: false, qty: null, missing: true, conflict: false, issues: [] };
+    if (distinct.length > 1) return { ready: false, qty: null, missing: false, conflict: true, issues: [iss('MARKETPLACE_STOCK_CONFLICT', 'conflicting amazon available_qty for ' + [country, marketplace, sku].join('/') + ': ' + distinct.join(','))] };
+    return { ready: true, qty: vals[distinct[0]], missing: false, conflict: false, issues: issues };
+  }
+
+  // ================================ §5.3 MARKETPLACE incoming identity resolver (pure) =======================
+  // Attempts EXACT resolution of each incoming candidate to a unique active marketplaces row via source-proven
+  // fields only (company + country + marketplace code). MULTI / blank / ambiguous → UNRESOLVED. A warehouse-destined
+  // row (destination_warehouse_id, non-MARKETPLACE) → NOT_MARKETPLACE (never counted as marketplace incoming).
+  // A row resolving to a DIFFERENT marketplace than the request scope → NOT_MARKETPLACE + SCOPE_MISMATCH (excluded,
+  // not relevant to this scope). Returns one { resolutionStatus, marketplaceId, issueCode } per candidate.
+  function resolveMarketplaceIncomingIdentity(input) {
+    input = input || {}; var scope = input.scope || {}; var marketplaces = input.marketplaces;
+    var scopeMktId = s(scope.marketplaceId || scope.destinationRefId);
+    var cands = Array.isArray(input.candidates) ? input.candidates : [];
+    return cands.map(function (c) {
+      c = c || {};
+      var destType = s(c.destinationType).toUpperCase();
+      var candMktId = s(c.marketplaceId);
+      var whId = s(c.destinationWarehouseId || c.destination_warehouse_id);
+      // Warehouse-destined and NOT explicitly a marketplace destination → not marketplace incoming.
+      if (destType !== 'MARKETPLACE' && !candMktId && whId) return { resolutionStatus: 'NOT_MARKETPLACE', marketplaceId: null, issueCode: null };
+      var mkt = s(c.marketplace);
+      if (eqv(mkt, 'MULTI') || !nonEmpty(mkt) && !candMktId) return { resolutionStatus: 'UNRESOLVED', marketplaceId: null, issueCode: 'MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED' };
+      // Reuse the ONE destination identity owner (exact unique active marketplaces resolution).
+      var nd = DA.normalizeRecommendationDestination({ destinationType: 'MARKETPLACE', company: s(c.company), country: s(c.country), marketplace: mkt, marketplaceId: candMktId || undefined }, { marketplaces: marketplaces });
+      if (!nd.ok) {
+        var code = (nd.issues && nd.issues[0] && nd.issues[0].code) || 'MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED';
+        if (code === 'MARKETPLACE_DESTINATION_CONFLICT') return { resolutionStatus: 'UNRESOLVED', marketplaceId: null, issueCode: 'MARKETPLACE_INCOMING_IDENTITY_CONFLICT' };
+        return { resolutionStatus: 'UNRESOLVED', marketplaceId: null, issueCode: 'MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED' };
+      }
+      var resolvedId = nd.destination.marketplaceId;
+      if (scopeMktId && resolvedId !== scopeMktId) return { resolutionStatus: 'NOT_MARKETPLACE', marketplaceId: resolvedId, issueCode: 'MARKETPLACE_INCOMING_SCOPE_MISMATCH' };
+      return { resolutionStatus: 'RESOLVED', marketplaceId: resolvedId, issueCode: null };
+    });
+  }
+
+  // Adapter: a RESOLVED marketplace incoming candidate → the KM_SHIPMENT_INCOMING result shape the FROZEN KMQI
+  // count-once evaluator consumes. This is an identity/shape adapter (authorized §D-F1-4B-FM1-4) — it duplicates
+  // NO Qualified-Incoming gate logic; the ten-gate / count-once / late-risk / external decisions stay in KMQI.
+  function _toKmIncomingResult(c, marketplaceId, idx) {
+    var q = qtyNum(has(c, 'quantity') ? c.quantity : c.quantityRemaining);
+    var status = s(c.status).toLowerCase();
+    var statusEligible = ACTIVE_INCOMING_STATUS[status] === 1;
+    var statusClass = statusEligible ? 'ELIGIBLE_INCOMING_STATUS' : (status ? 'STATUS_NOT_ELIGIBLE' : 'MISSING_STATUS');
+    var eta = s(c.eta);
+    var ref = s(c.ref || c.shipmentId || c.lineageKey || c.supplyCandidateId) || ('mkt-inc-' + idx);
+    return {
+      adapterType: 'KM_SHIPMENT_INCOMING', sourceEligible: true, statusEligible: statusEligible, statusClass: statusClass,
+      quantityEligible: (typeof q === 'number' && q > 0), etaPresent: nonEmpty(eta),
+      adapterEligibleQuantity: (statusEligible && typeof q === 'number' && q > 0) ? q : 0,
+      exclusionReasons: [], reviewReasons: [],
+      candidate: {
+        lineageKey: s(c.lineageKey) || ref, supplyCandidateId: s(c.supplyCandidateId) || ref, sourceLineRef: s(c.sourceLineRef) || ref,
+        company: s(c.company), country: s(c.country), marketplace: s(c.marketplace), sku: s(c.sku),
+        destinationWarehouseId: marketplaceId, destinationIdentitySource: 'RESOLVED_MARKETPLACE',
+        status: status, eta: eta, quantityRemaining: (typeof q === 'number' ? q : null), linkedShipmentId: s(c.linkedShipmentId) || ''
+      }
+    };
+  }
+
+  // ================================ §5.3+§5.4 confirmed marketplace incoming + completeness ===================
+  // Sums ONLY RESOLVED (this-scope) incoming through the frozen KMQI count-once lifecycle. Unresolved ACTIVE
+  // potentially-relevant rows are NEVER a confirmed zero — they set incomingCompleteness = PARTIAL (block canonical).
+  // candidates === undefined/null → source UNAVAILABLE (block); candidates === [] → COMPLETE (known-empty, confirmed 0 legit).
+  function resolveMarketplaceQualifiedIncoming(input) {
+    input = input || {}; var issues = [];
+    if (input.candidates === undefined || input.candidates === null) {
+      return { confirmedQualifiedIncomingQty: null, incomingCompleteness: 'UNAVAILABLE', unresolvedIncomingCount: 0, unresolvedIncomingRefs: [], issues: [iss('MARKETPLACE_INCOMING_SOURCE_UNAVAILABLE', 'marketplace incoming source not provided (missing ≠ 0)')], perCandidate: [] };
+    }
+    var cands = Array.isArray(input.candidates) ? input.candidates : [];
+    var identity = resolveMarketplaceIncomingIdentity({ candidates: cands, marketplaces: input.marketplaces, scope: input.scope || {} });
+    var resolvedResults = [], unresolvedRefs = [];
+    identity.forEach(function (r, i) {
+      var c = cands[i] || {};
+      if (r.issueCode) issues.push(iss(r.issueCode, 'incoming candidate ' + (s(c.ref || c.shipmentId) || ('@' + i)) + ' → ' + r.resolutionStatus, 'marketplace'));
+      if (r.resolutionStatus === 'RESOLVED') {
+        resolvedResults.push(_toKmIncomingResult(c, r.marketplaceId, i));
+      } else if (r.resolutionStatus === 'UNRESOLVED') {
+        // only ACTIVE in-flight unresolved rows are "potentially relevant" (a cancelled/draft row cannot cover demand)
+        if (ACTIVE_INCOMING_STATUS[s(c.status).toLowerCase()] === 1) unresolvedRefs.push(s(c.ref || c.shipmentId || c.lineageKey) || ('@' + i));
+      }
+    });
+    unresolvedRefs.sort(cmpStr);
+
+    var confirmed = 0;
+    if (resolvedResults.length) {
+      if (!nonEmpty(input.requiredByDate)) { issues.push(iss('MISSING_REQUIRED_BY_DATE', 'requiredByDate required to evaluate marketplace Qualified Incoming')); return { confirmedQualifiedIncomingQty: null, incomingCompleteness: 'UNAVAILABLE', unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, issues: issues, perCandidate: identity }; }
+      var qi = QI.evaluateQualifiedIncoming({ requiredByDate: s(input.requiredByDate), kmShipmentResults: resolvedResults, externalAuthorityResults: input.externalIncomingResults || [] });
+      confirmed = qi.qualifiedIncomingQuantity; // late-risk stays visible + non-covering (NOT in confirmed)
+    } else if (input.externalIncomingResults && input.externalIncomingResults.length) {
+      // external observed evidence is quarantined (§38) — never confirmed; evaluated only to surface diagnostics
+      QI.evaluateQualifiedIncoming({ requiredByDate: s(input.requiredByDate) || '2000-01-01', kmShipmentResults: [], externalAuthorityResults: input.externalIncomingResults });
+    }
+
+    var completeness = unresolvedRefs.length > 0 ? 'PARTIAL' : 'COMPLETE';
+    return {
+      confirmedQualifiedIncomingQty: confirmed, incomingCompleteness: completeness,
+      unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, issues: issues, perCandidate: identity
+    };
+  }
+
+  // ================================ §5.1/§6 MARKETPLACE demand (frozen KMPCX planning context) ================
+  // demand = Σ Regular FC over M+1..M+4 via the EXISTING KMPCX planning context with a MARKETPLACE node
+  // (warehouseId=null; no warehouse eligibility, no source-pool decomposition). Reuses the frozen forecast owner.
+  function resolveMarketplaceDemand(input) {
+    input = input || {}; var dest = input.destination || {};
+    var pcx = KMPCX.resolveRecommendationPlanningContext({
+      calculationMonth: input.calculationMonth, planningCycle: input.planningCycle, recommendationType: 'MONTHLY_ORDER',
+      marketplaces: input.marketplaces || [], warehouses: input.warehouses || [],
+      receivers: [{
+        company: dest.company, country: dest.country, marketplace: dest.marketplace, sku: s(input.sku), siteSku: s(input.siteSku),
+        destination: dest, regularForecastByMonth: input.regularForecastByMonth, specialEventFacts: input.specialEventFacts || []
+      }]
+    });
+    if (!pcx.ready || !pcx.contexts.length) return { ready: false, qty: null, context: null, issues: pcx.issues || [] };
+    return { ready: true, qty: pcx.contexts[0].forecastShareQty, context: pcx.contexts[0], issues: [] };
+  }
+
+  // ================================ §6 MARKETPLACE order-need (frozen Monthly CEILING resolver) ===============
+  function resolveMarketplaceRecommendation(input) {
+    input = input || {}; var issues = [], mode = 'MARKETPLACE_ORDER_NEED';
+    var completeness = s(input.incomingCompleteness).toUpperCase() || 'COMPLETE';
+    var demand = qtyNum(input.demandQty), stock = qtyNum(input.currentStockQty);
+    var confirmed = qtyNum(input.confirmedQualifiedIncomingQty); if (confirmed === null) confirmed = 0; // confirmed source-proven only
+    var approved = qtyNum(input.approvedCommittedSupplyQty); if (approved === null) approved = 0;
+    var upc = input.unitsPerCarton;
+    function out(gap, prov, blocked, reason) { return { recommendationMode: mode, calculatedGap: gap, recommendedQty: (blocked ? null : prov), provisionalOrderNeed: prov, blocked: blocked, blockedReason: reason, incomingCompleteness: completeness, issues: issues }; }
+    if (demand === null) { issues.push(iss('MISSING_MARKETPLACE_DEMAND', 'marketplace Regular-FC demand missing (missing ≠ 0)')); return out(null, null, true, 'MISSING_MARKETPLACE_DEMAND'); }
+    if (stock === null) { issues.push(iss('MARKETPLACE_STOCK_MISSING', 'marketplace current stock missing (missing ≠ 0)')); return out(null, null, true, 'MARKETPLACE_STOCK_MISSING'); }
+    if (!validUpc(upc)) { issues.push(iss('MISSING_OR_INVALID_UNITS_PER_CARTON', 'units_per_carton must be a positive integer')); return out(null, null, true, 'MISSING_OR_INVALID_UNITS_PER_CARTON'); }
+    var gap, prov;
+    try { gap = CALC.calculateGap({ demand: demand, destinationCurrentStock: stock, timelyQualifiedIncoming: confirmed, timelyApprovedCommittedSupply: approved }); }
+    catch (e) { issues.push(iss('GAP_INPUT_INVALID', String(e && e.message || e))); return out(null, null, true, 'GAP_INPUT_INVALID'); }
+    try { prov = CALC.calculateSuggestedOrderQty({ netOrderNeed: gap, unitsPerCarton: upc }); }  // frozen Monthly carton CEILING
+    catch (e) { issues.push(iss('ORDER_NEED_INPUT_INVALID', String(e && e.message || e))); return out(gap, null, true, 'ORDER_NEED_INPUT_INVALID'); }
+    if (completeness === 'PARTIAL' || completeness === 'UNAVAILABLE') return out(gap, prov, true, 'INCOMING_COMPLETENESS_' + completeness); // provisional only; canonical blocked
+    return out(gap, prov, false, null); // COMPLETE → recommendedQty is canonical (= provisionalOrderNeed)
+  }
+
+  // ================================ §7 WAREHOUSE replenishment (frozen Weekly FLOOR resolver) =================
+  function resolveWarehouseRecommendation(input) {
+    input = input || {}; var issues = [], mode = 'WAREHOUSE_REPLENISHMENT', node = input.destinationNode || null;
+    var demand = qtyNum(input.allocatedForecastQty), sales = qtyNum(input.allocatedSalesQty), stock = qtyNum(input.currentStockQty);
+    var incoming = qtyNum(input.qualifiedIncomingQty), supply = qtyNum(input.allocatedSupplyQty);
+    var approved = qtyNum(input.approvedCommittedSupplyQty); if (approved === null) approved = 0;
+    var other = qtyNum(input.otherLegallyAllocatedTimelySupply); if (other === null) other = 0;
+    var upc = input.unitsPerCarton;
+    function out(gap, rec, resid, blocked, reason) {
+      return { recommendationMode: mode, destinationNode: node, allocatedForecastQty: demand, allocatedSalesQty: sales, currentStockQty: stock, qualifiedIncomingQty: incoming, calculatedGap: gap, allocatedSupplyQty: supply, recommendedQty: rec, residualShortageQty: resid, blocked: blocked, blockedReason: reason, issues: issues };
+    }
+    if (demand === null) { issues.push(iss('MISSING_WAREHOUSE_DEMAND', 'allocated warehouse Forecast demand missing (missing ≠ 0)')); return out(null, null, null, true, 'MISSING_WAREHOUSE_DEMAND'); }
+    if (stock === null) { issues.push(iss('MISSING_WAREHOUSE_STOCK', 'warehouse current stock missing (missing ≠ 0)')); return out(null, null, null, true, 'MISSING_WAREHOUSE_STOCK'); }
+    if (incoming === null) { issues.push(iss('MISSING_WAREHOUSE_INCOMING', 'warehouse Qualified Incoming missing (missing ≠ 0)')); return out(null, null, null, true, 'MISSING_WAREHOUSE_INCOMING'); }
+    if (supply === null) { issues.push(iss('MISSING_ALLOCATED_SUPPLY', 'allocated source availability missing (missing ≠ 0)')); return out(null, null, null, true, 'MISSING_ALLOCATED_SUPPLY'); }
+    if (!validUpc(upc)) { issues.push(iss('MISSING_OR_INVALID_UNITS_PER_CARTON', 'units_per_carton must be a positive integer')); return out(null, null, null, true, 'MISSING_OR_INVALID_UNITS_PER_CARTON'); }
+    var gap, ship;
+    try { gap = CALC.calculateGap({ demand: demand, destinationCurrentStock: stock, timelyQualifiedIncoming: incoming, timelyApprovedCommittedSupply: approved }); }
+    catch (e) { issues.push(iss('GAP_INPUT_INVALID', String(e && e.message || e))); return out(null, null, null, true, 'GAP_INPUT_INVALID'); }
+    try { ship = CALC.calculateShippingAndResidual({ calculatedGap: gap, eligibleSourceAvailable: supply, otherLegallyAllocatedTimelySupply: other, unitsPerCarton: upc }); } // frozen Weekly FLOOR, allocator-capped
+    catch (e) { issues.push(iss('SHIPPING_INPUT_INVALID', String(e && e.message || e))); return out(gap, null, null, true, 'SHIPPING_INPUT_INVALID'); }
+    return out(gap, ship.recommendedShippingQty, ship.residualProductionRequired, false, null);
+  }
+
+  // ================================ §8 unified core entry point ==============================================
+  function _whById(warehouses) { var m = {}; (Array.isArray(warehouses) ? warehouses : []).forEach(function (w) { var id = s(w.warehouse_id || w.warehouseId); if (id && !m[id]) m[id] = w; }); return m; }
+  function resolveUnifiedDestinationRecommendation(rawSnapshots, request, options) {
+    rawSnapshots = rawSnapshots || {}; request = request || {}; options = options || {};
+    var scope = request.scope || {};
+    var meta = { deterministic: true, calculationMonth: s(request.calculationMonth) || null, planningCycle: s(request.planningCycle) || null, sourceDataAsOf: request.sourceDataAsOf == null ? null : s(request.sourceDataAsOf), formulaVersion: request.formulaVersion == null ? null : s(request.formulaVersion), recommendationType: s(request.recommendationType) || null };
+    var authorities = { marketplaces: rawSnapshots.marketplaces || options.marketplaces || [], warehouses: rawSnapshots.warehouses || options.warehouses || [] };
+    var din = request.destination || {};
+    var normInput = {
+      destinationType: din.destinationType, company: nonEmpty(din.company) ? din.company : scope.company,
+      country: nonEmpty(din.country) ? din.country : scope.country, marketplace: nonEmpty(din.marketplace) ? din.marketplace : scope.marketplace,
+      marketplaceId: din.marketplaceId, warehouseId: din.warehouseId, destinationWarehouseId: din.destinationWarehouseId, destinationRefId: din.destinationRefId
+    };
+    var nd = DA.normalizeRecommendationDestination(normInput, authorities);
+    if (!nd.ok) return { ready: false, destination: null, recommendationMode: null, line: null, issues: nd.issues, meta: meta };
+    var dest = nd.destination;
+
+    if (dest.destinationType === 'MARKETPLACE') {
+      var demandQty;
+      if (has(options, 'marketplaceDemandQty')) { demandQty = options.marketplaceDemandQty; }
+      else {
+        var dres = resolveMarketplaceDemand({ destination: dest, calculationMonth: request.calculationMonth, planningCycle: request.planningCycle, marketplaces: authorities.marketplaces, warehouses: authorities.warehouses, sku: scope.sku, siteSku: options.siteSku, regularForecastByMonth: options.regularForecastByMonth, specialEventFacts: options.specialEventFacts });
+        if (!dres.ready) return { ready: false, destination: dest, recommendationMode: 'MARKETPLACE_ORDER_NEED', line: null, issues: dres.issues, meta: meta };
+        demandQty = dres.qty;
+      }
+      var stockRes = resolveMarketplaceCurrentStock({ rows: (rawSnapshots.amazonInventory !== undefined ? rawSnapshots.amazonInventory : options.amazonInventory), scope: { country: dest.country, marketplace: dest.marketplace, sku: scope.sku } });
+      var qir = resolveMarketplaceQualifiedIncoming({ candidates: (rawSnapshots.marketplaceIncomingCandidates !== undefined ? rawSnapshots.marketplaceIncomingCandidates : options.marketplaceIncomingCandidates), marketplaces: authorities.marketplaces, scope: dest, requiredByDate: options.requiredByDate || request.requiredByDate, externalIncomingResults: options.externalIncomingResults });
+      var mrec = resolveMarketplaceRecommendation({ demandQty: demandQty, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, incomingCompleteness: qir.incomingCompleteness, approvedCommittedSupplyQty: options.approvedCommittedSupplyQty, unitsPerCarton: options.unitsPerCarton });
+      var mline = { destination: dest, recommendationMode: mrec.recommendationMode, calculatedGap: mrec.calculatedGap, recommendedQty: mrec.recommendedQty, provisionalOrderNeed: mrec.provisionalOrderNeed, blocked: mrec.blocked, blockedReason: mrec.blockedReason, incomingCompleteness: mrec.incomingCompleteness, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, unresolvedIncomingCount: qir.unresolvedIncomingCount, unresolvedIncomingRefs: qir.unresolvedIncomingRefs };
+      var mIssues = (mrec.issues || []).concat(stockRes.issues || []).concat(qir.issues || []);
+      return { ready: !mrec.blocked, destination: dest, recommendationMode: 'MARKETPLACE_ORDER_NEED', line: mline, issues: mIssues, meta: meta };
+    }
+
+    // WAREHOUSE — fan marketplace demand to this warehouse by the frozen configured ratio, then Weekly FLOOR leg.
+    var whId = dest.warehouseId;
+    var fan = DA.resolveScopeWarehouseDemandFacts({
+      scope: { company: dest.company, country: dest.country, marketplace: dest.marketplace, marketplaceId: dest.marketplaceId },
+      allocationRules: rawSnapshots.allocationRules || options.allocationRules || [], warehousesById: _whById(authorities.warehouses),
+      effectiveDate: s(request.calculationMonth), marketplaceForecastQty: options.marketplaceForecastQty, marketplaceSalesQty: options.marketplaceSalesQty
+    });
+    if (!fan.ready) return { ready: false, destination: dest, recommendationMode: 'WAREHOUSE_REPLENISHMENT', line: null, issues: fan.issues, meta: meta };
+    var leg = fan.warehouses.filter(function (w) { return w.warehouseId === whId; })[0];
+    if (!leg) return { ready: false, destination: dest, recommendationMode: 'WAREHOUSE_REPLENISHMENT', line: null, issues: [iss('DEMAND_ALLOCATION_RULE_NOT_CONFIGURED', 'no active allocation rule for requested destination warehouse: ' + whId)], meta: meta };
+    var perWh = (isObj(options.perWarehouseSupply) && options.perWarehouseSupply[whId]) || options.warehouseSupplyFacts || {};
+    var wrec = resolveWarehouseRecommendation({
+      destinationNode: dest, allocatedForecastQty: leg.allocatedForecastQty, allocatedSalesQty: leg.allocatedSalesQty,
+      currentStockQty: perWh.currentStockQty, qualifiedIncomingQty: perWh.qualifiedIncomingQty, allocatedSupplyQty: perWh.allocatedSupplyQty,
+      approvedCommittedSupplyQty: perWh.approvedCommittedSupplyQty, otherLegallyAllocatedTimelySupply: perWh.otherLegallyAllocatedTimelySupply, unitsPerCarton: options.unitsPerCarton
+    });
+    return { ready: !wrec.blocked, destination: dest, recommendationMode: 'WAREHOUSE_REPLENISHMENT', line: wrec, issues: wrec.issues || [], meta: meta };
+  }
+
+  // ================================ Canonical response-line normalizer (F1-4B-FM1-T §9) =====================
+  // The unified runtime is the ONE owner of final line normalization + stable identity. Produces the additive
+  // destination-identity response line for BOTH a MARKETPLACE order-need result and a WAREHOUSE (frozen KMPS) line.
+  // Stable recommendationLineId = mode | company | country | marketplace | sku | siteSku | destinationKey (NEVER a
+  // row index / array position / label / SKU-alone). Callers dedupe by this id (duplicate ⇒ structured conflict).
+  function _numOrNull(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
+  function recommendationLineId(mode, company, country, marketplace, sku, siteSku, destinationKey) {
+    return [s(mode), s(company), s(country), s(marketplace), s(sku), s(siteSku), s(destinationKey)].join('|');
+  }
+  function buildRecommendationLine(input) {
+    input = input || {}; var d = input.destination || {};
+    var mode = s(input.recommendationMode);
+    var company = s(d.company) || s(input.company), country = s(d.country) || s(input.country), marketplace = s(d.marketplace) || s(input.marketplace);
+    var sku = s(input.sku), siteSku = s(input.siteSku);
+    var destinationKey = s(d.destinationKey) || DA.destinationKey(d);
+    return {
+      recommendationLineId: recommendationLineId(mode, company, country, marketplace, sku, siteSku, destinationKey),
+      recommendationMode: mode || null,
+      company: company || null, country: country || null, marketplace: marketplace || null, marketplaceId: d.marketplaceId || null,
+      sku: sku || null, siteSku: siteSku || null,
+      destinationType: d.destinationType || null, destinationRefId: d.destinationRefId || null, destinationKey: destinationKey || null,
+      destinationCode: d.destinationCode || null, destinationLabel: d.destinationLabel || null, warehouseId: d.warehouseId || null,
+      allocatedForecastQty: _numOrNull(input.allocatedForecastQty), allocatedSalesQty: _numOrNull(input.allocatedSalesQty),
+      currentStockQty: _numOrNull(input.currentStockQty), qualifiedIncomingQty: _numOrNull(input.qualifiedIncomingQty),
+      incomingCompleteness: input.incomingCompleteness == null ? null : s(input.incomingCompleteness),
+      calculatedGap: _numOrNull(input.calculatedGap), allocatedSupplyQty: _numOrNull(input.allocatedSupplyQty),
+      recommendedQty: _numOrNull(input.recommendedQty), provisionalOrderNeed: _numOrNull(input.provisionalOrderNeed),
+      residualShortageQty: _numOrNull(input.residualShortageQty),
+      blocked: input.blocked === true, blockedReason: input.blocked === true ? (s(input.blockedReason) || null) : null,
+      formulaVersion: input.formulaVersion == null ? null : s(input.formulaVersion),
+      sourceDataAsOf: input.sourceDataAsOf == null ? null : s(input.sourceDataAsOf),
+      diagnostics: (input.diagnostics && typeof input.diagnostics === 'object') ? input.diagnostics : { issues: [] }
+    };
+  }
+
+  return {
+    normalizeRecommendationDestination: normalizeRecommendationDestination,
+    buildRecommendationLine: buildRecommendationLine,
+    recommendationLineId: recommendationLineId,
+    resolveMarketplaceCurrentStock: resolveMarketplaceCurrentStock,
+    resolveMarketplaceIncomingIdentity: resolveMarketplaceIncomingIdentity,
+    resolveMarketplaceQualifiedIncoming: resolveMarketplaceQualifiedIncoming,
+    resolveMarketplaceDemand: resolveMarketplaceDemand,
+    resolveMarketplaceRecommendation: resolveMarketplaceRecommendation,
+    resolveWarehouseRecommendation: resolveWarehouseRecommendation,
+    resolveUnifiedDestinationRecommendation: resolveUnifiedDestinationRecommendation
+  };
+});
+  __kmRegister("supply-planning-destination-runtime", module.exports);
+})();
+
 // ----- module: supply-planning-production-source (verbatim from assets/js/core/supply-planning-production-source.js) -----
 (function () {
   var require = __kmRequire;
@@ -7650,7 +8408,9 @@ function __kmRequire(p) {
     { key: 'overseasInventorySnapshot', sheet: 'overseas_inventory_snapshot', required: false },
     { key: 'factoryStock', sheet: 'factory_stock', required: false },
     { key: 'shippingPlans', sheet: 'shipping_plans', required: false },
-    { key: 'shipments', sheet: 'shipments', required: false }
+    { key: 'shipments', sheet: 'shipments', required: false },
+    // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
+    { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false }
   ];
 
   function tablesFor(config) {
@@ -7738,7 +8498,10 @@ function __kmRequire(p) {
   function buildProductionRecommendationSource(spreadsheet, request) {
     aType(isObj(request), 'buildProductionRecommendationSource: request required');
     var af = applyAllocationFacts(request); request = af.request;
-    var read = readCanonicalSnapshots(spreadsheet, request.config);
+    // F1-4B-FM1-T transport-boundary: when the caller already read the canonical snapshots ONCE for the whole
+    // Workspace request, pass them via request.preReadSnapshots so this per-SKU × per-destination call does NOT
+    // re-open the spreadsheet. No calculation behavior change — identical snapshots, just not re-read.
+    var read = isObj(request.preReadSnapshots) ? { snapshots: request.preReadSnapshots, issues: [] } : readCanonicalSnapshots(spreadsheet, request.config);
     var full = KMSP.projectAndRead(projectionInput(request, read.snapshots));
     var proj = full.projection || {};
     var srcIssues = (full.sourceIssues || []).concat(read.issues).concat(proj.issues || []).concat(producerIssues(af.facts));
@@ -8418,11 +9181,13 @@ var KMSRP = __kmModules["supply-planning-source-reader-production"];
 var KMSP = __kmModules["supply-planning-source-projection"];
 var KMAF = __kmModules["supply-planning-allocation-facts"];
 var KMPCX = __kmModules["supply-planning-planning-context"];
+var KMDA = __kmModules["supply-planning-demand-allocation"];
 var KMPA = __kmModules["supply-planning-production-assembly"];
+var KMDR = __kmModules["supply-planning-destination-runtime"];
 var KMPS = __kmModules["supply-planning-production-source"];
 var KMSAFE = __kmModules["supply-planning-production-safety"];
 var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"28e18770ea5d683202ebcc722e4017e2e45bded19d3f40ba768845c5b30c2329","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-production-assembly","sha256":"de545f7865f3ac777d75e1b56f2f08ea81d0548a7d49cfdbd2e6c48bc1039338"},{"module":"supply-planning-production-source","sha256":"db7aeb9b93c593c37072839d222a30575946b5d2dae59b70c5b940ffd84c4cbe"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"f803f73e9eef324fe057691054d37150a4c5ee2ecd87cb97cf2ad53f08c82d4d","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"241b8c87ed48522998fc29f5db5aa383ecdb872d83b2c933a49f50c77f43b6d7"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"899ec9a711b76aacbff843ee8c94b39b594817d7c0ab7d79c9711233f9f4aaa5"},{"module":"supply-planning-production-source","sha256":"13adfc30f860a04c893ddcdcf91c64b45295a3d84ba211b5223eb300f146d22f"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};

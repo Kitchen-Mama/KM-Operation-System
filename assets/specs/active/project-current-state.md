@@ -4129,3 +4129,43 @@ Governance: APPS_SCRIPT_SYNC_REQUIRED = true for 13_procurement_handlers.gs (use
 Separate follow-up (out of scope): over-broad Factory Stock initialization — see
   docs/planning/REQUEST_ORDER_FACTORY_STOCK_INIT_FOLLOWUP.md.
 ```
+
+---
+
+### Checkpoint — F1-4B-FM1-T Unified Destination Recommendation Transport (2026-08-06) — IMPLEMENTED
+
+```
+Round: F1-4B-FM1-T (transport + minimal presentation). Connects the FM1 unified core runtime to the read-only
+Recommendation Workspace via a SCOPE-ONLY request + server destination expansion. WAREHOUSE routing decision
+(user-confirmed): reuse the frozen KMPA->KMPS Weekly path for supply allocation; transport NEVER reconstructs
+allocatedSupplyQty; unified runtime stays the destination-type + final-normalization owner; MARKETPLACE uses the
+FM1 order-need path directly.
+Bundle: registered supply-planning-demand-allocation + supply-planning-destination-runtime (deps ordered);
+  regenerated 90_generated_supply_planning_bundle.gs, 30 modules, sha256=f803f73e9eef324fe057691054d37150a4c5ee2ecd87cb97cf2ad53f08c82d4d, --check parity PASS.
+Server (42_api_v1_recommendation_workspace.gs): scope-only validation (server owns dest+month+cycle; legacy
+  dest/month/cycle = deprecated compat, never drives fanout); calc-month authority recoWsResolveCalcContext_(io.configMonth
+  Script Property; no clock) -> planningCycle RECO-{YYYY-MM}; ONE targeted read (KMPS +replenishment_demand_allocation_rules
+  = 12 tables); destination expansion by marketplaces.fulfillment_model (platform->MARKETPLACE via unified runtime;
+  self->WAREHOUSE per-warehouse frozen fanout via KMPA(regularForecastByMonthOverride)->KMPS with preReadSnapshots (no
+  per-SKU re-open); hybrid/unknown->DESTINATION_AUTHORITY_UNRESOLVED); canonical response DTO + stable
+  recommendationLineId (mode|company|country|marketplace|sku|siteSku|destinationKey) + conflict token; missing source
+  never a fake zero.
+Core: KMPA accepts regularForecastByMonthOverride (authorized per-warehouse demand-fanout INPUT; no formula change);
+  KMPS adds replenishment_demand_allocation_rules to CANONICAL_TABLES + preReadSnapshots injection; destination-runtime
+  adds buildRecommendationLine/recommendationLineId (final-normalization owner).
+Frontend: km-api-foundation buildRecommendationRequestDTO now SCOPE-ONLY (drops dest/month/cycle); IRContext adds
+  toScopeRequest; inventory-replenishment read cutover now sends a scope-only request gated on Country/Marketplace
+  (retires _irInternalContext dest/month/cycle + _irSetInternalRecommendationContext as request prerequisites; no
+  Recommendation Context UI); per-destination presentation (one row per MARKETPLACE/WAREHOUSE line; canonical/zero/
+  blocked/partial-provisional/source-short/no-line/error distinct); minimal CSS. Flags remain default false; no dual
+  execution; no silent legacy fallback when ON.
+Tests: rewrote supply-planning-recommendation-workspace-f1-4b-a.test.js (transport handler, 29 assertions — drives the
+  REAL bundle+handler with fake ss+injected io: MARKETPLACE end-to-end gap 880->recQty 888, WAREHOUSE 30/70->300/700,
+  12-call single read, zero writes, fail-closed) + replen-recommendation-cutover-f1-4b-b.test.js (scope-only frontend,
+  29 assertions) + patched context-b-pre G3 + bundle count 28->30. FULL SUITE 93 files / 0 failing; Golden 39/1/0;
+  Scenario #34 Pending. Performance: TARGETED_RECOMMENDATION_FANOUT_READY; LIVE_LATENCY_UNVERIFIED.
+Governance: APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (bundle rebuilt) + 42_api_v1_recommendation_workspace.gs
+  (handler). FRONTEND_GITHUB_PAGES_REQUIRED = km-api-foundation.js, inventory-replenishment.js/.css. No live DB; no push; no deploy.
+Not this round (non-goals): persistence/Submit/Allocation-Draft/Shipment/Request-Order/PO/Coverage/DOS/Projected
+  Inventory/Export; global API migration; Supplier; factory-stock cleanup.
+```

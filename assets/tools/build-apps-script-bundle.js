@@ -40,7 +40,9 @@ var MODULE_ORDER = [
   'supply-planning-source-projection',         // requires source-reader-production (Round 1S-P1.5B projection runtime)
   'supply-planning-allocation-facts',          // requires calculations (F1-5-A allocation-fact producer)
   'supply-planning-planning-context',          // requires calculations (F1-5-BD planning context runtime)
+  'supply-planning-demand-allocation',         // destination DTO + multi-warehouse demand allocation (F1-4B-E0R/E; deps: none)
   'supply-planning-production-assembly',       // requires planning-context + allocation-facts + calculations (F1-4B-PRE)
+  'supply-planning-destination-runtime',       // requires demand-allocation + planning-context + calculations + qualified-incoming (F1-4B-FM1)
   'supply-planning-production-source',         // requires source-projection + plan-builder + allocation-facts (Round 1S-P2 / F1-5-A)
   'supply-planning-production-safety',         // standalone safety layer (Production Safety Round S0) — before writer
   'supply-planning-production-writer',         // requires production-source + orchestrator + locking + repository + safety (Round 1S-P3 writer)
@@ -72,7 +74,9 @@ var GLOBALS = [
   ['KMSP', 'supply-planning-source-projection'],
   ['KMAF', 'supply-planning-allocation-facts'],
   ['KMPCX', 'supply-planning-planning-context'],
+  ['KMDA', 'supply-planning-demand-allocation'],
   ['KMPA', 'supply-planning-production-assembly'],
+  ['KMDR', 'supply-planning-destination-runtime'],
   ['KMPS', 'supply-planning-production-source'],
   ['KMSAFE', 'supply-planning-production-safety'],
   ['KMPW', 'supply-planning-production-writer'],

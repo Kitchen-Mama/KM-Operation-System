@@ -141,8 +141,12 @@ section('G. Normalized DTO matches the F1-4B-A request contract');
   ok(IR.toRequestContext(IR.normalizeRecommendationContext({ scope: US, eligibleWarehouses: el, destinationSelectedId: '', calculationMonthRaw: '2026-08', planningCycleRaw: '2026-W40' })) === null, 'G2 not-ready context → null DTO (never partial/guessed)');
   // feed it into the real Foundation DTO builder — every mandatory field populates (no null)
   var api = KMAPI.createApiFoundation({});
-  var payload = api.recommendation.buildRequestDTO({ scope: { company: dto.company, country: dto.country, marketplace: dto.marketplace }, destinationWarehouseId: dto.destinationWarehouseId, calculationMonth: dto.calculationMonth, planningCycle: dto.planningCycle }).payload;
-  ok(payload.destinationWarehouseId === 'WH-US-3PL' && payload.calculationMonth === '2026-08' && payload.planningCycle === '2026-W40' && payload.scope.company === 'KM', 'G3 context drives a fully-populated recommendation.workspace.get DTO (no MISSING_* nulls)');
+  // F1-4B-FM1-T: the request DTO is now SCOPE-ONLY — the server owns destination + calc month/cycle. The internal
+  // context still carries destination/month/cycle (above), but they are NO LONGER sent on the wire.
+  var payload = api.recommendation.buildRequestDTO({ scope: { company: dto.company, country: dto.country, marketplace: dto.marketplace } }).payload;
+  ok(payload.scope.company === 'KM' && payload.scope.country === 'US' && payload.scope.marketplace === 'AMAZON_US'
+    && !('destinationWarehouseId' in payload) && !('calculationMonth' in payload) && !('planningCycle' in payload),
+    'G3 request DTO is scope-only (no destinationWarehouseId / calculationMonth / planningCycle on the wire)');
 })();
 
 // =====================================================================================================

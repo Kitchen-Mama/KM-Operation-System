@@ -1534,3 +1534,15 @@
 #ops-section .replen-recsum-ws__diag summary { cursor: pointer; color: #475569; }
 #ops-section .replen-recsum-ws__diag ul { margin: 6px 0 0; padding-left: 18px; }
 #ops-section .replen-recsum-ws__meta { margin-top: 6px; color: #64748B; font-size: 11px; }
+
+/* F1-4B-FM1-T — minimal per-destination recommendation presentation (one row per MARKETPLACE / WAREHOUSE line). */
+#ops-section .replen-recsum-ws__table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#ops-section .replen-recsum-ws__table th,
+#ops-section .replen-recsum-ws__table td { padding: 4px 8px; border-bottom: 1px solid #E2E8F0; text-align: left; vertical-align: top; }
+#ops-section .replen-recsum-ws__table .replen-recsum-table__num { text-align: right; white-space: nowrap; }
+#ops-section .replen-recsum-ws__table tr.is-ok td { background: #F0FDF4; }
+#ops-section .replen-recsum-ws__table tr.is-zero td { background: #F8FAFC; color: #475569; }
+#ops-section .replen-recsum-ws__table tr.is-short td { background: #FEFCE8; }
+#ops-section .replen-recsum-ws__table tr.is-partial td { background: #FFF7ED; }
+#ops-section .replen-recsum-ws__table tr.is-blocked td { background: #FEF2F2; color: #991B1B; }
+#ops-section .replen-recsum-ws__provisional { color: #9A3412; font-style: italic; }

@@ -344,22 +344,24 @@
     // graduate weeklyShipping from REGISTERED → IMPLEMENTED (keeps its seeded table set)
     register('weeklyShipping', { label: 'Weekly Shipping', tables: getWorkspace('weeklyShipping').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: weeklyShippingResolver });
 
-    // ---- F1-4B-A · Recommendation READ workspace resolver (read-only; server owner = 42_api_v1_recommendation_workspace.gs) --
-    // Bounded request: scope + explicit destination + injected calculationMonth + planningCycle. No client formula /
-    // demandDriver / forecast-weight override (Phase-1 driver stays FORECAST server-side). No auto destination/month.
+    // ---- F1-4B-FM1-T · Recommendation READ workspace resolver — SCOPE-ONLY (server owns destination + calc context) --
+    // The client sends ONLY the business scope + filters + pagination + include. It NEVER sends destinationWarehouseId,
+    // calculationMonth, or planningCycle — the server owns destination fanout (MARKETPLACE vs WAREHOUSE) and the
+    // calculation-month authority. No client formula / demandDriver override (Phase-1 driver stays FORECAST server-side).
     function buildRecommendationRequestDTO(params) {
       params = params || {};
       var scope = isObj(params.scope) ? params.scope : {};
+      var f = isObj(params.filters) ? params.filters : {};
       return {
         apiVersion: API_VERSION, action: 'recommendation.workspace.get', requestId: makeRequestId(params.requestId),
         payload: {
-          scope: { company: normName(scope.company) || null, country: normName(scope.country) || null, marketplace: normName(scope.marketplace) || null },
-          destinationWarehouseId: normName(params.destinationWarehouseId) || null,
-          calculationMonth: normName(params.calculationMonth) || null,
-          planningCycle: normName(params.planningCycle) || null,
-          filters: isObj(params.filters) ? params.filters : { sku: null, siteSku: null, category: null, series: null },
-          pagination: { page: (params.pagination && params.pagination.page) || 1, size: (params.pagination && params.pagination.size) || 50 },
-          include: Object.assign({ diagnostics: false }, isObj(params.include) ? params.include : {})
+          scope: {
+            company: normName(scope.company) || null, country: normName(scope.country) || null, marketplace: normName(scope.marketplace) || null,
+            sku: normName(scope.sku) || null, siteSku: normName(scope.siteSku) || null
+          },
+          filters: { lts: normName(f.lts) || null, series: normName(f.series) || null, category: normName(f.category) || null, sku: normName(f.sku) || null, siteSku: normName(f.siteSku) || null },
+          pagination: { page: (params.pagination && params.pagination.page) || 1, size: (params.pagination && params.pagination.size) || 100 },
+          include: Object.assign({ diagnostics: true }, isObj(params.include) ? params.include : {})
         },
         context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
       };

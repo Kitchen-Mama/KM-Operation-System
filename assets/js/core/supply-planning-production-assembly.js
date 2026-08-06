@@ -87,7 +87,11 @@
     if (!parseYM(request.calculationMonth)) issues.push(issue('MISSING_CALCULATION_MONTH', null, 'calculationMonth (injected "YYYY-MM") is mandatory (no browser/current-date inference)'));
     if (!nonEmpty(request.planningCycle)) issues.push(issue('MISSING_PLANNING_CYCLE', null, 'planningCycle is mandatory'));
     if (has(request, 'demandDriver') && nonEmpty(request.demandDriver) && str(request.demandDriver).toUpperCase() !== 'FORECAST') issues.push(issue('UNSUPPORTED_PHASE1_DEMAND_DRIVER', null, 'Phase-1 demandDriver is FORECAST only'));
-    return issues.length ? null : { recommendationType: recType, scope: scope, destinationWarehouseId: str(request.destinationWarehouseId), calculationMonth: str(request.calculationMonth), planningCycle: str(request.planningCycle), sourceDataAsOf: nonEmpty(request.sourceDataAsOf) ? str(request.sourceDataAsOf) : null, formulaVersion: nonEmpty(request.formulaVersion) ? str(request.formulaVersion) : null };
+    // F1-4B-FM1-T: optional caller-owned per-month Regular-FC override (the AUTHORIZED demand-fanout input for a
+    // WAREHOUSE destination — the per-warehouse ratio split). It replaces the marketplace-level FC projection for
+    // THIS receiver; it changes the demand INPUT only, never a formula. Ignored when absent (byte-identical legacy).
+    var fcOverride = has(request, 'regularForecastByMonthOverride') && isObj(request.regularForecastByMonthOverride) ? request.regularForecastByMonthOverride : null;
+    return issues.length ? null : { recommendationType: recType, scope: scope, destinationWarehouseId: str(request.destinationWarehouseId), calculationMonth: str(request.calculationMonth), planningCycle: str(request.planningCycle), sourceDataAsOf: nonEmpty(request.sourceDataAsOf) ? str(request.sourceDataAsOf) : null, formulaVersion: nonEmpty(request.formulaVersion) ? str(request.formulaVersion) : null, regularForecastByMonthOverride: fcOverride };
   }
 
   function assembleProductionRecommendationFacts(rawSnapshots, request, options) {
@@ -121,7 +125,9 @@
     receivers.forEach(function (m) {
       var sku = str(m.sku), key = sku;
       var recvIssues = [];
-      var fc = buildRegularForecastByMonth(fcRows, vr.scope, sku, monthsYm, recvIssues, key);
+      // Authorized per-warehouse demand-fanout override (F1-4B-FM1-T) → use it as the receiver's Regular-FC basis;
+      // else project the marketplace-level Regular FC from fc_regular_forecast (legacy, unchanged).
+      var fc = vr.regularForecastByMonthOverride ? { map: vr.regularForecastByMonthOverride, forecastId: null } : buildRegularForecastByMonth(fcRows, vr.scope, sku, monthsYm, recvIssues, key);
       recvIssues.forEach(function (x) { issues.push(x); });
       var events = evtRows.filter(function (r) { return inScope(r, vr.scope) && str(r.sku) === sku; })
         .map(function (r) { return { eventStartDate: str(r.event_start_date || r.start_date || r.eventStartDate) }; })
