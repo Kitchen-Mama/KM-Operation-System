@@ -4679,20 +4679,29 @@ function loadRecommendationWorkspace_() {
   _irRecoState = _irRecoBlank('LOADING');
   _irRecoState.contextKey = ctxKey; _irRecoState.seq = my; _irRecoState.scope = scopeReq;
   _irRecoRerenderSummaries();
+  var _t0 = (typeof Date !== 'undefined' && Date.now) ? Date.now() : null;   // client-latency stamp (diagnostic only)
   // ONE scope-only request (server expands destinations + loops SKUs internally — no per-SKU HTTP, no dest/month/cycle).
   var params = { scope: { company: scopeReq.company, country: scopeReq.country, marketplace: scopeReq.marketplace, sku: null, siteSku: null },
     filters: { lts: null, series: null, category: null, sku: null, siteSku: null },
     pagination: { page: 1, size: 100 }, include: { diagnostics: true } };
   return Promise.resolve(window.KM.api.getWorkspace('recommendation', params, { signal: signal })).then(function (env) {
     if (my !== _irRecoSeq) return;   // STALE_IGNORED — a newer scope superseded this response
+    _irRecoRecordDiag(_t0);
     _irRecoApplyEnvelope(env, ctxKey, scopeReq);
     _irRecoRerenderSummaries();
   }).catch(function (err) {
     if (my !== _irRecoSeq) return;
+    _irRecoRecordDiag(_t0);
     _irRecoState = _irRecoBlank('API_ERROR'); _irRecoState.contextKey = ctxKey; _irRecoState.seq = my;
     _irRecoState.errors = [{ code: (err && err.apiCode) || 'PAGE_READ_FAILED', message: String(err && err.message || err), details: null }];
     _irRecoRerenderSummaries();
   });
+}
+// F1-4B-FM2A: push the client-side latency for the Inventory consumer into the safe Foundation diagnostic
+// (guarded — a no-op when the recorder is absent, e.g. unit tests with a stubbed api).
+function _irRecoRecordDiag(t0) {
+  if (t0 == null || !(window.KM && window.KM.api && typeof window.KM.api.recordRecommendationDiagnostic === 'function')) return;
+  try { window.KM.api.recordRecommendationDiagnostic({ lastClientDurationMs: Date.now() - t0 }); } catch (e) {}
 }
 
 // ---- Recommendation Summary presentation (workspace vs legacy) --------------------------------------

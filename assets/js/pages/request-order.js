@@ -1852,18 +1852,27 @@ function _opLoadRecommendation(item) {
   var signal = _opRecoAbort ? _opRecoAbort.signal : undefined;
   _opRecoState = _opRecoBlank('LOADING'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.seq = my;
   _opRecoRerender();
+  var _t0 = (typeof Date !== 'undefined' && Date.now) ? Date.now() : null;   // client-latency stamp (diagnostic only)
   // ONE scope-only request for the expanded row (server expands destinations internally — no per-destination HTTP).
   var params = { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: scope.sku, siteSku: scope.siteSku },
     filters: { sku: scope.sku, siteSku: scope.siteSku }, pagination: { page: 1, size: 100 }, include: { diagnostics: true } };
   return Promise.resolve(window.KM.api.getWorkspace('recommendation', params, { signal: signal })).then(function (env) {
     if (my !== _opRecoSeq) return;   // STALE_IGNORED — a newer expand superseded this response
+    _opRecoRecordDiag(_t0);
     _opRecoApplyEnvelope(env, scopeKey, scope); _opRecoRerender();
   }).catch(function (err) {
     if (my !== _opRecoSeq) return;
+    _opRecoRecordDiag(_t0);
     _opRecoState = _opRecoBlank('API_ERROR'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.seq = my;
     _opRecoState.errors = [{ code: (err && err.apiCode) || 'PAGE_READ_FAILED', message: String(err && err.message || err), details: null }];
     _opRecoRerender();
   });
+}
+// F1-4B-FM2A: push the client-side latency for the Order-Planning consumer into the safe Foundation diagnostic
+// (guarded — a no-op when the diagnostic recorder is absent, e.g. in unit tests with a stubbed api).
+function _opRecoRecordDiag(t0) {
+  if (t0 == null || !(window.KM && window.KM.api && typeof window.KM.api.recordRecommendationDiagnostic === 'function')) return;
+  try { window.KM.api.recordRecommendationDiagnostic({ lastClientDurationMs: Date.now() - t0 }); } catch (e) {}
 }
 // ---- Presentation (READ-ONLY; distinguishes every state; no Send Request / Order-Qty write) ----------
 function _opRecoModeLabel(mode) {
@@ -1967,6 +1976,7 @@ function _opRecoRerender() {
 }
 if (typeof window !== 'undefined') {
   window._opSetRecommendationOptIn = _opSetRecommendationOptIn;
+  window._opGetRecommendationOptIn = function () { return _opRecoOptIn === true; };   // read-only opt-in state (diagnostic)
   window._opRecoEnabled = _opRecoEnabled;
   window._opLoadRecommendation = _opLoadRecommendation;
 }

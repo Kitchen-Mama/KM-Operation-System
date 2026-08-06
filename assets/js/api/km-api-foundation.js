@@ -374,10 +374,59 @@
         // reuse the canonical normalizer, then relabel the workspace/action for this resolver.
         var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
         env.meta.workspace = 'recommendation'; env.meta.action = dto.action;
+        recordRecoDiag_(dto, env);   // F1-4B-FM2A: capture safe last-request telemetry for the console diagnostic
         return env;
       });
     }
     register('recommendation', { label: 'Recommendation', tables: getWorkspace('recommendation').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: recommendationResolver });
+
+    // ---- F1-4B-FM2A · Recommendation Workspace console diagnostic (SAFE, bounded; no network, no secrets) ------
+    // A single read-only view for a controlled single-tester activation. It reflects the ACTUAL last request
+    // state (never invented success); unavailable fields stay null. NEVER exposes a Spreadsheet ID, raw sheet
+    // rows, a full request/response payload, a token, or personal data — the recorder whitelists safe keys only.
+    var _recoDiag = {
+      lastRequestId: null, lastScope: null, lastHttpStatus: null, lastErrorCode: null, lastDataVersion: null,
+      lastCalculationMonth: null, lastPlanningCycle: null, lastDestinationCount: null, lastLineCount: null, lastClientDurationMs: null
+    };
+    var _RECO_DIAG_KEYS = { lastRequestId: 1, lastScope: 1, lastHttpStatus: 1, lastErrorCode: 1, lastDataVersion: 1,
+      lastCalculationMonth: 1, lastPlanningCycle: 1, lastDestinationCount: 1, lastLineCount: 1, lastClientDurationMs: 1 };
+    // Whitelisted merge — a caller (consumer page) may push only safe timing/scope fields; unknown keys ignored.
+    function recordRecommendationDiagnostic(patch) {
+      if (!isObj(patch)) return;
+      for (var k in patch) { if (_RECO_DIAG_KEYS[k] === 1) _recoDiag[k] = (patch[k] === undefined ? null : patch[k]); }
+    }
+    // Auto-record the safe, response-derived fields on every resolved recommendation request.
+    function recordRecoDiag_(dto, env) {
+      var meta = (env && env.meta) || {}, data = (env && env.data) || null;
+      var lines = (data && Array.isArray(data.lines)) ? data.lines : [];
+      var destKeys = {}; lines.forEach(function (l) { if (l && l.destinationKey) destKeys[l.destinationKey] = 1; });
+      var sc = (dto && dto.payload && dto.payload.scope) ? dto.payload.scope : null;
+      recordRecommendationDiagnostic({
+        lastRequestId: meta.requestId || null,
+        lastScope: sc ? { company: sc.company || null, country: sc.country || null, marketplace: sc.marketplace || null, sku: sc.sku || null, siteSku: sc.siteSku || null } : null,
+        lastErrorCode: (env && env.success === false && Array.isArray(env.errors) && env.errors[0]) ? (env.errors[0].code || null) : null,
+        lastDataVersion: (data && data.dataVersion) ? data.dataVersion : null,
+        lastCalculationMonth: meta.calculationMonth || (data && data.scope && data.scope.calculationMonth) || null,
+        lastPlanningCycle: meta.planningCycle || (data && data.scope && data.scope.planningCycle) || null,
+        lastDestinationCount: lines.length ? Object.keys(destKeys).length : ((env && env.success === true) ? 0 : null),
+        lastLineCount: (env && env.success === true) ? lines.length : null
+      });
+    }
+    function getRecommendationWorkspaceDiagnostic() {
+      var d = resolveWorkspace('recommendation');
+      var w = (typeof window !== 'undefined') ? window : null;
+      var out = {
+        masterFlagEnabled: flags.USE_WORKSPACE_API === true,
+        recommendationFlagEnabled: wsEnabled.recommendation === true,
+        effectiveMode: effectiveMode('recommendation'),
+        endpointImplemented: !!(d && d.implemented),
+        inventoryConsumerReady: !!(w && typeof w.loadRecommendationWorkspace_ === 'function'),
+        orderPlanningConsumerReady: !!(w && typeof w._opLoadRecommendation === 'function'),
+        orderPlanningOptIn: !!(w && typeof w._opGetRecommendationOptIn === 'function' && w._opGetRecommendationOptIn() === true)
+      };
+      for (var k in _recoDiag) out[k] = _recoDiag[k];
+      return out;
+    }
 
     // ---- ApiDispatcher — routes a normalized request → envelope. Catches EVERYTHING (never throws). ----
     function dispatchCommand(req) {
@@ -474,6 +523,9 @@
       weekly: { buildRequestDTO: buildWeeklyRequestDTO, normalizeEnvelope: normalizeWorkspaceEnvelope, makeRequestId: makeRequestId },
       // Recommendation workspace helpers (F1-4B-A)
       recommendation: { buildRequestDTO: buildRecommendationRequestDTO, makeRequestId: makeRequestId },
+      // Recommendation Workspace console diagnostic (F1-4B-FM2A) — safe, bounded, read-only.
+      getRecommendationWorkspaceDiagnostic: getRecommendationWorkspaceDiagnostic,
+      recordRecommendationDiagnostic: recordRecommendationDiagnostic,
       // ApiClient (facade)
       client: client, getWorkspace: client.getWorkspace, executeCommand: client.executeCommand,
       // independent layers (each testable in isolation)

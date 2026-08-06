@@ -4388,3 +4388,43 @@ Tests: request-order-draft-line-alignment-f1-s3-ui.test.js (NEW, 28 assertions �
 Governance: FRONTEND_GITHUB_PAGES_REQUIRED = request-order-draft.js, procurement.css. No APPS_SCRIPT_SYNC.
   DB/schema/API/persistence changes = none. No live DB; no push; no deploy.
 ```
+
+---
+
+### Checkpoint — F1-4B-FM2A Recommendation live activation + dual-consumer diagnostic (2026-08-06) — IMPLEMENTED (source-side)
+
+```
+Round: F1-4B-FM2A. Closes the local/source-side of the controlled READ live-cutover boundary for BOTH consumers
+  (Inventory Replenishment + Order Planning). NO new engine, NO persistence/Allocation-Draft/Submit/Shipment/export,
+  NO formula change, NO endpoint/DTO change, NO bundle change, NO Apps Script change. Source defaults stay
+  USE_WORKSPACE_API=false / WORKSPACE_ENABLED.recommendation=false.
+Audit (source-verified, no defect): recommendation.workspace.get registered ONCE in 01_router.gs ->
+  handleRecommendationWorkspaceGet_ (42_api_v1_recommendation_workspace.gs); generated bundle contains KMDR/KMDA/
+  KMPS/KMPA/KMPCX; Inventory + Order Planning both send SCOPE-ONLY requests (no dest/month/cycle from UI); calc month
+  = Script Property RECOMMENDATION_CALCULATION_MONTH (recoWsResolveCalcContext_; NOT_CONFIGURED/INVALID fail closed;
+  planningCycle RECO-{YYYY-MM}; no clock fallback); flags are the only browser activation gate; no dual execution;
+  no write in either read flow. Root cause of the legacy screen remains FLAGS_DISABLED / live config-unverified —
+  not a runtime defect.
+Added (km-api-foundation.js): KM.api.getRecommendationWorkspaceDiagnostic() — a SAFE, bounded, read-only console
+  view (masterFlagEnabled / recommendationFlagEnabled / effectiveMode / endpointImplemented / inventoryConsumerReady /
+  orderPlanningConsumerReady / orderPlanningOptIn / last{RequestId,Scope,HttpStatus,ErrorCode,DataVersion,
+  CalculationMonth,PlanningCycle,DestinationCount,LineCount,ClientDurationMs}). No network, no Spreadsheet ID / raw
+  rows / payload / token; reflects the ACTUAL last request (unavailable = null). The recommendation resolver auto-
+  records response-derived safe fields; KM.api.recordRecommendationDiagnostic(patch) whitelists safe keys only. The
+  Foundation stays CLOCKLESS. Consumers (inventory-replenishment.js / request-order.js) push lastClientDurationMs via
+  a GUARDED recorder call (no-op when absent — existing consumer tests unaffected); request-order.js exposes
+  window._opGetRecommendationOptIn (read-only opt-in state). lastHttpStatus stays null (HTTP abstracted by the Foundation).
+Activation (single tester): Inventory = setWorkspaceApiEnabled(true)+setWorkspaceEnabled('recommendation',true);
+  Order Planning also window._opSetRecommendationOptIn(true). Disabling either shared flag -> both legacy; disabling
+  the OP opt-in -> Order Planning only. No duplicated Foundation flag, no auto-enable, no default enablement, no UI control.
+Tests: recommendation-live-activation-f1-4b-fm2a.test.js (NEW, 30 assertions — drives the REAL Foundation resolver:
+  diagnostic shape/whitelist/no-secrets, flag effective-mode, auto-recorded last-request telemetry (requestId/scope/
+  month/cycle/counts/errorCode/dataVersion), failure code, recorder whitelist, consumer readiness; source scans for
+  single registration + handler ownership + bundle modules + Script-Property no-clock contract + clockless Foundation +
+  guarded consumer telemetry). All prior recommendation/consumer suites still green. Full suite 99 files / 0 failing;
+  Golden 39/1/0; Scenario #34 Pending (honestly — no live run performed); bundle parity unchanged. Live latency
+  LIVE_LATENCY_UNVERIFIED (no Node latency claim).
+Governance: APPS_SCRIPT_SYNC_REQUIRED = none new (90_generated_supply_planning_bundle.gs + 42_api_v1_recommendation_
+  workspace.gs already required from FM1-T; unchanged this round). FRONTEND_GITHUB_PAGES_REQUIRED = km-api-foundation.js,
+  inventory-replenishment.js, request-order.js. DB/schema changes = none. No live DB; no push; no deploy.
+```

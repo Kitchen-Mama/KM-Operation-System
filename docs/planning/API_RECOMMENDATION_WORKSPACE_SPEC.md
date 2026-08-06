@@ -161,3 +161,30 @@ fanout; write methods never invoked). Live latency **unverified** this round →
   **AND** a page-local `_opRecoOptIn` (default **false**, console-toggle only, no UI control) so Order Planning is
   enabled/verified INDEPENDENTLY of Inventory. Both OFF by default → the legacy panel is preserved verbatim.
 - **No** page-side formula, write, Send Request / Confirm Site / Submit, per-SKU HTTP loop, or `getOperationDb`.
+
+---
+
+# F1-4B-FM2A ADDENDUM — Controlled live activation + safe console diagnostic (2026-08-06)
+
+> **Status: SOURCE-SIDE READINESS COMPLETE / TEST VERIFIED — NOT DEPLOYED (`LIVE_LATENCY_UNVERIFIED`).** No new
+> engine, no persistence, no endpoint/DTO change. Adds only a bounded read-only diagnostic + guarded consumer
+> latency telemetry so a single tester can truthfully verify both consumers reach the live runtime.
+
+## Console diagnostic (safe, bounded, read-only)
+`KM.api.getRecommendationWorkspaceDiagnostic()` → a whitelisted object only:
+`{ masterFlagEnabled, recommendationFlagEnabled, effectiveMode, endpointImplemented, inventoryConsumerReady,
+orderPlanningConsumerReady, orderPlanningOptIn, lastRequestId, lastScope, lastHttpStatus, lastErrorCode,
+lastDataVersion, lastCalculationMonth, lastPlanningCycle, lastDestinationCount, lastLineCount, lastClientDurationMs }`.
+It performs **no network request**, exposes **no Spreadsheet ID / raw rows / payload / token / personal data**,
+and reflects the **actual last request** (unavailable fields stay `null` — never invented success). The
+recommendation resolver auto-records the response-derived safe fields on every request; the two consumers push
+`lastClientDurationMs` through a **guarded** `KM.api.recordRecommendationDiagnostic({...})` (whitelisted keys only;
+a no-op when the recorder is absent). `lastHttpStatus` stays `null` (the Foundation abstracts HTTP). The API
+Foundation remains **clockless** (determinism); timing is stamped in the consumer pages only.
+
+## Controlled single-tester activation (source defaults stay false)
+- Inventory: `KM.api.setWorkspaceApiEnabled(true); KM.api.setWorkspaceEnabled('recommendation', true);` →
+  `effectiveMode('recommendation') === 'workspace'`.
+- Order Planning additionally: `window._opSetRecommendationOptIn(true)` (page-local; `window._opGetRecommendationOptIn()`
+  reads it). Disabling either shared flag returns both pages to legacy; disabling the OP opt-in affects Order
+  Planning only. No duplicated Foundation flag, no auto-enable, no production-wide default, no page UI control.
