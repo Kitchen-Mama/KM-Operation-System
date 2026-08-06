@@ -19,7 +19,7 @@ var AMAZON_DESTINATION_SPREADSHEET_ID_ = '1EMe9l6ow0-OZkNY9ZP6IxHk84YGs5bqD5nVKH
 // verification round must paste the DUPLICATED verification-copy id here first (never Production) per the
 // verification-copy plan — this gate is what makes "wrong spreadsheet" impossible. Amazon import keeps its own
 // AMAZON_DESTINATION_SPREADSHEET_ID_ above (a proven-separate destination database, RULE S0-5 exception).
-var PRODUCTION_DB_SPREADSHEET_ID_ = '';
+var PRODUCTION_DB_SPREADSHEET_ID_ = '1EMe9l6ow0-OZkNY9ZP6IxHk84YGs5bqD5nVKHOPt-Kk';
 
 // Recommendation targets the same canonical bound database (S0.5 unifies the id — no separate per-domain ids).
 var RECOMMENDATION_TARGET_SPREADSHEET_ID_ = PRODUCTION_DB_SPREADSHEET_ID_;
