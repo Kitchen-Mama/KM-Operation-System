@@ -1,3 +1,9 @@
+> **⏭ SUPERSEDED — RESOLVED (2026-08-06).** The planning-facts producer this audit called missing was built as
+> F1-5-A (`KMAF`) + F1-5-BD (`KMPCX`), and F1-4B-PRE (assembly) now wires raw canonical snapshots →
+> `supply-planning-production-assembly.js` (`KMPA`) → the existing production source → real `recommendedQty`
+> (commit for the assembly round; see `PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` §J). Retained as historical
+> evidence — not deleted.
+
 # Phase F1-4B-PRE — Recommendation Planning-Facts Projection Runtime — Authority Matrix + HALT
 
 > **Status: READINESS AUDIT COMPLETE — IMPLEMENTATION HALTED (2026-08-05).** Per the round's §2 first checkpoint

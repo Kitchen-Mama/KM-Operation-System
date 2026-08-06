@@ -3656,4 +3656,38 @@ No new business formula/DB/schema/header/API/router/page/CSS/persistence change.
 Next: F1-4B-PRE (wire context → producer → production-source with real canonical snapshots) then F1-4B (read-only API).
 ```
 
+### Checkpoint — F1-4B-PRE Production Recommendation Fact Assembly = IMPLEMENTED (2026-08-06)
+```
+F1-4B-PRE — raw canonical snapshots now reach the REAL resolver without prebuilt planningFacts/receiverFacts.
+NEW pure module supply-planning-production-assembly.js (KMPA / window.KM.productionAssembly;
+  assembleProductionRecommendationFacts(rawSnapshots, request, options)) assembles production inputs:
+  request validation → identity normalization (marketplace_skus/sku_details/warehouses/marketplaces/fc — canonical
+  rows, never index/display-name) → KMPCX.resolveRecommendationPlanningContext → KMPCX.toAllocationFactReceiver +
+  §2D forecast basis → KMAF.projectAllocationFacts → attach calculatedGap via the FROZEN KMCALC.calculateGap
+  (source-projection routes only calculated_gap_qty) → productionRequest {…, receiverFacts, factoryDemandFacts,
+  planningFacts} on source-projection's NATIVE seam. Authors NO formula.
+Gap model (matches the existing production fixture; no formula change): per-receiver gap = Regular FC M+1
+  (= demand-ledger forecastMonth); destinationCurrentStock/timelyQualifiedIncoming/committed = explicit 0
+  (self-fulfilled has no exclusive destination stock; current stock + qualified incoming pass through the UNCHANGED
+  F1-3 path into the supply ledger as the allocation source). forecastShareQty (M+1..M+4) = §7 weight basis (KMAF
+  normalizes). Destination explicit caller-owned + validated (KMPCX; never inferred). demandDriver = FORECAST.
+END-TO-END TEST VERIFIED: realistic canonical fixture (identity + 4-month FC + 3PL current stock + one qualified-
+  incoming shipment; NO prebuilt planningFacts/receiverFacts/demandWeight/eligiblePoolTypes/calculatedGap/
+  recommendedQty) → KMPA → KMPS.buildProductionRecommendationSource → existing demand/supply ledger + allocator +
+  resolver → REAL recommendedQty = 96 (FLOOR(MIN(gap100, allocated)/12)×12); calculatedGap === calculateGap(...);
+  carton-FLOOR owner unchanged. §12 preserved: current stock direct, QI canonical (F1-3), count-once, arrived →
+  SHIPPED_IN_TRANSIT, late incoming visible-but-not-covering (ETA>required-by → recommendedQty unchanged), no
+  cross-company borrowing, no missing→0, read-only (0 Sheet writes).
+Tests: NEW supply-planning-production-assembly-f1-4b-pre.test.js (30). Bundle 27→28 modules (hash d40c3708…,
+  --check reproducible); parity updated 27→28. FULL SUITE 86 files / 0 failing; Golden 39/1/0; #34 Pending.
+Files: NEW supply-planning-production-assembly.js (bundled), build-apps-script-bundle.js (KMPA registered),
+  90_generated_supply_planning_bundle.gs (regenerated — APPS_SCRIPT_SYNC_REQUIRED = generated bundle only if/when
+  user deploys), NEW test + bundle-parity test (GIT_ONLY), PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md §J,
+  PHASE_F1_4B_PRE_…_HALT.md (marked SUPERSEDED/RESOLVED, evidence retained), this entry (DOCUMENTATION_ONLY). KMPCX/
+  KMAF/production-source UNTOUCHED (native seam; no KMAF calculatedGap change needed).
+BUNDLE_REBUILD_REQUIRED=true (generated 90_*.gs only; NO handler/router sync). FRONTEND_GITHUB_PAGES_REQUIRED=false.
+No new formula/DB/schema/header/API/router/page/persistence change. No live DB. Not pushed, not deployed.
+Next: F1-4B — read-only recommendation.workspace.get API seam (separately authorized).
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
