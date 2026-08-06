@@ -3619,4 +3619,41 @@ No runtime/API/page/persistence/DB/schema/header/formula/bundle/source-reader ch
   (84 files / 0 failing); Golden 39/1/0; #34 Pending. Not pushed, not deployed. F1-5-A (83afd10) unchanged.
 ```
 
+### Checkpoint — F1-5-BD Phase-1 Planning Context decision closure + runtime = IMPLEMENTED (2026-08-06)
+```
+F1-5-BD — the three F1-5-B seams are FROZEN for Phase 1 and the Planning Context Runtime is BUILT.
+Decisions (SUPPLY_PLANNING_DECISION_REGISTER D-F1-5B-1..3; none contradicts an active owner — SC-11.3/§7/§27):
+  D-F1-5B-1 destination = explicit caller-owned warehouse_id, VALIDATED (exists+active+same-company; no cross-company
+    borrowing), NEVER inferred (auto-routing replenishment_route_rules = Phase 2; NO table created).
+  D-F1-5B-2 Phase-1 demandDriver = FORECAST (frozen policy, not a fallback; no dynamic classifier; no demand_driver
+    column; non-FORECAST explicit → UNSUPPORTED_PHASE1_DEMAND_DRIVER; sales run-rate stays diagnostic-only).
+  D-F1-5B-3 forecast anchor = injected calc month M; window M+1..M+4; forecastShareQty = Σ Regular FC over M+1..M+4
+    (Regular FC ONLY; Special Event NEVER double-counted in the weight basis; explicit 0 valid; missing month ≠ 0).
+NEW pure module supply-planning-planning-context.js (KMPCX / window.KM.planningContext;
+  resolveRecommendationPlanningContext(input, options)) produces destination-context / planningCycle / windowCode /
+  windowStart-End / requiredByDate / demandDriver / forecastWeightAnchor / forecastWeightMonths / forecastShareQty +
+  issues. Window = frozen 4-month window (start=first day M+1, end=last day M+4; NO invented 30/60/90 horizon); Regular
+  required-by = window start; Special-Event required-by INVOKES frozen §10 KMCALC.eventPreparationDate (pull-forward,
+  never duplicated). §7 SHARE normalization stays F1-5-A-owned; context supplies only the basis (narrow
+  toAllocationFactReceiver bridge → KMAF FORECAST_DRIVEN receiver.forecastBasis.forecastShareQty). Injected calc month
+  (no Date.now/browser); deterministic; permutation-invariant; input not mutated; MISSING never 0; JSON-safe.
+Tokens: MISSING_DESTINATION_WAREHOUSE / DESTINATION_NOT_ELIGIBLE / DESTINATION_AUTHORITY_CONFLICT / MISSING_PLANNING_CYCLE
+  / MISSING_WINDOW_CODE / MISSING_REQUIRED_BY_DATE / WINDOW_AUTHORITY_CONFLICT / UNSUPPORTED_PHASE1_DEMAND_DRIVER /
+  MISSING_FORECAST_WEIGHT_SOURCE / INVALID_FORECAST_WEIGHT_VALUE / FORECAST_WEIGHT_SOURCE_CONFLICT /
+  FORECAST_WEIGHT_ANCHOR_UNRESOLVED / PLANNING_CONTEXT_NOT_READY.
+Reachability TEST VERIFIED end-to-end: context → KMAF.projectAllocationFacts (share once) → REAL projectAllocationInputs
+  (real overseas allocator) → REAL resolveWeeklyRecommendationFacts → carton-FLOOR recommendedQty; calculatedGap ===
+  calculateGap(...) unchanged.
+Tests: NEW supply-planning-planning-context-f1-5bd.test.js (39). Bundle 26→27 modules (hash 7e766e35…, --check
+  reproducible); parity updated 26→27. FULL SUITE 85 files / 0 failing; Golden 39/1/0; #34 Pending.
+Files: NEW supply-planning-planning-context.js (bundled), build-apps-script-bundle.js (KMPCX registered),
+  90_generated_supply_planning_bundle.gs (regenerated — APPS_SCRIPT_SYNC_REQUIRED = generated bundle only if/when user
+  deploys), NEW test + bundle-parity test (GIT_ONLY), SUPPLY_PLANNING_DECISION_REGISTER.md (D-F1-5B-1..3),
+  PHASE_F1_5B_…_HALT.md (marked RESOLVED FOR PHASE 1, evidence retained), PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md
+  §I + this entry (DOCUMENTATION_ONLY). F1-5-A (83afd10) untouched. BUNDLE_REBUILD_REQUIRED=true (generated 90_*.gs
+  only; NO handler/router sync). FRONTEND_GITHUB_PAGES_REQUIRED=false.
+No new business formula/DB/schema/header/API/router/page/CSS/persistence change. No live DB. Not pushed, not deployed.
+Next: F1-4B-PRE (wire context → producer → production-source with real canonical snapshots) then F1-4B (read-only API).
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

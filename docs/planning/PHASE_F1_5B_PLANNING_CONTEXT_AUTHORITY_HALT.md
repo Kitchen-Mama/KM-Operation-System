@@ -1,5 +1,13 @@
 # Phase F1-5-B — Planning Context Authority Runtime — Authority Matrix + HALT
 
+> **⏭ SUPERSEDED — RESOLVED FOR PHASE 1 (2026-08-06, Round F1-5-BD).** The three unresolved authorities below were
+> closed by explicit Phase-1 business decisions **D-F1-5B-1 (destination = explicit caller input), D-F1-5B-2
+> (demandDriver = FORECAST), D-F1-5B-3 (forecast anchor = M, window M+1..M+4, Regular FC only)** — see
+> `SUPPLY_PLANNING_DECISION_REGISTER.md` and `PHASE_F1_FORMULA_RUNTIME_IMPLEMENTATION_PLAN.md` §I. The Planning Context
+> Runtime is IMPLEMENTED (`supply-planning-planning-context.js`, F1-5-BD). This document is retained **as historical
+> evidence** (the audit that motivated the decisions) — not deleted. Automated destination routing (`replenishment_
+> route_rules`) and Sales-driven policy remain **Phase 2**.
+
 > **Status: AUTHORITY AUDIT COMPLETE — IMPLEMENTATION HALTED (2026-08-06).** Per §3 (source-proven matrix first)
 > and §4 (HALT gate), this is the deliverable. The round's premise — *close the four F1-5-A seams using existing
 > canonical mapping and frozen business rules* — does **not hold** for three of the four: their canonical source is

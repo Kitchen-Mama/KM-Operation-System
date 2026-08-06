@@ -76,6 +76,44 @@
 - **Blocks implementation?** **Yes (direction only)** — F1-1 needs this decision to either wire or delete the resolver.
 - **Exact decision required:** *Should Target% adjust the FC-Summary displayed/persisted forecast (wire the resolver), or is Target% purely the §2D demand-engine input (retire the dead FC-Summary resolver)?*
 
+## D-F1-5B-1 — Destination authority (Phase-1)  ✅ RESOLVED / FROZEN FOR PHASE 1 (2026-08-06)
+
+- **Decision:** `destinationWarehouseId` is an **explicit caller-owned canonical input** (a valid `warehouse_id`). The
+  Planning Context Runtime **validates** it (exists + active + same company; no cross-company borrowing) but **never
+  auto-selects or infers** it — no first-row / display-name / country-default / latest-wins / cheapest-route / random.
+- **Tokens:** `MISSING_DESTINATION_WAREHOUSE` / `DESTINATION_NOT_ELIGIBLE` (invalid/inactive/cross-company) /
+  `DESTINATION_AUTHORITY_CONFLICT` (>1 distinct authority).
+- **Consistent with:** SC-11.3 (D-3) — destination caller/planning-scope-owned, never inferred. No contradiction.
+- **Phase 2:** automated selection via `replenishment_route_rules` (CARRIER_AND_ROUTE_SPEC §5A — "future source /
+  Spec only"). **No route-rules table created this round; no DB column/table.** Supersedes F1-5-B "unresolved seam #1".
+
+## D-F1-5B-2 — Demand driver (Phase-1)  ✅ RESOLVED / FROZEN FOR PHASE 1 (2026-08-06)
+
+- **Decision:** Phase-1 Inventory-Replenishment recommendations are **`demandDriver = FORECAST`** — a **frozen policy,
+  not a fallback**. Authoritative demand = Regular Forecast + Special Event demand (existing frozen event rules). Sales
+  run-rate stays available for diagnostics + the existing daily-demand/survival owner, but is **not** an automatic
+  classifier and **must not** override Forecast-driven replenishment. **No dynamic Sales/Forecast classification; no
+  `demand_driver` DB column.** A non-FORECAST explicit driver → `UNSUPPORTED_PHASE1_DEMAND_DRIVER`.
+- **Consistent with:** §2C/§2D/§20.5 (both modes exist; nothing mandates a given SKU be Sales-driven). No contradiction.
+- **Phase 2:** Sales-driven recommendation policy + classifier. Supersedes F1-5-B "unresolved seam #2".
+
+## D-F1-5B-3 — Forecast weight anchor (Phase-1)  ✅ RESOLVED / FROZEN FOR PHASE 1 (2026-08-06)
+
+- **Decision:** calculation month **M** (injected `YYYY-MM`, never browser-current); Forecast weight window =
+  **M+1, M+2, M+3, M+4**; `forecastWeightAnchor = M`; **`forecastShareQty = Σ Regular FC over M+1..M+4` (Regular FC
+  ONLY)**. Special Event demand stays part of recommendation demand via the existing event rules but is **never
+  double-counted inside the Regular-FC weight basis**. Explicit monthly zero = valid zero; a **missing** required month
+  is **not** auto-zero (`MISSING_FORECAST_WEIGHT_SOURCE`).
+- **Consistent with:** §7 ("rolling future 4-month FC window") + §27 T1-T4 (Month+1..+4). Pins the previously-unpinned
+  anchor; no contradicting anchor exists. Tokens: `MISSING_FORECAST_WEIGHT_SOURCE` / `INVALID_FORECAST_WEIGHT_VALUE` /
+  `FORECAST_WEIGHT_SOURCE_CONFLICT` / `FORECAST_WEIGHT_ANCHOR_UNRESOLVED`. §7 SHARE normalization remains F1-5-A-owned.
+- Supersedes F1-5-B "unresolved seam #3". **No DB column/table.**
+
+> **Runtime:** all three landed in the pure `assets/js/core/supply-planning-planning-context.js`
+> (`resolveRecommendationPlanningContext`, `KMPCX`, F1-5-BD) — bundled, test-verified (39 assertions), feeding F1-5-A →
+> real allocator → real resolver. F1-5-B's audit (`PHASE_F1_5B_PLANNING_CONTEXT_AUTHORITY_HALT.md`) is retained as
+> historical evidence, **marked RESOLVED FOR PHASE 1** by these decisions.
+
 ---
 
 ## Decisions explicitly NOT re-opened (already frozen — listed to prevent accidental re-litigation)
