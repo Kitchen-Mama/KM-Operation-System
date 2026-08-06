@@ -3806,4 +3806,45 @@ Exact F1-4B-B readiness: the page now produces a validated READY context + toReq
   structured states, replacing the AI-Pending / No-recommendation-generated placeholders.
 ```
 
+### Checkpoint — F1-4B-B Inventory Replenishment Recommendation READ Cutover = IMPLEMENTED (2026-08-06)
+```
+F1-4B-B — the Recommendation Summary is connected to recommendation.workspace.get behind the default-false
+  recommendation flag. Read cutover + presentation mapping ONLY: NO formula/runtime/API/Apps-Script/router/Foundation/
+  DB/schema/bundle change, NO write, NO persistence, NO Submit, NO Execution Plan / Allocation Draft mutation.
+Effective rule (single predicate _irRecommendationWorkspaceEnabled = Foundation workspaceApiActive('recommendation')):
+  master USE_WORKSPACE_API + per-workspace recommendation BOTH ON → workspace; else legacy placeholder preserved.
+One request per READY scope (loadRecommendationWorkspace_): IRContext.toRequestContext → getWorkspace('recommendation',
+  {scope, destinationWarehouseId, calculationMonth, planningCycle, filters:null, pagination:{1,100}, include:{diagnostics:true}}).
+  Server loops SKUs internally → NO per-SKU HTTP. Deduped by context key; monotonic-seq stale guard; AbortController
+  invalidation on scope/destination/month/cycle change + unmount. Context NOT READY or flags OFF → no request.
+Page-local read state _irRecoState (separate from Allocation Draft): DISABLED / CONTEXT_NOT_READY / LOADING / READY /
+  EMPTY / API_ERROR + per-line VALID_ZERO / BLOCKED / RECOMMENDATION_LINE_NOT_FOUND / RECOMMENDATION_LINE_CONFLICT.
+  Row identity = canonical composite key company|country|marketplace|sku|siteSku|destinationWarehouseId (never index/
+  order/label; duplicate key → CONFLICT, never latest-win). Added siteSku to the page row for identity.
+Mapping (_irRecoMapLine via _irNumOrNull — direct passthrough, NO recompute): currentStockQty / qualifiedIncomingQty /
+  calculatedGap / recommendedQty; legitimate 0 preserved, missing → null (never || 0). Blocked line shows reason +
+  source-proven stock/QI but NOT recommendedQty. Diagnostics (issues + formulaVersion + sourceDataAsOf + requestId)
+  in a collapsible <details>; role=status/aria-live=polite on the state body; states distinguished by text + border
+  (not color-only). Structured API failure → visible API_ERROR (code + message + requestId); no silent legacy fallback.
+Presentation scope: the Recommendation Summary card is the API-value surface (all four fields co-labeled). The main
+  results-table columns KEEP their existing FBA/legacy meaning — the API destination-scoped currentStockQty ≠ the
+  table's FBA 'Current Inventory', so they are deliberately not overwritten (honest bounded disposition, documented).
+  Legacy windowed placeholder (_recSummaryRows / AI-Pending / No-recommendation-generated) preserved for flags-off.
+Tests: NEW replen-recommendation-cutover-f1-4b-b.test.js (54 — predicate; request gating flags/context; one request per
+  scope + DTO from IRContext + no per-SKU loop; direct field mapping + legitimate-zero + missing→null; EMPTY / BLOCKED /
+  API_ERROR + missing-forecast vs missing-destination differentiation; composite row identity + not-found + conflict;
+  stale guard + invalidation; ON→OFF clears API values; enabled-but-unavailable → visible error; no formula/runtime
+  import; no whole-DB reload; no write/Submit/Execution-Plan mutation; legacy preserved). km-api-foundation-compat.test.js
+  PG1 updated + PG1c added (weekly + recommendation are the two READ cutover pages; each READ-only, no executeCommand).
+  FULL SUITE 89 files / 0 failing; Golden 39/1/0; #34 Pending.
+Files: inventory-replenishment.js (read state + fetch lifecycle + summary presentation + card switch + siteSku +
+  triggers/unmount), inventory-replenishment.css (workspace state styles) — FRONTEND_GITHUB_PAGES_REQUIRED=true;
+  NEW test + km-api-foundation-compat.test.js (GIT_ONLY); PHASE_F1_4B_RECOMMENDATION_WORKSPACE_BLOCKER.md §I + this
+  entry (DOCUMENTATION_ONLY). No HTML change this round.
+APPS_SCRIPT_SYNC_REQUIRED=false; BUNDLE_REBUILD_REQUIRED=false. Flags remain default-false (endpoint dormant until
+  enabled). No live DB. Not pushed, not deployed.
+Exact next slice: enabling the recommendation flag in a controlled environment for live browser verification, then
+  (separately authorized) Coverage/DOS/Projected Inventory, recommendation persistence, and Submit — all out of scope here.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.

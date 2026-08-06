@@ -1723,18 +1723,7 @@ function toggleReplenRow(sku) {
                 <div class="ir-panel-column ir-panel-column--action ir-decision-area">
                     <article class="replen-card replen-card--recommendation-summary" id="recommendation-summary-${sku}">
                         <h4 class="replen-card__title">Recommendation Summary</h4>
-                        <table class="replen-recsum-table">
-                            <thead>
-                                <tr>
-                                    <th>Window</th>
-                                    <th class="replen-recsum-table__num">Calculated Gap</th>
-                                    <th class="replen-recsum-table__num">Recommended Qty</th>
-                                    <th>Route</th>
-                                    <th>Reason</th>
-                                </tr>
-                            </thead>
-                            <tbody>${_recSummaryRows(skuData)}</tbody>
-                        </table>
+                        ${_irRecoSummaryCardBody(skuData)}
                     </article>
                     <article class="replen-card replen-card--execution-plan" id="execution-plan-${sku}">
                         <div class="replen-card__title-row">
@@ -3356,6 +3345,9 @@ function _doReplenSearch() {
         return;
     }
     renderReplenishment();
+    // F1-4B-B: after loading the scope, issue at most one recommendation.workspace.get when Workspace mode
+    // is effective + the context is READY (no-op otherwise). One request per scope; never per SKU.
+    if (typeof loadRecommendationWorkspace_ === 'function') loadRecommendationWorkspace_();
 }
 window.searchReplenishment = searchReplenishment;
 
@@ -3508,6 +3500,7 @@ function _getCloudReplenishmentData() {
 
         return {
             sku: mp.sku,
+            siteSku: mp.siteSku || '',   // F1-4B-B canonical row identity (with sku + destination) for API line matching
             lifecycle: det.lifecycle || '--',
             replenishmentModel: mp.replenishmentModel || 'sales_driven',
             company: scope.company || '--',       // derived from the marketplaces master (marketplace_id)
@@ -4586,10 +4579,14 @@ function bindReplenRecoContextControls() {
   var d = document.getElementById('replenRecoDestination');
   var m = document.getElementById('replenRecoCalcMonth');
   var p = document.getElementById('replenRecoPlanningCycle');
-  if (d) d.onchange = function () { updateReplenRecoContext(); };
-  if (m) m.onchange = function () { updateReplenRecoContext(); };
-  if (p) { p.oninput = function () { updateReplenRecoContext(); }; p.onchange = function () { updateReplenRecoContext(); }; }
+  // change → recompute context + (F1-4B-B) issue at most one Workspace request when READY; input → recompute
+  // context status only (no request per keystroke).
+  if (d) d.onchange = function () { updateReplenRecoContext(); _irRecoTrigger(); };
+  if (m) m.onchange = function () { updateReplenRecoContext(); _irRecoTrigger(); };
+  if (p) { p.oninput = function () { updateReplenRecoContext(); }; p.onchange = function () { updateReplenRecoContext(); _irRecoTrigger(); }; }
 }
+// Fire the read cutover if it exists (F1-4B-B). No-op in the F1-4B-B-PRE-only baseline.
+function _irRecoTrigger() { if (typeof loadRecommendationWorkspace_ === 'function') loadRecommendationWorkspace_(); }
 
 // One-time-per-mount init: populate destination options, restore explicit session selections, bind, refresh status.
 function initReplenRecoContext() {
@@ -4598,14 +4595,16 @@ function initReplenRecoContext() {
   _irctxRestoreFromSession();
   bindReplenRecoContextControls();
   updateReplenRecoContext();
+  _irRecoTrigger();   // F1-4B-B: fetch once if Workspace mode is effective + context is READY
 }
 
 // Scope change (Country/Marketplace) → recompute destination options, drop a now-invalid destination,
-// preserve valid month/cycle, refresh status. NEVER makes a request.
+// preserve valid month/cycle, refresh status. Invalidates + (F1-4B-B) refetches when READY.
 function onReplenRecoScopeChanged() {
   if (!document.getElementById('replenRecoDestination')) return;
   refreshReplenRecoDestinationOptions();   // keeps the current selection only if still eligible
   updateReplenRecoContext();
+  _irRecoTrigger();   // scope change invalidates the prior request and refetches when the new scope is READY
 }
 
 window.refreshReplenRecoDestinationOptions = refreshReplenRecoDestinationOptions;
@@ -4613,6 +4612,227 @@ window.updateReplenRecoContext = updateReplenRecoContext;
 window.initReplenRecoContext = initReplenRecoContext;
 window.onReplenRecoScopeChanged = onReplenRecoScopeChanged;
 window.bindReplenRecoContextControls = bindReplenRecoContextControls;
+
+// ============================================================================
+// F1-4B-B — Recommendation READ cutover (recommendation.workspace.get; default-false flags).
+// ----------------------------------------------------------------------------
+// When Recommendation Workspace mode is EFFECTIVE (Foundation workspaceApiActive('recommendation') —
+// master USE_WORKSPACE_API + per-workspace recommendation, both ON) AND the F1-4B-B-PRE page context is
+// READY, this issues ONE recommendation.workspace.get request per full page scope and maps the canonical
+// response INTO the Recommendation Summary. The page ONLY validates context, sends the request, maps the
+// response, and renders state — it authors NO formula, recomputes NONE of currentStockQty /
+// qualifiedIncomingQty / calculatedGap / recommendedQty, imports no runtime module, performs NO write,
+// creates NO Allocation Draft / Execution Plan route / Submit, and issues NO per-SKU HTTP loop and NO
+// whole-DB reload. When flags are OFF the existing legacy Recommendation Summary (placeholders) is
+// preserved verbatim. Note: the main results-table columns keep their existing (FBA/legacy) meaning and
+// labels — the API's destination-scoped currentStockQty ≠ the table's FBA "Current Inventory", so the
+// source-proven recommendation values are presented ONLY in the correctly-labeled Recommendation Summary.
+// __IRRECO_START__ (test extraction marker — do not remove)
+var _irRecoSeq = 0;              // monotonic request sequence (stale-response guard)
+var _irRecoAbort = null;         // AbortController for the in-flight request (browser response invalidation)
+function _irRecoBlank(status) {
+  return { status: status || 'DISABLED', contextKey: null, requestId: null, linesByKey: {}, conflictKeys: {},
+    pagination: null, dataVersion: null, errors: [], updatedAt: null, seq: _irRecoSeq, scope: null,
+    destinationWarehouseId: null, loadedOk: false };
+}
+var _irRecoState = _irRecoBlank('DISABLED');   // page-local read state (separate from Allocation Draft state)
+
+// Effective cutover predicate — the SINGLE source of truth (delegates to the Foundation effective logic).
+function _irRecommendationWorkspaceEnabled() {
+  return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+    window.KM.api.workspaceApiActive('recommendation'));
+}
+
+// explicit null/undefined/'' → null (preserve a legitimate 0; NEVER value || 0).
+function _irNumOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var n = Number(v); return isFinite(n) ? n : null;
+}
+// canonical composite row-identity key (scope + sku + siteSku + destination) — never index/order/label.
+function _irRecoLineKey(company, country, marketplace, sku, siteSku, dest) {
+  function k(v) { return String(v == null ? '' : v).trim(); }
+  return [k(company), k(country), k(marketplace), k(sku), k(siteSku), k(dest)].join('||');
+}
+// Map ONE canonical API line → the fields the summary renders (direct passthrough; no recompute, no ||0).
+function _irRecoMapLine(L) {
+  L = L || {};
+  return {
+    sku: L.sku, siteSku: L.siteSku, destinationWarehouseId: L.destinationWarehouseId,
+    currentStockQty: _irNumOrNull(L.currentStockQty),
+    qualifiedIncomingQty: _irNumOrNull(L.qualifiedIncomingQty),
+    calculatedGap: _irNumOrNull(L.calculatedGap),
+    recommendedQty: _irNumOrNull(L.recommendedQty),
+    blocked: L.blocked === true,
+    blockedReason: (L.blockedReason == null ? null : String(L.blockedReason)),
+    formulaVersion: (L.formulaVersion == null ? null : String(L.formulaVersion)),
+    sourceDataAsOf: (L.sourceDataAsOf == null ? null : String(L.sourceDataAsOf)),
+    diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
+  };
+}
+// Apply a canonical envelope → state. Success failure stays visible (never masked); success indexes lines.
+function _irRecoApplyEnvelope(env, ctxKey, reqScope, dest) {
+  if (!env || env.success !== true) {
+    _irRecoState = _irRecoBlank('API_ERROR');
+    _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope; _irRecoState.destinationWarehouseId = dest;
+    _irRecoState.errors = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
+      : [{ code: 'WORKSPACE_ERROR', message: 'Recommendation workspace request failed.', details: null }];
+    _irRecoState.requestId = (env && env.meta && env.meta.requestId) || null;
+    return;
+  }
+  var data = env.data || {};
+  var lines = Array.isArray(data.lines) ? data.lines : [];
+  var byKey = {}, conflict = {};
+  lines.forEach(function (L) {
+    var key = _irRecoLineKey(reqScope.company, reqScope.country, reqScope.marketplace, L.sku, L.siteSku, L.destinationWarehouseId);
+    if (Object.prototype.hasOwnProperty.call(byKey, key)) conflict[key] = true;   // conflict: never latest-win
+    byKey[key] = _irRecoMapLine(L);
+  });
+  _irRecoState = _irRecoBlank(lines.length ? 'READY' : 'EMPTY');
+  _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope; _irRecoState.destinationWarehouseId = dest;
+  _irRecoState.linesByKey = byKey; _irRecoState.conflictKeys = conflict;
+  _irRecoState.pagination = data.pagination || null; _irRecoState.dataVersion = data.dataVersion || null;
+  _irRecoState.requestId = (env.meta && env.meta.requestId) || null;
+  _irRecoState.updatedAt = (data.dataVersion && data.dataVersion.sourceDataAsOf) || null;   // server value, not browser clock
+  _irRecoState.loadedOk = true;
+}
+// Resolve the API line for a page row by canonical key (undefined = NOT_FOUND; {__conflict} = CONFLICT).
+function _irRecoLineForSku(skuData) {
+  if (!skuData || !_irRecoState.scope) return undefined;
+  var key = _irRecoLineKey(_irRecoState.scope.company, _irRecoState.scope.country, _irRecoState.scope.marketplace,
+    skuData.sku, skuData.siteSku, _irRecoState.destinationWarehouseId);
+  if (_irRecoState.conflictKeys && _irRecoState.conflictKeys[key]) return { __conflict: true };
+  return Object.prototype.hasOwnProperty.call(_irRecoState.linesByKey, key) ? _irRecoState.linesByKey[key] : undefined;
+}
+// Invalidate any in-flight request (bump seq + abort browser response) and reset to a clean status.
+function _irRecoInvalidate(status) {
+  _irRecoSeq++;
+  if (_irRecoAbort && _irRecoAbort.abort) { try { _irRecoAbort.abort(); } catch (e) {} }
+  _irRecoAbort = null;
+  _irRecoState = _irRecoBlank(status || 'CONTEXT_NOT_READY');
+}
+
+// The read cutover: at most ONE recommendation.workspace.get per READY context. Deduped, stale-guarded.
+function loadRecommendationWorkspace_() {
+  if (!_irRecommendationWorkspaceEnabled()) { _irRecoInvalidate('DISABLED'); _irRecoRerenderSummaries(); return null; }
+  var model = _irctxLastContext || ((typeof updateReplenRecoContext === 'function') ? updateReplenRecoContext() : null);
+  if (!model || model.status !== 'READY') { _irRecoInvalidate('CONTEXT_NOT_READY'); _irRecoRerenderSummaries(); return null; }
+  var reqCtx = window.IRContext.toRequestContext(model);
+  if (!reqCtx) { _irRecoInvalidate('CONTEXT_NOT_READY'); _irRecoRerenderSummaries(); return null; }
+  var ctxKey = JSON.stringify(reqCtx);
+  // dedupe: identical context already loading or loaded → no duplicate request from repeated calls / renders
+  if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || _irRecoState.loadedOk)) return null;
+  if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+    _irRecoInvalidate('API_ERROR'); _irRecoState.contextKey = ctxKey;
+    _irRecoState.errors = [{ code: 'WORKSPACE_UNAVAILABLE', message: 'Recommendation Workspace is enabled but the API client is unavailable.', details: null }];
+    _irRecoRerenderSummaries(); return null;
+  }
+  var my = ++_irRecoSeq;
+  if (_irRecoAbort && _irRecoAbort.abort) { try { _irRecoAbort.abort(); } catch (e) {} }
+  _irRecoAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var signal = _irRecoAbort ? _irRecoAbort.signal : undefined;
+  var reqScope = { company: reqCtx.company, country: reqCtx.country, marketplace: reqCtx.marketplace };
+  _irRecoState = _irRecoBlank('LOADING');
+  _irRecoState.contextKey = ctxKey; _irRecoState.seq = my; _irRecoState.scope = reqScope; _irRecoState.destinationWarehouseId = reqCtx.destinationWarehouseId;
+  _irRecoRerenderSummaries();
+  // ONE request for the whole scope (server loops SKUs internally — no per-SKU HTTP; size≤100 this round).
+  var params = { scope: reqScope, destinationWarehouseId: reqCtx.destinationWarehouseId,
+    calculationMonth: reqCtx.calculationMonth, planningCycle: reqCtx.planningCycle,
+    filters: { sku: null, siteSku: null, category: null, series: null },
+    pagination: { page: 1, size: 100 }, include: { diagnostics: true } };
+  return Promise.resolve(window.KM.api.getWorkspace('recommendation', params, { signal: signal })).then(function (env) {
+    if (my !== _irRecoSeq) return;   // STALE_IGNORED — a newer context superseded this response
+    _irRecoApplyEnvelope(env, ctxKey, reqScope, reqCtx.destinationWarehouseId);
+    _irRecoRerenderSummaries();
+  }).catch(function (err) {
+    if (my !== _irRecoSeq) return;
+    _irRecoState = _irRecoBlank('API_ERROR'); _irRecoState.contextKey = ctxKey; _irRecoState.seq = my;
+    _irRecoState.errors = [{ code: (err && err.apiCode) || 'PAGE_READ_FAILED', message: String(err && err.message || err), details: null }];
+    _irRecoRerenderSummaries();
+  });
+}
+
+// ---- Recommendation Summary presentation (workspace vs legacy) --------------------------------------
+function _legacyRecSummaryTableHtml(skuData) {
+  return '<table class="replen-recsum-table">'
+    + '<thead><tr><th>Window</th><th class="replen-recsum-table__num">Calculated Gap</th>'
+    + '<th class="replen-recsum-table__num">Recommended Qty</th><th>Route</th><th>Reason</th></tr></thead>'
+    + '<tbody>' + _recSummaryRows(skuData) + '</tbody></table>';
+}
+function _irRecoDiagnosticsHtml(line) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  var items = [];
+  (line.diagnostics || []).forEach(function (d) {
+    var code = (d && d.code) ? '<code>' + esc(d.code) + '</code> ' : '';
+    var msg = esc((d && d.message) ? d.message : (typeof d === 'string' ? d : ''));
+    items.push('<li>' + code + msg + '</li>');
+  });
+  var meta = [];
+  if (line.formulaVersion) meta.push('formulaVersion: ' + esc(line.formulaVersion));
+  if (line.sourceDataAsOf) meta.push('sourceDataAsOf: ' + esc(line.sourceDataAsOf));
+  if (_irRecoState.requestId) meta.push('requestId: ' + esc(_irRecoState.requestId));
+  if (!items.length && !meta.length) return '';
+  return '<details class="replen-recsum-ws__diag"><summary>Diagnostics</summary>'
+    + (items.length ? ('<ul>' + items.join('') + '</ul>') : '')
+    + (meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '')
+    + '</details>';
+}
+function _irRecoWorkspaceBody(skuData) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  function wrap(cls, inner) { return '<div class="replen-recsum-ws ' + cls + '" role="status" aria-live="polite">' + inner + '</div>'; }
+  function frow(label, val) { return '<div class="replen-card__row"><span class="replen-card__label">' + esc(label) + '</span><span class="replen-card__value">' + (val === null || val === undefined ? '—' : esc(String(val))) + '</span></div>'; }
+  var st = _irRecoState;
+  if (st.status === 'DISABLED') return _legacyRecSummaryTableHtml(skuData);   // safety net (should not reach when enabled)
+  if (st.status === 'CONTEXT_NOT_READY') {
+    var miss = (_irctxLastContext && _irctxLastContext.missing) || [];
+    var labels = { destinationWarehouseId: 'Destination Warehouse', calculationMonth: 'Calculation Month', planningCycle: 'Planning Cycle', company: 'Company', country: 'Country', marketplace: 'Marketplace' };
+    var names = miss.map(function (k) { return labels[k] || k; });
+    return wrap('replen-recsum-ws--info', 'Recommendation context is not ready. Select ' + (names.length ? esc(names.join(', ')) : 'the required inputs') + '.');
+  }
+  if (st.status === 'LOADING') return wrap('replen-recsum-ws--loading', 'Calculating recommendation…');
+  if (st.status === 'API_ERROR') {
+    var e = (st.errors && st.errors[0]) || { code: 'API_ERROR', message: 'Recommendation request failed.' };
+    var rid = st.requestId ? (' <span class="replen-recsum-ws__reqid">[' + esc(st.requestId) + ']</span>') : '';
+    return wrap('replen-recsum-ws--error', 'Recommendation request failed: ' + esc(e.message || '') + ' <code>' + esc(e.code || 'API_ERROR') + '</code>' + rid);
+  }
+  if (st.status === 'EMPTY') return wrap('replen-recsum-ws--info', 'No SKU matched the current recommendation scope.');
+  // READY (page level) → resolve this SKU's line
+  var line = _irRecoLineForSku(skuData);
+  if (line === undefined) return wrap('replen-recsum-ws--info', 'No recommendation line for this SKU in the current scope. <code>RECOMMENDATION_LINE_NOT_FOUND</code>');
+  if (line && line.__conflict) return wrap('replen-recsum-ws--error', 'Multiple conflicting recommendation lines for this SKU. <code>RECOMMENDATION_LINE_CONFLICT</code>');
+  if (line.blocked) {
+    var reason = line.blockedReason || 'RECOMMENDATION_RUNTIME_BLOCKED';
+    var binner = 'Recommendation could not be calculated for this SKU. <code>' + esc(reason) + '</code>'
+      + frow('Current Stock', line.currentStockQty) + frow('Qualified Incoming', line.qualifiedIncomingQty);
+    return wrap('replen-recsum-ws--blocked', binner) + _irRecoDiagnosticsHtml(line);
+  }
+  var zeroNote = (line.recommendedQty === 0)
+    ? '<div class="replen-recsum-ws__zero">Recommendation calculated successfully. No replenishment quantity is currently required.</div>' : '';
+  var body = frow('Current Stock', line.currentStockQty) + frow('Qualified Incoming', line.qualifiedIncomingQty)
+    + frow('Calculated Gap', line.calculatedGap) + frow('Recommended Qty', line.recommendedQty);
+  return wrap('replen-recsum-ws--ready' + (line.recommendedQty === 0 ? ' replen-recsum-ws--zero-state' : ''), body + zeroNote) + _irRecoDiagnosticsHtml(line);
+}
+// The card body: Workspace presentation when the flag is EFFECTIVE, else the unchanged legacy table.
+function _irRecoSummaryCardBody(skuData) {
+  if (!_irRecommendationWorkspaceEnabled()) return _legacyRecSummaryTableHtml(skuData);
+  return _irRecoWorkspaceBody(skuData);
+}
+// Re-render any OPEN Recommendation Summary card(s) from the current read state (no full-page overlay).
+function _irRecoRerenderSummaries() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  var cards = document.querySelectorAll('#ops-section .replen-card--recommendation-summary');
+  if (!cards || !cards.length) return;
+  var data = (typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : [];
+  Array.prototype.forEach.call(cards, function (card) {
+    var sku = String(card.id || '').replace('recommendation-summary-', '');
+    var skuData = null; for (var i = 0; i < data.length; i++) { if (data[i].sku === sku) { skuData = data[i]; break; } }
+    card.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>' + _irRecoSummaryCardBody(skuData);
+  });
+}
+// __IRRECO_END__ (test extraction marker — do not remove)
+
+window._irRecommendationWorkspaceEnabled = _irRecommendationWorkspaceEnabled;
+window.loadRecommendationWorkspace_ = loadRecommendationWorkspace_;
+window._irRecoSummaryCardBody = _irRecoSummaryCardBody;
 
 // ============================================================================
 // Toolbar "More Options" dropdown (renamed 2026-07-23) — UI-only consolidation of the five data-management buttons
@@ -4851,6 +5071,9 @@ if (window.KM && window.KM.lifecycle) {
             if (scrollCol && scrollCol._syncHandler) {
                 scrollCol.removeEventListener('scroll', scrollCol._syncHandler);
             }
+            // F1-4B-B: invalidate any in-flight Recommendation Workspace request (bump seq + abort the
+            // browser response) and reset the read state so it never applies to a later mount.
+            if (typeof _irRecoInvalidate === 'function') _irRecoInvalidate('DISABLED');
         }
     });
 }

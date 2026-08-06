@@ -252,3 +252,35 @@ calculationMonth,planningCycle}` DTO **only when READY** (else `null`) — prove
 **This slice makes NO API call and replaces NO Recommendation Summary placeholder** — that is F1-4B-B. Tests:
 `replen-recommendation-context-f1-4b-b-pre.test.js` (67). No formula/runtime/API/Apps-Script/DB/schema/bundle change;
 no write (sessionStorage page-input preference only); full suite 88 files / 0 failing; Golden 39/1/0; #34 Pending.
+
+---
+
+## I. F1-4B-B — Recommendation READ cutover (2026-08-06): IMPLEMENTED (the blocker is fully dissolved)
+
+The Recommendation Summary is now connected to `recommendation.workspace.get` behind the default-false
+`recommendation` flag ([`inventory-replenishment.js`](../../assets/js/pages/inventory-replenishment.js) `__IRRECO_*`):
+
+- **Effective predicate** `_irRecommendationWorkspaceEnabled()` = Foundation `workspaceApiActive('recommendation')`
+  (master `USE_WORKSPACE_API` **and** per-workspace `recommendation`, both ON). Flags OFF → the legacy windowed
+  placeholder (`_recSummaryRows`, "AI Pending"/"No recommendation generated") is preserved verbatim.
+- **One request per READY scope** (`loadRecommendationWorkspace_`): READY context → `IRContext.toRequestContext` →
+  Foundation `getWorkspace('recommendation', {scope, destinationWarehouseId, calculationMonth, planningCycle,
+  filters:null, pagination:{1,100}, include:{diagnostics:true}})`. The server loops SKUs internally → **no per-SKU
+  HTTP**. Deduped by context key; monotonic-seq stale guard; `AbortController` invalidation on scope/destination/
+  month/cycle change and unmount. Context not READY / flags OFF → no request.
+- **Page-local read state** `_irRecoState` (separate from Allocation Draft): `DISABLED` / `CONTEXT_NOT_READY` /
+  `LOADING` / `READY` / `EMPTY` / `API_ERROR`, with per-line `VALID_ZERO` / `BLOCKED` / `RECOMMENDATION_LINE_NOT_FOUND`
+  / `RECOMMENDATION_LINE_CONFLICT` resolved by a canonical composite key (company|country|marketplace|sku|siteSku|
+  destination — never index/order/label; conflicts never latest-win).
+- **Direct mapping, no recompute** (`_irRecoMapLine` via `_irNumOrNull`): `currentStockQty` / `qualifiedIncomingQty` /
+  `calculatedGap` / `recommendedQty` passed through; a legitimate `0` is preserved and a missing field is `null`
+  (never `|| 0`). Blocked lines show the reason (+ source-proven stock/QI) but **not** a `recommendedQty`.
+  Diagnostics (issues + `formulaVersion` + `sourceDataAsOf` + `requestId`) in a collapsible `<details>`.
+- **Presentation scope:** the Recommendation Summary card is the API-value surface (all four fields co-labeled).
+  The main results-table columns keep their existing FBA/legacy meaning — the API's destination-scoped
+  `currentStockQty` is a *different* quantity than the table's FBA "Current Inventory", so they are deliberately not
+  overwritten (documented, honest bounded disposition). No Execution Plan / Allocation Draft / Submit / persistence.
+
+Tests: `replen-recommendation-cutover-f1-4b-b.test.js` (54) + compat PG1/PG1c updated (weekly + recommendation are the
+two READ cutover pages). No formula/runtime/API/Apps-Script/router/Foundation/DB/schema/bundle change; no write; full
+suite 89 files / 0 failing; Golden 39/1/0; #34 Pending. Flags remain default-false (dormant until enabled).
