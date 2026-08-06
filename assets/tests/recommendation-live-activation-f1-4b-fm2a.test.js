@@ -24,10 +24,12 @@ function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass+
 function section(n) { console.log('\n== ' + n + ' =='); }
 function tick() { return Promise.resolve().then(function () {}).then(function () {}); }
 
-var EXPECTED_DIAG_KEYS = ['masterFlagEnabled', 'recommendationFlagEnabled', 'effectiveMode', 'endpointImplemented',
-  'inventoryConsumerReady', 'orderPlanningConsumerReady', 'orderPlanningOptIn', 'lastRequestId', 'lastScope',
+// F1-4B-FM2B extends the safe diagnostic with the canonical flag + deployment/runtime version guards.
+var EXPECTED_DIAG_KEYS = ['masterFlagEnabled', 'recommendationFlagEnabled', 'recommendationCanonical', 'effectiveMode',
+  'endpointImplemented', 'inventoryConsumerReady', 'orderPlanningConsumerReady', 'orderPlanningOptIn',
+  'frontendConsumerVersion', 'recommendationTransportVersion', 'lastRequestId', 'lastScope',
   'lastHttpStatus', 'lastErrorCode', 'lastDataVersion', 'lastCalculationMonth', 'lastPlanningCycle',
-  'lastDestinationCount', 'lastLineCount', 'lastClientDurationMs'];
+  'lastDestinationCount', 'lastLineCount', 'lastClientDurationMs', 'lastRuntimeVersion', 'lastBundleHash'];
 
 function makeApi(invoke, flagsOn) {
   return KMAPI.createApiFoundation({

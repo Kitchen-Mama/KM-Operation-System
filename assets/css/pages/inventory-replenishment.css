@@ -736,6 +736,10 @@
     justify-content: center;
 }
 #ops-section .replen-suggested-cell__value { font-variant-numeric: tabular-nums; }
+/* F1-4B-FM2B — when the canonical Runtime is active, the top-table Suggested cell is a breakdown indicator
+   (the real per-destination quantities live in the expanded Recommendation Summary), never a legacy 0. */
+#ops-section .replen-suggested-cell__value--breakdown { color: #64748B; }
+#ops-section .replen-suggested-cell__hint { font-style: normal; font-size: 11px; color: #94A3B8; }
 
 /* SKU-column expand toggle: a compact INLINE triangle immediately left of the SKU, matching Request
    Order's `.ro-sku-expand-toggle` (bare glyph — NO fixed-width box, NO border, NO rounded gray button
@@ -1528,6 +1532,8 @@
 #ops-section .replen-recsum-ws--zero-state { border-left-color: #0EA5E9; background: #F0F9FF; color: #075985; }
 #ops-section .replen-recsum-ws--blocked { border-left-color: #F59E0B; background: #FFFBEB; color: #92400E; }
 #ops-section .replen-recsum-ws--error   { border-left-color: #EF4444; background: #FEF2F2; color: #B91C1C; }
+/* F1-4B-FM2B — CONFIG_NOT_READY: distinct from a transport/API error (amber "needs setup", not red "failed"). */
+#ops-section .replen-recsum-ws--config  { border-left-color: #D97706; background: #FFFBEB; color: #92400E; }
 #ops-section .replen-recsum-ws__zero { margin-top: 6px; font-weight: 600; }
 #ops-section .replen-recsum-ws__reqid { color: #94A3B8; font-size: 11px; }
 #ops-section .replen-recsum-ws__diag { margin-top: 8px; font-size: 12px; }

@@ -4428,3 +4428,39 @@ Governance: APPS_SCRIPT_SYNC_REQUIRED = none new (90_generated_supply_planning_b
   workspace.gs already required from FM1-T; unchanged this round). FRONTEND_GITHUB_PAGES_REQUIRED = km-api-foundation.js,
   inventory-replenishment.js, request-order.js. DB/schema changes = none. No live DB; no push; no deploy.
 ```
+
+## F1-4B-FM2B checkpoint (2026-08-06) — Recommendation Runtime PRODUCTION READ CUTOVER
+
+Recommendation READ is now the CANONICAL Phase-1 path for BOTH consumers (Inventory Replenishment + Order
+Planning), ACTIVE BY DEFAULT and independent of the global master flag. Foundation: WORKSPACE_CANONICAL =
+{recommendation:true}; WORKSPACE_ENABLED.recommendation defaults TRUE; workspaceApiActive/effectiveMode gate a
+canonical workspace SOLELY on its per-workspace flag. Single emergency kill switch =
+KM.api.setWorkspaceEnabled('recommendation', false). Order Planning's page-local opt-in no longer gates
+(_opRecoEnabled depends only on workspaceApiActive; _opSetRecommendationOptIn is a deprecated inert no-op;
+_opGetRecommendationOptIn reports the effective enabled state). No console command required for normal usage.
+
+No silent legacy fallback: NEW distinct CONFIG_NOT_READY state (calc-month Script Property missing/invalid) with
+truthful "configuration is incomplete" wording — never "engine is not active", never a red API error; request
+failure -> API_ERROR (never legacy numbers); missing source never 0; valid zero stays valid zero; retry after
+CONFIG_NOT_READY/API_ERROR permitted. Inventory top-table Suggested Qty -> destination-breakdown indicator when
+active (no misleading legacy 0). Order Planning legacy "No recommendation available." suppressed when active
+(canonical "Recommendation — Order Need" subsection owns the surface); manual Order Qty untouched; no write; no
+Send Request; no persistence.
+
+Safe version guard added to getRecommendationWorkspaceDiagnostic(): recommendationCanonical,
+frontendConsumerVersion, recommendationTransportVersion (client constants) + lastRuntimeVersion/lastBundleHash
+(server meta when present, else null). Foundation stays clockless. No .gs / bundle change; parity f803f73e....
+
+Tests: recommendation-production-cutover-f1-4b-fm2b.test.js (NEW, 38 assertions — REAL Foundation for the
+canonical policy/kill-switch/master-independence/version diagnostics, + extracted consumer READ blocks for
+default-on + CONFIG_NOT_READY/API_ERROR/VALID_ZERO/retry + Suggested-Qty breakdown + Order-Allocation
+suppression, + source scans for no-formula/no-write/no-whole-DB/single-registration/clockless). Updated:
+km-api-foundation-compat (FF8 recommendation defaults TRUE + canonical/kill-switch), order-planning cutover
+(canonical default-on section A + CONFIG_NOT_READY E8), replen cutover (E6 CONFIG_NOT_READY),
+recommendation-live-activation-fm2a (diagnostic key set + version fields). Full suite 100 files / 0 failing;
+Golden 39/1/0; Scenario #34 Pending (no live run). Live latency LIVE_LATENCY_UNVERIFIED.
+
+Governance: APPS_SCRIPT_SYNC_REQUIRED = none new (90_generated_supply_planning_bundle.gs +
+42_api_v1_recommendation_workspace.gs already required from FM1-T; unchanged). FRONTEND_GITHUB_PAGES_REQUIRED =
+km-api-foundation.js, inventory-replenishment.js, request-order.js (+ their two CSS files). DB/schema = none. No
+live DB; no push; no deploy.

@@ -108,7 +108,7 @@ function freshLoad(active, env, ctx) { _irRecoInvalidate('CONTEXT_NOT_READY'); v
   var apiNoLine = await freshLoad(true, envOk([whLine()]));
   ok(/RECOMMENDATION_LINE_NOT_FOUND/.test(_irRecoSummaryCardBody({ sku: 'OTHER-SKU' })), 'E5 SKU with no line → NOT_FOUND (distinct from zero)');
   var apiErr = await freshLoad(true, envFail('RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED'));
-  ok(_irRecoState.status === 'API_ERROR' && /RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED/.test(_irRecoSummaryCardBody({ sku: 'CO1100-R' })), 'E6 server config error surfaces (never silent fallback)');
+  ok(_irRecoState.status === 'CONFIG_NOT_READY' && /configuration is incomplete/.test(_irRecoSummaryCardBody({ sku: 'CO1100-R' })) && /RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED/.test(_irRecoSummaryCardBody({ sku: 'CO1100-R' })), 'E6 FM2B: missing calc-month → distinct CONFIG_NOT_READY (never a silent fallback)');
 
   section('F. no internal-context prerequisite / no persistence / no whole-DB / no Context UI');
   var IRRECO_CODE = IRRECO.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');   // strip comments before negative scans

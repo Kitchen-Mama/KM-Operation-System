@@ -2073,6 +2073,8 @@
 #request-order-section .op-reco--loading,
 #request-order-section .op-reco--info { color: #64748B; padding: 6px 2px; }
 #request-order-section .op-reco--error { color: #B91C1C; padding: 6px 2px; }
+/* F1-4B-FM2B — CONFIG_NOT_READY: server calc-month not set (amber "needs setup", distinct from red API error). */
+#request-order-section .op-reco--config { color: #92400E; padding: 6px 2px; }
 #request-order-section .op-reco__table { width: 100%; }
 #request-order-section .op-reco__table td.ro-num,
 #request-order-section .op-reco__table th.ro-num { text-align: right; white-space: nowrap; }

@@ -1496,7 +1496,7 @@ function renderReplenishment() {
             <div class="scroll-cell">${item.upcomingEventQty !== null ? item.upcomingEventQty : '-'}</div>
             <div class="scroll-cell ${(window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '')}${item.needsAlert ? ' alert-red' : ''}">${item.daysOfSupply}</div>
             <div class="scroll-cell replen-suggested-cell">
-                <span class="replen-suggested-cell__value">${item.suggestedQty}</span>
+                ${_irSuggestedCellHtml(item)}
             </div>
             <div class="scroll-cell">${item.cnStock || 0}</div>
             <div class="scroll-cell">${item.twStock || 0}</div>
@@ -1537,6 +1537,20 @@ function initReplenHeaderSync() {
 // ========================================
 // Inventory Replenishment - 從 app.js 搬移 (批次 2: toggleReplenRow + 操作函式 + Shipping Allocation)
 // ========================================
+
+// F1-4B-FM2B: top-table Suggested Qty disposition. When the canonical Recommendation Runtime is the active
+// READ path, the single top-table number is MISLEADING (the runtime produces one line PER DESTINATION —
+// MARKETPLACE and/or each WAREHOUSE — never a single legacy aggregate, and this spec does NOT authorize
+// summing MARKETPLACE + WAREHOUSE). So we show a destination-breakdown indicator ("—") pointing to the
+// expanded Recommendation Summary where the real per-destination quantities live, rather than a legacy 0.
+// When the workspace is OFF (kill switch) the legacy suggestedQty number is preserved verbatim.
+function _irSuggestedCellHtml(item) {
+  if (_irRecommendationWorkspaceEnabled()) {
+    return '<span class="replen-suggested-cell__value replen-suggested-cell__value--breakdown" '
+      + 'title="Per-destination recommendation — open the row to see the Recommendation Summary breakdown">— <em class="replen-suggested-cell__hint">breakdown</em></span>';
+  }
+  return '<span class="replen-suggested-cell__value">' + (item && item.suggestedQty != null ? item.suggestedQty : 0) + '</span>';
+}
 
 // Recommendation Summary table body (read-only system suggestion — NOT the submitted plan).
 // Rows: 0–18d / 19–30d / 31–45d / 46–90d / Total. Columns: Window / Qty / Route / Reason.
@@ -4593,6 +4607,11 @@ function _irNumOrNull(v) {
   if (v === null || v === undefined || v === '') return null;
   var n = Number(v); return isFinite(n) ? n : null;
 }
+// F1-4B-FM2B: canonical server codes that mean "server configuration is incomplete" (calc-month Script
+// Property) — distinct from a transport/API failure. Presented as CONFIG_NOT_READY with truthful wording.
+function _irRecoIsConfigCode(code) {
+  return code === 'RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED' || code === 'RECOMMENDATION_CALCULATION_MONTH_INVALID';
+}
 // F1-4B-FM1-T: the SCOPE-ONLY request context (company/country/marketplace). The server owns destination expansion
 // + calculation month/cycle — the request NO LONGER depends on _irInternalContext destination/month/cycle.
 function _irRecoScopeRequest() {
@@ -4624,10 +4643,14 @@ function _irRecoMapLine(L) {
 // (each SKU may carry MULTIPLE destination lines — MARKETPLACE and/or one per WAREHOUSE — kept distinct).
 function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
   if (!env || env.success !== true) {
-    _irRecoState = _irRecoBlank('API_ERROR');
-    _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope;
-    _irRecoState.errors = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
+    var _errs = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
       : [{ code: 'WORKSPACE_ERROR', message: 'Recommendation workspace request failed.', details: null }];
+    // F1-4B-FM2B: a missing/malformed calculation-month Script Property is a CONFIG state (distinct from a
+    // transport/API failure) — surfaced with its own status + wording, never "engine is not active".
+    var _isConfig = _irRecoIsConfigCode(_errs[0] && _errs[0].code);
+    _irRecoState = _irRecoBlank(_isConfig ? 'CONFIG_NOT_READY' : 'API_ERROR');
+    _irRecoState.contextKey = ctxKey; _irRecoState.scope = reqScope;
+    _irRecoState.errors = _errs;
     _irRecoState.requestId = (env && env.meta && env.meta.requestId) || null;
     return;
   }
@@ -4773,6 +4796,11 @@ function _irRecoWorkspaceBody(skuData) {
   if (st.status === 'DISABLED') return _legacyRecSummaryTableHtml(skuData);   // safety net (should not reach when enabled)
   if (st.status === 'CONTEXT_NOT_READY') return wrap('replen-recsum-ws--info', 'Recommendation scope is not ready. Select a valid Country / Marketplace.');
   if (st.status === 'LOADING') return wrap('replen-recsum-ws--loading', 'Calculating recommendation…');
+  if (st.status === 'CONFIG_NOT_READY') {
+    var ce = (st.errors && st.errors[0]) || { code: 'RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED' };
+    var crid = st.requestId ? (' <span class="replen-recsum-ws__reqid">[' + esc(st.requestId) + ']</span>') : '';
+    return wrap('replen-recsum-ws--config', 'Recommendation configuration is incomplete: <code>' + esc(ce.code || 'RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED') + '</code>. Ask an administrator to set RECOMMENDATION_CALCULATION_MONTH.' + crid);
+  }
   if (st.status === 'API_ERROR') {
     var e = (st.errors && st.errors[0]) || { code: 'API_ERROR', message: 'Recommendation request failed.' };
     var rid = st.requestId ? (' <span class="replen-recsum-ws__reqid">[' + esc(st.requestId) + ']</span>') : '';

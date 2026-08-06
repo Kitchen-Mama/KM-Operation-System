@@ -93,7 +93,18 @@ function makeLegacy() {
 
   // per-slice flag readiness classification: the flag is currently a single GLOBAL boolean
   ok(typeof api.flags.USE_WORKSPACE_API === 'boolean' && Object.keys(api.getFlags()).length === 1, 'FF7 global master remains a single boolean; per-workspace map is separate (getWorkspaceFlags)');
-  ok(Object.keys(api.getWorkspaceFlags()).length === 8 && api.getWorkspaceFlags().weeklyShipping === false && api.getWorkspaceFlags().recommendation === false, 'FF8 per-workspace flag map present (8 incl. recommendation), all default false (API-2/F1-4B-A)');
+  // F1-4B-FM2B PRODUCTION CUTOVER: recommendation is the FIRST CANONICAL workspace — its per-workspace flag
+  // now defaults TRUE (active-by-default, master-flag-independent; kill switch = setWorkspaceEnabled). Every
+  // OTHER workspace stays default false behind the hybrid gate.
+  ok(Object.keys(api.getWorkspaceFlags()).length === 8 && api.getWorkspaceFlags().weeklyShipping === false && api.getWorkspaceFlags().recommendation === true, 'FF8 per-workspace flag map present (8); recommendation defaults TRUE (canonical), the rest default false');
+  ok(api.isCanonicalWorkspace('recommendation') === true && api.isCanonicalWorkspace('weeklyShipping') === false, 'FF8a recommendation is canonical; weeklyShipping is not');
+  // recommendation active-by-default with master flag OFF (canonical, master-flag-independent).
+  ok(api.workspaceApiActive('recommendation') === true && api.effectiveMode('recommendation') === 'workspace', 'FF8b recommendation active by default (master flag OFF) — no console command required');
+  // single kill switch restores legacy for recommendation ONLY.
+  api.setWorkspaceEnabled('recommendation', false);
+  ok(api.workspaceApiActive('recommendation') === false && api.effectiveMode('recommendation') === 'legacy', 'FF8c setWorkspaceEnabled(recommendation,false) is the emergency kill switch → legacy');
+  api.setWorkspaceEnabled('recommendation', true);
+  ok(api.workspaceApiActive('recommendation') === true, 'FF8d re-enabling restores the canonical workspace');
 
   // =====================================================================================================
   section('§5/§6 Legacy parity + error visibility — NO false success');

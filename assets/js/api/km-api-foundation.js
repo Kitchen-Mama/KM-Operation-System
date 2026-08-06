@@ -276,22 +276,43 @@
       return { configured: (typeof _fetcher === 'function') && c.ok, source: source, maskedEndpoint: c.ok ? maskEndpoint(c.url) : '', urlStatus: c.ok ? 'ok' : c.code, weeklyEnabled: workspaceApiActive('weeklyShipping') };
     }
 
-    // ---- API-2 · per-workspace feature flag (global master AND per-workspace enable; default all false) --
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: false, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false, recommendation: false };
+    // ---- API-2 · per-workspace feature flag (global master AND per-workspace enable) --------------------
+    // CANONICAL (production-cutover) workspaces have completed their READ cutover and are ACTIVE BY DEFAULT,
+    // INDEPENDENT of the global master USE_WORKSPACE_API flag. For a canonical workspace the ONLY gate — and
+    // the single emergency kill switch — is its per-workspace flag: setWorkspaceEnabled(name, false). This is
+    // NOT a second overlapping flag; it REMOVES the master-flag dependency for that one workspace so normal
+    // page usage reaches the canonical Runtime without any console command (F1-4B-FM2B production cutover).
+    // Non-canonical workspaces keep the hybrid gate (master AND per-workspace, both default false).
+    var WORKSPACE_CANONICAL = { recommendation: true };   // recommendation READ is production-canonical (Phase 1)
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: false, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false, recommendation: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
+    function isCanonicalWorkspace(name) { return WORKSPACE_CANONICAL[normName(name)] === true; }
     function setWorkspaceEnabled(name, on) { var n = normName(name); wsEnabled[n] = !!on; return wsEnabled[n]; }
-    function workspaceApiActive(name) { var d = getWorkspace(name); var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function'; return flags.USE_WORKSPACE_API === true && !!impl && wsEnabled[normName(name)] === true; }
-    // Hybrid gate: master OFF → legacy always. master ON + IMPLEMENTED → needs the per-workspace flag (else legacy →
-    // "disabling Weekly restores Legacy"). master ON + UNIMPLEMENTED → workspace path (→ WORKSPACE_NOT_IMPLEMENTED,
-    // no silent legacy fallback). No dual execution: exactly one branch runs.
+    function workspaceApiActive(name) {
+      var n = normName(name);
+      var d = getWorkspace(n); var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function';
+      if (!impl) return false;
+      // canonical workspace → master-flag-independent; gate is solely the per-workspace kill switch.
+      if (WORKSPACE_CANONICAL[n] === true) return wsEnabled[n] === true;
+      return flags.USE_WORKSPACE_API === true && wsEnabled[n] === true;
+    }
+    // Gate: CANONICAL → per-workspace flag ONLY (default ON; kill switch = setWorkspaceEnabled(name,false)).
+    // Non-canonical → master OFF → legacy always; master ON + IMPLEMENTED → needs the per-workspace flag;
+    // master ON + UNIMPLEMENTED → workspace path (→ WORKSPACE_NOT_IMPLEMENTED, no silent legacy fallback).
+    // No dual execution: exactly one branch runs.
     function effectiveMode(name) {
-      if (flags.USE_WORKSPACE_API !== true) return SOURCE.LEGACY;
-      var d = getWorkspace(name);
+      var n = normName(name);
+      var d = getWorkspace(n);
       var impl = d && d.status === WORKSPACE_STATUS.IMPLEMENTED && typeof d.resolver === 'function';
+      if (WORKSPACE_CANONICAL[n] === true) {
+        if (!impl) return SOURCE.LEGACY;   // canonical but somehow unimplemented → fail safe to legacy
+        return wsEnabled[n] === true ? SOURCE.WORKSPACE : SOURCE.LEGACY;
+      }
+      if (flags.USE_WORKSPACE_API !== true) return SOURCE.LEGACY;
       if (!impl) return SOURCE.WORKSPACE;
-      return wsEnabled[normName(name)] === true ? SOURCE.WORKSPACE : SOURCE.LEGACY;
+      return wsEnabled[n] === true ? SOURCE.WORKSPACE : SOURCE.LEGACY;
     }
 
     // ---- API-2 · requestId (correlation, NOT idempotency) + call sequence (stale-response protection) ---
@@ -384,12 +405,20 @@
     // A single read-only view for a controlled single-tester activation. It reflects the ACTUAL last request
     // state (never invented success); unavailable fields stay null. NEVER exposes a Spreadsheet ID, raw sheet
     // rows, a full request/response payload, a token, or personal data — the recorder whitelists safe keys only.
+    // F1-4B-FM2B · deployment/runtime version guard. FRONTEND_CONSUMER_VERSION + RECOMMENDATION_TRANSPORT_VERSION
+    // are client-side constants baked into THIS bundle (they prove the browser loaded the expected frontend).
+    // lastRuntimeVersion / lastBundleHash are surfaced from the server response meta when present (they prove
+    // Apps Script loaded the expected handler/bundle) and stay null otherwise — never invented, never a secret.
+    var RECOMMENDATION_TRANSPORT_VERSION = 'reco-transport-1';   // scope-only DTO + canonical-envelope contract
+    var FRONTEND_CONSUMER_VERSION = 'reco-consumers-fm2b';       // Inventory + Order Planning READ consumer contract
     var _recoDiag = {
       lastRequestId: null, lastScope: null, lastHttpStatus: null, lastErrorCode: null, lastDataVersion: null,
-      lastCalculationMonth: null, lastPlanningCycle: null, lastDestinationCount: null, lastLineCount: null, lastClientDurationMs: null
+      lastCalculationMonth: null, lastPlanningCycle: null, lastDestinationCount: null, lastLineCount: null,
+      lastClientDurationMs: null, lastRuntimeVersion: null, lastBundleHash: null
     };
     var _RECO_DIAG_KEYS = { lastRequestId: 1, lastScope: 1, lastHttpStatus: 1, lastErrorCode: 1, lastDataVersion: 1,
-      lastCalculationMonth: 1, lastPlanningCycle: 1, lastDestinationCount: 1, lastLineCount: 1, lastClientDurationMs: 1 };
+      lastCalculationMonth: 1, lastPlanningCycle: 1, lastDestinationCount: 1, lastLineCount: 1, lastClientDurationMs: 1,
+      lastRuntimeVersion: 1, lastBundleHash: 1 };
     // Whitelisted merge — a caller (consumer page) may push only safe timing/scope fields; unknown keys ignored.
     function recordRecommendationDiagnostic(patch) {
       if (!isObj(patch)) return;
@@ -409,7 +438,9 @@
         lastCalculationMonth: meta.calculationMonth || (data && data.scope && data.scope.calculationMonth) || null,
         lastPlanningCycle: meta.planningCycle || (data && data.scope && data.scope.planningCycle) || null,
         lastDestinationCount: lines.length ? Object.keys(destKeys).length : ((env && env.success === true) ? 0 : null),
-        lastLineCount: (env && env.success === true) ? lines.length : null
+        lastLineCount: (env && env.success === true) ? lines.length : null,
+        lastRuntimeVersion: meta.runtimeVersion || meta.recommendationRuntimeVersion || (data && data.dataVersion && data.dataVersion.runtimeVersion) || null,
+        lastBundleHash: meta.bundleHash || (data && data.dataVersion && data.dataVersion.bundleHash) || null
       });
     }
     function getRecommendationWorkspaceDiagnostic() {
@@ -418,11 +449,14 @@
       var out = {
         masterFlagEnabled: flags.USE_WORKSPACE_API === true,
         recommendationFlagEnabled: wsEnabled.recommendation === true,
+        recommendationCanonical: WORKSPACE_CANONICAL.recommendation === true,   // FM2B: active-by-default, master-flag-independent
         effectiveMode: effectiveMode('recommendation'),
         endpointImplemented: !!(d && d.implemented),
         inventoryConsumerReady: !!(w && typeof w.loadRecommendationWorkspace_ === 'function'),
         orderPlanningConsumerReady: !!(w && typeof w._opLoadRecommendation === 'function'),
-        orderPlanningOptIn: !!(w && typeof w._opGetRecommendationOptIn === 'function' && w._opGetRecommendationOptIn() === true)
+        orderPlanningOptIn: !!(w && typeof w._opGetRecommendationOptIn === 'function' && w._opGetRecommendationOptIn() === true),
+        frontendConsumerVersion: FRONTEND_CONSUMER_VERSION,
+        recommendationTransportVersion: RECOMMENDATION_TRANSPORT_VERSION
       };
       for (var k in _recoDiag) out[k] = _recoDiag[k];
       return out;
@@ -518,7 +552,7 @@
       // flags (global master + per-workspace map — API-2)
       flags: flags, getFlags: getFlags, setWorkspaceApiEnabled: setWorkspaceApiEnabled,
       getWorkspaceFlags: getWorkspaceFlags, setWorkspaceEnabled: setWorkspaceEnabled,
-      workspaceApiActive: workspaceApiActive, effectiveMode: effectiveMode,
+      workspaceApiActive: workspaceApiActive, effectiveMode: effectiveMode, isCanonicalWorkspace: isCanonicalWorkspace,
       // Weekly workspace helpers (API-2)
       weekly: { buildRequestDTO: buildWeeklyRequestDTO, normalizeEnvelope: normalizeWorkspaceEnvelope, makeRequestId: makeRequestId },
       // Recommendation workspace helpers (F1-4B-A)

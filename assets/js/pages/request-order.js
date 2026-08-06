@@ -1488,7 +1488,11 @@ function renderExpandPanel(item) {
   var firstShortBadge = (firstShort != null)
     ? '<span class="ro-first-shortage-badge">First Shortage: ' + RO_TIER_LABELS[firstShort] + ' · ' + next3[firstShort].label + '</span>'
     : '';
-  var allocEmpty = anySuggested ? '' : '<div class="ro-rec-empty">No recommendation available.</div>';
+  // F1-4B-FM2B: when the canonical Recommendation Runtime is the active READ path, the "Recommendation —
+  // Order Need" subsection below OWNS the recommendation surface — so the generic legacy "No recommendation
+  // available." message is suppressed (it must never show alongside canonical lines). When the workspace is
+  // OFF (kill switch), the legacy tier Suggested behavior is preserved verbatim.
+  var allocEmpty = (anySuggested || _opRecoEnabled()) ? '' : '<div class="ro-rec-empty">No recommendation available.</div>';
 
   // Incoming-supply empty state (F.6): no scheduled/completed across the next 3 months.
   var foHasData = foMonths.some(function (mo) { var rec = foBySku[_roYmKey(mo)]; return rec && (rec.scheduled > 0 || rec.completed > 0); });
@@ -1747,8 +1751,15 @@ function syncExpandPanelHeights() {
 // with Inventory Replenishment (identical read endpoint + scope semantics → no redundant Foundation flag),
 // but layers a page-local default-false opt-in so Order Planning can be enabled/verified INDEPENDENTLY of
 // Inventory (turning Inventory's workspace flag on does NOT turn Order Planning on).
+// F1-4B-FM2B PRODUCTION CUTOVER: Order Planning recommendation READ is now CANONICAL BY DEFAULT — it is
+// active whenever the Foundation reports the recommendation workspace active (workspaceApiActive), which is
+// itself default-on and master-flag-independent (single kill switch = KM.api.setWorkspaceEnabled). The old
+// page-local opt-in NO LONGER GATES the feature (it could permanently block the canonical Runtime, which
+// this round forbids). _opRecoOptIn is retained ONLY as an inert legacy field; _opSetRecommendationOptIn is
+// a deprecated no-op shim kept for API stability, and _opGetRecommendationOptIn now reports the EFFECTIVE
+// enabled state for the safe console diagnostic.
 // __OPRECO_START__ (test extraction marker — do not remove)
-var _opRecoOptIn = false;   // page-local Order-Planning opt-in (default OFF; console-toggle only, no UI control)
+var _opRecoOptIn = true;    // FM2B: inert legacy field (retained for API stability; no longer gates the feature)
 var _opRecoSeq = 0;         // monotonic request sequence (stale-response guard)
 var _opRecoAbort = null;    // AbortController for the in-flight request (browser response invalidation)
 function _opRecoBlank(status) {
@@ -1757,14 +1768,20 @@ function _opRecoBlank(status) {
 }
 var _opRecoState = _opRecoBlank('DISABLED');   // page-local read state (single slot — one row expands at a time)
 
-// Effective predicate — the Foundation recommendation Workspace is active AND the page-local opt-in is ON.
+// Effective predicate — SOLELY the Foundation recommendation Workspace active state (canonical default-on;
+// FM2B removed the page-local opt-in gate so normal usage reaches the Runtime with no console command).
 function _opRecoEnabled() {
   return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
-    window.KM.api.workspaceApiActive('recommendation')) && _opRecoOptIn === true;
+    window.KM.api.workspaceApiActive('recommendation'));
 }
-// Console-only enable/disable (NO UI control; never persisted; default OFF). Toggling it does NOT itself
-// fire a request — the next row expand (or re-expand) does, so a prior DISABLED state never suppresses it.
-function _opSetRecommendationOptIn(on) { _opRecoOptIn = (on === true); return _opRecoOptIn; }
+// DEPRECATED (FM2B): the opt-in no longer gates the feature. Retained as an inert no-op for API stability;
+// the emergency kill switch is KM.api.setWorkspaceEnabled('recommendation', false) (shared with Inventory).
+function _opSetRecommendationOptIn(on) { _opRecoOptIn = (on === true); return _opRecoEnabled(); }
+// FM2B: canonical config codes that mean the server calculation-month is not configured/valid (distinct
+// from a transport/API failure) — surfaced as CONFIG_NOT_READY with truthful wording, never a legacy state.
+function _opRecoIsConfigCode(code) {
+  return code === 'RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED' || code === 'RECOMMENDATION_CALCULATION_MONTH_INVALID';
+}
 
 // explicit null/undefined/'' → null (preserve a legitimate 0; NEVER value || 0).
 function _opNumOrNull(v) { if (v === null || v === undefined || v === '') return null; var n = Number(v); return isFinite(n) ? n : null; }
@@ -1808,10 +1825,12 @@ function _opRecoMapLine(L) {
 // expanded SKU and kept DISTINCT per destination (MARKETPLACE and/or one per WAREHOUSE — never merged).
 function _opRecoApplyEnvelope(env, scopeKey, scope) {
   if (!env || env.success !== true) {
-    _opRecoState = _opRecoBlank('API_ERROR');
-    _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope && scope.sku;
-    _opRecoState.errors = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
+    var errs = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
       : [{ code: 'WORKSPACE_ERROR', message: 'Recommendation workspace request failed.', details: null }];
+    var isConfig = _opRecoIsConfigCode(errs[0] && errs[0].code);   // FM2B: distinct CONFIG_NOT_READY state
+    _opRecoState = _opRecoBlank(isConfig ? 'CONFIG_NOT_READY' : 'API_ERROR');
+    _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope && scope.sku;
+    _opRecoState.errors = errs;
     _opRecoState.requestId = (env && env.meta && env.meta.requestId) || null;
     return;
   }
@@ -1931,6 +1950,11 @@ function _opRecoInner(item) {
   var st = _opRecoState;
   if (st.scopeKey !== _opRecoKey(scope)) return wrap('op-reco--loading', 'Calculating recommendation…');
   if (st.status === 'LOADING') return wrap('op-reco--loading', 'Calculating recommendation…');
+  if (st.status === 'CONFIG_NOT_READY') {
+    var ce = (st.errors && st.errors[0]) || { code: 'RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED' };
+    var crid = st.requestId ? (' <span class="op-reco__reqid">[' + _roEsc(st.requestId) + ']</span>') : '';
+    return wrap('op-reco--config', 'Recommendation configuration is incomplete: <code>' + _roEsc(ce.code || 'RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED') + '</code>. Ask an administrator to set RECOMMENDATION_CALCULATION_MONTH.' + crid);
+  }
   if (st.status === 'API_ERROR') {
     var e = (st.errors && st.errors[0]) || { code: 'API_ERROR', message: 'Recommendation request failed.' };
     var rid = st.requestId ? (' <span class="op-reco__reqid">[' + _roEsc(st.requestId) + ']</span>') : '';
@@ -1975,8 +1999,8 @@ function _opRecoRerender() {
   host.innerHTML = _opRecoInner(item);
 }
 if (typeof window !== 'undefined') {
-  window._opSetRecommendationOptIn = _opSetRecommendationOptIn;
-  window._opGetRecommendationOptIn = function () { return _opRecoOptIn === true; };   // read-only opt-in state (diagnostic)
+  window._opSetRecommendationOptIn = _opSetRecommendationOptIn;   // DEPRECATED (FM2B): inert, no longer gates
+  window._opGetRecommendationOptIn = function () { return _opRecoEnabled(); };   // FM2B: reports EFFECTIVE enabled state (diagnostic)
   window._opRecoEnabled = _opRecoEnabled;
   window._opLoadRecommendation = _opLoadRecommendation;
 }

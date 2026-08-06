@@ -50,17 +50,19 @@ function tick() { return Promise.resolve().then(function () {}).then(function ()
 function freshLoad(active, optIn, env, item) { _opRecoInvalidate('DISABLED'); _opSetRecommendationOptIn(optIn); var api = makeApi(active, env); global.window.KM = { api: api }; return Promise.resolve(_opLoadRecommendation(item || ITEM)).then(tick).then(function () { return api; }); }
 
 (async function main() {
-  section('A. feature gate (BOTH flags) — default OFF preserves legacy panel');
-  ok(_opRecoEnabled() === false, 'A1 default OFF (opt-in false)');
+  section('A. feature gate — FM2B canonical default-on; kill switch = the workspace flag (no opt-in block)');
+  ok(_opRecoEnabled() === false, 'A1 no api present → safely disabled');
   global.window.KM = { api: makeApi(true, envOk([whLine()])) };
-  ok(_opRecoEnabled() === false, 'A2 workspace active but page opt-in OFF → still disabled');
-  ok(_opRecoSubsectionHtml(ITEM) === '', 'A3 disabled → subsection omitted (legacy panel byte-unchanged)');
-  _opSetRecommendationOptIn(true);
-  ok(_opRecoEnabled() === true, 'A4 workspace active + opt-in ON → enabled');
-  _opSetRecommendationOptIn(false);
+  ok(_opRecoEnabled() === true, 'A2 workspace active → ENABLED BY DEFAULT (no console opt-in required)');
+  ok(_opRecoSubsectionHtml(ITEM) !== '', 'A3 enabled → the Recommendation — Order Need subsection is rendered');
   global.window.KM = { api: makeApi(false, envOk([whLine()])) };
-  _opSetRecommendationOptIn(true);
-  ok(_opRecoEnabled() === false, 'A5 opt-in ON but workspace inactive → still disabled (workspace flag authoritative)');
+  ok(_opRecoEnabled() === false, 'A4 workspace inactive (kill switch) → disabled, legacy panel preserved');
+  ok(_opRecoSubsectionHtml(ITEM) === '', 'A5 disabled → subsection omitted (legacy panel byte-unchanged)');
+  _opSetRecommendationOptIn(false);
+  ok(_opRecoEnabled() === false, 'A6 deprecated opt-in setter cannot re-enable while the workspace is OFF (inert)');
+  global.window.KM = { api: makeApi(true, envOk([whLine()])) };
+  _opSetRecommendationOptIn(false);
+  ok(_opRecoEnabled() === true, 'A7 deprecated opt-in setter CANNOT permanently block the canonical feature');
 
   section('B. flags ON + valid scope → ONE scope-only request, correct shape');
   var apiB = await freshLoad(true, true, envOk([whLine()]));
@@ -75,11 +77,10 @@ function freshLoad(active, optIn, env, item) { _opRecoInvalidate('DISABLED'); _o
   ok(_opRecoState.status === 'READY' && _opRecoState.calcMonth === '2026-08' && _opRecoState.planningCycle === 'RECO-2026-08', 'B8 server-owned calc month/cycle surfaced from meta');
 
   section('C. OFF→ON permitted; invalid scope; dedupe; stale-ignore');
-  await freshLoad(true, false, envOk([whLine()]));           // disabled render first
+  await freshLoad(false, false, envOk([whLine()]));          // workspace OFF (kill switch) → no request, DISABLED
   var apiC = makeApi(true, envOk([whLine()])); global.window.KM = { api: apiC };
-  _opSetRecommendationOptIn(true);
   await Promise.resolve(_opLoadRecommendation(ITEM)).then(tick);
-  ok(apiC._calls.getWorkspace === 1, 'C1 OFF→ON permits a fresh request (prior DISABLED does not suppress)');
+  ok(apiC._calls.getWorkspace === 1, 'C1 kill-switch OFF→ON permits a fresh request (prior DISABLED does not suppress)');
   var apiNo = await freshLoad(true, true, envOk([whLine()]), { sku: 'CO1100-R', company: '', country: 'US', marketplace: 'AMAZON_US' });
   ok(apiNo._calls.getWorkspace === 0 && _opRecoState.status === 'CONTEXT_NOT_READY', 'C2 incomplete scope (no company) → no request, CONTEXT_NOT_READY');
   var apiDup = await freshLoad(true, true, envOk([whLine()]));
@@ -121,7 +122,9 @@ function freshLoad(active, optIn, env, item) { _opRecoInvalidate('DISABLED'); _o
   await freshLoad(true, true, envOk([whLine({ sku: 'OTHER-SKU' })]));
   ok(/RECOMMENDATION_LINE_NOT_FOUND/.test(_opRecoSubsectionHtml(ITEM)), 'E7 line(s) present but none for this SKU → NOT_FOUND (distinct from EMPTY/zero)');
   await freshLoad(true, true, envFail('RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED'));
-  ok(_opRecoState.status === 'API_ERROR' && /RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED/.test(_opRecoSubsectionHtml(ITEM)), 'E8 server error surfaces (no silent fallback)');
+  ok(_opRecoState.status === 'CONFIG_NOT_READY' && /configuration is incomplete/.test(_opRecoSubsectionHtml(ITEM)) && /RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED/.test(_opRecoSubsectionHtml(ITEM)), 'E8 FM2B: missing calc-month → distinct CONFIG_NOT_READY (never a silent legacy fallback)');
+  await freshLoad(true, true, envFail('WORKSPACE_ERROR'));
+  ok(_opRecoState.status === 'API_ERROR' && /request failed/.test(_opRecoSubsectionHtml(ITEM)), 'E8b generic failure → API_ERROR (distinct from CONFIG_NOT_READY)');
   await freshLoad(true, true, envOk([whLine()], { conflicts: 2 }));
   ok(/RECOMMENDATION_LINE_IDENTITY_CONFLICT/.test(_opRecoSubsectionHtml(ITEM)), 'E9 meta.conflicts>0 → identity-conflict surfaced');
 
@@ -134,7 +137,7 @@ function freshLoad(active, optIn, env, item) { _opRecoInvalidate('DISABLED'); _o
   ok(!/getOperationDb|loadOperationDb/.test(CODE), 'F5 read block never triggers a whole-DB reload');
   ok(!/Math\.(ceil|floor|round)|calculateGap|calculateSuggested|\/\s*upc|boxSize/.test(CODE), 'F6 no page-side recommendation formula (values are passed through, never computed)');
   ok(/pagination:\s*\{\s*page:\s*1,\s*size:\s*100\s*\}/.test(OPRECO), 'F7 one bounded page request (size 100) — no per-SKU/per-destination HTTP loop');
-  ok(/_opRecoOptIn\s*=\s*false/.test(OPRECO), 'F8 page opt-in defaults false');
+  ok(!/workspaceApiActive\('recommendation'\)\)\s*&&\s*_opRecoOptIn/.test(OPRECO) && /function _opRecoEnabled\(\)[\s\S]*?workspaceApiActive\('recommendation'\)/.test(OPRECO), 'F8 FM2B: _opRecoEnabled gates SOLELY on the Foundation workspace (opt-in no longer gates)');
 
   console.log('\n----------------------------------------');
   console.log('ORDER PLANNING RECOMMENDATION CUTOVER (F1-4B-FM2): ' + pass + ' passed, ' + fail + ' failed');

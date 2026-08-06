@@ -188,3 +188,47 @@ Foundation remains **clockless** (determinism); timing is stamped in the consume
 - Order Planning additionally: `window._opSetRecommendationOptIn(true)` (page-local; `window._opGetRecommendationOptIn()`
   reads it). Disabling either shared flag returns both pages to legacy; disabling the OP opt-in affects Order
   Planning only. No duplicated Foundation flag, no auto-enable, no production-wide default, no page UI control.
+
+## F1-4B-FM2B addendum — PRODUCTION READ CUTOVER (recommendation is now CANONICAL)
+
+The recommendation READ workspace has completed its production cutover. It is the FIRST **canonical** workspace:
+
+- **Active by default, master-flag-independent.** `WORKSPACE_CANONICAL = { recommendation: true }`; the
+  per-workspace flag `WORKSPACE_ENABLED.recommendation` now **defaults `true`**. For a canonical workspace
+  `workspaceApiActive` / `effectiveMode` no longer consult the global `USE_WORKSPACE_API` master flag — the ONLY
+  gate is the per-workspace flag. Normal page usage reaches the canonical Runtime with **no console command**.
+- **Single emergency kill switch (rollback):** `KM.api.setWorkspaceEnabled('recommendation', false)` → both
+  consumers return to legacy. No second/overlapping flag; the master flag still gates every OTHER (non-canonical)
+  workspace exactly as before.
+- **Order Planning opt-in removed as a gate.** `_opRecoEnabled()` now depends SOLELY on
+  `workspaceApiActive('recommendation')`. `_opSetRecommendationOptIn` is a **deprecated inert no-op** (retained for
+  API stability; it can neither enable nor permanently block); `_opGetRecommendationOptIn()` reports the EFFECTIVE
+  enabled state for the diagnostic.
+
+### No silent legacy fallback — distinct visible states
+Both consumers distinguish: `LOADING` · `READY` · `VALID_ZERO` ("No replenishment/order needed") · `BLOCKED` ·
+`PARTIAL`/provisional · `SOURCE_SHORT` (residual shortage) · `EMPTY` · **`CONFIG_NOT_READY`** · `API_ERROR`.
+`CONFIG_NOT_READY` is NEW and DISTINCT: a `RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED` /
+`_INVALID` server code renders "Recommendation configuration is incomplete: `<code>` … set
+RECOMMENDATION_CALCULATION_MONTH." (amber "needs setup"), never "engine is not active" and never a red API error.
+A request failure never falls back to legacy numbers; missing source is never coerced to 0; a valid zero stays a
+valid zero. Retry after `CONFIG_NOT_READY` / `API_ERROR` is permitted (Inventory: Search/Refresh; OP: re-expand).
+
+### Suggested-Qty disposition
+- Inventory top table: when the canonical Runtime is active the single "Suggested Qty" cell shows a
+  **destination-breakdown indicator ("— breakdown")** pointing to the expanded Recommendation Summary (the runtime
+  emits one line per destination — MARKETPLACE and/or each WAREHOUSE — and this spec does NOT authorize summing
+  them). The legacy number is preserved only when the kill switch is OFF.
+- Order Planning: the legacy "No recommendation available." message is **suppressed** whenever the canonical
+  feature is active — the "Recommendation — Order Need" subsection owns the recommendation surface. Manual Order
+  Qty is never written/overwritten; Demand Summary stays demand-only; no Send Request; no persistence.
+
+### Deployment/runtime version guard (safe diagnostic)
+`getRecommendationWorkspaceDiagnostic()` adds `recommendationCanonical`, `frontendConsumerVersion`,
+`recommendationTransportVersion` (client-side constants proving the loaded frontend/transport) and
+`lastRuntimeVersion` / `lastBundleHash` (surfaced from server response `meta` when present; `null` otherwise —
+never invented, never a secret). No new server field was required (client-side guard only; the server-reported
+runtime/bundle version is opportunistically surfaced when the handler includes it).
+
+Scope, DTO (scope-only), single router registration, calc-month Script-Property authority (no clock), and the
+frozen runtime owners are UNCHANGED from FM1-T. No `.gs` / bundle change this round.
