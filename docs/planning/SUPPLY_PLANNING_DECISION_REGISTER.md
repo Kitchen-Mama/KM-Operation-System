@@ -116,6 +116,29 @@
 
 ---
 
+## D-F1-4B-E0R — Recommendation destination node + Phase-1 fixed multi-warehouse demand allocation ✅ AUTHORIZED (2026-08-06)
+
+- **D-F1-4B-E0R-1 — Destination node types.** Recommendation destinations are `MARKETPLACE` (canonical marketplace/
+  site identity; **no fake `warehouse_id`**; the actual Amazon FC is assigned later at Shipment creation) or
+  `WAREHOUSE` (canonical `warehouse_id`; stock/incoming/demand/gap stay warehouse-specific).
+- **D-F1-4B-E0R-2 — Multi-warehouse demand allocation.** When one company/country/marketplace demand scope serves
+  multiple overseas warehouses and the canonical Forecast/Sales source has **no `warehouse_id` dimension**, allocate
+  Forecast (and Sales/run-rate, same ratio unless a source-proven rule exists) to each warehouse by an **explicit
+  configured fixed ratio** (e.g. KM/US/Amazon 30% / 70%). Calculate each warehouse **independently**; **never pool**
+  destination Current Stock or Qualified Incoming; **no silent surplus transfer**. This **supersedes the prior blanket
+  prohibition** on proportional warehouse demand allocation. Cross-warehouse transfer stays Phase-2 (separately frozen).
+- **D-F1-4B-E0R-3 — Ratio is configuration, not a constant.** The ratio is read from ONE canonical authority
+  (`replenishment_demand_allocation_rules`, `REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md`). **Forbidden:** hard-coding
+  0.3/0.7 in calculation modules; inferring from inventory / warehouse order; equal split on missing config; first-
+  warehouse-gets-remainder; silent latest-wins; copying 100% demand to every warehouse.
+- **D-F1-4B-E0R-4 — Separate warehouse calculations.** Per warehouse, `allocatedForecastQty` / `allocatedSalesQty` /
+  `destinationCurrentStock` / `destinationQualifiedIncoming` / `calculatedGap` / `recommendedQty` / `remainingShortage`
+  are computed + returned **separately**; A's stock/incoming never count as B's.
+- **Runtime (this round F1-4B-E0R):** pure building blocks only — `assets/js/core/supply-planning-demand-allocation.js`
+  (destination DTO/key, targeted rule reader, ratio validator with integer basis points, deterministic largest-
+  remainder allocator **reusing the frozen §24.7 policy**). No wiring into KMPCX/KMAF/KMPA/KMPS; no UI/Submit/Shipment/
+  persistence; config table is a user-owned provisioning prerequisite (no runtime table creation).
+
 ## Decisions explicitly NOT re-opened (already frozen — listed to prevent accidental re-litigation)
 
 - Formula set (Engine A/B, §2C.1/§31/§14/§22/§27A/§32A/§34A/§39/§40) — FROZEN v4.7.

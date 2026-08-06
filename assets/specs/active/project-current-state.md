@@ -3914,4 +3914,51 @@ No page/API/router/Apps-Script/bundle/DB/schema/formula change; no inventory-com
   suite unchanged (89 files / 0 failing — no code touched); Golden 39/1/0; #34 Pending. Not pushed, not deployed.
 ```
 
+### Checkpoint — F1-4B-E0R Recommendation Destination Node + Phase-1 Fixed Multi-Warehouse Demand Allocation = IMPLEMENTED (pure building blocks) (2026-08-06)
+```
+F1-4B-E0R — a NEW authorized Phase-1 business decision (D-F1-4B-E0R-1..4): marketplace-level demand may be split to
+  multiple overseas warehouses by an EXPLICIT configured fixed ratio (KM/US/Amazon 30/70 example). Supersedes the prior
+  blanket prohibition on proportional warehouse demand allocation. This round = authority/grain AUDIT + pure building
+  blocks + config provisioning spec + tests. NO wiring into KMPCX/KMAF/KMPA/KMPS; NO UI/Submit/Shipment/persistence;
+  NO formula/API-contract/DB-schema/bundle/Apps-Script change; NO runtime DB mutation; NO live DB.
+Authority + grain audit (live-repo verified):
+  • 30/70 ratio → SOURCE_MISSING in repo (no allocation_ratio/demand_allocation field anywhere); business origin is
+    manual Google-Sheet formulas (SOURCE_PROVEN_MANUAL_SHEET_ONLY) — NOT runtime-authoritative.
+  • Marketplace identity = marketplaces.marketplace_id (canonical); Warehouse identity = warehouses.warehouse_id.
+  • Forecast (fc_regular_forecast), Sales (amazon_weekly/daily_sales_snapshot), Special Event (fc_special_events) =
+    MARKETPLACE-level (no warehouse_id). Current Stock (overseas_inventory_snapshot.warehouse_id) + Qualified Incoming
+    (shipments.destination_warehouse_id) = WAREHOUSE-level (separable — no pooling needed).
+  • Remainder owner = FROZEN deterministic largest-remainder (§24.7 supply-planning-allocations.js distributeByWeightCapped;
+    IRMap._allocateShared fractional-remainder + stable key). §5 gate satisfied by REUSING it — not inventing a policy.
+No HALT condition tripped (deterministic remainder frozen; marketplace scope identifiable; new decision authorizes
+  ratio allocation; stock/incoming separable by warehouse_id; marketplace identity present; allocator splits — never
+  invents sales; Special-Event handled by split-once, not duplication).
+NEW pure module assets/js/core/supply-planning-demand-allocation.js (window.KM.demandAllocation): buildDestinationDTO +
+  destinationKey (MARKETPLACE vs WAREHOUSE; Amazon→MARKETPLACE no fake warehouse; legacy destinationWarehouseId→WAREHOUSE),
+  readActiveAllocationRules (pure; rows injected; active + effective-period; no live DB), validateAllocationRules
+  (canonical active same-company warehouse_id; ratios∈[0,1]; integer basis points sum EXACTLY 10000; dup/period/total
+  errors), allocateByBasisPoints (largest-remainder, conserves exact total; leftover→largest fractional remainder,
+  tie-break warehouse_id asc), allocateMarketplaceDemand (split once; MISSING→null not 0; explicit 0→0),
+  passthroughWarehouseDemand (warehouse-level source NEVER re-split), buildWarehouseDemandFacts (per-warehouse
+  allocatedForecastQty/allocatedSalesQty — no pooled stock/incoming), allocationRuleId (RDAR-{CO}-{CY}-{MP}-{WH}).
+  Error tokens: DEMAND_ALLOCATION_RULE_NOT_CONFIGURED / _RATIO_INVALID / _RATIO_TOTAL_INVALID / _DESTINATION_CONFLICT /
+  _PERIOD_CONFLICT / DESTINATION_WAREHOUSE_INVALID. 30/70 of 1000 → 300/700; of 1001 → 300/701 (exact); permutation-invariant.
+Config authority: NEW docs/planning/REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md — exact header + grain + stable id +
+  validation + USER-OWNED provisioning (runtime never creates/repairs; manual sheet setup; exact Spreadsheet-ID gate).
+  No live table created this round; getReplenishmentDemandAllocationRules loader deferred to the wiring slice.
+Tests: NEW supply-planning-demand-allocation-f1-4b-e0r.test.js (37 — DTO/key + Amazon-no-warehouse + legacy normalize;
+  30/70 validate + sum-100 + under/over/dup/inactive/cross-company/period/ratio-range blocks; 1000→300/700, 1001 exact,
+  permutation-invariant, no-first-row-remainder, zero vs missing; warehouse isolation + passthrough-not-resplit + no
+  double-allocation; event split-once; multi-line; no hard-coded 0.3/0.7; no clock/RNG/row-index; no DB mutation).
+  FULL SUITE 90 files / 0 failing; Golden 39/1/0; #34 Pending.
+Decision register: SUPPLY_PLANNING_DECISION_REGISTER.md D-F1-4B-E0R-1..4 recorded (authorized).
+Files: NEW supply-planning-demand-allocation.js (browser+node core module; NOT bundled — not in MODULE_ORDER; NOT loaded
+  by index.html this round — no page wiring; effectively GIT_ONLY / no deploy effect until the wiring slice),
+  NEW test (GIT_ONLY), NEW REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md + decision-register + this entry (DOCUMENTATION_ONLY).
+  No change to any existing runtime/formula/API/router/bundle/DB-api/page. APPS_SCRIPT_SYNC_REQUIRED=false; BUNDLE_REBUILD_REQUIRED=false.
+Exact next slice: F1-4B-E — provision replenishment_demand_allocation_rules (user-owned) + a targeted read adapter +
+  wire buildWarehouseDemandFacts into the (unchanged) recommendation runtime per warehouse; then destination READY per
+  warehouse. Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
