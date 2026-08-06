@@ -4026,4 +4026,41 @@ Doc: docs/planning/PHASE_F1_4B_F_LIVE_FANOUT_AUDIT.md (call chain + 5 answers + 
   bundle/DB change; no live DB. Full suite unchanged (91 files / 0 failing); Golden 39/1/0; #34 Pending. Not pushed.
 ```
 
+### Checkpoint — F1-4B-FM Unified Destination-Node Recommendation Runtime = AUDIT / HALT (decisions required) (2026-08-06)
+```
+F1-4B-FM — build one unified destination-node runtime (MARKETPLACE adapter + WAREHOUSE live fanout) converging into the
+  existing frozen resolver, no fabricated Amazon warehouse_id, no second engine. §3 mandates audit-first + HALT if a
+  frozen owner contradicts the authorized decision OR a required canonical identity is unprovable. BOTH triggers met
+  for MARKETPLACE → HALTED. NO code change (no page/Apps-Script/bundle/core/API/DB/schema/formula; no live DB).
+Audit (two focused reads; cited in PHASE_F1_4B_FM_UNIFIED_DESTINATION_AUDIT.md):
+  • WAREHOUSE fanout is buildable (F1-4B-E resolveScopeWarehouseDemandFacts already feeds the frozen Weekly runtime).
+  • MARKETPLACE current stock IS source-proven: amazon_inventory_snapshot.available_qty (marketplace-level; db-api:606).
+  • calculateGap reusable via 4 caller-owned scalars (injectable seam; planning-context.js:194). marketplaces table
+    validates a MARKETPLACE destination (db-api:361-383). No doc forbids marketplace_id as destination; D-F1-4B-E0R-1
+    authorizes it.
+HALT trigger 1 (frozen owner contradicts): the endpoint runs recommendationType=WEEKLY_SHIPPING; the Weekly resolver caps
+  recommendedQty=min(gap,totalAllocated) where totalAllocated comes only from the warehouse/factory pool allocator
+  (source-facts.js:622,646). A MARKETPLACE has no warehouse supply pool + the projection is warehouse_id-only
+  (source-projection.js:210-211,382) + KMPA:86/KMPCX validateDestination/allocation-input:451,495 all hard-require a
+  canonical warehouse_id. So a marketplace computes to 0 on the Weekly path; a REAL marketplace order is the frozen
+  MONTHLY resolver's CEIL(gap/upc) (calculateSuggestedOrderQty, allocator-independent, :804-806) — a DIFFERENT frozen
+  resolver. "Same resolver" (§2) cannot hold; picking the resolver is an unspecified business decision.
+HALT trigger 2 (identity unprovable): MARKETPLACE Qualified Incoming — shipments/plans carry NO canonical marketplace_id
+  destination (only destination_warehouse_id + free-text; marketplace may be "MULTI"; db-api:913-922,747-751);
+  qualified-incoming keys on destinationWarehouseId only. → MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED (§6 diagnostic;
+  incoming=0, rec still computes from FC+FBA stock) — a correctness caveat to confirm, not assume.
+Decisions escalated: D-1 marketplace recommendation semantics (A recommended = ORDER-NEED via frozen Monthly
+  CEIL(gap/upc), reuses calculateGap+calculateSuggestedOrderQty, no allocator/no dup; B = ship-from-pool via Weekly,
+  needs forbidden allocation edits + yields 0). D-2 confirm MARKETPLACE incoming UNRESOLVED disposition (or supply a
+  source-proven shipment→marketplace mapping — none exists). D-3 authorize refactoring KMPA(:86)+allocation-input dest
+  to destination-node IDENTITY (marketplace_id, warehouseId=null) beyond §5's KMPCX — as identity support, not
+  allocation-math change. WAREHOUSE fanout is unblocked today; MARKETPLACE needs D-1/D-2/D-3.
+Next round F1-4B-FM' (after decisions): normalizeRecommendationDestination + KMPCX/KMPA/allocation-input identity
+  refactor + pure MARKETPLACE order-need adapter (FBA available_qty→calculateGap→Monthly) + WAREHOUSE Weekly fanout +
+  RECOMMENDATION_CALCULATION_MONTH config + planningCycle RECO-{YYYY-MM} + server rule reader + bundle rebuild +
+  additive response identity + scope-only request + compact per-destination UI + tests, golden 40-matrix protected.
+Doc: PHASE_F1_4B_FM_UNIFIED_DESTINATION_AUDIT.md. Full suite unchanged (91 files / 0 failing); Golden 39/1/0; #34
+  Pending. Not pushed, not deployed.
+```
+
 - **Files (F1-4A):** `docs/planning/PHASE_F1_4A_RUNTIME_CONNECTION_AUDIT.md` (NEW — dependency graph + blockers + options + recommendation — DOCUMENTATION_ONLY), this entry (DOCUMENTATION_ONLY). **No code/test/bundle change; `APPS_SCRIPT_SYNC_REQUIRED=false`; `FRONTEND_GITHUB_PAGES_REQUIRED=false`.** Not pushed, not deployed, no live DB accessed.
