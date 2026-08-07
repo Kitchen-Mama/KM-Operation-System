@@ -177,3 +177,53 @@ redesign, Apps Script handler fanout, UI, persistence, Submit/Shipment/PO/Covera
 - Persist-vs-on-request policy — FROZEN (`CALC_RULES §4`: live analysis not persisted; scheduled/manual recommendation persisted).
 - B-1/B-2/B-3/B-5/B-7 — RESOLVED (decision-only).
 - Pooling Phase-1 vs Phase-2 boundary (no cross-company borrowing in Phase-1) — FROZEN; audit confirmed no premature implementation.
+
+## D-F1-4B-FM3b — Canonical Time-Phased Supply Projection owner (KMTPP)
+
+**Owner (NEW, frozen):** `assets/js/core/supply-planning-time-phased-projection.js` →
+`KM.core.timePhasedProjection.projectTimePhasedSupply(input)` (VERSION `kmtpp-fm3b-1`). Pure / deterministic /
+READ-ONLY. It owns ONLY chronological mechanics; it owns NO fact.
+
+**Reused frozen owners (unchanged):** opening current stock (amazon_inventory_snapshot.available_qty for
+MARKETPLACE; warehouse-specific stock for WAREHOUSE), Qualified Incoming eligibility + ETA (KMQI), Regular FC
+by month + M+1..M+4 window (KMPCX `_forecastWeightMonths`; window start = first day of M+1, end = last day of
+M+4), Special-Event preparation/pull-forward date (KMCALC §10, Event Start − 30 calendar days), demand
+allocation split (KMDA), destination identity (KMDR), units-per-carton + carton CEIL/FLOOR + scalar
+calculateGap (KMCALC). The projection NEVER recomputes any of these.
+
+**New ownership (this decision):**
+1. **Event ordering** — a single merged event stream (INCOMING, DEMAND, CHECKPOINT), sorted ONCE by
+   (canonical ISO date → kind → lexicographic id). Same-date order: INCOMING (0) before DEMAND (1) before
+   CHECKPOINT (2), so incoming available on date D may cover demand required by D and a same-day checkpoint
+   reflects both. Never browser clock / locale sort / insertion order. No `Date.now()` / `new Date()` / RNG.
+2. **Opening balance** — `openingSupplyQty` (a canonical destination-specific fact). Missing → `ready:false`
+   `OPENING_SUPPLY_UNAVAILABLE` (missing ≠ zero). Negative → `OPENING_SUPPLY_INVALID`.
+3. **Supply event application** — `balance += incoming.qty` at its available date, applied EXACTLY ONCE
+   (count-once across all tiers/checkpoints — one shipment can never cover two tiers).
+4. **Demand event consumption** — `covered = min(balance, demand.qty)`; `balance -= covered`;
+   `shortage = demand.qty − covered`. Demand consumed chronologically.
+5. **Carry-forward** — remaining balance flows to the next tier. A tier's `openingSupplyQty` = the running
+   balance at the moment the tier's FIRST event is reached (remaining after all prior tiers). Opening stock is
+   consumed ONCE — NEVER `max(0, demand − opening)` re-evaluated per tier (that double-use is forbidden).
+6. **Checkpoint emission** — snapshot `{cumulativeDemandQty, cumulativeCoveredQty, remainingSupplyQty, gapQty}`
+   at each requested checkpoint (kind 'MONTH' | 'DAY'); plus a T1..T4 `monthlyProjection[]` rollup
+   `{tier, month, openingSupplyQty, incomingAddedQty, demandQty, coveredQty, remainingSupplyQty, remainingGapQty}`.
+
+**Zero / missing / blocked semantics:** valid canonical 0 demand → valid 0 gap (supply intact). Missing opening
+supply / invalid dates / invalid qty → fail closed with a structured issue (never 0). The owner does not itself
+mark lines "blocked" — the caller preserves the frozen MARKETPLACE PARTIAL/UNAVAILABLE fail-closed semantics.
+
+**MARKETPLACE:** destination identity passed through; NO fabricated `warehouse_id`; marketplace-level FBA stock
+only. **WAREHOUSE:** one independent projection per warehouse node; warehouse-specific stock + incoming; NO
+cross-warehouse pooling; totals conserved by construction.
+
+**BOUNDED HALT — day horizons (D18/D30/D45/D90):** NOT produced this round. Two required authorities are
+missing and NOT frozen: (a) no authoritative calculation-DAY / asOf anchor from which +18/+30/+45/+90 start
+(KMPCX derives only month-boundary dates and forbids browser-date inference); (b) no frozen intra-month
+day-demand distribution rule (monthly FC ÷ daysInMonth and avgSales × days are explicitly NOT authorized). The
+owner's checkpoint mechanism is generic and ready to snapshot day horizons the moment both authorities are
+frozen — but it never fabricates day demand or a day anchor. See the FM3b completion report for the exact
+missing-authority statement (business freeze required).
+
+**recommendedQty / carton conversion:** intentionally NOT performed inside this owner (separation of projection
+vs recommendation). The downstream frozen resolver (KMCALC carton CEIL/FLOOR) consumes `remainingGapQty`.

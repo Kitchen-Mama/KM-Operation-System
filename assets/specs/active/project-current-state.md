@@ -4505,3 +4505,33 @@ Tests: recommendation-session-cache-f1-4b-fm3a.test.js (NEW, 30) cache miss/hit/
 blocked/valid-zero + aggregation L–P + cell + source safety; updated recommendation-production-cutover-fm2b
 (Suggested no longer "breakdown"; per-load cache invalidate) + replen-recommendation-cutover (per-load cache
 invalidate). Full suite 104 files / 0 failing; Golden 39/1/0; #34 Pending.
+
+## F1-4B-FM3b checkpoint (2026-08-07) — Canonical Time-Phased Supply Projection owner (PARTIAL)
+
+Result PARTIAL (per §21): built + proved the ONE canonical chronological projection owner; day horizons are a
+bounded HALT (missing authorities). Runtime freeze only — NO consumer/DTO wiring (FM3c), NO UI, NO write.
+
+NEW frozen owner: assets/js/core/supply-planning-time-phased-projection.js →
+KM.core.timePhasedProjection.projectTimePhasedSupply(input) (VERSION kmtpp-fm3b-1). Pure/deterministic/READ-ONLY.
+Owns ONLY: single date-ordered event stream (sorted once; INCOMING<DEMAND<CHECKPOINT same-day; no clock/RNG),
+one running balance with COUNT-ONCE incoming, chronological CARRY-FORWARD (opening consumed once, never reused),
+checkpoint snapshots + T1..T4 monthlyProjection rollup. Reuses (does NOT rewrite) KMPCX (M+1..M+4 window), KMQI
+(qualified incoming + ETA), KMCALC (special-event prep date §10, carton owner, scalar calculateGap), KMDA
+(demand split), KMDR (destination identity), amazon/warehouse stock authorities. Input = normalized events
+{openingSupplyQty, demandEvents[{date,qty,tier,month,demandType}], incomingEvents[{availableDate,qty,tier,
+sourceType}], checkpoints[{date,kind,tier,month}]}; output = {ready, timeline[], checkpoints[], monthlyProjection[],
+issues[], meta}. Missing opening supply → ready:false OPENING_SUPPLY_UNAVAILABLE (missing≠0); valid zero preserved.
+
+Authority matrix: calculationMonth = SOURCE_PROVEN (Script Property); T1..T4 = M+1..M+4 = frozen (KMPCX);
+opening stock / qualified incoming+ETA / regular FC by month / special-event prep / UPC / destination identity =
+SOURCE_PROVEN/frozen; DAY-HORIZON start-date anchor = BLOCKED (no calc-DAY/asOf authority); intra-month
+day-demand distribution = BLOCKED (no frozen rule; FC/daysInMonth and avgSales×days NOT authorized). So
+monthlyProjection T1..T4 = PRODUCED; horizons[] D18/D30/D45/D90 = BOUNDED HALT (needs a business freeze of the
+two authorities). Decision registered as D-F1-4B-FM3b.
+
+Tests: supply-planning-time-phased-projection-f1-4b-fm3b.test.js (NEW, 27) — A sequential carry-forward (opening
+not reused), B incoming-between-tiers, C late-incoming excluded, D count-once, E valid-zero, F missing≠0, G
+special-event-once, H multi-warehouse isolation, I MARKETPLACE no-fake-warehouse, J determinism (permutation/no
+mutation/JSON-safe/no clock), K generic checkpoint mechanism + day-horizon no-invention, L full T1..T4 chain.
+No .gs/bundle change (owner not yet bundled/wired — FM3c). Full suite 105 files / 0 failing; Golden 39/1/0; #34
+Pending; bundle parity f803f73e... unchanged.

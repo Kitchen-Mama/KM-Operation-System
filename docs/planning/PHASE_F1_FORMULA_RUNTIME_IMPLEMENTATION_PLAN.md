@@ -240,3 +240,18 @@ NEW pure module `assets/js/core/supply-planning-planning-context.js` (`KMPCX` / 
 **Source-proven outputs per line:** `currentStockQty` (Σ CURRENT_STOCK supply source), `qualifiedIncomingQty` (Σ SHIPPED_IN_TRANSIT supply source), `calculatedGap` (frozen `calculateGap` owner via the productionRequest planning fact), `recommendedQty` (existing resolver carton-FLOOR). **No** Coverage/DOS/Projected/Reason/Status invented (omitted). Missing source → structured failure (never fake zero); legitimate runtime zero → successful zero; filter miss → successful empty page. To surface source-proven current-stock/QI, `supply-planning-production-source.js` `buildProductionRecommendationSource` additively returns `supplySourceEntries`/`demandSourceEntries` (the projection's lifecycle-bucketed rows; not a formula/recommendation change) → bundle regenerated (28 modules, hash `a002c6a3…`, `--check` reproducible; parity 56).
 
 **API Foundation:** `km-api-foundation.js` registers `recommendation` (IMPLEMENTED + resolver + bounded DTO builder); per-workspace flag `recommendation:false` and master `USE_WORKSPACE_API:false` remain **default false** (infrastructure-only; **no page cutover**; no dual execution; no silent legacy fallback). **Tests:** NEW `supply-planning-recommendation-workspace-f1-4b-a.test.js` (35 — end-to-end real recommendedQty 96 from raw snapshots, source-proven currentStock 100/QI 24/gap 100, validation-before-read, wrong-ID fail-closed, zero writes, pagination/filter, registration + default-false flags + no-fallback); `km-api-foundation`/`-compat` updated 7→8 workspaces. Full suite **87 files / 0 failing**; Golden **39/1/0**; #34 Pending. **No new formula, no DB/schema/header change, no page connection, no persistence, no live DB, no push/deploy.** **Next:** F1-4B-B — Inventory Replenishment page cutover behind the flag (separately authorized).
+
+## F1-4B-FM3b (2026-08-07) — Time-Phased Supply Projection owner (PARTIAL / runtime freeze)
+
+DONE: canonical projection owner KMTPP (supply-planning-time-phased-projection.js) — chronological carry-forward
++ count-once + T1..T4 monthlyProjection + generic checkpoint mechanism; 27 pure tests; decision D-F1-4B-FM3b.
+
+BOUNDED HALT (needs a business decision before implementation): DAY horizons D18/D30/D45/D90 — (1) no
+authoritative calculation-DAY / asOf anchor; (2) no frozen intra-month day-demand distribution rule. Do NOT
+implement FC÷daysInMonth or avgSales×days without an explicit freeze.
+
+NEXT (FM3c, requires authorization): (a) bundle KMTPP into 90_generated_supply_planning_bundle.gs and wire the
+recommendation.workspace.get handler to build per-tier demand events (recoWsRegularForecastByMonth_ per M+k) +
+ETA-dated incoming events (KMQI) and emit additive line.monthlyProjection (existing scalar line fields
+unchanged); (b) Order Planning + Inventory consumer cutover to display the monthly gap / carton-safe Suggested;
+(c) resolve the day-horizon authority freeze, then emit additive line.horizons[].
