@@ -697,3 +697,33 @@
     color: #334155;
     margin: 0 0 12px;
 }
+
+/* ============================================================================
+   UI-HOTFIX (2026-08-07) — SKU Handbook (1) filter alignment, (2) hide Data-mode badge.
+   (1) ALIGNMENT ROOT CAUSE: the row (.skuh-filters, align-items:flex-end) aligns the four groups by their
+       BOTTOM edge, so they only line up top+bottom when all four groups are the SAME height. Product Line /
+       Brand / Lifecycle render the shared multi-select (.kmf) inside .skuh-filter-mount, while Search is a
+       plain <input>; there was no EXPLICIT shared control-height owner, so any drift in the .kmf trigger box
+       let the shorter group sink Search below the selects. FIX (shared-owner geometry — no translateY /
+       negative margin / per-field pixel / JS measurement): pin the dropdown control area to the SAME height
+       as the Search input, and give all four labels one shared baseline height (stable even if a label wraps). */
+#sku-handbook-section .skuh-filter label {
+    min-height: 16px;
+    line-height: 16px;
+}
+#sku-handbook-section .skuh-filter-mount {
+    height: var(--km-filter-height, 38px);        /* dropdown control area == the Search input height */
+}
+#sku-handbook-section .skuh-filter--dropdown .kmf,
+#sku-handbook-section .skuh-filter--dropdown .kmf-trigger {
+    height: 100%;                                 /* trigger fills the pinned mount height (border-box) */
+    box-sizing: border-box;
+}
+/* (2) PRESENTATION-ONLY: hide the SKU Handbook data-mode badge ("Data: Mock" / "Data: Google Sheet").
+   The mode is STILL computed in sku-handbook.js (getDataSourceMode) and the badge is STILL rendered into
+   #skuh-stats — only its visibility is removed here. No mock/live selection, data source, or Demo Mode
+   logic changed. #skuh-stats is flex+gap, so display:none leaves NO reserved space; the EN/中文 toggle
+   lives in .skuh-header-top and is unaffected. Selector is SKU-Handbook-specific (no global impact). */
+#sku-handbook-section .skuh-stat--mode {
+    display: none;
+}
