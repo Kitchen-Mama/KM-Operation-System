@@ -293,5 +293,19 @@ recommendation-monthly-projection-transport-f1-4b-fm3c2.test.js (41) + bundle te
 Bounded: (a) workspace WAREHOUSE path pre-existingly blocked ALLOCATION_FACTS_NOT_READY → wiring in unreached
 success branch (semantics proven at helper level); (b) MARKETPLACE incoming required-by=T1-gated (frozen; preserves
 scalar) so later marketplace arrivals not time-phased this round.
-NEXT: FM3d — Order Planning UI cutover (render line.monthlyProjection T1–T4 + per-tier suggestedOrderQty; retire
-page-side derivations). Day-horizon (D18/30/45/90) remains a separate business-freeze item.
+FM3d DONE (below).
+
+## F1-4B-FM3d (2026-08-07) — Order Planning monthlyProjection consumer cutover (UI presentation only)
+
+DONE: frontend-only (request-order.js + minimal request-order.css). NO runtime formula, NO handler, NO bundle, NO DB,
+NO write-flow change. Demand Summary (reco path) gains Gap column (Demand←demandQty, Gap←remainingGapQty); Order
+Allocation Suggested (T1–T3)←suggestedOrderQty (server KMCALC). Legacy _roTierSuggested retired for the display column
+ONLY; still owns Order Qty default + Send Request (frozen write path, §18) + workspace-OFF fallback. Async patch
+(_opRecoPatchCanonicalCells) rewrites only Demand/Gap/Suggested cells (data-ro-*-tier identity) — Order Qty/Carton/Note
+untouched. Valid-zero: 0→"0", null→"…"/"—" (never fabricated). Standalone "Recommendation — Order Need" table retired
+→ collapsed <details> diagnostics. T4 visible (Demand Summary) but not writable (Order Allocation stays T1–T3). One
+request per expand; dedupe/abort/stale/FM3a cache unchanged. D-F1-4B-FM3d. Test:
+order-planning-monthly-projection-consumer-f1-4b-fm3d.test.js (33) + FM2 D1 updated.
+NEXT (separate business-authority tasks, NOT scheduled): Inventory 18/30/45/90 day-horizon (still frozen); MARKETPLACE
+later-arrival time-phasing (frozen required-by=T1 gate); WAREHOUSE ALLOCATION_FACTS_NOT_READY resolution (would
+activate warehouse monthlyProjection end-to-end).

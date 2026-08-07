@@ -339,3 +339,30 @@ exposes `line.monthlyProjection[]` for T1..T4. Transport only — reuses frozen 
   not time-phased this round. WAREHOUSE `warehouseQualifiedEvents` span the whole window (status-based, not
   required-by-gated). Read count unchanged (ONE targeted read); zero writes; FM3a session cache stores `env.data`
   verbatim → `monthlyProjection` persists.
+
+## D-F1-4B-FM3d — Order Planning monthlyProjection consumer cutover (UI presentation only; no formula/write)
+
+**Frontend-only** consumer cutover in `request-order.js` (+ minimal `request-order.css`). No runtime formula, no
+Apps Script handler, no bundle, no DB, no write-flow change. Presentation is PURE — the page authors no
+gap/carry-forward/carton/suggested math (all server/KMTPP/KMCALC owned in FM3c-2).
+
+- **Demand Summary (T1–T4)** — on the recommendation-enabled path gains a **Gap** column: `Demand ←
+  monthlyProjection.demandQty`, `Gap ← monthlyProjection.remainingGapQty` (the ONLY owner of monthly T1–T4
+  shortage). When a projection is unavailable, Demand falls back to the existing page authority
+  (`_roDemandForMonth`) and Gap renders "—" (never fabricated). Workspace OFF → legacy demand-only, byte-unchanged.
+- **Order Allocation Suggested (T1–T3)** — `Suggested ← monthlyProjection.suggestedOrderQty` (server KMCALC
+  carton-CEIL). Legacy page `_roTierSuggested` is retired ONLY for this DISPLAY column; it REMAINS the owner of
+  the Order Qty default + Send Request (frozen write path, §18) and the workspace-OFF fallback.
+- **Manual Order Qty / Send Request** — UNCHANGED. The async projection patch (`_opRecoPatchCanonicalCells`)
+  rewrites ONLY the Demand/Gap/Suggested cells (keyed by `data-ro-{demand,gap,suggested}-tier` identity), never
+  the Order Qty / Carton / Note inputs → no reset, no focus loss, no auto-overwrite.
+- **Valid-zero contract** — `_opRecoFmtQty`: finite (incl. 0) → number; null → "…" while loading, "—" once
+  settled. Never 0→dash, never null→0.
+- **Primary projection selection** — the single loaded destination line that carries a monthlyProjection
+  (MARKETPLACE case). Multiple lines (warehouse fanout) or none → null → truthful unavailable (no page-side merge).
+  WAREHOUSE lines are pre-existingly blocked `ALLOCATION_FACTS_NOT_READY` (FM3c-2) → Gap/Suggested "—".
+- **Standalone "Recommendation — Order Need" table retired** — demoted to a COLLAPSED `<details>` "Recommendation
+  diagnostics" area (`_opRecoSubsectionHtml`); all runtime states (status / recommended / blockedReason /
+  requestId / cycle) preserved as diagnostics, no longer the decision surface.
+- **T4** — shown in Demand Summary (visibility) but NOT made a writable Order Allocation tier (stays T1–T3).
+- Request lifecycle / dedupe / AbortController / stale-guard / FM3a cache — unchanged. One request per expand.

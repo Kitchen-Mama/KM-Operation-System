@@ -1445,9 +1445,19 @@ function renderExpandPanel(item) {
   var firstShort = _roFirstShortageTier(item);
   var next4b = _roNextMonths(4);
 
-  // A — Demand Summary (T1–T4). Demand = canonical monthly demand: Adjusted Basic FC(month) + Special
-  // Event demand assigned to that month. T1=Month+1 … T4=Month+4 (T4 = planning visibility only, never a
-  // Request Bucket). Missing month source → "--" (never a copied T3 value, never a fake 0).
+  // F1-4B-FM3d: when the recommendation workspace is ON, the canonical server monthlyProjection (KMTPP) OWNS the
+  // per-tier Gap + Suggested (and the recommendation-aware Demand). These cells render a "…"/existing-authority
+  // placeholder synchronously and are patched by _opRecoPatchCanonicalCells when the async READ settles — NO
+  // page-side gap/carton/suggested math. When OFF, the legacy demand-only + page-Suggested behavior is verbatim.
+  var recoOn = (typeof _opRecoEnabled === 'function') && _opRecoEnabled();
+  var recoProj = (recoOn && typeof _opRecoPrimaryProjectionFor === 'function') ? _opRecoPrimaryProjectionFor(item) : null;
+  var recoLoading = (recoOn && typeof _opRecoIsLoadingFor === 'function') ? _opRecoIsLoadingFor(item) : false;
+  function _roCanonTier(t) { if (!recoProj) return null; for (var ci = 0; ci < recoProj.length; ci++) { if (recoProj[ci].tier === t) return recoProj[ci]; } return null; }
+
+  // A — Demand Summary (T1–T4). Legacy (workspace OFF): Demand = Adjusted Basic FC(month) + Special Event demand
+  // (page authority). Canonical (workspace ON): Demand ← monthlyProjection.demandQty and Gap ← remainingGapQty
+  // (the ONLY owner of monthly T1–T4 shortage; FM3d §2/§8). Missing month source → "--"/"—" (never a copied T3
+  // value, never a fake 0). T1=Month+1 … T4=Month+4 (T4 = planning visibility only, never a Request Bucket).
   function _roDemandForMonth(mo) {
     var fc = fcForMonth(mo);
     var basic = (fc == null) ? null : Math.round(fc * (_roTargetPct(item, mo) / 100));
@@ -1459,8 +1469,16 @@ function renderExpandPanel(item) {
   var demandRows = ['T1', 'T2', 'T3', 'T4'].map(function (t, i) {
     var mo = next4b[i];
     var d = _roDemandForMonth(mo);
-    return '<tr><td>' + t + ' · ' + mo.label + '</td><td>' + (d == null ? '--' : d.toLocaleString()) + '</td></tr>';
+    var legacyStr = (d == null ? '--' : d.toLocaleString());
+    if (!recoOn) return '<tr><td>' + t + ' · ' + mo.label + '</td><td>' + legacyStr + '</td></tr>';
+    var ct = _roCanonTier(t);
+    var demStr = (ct && ct.demandQty != null) ? Number(ct.demandQty).toLocaleString() : legacyStr;
+    var gapStr = _opRecoFmtQty(ct ? ct.remainingGapQty : null, recoLoading);
+    return '<tr><td>' + t + ' · ' + mo.label + '</td>' +
+      '<td data-ro-demand-tier="' + t + '">' + demStr + '</td>' +
+      '<td data-ro-gap-tier="' + t + '">' + gapStr + '</td></tr>';
   }).join('');
+  var demandHead = recoOn ? '<th>Tier · Month</th><th>Demand</th><th>Gap</th>' : '<th>Tier · Month</th><th>Demand</th>';
 
   // B — Order Allocation (T1–T3 ONLY). Columns exactly: Tier/Month · Suggested · Order Qty · Carton · Note.
   // No visible Recommended column (the engine gap remains in runtime/audit). Order Qty defaults to Suggested;
@@ -1471,12 +1489,17 @@ function renderExpandPanel(item) {
     var sug = _roTierSuggested(item, i);
     if (sug != null) anySuggested = true;
     var e = edits[t] || {};
-    var eff = _roEffectiveOrderQty(item, i, e);
+    var eff = _roEffectiveOrderQty(item, i, e);   // Order Qty default UNCHANGED (frozen write path; §18)
     var cb = _roCartonBreak(eff == null ? '' : eff, box);
     var note = e.note != null ? String(e.note).replace(/"/g, '&quot;') : '';
     var qtyVal = (eff == null) ? '' : eff;
+    // FM3d: Suggested column ← canonical monthlyProjection.suggestedOrderQty when the workspace is ON (server
+    // KMCALC carton owner; NO page-side carton math). Legacy page-Suggested only on the workspace-OFF fallback.
+    var sugCell = recoOn
+      ? '<td data-ro-suggested-tier="' + t + '">' + _opRecoFmtQty((_roCanonTier(t) ? _roCanonTier(t).suggestedOrderQty : null), recoLoading) + '</td>'
+      : '<td>' + (sug == null ? '--' : sug.toLocaleString()) + '</td>';
     return '<tr><td>' + t + ' · ' + mo.label + '</td>' +
-      '<td>' + (sug == null ? '--' : sug.toLocaleString()) + '</td>' +
+      sugCell +
       '<td><input type="number" min="0" step="1" class="ro-alloc-qty" value="' + qtyVal + '" ' +
         'data-sku="' + _roAttr(sku) + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
         'data-bucket="' + t + '" data-idx="' + i + '" data-box="' + box + '" data-month="' + _roYm(mo) + '" onchange="_roAllocEdit(this)" oninput="_roRecomputeAllocRow(this)"></td>' +
@@ -1552,7 +1575,7 @@ function renderExpandPanel(item) {
           <div class="ro-expand-card-title">Recommendation Summary ${firstShortBadge}</div>
           <div class="ro-block-sub">
             <div class="ro-subtitle">Demand Summary</div>
-            <table class="ro-expand-table ro-demand-table"><thead><tr><th>Tier · Month</th><th>Demand</th></tr></thead><tbody>${demandRows}</tbody></table>
+            <table class="ro-expand-table ro-demand-table"><thead><tr>${demandHead}</tr></thead><tbody>${demandRows}</tbody></table>
           </div>
           <div class="ro-block-sub">
             <div class="ro-subtitle">Order Allocation</div>
@@ -1818,6 +1841,16 @@ function _opRecoMapLine(L) {
     blocked: L.blocked === true, blockedReason: (L.blockedReason == null ? null : String(L.blockedReason)),
     formulaVersion: (L.formulaVersion == null ? null : String(L.formulaVersion)),
     sourceDataAsOf: (L.sourceDataAsOf == null ? null : String(L.sourceDataAsOf)),
+    // F1-4B-FM3d: additive per-tier monthly projection (server/KMTPP-owned). Direct passthrough (no || 0 — a
+    // legitimate 0 is preserved; a missing tier field stays null so the UI renders "—", never a fabricated 0).
+    monthlyProjection: Array.isArray(L.monthlyProjection) ? L.monthlyProjection.map(function (t) {
+      t = t || {};
+      return { tier: (t.tier == null ? null : String(t.tier)), month: (t.month == null ? null : String(t.month)),
+        openingSupplyQty: _opNumOrNull(t.openingSupplyQty), incomingAddedQty: _opNumOrNull(t.incomingAddedQty),
+        demandQty: _opNumOrNull(t.demandQty), coveredQty: _opNumOrNull(t.coveredQty),
+        remainingSupplyQty: _opNumOrNull(t.remainingSupplyQty), remainingGapQty: _opNumOrNull(t.remainingGapQty),
+        suggestedOrderQty: _opNumOrNull(t.suggestedOrderQty) };
+    }) : null,
     diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
   };
 }
@@ -1975,13 +2008,58 @@ function _opRecoInner(item) {
     rows + '</tbody></table>';
   return wrap('op-reco--ready', table + conflictNote + (meta.length ? ('<div class="op-reco__meta">' + meta.join(' · ') + '</div>') : '')) + _opRecoDiagnosticsHtml(st.lines[0]);
 }
+// F1-4B-FM3d — canonical monthlyProjection CONSUMERS for the business decision surface (Demand Summary Gap +
+// Order Allocation Suggested). PRESENTATION ONLY: no gap/carry-forward/carton/suggested math (all server-owned).
+// The primary per-tier projection = the monthlyProjection of the SINGLE loaded destination line that carries one
+// (the MARKETPLACE case). Multiple lines (warehouse fanout) or none → null → truthful unavailable (never a
+// page-side merge/pool, never a fabricated value).
+function _opRecoPrimaryProjection() {
+  var st = _opRecoState;
+  if (!st || st.status !== 'READY' || !Array.isArray(st.lines)) return null;
+  var withP = st.lines.filter(function (l) { return Array.isArray(l.monthlyProjection) && l.monthlyProjection.length; });
+  return withP.length === 1 ? withP[0].monthlyProjection : null;
+}
+function _opRecoScopeMatches(item) { var s = _opRecoScopeFor(item); return !!(s && _opRecoState.scopeKey === _opRecoKey(s)); }
+function _opRecoPrimaryProjectionFor(item) { return _opRecoScopeMatches(item) ? _opRecoPrimaryProjection() : null; }
+function _opRecoIsLoadingFor(item) { return !_opRecoScopeMatches(item) || _opRecoState.status === 'LOADING'; }
+function _opRecoTierIn(proj, tier) { if (!proj) return null; for (var i = 0; i < proj.length; i++) { if (proj[i].tier === tier) return proj[i]; } return null; }
+// Canonical qty formatter: a finite number (INCLUDING 0) renders as-is; null/undefined → "…" while still loading,
+// "—" once settled/unavailable. NEVER fabricates a 0, NEVER turns a 0 into a dash (FM3d §10 valid-zero contract).
+function _opRecoFmtQty(v, loading) {
+  if (v === null || v === undefined) return loading ? '…' : '—';
+  var n = Number(v); return isFinite(n) ? n.toLocaleString() : '—';
+}
+// DOM patch (READ-ONLY presentation): rewrite ONLY the canonical Demand / Gap / Suggested cells in the expanded
+// panel from the current read state. NEVER touches the Order Qty / Carton / Note inputs (user-owned; no reset,
+// no focus loss). Demand is patched to the canonical value only when present (else the existing-authority value
+// rendered at expand stays visible — FM3d §9). Keyed by tier identity (data-ro-*-tier), never row index.
+function _opRecoPatchCanonicalCells(item) {
+  if (typeof document === 'undefined' || !document.getElementById || !_opRecoEnabled()) return;
+  var panel = document.getElementById(_roPanelId(_roRowKey(item)));
+  if (!panel || typeof panel.querySelector !== 'function') return;
+  var loading = _opRecoIsLoadingFor(item);
+  var proj = _opRecoPrimaryProjectionFor(item);
+  ['T1', 'T2', 'T3', 'T4'].forEach(function (tier) {
+    var pt = _opRecoTierIn(proj, tier);
+    var gap = panel.querySelector('[data-ro-gap-tier="' + tier + '"]');
+    if (gap) gap.innerHTML = _opRecoFmtQty(pt ? pt.remainingGapQty : null, loading);
+    var sug = panel.querySelector('[data-ro-suggested-tier="' + tier + '"]');
+    if (sug) sug.innerHTML = _opRecoFmtQty(pt ? pt.suggestedOrderQty : null, loading);
+    var dem = panel.querySelector('[data-ro-demand-tier="' + tier + '"]');
+    if (dem && pt && pt.demandQty != null) dem.innerHTML = Number(pt.demandQty).toLocaleString();
+  });
+}
 // The Block-3 subsection markup. Returns '' when the feature is OFF → the legacy panel is byte-unchanged.
 function _opRecoHostId(item) { return 'op-reco-' + _roPanelId(_roRowKey(item)); }
 function _opRecoSubsectionHtml(item) {
-  if (!_opRecoEnabled()) return '';   // legacy panel preserved verbatim when either flag is OFF
-  return '<div class="ro-block-sub op-reco-block">' +
-    '<div class="ro-subtitle">Recommendation — Order Need</div>' +
-    '<div class="op-reco-host" id="' + _roEsc(_opRecoHostId(item)) + '">' + _opRecoInner(item) + '</div></div>';
+  if (!_opRecoEnabled()) return '';   // legacy panel preserved verbatim when the workspace kill switch is OFF
+  // FM3d: the standalone "Recommendation — Order Need" DECISION table is retired. Its per-destination runtime
+  // detail (status / recommended / blockedReason / requestId / cycle) is preserved ONLY as a COLLAPSED
+  // diagnostics area — it is no longer the business-facing surface (that is now Demand Summary Gap + Order
+  // Allocation Suggested, driven by monthlyProjection). Host id retained so the async re-render still patches it.
+  return '<details class="ro-block-sub op-reco-block op-reco-diag">' +
+    '<summary class="ro-subtitle op-reco-diag__summary">Recommendation diagnostics</summary>' +
+    '<div class="op-reco-host" id="' + _roEsc(_opRecoHostId(item)) + '">' + _opRecoInner(item) + '</div></details>';
 }
 // The currently-expanded row item (only one row expands at a time), resolved from state.
 function _opRecoExpandedItem() {
@@ -1995,8 +2073,9 @@ function _opRecoExpandedItem() {
 function _opRecoRerender() {
   if (typeof document === 'undefined' || !document.getElementById) return;
   var item = _opRecoExpandedItem(); if (!item) return;
-  var host = document.getElementById(_opRecoHostId(item)); if (!host) return;
-  host.innerHTML = _opRecoInner(item);
+  var host = document.getElementById(_opRecoHostId(item));
+  if (host) host.innerHTML = _opRecoInner(item);
+  _opRecoPatchCanonicalCells(item);   // FM3d: patch Demand Summary Gap + Order Allocation Suggested from monthlyProjection
 }
 if (typeof window !== 'undefined') {
   window._opSetRecommendationOptIn = _opSetRecommendationOptIn;   // DEPRECATED (FM2B): inert, no longer gates

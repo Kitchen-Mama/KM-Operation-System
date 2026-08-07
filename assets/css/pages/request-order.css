@@ -2090,3 +2090,8 @@
 #request-order-section .op-reco__reqid { color: #94A3B8; font-weight: 400; }
 #request-order-section .op-reco__diag { margin-top: 4px; font-size: 10.5px; color: #64748B; }
 #request-order-section .op-reco__diag code { font-size: 10px; }
+/* F1-4B-FM3d: the retired standalone recommendation table is now a COLLAPSED diagnostics disclosure (not the
+   primary surface). Subdued summary; content only shown on demand — no layout jump when collapsed. */
+#request-order-section .op-reco-diag { margin-top: 8px; }
+#request-order-section .op-reco-diag__summary { cursor: pointer; color: #64748B; font-weight: 600; list-style: revert; border-bottom: none; }
+#request-order-section .op-reco-diag[open] .op-reco-diag__summary { border-bottom: 1px dashed #E2E8F0; }

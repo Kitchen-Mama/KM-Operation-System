@@ -4595,3 +4595,24 @@ recommendation-monthly-projection-transport-f1-4b-fm3c2.test.js (NEW, 41) + supp
 (30→31 + KMTPP). Full suite 108 files / 1 PRE-EXISTING unrelated failure (replen-header-toggle A2) / 0 NEW; Golden
 39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (new hash) +
 42_api_v1_recommendation_workspace.gs. NEXT: FM3d Order Planning UI cutover (consume line.monthlyProjection).
+
+## F1-4B-FM3d checkpoint (2026-08-07) — Order Planning monthlyProjection consumer cutover (UI presentation only)
+
+Frontend-only (request-order.js + minimal request-order.css). NO runtime formula, NO Apps Script handler, NO bundle,
+NO DB, NO write-flow change. Presentation is PURE — page authors no gap/carry-forward/carton/suggested math (server
+owned). Demand Summary (recommendation path) gains a Gap column: Demand←monthlyProjection.demandQty,
+Gap←remainingGapQty (only owner of monthly T1–T4 shortage). Order Allocation Suggested (T1–T3)←suggestedOrderQty
+(server KMCALC). Legacy _roTierSuggested retired ONLY for the display column; it REMAINS the Order Qty default + Send
+Request owner (frozen write path) + workspace-OFF fallback. Manual Order Qty / Send Request UNCHANGED — async patch
+(_opRecoPatchCanonicalCells) rewrites ONLY Demand/Gap/Suggested cells (keyed by data-ro-{demand,gap,suggested}-tier),
+never Order Qty/Carton/Note inputs (no reset/focus loss/auto-overwrite). Valid-zero: _opRecoFmtQty finite(incl 0)→num,
+null→"…" loading/"—" settled (never 0→dash, never null→0). Primary projection = the single line carrying one
+(MARKETPLACE); multi-line/none→null→truthful unavailable (WAREHOUSE pre-existingly blocked ALLOCATION_FACTS_NOT_READY
+→ Gap/Suggested "—"). Standalone "Recommendation — Order Need" table RETIRED → collapsed <details> "Recommendation
+diagnostics" (all runtime states preserved as diagnostics). T4 shown in Demand Summary but NOT a writable Order tier
+(stays T1–T3). One request per expand; dedupe/abort/stale/FM3a cache unchanged. Decision D-F1-4B-FM3d. Tests:
+order-planning-monthly-projection-consumer-f1-4b-fm3d.test.js (NEW, 33) + FM2 D1 updated (title→collapsed diagnostics).
+Full suite 109 files / 1 PRE-EXISTING unrelated failure (replen-header-toggle A2) / 0 NEW; Golden 39/1/0; #34 Pending.
+No APPS_SCRIPT_SYNC (no .gs/bundle change). Frontend deploy: request-order.js + request-order.css. NEXT (separate
+business-authority tasks, NOT scheduled): Inventory 18/30/45/90 day-horizon; MARKETPLACE later-arrival time-phasing;
+WAREHOUSE ALLOCATION_FACTS_NOT_READY resolution (would activate warehouse monthlyProjection end-to-end).

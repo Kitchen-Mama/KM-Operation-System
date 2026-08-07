@@ -97,7 +97,9 @@ function freshLoad(active, optIn, env, item) { _opRecoInvalidate('DISABLED'); _o
   var whB = whLine({ recommendationLineId: 'W|B', destinationKey: 'WAREHOUSE||KM||US||AMAZON_US||WH-B', destinationLabel: 'US B', warehouseId: 'WH-B', allocatedForecastQty: 700, recommendedQty: 456, residualShortageQty: 0 });
   await freshLoad(true, true, envOk([whLine(), whB]));
   var bodyD = _opRecoSubsectionHtml(ITEM);
-  ok(/Recommendation — Order Need/.test(bodyD), 'D1 subsection titled "Recommendation — Order Need"');
+  // FM3d: the standalone "Recommendation — Order Need" decision table is retired → the per-destination runtime
+  // detail is preserved ONLY as a COLLAPSED <details> "Recommendation diagnostics" area (no longer the surface).
+  ok(/<details[^>]*op-reco-diag/.test(bodyD) && /Recommendation diagnostics/.test(bodyD) && !/Recommendation — Order Need/.test(bodyD), 'D1 (FM3d) standalone table retired → collapsed "Recommendation diagnostics" details');
   ok(/US A/.test(bodyD) && /US B/.test(bodyD), 'D2 two WAREHOUSE destinations render as distinct rows');
   ok((bodyD.match(/Warehouse Replenishment/g) || []).length === 2, 'D3 both rows labeled Warehouse Replenishment');
   ok(/168/.test(bodyD) && /456/.test(bodyD), 'D4 each warehouse shows its OWN recommendedQty (never merged into one total)');
