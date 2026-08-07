@@ -1552,3 +1552,24 @@
 #ops-section .replen-recsum-ws__table tr.is-partial td { background: #FFF7ED; }
 #ops-section .replen-recsum-ws__table tr.is-blocked td { background: #FEF2F2; color: #991B1B; }
 #ops-section .replen-recsum-ws__provisional { color: #9A3412; font-style: italic; }
+
+/* ============================================================================
+   UI-HOTFIX (2026-08-07) — Expanded row: LEFT SKU identity column height == RIGHT detail height.
+   OWNERSHIP: the shared .table-body-bar flex row owns total height. The RIGHT .scroll-col is the natural
+   content-height authority; align-items:stretch makes the sticky LEFT .fixed-col match it, and the chain
+   .fixed-col(flex-col) → .fixed-body(flex:1) → .replen-expand-panel--fixed(flex:1, align-items:stretch) →
+   .replen-expand-fixed passes that height to the SKU identity block. This block makes the owner EXPLICIT
+   and guarantees the VISIBLE (white) left column reaches the SAME bottom divider as the right detail
+   canvas. NO fixed pixel height, NO JS offsetHeight/ResizeObserver measurement, NO transform / negative
+   margin / absolute positioning. Sticky frozen column, z-index, background, horizontal scroll, and
+   expand/collapse click behaviour are all untouched. The continuous bottom divider is the shared
+   .replen-expand-panel { border-bottom } already applied to BOTH the --fixed and --scroll panels. */
+#ops-section .table-body-bar {
+    align-items: stretch;            /* shared height owner — both columns stretch to the taller (right) */
+}
+#ops-section .replen-expand-panel--fixed {
+    background: #fff;                /* the full-height stretched left panel stays white to the bottom */
+}
+#ops-section .replen-expand-fixed {
+    min-height: 100%;                /* inner identity block fills the stretched panel (reinforces stretch) */
+}
