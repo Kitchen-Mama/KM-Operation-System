@@ -14,11 +14,14 @@
 //   2. MONTHLY protection mapping: survivalNeedQty defaults 0 (18-day survival protection is a WEEKLY concept, not
 //      monthly order planning) and demandWeight defaults to demandQty (proportional split). A caller MAY override
 //      both when a frozen value exists — the adapter passes them through unchanged.
-//   3. Waterfall order (frozen FM3f-1: Destination Stock → Qualified Incoming → Overseas → Factory → Residual):
-//      overseas is allocated first; the factory demand for each receiver = max(0, demandQty − allocatedOverseas).
-//      This is demand-input normalization (which layer is asked to cover what), NOT allocation math.
+//   3. Receiver-count rule (FM5-R2A supplemental freeze §3/§4/§5): 0 receivers → allocate NOTHING (ready, empty);
+//      exactly 1 eligible receiver → it receives 100% of the eligible pool (the deterministic single-receiver case
+//      of the canonical contract — a direct assignment, NOT a new formula, and NOT KMALLOC's demand cap); >1
+//      receivers → the canonical KMALLOC allocator distributes (demand-capped, conserved). Overseas and Factory are
+//      INDEPENDENT allocatable pools — each allocated on the receiver's own demand and INDEPENDENTLY conserved
+//      (§11); there is NO overseas→factory residual sequencing.
 //   4. Company isolation: every receiver + pool in one call MUST share the company (cross-company → BLOCKED); no
-//      cross-company pooling (§6). The caller partitions the competing receiver set by company + sku + pool.
+//      cross-company pooling (§6). The caller partitions the SKU-specific competing receiver set by company + sku + pool.
 //   5. eligiblePoolTypes defaults to [THREE_PL, FBA]; a caller may restrict per frozen eligibility.
 //   6. Country identity uses the canonical KMCID owner (UK ≡ GB) when composing receiver keys / grouping.
 //
@@ -62,7 +65,9 @@
     if (!company) return blocked('COMPANY_REQUIRED', 'input.company required');
     if (!masterSku) return blocked('MASTER_SKU_REQUIRED', 'input.masterSku required');
     var receivers = Array.isArray(root.receivers) ? root.receivers : [];
-    if (!receivers.length) return blocked('NO_RECEIVERS', 'at least one marketplace receiver required');
+    // §5 ZERO-RECEIVER: no eligible receiver carries this SKU → allocate NOTHING (valid empty, never a fabricated
+    // destination). Not an error.
+    if (!receivers.length) return { ready: true, blocked: false, company: company, masterSku: masterSku, receiverCount: 0, byReceiver: {}, overseas: null, factory: null, issues: [], VERSION: 'kmmsa-fm5r2a-1' };
 
     // §6 company isolation — every receiver must belong to this company (no cross-company pooling).
     for (var ci = 0; ci < receivers.length; ci++) {
@@ -88,10 +93,27 @@
 
     var byReceiver = {};
     norm.forEach(function (r) { byReceiver[r.key] = { allocatedOverseasQty: 0, allocatedFactoryQty: 0 }; });
-
-    // ---- OVERSEAS (KMALLOC.allocateOverseasSharedPool) ----
-    var overseasResult = null;
     var overseasPools = Array.isArray(root.overseasPools) ? root.overseasPools : [];
+    var factoryPools = Array.isArray(root.factoryPools) ? root.factoryPools : [];
+    var eligibleFactoryIds = Array.isArray(root.eligibleFactoryWarehouseIds) ? root.eligibleFactoryWarehouseIds.map(s).filter(Boolean) : [];
+    if (factoryPools.length && !eligibleFactoryIds.length) return blocked('FACTORY_ELIGIBILITY_UNRESOLVED', 'eligibleFactoryWarehouseIds required for factory allocation');
+    var overseasResult = null, factoryResult = null;
+    var singleReceiver = (norm.length === 1);
+
+    // §3 SINGLE-RECEIVER: the sole eligible receiver gets 100% of the eligible pool — a deterministic assignment
+    // (NOT KMALLOC's demand cap, NOT a new distribution formula). Overseas respects the receiver's eligible lanes;
+    // factory respects the eligible factory warehouse ids. Lineage-net pools are caller-supplied.
+    if (singleReceiver) {
+      var r0 = norm[0];
+      var ov = 0; overseasPools.forEach(function (p) { if (r0.eligiblePoolTypes.indexOf(s(p.poolType)) !== -1) ov += (qty(p.effectiveSupplyQty) || 0); });
+      var fc = 0; factoryPools.forEach(function (p) { if (eligibleFactoryIds.indexOf(s(p.warehouseId)) !== -1) fc += (qty(p.effectiveSupplyQty) || 0); });
+      byReceiver[r0.key] = { allocatedOverseasQty: ov, allocatedFactoryQty: fc };
+      return { ready: true, blocked: false, company: company, masterSku: masterSku, receiverCount: 1, byReceiver: byReceiver,
+        overseas: null, factory: null, singleReceiver: true, issues: issues, VERSION: 'kmmsa-fm5r2a-1' };
+    }
+
+    // §4 MULTIPLE RECEIVERS: reuse the canonical allocators. Overseas + Factory are INDEPENDENT pools — each
+    // allocated on the receiver's OWN demand and independently conserved (§11); NO residual sequencing.
     if (overseasPools.length) {
       var ovReceivers = norm.map(function (r) {
         return { receiverKey: r.key, demandKey: r.key, marketplace: r.marketplace || r.key, destinationWarehouseId: r.key /* receiver-identity label, NEVER a warehouse */,
@@ -105,20 +127,13 @@
       } catch (e) { return blocked('OVERSEAS_ALLOCATION_INPUT_INVALID', e && e.message ? String(e.message) : String(e)); }
       (overseasResult.allocations || []).forEach(function (a) { if (byReceiver[a.demandKey]) byReceiver[a.demandKey].allocatedOverseasQty += (a.allocatedQty || 0); });
     }
-
-    // ---- FACTORY (KMALLOC.allocateFactoryDeterministic) — demand = residual after overseas (waterfall, decision 3) ----
-    var factoryResult = null;
-    var factoryPools = Array.isArray(root.factoryPools) ? root.factoryPools : [];
-    var eligibleFactoryIds = Array.isArray(root.eligibleFactoryWarehouseIds) ? root.eligibleFactoryWarehouseIds.map(s).filter(Boolean) : [];
     if (factoryPools.length) {
-      if (!eligibleFactoryIds.length) return blocked('FACTORY_ELIGIBILITY_UNRESOLVED', 'eligibleFactoryWarehouseIds required for factory allocation');
       var factoryDemands = [];
       for (var fi = 0; fi < norm.length; fi++) {
         var fr = norm[fi];
-        var residual = Math.max(0, fr.demandQty - byReceiver[fr.key].allocatedOverseasQty);
         if (!fr.requiredByDate) return blocked('MISSING_REQUIRED_BY_DATE', 'requiredByDate required for factory FIFO on ' + fr.marketplace);
         factoryDemands.push({ demandKey: fr.key, company: company, marketplace: fr.marketplace || fr.key, destinationWarehouseId: fr.key /* identity label */,
-          requiredByDate: fr.requiredByDate, allocationPriority: fr.allocationPriority, demandQty: residual, eligibleFactoryWarehouseIds: eligibleFactoryIds.slice() });
+          requiredByDate: fr.requiredByDate, allocationPriority: fr.allocationPriority, demandQty: fr.demandQty, eligibleFactoryWarehouseIds: eligibleFactoryIds.slice() });
       }
       try {
         factoryResult = ALLOC.allocateFactoryDeterministic({ masterSku: masterSku,
@@ -128,7 +143,7 @@
       (factoryResult.allocations || []).forEach(function (a) { if (byReceiver[a.demandKey]) byReceiver[a.demandKey].allocatedFactoryQty += (a.allocatedQty || 0); });
     }
 
-    return { ready: true, company: company, masterSku: masterSku, byReceiver: byReceiver,
+    return { ready: true, company: company, masterSku: masterSku, receiverCount: norm.length, byReceiver: byReceiver,
       overseas: overseasResult, factory: factoryResult, issues: issues, blocked: false, VERSION: 'kmmsa-fm5r2a-1' };
 
     function blocked(code, message) {

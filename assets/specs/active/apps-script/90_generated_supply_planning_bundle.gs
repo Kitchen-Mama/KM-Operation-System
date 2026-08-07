@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 01ece8dc2a7678f43e8ec609f2b37d3e56d3dc6696f2b6a69bc63810b2db1bed
+// bundle_sha256 = 41d64956a28ad4a774bf5792cfec4436435d56fc54f2a3c56a66d8c0758a678f
 // modules (in load order):
 //   supply-planning-country-identity  81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -30,7 +30,7 @@
 //   supply-planning-allocation-facts  5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc
 //   supply-planning-planning-context  2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3
 //   supply-planning-demand-allocation  06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed
-//   supply-planning-marketplace-supply-allocation  8cf4e762f825b9d032aaea896bedd3e7da2d1ddc162ccb6bcfe93fbd0f74f5ca
+//   supply-planning-marketplace-supply-allocation  3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16
 //   supply-planning-production-assembly  d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7
 //   supply-planning-destination-runtime  7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c
 //   supply-planning-planning-demand  f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240
@@ -7893,11 +7893,14 @@ function __kmRequire(p) {
 //   2. MONTHLY protection mapping: survivalNeedQty defaults 0 (18-day survival protection is a WEEKLY concept, not
 //      monthly order planning) and demandWeight defaults to demandQty (proportional split). A caller MAY override
 //      both when a frozen value exists — the adapter passes them through unchanged.
-//   3. Waterfall order (frozen FM3f-1: Destination Stock → Qualified Incoming → Overseas → Factory → Residual):
-//      overseas is allocated first; the factory demand for each receiver = max(0, demandQty − allocatedOverseas).
-//      This is demand-input normalization (which layer is asked to cover what), NOT allocation math.
+//   3. Receiver-count rule (FM5-R2A supplemental freeze §3/§4/§5): 0 receivers → allocate NOTHING (ready, empty);
+//      exactly 1 eligible receiver → it receives 100% of the eligible pool (the deterministic single-receiver case
+//      of the canonical contract — a direct assignment, NOT a new formula, and NOT KMALLOC's demand cap); >1
+//      receivers → the canonical KMALLOC allocator distributes (demand-capped, conserved). Overseas and Factory are
+//      INDEPENDENT allocatable pools — each allocated on the receiver's own demand and INDEPENDENTLY conserved
+//      (§11); there is NO overseas→factory residual sequencing.
 //   4. Company isolation: every receiver + pool in one call MUST share the company (cross-company → BLOCKED); no
-//      cross-company pooling (§6). The caller partitions the competing receiver set by company + sku + pool.
+//      cross-company pooling (§6). The caller partitions the SKU-specific competing receiver set by company + sku + pool.
 //   5. eligiblePoolTypes defaults to [THREE_PL, FBA]; a caller may restrict per frozen eligibility.
 //   6. Country identity uses the canonical KMCID owner (UK ≡ GB) when composing receiver keys / grouping.
 //
@@ -7941,7 +7944,9 @@ function __kmRequire(p) {
     if (!company) return blocked('COMPANY_REQUIRED', 'input.company required');
     if (!masterSku) return blocked('MASTER_SKU_REQUIRED', 'input.masterSku required');
     var receivers = Array.isArray(root.receivers) ? root.receivers : [];
-    if (!receivers.length) return blocked('NO_RECEIVERS', 'at least one marketplace receiver required');
+    // §5 ZERO-RECEIVER: no eligible receiver carries this SKU → allocate NOTHING (valid empty, never a fabricated
+    // destination). Not an error.
+    if (!receivers.length) return { ready: true, blocked: false, company: company, masterSku: masterSku, receiverCount: 0, byReceiver: {}, overseas: null, factory: null, issues: [], VERSION: 'kmmsa-fm5r2a-1' };
 
     // §6 company isolation — every receiver must belong to this company (no cross-company pooling).
     for (var ci = 0; ci < receivers.length; ci++) {
@@ -7967,10 +7972,27 @@ function __kmRequire(p) {
 
     var byReceiver = {};
     norm.forEach(function (r) { byReceiver[r.key] = { allocatedOverseasQty: 0, allocatedFactoryQty: 0 }; });
-
-    // ---- OVERSEAS (KMALLOC.allocateOverseasSharedPool) ----
-    var overseasResult = null;
     var overseasPools = Array.isArray(root.overseasPools) ? root.overseasPools : [];
+    var factoryPools = Array.isArray(root.factoryPools) ? root.factoryPools : [];
+    var eligibleFactoryIds = Array.isArray(root.eligibleFactoryWarehouseIds) ? root.eligibleFactoryWarehouseIds.map(s).filter(Boolean) : [];
+    if (factoryPools.length && !eligibleFactoryIds.length) return blocked('FACTORY_ELIGIBILITY_UNRESOLVED', 'eligibleFactoryWarehouseIds required for factory allocation');
+    var overseasResult = null, factoryResult = null;
+    var singleReceiver = (norm.length === 1);
+
+    // §3 SINGLE-RECEIVER: the sole eligible receiver gets 100% of the eligible pool — a deterministic assignment
+    // (NOT KMALLOC's demand cap, NOT a new distribution formula). Overseas respects the receiver's eligible lanes;
+    // factory respects the eligible factory warehouse ids. Lineage-net pools are caller-supplied.
+    if (singleReceiver) {
+      var r0 = norm[0];
+      var ov = 0; overseasPools.forEach(function (p) { if (r0.eligiblePoolTypes.indexOf(s(p.poolType)) !== -1) ov += (qty(p.effectiveSupplyQty) || 0); });
+      var fc = 0; factoryPools.forEach(function (p) { if (eligibleFactoryIds.indexOf(s(p.warehouseId)) !== -1) fc += (qty(p.effectiveSupplyQty) || 0); });
+      byReceiver[r0.key] = { allocatedOverseasQty: ov, allocatedFactoryQty: fc };
+      return { ready: true, blocked: false, company: company, masterSku: masterSku, receiverCount: 1, byReceiver: byReceiver,
+        overseas: null, factory: null, singleReceiver: true, issues: issues, VERSION: 'kmmsa-fm5r2a-1' };
+    }
+
+    // §4 MULTIPLE RECEIVERS: reuse the canonical allocators. Overseas + Factory are INDEPENDENT pools — each
+    // allocated on the receiver's OWN demand and independently conserved (§11); NO residual sequencing.
     if (overseasPools.length) {
       var ovReceivers = norm.map(function (r) {
         return { receiverKey: r.key, demandKey: r.key, marketplace: r.marketplace || r.key, destinationWarehouseId: r.key /* receiver-identity label, NEVER a warehouse */,
@@ -7984,20 +8006,13 @@ function __kmRequire(p) {
       } catch (e) { return blocked('OVERSEAS_ALLOCATION_INPUT_INVALID', e && e.message ? String(e.message) : String(e)); }
       (overseasResult.allocations || []).forEach(function (a) { if (byReceiver[a.demandKey]) byReceiver[a.demandKey].allocatedOverseasQty += (a.allocatedQty || 0); });
     }
-
-    // ---- FACTORY (KMALLOC.allocateFactoryDeterministic) — demand = residual after overseas (waterfall, decision 3) ----
-    var factoryResult = null;
-    var factoryPools = Array.isArray(root.factoryPools) ? root.factoryPools : [];
-    var eligibleFactoryIds = Array.isArray(root.eligibleFactoryWarehouseIds) ? root.eligibleFactoryWarehouseIds.map(s).filter(Boolean) : [];
     if (factoryPools.length) {
-      if (!eligibleFactoryIds.length) return blocked('FACTORY_ELIGIBILITY_UNRESOLVED', 'eligibleFactoryWarehouseIds required for factory allocation');
       var factoryDemands = [];
       for (var fi = 0; fi < norm.length; fi++) {
         var fr = norm[fi];
-        var residual = Math.max(0, fr.demandQty - byReceiver[fr.key].allocatedOverseasQty);
         if (!fr.requiredByDate) return blocked('MISSING_REQUIRED_BY_DATE', 'requiredByDate required for factory FIFO on ' + fr.marketplace);
         factoryDemands.push({ demandKey: fr.key, company: company, marketplace: fr.marketplace || fr.key, destinationWarehouseId: fr.key /* identity label */,
-          requiredByDate: fr.requiredByDate, allocationPriority: fr.allocationPriority, demandQty: residual, eligibleFactoryWarehouseIds: eligibleFactoryIds.slice() });
+          requiredByDate: fr.requiredByDate, allocationPriority: fr.allocationPriority, demandQty: fr.demandQty, eligibleFactoryWarehouseIds: eligibleFactoryIds.slice() });
       }
       try {
         factoryResult = ALLOC.allocateFactoryDeterministic({ masterSku: masterSku,
@@ -8007,7 +8022,7 @@ function __kmRequire(p) {
       (factoryResult.allocations || []).forEach(function (a) { if (byReceiver[a.demandKey]) byReceiver[a.demandKey].allocatedFactoryQty += (a.allocatedQty || 0); });
     }
 
-    return { ready: true, company: company, masterSku: masterSku, byReceiver: byReceiver,
+    return { ready: true, company: company, masterSku: masterSku, receiverCount: norm.length, byReceiver: byReceiver,
       overseas: overseasResult, factory: factoryResult, issues: issues, blocked: false, VERSION: 'kmmsa-fm5r2a-1' };
 
     function blocked(code, message) {
@@ -9965,4 +9980,4 @@ var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"01ece8dc2a7678f43e8ec609f2b37d3e56d3dc6696f2b6a69bc63810b2db1bed","modules":[{"module":"supply-planning-country-identity","sha256":"81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"8cf4e762f825b9d032aaea896bedd3e7da2d1ddc162ccb6bcfe93fbd0f74f5ca"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb"},{"module":"supply-planning-production-source","sha256":"0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"41d64956a28ad4a774bf5792cfec4436435d56fc54f2a3c56a66d8c0758a678f","modules":[{"module":"supply-planning-country-identity","sha256":"81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb"},{"module":"supply-planning-production-source","sha256":"0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};

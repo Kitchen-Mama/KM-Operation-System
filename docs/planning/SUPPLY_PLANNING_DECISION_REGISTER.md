@@ -585,3 +585,23 @@ into the allocator DTOs and reads each receiver's allocated qty back.
   materialization + the CO1100-R end-to-end trace. Inventory D18/D30/D45/D90 and all formulas untouched.
 - Bundle rebuilt (KMMSA after allocations + country-identity): **35 modules**, `--check` PASS,
   `bundle_sha256 01ece8dc2a7678f43e8ec609f2b37d3e56d3dc6696f2b6a69bc63810b2db1bed`.
+
+### D-F1-4B-FM5-R2A (supplemental freeze) — receiver-count rule + independent pools
+
+Supplements/overrides the FM5-R2A defaults with the frozen business authority:
+- **Receiver-count rule:** 0 eligible receivers → allocate NOTHING (ready, empty; no fabricated destination);
+  exactly 1 eligible receiver → it receives **100% of the eligible pool** (deterministic single-receiver case, a
+  direct assignment respecting overseas lane eligibility + factory warehouse eligibility — NOT KMALLOC's demand
+  cap, NOT a new formula); >1 → the canonical KMALLOC allocator (demand-capped, conserved).
+- **Overseas + Factory are INDEPENDENT pools** — each allocated on the receiver's own demand and INDEPENDENTLY
+  conserved. This **supersedes the earlier FM5-R2A "overseas→factory residual (waterfall)" default** (decision 3);
+  there is no residual sequencing between the two pools.
+- **Eligible receiver set is SKU-specific** (caller-owned via marketplace_skus in R2b): a marketplace not carrying
+  the SKU is not a competing receiver.
+- Company/SKU/lane eligibility + KMCID country identity (UK ≡ GB) + lineage-net pools (caller-supplied; adapter
+  never guesses by SKU+qty) all preserved. `receiverCount` is surfaced on the result.
+- Bundle rebuilt: 35 modules; `--check` PASS; `bundle_sha256 41d64956a28ad4a774bf5792cfec4436435d56fc54f2a3c56a66d8c0758a678f`.
+- **R2b (unchanged scope):** wire KMMSA into the Order Planning batch — SKU-specific receiver set +
+  KMSF lineage-net pool construction + per-receiver KMTPP opening (Site Stock + allocated Overseas + allocated
+  Factory) + order_planning_gap + CO1100-R end-to-end trace. If the repo cannot source-prove the shipped-lineage
+  transition for a source path, HALT only that path and report the missing field/table (never invent a deduction).
