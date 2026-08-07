@@ -37,7 +37,7 @@ section('S. KMTPP bundle registration + parity');
 ok(H.hasKMTPP, 'S1 KMTPP is bundled + globally callable (KMTPP.projectTimePhasedSupply)');
 ok(H.hasKMCALC, 'S2 KMCALC carton owner globally callable');
 ok(H.bundleInfo && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-time-phased-projection'; }), 'S3 KM_BUNDLE_INFO manifest includes the KMTPP module');
-ok(H.bundleInfo && H.bundleInfo.modules.length === 31, 'S4 bundle module count = 31 (KMTPP added)');
+ok(H.bundleInfo && H.bundleInfo.modules.length >= 31 && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-time-phased-projection'; }), 'S4 bundle includes KMTPP module (count ≥ 31; grows as later modules like KMHP are added)');
 
 section('A. T1–T4 sequential projection — opening supply carries forward (no incoming)');
 var a = H.buildMonthlyProjection(MONTHS, 1000, dm(250, 250, 250, 250), [], 12, null);

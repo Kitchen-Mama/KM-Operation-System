@@ -366,3 +366,37 @@ gap/carry-forward/carton/suggested math (all server/KMTPP/KMCALC owned in FM3c-2
   requestId / cycle) preserved as diagnostics, no longer the decision surface.
 - **T4** — shown in Demand Summary (visibility) but NOT made a writable Order Allocation tier (stays T1–T3).
 - Request lifecycle / dedupe / AbortController / stale-guard / FM3a cache — unchanged. One request per expand.
+
+## D-F1-4B-FM4a — Canonical day-horizon (D18/D30/D45/D90) projection authority (runtime owner; no UI)
+
+Freezes the two authorities FM3b left open and implements ONE canonical owner. Additive; no new engine; no
+formula rewrite; no DB/write; no Inventory UI (that is FM4b).
+
+- **Calculation-DAY authority (FROZEN):** new server Script Property **`RECOMMENDATION_CALCULATION_DATE`**
+  (`YYYY-MM-DD`), owner `recoWsResolveCalcDate_` (42_api). Separate from `RECOMMENDATION_CALCULATION_MONTH` —
+  never derived from it. No browser/server clock, no `new Date()`. Missing → `RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED`;
+  malformed → `RECOMMENDATION_CALCULATION_DATE_INVALID` (fail closed). It gates ONLY `line.horizons`; the existing
+  monthly/OP response is unaffected when absent (additive).
+- **Daily regular-FC distribution (FROZEN):** for each calendar day, `dailyRate = monthlyRegularFC / daysInMonth`
+  using the month's REAL length (28/29-leap/30/31). Owner = **KMHP** (`supply-planning-horizon-projection.js`).
+  NOT `FC × days`, NOT avg-sales/day. Carried at FULL PRECISION per day; never pre-rounded. Special events are
+  **EXCLUDED** — consistent with the frozen recommendation demand authority (monthlyProjection is regular-FC only);
+  the prep-date special-event authority is available for a future round if the business freezes its inclusion (no
+  silent semantic change; not a conflict because we are NOT adding it).
+- **Rounding owner (FROZEN):** `hround = Math.round` applied ONCE at checkpoint emission inside KMHP — the single
+  quantity-rounding owner for day horizons; `gapQty = max(0, hround(cumDemand − cumCovered))` from the full-precision
+  KMTPP values. No independent rounding in any consumer.
+- **Chronology (REUSED, not duplicated):** KMHP calls the frozen **KMTPP** once per destination with per-day demand
+  events + ETA-dated incoming + dated checkpoints D{N} = calcDate + N days (`kind:'DAY'`). KMTPP got ONE additive
+  field — `checkpoint.cumulativeIncomingQty` — isolated from monthlyProjection (which passes no checkpoints), so
+  T1–T4 is byte/semantically unchanged (CO1100-R regression re-proven: gap 1714/4282/7500/0, sug 1720/4320/7520/0).
+- **Cumulative + count-once:** ONE timeline — opening supply consumed once (never reset per horizon), each incoming
+  applied once on its ETA (before D18 → covers D18; after D18/before D30 → covers D30+; after D90 → no horizon).
+- **Suggested (REUSED):** `KMCALC.calculateSuggestedOrderQty` carton-CEIL over `gapQty`; gap 0 → 0; missing UPC → null.
+- **DTO:** `line.horizons = [{ windowCode, requiredByDate, demandQty, openingSupplyQty, incomingAddedQty,
+  coveredQty, remainingSupplyQty, gapQty, suggestedOrderQty }]` for D18/D30/D45/D90. A horizon whose window covers a
+  month with missing FC → all quantities null (opening still shown) — truthful, never a fabricated 0.
+- **MARKETPLACE** — no fake warehouse; **WAREHOUSE** — one independent KMHP call per warehouse (own opening; only
+  its own `warehouseQualifiedEvents`; never pooled). WAREHOUSE `ALLOCATION_FACTS_NOT_READY` block preserved (unfixed).
+- Bundle: KMTPP + KMHP bundled → regenerated (32 modules; `--check` PASS; bundle_sha256
+  `56b225e60792b1202a95270a92fa536dcb211c53a5c64b5372ac1a5c685234d6`). FM4b (Inventory UI) consumes `line.horizons`.

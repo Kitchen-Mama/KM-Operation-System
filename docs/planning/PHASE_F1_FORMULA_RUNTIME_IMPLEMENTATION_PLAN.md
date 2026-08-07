@@ -309,3 +309,21 @@ order-planning-monthly-projection-consumer-f1-4b-fm3d.test.js (33) + FM2 D1 upda
 NEXT (separate business-authority tasks, NOT scheduled): Inventory 18/30/45/90 day-horizon (still frozen); MARKETPLACE
 later-arrival time-phasing (frozen required-by=T1 gate); WAREHOUSE ALLOCATION_FACTS_NOT_READY resolution (would
 activate warehouse monthlyProjection end-to-end).
+
+## F1-4B-FM4a (2026-08-07) — Canonical D18/D30/D45/D90 day-horizon projection owner (runtime only)
+
+DONE: freezes the two FM3b-open authorities + implements ONE owner (KMHP), no new engine. (1) Calc-DAY authority =
+Script Property RECOMMENDATION_CALCULATION_DATE (YYYY-MM-DD; recoWsResolveCalcDate_; separate, no clock, fail-closed;
+gates only line.horizons). (2) Daily regular-FC = monthlyFC / real daysInMonth (leap-aware), full precision, special
+events EXCLUDED (matches monthlyProjection regular-only demand); rounding owner hround=Math.round once at emission.
+Reuses frozen KMTPP (one call/destination; per-day demand + ETA incoming + dated D{N} checkpoints) — KMTPP +1 additive
+field checkpoint.cumulativeIncomingQty (monthlyProjection unaffected; CO1100-R re-proven). Cumulative + count-once;
+KMCALC carton for suggested. DTO line.horizons[{windowCode,requiredByDate,demandQty,openingSupplyQty,incomingAddedQty,
+coveredQty,remainingSupplyQty,gapQty,suggestedOrderQty}]; missing-FC month → null (opening shown). MARKETPLACE no fake
+warehouse; WAREHOUSE one independent call/warehouse (own opening + own events, never pooled). Wired additively into
+recommendation.workspace.get (+ meta.calculationDate); ONE read; zero writes. D-F1-4B-FM4a. Bundle 31→32 (KMTPP+KMHP);
+--check PASS; bundle_sha256 56b225e6. Tests: horizon-projection (35) + day-horizon-transport (18); bundle 32; fm3c2
+count resilient.
+NEXT: FM4b — Inventory Replenishment UI cutover to render line.horizons D18/D30/D45/D90 (runtime is ready). Requires
+live Script Property RECOMMENDATION_CALCULATION_DATE. MARKETPLACE later-arrival time-phasing + WAREHOUSE
+ALLOCATION_FACTS_NOT_READY remain separate authority-gated tasks.

@@ -87,6 +87,41 @@ function recoWsResolveCalcContext_(io) {
   return { ok: true, calculationMonth: raw, planningCycle: 'RECO-' + raw };
 }
 
+// F1-4B-FM4a calculation-DAY authority — a SEPARATE server-owned Script Property RECOMMENDATION_CALCULATION_DATE
+// (YYYY-MM-DD) anchoring the day-horizon (D18/D30/D45/D90) projection. NO browser/server clock, NO new Date(), and
+// NEVER derived from RECOMMENDATION_CALCULATION_MONTH. Missing/malformed → fail closed (canonical codes). This is
+// ADDITIVE: it gates ONLY line.horizons; the existing monthly/OP response is unaffected when it is absent.
+function recoWsResolveCalcDate_(io) {
+  var raw = recoWsStr_((io && typeof io.configDate === 'function') ? io.configDate() : '');
+  if (!raw) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED', 'RECOMMENDATION_CALCULATION_DATE is not configured (no clock fallback)') };
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(raw)) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_DATE_INVALID', 'RECOMMENDATION_CALCULATION_DATE must be YYYY-MM-DD (got "' + raw + '")') };
+  return { ok: true, calculationDate: raw };
+}
+// Months (YYYY-MM) the day-horizon window spans: calcDate's month through (calcDate + maxDays)'s month, inclusive.
+// Read-scope only (which FC months to fetch); the canonical daily-distribution ÷ days-in-month lives in KMHP.
+function recoWsHorizonWindowMonths_(calcDate, maxDays) {
+  var y = +calcDate.slice(0, 4), m = +calcDate.slice(5, 7), d = +calcDate.slice(8, 10);
+  function leap(Y) { return (Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0); }
+  function dim(Y, M) { return [31, leap(Y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][M - 1]; }
+  function key(Y, M) { return Y + '-' + (M < 10 ? '0' : '') + M; }
+  var seen = {}, out = []; function add(Y, M) { var k = key(Y, M); if (!seen[k]) { seen[k] = 1; out.push(k); } }
+  add(y, m);
+  for (var i = 0; i < maxDays; i++) { d++; if (d > dim(y, m)) { d = 1; m++; if (m > 12) { m = 1; y++; } } add(y, m); }
+  return out;
+}
+// Build the additive per-destination day-horizon projection via the frozen KMHP owner. Returns null (→ line.horizons
+// absent) when unavailable (KMHP not bundled, calc-DATE not configured, opening unavailable, or a covered month's
+// FC missing) — never a fabricated horizon. incomingEvents = the SAME ETA-dated events used by monthlyProjection.
+function recoWsBuildHorizons_(calc, fcRows, scope, sku, openingSupplyQty, incomingEvents, unitsPerCarton, destination) {
+  if (typeof KMHP === 'undefined' || !KMHP || typeof KMHP.projectHorizons !== 'function') return null;
+  if (!calc || !calc.calculationDate) return null;
+  var winMonths = recoWsHorizonWindowMonths_(calc.calculationDate, 90);
+  var hFc = recoWsRegularForecastByMonth_(fcRows, scope, sku, winMonths);
+  var hr = KMHP.projectHorizons({ destination: destination || null, calculationDate: calc.calculationDate,
+    openingSupplyQty: openingSupplyQty, regularFcByMonth: hFc, incomingEvents: incomingEvents || [], unitsPerCarton: unitsPerCarton });
+  return (hr && hr.ready) ? hr.horizons : null;
+}
+
 // Source-proven per-SKU supply context from the projection's lifecycle-bucketed rows (KMPS.supplySourceEntries).
 // currentStockQty = Σ CURRENT_STOCK; qualifiedIncomingQty = Σ SHIPPED_IN_TRANSIT (F1-3 in-transit bucket). NOT invented.
 function recoWsSupplyBySku_(supplySourceEntries) {
@@ -253,6 +288,9 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
   var mIncoming = (L.qualifiedEvents || []).map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
   var mProj = recoWsBuildMonthlyProjection_(months, recoWsNum_(L.currentStockQty), (haveAll ? fcByMonth : null), mIncoming, upc, nd.destination);
   if (mProj) mLine.monthlyProjection = mProj;
+  // F1-4B-FM4a: additive day-horizon projection (opening = same currentStockQty; incoming = same qualifiedEvents).
+  var mHz = recoWsBuildHorizons_(calc, fcRows, scope, sku, recoWsNum_(L.currentStockQty), mIncoming, upc, nd.destination);
+  if (mHz) mLine.horizons = mHz;
   return mLine;
 }
 
@@ -308,8 +346,13 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
     // ONLY the warehouseQualifiedEvents whose warehouseId === this warehouse (FM3c-1b; strictly isolated, count-once).
     var whIncoming = (src.warehouseQualifiedEvents || []).filter(function (e) { return recoWsStr_(e.warehouseId) === w.warehouseId; })
       .map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
-    var wProj = recoWsBuildMonthlyProjection_(months, recoWsWarehouseOpeningStock_(src.supplySourceEntries, w.warehouseId), override[w.warehouseId], whIncoming, upc, node);
+    var whOpening = recoWsWarehouseOpeningStock_(src.supplySourceEntries, w.warehouseId);
+    var wProj = recoWsBuildMonthlyProjection_(months, whOpening, override[w.warehouseId], whIncoming, upc, node);
     if (wProj) wLine.monthlyProjection = wProj;
+    // F1-4B-FM4a: additive per-warehouse day-horizon projection (opening = this warehouse's OWN stock; incoming =
+    // ONLY this warehouse's warehouseQualifiedEvents — same isolation as monthlyProjection; never pooled).
+    var wHz = recoWsBuildHorizons_(calc, fcRows, scope, sku, whOpening, whIncoming, upc, node);
+    if (wHz) wLine.horizons = wHz;
     lines.push(wLine);
   });
   return { lines: lines };
@@ -383,6 +426,8 @@ function recommendationWorkspaceDefaultIo_() {
     nextSeq: function () { RECO_WS_SEQ_++; return RECO_WS_SEQ_; },
     // F1-4B-FM1-T calculation-month configuration authority (Script Property; NO clock). Injectable in tests.
     configMonth: function () { try { return PropertiesService.getScriptProperties().getProperty('RECOMMENDATION_CALCULATION_MONTH'); } catch (e) { return null; } },
+    // F1-4B-FM4a calculation-DATE authority for day horizons (Script Property; NO clock). Injectable in tests.
+    configDate: function () { try { return PropertiesService.getScriptProperties().getProperty('RECOMMENDATION_CALCULATION_DATE'); } catch (e) { return null; } },
     openTarget: function () {
       var id = prodExpectedDbId_();
       if (!id) throw prodSchemaError_('WRONG_SPREADSHEET_TARGET', '', null);
@@ -405,6 +450,8 @@ function handleRecommendationWorkspaceGet_(body, io) {
     if (!v.ok) return recoWsEnvelope_(false, null, [v.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0 });
     var calc = recoWsResolveCalcContext_(io);                                // server-owned month/cycle (no clock)
     if (!calc.ok) return recoWsEnvelope_(false, null, [calc.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0, calculationMonth: null, planningCycle: null });
+    var cdRes = recoWsResolveCalcDate_(io);                                   // F1-4B-FM4a day-horizon anchor (ADDITIVE; absent → line.horizons omitted, OP unaffected)
+    calc.calculationDate = cdRes.ok ? cdRes.calculationDate : null;
 
     var ss = io.openTarget();                                                // exact-ID validated / fail closed
     var read = KMPS.readCanonicalSnapshots(ss, null);                        // ONE targeted read per request (never getOperationDb)
@@ -433,7 +480,7 @@ function handleRecommendationWorkspaceGet_(body, io) {
     if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle });
 
     var vm = recommendationWorkspaceBuild_(v, calc, lines);
-    return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, conflicts: issues.length });
+    return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, conflicts: issues.length });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INTERNAL_ERROR';
     return recoWsEnvelope_(false, null, [recoWsErr_(code, String(e && e.message || e), (e && e.schemaDetail) || null)], { requestId: reqId, serverDurationMs: (io.now() - t0) });

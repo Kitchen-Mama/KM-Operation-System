@@ -120,7 +120,7 @@
         timeline.push({ date: e.date, kind: 'DEMAND', qty: e.qty, tier: e.tier, coveredQty: covered, shortageQty: (e.qty - covered), balanceAfter: balance });
       } else {
         checkpoints.push({ checkpointId: e.checkpointId, date: e.date, kind: e.cpKind, tier: e.tier, month: e.month,
-          cumulativeDemandQty: cumDemand, cumulativeCoveredQty: cumCovered, remainingSupplyQty: balance, gapQty: (cumDemand - cumCovered) });
+          cumulativeDemandQty: cumDemand, cumulativeCoveredQty: cumCovered, cumulativeIncomingQty: cumIncoming, remainingSupplyQty: balance, gapQty: (cumDemand - cumCovered) });
       }
     }
 

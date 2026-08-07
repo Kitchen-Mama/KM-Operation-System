@@ -4616,3 +4616,29 @@ Full suite 109 files / 1 PRE-EXISTING unrelated failure (replen-header-toggle A2
 No APPS_SCRIPT_SYNC (no .gs/bundle change). Frontend deploy: request-order.js + request-order.css. NEXT (separate
 business-authority tasks, NOT scheduled): Inventory 18/30/45/90 day-horizon; MARKETPLACE later-arrival time-phasing;
 WAREHOUSE ALLOCATION_FACTS_NOT_READY resolution (would activate warehouse monthlyProjection end-to-end).
+
+## F1-4B-FM4a checkpoint (2026-08-07) — Canonical D18/D30/D45/D90 day-horizon projection owner (runtime only)
+
+Freezes the two FM3b-open authorities + implements ONE owner (KMHP). Additive; no new engine; no formula rewrite;
+no DB/write; no Inventory UI (FM4b). (1) Calc-DAY authority = new Script Property RECOMMENDATION_CALCULATION_DATE
+(YYYY-MM-DD; owner recoWsResolveCalcDate_; separate from CALCULATION_MONTH, never derived; no clock; missing/invalid
+→ RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED/INVALID fail-closed; gates ONLY line.horizons — OP unaffected).
+(2) Daily regular-FC distribution = monthlyFC / real daysInMonth (28/29-leap/30/31), full precision per day (owner
+KMHP supply-planning-horizon-projection.js); NOT FC×days, NOT avg-sales. Special events EXCLUDED (consistent with
+monthlyProjection regular-only demand; not a silent change). Rounding owner = hround=Math.round ONCE at checkpoint
+emission (gapQty=max(0,hround(cumDemand−cumCovered))). Chronology REUSES frozen KMTPP (one call/destination; per-day
+demand + ETA-dated incoming + dated checkpoints D{N}=calcDate+N, kind DAY). KMTPP got ONE additive field
+checkpoint.cumulativeIncomingQty (isolated from monthlyProjection which passes no checkpoints → T1–T4 unchanged;
+CO1100-R re-proven gap 1714/4282/7500/0, sug 1720/4320/7520/0). Cumulative + count-once (opening once, incoming
+once by ETA). Suggested = KMCALC carton-CEIL over gap (0→0, missing UPC→null). DTO line.horizons=[{windowCode,
+requiredByDate,demandQty,openingSupplyQty,incomingAddedQty,coveredQty,remainingSupplyQty,gapQty,suggestedOrderQty}]
+for D18/D30/D45/D90; horizon covering a missing-FC month → quantities null (opening shown), never fabricated 0.
+MARKETPLACE no fake warehouse; WAREHOUSE one independent call/warehouse (own opening + own warehouseQualifiedEvents,
+never pooled); ALLOCATION_FACTS_NOT_READY block preserved. Wired into recommendation.workspace.get additively
+(line.horizons + meta.calculationDate); ONE read; zero writes. Decision D-F1-4B-FM4a. Bundle regenerated
+(KMTPP+KMHP): 32 modules; --check PASS; bundle_sha256 56b225e60792b1202a95270a92fa536dcb211c53a5c64b5372ac1a5c685234d6.
+Tests: supply-planning-horizon-projection-f1-4b-fm4a.test.js (NEW, 35) + recommendation-day-horizon-transport-f1-4b-fm4a.test.js
+(NEW, 18); bundle 31→32; fm3c2 count assertion made resilient. Full suite 111 files / 1 PRE-EXISTING unrelated
+failure (replen-header-toggle A2) / 0 NEW; Golden 39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED =
+90_generated_supply_planning_bundle.gs (new hash) + 42_api_v1_recommendation_workspace.gs. NEXT: FM4b Inventory UI
+cutover (consume line.horizons D18/D30/D45/D90). New live config required: RECOMMENDATION_CALCULATION_DATE.
