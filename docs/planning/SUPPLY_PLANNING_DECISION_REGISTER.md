@@ -431,3 +431,23 @@ authority.
   source consumed ≤ once per request; no persistent reservation) → overseasCoveredQty/factoryCoveredQty > 0,
   residualOrderNeedQty < destinationGap. Inventory Replenishment vs Order Planning stay distinct models (numbers not
   reconciled).
+
+## D-F1-4B-FM4b-R — Transport safe-parse recovery + Inventory Horizon Summary consumer cutover (frontend only)
+
+Two frontend-only fixes; NO formula/runtime/DTO/bundle/Apps-Script change. Neither file is bundled into Apps Script,
+so there is **no bundle rebuild and no Apps Script sync** — GitHub Pages deploy only.
+- **Transport (root cause of live `Unexpected token '<' … TRANSPORT_ERROR`):** the Workspace invoke did a blind
+  `resp.json()`, so any HTML body (Apps Script login/redirect/exception page, stale/wrong deployment, or a GitHub
+  Pages fallback page) surfaced as an opaque `SyntaxError`. Fix: `km-api-foundation.js` now reads the body as **text**
+  and, on a non-JSON/HTML body, throws the canonical **`TRANSPORT_NON_JSON_RESPONSE`** carrying ONLY safe diagnostics
+  (HTTP status, Content-Type, sanitized ≤200-char prefix) — never full HTML, never a secret. Valid JSON is unchanged.
+  The `<!DOCTYPE>` itself is a **deployment/access** condition (USER action: confirm the Web App `/exec` URL, redeploy
+  a current version, and set access to "Anyone"); the router already registers `recommendation.workspace.get`.
+- **Inventory FM4b UI cutover:** Inventory Replenishment now consumes the server-owned **`line.horizons[]`
+  (D18/D30/D45/D90)** as the PRIMARY decision surface — Window / Required By / Demand / Covered / Gap / Suggested
+  rendered verbatim (no page math, no `Math.*`, cumulative windows NEVER summed), valid `0` → "0", missing → "—",
+  blocked truthful, one subsection per MARKETPLACE / WAREHOUSE destination (never pooled). The old technical table
+  (Destination/Mode/Demand-Gap/Stock/Incoming/Recommended/Status/Reason) is DEMOTED verbatim under
+  `<details>Diagnostics</details>`. Session cache preserves horizons with zero refetch.
+- **Top-table Suggested Qty owner UNCHANGED:** still `_irAggregateActionableRecommendedQty` (Σ actionable canonical
+  `recommendedQty`, FM3a) — NOT a sum of horizon gaps. Order Planning monthlyProjection + manual Order Qty untouched.

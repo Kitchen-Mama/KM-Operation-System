@@ -4719,7 +4719,23 @@ function _irRecoMapLine(L) {
     blocked: L.blocked === true, blockedReason: (L.blockedReason == null ? null : String(L.blockedReason)),
     formulaVersion: (L.formulaVersion == null ? null : String(L.formulaVersion)),
     sourceDataAsOf: (L.sourceDataAsOf == null ? null : String(L.sourceDataAsOf)),
+    // F1-4B-FM4b: additive canonical D18/D30/D45/D90 day-horizon projection (server-owned; null when absent).
+    // Pure passthrough — the page authors NO horizon math (no gap/covered/suggested computed here).
+    horizons: Array.isArray(L.horizons) ? L.horizons.map(_irRecoMapHorizon) : null,
     diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
+  };
+}
+// F1-4B-FM4b: map ONE canonical horizon checkpoint → the fields the Horizon Summary renders (direct passthrough,
+// preserve a legitimate 0; NEVER value || 0). The page computes NO gap/covered/suggested — all are server facts.
+function _irRecoMapHorizon(h) {
+  h = h || {};
+  return {
+    windowCode: (h.windowCode == null ? null : String(h.windowCode)),
+    requiredByDate: (h.requiredByDate == null ? null : String(h.requiredByDate)),
+    demandQty: _irNumOrNull(h.demandQty), openingSupplyQty: _irNumOrNull(h.openingSupplyQty),
+    incomingAddedQty: _irNumOrNull(h.incomingAddedQty), coveredQty: _irNumOrNull(h.coveredQty),
+    remainingSupplyQty: _irNumOrNull(h.remainingSupplyQty), gapQty: _irNumOrNull(h.gapQty),
+    suggestedOrderQty: _irNumOrNull(h.suggestedOrderQty)
   };
 }
 // Apply a canonical envelope → state. Failure stays visible (never masked); success indexes lines by SKU
@@ -4834,7 +4850,9 @@ function _legacyRecSummaryTableHtml(skuData) {
     + '<th class="replen-recsum-table__num">Recommended Qty</th><th>Route</th><th>Reason</th></tr></thead>'
     + '<tbody>' + _recSummaryRows(skuData) + '</tbody></table>';
 }
-function _irRecoDiagnosticsHtml(line) {
+// Inner diagnostics content (issue list + version meta) WITHOUT the <details> wrapper, so callers can compose
+// it inside a single Diagnostics section (avoids nested <details>). Returns '' when nothing to show.
+function _irRecoDiagnosticsInnerHtml(line) {
   function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
   var items = [];
   (line.diagnostics || []).forEach(function (d) {
@@ -4847,10 +4865,13 @@ function _irRecoDiagnosticsHtml(line) {
   if (line.sourceDataAsOf) meta.push('sourceDataAsOf: ' + esc(line.sourceDataAsOf));
   if (_irRecoState.requestId) meta.push('requestId: ' + esc(_irRecoState.requestId));
   if (!items.length && !meta.length) return '';
-  return '<details class="replen-recsum-ws__diag"><summary>Diagnostics</summary>'
-    + (items.length ? ('<ul>' + items.join('') + '</ul>') : '')
-    + (meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '')
-    + '</details>';
+  return (items.length ? ('<ul>' + items.join('') + '</ul>') : '')
+    + (meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '');
+}
+function _irRecoDiagnosticsHtml(line) {
+  var inner = _irRecoDiagnosticsInnerHtml(line);
+  if (!inner) return '';
+  return '<details class="replen-recsum-ws__diag"><summary>Diagnostics</summary>' + inner + '</details>';
 }
 // F1-4B-FM1-T minimal destination presentation — ONE compact row per response destination (MARKETPLACE and/or
 // each WAREHOUSE). Distinguishes canonical / valid-zero / blocked / partial-provisional / missing-rule /
@@ -4889,6 +4910,72 @@ function _irRecoDestRowHtml(line) {
     + '<td>' + reason + '</td>'
     + '</tr>';
 }
+// ---- F1-4B-FM4b · Horizon Summary (the PRIMARY decision surface) -------------------------------------
+// Renders the server-owned D18/D30/D45/D90 CUMULATIVE checkpoints for ONE destination line. The page does
+// NO horizon math: Window/Required By/Demand/Covered/Gap/Suggested come verbatim from line.horizons[]. A
+// legitimate canonical 0 renders "0"; a missing/unavailable value renders "—". The four windows are cumulative
+// checkpoints and are NEVER summed together. A short destination-type badge ("Warehouse" / "Marketplace") is
+// shown for identity — deliberately NOT the "Warehouse Replenishment" mode phrase (that stays in Diagnostics).
+var _IR_HORIZON_WINDOWS = [{ code: 'D18', label: '18 Days' }, { code: 'D30', label: '30 Days' }, { code: 'D45', label: '45 Days' }, { code: 'D90', label: '90 Days' }];
+function _irRecoDestTypeBadge(line) {
+  if (line.destinationType === 'WAREHOUSE') return 'Warehouse';
+  if (line.destinationType === 'MARKETPLACE') return 'Marketplace';
+  return line.destinationType || '';
+}
+function _irRecoHorizonTableHtml(line) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  function num(v) { return (v === null || v === undefined) ? '—' : esc(String(v)); }   // valid 0 → "0"; missing → "—"
+  var byWin = {};
+  (line.horizons || []).forEach(function (h) { if (h && h.windowCode) byWin[h.windowCode] = h; });
+  var rows = _IR_HORIZON_WINDOWS.map(function (w) {
+    var h = byWin[w.code];
+    if (!h) return '<tr class="is-missing"><td>' + w.label + '</td><td>—</td>'
+      + '<td class="replen-recsum-table__num">—</td><td class="replen-recsum-table__num">—</td>'
+      + '<td class="replen-recsum-table__num">—</td><td class="replen-recsum-table__num">—</td></tr>';
+    return '<tr>'
+      + '<td>' + w.label + '</td>'
+      + '<td>' + (h.requiredByDate ? esc(h.requiredByDate) : '—') + '</td>'
+      + '<td class="replen-recsum-table__num">' + num(h.demandQty) + '</td>'
+      + '<td class="replen-recsum-table__num">' + num(h.coveredQty) + '</td>'
+      + '<td class="replen-recsum-table__num">' + num(h.gapQty) + '</td>'
+      + '<td class="replen-recsum-table__num">' + num(h.suggestedOrderQty) + '</td>'
+      + '</tr>';
+  }).join('');
+  return '<table class="replen-horizon-table"><thead><tr>'
+    + '<th>Window</th><th>Required By</th><th class="replen-recsum-table__num">Demand</th>'
+    + '<th class="replen-recsum-table__num">Covered</th><th class="replen-recsum-table__num">Gap</th>'
+    + '<th class="replen-recsum-table__num">Suggested</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+// ONE destination subsection (MARKETPLACE → one; WAREHOUSE → one per warehouse; never pooled). Blocked and
+// horizon-unavailable states are shown truthfully instead of a fabricated table.
+function _irRecoHorizonSectionHtml(line) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  var badge = _irRecoDestTypeBadge(line);
+  var head = '<div class="replen-horizon-dest"><div class="replen-horizon-dest__hd">'
+    + '<span class="replen-horizon-dest__name">' + esc(line.destinationLabel || '—') + '</span>'
+    + (badge ? (' <span class="replen-horizon-dest__badge">' + esc(badge) + '</span>') : '');
+  if (line.blocked) {
+    var reason = line.blockedReason ? ('<code>' + esc(line.blockedReason) + '</code>') : 'blocked';
+    if (line.incomingCompleteness === 'PARTIAL' || line.incomingCompleteness === 'UNAVAILABLE') {
+      return head + '</div><div class="replen-horizon-dest__blocked">Partial incoming — provisional; horizon withheld ' + reason + '</div></div>';
+    }
+    return head + '</div><div class="replen-horizon-dest__blocked">Blocked — ' + reason + '</div></div>';
+  }
+  if (!line.horizons || !line.horizons.length) {
+    return head + '</div><div class="replen-horizon-dest__na">Horizon projection unavailable for this destination. <code>HORIZONS_NOT_AVAILABLE</code></div></div>';
+  }
+  return head + '</div>' + _irRecoHorizonTableHtml(line) + '</div>';
+}
+// The legacy per-destination technical table (Destination/Mode/Demand-Gap/Stock/Incoming/Recommended/Status/
+// Reason) — RELOCATED under Diagnostics (no longer the primary surface). Content preserved verbatim.
+function _irRecoLegacyDestTableHtml(lines) {
+  var rows = lines.map(_irRecoDestRowHtml).join('');
+  return '<table class="replen-recsum-table replen-recsum-ws__table"><thead><tr>'
+    + '<th>Destination</th><th>Mode</th><th class="replen-recsum-table__num">Demand / Gap</th>'
+    + '<th class="replen-recsum-table__num">Stock</th><th class="replen-recsum-table__num">Incoming</th>'
+    + '<th class="replen-recsum-table__num">Recommended</th><th>Status</th><th>Reason</th></tr></thead><tbody>'
+    + rows + '</tbody></table>';
+}
 function _irRecoWorkspaceBody(skuData) {
   function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
   function wrap(cls, inner) { return '<div class="replen-recsum-ws ' + cls + '" role="status" aria-live="polite">' + inner + '</div>'; }
@@ -4909,17 +4996,18 @@ function _irRecoWorkspaceBody(skuData) {
   if (st.status === 'EMPTY') return wrap('replen-recsum-ws--info', 'No SKU matched the current recommendation scope.');
   var lines = _irRecoLinesForSku(skuData);
   if (!lines || !lines.length) return wrap('replen-recsum-ws--info', 'No recommendation line for this SKU in the current scope. <code>RECOMMENDATION_LINE_NOT_FOUND</code>');
-  var rows = lines.map(_irRecoDestRowHtml).join('');
   var meta = [];
   if (st.calculationMonth) meta.push('month: ' + esc(st.calculationMonth));
   if (st.planningCycle) meta.push('cycle: ' + esc(st.planningCycle));
   if (st.requestId) meta.push('requestId: ' + esc(st.requestId));
-  var table = '<table class="replen-recsum-table replen-recsum-ws__table"><thead><tr>'
-    + '<th>Destination</th><th>Mode</th><th class="replen-recsum-table__num">Demand / Gap</th>'
-    + '<th class="replen-recsum-table__num">Stock</th><th class="replen-recsum-table__num">Incoming</th>'
-    + '<th class="replen-recsum-table__num">Recommended</th><th>Status</th><th>Reason</th></tr></thead><tbody>'
-    + rows + '</tbody></table>';
-  return wrap('replen-recsum-ws--ready', table + (meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '')) + _irRecoDiagnosticsHtml(lines[0]);
+  // PRIMARY surface: one Horizon Summary subsection per destination line (MARKETPLACE → one; WAREHOUSE →
+  // one per warehouse; never pooled, never summed across windows).
+  var sections = '<div class="replen-horizon-summary">' + lines.map(_irRecoHorizonSectionHtml).join('') + '</div>';
+  var metaHtml = meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '';
+  // Technical destination/runtime detail is DEMOTED under a collapsed <details> — no longer the decision surface.
+  var diag = '<details class="replen-recsum-ws__diag replen-recsum-ws__diag--dest"><summary>Diagnostics</summary>'
+    + _irRecoLegacyDestTableHtml(lines) + _irRecoDiagnosticsInnerHtml(lines[0]) + '</details>';
+  return wrap('replen-recsum-ws--ready', sections + metaHtml + diag);
 }
 // The card body: Workspace presentation when the flag is EFFECTIVE, else the unchanged legacy table.
 function _irRecoSummaryCardBody(skuData) {

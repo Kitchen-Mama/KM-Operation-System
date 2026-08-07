@@ -56,6 +56,7 @@
     TRANSPORT_NOT_CONFIGURED: 'TRANSPORT_NOT_CONFIGURED',
     TRANSPORT_URL_INVALID: 'TRANSPORT_URL_INVALID',
     TRANSPORT_ERROR: 'TRANSPORT_ERROR',
+    TRANSPORT_NON_JSON_RESPONSE: 'TRANSPORT_NON_JSON_RESPONSE',
     INTERNAL_ERROR: 'INTERNAL_ERROR'
   };
 
@@ -159,8 +160,60 @@
         else if (err.safetyToken) { code = API_ERROR_CODES.FORBIDDEN_OPERATION; details = { safetyToken: err.safetyToken }; }
         else code = API_ERROR_CODES.TRANSPORT_ERROR;
         msg = err.message ? String(err.message) : code;
+        // A non-JSON transport response carries SAFE diagnostic fields (status / content-type / sanitized
+        // prefix) — surfaced in details so the page can show an honest cause, never the full HTML / secrets.
+        if (code === API_ERROR_CODES.TRANSPORT_NON_JSON_RESPONSE) {
+          details = { httpStatus: (err.transportStatus === undefined ? null : err.transportStatus),
+            contentType: err.transportContentType || null, responsePrefix: err.responsePrefix || null };
+        }
       } else if (typeof err === 'string') { code = API_ERROR_CODES.TRANSPORT_ERROR; msg = err; }
       return buildError(code, msg, details, meta);
+    }
+
+    // ---- SAFE response parsing (Hotfix — non-JSON never reaches a blind JSON.parse) --------------------
+    // The single guard between the network Response and the canonical envelope. Apps Script can return an
+    // HTML page instead of JSON — a Google login/redirect page (wrong "who has access"), an exception page,
+    // a stale/wrong deployment, or a GitHub Pages fallback. A blind resp.json() would then throw the opaque
+    // "Unexpected token '<' … is not valid JSON" and surface as a bare TRANSPORT_ERROR. Instead we read the
+    // body as TEXT, detect a non-JSON/HTML body, and throw a STRUCTURED TRANSPORT_NON_JSON_RESPONSE carrying
+    // ONLY safe diagnostics (HTTP status, Content-Type, a sanitized ≤200-char prefix). Never the full HTML.
+    function _safeResponsePrefix(s) {
+      var t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+      if (t.length > 200) t = t.slice(0, 200) + '…';
+      return t;
+    }
+    function _nonJsonError(status, ctype, body) {
+      var e = new Error('Server returned a non-JSON response (HTTP ' + (status == null ? '?' : status) + ', ' +
+        (ctype || 'unknown content-type') + '). The endpoint likely returned an HTML page (login / redirect / ' +
+        'error / wrong URL) instead of the JSON API envelope.');
+      e.apiCode = API_ERROR_CODES.TRANSPORT_NON_JSON_RESPONSE;
+      e.transportStatus = (typeof status === 'number') ? status : null;
+      e.transportContentType = ctype || null;
+      e.responsePrefix = _safeResponsePrefix(body);
+      return e;
+    }
+    function _parseJsonTextOrThrow(raw, status, ctype) {
+      var text = (typeof raw === 'string') ? raw : (raw == null ? '' : String(raw));
+      var trimmed = text.replace(/^﻿/, '').trim();
+      if (trimmed === '' || /^<(!doctype|html|\?xml|head|body)/i.test(trimmed)) throw _nonJsonError(status, ctype, trimmed);
+      try { return JSON.parse(trimmed); } catch (e) { throw _nonJsonError(status, ctype, trimmed); }
+    }
+    function safeReadJsonResponse(resp) {
+      if (!resp || typeof resp !== 'object') return resp;   // already a parsed value (some injected fetchers)
+      var status = (typeof resp.status === 'number') ? resp.status : null;
+      var ctype = '';
+      try { if (resp.headers && typeof resp.headers.get === 'function') ctype = resp.headers.get('content-type') || ''; } catch (e0) { /* ignore */ }
+      // Prefer text() so a non-JSON body never throws an opaque SyntaxError inside json().
+      if (typeof resp.text === 'function') {
+        return Promise.resolve(resp.text()).then(function (raw) { return _parseJsonTextOrThrow(raw, status, ctype); });
+      }
+      // Response-like with only json() (e.g. injected test fetchers) → guard the parse so a non-JSON/HTML
+      // body still becomes a structured TRANSPORT_NON_JSON_RESPONSE instead of an opaque rejection.
+      if (typeof resp.json === 'function') {
+        return Promise.resolve().then(function () { return resp.json(); }).then(function (v) { return v; },
+          function (err) { throw _nonJsonError(status, ctype, (err && err.message) || ''); });
+      }
+      return resp;   // plain object → already the parsed envelope
     }
 
     // ---- Cache Layer (memory only; TTL = 0 → interface present, never actually caches) -----------------
@@ -249,6 +302,7 @@
     }
     var transport = {
       resolveBaseUrl: resolveBaseUrl,
+      safeReadJsonResponse: safeReadJsonResponse,   // SAFE parse: non-JSON/HTML → structured TRANSPORT_NON_JSON_RESPONSE
       configured: function () { return typeof _fetcher === 'function' && classifyUrl(resolveBaseUrl()).ok; },
       get: function (params) {
         if (typeof _fetcher !== 'function') return Promise.reject(txErr(API_ERROR_CODES.TRANSPORT_NOT_CONFIGURED, 'no fetch available'));
@@ -324,7 +378,7 @@
     var _workspaceInvoke = (typeof deps.workspaceInvoke === 'function') ? deps.workspaceInvoke : function (action, dto, signal) {
       // transport.post resolves the canonical URL at call time and rejects with the specific transport code
       // (TRANSPORT_NOT_CONFIGURED / TRANSPORT_URL_INVALID) — surfaced verbatim via errorFromException.
-      return transport.post(dto, { signal: signal }).then(function (resp) { return (resp && typeof resp.json === 'function') ? resp.json() : resp; });
+      return transport.post(dto, { signal: signal }).then(function (resp) { return safeReadJsonResponse(resp); });
     };
 
     // ---- API-2 · Weekly Shipping READ workspace resolver (the FIRST implemented workspace) ---------------
