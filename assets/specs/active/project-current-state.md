@@ -4549,3 +4549,23 @@ smallest future fix is additively preserving eta onto the KMSF entry + source-pr
 D-F1-4B-FM3c-1. Bundle regenerated (KMQI+KMDR changed): sha256 904d45cb...; 30 modules (KMTPP still NOT bundled).
 Tests: qualified-incoming-event-exposure-f1-4b-fm3c1.test.js (NEW, 23). Full suite 106 files / 0 failing; Golden
 39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (new hash).
+
+## F1-4B-FM3c-1b checkpoint (2026-08-07) — Warehouse Incoming ETA Lineage Preservation (WAREHOUSE HALT RESOLVED → Outcome A)
+
+Additive fact preservation only (no qualification/allocation/quantity/destination/formula change, no projection
+wiring, no handler, no UI). Resolves the FM3c-1 WAREHOUSE bounded HALT. ETA authority = the already-known canonical
+shipment `c.eta` (the same value KMQI's ETA gate consumed) — never a derived/fabricated date; missing stays null.
+Preserved through: (1) KMSF.projectSupplyLifecycle shipment entry now carries `eta` (former granularity-loss point);
+(2) source-projection `lifecycle.entries → supplyRows` carries it; (3) KMPS.supplySourceEntries (raw supplyRows, not
+the fixed-header toSnapshot) surfaces it verbatim — no strip on the FM3c-2 path. NEW additive warehouse owner:
+source-projection `warehouseQualifiedEvents:[{incomingId(supply_lineage_ref), eta, eligibleQty(=SHIPPED_IN_TRANSIT
+quantity), warehouseId, sourceType:'KM', state:'QUALIFIED'}]`, surfaced on KMPS.buildProductionRecommendationSource;
+derived from the SAME SHIPPED_IN_TRANSIT rows the handler already aggregates (Σ eligibleQty == Σ SHIPPED_IN_TRANSIT
+= evidence, not extra supply). Only ETA-bearing rows become dated events; missing-ETA in-transit stays in the
+aggregate, not an event. Multi-warehouse splits isolated by distinct lineageKeys. Decision D-F1-4B-FM3c-1b. Bundle
+regenerated (KMSF+KMSP+KMPS changed): bundle_sha256 beecbee3a50e6db8d6682acbcf592fc239a4e12d29ffc13fcb7e477798993a0b;
+30 modules; --check PASS (KMTPP still NOT bundled). Tests: warehouse-incoming-eta-preservation-f1-4b-fm3c1b.test.js
+(NEW, 40) + updated fm3c1 W-Bev1/W-Bev2 (HALT→resolved). Full suite 107 files / 0 new failures (1 PRE-EXISTING
+unrelated frontend failure: replen-header-toggle A2, in inventory-replenishment.js, outside this round's scope —
+fails identically at HEAD with FM3c-1b changes stashed); Golden 39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED =
+90_generated_supply_planning_bundle.gs (new hash). FM3c-2 now unblocked for BOTH destination types.

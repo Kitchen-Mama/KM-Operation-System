@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 904d45cb0a4550eea87064aa1c0b5ba8642fa4fd0c7aa68dd56be996798c8e23
+// bundle_sha256 = beecbee3a50e6db8d6682acbcf592fc239a4e12d29ffc13fcb7e477798993a0b
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5
@@ -20,18 +20,18 @@
 //   supply-planning-persistence-plan-builder  c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304
 //   supply-planning-recommendation-orchestrator  23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192
 //   supply-planning-user-edit  365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693
-//   supply-planning-source-facts  259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687
+//   supply-planning-source-facts  c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83
 //   supply-planning-plan-bridge  c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
-//   supply-planning-source-projection  1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4
+//   supply-planning-source-projection  64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae
 //   supply-planning-allocation-facts  5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc
 //   supply-planning-planning-context  2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3
 //   supply-planning-demand-allocation  06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed
 //   supply-planning-production-assembly  d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7
 //   supply-planning-destination-runtime  538ed63309659df78b74cdc75c551db8004d139451be3277f8fdff286ff22fff
-//   supply-planning-production-source  13adfc30f860a04c893ddcdcf91c64b45295a3d84ba211b5223eb300f146d22f
+//   supply-planning-production-source  6caf9efa29c7c7055fc661f4b9ddcdc76524acf8346c2fef4ef06fbca1bb6839
 //   supply-planning-production-safety  7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6
 //   supply-planning-production-writer  1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364
 //   supply-planning-verification-diagnostics  efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea
@@ -4675,7 +4675,8 @@ function __kmRequire(p) {
         if (qr.qty < 0) { addIssue(domain, i, 'NEGATIVE_QUANTITY:' + str(r.supplyLineageRef)); continue; }   // fail-closed, no throw
         entries.push({
           supplyLineageRef: str(r.supplyLineageRef), masterSku: str(r.masterSku), company: str(r.company),
-          warehouseId: str(r.warehouseId), poolType: pt, lifecycleBucket: bucket, quantity: qr.qty
+          warehouseId: str(r.warehouseId), poolType: pt, lifecycleBucket: bucket, quantity: qr.qty,
+          eta: (nonEmpty(r.eta) ? str(r.eta) : null)   // F1-4B-FM3c-1b: additively preserve a canonical row ETA when present (missing stays null; never fabricated)
         });
       }
     }
@@ -4720,7 +4721,8 @@ function __kmRequire(p) {
         if (sqr.qty < 0) { addIssue('shipment', k, 'NEGATIVE_QUANTITY:' + c.lineageKey); continue; }        // fail-closed, no throw
         entries.push({
           supplyLineageRef: str(c.lineageKey), masterSku: str(c.sku), company: str(c.company),
-          warehouseId: str(c.destinationWarehouseId), poolType: spt, lifecycleBucket: sbucket, quantity: sqr.qty
+          warehouseId: str(c.destinationWarehouseId), poolType: spt, lifecycleBucket: sbucket, quantity: sqr.qty,
+          eta: (nonEmpty(c.eta) ? str(c.eta) : null)   // F1-4B-FM3c-1b: additively preserve the ALREADY-KNOWN canonical shipment ETA (c.eta, the same value KMQI's ETA gate consumed). Missing stays null — never a fabricated/derived date. Fact preservation only; no eligibility/quantity/count-once change.
         });
       }
     }
@@ -6711,7 +6713,29 @@ function __kmRequire(p) {
     // Reuse the canonical lifecycle entries VERBATIM (shape adapter only; lifecycle_bucket carried through unchanged).
     (lifecycle.entries || []).forEach(function (e) {
       supplyRows.push({ pool_type: e.poolType, warehouse_id: e.warehouseId, quantity: e.quantity,
-        supply_lineage_ref: e.supplyLineageRef, sku: e.masterSku, company: e.company, lifecycle_bucket: e.lifecycleBucket });
+        supply_lineage_ref: e.supplyLineageRef, sku: e.masterSku, company: e.company, lifecycle_bucket: e.lifecycleBucket,
+        eta: (e.eta == null ? null : str(e.eta)) });   // F1-4B-FM3c-1b: carry the KMSF-preserved canonical ETA through the supply row (evidence only; missing stays null)
+    });
+
+    // ---- F1-4B-FM3c-1b: WAREHOUSE Qualified Incoming EVENT facts (additive; surfaced, never reconstructed) ----
+    // Surfaced from the SAME SHIPPED_IN_TRANSIT supply rows the handler already aggregates
+    // (recoWsSupplyBySku_: qualifiedIncomingQty = Σ SHIPPED_IN_TRANSIT). These events are EVIDENCE over existing
+    // supply, NOT additional supply — each event's eligibleQty is the row's already-counted quantity, so the
+    // aggregate is unchanged. Only a row with a canonical ETA becomes a DATED event (missing ETA is never a
+    // fabricated date → the row stays in the aggregate but is not a dated event). incomingId = the count-once
+    // supply_lineage_ref (shipment:<id>:<lineId>, per-line, one destination warehouse) → legitimate multi-warehouse
+    // splits are distinct lineageKeys, so they are distinct events and are never deduped together.
+    var warehouseQualifiedEvents = [];
+    supplyRows.forEach(function (e) {
+      if (e.lifecycle_bucket !== 'SHIPPED_IN_TRANSIT') return;   // canonical Qualified Incoming bucket (matches the handler aggregate)
+      if (!nonEmpty(e.eta)) return;                              // no fabricated date; row still counted in the aggregate
+      warehouseQualifiedEvents.push({
+        incomingId: str(e.supply_lineage_ref), eta: str(e.eta), eligibleQty: e.quantity,
+        warehouseId: str(e.warehouse_id), sourceType: 'KM', state: 'QUALIFIED'
+      });
+    });
+    warehouseQualifiedEvents.sort(function (a, b) {
+      return cmpStr(a.warehouseId, b.warehouseId) || cmpStr(a.eta, b.eta) || cmpStr(a.incomingId, b.incomingId);
     });
 
     // ---- caller-owned planning facts → DTO rows (ROUTE, never compute) --------------------------------------
@@ -6784,6 +6808,7 @@ function __kmRequire(p) {
       issues: issues, recommendationType: type, planningCycle: str(input.planningCycle), businessScope: scope,
       sourceReaderInput: reader,
       demandSourceEntries: demandRows, supplySourceEntries: supplyRows,
+      warehouseQualifiedEvents: warehouseQualifiedEvents,   // F1-4B-FM3c-1b (additive; evidence over SHIPPED_IN_TRANSIT supply)
       receiverFacts: receiverRows, factoryDemandFacts: factoryRows, planningFacts: planningRows,
       sourceDataAsOf: sourceAsOf, sourceAsOfByType: asOfByType,
       lineage: { origin: ORIGIN, demandCount: demandRows.length, supplyCount: supplyRows.length }
@@ -8535,6 +8560,9 @@ function __kmRequire(p) {
       // source-proven Current Stock (CURRENT_STOCK bucket) + Qualified Incoming (SHIPPED_IN_TRANSIT bucket) per SKU.
       // NOT a recommendation output; NOT persisted; the arrays are the same projection rows already counted in lineage.
       supplySourceEntries: (proj.supplySourceEntries || []),
+      // F1-4B-FM3c-1b: warehouse Qualified Incoming EVENT facts (additive; ETA-dated evidence over the SHIPPED_IN_TRANSIT
+      // supply rows already counted above). Enables downstream (FM3c-2) ETA-dated time-phased warehouse incoming.
+      warehouseQualifiedEvents: (proj.warehouseQualifiedEvents || []),
       demandSourceEntries: (proj.demandSourceEntries || []),
       sourceDataAsOf: full.sourceDataAsOf !== undefined ? full.sourceDataAsOf : (proj.sourceDataAsOf || null),
       formulaVersion: full.formulaVersion !== undefined ? full.formulaVersion : (request.formulaVersion || null),
@@ -9206,4 +9234,4 @@ var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"904d45cb0a4550eea87064aa1c0b5ba8642fa4fd0c7aa68dd56be996798c8e23","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"259296bf83751256e43444308b0cf5043fa276e8c2cbc1f746ca0f33f43f5687"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"1af5185c66aba6dd3ef51e1ea12e1faf2689870dc1754c5b90ad96f383dd44f4"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"538ed63309659df78b74cdc75c551db8004d139451be3277f8fdff286ff22fff"},{"module":"supply-planning-production-source","sha256":"13adfc30f860a04c893ddcdcf91c64b45295a3d84ba211b5223eb300f146d22f"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"beecbee3a50e6db8d6682acbcf592fc239a4e12d29ffc13fcb7e477798993a0b","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"538ed63309659df78b74cdc75c551db8004d139451be3277f8fdff286ff22fff"},{"module":"supply-planning-production-source","sha256":"6caf9efa29c7c7055fc661f4b9ddcdc76524acf8346c2fef4ef06fbca1bb6839"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};

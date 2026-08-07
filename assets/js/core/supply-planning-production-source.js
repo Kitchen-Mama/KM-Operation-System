@@ -157,6 +157,9 @@
       // source-proven Current Stock (CURRENT_STOCK bucket) + Qualified Incoming (SHIPPED_IN_TRANSIT bucket) per SKU.
       // NOT a recommendation output; NOT persisted; the arrays are the same projection rows already counted in lineage.
       supplySourceEntries: (proj.supplySourceEntries || []),
+      // F1-4B-FM3c-1b: warehouse Qualified Incoming EVENT facts (additive; ETA-dated evidence over the SHIPPED_IN_TRANSIT
+      // supply rows already counted above). Enables downstream (FM3c-2) ETA-dated time-phased warehouse incoming.
+      warehouseQualifiedEvents: (proj.warehouseQualifiedEvents || []),
       demandSourceEntries: (proj.demandSourceEntries || []),
       sourceDataAsOf: full.sourceDataAsOf !== undefined ? full.sourceDataAsOf : (proj.sourceDataAsOf || null),
       formulaVersion: full.formulaVersion !== undefined ? full.formulaVersion : (request.formulaVersion || null),

@@ -338,7 +338,29 @@
     // Reuse the canonical lifecycle entries VERBATIM (shape adapter only; lifecycle_bucket carried through unchanged).
     (lifecycle.entries || []).forEach(function (e) {
       supplyRows.push({ pool_type: e.poolType, warehouse_id: e.warehouseId, quantity: e.quantity,
-        supply_lineage_ref: e.supplyLineageRef, sku: e.masterSku, company: e.company, lifecycle_bucket: e.lifecycleBucket });
+        supply_lineage_ref: e.supplyLineageRef, sku: e.masterSku, company: e.company, lifecycle_bucket: e.lifecycleBucket,
+        eta: (e.eta == null ? null : str(e.eta)) });   // F1-4B-FM3c-1b: carry the KMSF-preserved canonical ETA through the supply row (evidence only; missing stays null)
+    });
+
+    // ---- F1-4B-FM3c-1b: WAREHOUSE Qualified Incoming EVENT facts (additive; surfaced, never reconstructed) ----
+    // Surfaced from the SAME SHIPPED_IN_TRANSIT supply rows the handler already aggregates
+    // (recoWsSupplyBySku_: qualifiedIncomingQty = Σ SHIPPED_IN_TRANSIT). These events are EVIDENCE over existing
+    // supply, NOT additional supply — each event's eligibleQty is the row's already-counted quantity, so the
+    // aggregate is unchanged. Only a row with a canonical ETA becomes a DATED event (missing ETA is never a
+    // fabricated date → the row stays in the aggregate but is not a dated event). incomingId = the count-once
+    // supply_lineage_ref (shipment:<id>:<lineId>, per-line, one destination warehouse) → legitimate multi-warehouse
+    // splits are distinct lineageKeys, so they are distinct events and are never deduped together.
+    var warehouseQualifiedEvents = [];
+    supplyRows.forEach(function (e) {
+      if (e.lifecycle_bucket !== 'SHIPPED_IN_TRANSIT') return;   // canonical Qualified Incoming bucket (matches the handler aggregate)
+      if (!nonEmpty(e.eta)) return;                              // no fabricated date; row still counted in the aggregate
+      warehouseQualifiedEvents.push({
+        incomingId: str(e.supply_lineage_ref), eta: str(e.eta), eligibleQty: e.quantity,
+        warehouseId: str(e.warehouse_id), sourceType: 'KM', state: 'QUALIFIED'
+      });
+    });
+    warehouseQualifiedEvents.sort(function (a, b) {
+      return cmpStr(a.warehouseId, b.warehouseId) || cmpStr(a.eta, b.eta) || cmpStr(a.incomingId, b.incomingId);
     });
 
     // ---- caller-owned planning facts → DTO rows (ROUTE, never compute) --------------------------------------
@@ -411,6 +433,7 @@
       issues: issues, recommendationType: type, planningCycle: str(input.planningCycle), businessScope: scope,
       sourceReaderInput: reader,
       demandSourceEntries: demandRows, supplySourceEntries: supplyRows,
+      warehouseQualifiedEvents: warehouseQualifiedEvents,   // F1-4B-FM3c-1b (additive; evidence over SHIPPED_IN_TRANSIT supply)
       receiverFacts: receiverRows, factoryDemandFacts: factoryRows, planningFacts: planningRows,
       sourceDataAsOf: sourceAsOf, sourceAsOfByType: asOfByType,
       lineage: { origin: ORIGIN, demandCount: demandRows.length, supplyCount: supplyRows.length }

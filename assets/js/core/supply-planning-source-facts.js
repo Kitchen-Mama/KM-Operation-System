@@ -281,7 +281,8 @@
         if (qr.qty < 0) { addIssue(domain, i, 'NEGATIVE_QUANTITY:' + str(r.supplyLineageRef)); continue; }   // fail-closed, no throw
         entries.push({
           supplyLineageRef: str(r.supplyLineageRef), masterSku: str(r.masterSku), company: str(r.company),
-          warehouseId: str(r.warehouseId), poolType: pt, lifecycleBucket: bucket, quantity: qr.qty
+          warehouseId: str(r.warehouseId), poolType: pt, lifecycleBucket: bucket, quantity: qr.qty,
+          eta: (nonEmpty(r.eta) ? str(r.eta) : null)   // F1-4B-FM3c-1b: additively preserve a canonical row ETA when present (missing stays null; never fabricated)
         });
       }
     }
@@ -326,7 +327,8 @@
         if (sqr.qty < 0) { addIssue('shipment', k, 'NEGATIVE_QUANTITY:' + c.lineageKey); continue; }        // fail-closed, no throw
         entries.push({
           supplyLineageRef: str(c.lineageKey), masterSku: str(c.sku), company: str(c.company),
-          warehouseId: str(c.destinationWarehouseId), poolType: spt, lifecycleBucket: sbucket, quantity: sqr.qty
+          warehouseId: str(c.destinationWarehouseId), poolType: spt, lifecycleBucket: sbucket, quantity: sqr.qty,
+          eta: (nonEmpty(c.eta) ? str(c.eta) : null)   // F1-4B-FM3c-1b: additively preserve the ALREADY-KNOWN canonical shipment ETA (c.eta, the same value KMQI's ETA gate consumed). Missing stays null — never a fabricated/derived date. Fact preservation only; no eligibility/quantity/count-once change.
         });
       }
     }

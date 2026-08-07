@@ -264,3 +264,40 @@ qualification math change. That would make WAREHOUSE Outcome A. NOT a per-tier K
 Bundle: KMQI + KMDR are bundled modules → `90_generated_supply_planning_bundle.gs` regenerated via the build
 tool (30 modules; sha256 904d45cb0a4550eea87064aa1c0b5ba8642fa4fd0c7aa68dd56be996798c8e23). KMTPP NOT bundled
 this round.
+
+## D-F1-4B-FM3c-1b — Warehouse Qualified Incoming ETA Lineage Preservation (additive; resolves FM3c-1 WAREHOUSE HALT)
+
+**Resolves** the FM3c-1 WAREHOUSE bounded HALT (Outcome B) — makes WAREHOUSE **Outcome A** by additive fact
+preservation only. NO qualification, allocation, quantity, destination, or formula change.
+
+**ETA authority (frozen):** the ALREADY-KNOWN canonical shipment ETA `c.eta` — the SAME value KMQI's ETA gate
+consumed. Never a new date source; never `source_data_as_of` / required-by / month start-end / clock / any
+derived date. Missing ETA stays missing (never fabricated).
+
+**Preservation chain (each additive, evidence only):**
+1. `KMSF.projectSupplyLifecycle` (supply-planning-source-facts.js) — the shipment lifecycle entry now carries
+   `eta: (nonEmpty(c.eta) ? str(c.eta) : null)` alongside the unchanged `supplyLineageRef / warehouseId /
+   poolType / lifecycleBucket / quantity`. (The generic explicit-row builder likewise carries `r.eta` when
+   present — uniform, additive.) This is the exact former granularity-loss point.
+2. `supply-planning-source-projection.js` — the `lifecycle.entries → supplyRows` push carries `eta` through.
+3. Production supply facts — `supplySourceEntries` is the RAW supplyRows array (not the fixed-header
+   `toSnapshot`), surfaced verbatim by `KMPS.buildProductionRecommendationSource`; ETA is NOT stripped on the
+   FM3c-2 consumer path.
+
+**Warehouse qualifiedEvents owner (additive; surfaced, never reconstructed):** `supply-planning-source-projection.js`
+derives `warehouseQualifiedEvents: [{ incomingId, eta, eligibleQty, warehouseId, sourceType, state }]` from the
+SAME `SHIPPED_IN_TRANSIT` supply rows the handler already aggregates (`recoWsSupplyBySku_`:
+`qualifiedIncomingQty = Σ SHIPPED_IN_TRANSIT`). Surfaced additively on `KMPS.buildProductionRecommendationSource`.
+- **incomingId** = `supply_lineage_ref` (`shipment:<id>:<lineId>`, count-once, per-line → one destination
+  warehouse; legitimate multi-warehouse splits are distinct lineageKeys → distinct events, never deduped).
+- **eta** = the preserved canonical shipment ETA. Only a row WITH an ETA becomes a dated event; a missing-ETA
+  in-transit row stays counted in the aggregate but is NOT a dated event.
+- **eligibleQty** = the row's existing `SHIPPED_IN_TRANSIT` quantity — EVIDENCE over existing supply, NOT
+  additional supply, so `Σ eligibleQty == Σ SHIPPED_IN_TRANSIT` (conservation; no double count).
+- **Explicit:** no qualification/allocation/quantity/destination/formula change; no monthly-projection wiring;
+  no handler cutover; no Order Planning / Inventory UI change.
+
+Bundle: KMSF + KMSP + KMPS are bundled → `90_generated_supply_planning_bundle.gs` regenerated via the build tool
+(30 modules; `--check` PASS; bundle_sha256 beecbee3a50e6db8d6682acbcf592fc239a4e12d29ffc13fcb7e477798993a0b).
+KMTPP still NOT bundled (FM3c-2). FM3c-2 may now consume ETA-dated warehouse incoming events for both
+destination types (MARKETPLACE via FM3c-1, WAREHOUSE via this round).

@@ -70,15 +70,15 @@ section('KMQI direct — qualifiedEvents keys are exactly the canonical event co
 // (evaluateQualifiedIncoming already returns candidateResults; qualifiedEvents is the QUALIFIED subset)
 ok(one.qualifiedEvents.every(function (e) { var k = Object.keys(e).sort().join(','); return k === 'eligibleQty,eta,incomingId,sourceType,state'; }), 'X1 event contract = {incomingId, eta, eligibleQty, sourceType, state} (no presentation/tier/month fields)');
 
-section('WAREHOUSE — Outcome B evidence (bounded HALT): per-shipment ETA is dropped before an event structure exists');
+section('WAREHOUSE — Outcome B was a bounded HALT here; RESOLVED by F1-4B-FM3c-1b (per-shipment ETA now preserved)');
 var KMSF_SRC = read('js/core/supply-planning-source-facts.js');
-// The shipment lifecycle entry (buildSupplyLedger / projectSupplyLifecycle) carries identity + warehouse +
-// qty + bucket but NOT eta — so no ETA-dated, destination-specific warehouse event exists downstream.
-var whEntryPush = KMSF_SRC.slice(KMSF_SRC.indexOf('supplyLineageRef: str(c.lineageKey)'), KMSF_SRC.indexOf('supplyLineageRef: str(c.lineageKey)') + 200);
-ok(/warehouseId:\s*str\(c\.destinationWarehouseId\)/.test(whEntryPush) && !/eta/.test(whEntryPush), 'W-Bev1 KMSF shipment lifecycle entry preserves warehouseId + qty + lineage but NOT eta (granularity-loss point)');
+// FM3c-1b RESOLVED the granularity loss: the shipment lifecycle entry now additively carries the canonical ETA
+// (c.eta — the same value KMQI's ETA gate consumed) alongside identity + warehouse + qty + bucket.
+var whEntryPush = KMSF_SRC.slice(KMSF_SRC.indexOf('supplyLineageRef: str(c.lineageKey)'), KMSF_SRC.indexOf('supplyLineageRef: str(c.lineageKey)') + 260);
+ok(/warehouseId:\s*str\(c\.destinationWarehouseId\)/.test(whEntryPush) && /eta:\s*\(nonEmpty\(c\.eta\)/.test(whEntryPush), 'W-Bev1 (FM3c-1b) KMSF shipment lifecycle entry now additively preserves the canonical shipment ETA (granularity loss resolved)');
 var PROJ_SRC = read('js/core/supply-planning-source-projection.js');
-var supplyRowPush = PROJ_SRC.slice(PROJ_SRC.indexOf('supplyRows.push({ pool_type: e.poolType'), PROJ_SRC.indexOf('supplyRows.push({ pool_type: e.poolType') + 220);
-ok(supplyRowPush.length > 0 && !/eta/.test(supplyRowPush), 'W-Bev2 source-projection supplyRows also carry no eta → warehouse incoming has no available-date (HALT, not faked)');
+var supplyRowPush = PROJ_SRC.slice(PROJ_SRC.indexOf('supplyRows.push({ pool_type: e.poolType'), PROJ_SRC.indexOf('supplyRows.push({ pool_type: e.poolType') + 260);
+ok(supplyRowPush.length > 0 && /eta:\s*\(e\.eta ==/.test(supplyRowPush), 'W-Bev2 (FM3c-1b) source-projection supplyRows now carry the preserved ETA → warehouse incoming has an available-date');
 
 section('Non-goals — no wiring / no formula change in this round');
 var DR_SRC = read('js/core/supply-planning-destination-runtime.js');

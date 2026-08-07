@@ -263,6 +263,20 @@ DONE: MARKETPLACE qualifiedEvents surfaced additively from KMQI → KMDR line (O
 HALT (bounded): WAREHOUSE per-shipment ETA is dropped at KMSF supply-lifecycle entry (Outcome B). FM3c-1b
 (needs authorization): additively preserve eta on the KMSF lifecycle entry + source-projection supplyRow (pure
 fact preservation, no allocation change) → makes WAREHOUSE Outcome A.
-NEXT: FM3c-2 (after FM3c-1b) — bundle KMTPP + handler monthlyProjection assembly (demand=fcByMonth; incoming=
-qualifiedEvents dated by ETA; opening=stock; per-tier required-by=first day M+k) + additive line.monthlyProjection
-(+ per-tier carton suggestedOrderQty via KMCALC) + transport tests. Then FM3d Order Planning UI cutover.
+HALT RESOLVED by FM3c-1b (below).
+
+## F1-4B-FM3c-1b (2026-08-07) — Warehouse Incoming ETA Lineage Preservation (WAREHOUSE → Outcome A)
+
+DONE: additive fact preservation only. Canonical shipment `c.eta` (the value KMQI's ETA gate already consumed) is
+now preserved through KMSF.projectSupplyLifecycle shipment entry → source-projection supplyRow → KMPS
+supplySourceEntries (raw array; not stripped by the fixed-header toSnapshot). NEW additive warehouse owner
+`warehouseQualifiedEvents:[{incomingId, eta, eligibleQty, warehouseId, sourceType, state}]` on source-projection +
+KMPS.buildProductionRecommendationSource, derived from the SAME SHIPPED_IN_TRANSIT rows the handler aggregates
+(Σ eligibleQty == Σ SHIPPED_IN_TRANSIT = evidence, not extra supply). Missing ETA never fabricated; splits isolated
+by distinct lineageKeys. No qualification/allocation/quantity/formula change; no wiring/handler/UI. Bundle
+regenerated (KMSF+KMSP+KMPS): bundle_sha256 beecbee3...; 30 modules; --check PASS (KMTPP not bundled).
+D-F1-4B-FM3c-1b. Test: warehouse-incoming-eta-preservation-f1-4b-fm3c1b.test.js (40) + updated fm3c1 W-Bev1/2.
+NEXT: FM3c-2 (BOTH destination types now unblocked) — bundle KMTPP + handler monthlyProjection assembly
+(demand=fcByMonth; incoming=qualifiedEvents [MARKETPLACE] + warehouseQualifiedEvents [WAREHOUSE] dated by ETA;
+opening=stock; per-tier required-by=first day M+k) + additive line.monthlyProjection (+ per-tier carton
+suggestedOrderQty via KMCALC) + transport tests. Then FM3d Order Planning UI cutover.
