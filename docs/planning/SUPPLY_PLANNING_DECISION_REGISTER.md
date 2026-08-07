@@ -664,3 +664,37 @@ invariant, so this is a regression-lock (no code change), preserving the frozen 
   outside the frozen warehouse-isolation model; were it to become live, it would need the same cross-scope conserved
   allocation as the R2b marketplace Overseas/Factory pools (a separate freeze) — analogous to the cross-company
   FACTORY_SHARED boundary. Not present in the current model (warehouse = one destination).
+
+### D-F1-4B-FM5-R3 — Gap Materialization Scheduler + post-import orchestration (schedule-only; rollover HALT)
+
+Productionizes the proven materialized gap batches as scheduled jobs. ORCHESTRATION ONLY — no formula/stock/
+allocation/KMHP/KMTPP/KMMSA/KMALLOC/KMQI/DB-schema/UI-calc change. New file `44_gap_materialization_scheduler.gs`.
+
+- **Frozen cadence (Asia/Taipei):** source imports ~12:00–13:00 (Day D; `runAmazonSnapshotImports`, unchanged) →
+  `runDailyInventoryGapMaterialization()` **13:30 Day D** → (future warnings consume the fresh
+  inventory_replenishment_gap; never recalc) → `runDailyOrderPlanningGapMaterialization()` **03:30 Day D+1**.
+  Same-day-import → same-day Inventory gap → **next-day (D+1)** Order Planning gap is frozen (no 15h-vs-same-day
+  ambiguity).
+- **Owners = the existing batch owners** (manual "Recalculate All Sites" and scheduler share ONE pathway):
+  `handleRecalculateInventoryReplenishmentGapBatch_` / `handleRecalculateOrderPlanningGapBatch_`. Scheduler is thin
+  (validate config → invoke owner → structured summary); no second formula, no per-SKU HTTP, no browser dependency.
+- **Execution lock (§5):** bounded `LockService.getScriptLock().tryLock(10s)` at orchestration level; held → return
+  `SKIPPED_LOCKED` and DO NOT run (no overlapping full-site recalc). No DB lock, no new schema.
+- **Idempotency (§4):** delegated to the latest-state UPSERT batches (key company+country+marketplace+sku); the
+  scheduler writes no rows itself, so re-running a day is safe (overwrites the same snapshot).
+- **Failure (§6):** READY/BLOCKED/ERROR preserved verbatim; summary = job/status/startedAt/finishedAt/timezone/
+  scopesProcessed/rowsProcessed/readyCount/blockedCount/errorCount/calculatedAt/batchErrors; batch success:false →
+  status ERROR (no fake success).
+- **Trigger mechanism:** manual USER attachment in the Apps Script UI (no `ScriptApp.newTrigger` in source
+  historically). A guarded, USER-RUN `installGapMaterializationTriggers_()` is provided — duplicate-protection
+  deletes ONLY the two gap handlers, NEVER `runAmazonSnapshotImports`; project timezone must be Asia/Taipei.
+- **Monday recommendation flow:** boundary frozen — weekly recommendation must READ inventory_replenishment_gap after
+  materialization, never recalc. No automated weekly-recommendation owner exists in source → **SOURCE_MISSING**;
+  stopped at the materialization boundary (no AI/Execution Plan, no shipment write this round).
+- **CALC-DATE / -MONTH ROLLOVER — HALTED (§7):** `RECOMMENDATION_CALCULATION_DATE` +
+  `RECOMMENDATION_CALCULATION_MONTH` are READ-ONLY Script Properties (no setter in source) → manually maintained. The
+  scheduler validates them (frozen resolvers) and returns `CONFIG_BLOCKED` if missing/malformed; it NEVER auto-rolls.
+  **CALCULATION_DATE_ROLLOVER_AUTHORITY_NOT_FROZEN** + **CALCULATION_MONTH_ROLLOVER_AUTHORITY_NOT_FROZEN** — authorize
+  deterministic rollover in a separate round.
+- **Tests:** `gap-materialization-scheduler-f1-4b-fm5r3` (27 assertions A–L + config-HALT). Bundle UNCHANGED (35
+  modules, `41d64956…`). No DB/schema, no frontend deploy.
