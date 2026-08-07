@@ -500,3 +500,38 @@ Implements the FM4c presentation freeze and the UI LAYOUT HARD RULE. Frontend-on
 - Tests: inventory-outlook-containment-f1-4b-fm6 (NEW, 33) — states A–H (normal / large qty / long reason /
   MARKETPLACE_STOCK_MISSING / HORIZONS_NOT_AVAILABLE / all windows / Diagnostics / long error) + CSS containment
   rules. All prior Inventory tests unchanged (Demand/Covered/Required By now assert against the Diagnostics detail).
+
+## D-F1-4B-FM5-R1 — Materialized gap READ cutover + root-cause proofs (UK stock / US horizons)
+
+Cuts both pages over to reading the FM5 materialized gap tables as the PRIMARY display; live
+recommendation.workspace.get is demoted to batch owner + diagnostic/fallback. NO formula change, NO scheduler,
+NO Overseas/Factory allocation, NO AI-Plan/Execution-Plan change.
+- **New READ owners (43_, NOT bundled):** `inventoryReplenishmentGap.get` / `orderPlanningGap.get` — bounded
+  scope read (company+country+marketplace(+sku)); stored rows returned VERBATIM (valid 0 stays 0; blank stays
+  blank → UI "—", never a fabricated 0); fail-closed via `prodRequireSheet_`. KM.DB readers
+  `getInventoryReplenishmentGap` / `getOrderPlanningGap` are text-first + fail-safe (never silently fall back to a
+  browser calc).
+- **Flag `USE_MATERIALIZED_GAP_READ` (default true):** changes READ SOURCE only — not a second engine.
+  Inventory: expand renders the frozen Replenishment Outlook from the stored row (gap-row → horizons shape → the
+  frozen `_irRecoHorizonOutlookTableHtml`); NO live workspace call on expand; states READY / NOT_CALCULATED /
+  BLOCKED / READ_ERROR / STALE. Order Planning: expand reads stored T1–T4 (synthesized monthlyProjection →
+  existing patch); NO getWorkspace; manual Order Qty / Carton / Note untouched; no writable T4. Both live-path
+  test suites stay green because the delegation is gated on the reader being present (tests stub only KM.api).
+- **Manual recalc:** after the FM5 batch succeeds, the materialized-read cache is invalidated + refetched (no page
+  reload, no per-SKU live calc).
+- **UK / Amazon / CO1100-R root cause (PROVEN, repair scoped as its own slice):** the canonical stock reader
+  `KMDR.resolveMarketplaceCurrentStock` matches the snapshot by EXACT `eqv(country)` + `eqv(marketplace)`, but
+  `amazon_inventory_snapshot` stores `country='GB'` for the UK market and `marketplace` defaults to `'Amazon'`;
+  the page matches with the alias-aware `IRCountry` (UK≡GB). FIRST divergence = **country alias**. The only alias
+  authority (`IRCountry`, inventory-compat.js) is FRONTEND-ONLY — there is NO country-alias authority in the
+  server/bundle runtime. Mirroring it into KMDR is a bundled change (bundle rebuild + broad test/Apps-Script
+  impact) and is deferred to its own micro-slice (FM5-R1b) rather than folded into this read-cutover commit —
+  reported, not invented, not patched in the page.
+- **US / Amazon / CO1100-R HORIZONS_NOT_AVAILABLE (PROVEN, FM4c):** deployment/config gate — stale deployed
+  handler/bundle (pre-FM4a) and/or unset `RECOMMENDATION_CALCULATION_DATE` (additive gate → `line.horizons`
+  omitted). NOT a DTO/consumer defect. USER action: sync current 33-module bundle + handler, set the Script
+  Property. A CONFIG_NOT_READY condition is never shown as DATA_MISSING.
+- **Aggregation authority (Goal 4):** site/SKU SUM of per-destination D18–D90 / T1–T4 is CORRECT under the frozen
+  warehouse-isolation authority (stock A can never cover B → independent shortages sum), cited by the FM5 batch
+  test + the cutover-b "distinct per-warehouse, never merged" assertions. Single-destination Marketplace is a
+  1-element sum (unchanged). Preserved, not changed.

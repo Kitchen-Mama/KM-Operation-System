@@ -1151,6 +1151,9 @@ function handleRecalcAllOrderPlanningGap() {
     if (res && res.success && res.data) {
       var d = res.data;
       alert('Order-planning gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
+      // FM5-R1: invalidate the materialized-read cache + refetch stored rows so refreshed T1–T4 Gap/Suggested
+      // appear without a page reload and WITHOUT any per-SKU live calculation. Manual Order Qty is never touched.
+      if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') refreshOrderPlanningGapAfterRecalc_();
     } else {
       var e = (res && res.error) || {};
       alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
@@ -1915,8 +1918,64 @@ function _opRecoInvalidate(status) {
   _opRecoAbort = null;
   _opRecoState = _opRecoBlank(status || 'DISABLED');
 }
+// ---- F1-4B-FM5-R1 · MATERIALIZED READ (order_planning_gap) — primary source; live is diagnostic/fallback ----
+// Flag USE_MATERIALIZED_GAP_READ (default true) changes the READ SOURCE only. In materialized mode the expanded
+// row READS the stored T1–T4 gap/suggested (NO recommendation.workspace.get, NO browser T-formula). Gated ALSO on
+// the reader being present so the live-path tests (which stub only KM.api) keep exercising the fallback path.
+function _opUseMaterializedGapRead() {
+  if (typeof window !== 'undefined' && window.KM_FLAGS && typeof window.KM_FLAGS.USE_MATERIALIZED_GAP_READ === 'boolean') return window.KM_FLAGS.USE_MATERIALIZED_GAP_READ;
+  return true;
+}
+function _opMaterializedReaderReady() { return !!(window.KM && window.KM.DB && typeof window.KM.DB.getOrderPlanningGap === 'function'); }
+var _opMatCache = { key: null, bySku: {} };   // one scope (company/country/marketplace) cached; re-expand = no refetch
+// Synthesize the frozen monthlyProjection line shape from ONE stored order_planning_gap row (verbatim; no math).
+function _opMatToLine(row, scope) {
+  var tiers = [['T1', 't1'], ['T2', 't2'], ['T3', 't3'], ['T4', 't4']];
+  var mp = tiers.map(function (p) {
+    return { tier: p[0], month: (row[p[1] + '_month'] != null && row[p[1] + '_month'] !== '' ? String(row[p[1] + '_month']) : null),
+      openingSupplyQty: null, incomingAddedQty: null, demandQty: null, coveredQty: null, remainingSupplyQty: null,
+      remainingGapQty: _opNumOrNull(row[p[1] + '_gap_qty']), suggestedOrderQty: _opNumOrNull(row[p[1] + '_suggested_qty']) };
+  });
+  return { recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: scope.sku, siteSku: scope.siteSku || null,
+    destinationType: 'MARKETPLACE', destinationLabel: 'Order Planning', blocked: false, monthlyProjection: mp };
+}
+function _opLoadMaterializedGap(item) {
+  var scope = _opRecoScopeFor(item);
+  if (!scope) { _opRecoInvalidate('CONTEXT_NOT_READY'); _opRecoRerender(); return null; }
+  var scopeKey = _opRecoKey(scope);
+  if (_opRecoState.scopeKey === scopeKey && _opRecoState.loadedOk) return null;   // dedupe (re-render / re-expand)
+  var mscope = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
+  var mkey = JSON.stringify(mscope);
+  function applyFromCache() {
+    var row = _opMatCache.bySku[String(scope.sku)] || null;
+    if (!row) { _opRecoState = _opRecoBlank('NOT_CALCULATED'); }
+    else { _opRecoState = _opRecoBlank('READY'); _opRecoState.lines = [_opMatToLine(row, scope)]; _opRecoState.calcMonth = row.calculation_month || null; }
+    _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.loadedOk = true; _opRecoRerender();
+  }
+  if (_opMatCache.key === mkey) { applyFromCache(); return null; }
+  var my = ++_opRecoSeq;
+  _opRecoState = _opRecoBlank('LOADING'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.seq = my;
+  _opRecoRerender();
+  return Promise.resolve(window.KM.DB.getOrderPlanningGap(mscope)).then(function (res) {
+    if (my !== _opRecoSeq) return;
+    if (!res || !res.success) { _opRecoState = _opRecoBlank('API_ERROR'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.errors = [(res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' }]; _opRecoRerender(); return; }
+    var rows = (res.data && res.data.rows) || [];
+    var bySku = {}; rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
+    _opMatCache = { key: mkey, bySku: bySku };
+    applyFromCache();
+  }).catch(function (err) {
+    if (my !== _opRecoSeq) return;
+    _opRecoState = _opRecoBlank('API_ERROR'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku;
+    _opRecoState.errors = [{ code: 'READ_FAILED', message: String(err && err.message || err) }]; _opRecoRerender();
+  });
+}
+function refreshOrderPlanningGapAfterRecalc_() { _opMatCache = { key: null, bySku: {} }; _opRecoInvalidate('LOADING'); var item = _opRecoExpandedItem(); if (item) _opLoadMaterializedGap(item); }
+if (typeof window !== 'undefined') { window.refreshOrderPlanningGapAfterRecalc_ = refreshOrderPlanningGapAfterRecalc_; }
+
 // The read: at most ONE scope-only recommendation.workspace.get per expanded row. Deduped, stale-guarded.
 function _opLoadRecommendation(item) {
+  // FM5-R1: materialized read is primary (when the reader exists) — expand is READ-ONLY, no live calculation.
+  if (_opUseMaterializedGapRead() && _opMaterializedReaderReady()) return _opLoadMaterializedGap(item);
   if (!_opRecoEnabled()) { _opRecoInvalidate('DISABLED'); _opRecoRerender(); return null; }
   var scope = _opRecoScopeFor(item);
   if (!scope) { _opRecoInvalidate('CONTEXT_NOT_READY'); _opRecoRerender(); return null; }
@@ -2025,6 +2084,7 @@ function _opRecoInner(item) {
   }
   if (st.status === 'EMPTY') return wrap('op-reco--info', 'No SKU matched the recommendation scope. <code>EMPTY</code>');
   if (st.status === 'NO_LINE') return wrap('op-reco--info', 'No recommendation line for this SKU in the current scope. <code>RECOMMENDATION_LINE_NOT_FOUND</code>');
+  if (st.status === 'NOT_CALCULATED') return wrap('op-reco--info', 'Not calculated yet — run <strong>Recalculate All Sites</strong>. <code>NOT_CALCULATED</code>');
   if (st.status !== 'READY') return wrap('op-reco--info', 'Recommendation not loaded.');
   var rows = st.lines.map(_opRecoDestRowHtml).join('');
   var meta = [];

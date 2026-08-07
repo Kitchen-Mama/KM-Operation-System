@@ -2754,6 +2754,29 @@ window.KM.DB.completeShippingPlan = function(payload) { return _kmWeeklyCommand_
 window.KM.DB.recalculateInventoryReplenishmentGapAll = function(payload) { return _kmWeeklyCommand_('inventoryReplenishmentGap.recalculate.all', payload || {}); };
 window.KM.DB.recalculateOrderPlanningGapAll = function(payload) { return _kmWeeklyCommand_('orderPlanningGap.recalculate.all', payload || {}); };
 
+// F1-4B-FM5-R1 · MATERIALIZED READ (page reads STORED gap rows; NO calculation, NO whole-DB reload). Bounded
+// POST read of inventory_replenishment_gap / order_planning_gap for one scope. Text-first + fail-safe: on a
+// transport/non-JSON/business failure returns { success:false, error } so the page can show a truthful state and
+// NEVER silently fall back to a browser/live calculation. Returns { success, data:{ rows:[...] }, error }.
+async function _kmGapRead_(action, payload) {
+    if (!isOperationDbApiConfigured()) return { success: false, error: { code: 'TRANSPORT_NOT_CONFIGURED', message: 'Operation DB API not configured' } };
+    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var resp;
+    try { resp = await fetch(url, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: action }, payload || {})) }); }
+    catch (netErr) { return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } }; }
+    var text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
+    if (!resp.ok) return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'API HTTP ' + resp.status } };
+    var trimmed = String(text || '').trim();
+    if (trimmed.charCodeAt(0) !== 123) return { success: false, error: { code: 'NON_JSON_RESPONSE', message: 'Non-JSON response', snippet: trimmed.slice(0, 80) } };
+    var json; try { json = JSON.parse(trimmed); } catch (pe) { return { success: false, error: { code: 'NON_JSON_RESPONSE', message: 'Malformed JSON response' } }; }
+    if (!json.success) return { success: false, error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
+    return { success: true, data: json.data || { rows: [] } };
+}
+// { company, country, marketplace, sku? } → { success, data:{ rows:[ inventory_replenishment_gap rows ] } }.
+window.KM.DB.getInventoryReplenishmentGap = function(scope) { return _kmGapRead_('inventoryReplenishmentGap.get', { payload: { scope: scope || {} } }); };
+// { company, country, marketplace, sku? } → { success, data:{ rows:[ order_planning_gap rows ] } }.
+window.KM.DB.getOrderPlanningGap = function(scope) { return _kmGapRead_('orderPlanningGap.get', { payload: { scope: scope || {} } }); };
+
 // ---- Weekly Plan Layer-1/2 + Combined Plan + Method Recommendation adapters (2026-07-28) ----
 // All matching is CODE/ID based server-side. Weekly Plan NEVER persists rate_card_id; carrier_name is
 // resolved live (KM.display.carrierName). READ helpers do not force a DB reload; WRITE helpers do.

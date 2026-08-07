@@ -3368,9 +3368,9 @@ function _doReplenSearch() {
         return;
     }
     renderReplenishment();
-    // F1-4B-B: after loading the scope, issue at most one recommendation.workspace.get when Workspace mode
-    // is effective + the context is READY (no-op otherwise). One request per scope; never per SKU.
-    if (typeof loadRecommendationWorkspace_ === 'function') loadRecommendationWorkspace_();
+    // F1-4B-B / FM5-R1: after loading the scope, read the materialized gap (default) or issue at most one live
+    // recommendation.workspace.get (diagnostic/fallback). One request per scope; never per SKU; never both.
+    if (typeof _irRecoTrigger === 'function') _irRecoTrigger();
 }
 window.searchReplenishment = searchReplenishment;
 
@@ -3395,6 +3395,9 @@ function handleRecalcAllInventoryGap() {
     if (res && res.success && res.data) {
       var d = res.data;
       alert('Inventory gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
+      // FM5-R1: invalidate the materialized-read cache + refetch stored rows so the refreshed Gap/Suggested
+      // become visible without a page reload and WITHOUT any per-SKU live calculation.
+      if (typeof refreshInventoryGapAfterRecalc_ === 'function') refreshInventoryGapAfterRecalc_();
     } else {
       var e = (res && res.error) || {};
       alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
@@ -4579,7 +4582,14 @@ function updateReplenRecoContext() {
 }
 
 // Fire the read cutover if it exists (F1-4B-B). No-op unless Workspace mode is effective + context READY.
-function _irRecoTrigger() { if (typeof loadRecommendationWorkspace_ === 'function') loadRecommendationWorkspace_(); }
+// FM5-R1: in materialized mode the trigger READS the stored gap (no live calculation); the live workspace read
+// is the diagnostic/fallback path (flag off). NEVER both.
+function _irRecoTrigger() {
+  var matReady = (typeof _irUseMaterializedGapRead === 'function' && _irUseMaterializedGapRead()
+    && window.KM && window.KM.DB && typeof window.KM.DB.getInventoryReplenishmentGap === 'function');
+  if (matReady) { if (typeof loadInventoryGap_ === 'function') loadInventoryGap_(); return; }
+  if (typeof loadRecommendationWorkspace_ === 'function') loadRecommendationWorkspace_();
+}
 
 // Non-UI internal seam: a scheduler/config (NOT the user) supplies the Runtime context. Recomputes the
 // internal model and re-triggers the (flag-gated) read. There is no control bound to this.
@@ -5076,11 +5086,98 @@ function _irRecoWorkspaceBody(skuData) {
     + horizonDetail + _irRecoDiagnosticsInnerHtml(lines[0]) + '</details>';
   return wrap('replen-recsum-ws--ready', sections + metaHtml + diag);
 }
-// The card body: Workspace presentation when the flag is EFFECTIVE, else the unchanged legacy table.
+// The card body: MATERIALIZED read (FM5-R1) is the primary surface once a materialized load has occurred for the
+// scope; else the live Workspace presentation (diagnostic/fallback); else the unchanged legacy table.
 function _irRecoSummaryCardBody(skuData) {
+  if (_irUseMaterializedGapRead() && _irMatState.status !== 'IDLE') return _irMatOutlookBody(skuData);
   if (!_irRecommendationWorkspaceEnabled()) return _legacyRecSummaryTableHtml(skuData);
   return _irRecoWorkspaceBody(skuData);
 }
+
+// ================= F1-4B-FM5-R1 · MATERIALIZED GAP READ (inventory_replenishment_gap) =================
+// The normal page reads the STORED batch result — it does NOT run recommendation.workspace.get on expand and does
+// NO gap math in the browser. recommendation.workspace.get is demoted to the batch owner + a diagnostic/fallback.
+// Flag USE_MATERIALIZED_GAP_READ (default true) changes the READ SOURCE only — it is NOT a second engine.
+function _irUseMaterializedGapRead() {
+  if (typeof window !== 'undefined' && window.KM_FLAGS && typeof window.KM_FLAGS.USE_MATERIALIZED_GAP_READ === 'boolean') return window.KM_FLAGS.USE_MATERIALIZED_GAP_READ;
+  return true;
+}
+var _irMatState = { status: 'IDLE', scopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null };
+var _irMatSeq = 0;
+// Explicit numeric coercion: '' / null / undefined → null (renders "—", never a fabricated 0); a real number
+// (including 0) is preserved. NO arithmetic — the stored value is displayed verbatim.
+function _irMatNum(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
+// STALE: only when the client is told the currently-expected calculation date and the stored row is older. No
+// silent recalculation on expansion — a stale row is shown with a subtle indicator, never recomputed.
+function _irMatExpectedCalcDate() { return (typeof window !== 'undefined' && window.KM_FLAGS && window.KM_FLAGS.EXPECTED_CALCULATION_DATE) ? String(window.KM_FLAGS.EXPECTED_CALCULATION_DATE) : null; }
+function _irMatIsStale(row) { var exp = _irMatExpectedCalcDate(); var cd = row && row.calculation_date ? String(row.calculation_date) : ''; return !!(exp && cd && cd < exp); }
+// Map ONE stored gap row → the frozen horizons-shaped line the FROZEN outlook renderer consumes (no new render).
+function _irMatToLine(row) {
+  return {
+    destinationType: 'MARKETPLACE', destinationLabel: null,
+    horizons: [
+      { windowCode: 'D18', gapQty: _irMatNum(row.d18_gap_qty), suggestedOrderQty: _irMatNum(row.d18_suggested_qty) },
+      { windowCode: 'D30', gapQty: _irMatNum(row.d30_gap_qty), suggestedOrderQty: _irMatNum(row.d30_suggested_qty) },
+      { windowCode: 'D45', gapQty: _irMatNum(row.d45_gap_qty), suggestedOrderQty: _irMatNum(row.d45_suggested_qty) },
+      { windowCode: 'D90', gapQty: _irMatNum(row.d90_gap_qty), suggestedOrderQty: _irMatNum(row.d90_suggested_qty) }
+    ]
+  };
+}
+function _irMatMetaHtml(row) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  var bits = [];
+  if (row.calculation_status) bits.push('status: ' + esc(row.calculation_status));
+  if (row.calculation_date) bits.push('calc date: ' + esc(row.calculation_date));
+  if (row.calculated_at) bits.push('as of ' + esc(row.calculated_at));
+  var stale = _irMatIsStale(row) ? '<span class="replen-mat-stale">⚠ stale — run Recalculate All Sites</span> ' : '';
+  var note = (row.note != null && String(row.note) !== '') ? ('<div class="replen-recsum-ws__meta replen-mat-note">note: ' + esc(row.note) + '</div>') : '';
+  return note + '<div class="replen-recsum-ws__meta">' + stale + bits.join(' · ') + '</div>';
+}
+function _irMatOutlookBody(skuData) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  function wrap(cls, inner) { return '<div class="replen-recsum-ws ' + cls + '" role="status" aria-live="polite">' + inner + '</div>'; }
+  var st = _irMatState;
+  if (st.status === 'CONTEXT_NOT_READY') return wrap('replen-recsum-ws--info', 'Recommendation scope is not ready. Select a valid Country / Marketplace.');
+  if (st.status === 'IDLE' || st.status === 'LOADING') return wrap('replen-recsum-ws--loading', 'Loading materialized replenishment gap…');
+  if (st.status === 'READ_ERROR') { var e = st.error || {}; return wrap('replen-recsum-ws--error', 'Could not read the materialized gap: ' + esc(e.message || '') + ' <code>' + esc(e.code || 'READ_ERROR') + '</code>'); }
+  var row = (skuData && _irMatState.bySku[String(skuData.sku)]) || null;
+  if (!row) return wrap('replen-recsum-ws--info', 'Not calculated yet — run <strong>Recalculate All Sites</strong>. <code>NOT_CALCULATED</code>');
+  var badge = (row.calculation_status && row.calculation_status !== 'READY') ? row.calculation_status : 'Materialized';
+  var section = '<div class="replen-horizon-summary"><div class="replen-horizon-dest">'
+    + '<div class="replen-horizon-dest__hd"><span class="replen-horizon-dest__name">Replenishment Outlook</span> <span class="replen-horizon-dest__badge">' + esc(badge) + '</span></div>'
+    + _irRecoHorizonOutlookTableHtml(_irMatToLine(row)) + '</div></div>';
+  return wrap('replen-recsum-ws--ready', section + _irMatMetaHtml(row));
+}
+// ONE materialized read per scope (deduped, stale-guarded). Reads STORED rows; no calculation, no per-SKU HTTP.
+function loadInventoryGap_(force) {
+  if (!_irUseMaterializedGapRead()) return null;
+  var scopeReq = _irRecoScopeRequest();
+  if (!scopeReq) { _irMatState = { status: 'CONTEXT_NOT_READY', scopeKey: null, bySku: {}, rows: [], loadedOk: false, error: null }; _irRecoRerenderSummaries(); return null; }
+  var key = JSON.stringify(scopeReq);
+  if (!force && _irMatState.scopeKey === key && _irMatState.loadedOk) { _irRecoRerenderSummaries(); return null; }
+  if (!(window.KM && window.KM.DB && typeof window.KM.DB.getInventoryReplenishmentGap === 'function')) {
+    _irMatState = { status: 'READ_ERROR', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: { code: 'READER_UNAVAILABLE', message: 'materialized gap reader unavailable' } };
+    _irRecoRerenderSummaries(); return null;
+  }
+  var my = ++_irMatSeq;
+  _irMatState = { status: 'LOADING', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: null };
+  _irRecoRerenderSummaries();
+  return Promise.resolve(window.KM.DB.getInventoryReplenishmentGap(scopeReq)).then(function (res) {
+    if (my !== _irMatSeq) return;
+    if (!res || !res.success) { _irMatState = { status: 'READ_ERROR', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: (res && res.error) || { code: 'READ_FAILED', message: 'materialized gap read failed' } }; _irRecoRerenderSummaries(); return; }
+    var rows = (res.data && res.data.rows) || [];
+    var bySku = {}; rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
+    _irMatState = { status: rows.length ? 'READY' : 'EMPTY', scopeKey: key, bySku: bySku, rows: rows, loadedOk: true, error: null };
+    _irRecoRerenderSummaries(); _irRecoUpdateSuggestedCells();
+  }).catch(function (err) {
+    if (my !== _irMatSeq) return;
+    _irMatState = { status: 'READ_ERROR', scopeKey: key, bySku: {}, rows: [], loadedOk: false, error: { code: 'READ_FAILED', message: String(err && err.message || err) } };
+    _irRecoRerenderSummaries();
+  });
+}
+// Manual-recalc refresh: invalidate the materialized cache + refetch the stored rows (no per-SKU live calc).
+function refreshInventoryGapAfterRecalc_() { _irMatState.loadedOk = false; _irMatState.scopeKey = null; return loadInventoryGap_(true); }
+window.loadInventoryGap_ = loadInventoryGap_;
 // Re-render any OPEN Recommendation Summary card(s) from the current read state (no full-page overlay).
 function _irRecoRerenderSummaries() {
   if (typeof document === 'undefined' || !document.querySelectorAll) return;

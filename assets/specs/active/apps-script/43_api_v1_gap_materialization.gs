@@ -255,3 +255,41 @@ function handleRecalculateInventoryReplenishmentGapBatch_(body, io) {
 function handleRecalculateOrderPlanningGapBatch_(body, io) {
   return gapRunBatch_(body, io, { product: 'ORDER_PLANNING', table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_, map: gapOpMapFromLines_ });
 }
+
+// ---- F1-4B-FM5-R1 · bounded MATERIALIZED READ owners (page reads STORED result; NO calculation) -------
+// The normal page flow reads these — it does NOT run recommendation.workspace.get on expand. Returns the stored
+// rows for the scope VERBATIM (no page-side / server-side gap math; the batch already computed them). Fails
+// CLOSED via the S0.5 validate-only resolver if the table/header is missing. Filter = company/country/marketplace
+// exact (case-insensitive); an optional sku narrows further. Numeric cells returned as-is (valid 0 stays 0; a
+// blank stays blank so the UI can render "—" and never fabricate a 0).
+function gapReadScopeRows_(body, io, cfg) {
+  io = io || gapMaterializationDefaultIo_();
+  var reqId = (body && body.requestId) || null;
+  try {
+    var payload = (body && body.payload) || body || {};
+    var scope = payload.scope || payload || {};
+    var company = gapStr_(scope.company), country = gapStr_(scope.country), marketplace = gapStr_(scope.marketplace), sku = gapStr_(scope.sku);
+    if (!company || !country || !marketplace) return gapBatchEnvelope_(false, null, 'INVALID_SCOPE', 'company + country + marketplace required');
+    var ss = io.openTarget();
+    var sheet = prodRequireSheet_(ss, cfg.table, cfg.headers);   // validate-only; fail CLOSED if missing/invalid
+    var all = gapReadObjects_(ss, cfg.table);
+    var lc = function (v) { return gapStr_(v).toLowerCase(); };
+    var rows = [];
+    all.forEach(function (r) {
+      if (lc(r.company) !== lc(company) || lc(r.country) !== lc(country) || lc(r.marketplace) !== lc(marketplace)) return;
+      if (sku && lc(r.sku) !== lc(sku)) return;
+      var out = {}; for (var i = 0; i < cfg.headers.length; i++) { var h = cfg.headers[i]; out[h] = (r[h] === undefined ? null : r[h]); }
+      rows.push(out);
+    });
+    return gapBatchEnvelope_(true, { product: cfg.product, scope: { company: company, country: country, marketplace: marketplace, sku: sku || null }, rows: rows, requestId: reqId });
+  } catch (e) {
+    var token = (e && e.safetyToken) ? e.safetyToken : (e && e.schemaStatus) ? e.schemaStatus : 'GAP_READ_ERROR';
+    return gapBatchEnvelope_(false, null, token, e && e.message ? String(e.message) : String(e));
+  }
+}
+function handleGetInventoryReplenishmentGap_(body, io) {
+  return gapReadScopeRows_(body, io, { product: 'INVENTORY', table: INV_GAP_TABLE_, headers: INV_GAP_HEADERS_ });
+}
+function handleGetOrderPlanningGap_(body, io) {
+  return gapReadScopeRows_(body, io, { product: 'ORDER_PLANNING', table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_ });
+}

@@ -129,6 +129,15 @@ function doPost(e) {
       return jsonResponse_(handleRecalculateOrderPlanningGapBatch_(body));
     }
 
+    // F1-4B-FM5-R1 · Materialized Gap READ (page reads STORED result; NO calculation on expand). Bounded read of
+    // inventory_replenishment_gap / order_planning_gap by company/country/marketplace(/sku). No business logic here.
+    if (action === 'inventoryReplenishmentGap.get') {
+      return jsonResponse_(handleGetInventoryReplenishmentGap_(body));
+    }
+    if (action === 'orderPlanningGap.get') {
+      return jsonResponse_(handleGetOrderPlanningGap_(body));
+    }
+
     // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
     if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
       return handleGetShippingMethodCandidates_(body);
