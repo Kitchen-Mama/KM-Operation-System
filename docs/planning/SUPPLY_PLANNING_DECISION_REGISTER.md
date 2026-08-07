@@ -698,3 +698,28 @@ allocation/KMHP/KMTPP/KMMSA/KMALLOC/KMQI/DB-schema/UI-calc change. New file `44_
   deterministic rollover in a separate round.
 - **Tests:** `gap-materialization-scheduler-f1-4b-fm5r3` (27 assertions A–L + config-HALT). Bundle UNCHANGED (35
   modules, `41d64956…`). No DB/schema, no frontend deploy.
+
+### D-F1-4B-FM5-R3 (supplemental) — materialized-gap LIFECYCLE freeze (latest-state; authority-based cleanup deferred)
+
+`inventory_replenishment_gap` + `order_planning_gap` are **LATEST-STATE** materialized tables, NOT historical
+snapshots. Regression-lock only (audit confirmed the existing behavior already complies); no code change.
+
+- **UPSERT identity = company + country + marketplace + sku** (`GAP_KEY_COLS_`). A newer successful calculation
+  UPDATES the existing row in place (`gapUpsertByKey_` → insert on a new key, update on an existing key); it NEVER
+  appends a historical version. A newer value supersedes the previous automatically.
+- **Timestamps:** `calculated_at` = when the canonical gap calculation completed; `updated_at` = when the
+  materialized row was last written. Both advance on each successful (or blocked) write of that row.
+- **Metadata for later staleness detection:** both tables expose `calculation_status` (READY/BLOCKED/ERROR),
+  `calculated_at`, `updated_at` — sufficient to identify stale rows in a future maintenance round.
+- **Safety invariant (frozen):** an active/plannable SKU row is NEVER deleted merely because its calculation is old
+  or a scheduler/import run failed. A failed/blocked recalculation UPDATES the row's status — it never removes the
+  row. (`gapUpsertByKey_` has no delete path; the batch/scheduler perform no row deletion.)
+- **Cleanup owner:** **MATERIALIZED_GAP_CLEANUP_OWNER = SOURCE_MISSING** — no purge/cleanup owner and no age-only
+  deletion exists in source (verified: no `deleteRow`/`clearContent`/`updated_at < N days` logic in 43 or 44).
+  Deletion logic is DEFERRED to a separate maintenance round.
+- **Future maintenance rule (frozen intent, NOT implemented):** a gap row is purge-eligible ONLY when its identity
+  no longer belongs to the current canonical plannable SKU universe (marketplace_skus / active receiver authority)
+  AND it has exceeded a configurable grace period — i.e., **active-source-identity check → grace period → safe
+  purge**. NEVER age-only deletion.
+- **Test:** `materialized-gap-lifecycle-f1-4b-fm5r3` (19 assertions: UPSERT latest-state, metadata exposure, safety
+  invariant, no purge/age-deletion owner).
