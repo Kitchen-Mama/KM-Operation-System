@@ -51,7 +51,9 @@ function mktLine(over) { var L = { recommendationLineId: 'MARKETPLACE_ORDER_NEED
 var READY = { status: 'READY', company: 'KM', country: 'US', marketplace: 'AMAZON_US', marketplaceId: 'MP1', destinationWarehouseId: 'WH-3PL', calculationMonth: '2026-08', planningCycle: '2026-W40', missing: [], issues: [] };
 function setCtx(m) { _irctxLastContext = m; }
 function tick() { return Promise.resolve().then(function () {}).then(function () {}); }
-function freshLoad(active, env, ctx) { _irRecoInvalidate('CONTEXT_NOT_READY'); var api = makeApi(active, env); global.window.KM = { api: api }; setCtx(ctx || READY); return Promise.resolve(loadRecommendationWorkspace_()).then(tick).then(function () { return api; }); }
+// FM3a added a session cache; these assertions test per-response STATE transitions on one scope, so clear
+// the cache before each load to force a fresh fetch of the given envelope.
+function freshLoad(active, env, ctx) { if (typeof invalidateRecommendationSessionCache === 'function') invalidateRecommendationSessionCache(); _irRecoInvalidate('CONTEXT_NOT_READY'); var api = makeApi(active, env); global.window.KM = { api: api }; setCtx(ctx || READY); return Promise.resolve(loadRecommendationWorkspace_()).then(tick).then(function () { return api; }); }
 
 (async function main() {
   section('A. flags OFF → legacy preserved, no request');

@@ -1538,18 +1538,27 @@ function initReplenHeaderSync() {
 // Inventory Replenishment - 從 app.js 搬移 (批次 2: toggleReplenRow + 操作函式 + Shipping Allocation)
 // ========================================
 
-// F1-4B-FM2B: top-table Suggested Qty disposition. When the canonical Recommendation Runtime is the active
-// READ path, the single top-table number is MISLEADING (the runtime produces one line PER DESTINATION —
-// MARKETPLACE and/or each WAREHOUSE — never a single legacy aggregate, and this spec does NOT authorize
-// summing MARKETPLACE + WAREHOUSE). So we show a destination-breakdown indicator ("—") pointing to the
-// expanded Recommendation Summary where the real per-destination quantities live, rather than a legacy 0.
-// When the workspace is OFF (kill switch) the legacy suggestedQty number is preserved verbatim.
+// F1-4B-FM3a: top-table Suggested Qty = a NUMERIC PRESENTATION AGGREGATION of the canonical recommendation
+// lines for this SKU (NOT a formula — see _irAggregateActionableRecommendedQty). Sums ONLY source-proven,
+// non-blocked, finite recommendedQty across the SKU's destination lines (MARKETPLACE and/or each WAREHOUSE);
+// provisional / blocked / null / residual are excluded. Valid canonical 0 shows "0". When no actionable
+// canonical line exists (all blocked / none), it shows an honest "—" (never a fake 0) and the expanded
+// Recommendation Summary explains why. Before the scope result is available it shows a compact "…" pending
+// marker. When the workspace is OFF (kill switch), the legacy suggestedQty number is preserved verbatim.
+// (Supersedes the FM2B "— breakdown" indicator, per the FM3 audit authorization.)
 function _irSuggestedCellHtml(item) {
-  if (_irRecommendationWorkspaceEnabled()) {
-    return '<span class="replen-suggested-cell__value replen-suggested-cell__value--breakdown" '
-      + 'title="Per-destination recommendation — open the row to see the Recommendation Summary breakdown">— <em class="replen-suggested-cell__hint">breakdown</em></span>';
+  if (!_irRecommendationWorkspaceEnabled()) {
+    return '<span class="replen-suggested-cell__value">' + (item && item.suggestedQty != null ? item.suggestedQty : 0) + '</span>';
   }
-  return '<span class="replen-suggested-cell__value">' + (item && item.suggestedQty != null ? item.suggestedQty : 0) + '</span>';
+  var lines = (typeof _irRecoLinesForSku === 'function') ? _irRecoLinesForSku(item) : null;
+  if (lines === null) {
+    return '<span class="replen-suggested-cell__value replen-suggested-cell__value--pending" title="Calculating recommendation…">…</span>';
+  }
+  var agg = _irAggregateActionableRecommendedQty(lines);
+  if (agg.actionableCount === 0) {
+    return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable canonical recommendation — see the expanded Recommendation Summary">—</span>';
+  }
+  return '<span class="replen-suggested-cell__value">' + agg.total + '</span>';
 }
 
 // Recommendation Summary table body (read-only system suggestion — NOT the submitted plan).
@@ -4602,6 +4611,80 @@ function _irRecommendationWorkspaceEnabled() {
     window.KM.api.workspaceApiActive('recommendation'));
 }
 
+// ---- F1-4B-FM3a · Suggested-Qty PRESENTATION aggregation (NOT a recommendation formula) --------------
+// Sum ONLY source-proven, non-blocked, finite recommendedQty across a SKU's canonical destination lines.
+// Excludes provisional (provisionalOrderNeed), blocked lines, null/non-finite recommendedQty, and residual
+// shortage. A legitimate canonical 0 is INCLUDED (valid zero). Returns { total, actionableCount } — the
+// caller shows the numeric total when actionableCount>0, else an honest "—" (never a fake 0). No gap /
+// stock / forecast / incoming / carton math here — pure read-side summation of already-computed canonical
+// recommendedQty values.
+function _irAggregateActionableRecommendedQty(lines) {
+  var total = 0, actionableCount = 0;
+  (lines || []).forEach(function (L) {
+    if (!L || L.blocked === true) return;                 // blocked → not actionable
+    var q = L.recommendedQty;
+    if (typeof q !== 'number' || !isFinite(q)) return;    // null / provisional-only / missing → excluded
+    total += q; actionableCount++;
+  });
+  return { total: total, actionableCount: actionableCount };
+}
+
+// ---- F1-4B-FM3a · bounded SESSION cache for successful Recommendation READ results -------------------
+// Session-only (sessionStorage + in-memory mirror). Prevents a redundant recommendation.workspace.get on
+// repeated navigation / re-expand of the SAME canonical scope. NEVER localStorage/IndexedDB/DB. Only a
+// SUCCESSFUL canonical envelope is stored (blocked lines and valid zero ARE valid successes and cacheable);
+// transport/API failure, CONFIG_NOT_READY, aborted, and stale responses are NEVER stored. JSON-safe record;
+// the canonical envelope is never mutated.
+var _IR_RECO_CACHE_KEY = 'km_ir_reco_cache_v1';
+var _irRecoCacheMem = null;                                // lazy in-memory mirror of the session store
+function _irRecoCacheLoad() {
+  if (_irRecoCacheMem) return _irRecoCacheMem;
+  _irRecoCacheMem = {};
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      var raw = sessionStorage.getItem(_IR_RECO_CACHE_KEY);
+      if (raw) { var o = JSON.parse(raw); if (o && typeof o === 'object') _irRecoCacheMem = o; }
+    }
+  } catch (e) { _irRecoCacheMem = {}; }
+  return _irRecoCacheMem;
+}
+function _irRecoCachePersist() {
+  try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(_IR_RECO_CACHE_KEY, JSON.stringify(_irRecoCacheMem || {})); } catch (e) {}
+}
+// Scope-only key (the Inventory request is company/country/marketplace scoped; server owns month/cycle).
+function _irRecoCacheKey(scopeReq) {
+  if (!scopeReq) return null;
+  return [scopeReq.company || '', scopeReq.country || '', scopeReq.marketplace || ''].join('||');
+}
+function _irRecoCacheGet(scopeReq) {
+  var k = _irRecoCacheKey(scopeReq); if (!k) return null;
+  var e = _irRecoCacheLoad()[k];
+  return (e && e.envelopeData) ? e : null;
+}
+function _irRecoCacheSet(scopeReq, env) {
+  var k = _irRecoCacheKey(scopeReq); if (!k || !env || env.success !== true) return;   // successes only
+  var c = _irRecoCacheLoad();
+  c[k] = {
+    requestScope: { company: scopeReq.company, country: scopeReq.country, marketplace: scopeReq.marketplace },
+    envelopeData: (env.data && typeof env.data === 'object') ? env.data : {},
+    meta: {
+      requestId: (env.meta && env.meta.requestId) || null,
+      calculationMonth: (env.meta && env.meta.calculationMonth) || null,
+      planningCycle: (env.meta && env.meta.planningCycle) || null,
+      dataVersion: (env.data && env.data.dataVersion) || null
+    },
+    cachedAt: (typeof Date !== 'undefined' && Date.now) ? Date.now() : null
+  };
+  _irRecoCacheMem = c; _irRecoCachePersist();
+}
+// Narrow programmatic invalidation (no UI this round). No arg → clear all; scopeReq → drop that key.
+function invalidateRecommendationSessionCache(scopeReq) {
+  var c = _irRecoCacheLoad();
+  if (scopeReq === undefined || scopeReq === null) { _irRecoCacheMem = {}; }
+  else { var k = _irRecoCacheKey(scopeReq); if (k && c[k]) { delete c[k]; _irRecoCacheMem = c; } }
+  _irRecoCachePersist();
+}
+
 // explicit null/undefined/'' → null (preserve a legitimate 0; NEVER value || 0).
 function _irNumOrNull(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -4690,6 +4773,21 @@ function loadRecommendationWorkspace_() {
   var ctxKey = JSON.stringify(scopeReq);
   // dedupe: identical scope already loading or loaded → no duplicate request from repeated calls / renders
   if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || _irRecoState.loadedOk)) return null;
+  // F1-4B-FM3a SESSION CACHE HIT: a previously-successful canonical result for this exact scope → restore it
+  // with ZERO HTTP (survives navigate-away/back + re-expand within the browser session). Abort any in-flight
+  // request for a superseded scope and bump the sequence so a late response can't clobber the cached state.
+  var cachedEntry = _irRecoCacheGet(scopeReq);
+  if (cachedEntry) {
+    if (_irRecoAbort && _irRecoAbort.abort) { try { _irRecoAbort.abort(); } catch (e) {} }
+    _irRecoAbort = null; _irRecoSeq++;
+    var cachedEnv = { success: true, data: cachedEntry.envelopeData,
+      meta: Object.assign({ source: 'session-cache' }, cachedEntry.meta || {}), errors: [] };
+    _irRecoApplyEnvelope(cachedEnv, ctxKey, scopeReq);
+    _irRecoState.fromCache = true;
+    _irRecoRerenderSummaries();
+    _irRecoUpdateSuggestedCells();
+    return null;
+  }
   if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
     _irRecoInvalidate('API_ERROR'); _irRecoState.contextKey = ctxKey;
     _irRecoState.errors = [{ code: 'WORKSPACE_UNAVAILABLE', message: 'Recommendation Workspace is enabled but the API client is unavailable.', details: null }];
@@ -4708,10 +4806,12 @@ function loadRecommendationWorkspace_() {
     filters: { lts: null, series: null, category: null, sku: null, siteSku: null },
     pagination: { page: 1, size: 100 }, include: { diagnostics: true } };
   return Promise.resolve(window.KM.api.getWorkspace('recommendation', params, { signal: signal })).then(function (env) {
-    if (my !== _irRecoSeq) return;   // STALE_IGNORED — a newer scope superseded this response
+    if (my !== _irRecoSeq) return;   // STALE_IGNORED — a newer scope superseded this response (never cached)
     _irRecoRecordDiag(_t0);
     _irRecoApplyEnvelope(env, ctxKey, scopeReq);
+    _irRecoCacheSet(scopeReq, env);   // FM3a: cache ONLY a successful canonical envelope (guarded inside)
     _irRecoRerenderSummaries();
+    _irRecoUpdateSuggestedCells();
   }).catch(function (err) {
     if (my !== _irRecoSeq) return;
     _irRecoRecordDiag(_t0);
@@ -4838,11 +4938,27 @@ function _irRecoRerenderSummaries() {
     card.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>' + _irRecoSummaryCardBody(skuData);
   });
 }
+// F1-4B-FM3a: repaint the main-table Suggested Qty cells from the current recommendation state (numeric
+// actionable total per SKU) once the scope result is available (live or from the session cache). No table
+// re-render — patches only the .replen-suggested-cell content, so nothing else in the row is disturbed.
+function _irRecoUpdateSuggestedCells() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  var rows = document.querySelectorAll('#ops-section .scroll-row[data-sku]');
+  if (!rows || !rows.length) return;
+  var data = (typeof getReplenishmentData === 'function') ? (getReplenishmentData() || []) : [];
+  Array.prototype.forEach.call(rows, function (row) {
+    var cell = row.querySelector('.replen-suggested-cell'); if (!cell) return;
+    var sku = row.getAttribute('data-sku');
+    var skuData = null; for (var i = 0; i < data.length; i++) { if (data[i].sku === sku) { skuData = data[i]; break; } }
+    cell.innerHTML = _irSuggestedCellHtml(skuData || { sku: sku });
+  });
+}
 // __IRRECO_END__ (test extraction marker — do not remove)
 
 window._irRecommendationWorkspaceEnabled = _irRecommendationWorkspaceEnabled;
 window.loadRecommendationWorkspace_ = loadRecommendationWorkspace_;
 window._irRecoSummaryCardBody = _irRecoSummaryCardBody;
+window.invalidateRecommendationSessionCache = invalidateRecommendationSessionCache;
 
 // ============================================================================
 // Toolbar "More Options" dropdown (renamed 2026-07-23) — UI-only consolidation of the five data-management buttons

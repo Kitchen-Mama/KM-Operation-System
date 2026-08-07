@@ -4476,3 +4476,32 @@ This commit is a DOCS-ONLY deployment checkpoint whose sole purpose is to trigge
 from the current latest main HEAD (43d1509). It changes NO application/runtime behavior: no Recommendation
 Runtime, no formulas, no API contracts, no DB/schema, no Apps Script, no frontend page behavior, no workflow
 configuration, no generated bundle. Only this project-current-state.md note was added.
+
+## F1-4B-FM3a checkpoint (2026-08-07) — Recommendation session cache + Inventory Suggested-Qty aggregation
+
+Owner-independent slice authorized by the F1-4B-FM3 HALT (the two missing formula owners — 18/30/45/90 horizon
+gap + monthly sequential shortage — remain deferred to FM3b; NOT implemented here).
+
+(1) SESSION CACHE (inventory-replenishment.js, __IRRECO__ block): a bounded browser-session cache for
+SUCCESSFUL recommendation.workspace.get results. Owner = page-local helpers (_irRecoCacheGet/Set/Load/Persist)
+backed by sessionStorage + an in-memory mirror (_irRecoCacheMem). Key = scope-only company||country||marketplace
+(the Inventory request is scope-scoped; server owns month/cycle); the returned calculationMonth/planningCycle/
+dataVersion are bound INTO the cached record. loadRecommendationWorkspace_ now: dedupe(state) -> CACHE HIT
+(restore envelope, ZERO HTTP, aborts any superseded in-flight + bumps seq) -> else HTTP -> on SUCCESS cache-set.
+Only successful canonical envelopes are cached (blocked lines + valid zero ARE cached); API_ERROR/CONFIG_NOT_READY/
+stale/aborted are NEVER cached (cache-set is after the stale guard and guards env.success===true). Narrow
+programmatic invalidateRecommendationSessionCache([scope]) exposed on window; session-only (no localStorage/
+IndexedDB/DB). Structurally fixes the repeated-navigation refetch.
+
+(2) SUGGESTED QTY (supersedes the FM2B "— breakdown" indicator): main-table Suggested Qty is now a NUMERIC
+presentation aggregation — _irAggregateActionableRecommendedQty(lines) sums non-blocked, finite canonical
+recommendedQty across a SKU's destination lines (MARKETPLACE + each WAREHOUSE); provisional/blocked/null/residual
+excluded; valid canonical 0 -> "0"; no actionable line -> honest "—" (never fake 0); pre-load -> "…". Pure
+read-side summation — NO gap/stock/forecast/incoming/carton math, NO Math.ceil/floor. _irRecoUpdateSuggestedCells
+repaints the .replen-suggested-cell cells after a live/cached result (no table re-render).
+
+Order Planning UNCHANGED (FM3b). AI Plan unchanged/deferred. No formula/runtime/API/Apps-Script/bundle/DB change.
+Tests: recommendation-session-cache-f1-4b-fm3a.test.js (NEW, 30) cache miss/hit/scope-change/stale/abort/fail/
+blocked/valid-zero + aggregation L–P + cell + source safety; updated recommendation-production-cutover-fm2b
+(Suggested no longer "breakdown"; per-load cache invalidate) + replen-recommendation-cutover (per-load cache
+invalidate). Full suite 104 files / 0 failing; Golden 39/1/0; #34 Pending.

@@ -93,7 +93,9 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   var IRSUG = IRSRC.slice(IRSRC.indexOf('function _irSuggestedCellHtml'), IRSRC.indexOf('// Recommendation Summary table body'));
   eval(IRSUG);
   function irApi(active, env) { return { workspaceApiActive: function (n) { return active && n === 'recommendation'; }, getWorkspace: function () { return Promise.resolve(env); } }; }
-  function irLoad(active, env) { _irRecoInvalidate('DISABLED'); global.window.KM = { api: irApi(active, env) }; return Promise.resolve(loadRecommendationWorkspace_()).then(tick); }
+  // FM3a added a session cache; these FM2B assertions test per-response STATE transitions on one scope, so
+  // clear the cache before each load to force a fresh fetch of the given envelope.
+  function irLoad(active, env) { if (typeof invalidateRecommendationSessionCache === 'function') invalidateRecommendationSessionCache(); _irRecoInvalidate('DISABLED'); global.window.KM = { api: irApi(active, env) }; return Promise.resolve(loadRecommendationWorkspace_()).then(tick); }
 
   await irLoad(true, envOk([mkt({ blocked: false, recommendedQty: 0, residualShortageQty: 0, incomingCompleteness: 'COMPLETE', blockedReason: null })]));
   ok(_irRecoState.status === 'READY', 'D1 workspace active → READY (canonical, no opt-in)');
@@ -108,9 +110,11 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   // kill switch → legacy body (no workspace wrapper), workspace suppressed.
   await irLoad(false, envOk([mkt()]));
   ok(_irRecoSummaryCardBody({ sku: 'CO1100-R' }).indexOf('replen-recsum-ws') < 0, 'D6 kill switch OFF → legacy summary body preserved (no workspace wrapper)');
-  // top-table Suggested Qty disposition (breakdown indicator vs misleading legacy number).
+  // top-table Suggested Qty disposition. FM3a REPLACED the FM2B "— breakdown" indicator with a numeric
+  // presentation aggregation; here we only assert the misleading legacy 0 is not shown and the old
+  // "breakdown" placeholder is gone (the numeric aggregation is covered by the FM3a suite).
   global.window.KM = { api: irApi(true, envOk([mkt()])) };
-  ok(/breakdown/.test(_irSuggestedCellHtml({ sku: 'CO1100-R', suggestedQty: 0 })), 'D7 enabled → top-table Suggested Qty shows a destination-breakdown indicator (never a misleading legacy 0)');
+  ok(!/breakdown/.test(_irSuggestedCellHtml({ sku: 'CO1100-R', suggestedQty: 0 })), 'D7 enabled → no misleading legacy number and the FM2B "breakdown" placeholder is removed (FM3a)');
   global.window.KM = { api: irApi(false, envOk([mkt()])) };
   ok(_irSuggestedCellHtml({ sku: 'CO1100-R', suggestedQty: 42 }).indexOf('42') >= 0, 'D8 kill switch OFF → legacy Suggested Qty number preserved');
   delete global.window; delete global.document; delete global.AbortController;
@@ -152,7 +156,7 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   ok(!/Math\.(ceil|floor)|calculateGap|forecast\s*-\s*stock/.test(irCode), 'F2 Inventory READ block authors NO recommendation formula');
   ok(!/Math\.(ceil|floor)|calculateGap|calculateSuggested/.test(roCode), 'F3 Order Planning READ block authors NO recommendation formula');
   // no writes in the READ blocks.
-  ok(!/appendRow|setValues|executeCommand|createRequestOrder|submitRequestOrder|persist/i.test(irCode), 'F4 Inventory READ block performs NO write');
+  ok(!/appendRow|setValues|executeCommand|createRequestOrder|submitRequestOrder|persistDraft|saveDraft/i.test(irCode), 'F4 Inventory READ block performs NO write (FM3a sessionStorage cache-persist excluded)');
   ok(!/appendRow|setValues|executeCommand|createRequestOrder|submitRequestOrder|persist/i.test(roCode), 'F5 Order Planning READ block performs NO write');
   // no whole-DB reload.
   ok(!/getOperationDb|loadOperationDb/.test(irCode) && !/getOperationDb|loadOperationDb/.test(roCode), 'F6 neither READ block triggers a whole-DB reload');
