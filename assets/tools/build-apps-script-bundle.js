@@ -42,6 +42,7 @@ var MODULE_ORDER = [
   'supply-planning-allocation-facts',          // requires calculations (F1-5-A allocation-fact producer)
   'supply-planning-planning-context',          // requires calculations (F1-5-BD planning context runtime)
   'supply-planning-demand-allocation',         // destination DTO + multi-warehouse demand allocation (F1-4B-E0R/E; deps: none)
+  'supply-planning-marketplace-supply-allocation', // MARKETPLACE-receiver monthly supply-allocation adapter (F1-4B-FM5-R2A; deps: allocations + country-identity)
   'supply-planning-production-assembly',       // requires planning-context + allocation-facts + calculations (F1-4B-PRE)
   'supply-planning-destination-runtime',       // requires demand-allocation + planning-context + calculations + qualified-incoming (F1-4B-FM1)
   'supply-planning-planning-demand',           // canonical planning-demand owner: Target%-adjusted FC + special events + current-month remaining (F1-4B-FM3f-1; no deps)
@@ -80,6 +81,7 @@ var GLOBALS = [
   ['KMAF', 'supply-planning-allocation-facts'],
   ['KMPCX', 'supply-planning-planning-context'],
   ['KMDA', 'supply-planning-demand-allocation'],
+  ['KMMSA', 'supply-planning-marketplace-supply-allocation'],
   ['KMPA', 'supply-planning-production-assembly'],
   ['KMDR', 'supply-planning-destination-runtime'],
   ['KMPD', 'supply-planning-planning-demand'],

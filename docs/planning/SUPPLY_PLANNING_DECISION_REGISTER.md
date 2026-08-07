@@ -558,3 +558,30 @@ MARKETPLACE_STOCK_MISSING for UK sites. NO Inventory-only special case, NO scatt
 - **Bundle rebuilt** (KMCID added first in load order): **34 modules**, `--check` PASS,
   `bundle_sha256 91fefda1cbd1ef561a3d869ed356939955e39666be9d054b35dadc2e87e356bc`. US HORIZONS_NOT_AVAILABLE
   (deployment/config) is untouched — this is the country repair only.
+
+## D-F1-4B-FM5-R2A — MARKETPLACE-receiver monthly supply-allocation contract (model b)
+
+Freezes the marketplace-receiver allocation contract chosen in FM5-R2 (model b): a platform_fulfilled MARKETPLACE
+is a valid MONTHLY_ORDER receiver of the eligible Overseas / Factory shared pools, WITHOUT a destination warehouse.
+New bundled adapter **KMMSA** (`supply-planning-marketplace-supply-allocation.js`, `kmmsa-fm5r2a-1`; deps: KMALLOC +
+KMCID). It is a thin DTO adapter — ALL distribution math stays in the frozen `KMALLOC.allocateOverseasSharedPool`
+(§20/§24) and `KMALLOC.allocateFactoryDeterministic` (§35); the adapter only normalizes receiver facts + pools
+into the allocator DTOs and reads each receiver's allocated qty back.
+- **No fake warehouse:** the allocator-required `destinationWarehouseId` field carries the canonical RECEIVER KEY
+  (company‖canonicalCountry‖marketplace‖sku identity label), NEVER a physical warehouse and NEVER a
+  marketplace→warehouse mapping. Country identity uses KMCID (UK ≡ GB).
+- **Frozen decisions (D-FM5-R2A-1..3):** (1) MONTHLY protection mapping — `survivalNeedQty` defaults 0 (18-day
+  survival is a WEEKLY concept), `demandWeight` defaults to `demandQty` (proportional split); a caller MAY override
+  both when a frozen value exists (passthrough). (2) Waterfall (frozen FM3f-1: … → Overseas → Factory → Residual):
+  overseas allocated first, factory demand per receiver = `max(0, demandQty − allocatedOverseas)` (input
+  normalization, not distribution). (3) Company isolation — all receivers/pools in one call MUST share the company
+  (cross-company → BLOCKED); no cross-company pooling. eligiblePoolTypes defaults [THREE_PL, FBA].
+- **Conservation** (KMALLOC-owned): Σ receiver allocations ≤ eligible physical pool; proven by fixture (factory
+  1000, US 600 + CA 400 = 1000; neither sees the full 1000). **Lineage:** the caller supplies pools ALREADY net of
+  SHIPPED_IN_TRANSIT (canonical source-fact lifecycle); the adapter never re-derives duplication by qty guessing.
+- **Scope:** R2A ships the CONTRACT owner + unit tests only (19 assertions). **R2b** wires KMMSA into the Order
+  Planning batch: source-fact lineage-net pool construction (reusing KMSF), the competing-receiver set, per-receiver
+  KMTPP opening-supply composition (Site Stock + allocated Overseas + allocated Factory), and order_planning_gap
+  materialization + the CO1100-R end-to-end trace. Inventory D18/D30/D45/D90 and all formulas untouched.
+- Bundle rebuilt (KMMSA after allocations + country-identity): **35 modules**, `--check` PASS,
+  `bundle_sha256 01ece8dc2a7678f43e8ec609f2b37d3e56d3dc6696f2b6a69bc63810b2db1bed`.
