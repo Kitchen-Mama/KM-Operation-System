@@ -276,7 +276,22 @@ KMPS.buildProductionRecommendationSource, derived from the SAME SHIPPED_IN_TRANS
 by distinct lineageKeys. No qualification/allocation/quantity/formula change; no wiring/handler/UI. Bundle
 regenerated (KMSF+KMSP+KMPS): bundle_sha256 beecbee3...; 30 modules; --check PASS (KMTPP not bundled).
 D-F1-4B-FM3c-1b. Test: warehouse-incoming-eta-preservation-f1-4b-fm3c1b.test.js (40) + updated fm3c1 W-Bev1/2.
-NEXT: FM3c-2 (BOTH destination types now unblocked) — bundle KMTPP + handler monthlyProjection assembly
-(demand=fcByMonth; incoming=qualifiedEvents [MARKETPLACE] + warehouseQualifiedEvents [WAREHOUSE] dated by ETA;
-opening=stock; per-tier required-by=first day M+k) + additive line.monthlyProjection (+ per-tier carton
-suggestedOrderQty via KMCALC) + transport tests. Then FM3d Order Planning UI cutover.
+FM3c-2 DONE (below).
+
+## F1-4B-FM3c-2 (2026-08-07) — Monthly Projection Transport Wiring (additive line.monthlyProjection T1–T4)
+
+DONE: KMTPP bundled (MODULE_ORDER + GLOBALS `KMTPP`; standalone) → 31 modules; --check PASS; bundle_sha256
+16a393c4. Wired into recommendation.workspace.get (recoWsBuildMonthlyProjection_): ONE KMTPP call per destination
+owns chronological carry-forward/count-once/gap; per-tier suggestedOrderQty from frozen KMCALC carton-CEIL over
+remainingGapQty. T1..T4=M+1..M+4; required-by=tier-month first day (no clock/day-horizon). MARKETPLACE opening=
+currentStockQty, demand=fcByMonth, incoming=line.qualifiedEvents. WAREHOUSE one call/warehouse, opening=own Σ
+CURRENT_STOCK (never pooled), demand=override split, incoming=warehouseQualifiedEvents filtered by warehouseId.
+Additive DTO line.monthlyProjection[{tier,month,openingSupplyQty,incomingAddedQty,demandQty,coveredQty,
+remainingSupplyQty,remainingGapQty,suggestedOrderQty}]; scalar fields byte-compatible; absent when not truthfully
+buildable. ONE read; zero writes; FM3a cache-safe. D-F1-4B-FM3c-2. Tests:
+recommendation-monthly-projection-transport-f1-4b-fm3c2.test.js (41) + bundle test 30→31.
+Bounded: (a) workspace WAREHOUSE path pre-existingly blocked ALLOCATION_FACTS_NOT_READY → wiring in unreached
+success branch (semantics proven at helper level); (b) MARKETPLACE incoming required-by=T1-gated (frozen; preserves
+scalar) so later marketplace arrivals not time-phased this round.
+NEXT: FM3d — Order Planning UI cutover (render line.monthlyProjection T1–T4 + per-tier suggestedOrderQty; retire
+page-side derivations). Day-horizon (D18/30/45/90) remains a separate business-freeze item.

@@ -301,3 +301,41 @@ Bundle: KMSF + KMSP + KMPS are bundled → `90_generated_supply_planning_bundle.
 (30 modules; `--check` PASS; bundle_sha256 beecbee3a50e6db8d6682acbcf592fc239a4e12d29ffc13fcb7e477798993a0b).
 KMTPP still NOT bundled (FM3c-2). FM3c-2 may now consume ETA-dated warehouse incoming events for both
 destination types (MARKETPLACE via FM3c-1, WAREHOUSE via this round).
+
+## D-F1-4B-FM3c-2 — Monthly Projection Transport Wiring (additive DTO; KMTPP bundled + wired; no formula/UI)
+
+**Bundles + wires** the frozen KMTPP owner into `recommendation.workspace.get` so each canonical line additively
+exposes `line.monthlyProjection[]` for T1..T4. Transport only — reuses frozen owners, invents no formula, no UI.
+
+- **KMTPP bundle registration:** `supply-planning-time-phased-projection` added to the build tool MODULE_ORDER
+  (standalone, no deps) + GLOBALS (`KMTPP`). Bundle regenerated → **31 modules**; `--check` PASS;
+  bundle_sha256 `16a393c4748e594f58f95d7a8926287a5a25f1cb93d17f3ecc5c833689a750ef`. Never hand-edited.
+- **Month/tier authority:** the existing `KMPCX._forecastWeightMonths(calculationMonth)` window; T1..T4 = M+1..M+4;
+  each tier checkpoint/required-by = the tier month first day (`YYYY-MM-01`) — allowed derivation, NO clock, NO
+  day-horizon (D18/30/45/90 remain authority-blocked).
+- **Assembly owner:** `recoWsBuildMonthlyProjection_` (handler `42_api_v1_recommendation_workspace.gs`) — builds
+  demand/incoming events, calls `KMTPP.projectTimePhasedSupply` EXACTLY ONCE per destination, and appends a
+  per-tier `suggestedOrderQty` from the frozen `KMCALC.calculateSuggestedOrderQty` carton-CEIL owner over
+  `remainingGapQty`. It owns NO chronological/gap/ceil math.
+- **MARKETPLACE:** opening = `line.currentStockQty`; demand = the SAME `fcByMonth` (all 4 months required, else
+  truthful block); incoming = the FM3c-1 `line.qualifiedEvents` (ETA-dated, count-once, QUALIFIED-only — never
+  reconstructed from `confirmedQualifiedIncomingQty`). One KMTPP call.
+- **WAREHOUSE:** one INDEPENDENT KMTPP call per warehouse; opening = that warehouse's OWN Σ CURRENT_STOCK
+  (`recoWsWarehouseOpeningStock_`; missing → null → truthful unavailable, never pooled, never fake 0); demand =
+  the per-warehouse monthly split (`override[warehouseId]`); incoming = ONLY `warehouseQualifiedEvents` whose
+  `warehouseId` matches (FM3c-1b; strictly isolated). NOTE: the workspace WAREHOUSE runtime path is
+  PRE-EXISTINGLY blocked `ALLOCATION_FACTS_NOT_READY` (WEEKLY allocation/receiver facts not derivable from raw
+  snapshots — unrelated to this round), so the wiring lives in the (currently unreached) success branch; a
+  blocked line correctly carries NO `monthlyProjection` (§12 absent-on-blocked). Warehouse projection/isolation
+  semantics are proven directly at the KMTPP-helper level.
+- **Additive DTO:** `line.monthlyProjection = [{ tier, month, openingSupplyQty, incomingAddedQty, demandQty,
+  coveredQty, remainingSupplyQty, remainingGapQty, suggestedOrderQty }]`. All pre-existing scalar fields
+  (allocatedForecastQty / currentStockQty / qualifiedIncomingQty / calculatedGap / recommendedQty /
+  provisionalOrderNeed / residualShortageQty / blocked / blockedReason) are byte-compatible. `line.monthlyProjection`
+  is ABSENT when it cannot be built truthfully (missing forecast month, opening unavailable, blocked, KMTPP absent).
+- **Bounded property (documented, not a HALT):** MARKETPLACE incoming events are QUALIFIED against the existing
+  required-by = T1 (M+1) first day, so they represent incoming available by T1; later marketplace arrivals are (by
+  the frozen gate, unchanged to preserve scalar `confirmedQualifiedIncomingQty`) not in `qualifiedEvents` and thus
+  not time-phased this round. WAREHOUSE `warehouseQualifiedEvents` span the whole window (status-based, not
+  required-by-gated). Read count unchanged (ONE targeted read); zero writes; FM3a session cache stores `env.data`
+  verbatim → `monthlyProjection` persists.

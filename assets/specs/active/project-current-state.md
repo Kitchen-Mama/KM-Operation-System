@@ -4569,3 +4569,29 @@ regenerated (KMSF+KMSP+KMPS changed): bundle_sha256 beecbee3a50e6db8d6682acbcf59
 unrelated frontend failure: replen-header-toggle A2, in inventory-replenishment.js, outside this round's scope —
 fails identically at HEAD with FM3c-1b changes stashed); Golden 39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED =
 90_generated_supply_planning_bundle.gs (new hash). FM3c-2 now unblocked for BOTH destination types.
+
+## F1-4B-FM3c-2 checkpoint (2026-08-07) — Monthly Projection Transport Wiring (additive line.monthlyProjection T1–T4)
+
+Transport only — reuses frozen owners, invents no formula, no UI, no day-horizon. KMTPP now BUNDLED (build tool
+MODULE_ORDER + GLOBALS `KMTPP`; standalone, no deps): 31 modules; --check PASS; bundle_sha256
+16a393c4748e594f58f95d7a8926287a5a25f1cb93d17f3ecc5c833689a750ef. Wired into recommendation.workspace.get via new
+pure handler helper recoWsBuildMonthlyProjection_ (42_api): T1..T4 = M+1..M+4 (KMPCX window); per-tier required-by =
+tier-month first day (YYYY-MM-01; NO clock, NO 18/30/45/90). ONE KMTPP.projectTimePhasedSupply call per destination
+owns ALL chronological carry-forward/count-once/gap; per-tier suggestedOrderQty from the frozen KMCALC carton-CEIL
+owner over remainingGapQty (gap 0→0; missing UPC→null). MARKETPLACE: opening=line.currentStockQty, demand=fcByMonth
+(all 4 required), incoming=FM3c-1 line.qualifiedEvents (QUALIFIED, count-once). WAREHOUSE: one independent call per
+warehouse, opening=that warehouse's OWN Σ CURRENT_STOCK (recoWsWarehouseOpeningStock_; missing→null, never pooled/0),
+demand=per-warehouse split (override), incoming=warehouseQualifiedEvents filtered by warehouseId (FM3c-1b, isolated).
+Additive DTO line.monthlyProjection=[{tier,month,openingSupplyQty,incomingAddedQty,demandQty,coveredQty,
+remainingSupplyQty,remainingGapQty,suggestedOrderQty}]; ALL pre-existing scalar fields byte-compatible; projection
+ABSENT when not truthfully buildable (missing month / opening unavailable / blocked). Read count unchanged (ONE
+targeted read; zero writes); FM3a session cache stores env.data verbatim → monthlyProjection persists (JSON round-trip
+proven). Decision D-F1-4B-FM3c-2. Bounded note: workspace WAREHOUSE path is PRE-EXISTINGLY blocked
+ALLOCATION_FACTS_NOT_READY (unrelated to FM3c-2) so warehouse monthlyProjection wiring lives in the (unreached)
+success branch — blocked lines correctly carry NO projection; warehouse projection/isolation proven at the
+KMTPP-helper level. Bounded note 2: MARKETPLACE incoming is required-by=T1-gated (frozen; preserves scalar), so later
+marketplace arrivals are not time-phased this round; warehouse events span the window. Tests:
+recommendation-monthly-projection-transport-f1-4b-fm3c2.test.js (NEW, 41) + supply-planning-apps-script-bundle
+(30→31 + KMTPP). Full suite 108 files / 1 PRE-EXISTING unrelated failure (replen-header-toggle A2) / 0 NEW; Golden
+39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (new hash) +
+42_api_v1_recommendation_workspace.gs. NEXT: FM3d Order Planning UI cutover (consume line.monthlyProjection).

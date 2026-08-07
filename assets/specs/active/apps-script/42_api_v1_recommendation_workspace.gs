@@ -154,6 +154,66 @@ function recoWsRegularForecastByMonth_(fcRows, scope, sku, months) {
   return out;
 }
 
+// ---- F1-4B-FM3c-2 canonical monthly-projection transport (server/runtime owned; delegates ALL math) ----------
+// Tiers T1..T4 = M+1..M+4 (the frozen KMPCX window); each tier's checkpoint/required-by = the tier month's first
+// calendar day (YYYY-MM-01) — an allowed derivation from the frozen monthly window (NO clock, NO day-horizon).
+var RECO_WS_TIERS_ = ['T1', 'T2', 'T3', 'T4'];
+
+// One warehouse's OWN opening supply = Σ CURRENT_STOCK supplyRows for that warehouse_id. Missing (zero rows) →
+// null (UNKNOWN), never a fabricated 0; an explicit 0-qty row is a truthful 0. Per-warehouse (never pooled).
+function recoWsWarehouseOpeningStock_(supplySourceEntries, warehouseId) {
+  var sum = 0, found = false;
+  (supplySourceEntries || []).forEach(function (e) {
+    if (recoWsStr_(e.lifecycle_bucket) !== 'CURRENT_STOCK') return;
+    if (recoWsStr_(e.warehouse_id) !== warehouseId) return;
+    var q = recoWsNum_(e.quantity); if (q === null) return;
+    sum += q; found = true;
+  });
+  return found ? sum : null;
+}
+
+// Build the additive per-tier monthlyProjection for ONE canonical destination by delegating EVERY chronological
+// balance/carry-forward/count-once decision to the frozen KMTPP owner and EVERY per-tier carton suggestion to the
+// frozen KMCALC Monthly-CEIL owner. Returns null (→ line.monthlyProjection simply absent) when it cannot be built
+// TRUTHFULLY: KMTPP not bundled, no 4-month window, a missing forecast month, or KMTPP itself not ready (e.g.
+// opening supply unavailable). NEVER fabricates a number and NEVER re-implements gap/ceil math here.
+//   months          : ['YYYY-MM' × 4] (M+1..M+4)
+//   openingSupplyQty : canonical destination opening stock (number ≥0, or null → UNKNOWN → KMTPP fails closed)
+//   demandByMonth    : { 'YYYY-MM': qty } — must contain all 4 tier months (missing → truthful block, not 0)
+//   incomingEvents   : [{ incomingId, eta, qty, sourceType }] — already count-once, ETA-dated (marketplace
+//                      line.qualifiedEvents OR the warehouse-filtered warehouseQualifiedEvents; never reconstructed)
+//   unitsPerCarton   : canonical UPC for the carton owner (missing/invalid → suggestedOrderQty null + honest)
+//   destination      : canonical destination object (diagnostic passthrough into KMTPP)
+function recoWsBuildMonthlyProjection_(months, openingSupplyQty, demandByMonth, incomingEvents, unitsPerCarton, destination) {
+  if (typeof KMTPP === 'undefined' || !KMTPP || typeof KMTPP.projectTimePhasedSupply !== 'function') return null;
+  if (!Array.isArray(months) || months.length !== 4) return null;
+  var demandEvents = [], i;
+  for (i = 0; i < 4; i++) {
+    var ym = months[i], q = demandByMonth ? demandByMonth[ym] : undefined;
+    if (q === null || q === undefined || !isFinite(Number(q))) return null;   // missing forecast month → truthful block (never coerced to 0)
+    demandEvents.push({ demandId: 'DMD-' + RECO_WS_TIERS_[i] + '-' + ym, date: ym + '-01', qty: Number(q), demandType: 'REGULAR_FORECAST', month: ym, tier: RECO_WS_TIERS_[i] });
+  }
+  var tierByMonth = {}; for (i = 0; i < 4; i++) tierByMonth[months[i]] = RECO_WS_TIERS_[i];
+  var inEvents = (incomingEvents || []).map(function (e) {
+    var eta = recoWsStr_(e.eta), ym2 = eta.slice(0, 7);
+    return { incomingId: recoWsStr_(e.incomingId) || null, availableDate: eta, qty: recoWsNum_(e.qty),
+      sourceType: recoWsStr_(e.sourceType) || null, tier: (tierByMonth[ym2] || null) };   // tier from ETA month only (else null → still carried by balance)
+  });
+  var proj = KMTPP.projectTimePhasedSupply({ destination: destination || null, openingSupplyQty: openingSupplyQty, demandEvents: demandEvents, incomingEvents: inEvents });
+  if (!proj || proj.ready !== true) return null;   // opening unavailable / invalid input → no fabricated monthly numbers
+  return (proj.monthlyProjection || []).map(function (r) {
+    var sug = null;
+    if (typeof r.remainingGapQty === 'number' && isFinite(r.remainingGapQty)) {
+      if (r.remainingGapQty <= 0) sug = 0;                                    // no shortage → 0 (no carton call needed)
+      else if (typeof unitsPerCarton === 'number' && isFinite(unitsPerCarton) && unitsPerCarton > 0 && Math.floor(unitsPerCarton) === unitsPerCarton) {
+        try { sug = KMCALC.calculateSuggestedOrderQty({ netOrderNeed: r.remainingGapQty, unitsPerCarton: unitsPerCarton }); } catch (e) { sug = null; }
+      } else sug = null;                                                      // missing carton authority → truthful null (never hand-coded ceil)
+    }
+    return { tier: r.tier, month: r.month, openingSupplyQty: r.openingSupplyQty, incomingAddedQty: r.incomingAddedQty,
+      demandQty: r.demandQty, coveredQty: r.coveredQty, remainingSupplyQty: r.remainingSupplyQty, remainingGapQty: r.remainingGapQty, suggestedOrderQty: sug };
+  });
+}
+
 // MARKETPLACE expansion → one canonical response line via the unified runtime (order-need; no source-pool allocator).
 function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
   var snaps = read.snapshots || {};
@@ -179,7 +239,7 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
   var L = res.line || {};
   var partial = L.incomingCompleteness === 'PARTIAL' || L.incomingCompleteness === 'UNAVAILABLE';
   var blockedReason = L.blocked ? (partial ? 'MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED' : (recoWsStr_(L.blockedReason) || null)) : null;
-  return KMDR.buildRecommendationLine({
+  var mLine = KMDR.buildRecommendationLine({
     destination: nd.destination, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku,
     allocatedForecastQty: haveAll ? demandQty : (demandQty > 0 ? demandQty : null),
     currentStockQty: L.currentStockQty, qualifiedIncomingQty: L.confirmedQualifiedIncomingQty, incomingCompleteness: L.incomingCompleteness,
@@ -187,6 +247,13 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
     blocked: L.blocked === true, blockedReason: blockedReason, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
     diagnostics: { issues: (res.issues || []).map(function (x) { return { code: x.code, message: x.message }; }) }
   });
+  // F1-4B-FM3c-2: additive per-tier monthly projection. Opening = the canonical MARKETPLACE currentStockQty;
+  // demand = the SAME fcByMonth (all 4 months required); incoming = the FM3c-1 line.qualifiedEvents (ETA-dated,
+  // count-once, QUALIFIED-only — never reconstructed from confirmedQualifiedIncomingQty). Scalar line unchanged.
+  var mIncoming = (L.qualifiedEvents || []).map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
+  var mProj = recoWsBuildMonthlyProjection_(months, recoWsNum_(L.currentStockQty), (haveAll ? fcByMonth : null), mIncoming, upc, nd.destination);
+  if (mProj) mLine.monthlyProjection = mProj;
+  return mLine;
 }
 
 // WAREHOUSE expansion → one canonical line per configured warehouse. Demand is fanned per month by the FROZEN ratio;
@@ -195,6 +262,7 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
 function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
   var snaps = read.snapshots || {}, lines = [];
   var whRows = recoWsToRowObjects_(snaps.warehouses), ruleRows = recoWsToRowObjects_(snaps.replenishmentDemandAllocationRules), fcRows = recoWsToRowObjects_(snaps.fcRegularForecast);
+  var upc = recoWsUpcBySku_(recoWsToRowObjects_(snaps.skuDetails))[sku];   // F1-4B-FM3c-2: carton owner input (per-tier suggestedOrderQty)
   var whById = {}; whRows.forEach(function (w) { var id = recoWsStr_(w.warehouse_id); if (id) whById[id] = w; });
   var scopeObj = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
   var active = KMDA.readActiveAllocationRules(ruleRows, scopeObj, calc.calculationMonth);
@@ -227,14 +295,22 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
     var gap = recoWsGapBySku_(pr.planningFacts)[sku]; if (gap === undefined) gap = null;
     var wline = null; (src.lines || []).forEach(function (l) { if (!wline && recoWsStr_(l.masterSku || l.sku) === sku) wline = l; }); if (!wline) wline = (src.lines || [])[0] || null;
     var allocatedSupply = 0; if (wline && wline.allocationBreakdown) wline.allocationBreakdown.forEach(function (b) { if (typeof b.allocatedQty === 'number') allocatedSupply += b.allocatedQty; });
-    lines.push(KMDR.buildRecommendationLine({
+    var wLine = KMDR.buildRecommendationLine({
       destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku,
       allocatedForecastQty: cnt ? allocatedForecast : null, currentStockQty: supply.currentStockQty, qualifiedIncomingQty: supply.qualifiedIncomingQty, incomingCompleteness: 'COMPLETE',
       calculatedGap: gap, allocatedSupplyQty: wline ? allocatedSupply : null, recommendedQty: (wline && typeof wline.recommendedQty === 'number') ? wline.recommendedQty : null,
       residualShortageQty: (wline && typeof wline.unallocatedQty === 'number') ? wline.unallocatedQty : null,
       blocked: !!(wline && wline.blockedReason), blockedReason: wline ? wline.blockedReason : null,
       formulaVersion: src.formulaVersion || vmeta.formulaVersion, sourceDataAsOf: src.sourceDataAsOf || vmeta.sourceDataAsOf
-    }));
+    });
+    // F1-4B-FM3c-2: additive per-warehouse monthly projection — ONE independent KMTPP call per warehouse. Opening =
+    // this warehouse's OWN CURRENT_STOCK (never pooled); demand = the per-warehouse monthly split (override); incoming =
+    // ONLY the warehouseQualifiedEvents whose warehouseId === this warehouse (FM3c-1b; strictly isolated, count-once).
+    var whIncoming = (src.warehouseQualifiedEvents || []).filter(function (e) { return recoWsStr_(e.warehouseId) === w.warehouseId; })
+      .map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
+    var wProj = recoWsBuildMonthlyProjection_(months, recoWsWarehouseOpeningStock_(src.supplySourceEntries, w.warehouseId), override[w.warehouseId], whIncoming, upc, node);
+    if (wProj) wLine.monthlyProjection = wProj;
+    lines.push(wLine);
   });
   return { lines: lines };
 }
