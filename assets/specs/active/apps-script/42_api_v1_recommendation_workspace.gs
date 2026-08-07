@@ -73,6 +73,9 @@ function validateRecommendationWorkspaceRequest_(payload) {
     filters: { sku: recoWsStr_(scope.sku) || recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(scope.siteSku) || recoWsStr_(filters.siteSku) || null, category: recoWsStr_(filters.category) || null, series: recoWsStr_(filters.series) || null },
     page: page, size: size, include: recoWsIsObj_(payload.include) ? payload.include : {},
     formulaVersion: recoWsStr_(payload.formulaVersion) || null, sourceDataAsOf: recoWsStr_(payload.sourceDataAsOf) || null,
+    // F1-4B-FM5-R2b: additive, server-internal per-receiver Overseas/Factory allocation injected by the Order Planning
+    // materialization batch (never client-driven; absent for a normal read → Site-Stock-only monthly opening).
+    supplyAllocationByReceiver: recoWsIsObj_(payload.supplyAllocationByReceiver) ? payload.supplyAllocationByReceiver : null,
     deprecatedCompat: { destinationWarehouseId: recoWsStr_(payload.destinationWarehouseId) || null, calculationMonth: recoWsStr_(payload.calculationMonth) || null, planningCycle: recoWsStr_(payload.planningCycle) || null }
   };
 }
@@ -216,6 +219,21 @@ function recoWsWarehouseOpeningStock_(supplySourceEntries, warehouseId) {
   return found ? sum : null;
 }
 
+// F1-4B-FM5-R2b (§7) — PURE Order Planning OPENING-SUPPLY composition owner. It ADDS source-proven canonical
+// quantities into the SINGLE KMTPP opening supply: Site Stock (frozen MARKETPLACE Site Stock owner, Authority A)
+// + allocated eligible Overseas + allocated eligible Factory. It contains NO allocation math — the distribution is
+// the frozen KMMSA/KMALLOC's (§4/§5/§6); this helper only sums already-decided quantities. Missing Site Stock
+// (null) → null opening (KMTPP then fails closed; missing ≠ 0). An explicit 0 stays 0. Overseas/Factory absent
+// (no injected allocation) → 0 each, so opening == Site Stock and the monthly projection is byte-identical to the
+// pre-R2b behaviour (fully additive / backward-compatible). Returns the auditable composition facts (§7).
+function recoWsComposeOpeningSupply_(siteStockQty, allocatedOverseasQty, allocatedFactoryQty) {
+  var site = recoWsNum_(siteStockQty);
+  var ov = recoWsNum_(allocatedOverseasQty); if (ov === null) ov = 0;
+  var fc = recoWsNum_(allocatedFactoryQty); if (fc === null) fc = 0;
+  var opening = (site === null) ? null : (site + ov + fc);
+  return { siteStockQty: site, allocatedOverseasQty: ov, allocatedFactoryQty: fc, openingSupplyQty: opening };
+}
+
 // Build the additive per-tier monthlyProjection for ONE canonical destination by delegating EVERY chronological
 // balance/carry-forward/count-once decision to the frozen KMTPP owner and EVERY per-tier carton suggestion to the
 // frozen KMCALC Monthly-CEIL owner. Returns null (→ line.monthlyProjection simply absent) when it cannot be built
@@ -275,7 +293,11 @@ function recoWsBuildMonthlyProjection_(months, openingSupplyQty, demandByMonth, 
 }
 
 // MARKETPLACE expansion → one canonical response line via the unified runtime (order-need; no source-pool allocator).
-function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
+// F1-4B-FM5-R2b: `supplyAllocationByReceiver` (optional, additive) carries the batch-decided per-receiver Overseas +
+// Factory allocation (keyed by the canonical KMMSA receiver key). When absent the monthly opening supply is Site
+// Stock only — byte-identical to the pre-R2b behaviour. The allocation is COMPOSED into the monthly opening supply
+// ONLY (order planning); the Inventory day-horizon (D18/D30/D45/D90) opening stays Site-Stock-only (§18 unchanged).
+function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supplyAllocationByReceiver) {
   var snaps = read.snapshots || {};
   var mktRows = recoWsToRowObjects_(snaps.marketplaces), whRows = recoWsToRowObjects_(snaps.warehouses);
   var amazonRows = recoWsToRowObjects_(snaps.amazonInventorySnapshot);
@@ -328,8 +350,17 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta) {
   var cmr = (useKMPD && calc.calculationDate) ? KMPD.currentMonthRemainingDemand({ calculationDate: calc.calculationDate, fcRegularRows: fcRows, fcTargetRuleRows: tgtRows, fcSpecialEventRows: evtRows, scope: scope, sku: sku, skuMeta: skuMeta }) : null;
   var preT1Demand = (cmr && cmr.ready) ? Math.round(cmr.demand) : null;   // rounded once at emission (KMPD carries full precision)
   var preT1Date = (cmr && cmr.ready) ? cmr.requiredByDate : null;
-  var mProj = recoWsBuildMonthlyProjection_(months, recoWsNum_(L.currentStockQty), (haveAll ? demandByMonth : null), mIncoming, upc, nd.destination, preT1Demand, preT1Date);
-  if (mProj) mLine.monthlyProjection = mProj;
+  // F1-4B-FM5-R2b (§1/§7): opening ORDER-PLANNING supply = Site Stock + allocated eligible Overseas + allocated
+  // eligible Factory (composed once, counted once — the Overseas/Factory allocation is OPENING planning supply,
+  // NOT ETA-phased incoming; incoming lineage stays separate in mIncoming). The allocation is the batch-decided,
+  // conserved KMMSA result keyed by the canonical receiver key; absent → 0/0 → opening == Site Stock (pre-R2b).
+  var siteStockQty = recoWsNum_(L.currentStockQty);
+  var rKey = (typeof KMMSA !== 'undefined' && KMMSA && typeof KMMSA.receiverKeyOf === 'function')
+    ? KMMSA.receiverKeyOf({ company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku }) : null;
+  var rAlloc = (recoWsIsObj_(supplyAllocationByReceiver) && rKey && recoWsIsObj_(supplyAllocationByReceiver[rKey])) ? supplyAllocationByReceiver[rKey] : null;
+  var composition = recoWsComposeOpeningSupply_(siteStockQty, rAlloc ? rAlloc.overseasCoveredQty : 0, rAlloc ? rAlloc.factoryCoveredQty : 0);
+  var mProj = recoWsBuildMonthlyProjection_(months, composition.openingSupplyQty, (haveAll ? demandByMonth : null), mIncoming, upc, nd.destination, preT1Demand, preT1Date);
+  if (mProj) { mLine.monthlyProjection = mProj; mLine.openingSupplyComposition = composition; }   // §7 auditable opening-supply facts
   if (cmr && cmr.ready) mLine.currentMonthRemaining = { requiredByDate: cmr.requiredByDate, month: cmr.ym, remainingDays: cmr.remainingDays, demandQty: Math.round(cmr.demand) };   // PRE-T1 audit (not a writable tier)
   // F1-4B-FM4a + FM3f-1: additive day-horizon projection — SAME corrected inputs (Site Stock opening, adjusted+special demand).
   var mHz = recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, recoWsNum_(L.currentStockQty), mIncoming, upc, nd.destination);
@@ -516,7 +547,7 @@ function handleRecommendationWorkspaceGet_(body, io) {
     var lines = [], seen = {}, issues = [];
     for (var i = 0; i < scopeSkus.length; i++) {
       var sku = scopeSkus[i], siteSku = siteSkuBySku[sku] || null, produced;
-      if (ful.mode === 'MARKETPLACE') produced = [recoWsExpandMarketplace_(read, v.scope, sku, siteSku, calc, vmeta)];
+      if (ful.mode === 'MARKETPLACE') produced = [recoWsExpandMarketplace_(read, v.scope, sku, siteSku, calc, vmeta, v.supplyAllocationByReceiver)];
       else if (ful.mode === 'WAREHOUSE') produced = recoWsExpandWarehouse_(read, ss, v.scope, sku, siteSku, calc, vmeta).lines;
       else produced = [KMDR.buildRecommendationLine({ destination: { destinationType: null, company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, destinationKey: 'UNRESOLVED||' + v.scope.company + '||' + v.scope.country + '||' + v.scope.marketplace + '||' + sku }, recommendationMode: 'UNRESOLVED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: 'DESTINATION_AUTHORITY_UNRESOLVED', formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })];
       for (var p = 0; p < produced.length; p++) {

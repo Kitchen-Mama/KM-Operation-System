@@ -134,7 +134,12 @@ ok(/_kmWeeklyCommand_\('inventoryReplenishmentGap\.recalculate\.all'/.test(DBAPI
 
 section('Negative constraints — no forbidden writes, no browser formula');
 var CODE = SRC.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-ok(!/factory_stock|overseas_inventory|fc_regular_forecast|shipment|request_order|purchase_order|allocation_draft/i.test(CODE.replace(/marketplace_skus/g, '')), 'N1 batch never writes factory/overseas/FC/shipment/order/draft tables');
+// F1-4B-FM5-R2b: the Order Planning batch now LEGITIMATELY READS the current-stock snapshots factory_stock +
+// overseas_inventory_snapshot to build the FROZEN lineage-net Overseas/Factory allocatable pools (source contract
+// §C; R2b §4/§5) — these are the source-of-truth current-stock authorities, never written. The batch STILL never
+// re-sources demand/incoming (fc_regular_forecast/shipment) nor touches order/draft tables, and STILL writes only
+// the gap tables (proven by order-planning-supply-allocation-f1-4b-fm5r2b AD). Forbidden set narrowed accordingly.
+ok(!/fc_regular_forecast|shipment|request_order|purchase_order|allocation_draft/i.test(CODE.replace(/marketplace_skus/g, '')), 'N1 batch never re-sources demand/incoming (FC/shipment) nor touches order/draft tables (factory_stock/overseas_inventory_snapshot are the R2b current-stock pool reads)');
 ok(!/Math\.(ceil|floor|round)/.test(CODE), 'N2 no gap/carton arithmetic invented in the materializer (reuses canonical runtime)');
 
 console.log('\n----------------------------------------');

@@ -605,3 +605,35 @@ Supplements/overrides the FM5-R2A defaults with the frozen business authority:
   KMSF lineage-net pool construction + per-receiver KMTPP opening (Site Stock + allocated Overseas + allocated
   Factory) + order_planning_gap + CO1100-R end-to-end trace. If the repo cannot source-prove the shipped-lineage
   transition for a source path, HALT only that path and report the missing field/table (never invent a deduction).
+
+### D-F1-4B-FM5-R2b — Order Planning MONTHLY supply-allocation runtime integration (KMMSA wired end-to-end)
+
+Wires the frozen KMMSA marketplace-receiver contract (FM5-R2A + supplemental) into the Order Planning batch so a
+MONTHLY marketplace receiver's opening supply = **Site Stock + allocated eligible Overseas + allocated eligible
+Factory** (§1/§7). Additive only; no new allocator; no Inventory change; no scheduler; no DB/schema change.
+
+- **Competition-scope decisions (user-frozen this round):** (1) **Overseas = per (company, canonical country)** —
+  the frozen `KMALLOC.allocateOverseasSharedPool` requires a single country and R2b forbids a new allocator, so one
+  overseas 3PL pool is conserved only among same-country marketplaces; **Factory = company-wide** (`FACTORY_SHARED`,
+  `allocateFactoryDeterministic` is country-agnostic). (2) **Overseas allocatable pool = THREE_PL only** — FBA current
+  stock IS the marketplace Site Stock (`amazon_inventory_snapshot`), so including it would double-count; overseas pool
+  is `overseas_inventory_snapshot` 3PL current stock only. Overseas + Factory stay INDEPENDENT pools, independently
+  conserved (supersedes no waterfall).
+- **Lineage-net BY SOURCE CONSTRUCTION:** only the current-stock snapshots enter the pool; a quantity transitioned to
+  `SHIPPED_IN_TRANSIT` lives in `shipments` (surfaced ETA-dated as qualified incoming), never in these snapshots — so
+  NO heuristic subtraction and NO SKU+qty dedup (§4/§5/§16). The same physical lineage is never counted twice (§8).
+- **Source authorities (all frozen / DB-confirmed / derived-upstream):** receiver set = `marketplace_skus`
+  (platform_fulfilled, active/plannable); `allocation_priority` = `marketplaces.allocation_priority` (§20.4);
+  `eligibleFactoryWarehouseIds` = `warehouses.is_factory_warehouse` (§40/§35); overseas eligibility = `warehouses`
+  3PL+active join (§23.6/§24.9); Site Stock owner unchanged (Authority A); demand reused verbatim (KMPD; §9).
+- **Owners:** `recoWsComposeOpeningSupply_` (42; PURE opening-supply composition — addition only, no allocation math);
+  `gapOpReadSupplyPoolFacts_` + `gapOpBuildSupplyAllocation_` + rewritten `handleRecalculateOrderPlanningGapBatch_`
+  (43; harvest competing set → allocate shared pools ONCE conserved → re-project per receiver with injected
+  allocation → UPSERT `order_planning_gap`). Injection is additive `payload.supplyAllocationByReceiver` (absent →
+  Site-Stock-only monthly opening, byte-identical to pre-R2b; Inventory D18/D30/D45/D90 opening stays Site-only).
+- **Tests:** `order-planning-supply-allocation-f1-4b-fm5r2b` (40 assertions, A–AD). `gap-materialization-f1-4b-fm5`
+  N1 updated to the R2b authority (batch legitimately READS factory_stock + overseas_inventory_snapshot; still writes
+  only the gap tables). Bundle UNCHANGED (no core-module edit): 35 modules, `41d64956…`, `--check` PASS.
+- **Documented limitation (remaining blocker):** cross-company FACTORY_SHARED pool conservation is per-company (each
+  real company's batch sees the full shared factory pool); only relevant if multiple real companies draw the same
+  physical factory pool — requires a separate freeze if that becomes live (KM is currently the sole company).

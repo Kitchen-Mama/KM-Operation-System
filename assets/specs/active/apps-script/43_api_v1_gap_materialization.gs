@@ -46,6 +46,18 @@ var GAP_OP_TIERS_ = ['T1', 'T2', 'T3', 'T4'];
 // ---- small pure helpers -------------------------------------------------------------------------------
 function gapIsFiniteNum_(v) { return typeof v === 'number' && isFinite(v); }
 function gapStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+// MISSING vs ZERO: '' / null / undefined → null (never coerced to 0); an explicit finite value (incl. 0) → that value.
+function gapNum_(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
+function gapTruthy_(v) { if (v === true) return true; var s = gapStr_(v).toLowerCase(); return s === 'true' || s === 'yes' || s === '1'; }
+// Canonical country identity (UK ≡ GB) via the bundled KMCID owner; fallback upper-case (never guesses an alias).
+function gapCanonCountry_(v) { return (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.canonicalCountryCode === 'function') ? KMCID.canonicalCountryCode(v) : gapStr_(v).toUpperCase(); }
+// Canonical KMMSA receiver key (company||canonicalCountry||marketplace||sku) — MUST match the key the recommendation
+// workspace computes for supplyAllocationByReceiver, so the injected allocation lands on the right receiver.
+function gapReceiverKey_(company, country, marketplace, sku) {
+  return (typeof KMMSA !== 'undefined' && KMMSA && typeof KMMSA.receiverKeyOf === 'function')
+    ? KMMSA.receiverKeyOf({ company: company, country: country, marketplace: marketplace, sku: sku })
+    : [gapStr_(company), gapCanonCountry_(country), gapStr_(marketplace), gapStr_(sku)].join('||');
+}
 
 // Read a sheet as header-mapped row objects (READ ONLY; [] when absent/empty). No write, no whole-DB load.
 function gapReadObjects_(ss, name) {
@@ -248,12 +260,185 @@ function gapRunBatch_(body, io, cfg) {
   }
 }
 
+// ============================================================================================================
+// F1-4B-FM5-R2b — Order Planning MONTHLY supply-allocation orchestration (Overseas + Factory → opening supply)
+// ------------------------------------------------------------------------------------------------------------
+// Wires the FROZEN marketplace-receiver allocation contract (KMMSA, FM5-R2A supplemental) into the Order Planning
+// batch. The competing MONTHLY marketplace receivers of a company+SKU share the lineage-net physical pools, so the
+// allocation MUST be computed ONCE across the complete bounded receiver set and only then fed back into each
+// receiver's own KMTPP projection (§12/§14) — never one marketplace at a time (which would duplicate a shared pool).
+//   • FACTORY  — company-wide competing set (factory_stock is the FACTORY_SHARED pool; is_factory_warehouse eligible).
+//   • OVERSEAS — per (company, canonical country) competing set (overseas_inventory_snapshot THREE_PL current stock);
+//                the frozen overseas allocator is single-country and R2b §0 forbids a new allocator, so overseas
+//                competition is per-country while factory is company-wide. FBA is Site Stock (excluded — no double
+//                count). Overseas + Factory are INDEPENDENT pools, INDEPENDENTLY conserved (FM5-R2A supplemental §6).
+// Lineage-net BY SOURCE CONSTRUCTION: only the current-stock snapshots enter the pool; a quantity transitioned to
+// SHIPPED_IN_TRANSIT lives in `shipments` (surfaced as ETA-dated qualified incoming), never in these snapshots — so
+// NO heuristic subtraction and NO SKU+qty dedup (§4/§16). Opening supply = Site + allocated Overseas + allocated
+// Factory (§1/§7); the shipment stays incoming-only (§8) — the same physical lineage is never counted twice.
+
+// Read the lineage-net source pools + marketplace authorities ONCE for the whole batch (bounded; READ ONLY).
+function gapOpReadSupplyPoolFacts_(ss) {
+  var whById = {}, factoryWhIds = {};
+  gapReadObjects_(ss, 'warehouses').forEach(function (w) {
+    var id = gapStr_(w.warehouse_id); if (!id) return;
+    whById[id] = { company: gapStr_(w.company), country: gapCanonCountry_(w.country), type: gapStr_(w.warehouse_type).toUpperCase(), active: gapTruthy_(w.is_active), factory: gapTruthy_(w.is_factory_warehouse) };
+    if (whById[id].factory) factoryWhIds[id] = 1;
+  });
+  var priorityByMkt = {};
+  gapReadObjects_(ss, 'marketplaces').forEach(function (m) {
+    var key = gapStr_(m.company) + '||' + gapCanonCountry_(m.country) + '||' + gapStr_(m.marketplace);
+    var ap = gapNum_(m.allocation_priority); if (ap !== null) priorityByMkt[key] = ap;   // §20.4 DB-confirmed; missing → KMMSA default 0
+  });
+  // OVERSEAS THREE_PL pools per company||canonicalCountry||sku (warehouses join: 3PL + active only; FBA excluded).
+  var overseasPoolsByKey = {};
+  gapReadObjects_(ss, 'overseas_inventory_snapshot').forEach(function (r) {
+    var q = gapNum_(r.wh_available_stock); if (q === null || q < 0) return;                 // missing ≠ 0; negative fail-closed
+    var wh = gapStr_(r.warehouse_id), sku = gapStr_(r.sku); if (!wh || !sku) return;
+    var meta = whById[wh]; if (!meta) return;                                               // unknown warehouse → not eligible
+    if (meta.type && meta.type !== '3PL') return;                                           // THREE_PL lane only
+    if (!meta.active) return;                                                               // inactive → excluded
+    var k = gapStr_(meta.company) + '||' + meta.country + '||' + sku;
+    (overseasPoolsByKey[k] = overseasPoolsByKey[k] || []).push({ poolKey: 'OV:' + wh + ':' + sku, poolType: 'THREE_PL', warehouseId: wh, effectiveSupplyQty: q });
+  });
+  // FACTORY pools per sku (company-wide FACTORY_SHARED); only is_factory_warehouse stock is eligible.
+  var factoryPoolsBySku = {};
+  gapReadObjects_(ss, 'factory_stock').forEach(function (r) {
+    var q = gapNum_(r.fac_current_stock); if (q === null || q < 0) return;
+    var wh = gapStr_(r.warehouse_id), sku = gapStr_(r.sku); if (!wh || !sku) return;
+    if (!factoryWhIds[wh]) return;                                                          // only factory warehouses
+    (factoryPoolsBySku[sku] = factoryPoolsBySku[sku] || []).push({ poolKey: 'FC:' + wh + ':' + sku, poolType: 'FACTORY', warehouseId: wh, effectiveSupplyQty: q });
+  });
+  return { overseasPoolsByKey: overseasPoolsByKey, factoryPoolsBySku: factoryPoolsBySku,
+    eligibleFactoryWarehouseIds: Object.keys(factoryWhIds).sort(), priorityByMkt: priorityByMkt };
+}
+
+// PURE. Run the FROZEN KMMSA contract over the harvested competing receiver set: FACTORY once per (company, sku)
+// company-wide; OVERSEAS once per (company, canonicalCountry, sku). 0 receivers → nothing; 1 → 100% of the eligible
+// pool; >1 → conserved KMMSA/KMALLOC. Independent pools, independently conserved (§6). Returns the per-receiver
+// {overseasCoveredQty, factoryCoveredQty} keyed by the canonical receiver key + any allocation issues.
+function gapOpBuildSupplyAllocation_(receivers, poolFacts) {
+  var out = {}, issues = [];
+  if (typeof KMMSA === 'undefined' || !KMMSA || typeof KMMSA.allocateMarketplaceReceiverSupply !== 'function') {
+    return { byReceiverKey: out, issues: [{ scope: '', code: 'KMMSA_NOT_BUNDLED' }] };
+  }
+  var byCompanySku = {}, byCompanyCountrySku = {};
+  (receivers || []).forEach(function (r) {
+    var cc = gapCanonCountry_(r.country);   // canonical (UK ≡ GB) so the group key matches the canonical pool key
+    (byCompanySku[r.company + '||' + r.sku] = byCompanySku[r.company + '||' + r.sku] || []).push(r);
+    (byCompanyCountrySku[r.company + '||' + cc + '||' + r.sku] = byCompanyCountrySku[r.company + '||' + cc + '||' + r.sku] || []).push(r);
+  });
+  function ensure(k) { if (!out[k]) out[k] = { overseasCoveredQty: 0, factoryCoveredQty: 0 }; return out[k]; }
+  function msaReceivers(list, eligiblePoolTypes) {
+    return list.map(function (r) {
+      var o = { company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku, demandQty: r.demandQty, allocationPriority: r.allocationPriority, requiredByDate: r.requiredByDate };
+      if (eligiblePoolTypes) o.eligiblePoolTypes = eligiblePoolTypes;
+      return o;
+    });
+  }
+  Object.keys(byCompanySku).forEach(function (cs) {                                          // FACTORY — company-wide
+    var list = byCompanySku[cs], pools = poolFacts.factoryPoolsBySku[list[0].sku] || [];
+    if (!pools.length) return;                                                               // no factory pool → 0 (valid)
+    var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: list[0].sku, factoryPools: pools, eligibleFactoryWarehouseIds: poolFacts.eligibleFactoryWarehouseIds, receivers: msaReceivers(list) });
+    if (!res || res.blocked) { issues.push({ scope: cs, code: (res && res.issues && res.issues[0] && res.issues[0].code) || 'FACTORY_ALLOCATION_BLOCKED' }); return; }
+    for (var k in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k)) ensure(k).factoryCoveredQty += (res.byReceiver[k].allocatedFactoryQty || 0);
+  });
+  Object.keys(byCompanyCountrySku).forEach(function (ccs) {                                   // OVERSEAS — per country
+    var list = byCompanyCountrySku[ccs], pools = poolFacts.overseasPoolsByKey[ccs] || [];
+    if (!pools.length) return;
+    var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: list[0].sku, overseasPools: pools, receivers: msaReceivers(list, ['THREE_PL']) });
+    if (!res || res.blocked) { issues.push({ scope: ccs, code: (res && res.issues && res.issues[0] && res.issues[0].code) || 'OVERSEAS_ALLOCATION_BLOCKED' }); return; }
+    for (var k2 in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k2)) ensure(k2).overseasCoveredQty += (res.byReceiver[k2].allocatedOverseasQty || 0);
+  });
+  return { byReceiverKey: out, issues: issues };
+}
+
 // ---- PUBLIC batch owners (one bounded server batch per manual button) ---------------------------------
 function handleRecalculateInventoryReplenishmentGapBatch_(body, io) {
   return gapRunBatch_(body, io, { product: 'INVENTORY', table: INV_GAP_TABLE_, headers: INV_GAP_HEADERS_, map: gapInvMapFromLines_ });
 }
+
+// Order Planning batch — HARVEST competing receivers (one canonical read per scope) → ALLOCATE the shared lineage-net
+// pools ONCE across the full set (conserved) → RE-PROJECT each scope with its injected allocation (Site-Stock-only
+// scopes reuse the harvest pass; no wasted read) → map + UPSERT order_planning_gap. ONE bounded server batch, no
+// per-SKU HTTP loop, no shared-pool duplication. Inventory batch is untouched (§18).
 function handleRecalculateOrderPlanningGapBatch_(body, io) {
-  return gapRunBatch_(body, io, { product: 'ORDER_PLANNING', table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_, map: gapOpMapFromLines_ });
+  io = io || gapMaterializationDefaultIo_();
+  var cfg = { product: 'ORDER_PLANNING', table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_, map: gapOpMapFromLines_ };
+  try {
+    var ss = io.openTarget();
+    var sheet = prodRequireSheet_(ss, cfg.table, cfg.headers);                               // fail CLOSED if missing/invalid
+    var scopes = io.enumerateScopes ? io.enumerateScopes(ss) : gapEnumerateScopes_(ss);
+    var poolFacts = io.readSupplyPoolFacts ? io.readSupplyPoolFacts(ss) : gapOpReadSupplyPoolFacts_(ss);
+
+    // ---- PASS 1: harvest MONTHLY marketplace receivers (demand + required-by) across the full competing set ----
+    var receivers = [], envByScope = {}, s, scope, env, lines;
+    for (s = 0; s < scopes.length; s++) {
+      scope = scopes[s];
+      var reqBody = { requestId: 'GAP-OP-H-' + (s + 1), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ } } };
+      try { env = io.workspaceGet(reqBody, ss); } catch (e) { env = null; }
+      envByScope[scope.company + '||' + scope.country + '||' + scope.marketplace] = env;
+      if (!env || env.success !== true) continue;
+      lines = (env.data && env.data.lines) ? env.data.lines : [];
+      var country = gapCanonCountry_(scope.country), pkey = scope.company + '||' + country + '||' + scope.marketplace;
+      lines.forEach(function (L) {
+        if (!L || L.recommendationMode !== 'MARKETPLACE_ORDER_NEED' || L.blocked) return;   // MARKETPLACE receivers only
+        var sku = gapStr_(L.sku); if (!sku) return;
+        var demandQty = gapNum_(L.allocatedForecastQty); if (demandQty === null) return;     // no quantified demand → not competing
+        var mp = L.monthlyProjection; if (!mp || !mp.length || !gapStr_(mp[0].month)) return; // needs a T1 month for required-by
+        receivers.push({ company: scope.company, country: country, marketplace: scope.marketplace, sku: sku,
+          demandQty: demandQty, requiredByDate: gapStr_(mp[0].month) + '-01',
+          allocationPriority: (poolFacts.priorityByMkt[pkey] != null ? poolFacts.priorityByMkt[pkey] : 0),
+          key: gapReceiverKey_(scope.company, country, scope.marketplace, sku) });
+      });
+    }
+
+    // ---- ALLOCATE the shared pools ONCE across the complete bounded competing set (conserved) ----
+    var alloc = gapOpBuildSupplyAllocation_(receivers, poolFacts);
+    var allocMap = alloc.byReceiverKey, scopeHasAlloc = {};
+    receivers.forEach(function (r) { var a = allocMap[r.key]; if (a && (a.overseasCoveredQty > 0 || a.factoryCoveredQty > 0)) scopeHasAlloc[r.company + '||' + r.country + '||' + r.marketplace] = 1; });
+
+    // ---- PASS 2 + MATERIALIZE: re-project scopes with injected allocation (else reuse harvest), map, UPSERT ----
+    var summary = { product: cfg.product, totalScopes: scopes.length, scopesCalculated: 0, ready: 0, blocked: 0, errors: 0, written: 0, calculatedAt: null, scopeErrors: [], allocationIssues: alloc.issues, receiversConsidered: receivers.length, scopesReprojected: 0 };
+    var ts = gapBatchTimestamp_(io);
+    for (s = 0; s < scopes.length; s++) {
+      scope = scopes[s];
+      var envKey = scope.company + '||' + scope.country + '||' + scope.marketplace;
+      var canonKey = scope.company + '||' + gapCanonCountry_(scope.country) + '||' + scope.marketplace;
+      var env2;
+      if (scopeHasAlloc[canonKey]) {
+        var reqBody2 = { requestId: 'GAP-OP-M-' + (s + 1), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ }, supplyAllocationByReceiver: allocMap } };
+        try { env2 = io.workspaceGet(reqBody2, ss); } catch (e2) { env2 = null; }
+        if (env2 && env2.success === true) summary.scopesReprojected++;
+      } else {
+        env2 = envByScope[envKey];                                                           // Site-Stock-only projection already correct
+      }
+      if (!env2 || env2.success !== true) {
+        summary.errors++;
+        summary.scopeErrors.push({ scope: envKey, code: (env2 && env2.errors && env2.errors[0] && env2.errors[0].code) || 'SCOPE_CALCULATION_FAILED' });
+        continue;
+      }
+      summary.scopesCalculated++;
+      var calcAuthority = (env2.meta && env2.meta.calculationMonth) || '';
+      var lines2 = (env2.data && env2.data.lines) ? env2.data.lines : [];
+      var bySku = {}; lines2.forEach(function (L) { var k = gapStr_(L.sku); if (!k) return; (bySku[k] = bySku[k] || []).push(L); });
+      for (var sku2 in bySku) {
+        if (!Object.prototype.hasOwnProperty.call(bySku, sku2)) continue;
+        var row = cfg.map(bySku[sku2], scope, sku2, calcAuthority);
+        row.calculated_at = ts; row.updated_at = ts;
+        gapUpsertByKey_(sheet, row);
+        summary.written++;
+        if (row.calculation_status === 'READY') summary.ready++;
+        else if (row.calculation_status === 'BLOCKED') summary.blocked++;
+        else summary.errors++;
+      }
+    }
+    summary.calculatedAt = ts;
+    return gapBatchEnvelope_(true, summary);
+  } catch (e) {
+    var token = (e && e.safetyToken) ? e.safetyToken : (e && e.schemaStatus) ? e.schemaStatus : 'GAP_BATCH_ERROR';
+    return gapBatchEnvelope_(false, null, token, e && e.message ? String(e.message) : String(e));
+  }
 }
 
 // ---- F1-4B-FM5-R1 · bounded MATERIALIZED READ owners (page reads STORED result; NO calculation) -------
