@@ -4464,3 +4464,15 @@ Governance: APPS_SCRIPT_SYNC_REQUIRED = none new (90_generated_supply_planning_b
 42_api_v1_recommendation_workspace.gs already required from FM1-T; unchanged). FRONTEND_GITHUB_PAGES_REQUIRED =
 km-api-foundation.js, inventory-replenishment.js, request-order.js (+ their two CSS files). DB/schema = none. No
 live DB; no push; no deploy.
+
+## Pages deployment checkpoint (2026-08-07) — GH-PAGES-REDEPLOY-01
+
+Prior GitHub Pages runs #121 (SHA 4ea0d13, FM2A — older) and #122 (SHA 43d1509, FM2B — latest) both FAILED at
+the native `pages-build-deployment` **deploy** step (`build` + `report-build-status` succeeded) with
+`deployment_queued` -> `Timeout reached, aborting!` (a GitHub-hosted `github-pages` environment queue lock; not a
+repository/workflow defect). Current live Pages is not proven to contain 43d1509.
+
+This commit is a DOCS-ONLY deployment checkpoint whose sole purpose is to trigger ONE fresh Pages deployment
+from the current latest main HEAD (43d1509). It changes NO application/runtime behavior: no Recommendation
+Runtime, no formulas, no API contracts, no DB/schema, no Apps Script, no frontend page behavior, no workflow
+configuration, no generated bundle. Only this project-current-state.md note was added.
