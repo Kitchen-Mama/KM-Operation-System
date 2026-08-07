@@ -637,3 +637,30 @@ Factory** (§1/§7). Additive only; no new allocator; no Inventory change; no sc
 - **Documented limitation (remaining blocker):** cross-company FACTORY_SHARED pool conservation is per-company (each
   real company's batch sees the full shared factory pool); only relevant if multiple real companies draw the same
   physical factory pool — requires a separate freeze if that becomes live (KM is currently the sole company).
+
+### D-F1-4B-FM5-R2b (supplemental) — fulfillment-stock owner freeze (MARKETPLACE vs self_fulfilled/WAREHOUSE)
+
+Audit-first verification of the opening-stock authority per fulfillment mode; the existing paths ALREADY satisfy the
+invariant, so this is a regression-lock (no code change), preserving the frozen distinction:
+
+- **Resolver:** `recoWsResolveFulfillment_` (42) — `marketplaces.fulfillment_model`: platform_fulfilled → MARKETPLACE,
+  self_fulfilled → WAREHOUSE, else DESTINATION_AUTHORITY_UNRESOLVED (never guessed).
+- **PLATFORM_FULFILLED opening owner = the frozen Amazon Site Stock owner** `KMDR.resolveMarketplaceCurrentStock`:
+  `amazon_inventory_snapshot.available_qty + fc_transfer_qty + fc_processing_qty`; customer orders + unsellable
+  EXCLUDED; any warehouse-identified row EXCLUDED (so FBA/3PL/factory is never re-added as Site Stock). available_qty
+  missing → missing (never a fabricated 0); explicit 0 → 0. R2b Overseas/Factory allocation is composed SEPARATELY
+  (THREE_PL pool excludes FBA) — no re-add of FBA through the Overseas pool.
+- **self_fulfilled/WAREHOUSE opening owner = `recoWsWarehouseOpeningStock_` (42)** = Σ the warehouse's OWN
+  `CURRENT_STOCK` lifecycle rows (KMPS `supplySourceEntries`), filtered to its own `warehouse_id`; NOT the Amazon
+  formula. Each warehouse is projected INDEPENDENTLY by KMTPP (warehouse isolation); the SITE row is the SUM across
+  the per-warehouse lines in the materialization aggregation (`gapOpMapFromLines_`, 43) — summed ONLY AFTER each
+  warehouse is independently projected, never pool-then-invent. Valid-zero → 0; missing → null (KMTPP fails closed).
+- **Conservation:** each physical warehouse's stock is attributed to exactly one `warehouse_id`/destination line, so a
+  site receives only its own warehouses' stock (WH-A 600 + WH-B 400 = Site X 1000, matching the frozen example). NO
+  Amazon-formula leak into the self_fulfilled path (verified: the WAREHOUSE expander never references
+  amazonInventory / resolveMarketplaceCurrentStock / available_qty·fc_transfer·fc_processing).
+- **Regression lock:** `self-fulfilled-opening-stock-f1-4b-fm5r2b` (17 assertions). No code change; no new formula.
+- **Documented boundary:** a single physical warehouse SHARED across multiple self_fulfilled marketplace receivers is
+  outside the frozen warehouse-isolation model; were it to become live, it would need the same cross-scope conserved
+  allocation as the R2b marketplace Overseas/Factory pools (a separate freeze) — analogous to the cross-company
+  FACTORY_SHARED boundary. Not present in the current model (warehouse = one destination).
