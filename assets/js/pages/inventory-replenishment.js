@@ -4971,10 +4971,41 @@ function _irRecoHorizonTableHtml(line) {
       + '<td class="replen-recsum-table__num">' + num(h.suggestedOrderQty) + '</td>'
       + '</tr>';
   }).join('');
-  return '<table class="replen-horizon-table"><thead><tr>'
+  return '<table class="replen-horizon-table replen-horizon-table--detail"><thead><tr>'
     + '<th>Window</th><th>Required By</th><th class="replen-recsum-table__num">Demand</th>'
     + '<th class="replen-recsum-table__num">Covered</th><th class="replen-recsum-table__num">Gap</th>'
     + '<th class="replen-recsum-table__num">Suggested</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+// F1-4B-FM6 · truthful per-window Note derived ONLY from the canonical gap (no page formula): missing → "—";
+// valid zero → "No shortage"; positive gap → "Replenishment required".
+function _irRecoHorizonNote_(h) {
+  if (!h || typeof h.gapQty !== 'number' || !isFinite(h.gapQty)) return '—';
+  return h.gapQty <= 0 ? 'No shortage' : 'Replenishment required';
+}
+// F1-4B-FM6 · FROZEN PRIMARY surface — the compact decision table: Window | Gap | Suggested Qty | Note ONLY.
+// Required By is a subtle sub-line under Window (not a column). Demand/Covered and all technical fields live under
+// Diagnostics. Valid 0 → "0"; missing → "—". The table is wrapped in an overflow-x container so a very large
+// number or a narrow viewport scrolls INTERNALLY and never overflows the SKU card.
+function _irRecoHorizonOutlookTableHtml(line) {
+  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  function num(v) { return (v === null || v === undefined) ? '—' : esc(String(v)); }
+  var byWin = {};
+  (line.horizons || []).forEach(function (h) { if (h && h.windowCode) byWin[h.windowCode] = h; });
+  var rows = _IR_HORIZON_WINDOWS.map(function (w) {
+    var h = byWin[w.code];
+    var by = (h && h.requiredByDate) ? ('<span class="replen-horizon-by">by ' + esc(h.requiredByDate) + '</span>') : '';
+    var winCell = '<td class="replen-horizon-table__win"><span class="replen-horizon-win">' + w.label + '</span>' + by + '</td>';
+    if (!h) return '<tr class="is-missing">' + winCell + '<td class="replen-recsum-table__num">—</td><td class="replen-recsum-table__num">—</td><td class="replen-horizon-table__note">—</td></tr>';
+    return '<tr>' + winCell
+      + '<td class="replen-recsum-table__num">' + num(h.gapQty) + '</td>'
+      + '<td class="replen-recsum-table__num">' + num(h.suggestedOrderQty) + '</td>'
+      + '<td class="replen-horizon-table__note">' + esc(_irRecoHorizonNote_(h)) + '</td>'
+      + '</tr>';
+  }).join('');
+  return '<div class="replen-horizon-tablewrap"><table class="replen-horizon-table replen-horizon-table--outlook"><thead><tr>'
+    + '<th class="replen-horizon-table__win">Window</th><th class="replen-recsum-table__num">Gap</th>'
+    + '<th class="replen-recsum-table__num">Suggested Qty</th><th class="replen-horizon-table__note">Note</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 // ONE destination subsection (MARKETPLACE → one; WAREHOUSE → one per warehouse; never pooled). Blocked and
 // horizon-unavailable states are shown truthfully instead of a fabricated table.
@@ -4994,7 +5025,7 @@ function _irRecoHorizonSectionHtml(line) {
   if (!line.horizons || !line.horizons.length) {
     return head + '</div><div class="replen-horizon-dest__na">Horizon projection unavailable for this destination. <code>HORIZONS_NOT_AVAILABLE</code></div></div>';
   }
-  return head + '</div>' + _irRecoHorizonTableHtml(line) + '</div>';
+  return head + '</div>' + _irRecoHorizonOutlookTableHtml(line) + '</div>';
 }
 // The legacy per-destination technical table (Destination/Mode/Demand-Gap/Stock/Incoming/Recommended/Status/
 // Reason) — RELOCATED under Diagnostics (no longer the primary surface). Content preserved verbatim.
@@ -5035,8 +5066,14 @@ function _irRecoWorkspaceBody(skuData) {
   var sections = '<div class="replen-horizon-summary">' + lines.map(_irRecoHorizonSectionHtml).join('') + '</div>';
   var metaHtml = meta.length ? ('<div class="replen-recsum-ws__meta">' + meta.join(' · ') + '</div>') : '';
   // Technical destination/runtime detail is DEMOTED under a collapsed <details> — no longer the decision surface.
+  // Wide tables (legacy destination table + the full horizon detail: Required By / Demand / Covered) scroll
+  // INTERNALLY inside their own overflow-x container so they never widen or overflow the SKU card.
+  var horizonDetail = lines.map(function (L) {
+    return (L.horizons && L.horizons.length) ? ('<div class="replen-recsum-ws__scroll">' + _irRecoHorizonTableHtml(L) + '</div>') : '';
+  }).join('');
   var diag = '<details class="replen-recsum-ws__diag replen-recsum-ws__diag--dest"><summary>Diagnostics</summary>'
-    + _irRecoLegacyDestTableHtml(lines) + _irRecoDiagnosticsInnerHtml(lines[0]) + '</details>';
+    + '<div class="replen-recsum-ws__scroll">' + _irRecoLegacyDestTableHtml(lines) + '</div>'
+    + horizonDetail + _irRecoDiagnosticsInnerHtml(lines[0]) + '</details>';
   return wrap('replen-recsum-ws--ready', sections + metaHtml + diag);
 }
 // The card body: Workspace presentation when the flag is EFFECTIVE, else the unchanged legacy table.

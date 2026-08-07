@@ -1552,19 +1552,40 @@
 #ops-section .replen-recsum-ws__table tr.is-partial td { background: #FFF7ED; }
 #ops-section .replen-recsum-ws__table tr.is-blocked td { background: #FEF2F2; color: #991B1B; }
 #ops-section .replen-recsum-ws__provisional { color: #9A3412; font-style: italic; }
-/* ---- F1-4B-FM4b · Horizon Summary (PRIMARY decision surface: D18/D30/D45/D90) ---------------------- */
-#ops-section .replen-horizon-summary { margin-top: 4px; }
-#ops-section .replen-horizon-dest { margin: 8px 0; }
-#ops-section .replen-horizon-dest__hd { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #0F172A; margin-bottom: 4px; }
-#ops-section .replen-horizon-dest__badge { font-size: 11px; font-weight: 600; color: #475569; background: #E2E8F0; border-radius: 10px; padding: 1px 8px; }
-#ops-section .replen-horizon-dest__blocked { font-size: 12px; color: #92400E; background: #FFFBEB; border-left: 3px solid #F59E0B; padding: 4px 8px; }
-#ops-section .replen-horizon-dest__na { font-size: 12px; color: #475569; background: #F8FAFC; border-left: 3px solid #94A3B8; padding: 4px 8px; }
+/* ---- F1-4B-FM4b/FM6 · Replenishment Outlook (PRIMARY: Window | Gap | Suggested Qty | Note) ---------- */
+/* CONTAINMENT HARD RULE: the recommendation result must ALWAYS stay inside the expanded-SKU card. Nothing here
+   may cause horizontal overflow of the card, column expansion beyond it, or text overlapping adjacent sections.
+   Wide/long content scrolls or wraps INTERNALLY — never the outer card. */
+#ops-section .replen-recsum-ws { max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+#ops-section .replen-horizon-summary { margin-top: 4px; max-width: 100%; }
+#ops-section .replen-horizon-dest { margin: 8px 0; max-width: 100%; }
+#ops-section .replen-horizon-dest__hd { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-weight: 600; color: #0F172A; margin-bottom: 4px; max-width: 100%; }
+#ops-section .replen-horizon-dest__name { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+#ops-section .replen-horizon-dest__badge { font-size: 11px; font-weight: 600; color: #475569; background: #E2E8F0; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+/* Long blocked/unavailable reason + canonical token wrap inside their own container (never widen the card). */
+#ops-section .replen-horizon-dest__blocked,
+#ops-section .replen-horizon-dest__na { font-size: 12px; padding: 4px 8px; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+#ops-section .replen-horizon-dest__blocked { color: #92400E; background: #FFFBEB; border-left: 3px solid #F59E0B; }
+#ops-section .replen-horizon-dest__na { color: #475569; background: #F8FAFC; border-left: 3px solid #94A3B8; }
+#ops-section .replen-horizon-dest__blocked code,
+#ops-section .replen-horizon-dest__na code { white-space: normal; overflow-wrap: anywhere; word-break: break-all; }
+/* The primary table scrolls INTERNALLY (controlled) if a very large number / narrow viewport needs it. */
+#ops-section .replen-horizon-tablewrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 #ops-section .replen-horizon-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 #ops-section .replen-horizon-table th,
-#ops-section .replen-horizon-table td { padding: 4px 8px; border-bottom: 1px solid #E2E8F0; text-align: left; white-space: nowrap; }
+#ops-section .replen-horizon-table td { padding: 4px 8px; border-bottom: 1px solid #E2E8F0; text-align: left; vertical-align: top; }
 #ops-section .replen-horizon-table thead th { background: rgb(255, 248, 240); color: #1f2937; font-weight: 600; }
-#ops-section .replen-horizon-table .replen-recsum-table__num { text-align: right; }
+/* Gap / Suggested Qty: right-aligned, never wrap mid-number — large values scroll via the wrap, not card-widen. */
+#ops-section .replen-horizon-table .replen-recsum-table__num { text-align: right; white-space: nowrap; }
+#ops-section .replen-horizon-table__win { white-space: nowrap; }
+#ops-section .replen-horizon-win { display: block; font-weight: 600; }
+#ops-section .replen-horizon-by { display: block; font-size: 11px; color: #94A3B8; white-space: nowrap; }
+/* Note: bounded width, wraps inside its own cell — a long Note NEVER determines the table/card width. */
+#ops-section .replen-horizon-table__note { max-width: 240px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 #ops-section .replen-horizon-table tr.is-missing td { color: #94A3B8; }
+/* Diagnostics obey the SAME containment: the wide legacy + horizon-detail tables scroll internally. */
+#ops-section .replen-recsum-ws__diag { max-width: 100%; }
+#ops-section .replen-recsum-ws__scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 4px 0; }
 
 /* ============================================================================
    UI-HOTFIX (2026-08-07) — Expanded row: LEFT SKU identity column height == RIGHT detail height.

@@ -479,3 +479,24 @@ engine, NO browser math, NO Inventory↔Order convergence — it reuses the cano
   exist in the repo mirror (UI-owned).** No scheduler created this round (documented cadence only): 12:00–13:00
   import → 13:10 Inventory Gap batch → 13:20 alerts → Mon 13:30 shipping reco (after that day's gap) → 15:00–16:00
   Order Planning gap. Preferred long-term: import-success → invalidate affected scopes → recalc, not wall-clock.
+
+## D-F1-4B-FM6 — Replenishment Outlook FROZEN primary + UI layout containment (frontend only)
+
+Implements the FM4c presentation freeze and the UI LAYOUT HARD RULE. Frontend-only (inventory-replenishment.js +
+.css); NO formula, NO runtime/DTO/bundle/Apps-Script change.
+- **FROZEN primary surface** = the compact `Window | Gap | Suggested Qty | Note` table ONLY
+  (`_irRecoHorizonOutlookTableHtml`). `Required By` is a subtle sub-line under Window (not a column); `Note` is a
+  truthful per-window state derived ONLY from the canonical gap (`No shortage` / `Replenishment required`; missing
+  → `—`) — no page formula. Destination / Mode / Demand / Covered / Stock / Incoming / Status / Reason are NOT
+  primary columns.
+- **Technical detail DEMOTED to Diagnostics:** the full 6-column horizon detail (Required By / Demand / Covered /
+  Gap / Suggested) + the legacy destination table live under the collapsed `<details>Diagnostics`.
+- **Containment HARD RULE:** the result always stays inside the expanded-SKU card. `.replen-recsum-ws` max-width
+  100%; the outlook table + every wide diagnostics table are wrapped in an `overflow-x:auto` container
+  (`replen-horizon-tablewrap` / `replen-recsum-ws__scroll`) so a very large number or a narrow viewport scrolls
+  INTERNALLY, never overflowing the card. Numeric Gap/Suggested cells are right-aligned `nowrap`; the `Note` cell
+  is `max-width`-bounded with `overflow-wrap:anywhere/word-break` so a long Note never determines table width; long
+  blocked/na reason + canonical error tokens word-break inside their own containers.
+- Tests: inventory-outlook-containment-f1-4b-fm6 (NEW, 33) — states A–H (normal / large qty / long reason /
+  MARKETPLACE_STOCK_MISSING / HORIZONS_NOT_AVAILABLE / all windows / Diagnostics / long error) + CSS containment
+  rules. All prior Inventory tests unchanged (Demand/Covered/Required By now assert against the Diagnostics detail).
