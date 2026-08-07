@@ -699,25 +699,24 @@
 }
 
 /* ============================================================================
-   UI-HOTFIX (2026-08-07) — SKU Handbook (1) filter alignment, (2) hide Data-mode badge.
-   (1) ALIGNMENT ROOT CAUSE: the row (.skuh-filters, align-items:flex-end) aligns the four groups by their
-       BOTTOM edge, so they only line up top+bottom when all four groups are the SAME height. Product Line /
-       Brand / Lifecycle render the shared multi-select (.kmf) inside .skuh-filter-mount, while Search is a
-       plain <input>; there was no EXPLICIT shared control-height owner, so any drift in the .kmf trigger box
-       let the shorter group sink Search below the selects. FIX (shared-owner geometry — no translateY /
-       negative margin / per-field pixel / JS measurement): pin the dropdown control area to the SAME height
-       as the Search input, and give all four labels one shared baseline height (stable even if a label wraps). */
-#sku-handbook-section .skuh-filter label {
-    min-height: 16px;
-    line-height: 16px;
-}
-#sku-handbook-section .skuh-filter-mount {
-    height: var(--km-filter-height, 38px);        /* dropdown control area == the Search input height */
-}
-#sku-handbook-section .skuh-filter--dropdown .kmf,
+   UI-HOTFIX (2026-08-07, rev2) — SKU Handbook (1) filter control alignment, (2) hide Data-mode badge.
+   (1) REAL ROOT CAUSE (inherited GLOBAL css, not the wrapper): the three "dropdowns" render a
+       `<button class="kmf-trigger">` (multi-select-filter.js), which INHERITS the global
+       `button { margin: 4px }` (components.css) — a rule the .kmf-trigger declarations never override —
+       while the Search `<input>` carries ZERO margin. That 4px control-box asymmetry (not the wrapper
+       position) is what pushed Search low, and the rev1 wrapper-height patch merely flipped it high.
+       AUDIT: no global input/select geometry rule exists; box-sizing is border-box for all (base reset);
+       both controls resolve to --km-filter-height (38px). FIX — ONE shared control-geometry owner for BOTH
+       the <input> and the .kmf trigger: identical height + box-sizing + ZERO margin, so both controls share
+       one top+bottom edge under the row's existing align-items:flex-end. No translateY / top offset /
+       negative margin / Search-only compensation. The rev1 wrapper-height + label min-height/line-height
+       patch is REMOVED (superseded — one final owner, not stacked corrections). */
+#sku-handbook-section .skuh-filter > input,
 #sku-handbook-section .skuh-filter--dropdown .kmf-trigger {
-    height: 100%;                                 /* trigger fills the pinned mount height (border-box) */
+    height: var(--km-filter-height, 38px);
     box-sizing: border-box;
+    margin: 0;                    /* neutralize the inherited global button{margin:4px} on the .kmf trigger */
+    vertical-align: top;
 }
 /* (2) PRESENTATION-ONLY: hide the SKU Handbook data-mode badge ("Data: Mock" / "Data: Google Sheet").
    The mode is STILL computed in sku-handbook.js (getDataSourceMode) and the badge is STILL rendered into
