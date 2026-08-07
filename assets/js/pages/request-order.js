@@ -1130,6 +1130,36 @@ function handleRequestOrderSearch() {
   renderRequestOrderTable();
 }
 
+// ---- F1-4B-FM5 · manual "Recalculate All Sites" (Order Planning Gap materialization) ----------------
+// ONE browser request → ONE bounded server batch (enumerate scopes → reuse the canonical monthlyProjection per
+// scope → UPSERT order_planning_gap). NEVER a per-SKU HTTP loop, NEVER a browser recompute. Manual Order Qty /
+// Carton / Note are user decision data and are NOT touched. The button shows the truthful batch summary.
+var _roRecalcAllBusy = false;
+function handleRecalcAllOrderPlanningGap() {
+  if (_roRecalcAllBusy) return;
+  if (!(window.KM && window.KM.DB && typeof window.KM.DB.recalculateOrderPlanningGapAll === 'function')) {
+    alert('Recalculation service is unavailable (Operation DB API not configured).');
+    return;
+  }
+  if (typeof window.confirm === 'function' && !window.confirm('Recalculate the materialized order-planning gap for ALL sites now? This runs one server batch and overwrites the latest T1–T4 result per site/SKU. Manual Order Qty is never changed.')) return;
+  var btn = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-recalc-all-btn') : null;
+  var label = btn ? btn.textContent : '';
+  _roRecalcAllBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Recalculating…'; }
+  function restore() { _roRecalcAllBusy = false; if (btn) { btn.disabled = false; btn.textContent = label || 'Recalculate All Sites'; } }
+  return Promise.resolve(window.KM.DB.recalculateOrderPlanningGapAll({})).then(function (res) {
+    if (res && res.success && res.data) {
+      var d = res.data;
+      alert('Order-planning gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
+    } else {
+      var e = (res && res.error) || {};
+      alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
+    }
+    restore();
+  }).catch(function (err) { alert('Recalculation failed: ' + (err && err.message ? err.message : err)); restore(); });
+}
+window.handleRecalcAllOrderPlanningGap = handleRecalcAllOrderPlanningGap;
+
 function setRequestOrderShowMode(mode) {
   requestOrderState.showMode = mode;
   requestOrderState.page = 1;

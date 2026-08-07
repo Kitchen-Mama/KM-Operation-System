@@ -3374,6 +3374,36 @@ function _doReplenSearch() {
 }
 window.searchReplenishment = searchReplenishment;
 
+// ---- F1-4B-FM5 · manual "Recalculate All Sites" (Inventory Replenishment Gap materialization) --------
+// ONE browser request → ONE bounded server batch (enumerate scopes → reuse the canonical calc per scope →
+// UPSERT inventory_replenishment_gap). NEVER a per-SKU HTTP loop, NEVER a browser recompute. The button shows
+// the truthful batch summary; the materialized-read render cutover is a separate flagged slice.
+var _irRecalcAllBusy = false;
+function handleRecalcAllInventoryGap() {
+  if (_irRecalcAllBusy) return;
+  if (!(window.KM && window.KM.DB && typeof window.KM.DB.recalculateInventoryReplenishmentGapAll === 'function')) {
+    alert('Recalculation service is unavailable (Operation DB API not configured).');
+    return;
+  }
+  if (typeof window.confirm === 'function' && !window.confirm('Recalculate the materialized replenishment gap for ALL sites now? This runs one server batch and overwrites the latest result per site/SKU.')) return;
+  var btn = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-recalc-all-btn') : null;
+  var label = btn ? btn.textContent : '';
+  _irRecalcAllBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Recalculating…'; }
+  function restore() { _irRecalcAllBusy = false; if (btn) { btn.disabled = false; btn.textContent = label || 'Recalculate All Sites'; } }
+  return Promise.resolve(window.KM.DB.recalculateInventoryReplenishmentGapAll({})).then(function (res) {
+    if (res && res.success && res.data) {
+      var d = res.data;
+      alert('Inventory gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
+    } else {
+      var e = (res && res.error) || {};
+      alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
+    }
+    restore();
+  }).catch(function (err) { alert('Recalculation failed: ' + (err && err.message ? err.message : err)); restore(); });
+}
+window.handleRecalcAllInventoryGap = handleRecalcAllInventoryGap;
+
 // AI Plan (Inventory Replenishment) — refreshes replenishment suggestions using the EXISTING Suggested Qty /
 // View Recommendation calculation (renderReplenishment recomputes + re-renders with the CURRENT filter /
 // planning scope; the same entry used on load + Search). It does NOT reset the Category tab, NEVER runs

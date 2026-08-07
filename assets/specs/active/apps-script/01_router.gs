@@ -118,6 +118,17 @@ function doPost(e) {
       return jsonResponse_(handleRecommendationWorkspaceGet_(body));
     }
 
+    // F1-4B-FM5 · Materialized Gap batch recalculation (owner = 43_api_v1_gap_materialization.gs). ONE bounded
+    // server batch per manual button: enumerate scopes → reuse the canonical recommendation calc per scope →
+    // UPSERT the latest result into inventory_replenishment_gap / order_planning_gap. Writes ONLY those two
+    // tables; no new formula; fails closed if the table/header is missing. No business logic here.
+    if (action === 'inventoryReplenishmentGap.recalculate.all') {
+      return jsonResponse_(handleRecalculateInventoryReplenishmentGapBatch_(body));
+    }
+    if (action === 'orderPlanningGap.recalculate.all') {
+      return jsonResponse_(handleRecalculateOrderPlanningGapBatch_(body));
+    }
+
     // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
     if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
       return handleGetShippingMethodCandidates_(body);

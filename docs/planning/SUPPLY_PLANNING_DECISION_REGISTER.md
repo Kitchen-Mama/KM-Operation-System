@@ -451,3 +451,31 @@ so there is **no bundle rebuild and no Apps Script sync** — GitHub Pages deplo
   `<details>Diagnostics</details>`. Session cache preserves horizons with zero refetch.
 - **Top-table Suggested Qty owner UNCHANGED:** still `_irAggregateActionableRecommendedQty` (Σ actionable canonical
   `recommendedQty`, FM3a) — NOT a sum of horizon gaps. Order Planning monthlyProjection + manual Order Qty untouched.
+
+## D-F1-4B-FM5 — Materialized Gap tables + manual all-site batch recalculation
+
+Moves Inventory Replenishment / Order Planning toward READING precomputed DB results instead of recomputing on
+expand. New server owner `43_api_v1_gap_materialization.gs` (NOT bundled) + router actions
+`inventoryReplenishmentGap.recalculate.all` / `orderPlanningGap.recalculate.all`. NO new formula, NO second
+engine, NO browser math, NO Inventory↔Order convergence — it reuses the canonical calc
+(`handleRecommendationWorkspaceGet_` → KMHP horizons / KMTPP monthlyProjection).
+- **Two USER-CREATED tables (no schema change this round):** `inventory_replenishment_gap` (D18/D30/D45/D90 gap+
+  suggested) and `order_planning_gap` (T1–T4 month+gap+suggested). Business key = company+country+marketplace+sku;
+  **latest result only, bounded UPSERT, no history**. Fails CLOSED via `prodRequireSheet_` (S0.5 validate-only) if
+  the table/header is missing — never auto-creates/repairs.
+- **Status semantics:** READY | BLOCKED | ERROR. READY+0 = canonical valid zero; BLOCKED/ERROR leave qty blank.
+  **missing/unresolved NEVER becomes 0.** `note` carries the concise canonical token.
+- **Multi-warehouse:** each destination calculated INDEPENDENTLY by the frozen runtime (warehouse isolation); the
+  site row = **SUM** of per-destination window/tier results. Materialization AGGREGATION, never inventory pooling.
+  Destination routing stays Execution Plan authority and is NOT stored in the gap tables.
+- **Manual batch:** one "Recalculate All Sites" button per page → `KM.DB.recalculate*GapAll()` (canonical text-first
+  command runner) → ONE bounded server batch (enumerate scopes → ONE canonical read per scope → batched UPSERT).
+  **Never a per-SKU HTTP loop.** Timestamps: calculation_date/month from frozen config authority (server, not
+  clock); calculated_at/updated_at = batch write time. Writes ONLY the two gap tables.
+- **Read cutover = NOT YET (bounded):** the write path + manual button ship now; the page render still uses the live
+  runtime. Materialized-read render cutover (behind an explicit flag, materialized primary) is the next slice.
+- **Scheduler audit:** entry `runAmazonSnapshotImports()`; only `amazon_daily_sales_snapshot` has a `scheduleTime`
+  (16:00 Asia/Taipei); **NO `ScriptApp` time-trigger and NO recommendation/warning/Monday/Order-Planning scheduler
+  exist in the repo mirror (UI-owned).** No scheduler created this round (documented cadence only): 12:00–13:00
+  import → 13:10 Inventory Gap batch → 13:20 alerts → Mon 13:30 shipping reco (after that day's gap) → 15:00–16:00
+  Order Planning gap. Preferred long-term: import-success → invalidate affected scopes → recalc, not wall-clock.

@@ -2747,6 +2747,13 @@ window.KM.DB.appendShippingPlanNote = function(payload) { return _kmWeeklyComman
 // Decision Layer Completion (Done): mark an Approved + transferred plan completed { shipping_plan_id, actor? }.
 window.KM.DB.completeShippingPlan = function(payload) { return _kmWeeklyCommand_('completeShippingPlan', payload); };
 
+// F1-4B-FM5 · Manual "Recalculate All Sites" batch commands. ONE browser request → ONE bounded server batch
+// (enumerate scopes → reuse canonical calc per scope → UPSERT latest into the gap table). Never a per-SKU HTTP
+// loop. Uses the canonical C1 command runner (text-first, transport/business classified, never throws). The
+// page performs its own single readback of the materialized table; this runner never reloads the whole DB.
+window.KM.DB.recalculateInventoryReplenishmentGapAll = function(payload) { return _kmWeeklyCommand_('inventoryReplenishmentGap.recalculate.all', payload || {}); };
+window.KM.DB.recalculateOrderPlanningGapAll = function(payload) { return _kmWeeklyCommand_('orderPlanningGap.recalculate.all', payload || {}); };
+
 // ---- Weekly Plan Layer-1/2 + Combined Plan + Method Recommendation adapters (2026-07-28) ----
 // All matching is CODE/ID based server-side. Weekly Plan NEVER persists rate_card_id; carrier_name is
 // resolved live (KM.display.carrierName). READ helpers do not force a DB reload; WRITE helpers do.
