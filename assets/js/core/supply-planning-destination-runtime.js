@@ -170,11 +170,12 @@
     });
     unresolvedRefs.sort(cmpStr);
 
-    var confirmed = 0;
+    var confirmed = 0, qiEvents = [];
     if (resolvedResults.length) {
-      if (!nonEmpty(input.requiredByDate)) { issues.push(iss('MISSING_REQUIRED_BY_DATE', 'requiredByDate required to evaluate marketplace Qualified Incoming')); return { confirmedQualifiedIncomingQty: null, incomingCompleteness: 'UNAVAILABLE', unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, issues: issues, perCandidate: identity }; }
+      if (!nonEmpty(input.requiredByDate)) { issues.push(iss('MISSING_REQUIRED_BY_DATE', 'requiredByDate required to evaluate marketplace Qualified Incoming')); return { confirmedQualifiedIncomingQty: null, incomingCompleteness: 'UNAVAILABLE', unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, issues: issues, perCandidate: identity, qualifiedEvents: [] }; }
       var qi = QI.evaluateQualifiedIncoming({ requiredByDate: s(input.requiredByDate), kmShipmentResults: resolvedResults, externalAuthorityResults: input.externalIncomingResults || [] });
       confirmed = qi.qualifiedIncomingQuantity; // late-risk stays visible + non-covering (NOT in confirmed)
+      qiEvents = (qi && qi.qualifiedEvents) ? qi.qualifiedEvents : [];   // F1-4B-FM3c-1 additive event surfacing
     } else if (input.externalIncomingResults && input.externalIncomingResults.length) {
       // external observed evidence is quarantined (§38) — never confirmed; evaluated only to surface diagnostics
       QI.evaluateQualifiedIncoming({ requiredByDate: s(input.requiredByDate) || '2000-01-01', kmShipmentResults: [], externalAuthorityResults: input.externalIncomingResults });
@@ -183,7 +184,8 @@
     var completeness = unresolvedRefs.length > 0 ? 'PARTIAL' : 'COMPLETE';
     return {
       confirmedQualifiedIncomingQty: confirmed, incomingCompleteness: completeness,
-      unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, issues: issues, perCandidate: identity
+      unresolvedIncomingCount: unresolvedRefs.length, unresolvedIncomingRefs: unresolvedRefs, issues: issues, perCandidate: identity,
+      qualifiedEvents: qiEvents   // F1-4B-FM3c-1 additive: ETA-dated qualified events (empty on UNAVAILABLE / no resolved candidates)
     };
   }
 
@@ -277,7 +279,7 @@
       var stockRes = resolveMarketplaceCurrentStock({ rows: (rawSnapshots.amazonInventory !== undefined ? rawSnapshots.amazonInventory : options.amazonInventory), scope: { country: dest.country, marketplace: dest.marketplace, sku: scope.sku } });
       var qir = resolveMarketplaceQualifiedIncoming({ candidates: (rawSnapshots.marketplaceIncomingCandidates !== undefined ? rawSnapshots.marketplaceIncomingCandidates : options.marketplaceIncomingCandidates), marketplaces: authorities.marketplaces, scope: dest, requiredByDate: options.requiredByDate || request.requiredByDate, externalIncomingResults: options.externalIncomingResults });
       var mrec = resolveMarketplaceRecommendation({ demandQty: demandQty, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, incomingCompleteness: qir.incomingCompleteness, approvedCommittedSupplyQty: options.approvedCommittedSupplyQty, unitsPerCarton: options.unitsPerCarton });
-      var mline = { destination: dest, recommendationMode: mrec.recommendationMode, calculatedGap: mrec.calculatedGap, recommendedQty: mrec.recommendedQty, provisionalOrderNeed: mrec.provisionalOrderNeed, blocked: mrec.blocked, blockedReason: mrec.blockedReason, incomingCompleteness: mrec.incomingCompleteness, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, unresolvedIncomingCount: qir.unresolvedIncomingCount, unresolvedIncomingRefs: qir.unresolvedIncomingRefs };
+      var mline = { destination: dest, recommendationMode: mrec.recommendationMode, calculatedGap: mrec.calculatedGap, recommendedQty: mrec.recommendedQty, provisionalOrderNeed: mrec.provisionalOrderNeed, blocked: mrec.blocked, blockedReason: mrec.blockedReason, incomingCompleteness: mrec.incomingCompleteness, currentStockQty: stockRes.qty, confirmedQualifiedIncomingQty: qir.confirmedQualifiedIncomingQty, unresolvedIncomingCount: qir.unresolvedIncomingCount, unresolvedIncomingRefs: qir.unresolvedIncomingRefs, qualifiedEvents: qir.qualifiedEvents || [] };
       var mIssues = (mrec.issues || []).concat(stockRes.issues || []).concat(qir.issues || []);
       return { ready: !mrec.blocked, destination: dest, recommendationMode: 'MARKETPLACE_ORDER_NEED', line: mline, issues: mIssues, meta: meta };
     }

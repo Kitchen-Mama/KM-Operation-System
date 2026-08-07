@@ -255,3 +255,14 @@ recommendation.workspace.get handler to build per-tier demand events (recoWsRegu
 ETA-dated incoming events (KMQI) and emit additive line.monthlyProjection (existing scalar line fields
 unchanged); (b) Order Planning + Inventory consumer cutover to display the monthly gap / carton-safe Suggested;
 (c) resolve the day-horizon authority freeze, then emit additive line.horizons[].
+
+## F1-4B-FM3c-1 (2026-08-07) — Qualified Incoming Event Exposure (additive)
+
+DONE: MARKETPLACE qualifiedEvents surfaced additively from KMQI → KMDR line (Outcome A). Bundle regenerated
+(904d45cb; KMTPP not bundled). D-F1-4B-FM3c-1.
+HALT (bounded): WAREHOUSE per-shipment ETA is dropped at KMSF supply-lifecycle entry (Outcome B). FM3c-1b
+(needs authorization): additively preserve eta on the KMSF lifecycle entry + source-projection supplyRow (pure
+fact preservation, no allocation change) → makes WAREHOUSE Outcome A.
+NEXT: FM3c-2 (after FM3c-1b) — bundle KMTPP + handler monthlyProjection assembly (demand=fcByMonth; incoming=
+qualifiedEvents dated by ETA; opening=stock; per-tier required-by=first day M+k) + additive line.monthlyProjection
+(+ per-tier carton suggestedOrderQty via KMCALC) + transport tests. Then FM3d Order Planning UI cutover.

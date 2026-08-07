@@ -336,6 +336,19 @@
     var summaryReasons = [];
     for (var s = 0; s < SUMMARY_ORDER.length; s++) { if (summarySet[SUMMARY_ORDER[s]]) summaryReasons.push(SUMMARY_ORDER[s]); }
 
+    // F1-4B-FM3c-1 — ADDITIVE event exposure. Surface the ALREADY-QUALIFIED candidates as canonical
+    // event-level facts (identity + ETA + eligible qty), derived PURELY from candidateResults — no new
+    // eligibility, no requalification, no ETA fabrication. ONLY qualificationState==='QUALIFIED' becomes an
+    // event (LATE_RISK / REVIEW / EXCLUDED / quarantined-external stay OUT — never a fake usable qty). The
+    // aggregate qualifiedIncomingQuantity + incomingCompleteness are UNCHANGED. incomingId = the canonical
+    // count-once lineageKey (dedup already collapsed identical lineages), so no shipment appears twice.
+    var qualifiedEvents = candidateResults
+      .filter(function (cr) { return cr.qualificationState === 'QUALIFIED'; })
+      .map(function (cr) {
+        return { incomingId: cr.lineageKey, eta: (cr.candidate && cr.candidate.eta) || null,
+          eligibleQty: cr.qualifiedQuantity, sourceType: 'KM', state: cr.qualificationState };
+      });
+
     return {
       engineType: 'QUALIFIED_INCOMING',
       requiredByDate: requiredByDate,
@@ -352,6 +365,7 @@
       adoptedExternalCount: adoptedExternalCount,
       adoptionPendingCount: adoptionPendingCount,
       candidateResults: candidateResults,
+      qualifiedEvents: qualifiedEvents,   // F1-4B-FM3c-1 additive: ETA-dated qualified events (identity + eta + eligibleQty)
       externalResults: externalResultsOut,
       summaryReasons: summaryReasons
     };

@@ -4535,3 +4535,17 @@ special-event-once, H multi-warehouse isolation, I MARKETPLACE no-fake-warehouse
 mutation/JSON-safe/no clock), K generic checkpoint mechanism + day-horizon no-invention, L full T1..T4 chain.
 No .gs/bundle change (owner not yet bundled/wired — FM3c). Full suite 105 files / 0 failing; Golden 39/1/0; #34
 Pending; bundle parity f803f73e... unchanged.
+
+## F1-4B-FM3c-1 checkpoint (2026-08-07) — Qualified Incoming Event Exposure (PARTIAL: MARKETPLACE done, WAREHOUSE HALT)
+
+Additive authority exposure only (no projection wiring, no UI, no formula change). MARKETPLACE = Outcome A:
+KMQI now returns `qualifiedEvents:[{incomingId(lineageKey), eta, eligibleQty(qualifiedQuantity), sourceType:'KM',
+state}]` (QUALIFIED only), surfaced through resolveMarketplaceQualifiedIncoming (+ UNAVAILABLE early-return → [])
+and onto the MARKETPLACE line in KMDR.resolveUnifiedDestinationRecommendation. Existing confirmedQualifiedIncomingQty
++ incomingCompleteness + count-once + ETA rules UNCHANGED; LATE_RISK/REVIEW/EXCLUDED/missing-ETA/UNAVAILABLE never
+become fake usable events. WAREHOUSE = Outcome B bounded HALT: KMSF supply-lifecycle entry (source-facts.js) drops
+per-shipment eta before an ETA-dated warehouse event exists (source-facts.js is outside FM3c-1 file scope) — the
+smallest future fix is additively preserving eta onto the KMSF entry + source-projection supplyRow (FM3c-1b). Decision
+D-F1-4B-FM3c-1. Bundle regenerated (KMQI+KMDR changed): sha256 904d45cb...; 30 modules (KMTPP still NOT bundled).
+Tests: qualified-incoming-event-exposure-f1-4b-fm3c1.test.js (NEW, 23). Full suite 106 files / 0 failing; Golden
+39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (new hash).

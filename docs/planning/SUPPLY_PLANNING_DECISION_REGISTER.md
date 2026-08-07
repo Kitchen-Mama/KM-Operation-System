@@ -227,3 +227,40 @@ missing-authority statement (business freeze required).
 
 **recommendedQty / carton conversion:** intentionally NOT performed inside this owner (separation of projection
 vs recommendation). The downstream frozen resolver (KMCALC carton CEIL/FLOOR) consumes `remainingGapQty`.
+
+## D-F1-4B-FM3c-1 — Qualified Incoming Event Exposure (additive; no qualification/allocation change)
+
+**MARKETPLACE owner:** `KMQI.evaluateQualifiedIncoming` (supply-planning-qualified-incoming.js) → surfaced via
+`resolveMarketplaceQualifiedIncoming` and the MARKETPLACE line in
+`KMDR.resolveUnifiedDestinationRecommendation` (supply-planning-destination-runtime.js).
+**Status:** Outcome A — event facts already existed in `candidateResults`; now surfaced additively as
+`qualifiedEvents: [{ incomingId, eta, eligibleQty, sourceType, state }]`.
+- **incomingId authority** = KMQI candidate `lineageKey` (the canonical count-once identity; dedup already
+  collapses identical lineages, so no shipment appears twice).
+- **ETA authority** = KMQI candidate `eta` (strict YYYY-MM-DD; no fabrication; missing ETA → not QUALIFIED →
+  not an event).
+- **quantity authority** = KMQI `qualifiedQuantity` (the QUALIFIED state's eligible qty).
+- **completeness authority** = unchanged: `confirmedQualifiedIncomingQty` + `incomingCompleteness`
+  (COMPLETE/PARTIAL/UNAVAILABLE) are byte-for-byte semantically unchanged. Only `qualificationState ===
+  'QUALIFIED'` becomes an event; LATE_RISK / REVIEW / EXCLUDED / quarantined-external stay OUT (never a fake
+  usable qty); UNAVAILABLE → `qualifiedEvents: []`.
+- **Explicit:** ADDITIVE EXPOSURE ONLY — no eligibility, ETA rule, count-once, PARTIAL/UNAVAILABLE, or
+  allocation formula was changed.
+
+**WAREHOUSE owner:** `KMSF` supply-lifecycle (`supply-planning-source-facts.js`
+`buildSupplyLedger`/`projectSupplyLifecycle`) → `supply-planning-source-projection.js` supplyRows → KMPS
+`supplySourceEntries`.
+**Status:** Outcome B — **BOUNDED HALT (unresolved).** Granularity-loss point: the shipment lifecycle ENTRY
+carries `supplyLineageRef, warehouseId, poolType, lifecycleBucket, quantity` but **DROPS the per-shipment
+`eta`** (the candidate `c.eta` is consumed by the ETA gate but never preserved on the output entry); source-
+projection supplyRows likewise carry no `eta`. So no ETA-dated, destination-specific warehouse incoming EVENT
+exists downstream — warehouse incoming reaches the handler only as an aggregate `qualifiedIncomingQty`.
+`supply-planning-source-facts.js` is OUTSIDE this round's authorized file scope, so no change was made.
+**Smallest proposed future authority change (FM3c-1b, requires authorization):** additively preserve the
+already-validated `eta` (and `destinationWarehouseId`) onto the KMSF lifecycle entry, then copy it onto the
+source-projection supplyRow — a pure fact-preservation of an existing validated value, NO allocation/
+qualification math change. That would make WAREHOUSE Outcome A. NOT a per-tier KMPS algorithm.
+
+Bundle: KMQI + KMDR are bundled modules → `90_generated_supply_planning_bundle.gs` regenerated via the build
+tool (30 modules; sha256 904d45cb0a4550eea87064aa1c0b5ba8642fa4fd0c7aa68dd56be996798c8e23). KMTPP NOT bundled
+this round.
