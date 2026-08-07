@@ -709,3 +709,28 @@
     }
     #overseas-stock-section .ovs-calendars { flex-direction: column; gap: 1rem; }
 }
+
+/* ============================================================================
+   UI-HOTFIX (2026-08-07) — GREEN (.btn-secondary) vs BLUE (.btn-primary) button parity.
+   ROOT CAUSE: the global .btn-secondary (components.css) overrides the blue .btn authority with
+   `padding: 0.8rem 1.5rem` — adding vertical padding on top of the shared fixed height:36px, so the
+   green label sits LOW — plus border-radius:8px / font-size:0.9rem / box-shadow that the blue .btn
+   does not have. Blue keeps the .btn token geometry (padding:0 16px, radius 4px, font-size 14px).
+   FIX (scoped to THIS page + its modals only — NOT a global button refactor): green inherits the
+   SAME .btn geometry; only the semantic color differs. No transform/negative-margin/offset hacks.
+   ============================================================================ */
+#overseas-stock-section .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--btn-height);
+    box-sizing: border-box;
+}
+#overseas-stock-section .btn.btn-secondary {
+    height: var(--btn-height);
+    padding: 0 var(--btn-padding-inline);
+    border-radius: var(--btn-radius);
+    font-size: var(--btn-font-size);
+    font-weight: var(--btn-font-weight);
+    box-shadow: none;
+}

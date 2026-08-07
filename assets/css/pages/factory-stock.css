@@ -561,3 +561,28 @@
 #factory-stock-section .fii-result .fii-ok { color: #16A34A; font-weight: 700; }
 #factory-stock-section .fii-result .fii-error { color: #B91C1C; font-weight: 700; }
 #factory-stock-section .fii-result .fii-reconfirm { color: #B45309; font-weight: 600; margin-top: 4px; }
+
+/* ============================================================================
+   UI-HOTFIX (2026-08-07) — GREEN (.btn-secondary) vs BLUE (.btn-primary) button parity.
+   ROOT CAUSE: the global .btn-secondary (components.css) overrides the blue .btn authority with
+   `padding: 0.8rem 1.5rem` — adding vertical padding on top of the shared fixed height:36px, so the
+   green label sits LOW — plus border-radius:8px / font-size:0.9rem / box-shadow that the blue .btn
+   does not have. Blue keeps the .btn token geometry (padding:0 16px, radius 4px, font-size 14px).
+   FIX (scoped to THIS page + its modals only — NOT a global button refactor): green inherits the
+   SAME .btn geometry; only the semantic color differs. No transform/negative-margin/offset hacks.
+   ============================================================================ */
+#factory-stock-section .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--btn-height);
+    box-sizing: border-box;
+}
+#factory-stock-section .btn.btn-secondary {
+    height: var(--btn-height);
+    padding: 0 var(--btn-padding-inline);
+    border-radius: var(--btn-radius);
+    font-size: var(--btn-font-size);
+    font-weight: var(--btn-font-weight);
+    box-shadow: none;
+}
