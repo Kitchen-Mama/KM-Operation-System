@@ -69,6 +69,13 @@
       if (mfc === null) { missingMonths[ym] = 1; continue; }
       demandEvents.push({ demandId: 'RFC-' + iso(cy, cm, cd), date: iso(cy, cm, cd), qty: mfc / daysInMonth(cy, cm), demandType: 'REGULAR_FORECAST_DAILY', month: ym });
     }
+    // F1-4B-FM3f-1 (Authority F): special-event demand enters ONCE on its canonical prep date (100%, never daily-
+    // distributed, never target-adjusted). Caller supplies [{ prepDate:'YYYY-MM-DD', qty }] from the KMPD owner.
+    (Array.isArray(input.specialEventDemands) ? input.specialEventDemands : []).forEach(function (se, k) {
+      se = se || {}; var pd = String(se.prepDate == null ? '' : se.prepDate); var q = numOrNull(se.qty);
+      if (!isIso(pd) || q === null || q <= 0) return;
+      demandEvents.push({ demandId: 'SEV-' + k + '-' + pd, date: pd, qty: q, demandType: 'SPECIAL_EVENT', month: pd.slice(0, 7) });
+    });
 
     // 2. cumulative dated checkpoints D{N} = calcDate + N calendar days (kind 'DAY').
     var checkpoints = [], cpDateByN = {};

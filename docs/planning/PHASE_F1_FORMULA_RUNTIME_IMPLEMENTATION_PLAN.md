@@ -327,3 +327,22 @@ count resilient.
 NEXT: FM4b — Inventory Replenishment UI cutover to render line.horizons D18/D30/D45/D90 (runtime is ready). Requires
 live Script Property RECOMMENDATION_CALCULATION_DATE. MARKETPLACE later-arrival time-phasing + WAREHOUSE
 ALLOCATION_FACTS_NOT_READY remain separate authority-gated tasks.
+
+## F1-4B-FM3f-1 (2026-08-07) — Canonical planning-input correction, Commit 1 (A/D/E/F; runtime only)
+
+DONE: corrected the monthlyProjection/horizons INPUTS (root cause of the FM3f HALT) at the runtime/source-fact
+layer — NO page-side formula, NO write, NO DB/schema, NO FM4b UI. New bundled owner KMPD (planning-demand;
+kmpd-fm3f1-1) replicates the frozen page owners so all consumers share ONE demand authority. A: KMDR marketplace
+opening = Site Stock (available + fc_transfer + fc_processing; customer_order + unfulfillable excluded; never double
+counted as incoming). E: Target%-adjusted regular FC via fc_target_rules (added to KMPS canonical read; 13 tables). F:
+special-event FC 100% at prep month (start−30d), once. D: current-month remaining demand (calc-DATE anchored; daily ÷
+real month length) consumed PRE-T1. Additive DTO: destinationGapQty / overseasCoveredQty(0) / factoryCoveredQty(0) /
+residualOrderNeedQty (+ openingDestinationSupplyQty / qualifiedIncomingQty); suggestedOrderQty = cartonized residual
+new-order need. horizons consume same corrected demand (KMHP +specialEventDemands). KMTPP/KMHP chronology + existing
+DTO fields unchanged. CO1100-R: Site Stock 7374, pre-T1 2400 → T1 opening 4974, T1 gap 2026 / suggested 2040
+(replaces wrong 1714), T2 4282, T3 7500, T4 0. D-F1-4B-FM3f-1. Bundle 32→33 (KMPD); --check PASS; bundle_sha256
+b1fc01ad. Tests: planning-demand owner (27) + CO1100-R correction handler (20); ripple updates (bundle 33, reads 13,
+additive DTO keys).
+NEXT: Commit 2 — B/C within-request overseas + factory allocation (deterministic, read-only, source consumed ≤ once
+per request; no persistent reservation / cross-request conservation → Allocation Draft / Request Order later). Then
+FM4b Inventory UI. Inventory Replenishment and Order Planning remain distinct planning models (numbers not reconciled).

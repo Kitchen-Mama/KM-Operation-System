@@ -29,7 +29,9 @@ var H = (new Function(BUNDLE + '\n' + HANDLER + '\n return {' +
   '};'))();
 
 var MONTHS = ['2026-09', '2026-10', '2026-11', '2026-12'];   // M+1..M+4 for calcMonth 2026-08
-var TIER_KEYS = 'coveredQty,demandQty,incomingAddedQty,month,openingSupplyQty,remainingGapQty,remainingSupplyQty,suggestedOrderQty,tier';
+// F1-4B-FM3f-1 additive DTO: destinationGapQty / overseasCoveredQty / factoryCoveredQty / residualOrderNeedQty +
+// openingDestinationSupplyQty / qualifiedIncomingQty added alongside the original fields (backward compatible).
+var TIER_KEYS = 'coveredQty,demandQty,destinationGapQty,factoryCoveredQty,incomingAddedQty,month,openingDestinationSupplyQty,openingSupplyQty,overseasCoveredQty,qualifiedIncomingQty,remainingGapQty,remainingSupplyQty,residualOrderNeedQty,suggestedOrderQty,tier';
 function dm(a, b, c, d) { return { '2026-09': a, '2026-10': b, '2026-11': c, '2026-12': d }; }
 
 // =============================================================================
@@ -126,7 +128,7 @@ eq([lm.calculatedGap, lm.recommendedQty, lm.currentStockQty, lm.qualifiedIncomin
 ok(Array.isArray(lm.monthlyProjection) && lm.monthlyProjection.length === 4, 'M2 additive line.monthlyProjection with 4 tiers');
 eq([lm.monthlyProjection[0].openingSupplyQty, lm.monthlyProjection[0].demandQty, lm.monthlyProjection[0].remainingGapQty, lm.monthlyProjection[0].suggestedOrderQty], [120, 250, 130, 132], 'M3 T1: opening = currentStockQty 120, demand 250, gap 130, CEIL→132');
 eq([lm.monthlyProjection[1].openingSupplyQty, lm.monthlyProjection[1].remainingGapQty], [0, 250], 'M4 T2: carry-forward opening 0, gap 250');
-ok(cM.getSheetByName === 12 && cM.write === 0, 'O request count unchanged (12 targeted reads; ZERO writes) — projection adds no HTTP/read');
+ok(cM.getSheetByName === 13 && cM.write === 0, 'O request count unchanged (13 targeted reads; ZERO writes) — projection adds no HTTP/read');
 var roundtrip = JSON.parse(JSON.stringify(envM));   // FM3a session cache stores env.data verbatim (JSON)
 ok(roundtrip.data.lines[0].monthlyProjection.length === 4, 'P monthlyProjection survives JSON round-trip (FM3a session cache compatible)');
 ok(cM.write === 0, 'Q no writes on the READ path');
@@ -146,7 +148,7 @@ var wB = envW.data.lines.filter(function (l) { return l.warehouseId === 'WH-B'; 
 ok(wA.blocked === true && wB.blocked === true && wA.blockedReason === 'ALLOCATION_FACTS_NOT_READY', 'G1 warehouse lines blocked ALLOCATION_FACTS_NOT_READY (pre-existing workspace state, not FM3c-2)');
 ok(wA.monthlyProjection === undefined && wB.monthlyProjection === undefined, 'G2 blocked line carries NO monthlyProjection (no fabricated tiers — §12 absent-on-blocked)');
 eq([wA.allocatedForecastQty, wB.allocatedForecastQty], [300, 700], 'G3 pre-existing scalar allocatedForecastQty unchanged (30/70 fanout 300/700)');
-ok(cW.getSheetByName === 12 && cW.write === 0, 'G4 one targeted read for the 2-warehouse fanout; zero writes (projection adds no read)');
+ok(cW.getSheetByName === 13 && cW.write === 0, 'G4 one targeted read for the 2-warehouse fanout; zero writes (projection adds no read)');
 
 console.log('\n----------------------------------------');
 console.log('MONTHLY PROJECTION TRANSPORT (F1-4B-FM3c-2): ' + pass + ' passed, ' + fail + ' failed');

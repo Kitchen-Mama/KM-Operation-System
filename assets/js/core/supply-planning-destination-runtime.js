@@ -59,10 +59,14 @@
     return DA.normalizeRecommendationDestination(input, authorities);
   }
 
-  // ================================ §5.2 MARKETPLACE current stock (amazon_inventory_snapshot only) ==========
-  // Reads ONLY amazon_inventory_snapshot.available_qty for the (country, marketplace, sku) scope. Overseas /
-  // factory rows (any row carrying a warehouse identity, or lacking an available_qty field) are excluded. Explicit
-  // 0 stays 0; no matching row = missing (null), NEVER a fabricated 0; >1 distinct value = canonical conflict.
+  // ================================ §5.2 MARKETPLACE OPENING DESTINATION STOCK (canonical Site Stock) =========
+  // F1-4B-FM3f-1 (Authority A, user-frozen): the canonical marketplace OPENING_DESTINATION_STOCK owner. Site Stock
+  // = amazon_inventory_snapshot.available_qty + fc_transfer_qty + fc_processing_qty (all already inside the Amazon
+  // fulfillment network). Customer Orders + Unsellable EXCLUDED. available_qty is the REQUIRED base (missing → still
+  // missing, NEVER a fabricated 0); fc_transfer/fc_processing are supplementary buckets (absent → 0). transfer /
+  // processing are NEVER modeled as qualified incoming (KMQI reads shipments only), so there is NO double count.
+  // Overseas/factory rows (any warehouse identity, or no available_qty field) are excluded — those are ALLOCATABLE
+  // sources (B/C), not opening stock. Explicit 0 stays 0; >1 distinct composed value = canonical conflict.
   function resolveMarketplaceCurrentStock(input) {
     input = input || {}; var scope = input.scope || {}; var issues = [];
     if (input.rows === undefined || input.rows === null) {
@@ -78,15 +82,17 @@
       var hasAvail = has(r, 'availableQty') || has(r, 'available_qty');
       if (!hasAvail) return;
       if (!(eqv(r.country, country) && eqv(r.marketplace, marketplace) && eqv(r.sku, sku))) return;
-      var raw = has(r, 'availableQty') ? r.availableQty : r.available_qty;
-      var q = qtyNum(raw);
+      var q = qtyNum(has(r, 'availableQty') ? r.availableQty : r.available_qty);
       if (q === null) return; // an unreadable available_qty is not a zero
+      var tr = qtyNum(has(r, 'fcTransferQty') ? r.fcTransferQty : r.fc_transfer_qty); if (tr === null) tr = 0;   // absent → 0 (supplementary)
+      var pr = qtyNum(has(r, 'fcProcessingQty') ? r.fcProcessingQty : r.fc_processing_qty); if (pr === null) pr = 0;
+      var site = q + tr + pr;   // canonical Site Stock (OPENING_DESTINATION_STOCK)
       matched++;
-      vals[String(q)] = q;
+      vals[String(site)] = site;
     });
     var distinct = Object.keys(vals);
     if (matched === 0) return { ready: false, qty: null, missing: true, conflict: false, issues: [] };
-    if (distinct.length > 1) return { ready: false, qty: null, missing: false, conflict: true, issues: [iss('MARKETPLACE_STOCK_CONFLICT', 'conflicting amazon available_qty for ' + [country, marketplace, sku].join('/') + ': ' + distinct.join(','))] };
+    if (distinct.length > 1) return { ready: false, qty: null, missing: false, conflict: true, issues: [iss('MARKETPLACE_STOCK_CONFLICT', 'conflicting amazon Site Stock for ' + [country, marketplace, sku].join('/') + ': ' + distinct.join(','))] };
     return { ready: true, qty: vals[distinct[0]], missing: false, conflict: false, issues: issues };
   }
 

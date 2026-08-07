@@ -400,3 +400,34 @@ formula rewrite; no DB/write; no Inventory UI (that is FM4b).
   its own `warehouseQualifiedEvents`; never pooled). WAREHOUSE `ALLOCATION_FACTS_NOT_READY` block preserved (unfixed).
 - Bundle: KMTPP + KMHP bundled → regenerated (32 modules; `--check` PASS; bundle_sha256
   `56b225e60792b1202a95270a92fa536dcb211c53a5c64b5372ac1a5c685234d6`). FM4b (Inventory UI) consumes `line.horizons`.
+
+## D-F1-4B-FM3f-1 — Canonical planning-input correction, Commit 1 (Authorities A/D/E/F; runtime only)
+
+User-frozen (FM3f-1) + implemented at the runtime/source-fact layer — NO page-side formula, NO write, NO DB/schema
+change, NO FM4b UI. Corrects the monthlyProjection/horizons INPUTS (the prior HALT's root cause), not the KMTPP/KMHP
+chronology. New canonical owner **KMPD** (`supply-planning-planning-demand.js`, bundled; VERSION `kmpd-fm3f1-1`)
+replicates the frozen page owners so Order Planning + Inventory + monthlyProjection + horizons share ONE demand
+authority.
+- **A · Site Stock (OPENING_DESTINATION_STOCK):** `KMDR.resolveMarketplaceCurrentStock` = `available_qty +
+  fc_transfer_qty + fc_processing_qty` (customer_order + unfulfillable EXCLUDED). available_qty is the required base
+  (missing → still missing, never fabricated 0); transfer/processing absent → 0; NEVER modeled as qualified incoming
+  (KMQI = shipments only) → no double count. Single marketplace planning-stock owner all consumers reuse.
+- **E · Target %:** `KMPD.adjustedRegularFc` = round(Base × TargetPct/100); TargetPct from `fc_target_rules` via the
+  SAME matching as page `_roTargetPct` ({month}_pct → target_percentage → 100 default; no rules → 100).
+  `fc_target_rules` added to KMPS.CANONICAL_TABLES → 13 tables/request.
+- **F · Special Event FC:** 100% (never target-adjusted), assigned ONCE to prep month (eventStartDate − 30d),
+  scoped+active. Monthly demand = adjusted regular + special.
+- **D · Current-month remaining (PRE-T1):** `KMPD.currentMonthRemainingDemand` = adjusted current-month FC ÷ real
+  days-in-month × days AFTER RECOMMENDATION_CALCULATION_DATE + prep-in-window special; consumed BEFORE T1 (tier=null
+  event at current-month end; reduces T1 opening; surfaced additively as `line.currentMonthRemaining`).
+- **DTO (additive):** per tier `openingDestinationSupplyQty`, `qualifiedIncomingQty`, `destinationGapQty`,
+  `overseasCoveredQty`(0), `factoryCoveredQty`(0), `residualOrderNeedQty` (= destinationGap − overseas − factory);
+  `suggestedOrderQty` = cartonized RESIDUAL new-order need. Existing fields byte-compatible. horizons consume the
+  same adjusted+special demand (KMHP gained additive `specialEventDemands`).
+- **CO1100-R corrected:** Site Stock 7374; pre-T1 Aug 8–31 = 2400 → T1 opening 4974; **T1 Sep 7000 → destinationGap
+  2026, suggested 2040** (replaces wrong 1714); T2 4282; T3 7500; T4 0. Bundle 33 modules; `--check` PASS;
+  bundle_sha256 `b1fc01ad2d9e16cc77b56f7d0d2abc32a82b8549276cd8ab15fab091381cf33d`.
+- **Commit 2 (next, authorized, within-request):** B overseas + C factory allocation (deterministic, read-only,
+  source consumed ≤ once per request; no persistent reservation) → overseasCoveredQty/factoryCoveredQty > 0,
+  residualOrderNeedQty < destinationGap. Inventory Replenishment vs Order Planning stay distinct models (numbers not
+  reconciled).

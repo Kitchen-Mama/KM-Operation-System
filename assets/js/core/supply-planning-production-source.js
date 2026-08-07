@@ -48,7 +48,9 @@
     { key: 'shippingPlans', sheet: 'shipping_plans', required: false },
     { key: 'shipments', sheet: 'shipments', required: false },
     // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
-    { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false }
+    { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false },
+    // F1-4B-FM3f-1 (Authority E): Target % rules — read-only; missing → 100% (frozen fallback), never invented.
+    { key: 'fcTargetRules', sheet: 'fc_target_rules', required: false }
   ];
 
   function tablesFor(config) {

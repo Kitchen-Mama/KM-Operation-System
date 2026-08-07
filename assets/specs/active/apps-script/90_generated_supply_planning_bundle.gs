@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 56b225e60792b1202a95270a92fa536dcb211c53a5c64b5372ac1a5c685234d6
+// bundle_sha256 = b1fc01ad2d9e16cc77b56f7d0d2abc32a82b8549276cd8ab15fab091381cf33d
 // modules (in load order):
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5
@@ -30,10 +30,11 @@
 //   supply-planning-planning-context  2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3
 //   supply-planning-demand-allocation  06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed
 //   supply-planning-production-assembly  d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7
-//   supply-planning-destination-runtime  538ed63309659df78b74cdc75c551db8004d139451be3277f8fdff286ff22fff
+//   supply-planning-destination-runtime  a62c98d26aa1f76b54ec27d74c0bfa3ebb9d838c9d6655199f2c7662c456b16a
+//   supply-planning-planning-demand  f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240
 //   supply-planning-time-phased-projection  327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947
-//   supply-planning-horizon-projection  afb84024462012825679be31ced157e970850a4ca6fe2f8c4b9a3d187bd33515
-//   supply-planning-production-source  6caf9efa29c7c7055fc661f4b9ddcdc76524acf8346c2fef4ef06fbca1bb6839
+//   supply-planning-horizon-projection  39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb
+//   supply-planning-production-source  0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530
 //   supply-planning-production-safety  7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6
 //   supply-planning-production-writer  1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364
 //   supply-planning-verification-diagnostics  efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea
@@ -8103,10 +8104,14 @@ function __kmRequire(p) {
     return DA.normalizeRecommendationDestination(input, authorities);
   }
 
-  // ================================ §5.2 MARKETPLACE current stock (amazon_inventory_snapshot only) ==========
-  // Reads ONLY amazon_inventory_snapshot.available_qty for the (country, marketplace, sku) scope. Overseas /
-  // factory rows (any row carrying a warehouse identity, or lacking an available_qty field) are excluded. Explicit
-  // 0 stays 0; no matching row = missing (null), NEVER a fabricated 0; >1 distinct value = canonical conflict.
+  // ================================ §5.2 MARKETPLACE OPENING DESTINATION STOCK (canonical Site Stock) =========
+  // F1-4B-FM3f-1 (Authority A, user-frozen): the canonical marketplace OPENING_DESTINATION_STOCK owner. Site Stock
+  // = amazon_inventory_snapshot.available_qty + fc_transfer_qty + fc_processing_qty (all already inside the Amazon
+  // fulfillment network). Customer Orders + Unsellable EXCLUDED. available_qty is the REQUIRED base (missing → still
+  // missing, NEVER a fabricated 0); fc_transfer/fc_processing are supplementary buckets (absent → 0). transfer /
+  // processing are NEVER modeled as qualified incoming (KMQI reads shipments only), so there is NO double count.
+  // Overseas/factory rows (any warehouse identity, or no available_qty field) are excluded — those are ALLOCATABLE
+  // sources (B/C), not opening stock. Explicit 0 stays 0; >1 distinct composed value = canonical conflict.
   function resolveMarketplaceCurrentStock(input) {
     input = input || {}; var scope = input.scope || {}; var issues = [];
     if (input.rows === undefined || input.rows === null) {
@@ -8122,15 +8127,17 @@ function __kmRequire(p) {
       var hasAvail = has(r, 'availableQty') || has(r, 'available_qty');
       if (!hasAvail) return;
       if (!(eqv(r.country, country) && eqv(r.marketplace, marketplace) && eqv(r.sku, sku))) return;
-      var raw = has(r, 'availableQty') ? r.availableQty : r.available_qty;
-      var q = qtyNum(raw);
+      var q = qtyNum(has(r, 'availableQty') ? r.availableQty : r.available_qty);
       if (q === null) return; // an unreadable available_qty is not a zero
+      var tr = qtyNum(has(r, 'fcTransferQty') ? r.fcTransferQty : r.fc_transfer_qty); if (tr === null) tr = 0;   // absent → 0 (supplementary)
+      var pr = qtyNum(has(r, 'fcProcessingQty') ? r.fcProcessingQty : r.fc_processing_qty); if (pr === null) pr = 0;
+      var site = q + tr + pr;   // canonical Site Stock (OPENING_DESTINATION_STOCK)
       matched++;
-      vals[String(q)] = q;
+      vals[String(site)] = site;
     });
     var distinct = Object.keys(vals);
     if (matched === 0) return { ready: false, qty: null, missing: true, conflict: false, issues: [] };
-    if (distinct.length > 1) return { ready: false, qty: null, missing: false, conflict: true, issues: [iss('MARKETPLACE_STOCK_CONFLICT', 'conflicting amazon available_qty for ' + [country, marketplace, sku].join('/') + ': ' + distinct.join(','))] };
+    if (distinct.length > 1) return { ready: false, qty: null, missing: false, conflict: true, issues: [iss('MARKETPLACE_STOCK_CONFLICT', 'conflicting amazon Site Stock for ' + [country, marketplace, sku].join('/') + ': ' + distinct.join(','))] };
     return { ready: true, qty: vals[distinct[0]], missing: false, conflict: false, issues: issues };
   }
 
@@ -8398,6 +8405,213 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-destination-runtime", module.exports);
 })();
 
+// ----- module: supply-planning-planning-demand (verbatim from assets/js/core/supply-planning-planning-demand.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Canonical Planning-Demand Owner (KMPD) — F1-4B-FM3f-1 (Authorities D/E/F).
+// =============================================================================================
+// ONE canonical runtime owner for the Order-Planning / recommendation PLANNING DEMAND, so Order Planning,
+// Inventory Replenishment, monthlyProjection[] and horizons[] all consume the SAME demand facts (no page-side
+// FC×Target math, no per-consumer duplication). It does NOT own supply, chronology (KMTPP/KMHP), or carton
+// (KMCALC). Pure / deterministic (no clock, no RNG, input never mutated, JSON-safe).
+//
+// Authorities frozen by the user (F1-4B-FM3f-1) and REPLICATED here from the existing owners — never invented:
+//   E · Target %  — Adjusted Regular FC(month) = round(Base Regular FC(month) × TargetPct/100). TargetPct comes
+//       from fc_target_rules via the SAME matching the page owner uses (_roTargetPct, request-order.js): scope by
+//       sku/series/category (scope_id or raw sku/series/category), company exact, country/marketplace exact-or-ALL,
+//       year exact-if-present; then {month}_pct → target_percentage → 100 default. No rules → 100 (frozen fallback).
+//   F · Special Event FC — 100% (NEVER target-adjusted). Assigned ONCE to its PREP month = eventStartDate − 30
+//       calendar days (canonical prep rule, request-order.js _roEventPrepMonth). Scoped + active only.
+//   D · Current-month remaining demand — adjusted Regular FC of the calculation month distributed per calendar
+//       day (÷ real days-in-month) × the days AFTER the calculation date through month end, PLUS special-event FC
+//       whose prep date falls in that remaining-current-month window. Full precision; caller rounds at emission.
+(function (root, factory) {
+  'use strict';
+  var api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.core = window.KM.core || {}; window.KM.core.planningDemand = api; window.KM.planningDemand = api; }
+  return api;
+})(this, function () {
+  'use strict';
+
+  var MONTH_ABBR = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  var DEAD_EVENT = { inactive: 1, deleted: 1, archived: 1, cancelled: 1, void: 1 };
+  var SPECIAL_EVENT_PREP_OFFSET_DAYS = 30;   // canonical prep rule (SUPPLY_PLANNING_CALCULATION_RULES §canonical)
+  function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function s(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  function U(v) { return s(v).toUpperCase(); }
+  function L(v) { return s(v).toLowerCase(); }
+  function num(v) { if (v === null || v === undefined || v === '') return null; var n = Number(v); return isFinite(n) ? n : null; }
+  function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0); }
+  function daysInMonth(y, m) { return [31, (isLeap(y) ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]; }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  // ---- E · Target % (replicates request-order.js _roTargetPct from RAW fc_target_rules rows) ----------------
+  //   targetRuleRows: raw fc_target_rules rows (snake_case). skuMeta: { sku, series, category, company }.
+  //   ym: 'YYYY-MM'. Returns a percentage number (100 default; no invented fallback).
+  function resolveTargetPct(targetRuleRows, skuMeta, scope, ym) {
+    var rules = Array.isArray(targetRuleRows) ? targetRuleRows : [];
+    if (!rules.length) return 100;
+    var m = /^(\d{4})-(\d{2})$/.exec(s(ym)); if (!m) return 100;
+    var year = m[1], monKey = MONTH_ABBR[(+m[2]) - 1] + '_pct';
+    var meta = skuMeta || {}, sc = scope || {};
+    var match = rules.filter(function (r) {
+      r = r || {};
+      var scopeVal = s(r.scope_id) || s(r.sku) || s(r.series) || s(r.category);
+      var scopeHit = U(scopeVal) === U(meta.sku) || U(scopeVal) === U(meta.series) || U(scopeVal) === U(meta.category) ||
+        U(r.sku) === U(meta.sku) || U(r.series) === U(meta.series) || U(r.category) === U(meta.category);
+      if (!scopeHit) return false;
+      if (s(r.company) && s(sc.company) && U(r.company) !== U(sc.company)) return false;
+      if (s(r.country) && s(sc.country) && U(r.country) !== U(sc.country) && U(r.country) !== 'ALL') return false;
+      if (s(r.marketplace) && s(sc.marketplace) && L(r.marketplace) !== L(sc.marketplace) && U(r.marketplace) !== 'ALL') return false;
+      if (s(r.year) && year && s(r.year) !== year) return false;
+      return true;
+    })[0];
+    if (!match) return 100;
+    if (match[monKey] != null && match[monKey] !== '') { var mp = parseFloat(match[monKey]); if (!isNaN(mp)) return mp; }
+    var tp = (match.target_percentage != null && match.target_percentage !== '') ? parseFloat(match.target_percentage) : NaN;
+    if (!isNaN(tp)) return tp;
+    return 100;
+  }
+
+  // Base Regular FC for a month from raw fc_regular_forecast rows (scoped; single non-conflicting value or null).
+  function baseRegularFc(fcRows, scope, sku, ym) {
+    var m = /^(\d{4})-(\d{2})$/.exec(s(ym)); if (!m) return null;
+    var year = Number(m[1]), abbr = MONTH_ABBR[(+m[2]) - 1], sc = scope || {}, vals = {};
+    (fcRows || []).forEach(function (r) {
+      r = r || {};
+      if (U(r.company) !== U(sc.company) || U(r.country) !== U(sc.country) || U(r.marketplace) !== U(sc.marketplace) || U(r.sku) !== U(sku)) return;
+      if (Number(r.year) !== year) return;
+      var v = r[abbr]; if (v !== '' && v !== null && v !== undefined && isFinite(Number(v))) vals[String(Number(v))] = Number(v);
+    });
+    var keys = Object.keys(vals); return keys.length === 1 ? vals[keys[0]] : null;   // missing/conflicting → null (never fabricated 0)
+  }
+
+  // Adjusted Regular FC(month) = round(base × pct/100). Returns null when base is missing (never 0).
+  function adjustedRegularFc(fcRows, targetRuleRows, skuMeta, scope, sku, ym) {
+    var base = baseRegularFc(fcRows, scope, sku, ym); if (base === null) return null;
+    var pct = resolveTargetPct(targetRuleRows, skuMeta, scope, ym);
+    return { base: base, targetPct: pct, adjusted: Math.round(base * (pct / 100)) };
+  }
+
+  // ---- F · Special-event demand by planning month (prep month = start − 30d; 100%, never target-adjusted) -----
+  function parseIsoDate(v) {
+    var m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(s(v)); if (!m) return null;
+    return { y: +m[1], mo: +m[2], d: +m[3] };
+  }
+  function addDaysYmd(ymd, delta) {
+    // pure integer calendar arithmetic (no Date); delta may be negative.
+    var y = ymd.y, mo = ymd.mo, d = ymd.d + delta;
+    while (d < 1) { mo--; if (mo < 1) { mo = 12; y--; } d += daysInMonth(y, mo); }
+    while (d > daysInMonth(y, mo)) { d -= daysInMonth(y, mo); mo++; if (mo > 12) { mo = 1; y++; } }
+    return { y: y, mo: mo, d: d };
+  }
+  function eventScopeMatch(r, scope, sku) {
+    r = r || {}; var sc = scope || {};
+    var skuMatch = U(r.sku) === U(sku) || (L(r.scope_type) === 'sku' && U(r.scope_id) === U(sku));
+    if (!skuMatch) return false;
+    if (s(r.company) && s(sc.company) && U(r.company) !== U(sc.company)) return false;
+    if (s(r.country) && s(sc.country) && U(r.country) !== U(sc.country)) return false;
+    if (s(r.marketplace) && s(sc.marketplace) && L(r.marketplace) !== L(sc.marketplace)) return false;
+    var st = L(r.status); if (st && DEAD_EVENT[st]) return false;
+    return true;
+  }
+  // prep month (YYYY-MM) for an event row, or null if no parseable start date.
+  function eventPrepMonth(r) {
+    var start = parseIsoDate((r || {}).event_start_date || (r || {}).eventStartDate);
+    if (!start) return null;
+    var prep = addDaysYmd(start, -SPECIAL_EVENT_PREP_OFFSET_DAYS);
+    return { ym: prep.y + '-' + pad2(prep.mo), prepDate: prep.y + '-' + pad2(prep.mo) + '-' + pad2(prep.d), y: prep.y, mo: prep.mo, d: prep.d };
+  }
+  function specialEventFcForMonth(eventRows, scope, sku, ym) {
+    var total = 0, any = false;
+    (eventRows || []).forEach(function (r) {
+      if (!eventScopeMatch(r, scope, sku)) return;
+      var pm = eventPrepMonth(r); if (!pm || pm.ym !== s(ym)) return;
+      var q = num(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty); if (q === null || q <= 0) return;
+      total += q; any = true;
+    });
+    return any ? total : 0;   // 0 = no event in this month (a real zero, distinct from a missing regular FC)
+  }
+
+  // ---- canonical planning demand by month: adjusted regular FC + special-event FC ---------------------------
+  //   Returns { 'YYYY-MM': { regularBase, targetPct, adjustedRegular, special, demand } } for months with a
+  //   resolvable regular FC (missing regular month → omitted so the caller blocks that tier — never fabricated).
+  function planningDemandByMonth(input) {
+    input = input || {};
+    var fcRows = input.fcRegularRows, tgtRows = input.fcTargetRuleRows, evtRows = input.fcSpecialEventRows;
+    var scope = input.scope || {}, sku = s(input.sku), skuMeta = input.skuMeta || { sku: sku };
+    var months = Array.isArray(input.months) ? input.months : [];
+    var out = {};
+    months.forEach(function (ym) {
+      var adj = adjustedRegularFc(fcRows, tgtRows, skuMeta, scope, sku, ym);
+      if (!adj) return;   // missing regular FC for a needed month → omit (caller surfaces truthfully)
+      var special = specialEventFcForMonth(evtRows, scope, sku, ym);
+      out[ym] = { regularBase: adj.base, targetPct: adj.targetPct, adjustedRegular: adj.adjusted, special: special, demand: adj.adjusted + special };
+    });
+    return out;
+  }
+
+  // ---- D · current-month remaining demand (adjusted regular daily × remaining days + prep-in-window special) --
+  //   calculationDate 'YYYY-MM-DD'. Window = day AFTER calcDate .. last day of the calc month. FULL PRECISION
+  //   (caller rounds at emission). Returns { ready, requiredByDate, ym, remainingDays, daysInMonth, dailyRate,
+  //   regularRemaining, special, demand, issues }.
+  function currentMonthRemainingDemand(input) {
+    input = input || {};
+    var cd = parseIsoDate(input.calculationDate);
+    if (!cd) return { ready: false, issues: [{ code: 'CALCULATION_DATE_INVALID', message: 'calculationDate must be YYYY-MM-DD' }] };
+    var ym = cd.y + '-' + pad2(cd.mo);
+    var dim = daysInMonth(cd.y, cd.mo);
+    var remainingDays = dim - cd.d;   // days AFTER the calc date through month end (calcDate itself already elapsed)
+    if (remainingDays < 0) remainingDays = 0;
+    var adj = adjustedRegularFc(input.fcRegularRows, input.fcTargetRuleRows, input.skuMeta || { sku: s(input.sku) }, input.scope || {}, s(input.sku), ym);
+    if (!adj) return { ready: false, ym: ym, remainingDays: remainingDays, daysInMonth: dim, issues: [{ code: 'CURRENT_MONTH_FORECAST_MISSING', message: 'no regular FC for the calculation month ' + ym }] };
+    var dailyRate = adj.adjusted / dim;                       // adjusted monthly ÷ real days-in-month
+    var regularRemaining = dailyRate * remainingDays;         // full precision
+    // special events whose PREP date falls in (calcDate, month end]
+    var special = 0;
+    (input.fcSpecialEventRows || []).forEach(function (r) {
+      if (!eventScopeMatch(r, input.scope || {}, s(input.sku))) return;
+      var pm = eventPrepMonth(r); if (!pm || pm.ym !== ym) return;
+      if (pm.d <= cd.d) return;   // prep already elapsed on/before the calculation date
+      var q = num(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty); if (q === null || q <= 0) return;
+      special += q;
+    });
+    return { ready: true, requiredByDate: ym + '-' + pad2(dim), ym: ym, remainingDays: remainingDays, daysInMonth: dim,
+      dailyRate: dailyRate, regularRemaining: regularRemaining, special: special, demand: regularRemaining + special, targetPct: adj.targetPct, issues: [] };
+  }
+
+  // Scoped active special-event PREP events (for the day-horizon owner, which places demand on the exact prep date).
+  // Returns [{ incomingId?, prepDate:'YYYY-MM-DD', qty }] — 100% (never target-adjusted); one entry per event.
+  function scopedSpecialEventPreps(eventRows, scope, sku) {
+    var out = [];
+    (eventRows || []).forEach(function (r) {
+      if (!eventScopeMatch(r, scope || {}, s(sku))) return;
+      var pm = eventPrepMonth(r); if (!pm) return;
+      var q = num(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty); if (q === null || q <= 0) return;
+      out.push({ prepDate: pm.prepDate, qty: q });
+    });
+    return out;
+  }
+
+  return {
+    VERSION: 'kmpd-fm3f1-1',
+    SPECIAL_EVENT_PREP_OFFSET_DAYS: SPECIAL_EVENT_PREP_OFFSET_DAYS,
+    resolveTargetPct: resolveTargetPct,
+    scopedSpecialEventPreps: scopedSpecialEventPreps,
+    baseRegularFc: baseRegularFc,
+    adjustedRegularFc: adjustedRegularFc,
+    eventPrepMonth: eventPrepMonth,
+    specialEventFcForMonth: specialEventFcForMonth,
+    planningDemandByMonth: planningDemandByMonth,
+    currentMonthRemainingDemand: currentMonthRemainingDemand
+  };
+});
+  __kmRegister("supply-planning-planning-demand", module.exports);
+})();
+
 // ----- module: supply-planning-time-phased-projection (verbatim from assets/js/core/supply-planning-time-phased-projection.js) -----
 (function () {
   var require = __kmRequire;
@@ -8629,6 +8843,13 @@ function __kmRequire(p) {
       if (mfc === null) { missingMonths[ym] = 1; continue; }
       demandEvents.push({ demandId: 'RFC-' + iso(cy, cm, cd), date: iso(cy, cm, cd), qty: mfc / daysInMonth(cy, cm), demandType: 'REGULAR_FORECAST_DAILY', month: ym });
     }
+    // F1-4B-FM3f-1 (Authority F): special-event demand enters ONCE on its canonical prep date (100%, never daily-
+    // distributed, never target-adjusted). Caller supplies [{ prepDate:'YYYY-MM-DD', qty }] from the KMPD owner.
+    (Array.isArray(input.specialEventDemands) ? input.specialEventDemands : []).forEach(function (se, k) {
+      se = se || {}; var pd = String(se.prepDate == null ? '' : se.prepDate); var q = numOrNull(se.qty);
+      if (!isIso(pd) || q === null || q <= 0) return;
+      demandEvents.push({ demandId: 'SEV-' + k + '-' + pd, date: pd, qty: q, demandType: 'SPECIAL_EVENT', month: pd.slice(0, 7) });
+    });
 
     // 2. cumulative dated checkpoints D{N} = calcDate + N calendar days (kind 'DAY').
     var checkpoints = [], cpDateByN = {};
@@ -8742,7 +8963,9 @@ function __kmRequire(p) {
     { key: 'shippingPlans', sheet: 'shipping_plans', required: false },
     { key: 'shipments', sheet: 'shipments', required: false },
     // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
-    { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false }
+    { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false },
+    // F1-4B-FM3f-1 (Authority E): Target % rules — read-only; missing → 100% (frozen fallback), never invented.
+    { key: 'fcTargetRules', sheet: 'fc_target_rules', required: false }
   ];
 
   function tablesFor(config) {
@@ -9519,6 +9742,7 @@ var KMPCX = __kmModules["supply-planning-planning-context"];
 var KMDA = __kmModules["supply-planning-demand-allocation"];
 var KMPA = __kmModules["supply-planning-production-assembly"];
 var KMDR = __kmModules["supply-planning-destination-runtime"];
+var KMPD = __kmModules["supply-planning-planning-demand"];
 var KMTPP = __kmModules["supply-planning-time-phased-projection"];
 var KMHP = __kmModules["supply-planning-horizon-projection"];
 var KMPS = __kmModules["supply-planning-production-source"];
@@ -9527,4 +9751,4 @@ var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"56b225e60792b1202a95270a92fa536dcb211c53a5c64b5372ac1a5c685234d6","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"538ed63309659df78b74cdc75c551db8004d139451be3277f8fdff286ff22fff"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"afb84024462012825679be31ced157e970850a4ca6fe2f8c4b9a3d187bd33515"},{"module":"supply-planning-production-source","sha256":"6caf9efa29c7c7055fc661f4b9ddcdc76524acf8346c2fef4ef06fbca1bb6839"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"b1fc01ad2d9e16cc77b56f7d0d2abc32a82b8549276cd8ab15fab091381cf33d","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"a62c98d26aa1f76b54ec27d74c0bfa3ebb9d838c9d6655199f2c7662c456b16a"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb"},{"module":"supply-planning-production-source","sha256":"0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};

@@ -4642,3 +4642,28 @@ Tests: supply-planning-horizon-projection-f1-4b-fm4a.test.js (NEW, 35) + recomme
 failure (replen-header-toggle A2) / 0 NEW; Golden 39/1/0; #34 Pending. APPS_SCRIPT_SYNC_REQUIRED =
 90_generated_supply_planning_bundle.gs (new hash) + 42_api_v1_recommendation_workspace.gs. NEXT: FM4b Inventory UI
 cutover (consume line.horizons D18/D30/D45/D90). New live config required: RECOMMENDATION_CALCULATION_DATE.
+
+## F1-4B-FM3f-1 checkpoint (2026-08-07) — Canonical planning-input correction, Commit 1 (A/D/E/F; runtime only)
+
+Corrects the monthlyProjection/horizons INPUTS (root cause of the FM3f HALT), not the chronology. NO page-side
+formula, NO write, NO DB/schema change, NO FM4b UI. New bundled owner KMPD (supply-planning-planning-demand.js,
+VERSION kmpd-fm3f1-1) replicates the frozen page owners in the runtime → Order Planning + Inventory + monthly +
+horizons share ONE demand authority. A: KMDR.resolveMarketplaceCurrentStock now = available_qty + fc_transfer_qty +
+fc_processing_qty (customer_order + unfulfillable EXCLUDED; available_qty required base, transfer/processing absent→0;
+never qualified incoming → no double count). E: KMPD.adjustedRegularFc = round(base × TargetPct/100), TargetPct from
+fc_target_rules (same matching as page _roTargetPct; {month}_pct→target_percentage→100; no rules→100); fc_target_rules
+added to KMPS.CANONICAL_TABLES (13 tables/request). F: special-event FC 100% (never target-adjusted), prep month =
+start−30d, once. D: KMPD.currentMonthRemainingDemand = adjusted current-month FC ÷ real days-in-month × days after
+RECOMMENDATION_CALCULATION_DATE + prep-in-window special; PRE-T1 (tier=null event at month end; reduces T1 opening;
+surfaced as line.currentMonthRemaining). Additive DTO per tier: openingDestinationSupplyQty, qualifiedIncomingQty,
+destinationGapQty, overseasCoveredQty(0), factoryCoveredQty(0), residualOrderNeedQty; suggestedOrderQty = cartonized
+residual new-order need. horizons consume same adjusted+special (KMHP +additive specialEventDemands input). Existing
+DTO fields byte-compatible; KMTPP/KMHP chronology unchanged. CO1100-R corrected: Site Stock 7374; pre-T1 2400 → T1
+opening 4974; T1 Sep 7000 → destinationGap 2026 / suggested 2040 (replaces wrong 1714); T2 4282; T3 7500; T4 0.
+Decision D-F1-4B-FM3f-1. Bundle regenerated (KMPD added): 33 modules; --check PASS; bundle_sha256
+b1fc01ad2d9e16cc77b56f7d0d2abc32a82b8549276cd8ab15fab091381cf33d. Tests: planning-demand owner (NEW, 27) +
+planning-inputs-correction CO1100-R handler (NEW, 20); ripple updates (bundle 32→33, table reads 12→13, additive DTO
+keys). Full suite 113 files / 1 PRE-EXISTING unrelated failure (replen-header-toggle A2) / 0 NEW; Golden 39/1/0; #34
+Pending. APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (new hash) +
+42_api_v1_recommendation_workspace.gs. NEXT: Commit 2 (B/C within-request overseas + factory allocation → residual
+new-order need). Inventory vs Order Planning remain distinct models (numbers NOT reconciled). New live read: fc_target_rules.
