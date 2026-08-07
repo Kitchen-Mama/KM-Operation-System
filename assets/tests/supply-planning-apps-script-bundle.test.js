@@ -31,7 +31,7 @@ section('A. deterministic / reproducible output');
   eq(b1.code, b2.code, 'A: same sources → byte-identical bundle');
   eq(b1.hash, b2.hash, 'A: same sources → identical bundle hash');
   ok(/^[0-9a-f]{64}$/.test(b1.hash), 'A: bundle hash is a sha256 hex');
-  eq(b1.manifest.length, 33, 'A: manifest lists all 33 canonical modules');
+  eq(b1.manifest.length, 34, 'A: manifest lists all 34 canonical modules');
   ok(b1.manifest.every(function (m) { return /^[0-9a-f]{64}$/.test(m.sha256); }), 'A: each manifest entry has a sha256');
 })();
 
@@ -46,10 +46,11 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
 (function () {
   var code = BUILD.buildBundleFromDisk(CORE_DIR).code;
   var ctx = loadBundle(code);
-  ['KMCALC', 'KMQI', 'KMLEDGER', 'KMALLOC', 'KMLINE', 'KMPC', 'KMPR', 'KMPL', 'KMPB', 'KMPPB', 'KMORCH', 'KMUE',
+  ['KMCID', 'KMCALC', 'KMQI', 'KMLEDGER', 'KMALLOC', 'KMLINE', 'KMPC', 'KMPR', 'KMPL', 'KMPB', 'KMPPB', 'KMORCH', 'KMUE',
    'KMSF', 'KMBRIDGE', 'KMSR', 'KMSI', 'KMSRP', 'KMSP', 'KMTPP', 'KMHP', 'KMPS', 'KMSAFE', 'KMPW', 'KMVD'].forEach(function (ns) {
     ok(ctx[ns] && typeof ctx[ns] === 'object', 'C: ' + ns + ' exposed');
   });
+  ok(typeof ctx.KMCID.countryMatches === 'function' && ctx.KMCID.VERSION === 'kmcid-fm5r1b-1' && ctx.KMCID.countryMatches('UK', 'GB') === true, 'C: KMCID canonical country identity owner available in bundle (F1-4B-FM5-R1b)');
   ok(typeof ctx.KMTPP.projectTimePhasedSupply === 'function' && ctx.KMTPP.VERSION === 'kmtpp-fm3b-1', 'C: KMTPP time-phased projection owner available in bundle (F1-4B-FM3c-2)');
   ok(typeof ctx.KMHP.projectHorizons === 'function' && ctx.KMHP.VERSION === 'kmhp-fm4a-1', 'C: KMHP day-horizon projection owner available in bundle (F1-4B-FM4a)');
   ok(typeof ctx.KMSRP.readRecommendationSourceFacts === 'function' && typeof ctx.KMSRP.readRawTableSnapshot === 'function', 'C: KMSRP production source reader available in bundle');
@@ -66,7 +67,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   ok(typeof ctx.KMPR.applyPersistencePlan === 'function' && typeof ctx.KMPR.loadActiveDraftContext === 'function', 'C: KMPR repository API available');
   ok(typeof ctx.KMPL.executeLockedPersistence === 'function', 'C: KMPL.executeLockedPersistence available');
   ok(typeof ctx.KMPC.generateRecommendationDraft === 'function', 'C: KMPC Persistence Core available');
-  eq(ctx.KM_BUNDLE_INFO.modules.length, 33, 'C: KM_BUNDLE_INFO manifest present in runtime');
+  eq(ctx.KM_BUNDLE_INFO.modules.length, 34, 'C: KM_BUNDLE_INFO manifest present in runtime');
 })();
 
 section('D. ported modules actually RUN end-to-end inside the bundle context');

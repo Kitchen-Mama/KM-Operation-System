@@ -3,8 +3,9 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = b1fc01ad2d9e16cc77b56f7d0d2abc32a82b8549276cd8ab15fab091381cf33d
+// bundle_sha256 = 91fefda1cbd1ef561a3d869ed356939955e39666be9d054b35dadc2e87e356bc
 // modules (in load order):
+//   supply-planning-country-identity  81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
 //   supply-planning-qualified-incoming  dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5
 //   supply-planning-ledgers  3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042
@@ -30,7 +31,7 @@
 //   supply-planning-planning-context  2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3
 //   supply-planning-demand-allocation  06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed
 //   supply-planning-production-assembly  d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7
-//   supply-planning-destination-runtime  a62c98d26aa1f76b54ec27d74c0bfa3ebb9d838c9d6655199f2c7662c456b16a
+//   supply-planning-destination-runtime  7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c
 //   supply-planning-planning-demand  f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240
 //   supply-planning-time-phased-projection  327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947
 //   supply-planning-horizon-projection  39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb
@@ -47,6 +48,60 @@ function __kmRequire(p) {
   if (!__kmModules.hasOwnProperty(base)) { throw new Error("KM bundle: module not registered: " + base); }
   return __kmModules[base];
 }
+
+// ----- module: supply-planning-country-identity (verbatim from assets/js/core/supply-planning-country-identity.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Canonical Country Identity owner (F1-4B-FM5-R1b).
+// -----------------------------------------------------------------------------
+// The ONE server/runtime authority for country IDENTITY matching. It exists because the DB stores the same
+// market under two spellings — the domain/scope uses `UK`, while `amazon_inventory_snapshot` stores the ISO code
+// `GB`. The Inventory frontend already resolves this via IRCountry (assets/js/utils/inventory-compat.js,
+// SAME_MARKET_ALIAS = { UK:[UK,GB], GB:[UK,GB] }); this module mirrors that FROZEN authority for the runtime so
+// there is exactly ONE convention on BOTH sides of every canonical identity comparison — never a scattered
+// `country === 'UK' || country === 'GB'` special case.
+//
+// Deterministic canonical code = the ISO value GB (IRCountry documents "GB is the ISO code for the United
+// Kingdom"), applied identically to both operands. PURE / deterministic: no clock, no RNG, no I/O, no mutation.
+// It NEVER rewrites stored DB values — identity resolution only.
+
+(function (root, factory) {
+  'use strict';
+  var api = factory();
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.countryIdentity = api; }
+  if (typeof root !== 'undefined' && root) { root.KMCID = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  function up(v) { return String(v === undefined || v === null ? '' : v).trim().toUpperCase(); }
+
+  // Frozen same-market spelling aliases (mirror of IRCountry.SAME_MARKET_ALIAS). GB is the ISO code; UK is the
+  // domain spelling — the SAME single market. NO EU aggregation here (identity only, never a market group sum).
+  var SAME_MARKET_ALIAS = { 'UK': ['UK', 'GB'], 'GB': ['UK', 'GB'] };
+  // Deterministic canonical representation, used identically on BOTH operands of a comparison.
+  var CANON = { 'UK': 'GB', 'GB': 'GB' };
+
+  // canonicalCountryCode('UK') → 'GB'; canonicalCountryCode('GB') → 'GB'; any other code → itself (uppercased).
+  function canonicalCountryCode(v) { var c = up(v); return CANON[c] || c; }
+  // The raw source values that belong to a scope country's single market (alias-aware; [] for blank).
+  function aliasMembers(country) { var c = up(country); return SAME_MARKET_ALIAS[c] ? SAME_MARKET_ALIAS[c].slice() : (c ? [c] : []); }
+  // True when two country codes are the SAME market. Blank on either side → false (callers keep their own guard).
+  // Exact-country codes are unchanged (US↔US); only a frozen same-market alias (UK↔GB) resolves equal.
+  function countryMatches(a, b) { var A = up(a), B = up(b); if (!A || !B) return false; return canonicalCountryCode(A) === canonicalCountryCode(B); }
+
+  return {
+    canonicalCountryCode: canonicalCountryCode,
+    countryMatches: countryMatches,
+    aliasMembers: aliasMembers,
+    SAME_MARKET_ALIAS: { 'UK': ['UK', 'GB'], 'GB': ['UK', 'GB'] },
+    VERSION: 'kmcid-fm5r1b-1'
+  };
+});
+  __kmRegister("supply-planning-country-identity", module.exports);
+})();
 
 // ----- module: supply-planning-calculations (verbatim from assets/js/core/supply-planning-calculations.js) -----
 (function () {
@@ -8088,6 +8143,14 @@ function __kmRequire(p) {
   function s(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function eqv(a, b) { return s(a).toLowerCase() === s(b).toLowerCase(); }
   function nonEmpty(v) { return s(v).length > 0; }
+  // F1-4B-FM5-R1b: canonical COUNTRY identity match via the ONE shared owner (KMCID) — resolves the frozen
+  // same-market alias (UK ≡ GB, the ISO spelling stored in amazon_inventory_snapshot). Falls back to exact
+  // equality only when KMCID is not loaded (e.g. a unit test that requires this module in isolation). marketplace
+  // + sku stay EXACT — only country identity is alias-aware.
+  function countryEqv(a, b) {
+    var CID = (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.countryMatches === 'function') ? KMCID : null;
+    return CID ? CID.countryMatches(a, b) : eqv(a, b);
+  }
   function has(o, k) { return isObj(o) && Object.prototype.hasOwnProperty.call(o, k); }
   function cmpStr(a, b) { a = s(a); b = s(b); return a < b ? -1 : a > b ? 1 : 0; }
   function iss(code, message, field) { return { code: code, message: message, field: field === undefined ? null : field }; }
@@ -8126,7 +8189,7 @@ function __kmRequire(p) {
       if (nonEmpty(r.warehouseId) || nonEmpty(r.warehouse_id)) return;
       var hasAvail = has(r, 'availableQty') || has(r, 'available_qty');
       if (!hasAvail) return;
-      if (!(eqv(r.country, country) && eqv(r.marketplace, marketplace) && eqv(r.sku, sku))) return;
+      if (!(countryEqv(r.country, country) && eqv(r.marketplace, marketplace) && eqv(r.sku, sku))) return;
       var q = qtyNum(has(r, 'availableQty') ? r.availableQty : r.available_qty);
       if (q === null) return; // an unreadable available_qty is not a zero
       var tr = qtyNum(has(r, 'fcTransferQty') ? r.fcTransferQty : r.fc_transfer_qty); if (tr === null) tr = 0;   // absent → 0 (supplementary)
@@ -9716,6 +9779,7 @@ function __kmRequire(p) {
 })();
 
 // ----- Apps Script global namespace exposure -----
+var KMCID = __kmModules["supply-planning-country-identity"];
 var KMCALC = __kmModules["supply-planning-calculations"];
 var KMQI = __kmModules["supply-planning-qualified-incoming"];
 var KMLEDGER = __kmModules["supply-planning-ledgers"];
@@ -9751,4 +9815,4 @@ var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"b1fc01ad2d9e16cc77b56f7d0d2abc32a82b8549276cd8ab15fab091381cf33d","modules":[{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"a62c98d26aa1f76b54ec27d74c0bfa3ebb9d838c9d6655199f2c7662c456b16a"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb"},{"module":"supply-planning-production-source","sha256":"0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"91fefda1cbd1ef561a3d869ed356939955e39666be9d054b35dadc2e87e356bc","modules":[{"module":"supply-planning-country-identity","sha256":"81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb"},{"module":"supply-planning-production-source","sha256":"0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};

@@ -43,6 +43,14 @@
   function s(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function eqv(a, b) { return s(a).toLowerCase() === s(b).toLowerCase(); }
   function nonEmpty(v) { return s(v).length > 0; }
+  // F1-4B-FM5-R1b: canonical COUNTRY identity match via the ONE shared owner (KMCID) — resolves the frozen
+  // same-market alias (UK ≡ GB, the ISO spelling stored in amazon_inventory_snapshot). Falls back to exact
+  // equality only when KMCID is not loaded (e.g. a unit test that requires this module in isolation). marketplace
+  // + sku stay EXACT — only country identity is alias-aware.
+  function countryEqv(a, b) {
+    var CID = (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.countryMatches === 'function') ? KMCID : null;
+    return CID ? CID.countryMatches(a, b) : eqv(a, b);
+  }
   function has(o, k) { return isObj(o) && Object.prototype.hasOwnProperty.call(o, k); }
   function cmpStr(a, b) { a = s(a); b = s(b); return a < b ? -1 : a > b ? 1 : 0; }
   function iss(code, message, field) { return { code: code, message: message, field: field === undefined ? null : field }; }
@@ -81,7 +89,7 @@
       if (nonEmpty(r.warehouseId) || nonEmpty(r.warehouse_id)) return;
       var hasAvail = has(r, 'availableQty') || has(r, 'available_qty');
       if (!hasAvail) return;
-      if (!(eqv(r.country, country) && eqv(r.marketplace, marketplace) && eqv(r.sku, sku))) return;
+      if (!(countryEqv(r.country, country) && eqv(r.marketplace, marketplace) && eqv(r.sku, sku))) return;
       var q = qtyNum(has(r, 'availableQty') ? r.availableQty : r.available_qty);
       if (q === null) return; // an unreadable available_qty is not a zero
       var tr = qtyNum(has(r, 'fcTransferQty') ? r.fcTransferQty : r.fc_transfer_qty); if (tr === null) tr = 0;   // absent → 0 (supplementary)

@@ -535,3 +535,26 @@ NO Overseas/Factory allocation, NO AI-Plan/Execution-Plan change.
   warehouse-isolation authority (stock A can never cover B → independent shortages sum), cited by the FM5 batch
   test + the cutover-b "distinct per-warehouse, never merged" assertions. Single-destination Marketplace is a
   1-element sum (unchanged). Preserved, not changed.
+
+## D-F1-4B-FM5-R1b — Canonical country identity owner (UK ≡ GB) for runtime matching
+
+Repairs the one FM5-R1 canonical defect: the domain/scope spells the market `UK` while
+`amazon_inventory_snapshot` stores the ISO code `GB`, so the exact-equality runtime matcher returned
+MARKETPLACE_STOCK_MISSING for UK sites. NO Inventory-only special case, NO scattered `UK||GB` checks — ONE owner.
+- **New bundled owner KMCID** (`supply-planning-country-identity.js`, VERSION `kmcid-fm5r1b-1`, no deps) mirrors the
+  FROZEN frontend authority `IRCountry.SAME_MARKET_ALIAS = { UK:[UK,GB], GB:[UK,GB] }`. Deterministic canonical
+  code = the ISO value **GB** (IRCountry documents "GB is the ISO code"), applied identically to both operands:
+  `canonicalCountryCode('UK')='GB'`, `countryMatches('UK','GB')=true`; every other code is exact/unchanged
+  (`US↔US`, `DE↔DE`); blank on either side → false; NO EU aggregation (identity only). Identity resolution only —
+  NEVER rewrites stored DB values.
+- **Applied to identity matching only:** `KMDR.resolveMarketplaceCurrentStock` now matches the snapshot country via
+  `KMCID.countryMatches` (`countryEqv`); marketplace + sku stay EXACT. It is the only raw source-row country
+  comparison in the runtime (incoming/destination identity resolve via the marketplaces table, which uses the
+  domain `UK` on both sides — no divergence). Falls back to exact equality when KMCID is absent (a unit test that
+  requires KMDR in isolation → unchanged legacy behavior).
+- **Site Stock authority UNCHANGED:** still `available + fc_transfer + fc_processing` (customer orders + unsellable
+  excluded; missing ≠ 0; explicit 0 stays 0). Regression (fixture only, never hard-coded): UK scope + GB snapshot
+  `233 + 1 + 0 = 234`; the materialized batch no longer returns MARKETPLACE_STOCK_MISSING for the UK/GB fixture.
+- **Bundle rebuilt** (KMCID added first in load order): **34 modules**, `--check` PASS,
+  `bundle_sha256 91fefda1cbd1ef561a3d869ed356939955e39666be9d054b35dadc2e87e356bc`. US HORIZONS_NOT_AVAILABLE
+  (deployment/config) is untouched — this is the country repair only.
