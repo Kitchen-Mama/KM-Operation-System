@@ -962,3 +962,33 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
   live basis resolves; otherwise the enriched note names the exact live gap (channel/rows/country) to fix in data.
 - No formula / DB / schema / bundle change (only the 42 `.gs` handler — not bundled — + tests). Full suite 134/135
   (pre-existing replen-header-toggle A2 only); Golden PASS.
+
+## F1-4B-FM5-R4UI-R5A — Sales-basis weekly-fallback live repair + Inventory UI polish (2026-08-08)
+- **§1/§2 CO1100-R BLOCKED — ROOT CAUSE FOUND & FIXED (code, proven end-to-end):** the Inventory UI Avg Sales/day
+  (~178.4) is `IR.avgSalesPerDay` reading the WEEKLY snapshot (`salesUnits7d/7`), while the canonical
+  `recoWsResolveSalesRate_` returned `SALES_BASIS_UNAVAILABLE` the instant there were 0 scoped DAILY rows — so the
+  frozen §22/§29E ladder rung "<3 NORMAL days → weekly_7d ÷ 7" was UNREACHABLE for a weekly-only SKU. Classification
+  = DAILY_SOURCE_MAPPING / WEEKLY_FALLBACK unreachable. Fix: resolve the channel from daily when present, else from
+  weekly (`chSource = daily.length ? daily : weeklyAll`); fail-close only when NEITHER source has rows. KMCALC then
+  applies the ladder (empty dailySales + a valid weekly7d → weekly7d/7), so the canonical rate reconciles with the
+  UI (both = weekly_7d/7 ≈ 178.43). NO forecast fallback, NO fabricated value, NO second averaging engine, NO
+  page-side rate — the same frozen KMCALC.normalizedAvgSalesPerDay owner, now correctly routed to its own weekly
+  rung. Proven functionally through BUNDLE+42 in `inventory-sales-weekly-fallback` (weekly-only → READY 178.43;
+  neither source → BLOCKED; ≥3 daily → normalized_30d; ambiguous channel → still fail-closed).
+- **§3 BLOCKED-reason transparency:** the normal Recommendation Summary now shows a user-safe "Calculation
+  unavailable" instead of raw internal codes (SALES_BASIS_* / HORIZONS_NOT_AVAILABLE / …). The technical reason is
+  UNCHANGED in the DB note and still visible under Diagnostics (IR_DEBUG_DIAGNOSTICS). (Supersedes the earlier
+  fm5r4ui BK3 which surfaced the raw code — updated to the new contract, not weakened.)
+- **§7 active blue background covers the full logical row:** the highlight is now applied per-cell
+  (`.scroll-row.is-active-selected .scroll-cell`), so every cell — including those off-screen until horizontal
+  scroll — stays blue; DoS severity survives via its bold coloured TEXT. Presentation-only.
+- **§9 header logo +15%** (shared shell): max-height 36→41px (layout.css) + inline max-width 150→172px (index.html),
+  aspect ratio preserved, vertically centered; header stays ~56px.
+- **§5 left/right expanded height & §6 white gutter:** the canonical height owner remains the shared
+  `.table-body-bar` flex `align-items:stretch` chain (untouched — correct by construction). The residual white strip
+  still cannot be source-proven without a live computed-DOM reading (both `.fixed-col`/`.scroll-col` reserve only a
+  bottom gutter); the §7 per-cell paint removes any active-state strip, but a persistent static strip needs one
+  DevTools reading. No speculative CSS applied.
+- No Inventory/Order Planning formula change; no DB/schema change; no gap-key change; core modules + generated
+  bundle UNCHANGED (only 42 `.gs` — not bundled — + page JS/CSS + shared logo CSS/HTML + tests). Full suite 135/136
+  (pre-existing replen-header-toggle A2 only); Golden PASS.

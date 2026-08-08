@@ -5237,7 +5237,10 @@ function _irMatIsStale(row) { var exp = _irMatExpectedCalcDate(); var cd = row &
 // per-window business Note is derived (No shortage / Replenishment required) from the stored gap. Stored values only.
 function _irMatToLine(row) {
   var st = row.calculation_status ? String(row.calculation_status) : '';
-  var reason = (st && st !== 'READY') ? ((row.note != null && String(row.note) !== '') ? String(row.note) : st) : null;
+  // F1-4B-FM5-R4UI-R5A §3 — the normal Recommendation Summary must NOT surface raw internal codes
+  // (SALES_BASIS_* / HORIZONS_NOT_AVAILABLE / …). Show a short user-safe note; the technical row.note stays in the
+  // DB and is still visible under Diagnostics (IR_DEBUG_DIAGNOSTICS). READY rows keep the derived business note.
+  var reason = (st && st !== 'READY') ? 'Calculation unavailable' : null;
   function hz(code, g, s) { var h = { windowCode: code, gapQty: _irMatNum(g), suggestedOrderQty: _irMatNum(s) }; if (reason) h.note = reason; return h; }
   return {
     destinationType: 'MARKETPLACE', destinationLabel: null, calculationStatus: st,

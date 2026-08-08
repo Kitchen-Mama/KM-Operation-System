@@ -18,7 +18,7 @@ function eq(a, b, l) { ok(a === b, l + '  (got ' + JSON.stringify(a) + ')'); }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 section('§1 recoWsResolveSalesRate_ attaches a compact diagnostic detail to every fail-closed reason');
-ok(/reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily rows @ '/.test(WS), 'D1 zero-scoped-rows → detail names the resolved country/marketplace');
+ok(/reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ '/.test(WS), 'D1 zero daily AND weekly rows → detail names the resolved country/marketplace (R5A: weekly fallback now reachable)');
 ok(/reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' \+ chKeys\.length/.test(WS), 'D2 ambiguous channel → detail names the distinct channel count + the channel set');
 ok(/\(blank\)/.test(WS), 'D3 a blank channel is shown as (blank) so an unlabeled-channel data gap is obvious');
 ok(/reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg \(' \+ daily\.length/.test(WS), 'D4 a non-finite run-rate → detail names the matched daily-row count');
@@ -30,7 +30,7 @@ ok(/mLine\.horizonsBlockedReason = salesReason/.test(WS), 'S3 the enriched reaso
 
 section('§1 the diagnostic is metadata only — no threshold moved, no rule relaxed');
 ok(/if \(chKeys\.length !== 1\) return \{ ok: false, reason: 'SALES_BASIS_AMBIGUOUS'/.test(WS), 'R1 the single-channel fail-closed rule is unchanged (still !== 1)');
-ok(/if \(!daily\.length\) return \{ ok: false, reason: 'SALES_BASIS_UNAVAILABLE'/.test(WS), 'R2 the no-rows fail-closed rule is unchanged');
+ok(/if \(!chSource\.length\) return \{ ok: false, reason: 'SALES_BASIS_UNAVAILABLE'/.test(WS), 'R2 the no-rows fail-closed rule is preserved (now: neither daily NOR weekly present) — R5A');
 
 section('§1 materialization surfaces the full enriched string verbatim (round-trip)');
 var gap = (new Function(GAP_SRC + '\n;return { map: gapInvMapFromLines_ };'))();

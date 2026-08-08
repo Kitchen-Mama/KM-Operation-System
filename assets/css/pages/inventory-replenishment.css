@@ -1671,6 +1671,14 @@
    .is-active-sticky class, added lazily on the first scroll (see toggleReplenRow / _irBindStickyScrollOnce). */
 #ops-section .fixed-row.is-active-selected,
 #ops-section .scroll-row.is-active-selected { background: #EAF2FE; }
+/* F1-4B-FM5-R4UI-R5A §7 — the active highlight must paint EVERY cell of the logical first-level row, including the
+   cells that are off-screen until the table is horizontally scrolled. The `.scroll-row` box already spans the full
+   max-content width, but per-cell state backgrounds (Days-of-Supply red/khaki tint, hover) would otherwise punch
+   white/coloured holes through it. Painting the cells themselves keeps the blue continuous across the whole record
+   under horizontal scroll. DoS severity is still conveyed by its bold coloured TEXT (unchanged), so the warning
+   survives on the blue. Presentation only — no layout/position change. */
+#ops-section .scroll-row.is-active-selected .scroll-cell,
+#ops-section .fixed-row.is-active-selected .replen-suggested-cell { background: #EAF2FE; }
 
 /* §4 — trim the card's vertical whitespace: tighter title gap + tighter summary rows; row height stays readable,
    card never widens (fixed table layout + internal overflow-x preserved from R4UI-R3). Shorthand padding/margin

@@ -71,7 +71,7 @@ section('BLOCKED → dash numerics + truthful Note (in the table, not only diagn
 var blkPre = preDiag(blockedBody);
 ok(/replen-horizon-table--outlook/.test(blkPre) && !/Materialized/.test(blockedBody), 'BK1 BLOCKED still renders the fixed outlook table, no badge');
 ok(/replen-recsum-table__num"[^>]*>—</.test(blkPre), 'BK2 BLOCKED numeric cells show "—" (never a fabricated 0)');
-ok(/replen-horizon-table__note"[^>]*>MARKETPLACE_STOCK_MISSING</.test(blkPre), 'BK3 BLOCKED row Note shows the truthful reason in the table (per window)');
+ok(/replen-horizon-table__note"[^>]*>Calculation unavailable</.test(blkPre), 'BK3 (R5A §3) BLOCKED Note shows a USER-SAFE "Calculation unavailable" — raw internal codes (MARKETPLACE_STOCK_MISSING / SALES_BASIS_* / …) never surface in the normal UI; the technical reason stays in the DB note + Diagnostics');
 ok(/18 Days/.test(blkPre) && /90 Days/.test(blkPre), 'BK4 all four windows still rendered for a BLOCKED row');
 
 section('shared note helper stays backward-compatible (live workspace path unaffected)');

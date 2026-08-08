@@ -43,7 +43,7 @@
    rule — it applies to every page's header, not an Inventory-only hack. The element's inline max-width still caps
    the width; both bounds compose, so the image never exceeds either. */
 .top-header .header-left img,
-.top-header .logo-text img { max-height: 36px; width: auto; height: auto; }
+.top-header .logo-text img { max-height: 41px; width: auto; height: auto; }   /* R5A §9: 36px × 1.15 ≈ 41px (+15%) */
 
 .header-right {
     margin-left: auto;

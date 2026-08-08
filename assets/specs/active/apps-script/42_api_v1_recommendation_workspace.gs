@@ -203,17 +203,24 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
     return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace;
   });
-  // F1-4B-FM5-R4UI-R7V — attach a COMPACT self-describing `detail` to every fail-closed reason so the live BLOCKED
-  // note names the exact data cause (row count, distinct channels, resolved country) WITHOUT needing a server-log
-  // dive. Diagnostic only — it changes no threshold and relaxes no fail-closed rule (the reason token is unchanged).
-  if (!daily.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) };
-  var chSet = {}; daily.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
+  var weeklyAll = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
+    return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace;
+  });
+  // F1-4B-FM5-R4UI-R5A §1/§2 — the weekly_7d rung MUST be reachable when there are ZERO scoped daily rows. Before,
+  // the resolver returned SALES_BASIS_UNAVAILABLE the instant `daily` was empty, so a SKU with ONLY weekly history
+  // fail-closed — the exact live CO1100-R defect (the Inventory UI's Avg Sales/day reads the WEEKLY snapshot, hence
+  // ~178.4, while this canonical reader blocked). The frozen §22/§29E ladder is "≥3 NORMAL days → normalized_30d,
+  // else weekly_7d ÷ 7" (KMCALC applies it: an EMPTY dailySales + a valid weekly7d yields weekly7d/7). So resolve
+  // the channel from daily when present, else from weekly; only a scope with NEITHER daily NOR weekly rows is a
+  // genuine SALES_BASIS_UNAVAILABLE. NO forecast fallback, NO fabricated value, NO new averaging engine — the same
+  // canonical owner, now correctly routed to its own weekly rung. (R7V diagnostic detail retained on each reason.)
+  var chSource = daily.length ? daily : weeklyAll;
+  if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) };
+  var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
   var chKeys = Object.keys(chSet);
   if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
   var channel = chKeys[0];
-  var weekly = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
-    return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace && recoWsStr_(r.channel) === channel;
-  });
+  var weekly = weeklyAll.filter(function (r) { return recoWsStr_(r.channel) === channel; });
   var weekly7d = 0;
   if (weekly.length) {
     weekly.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });

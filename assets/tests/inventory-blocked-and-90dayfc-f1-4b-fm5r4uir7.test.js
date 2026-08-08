@@ -85,7 +85,7 @@ ok(/90 days FC<\/div>/.test(HTML) && !/60 days FC<\/div>/.test(HTML), 'P3 the vi
 
 section('§5 logo scales to the compacted 56px header (shared shell rule, aspect ratio preserved)');
 ok(/--header-height:\s*56px/.test(BASE), 'L1 header is 56px');
-ok(/\.top-header[\s\S]*?logo-text img[\s\S]*?max-height:\s*36px/.test(LAYOUT) || /logo-text img\s*\{[^}]*max-height:\s*36px/.test(LAYOUT), 'L2 the shared logo has a max-height that fits 56px');
+ok(/logo-text img\s*\{[^}]*max-height:\s*41px/.test(LAYOUT), 'L2 the shared logo has a max-height that fits the 56px header (R5A: 41px, +15%)');
 ok(/logo-text img\s*\{[^}]*width:\s*auto/.test(LAYOUT), 'L3 width:auto preserves the aspect ratio (no distortion/crop)');
 
 section('§2 no pin/overlay — master row + detail scroll as one natural unit');
