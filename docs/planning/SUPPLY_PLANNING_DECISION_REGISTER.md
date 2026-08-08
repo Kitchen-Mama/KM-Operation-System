@@ -723,3 +723,35 @@ snapshots. Regression-lock only (audit confirmed the existing behavior already c
   purge**. NEVER age-only deletion.
 - **Test:** `materialized-gap-lifecycle-f1-4b-fm5r3` (19 assertions: UPSERT latest-state, metadata exposure, safety
   invariant, no purge/age-deletion owner).
+
+### D-F1-4B-FM5-R4 — deterministic calculation date/month rollover authority (removes the R3 CONFIG_BLOCKED)
+
+Freezes + implements ONE canonical Asia/Taipei calculation-context owner for scheduled + manual gap materialization,
+resolving the R3 `CALCULATION_DATE/MONTH_ROLLOVER_AUTHORITY_NOT_FROZEN` HALT. Orchestration/context only — no
+formula/stock/allocation/KMHP/KMTPP/KMMSA/KMALLOC/KMQI/gap-schema/read-behavior/manual-Order-Qty change.
+
+- **Canonical owner (43):** `gapCalcContextForJob_` + `gapCalcResolveContext_` + `gapCalcTaipeiYmd_` /
+  `gapCalcPrevYmd_` / `gapCalcYmdValid_`. `calculationDate = YYYY-MM-DD`; `calculationMonth = date's YYYY-MM`;
+  `planningCycle = RECO-{month}` — month + cycle DERIVE from the date (no longer independent). Asia/Taipei = fixed
+  UTC+8 (no DST) → the calendar date is pure epoch arithmetic (shift + getUTC*), and the previous-day is
+  calendar-correct string arithmetic — no UTC/DST rollover bug. Previous owners: `recoWsResolveCalcDate_`
+  (RECOMMENDATION_CALCULATION_DATE) + `recoWsResolveCalcContext_` (RECOMMENDATION_CALCULATION_MONTH), independent.
+- **Job rule (§2/§3):** INVENTORY calculationDate = the execution's Asia/Taipei date (13:30 Day D). ORDER_PLANNING
+  calculationDate = the PREVIOUS Asia/Taipei date (03:30 Day D+1 runs before that day's 12:00–13:00 source refresh →
+  latest COMPLETED source cycle = Day D). Proven: A (2026-08-07 13:30→2026-08-07), B (2026-08-08 03:30→2026-08-07),
+  C month-boundary (2026-09-01 03:30→2026-08-31/2026-08), D (2026-09-01 13:30→2026-09-01/2026-09), E leap
+  (2028-03-01→2028-02-29; 2026-02-29 invalid), F year-boundary (2027-01-01 03:30→2026-12-31/2026-12).
+- **Injection, not mutation (§5):** the scheduler (44) derives the context and INJECTS it into the batch io
+  (`gapMaterializationDefaultIo_(ctx)` → recoIo.configDate/configMonth); the manual/router path (batch owner, no io)
+  derives the SAME context via the SAME owner (INVENTORY today / ORDER_PLANNING prev day). Script Properties are
+  NEVER written and are NO LONGER required for scheduled OR manual runs — they remain an optional debug/override
+  authority for a direct `recommendation.workspace.get`. Manual + scheduled share ONE owner (§6/§G).
+- **Fail-closed (§10):** an invalid deterministic context → CONFIG_BLOCKED; never UTC/browser/stale/blank/fabricated.
+- **DB mapping (§8):** stored `calculation_date` (inventory_replenishment_gap) / `calculation_month`
+  (order_planning_gap) come from the workspace `meta` driven by the injected context = the canonical values. No
+  columns added, no history — FM5-R3 latest-state UPSERT + `MATERIALIZED_GAP_CLEANUP_OWNER = SOURCE_MISSING` preserved.
+- **No frontend clock authority (§7):** pages read the context from server `env.meta`; the gap batch derives context
+  server-side and never consumes a browser-supplied calculationDate/Month.
+- **Tests:** `gap-calc-context-f1-4b-fm5r4` (23: A–F, leap, year, month-boundary, cycle, TZ integrity, fail-closed);
+  `gap-materialization-scheduler-f1-4b-fm5r3` updated to the R4 injection surface (31). Bundle UNCHANGED (35 modules,
+  `41d64956…`). No DB/schema, no frontend deploy. Remaining blocker cleared: scheduled runs need no manual property.

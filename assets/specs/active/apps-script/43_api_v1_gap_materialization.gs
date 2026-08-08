@@ -185,12 +185,59 @@ function gapUpsertByKey_(sheet, rowObj) {
   return 'insert';
 }
 
-// ---- default IO (memoized spreadsheet open; frozen config authorities; reuse the canonical calc) ------
-function gapMaterializationDefaultIo_() {
+// ============================================================================================================
+// F1-4B-FM5-R4 — canonical CALCULATION-CONTEXT owner (Asia/Taipei; deterministic; ONE owner for date+month+cycle)
+// ------------------------------------------------------------------------------------------------------------
+// calculationDate = YYYY-MM-DD · calculationMonth = the date's YYYY-MM · planningCycle = RECO-{month}. After R4 the
+// three are NEVER independent authorities — month + cycle are DERIVED from the date. Asia/Taipei is a FIXED UTC+8
+// offset (Taiwan observes no DST), so the calendar date is pure epoch arithmetic — no Utilities, no local/UTC clock
+// leak, no DST drift. Job rule (§2/§3): INVENTORY uses the execution's Asia/Taipei date (13:30 Day D); ORDER_PLANNING
+// uses the PREVIOUS Asia/Taipei calendar date (its 03:30 Day D+1 run precedes that day's 12:00–13:00 source refresh,
+// so it belongs to the latest COMPLETED source cycle = Day D). ONE owner for scheduled AND manual (§6). The scheduler
+// INJECTS the derived context into the batch io — it never mutates a Script Property (§5).
+var GAP_CALC_TZ_ = 'Asia/Taipei';
+var GAP_CALC_UTC_OFFSET_MIN_ = 480;   // Asia/Taipei = UTC+8, fixed (no DST in Taiwan)
+function gapCalcLeap_(y) { return (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0); }
+function gapCalcDaysInMonth_(y, m) { return [31, gapCalcLeap_(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]; }
+function gapCalcYmdValid_(ymd) {
+  ymd = String(ymd == null ? '' : ymd);
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(ymd)) return false;
+  return +ymd.slice(8, 10) <= gapCalcDaysInMonth_(+ymd.slice(0, 4), +ymd.slice(5, 7));   // reject 2026-02-30 etc.
+}
+// PURE: epoch ms → Asia/Taipei calendar date (shift by the fixed UTC+8 offset, then read the UTC wall-clock).
+function gapCalcTaipeiYmd_(epochMs) {
+  var d = new Date(epochMs + GAP_CALC_UTC_OFFSET_MIN_ * 60000);
+  var y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
+  return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+}
+// PURE: previous calendar day (correct across month/year/leap boundaries; string arithmetic, NO Date subtraction).
+function gapCalcPrevYmd_(ymd) {
+  var y = +ymd.slice(0, 4), m = +ymd.slice(5, 7), d = +ymd.slice(8, 10);
+  d -= 1; if (d < 1) { m -= 1; if (m < 1) { m = 12; y -= 1; } d = gapCalcDaysInMonth_(y, m); }
+  return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
+}
+// PURE: canonical calculation context for a job from an Asia/Taipei execution date. Month + cycle derive from the date.
+function gapCalcContextForJob_(jobType, execYmd) {
+  if (!gapCalcYmdValid_(execYmd)) return { ok: false, code: 'CALCULATION_CONTEXT_DATE_INVALID', message: 'execution Asia/Taipei date invalid: ' + execYmd };
+  var calcDate = (String(jobType) === 'ORDER_PLANNING') ? gapCalcPrevYmd_(execYmd) : execYmd;
+  var calcMonth = calcDate.slice(0, 7);
+  return { ok: true, jobType: String(jobType), calculationDate: calcDate, calculationMonth: calcMonth, planningCycle: 'RECO-' + calcMonth, timezone: GAP_CALC_TZ_ };
+}
+function gapCalcNowMs_() { return new Date().getTime(); }                                   // the ONLY clock read (server-side)
+// Resolve the canonical context for a job at an execution instant (default = now). One owner; scheduled + manual.
+function gapCalcResolveContext_(jobType, nowMs) { return gapCalcContextForJob_(jobType, gapCalcTaipeiYmd_(nowMs != null ? nowMs : gapCalcNowMs_())); }
+
+// ---- default IO (memoized spreadsheet open; injectable canonical calc-context; reuse the canonical calc) ------
+// F1-4B-FM5-R4: when `calcContext` is supplied, the reco-io's calculation DATE + MONTH come from it (the canonical
+// deterministic context) — NOT from the RECOMMENDATION_CALCULATION_DATE / _MONTH Script Properties. When it is
+// absent (a direct/diagnostic workspace.get), the Script Properties remain the debug/override authority (§5).
+function gapMaterializationDefaultIo_(calcContext) {
   var _ss = null;
+  var ctx = (calcContext && calcContext.ok) ? calcContext : null;
   return {
     now: function () { return new Date(); },
     tz: function () { try { return Session.getScriptTimeZone(); } catch (e) { return 'UTC'; } },
+    calcContext: ctx,
     openTarget: function () {
       if (_ss) return _ss;                                  // memoized: open ONCE for the whole batch
       var id = prodExpectedDbId_();
@@ -204,6 +251,10 @@ function gapMaterializationDefaultIo_() {
     workspaceGet: function (body, sharedSs) {
       var recoIo = recommendationWorkspaceDefaultIo_();
       recoIo.openTarget = function () { return sharedSs; };
+      if (ctx) {                                            // inject the canonical deterministic context (no Script Property)
+        recoIo.configDate = function () { return ctx.calculationDate; };
+        recoIo.configMonth = function () { return ctx.calculationMonth; };
+      }
       return handleRecommendationWorkspaceGet_(body, recoIo);
     }
   };
@@ -354,7 +405,16 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts) {
 }
 
 // ---- PUBLIC batch owners (one bounded server batch per manual button) ---------------------------------
+// F1-4B-FM5-R4: when no io is injected (the manual "Recalculate All Sites" / router path), derive the canonical
+// deterministic Asia/Taipei context (INVENTORY → today) and inject it — the SAME owner + rule the scheduler uses,
+// so manual and scheduled never calculate different business periods (§6). An injected io (scheduler / tests) is
+// used as-is. Fail closed on an invalid context (§10) — never a fabricated/blank/UTC date.
 function handleRecalculateInventoryReplenishmentGapBatch_(body, io) {
+  if (!io) {
+    var ctx = gapCalcResolveContext_('INVENTORY');
+    if (!ctx.ok) return gapBatchEnvelope_(false, null, ctx.code, ctx.message);
+    io = gapMaterializationDefaultIo_(ctx);
+  }
   return gapRunBatch_(body, io, { product: 'INVENTORY', table: INV_GAP_TABLE_, headers: INV_GAP_HEADERS_, map: gapInvMapFromLines_ });
 }
 
@@ -363,7 +423,11 @@ function handleRecalculateInventoryReplenishmentGapBatch_(body, io) {
 // scopes reuse the harvest pass; no wasted read) → map + UPSERT order_planning_gap. ONE bounded server batch, no
 // per-SKU HTTP loop, no shared-pool duplication. Inventory batch is untouched (§18).
 function handleRecalculateOrderPlanningGapBatch_(body, io) {
-  io = io || gapMaterializationDefaultIo_();
+  if (!io) {
+    var opCtx = gapCalcResolveContext_('ORDER_PLANNING');   // §3 latest completed source cycle = the PREVIOUS Asia/Taipei date
+    if (!opCtx.ok) return gapBatchEnvelope_(false, null, opCtx.code, opCtx.message);
+    io = gapMaterializationDefaultIo_(opCtx);
+  }
   var cfg = { product: 'ORDER_PLANNING', table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_, map: gapOpMapFromLines_ };
   try {
     var ss = io.openTarget();

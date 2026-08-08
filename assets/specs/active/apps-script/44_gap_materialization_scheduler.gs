@@ -22,11 +22,11 @@
 // DB schema, gap columns, or UI calc. NO AI Plan, NO Execution Plan, NO warnings, NO order/shipment writes, NO
 // browser timer, NO page-load calculation, NO per-SKU HTTP loop. The Amazon import trigger is NOT touched.
 //
-// CALCULATION-DATE / -MONTH ROLLOVER: HALTED (§7). RECOMMENDATION_CALCULATION_DATE + RECOMMENDATION_CALCULATION_MONTH
-// are READ-ONLY Script Properties in this codebase (no setter exists) → they are MANUALLY maintained. This scheduler
-// VALIDATES them (via the frozen resolvers) and fails safely with a clear diagnostic if missing/stale; it does NOT
-// invent auto-roll. Rollover authority is NOT frozen: CALCULATION_DATE_ROLLOVER_AUTHORITY_NOT_FROZEN /
-// CALCULATION_MONTH_ROLLOVER_AUTHORITY_NOT_FROZEN — authorize deterministic rollover in a separate round.
+// CALCULATION-DATE / -MONTH ROLLOVER: FROZEN + IMPLEMENTED in F1-4B-FM5-R4. The scheduler derives a DETERMINISTIC
+// Asia/Taipei calculation context via the canonical owner `gapCalcResolveContext_` (in 43) and INJECTS it into the
+// batch owner — RECOMMENDATION_CALCULATION_DATE / _MONTH Script Properties are NO LONGER required for scheduled (or
+// manual) runs and are NEVER mutated (they remain an optional debug/override authority for direct workspace.get).
+// If a valid deterministic context cannot be established → CONFIG_BLOCKED (never UTC / browser / stale / blank).
 
 var GAP_SCHED_TZ_ = 'Asia/Taipei';       // frozen operational timezone (authority: import scheduleTimezone)
 var GAP_SCHED_LOCK_MS_ = 10000;          // bounded wait for the orchestration-level Apps Script lock
@@ -38,11 +38,12 @@ function gapSchedIsOwnedHandler_(name) { return GAP_SCHED_OWNED_HANDLERS_.indexO
 
 function gapSchedTimestamp_() { try { return Utilities.formatDate(new Date(), GAP_SCHED_TZ_, 'yyyy-MM-dd HH:mm:ss'); } catch (e) { return ''; } }
 
-// Shared thin orchestration: bounded lock (§5, no overlap) → read-only config validation (§7, no auto-roll) →
-// invoke the EXISTING canonical batch owner (§8, same as the manual button) → structured summary (§6, no fake
-// success). A single blocked/error SKU never invalidates the valid rows — the batch's READY/BLOCKED/ERROR
-// semantics are preserved verbatim (this layer only reports the batch's own counts).
-function gapSchedRun_(jobName, configCheck, invoke) {
+// Shared thin orchestration: bounded lock (§5, no overlap) → derive the canonical DETERMINISTIC calc context
+// (F1-4B-FM5-R4; Asia/Taipei; via the ONE owner in 43 — no Script Property, no auto-roll) → INJECT it into the
+// EXISTING canonical batch owner (§8, same as the manual button) → structured summary (§6, no fake success). A
+// single blocked/error SKU never invalidates the valid rows — the batch's READY/BLOCKED/ERROR semantics are
+// preserved verbatim. `nowMs` is an OPTIONAL test seam (production triggers pass nothing → clock is read once).
+function gapSchedRun_(jobName, jobType, invoke, nowMs) {
   var startedAt = gapSchedTimestamp_();
   var lock = null;
   try { lock = LockService.getScriptLock(); } catch (e) { lock = null; }
@@ -52,13 +53,13 @@ function gapSchedRun_(jobName, configCheck, invoke) {
     return skip;
   }
   try {
-    var cfg = configCheck();                                                        // §7 validate READ-ONLY authority; NO auto-roll
-    if (!cfg.ok) {
-      var blocked = { job: jobName, status: 'CONFIG_BLOCKED', code: cfg.code, message: cfg.message, startedAt: startedAt, finishedAt: gapSchedTimestamp_() };
+    var ctx = gapCalcResolveContext_(jobType, nowMs);                               // §1/§2/§3 deterministic Asia/Taipei context (no Script Property)
+    if (!ctx.ok) {                                                                  // §10 no fabricated/ambiguous context
+      var blocked = { job: jobName, status: 'CONFIG_BLOCKED', code: ctx.code, message: ctx.message, startedAt: startedAt, finishedAt: gapSchedTimestamp_() };
       try { Logger.log('[gapScheduler] ' + JSON.stringify(blocked)); } catch (_b) {}
-      return blocked;                                                               // no batch run, no fake success
+      return blocked;
     }
-    var env = invoke();                                                             // §8 the SAME owner the manual button calls
+    var env = invoke(ctx);                                                          // §5 inject the derived context into the SAME owner the manual button calls
     var d = (env && env.data) || {};
     var summary = {
       job: jobName,
@@ -66,7 +67,7 @@ function gapSchedRun_(jobName, configCheck, invoke) {
       startedAt: startedAt,
       finishedAt: gapSchedTimestamp_(),
       timezone: GAP_SCHED_TZ_,
-      calculationAuthority: cfg.authority || null,
+      calculationAuthority: { calculationDate: ctx.calculationDate, calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle },
       scopesProcessed: (d.scopesCalculated != null ? d.scopesCalculated : (d.totalScopes != null ? d.totalScopes : null)),
       rowsProcessed: (d.written != null ? d.written : null),
       readyCount: (d.ready != null ? d.ready : null),
@@ -86,35 +87,21 @@ function gapSchedRun_(jobName, configCheck, invoke) {
   }
 }
 
-// READ-ONLY config validators. They confirm the manually-maintained Script Property is present + well-formed via the
-// SAME frozen resolvers the recommendation workspace uses (recoWsResolveCalcDate_ / recoWsResolveCalcContext_).
-// They NEVER set or roll the property — rollover authority is NOT frozen (§7 HALT).
-function gapSchedCheckInventoryConfig_() {
-  var io = recommendationWorkspaceDefaultIo_();
-  var d = recoWsResolveCalcDate_(io);                                               // RECOMMENDATION_CALCULATION_DATE (YYYY-MM-DD)
-  if (!d.ok) return { ok: false, code: d.error.code, message: d.error.message };
-  return { ok: true, authority: { calculationDate: d.calculationDate } };
-}
-function gapSchedCheckOrderPlanningConfig_() {
-  var io = recommendationWorkspaceDefaultIo_();
-  var m = recoWsResolveCalcContext_(io);                                            // RECOMMENDATION_CALCULATION_MONTH (YYYY-MM)
-  if (!m.ok) return { ok: false, code: m.error.code, message: m.error.message };
-  return { ok: true, authority: { calculationMonth: m.calculationMonth, planningCycle: m.planningCycle } };
-}
-
 // ---- NAMED SCHEDULER ENTRY POINTS (attach to Apps Script time triggers; Asia/Taipei) --------------------------
+// The optional `nowMs` argument is a test seam only — production time-triggers invoke these with no arguments.
 // Step B — daily Inventory Replenishment gap snapshot. Preferred trigger: 13:30 Asia/Taipei (after source import).
-function runDailyInventoryGapMaterialization() {
-  return gapSchedRun_('INVENTORY_GAP', gapSchedCheckInventoryConfig_, function () {
-    return handleRecalculateInventoryReplenishmentGapBatch_({ requestId: 'SCHED-INV-GAP' });
-  });
+// Canonical calculationDate = the execution's Asia/Taipei date (Day D). No manual Script Property required (§O).
+function runDailyInventoryGapMaterialization(nowMs) {
+  return gapSchedRun_('INVENTORY_GAP', 'INVENTORY', function (ctx) {
+    return handleRecalculateInventoryReplenishmentGapBatch_({ requestId: 'SCHED-INV-GAP' }, gapMaterializationDefaultIo_(ctx));
+  }, nowMs);
 }
-// Step D — daily Order Planning gap snapshot. Preferred trigger: 03:30 Asia/Taipei (Day D+1, the morning AFTER the
-// Day-D source import + Inventory gap). Same-day-import → next-day Order Planning is frozen (see decision register).
-function runDailyOrderPlanningGapMaterialization() {
-  return gapSchedRun_('ORDER_PLANNING_GAP', gapSchedCheckOrderPlanningConfig_, function () {
-    return handleRecalculateOrderPlanningGapBatch_({ requestId: 'SCHED-OP-GAP' });
-  });
+// Step D — daily Order Planning gap snapshot. Preferred trigger: 03:30 Asia/Taipei (Day D+1). Canonical
+// calculationDate = the PREVIOUS Asia/Taipei date (Day D) — the latest COMPLETED source cycle. No property required.
+function runDailyOrderPlanningGapMaterialization(nowMs) {
+  return gapSchedRun_('ORDER_PLANNING_GAP', 'ORDER_PLANNING', function (ctx) {
+    return handleRecalculateOrderPlanningGapBatch_({ requestId: 'SCHED-OP-GAP' }, gapMaterializationDefaultIo_(ctx));
+  }, nowMs);
 }
 
 // ---- MANUAL, USER-RUN trigger installer (run ONCE from the Apps Script editor; NOT wired to any POST/trigger) ----
