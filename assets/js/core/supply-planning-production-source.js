@@ -55,7 +55,13 @@
     // Daily sales = the §22 confirmed-day window; weekly = the <3-normal-day fallback rung. Read-only; missing → the
     // Sales-Driven horizon fail-closes truthfully (SALES_BASIS_UNAVAILABLE), never guessed, never forecast-substituted.
     { key: 'amazonDailySalesSnapshot', sheet: 'amazon_daily_sales_snapshot', required: false },
-    { key: 'amazonWeeklySalesSnapshot', sheet: 'amazon_weekly_sales_snapshot', required: false }
+    { key: 'amazonWeeklySalesSnapshot', sheet: 'amazon_weekly_sales_snapshot', required: false },
+    // F1-4B-FM5-R4UI-R3a: the §22 contamination-day authority — campaign/promotion selling windows excluded from the
+    // NORMAL run-rate. campaigns (start_date/end_date/status) join campaign_sku_lines (marketplace_sku_id identity);
+    // fc_special_events (already read above) supplies the event selling window. Read-only; a MISSING campaigns source
+    // is NOT silently "no contamination" — the Sales-Driven horizon fail-closes (CONTAMINATION_SOURCE_UNAVAILABLE).
+    { key: 'campaigns', sheet: 'campaigns', required: false },
+    { key: 'campaignSkuLines', sheet: 'campaign_sku_lines', required: false }
   ];
 
   function tablesFor(config) {

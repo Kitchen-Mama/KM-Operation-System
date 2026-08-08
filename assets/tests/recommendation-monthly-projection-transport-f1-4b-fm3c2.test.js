@@ -128,7 +128,7 @@ eq([lm.calculatedGap, lm.recommendedQty, lm.currentStockQty, lm.qualifiedIncomin
 ok(Array.isArray(lm.monthlyProjection) && lm.monthlyProjection.length === 4, 'M2 additive line.monthlyProjection with 4 tiers');
 eq([lm.monthlyProjection[0].openingSupplyQty, lm.monthlyProjection[0].demandQty, lm.monthlyProjection[0].remainingGapQty, lm.monthlyProjection[0].suggestedOrderQty], [120, 250, 130, 132], 'M3 T1: opening = currentStockQty 120, demand 250, gap 130, CEIL→132');
 eq([lm.monthlyProjection[1].openingSupplyQty, lm.monthlyProjection[1].remainingGapQty], [0, 250], 'M4 T2: carry-forward opening 0, gap 250');
-ok(cM.getSheetByName === 15 && cM.write === 0, 'O request count = 15 targeted reads (13 canonical + FM5-R4UI-R3 daily/weekly sales); ZERO writes — projection adds no write');
+ok(cM.getSheetByName === 17 && cM.write === 0, 'O request count = 17 targeted reads (13 canonical + R3 daily/weekly sales + R3a campaigns); ZERO writes — projection adds no write');
 var roundtrip = JSON.parse(JSON.stringify(envM));   // FM3a session cache stores env.data verbatim (JSON)
 ok(roundtrip.data.lines[0].monthlyProjection.length === 4, 'P monthlyProjection survives JSON round-trip (FM3a session cache compatible)');
 ok(cM.write === 0, 'Q no writes on the READ path');
@@ -148,7 +148,7 @@ var wB = envW.data.lines.filter(function (l) { return l.warehouseId === 'WH-B'; 
 ok(wA.blocked === true && wB.blocked === true && wA.blockedReason === 'ALLOCATION_FACTS_NOT_READY', 'G1 warehouse lines blocked ALLOCATION_FACTS_NOT_READY (pre-existing workspace state, not FM3c-2)');
 ok(wA.monthlyProjection === undefined && wB.monthlyProjection === undefined, 'G2 blocked line carries NO monthlyProjection (no fabricated tiers — §12 absent-on-blocked)');
 eq([wA.allocatedForecastQty, wB.allocatedForecastQty], [300, 700], 'G3 pre-existing scalar allocatedForecastQty unchanged (30/70 fanout 300/700)');
-ok(cW.getSheetByName === 15 && cW.write === 0, 'G4 one targeted read (15 canonical tables) for the 2-warehouse fanout; zero writes');
+ok(cW.getSheetByName === 17 && cW.write === 0, 'G4 one targeted read (17 canonical tables) for the 2-warehouse fanout; zero writes');
 
 console.log('\n----------------------------------------');
 console.log('MONTHLY PROJECTION TRANSPORT (F1-4B-FM3c-2): ' + pass + ' passed, ' + fail + ' failed');
