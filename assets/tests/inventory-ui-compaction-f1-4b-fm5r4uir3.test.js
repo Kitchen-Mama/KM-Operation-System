@@ -45,8 +45,8 @@ ok(/\.fixed-row\.is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'R1 acti
 ok(/\.scroll-row\.is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'R2 active scroll master row is position:sticky');
 ok(/is-active-sticky[\s\S]*?top:\s*calc\([\s\S]*?--km-sticky-header-total/.test(CSS), 'R3 sticky top offset includes the header total → row pins BELOW the two-level header (never covers it)');
 ok(/is-active-sticky[\s\S]*?z-index:\s*calc\(var\(--km-sticky-z-col/.test(CSS), 'R4 sticky row z sits just above the row/left-column layer, below the header rows');
-ok(/fixedRow\.classList\.add\('is-active-sticky'\)/.test(JS) && /scrollRow\.classList\.add\('is-active-sticky'\)/.test(JS), 'R5 both real rows get the sticky class on expand (no detached clone)');
-ok(/classList\.remove\('is-active-sticky'\)/.test(JS), 'R6 collapse pass removes the sticky class from every row (only the active row is ever sticky)');
+ok(/fixedRow\.classList\.add\('is-active-selected'\)/.test(JS) && /scrollRow\.classList\.add\('is-active-selected'\)/.test(JS), 'R5 both real rows get the selected-highlight class on expand (FM5-R4UI-R4: sticky deferred to scroll → no expand jump)');
+ok(/classList\.remove\('is-active-sticky'\)/.test(JS) && /classList\.remove\('is-active-selected'\)/.test(JS), 'R6 collapse pass removes BOTH sticky + selected classes from every row');
 
 section('§16 overflow containment preserved (no outer-container overflow)');
 ok(/\.replen-horizon-tablewrap\s*\{[^}]*overflow-x:\s*auto/.test(CSS), 'S1 Recommendation Summary table wrapped in an internal-scroll container (card cannot widen)');

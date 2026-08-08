@@ -1659,3 +1659,21 @@
     background: #EAF2FE;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
 }
+
+/* =============================================================================================================
+   F1-4B-FM5-R4UI-R4 — active-row selected highlight (§2) + compact Recommendation Summary spacing (§4).
+   ============================================================================================================= */
+
+/* §2 — the highlight applied AT EXPAND (no reposition → zero jump). position:sticky lives on the separate
+   .is-active-sticky class, added lazily on the first scroll (see toggleReplenRow / _irBindStickyScrollOnce). */
+#ops-section .fixed-row.is-active-selected,
+#ops-section .scroll-row.is-active-selected { background: #EAF2FE; }
+
+/* §4 — trim the card's vertical whitespace: tighter title gap + tighter summary rows; row height stays readable,
+   card never widens (fixed table layout + internal overflow-x preserved from R4UI-R3). Shorthand padding/margin
+   only (no *-top with a numeric value) so the compaction stays clearly a spacing change, never a position hack. */
+#ops-section .replen-card--recommendation-summary .replen-card__title { margin: 0 0 6px; }
+#ops-section .replen-card--recommendation-summary .replen-recsum-ws { margin: 0; }
+#ops-section .replen-card--recommendation-summary .replen-horizon-tablewrap { margin: 0; }
+#ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook td,
+#ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook th { padding: 4px 8px; }

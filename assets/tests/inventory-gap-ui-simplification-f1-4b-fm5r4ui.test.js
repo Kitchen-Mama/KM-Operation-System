@@ -53,22 +53,25 @@ ok(!/replen-recsum-ws__meta[^<]*note:/.test(pre), 'UI5 no panel-level aggregate 
 ok(INVJS.indexOf('<h4 class="replen-card__title">Recommendation Summary</h4>') >= 0, 'UI6 outer card title is "Recommendation Summary" (caller-owned; the only primary title)');
 
 section('Diagnostics — engineering metadata preserved but collapsed');
-ok(/<summary>Diagnostics<\/summary>/.test(readyBody), 'DG1 a collapsed Diagnostics <details> is present');
-ok(/status: READY/.test(readyBody) && /calc date: 2026-08-07/.test(readyBody) && /as of 2026-08-07 12:00:00/.test(readyBody), 'DG2 status / calc date / as-of live under Diagnostics');
-ok(/note: Shortage within 30 days/.test(readyBody), 'DG3 the panel aggregate note lives under Diagnostics');
+// F1-4B-FM5-R4UI-R4 §3: Diagnostics are REMOVED from the normal production card (emitted only behind the explicit
+// window.KM_FLAGS.IR_DEBUG_DIAGNOSTICS debug flag, which is off in this harness). The normal view shows ONLY the
+// fixed 4-row table + (when applicable) the actionable stale banner.
+ok(!/<summary>Diagnostics<\/summary>/.test(readyBody), 'DG1 no Diagnostics control in the normal production view (hidden behind debug flag)');
+ok(!/status: READY/.test(readyBody) && !/calc date: 2026-08-07/.test(readyBody) && !/as of 2026-08-07 12:00:00/.test(readyBody), 'DG2 engineering status / calc-date / as-of NOT shown in the normal view');
+ok(!/note: Shortage within 30 days/.test(readyBody), 'DG3 the aggregate engineering note is not shown in the normal view');
 
 section('row-level Note preserved + fixed structure + valid zero');
 ok(/18 Days/.test(readyBody) && /30 Days/.test(readyBody) && /45 Days/.test(readyBody) && /90 Days/.test(readyBody), 'RS1 all four windows always rendered (stable structure)');
 ok(/No shortage/.test(pre), 'RS2 row-level Note preserved — D18 (gap 0) → "No shortage"');
 ok(/Replenishment required/.test(pre), 'RS3 row-level Note preserved — D30/D45/D90 (gap>0) → "Replenishment required"');
-ok(/replen-recsum-table__num">0</.test(pre), 'RS4 valid zero renders 0 (D18 gap), never "—"');
-ok(/replen-recsum-table__num">1200</.test(pre) && /replen-recsum-table__num">600</.test(pre), 'RS5 stored D90/D45 gap shown verbatim (no math)');
+ok(/replen-recsum-table__num"[^>]*>0</.test(pre), 'RS4 valid zero renders 0 (D18 gap), never "—"');
+ok(/replen-recsum-table__num"[^>]*>1200</.test(pre) && /replen-recsum-table__num"[^>]*>600</.test(pre), 'RS5 stored D90/D45 gap shown verbatim (no math)');
 
 section('BLOCKED → dash numerics + truthful Note (in the table, not only diagnostics)');
 var blkPre = preDiag(blockedBody);
 ok(/replen-horizon-table--outlook/.test(blkPre) && !/Materialized/.test(blockedBody), 'BK1 BLOCKED still renders the fixed outlook table, no badge');
-ok(/replen-recsum-table__num">—</.test(blkPre), 'BK2 BLOCKED numeric cells show "—" (never a fabricated 0)');
-ok(/replen-horizon-table__note">MARKETPLACE_STOCK_MISSING</.test(blkPre), 'BK3 BLOCKED row Note shows the truthful reason in the table (per window)');
+ok(/replen-recsum-table__num"[^>]*>—</.test(blkPre), 'BK2 BLOCKED numeric cells show "—" (never a fabricated 0)');
+ok(/replen-horizon-table__note"[^>]*>MARKETPLACE_STOCK_MISSING</.test(blkPre), 'BK3 BLOCKED row Note shows the truthful reason in the table (per window)');
 ok(/18 Days/.test(blkPre) && /90 Days/.test(blkPre), 'BK4 all four windows still rendered for a BLOCKED row');
 
 section('shared note helper stays backward-compatible (live workspace path unaffected)');

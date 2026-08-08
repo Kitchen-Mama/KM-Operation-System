@@ -1629,6 +1629,24 @@ function _recSummaryRows(skuData) {
     return html;
 }
 
+// FM5-R4UI-R4 §2 — defer sticky positioning to the FIRST scroll after an expand. On expand the active row carries
+// only .is-active-selected (highlight, no reposition → no jump). The moment the user scrolls, promote the active
+// row(s) to .is-active-sticky so native position:sticky pins them under the header only as they scroll away. Bound
+// once; passive + capture so it also catches an inner scroll container. Cheap: does nothing unless a row is open.
+var _irStickyScrollBound = false;
+function _irBindStickyScrollOnce() {
+    if (_irStickyScrollBound || typeof window === 'undefined' || !window.addEventListener) return;
+    _irStickyScrollBound = true;
+    var onScroll = function () {
+        if (typeof currentExpandedRow === 'undefined' || !currentExpandedRow) return;
+        if (typeof document === 'undefined' || !document.querySelectorAll) return;
+        var active = document.querySelectorAll('#ops-section .fixed-row.is-active-selected, #ops-section .scroll-row.is-active-selected');
+        Array.prototype.forEach.call(active, function (r) { if (!r.classList.contains('is-active-sticky')) r.classList.add('is-active-sticky'); });
+    };
+    try { window.addEventListener('scroll', onScroll, { capture: true, passive: true }); }
+    catch (e) { window.addEventListener('scroll', onScroll, true); }
+}
+
 function toggleReplenRow(sku) {
     const fixedRows = document.querySelectorAll('#ops-section .fixed-row');
     const scrollRows = document.querySelectorAll('#ops-section .scroll-row');
@@ -1642,10 +1660,10 @@ function toggleReplenRow(sku) {
     existingFixedPanels.forEach(panel => panel.remove());
     existingScrollPanels.forEach(panel => panel.remove());
 
-    // FM5-R4UI-R3 §13: clear the active-sticky state everywhere on every collapse pass so only the ONE currently
-    // expanded master row is ever sticky (collapse fully restores normal row flow).
-    fixedRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); });
-    scrollRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); });
+    // FM5-R4UI-R4 §2: clear the active-selected + active-sticky state everywhere on every collapse pass so only the
+    // ONE currently expanded master row is ever highlighted/sticky (collapse fully restores normal row flow).
+    fixedRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); row.classList.remove('is-active-selected'); });
+    scrollRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); row.classList.remove('is-active-selected'); });
     document.querySelectorAll('#ops-section .replen-row-chevron').forEach(function (btn) {
         btn.setAttribute('aria-expanded', 'false');
         btn.classList.remove('is-open');
@@ -1663,10 +1681,14 @@ function toggleReplenRow(sku) {
     const scrollRow = Array.from(scrollRows).find(row => row.dataset.sku === sku);
 
     // Both containers receive their expanded class in the SAME synchronous pass (no per-side setTimeout).
-    // FM5-R4UI-R3 §13: the active master row also gets .is-active-sticky so it stays pinned (real row, no clone)
-    // below the two-level table header while the user scrolls its expanded detail region (CSS owns the geometry).
-    if (fixedRow) { fixedRow.classList.add('expanded'); fixedRow.classList.add('is-active-sticky'); }
-    if (scrollRow) { scrollRow.classList.add('expanded'); scrollRow.classList.add('is-active-sticky'); }
+    // FM5-R4UI-R4 §2: on expand the active master row gets ONLY the subtle selected highlight (.is-active-selected)
+    // — NOT position:sticky — so expanding causes ZERO vertical jump (the earlier R3 code applied sticky+top at
+    // expand, which clamped a near-top row downward). The sticky positioning (.is-active-sticky) is added lazily by
+    // the scroll handler once the user actually scrolls, so the row only pins under the header when it would leave
+    // the viewport (see _irBindStickyScrollOnce). Collapse clears BOTH classes → normal flow restored.
+    if (fixedRow) { fixedRow.classList.add('expanded'); fixedRow.classList.add('is-active-selected'); }
+    if (scrollRow) { scrollRow.classList.add('expanded'); scrollRow.classList.add('is-active-selected'); }
+    _irBindStickyScrollOnce();
     if (fixedRow) {
         const chevron = fixedRow.querySelector('.replen-row-chevron');
         if (chevron) { chevron.setAttribute('aria-expanded', 'true'); chevron.classList.add('is-open'); }
@@ -3406,21 +3428,53 @@ function handleRecalcAllInventoryGap() {
   _irRecalcAllBusy = true;
   if (btn) { btn.disabled = true; btn.textContent = 'Recalculating…'; }
   function restore() { _irRecalcAllBusy = false; if (btn) { btn.disabled = false; btn.textContent = label || 'Recalculate All Sites'; } }
+  var preMax = _irMaxCalculatedAt_();   // snapshot the current scope's newest stored calculated_at BEFORE the batch
   return Promise.resolve(window.KM.DB.recalculateInventoryReplenishmentGapAll({})).then(function (res) {
     if (res && res.success && res.data) {
       var d = res.data;
       alert('Inventory gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
-      // FM5-R1: invalidate the materialized-read cache + refetch stored rows so the refreshed Gap/Suggested
-      // become visible without a page reload and WITHOUT any per-SKU live calculation.
       if (typeof refreshInventoryGapAfterRecalc_ === 'function') refreshInventoryGapAfterRecalc_();
-    } else {
-      var e = (res && res.error) || {};
-      alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
+      restore();
+      return;
     }
+    var e = (res && res.error) || {};
+    // F1-4B-FM5-R4UI-R4 §6/§7 — a TRANSPORT failure means the browser lost the response; it does NOT prove the
+    // server batch failed (Apps Script often finishes the DB writes after the connection drops). Do NOT claim
+    // failure and do NOT re-run the WRITE batch (that would duplicate an expensive recalc). Instead refetch the
+    // materialized READ and confirm from the stored calculated_at whether the batch actually advanced.
+    if (_irIsTransportError_(e)) { _irRecalcTransportRecovery_('Inventory', preMax, refreshInventoryGapAfterRecalc_, _irMaxCalculatedAt_, restore); return; }
+    alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
     restore();
   }).catch(function (err) { alert('Recalculation failed: ' + (err && err.message ? err.message : err)); restore(); });
 }
 window.handleRecalcAllInventoryGap = handleRecalcAllInventoryGap;
+
+// F1-4B-FM5-R4UI-R4 §6/§7 — SHARED manual-recalc transport-recovery contract (Inventory + Order Planning use it
+// identically, §11.P). A transport error = the browser never received an acknowledged batch envelope. On it we
+// refetch the READ ONLY (never the WRITE), then decide from the stored calculated_at: if the newest stored row is
+// newer than the pre-recalc snapshot, the batch completed despite the lost response → report completion from the
+// refreshed data; otherwise report that completion could not be confirmed (never a fabricated success).
+function _irIsTransportError_(e) { var c = e && e.code ? String(e.code) : ''; return c === 'HTTP_TRANSPORT_ERROR' || c === 'NON_JSON_RESPONSE'; }
+// Newest calculated_at among the currently-loaded materialized rows (server 'YYYY-MM-DD HH:MM:SS' → lexical compare).
+function _irMaxCalculatedAt_() {
+  var rows = (_irMatState && _irMatState.rows) || []; var mx = '';
+  for (var i = 0; i < rows.length; i++) { var c = rows[i] && rows[i].calculated_at ? String(rows[i].calculated_at) : ''; if (c > mx) mx = c; }
+  return mx;
+}
+function _irRecalcTransportRecovery_(product, preMax, refetchFn, maxFn, restore) {
+  alert('Request connection was interrupted. ' + product + ' calculation status is being refreshed…');
+  return Promise.resolve(typeof refetchFn === 'function' ? refetchFn() : null).then(function () {
+    var postMax = (typeof maxFn === 'function') ? maxFn() : '';
+    if (postMax && (!preMax || postMax > preMax)) {
+      alert(product + ' calculation completed — refreshed from the server (the connection was interrupted but the results were saved).');
+    } else {
+      alert(product + ' calculation could not be confirmed. The last stored results are shown; check again shortly before re-running (no automatic retry was issued).');
+    }
+    if (typeof restore === 'function') restore();
+  }).catch(function () { if (typeof restore === 'function') restore(); });
+}
+window._irRecalcTransportRecovery_ = _irRecalcTransportRecovery_;
+window._irIsTransportError_ = _irIsTransportError_;
 
 // AI Plan (Inventory Replenishment) — refreshes replenishment suggestions using the EXISTING Suggested Qty /
 // View Recommendation calculation (renderReplenishment recomputes + re-renders with the CURRENT filter /
@@ -5017,18 +5071,21 @@ function _irRecoHorizonOutlookTableHtml(line) {
   function num(v) { return (v === null || v === undefined) ? '—' : esc(String(v)); }
   var byWin = {};
   (line.horizons || []).forEach(function (h) { if (h && h.windowCode) byWin[h.windowCode] = h; });
+  // F1-4B-FM5-R4UI-R4 §3 — TRUE fixed schema: the four windows ALWAYS render, each cell carries a stable identity
+  // (data-ir-gap-window / data-ir-suggested-window / data-ir-note-window) so async data PATCHES cell content in place
+  // (see _irRecoPatchSummaryCells) instead of regenerating the table. Missing/absent data → "—"/"…", never dropped.
   var rows = _IR_HORIZON_WINDOWS.map(function (w) {
     var h = byWin[w.code];
     var by = (h && h.requiredByDate) ? ('<span class="replen-horizon-by">by ' + esc(h.requiredByDate) + '</span>') : '';
     var winCell = '<td class="replen-horizon-table__win"><span class="replen-horizon-win">' + w.label + '</span>' + by + '</td>';
-    if (!h) return '<tr class="is-missing">' + winCell + '<td class="replen-recsum-table__num">—</td><td class="replen-recsum-table__num">—</td><td class="replen-horizon-table__note">—</td></tr>';
-    return '<tr>' + winCell
-      + '<td class="replen-recsum-table__num">' + num(h.gapQty) + '</td>'
-      + '<td class="replen-recsum-table__num">' + num(h.suggestedOrderQty) + '</td>'
-      + '<td class="replen-horizon-table__note">' + esc(_irRecoHorizonNote_(h)) + '</td>'
+    var gap = h ? num(h.gapQty) : '—', sug = h ? num(h.suggestedOrderQty) : '—', note = h ? esc(_irRecoHorizonNote_(h)) : '—';
+    return '<tr' + (h ? '' : ' class="is-missing"') + '>' + winCell
+      + '<td class="replen-recsum-table__num" data-ir-gap-window="' + w.code + '">' + gap + '</td>'
+      + '<td class="replen-recsum-table__num" data-ir-suggested-window="' + w.code + '">' + sug + '</td>'
+      + '<td class="replen-horizon-table__note" data-ir-note-window="' + w.code + '">' + note + '</td>'
       + '</tr>';
   }).join('');
-  return '<div class="replen-horizon-tablewrap"><table class="replen-horizon-table replen-horizon-table--outlook"><thead><tr>'
+  return '<div class="replen-horizon-tablewrap"><table class="replen-horizon-table replen-horizon-table--outlook" data-ir-summary="1"><thead><tr>'
     + '<th class="replen-horizon-table__win">Window</th><th class="replen-recsum-table__num">Gap</th>'
     + '<th class="replen-recsum-table__num">Suggested Qty</th><th class="replen-horizon-table__note">Note</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -5150,9 +5207,15 @@ function _irMatToLine(row) {
 // DEMOTED under a collapsed Diagnostics section — it is NOT part of the normal presentation. Only the actionable
 // "stale" warning stays visible in the normal view (business signal → run Recalculate All Sites). The per-window
 // business Note remains in the primary table.
+// F1-4B-FM5-R4UI-R4 §3 — the normal user-facing card shows ONLY the fixed 4-row table + (when applicable) the
+// actionable "stale" business banner. Engineering metadata (status / calc date / as-of / aggregate note) is NO
+// LONGER shown in production — it is emitted ONLY when the developer debug flag is explicitly enabled
+// (window.KM_FLAGS.IR_DEBUG_DIAGNOSTICS === true). This removes the collapsed Diagnostics control from ordinary UI.
+function _irRecoDebugDiagnosticsEnabled() { return !!(typeof window !== 'undefined' && window.KM_FLAGS && window.KM_FLAGS.IR_DEBUG_DIAGNOSTICS === true); }
 function _irMatMetaHtml(row) {
   function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
   var stale = _irMatIsStale(row) ? '<div class="replen-recsum-ws__meta"><span class="replen-mat-stale">⚠ stale — run Recalculate All Sites</span></div>' : '';
+  if (!_irRecoDebugDiagnosticsEnabled()) return stale;   // production: no Diagnostics control in the normal card
   var bits = [];
   if (row.calculation_status) bits.push('status: ' + esc(row.calculation_status));
   if (row.calculation_date) bits.push('calc date: ' + esc(row.calculation_date));
@@ -5216,8 +5279,31 @@ function _irRecoRerenderSummaries() {
   Array.prototype.forEach.call(cards, function (card) {
     var sku = String(card.id || '').replace('recommendation-summary-', '');
     var skuData = null; for (var i = 0; i < data.length; i++) { if (data[i].sku === sku) { skuData = data[i]; break; } }
+    // F1-4B-FM5-R4UI-R4 §3 — once the fixed 4-row schema exists in this card, a subsequent materialized-READY read
+    // PATCHES the cell values in place (never regenerates the table). The full rebuild runs only on the FIRST render
+    // or on a structural state change (loading / error / not-calculated / fallback mode).
+    if (_irRecoPatchSummaryCells(card, skuData)) return;
     card.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>' + _irRecoSummaryCardBody(skuData);
   });
+}
+// Returns true when it patched an existing fixed-schema table in place (materialized READY row present); false when
+// a full (re)build is required. Only cell text/notes change — the 4-row structure + identities are untouched.
+function _irRecoPatchSummaryCells(card, skuData) {
+  if (!_irUseMaterializedGapRead()) return false;
+  if (_irMatState.status !== 'READY' && _irMatState.status !== 'EMPTY') return false;
+  var table = card.querySelector && card.querySelector('[data-ir-summary]');
+  if (!table) return false;
+  var row = (skuData && _irMatState.bySku[String(skuData.sku)]) || null;
+  if (!row) return false;   // not-calculated for this SKU → fall through to the rebuild (shows the truthful message)
+  var byWin = {}; _irMatToLine(row).horizons.forEach(function (h) { if (h && h.windowCode) byWin[h.windowCode] = h; });
+  function setCell(attr, code, val) { var c = table.querySelector('[data-ir-' + attr + '-window="' + code + '"]'); if (c) c.textContent = val; }
+  _IR_HORIZON_WINDOWS.forEach(function (w) {
+    var h = byWin[w.code];
+    setCell('gap', w.code, (h && h.gapQty != null) ? String(h.gapQty) : '—');
+    setCell('suggested', w.code, (h && h.suggestedOrderQty != null) ? String(h.suggestedOrderQty) : '—');
+    setCell('note', w.code, _irRecoHorizonNote_(h));
+  });
+  return true;
 }
 // F1-4B-FM3a: repaint the main-table Suggested Qty cells from the current recommendation state (numeric
 // actionable total per SKU) once the scope result is available (live or from the session cache). No table

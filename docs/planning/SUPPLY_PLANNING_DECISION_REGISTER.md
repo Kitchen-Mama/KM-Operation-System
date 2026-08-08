@@ -796,3 +796,34 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 - **Differentiation (§3), never collapsed:** (A) present-but-empty source = legitimate zero contaminated days; (B) missing source sheet → `CONTAMINATION_SOURCE_UNAVAILABLE` (fail closed, never assumed empty); (C) ambiguous identity / owner throw → `SALES_BASIS_AMBIGUOUS`. No-daily-history → `SALES_BASIS_UNAVAILABLE`.
 - **Proof:** spike days 25–27 (1000 u) vs normal (100 u): no campaign → avg 370; campaign covering 25–27 → 3 days excluded → NORMAL=7 → avg 100. Historical event selling window excluded from the rate while the FUTURE planned event is still added once by KMHP (different concepts, no double count). Test `planning-model-wiring-f1-4b-fm5r4uir3` (22).
 - **Remaining follow-up:** multi-company daily-sales attribution still stamps the scope company (single-company scopes correct; genuinely multi-company scopes fail closed). Needs live observation before FM5-R5.
+
+### F1-4B-FM5-R4UI-R4 — Table geometry + stable summary schema + recalc reliability (5 live defects)
+
+- **§5 READY→BLOCKED root cause (highest priority):** the R3a contamination-source check fail-closed
+  (`CONTAMINATION_SOURCE_UNAVAILABLE`) whenever `campaigns`/`campaign_sku_lines`/`fc_special_events` was
+  missing OR empty — turning previously-READY sales-driven rows BLOCKED after recalc. **Fix (source-marshalling
+  only, no formula change per §10):** contamination is now a best-effort OPTIONAL filter — present-empty AND absent
+  both mean "no exclusion" (the frozen owner's own contract); a contamination identity conflict degrades to an
+  un-excluded basis via a retry. Fail-closed is reserved for the daily-sales BASIS (`SALES_BASIS_UNAVAILABLE` /
+  `SALES_BASIS_AMBIGUOUS`). Batch↔workspace snapshot parity CONFIRMED (both read the same 17 canonical tables via
+  `handleRecommendationWorkspaceGet_ → KMPS.readCanonicalSnapshots`). Documented secondary coupling: a sales-driven
+  SKU with NO regular forecast has null Site Stock (opening) → BLOCKED (pre-existing opening/forecast coupling, not
+  this round's defect). Tests: `inventory-recalc-determinism-f1-4b-fm5r4uir4` (READY→recalc→READY deterministic;
+  present-empty ≠ absent ≠ block).
+- **§6/§7 HTTP_TRANSPORT_ERROR:** a lost browser response no longer reports failure. Both recalc buttons now treat a
+  transport error as "server result unknown" → refetch the materialized READ ONLY (never re-run the WRITE batch →
+  no duplicate expensive recalc) and confirm completion from a newer stored `calculated_at` (never a fabricated
+  success). Shared contract across Inventory + Order Planning (§11.P). §8 batch response is already a compact
+  summary (counts only; no per-SKU payload) — confirmed by test.
+- **§3/§4 Recommendation Summary:** now a fixed 4-row schema with stable `data-ir-{gap,suggested,note}-window`
+  cell identities; a materialized-READY refetch PATCHES cells in place (no table rebuild). Diagnostics
+  (status/calc-date/as-of/note) removed from the normal card — emitted only behind
+  `window.KM_FLAGS.IR_DEBUG_DIAGNOSTICS`. Compact card spacing (shorthand only, no position hack).
+- **§2 sticky active row:** the expand no longer applies position:sticky (that clamped a near-top row downward =
+  the jump). Expand adds a highlight-only class; `.is-active-sticky` (position:sticky) is promoted lazily on the
+  first scroll → zero jump on expand, pins under the header only as the row scrolls away, collapse clears both.
+- **§1 header geometry:** verified — the three rowspan/tall cells (SKU / Planning Model / AI Action) already span
+  EXACTLY the compact two-row total via `var(--km-sticky-header-total)` (= 34+34 = 68px); no stale hardcoded height
+  remains (the R3 note-span token fix established this), so no gray third band in the current code. Locked by test.
+- **No formula change** (KMHP/KMTPP/KMCALC/KMPD/KMMSA/KMALLOC untouched); no DB/schema change; bundle unchanged
+  (`fb4824d1…`). Order Planning + Execution Plan formulas untouched.

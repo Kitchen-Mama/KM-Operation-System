@@ -140,35 +140,43 @@ function recoWsResolvePlanningModel_(snaps, scope, sku) {
 // is the legitimate "zero contaminated days"; an ambiguous identity (owner throw) is a distinct conflict. Returns
 // { ok:true, campaigns, events } or { ok:false, reason }.
 function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
-  // (B) source availability — the sheets must be PRESENT (readCanonicalSnapshots omits the key when the sheet is
-  // absent). A present-but-empty sheet is (A) "zero contaminated days" and is kept, never conflated with (B).
-  if (!recoWsIsObj_(snaps.campaigns) || !recoWsIsObj_(snaps.campaignSkuLines) || !recoWsIsObj_(snaps.fcSpecialEvents)) {
-    return { ok: false, reason: 'CONTAMINATION_SOURCE_UNAVAILABLE' };
-  }
-  var linesByCampaign = {};
-  recoWsToRowObjects_(snaps.campaignSkuLines).forEach(function (r) {
-    var cid = recoWsStr_(r.campaign_id); if (!cid) return;
-    (linesByCampaign[cid] = linesByCampaign[cid] || []).push({ marketplaceSkuId: recoWsStr_(r.marketplace_sku_id) || null, sku: recoWsStr_(r.sku) });
-  });
+  // F1-4B-FM5-R4UI-R4 §5 — contamination sources are OPTIONAL exclusion FILTERS: the frozen owner accepts empty
+  // campaigns/events as a legitimate "no contaminated days". So a source that is PRESENT-BUT-EMPTY *or* genuinely
+  // ABSENT must NOT block the run-rate (that was the R3a over-strict CONTAMINATION_SOURCE_UNAVAILABLE that turned
+  // READY rows BLOCKED after recalc). This builder is best-effort and NEVER fails: a missing source simply
+  // contributes zero exclusions. Only the daily-sales BASIS gates READY (see recoWsResolveSalesRate_). The presence
+  // of each source is reported for diagnostics — TABLE PRESENT + 0 rows is differentiated from TABLE ABSENT — but
+  // neither blocks. The owner still OWNS the identity match/exclude + its own ambiguous-line fail-fast (handled by
+  // the caller's best-effort retry, so a malformed campaign line degrades to "no exclusion", never a SKU block).
+  var campPresent = recoWsIsObj_(snaps.campaigns) && recoWsIsObj_(snaps.campaignSkuLines);
+  var evtPresent = recoWsIsObj_(snaps.fcSpecialEvents);
   var campaigns = [];
-  recoWsToRowObjects_(snaps.campaigns).forEach(function (c) {
-    var cid = recoWsStr_(c.campaign_id); if (!cid) return;
-    var lines = linesByCampaign[cid] || [];
-    // Only campaigns that TOUCH this SKU (by our marketplace_sku_id or the master sku) are relevant. Their FULL
-    // line set is passed so the owner can apply its own identity guard (a master-sku line missing marketplace_sku_id
-    // → owner throws → treated as an ambiguous conflict upstream, never silently dropped).
-    var touches = lines.some(function (ln) { return (mSkuId && ln.marketplaceSkuId === mSkuId) || (ln.sku && recoWsStr_(ln.sku) === sku); });
-    if (!touches) return;
-    campaigns.push({ status: recoWsStr_(c.status), start: recoWsStr_(c.start_date), end: recoWsStr_(c.end_date), skuLines: lines });
-  });
+  if (campPresent) {
+    var linesByCampaign = {};
+    recoWsToRowObjects_(snaps.campaignSkuLines).forEach(function (r) {
+      var cid = recoWsStr_(r.campaign_id); if (!cid) return;
+      (linesByCampaign[cid] = linesByCampaign[cid] || []).push({ marketplaceSkuId: recoWsStr_(r.marketplace_sku_id) || null, sku: recoWsStr_(r.sku) });
+    });
+    recoWsToRowObjects_(snaps.campaigns).forEach(function (c) {
+      var cid = recoWsStr_(c.campaign_id); if (!cid) return;
+      var lines = linesByCampaign[cid] || [];
+      // Only campaigns that TOUCH this SKU (by our marketplace_sku_id or the master sku) are relevant. Their FULL
+      // line set is passed so the owner applies its own identity guard.
+      var touches = lines.some(function (ln) { return (mSkuId && ln.marketplaceSkuId === mSkuId) || (ln.sku && recoWsStr_(ln.sku) === sku); });
+      if (!touches) return;
+      campaigns.push({ status: recoWsStr_(c.status), start: recoWsStr_(c.start_date), end: recoWsStr_(c.end_date), skuLines: lines });
+    });
+  }
   var events = [];
-  recoWsToRowObjects_(snaps.fcSpecialEvents).forEach(function (r) {
-    if (recoWsStr_(r.sku) !== sku) return;
-    events.push({ sku: recoWsStr_(r.sku), status: recoWsStr_(r.status), marketplaceId: recoWsStr_(r.marketplace_id) || null,
-      company: recoWsStr_(r.company), country: recoWsStr_(r.country), marketplace: recoWsStr_(r.marketplace),
-      start: recoWsStr_(r.event_start_date) || recoWsStr_(r.eventStartDate), end: recoWsStr_(r.event_end_date) || recoWsStr_(r.eventEndDate) });
-  });
-  return { ok: true, campaigns: campaigns, events: events };
+  if (evtPresent) {
+    recoWsToRowObjects_(snaps.fcSpecialEvents).forEach(function (r) {
+      if (recoWsStr_(r.sku) !== sku) return;
+      events.push({ sku: recoWsStr_(r.sku), status: recoWsStr_(r.status), marketplaceId: recoWsStr_(r.marketplace_id) || null,
+        company: recoWsStr_(r.company), country: recoWsStr_(r.country), marketplace: recoWsStr_(r.marketplace),
+        start: recoWsStr_(r.event_start_date) || recoWsStr_(r.eventStartDate), end: recoWsStr_(r.event_end_date) || recoWsStr_(r.eventEndDate) });
+    });
+  }
+  return { ok: true, campaigns: campaigns, events: events, sourceStatus: { campaigns: campPresent ? 'PRESENT' : 'ABSENT', events: evtPresent ? 'PRESENT' : 'ABSENT' } };
 }
 
 // F1-4B-FM5-R4UI-R3 (+R3a) — Sales-Driven canonical run-rate via the FROZEN KMCALC.normalizedAvgSalesPerDay owner
@@ -179,8 +187,10 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
 // fabricated 0, never a thrown scope failure). company is stamped from the resolved scope (amazon_daily_sales_snapshot
 // carries no company column; one scope = one company); channel is derived from the scoped rows and MUST be
 // unambiguous; marketplaceId is resolved from the marketplaces registry (required by the owner for ID-bearing events).
-// Reasons (§3): SALES_BASIS_UNAVAILABLE = no scoped daily-sales history · SALES_BASIS_AMBIGUOUS = ambiguous channel
-// or an owner identity conflict · CONTAMINATION_SOURCE_UNAVAILABLE = a contamination source sheet is missing.
+// Reasons: SALES_BASIS_UNAVAILABLE = no scoped daily-sales history (or the basis is unusable even without any
+// contamination filter) · SALES_BASIS_AMBIGUOUS = ambiguous daily-sales channel. Contamination sources NEVER
+// produce a fail-closed reason (R4 §5): present-empty and absent both mean "no exclusion", and a contamination
+// identity conflict degrades to an un-excluded basis — never a block.
 function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.normalizedAvgSalesPerDay !== 'function') return { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
   if (!calcDate) return { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };
@@ -209,19 +219,30 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // ID-bearing event when the scope marketplace_id is unresolved, so resolve it from the marketplaces registry.
   var scopeMktId = null;
   recoWsToRowObjects_(snaps.marketplaces).forEach(function (m) { if (scopeMktId) return; if (recoWsStr_(m.company) === scope.company && recoWsStr_(m.country) === scope.country && recoWsStr_(m.marketplace) === scope.marketplace) scopeMktId = recoWsStr_(m.marketplace_id) || null; });
-  // R3a — real contamination facts (never []). A missing source fail-closes distinctly (never silent no-contamination).
+  // R3a+R4 — best-effort contamination facts (never []unless the source is empty/absent). The exclusion filter must
+  // NEVER gate READY (R4 §5): compute the basis WITH contamination; if the owner throws on a contamination identity
+  // conflict (e.g. a campaign line missing marketplace_sku_id), RECOMPUTE the basis WITHOUT the contamination filter
+  // so a malformed campaign row degrades to "no exclusion" instead of blocking the SKU. Only a fundamentally broken
+  // daily-sales basis (non-finite / owner throw even without contamination) fail-closes to SALES_BASIS_UNAVAILABLE.
   var contam = recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId);
-  if (!contam.ok) return { ok: false, reason: contam.reason };
-  try {
-    var res = KMCALC.normalizedAvgSalesPerDay({
+  function compute(campaigns, events) {
+    return KMCALC.normalizedAvgSalesPerDay({
       calcDate: calcDate,
       scope: { sku: sku, country: scope.country, marketplace: scope.marketplace, channel: channel, company: scope.company, marketplaceId: scopeMktId, marketplaceSkuId: mSkuId },
-      weekly7d: weekly7d, dailySales: dailySales, campaigns: contam.campaigns, events: contam.events
+      weekly7d: weekly7d, dailySales: dailySales, campaigns: campaigns, events: events
     });
-    var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
-    if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };
-    return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates };
-  } catch (e) { return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS' }; }   // owner identity conflict (§3 case C)
+  }
+  var res, contaminationApplied = true;
+  try {
+    res = compute(contam.campaigns, contam.events);
+  } catch (e) {
+    contaminationApplied = false;
+    try { res = compute([], []); } catch (e2) { return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' }; }
+  }
+  var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
+  if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };
+  return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
+    contaminationApplied: contaminationApplied, contaminationSource: contam.sourceStatus };
 }
 
 // Build the additive per-destination day-horizon projection via the frozen KMHP owner. Returns null (→ line.horizons

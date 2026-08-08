@@ -99,8 +99,8 @@ section('INVENTORY · expand reads STORED row (no live getWorkspace), valid zero
     var body = _irRecoSummaryCardBody({ sku: 'CO1100-R' });
     ok(/replen-horizon-table--outlook/.test(body) && !/Replenishment Outlook/.test(body) && !/replen-horizon-dest__badge/.test(body), 'INV3 renders the frozen outlook table from the stored row — R4UI: no "Replenishment Outlook" sub-title, no "Materialized" badge in the normal view');
     ok(/18 Days/.test(body) && /90 Days/.test(body), 'INV4 D18–D90 rows present');
-    ok(/replen-recsum-table__num">1200</.test(body) && /replen-recsum-table__num">600</.test(body), 'INV5 D45/D90 gap from GAP DB verbatim');
-    ok(/replen-recsum-table__num">0</.test(body), 'INV6 valid zero renders 0 (D18)');
+    ok(/replen-recsum-table__num"[^>]*>1200</.test(body) && /replen-recsum-table__num"[^>]*>600</.test(body), 'INV5 D45/D90 gap from GAP DB verbatim');
+    ok(/replen-recsum-table__num"[^>]*>0</.test(body), 'INV6 valid zero renders 0 (D18)');
     var bodyMissing = _irRecoSummaryCardBody({ sku: 'DOES-NOT-EXIST' });
     ok(/NOT_CALCULATED/.test(bodyMissing), 'INV7 SKU with no stored row → NOT_CALCULATED (never fabricated 0)');
     // manual recalc refresh → refetch

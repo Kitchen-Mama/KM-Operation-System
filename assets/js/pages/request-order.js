@@ -1147,21 +1147,41 @@ function handleRecalcAllOrderPlanningGap() {
   _roRecalcAllBusy = true;
   if (btn) { btn.disabled = true; btn.textContent = 'Recalculating…'; }
   function restore() { _roRecalcAllBusy = false; if (btn) { btn.disabled = false; btn.textContent = label || 'Recalculate All Sites'; } }
+  var preMax = _roMaxCalculatedAt_();   // newest stored calculated_at BEFORE the batch (transport-recovery baseline)
   return Promise.resolve(window.KM.DB.recalculateOrderPlanningGapAll({})).then(function (res) {
     if (res && res.success && res.data) {
       var d = res.data;
       alert('Order-planning gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
-      // FM5-R1: invalidate the materialized-read cache + refetch stored rows so refreshed T1–T4 Gap/Suggested
-      // appear without a page reload and WITHOUT any per-SKU live calculation. Manual Order Qty is never touched.
       if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') refreshOrderPlanningGapAfterRecalc_();
-    } else {
-      var e = (res && res.error) || {};
-      alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
+      restore();
+      return;
     }
+    var e = (res && res.error) || {};
+    // F1-4B-FM5-R4UI-R4 §6/§7/§11.P — identical transport-recovery contract as Inventory: a transport failure does
+    // NOT prove the server batch failed. Never claim failure, never re-run the WRITE. Refetch the READ only and
+    // confirm from the stored calculated_at whether the batch advanced.
+    var isTransport = (e.code === 'HTTP_TRANSPORT_ERROR' || e.code === 'NON_JSON_RESPONSE');
+    if (isTransport) {
+      alert('Request connection was interrupted. Order Planning calculation status is being refreshed…');
+      Promise.resolve(typeof refreshOrderPlanningGapAfterRecalc_ === 'function' ? refreshOrderPlanningGapAfterRecalc_() : null).then(function () {
+        var postMax = _roMaxCalculatedAt_();
+        if (postMax && (!preMax || postMax > preMax)) alert('Order Planning calculation completed — refreshed from the server (the connection was interrupted but the results were saved).');
+        else alert('Order Planning calculation could not be confirmed. The last stored results are shown; check again shortly before re-running (no automatic retry was issued).');
+        restore();
+      });
+      return;
+    }
+    alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
     restore();
   }).catch(function (err) { alert('Recalculation failed: ' + (err && err.message ? err.message : err)); restore(); });
 }
 window.handleRecalcAllOrderPlanningGap = handleRecalcAllOrderPlanningGap;
+// Newest calculated_at among the loaded materialized OP rows (server 'YYYY-MM-DD HH:MM:SS' → lexical compare).
+function _roMaxCalculatedAt_() {
+  var by = (typeof _opMatCache !== 'undefined' && _opMatCache && _opMatCache.bySku) || {}; var mx = '';
+  for (var k in by) { if (Object.prototype.hasOwnProperty.call(by, k)) { var c = by[k] && by[k].calculated_at ? String(by[k].calculated_at) : ''; if (c > mx) mx = c; } }
+  return mx;
+}
 
 function setRequestOrderShowMode(mode) {
   requestOrderState.showMode = mode;

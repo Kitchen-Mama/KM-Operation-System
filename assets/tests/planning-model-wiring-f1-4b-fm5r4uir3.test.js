@@ -82,15 +82,17 @@ eq(camp.excludedDates && camp.excludedDates.length, 3, 'A3 the 3 campaign sellin
 eq(camp.normalDayCount, 7, 'A4 NORMAL day count = 7 (10 candidates − 3 contaminated)');
 eq(camp.avgSalesPerDay, 100, 'A5 corrected run-rate = 700/7 = 100 (spike removed) — proves exclusion actually applied');
 
-section('R3a B — contamination source UNAVAILABLE is NOT silently "no contamination" (B ≠ A)');
+section('R4 §5 — contamination source ABSENT does NOT block (optional filter); PRESENT+0 differentiated from ABSENT');
 var missingCampSheet = { marketplaceSkus: snap(mskHdr, mskRows), amazonDailySalesSnapshot: snap(dsHdr, spikeRows), amazonWeeklySalesSnapshot: snap(wkHdr, []), fcSpecialEvents: snap(EVT_H, []), marketplaces: snap(MKT_H, []) };   // campaigns/campaignSkuLines keys ABSENT
 var b = H.resolveRate(missingCampSheet, SCOPE, 'CO1100-R', '2026-08-07');
-ok(b.ok === false && b.reason === 'CONTAMINATION_SOURCE_UNAVAILABLE', 'B1 missing campaigns/campaign_sku_lines sheet → CONTAMINATION_SOURCE_UNAVAILABLE (fail closed, never assumed empty)');
+ok(b.ok === true && b.avgSalesPerDay === 370, 'B1 absent campaigns/campaign_sku_lines → NO exclusion (rate 370, spikes retained) — never a spurious BLOCKED (R4 §5)');
+eq(b.contaminationSource.campaigns, 'ABSENT', 'B2 sourceStatus differentiates ABSENT (diagnostic) — but never blocks');
+eq(noCampaign.contaminationSource.campaigns, 'PRESENT', 'B3 present-but-empty campaigns → PRESENT (0 matches), distinct from ABSENT, also 370 — neither blocks (TABLE PRESENT+0 ≠ UNAVAILABLE)');
 
-section('R3a C — ambiguous identity is a distinct conflict (campaign line matches master sku but has no marketplace_sku_id)');
-var ambigLine = merge(base(flatRows), { campaigns: snap(CAMP_H, [['C1', 'KM', 'US', 'Amazon', 'MP1', '2026-07-25', '2026-07-27', 'active']]), campaignSkuLines: snap(CSL_H, [['L1', 'C1', '', 'CO1100-R']]) });   // blank marketplace_sku_id + master-sku match → owner throws
+section('R4 §5 — ambiguous campaign identity DEGRADES to no-exclusion (never blocks the SKU)');
+var ambigLine = merge(base(spikeRows), { campaigns: snap(CAMP_H, [['C1', 'KM', 'US', 'Amazon', 'MP1', '2026-07-25', '2026-07-27', 'active']]), campaignSkuLines: snap(CSL_H, [['L1', 'C1', '', 'CO1100-R']]) });   // blank marketplace_sku_id + master-sku match → owner throws
 var c = H.resolveRate(ambigLine, SCOPE, 'CO1100-R', '2026-08-07');
-ok(c.ok === false && c.reason === 'SALES_BASIS_AMBIGUOUS', 'C1 owner identity conflict → SALES_BASIS_AMBIGUOUS (never collapsed into A or B)');
+ok(c.ok === true && c.avgSalesPerDay === 370 && c.contaminationApplied === false, 'C1 a malformed campaign line no longer blocks — the basis recomputes WITHOUT contamination (rate 370, contaminationApplied=false)');
 
 section('R3a — historical event selling days excluded (event contamination via the events param, composite scope)');
 var evtRows = merge(base(spikeRows), { fcSpecialEvents: snap(EVT_H, [['E1', 'KM', 'US', 'Amazon', '', 'CO1100-R', '2026-07-25', '2026-07-27', 'active', 500]]) });
