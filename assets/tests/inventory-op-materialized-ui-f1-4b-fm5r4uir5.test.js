@@ -25,8 +25,8 @@ section('§1 header total token re-derived from the compacted rows (no 96px gray
 ok(/#ops-section\s*\{[\s\S]*?--km-sticky-header-total:\s*calc\(var\(--km-sticky-row-1-height\)\s*\+\s*var\(--km-sticky-row-2-height\)/.test(CSS), 'H1 #ops-section overrides --km-sticky-header-total = row1 + row2 (68px), not the inherited 96px');
 ok(/--km-sticky-row-1-height:\s*34px/.test(CSS) && /--km-sticky-row-2-height:\s*34px/.test(CSS), 'H2 the two header rows are 34px each (total now 68px, matching the rowspan cells)');
 
-section('§2 active sticky row top offset uses the (now-correct) header total');
-ok(/is-active-sticky[\s\S]*?top:\s*calc\([\s\S]*?--km-sticky-header-total/.test(CSS), 'S1 sticky `top` still keys off --km-sticky-header-total → now pins exactly under the 68px header (was 28px too low)');
+section('§2 active-row pin (FM5-R4UI-R6 §5: fixed overlay clone replaces the wrong-container native sticky)');
+ok(/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS) && !/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'S1 the active-row pin is a fixed overlay clone — the real row is never position:sticky (kills the wrong-scroll-container jump the 28px offset patch could never fix)');
 
 section('§3 Recommendation Summary — green container + green left border removed');
 ok(/\.replen-recsum-ws\s*\{[^}]*border-left:\s*0/.test(CSS), 'G1 base .replen-recsum-ws left border removed');

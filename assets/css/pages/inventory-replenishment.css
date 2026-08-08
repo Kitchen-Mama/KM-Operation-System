@@ -1149,8 +1149,9 @@
     table-layout: auto;        /* columns size to content so Reason fits on ONE line */
     border-collapse: collapse;
     font-size: 12px;
-    /* Override the global 20px table margin — keep this compact table tight to its title (Part 2). */
-    margin: 10px 0;
+    /* Override the global 20px table margin — keep this compact table tight to its title (Part 2). FM5-R4UI-R6
+       §11: 10px → 2px so the Recommendation Summary body density matches the Monthly Achievement Rate card. */
+    margin: 2px 0;
 }
 #ops-section .replen-recsum-table th,
 #ops-section .replen-recsum-table td {
@@ -1164,9 +1165,10 @@
     vertical-align: middle;
 }
 #ops-section .replen-recsum-table th { white-space: nowrap; }   /* headers stay on one line */
-/* Header: light warm background (§11.5), dark readable text — Recommendation Summary ONLY. */
+/* FM5-R4UI-R6 §10 — NEUTRAL light-gray header (was warm beige rgb(255,248,240)), dark readable text, to match the
+   Order Planning inner tables. No green, no beige. Data rows stay white (default). */
 #ops-section .replen-recsum-table thead th {
-    background: rgb(255, 248, 240);
+    background: #f1f5f9;
     color: #1f2937;
     font-weight: 600;
 }
@@ -1321,7 +1323,9 @@
 #ops-section .replen-achv-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
 #ops-section .replen-achv-table th,
 #ops-section .replen-achv-table td { padding: 3px 6px; text-align: left; border-bottom: 1px solid #F1F5F9; white-space: nowrap; }
-#ops-section .replen-achv-table thead th { color: #64748B; font-weight: 600; }
+/* FM5-R4UI-R6 §10 — Monthly Achievement Rate header gets the SAME neutral light-gray fill as the Recommendation
+   Summary header (was transparent), so both second-layer tables read as one neutral-gray family. Data rows white. */
+#ops-section .replen-achv-table thead th { background: #f1f5f9; color: #334155; font-weight: 600; }
 #ops-section .replen-achv-table .replen-achv__num { text-align: right; }
 /* Achievement card sizes to the table (was a fixed-height chart); keep it aligned with siblings. */
 #ops-section .replen-card--achievement { min-height: 150px; }
@@ -1574,7 +1578,9 @@
 #ops-section .replen-horizon-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 #ops-section .replen-horizon-table th,
 #ops-section .replen-horizon-table td { padding: 4px 8px; border-bottom: 1px solid #E2E8F0; text-align: left; vertical-align: top; }
-#ops-section .replen-horizon-table thead th { background: rgb(255, 248, 240); color: #1f2937; font-weight: 600; }
+/* FM5-R4UI-R6 §10 — NEUTRAL light-gray header (was warm beige) so the rendered outlook table matches the Order
+   Planning inner tables. This is the table actually shown in the Recommendation Summary card. */
+#ops-section .replen-horizon-table thead th { background: #f1f5f9; color: #1f2937; font-weight: 600; }
 /* Gap / Suggested Qty: right-aligned, never wrap mid-number — large values scroll via the wrap, not card-widen. */
 #ops-section .replen-horizon-table .replen-recsum-table__num { text-align: right; white-space: nowrap; }
 #ops-section .replen-horizon-table__win { white-space: nowrap; }
@@ -1649,21 +1655,47 @@
 #ops-section .replen-category-rail { padding: 4px; gap: 6px; }
 #ops-section .replen-category-rail__tab { padding: 3px 10px; }
 
-/* §13 sticky active expanded master SKU row — the REAL row (no detached clone) stays pinned below the two-level
-   table header while its expanded detail region is scrolled. Applied only to the active row (.is-active-sticky,
-   toggled in toggleReplenRow); collapse removes it → normal flow. Pin offset = the full sticky stack above the
-   rows (toolbar base + category-rail height + compacted header total). z sits ABOVE the row/left-column layer
-   (110) but BELOW the header rows (118–120) so the header is never covered; it composes with the existing sticky
-   first column (.fixed-col, left:0) — different axes. Subtle selected tint. MANUAL screenshot verification needed:
-   expand a SKU on a short laptop viewport, scroll its detail — the master row should stay under the header and
-   release when the next SKU scrolls up. */
-#ops-section .fixed-row.is-active-sticky,
-#ops-section .scroll-row.is-active-sticky {
-    position: sticky;
-    top: calc(var(--km-sticky-top-base, 72px) + var(--km-replen-cat-rail-h, 0px) + var(--km-sticky-header-total, 96px));
-    z-index: calc(var(--km-sticky-z-col, 110) + 1);
+/* §13 (FM5-R4UI-R6 §5 REWRITE) active expanded master SKU row — STICKY VISUAL OVERLAY, not native position:sticky.
+   ROOT CAUSE of the prior jump: the real rows live INSIDE .fixed-col / .scroll-col, both of which are
+   `overflow-x:auto` scroll containers (a non-visible overflow). `position:sticky` on a descendant sticks relative
+   to that nearest scroll container — which here scrolls only horizontally (overflow-y:hidden) and does not scroll
+   vertically — so the vertical `top` sticky was evaluated against the wrong container and the row visibly jumped
+   to an incorrect vertical position on scroll. No `top` offset patch can fix that (the containing block is wrong).
+   FIX: the real rows now NEVER become position:sticky. A separate lightweight fixed-position overlay (built by
+   _irUpdateStickyOverlay from clones of the active fixed-row + scroll-row) is shown ONLY while the active master
+   row has scrolled up behind the header; it is pinned immediately below the real header and its scroll half mirrors
+   the live horizontal scrollLeft. The overlay has NO layout footprint (position:fixed, pointer-events:none) so the
+   real table — and the expanded detail panel — never move. Collapse / return-into-view removes it. */
+#ops-section .ir-sticky-overlay {
+    position: fixed;
+    display: flex;
+    z-index: 122;                    /* above body rows (110); sits below the real header physically (no overlap) */
     background: #EAF2FE;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.10);
+    pointer-events: none;            /* purely visual — never intercepts clicks meant for the real row */
+    overflow: hidden;
+    contain: layout paint;
+}
+#ops-section .ir-sticky-overlay[hidden] { display: none; }
+#ops-section .ir-sticky-overlay__fixed {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    background: #EAF2FE;
+    border-right: 1px solid #dbe3ea;
+    overflow: hidden;
+}
+#ops-section .ir-sticky-overlay__scrollport {
+    flex: 1 1 auto;
+    overflow: hidden;                /* the horizontal position is applied via transform on the inner clone */
+}
+#ops-section .ir-sticky-overlay__scroll { will-change: transform; }
+/* The cloned rows keep their original column widths/styles; force the selected tint + kill their bottom border
+   so the overlay reads as one clean pinned bar. */
+#ops-section .ir-sticky-overlay .fixed-row,
+#ops-section .ir-sticky-overlay .scroll-row {
+    background: #EAF2FE;
+    border-bottom: 0;
+    cursor: default;
 }
 
 /* =============================================================================================================

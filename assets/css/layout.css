@@ -9,7 +9,10 @@
 .top-header {
     display: flex;
     align-items: center;
-    padding: 1.5rem 2rem;
+    /* F1-4B-FM5-R4UI-R6 §7 — trimmed vertical padding (1.5rem → 0.5rem) so the compacted 56px --header-height is
+       comfortable, not cramped: 8px top/bottom padding leaves ~40px for the centered logo + user info. Horizontal
+       padding (2rem) is unchanged. align-items:center keeps all header content vertically centered at any height. */
+    padding: 0.5rem 2rem;
     /* Canonical fixed-header height (single offset owner). box-sizing keeps padding inside the token height so the
        header's rendered bottom is EXACTLY --header-height — it fully fills the reserved offset (no body-cream
        shortfall strip below it) and, since the header content is short, never overflows to overlap the content. */

@@ -31,10 +31,10 @@ ok(!/--note-span\s*\{[^}]*height:\s*96px/.test(CSS) && !/--status\s*\{[^}]*heigh
 section('§2 active row highlight on expand (no reposition); sticky deferred to scroll');
 ok(/is-active-selected'\)/.test(JS) && /_irBindStickyScrollOnce\(\)/.test(JS), 'C1 expand adds .is-active-selected (highlight) + binds the scroll handler — no position change → no jump');
 ok(!/classList\.add\('is-active-sticky'\)/.test(JS.slice(JS.indexOf('function toggleReplenRow'), JS.indexOf('function toggleReplenRow') + 2500)), 'C2 toggleReplenRow does NOT add position:sticky at expand (that caused the immediate jump)');
-ok(/addEventListener\('scroll'[\s\S]*?is-active-sticky/.test(JS), 'C3 the scroll handler promotes the active row to .is-active-sticky only once the user scrolls');
+ok(/onScroll = function \(\) \{ _irUpdateStickyOverlay\(\)/.test(JS) && /addEventListener\('scroll', onScroll/.test(JS), 'C3 the scroll handler drives the sticky VISUAL OVERLAY (FM5-R4UI-R6 §5) once the user scrolls');
 ok(/\.is-active-selected\s*,?\s*\n?[^}]*\{[^}]*background/.test(CSS) || /is-active-selected[\s\S]{0,120}background/.test(CSS), 'D1 .is-active-selected is a subtle background highlight (no position/reposition)');
-ok(/\.fixed-row\.is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'D2 .is-active-sticky remains the position:sticky owner (added on scroll)');
-ok(/remove\('is-active-sticky'\)[\s\S]*?remove\('is-active-selected'\)/.test(JS) || (/remove\('is-active-selected'\)/.test(JS) && /remove\('is-active-sticky'\)/.test(JS)), 'E1 collapse clears BOTH classes (exactly one active row; switching transfers cleanly)');
+ok(/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS) && !/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'D2 the sticky visual is now a FIXED overlay clone — the real row is never position:sticky (no wrong-container jump)');
+ok(/_irRemoveStickyOverlay\(\)/.test(JS) && /remove\('is-active-selected'\)/.test(JS), 'E1 collapse tears down the overlay + clears the selected highlight (exactly one active row; switching transfers cleanly)');
 
 section('§3 Recommendation Summary — fixed 4-row schema + stable cell identities + cell patching');
 ok(/data-ir-summary="1"/.test(JS), 'F1 the outlook table carries a data-ir-summary marker (stable skeleton)');

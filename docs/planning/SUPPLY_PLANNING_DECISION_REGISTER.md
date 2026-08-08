@@ -865,3 +865,39 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 - **No formula change** (KMHP/KMTPP/KMCALC/KMPD/KMMSA/KMALLOC untouched); no DB/schema change; no API/DTO change;
   bundle unchanged (`fb4824d1…`). Order Planning + Execution Plan formulas untouched; materialized-expand stays
   read-only.
+
+## F1-4B-FM5-R4UI-R6 — Inventory Live Defect Closeout (fresh-recalc freeze + sticky/header/summary; 2026-08-08)
+- **§1–§4 BLOCKED root cause = DEPLOYMENT STALENESS, not a live calc defect.** Audit proved the fresh-state
+  recalculation invariant is ALREADY satisfied in code: (a) the materialization map (`gapInvMapFromLines_` /
+  `gapOpMapFromLines_`) is a PURE function of `(lines, scope, sku, calcAuthority)` — it reads no prior row and no
+  `calculation_status`; (b) `gapUpsertByKey_` OVERWRITES status+values+note on the same business-key row every run;
+  (c) the canonical workspace (`42`) has ZERO references to the gap tables (previous status can never be a calc
+  input); (d) the frontend `refreshInventoryGapAfterRecalc_` clears `loadedOk`+`scopeKey` then force-refetches.
+  The live "previously-READY SKUs are BLOCKED" symptom is the R5 §4 fix (`resolveMarketplaceCurrentStock`
+  horizon-opening decoupling) being committed LOCAL-ONLY (`6306a7c`) and never pushed — origin/Apps Script run R4
+  (`b7421cd`), which returns `line:null`/HORIZONS_NOT_AVAILABLE for sales-driven no-forecast SKUs. **Fix = deploy R5.**
+- **§2/§12/§13 FREEZE:** every recalculation is stateless wrt the previous gap status (OUTPUT ONLY). No
+  status-carry-forward / stale-row-reuse / HORIZONS_NOT_AVAILABLE-preservation coupling exists; locked by a
+  BLOCKED→READY→BLOCKED→READY same-row test (`inventory-recalc-freeze-ui`).
+- **§4 real reason preserved:** the map surfaces the specific `L.blockedReason` (SALES_BASIS_MISSING /
+  SITE_STOCK_MISSING / DEMAND_NOT_READY …); generic HORIZONS_NOT_AVAILABLE only when horizons are empty AND the line
+  is not otherwise blocked. Unchanged; test-locked.
+- **§5 sticky REWRITE (native → fixed overlay clone):** root cause of the persistent jump = the real rows live inside
+  `.fixed-col`/`.scroll-col`, both `overflow-x:auto` scroll containers, so `position:sticky` stuck to the WRONG
+  containing block (a box that scrolls only horizontally) — no `top` patch could fix it. The real rows are now NEVER
+  position:sticky; a fixed-position `#ir-sticky-overlay` (clone of the active fixed-row + scroll-row, pointer-events
+  none, no layout footprint) is shown only while the master row is behind the header, pinned just below it, with the
+  scroll half mirroring the live `scrollLeft`. Removed/hidden on collapse or return-into-view.
+- **§7 global chrome compaction (USER-authorized):** `--header-height` 80px → 56px at its single canonical owner
+  (base.css); `.top-header` padding 1.5rem → 0.5rem. All consumers (app-layout margin, sidebar top/height,
+  main-content height, top-header min-height) derive from the one token → consistent across every page, no per-page
+  offset. §8 inventory two-level header stays 68px (34+34; all tall/rowspan cells key off the re-derived total).
+- **§9–§11 Recommendation Summary + Monthly Achievement:** NEUTRAL light-gray headers (`#f1f5f9`) replacing the warm
+  beige (no green, no beige); data bodies white; recsum table margin 10px → 2px for density parity.
+- **§6 white gutter — HALT (again, honestly):** static CSS audit proved neither `.fixed-col` nor `.scroll-col`
+  reserves a RIGHT-side gutter (both `overflow-y:hidden` + `scrollbar-gutter:stable` ⇒ bottom-only). The remaining
+  candidate owner cannot be pinned without a live computed-DOM reading, and §6 explicitly forbids speculative CSS.
+  Deferred to a one-line live DevTools check (inspect the white strip → report selector/width/background).
+- **No formula change** (KMHP/KMTPP/KMCALC/KMMSA/KMALLOC untouched); no DB/schema change; no API/DTO change; no gap
+  business-key change; core modules + generated bundle UNCHANGED (`fb4824d1…`; only page CSS/JS + shared chrome CSS +
+  tests changed). Order Planning T1–T4 math + Execution Plan untouched; materialized-expand stays read-only.

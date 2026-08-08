@@ -7,7 +7,12 @@
     /* Canonical fixed-header height — the SINGLE owner of the global header offset. The fixed .top-header,
        the .app-layout top offset, the fixed .sidebar top, and the .main-content viewport height ALL derive
        from this one token, so the header offset can never be double-counted or drift between layers (layout.css). */
-    --header-height: 80px;
+    /* F1-4B-FM5-R4UI-R6 §7 — USER-authorized global chrome compaction: 80px → 56px. The header holds only a
+       centered logo + notification bell + user info (short, single-line content), so 56px keeps them comfortably
+       centered (see .top-header padding) while reclaiming ~24px of above-the-fold height on EVERY page. Because
+       every consumer (.top-header min-height, .app-layout margin-top, .sidebar top/height, .main-content height)
+       derives from this ONE token, the reduction stays consistent across all pages with no per-page offset. */
+    --header-height: 56px;
 
     /* ========================================
        Brand Colors

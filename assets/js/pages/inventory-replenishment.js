@@ -1643,22 +1643,91 @@ function _recSummaryRows(skuData) {
     return html;
 }
 
-// FM5-R4UI-R4 §2 — defer sticky positioning to the FIRST scroll after an expand. On expand the active row carries
-// only .is-active-selected (highlight, no reposition → no jump). The moment the user scrolls, promote the active
-// row(s) to .is-active-sticky so native position:sticky pins them under the header only as they scroll away. Bound
-// once; passive + capture so it also catches an inner scroll container. Cheap: does nothing unless a row is open.
+// FM5-R4UI-R6 §5 — STICKY VISUAL OVERLAY (replaces the broken native position:sticky). On expand the active row
+// carries only .is-active-selected (a highlight, NO reposition → zero jump). While the user scrolls, a separate
+// fixed-position overlay — a CLONE of the active fixed-row + scroll-row — is shown ONLY once the real master row
+// has scrolled up behind the table header, pinned immediately below it. The real rows are NEVER made sticky and
+// never move, so neither the row nor its expanded detail panel can jump. Bound once; capture:true so it also
+// catches the inner .scroll-col / .main-content scroll. Cheap: no-ops unless a row is expanded.
 var _irStickyScrollBound = false;
 function _irBindStickyScrollOnce() {
     if (_irStickyScrollBound || typeof window === 'undefined' || !window.addEventListener) return;
     _irStickyScrollBound = true;
-    var onScroll = function () {
-        if (typeof currentExpandedRow === 'undefined' || !currentExpandedRow) return;
-        if (typeof document === 'undefined' || !document.querySelectorAll) return;
-        var active = document.querySelectorAll('#ops-section .fixed-row.is-active-selected, #ops-section .scroll-row.is-active-selected');
-        Array.prototype.forEach.call(active, function (r) { if (!r.classList.contains('is-active-sticky')) r.classList.add('is-active-sticky'); });
-    };
+    var onScroll = function () { _irUpdateStickyOverlay(); };
     try { window.addEventListener('scroll', onScroll, { capture: true, passive: true }); }
     catch (e) { window.addEventListener('scroll', onScroll, true); }
+    try { window.addEventListener('resize', onScroll, { passive: true }); } catch (e2) { /* older browsers */ }
+}
+
+// Remove the sticky overlay (collapse, scope change, or the active row returning fully into view).
+function _irRemoveStickyOverlay() {
+    if (typeof document === 'undefined') return;
+    var ov = document.getElementById('ir-sticky-overlay');
+    if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+}
+
+// Build/reuse the overlay and position it. Show only while the active master row's top has scrolled above the
+// header bottom (i.e. the real row is hidden behind the header) AND its expanded detail is still on screen.
+// Geometry (top/left/width/height + horizontal transform) is measured from the LIVE nodes each call so the clone
+// stays column-aligned with the real table; the clone itself is never interactive (pointer-events:none, aria-hidden).
+function _irUpdateStickyOverlay() {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    if (typeof currentExpandedRow === 'undefined' || !currentExpandedRow) { _irRemoveStickyOverlay(); return; }
+    var table = document.querySelector('#ops-section .dual-layer-table');
+    var headerBar = document.querySelector('#ops-section .table-header-bar');
+    var bodyBar = document.querySelector('#ops-section .table-body-bar');
+    var scrollCol = document.querySelector('#ops-section .scroll-col');
+    var fixedRow = document.querySelector('#ops-section .fixed-row.is-active-selected');
+    var scrollRow = document.querySelector('#ops-section .scroll-row.is-active-selected');
+    if (!table || !headerBar || !bodyBar || !fixedRow) { _irRemoveStickyOverlay(); return; }
+    if (typeof fixedRow.getBoundingClientRect !== 'function') return;   // non-DOM test env → no-op
+
+    var headerRect = headerBar.getBoundingClientRect();
+    var rowRect = fixedRow.getBoundingClientRect();
+    var bodyRect = bodyBar.getBoundingClientRect();
+    var headerBottom = headerRect.bottom;
+    // Show ONLY when the real row has scrolled up behind the header (its top is above the header bottom) and the
+    // expanded region below it is still within view (bodyBar bottom is still under the header). Else hide/remove.
+    var shouldShow = (rowRect.top < headerBottom - 1) && (bodyRect.bottom > headerBottom + 4);
+    if (!shouldShow) { _irRemoveStickyOverlay(); return; }
+
+    var ov = document.getElementById('ir-sticky-overlay');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'ir-sticky-overlay';
+        ov.className = 'ir-sticky-overlay';
+        ov.setAttribute('aria-hidden', 'true');
+        var fx = document.createElement('div'); fx.className = 'ir-sticky-overlay__fixed';
+        var sp = document.createElement('div'); sp.className = 'ir-sticky-overlay__scrollport';
+        var si = document.createElement('div'); si.className = 'ir-sticky-overlay__scroll';
+        sp.appendChild(si); ov.appendChild(fx); ov.appendChild(sp);
+        table.appendChild(ov);
+    }
+    var fxHost = ov.firstChild, siHost = ov.lastChild.firstChild;
+    // Re-clone each update (the active row's rendered values are stable, but re-cloning keeps the clone in lock-step
+    // with any re-render and is cheap for one row). Strip ids from the clone so no duplicate id leaks into the DOM.
+    function cloneInto(host, node) {
+        while (host.firstChild) host.removeChild(host.firstChild);
+        if (!node) return;
+        var c = node.cloneNode(true);
+        c.removeAttribute && c.removeAttribute('id');
+        var withId = c.querySelectorAll ? c.querySelectorAll('[id]') : [];
+        Array.prototype.forEach.call(withId, function (n) { n.removeAttribute('id'); });
+        host.appendChild(c);
+    }
+    cloneInto(fxHost, fixedRow);
+    cloneInto(siHost, scrollRow);
+
+    var fixedColRect = (document.querySelector('#ops-section .fixed-col') || fixedRow).getBoundingClientRect();
+    ov.style.top = headerBottom + 'px';
+    ov.style.left = bodyRect.left + 'px';
+    ov.style.width = bodyRect.width + 'px';
+    ov.style.height = rowRect.height + 'px';
+    fxHost.style.width = fixedColRect.width + 'px';
+    // Mirror the live horizontal scroll so the cloned data cells line up with the columns under them.
+    var sx = scrollCol ? scrollCol.scrollLeft : 0;
+    siHost.style.transform = 'translateX(' + (-sx) + 'px)';
+    ov.hidden = false;
 }
 
 function toggleReplenRow(sku) {
@@ -1678,6 +1747,9 @@ function toggleReplenRow(sku) {
     // ONE currently expanded master row is ever highlighted/sticky (collapse fully restores normal row flow).
     fixedRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); row.classList.remove('is-active-selected'); });
     scrollRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); row.classList.remove('is-active-selected'); });
+    // FM5-R4UI-R6 §5 — every collapse pass tears down the sticky visual overlay so a stale pinned bar can never
+    // linger (also covers the re-click-to-collapse path, which returns before re-adding .is-active-selected below).
+    if (typeof _irRemoveStickyOverlay === 'function') _irRemoveStickyOverlay();
     document.querySelectorAll('#ops-section .replen-row-chevron').forEach(function (btn) {
         btn.setAttribute('aria-expanded', 'false');
         btn.classList.remove('is-open');

@@ -40,13 +40,13 @@ ok(/#ops-section\s*\{[^}]*--km-sticky-row-1-height:\s*34px[^}]*--km-sticky-row-2
 ok(/km-table__header-cell--note-span[\s\S]*?height:\s*var\(--km-sticky-header-total/.test(CSS), 'Q8 the note-span corner cell now uses the total token (was a hardcoded 96px) so it stays aligned after compaction');
 ok(/Inventory \/ Sales \/ Replenishment/.test(CSS) || /header-cell--inventory/.test(CSS), 'Q9 two-level group semantics retained (group cells still present)');
 
-section('§13 sticky active expanded master SKU row (real row, class-toggled)');
-ok(/\.fixed-row\.is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'R1 active fixed master row is position:sticky');
-ok(/\.scroll-row\.is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'R2 active scroll master row is position:sticky');
-ok(/is-active-sticky[\s\S]*?top:\s*calc\([\s\S]*?--km-sticky-header-total/.test(CSS), 'R3 sticky top offset includes the header total → row pins BELOW the two-level header (never covers it)');
-ok(/is-active-sticky[\s\S]*?z-index:\s*calc\(var\(--km-sticky-z-col/.test(CSS), 'R4 sticky row z sits just above the row/left-column layer, below the header rows');
-ok(/fixedRow\.classList\.add\('is-active-selected'\)/.test(JS) && /scrollRow\.classList\.add\('is-active-selected'\)/.test(JS), 'R5 both real rows get the selected-highlight class on expand (FM5-R4UI-R4: sticky deferred to scroll → no expand jump)');
-ok(/classList\.remove\('is-active-sticky'\)/.test(JS) && /classList\.remove\('is-active-selected'\)/.test(JS), 'R6 collapse pass removes BOTH sticky + selected classes from every row');
+section('§13 (FM5-R4UI-R6 §5) active expanded master SKU row — STICKY VISUAL OVERLAY (real row never repositioned)');
+ok(!/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'R1 the real row is NO LONGER position:sticky — the broken native approach (sticky inside the overflow-x scroll column) was removed');
+ok(/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS), 'R2 the sticky visual is a FIXED-position overlay, built outside the overflow-x scroll containers (correct containing block)');
+ok(/\.ir-sticky-overlay\s*\{[\s\S]*?pointer-events:\s*none/.test(CSS), 'R3 the overlay is purely visual (pointer-events:none → never intercepts the real row interaction)');
+ok(/function _irUpdateStickyOverlay/.test(JS) && /translateX\(/.test(JS), 'R4 the overlay is positioned + horizontally scroll-synced from LIVE geometry (transform mirrors scrollLeft)');
+ok(/fixedRow\.classList\.add\('is-active-selected'\)/.test(JS) && /scrollRow\.classList\.add\('is-active-selected'\)/.test(JS), 'R5 both real rows get ONLY the selected-highlight class on expand (no reposition → no expand jump)');
+ok(/_irRemoveStickyOverlay\(\)/.test(JS) && /classList\.remove\('is-active-selected'\)/.test(JS), 'R6 collapse pass tears down the overlay + clears the selected highlight from every row');
 
 section('§16 overflow containment preserved (no outer-container overflow)');
 ok(/\.replen-horizon-tablewrap\s*\{[^}]*overflow-x:\s*auto/.test(CSS), 'S1 Recommendation Summary table wrapped in an internal-scroll container (card cannot widen)');
