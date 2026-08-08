@@ -52,7 +52,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   });
   ok(typeof ctx.KMCID.countryMatches === 'function' && ctx.KMCID.VERSION === 'kmcid-fm5r1b-1' && ctx.KMCID.countryMatches('UK', 'GB') === true, 'C: KMCID canonical country identity owner available in bundle (F1-4B-FM5-R1b)');
   ok(typeof ctx.KMTPP.projectTimePhasedSupply === 'function' && ctx.KMTPP.VERSION === 'kmtpp-fm3b-1', 'C: KMTPP time-phased projection owner available in bundle (F1-4B-FM3c-2)');
-  ok(typeof ctx.KMHP.projectHorizons === 'function' && ctx.KMHP.VERSION === 'kmhp-fm4a-1', 'C: KMHP day-horizon projection owner available in bundle (F1-4B-FM4a)');
+  ok(typeof ctx.KMHP.projectHorizons === 'function' && ctx.KMHP.VERSION === 'kmhp-fm5r4uir3-1', 'C: KMHP day-horizon projection owner available in bundle (F1-4B-FM5-R4UI-R3 Planning Model split)');
   ok(typeof ctx.KMSRP.readRecommendationSourceFacts === 'function' && typeof ctx.KMSRP.readRawTableSnapshot === 'function', 'C: KMSRP production source reader available in bundle');
   ok(typeof ctx.KMSR.readWeeklyRecommendationSource === 'function' && typeof ctx.KMSI.resolveRecommendationFactsFromSource === 'function', 'C: KMSR/KMSI source pipeline available in bundle');
   ok(typeof ctx.KMSP.projectRecommendationProductionSources === 'function' && typeof ctx.KMSP.projectAndRead === 'function', 'C: KMSP projection runtime available in bundle');

@@ -112,25 +112,95 @@ function recoWsHorizonWindowMonths_(calcDate, maxDays) {
   for (var i = 0; i < maxDays; i++) { d++; if (d > dim(y, m)) { d = 1; m++; if (m > 12) { m = 1; y++; } } add(y, m); }
   return out;
 }
+// F1-4B-FM5-R4UI-R3 — resolve the SKU's canonical Planning Model from marketplace_skus.replenishment_model
+// (00_config VALID_REPLENISHMENT_MODELS_ = sales_driven | forecast_driven; the master-data writer defaults new rows
+// to 'sales_driven'). scope+sku exact. A blank cell → 'sales_driven' (the DB default); any OTHER non-empty value is
+// returned verbatim so KMHP fails closed (PLANNING_MODEL_UNKNOWN) rather than this layer guessing a mode.
+function recoWsResolvePlanningModel_(snaps, scope, sku) {
+  var rows = recoWsToRowObjects_(snaps.marketplaceSkus);
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (recoWsStr_(r.sku) !== sku) continue;
+    if (recoWsStr_(r.company) !== '' && recoWsStr_(r.company) !== scope.company) continue;
+    if (recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) continue;
+    var m = recoWsStr_(r.replenishment_model);
+    return m === '' ? 'sales_driven' : m;
+  }
+  return 'sales_driven';
+}
+
+// F1-4B-FM5-R4UI-R3 — Sales-Driven canonical run-rate via the FROZEN KMCALC.normalizedAvgSalesPerDay owner (§22:
+// latest ≤30 confirmed NORMAL days inside the 90 completed-day window ÷ actual normal-day count; <3 normal days →
+// weekly_7d ÷ 7). This layer creates NO second averaging engine — it only marshals the owner's inputs. Returns
+// { ok:true, avgSalesPerDay, source, warning } or { ok:false, reason } → the caller fail-closes to a truthful
+// BLOCKED (never a silent forecast substitution, never a fabricated 0, never a thrown scope failure). company is
+// stamped from the resolved scope (amazon_daily_sales_snapshot carries no company column; one scope = one company);
+// channel is derived from the scoped rows and MUST be unambiguous (the owner filters on an exact channel — never
+// guessed). Campaign/event contamination-day exclusion is NOT yet marshalled here (the owner supports it via
+// campaigns/events, which require the campaign_sku_lines join + fc_special_events selling-window — a bounded
+// follow-up); this round supplies [] for both, so the rate is the raw scoped confirmed-day average.
+function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
+  if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.normalizedAvgSalesPerDay !== 'function') return { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
+  if (!calcDate) return { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };
+  var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
+    return recoWsStr_(r.sku) === sku && recoWsStr_(r.country) === scope.country && recoWsStr_(r.marketplace) === scope.marketplace;
+  });
+  if (!daily.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };
+  var chSet = {}; daily.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
+  var chKeys = Object.keys(chSet);
+  if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };   // 0 or ambiguous channel → fail closed
+  var channel = chKeys[0];
+  var weekly = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
+    return recoWsStr_(r.sku) === sku && recoWsStr_(r.country) === scope.country && recoWsStr_(r.marketplace) === scope.marketplace && recoWsStr_(r.channel) === channel;
+  });
+  var weekly7d = 0;
+  if (weekly.length) {
+    weekly.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
+    var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d); weekly7d = (wv === null || wv < 0) ? 0 : wv;   // latest week; the <3-day fallback rung only
+  }
+  var dailySales = daily.map(function (r) {
+    return { date: recoWsStr_(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
+  });
+  var mSkuId = null, mskRows = recoWsToRowObjects_(snaps.marketplaceSkus);
+  for (var i = 0; i < mskRows.length; i++) { var mr = mskRows[i]; if (recoWsStr_(mr.sku) === sku && recoWsStr_(mr.country) === scope.country && recoWsStr_(mr.marketplace) === scope.marketplace) { mSkuId = recoWsStr_(mr.marketplace_sku_id) || null; break; } }
+  try {
+    var res = KMCALC.normalizedAvgSalesPerDay({
+      calcDate: calcDate,
+      scope: { sku: sku, country: scope.country, marketplace: scope.marketplace, channel: channel, company: scope.company, marketplaceId: null, marketplaceSkuId: mSkuId },
+      weekly7d: weekly7d, dailySales: dailySales, campaigns: [], events: []
+    });
+    var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
+    if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };
+    return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning };
+  } catch (e) { return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' }; }
+}
+
 // Build the additive per-destination day-horizon projection via the frozen KMHP owner. Returns null (→ line.horizons
-// absent) when unavailable (KMHP not bundled, calc-DATE not configured, opening unavailable, or a covered month's
-// FC missing) — never a fabricated horizon. incomingEvents = the SAME ETA-dated events used by monthlyProjection.
-function recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, openingSupplyQty, incomingEvents, unitsPerCarton, destination) {
+// absent → materialized BLOCKED) when unavailable (KMHP not bundled, calc-DATE not configured, opening unavailable, a
+// covered month's FC missing on the forecast path, or the Sales-Driven basis unresolvable) — never a fabricated
+// horizon. incomingEvents = the SAME ETA-dated events used by monthlyProjection.
+// F1-4B-FM5-R4UI-R3 — the Planning Model split lives HERE: forecast_driven → Target%-adjusted regular FC ÷ real days
+// (Authority E, unchanged); sales_driven → the canonical §22 run-rate (avgSalesPerDay), NO regular FC and NO Target%.
+// Special-event prep-dated demand (Authority F) is additive in BOTH paths (count-once). demandMode + avgSalesPerDay
+// are caller-resolved and passed to KMHP verbatim; an unknown model fails closed inside KMHP (PLANNING_MODEL_UNKNOWN).
+function recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, openingSupplyQty, incomingEvents, unitsPerCarton, destination, demandMode, avgSalesPerDay) {
   if (typeof KMHP === 'undefined' || !KMHP || typeof KMHP.projectHorizons !== 'function') return null;
   if (!calc || !calc.calculationDate) return null;
+  var mode = (demandMode === 'sales_driven' || demandMode === 'forecast_driven') ? demandMode : 'forecast_driven';
   var winMonths = recoWsHorizonWindowMonths_(calc.calculationDate, 90);
-  // F1-4B-FM3f-1: horizons consume the SAME corrected demand as the monthly model — Target%-adjusted regular FC
-  // (Authority E) + special-event prep-dated demand (Authority F). No separate horizon demand model.
   var hFc = {}, specialEventDemands = [];
   if (typeof KMPD !== 'undefined' && KMPD && typeof KMPD.adjustedRegularFc === 'function') {
-    winMonths.forEach(function (ym) { var a = KMPD.adjustedRegularFc(fcRows, tgtRows, skuMeta, scope, sku, ym); if (a) hFc[ym] = a.adjusted; });
+    // Forecast-Driven base demand (Authority E). Skipped by KMHP under sales_driven, but the special-event preps
+    // (Authority F) are model-agnostic and additive in BOTH paths, so they are always resolved from the ONE owner.
+    if (mode === 'forecast_driven') winMonths.forEach(function (ym) { var a = KMPD.adjustedRegularFc(fcRows, tgtRows, skuMeta, scope, sku, ym); if (a) hFc[ym] = a.adjusted; });
     specialEventDemands = KMPD.scopedSpecialEventPreps(evtRows, scope, sku);
-  } else {
+  } else if (mode === 'forecast_driven') {
     hFc = recoWsRegularForecastByMonth_(fcRows, scope, sku, winMonths);   // fallback: raw (KMPD absent)
   }
   var hr = KMHP.projectHorizons({ destination: destination || null, calculationDate: calc.calculationDate,
     openingSupplyQty: openingSupplyQty, regularFcByMonth: hFc, specialEventDemands: specialEventDemands,
-    incomingEvents: incomingEvents || [], unitsPerCarton: unitsPerCarton });
+    incomingEvents: incomingEvents || [], unitsPerCarton: unitsPerCarton,
+    demandMode: mode, avgSalesPerDay: (mode === 'sales_driven' ? avgSalesPerDay : null) });
   return (hr && hr.ready) ? hr.horizons : null;
 }
 
@@ -362,8 +432,15 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   var mProj = recoWsBuildMonthlyProjection_(months, composition.openingSupplyQty, (haveAll ? demandByMonth : null), mIncoming, upc, nd.destination, preT1Demand, preT1Date);
   if (mProj) { mLine.monthlyProjection = mProj; mLine.openingSupplyComposition = composition; }   // §7 auditable opening-supply facts
   if (cmr && cmr.ready) mLine.currentMonthRemaining = { requiredByDate: cmr.requiredByDate, month: cmr.ym, remainingDays: cmr.remainingDays, demandQty: Math.round(cmr.demand) };   // PRE-T1 audit (not a writable tier)
-  // F1-4B-FM4a + FM3f-1: additive day-horizon projection — SAME corrected inputs (Site Stock opening, adjusted+special demand).
-  var mHz = recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, recoWsNum_(L.currentStockQty), mIncoming, upc, nd.destination);
+  // F1-4B-FM4a + FM3f-1 + FM5-R4UI-R3: additive day-horizon projection on Site Stock opening. Demand authority now
+  // splits on the SKU's canonical Planning Model — sales_driven consumes the §22 run-rate (NOT regular FC / Target%),
+  // forecast_driven keeps the adjusted-regular+special demand. A Sales-Driven SKU whose run-rate cannot be resolved
+  // fail-closes (no horizons → materialized BLOCKED), never silently reverting to the forecast path.
+  var planModel = recoWsResolvePlanningModel_(snaps, scope, sku);
+  var salesRate = null;
+  if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); salesRate = sr.ok ? sr.avgSalesPerDay : null; }
+  var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
+    : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, recoWsNum_(L.currentStockQty), mIncoming, upc, nd.destination, planModel, salesRate);
   if (mHz) mLine.horizons = mHz;
   return mLine;
 }
@@ -390,6 +467,11 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
     return { lines: lines };
   }
   var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
+  // F1-4B-FM5-R4UI-R3 — resolve the SKU's Planning Model + (Sales-Driven) canonical run-rate ONCE per SKU; the
+  // per-warehouse horizons below all share it (the model is a marketplace-SKU attribute, not per-warehouse).
+  var whPlanModel = recoWsResolvePlanningModel_(snaps, scope, sku);
+  var whSalesRate = null;
+  if (whPlanModel === 'sales_driven') { var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); whSalesRate = wsr.ok ? wsr.avgSalesPerDay : null; }
   var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
   var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
   months.forEach(function (mm) {
@@ -430,7 +512,8 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
     if (wProj) wLine.monthlyProjection = wProj;
     // F1-4B-FM4a: additive per-warehouse day-horizon projection (opening = this warehouse's OWN stock; incoming =
     // ONLY this warehouse's warehouseQualifiedEvents — same isolation as monthlyProjection; never pooled).
-    var wHz = recoWsBuildHorizons_(calc, fcRows, tgtRowsW, evtRowsW, skuMetaW, scope, sku, whOpening, whIncoming, upc, node);
+    var wHz = (whPlanModel === 'sales_driven' && whSalesRate === null) ? null
+      : recoWsBuildHorizons_(calc, fcRows, tgtRowsW, evtRowsW, skuMetaW, scope, sku, whOpening, whIncoming, upc, node, whPlanModel, whSalesRate);
     if (wHz) wLine.horizons = wHz;
     lines.push(wLine);
   });

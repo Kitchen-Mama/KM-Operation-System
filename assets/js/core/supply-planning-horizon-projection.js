@@ -56,18 +56,41 @@
     var horizonDays = (Array.isArray(input.horizonDays) && input.horizonDays.length) ? input.horizonDays.slice() : HORIZON_DAYS.slice();
     var maxN = 0; horizonDays.forEach(function (n) { if (n > maxN) maxN = n; });
 
+    // F1-4B-FM5-R4UI-R3 — canonical Planning Model demand split. The caller (recommendation workspace) resolves the
+    // SKU's replenishment_model and passes it here as demandMode; this owner NEVER guesses a mode. Absent/empty →
+    // 'forecast_driven' (the sole pre-R3 behavior, kept for backward compatibility with existing forecast callers).
+    //   • forecast_driven — daily demand = monthly Target%-adjusted regular FC ÷ that month's real days (unchanged).
+    //   • sales_driven    — daily demand = the canonical KMCALC.normalizedAvgSalesPerDay run-rate (a FLAT per-day
+    //                       quantity); monthly regular FC and Target% NEVER enter this path. The caller supplies the
+    //                       already-resolved avgSalesPerDay (no second averaging owner is created here).
+    // Special-event demand (specialEventDemands) is additive in BOTH paths (count-once, on its canonical prep date).
+    // An unknown mode, or a sales_driven call without a finite non-negative avgSalesPerDay, FAILS CLOSED (never a
+    // silent forecast/sales substitution, never a fabricated 0).
+    var demandMode = (input.demandMode === undefined || input.demandMode === null || input.demandMode === '') ? 'forecast_driven' : String(input.demandMode);
+    if (demandMode !== 'forecast_driven' && demandMode !== 'sales_driven') return fail(null, 'PLANNING_MODEL_UNKNOWN', 'demandMode must be forecast_driven | sales_driven (the Planning Model is caller-resolved and never guessed)', { got: input.demandMode });
+    var salesRate = null;
+    if (demandMode === 'sales_driven') {
+      salesRate = numOrNull(input.avgSalesPerDay);
+      if (salesRate === null || salesRate < 0) return fail(null, 'SALES_BASIS_UNAVAILABLE', 'sales_driven horizon requires a finite non-negative avgSalesPerDay from the canonical normalizedAvgSalesPerDay owner', { got: input.avgSalesPerDay });
+    }
+
     var y = +calcDate.slice(0, 4), m = +calcDate.slice(5, 7), d = +calcDate.slice(8, 10);
 
-    // 1. daily regular-FC demand events (calcDate+1 .. calcDate+maxN), FULL PRECISION (never pre-rounded).
-    //    A day whose month has NO canonical FC is OMITTED and its month recorded MISSING (a horizon whose window
-    //    includes such a day is surfaced UNAVAILABLE — never a fabricated 0).
+    // 1. daily base-demand events (calcDate+1 .. calcDate+maxN), FULL PRECISION (never pre-rounded).
+    //    forecast_driven: a day whose month has NO canonical FC is OMITTED and its month recorded MISSING (a horizon
+    //    whose window includes such a day is surfaced UNAVAILABLE — never a fabricated 0). sales_driven: the flat
+    //    run-rate applies to every elapsed day (no month-FC dependency → no missing-month gate).
     var demandEvents = [], missingMonths = {}, cy = y, cm = m, cd = d, i, t;
     for (i = 1; i <= maxN; i++) {
       t = nextDay(cy, cm, cd); cy = t[0]; cm = t[1]; cd = t[2];
-      var ym = y + ''; ym = iso(cy, cm, cd).slice(0, 7);
+      var dISO = iso(cy, cm, cd), ym = dISO.slice(0, 7);
+      if (demandMode === 'sales_driven') {
+        demandEvents.push({ demandId: 'SRD-' + dISO, date: dISO, qty: salesRate, demandType: 'SALES_RUN_RATE_DAILY', month: ym });
+        continue;
+      }
       var mfc = numOrNull(fcByMonth[ym]);
       if (mfc === null) { missingMonths[ym] = 1; continue; }
-      demandEvents.push({ demandId: 'RFC-' + iso(cy, cm, cd), date: iso(cy, cm, cd), qty: mfc / daysInMonth(cy, cm), demandType: 'REGULAR_FORECAST_DAILY', month: ym });
+      demandEvents.push({ demandId: 'RFC-' + dISO, date: dISO, qty: mfc / daysInMonth(cy, cm), demandType: 'REGULAR_FORECAST_DAILY', month: ym });
     }
     // F1-4B-FM3f-1 (Authority F): special-event demand enters ONCE on its canonical prep date (100%, never daily-
     // distributed, never target-adjusted). Caller supplies [{ prepDate:'YYYY-MM-DD', qty }] from the KMPD owner.
@@ -121,7 +144,8 @@
     });
 
     return { ready: true, horizons: horizons, issues: [],
-      meta: { deterministic: true, calculationDate: calcDate, destination: destination, openingSupplyQty: opening, horizonDays: horizonDays } };
+      meta: { deterministic: true, calculationDate: calcDate, destination: destination, openingSupplyQty: opening, horizonDays: horizonDays,
+        demandMode: demandMode, avgSalesPerDay: (demandMode === 'sales_driven' ? salesRate : null) } };
 
     function fail(dummy, code, message, details) {
       return { ready: false, horizons: [], issues: [{ code: code, message: message || code, details: details || null }],
@@ -129,5 +153,5 @@
     }
   }
 
-  return { projectHorizons: projectHorizons, HORIZON_DAYS: HORIZON_DAYS.slice(), VERSION: 'kmhp-fm4a-1' };
+  return { projectHorizons: projectHorizons, HORIZON_DAYS: HORIZON_DAYS.slice(), VERSION: 'kmhp-fm5r4uir3-1' };
 });

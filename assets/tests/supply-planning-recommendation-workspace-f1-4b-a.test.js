@@ -87,7 +87,7 @@ ok(lm.destinationType === 'MARKETPLACE' && lm.marketplaceId === 'MP1' && lm.ware
 ok(lm.calculatedGap === 880 && lm.recommendedQty === 888, 'D5 order-need via Monthly CEIL: gap 1000-120=880 → CEIL(880/12)*12 = 888');
 ok(lm.currentStockQty === 120 && lm.incomingCompleteness === 'COMPLETE', 'D6 FBA available_qty=120; no unresolved incoming → COMPLETE');
 ok(envM.meta.calculationMonth === '2026-08' && envM.meta.planningCycle === 'RECO-2026-08' && envM.meta.sourceReadCount === 1, 'D7 meta carries server calc context + one source read');
-ok(cM.getSheetByName === 13, 'D8 targeted read ONCE (13 canonical tables; no per-SKU/per-destination re-open)');
+ok(cM.getSheetByName === 15, 'D8 targeted read ONCE (15 canonical tables incl. FM5-R4UI-R3 daily/weekly sales; no per-SKU/per-destination re-open)');
 ok(cM.write === 0, 'D9 zero writes');
 ok(lm.recommendationLineId.indexOf('MARKETPLACE_ORDER_NEED') === 0 && lm.recommendationLineId.indexOf(lm.destinationKey) > -1, 'D10 stable line id includes mode + destinationKey');
 
@@ -102,7 +102,7 @@ var a = lines.filter(function (l) { return l.warehouseId === 'WH-A'; })[0], b = 
 ok(a && b && a.allocatedForecastQty === 300 && b.allocatedForecastQty === 700, 'E3 30/70 fanout: 1000 → 300 / 700 (per-month largest-remainder, conserved)');
 ok(a.destinationKey !== b.destinationKey && a.recommendationLineId !== b.recommendationLineId, 'E4 two warehouses never collide (distinct destinationKey + line id)');
 ok(a.destinationType === 'WAREHOUSE' && a.destinationRefId === 'WH-A' && a.marketplaceId === null, 'E5 WAREHOUSE identity = warehouse_id');
-ok(cW.getSheetByName === 13 && cW.write === 0, 'E6 ONE targeted read for 2-destination fanout (no per-destination re-open); zero writes');
+ok(cW.getSheetByName === 15 && cW.write === 0, 'E6 ONE targeted read (15 canonical tables) for 2-destination fanout (no per-destination re-open); zero writes');
 
 section('F. missing rules / unknown fulfillment fail closed');
 var noRules = baseTables('self_fulfilled');   // self_fulfilled but NO allocation rules

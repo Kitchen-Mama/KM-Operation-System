@@ -1,5 +1,11 @@
 ﻿// Inventory Replenishment - Add SKU Modal
 
+// F1-4B-FM5-R4UI-R3 (§9): the visible "Target Days" filter was removed — the canonical replenishment horizons are
+// FIXED at D18/D30/D45/D90 and the materialized gap authority never consumes a UI target-days value, so a user must
+// not be able to alter the horizon authority. This internal constant preserves the ONE legacy consumer that still
+// records a target-days figure in the shipping-plan Decision Snapshot (snapshot_target_days / allocation draft).
+var REPLEN_TARGET_DAYS = 90;
+
 function openReplenAddSkuModal() {
   const modal = document.getElementById('replen-add-sku-modal');
   const overlay = document.getElementById('replen-modal-overlay');
@@ -1636,8 +1642,10 @@ function toggleReplenRow(sku) {
     existingFixedPanels.forEach(panel => panel.remove());
     existingScrollPanels.forEach(panel => panel.remove());
 
-    fixedRows.forEach(row => row.classList.remove('expanded'));
-    scrollRows.forEach(row => row.classList.remove('expanded'));
+    // FM5-R4UI-R3 §13: clear the active-sticky state everywhere on every collapse pass so only the ONE currently
+    // expanded master row is ever sticky (collapse fully restores normal row flow).
+    fixedRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); });
+    scrollRows.forEach(row => { row.classList.remove('expanded'); row.classList.remove('is-active-sticky'); });
     document.querySelectorAll('#ops-section .replen-row-chevron').forEach(function (btn) {
         btn.setAttribute('aria-expanded', 'false');
         btn.classList.remove('is-open');
@@ -1655,8 +1663,10 @@ function toggleReplenRow(sku) {
     const scrollRow = Array.from(scrollRows).find(row => row.dataset.sku === sku);
 
     // Both containers receive their expanded class in the SAME synchronous pass (no per-side setTimeout).
-    if (fixedRow) fixedRow.classList.add('expanded');
-    if (scrollRow) scrollRow.classList.add('expanded');
+    // FM5-R4UI-R3 §13: the active master row also gets .is-active-sticky so it stays pinned (real row, no clone)
+    // below the two-level table header while the user scrolls its expanded detail region (CSS owns the geometry).
+    if (fixedRow) { fixedRow.classList.add('expanded'); fixedRow.classList.add('is-active-sticky'); }
+    if (scrollRow) { scrollRow.classList.add('expanded'); scrollRow.classList.add('is-active-sticky'); }
     if (fixedRow) {
         const chevron = fixedRow.querySelector('.replen-row-chevron');
         if (chevron) { chevron.setAttribute('aria-expanded', 'true'); chevron.classList.add('is-open'); }
@@ -1827,7 +1837,12 @@ function submitReplenishmentPlans() {
     const _scope = _replenSelectedScope();
     const country = _scope.country;
     const marketplace = _scope.marketplace;
-    const targetDays = document.getElementById('replenTargetDays').value;
+    // F1-4B-FM5-R4UI-R3 (§9): the visible "Target Days" control was removed — the canonical horizons are fixed at
+    // D18/D30/D45/D90 and the materialized gap authority never consumes a UI target-days value. The legacy
+    // shipping-plan Decision Snapshot still records a target-days figure, so fall back to the internal constant when
+    // the (now-absent) control is not present. Reads the control ONLY if a page variant still renders it.
+    var _tdEl = document.getElementById('replenTargetDays');
+    const targetDays = _tdEl ? _tdEl.value : REPLEN_TARGET_DAYS;
     const shippingPlans = {};
     
     console.log('=== Submit Plan Debug ===');
@@ -2420,7 +2435,7 @@ function _saveAllocationDraftFromDom(sku) {
     if (!routesList) return;
     var ctx = _replenCtx();
     replenAllocationDraft.context = ctx;
-    replenAllocationDraft.targetDays = (document.getElementById('replenTargetDays') || {}).value || '';
+    replenAllocationDraft.targetDays = (document.getElementById('replenTargetDays') || {}).value || REPLEN_TARGET_DAYS;   // FM5-R4UI-R3: control removed → internal default
     var rows = [];
     routesList.querySelectorAll('.exec-route-row').forEach(function (rowEl) {
         function fieldVal(f) {

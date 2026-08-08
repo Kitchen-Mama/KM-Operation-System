@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 41d64956a28ad4a774bf5792cfec4436435d56fc54f2a3c56a66d8c0758a678f
+// bundle_sha256 = 1c0002372d32f380eb3c603f6af48c9f0f91a1ef8c3ef4d3cfafc21a17fe4e93
 // modules (in load order):
 //   supply-planning-country-identity  81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -35,8 +35,8 @@
 //   supply-planning-destination-runtime  7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c
 //   supply-planning-planning-demand  f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240
 //   supply-planning-time-phased-projection  327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947
-//   supply-planning-horizon-projection  39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb
-//   supply-planning-production-source  0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530
+//   supply-planning-horizon-projection  d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6
+//   supply-planning-production-source  370635cf8fda03289c921f3bc609caeb11bd083fd8277abe6756b204d5f15743
 //   supply-planning-production-safety  7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6
 //   supply-planning-production-writer  1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364
 //   supply-planning-verification-diagnostics  efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea
@@ -9057,18 +9057,41 @@ function __kmRequire(p) {
     var horizonDays = (Array.isArray(input.horizonDays) && input.horizonDays.length) ? input.horizonDays.slice() : HORIZON_DAYS.slice();
     var maxN = 0; horizonDays.forEach(function (n) { if (n > maxN) maxN = n; });
 
+    // F1-4B-FM5-R4UI-R3 — canonical Planning Model demand split. The caller (recommendation workspace) resolves the
+    // SKU's replenishment_model and passes it here as demandMode; this owner NEVER guesses a mode. Absent/empty →
+    // 'forecast_driven' (the sole pre-R3 behavior, kept for backward compatibility with existing forecast callers).
+    //   • forecast_driven — daily demand = monthly Target%-adjusted regular FC ÷ that month's real days (unchanged).
+    //   • sales_driven    — daily demand = the canonical KMCALC.normalizedAvgSalesPerDay run-rate (a FLAT per-day
+    //                       quantity); monthly regular FC and Target% NEVER enter this path. The caller supplies the
+    //                       already-resolved avgSalesPerDay (no second averaging owner is created here).
+    // Special-event demand (specialEventDemands) is additive in BOTH paths (count-once, on its canonical prep date).
+    // An unknown mode, or a sales_driven call without a finite non-negative avgSalesPerDay, FAILS CLOSED (never a
+    // silent forecast/sales substitution, never a fabricated 0).
+    var demandMode = (input.demandMode === undefined || input.demandMode === null || input.demandMode === '') ? 'forecast_driven' : String(input.demandMode);
+    if (demandMode !== 'forecast_driven' && demandMode !== 'sales_driven') return fail(null, 'PLANNING_MODEL_UNKNOWN', 'demandMode must be forecast_driven | sales_driven (the Planning Model is caller-resolved and never guessed)', { got: input.demandMode });
+    var salesRate = null;
+    if (demandMode === 'sales_driven') {
+      salesRate = numOrNull(input.avgSalesPerDay);
+      if (salesRate === null || salesRate < 0) return fail(null, 'SALES_BASIS_UNAVAILABLE', 'sales_driven horizon requires a finite non-negative avgSalesPerDay from the canonical normalizedAvgSalesPerDay owner', { got: input.avgSalesPerDay });
+    }
+
     var y = +calcDate.slice(0, 4), m = +calcDate.slice(5, 7), d = +calcDate.slice(8, 10);
 
-    // 1. daily regular-FC demand events (calcDate+1 .. calcDate+maxN), FULL PRECISION (never pre-rounded).
-    //    A day whose month has NO canonical FC is OMITTED and its month recorded MISSING (a horizon whose window
-    //    includes such a day is surfaced UNAVAILABLE — never a fabricated 0).
+    // 1. daily base-demand events (calcDate+1 .. calcDate+maxN), FULL PRECISION (never pre-rounded).
+    //    forecast_driven: a day whose month has NO canonical FC is OMITTED and its month recorded MISSING (a horizon
+    //    whose window includes such a day is surfaced UNAVAILABLE — never a fabricated 0). sales_driven: the flat
+    //    run-rate applies to every elapsed day (no month-FC dependency → no missing-month gate).
     var demandEvents = [], missingMonths = {}, cy = y, cm = m, cd = d, i, t;
     for (i = 1; i <= maxN; i++) {
       t = nextDay(cy, cm, cd); cy = t[0]; cm = t[1]; cd = t[2];
-      var ym = y + ''; ym = iso(cy, cm, cd).slice(0, 7);
+      var dISO = iso(cy, cm, cd), ym = dISO.slice(0, 7);
+      if (demandMode === 'sales_driven') {
+        demandEvents.push({ demandId: 'SRD-' + dISO, date: dISO, qty: salesRate, demandType: 'SALES_RUN_RATE_DAILY', month: ym });
+        continue;
+      }
       var mfc = numOrNull(fcByMonth[ym]);
       if (mfc === null) { missingMonths[ym] = 1; continue; }
-      demandEvents.push({ demandId: 'RFC-' + iso(cy, cm, cd), date: iso(cy, cm, cd), qty: mfc / daysInMonth(cy, cm), demandType: 'REGULAR_FORECAST_DAILY', month: ym });
+      demandEvents.push({ demandId: 'RFC-' + dISO, date: dISO, qty: mfc / daysInMonth(cy, cm), demandType: 'REGULAR_FORECAST_DAILY', month: ym });
     }
     // F1-4B-FM3f-1 (Authority F): special-event demand enters ONCE on its canonical prep date (100%, never daily-
     // distributed, never target-adjusted). Caller supplies [{ prepDate:'YYYY-MM-DD', qty }] from the KMPD owner.
@@ -9122,7 +9145,8 @@ function __kmRequire(p) {
     });
 
     return { ready: true, horizons: horizons, issues: [],
-      meta: { deterministic: true, calculationDate: calcDate, destination: destination, openingSupplyQty: opening, horizonDays: horizonDays } };
+      meta: { deterministic: true, calculationDate: calcDate, destination: destination, openingSupplyQty: opening, horizonDays: horizonDays,
+        demandMode: demandMode, avgSalesPerDay: (demandMode === 'sales_driven' ? salesRate : null) } };
 
     function fail(dummy, code, message, details) {
       return { ready: false, horizons: [], issues: [{ code: code, message: message || code, details: details || null }],
@@ -9130,7 +9154,7 @@ function __kmRequire(p) {
     }
   }
 
-  return { projectHorizons: projectHorizons, HORIZON_DAYS: HORIZON_DAYS.slice(), VERSION: 'kmhp-fm4a-1' };
+  return { projectHorizons: projectHorizons, HORIZON_DAYS: HORIZON_DAYS.slice(), VERSION: 'kmhp-fm5r4uir3-1' };
 });
   __kmRegister("supply-planning-horizon-projection", module.exports);
 })();
@@ -9192,7 +9216,12 @@ function __kmRequire(p) {
     // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
     { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false },
     // F1-4B-FM3f-1 (Authority E): Target % rules — read-only; missing → 100% (frozen fallback), never invented.
-    { key: 'fcTargetRules', sheet: 'fc_target_rules', required: false }
+    { key: 'fcTargetRules', sheet: 'fc_target_rules', required: false },
+    // F1-4B-FM5-R4UI-R3 (Sales-Driven Planning Model): the canonical KMCALC.normalizedAvgSalesPerDay run-rate inputs.
+    // Daily sales = the §22 confirmed-day window; weekly = the <3-normal-day fallback rung. Read-only; missing → the
+    // Sales-Driven horizon fail-closes truthfully (SALES_BASIS_UNAVAILABLE), never guessed, never forecast-substituted.
+    { key: 'amazonDailySalesSnapshot', sheet: 'amazon_daily_sales_snapshot', required: false },
+    { key: 'amazonWeeklySalesSnapshot', sheet: 'amazon_weekly_sales_snapshot', required: false }
   ];
 
   function tablesFor(config) {
@@ -9980,4 +10009,4 @@ var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"41d64956a28ad4a774bf5792cfec4436435d56fc54f2a3c56a66d8c0758a678f","modules":[{"module":"supply-planning-country-identity","sha256":"81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"39065a2dc881e377feee7131d0094b692cb959bed381d550fcfe6276c6a08edb"},{"module":"supply-planning-production-source","sha256":"0fe7cc0bfc113b24fcebe9c620f87d5ad4211a5a5a183d4fcda9cd3648b2b530"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"1c0002372d32f380eb3c603f6af48c9f0f91a1ef8c3ef4d3cfafc21a17fe4e93","modules":[{"module":"supply-planning-country-identity","sha256":"81cc7964d540fc2f415978e73ab737531af0f0761e2141a8a00570609757f9b8"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"370635cf8fda03289c921f3bc609caeb11bd083fd8277abe6756b204d5f15743"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"}]};

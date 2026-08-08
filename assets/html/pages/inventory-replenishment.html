@@ -39,17 +39,18 @@
                                     <option value="Newegg">Newegg</option>
                                 </select>
                             </div>
-                            <div class="filter-group">
+                            <!-- F1-4B-FM5-R4UI-R3 (§9/§10): LTS Filter is content-width compact (see .replen-filters .filter-group--lts).
+                                 "Target Days" removed from the normal UI — the canonical horizons are FIXED at D18/D30/D45/D90
+                                 and the materialized gap authority never consumes a UI target-days value. The internal
+                                 default (REPLEN_TARGET_DAYS = 90) lives in inventory-replenishment.js for the legacy
+                                 shipping-plan snapshot metadata that still records a target-days figure. -->
+                            <div class="filter-group filter-group--lts">
                                 <label>LTS Filter</label>
                                 <select id="replenLTSFilter" onchange="renderReplenishment()">
                                     <option value="">All SKU</option>
                                     <option value="over90">Over 90+</option>
                                     <option value="over180">Over 180+</option>
                                 </select>
-                            </div>
-                            <div class="filter-group">
-                                <label>Target Days</label>
-                                <input type="number" id="replenTargetDays" value="90" onchange="renderReplenishment()" placeholder="Days">
                             </div>
                         </div>
                         <div class="replen-actions">

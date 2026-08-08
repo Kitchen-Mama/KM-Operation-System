@@ -35,7 +35,7 @@ var FC_HEADERS = ['company', 'country', 'marketplace', 'sku', 'year', 'jan', 'fe
 function fcRow() { return ['KM', 'US', 'AMAZON_US', 'CO1100', 2026, 0, 0, 0, 0, 0, 0, 0, 3100, 3000, 3100, 3000, 0, 'FC-1']; }
 function mpTables() {
   return {
-    marketplace_skus: { headers: ['company', 'country', 'marketplace', 'sku', 'site_sku'], rows: [['KM', 'US', 'AMAZON_US', 'CO1100', 'ST']] },
+    marketplace_skus: { headers: ['company', 'country', 'marketplace', 'sku', 'site_sku', 'replenishment_model'], rows: [['KM', 'US', 'AMAZON_US', 'CO1100', 'ST', 'forecast_driven']] },   // FM5-R4UI-R3: this suite exercises the FORECAST horizon path explicitly
     marketplaces: { headers: ['marketplace_id', 'company', 'country', 'marketplace', 'fulfillment_model', 'status'], rows: [['MP1', 'KM', 'US', 'AMAZON_US', 'platform_fulfilled', 'active']] },
     warehouses: { headers: ['warehouse_id', 'company', 'country', 'is_active', 'is_factory_warehouse', 'warehouse_type'], rows: [['WH-A', 'KM', 'US', 'TRUE', 'FALSE', '3PL']] },
     sku_details: { headers: ['sku', 'units_per_carton'], rows: [['CO1100', 40]] },
@@ -65,7 +65,7 @@ ok(hz(lm, 'D30').requiredByDate === '2026-09-06' && hz(lm, 'D30').demandQty === 
 ok(hz(lm, 'D90').requiredByDate === '2026-11-05', 'M4 D90: reqBy 2026-11-05 (multi-month window)');
 ok(Array.isArray(lm.monthlyProjection) && lm.monthlyProjection.length === 4, 'M5 monthlyProjection STILL present (non-regression)');
 ok(envM.meta.calculationDate === '2026-08-07', 'M6 meta carries the calc-DATE anchor');
-ok(cM.getSheetByName === 13 && cM.write === 0, 'M7 one targeted read (13 tables incl. fc_target_rules); ZERO writes — horizons add no read/write');
+ok(cM.getSheetByName === 15 && cM.write === 0, 'M7 one targeted read (15 tables incl. fc_target_rules + FM5-R4UI-R3 daily/weekly sales); ZERO writes — horizons add no write');
 
 section('additive fail-closed — calc-DATE absent → horizons omitted, OP response unaffected');
 var cN = {}; var envN = H.handle(body(), io('2026-08', '', makeSs(mpTables(), cN)));

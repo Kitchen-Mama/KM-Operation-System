@@ -50,7 +50,12 @@
     // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
     { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false },
     // F1-4B-FM3f-1 (Authority E): Target % rules — read-only; missing → 100% (frozen fallback), never invented.
-    { key: 'fcTargetRules', sheet: 'fc_target_rules', required: false }
+    { key: 'fcTargetRules', sheet: 'fc_target_rules', required: false },
+    // F1-4B-FM5-R4UI-R3 (Sales-Driven Planning Model): the canonical KMCALC.normalizedAvgSalesPerDay run-rate inputs.
+    // Daily sales = the §22 confirmed-day window; weekly = the <3-normal-day fallback rung. Read-only; missing → the
+    // Sales-Driven horizon fail-closes truthfully (SALES_BASIS_UNAVAILABLE), never guessed, never forecast-substituted.
+    { key: 'amazonDailySalesSnapshot', sheet: 'amazon_daily_sales_snapshot', required: false },
+    { key: 'amazonWeeklySalesSnapshot', sheet: 'amazon_weekly_sales_snapshot', required: false }
   ];
 
   function tablesFor(config) {

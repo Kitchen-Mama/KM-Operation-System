@@ -33,7 +33,7 @@ var FCH = ['company', 'country', 'marketplace', 'sku', 'year', 'jan', 'feb', 'ma
 function fcRow() { return ['KM', 'US', 'AMAZON_US', 'CO1100-R', 2026, 0, 0, 0, 0, 0, 0, 0, 3100, 7000, 4282, 7500, 0, 'FC-1']; }
 function tables(extra) {
   var t = {
-    marketplace_skus: { headers: ['company', 'country', 'marketplace', 'sku', 'site_sku'], rows: [['KM', 'US', 'AMAZON_US', 'CO1100-R', 'ST']] },
+    marketplace_skus: { headers: ['company', 'country', 'marketplace', 'sku', 'site_sku', 'replenishment_model'], rows: [['KM', 'US', 'AMAZON_US', 'CO1100-R', 'ST', 'forecast_driven']] },   // FM5-R4UI-R3: this suite exercises the FORECAST horizon path explicitly
     marketplaces: { headers: ['marketplace_id', 'company', 'country', 'marketplace', 'fulfillment_model', 'status'], rows: [['MP1', 'KM', 'US', 'AMAZON_US', 'platform_fulfilled', 'active']] },
     warehouses: { headers: ['warehouse_id', 'company', 'country', 'is_active', 'is_factory_warehouse', 'warehouse_type'], rows: [['WH-A', 'KM', 'US', 'TRUE', 'FALSE', '3PL']] },
     sku_details: { headers: ['sku', 'units_per_carton', 'series', 'category'], rows: [['CO1100-R', 40, 'CO', 'OPENER']] },
@@ -83,7 +83,7 @@ eq(HZ(lm, 'D18').demandQty, 1800, 'HZ1 D18 (Aug 8–25) = 18 × (adjusted 3100/3
 eq(HZ(lm, 'D18').openingSupplyQty, 7374, 'HZ2 horizon opening = Site Stock 7374 (same Authority-A owner)');
 
 section('request-count / write-safety / demand owner (no page-side formula)');
-ok(cM.getSheetByName === 13 && cM.write === 0, 'ONE read (13 tables incl. fc_target_rules); ZERO writes');
+ok(cM.getSheetByName === 15 && cM.write === 0, 'ONE read (15 tables incl. fc_target_rules + FM5-R4UI-R3 daily/weekly sales); ZERO writes');
 ok(/KMPD\.planningDemandByMonth/.test(HANDLER) && /KMPD\.currentMonthRemainingDemand/.test(HANDLER), 'demand owned by canonical KMPD (no handler FC×Target)');
 ok(!/\* *r\.target|fc *\* *target|target_percentage *\/ *100/i.test(HANDLER), 'no page/handler-side FC×Target arithmetic');
 

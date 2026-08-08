@@ -196,7 +196,9 @@ section('J. UI removal — panel gone; original filters restored; Summary intact
   ok(!/replenRecoDestination|replenRecoCalcMonth|replenRecoPlanningCycle|replenRecoContextStatus/.test(HTML), 'J1 no Recommendation Context control in the HTML');
   ok(!/replen-reco-context/.test(HTML), 'J2 no Recommendation Context panel container in the HTML');
   ok(!/Recommendation Context/.test(HTML), 'J3 the "Recommendation Context" label no longer appears in the UI');
-  ok(/id="replenCountry"/.test(HTML) && /id="replenMarketplace"/.test(HTML) && /id="replenLTSFilter"/.test(HTML) && /id="replenTargetDays"/.test(HTML), 'J4 original Country/Marketplace/LTS/TargetDays filters restored/preserved');
+  // F1-4B-FM5-R4UI-R3 §9: Target Days removed from the normal UI (horizons are fixed D18/D30/D45/D90; the gap
+  // authority never consumes a UI target-days value). The three real filters remain; the Target Days control is gone.
+  ok(/id="replenCountry"/.test(HTML) && /id="replenMarketplace"/.test(HTML) && /id="replenLTSFilter"/.test(HTML) && !/id="replenTargetDays"/.test(HTML), 'J4 Country/Marketplace/LTS filters preserved; Target Days control removed (FM5-R4UI-R3 §9)');
   ok(/onclick="searchReplenishment\(\)"/.test(HTML), 'J5 Search button preserved');
   // Recommendation Summary is unaffected: legacy placeholders remain the honest not-ready state
   ok(/No recommendation generated/.test(JS) && /AI Pending/.test(JS), 'J6 Recommendation Summary legacy placeholders intact (honest until runtime Ready)');

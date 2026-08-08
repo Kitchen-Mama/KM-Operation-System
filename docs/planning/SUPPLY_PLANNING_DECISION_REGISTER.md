@@ -774,3 +774,17 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 - **No structural regression:** materialized-read remains primary; expand does not calculate; Recalculate All Sites,
   Execution Plan, Diagnostics, and top-level Suggested Qty behavior unchanged. Tests:
   `inventory-gap-ui-simplification-f1-4b-fm5r4ui` (27); FM5-R1 INV3 updated to the R4UI surface. Bundle unchanged.
+
+---
+
+## F1-4B-FM5-R4UI-R3 — Planning Model demand split FROZEN + wired (resolves the R4UI-R2 AUTHORITY_NOT_FROZEN HALT)
+
+- **Decision (user-frozen this round):** Inventory Replenishment horizon demand splits on `marketplace_skus.replenishment_model`.
+  - **sales_driven** — daily demand = the canonical `KMCALC.normalizedAvgSalesPerDay` run-rate (§22: latest ≤30 confirmed NORMAL days in the 90 completed-day window ÷ actual normal-day count; <3 → `weekly_7d ÷ 7`), applied FLAT per elapsed calendar day. Regular FC and Target% NEVER enter this path.
+  - **forecast_driven** — unchanged: monthly Target%-adjusted regular FC (Authority E) ÷ that month's real days.
+  - **Special events** (Authority F, `KMPD.scopedSpecialEventPreps`) are additive in BOTH paths, count-once, on the canonical prep date.
+  - **Unknown / missing model** → KMHP fails closed (`PLANNING_MODEL_UNKNOWN`); a Sales-Driven SKU whose run-rate cannot be resolved fails closed (`SALES_BASIS_UNAVAILABLE`) → materialized BLOCKED. Never a silent forecast/sales substitution, never a fabricated 0.
+- **Owners changed:** `KMHP.projectHorizons` (demandMode + avgSalesPerDay; ONE KMTPP call; VERSION `kmhp-fm5r4uir3-1`); `KMPS` canonical tables +`amazon_daily_sales_snapshot` +`amazon_weekly_sales_snapshot`; `42` `recoWsResolvePlanningModel_` + `recoWsResolveSalesRate_` wired into the marketplace + warehouse horizon paths. Site Stock opening owner + Factory/Overseas exclusion UNCHANGED. Bundle `1c0002372d32f380eb3c603f6af48c9f0f91a1ef8c3ef4d3cfafc21a17fe4e93`.
+- **Proof:** the old forecast-derived D45=2804 cannot occur for a Sales-Driven SKU — its D45 is now `max(0, avgSalesPerDay×45 − Site Stock − timely incoming)`. Tests: `planning-model-demand-split-f1-4b-fm5r4uir3` (27), `planning-model-wiring-f1-4b-fm5r4uir3` (14).
+- **Narrow HALT (authorized §14):** global-header vertical compaction — the header is a SINGLE shared owner (`layout.css .top-header` + `base.css --header-height`) consumed by every page's layout offset/sidebar/content height; changing it ripples cross-page and is not live-verifiable here. Inventory page CSS does NOT touch it. Owner reported; deferred to a dedicated cross-page round.
+- **Known follow-ups (bounded, not blocking):** (1) the Sales-Driven run-rate wiring supplies `campaigns:[]`/`events:[]` to the owner, so campaign/event contamination-day EXCLUSION is not yet marshalled (needs the `campaign_sku_lines` join + `fc_special_events` selling-window); (2) daily-sales company attribution stamps the scope company (correct for single-company scopes; a genuinely multi-company scope fails closed rather than guessing). Both require LIVE observation before FM5-R5.
