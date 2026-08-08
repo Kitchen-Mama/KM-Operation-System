@@ -1578,6 +1578,14 @@
 /* Gap / Suggested Qty: right-aligned, never wrap mid-number — large values scroll via the wrap, not card-widen. */
 #ops-section .replen-horizon-table .replen-recsum-table__num { text-align: right; white-space: nowrap; }
 #ops-section .replen-horizon-table__win { white-space: nowrap; }
+/* F1-4B-FM5-R4UI: the primary outlook table has a FIXED structure — column widths are data-independent so the table
+   shape stays stable before/after data arrives and cannot be widened by a large value. Window compact; Gap/Suggested
+   numeric; Note takes the flexible remaining width (and wraps). Contained by .replen-horizon-tablewrap. */
+#ops-section .replen-horizon-table--outlook { table-layout: fixed; }
+#ops-section .replen-horizon-table--outlook col.replen-horizon-col--win,
+#ops-section .replen-horizon-table--outlook th.replen-horizon-table__win { width: 22%; }
+#ops-section .replen-horizon-table--outlook th.replen-recsum-table__num { width: 19%; }
+#ops-section .replen-horizon-table--outlook th.replen-horizon-table__note { width: auto; }
 #ops-section .replen-horizon-win { display: block; font-weight: 600; }
 #ops-section .replen-horizon-by { display: block; font-size: 11px; color: #94A3B8; white-space: nowrap; }
 /* Note: bounded width, wraps inside its own cell — a long Note NEVER determines the table/card width. */

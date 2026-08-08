@@ -97,7 +97,7 @@ section('INVENTORY · expand reads STORED row (no live getWorkspace), valid zero
     ok(wsCalls.n === 0, 'INV1 expand/scope load did NOT call live recommendation.workspace.get (READ-ONLY)');
     ok(readCalls.n === 1, 'INV2 one materialized read for the scope');
     var body = _irRecoSummaryCardBody({ sku: 'CO1100-R' });
-    ok(/Replenishment Outlook/.test(body) && /replen-horizon-table--outlook/.test(body), 'INV3 renders the frozen Replenishment Outlook from the stored row');
+    ok(/replen-horizon-table--outlook/.test(body) && !/Replenishment Outlook/.test(body) && !/replen-horizon-dest__badge/.test(body), 'INV3 renders the frozen outlook table from the stored row — R4UI: no "Replenishment Outlook" sub-title, no "Materialized" badge in the normal view');
     ok(/18 Days/.test(body) && /90 Days/.test(body), 'INV4 D18–D90 rows present');
     ok(/replen-recsum-table__num">1200</.test(body) && /replen-recsum-table__num">600</.test(body), 'INV5 D45/D90 gap from GAP DB verbatim');
     ok(/replen-recsum-table__num">0</.test(body), 'INV6 valid zero renders 0 (D18)');

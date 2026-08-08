@@ -755,3 +755,22 @@ formula/stock/allocation/KMHP/KMTPP/KMMSA/KMALLOC/KMQI/gap-schema/read-behavior/
 - **Tests:** `gap-calc-context-f1-4b-fm5r4` (23: A–F, leap, year, month-boundary, cycle, TZ integrity, fail-closed);
   `gap-materialization-scheduler-f1-4b-fm5r3` updated to the R4 injection surface (31). Bundle UNCHANGED (35 modules,
   `41d64956…`). No DB/schema, no frontend deploy. Remaining blocker cleared: scheduled runs need no manual property.
+
+### D-F1-4B-FM5-R4UI — Inventory materialized-gap UI simplification (presentation only)
+
+Presentation-only cleanup of the Inventory Replenishment materialized-gap card; NO formula / materialization / DB /
+scheduler / allocation / runtime-owner change. Frontend files only (`inventory-replenishment.js` + `.css`).
+
+- **Normal view = the fixed 4-window outlook table ONLY** (Window | Gap | Suggested Qty | Note) under the outer
+  "Recommendation Summary" title. Removed from the normal view: the "Replenishment Outlook" sub-title, the
+  "Materialized" badge, and the panel-level note/status/calc-date/as-of. Those engineering facts are DEMOTED under a
+  collapsed **Diagnostics** `<details>` (`_irMatMetaHtml`). The actionable "stale" warning stays visible.
+- **Row-level Note preserved:** `_irMatToLine` sets a truthful per-window Note for non-READY rows (the stored reason)
+  and leaves READY rows to the derived business note (No shortage / Replenishment required) via `_irRecoHorizonNote_`
+  (now prefers an explicit `h.note`; live-workspace path unaffected). Valid zero → 0; BLOCKED → "—" + truthful Note.
+- **Stable structure:** `.replen-horizon-table--outlook` gains `table-layout: fixed` + data-independent column widths
+  (Window 22% / Gap 19% / Suggested 19% / Note flexible); still inside `.replen-horizon-tablewrap` (overflow-x) so a
+  large value scrolls internally and never widens the card. All four windows always render.
+- **No structural regression:** materialized-read remains primary; expand does not calculate; Recalculate All Sites,
+  Execution Plan, Diagnostics, and top-level Suggested Qty behavior unchanged. Tests:
+  `inventory-gap-ui-simplification-f1-4b-fm5r4ui` (27); FM5-R1 INV3 updated to the R4UI surface. Bundle unchanged.

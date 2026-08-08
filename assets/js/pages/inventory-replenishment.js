@@ -4989,6 +4989,7 @@ function _irRecoHorizonTableHtml(line) {
 // F1-4B-FM6 · truthful per-window Note derived ONLY from the canonical gap (no page formula): missing → "—";
 // valid zero → "No shortage"; positive gap → "Replenishment required".
 function _irRecoHorizonNote_(h) {
+  if (h && h.note != null && String(h.note) !== '') return String(h.note);   // explicit truthful note (e.g. a BLOCKED reason) wins
   if (!h || typeof h.gapQty !== 'number' || !isFinite(h.gapQty)) return '—';
   return h.gapQty <= 0 ? 'No shortage' : 'Replenishment required';
 }
@@ -5112,26 +5113,38 @@ function _irMatNum(v) { if (v === '' || v === null || v === undefined) return nu
 function _irMatExpectedCalcDate() { return (typeof window !== 'undefined' && window.KM_FLAGS && window.KM_FLAGS.EXPECTED_CALCULATION_DATE) ? String(window.KM_FLAGS.EXPECTED_CALCULATION_DATE) : null; }
 function _irMatIsStale(row) { var exp = _irMatExpectedCalcDate(); var cd = row && row.calculation_date ? String(row.calculation_date) : ''; return !!(exp && cd && cd < exp); }
 // Map ONE stored gap row → the frozen horizons-shaped line the FROZEN outlook renderer consumes (no new render).
+// Map ONE stored gap row → the frozen horizons-shaped line the outlook renderer consumes (no new render, NO math).
+// F1-4B-FM5-R4UI: a non-READY (BLOCKED/ERROR) row has blank gap cells → every window renders "—" plus the truthful
+// stored reason (row.note, else the status) as its per-window Note. A READY row leaves note undefined so the
+// per-window business Note is derived (No shortage / Replenishment required) from the stored gap. Stored values only.
 function _irMatToLine(row) {
+  var st = row.calculation_status ? String(row.calculation_status) : '';
+  var reason = (st && st !== 'READY') ? ((row.note != null && String(row.note) !== '') ? String(row.note) : st) : null;
+  function hz(code, g, s) { var h = { windowCode: code, gapQty: _irMatNum(g), suggestedOrderQty: _irMatNum(s) }; if (reason) h.note = reason; return h; }
   return {
-    destinationType: 'MARKETPLACE', destinationLabel: null,
+    destinationType: 'MARKETPLACE', destinationLabel: null, calculationStatus: st,
     horizons: [
-      { windowCode: 'D18', gapQty: _irMatNum(row.d18_gap_qty), suggestedOrderQty: _irMatNum(row.d18_suggested_qty) },
-      { windowCode: 'D30', gapQty: _irMatNum(row.d30_gap_qty), suggestedOrderQty: _irMatNum(row.d30_suggested_qty) },
-      { windowCode: 'D45', gapQty: _irMatNum(row.d45_gap_qty), suggestedOrderQty: _irMatNum(row.d45_suggested_qty) },
-      { windowCode: 'D90', gapQty: _irMatNum(row.d90_gap_qty), suggestedOrderQty: _irMatNum(row.d90_suggested_qty) }
+      hz('D18', row.d18_gap_qty, row.d18_suggested_qty),
+      hz('D30', row.d30_gap_qty, row.d30_suggested_qty),
+      hz('D45', row.d45_gap_qty, row.d45_suggested_qty),
+      hz('D90', row.d90_gap_qty, row.d90_suggested_qty)
     ]
   };
 }
+// F1-4B-FM5-R4UI: panel-level engineering metadata (calculation_status / calc date / as-of / aggregate note) is
+// DEMOTED under a collapsed Diagnostics section — it is NOT part of the normal presentation. Only the actionable
+// "stale" warning stays visible in the normal view (business signal → run Recalculate All Sites). The per-window
+// business Note remains in the primary table.
 function _irMatMetaHtml(row) {
   function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
+  var stale = _irMatIsStale(row) ? '<div class="replen-recsum-ws__meta"><span class="replen-mat-stale">⚠ stale — run Recalculate All Sites</span></div>' : '';
   var bits = [];
   if (row.calculation_status) bits.push('status: ' + esc(row.calculation_status));
   if (row.calculation_date) bits.push('calc date: ' + esc(row.calculation_date));
   if (row.calculated_at) bits.push('as of ' + esc(row.calculated_at));
-  var stale = _irMatIsStale(row) ? '<span class="replen-mat-stale">⚠ stale — run Recalculate All Sites</span> ' : '';
-  var note = (row.note != null && String(row.note) !== '') ? ('<div class="replen-recsum-ws__meta replen-mat-note">note: ' + esc(row.note) + '</div>') : '';
-  return note + '<div class="replen-recsum-ws__meta">' + stale + bits.join(' · ') + '</div>';
+  if (row.note != null && String(row.note) !== '') bits.push('note: ' + esc(row.note));
+  var diag = bits.length ? ('<details class="replen-recsum-ws__diag replen-recsum-ws__diag--mat"><summary>Diagnostics</summary><div class="replen-recsum-ws__meta">' + bits.join(' · ') + '</div></details>') : '';
+  return stale + diag;
 }
 function _irMatOutlookBody(skuData) {
   function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
@@ -5142,9 +5155,10 @@ function _irMatOutlookBody(skuData) {
   if (st.status === 'READ_ERROR') { var e = st.error || {}; return wrap('replen-recsum-ws--error', 'Could not read the materialized gap: ' + esc(e.message || '') + ' <code>' + esc(e.code || 'READ_ERROR') + '</code>'); }
   var row = (skuData && _irMatState.bySku[String(skuData.sku)]) || null;
   if (!row) return wrap('replen-recsum-ws--info', 'Not calculated yet — run <strong>Recalculate All Sites</strong>. <code>NOT_CALCULATED</code>');
-  var badge = (row.calculation_status && row.calculation_status !== 'READY') ? row.calculation_status : 'Materialized';
+  // PRIMARY surface: ONLY the fixed 4-window outlook table (Window | Gap | Suggested Qty | Note) under the outer
+  // "Recommendation Summary" title. No "Replenishment Outlook" sub-title, no "Materialized" badge, no panel
+  // note/status/calc-date/as-of — engineering metadata is demoted to the collapsed Diagnostics section below.
   var section = '<div class="replen-horizon-summary"><div class="replen-horizon-dest">'
-    + '<div class="replen-horizon-dest__hd"><span class="replen-horizon-dest__name">Replenishment Outlook</span> <span class="replen-horizon-dest__badge">' + esc(badge) + '</span></div>'
     + _irRecoHorizonOutlookTableHtml(_irMatToLine(row)) + '</div></div>';
   return wrap('replen-recsum-ws--ready', section + _irMatMetaHtml(row));
 }
