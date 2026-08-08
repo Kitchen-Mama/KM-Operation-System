@@ -44,7 +44,7 @@ ok(/mLine\.horizonsBlockedReason = salesReason \|\| 'HORIZON_PROJECTION_UNAVAILA
 ok(/wLine\.horizonsBlockedReason = whSalesReason \|\| 'HORIZON_PROJECTION_UNAVAILABLE'/.test(WS_SRC), 'W2 warehouse path stamps the sales reason too');
 ok(/recoWsCanonC\(r\.country\) === scopeCountryC/.test(WS_SRC), 'W3 daily-sales scope match uses CANONICAL country (KMCID), not raw equality (fixes the UK≡GB-class false SALES_BASIS_UNAVAILABLE)');
 ok(/canonicalCountryCode/.test(WS_SRC), 'W4 the canon helper delegates to the KMCID country owner');
-ok(/salesReason = sr\.reason/.test(WS_SRC), 'W5 the sales-rate failure reason is captured (was discarded)');
+ok(/salesReason = \(sr\.reason \|\|/.test(WS_SRC), 'W5 the sales-rate failure reason (+ diagnostic detail) is captured (was discarded)');
 
 section('§1 fresh-state invariant preserved (the map never reads a prior row/status)');
 ok(!/getRange|getLastRow|calculation_status\s*===|existing\./.test(gap.map.toString()), 'FS1 the materialization map is a pure function of its inputs — no prior calculation_status can gate the new run');

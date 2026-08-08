@@ -203,10 +203,13 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
     return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace;
   });
-  if (!daily.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };
+  // F1-4B-FM5-R4UI-R7V — attach a COMPACT self-describing `detail` to every fail-closed reason so the live BLOCKED
+  // note names the exact data cause (row count, distinct channels, resolved country) WITHOUT needing a server-log
+  // dive. Diagnostic only — it changes no threshold and relaxes no fail-closed rule (the reason token is unchanged).
+  if (!daily.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) };
   var chSet = {}; daily.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
   var chKeys = Object.keys(chSet);
-  if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS' };   // 0 or ambiguous channel → fail closed (conflict)
+  if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
   var channel = chKeys[0];
   var weekly = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
     return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace && recoWsStr_(r.channel) === channel;
@@ -243,10 +246,10 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     res = compute(contam.campaigns, contam.events);
   } catch (e) {
     contaminationApplied = false;
-    try { res = compute([], []); } catch (e2) { return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' }; }
+    try { res = compute([], []); } catch (e2) { return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error' }; }
   }
   var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
-  if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };
+  if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)' };
   return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
     contaminationApplied: contaminationApplied, contaminationSource: contam.sourceStatus };
 }
@@ -514,7 +517,7 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // fail-closes (no horizons → materialized BLOCKED), never silently reverting to the forecast path.
   var planModel = recoWsResolvePlanningModel_(snaps, scope, sku);
   var salesRate = null, salesReason = null;
-  if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = sr.reason || 'SALES_BASIS_UNAVAILABLE'; }
+  if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = (sr.reason || 'SALES_BASIS_UNAVAILABLE') + (sr.detail ? ': ' + sr.detail : ''); }
   // F1-4B-FM5-R4UI-R5 §4 — the INVENTORY horizon opening is Site Stock, which is FORECAST-INDEPENDENT. The unified
   // resolver returns a null line (→ null L.currentStockQty) when the MONTHLY demand (regular forecast) is not
   // resolvable — so a Sales-Driven SKU with no regular forecast was losing its Site Stock and materializing
@@ -565,7 +568,7 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
   // per-warehouse horizons below all share it (the model is a marketplace-SKU attribute, not per-warehouse).
   var whPlanModel = recoWsResolvePlanningModel_(snaps, scope, sku);
   var whSalesRate = null, whSalesReason = null;
-  if (whPlanModel === 'sales_driven') { var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = wsr.reason || 'SALES_BASIS_UNAVAILABLE'; }
+  if (whPlanModel === 'sales_driven') { var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = (wsr.reason || 'SALES_BASIS_UNAVAILABLE') + (wsr.detail ? ': ' + wsr.detail : ''); }
   var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
   var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
   months.forEach(function (mm) {

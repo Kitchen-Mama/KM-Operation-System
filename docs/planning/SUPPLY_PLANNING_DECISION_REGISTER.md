@@ -943,3 +943,22 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 - No Inventory D18–D90 / Order Planning formula change; no DB/schema change; no gap business-key change; core modules
   + generated bundle UNCHANGED (only the 42/43 `.gs` handlers — not bundled — + page JS/CSS/HTML + shared logo CSS +
   tests changed). Full suite 133/134 (only pre-existing replen-header-toggle A2); Golden PASS.
+
+## F1-4B-FM5-R4UI-R7V — Live-closure: self-diagnosing sales-basis BLOCKED note (2026-08-08)
+- **Execution boundary (honest):** this agent has NO live browser / Apps Script runtime / Google Sheet / DevTools
+  access, so it cannot run "Recalculate All Sites", read the live `inventory_replenishment_gap`, produce live
+  numeric horizons, or capture live computed styles. No live values are fabricated. Also note R7 (`cf54747`) is
+  UNPUSHED (origin at R6 `48aeb17`) — the "current R7 deployment" the round assumes has not happened; the R7
+  reason-unmask + country-canon are not live yet, so the live note is still R6's generic HORIZONS_NOT_AVAILABLE.
+- **§1 the one safe, code-provable advance:** each `recoWsResolveSalesRate_` fail-closed reason now carries a
+  compact `detail` (matched daily-row count · distinct channel set incl. `(blank)` · resolved country); the
+  marketplace + warehouse paths append it to `horizonsBlockedReason`, so once R7+R7V are deployed the LIVE BLOCKED
+  note self-explains — e.g. `SALES_BASIS_AMBIGUOUS: channels=2 [FBA,(blank)]` or `SALES_BASIS_UNAVAILABLE: no daily
+  rows @ US/Amazon`. DIAGNOSTIC ONLY: no threshold moved, no fail-closed rule relaxed (still `!daily.length` /
+  `chKeys.length !== 1`), reason token unchanged. This turns the live BLOCKED into a self-serve data-fix signal
+  (the round's real goal) without the agent needing live access.
+- **§4 white strip — HALT (unchanged):** requires the live DevTools evidence the round itself specifies; no
+  speculative CSS. **§1 CO1100-R READY** cannot be asserted from here — after deploy+recalc it is READY iff the
+  live basis resolves; otherwise the enriched note names the exact live gap (channel/rows/country) to fix in data.
+- No formula / DB / schema / bundle change (only the 42 `.gs` handler — not bundled — + tests). Full suite 134/135
+  (pre-existing replen-header-toggle A2 only); Golden PASS.
