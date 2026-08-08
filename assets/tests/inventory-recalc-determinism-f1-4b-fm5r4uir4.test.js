@@ -85,6 +85,7 @@ function salesTables(opts) {
     t.campaign_sku_lines = { headers: CSL_H, rows: [] };
     t.fc_special_events = { headers: EVT_H, rows: [] };
   }
+  if (opts.omitForecast) delete t.fc_regular_forecast;   // Sales-Driven SKU with NO regular forecast (R5 §4 case)
   return t;
 }
 function invRow(ss) { return H.getInvGap({ payload: { scope: { company: 'KM', country: 'US', marketplace: 'AMAZON_US' } } }, ioFor(ss)).data.rows[0]; }
@@ -117,6 +118,19 @@ ok(runNo.success === true, 'L0 batch success with contamination sheets absent');
 var rNo = invRow(ssNoContam);
 eq(rNo.calculation_status, 'READY', 'L1 absent campaign/event sheets → STILL READY (optional filter never gates READY) — deterministic vs present-empty');
 eq([rNo.d18_gap_qty, rNo.d90_gap_qty], [r1.d18_gap_qty, r1.d90_gap_qty], 'L2 identical values whether contamination sheets are present-empty or absent (no exclusion either way)');
+
+section('R5 §4 — Sales-Driven SKU with a valid Site Stock but NO regular forecast → READY (horizon opening decoupled)');
+// Under R4 the unified resolver returned a null line (no monthly forecast demand) → null Site Stock → null horizons
+// → HORIZONS_NOT_AVAILABLE. R5 resolves the horizon opening from the canonical Site Stock owner directly, so a
+// Sales-Driven SKU with a real Site Stock + sales basis materializes READY even without any regular forecast.
+var ssNoFc = makeSs(salesTables({ omitForecast: true }));
+var runFc = H.invBatch({ requestId: 'REQ-INV-4' }, ioFor(ssNoFc));
+ok(runFc.success === true, 'S4a batch success with no regular forecast');
+var rFc = invRow(ssNoFc);
+eq(rFc.calculation_status, 'READY', 'S4b Sales-Driven + valid Site Stock + no forecast → READY (was BLOCKED/HORIZONS_NOT_AVAILABLE)');
+eq([rFc.d18_gap_qty, rFc.d90_gap_qty], [r1.d18_gap_qty, r1.d90_gap_qty], 'S4c same run-rate horizon values as the with-forecast case (Site Stock 5000, avg 100 → D18 0, D90 4000) — forecast never entered the horizon');
+H.invBatch({ requestId: 'REQ-INV-4b' }, ioFor(ssNoFc));
+eq(invRow(ssNoFc).d90_gap_qty, rFc.d90_gap_qty, 'S4d deterministic recalc (no-forecast case): READY→recalc→READY, identical D90');
 
 section('§5 batch response is a COMPACT summary (no per-SKU payload) — §8');
 eq(Object.keys(run1.data).sort().join(','), ['blocked', 'calculatedAt', 'errors', 'product', 'ready', 'scopeErrors', 'scopesCalculated', 'totalScopes', 'written'].join(','), 'RS1 batch envelope carries ONLY the compact summary counts (no per-SKU rows returned)');

@@ -509,8 +509,21 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   var planModel = recoWsResolvePlanningModel_(snaps, scope, sku);
   var salesRate = null;
   if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); salesRate = sr.ok ? sr.avgSalesPerDay : null; }
+  // F1-4B-FM5-R4UI-R5 §4 — the INVENTORY horizon opening is Site Stock, which is FORECAST-INDEPENDENT. The unified
+  // resolver returns a null line (→ null L.currentStockQty) when the MONTHLY demand (regular forecast) is not
+  // resolvable — so a Sales-Driven SKU with no regular forecast was losing its Site Stock and materializing
+  // HORIZONS_NOT_AVAILABLE despite a valid Site Stock + sales basis. Resolve the opening DIRECTLY from the canonical
+  // Site Stock owner (KMDR.resolveMarketplaceCurrentStock — the SAME owner the unified resolver uses) as a fallback
+  // when L.currentStockQty is absent. No formula change: identical owner, identical value; forecast SKUs (line
+  // present) keep L.currentStockQty verbatim. A genuinely missing/conflicting Site Stock stays null → truthfully
+  // BLOCKED (never a fabricated 0).
+  var horizonOpening = recoWsNum_(L.currentStockQty);
+  if (horizonOpening === null && typeof KMDR.resolveMarketplaceCurrentStock === 'function') {
+    var siteRes = KMDR.resolveMarketplaceCurrentStock({ rows: amazonRows, scope: { country: scope.country, marketplace: scope.marketplace, sku: sku } });
+    if (siteRes && siteRes.ready && typeof siteRes.qty === 'number') horizonOpening = siteRes.qty;
+  }
   var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
-    : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, recoWsNum_(L.currentStockQty), mIncoming, upc, nd.destination, planModel, salesRate);
+    : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, mIncoming, upc, nd.destination, planModel, salesRate);
   if (mHz) mLine.horizons = mHz;
   return mLine;
 }

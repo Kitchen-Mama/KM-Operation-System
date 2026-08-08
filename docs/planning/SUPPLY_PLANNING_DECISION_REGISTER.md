@@ -827,3 +827,41 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
   remains (the R3 note-span token fix established this), so no gray third band in the current code. Locked by test.
 - **No formula change** (KMHP/KMTPP/KMCALC/KMPD/KMMSA/KMALLOC untouched); no DB/schema change; bundle unchanged
   (`fb4824d1…`). Order Planning + Execution Plan formulas untouched.
+
+### F1-4B-FM5-R4UI-R5 — Final UI + materialization repair (9 outcomes; 7 fixed, 2 HALT)
+
+- **§4 (highest priority) READY→BLOCKED / HORIZONS_NOT_AVAILABLE root cause + fix:** the unified MARKETPLACE
+  resolver (supply-planning-destination-runtime.js) returns `line:null` when the MONTHLY forecast demand is not
+  resolvable — BEFORE computing Site Stock. So a Sales-Driven SKU with a valid Site Stock + sales basis but NO
+  regular forecast lost `L.currentStockQty` → null horizon opening → HORIZONS_NOT_AVAILABLE. Classification =
+  **MARSHALLING** (transport coupling), not a formula defect. **Fix (page-marshalling only):** the horizon opening
+  now resolves Site Stock DIRECTLY from the canonical `KMDR.resolveMarketplaceCurrentStock` (the SAME owner, forecast-
+  independent) when `L.currentStockQty` is null. Forecast SKUs keep `L.currentStockQty` verbatim; a genuinely
+  missing/conflicting Site Stock stays null → truthfully BLOCKED. Deterministic READY→recalc→READY proven with and
+  without forecast (`inventory-recalc-determinism` §4 case).
+- **§1 header gray band root cause + fix:** `--km-sticky-header-total` (defined at :root = 96px) was never re-derived
+  when R3/R4 compacted the two row tokens to 34px, so every container + rowspan cell stayed 96px vs 68px of rows = a
+  ~28px gray band AND a 28px-too-low §2 sticky offset. **Fix:** `#ops-section` now re-derives
+  `--km-sticky-header-total = row1 + row2` → 68px. This resolves §1 (band) AND §2 (the sticky row now pins exactly
+  under the header; R4's defer-to-scroll already removed the expand jump — no overlay clone needed).
+- **§5 Inventory top Suggested Qty:** now materialized — reads `inventory_replenishment_gap.d90_suggested_qty` (the
+  FURTHEST cumulative checkpoint = the ONE actionable total; D18/D30/D45/D90 are cumulative so summing double-counts).
+  READY→value, BLOCKED/missing→—, loading→…. No page-side math.
+- **§6A OP top Suggest Order:** materialized `t1+t2+t3_suggested_qty` (T4 visibility-only, excluded); §6B Demand
+  Summary gains a **Suggested** column mapping the canonical tier `suggestedOrderQty` (t{1..4}) for all four tiers,
+  T4 rendered as a read-only cell (non-writable). Same stored owner as Order Allocation → internally consistent.
+- **§3 Recommendation Summary:** green container + green left border removed (white body / neutral). **§8:** the
+  platform_fulfilled/self_fulfilled badge hidden in the normal UI (`.ir-ff-badge{display:none}`; data-fulfillment +
+  ir-fulfillment--* class retained — internal authority + card ordering untouched).
+- **§7 90-Days Demand — HALT:** the canonical 90-day planning demand is KMHP's D90 `demandQty` (both modes + special
+  events, count-once), but it is NOT materialized (the gap table stores gap/suggested only). Surfacing it on the
+  materialized-read main table needs either a new materialized column (**DB schema change — forbidden by §0 + the
+  FINAL GATE**) or page-side arithmetic (forbidden). Kept the "60 days FC" label rather than mislead. **Follow-up:**
+  a schema-authorized round adds `d90_demand_qty` to inventory_replenishment_gap (written from the already-computed
+  D90 demandQty) → then relabel to "90 Days Demand".
+- **§9 SKU white block — HALT:** the audit could not identify the geometry owner with confidence (candidates:
+  `.fixed-col` scrollbar-gutter/border, or expand-panel background). A blind CSS change risks the frozen-column
+  alignment/readability the spec requires preserved. Owners documented; needs live inspection.
+- **No formula change** (KMHP/KMTPP/KMCALC/KMPD/KMMSA/KMALLOC untouched); no DB/schema change; no API/DTO change;
+  bundle unchanged (`fb4824d1…`). Order Planning + Execution Plan formulas untouched; materialized-expand stays
+  read-only.

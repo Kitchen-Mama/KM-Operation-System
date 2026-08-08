@@ -1628,6 +1628,12 @@
 #ops-section {
     --km-sticky-row-1-height: 34px;
     --km-sticky-row-2-height: 34px;
+    /* F1-4B-FM5-R4UI-R5 §1 — the ROOT CAUSE of the gray residual band: the two row tokens were compacted to 34px
+       but --km-sticky-header-total (defined at :root as row1+row2+row3 = 96px) was never re-derived for this page,
+       so every container + rowspan cell (.table-header-bar / .fixed-header / --status / --note-span, all keyed off
+       the total) stayed 96px while the two real rows total only 68px → a ~28px gray band + a 28px-too-low sticky
+       offset. Re-derive the total from the compacted rows so header geometry + the sticky `top` are exact. */
+    --km-sticky-header-total: calc(var(--km-sticky-row-1-height) + var(--km-sticky-row-2-height) + var(--km-sticky-row-3-height, 0px));
 }
 
 /* §10 filter/action bar — trim vertical padding + gaps; the LTS Filter becomes content-width (was a fixed 160px
@@ -1677,3 +1683,17 @@
 #ops-section .replen-card--recommendation-summary .replen-horizon-tablewrap { margin: 0; }
 #ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook td,
 #ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook th { padding: 4px 8px; }
+
+/* =============================================================================================================
+   F1-4B-FM5-R4UI-R5 — Recommendation Summary neutral (§3) + hidden fulfillment badge (§8).
+   ============================================================================================================= */
+
+/* §3 — remove the green "ready" container + green left border; render title-gray / body-white to match the Order
+   Planning Demand Summary. The card is a fixed 4-row table, so no growth. Other states keep only text messaging. */
+#ops-section .replen-recsum-ws { border-left: 0; background: #fff; color: inherit; padding: 6px 8px; }
+#ops-section .replen-recsum-ws--ready { background: #fff; color: inherit; border-left-color: transparent; }
+
+/* §8 — hide the platform_fulfilled / self_fulfilled badge from the normal Inventory UI. The data-fulfillment
+   attribute + .ir-fulfillment--* class remain (internal destination/fulfillment authority + card ordering are
+   untouched); only the user-facing badge text is hidden. */
+#ops-section .ir-ff-badge { display: none; }

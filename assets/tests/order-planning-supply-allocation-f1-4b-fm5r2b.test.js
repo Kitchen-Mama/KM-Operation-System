@@ -202,7 +202,12 @@ eq(usAfter[OP_HEADERS.indexOf('manual_order_qty')], 999, 'Z manual_order_qty (ad
 
 section('Inventory strict non-impact (§18) + no page-side formula + no scheduler — AA/AB/AC');
 // AA — the Inventory day-horizon opening stays Site-Stock-only: the composed opening is used ONLY for monthlyProjection.
-ok(/recoWsBuildHorizons_\(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, recoWsNum_\(L\.currentStockQty\)/.test(SRC42), 'AA Inventory horizons opening = Site Stock only (recoWsNum_(L.currentStockQty)) — allocation NOT folded into D18/D30/D45/D90');
+// FM5-R4UI-R5 §4: the horizon opening is now `horizonOpening` = L.currentStockQty, else the canonical Site Stock
+// owner (KMDR.resolveMarketplaceCurrentStock) — STILL Site Stock ONLY, decoupled from the forecast/monthly line, and
+// explicitly NOT the OP composed opening (composition.openingSupplyQty with overseas/factory). Allocation is never
+// folded into D18/D30/D45/D90.
+ok(/horizonOpening = recoWsNum_\(L\.currentStockQty\)/.test(SRC42) && /resolveMarketplaceCurrentStock\(\{ rows: amazonRows/.test(SRC42), 'AA horizon opening = Site Stock only (L.currentStockQty, else canonical resolveMarketplaceCurrentStock) — forecast-decoupled, NOT the OP composed opening');
+ok(/recoWsBuildHorizons_\(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening,/.test(SRC42), 'AA2 horizons receive horizonOpening (Site Stock), never composition.openingSupplyQty (Site+Overseas+Factory)');
 ok(/allocatedOverseasQty: ov, allocatedFactoryQty: fc/.test(SRC42) && !/D18|D30|D45|D90/.test(H.compose.toString()), 'AA2 composition owner touches opening supply only (no horizon window arithmetic)');
 // the Inventory batch is untouched (still the generic gapRunBatch_ path).
 ok(/function handleRecalculateInventoryReplenishmentGapBatch_[\s\S]*?return gapRunBatch_\(body, io, \{ product: 'INVENTORY'/.test(SRC43), 'AA3 Inventory batch owner still delegates to the generic gapRunBatch_ (INVENTORY product) — no formula duplication (R4 added only deterministic context derivation)');

@@ -1342,8 +1342,15 @@ function renderRequestOrderTable() {
 
     // Suggested Order = calc placeholder. Only mock/demo rows carry a shortage-derived number;
     // live-DB (placeholder) rows show "--" until the calculation engine exists (Mapping v1).
+    // F1-4B-FM5-R4UI-R5 §6A — the top Suggest Order is the MATERIALIZED actionable total from order_planning_gap:
+    // t1 + t2 + t3 suggested (T1–T3 are the writable/actionable tiers; T4 is visibility-only, excluded from this
+    // total). Read from the materialized cache when it exists (valid 0 → "0"); otherwise the legacy shortage-derived
+    // placeholder. No blind T1–T4 sum, no client gap formula.
     let suggestDisplay = '--';
-    if (!isPh) {
+    var _matSug = _opMatSuggestedTotal_(item.sku);
+    if (_matSug !== null) {
+      suggestDisplay = _matSug > 0 ? _matSug.toLocaleString() : '0';
+    } else if (!isPh) {
       const t1Order = item.shortageM1 < 0 ? Math.ceil(Math.abs(item.shortageM1) / item.boxSize) * item.boxSize : 0;
       const t2Order = item.shortageM2 < 0 ? Math.ceil(Math.abs(item.shortageM2) / item.boxSize) * item.boxSize : 0;
       const t3Order = item.shortageM3 < 0 ? Math.ceil(Math.abs(item.shortageM3) / item.boxSize) * item.boxSize : 0;
@@ -1356,7 +1363,7 @@ function renderRequestOrderTable() {
     const isExpanded = requestOrderState.expandedRowKey === rowKey;
 
     return `
-      <div class="ro-row-wrapper" data-rowkey="${_roEsc(rowKey)}">
+      <div class="ro-row-wrapper" data-rowkey="${_roEsc(rowKey)}" data-ro-sku="${_roEsc(item.sku)}">
         <div class="scroll-row" role="row">
           <!-- Risk 欄位 (placeholder until risk engine) -->
           <div class="scroll-cell scroll-cell--risk" data-risk="${riskVal}">${_roFmt(item.risk)}</div>
@@ -1527,11 +1534,16 @@ function renderExpandPanel(item) {
     var ct = _roCanonTier(t);
     var demStr = (ct && ct.demandQty != null) ? Number(ct.demandQty).toLocaleString() : legacyStr;
     var gapStr = _opRecoFmtQty(ct ? ct.remainingGapQty : null, recoLoading);
+    // F1-4B-FM5-R4UI-R5 §6B — Suggested column from the SAME materialized order_planning_gap tier
+    // (t{1..4}_suggested_qty → canonical tier.suggestedOrderQty). All four tiers visible; T4 stays visibility-only
+    // (never writable — this is a read-only display column, no input). No client calculation.
+    var sugStr = _opRecoFmtQty(ct ? ct.suggestedOrderQty : null, recoLoading);
     return '<tr><td>' + t + ' · ' + mo.label + '</td>' +
       '<td data-ro-demand-tier="' + t + '">' + demStr + '</td>' +
-      '<td data-ro-gap-tier="' + t + '">' + gapStr + '</td></tr>';
+      '<td data-ro-gap-tier="' + t + '">' + gapStr + '</td>' +
+      '<td data-ro-suggested-tier="' + t + '">' + sugStr + '</td></tr>';
   }).join('');
-  var demandHead = recoOn ? '<th>Tier · Month</th><th>Demand</th><th>Gap</th>' : '<th>Tier · Month</th><th>Demand</th>';
+  var demandHead = recoOn ? '<th>Tier · Month</th><th>Demand</th><th>Gap</th><th>Suggested</th>' : '<th>Tier · Month</th><th>Demand</th>';
 
   // B — Order Allocation (T1–T3 ONLY). Columns exactly: Tier/Month · Suggested · Order Qty · Carton · Note.
   // No visible Recommended column (the engine gap remains in runtime/audit). Order Qty defaults to Suggested;
@@ -1971,6 +1983,7 @@ function _opLoadMaterializedGap(item) {
     if (!row) { _opRecoState = _opRecoBlank('NOT_CALCULATED'); }
     else { _opRecoState = _opRecoBlank('READY'); _opRecoState.lines = [_opMatToLine(row, scope)]; _opRecoState.calcMonth = row.calculation_month || null; }
     _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.loadedOk = true; _opRecoRerender();
+    _opRepaintSuggestOrderCells_();   // FM5-R4UI-R5 §6A: refresh the main-table top Suggest Order cells from the cache
   }
   if (_opMatCache.key === mkey) { applyFromCache(); return null; }
   var my = ++_opRecoSeq;
@@ -1987,6 +2000,26 @@ function _opLoadMaterializedGap(item) {
     if (my !== _opRecoSeq) return;
     _opRecoState = _opRecoBlank('API_ERROR'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku;
     _opRecoState.errors = [{ code: 'READ_FAILED', message: String(err && err.message || err) }]; _opRecoRerender();
+  });
+}
+// FM5-R4UI-R5 §6A — the top Suggest Order actionable total = materialized t1+t2+t3 suggested (READY only). T4 is
+// visibility-only and excluded. Returns null when the SKU's row is absent / not READY / all three actionable
+// values missing (→ the caller keeps its legacy placeholder). A valid 0+0+0 returns 0 (not null). No client math.
+function _opMatSuggestedTotal_(sku) {
+  var by = (_opMatCache && _opMatCache.bySku) || {}; var row = sku != null ? by[String(sku)] : null;
+  if (!row || String(row.calculation_status) !== 'READY') return null;
+  var any = false, total = 0;
+  ['t1_suggested_qty', 't2_suggested_qty', 't3_suggested_qty'].forEach(function (k) { var v = _opNumOrNull(row[k]); if (v !== null) { total += v; any = true; } });
+  return any ? total : null;
+}
+// Patch the main-table top Suggest Order cells in place from the materialized cache (no full re-render, no calc).
+function _opRepaintSuggestOrderCells_() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  var wraps = document.querySelectorAll('.ro-row-wrapper[data-ro-sku]');
+  Array.prototype.forEach.call(wraps, function (w) {
+    var cell = w.querySelector('.ro-request-order-value'); if (!cell) return;
+    var t = _opMatSuggestedTotal_(w.getAttribute('data-ro-sku'));
+    if (t !== null) cell.textContent = t > 0 ? t.toLocaleString() : '0';
   });
 }
 function refreshOrderPlanningGapAfterRecalc_() { _opMatCache = { key: null, bySku: {} }; _opRecoInvalidate('LOADING'); var item = _opRecoExpandedItem(); if (item) _opLoadMaterializedGap(item); }

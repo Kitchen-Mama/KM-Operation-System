@@ -77,7 +77,9 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   var irScope = { toScopeRequest: function () { return { company: 'KM', country: 'US', marketplace: 'AMAZON_US' }; } };
   var irEnv = { window: { IRContext: irScope }, document: null };
   // Minimal host stubs the extracted block references.
-  global.window = { IRContext: irScope };
+  // FM5-R4UI-R5 §5: the top Suggested cell is materialized-first by default; this cutover suite validates the
+  // workspace/legacy Suggested path, so run it with the materialized read OFF to exercise that fallback.
+  global.window = { IRContext: irScope, KM_FLAGS: { USE_MATERIALIZED_GAP_READ: false } };
   global.document = { querySelectorAll: function () { return []; }, getElementById: function () { return null; } };
   global.AbortController = function () { this.signal = {}; this.abort = function () {}; };
   function escapeReplenHtml(s) { return String(s == null ? '' : s); }

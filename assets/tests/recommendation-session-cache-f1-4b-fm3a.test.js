@@ -40,7 +40,9 @@ function getReplenishmentData() { return []; }
 function _recSummaryRows() { return ''; }
 var _irctxLastContext = { ready: true };
 function updateReplenRecoContext() { return _irctxLastContext; }
-global.window = { IRContext: { toScopeRequest: function () { return CURRENT_SCOPE; } } };
+// FM5-R4UI-R5 §5: the top Suggested cell is materialized-first by default; this suite validates the WORKSPACE
+// aggregation fallback, so it must run with the materialized read OFF (kill switch) to exercise that path.
+global.window = { IRContext: { toScopeRequest: function () { return CURRENT_SCOPE; } }, KM_FLAGS: { USE_MATERIALIZED_GAP_READ: false } };
 eval(IR);
 eval(IRSUG);
 ok(typeof loadRecommendationWorkspace_ === 'function' && typeof _irAggregateActionableRecommendedQty === 'function' && typeof invalidateRecommendationSessionCache === 'function', 'X1 cache + aggregation functions eval OK');

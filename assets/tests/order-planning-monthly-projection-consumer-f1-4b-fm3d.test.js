@@ -133,7 +133,7 @@ section('R/S/P end-to-end load — ONE request, patch applied, no writes, projec
 
   // ---- source-scans of the panel markup + FM3d mapping block --------------------------------------
   section('panel markup + ownership (source scans)');
-  ok(/demandHead = recoOn \? '<th>Tier · Month<\/th><th>Demand<\/th><th>Gap<\/th>'/.test(JS), 'U1 Demand Summary gains a Gap column on the recommendation path');
+  ok(/demandHead = recoOn \? '<th>Tier · Month<\/th><th>Demand<\/th><th>Gap<\/th><th>Suggested<\/th>'/.test(JS), 'U1 Demand Summary has Gap + (FM5-R4UI-R5 §6B) Suggested columns on the recommendation path');
   ok(/data-ro-gap-tier/.test(JS) && /data-ro-suggested-tier/.test(JS) && /data-ro-demand-tier/.test(JS), 'Q tier-identity cells (data-ro-*-tier), not row-index-only');
   ok(/\['T1', 'T2', 'T3', 'T4'\][\s\S]{0,400}data-ro-gap-tier/.test(JS), 'U2 Demand Summary maps T1–T4');
   ok(/data-ro-suggested-tier="' \+ t \+ '">' \+ _opRecoFmtQty/.test(JS) || /data-ro-suggested-tier[\s\S]{0,80}_opRecoFmtQty/.test(JS), 'F2 Suggested cell renders canonical suggestedOrderQty via the formatter (no page math)');

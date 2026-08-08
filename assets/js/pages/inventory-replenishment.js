@@ -1553,6 +1553,20 @@ function initReplenHeaderSync() {
 // marker. When the workspace is OFF (kill switch), the legacy suggestedQty number is preserved verbatim.
 // (Supersedes the FM2B "— breakdown" indicator, per the FM3 audit authorization.)
 function _irSuggestedCellHtml(item) {
+  // F1-4B-FM5-R4UI-R5 §5 — the top-table Suggested Qty is the MATERIALIZED actionable total from
+  // inventory_replenishment_gap. D18/D30/D45/D90 are CUMULATIVE checkpoints, so summing them double-counts need;
+  // the ONE actionable replenishment recommendation is the FURTHEST configured horizon's stored suggested qty
+  // (canonical max horizon = D90). READY → stored d90_suggested_qty (valid 0 → "0"); BLOCKED / not-calculated →
+  // "—"; still loading → "…". No page-side gap math, no live per-SKU calculation.
+  if (_irUseMaterializedGapRead()) {
+    var st = _irMatState.status;
+    if (st === 'IDLE' || st === 'LOADING' || st === 'CONTEXT_NOT_READY') return '<span class="replen-suggested-cell__value replen-suggested-cell__value--pending" title="Loading materialized replenishment gap…">…</span>';
+    var row = (item && _irMatState.bySku[String(item.sku)]) || null;
+    if (!row || String(row.calculation_status) !== 'READY') return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none" title="No actionable materialized recommendation — run Recalculate All Sites / see the expanded Recommendation Summary">—</span>';
+    var v = _irMatNum(row.d90_suggested_qty);   // furthest cumulative checkpoint = the single actionable total
+    if (v === null) return '<span class="replen-suggested-cell__value replen-suggested-cell__value--none">—</span>';
+    return '<span class="replen-suggested-cell__value">' + v + '</span>';
+  }
   if (!_irRecommendationWorkspaceEnabled()) {
     return '<span class="replen-suggested-cell__value">' + (item && item.suggestedQty != null ? item.suggestedQty : 0) + '</span>';
   }
