@@ -27,6 +27,7 @@
     <link rel="stylesheet" href="assets/css/pages/carrier-rate-card.css">
     <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css">
     <link rel="stylesheet" href="assets/css/pages/global-logistics-map.css">
+    <link rel="stylesheet" href="assets/css/pages/automation-schedule.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- ExcelJS — client-side XLSX generation for formatted export templates (TEMPLATE_UI_STANDARD_SPEC). -->
     <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
@@ -214,6 +215,20 @@
                     <span class="menu-label">Supply Chain Canvas</span>
                 </div>
             </div>
+
+            <!-- Administration / System Management (ADMIN-AUTOMATION-R1) -->
+            <div class="menu-parent"
+                 data-menu-id="administration"
+                 onclick="toggleMenu('administration')" title="Administration">
+                <span class="menu-icon">⚙️</span><span class="menu-label">Administration</span>
+            </div>
+            <div class="menu-children"
+                 data-parent="administration">
+                <div class="menu-item"
+                     onclick="showSection('automation')" title="Automation Schedule">
+                    <span class="menu-label">Automation Schedule</span>
+                </div>
+            </div>
         </nav>
         
         <!-- 右側內容區域 -->
@@ -362,6 +377,10 @@
             <!-- SKU Regional Details (SKU Domain v2.0 Layer 2 — sku_regional_details).
                  KM.partialLoader injects #sku-regional-details-section into this mount point on lifecycle mount. -->
             <div id="sku-regional-details-mount"></div>
+
+            <!-- Automation Schedule (ADMIN-AUTOMATION-R1) — Administration / System Management.
+                 KM.partialLoader injects #automation-schedule-section into this mount point on lifecycle mount. -->
+            <div id="automation-schedule-mount"></div>
             </main>
         </div>
     </div>
@@ -423,6 +442,7 @@
     <script src="assets/js/data/world-land-110m.js"></script>
     <script src="assets/js/lib/km-globe.js"></script>
     <script src="assets/js/pages/global-logistics-map.js"></script>
+    <script src="assets/js/pages/automation-schedule.js"></script>
 
     <!-- App (Global) -->
     <script src="assets/js/app.js"></script>

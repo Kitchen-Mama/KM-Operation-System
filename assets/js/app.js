@@ -105,7 +105,8 @@ function showSection(section) {
             'purchase-order-list': 'purchase-order-list-section',
             'carrier-rate-card': 'carrier-rate-card-section',
             'sku-regional-details': 'sku-regional-details-section',
-            'global-logistics-map': 'global-logistics-map-section'
+            'global-logistics-map': 'global-logistics-map-section',
+            'automation': 'automation-schedule-section'
         };
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
@@ -135,7 +136,8 @@ function showSection(section) {
         'purchase-order-overview': 'purchase-order-overview-section',
         'purchase-order-list': 'purchase-order-list-section',
         'carrier-rate-card': 'carrier-rate-card-section',
-        'sku-regional-details': 'sku-regional-details-section'
+        'sku-regional-details': 'sku-regional-details-section',
+        'automation': 'automation-schedule-section'
     };
 
     const targetSectionId = sectionMap[section];

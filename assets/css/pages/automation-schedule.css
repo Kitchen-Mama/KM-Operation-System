@@ -1,0 +1,98 @@
+/* ========================================
+   ADMIN-AUTOMATION-R1 — Automation Schedule Settings
+   Page-scoped (#automation-schedule-section). Clean white cards, compact, existing KM visual language.
+   No mock dashboard graphics; responsive for laptop / desktop.
+======================================== */
+#automation-schedule-section { padding: 20px 24px; max-width: 1040px; }
+
+#automation-schedule-section .auto-sched-head { margin-bottom: 12px; }
+#automation-schedule-section .auto-sched-title { margin: 0 0 2px; font-size: 20px; font-weight: 700; color: var(--text-primary, #1f2937); }
+#automation-schedule-section .auto-sched-sub { margin: 0; font-size: 13px; color: var(--text-secondary, #64748b); }
+
+#automation-schedule-section .auto-sched-note {
+  margin: 12px 0; padding: 8px 12px; font-size: 12px; line-height: 1.45;
+  color: #475569; background: #f8fafc; border: 1px solid var(--border-light, #e5e7eb);
+  border-left: 3px solid var(--km-brand-blue, #0080bb); border-radius: 6px;
+}
+
+#automation-schedule-section .auto-sched-flow {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  font-size: 12px; color: #475569; margin: 0 0 16px;
+}
+#automation-schedule-section .auto-sched-flow__step { padding: 3px 10px; background: #eef2f7; border-radius: 999px; font-weight: 600; }
+#automation-schedule-section .auto-sched-flow__arrow { color: #94a3b8; font-weight: 700; }
+#automation-schedule-section .auto-sched-flow__aside { flex-basis: 100%; color: #94a3b8; font-size: 11px; margin-top: 2px; }
+
+#automation-schedule-section .auto-sched-warnings { margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+#automation-schedule-section .auto-sched-warn {
+  padding: 8px 12px; font-size: 12px; line-height: 1.4; color: #92400e;
+  background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; border-radius: 6px;
+}
+
+#automation-schedule-section .auto-sched-cards { display: flex; flex-direction: column; gap: 14px; }
+#automation-schedule-section .auto-sched-loading { color: #94a3b8; font-size: 13px; padding: 16px 0; }
+
+#automation-schedule-section .auto-card {
+  background: #fff; border: 1px solid var(--border-light, #e5e7eb); border-radius: 8px;
+  box-shadow: var(--shadow-soft, 0 1px 3px rgba(0,0,0,0.08)); padding: 14px 16px;
+}
+#automation-schedule-section .auto-card--disabled-job { opacity: 0.72; }
+
+#automation-schedule-section .auto-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+#automation-schedule-section .auto-card__name { font-size: 15px; font-weight: 700; color: var(--text-primary, #1f2937); }
+#automation-schedule-section .auto-card__status {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: 999px;
+}
+#automation-schedule-section .auto-card__status--enabled { color: #166534; background: #ecfdf5; border: 1px solid #bbf7d0; }
+#automation-schedule-section .auto-card__status--disabled { color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; }
+#automation-schedule-section .auto-card__status--coming { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; }
+
+#automation-schedule-section .auto-card__grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; margin-top: 12px;
+}
+#automation-schedule-section .auto-field { display: flex; flex-direction: column; gap: 4px; }
+#automation-schedule-section .auto-field label { font-size: 11px; font-weight: 600; color: #64748b; }
+#automation-schedule-section .auto-field select,
+#automation-schedule-section .auto-field input {
+  padding: 6px 8px; border: 1px solid var(--km-filter-border, #d1d5db); border-radius: 6px;
+  font-size: 13px; background: #fff; box-sizing: border-box;
+}
+#automation-schedule-section .auto-field--time { flex-direction: row; align-items: flex-end; gap: 6px; }
+#automation-schedule-section .auto-time-inputs { display: flex; align-items: center; gap: 4px; }
+#automation-schedule-section .auto-time-inputs input { width: 56px; text-align: center; }
+#automation-schedule-section .auto-time-inputs .auto-time-colon { font-weight: 700; color: #475569; }
+#automation-schedule-section .auto-tz { font-size: 12px; color: #64748b; align-self: flex-end; padding-bottom: 6px; }
+
+#automation-schedule-section .auto-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-primary, #1f2937); }
+#automation-schedule-section .auto-toggle input { width: 16px; height: 16px; }
+
+#automation-schedule-section .auto-card__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-light, #f1f5f9);
+}
+#automation-schedule-section .auto-card__meta { font-size: 11px; color: #94a3b8; }
+#automation-schedule-section .auto-card__trigger { font-size: 11px; }
+#automation-schedule-section .auto-card__trigger--active { color: #166534; }
+#automation-schedule-section .auto-card__trigger--inactive { color: #94a3b8; }
+
+#automation-schedule-section .auto-btn {
+  height: 34px; padding: 0 16px; border: none; border-radius: 6px; cursor: pointer;
+  font-weight: 600; font-size: 13px; white-space: nowrap; transition: opacity 0.15s;
+  background: var(--warm-orange, #f59e0b); color: #fff;
+}
+#automation-schedule-section .auto-btn:hover:not(:disabled) { opacity: 0.88; }
+#automation-schedule-section .auto-btn:disabled { opacity: 0.5; cursor: default; }
+
+#automation-schedule-section .auto-card__msg { font-size: 12px; font-weight: 600; }
+#automation-schedule-section .auto-card__msg--ok { color: #166534; }
+#automation-schedule-section .auto-card__msg--err { color: #b91c1c; }
+
+#automation-schedule-section .auto-details { margin-top: 10px; }
+#automation-schedule-section .auto-details > summary { cursor: pointer; font-size: 11px; color: #64748b; list-style: none; }
+#automation-schedule-section .auto-details > summary::-webkit-details-marker { display: none; }
+#automation-schedule-section .auto-details__body { margin-top: 6px; font-size: 11px; color: #64748b; }
+#automation-schedule-section .auto-details__body code { background: rgba(15,23,42,0.06); padding: 1px 5px; border-radius: 4px; }
+
+#automation-schedule-section .auto-card--coming .auto-card__body { font-size: 13px; color: #92400e; padding: 8px 0 2px; }

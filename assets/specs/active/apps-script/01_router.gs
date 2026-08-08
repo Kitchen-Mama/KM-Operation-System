@@ -351,6 +351,16 @@ function doPost(e) {
       return handleFactoryInventoryImportCommit_(body);
     }
 
+    // ADMIN-AUTOMATION-R1 — Automation Schedule Settings (owner = 45_api_v1_automation_schedule.gs). Schedule config
+    // lives in Script Properties (NOT the spreadsheet DB); UPDATE reconciles ONLY the owned time trigger via a strict
+    // handler allowlist. No formula, no DB table, no calc. GET is read-only (opening the page mutates nothing).
+    if (action === 'automationSchedule.get') {
+      return jsonResponse_(handleAutomationScheduleGet_(body));
+    }
+    if (action === 'automationSchedule.update') {
+      return jsonResponse_(handleAutomationScheduleUpdate_(body));
+    }
+
     return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft' });
 
   } catch (err) {

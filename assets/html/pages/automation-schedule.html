@@ -1,0 +1,27 @@
+<!-- ADMIN-AUTOMATION-R1 — Automation Schedule Settings (Administration / System Management).
+     Markup is a partial injected by KM.partialLoader into #automation-schedule-mount on the page lifecycle mount.
+     Config owner = Script Properties (KM_AUTOMATION_SCHEDULE_CONFIG); execution owner = Apps Script time triggers.
+     This page renders READ-ONLY on load — only "Save & Apply" mutates a schedule (never opening the page). -->
+<section id="automation-schedule-section" class="module-section auto-sched-section">
+  <div class="auto-sched-head">
+    <h2 class="auto-sched-title">Automation Schedule</h2>
+    <p class="auto-sched-sub">Manage when Kitchen Mama OS background jobs run. Times are in <strong>Asia/Taipei</strong>.</p>
+  </div>
+
+  <div class="auto-sched-note" role="note">
+    Scheduled execution time is approximate — Apps Script time triggers run within a scheduling window, not to the exact minute.
+  </div>
+
+  <div class="auto-sched-flow" aria-hidden="true">
+    <span class="auto-sched-flow__step">Source Import</span><span class="auto-sched-flow__arrow">→</span>
+    <span class="auto-sched-flow__step">Inventory Gap</span><span class="auto-sched-flow__arrow">→</span>
+    <span class="auto-sched-flow__step">Recommendation</span>
+    <span class="auto-sched-flow__aside">Order Planning runs separately at 03:30 using the previous completed source day.</span>
+  </div>
+
+  <div id="auto-sched-warnings" class="auto-sched-warnings" hidden></div>
+
+  <div id="auto-sched-cards" class="auto-sched-cards" aria-live="polite">
+    <div class="auto-sched-loading">Loading automation schedules…</div>
+  </div>
+</section>

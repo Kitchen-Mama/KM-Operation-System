@@ -2777,6 +2777,15 @@ window.KM.DB.getInventoryReplenishmentGap = function(scope) { return _kmGapRead_
 // { company, country, marketplace, sku? } → { success, data:{ rows:[ order_planning_gap rows ] } }.
 window.KM.DB.getOrderPlanningGap = function(scope) { return _kmGapRead_('orderPlanningGap.get', { payload: { scope: scope || {} } }); };
 
+// ADMIN-AUTOMATION-R1 · Automation Schedule Settings. GET is read-only (opening the Admin page mutates nothing);
+// UPDATE writes the Script-Property config + reconciles ONLY the owned time trigger, then returns the normalized
+// config + trigger status. Both use the canonical text-first runners (never throw; transport/business classified).
+window.KM.DB.getAutomationSchedule = function() { return _kmGapRead_('automationSchedule.get', {}); };
+// UPDATE uses the same text-first POST runner as the reads so the server's structured `errors[0]` (e.g.
+// WEEKLY_RECOMMENDATION_NOT_AVAILABLE / INVALID_TIME) surfaces as { success:false, error:{ code } } and the
+// success path returns the server's post-reconcile readback in `data` (jobs + trigger status + warnings).
+window.KM.DB.updateAutomationSchedule = function(payload) { return _kmGapRead_('automationSchedule.update', { payload: payload || {} }); };
+
 // ---- Weekly Plan Layer-1/2 + Combined Plan + Method Recommendation adapters (2026-07-28) ----
 // All matching is CODE/ID based server-side. Weekly Plan NEVER persists rate_card_id; carrier_name is
 // resolved live (KM.display.carrierName). READ helpers do not force a DB reload; WRITE helpers do.
