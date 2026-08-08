@@ -1706,3 +1706,41 @@
    attribute + .ir-fulfillment--* class remain (internal destination/fulfillment authority + card ordering are
    untouched); only the user-facing badge text is hidden. */
 #ops-section .ir-ff-badge { display: none; }
+
+/* =============================================================================================================
+   F1-4B-FM5-R4UI-R5D — Inventory detail geometry + summary density (UI-only; audit-proven owners).
+   ============================================================================================================= */
+
+/* §A (Defect A) — Recommendation Summary occupies TITLE + 4-row table height ONLY. Audit found the residual
+   vertical whitespace owner is the shared `.replen-horizon-dest` wrapper's `margin: 8px 0` (16px top+bottom),
+   which is present in the rendered outlook DOM but has NO counterpart in the Monthly Achievement table (that
+   table sits directly inside its card). Zeroing it INSIDE the summary card only makes the summary density match
+   Monthly Achievement Rate exactly. The card is already flex:0 0 auto / height:auto / min-height:auto (no floor)
+   and the green ready-container was removed in R5/R5A — so this is the last blank-space owner. */
+#ops-section .replen-card--recommendation-summary .replen-horizon-dest { margin: 0; }
+#ops-section .replen-card--recommendation-summary .replen-horizon-summary { margin: 0; }
+
+/* §B (Defect B) — the selected first-layer row must read as ONE continuous blue record across the FULL logical
+   width. ROOT CAUSE (candidate #5, "row width smaller than scroll content"): a `.scroll-row` is
+   `min-width:max-content` of its OWN cells (~1475px), but when a SKU is expanded the detail panel below is WIDER
+   (~1560px fixed groups), so `.scroll-col` scrolls past the row's own end and exposes the `.scroll-body`
+   (previously `width:auto` = viewport width) as an UNPAINTED white strip to the right of the row. Fix at the true
+   owner: the `.scroll-body` spans its widest child (`width:max-content`) and is never narrower than the viewport
+   (`min-width:100%`), so every row — including the `.is-active-selected` row whose box AND cells are painted
+   `#EAF2FE` (rules above) — fills the full scroll-content width and the blue is continuous left→right. No spacer
+   node, no overlay, no sticky, no clone. Horizontal scroll + the header translateX sync are unchanged. */
+#ops-section .scroll-body { width: max-content; min-width: 100%; }
+
+/* §C (Defect C) — the expanded row's LEFT (sticky SKU identity) and RIGHT (detail canvas) end at the SAME
+   baseline. The height owner is the shared `.table-body-bar` flex row (`align-items:stretch`, defined above): the
+   RIGHT `.scroll-col` is the natural content-height authority and the LEFT `.fixed-col` stretches to it through
+   `.fixed-col`(flex-col) → `.fixed-body`(flex:1) → `.replen-expand-panel--fixed`(flex:1 1 auto). Because this is
+   LIVE CSS stretch (not a one-shot measurement), async growth of the right side (Execution Plan routes seeded in
+   the post-render tick, or a materialized-READY summary patch) re-equalizes the left automatically — so NO JS
+   offsetHeight/ResizeObserver, NO inline height write, NO hardcoded detail min-height, and NO first-paint flash.
+   The `.scroll-body { width:max-content }` above additionally makes the right detail panel fit its own container
+   exactly (no overflow of the body box), keeping the horizontal-scrollbar gutter symmetry between the two columns
+   stable. Make the fixed panel's fill-participation explicit so the shared-height contract is unambiguous. */
+#ops-section .table-body-bar > .fixed-col,
+#ops-section .table-body-bar > .scroll-col { align-self: stretch; }
+#ops-section .replen-expand-panel--fixed { flex: 1 1 auto; }
