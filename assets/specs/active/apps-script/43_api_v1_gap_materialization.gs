@@ -38,6 +38,12 @@ var OP_GAP_HEADERS_ = ['company', 'country', 'marketplace', 'sku', 'calculation_
   't3_month', 't3_gap_qty', 't3_suggested_qty', 't4_month', 't4_gap_qty', 't4_suggested_qty',
   'note', 'calculated_at', 'updated_at'];
 
+// F1-4B-FM5-R4UI-R5C — READ-ONLY deployment/version PROBE (diagnostics only; NO DB write, NO schema, NO formula).
+// Stamped into every batch response envelope's `meta` so ONE browser Network response from "Recalculate All Sites"
+// proves which deployed gap-materialization handler is actually live (distinguishes a stale Apps Script deployment
+// from a genuine remaining defect). Bump this token on each round that touches the live server path.
+var GAP_MATERIALIZATION_HANDLER_VERSION_ = 'fm5-r4ui-r5c';
+
 var GAP_KEY_COLS_ = ['company', 'country', 'marketplace', 'sku'];
 var GAP_MAX_SKUS_ = 5000;          // bounded page size for the per-scope canonical read (no per-SKU HTTP)
 var GAP_INV_WINDOWS_ = ['D18', 'D30', 'D45', 'D90'];
@@ -267,8 +273,10 @@ function gapBatchTimestamp_(io) {
   try { return Utilities.formatDate(io.now(), io.tz(), 'yyyy-MM-dd HH:mm:ss'); } catch (e) { return ''; }
 }
 function gapBatchEnvelope_(ok, data, errorToken, message) {
-  return ok ? { success: true, data: data, errors: [] }
-    : { success: false, data: null, errors: [{ code: errorToken || 'GAP_BATCH_ERROR', message: message || errorToken || 'gap batch error', details: null }] };
+  // R5C: additive READ-ONLY version marker on the meta (both success and failure) — proves the live handler.
+  var meta = { gapMaterializationHandlerVersion: GAP_MATERIALIZATION_HANDLER_VERSION_ };
+  return ok ? { success: true, data: data, meta: meta, errors: [] }
+    : { success: false, data: null, meta: meta, errors: [{ code: errorToken || 'GAP_BATCH_ERROR', message: message || errorToken || 'gap batch error', details: null }] };
 }
 
 // ---- shared batch orchestration (Inventory + Order Planning share the enumerate→calc→map→UPSERT skeleton) --

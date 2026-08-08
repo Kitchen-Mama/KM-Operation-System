@@ -31,6 +31,12 @@ var RECO_WS_SEQ_ = 0;                 // API diagnostic-layer server correlation
 var RECO_WS_PAGE_MAX_ = 100;
 var RECO_WS_PAGE_DEFAULT_ = 50;
 
+// F1-4B-FM5-R4UI-R5C — READ-ONLY deployment/version PROBE (diagnostics only; NO DB write, NO schema, NO formula).
+// Stamped into the workspace envelope's `meta` so ONE direct recommendation.workspace.get Network response proves
+// which deployed recommendation-workspace handler is live — i.e. that the R5B sales-basis marshalling repair
+// (toYmd coercion + WEEKLY_ONLY sentinel + surfaced owner error) is actually running server-side. Bump per round.
+var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5c';
+
 // --------------------------------------------------------------------------------------------------------
 // PURE helpers (deterministic; no clock / no Spreadsheet / no formula)
 // --------------------------------------------------------------------------------------------------------
@@ -45,7 +51,7 @@ function recoWsRequestId_(provided, io) {
   return 'REQ-S' + ('000000' + seq).slice(-6);
 }
 function recoWsEnvelope_(ok, data, errors, meta) {
-  var m = { apiVersion: '1', source: 'recommendation.workspace.get', workspace: 'recommendation', mode: 'WORKSPACE', cached: false };
+  var m = { apiVersion: '1', source: 'recommendation.workspace.get', workspace: 'recommendation', mode: 'WORKSPACE', cached: false, recommendationWorkspaceHandlerVersion: RECO_WS_HANDLER_VERSION_ };
   if (meta) { for (var k in meta) m[k] = meta[k]; }
   return { success: !!ok, data: ok ? (data === undefined ? null : data) : null, meta: m, errors: ok ? [] : (errors || []) };
 }

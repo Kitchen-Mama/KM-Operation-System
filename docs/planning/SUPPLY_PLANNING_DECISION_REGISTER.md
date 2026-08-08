@@ -1022,3 +1022,48 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 - No Inventory/Order Planning formula change; no DB/schema/scheduler change; core modules + generated bundle
   UNCHANGED (only 42 `.gs` — not bundled — + one test). Full suite 136/137 (pre-existing replen-header-toggle A2);
   Golden PASS.
+
+### F1-4B-FM5-R4UI-R5C — Deployment/version-parity PROBE + live-path proof (audit-first; one additive read-only marker) — 2026-08-08
+- **Trigger:** after push + Apps Script sync + "Recalculate All Sites", CO1100-R still BLOCKED, `updated_at` still
+  advances, logo looks new but the Inventory page looks stale. Static analysis cannot read the live server/DOM, so
+  the round classifies parity and adds the smallest possible probe to make ONE Network response decisive.
+- **Git parity (Phase 1):** HEAD == `origin/main` == `3640fa7` — R5A (`0914560`) AND R5B (`3640fa7`) are BOTH on
+  origin (the earlier "origin at 473f890" note is superseded; the user has since pushed). So the frontend GIT SOURCE
+  is current; whether the SERVED GitHub-Pages assets match is not statically provable.
+- **Frontend mixed-version root cause (Phase 1/7):** assets load WITHOUT any cache-busting query
+  (`href="assets/css/pages/inventory-replenishment.css"`, no `?v=`); NO service worker; exactly ONE inventory
+  stylesheet (no duplicate old CSS; page CSS loads after components/layout so R5A rules win at equal specificity).
+  ⇒ the "new logo, stale Inventory page" split is explained by browser/Pages HTTP caching of un-versioned assets,
+  NOT wrong code. No cache-busting implemented this round (spec: only once a live mismatch is proven).
+- **Client endpoint (Phase 2):** the READ adapter `operation-system-db-api.js` hardcodes a specific `…/exec`
+  literal; the COMMAND transport (Foundation) resolves at call time `deps.baseUrl → KM.DB.getApiBaseUrl →
+  KM.config.operationDbWebAppUrl`. "Recalculate All Sites" is a COMMAND → it uses the Foundation transport, so the
+  live endpoint is whatever `KM.config.operationDbWebAppUrl` is set to at runtime (not statically resolvable here).
+  STALE_OR_WRONG_ENDPOINT remains possible until the probe below confirms the live handler token.
+- **Sales path (Phase 3):** `recoWsResolveSalesRate_` is the SOLE sales-rate owner — `KMCALC.normalizedAvgSalesPerDay`
+  is invoked exactly once (inside it); two call sites (marketplace §551 + warehouse §602) both feed the same
+  `avgSalesPerDay`. No alternate/old path bypasses the R5B fix. All R5B markers present (toYmd, WEEKLY_ONLY,
+  chSource daily-else-weekly, surfaced owner error).
+- **Version PROBE (Phase 4, the one code change) — additive READ-ONLY response metadata only:**
+    1. `43` `gapBatchEnvelope_` → `meta.gapMaterializationHandlerVersion = 'fm5-r4ui-r5c'` on BOTH success and
+       failure. This is the envelope the browser receives from "Recalculate All Sites" — ONE Network response now
+       proves which gap-materialization handler is live.
+    2. `42` `recoWsEnvelope_` → `meta.recommendationWorkspaceHandlerVersion = 'fm5-r4ui-r5c'`. Any direct
+       `recommendation.workspace.get` response proves the R5B sales-basis repair is the live code.
+  Chosen because NO existing field is a deploy/handler version: `meta.apiVersion:'1'` is a static contract version
+  and `formulaVersion`/`sourceDataAsOf` are DATA versions from config — none change when new handler code deploys.
+  NO DB write, NO schema, NO formula, NO page-side business logic; business/summary fields untouched (marker on meta).
+- **Materialization (Phase 6):** Recalculate = ONE browser command → `handleRecalculateInventoryReplenishmentGapBatch_`
+  → `gapRunBatch_` (enumerate scopes → one `io.workspaceGet` per scope → `gapInvMapFromLines_` → `gapUpsertByKey_`
+  overwrite-by-business-key). `updated_at` advancing proves the batch executes and UPSERTs — but does NOT prove WHICH
+  handler ran; that is exactly what the new `gapMaterializationHandlerVersion` disambiguates. No retry, no duplicate
+  write (upsert by key).
+- **§2 header band / §3 white strip:** unchanged from R5A/R5B — no source-provable static owner; need one live
+  computed-DOM reading. No speculative CSS.
+- **Classification:** cannot yet assert #4 (CURRENT_CODE_LIVE) vs #1/#2/#3 without reading the live probe. The probe
+  makes the NEXT recalc self-classifying: if the response shows `gapMaterializationHandlerVersion="fm5-r4ui-r5c"`
+  (and a workspace GET shows the workspace token) AND CO1100-R still BLOCKED → CURRENT_CODE_LIVE + a real remaining
+  defect whose exact first-failing owner is already surfaced in the note; if the token is ABSENT/old → DEPLOYMENT_STALE
+  / wrong endpoint / stale asset.
+- No formula/DB/schema/scheduler change; core + generated bundle UNCHANGED (only 42 & 43 `.gs` — neither bundled —
+  + one new test). Full suite 137/138 (pre-existing replen-header-toggle A1/A2); Golden PASS (39/40, #34 pending).
