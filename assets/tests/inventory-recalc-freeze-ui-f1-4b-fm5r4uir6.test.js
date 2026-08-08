@@ -101,12 +101,11 @@ ok(/resolveMarketplaceCurrentStock\(\{\s*rows:\s*amazonRows/.test(WS_SRC) && /ho
 section('§3/§13 frontend invalidates the materialized cache + force-refetches after a manual recalc');
 ok(/function refreshInventoryGapAfterRecalc_\(\)\s*\{[^}]*loadedOk\s*=\s*false[^}]*scopeKey\s*=\s*null[^}]*loadInventoryGap_\(true\)/.test(JS), 'C1 refreshInventoryGapAfterRecalc_ clears loadedOk+scopeKey then force-refetches (no stale BLOCKED left in memory)');
 
-section('§5 active-row pin = FIXED overlay clone (native sticky removed)');
-ok(!/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'S1 the real row is NEVER position:sticky (the wrong-container native approach is gone)');
-ok(/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS) && /pointer-events:\s*none/.test(CSS), 'S2 the overlay is fixed-position + pointer-events:none (purely visual, no layout footprint)');
-ok(/function _irUpdateStickyOverlay/.test(JS) && /function _irRemoveStickyOverlay/.test(JS), 'S3 overlay build + teardown owners exist');
-ok(/rowRect\.top < headerBottom/.test(JS) && /_irRemoveStickyOverlay\(\)/.test(JS), 'S4 shown ONLY while the real row is behind the header; removed otherwise / on collapse');
-ok(/translateX\(' \+ \(-sx\)/.test(JS), 'S5 the overlay scroll half mirrors the live horizontal scrollLeft (columns stay aligned)');
+section('§2 (superseded by R7) active row + detail scroll as ONE natural unit — no pin/overlay');
+ok(!/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS) && !/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS), 'S1 NO pin: the real row is never position:sticky AND there is no fixed overlay (R7 §2 — a pin floats over / occludes the detail)');
+ok(/is-active-selected[\s\S]{0,140}background/.test(CSS), 'S2 the active row keeps ONLY the .is-active-selected highlight (no reposition, no float)');
+ok(/function _irRemoveStickyOverlay/.test(JS) && !/function _irUpdateStickyOverlay/.test(JS), 'S3 the overlay BUILDER is removed; only the teardown stub remains (clears any legacy overlay node)');
+ok(/_irRemoveStickyOverlay\(\)/.test(JS) && /classList\.remove\('is-active-selected'\)/.test(JS), 'S4 collapse tears down any legacy overlay + clears the highlight');
 
 section('§7 global chrome compaction via the single canonical owner');
 ok(/--header-height:\s*56px/.test(BASE), 'H1 --header-height reduced to 56px (was 80) at its single canonical owner');

@@ -194,8 +194,14 @@ function recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId) {
 function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.normalizedAvgSalesPerDay !== 'function') return { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
   if (!calcDate) return { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };
+  // F1-4B-FM5-R4UI-R7 §1 (audit Q3) — CANONICAL country identity when matching the sales snapshots. The daily/weekly
+  // snapshots and marketplace_skus can encode the same country differently (the known UK≡GB class the repo already
+  // repairs elsewhere via KMCID); a RAW string match dropped every scoped row → a false SALES_BASIS_UNAVAILABLE →
+  // the Sales-Driven horizon fail-closed as HORIZONS_NOT_AVAILABLE. Canonicalize BOTH sides (marketplace unchanged).
+  var recoWsCanonC = function (v) { return (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.canonicalCountryCode === 'function') ? KMCID.canonicalCountryCode(v) : recoWsStr_(v).toUpperCase(); };
+  var scopeCountryC = recoWsCanonC(scope.country);
   var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
-    return recoWsStr_(r.sku) === sku && recoWsStr_(r.country) === scope.country && recoWsStr_(r.marketplace) === scope.marketplace;
+    return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace;
   });
   if (!daily.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE' };
   var chSet = {}; daily.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
@@ -203,7 +209,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS' };   // 0 or ambiguous channel → fail closed (conflict)
   var channel = chKeys[0];
   var weekly = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
-    return recoWsStr_(r.sku) === sku && recoWsStr_(r.country) === scope.country && recoWsStr_(r.marketplace) === scope.marketplace && recoWsStr_(r.channel) === channel;
+    return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace && recoWsStr_(r.channel) === channel;
   });
   var weekly7d = 0;
   if (weekly.length) {
@@ -507,8 +513,8 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   // forecast_driven keeps the adjusted-regular+special demand. A Sales-Driven SKU whose run-rate cannot be resolved
   // fail-closes (no horizons → materialized BLOCKED), never silently reverting to the forecast path.
   var planModel = recoWsResolvePlanningModel_(snaps, scope, sku);
-  var salesRate = null;
-  if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); salesRate = sr.ok ? sr.avgSalesPerDay : null; }
+  var salesRate = null, salesReason = null;
+  if (planModel === 'sales_driven') { var sr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = sr.reason || 'SALES_BASIS_UNAVAILABLE'; }
   // F1-4B-FM5-R4UI-R5 §4 — the INVENTORY horizon opening is Site Stock, which is FORECAST-INDEPENDENT. The unified
   // resolver returns a null line (→ null L.currentStockQty) when the MONTHLY demand (regular forecast) is not
   // resolvable — so a Sales-Driven SKU with no regular forecast was losing its Site Stock and materializing
@@ -525,6 +531,11 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
     : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, mIncoming, upc, nd.destination, planModel, salesRate);
   if (mHz) mLine.horizons = mHz;
+  // F1-4B-FM5-R4UI-R7 §1/§4 — when the day-horizon cannot be built, PRESERVE the specific first reason so
+  // materialization surfaces it verbatim (a Sales-Driven SKU with an unresolvable canonical run-rate now reports
+  // SALES_BASIS_UNAVAILABLE / SALES_BASIS_AMBIGUOUS, not the generic HORIZONS_NOT_AVAILABLE that masked the real
+  // cause). Horizon-only reason — the line's own blocked/monthlyProjection (Order Planning) is untouched.
+  else mLine.horizonsBlockedReason = salesReason || 'HORIZON_PROJECTION_UNAVAILABLE';
   return mLine;
 }
 
@@ -553,8 +564,8 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
   // F1-4B-FM5-R4UI-R3 — resolve the SKU's Planning Model + (Sales-Driven) canonical run-rate ONCE per SKU; the
   // per-warehouse horizons below all share it (the model is a marketplace-SKU attribute, not per-warehouse).
   var whPlanModel = recoWsResolvePlanningModel_(snaps, scope, sku);
-  var whSalesRate = null;
-  if (whPlanModel === 'sales_driven') { var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); whSalesRate = wsr.ok ? wsr.avgSalesPerDay : null; }
+  var whSalesRate = null, whSalesReason = null;
+  if (whPlanModel === 'sales_driven') { var wsr = recoWsResolveSalesRate_(snaps, scope, sku, calc.calculationDate); if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = wsr.reason || 'SALES_BASIS_UNAVAILABLE'; }
   var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
   var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
   months.forEach(function (mm) {
@@ -598,6 +609,7 @@ function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
     var wHz = (whPlanModel === 'sales_driven' && whSalesRate === null) ? null
       : recoWsBuildHorizons_(calc, fcRows, tgtRowsW, evtRowsW, skuMetaW, scope, sku, whOpening, whIncoming, upc, node, whPlanModel, whSalesRate);
     if (wHz) wLine.horizons = wHz;
+    else wLine.horizonsBlockedReason = whSalesReason || 'HORIZON_PROJECTION_UNAVAILABLE';   // R7 §1/§4 — preserve the specific reason (no generic mask)
     lines.push(wLine);
   });
   return { lines: lines };

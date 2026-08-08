@@ -1655,48 +1655,13 @@
 #ops-section .replen-category-rail { padding: 4px; gap: 6px; }
 #ops-section .replen-category-rail__tab { padding: 3px 10px; }
 
-/* §13 (FM5-R4UI-R6 §5 REWRITE) active expanded master SKU row — STICKY VISUAL OVERLAY, not native position:sticky.
-   ROOT CAUSE of the prior jump: the real rows live INSIDE .fixed-col / .scroll-col, both of which are
-   `overflow-x:auto` scroll containers (a non-visible overflow). `position:sticky` on a descendant sticks relative
-   to that nearest scroll container — which here scrolls only horizontally (overflow-y:hidden) and does not scroll
-   vertically — so the vertical `top` sticky was evaluated against the wrong container and the row visibly jumped
-   to an incorrect vertical position on scroll. No `top` offset patch can fix that (the containing block is wrong).
-   FIX: the real rows now NEVER become position:sticky. A separate lightweight fixed-position overlay (built by
-   _irUpdateStickyOverlay from clones of the active fixed-row + scroll-row) is shown ONLY while the active master
-   row has scrolled up behind the header; it is pinned immediately below the real header and its scroll half mirrors
-   the live horizontal scrollLeft. The overlay has NO layout footprint (position:fixed, pointer-events:none) so the
-   real table — and the expanded detail panel — never move. Collapse / return-into-view removes it. */
-#ops-section .ir-sticky-overlay {
-    position: fixed;
-    display: flex;
-    z-index: 122;                    /* above body rows (110); sits below the real header physically (no overlap) */
-    background: #EAF2FE;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.10);
-    pointer-events: none;            /* purely visual — never intercepts clicks meant for the real row */
-    overflow: hidden;
-    contain: layout paint;
-}
-#ops-section .ir-sticky-overlay[hidden] { display: none; }
-#ops-section .ir-sticky-overlay__fixed {
-    flex: 0 0 auto;
-    box-sizing: border-box;
-    background: #EAF2FE;
-    border-right: 1px solid #dbe3ea;
-    overflow: hidden;
-}
-#ops-section .ir-sticky-overlay__scrollport {
-    flex: 1 1 auto;
-    overflow: hidden;                /* the horizontal position is applied via transform on the inner clone */
-}
-#ops-section .ir-sticky-overlay__scroll { will-change: transform; }
-/* The cloned rows keep their original column widths/styles; force the selected tint + kill their bottom border
-   so the overlay reads as one clean pinned bar. */
-#ops-section .ir-sticky-overlay .fixed-row,
-#ops-section .ir-sticky-overlay .scroll-row {
-    background: #EAF2FE;
-    border-bottom: 0;
-    cursor: default;
-}
+/* §13 (FM5-R4UI-R7 §2) active expanded master SKU row — NO PIN. The R3 native sticky (broken: the rows sit inside
+   the overflow-x scroll columns = the wrong sticky containing block → jump) and the R6 fixed-overlay clone (which
+   pinned the row but then FLOATED over and occluded the top of the second-level detail) are BOTH removed. Any pinned
+   bar necessarily floats over the content scrolling beneath it, so the master row and its detail are kept as ONE
+   natural scroll unit instead: the active row carries ONLY the selected-highlight (defined below) — no position
+   change, no float — and scrolls together with its expanded detail. Zero jump, zero occlusion, zero detachment.
+   No pinned-row or floating-clone rules remain here; the JS tears down any legacy overlay node from a stale build. */
 
 /* =============================================================================================================
    F1-4B-FM5-R4UI-R4 — active-row selected highlight (§2) + compact Recommendation Summary spacing (§4).
@@ -1713,8 +1678,12 @@
 #ops-section .replen-card--recommendation-summary .replen-card__title { margin: 0 0 6px; }
 #ops-section .replen-card--recommendation-summary .replen-recsum-ws { margin: 0; }
 #ops-section .replen-card--recommendation-summary .replen-horizon-tablewrap { margin: 0; }
+/* F1-4B-FM5-R4UI-R7 §4/§11 — EXACT density parity with the Monthly Achievement Rate table (3px 6px cells) so the
+   two second-layer cards read at the same density. No artificial min-height, no blank bands. */
 #ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook td,
-#ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook th { padding: 4px 8px; }
+#ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook th { padding: 3px 6px; }
+#ops-section .replen-card--recommendation-summary .replen-recsum-ws { padding: 2px 0; }
+#ops-section .replen-card--recommendation-summary .replen-horizon-summary { margin: 0; }
 
 /* =============================================================================================================
    F1-4B-FM5-R4UI-R5 — Recommendation Summary neutral (§3) + hidden fulfillment badge (§8).

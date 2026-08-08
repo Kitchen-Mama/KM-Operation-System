@@ -313,8 +313,42 @@ window.IRMap = (function () {
     return 100;
   }
 
-  // 60 Days FC = (FC Month+1 + FC Month+2) with Target Rule applied. ← fc_regular_forecast.
-  function forecast60d(fcRows, rules, scope) {
+  // F1-4B-FM5-R4UI-R7 §0/§F — canonical "90 days FC" USER REFERENCE field (independent of Planning Model):
+  //   SUM of the next 3 forecast months' Base FC  +  SUM of Special Event fc_qty whose applicable month falls
+  //   inside those same 3 forecast months (each event counted ONCE). This is a display reference ONLY — NOT
+  //   D90 demandQty, NOT Avg Sales/day × 90, NO inventory subtraction, NO gap logic, NO Target% (it is Base FC).
+  //   It reuses the SAME already-loaded fc_regular_forecast + fc_special_events facts that power the Forecast
+  //   Breakdown + Upcoming Event cards. Sales-Driven and Forecast-Driven SKUs display the SAME reference.
+  //   (`rules` retained in the signature for call-site compatibility; Target% is intentionally NOT applied.)
+  function forecast60d(fcRows, rules, scope, events) {
+    var cm = new Date().getMonth();
+    var base = 0;
+    if (fcRows && fcRows.length) {
+      var fc = fcRows.find(function (r) {
+        return eq(r.sku, scope.sku)
+          && (!scope.company || !r.company || eq(r.company, scope.company))
+          && (!scope.country || !r.country || eq(r.country, scope.country))
+          && (!scope.marketplace || !r.marketplace || eq(r.marketplace, scope.marketplace));
+      });
+      if (fc) base = num(fc[MONTHS[(cm + 1) % 12]]) + num(fc[MONTHS[(cm + 2) % 12]]) + num(fc[MONTHS[(cm + 3) % 12]]);
+    }
+    // Special events whose applicable calendar month ∈ the next-3 forecast months, active + scope-matched, once.
+    var allowed = {}; allowed[((cm + 1) % 12) + 1] = 1; allowed[((cm + 2) % 12) + 1] = 1; allowed[((cm + 3) % 12) + 1] = 1;
+    var evtQty = 0;
+    (events || []).forEach(function (ev) {
+      if (!_irEventActive(ev) || !_irEventScopeMatch(ev, scope)) return;
+      var mo = parseEventMonth(ev);
+      if (mo === null) { var sd = _irParseDate(ev.eventStartDate); if (sd) mo = sd.getMonth() + 1; }
+      if (mo === null || !allowed[mo]) return;
+      evtQty += num(ev.fcQty);
+    });
+    return Math.round(base + evtQty);
+  }
+
+  // Planning-only 2-month Target%-adjusted forecast used by the 3PL 18-day site-planning allocation (§20/§23/§24).
+  // Kept SEPARATE from the UI "90 days FC" reference (forecast60d) so the R7 §F reference-field redefinition never
+  // leaks into a planning/shortage calc. This preserves the pre-R7 3PL allocation behavior byte-for-byte.
+  function _irForecastPlanning2mo(fcRows, rules, scope) {
     if (!fcRows || !fcRows.length) return 0;
     var fc = fcRows.find(function (r) {
       return eq(r.sku, scope.sku)
@@ -324,13 +358,11 @@ window.IRMap = (function () {
     });
     if (!fc) return 0;
     var cm = new Date().getMonth();
-    var m1 = MONTHS[(cm + 1) % 12];
-    var m2 = MONTHS[(cm + 2) % 12];
     var pct = targetPct(rules, {
       company: scope.company, country: scope.country, marketplace: scope.marketplace,
       sku: scope.sku, series: fc.series || scope.series, category: fc.category || scope.category
     }) / 100;
-    return Math.round((num(fc[m1]) + num(fc[m2])) * pct);
+    return Math.round((num(fc[MONTHS[(cm + 1) % 12]]) + num(fc[MONTHS[(cm + 2) % 12]])) * pct);
   }
 
   function parseEventMonth(ev) {
@@ -550,7 +582,7 @@ window.IRMap = (function () {
       var demandMode = (m.replenishmentModel || 'sales_driven');
       var daily;
       if (demandMode === 'forecast_driven') {
-        var fc60 = forecast60d(ctx.fcRows, ctx.targetRules, siteScope);   // next 2 months (60 days), target-adjusted
+        var fc60 = _irForecastPlanning2mo(ctx.fcRows, ctx.targetRules, siteScope);   // planning-only (NOT the UI 90-day reference)
         daily = fc60 > 0 ? (fc60 / 60) : 0;
       } else {
         daily = avgSalesPerDay(ctx.weeklyRows, siteScope);               // §22 canonical Avg Sales/Day
@@ -1643,91 +1675,19 @@ function _recSummaryRows(skuData) {
     return html;
 }
 
-// FM5-R4UI-R6 §5 — STICKY VISUAL OVERLAY (replaces the broken native position:sticky). On expand the active row
-// carries only .is-active-selected (a highlight, NO reposition → zero jump). While the user scrolls, a separate
-// fixed-position overlay — a CLONE of the active fixed-row + scroll-row — is shown ONLY once the real master row
-// has scrolled up behind the table header, pinned immediately below it. The real rows are NEVER made sticky and
-// never move, so neither the row nor its expanded detail panel can jump. Bound once; capture:true so it also
-// catches the inner .scroll-col / .main-content scroll. Cheap: no-ops unless a row is expanded.
-var _irStickyScrollBound = false;
-function _irBindStickyScrollOnce() {
-    if (_irStickyScrollBound || typeof window === 'undefined' || !window.addEventListener) return;
-    _irStickyScrollBound = true;
-    var onScroll = function () { _irUpdateStickyOverlay(); };
-    try { window.addEventListener('scroll', onScroll, { capture: true, passive: true }); }
-    catch (e) { window.addEventListener('scroll', onScroll, true); }
-    try { window.addEventListener('resize', onScroll, { passive: true }); } catch (e2) { /* older browsers */ }
-}
-
-// Remove the sticky overlay (collapse, scope change, or the active row returning fully into view).
+// FM5-R4UI-R7 §2 — the expanded master row + its detail panel are ONE natural scroll unit. The R6 fixed-overlay
+// clone pinned the master row below the header, but ANY pin (native sticky OR a floating overlay) necessarily
+// FLOATS over the content that scrolls beneath it — which occluded the top of the second-level detail (the reported
+// R6 defect). There is no offset that removes that occlusion for free vertical scrolling. So the pin is removed:
+// the active master row keeps ONLY the .is-active-selected highlight (no reposition, no float) and scrolls TOGETHER
+// with its detail panel — zero jump, zero occlusion, zero detachment; collapse/switch restores normal layout.
+// These are safe no-op stubs kept so the toggleReplenRow call sites are unchanged; _irRemoveStickyOverlay also tears
+// down any legacy #ir-sticky-overlay node a stale (R6) build may have left in the DOM.
+function _irBindStickyScrollOnce() { _irRemoveStickyOverlay(); }
 function _irRemoveStickyOverlay() {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined' || !document.getElementById) return;
     var ov = document.getElementById('ir-sticky-overlay');
     if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
-}
-
-// Build/reuse the overlay and position it. Show only while the active master row's top has scrolled above the
-// header bottom (i.e. the real row is hidden behind the header) AND its expanded detail is still on screen.
-// Geometry (top/left/width/height + horizontal transform) is measured from the LIVE nodes each call so the clone
-// stays column-aligned with the real table; the clone itself is never interactive (pointer-events:none, aria-hidden).
-function _irUpdateStickyOverlay() {
-    if (typeof document === 'undefined' || !document.getElementById) return;
-    if (typeof currentExpandedRow === 'undefined' || !currentExpandedRow) { _irRemoveStickyOverlay(); return; }
-    var table = document.querySelector('#ops-section .dual-layer-table');
-    var headerBar = document.querySelector('#ops-section .table-header-bar');
-    var bodyBar = document.querySelector('#ops-section .table-body-bar');
-    var scrollCol = document.querySelector('#ops-section .scroll-col');
-    var fixedRow = document.querySelector('#ops-section .fixed-row.is-active-selected');
-    var scrollRow = document.querySelector('#ops-section .scroll-row.is-active-selected');
-    if (!table || !headerBar || !bodyBar || !fixedRow) { _irRemoveStickyOverlay(); return; }
-    if (typeof fixedRow.getBoundingClientRect !== 'function') return;   // non-DOM test env → no-op
-
-    var headerRect = headerBar.getBoundingClientRect();
-    var rowRect = fixedRow.getBoundingClientRect();
-    var bodyRect = bodyBar.getBoundingClientRect();
-    var headerBottom = headerRect.bottom;
-    // Show ONLY when the real row has scrolled up behind the header (its top is above the header bottom) and the
-    // expanded region below it is still within view (bodyBar bottom is still under the header). Else hide/remove.
-    var shouldShow = (rowRect.top < headerBottom - 1) && (bodyRect.bottom > headerBottom + 4);
-    if (!shouldShow) { _irRemoveStickyOverlay(); return; }
-
-    var ov = document.getElementById('ir-sticky-overlay');
-    if (!ov) {
-        ov = document.createElement('div');
-        ov.id = 'ir-sticky-overlay';
-        ov.className = 'ir-sticky-overlay';
-        ov.setAttribute('aria-hidden', 'true');
-        var fx = document.createElement('div'); fx.className = 'ir-sticky-overlay__fixed';
-        var sp = document.createElement('div'); sp.className = 'ir-sticky-overlay__scrollport';
-        var si = document.createElement('div'); si.className = 'ir-sticky-overlay__scroll';
-        sp.appendChild(si); ov.appendChild(fx); ov.appendChild(sp);
-        table.appendChild(ov);
-    }
-    var fxHost = ov.firstChild, siHost = ov.lastChild.firstChild;
-    // Re-clone each update (the active row's rendered values are stable, but re-cloning keeps the clone in lock-step
-    // with any re-render and is cheap for one row). Strip ids from the clone so no duplicate id leaks into the DOM.
-    function cloneInto(host, node) {
-        while (host.firstChild) host.removeChild(host.firstChild);
-        if (!node) return;
-        var c = node.cloneNode(true);
-        c.removeAttribute && c.removeAttribute('id');
-        var withId = c.querySelectorAll ? c.querySelectorAll('[id]') : [];
-        Array.prototype.forEach.call(withId, function (n) { n.removeAttribute('id'); });
-        host.appendChild(c);
-    }
-    cloneInto(fxHost, fixedRow);
-    cloneInto(siHost, scrollRow);
-
-    var fixedColRect = (document.querySelector('#ops-section .fixed-col') || fixedRow).getBoundingClientRect();
-    ov.style.top = headerBottom + 'px';
-    ov.style.left = bodyRect.left + 'px';
-    ov.style.width = bodyRect.width + 'px';
-    ov.style.height = rowRect.height + 'px';
-    fxHost.style.width = fixedColRect.width + 'px';
-    // Mirror the live horizontal scroll so the cloned data cells line up with the columns under them.
-    var sx = scrollCol ? scrollCol.scrollLeft : 0;
-    siHost.style.transform = 'translateX(' + (-sx) + 'px)';
-    ov.hidden = false;
 }
 
 function toggleReplenRow(sku) {
@@ -3662,7 +3622,7 @@ function _getCloudReplenishmentData() {
         var lts = IR.longTermStorage(health);
         var trend = IR.salesTrend7d(dailyRows, scope);
         var avg = IR.avgSalesPerDay(weeklyRows, scope);
-        var fc60 = IR.forecast60d(fcRows, targetRules, scope);
+        var fc60 = IR.forecast60d(fcRows, targetRules, scope, events);   // R7 §F: 3-month Base FC + scoped Special Events (once)
         var eventQty = IR.upcomingEventQty(events, scope);
         // 3rd Party Stock = Site Planning Available (18-day virtual planning allocation of the shared
         // 3PL pool; §20/§23/§24). Display-only — no movement, no reserve, no snapshot write.

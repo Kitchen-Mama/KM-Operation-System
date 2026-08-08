@@ -37,6 +37,14 @@
     align-items: center;
 }
 
+/* F1-4B-FM5-R4UI-R7 §5 — the shared logo scales to fit the compacted 56px header (it was sized for the old 80px).
+   max-height keeps it comfortably inside the ~40px content box (56px − 2×8px padding); width:auto preserves the
+   aspect ratio (no distortion, no crop, stays centered via .header-left align-items:center). This is a SHARED shell
+   rule — it applies to every page's header, not an Inventory-only hack. The element's inline max-width still caps
+   the width; both bounds compose, so the image never exceeds either. */
+.top-header .header-left img,
+.top-header .logo-text img { max-height: 36px; width: auto; height: auto; }
+
 .header-right {
     margin-left: auto;
     display: flex;

@@ -104,7 +104,10 @@ function gapInvMapFromLines_(lines, scope, sku, calcDate) {
     var L = lines[i];
     if (L && L.blocked) { blockedReason = gapStr_(L.blockedReason) || 'BLOCKED'; break; }
     var hz = L && L.horizons;
-    if (!hz || !hz.length) { blockedReason = 'HORIZONS_NOT_AVAILABLE'; break; }
+    // F1-4B-FM5-R4UI-R7 §1/§4 — surface the SPECIFIC upstream horizon reason (e.g. SALES_BASIS_UNAVAILABLE /
+    // SALES_BASIS_AMBIGUOUS, stamped by recoWsExpandMarketplace_/recoWsExpandWarehouse_) instead of masking it as
+    // the generic HORIZONS_NOT_AVAILABLE. Falls back to the generic token only when no specific reason was provided.
+    if (!hz || !hz.length) { blockedReason = gapStr_(L && L.horizonsBlockedReason) || 'HORIZONS_NOT_AVAILABLE'; break; }
     var byW = {}; hz.forEach(function (h) { if (h && h.windowCode) byW[h.windowCode] = h; });
     for (var w = 0; w < GAP_INV_WINDOWS_.length; w++) {
       var wc = GAP_INV_WINDOWS_[w], h = byW[wc];

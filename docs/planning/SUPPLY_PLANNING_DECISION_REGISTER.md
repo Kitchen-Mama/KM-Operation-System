@@ -901,3 +901,45 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 - **No formula change** (KMHP/KMTPP/KMCALC/KMMSA/KMALLOC untouched); no DB/schema change; no API/DTO change; no gap
   business-key change; core modules + generated bundle UNCHANGED (`fb4824d1…`; only page CSS/JS + shared chrome CSS +
   tests changed). Order Planning T1–T4 math + Execution Plan untouched; materialized-expand stays read-only.
+
+## F1-4B-FM5-R4UI-R7 — Inventory BLOCKED closure + 90-Day FC reference + UI (2026-08-08)
+- **§1 CO1100-R BLOCKED root cause (reopened from scratch; CODE, not deployment):** for a Sales-Driven SKU the
+  day-horizon is gated by `mHz = (planModel==='sales_driven' && salesRate===null) ? null : recoWsBuildHorizons_(…)`.
+  When the canonical run-rate (`recoWsResolveSalesRate_` → KMCALC.normalizedAvgSalesPerDay) does NOT resolve, `mHz`
+  was set to a silent null and `gapInvMapFromLines_` reported the GENERIC `HORIZONS_NOT_AVAILABLE` — masking the
+  real reason (audit Q9 = YES). Two proven defects fixed at the FIRST broken boundary:
+    (A) **Reason masking:** `recoWsExpandMarketplace_`/`recoWsExpandWarehouse_` now stamp
+        `line.horizonsBlockedReason` = the specific sales reason (SALES_BASIS_UNAVAILABLE / SALES_BASIS_AMBIGUOUS /
+        HORIZON_PROJECTION_UNAVAILABLE); `gapInvMapFromLines_` surfaces it verbatim. The BLOCKED note now tells the
+        user WHY (so CO1100-R's true cause is visible instead of the generic token).
+    (B) **Country-identity marshalling:** `recoWsResolveSalesRate_` matched the daily/weekly snapshots by RAW
+        `country` string equality; the snapshot country (sourced from Amazon's "Marketplace" field) and
+        marketplace_skus.country can encode the same country differently (the UK≡GB class the repo repairs
+        elsewhere). A mismatch dropped every scoped row → false SALES_BASIS_UNAVAILABLE. Now canonicalized via KMCID
+        (`recoWsCanonC`), both sides. Marshalling correctness — NO formula change, NO second averaging engine.
+  Snapshot parity VERIFIED: the batch reads amazon_daily/weekly_sales_snapshot via KMPS.readCanonicalSnapshots
+  (same reader as live expand). Fresh-state invariant re-confirmed (map is pure; no prior status read) + test-locked.
+- **§F "90 days FC" is a USER REFERENCE field** (business freeze): `IR.forecast60d` rewritten = SUM(next 3 forecast
+  months' Base FC) + SUM(Special Event fc_qty whose applicable month ∈ those 3 months, counted once). NO Target%,
+  NO Avg Sales/day, NO inventory subtraction, NO gap, NOT D90 demandQty. Reuses the SAME fc_regular_forecast +
+  fc_special_events facts as Forecast Breakdown / Upcoming Event; model-independent. Header renamed 60 → 90 days FC.
+  The 3PL 18-day site-planning allocation is DECOUPLED to a new planning-only owner `_irForecastPlanning2mo` (the
+  pre-R7 2-month Target%-adjusted logic, byte-for-byte) so NO planning/shortage formula consumes the reference field.
+- **§2 expanded-row pin REMOVED (supersedes the R6 overlay):** any pin — native sticky OR a floating overlay clone —
+  necessarily floats over the content scrolling beneath it, which occluded the top of the second-level detail (the
+  reported R6 defect). No offset removes that for free vertical scroll. Resolution: the active master row keeps ONLY
+  the `.is-active-selected` highlight (no reposition, no float) and scrolls as ONE natural unit with its detail —
+  zero jump, zero occlusion, zero detachment. Legacy overlay node torn down defensively.
+- **§4 Recommendation Summary** density parity with Monthly Achievement (3px 6px cells, tight wrapper margins);
+  neutral-gray header (#f1f5f9), white body, fixed 4-row schema (unchanged). **§5** shared logo scales to the 56px
+  header via a layout.css rule (max-height 36px, width auto — aspect ratio preserved; not an Inventory-only hack).
+- **§3 left/right expanded height:** the canonical owner is the shared `.table-body-bar` flex `align-items:stretch`
+  chain (2026-08-07 hotfix) — reactive to async content by construction; left untouched (removing the overlay also
+  removes a layout perturbation). **§6 white strip — HALT:** static audit proved neither `.fixed-col` nor
+  `.scroll-col` reserves a right-side gutter (both overflow-y:hidden + scrollbar-gutter:stable ⇒ bottom-only); the
+  "disappears after scroll" clue points to a state/reflow owner that cannot be source-proven without a live
+  computed-DOM reading. §6 forbids speculative CSS → deferred with the requested evidence template.
+- **§7 Inventory top Suggested = D90** and **§8 Order Planning (t1+t2+t3; T4 non-writable)** preserved unchanged.
+- No Inventory D18–D90 / Order Planning formula change; no DB/schema change; no gap business-key change; core modules
+  + generated bundle UNCHANGED (only the 42/43 `.gs` handlers — not bundled — + page JS/CSS/HTML + shared logo CSS +
+  tests changed). Full suite 133/134 (only pre-existing replen-header-toggle A2); Golden PASS.

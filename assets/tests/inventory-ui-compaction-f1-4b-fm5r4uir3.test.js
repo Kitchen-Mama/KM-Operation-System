@@ -40,13 +40,13 @@ ok(/#ops-section\s*\{[^}]*--km-sticky-row-1-height:\s*34px[^}]*--km-sticky-row-2
 ok(/km-table__header-cell--note-span[\s\S]*?height:\s*var\(--km-sticky-header-total/.test(CSS), 'Q8 the note-span corner cell now uses the total token (was a hardcoded 96px) so it stays aligned after compaction');
 ok(/Inventory \/ Sales \/ Replenishment/.test(CSS) || /header-cell--inventory/.test(CSS), 'Q9 two-level group semantics retained (group cells still present)');
 
-section('§13 (FM5-R4UI-R6 §5) active expanded master SKU row — STICKY VISUAL OVERLAY (real row never repositioned)');
-ok(!/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS), 'R1 the real row is NO LONGER position:sticky — the broken native approach (sticky inside the overflow-x scroll column) was removed');
-ok(/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS), 'R2 the sticky visual is a FIXED-position overlay, built outside the overflow-x scroll containers (correct containing block)');
-ok(/\.ir-sticky-overlay\s*\{[\s\S]*?pointer-events:\s*none/.test(CSS), 'R3 the overlay is purely visual (pointer-events:none → never intercepts the real row interaction)');
-ok(/function _irUpdateStickyOverlay/.test(JS) && /translateX\(/.test(JS), 'R4 the overlay is positioned + horizontally scroll-synced from LIVE geometry (transform mirrors scrollLeft)');
-ok(/fixedRow\.classList\.add\('is-active-selected'\)/.test(JS) && /scrollRow\.classList\.add\('is-active-selected'\)/.test(JS), 'R5 both real rows get ONLY the selected-highlight class on expand (no reposition → no expand jump)');
-ok(/_irRemoveStickyOverlay\(\)/.test(JS) && /classList\.remove\('is-active-selected'\)/.test(JS), 'R6 collapse pass tears down the overlay + clears the selected highlight from every row');
+section('§13 (FM5-R4UI-R7 §2) active expanded master SKU row — ONE natural scroll unit, NO pin/overlay');
+ok(!/is-active-sticky[\s\S]*?position:\s*sticky/.test(CSS) && !/\.ir-sticky-overlay\s*\{[\s\S]*?position:\s*fixed/.test(CSS), 'R1 NO pin: real row never position:sticky AND no fixed overlay (both floated over / occluded the second-level detail)');
+ok(/is-active-selected[\s\S]{0,140}background/.test(CSS), 'R2 the active row carries ONLY the subtle .is-active-selected highlight (no reposition, no float)');
+ok(/function _irRemoveStickyOverlay/.test(JS) && !/function _irUpdateStickyOverlay/.test(JS), 'R3 the overlay builder is removed; only the teardown stub remains (clears any legacy overlay node)');
+ok(/function _irBindStickyScrollOnce/.test(JS), 'R4 _irBindStickyScrollOnce retained as a safe no-op stub (call sites unchanged)');
+ok(/fixedRow\.classList\.add\('is-active-selected'\)/.test(JS) && /scrollRow\.classList\.add\('is-active-selected'\)/.test(JS), 'R5 both real rows get ONLY the selected-highlight class on expand (no reposition → no expand jump; scroll together with the detail)');
+ok(/_irRemoveStickyOverlay\(\)/.test(JS) && /classList\.remove\('is-active-selected'\)/.test(JS), 'R6 collapse pass tears down any legacy overlay + clears the selected highlight from every row');
 
 section('§16 overflow containment preserved (no outer-container overflow)');
 ok(/\.replen-horizon-tablewrap\s*\{[^}]*overflow-x:\s*auto/.test(CSS), 'S1 Recommendation Summary table wrapped in an internal-scroll container (card cannot widen)');
