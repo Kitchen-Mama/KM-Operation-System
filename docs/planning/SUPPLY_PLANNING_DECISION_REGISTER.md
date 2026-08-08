@@ -992,3 +992,33 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
 - No Inventory/Order Planning formula change; no DB/schema change; no gap-key change; core modules + generated
   bundle UNCHANGED (only 42 `.gs` — not bundled — + page JS/CSS + shared logo CSS/HTML + tests). Full suite 135/136
   (pre-existing replen-header-toggle A2 only); Golden PASS.
+
+## F1-4B-FM5-R4UI-R5B — Canonical sales-basis owner MARSHALLING repair (CO1100-R run-rate owner error) (2026-08-08)
+- **Root cause PROVEN:** the live note `SALES_BASIS_UNAVAILABLE: run-rate owner error` is the R7V `catch(e2)` branch —
+  i.e. the frozen `KMCALC.normalizedAvgSalesPerDay` THREW even on the no-contamination retry. So the weekly fallback
+  (R5A) IS reached; the owner rejects the CALLER's inputs. Two marshalling defects fixed (owner math untouched):
+    1. **snapshot_date format** — the batch feeds KMCALC the raw Sheet cell; a JS Date object / 'YYYY/MM/DD' /
+       'M/D/YYYY' fails KMCALC's strict `_parseIso` ('YYYY-MM-DD') → throw. Fix: `toYmd()` coerces Date/slash forms
+       to strict YYYY-MM-DD before the owner call (a valid YMD is re-emitted unchanged; an unknown value passes
+       through so KMCALC still validates it). Also applied to calcDate (`calcYmd`).
+    2. **weekly-only blank channel** — a 0-daily basis whose weekly rows carry a BLANK channel: KMCALC requires a
+       non-empty channel identity and throws, even though the weekly_7d rung's result (weekly7d/7) never depends on
+       channel (KMCALC uses channel only to filter daily rows + scope contamination, both inert with empty
+       dailySales). Fix: a stable `'WEEKLY_ONLY'` channel token for THAT exact case only
+       (`!daily.length && !channel`); daily-driven paths keep the real channel — identity is NOT loosened (a
+       daily-driven blank channel still fails closed with the surfaced channel error).
+  Plus: the real owner exception message is surfaced in the detail (`run-rate owner error: <message>`) so any future
+  owner throw names itself in the live BLOCKED note. NO formula change, NO second averaging engine, NO forecast
+  fallback, NO copying the UI Avg Sales/day — the same frozen KMCALC owner, now fed contract-valid inputs.
+  Proven end-to-end (BUNDLE+42): weekly-only blank-channel → READY 178.43; Date/slash snapshot_date → READY
+  normalized; unparseable date → BLOCKED with the named owner error; daily blank channel → still BLOCKED.
+- **§2 dual-layer header band & §3 fixed/scroll white strip:** header cells all derive from the one
+  `--km-sticky-header-total` token (68px on both sides; no stray hardcoded 96px) — no source-provable owner for the
+  residual band; the white strip likewise has no static owner (both columns reserve only a bottom gutter). No
+  speculative CSS applied (per §0 / "Do not guess"); both need one live computed-DOM reading to name the owner.
+- **§4 full-row active bg / §5 summary density / §6 user-safe BLOCKED note** were delivered in R5A — but R5A
+  (`0914560`) + this R5B are UNPUSHED (origin at R7V `473f890`), so those are not live yet; deploying R5A+R5B is
+  required for the geometry/summary/note fixes AND the CO1100-R READY result to appear.
+- No Inventory/Order Planning formula change; no DB/schema/scheduler change; core modules + generated bundle
+  UNCHANGED (only 42 `.gs` — not bundled — + one test). Full suite 136/137 (pre-existing replen-header-toggle A2);
+  Golden PASS.

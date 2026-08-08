@@ -220,6 +220,27 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   var chKeys = Object.keys(chSet);
   if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
   var channel = chKeys[0];
+  // F1-4B-FM5-R4UI-R5B §1 — coerce a Sheet cell (JS Date object / 'YYYY/MM/DD' / 'M/D/YYYY') to the STRICT
+  // 'YYYY-MM-DD' the frozen KMCALC owner requires (it throws otherwise, which previously collapsed into the opaque
+  // "run-rate owner error"). A valid 'YYYY-MM-DD' is re-emitted unchanged; an unrecognised value passes through so
+  // KMCALC still validates it (and the surfaced message names it). Marshalling only — no date math, no owner change.
+  function toYmd(v) {
+    if (v == null || v === '') return '';
+    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+      return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2);
+    }
+    var s = recoWsStr_(v);
+    var a = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); if (a) return a[1] + '-' + ('0' + a[2]).slice(-2) + '-' + ('0' + a[3]).slice(-2);
+    var b = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); if (b) return b[3] + '-' + ('0' + b[1]).slice(-2) + '-' + ('0' + b[2]).slice(-2);
+    return s;
+  }
+  var calcYmd = toYmd(calcDate);
+  // A WEEKLY-ONLY source (0 daily rows) with a BLANK channel is a valid sales basis for the weekly_7d rung: its
+  // result (weekly7d/7) does NOT depend on channel — KMCALC uses channel only to filter daily rows + scope
+  // contamination, both inert when dailySales is empty — yet KMCALC still REQUIRES a non-empty channel identity.
+  // Represent a blank weekly-only channel with a stable token so the contract is satisfied WITHOUT altering the
+  // result or the frozen owner. Daily-driven paths keep the real channel (identity unchanged, never loosened).
+  var kmcalcChannel = (!daily.length && !channel) ? 'WEEKLY_ONLY' : channel;
   var weekly = weeklyAll.filter(function (r) { return recoWsStr_(r.channel) === channel; });
   var weekly7d = 0;
   if (weekly.length) {
@@ -227,7 +248,7 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d); weekly7d = (wv === null || wv < 0) ? 0 : wv;   // latest week; the <3-day fallback rung only
   }
   var dailySales = daily.map(function (r) {
-    return { date: recoWsStr_(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
+    return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
   });
   var mSkuId = null, mskRows = recoWsToRowObjects_(snaps.marketplaceSkus);
   for (var i = 0; i < mskRows.length; i++) { var mr = mskRows[i]; if (recoWsStr_(mr.sku) === sku && recoWsStr_(mr.country) === scope.country && recoWsStr_(mr.marketplace) === scope.marketplace) { mSkuId = recoWsStr_(mr.marketplace_sku_id) || null; break; } }
@@ -243,17 +264,20 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   var contam = recoWsBuildContaminationFacts_(snaps, scope, sku, mSkuId);
   function compute(campaigns, events) {
     return KMCALC.normalizedAvgSalesPerDay({
-      calcDate: calcDate,
-      scope: { sku: sku, country: scope.country, marketplace: scope.marketplace, channel: channel, company: scope.company, marketplaceId: scopeMktId, marketplaceSkuId: mSkuId },
+      calcDate: calcYmd,
+      scope: { sku: sku, country: scope.country, marketplace: scope.marketplace, channel: kmcalcChannel, company: scope.company, marketplaceId: scopeMktId, marketplaceSkuId: mSkuId },
       weekly7d: weekly7d, dailySales: dailySales, campaigns: campaigns, events: events
     });
   }
+  // Surface the REAL owner exception (stripped + truncated) in the detail so the live BLOCKED note names the exact
+  // cause when the owner still throws after the no-contamination retry — no more opaque "run-rate owner error".
+  function ownerErr(e) { return (e && e.message) ? String(e.message).replace(/^supplyPlanningCalculations:\s*/, '').slice(0, 140) : '?'; }
   var res, contaminationApplied = true;
   try {
     res = compute(contam.campaigns, contam.events);
   } catch (e) {
     contaminationApplied = false;
-    try { res = compute([], []); } catch (e2) { return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error' }; }
+    try { res = compute([], []); } catch (e2) { return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + ownerErr(e2) }; }
   }
   var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
   if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)' };
