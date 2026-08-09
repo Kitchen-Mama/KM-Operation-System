@@ -66,7 +66,7 @@ ok(zero.ok === true && zero.avgSalesPerDay === 0, 'A9 weekly valid-zero → 0/da
 
 section('§1 source structure — marshalling fixes present, owner untouched');
 ok(/function toYmd\(v\)/.test(F42) && /calcDate: calcYmd/.test(F42), 'S1 date coercion helper + normalized calcDate wired into the owner call');
-ok(/var kmcalcChannel = \(!daily\.length && !channel\) \? 'WEEKLY_ONLY' : channel;/.test(F42), 'S2 the blank-channel sentinel is gated to the weekly-only path');
+ok(/kmcalcChannel = \(!daily\.length && !channel\) \? 'WEEKLY_ONLY' : channel;/.test(F42), 'S2 the blank-channel sentinel is gated to the weekly-only path (single-market branch)');
 ok(/channel: kmcalcChannel,/.test(F42), 'S3 the owner scope uses the sentinel-safe channel');
 ok(/run-rate owner error: ' \+ ownerErr\(e2\)/.test(F42), 'S4 the real owner exception message is surfaced');
 

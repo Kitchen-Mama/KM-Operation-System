@@ -206,11 +206,21 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // the Sales-Driven horizon fail-closed as HORIZONS_NOT_AVAILABLE. Canonicalize BOTH sides (marketplace unchanged).
   var recoWsCanonC = function (v) { return (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.canonicalCountryCode === 'function') ? KMCID.canonicalCountryCode(v) : recoWsStr_(v).toUpperCase(); };
   var scopeCountryC = recoWsCanonC(scope.country);
+  // F1-4B-FM5-R4UI-R5D — EU is a planning/marketplace REGION, not a country alias: match sales rows whose canonical
+  // country is a MEMBER of the scope's eligible SOURCE-country set (KMCID.sourceCountriesForScope, which mirrors the
+  // FROZEN IRCountry.SALES_AGG EU=IT+DE+ES+FR authority; Amazon-only). A single market (US/CA/UK/DE/…) resolves to
+  // its own one-member set, so membership matching is byte-equivalent to the prior exact canonical match for every
+  // non-EU scope. company isolation holds by construction (amazon_daily_sales_snapshot is one-company-per-scope);
+  // marketplace + sku + channel identity are still enforced below.
+  var srcSet = (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.sourceCountriesForScope === 'function')
+    ? KMCID.sourceCountriesForScope(scope.country, scope.marketplace) : { members: [scopeCountryC], aggregate: false };
+  var srcMembers = {}; srcSet.members.forEach(function (m) { srcMembers[m] = 1; });
+  function recoWsInSrc_(c) { return srcMembers[recoWsCanonC(c)] === 1; }
   var daily = recoWsToRowObjects_(snaps.amazonDailySalesSnapshot).filter(function (r) {
-    return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace;
+    return recoWsStr_(r.sku) === sku && recoWsInSrc_(r.country) && recoWsStr_(r.marketplace) === scope.marketplace;
   });
   var weeklyAll = recoWsToRowObjects_(snaps.amazonWeeklySalesSnapshot).filter(function (r) {
-    return recoWsStr_(r.sku) === sku && recoWsCanonC(r.country) === scopeCountryC && recoWsStr_(r.marketplace) === scope.marketplace;
+    return recoWsStr_(r.sku) === sku && recoWsInSrc_(r.country) && recoWsStr_(r.marketplace) === scope.marketplace;
   });
   // F1-4B-FM5-R4UI-R5A §1/§2 — the weekly_7d rung MUST be reachable when there are ZERO scoped daily rows. Before,
   // the resolver returned SALES_BASIS_UNAVAILABLE the instant `daily` was empty, so a SKU with ONLY weekly history
@@ -220,16 +230,9 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
   // the channel from daily when present, else from weekly; only a scope with NEITHER daily NOR weekly rows is a
   // genuine SALES_BASIS_UNAVAILABLE. NO forecast fallback, NO fabricated value, NO new averaging engine — the same
   // canonical owner, now correctly routed to its own weekly rung. (R7V diagnostic detail retained on each reason.)
-  var chSource = daily.length ? daily : weeklyAll;
-  if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) };
-  var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
-  var chKeys = Object.keys(chSet);
-  if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
-  var channel = chKeys[0];
-  // F1-4B-FM5-R4UI-R5B §1 — coerce a Sheet cell (JS Date object / 'YYYY/MM/DD' / 'M/D/YYYY') to the STRICT
-  // 'YYYY-MM-DD' the frozen KMCALC owner requires (it throws otherwise, which previously collapsed into the opaque
-  // "run-rate owner error"). A valid 'YYYY-MM-DD' is re-emitted unchanged; an unrecognised value passes through so
-  // KMCALC still validates it (and the surfaced message names it). Marshalling only — no date math, no owner change.
+  // toYmd (needed by BOTH branches below) — coerce a Sheet cell (JS Date object / 'YYYY/MM/DD' / 'M/D/YYYY') to the
+  // STRICT 'YYYY-MM-DD' the frozen KMCALC owner requires (R5B). A valid 'YYYY-MM-DD' is re-emitted unchanged; an
+  // unrecognised value passes through so KMCALC still validates it. Marshalling only — no date math, no owner change.
   function toYmd(v) {
     if (v == null || v === '') return '';
     if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
@@ -241,21 +244,50 @@ function recoWsResolveSalesRate_(snaps, scope, sku, calcDate) {
     return s;
   }
   var calcYmd = toYmd(calcDate);
-  // A WEEKLY-ONLY source (0 daily rows) with a BLANK channel is a valid sales basis for the weekly_7d rung: its
-  // result (weekly7d/7) does NOT depend on channel — KMCALC uses channel only to filter daily rows + scope
-  // contamination, both inert when dailySales is empty — yet KMCALC still REQUIRES a non-empty channel identity.
-  // Represent a blank weekly-only channel with a stable token so the contract is satisfied WITHOUT altering the
-  // result or the frozen owner. Daily-driven paths keep the real channel (identity unchanged, never loosened).
-  var kmcalcChannel = (!daily.length && !channel) ? 'WEEKLY_ONLY' : channel;
-  var weekly = weeklyAll.filter(function (r) { return recoWsStr_(r.channel) === channel; });
-  var weekly7d = 0;
-  if (weekly.length) {
-    weekly.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
-    var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d); weekly7d = (wv === null || wv < 0) ? 0 : wv;   // latest week; the <3-day fallback rung only
+
+  var channel, kmcalcChannel, weekly7d = 0, dailySales;
+  if (srcSet.aggregate) {
+    // F1-4B-FM5-R4UI-R5D — EU roll-up (frozen IRCountry.SALES_AGG authority). The member markets (IT/DE/ES/FR) are
+    // DISTINCT Amazon sites, so "channel" is NOT a single-market identity here — the frozen weekly authority sums
+    // per-member latest-week units WITHOUT a channel filter. A stable synthetic channel token satisfies KMCALC's
+    // non-empty-channel contract WITHOUT changing the run-rate (KMCALC uses channel only to filter the daily series,
+    // which we PRE-aggregate). No new averaging engine — KMCALC stays the sole run-rate owner (§3/§11).
+    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) };
+    channel = 'EU_AGG'; kmcalcChannel = channel;
+    // Daily: SUM eligible member rows by the SAME canonical date → ONE canonical EU daily entry per date (never
+    // per-country days, never averaged averages). The existing KMCALC ladder then owns the run-rate verbatim.
+    var byDate = {};
+    daily.forEach(function (r) { var d = toYmd(r.snapshot_date); if (!d) return; var u = recoWsNum_(r.sales_units); byDate[d] = (byDate[d] || 0) + ((u === null || u < 0) ? 0 : u); });
+    dailySales = Object.keys(byDate).sort().map(function (d) { return { date: d, sku: sku, units: byDate[d], company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel }; });
+    // Weekly fallback: per eligible member country take its OWN latest week_end_date sales_units_7d, then SUM across
+    // members ONCE (mirrors IRCountry.weeklyUnits7d) → weekly7d ÷ 7 flows through the same owner.
+    srcSet.members.forEach(function (m) {
+      var mr = weeklyAll.filter(function (r) { return recoWsCanonC(r.country) === m; });
+      if (!mr.length) return;
+      mr.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
+      var wv = recoWsNum_(mr[mr.length - 1].sales_units_7d); weekly7d += (wv === null || wv < 0) ? 0 : wv;
+    });
+  } else {
+    // Single-market path — UNCHANGED (US/CA/UK/DE/…): channel must be unambiguous; latest week is the <3-day rung.
+    var chSource = daily.length ? daily : weeklyAll;
+    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) };
+    var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
+    var chKeys = Object.keys(chSet);
+    if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']' };   // 0 or ambiguous channel → fail closed (conflict)
+    channel = chKeys[0];
+    // A WEEKLY-ONLY source (0 daily rows) with a BLANK channel is a valid weekly_7d basis (result independent of
+    // channel); represent it with a stable token so KMCALC's non-empty-channel contract is met (R5B). Daily-driven
+    // paths keep the real channel (identity unchanged, never loosened).
+    kmcalcChannel = (!daily.length && !channel) ? 'WEEKLY_ONLY' : channel;
+    var weekly = weeklyAll.filter(function (r) { return recoWsStr_(r.channel) === channel; });
+    if (weekly.length) {
+      weekly.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
+      var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d); weekly7d = (wv === null || wv < 0) ? 0 : wv;   // latest week; the <3-day fallback rung only
+    }
+    dailySales = daily.map(function (r) {
+      return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
+    });
   }
-  var dailySales = daily.map(function (r) {
-    return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
-  });
   var mSkuId = null, mskRows = recoWsToRowObjects_(snaps.marketplaceSkus);
   for (var i = 0; i < mskRows.length; i++) { var mr = mskRows[i]; if (recoWsStr_(mr.sku) === sku && recoWsStr_(mr.country) === scope.country && recoWsStr_(mr.marketplace) === scope.marketplace) { mSkuId = recoWsStr_(mr.marketplace_sku_id) || null; break; } }
   // scope marketplace_id — the owner treats an event's marketplace_id as AUTHORITATIVE and fail-fasts on an

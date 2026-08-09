@@ -42,7 +42,7 @@ eq(mGeneric.note, 'HORIZONS_NOT_AVAILABLE', 'N4 with NO specific reason it falls
 section('§1 the workspace stamps the specific reason + canonicalizes the daily/weekly country identity');
 ok(/mLine\.horizonsBlockedReason = salesReason \|\| 'HORIZON_PROJECTION_UNAVAILABLE'/.test(WS_SRC), 'W1 marketplace path stamps the sales reason on the line (no silent null horizon)');
 ok(/wLine\.horizonsBlockedReason = whSalesReason \|\| 'HORIZON_PROJECTION_UNAVAILABLE'/.test(WS_SRC), 'W2 warehouse path stamps the sales reason too');
-ok(/recoWsCanonC\(r\.country\) === scopeCountryC/.test(WS_SRC), 'W3 daily-sales scope match uses CANONICAL country (KMCID), not raw equality (fixes the UK≡GB-class false SALES_BASIS_UNAVAILABLE)');
+ok(/recoWsInSrc_\(r\.country\)/.test(WS_SRC) && /srcMembers\[recoWsCanonC\(c\)\]/.test(WS_SRC), 'W3 daily-sales scope match uses CANONICAL country MEMBERSHIP (KMCID.sourceCountriesForScope), not raw equality (fixes the UK≡GB-class false SALES_BASIS_UNAVAILABLE + the EU≠member-country class)');
 ok(/canonicalCountryCode/.test(WS_SRC), 'W4 the canon helper delegates to the KMCID country owner');
 ok(/salesReason = \(sr\.reason \|\|/.test(WS_SRC), 'W5 the sales-rate failure reason (+ diagnostic detail) is captured (was discarded)');
 

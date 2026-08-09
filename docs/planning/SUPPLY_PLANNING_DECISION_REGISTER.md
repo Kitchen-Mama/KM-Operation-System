@@ -1067,3 +1067,33 @@ scheduler / allocation / runtime-owner change. Frontend files only (`inventory-r
   / wrong endpoint / stale asset.
 - No formula/DB/schema/scheduler change; core + generated bundle UNCHANGED (only 42 & 43 `.gs` — neither bundled —
   + one new test). Full suite 137/138 (pre-existing replen-header-toggle A1/A2); Golden PASS (39/40, #34 pending).
+
+### F1-4B-FM5-R4UI-R5D — EU Sales-Basis region→source-country membership + aggregation (identity/marshalling) — 2026-08-09
+- **Root cause:** `recoWsResolveSalesRate_` matched the daily/weekly sales snapshots by EXACT canonical country
+  (`recoWsCanonC(r.country) === scopeCountryC`). An **EU** planning/marketplace scope (country='EU') therefore never
+  matched its DE/FR/IT/ES source rows → false `SALES_BASIS_UNAVAILABLE` → the Sales-Driven horizon fail-closed and
+  the SKU materialized **BLOCKED**. EU is a planning REGION, not a country alias.
+- **Canonical owner (reused, not invented):** the FROZEN frontend authority `IRCountry.SALES_AGG =
+  { EU:['IT','DE','ES','FR'] }` (assets/js/utils/inventory-compat.js) — Amazon-only, "sum each member market's own
+  latest week", NO legacy country='EU' fallback. This set was taken VERBATIM from that authority (not guessed).
+- **Runtime owner added:** `KMCID.sourceCountriesForScope(country, marketplace)` in
+  supply-planning-country-identity.js (the same module that already mirrors IRCountry's UK≡GB alias for the runtime)
+  → `{ members:[canonical source-country codes], aggregate:bool }`. `aggregate:true` ONLY for Amazon EU; single
+  markets → `{members:[self/alias], aggregate:false}` (US→[US], UK→[GB]). `EU != DE/FR/IT/ES` (identity intact:
+  `canonicalCountryCode('EU')==='EU'`, `countryMatches('EU','DE')===false`). Bundle REBUILT (KMCID is bundled).
+- **42 marshalling change (no formula):** the daily/weekly filter now matches by canonical source-country
+  MEMBERSHIP (`recoWsInSrc_`) instead of exact equality — byte-equivalent for every single-market scope. For an
+  aggregate (EU) scope: (a) DAILY summed by the SAME canonical date across eligible members → one canonical EU
+  series (never per-country days, never averaged averages); (b) WEEKLY = each eligible member's OWN latest
+  week_end_date `sales_units_7d`, summed ONCE across members. A stable synthetic `EU_AGG` channel token satisfies
+  KMCALC's non-empty-channel contract without changing the run-rate (member sites are distinct channels; the frozen
+  weekly authority ignores channel for EU). **KMCALC remains the sole run-rate owner** — no second averaging engine,
+  no forecast fallback, no UI-side aggregation.
+- **Missing ≠ zero preserved:** real zero → 0; no eligible daily but valid weekly → weekly fallback; no eligible
+  daily AND no eligible weekly → truthful `SALES_BASIS_UNAVAILABLE` (detail names the EU source set). Single-market
+  channel-ambiguity rule unchanged; marketplace/SKU isolation preserved; company isolation is structural (the daily
+  snapshot has no company column — one scope = one company; scope.company is stamped, never used to pool).
+- No DB/schema change, no new table, no scheduler/AI/Order-Planning change, no UI change. Apps Script sync: 90 bundle
+  (rebuilt, sha256 14141b5d…) + 42_api_v1_recommendation_workspace.gs. Tests: new EU suite (22/22) + updated
+  R5B/R5C/R7/bundle assertions to the new (as-strong) contract. Full suite 140/141 (pre-existing replen-header-
+  toggle); Golden PASS.

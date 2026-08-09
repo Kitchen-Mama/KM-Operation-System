@@ -46,7 +46,7 @@ ok(W.ver === VER, 'W4 the workspace version constant is exactly "' + VER + '"');
 
 section('Phase 3 — R5B live-path repair markers still present (the version proven live IS the fixed code)');
 ok(/function toYmd\(v\)/.test(F42) && /var calcYmd = toYmd\(calcDate\)/.test(F42), 'R1 snapshot/calc date coercion (toYmd) present');
-ok(/var kmcalcChannel = \(!daily\.length && !channel\) \? 'WEEKLY_ONLY' : channel;/.test(F42), 'R2 WEEKLY_ONLY blank-channel sentinel present');
+ok(/kmcalcChannel = \(!daily\.length && !channel\) \? 'WEEKLY_ONLY' : channel;/.test(F42), 'R2 WEEKLY_ONLY blank-channel sentinel present (single-market branch)');
 ok(/var chSource = daily\.length \? daily : weeklyAll;/.test(F42), 'R3 daily-else-weekly basis routing present');
 ok(/run-rate owner error: ' \+ ownerErr\(e2\)/.test(F42), 'R4 the real owner exception is surfaced (no opaque token)');
 

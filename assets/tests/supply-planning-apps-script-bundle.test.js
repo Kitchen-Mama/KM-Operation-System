@@ -50,7 +50,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
    'KMSF', 'KMBRIDGE', 'KMSR', 'KMSI', 'KMSRP', 'KMSP', 'KMTPP', 'KMHP', 'KMPS', 'KMSAFE', 'KMPW', 'KMVD'].forEach(function (ns) {
     ok(ctx[ns] && typeof ctx[ns] === 'object', 'C: ' + ns + ' exposed');
   });
-  ok(typeof ctx.KMCID.countryMatches === 'function' && ctx.KMCID.VERSION === 'kmcid-fm5r1b-1' && ctx.KMCID.countryMatches('UK', 'GB') === true, 'C: KMCID canonical country identity owner available in bundle (F1-4B-FM5-R1b)');
+  ok(typeof ctx.KMCID.countryMatches === 'function' && ctx.KMCID.VERSION === 'kmcid-fm5r5d-eu-1' && ctx.KMCID.countryMatches('UK', 'GB') === true && typeof ctx.KMCID.sourceCountriesForScope === 'function' && ctx.KMCID.sourceCountriesForScope('EU', 'Amazon').aggregate === true, 'C: KMCID canonical country identity owner available in bundle (F1-4B-FM5-R1b + R5D EU source membership)');
   ok(typeof ctx.KMTPP.projectTimePhasedSupply === 'function' && ctx.KMTPP.VERSION === 'kmtpp-fm3b-1', 'C: KMTPP time-phased projection owner available in bundle (F1-4B-FM3c-2)');
   ok(typeof ctx.KMHP.projectHorizons === 'function' && ctx.KMHP.VERSION === 'kmhp-fm5r4uir3-1', 'C: KMHP day-horizon projection owner available in bundle (F1-4B-FM5-R4UI-R3 Planning Model split)');
   ok(typeof ctx.KMSRP.readRecommendationSourceFacts === 'function' && typeof ctx.KMSRP.readRawTableSnapshot === 'function', 'C: KMSRP production source reader available in bundle');

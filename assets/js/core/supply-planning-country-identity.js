@@ -36,11 +36,31 @@
   // Exact-country codes are unchanged (US↔US); only a frozen same-market alias (UK↔GB) resolves equal.
   function countryMatches(a, b) { var A = up(a), B = up(b); if (!A || !B) return false; return canonicalCountryCode(A) === canonicalCountryCode(B); }
 
+  // Sales-SOURCE region membership (F1-4B-FM5-R4UI-R5D). EU is a planning/marketplace REGION, NOT a country alias
+  // (EU ≠ DE/FR/IT/ES) — its members are the eligible SOURCE countries for a Sales basis. This MIRRORS the FROZEN
+  // frontend authority IRCountry.SALES_AGG (assets/js/utils/inventory-compat.js): Amazon EU sales roll up the four
+  // DISTINCT markets IT+DE+ES+FR, summed at the same grain, Amazon-only, with NO legacy country='EU' fallback.
+  // The set is taken verbatim from that authority — NOT guessed. Any non-region country returns its own single
+  // market (alias-aware; US→[US], UK→[GB]). INVENTORY / WAREHOUSE country identity is UNCHANGED — this is sales
+  // source membership only (never a market group sum for identity), consistent with this module's "no EU
+  // aggregation for identity" contract above.
+  var EU_SALES_SOURCE_ = { 'EU': ['IT', 'DE', 'ES', 'FR'] };
+  // → { members:[canonical source-country codes], aggregate:bool }. aggregate=true ONLY for a region that rolls up
+  // multiple distinct source markets (EU under Amazon); single markets → aggregate:false, members = the alias set.
+  function _uniq(a) { var seen = {}, out = []; a.forEach(function (x) { if (!seen[x]) { seen[x] = 1; out.push(x); } }); return out; }
+  function sourceCountriesForScope(country, marketplace) {
+    var c = up(country), isAmazon = up(marketplace) === 'AMAZON';
+    if (isAmazon && EU_SALES_SOURCE_[c]) return { members: _uniq(EU_SALES_SOURCE_[c].map(canonicalCountryCode)), aggregate: true };
+    return { members: _uniq(aliasMembers(c).map(canonicalCountryCode)), aggregate: false };   // UK/GB → ['GB'] (deduped)
+  }
+
   return {
     canonicalCountryCode: canonicalCountryCode,
     countryMatches: countryMatches,
     aliasMembers: aliasMembers,
+    sourceCountriesForScope: sourceCountriesForScope,
     SAME_MARKET_ALIAS: { 'UK': ['UK', 'GB'], 'GB': ['UK', 'GB'] },
-    VERSION: 'kmcid-fm5r1b-1'
+    EU_SALES_SOURCE: { 'EU': ['IT', 'DE', 'ES', 'FR'] },
+    VERSION: 'kmcid-fm5r5d-eu-1'
   };
 });
