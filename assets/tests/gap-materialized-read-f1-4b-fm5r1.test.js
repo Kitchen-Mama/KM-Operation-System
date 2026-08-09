@@ -102,7 +102,9 @@ section('INVENTORY · expand reads STORED row (no live getWorkspace), valid zero
     ok(/replen-recsum-table__num"[^>]*>1200</.test(body) && /replen-recsum-table__num"[^>]*>600</.test(body), 'INV5 D45/D90 gap from GAP DB verbatim');
     ok(/replen-recsum-table__num"[^>]*>0</.test(body), 'INV6 valid zero renders 0 (D18)');
     var bodyMissing = _irRecoSummaryCardBody({ sku: 'DOES-NOT-EXIST' });
-    ok(/NOT_CALCULATED/.test(bodyMissing), 'INV7 SKU with no stored row → NOT_CALCULATED (never fabricated 0)');
+    // R5E §1 — a not-calculated SKU now shows the SAME fixed 4-row skeleton (cells only): gap/suggested are "—"
+    // (NEVER a fabricated 0) and the Note reads "Not calculated". Honest not-calculated state, stable DOM.
+    ok(/data-ir-summary="1"/.test(bodyMissing) && /Not calculated/.test(bodyMissing) && !/replen-recsum-table__num"[^>]*>0</.test(bodyMissing), 'INV7 SKU with no stored row → fixed skeleton with "—" cells + "Not calculated" note (never a fabricated 0)');
     // manual recalc refresh → refetch
     readCalls.n = 0;
     return Promise.resolve(refreshInventoryGapAfterRecalc_()).then(tick).then(function () {

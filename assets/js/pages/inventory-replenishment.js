@@ -5274,20 +5274,28 @@ function _irMatMetaHtml(row) {
   return stale + diag;
 }
 function _irMatOutlookBody(skuData) {
-  function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
   function wrap(cls, inner) { return '<div class="replen-recsum-ws ' + cls + '" role="status" aria-live="polite">' + inner + '</div>'; }
-  var st = _irMatState;
-  if (st.status === 'CONTEXT_NOT_READY') return wrap('replen-recsum-ws--info', 'Recommendation scope is not ready. Select a valid Country / Marketplace.');
-  if (st.status === 'IDLE' || st.status === 'LOADING') return wrap('replen-recsum-ws--loading', 'Loading materialized replenishment gap…');
-  if (st.status === 'READ_ERROR') { var e = st.error || {}; return wrap('replen-recsum-ws--error', 'Could not read the materialized gap: ' + esc(e.message || '') + ' <code>' + esc(e.code || 'READ_ERROR') + '</code>'); }
-  var row = (skuData && _irMatState.bySku[String(skuData.sku)]) || null;
-  if (!row) return wrap('replen-recsum-ws--info', 'Not calculated yet — run <strong>Recalculate All Sites</strong>. <code>NOT_CALCULATED</code>');
-  // PRIMARY surface: ONLY the fixed 4-window outlook table (Window | Gap | Suggested Qty | Note) under the outer
-  // "Recommendation Summary" title. No "Replenishment Outlook" sub-title, no "Materialized" badge, no panel
-  // note/status/calc-date/as-of — engineering metadata is demoted to the collapsed Diagnostics section below.
+  // F1-4B-FM5-R4UI-R5E §1 — TRUE FIXED SCHEMA (like Monthly Achievement): the fixed 4-window outlook table ALWAYS
+  // exists from the moment the SKU expands, in EVERY load state. Loading / not-calculated / read-error only change
+  // the per-window Note CELL + the wrapper's state class — they NEVER replace the table — so the card DOM and its
+  // height are stable from expand and async data PATCHES cells in place (see _irRecoPatchSummaryCells). A response
+  // never decides the table structure or height. Only the fixed 4-row table is the primary surface; panel-level
+  // engineering metadata stays under the collapsed Diagnostics (debug-flag) section.
+  function placeholderLine(note) {
+    return { destinationType: 'MARKETPLACE', horizons: _IR_HORIZON_WINDOWS.map(function (w) { return { windowCode: w.code, gapQty: null, suggestedOrderQty: null, note: note }; }) };
+  }
+  var st = _irMatState, stateCls = 'replen-recsum-ws--ready', line, meta = '';
+  if (st.status === 'CONTEXT_NOT_READY') { stateCls = 'replen-recsum-ws--info'; line = placeholderLine('Select a valid Country / Marketplace'); }
+  else if (st.status === 'IDLE' || st.status === 'LOADING') { stateCls = 'replen-recsum-ws--loading'; line = placeholderLine('Loading…'); }
+  else if (st.status === 'READ_ERROR') { stateCls = 'replen-recsum-ws--error'; line = placeholderLine('Calculation unavailable'); }
+  else {
+    var row = (skuData && _irMatState.bySku[String(skuData.sku)]) || null;
+    if (!row) { stateCls = 'replen-recsum-ws--info'; line = placeholderLine('Not calculated'); }
+    else { stateCls = 'replen-recsum-ws--ready'; line = _irMatToLine(row); meta = _irMatMetaHtml(row); }
+  }
   var section = '<div class="replen-horizon-summary"><div class="replen-horizon-dest">'
-    + _irRecoHorizonOutlookTableHtml(_irMatToLine(row)) + '</div></div>';
-  return wrap('replen-recsum-ws--ready', section + _irMatMetaHtml(row));
+    + _irRecoHorizonOutlookTableHtml(line) + '</div></div>';
+  return wrap(stateCls, section + meta);
 }
 // ONE materialized read per scope (deduped, stale-guarded). Reads STORED rows; no calculation, no per-SKU HTTP.
 function loadInventoryGap_(force) {
@@ -5343,8 +5351,12 @@ function _irRecoPatchSummaryCells(card, skuData) {
   var table = card.querySelector && card.querySelector('[data-ir-summary]');
   if (!table) return false;
   var row = (skuData && _irMatState.bySku[String(skuData.sku)]) || null;
-  if (!row) return false;   // not-calculated for this SKU → fall through to the rebuild (shows the truthful message)
-  var byWin = {}; _irMatToLine(row).horizons.forEach(function (h) { if (h && h.windowCode) byWin[h.windowCode] = h; });
+  // F1-4B-FM5-R4UI-R5E §1 — patch cells in place even when this SKU has no stored row (not-calculated): set the
+  // window cells to "—" + a user-safe Note. NEVER fall through to an innerHTML rebuild once the skeleton exists,
+  // so the summary DOM/height stays stable after any data load.
+  var line = row ? _irMatToLine(row)
+    : { horizons: _IR_HORIZON_WINDOWS.map(function (w) { return { windowCode: w.code, gapQty: null, suggestedOrderQty: null, note: 'Not calculated' }; }) };
+  var byWin = {}; line.horizons.forEach(function (h) { if (h && h.windowCode) byWin[h.windowCode] = h; });
   function setCell(attr, code, val) { var c = table.querySelector('[data-ir-' + attr + '-window="' + code + '"]'); if (c) c.textContent = val; }
   _IR_HORIZON_WINDOWS.forEach(function (w) {
     var h = byWin[w.code];

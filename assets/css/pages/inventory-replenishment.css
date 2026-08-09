@@ -650,16 +650,12 @@
        align-items:stretch), so .fixed-col already stretches to the taller .scroll-col. */
     display: flex;
     flex-direction: column;
-    /* Reserve the SAME horizontal-scrollbar gutter that .scroll-col reserves (scrollbar-gutter:stable),
-       so both columns have an identical ~scrollbar-height bottom gutter. Without this, .scroll-col's
-       horizontal scrollbar inflated its box by the scrollbar height, and the flex-stretched expand
-       panel here overshot the right detail canvas by exactly that amount (~15px). overflow-x:auto keeps
-       the gutter axis horizontal (its own 143px content never actually overflows, so no scrollbar
-       shows — only the reserved gutter); overflow-y:hidden avoids a stray vertical gutter. No fixed
-       pixel value — the gutter width is the browser's own scrollbar metric, kept symmetric. */
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-gutter: stable;
+    /* F1-4B-FM5-R4UI-R5E §4 — the sticky SKU column owns NO independent scroll. The PAGE (.main-content) owns the
+       vertical scroll and the right .scroll-col owns the horizontal scroll; a per-column overflow here only
+       reserved a phantom scrollbar gutter that rendered as the empty white/green strip immediately right of the
+       143px column. Removed (overflow defaults to visible → no scrollbar, no reserved gutter). The intentional
+       separator stays as the border-right + soft box-shadow above; the shared-height parity is owned by
+       .table-body-bar { align-items: stretch } (see the R5E block below), not by a matched scrollbar gutter. */
 }
 
 #ops-section .fixed-body {
@@ -671,14 +667,14 @@
     flex-direction: column;
 }
 
-/* Always reserve the horizontal-scrollbar gutter (whether or not the scrollbar is currently shown) so
-   .scroll-col and .fixed-col keep IDENTICAL bottom gutters. This removes the ~15px asymmetry that made
-   the flex-stretched left SKU panel overshoot the right detail canvas. Page-scoped only — the shared
-   .scroll-col overflow (components.css) is unchanged, so the header⇄scroll-col scrollLeft sync and the
-   horizontal-scroll behaviour are preserved. */
-#ops-section .scroll-col {
-    scrollbar-gutter: stable;
-}
+/* F1-4B-FM5-R4UI-R5E §3/§4 — the matching scrollbar-gutter reservation on .scroll-col is removed together with the
+   .fixed-col one above: it was a phantom-gutter hack (scrollbar-gutter governs the VERTICAL scrollbar, so with
+   overflow-y:hidden it reserved nothing useful for the horizontal-scroll parity it claimed, while still risking an
+   asymmetric strip). Left/right detail height parity is owned purely by the shared flex row
+   .table-body-bar { align-items: stretch } → both columns stretch to the taller (right) content; the fill chain
+   .fixed-col(flex-col) → .fixed-body(flex:1) → .replen-expand-panel--fixed(flex:1 1 auto) carries that height to
+   the SKU identity panel. The base .scroll-col overflow (components.css) is untouched, so the header⇄scroll-col
+   scrollLeft sync and the horizontal scroll are preserved. */
 
 #ops-section .fixed-row {
     height: 48px;
