@@ -279,14 +279,31 @@ function gapBatchEnvelope_(ok, data, errorToken, message) {
     : { success: false, data: null, meta: meta, errors: [{ code: errorToken || 'GAP_BATCH_ERROR', message: message || errorToken || 'gap batch error', details: null }] };
 }
 
+// F1-4B-FM5-R4T — additive DIAGNOSTIC run identity for the manual/scheduled batch. Format
+// GAP-{INV|OP}-{yyyymmddThhmmss}-{seq} (e.g. GAP-INV-20260809T131500-0001). Derived ONLY from the injected io
+// clock (Asia/Taipei) + a bounded in-memory sequence — NO Math.random, NO DB, NO new table. Lets the client
+// correlate a batch response with its logs when the transport response is later recovered.
+var gapRunSeq_ = 0;
+function gapRunId_(product, io) {
+  var p = (product === 'INVENTORY') ? 'INV' : ((product === 'ORDER_PLANNING') ? 'OP' : gapStr_(product) || 'GAP');
+  var ts = (gapBatchTimestamp_(io) || '').replace(/-/g, '').replace(/:/g, '').replace(' ', 'T');   // yyyymmddThhmmss
+  gapRunSeq_ = (gapRunSeq_ + 1) % 10000;
+  return 'GAP-' + p + '-' + ts + '-' + ('000' + gapRunSeq_).slice(-4);
+}
+
 // ---- shared batch orchestration (Inventory + Order Planning share the enumerate→calc→map→UPSERT skeleton) --
 function gapRunBatch_(body, io, cfg) {
   io = io || gapMaterializationDefaultIo_();
   try {
+    var startedAt = gapBatchTimestamp_(io);                              // R4T: batch start (diagnostic; compact summary)
+    var runId = gapRunId_(cfg.product, io);                              // R4T: diagnostic run identity (no DB)
     var ss = io.openTarget();
     var sheet = prodRequireSheet_(ss, cfg.table, cfg.headers);          // fail CLOSED if table/header missing/invalid
     var scopes = io.enumerateScopes ? io.enumerateScopes(ss) : gapEnumerateScopes_(ss);
-    var summary = { product: cfg.product, totalScopes: scopes.length, scopesCalculated: 0, ready: 0, blocked: 0, errors: 0, written: 0, calculatedAt: null, scopeErrors: [] };
+    // COMPACT summary ONLY (R4T §5) — counts + timestamps + run identity; NEVER per-SKU rows.
+    var summary = { product: cfg.product, materializationRunId: runId, startedAt: startedAt, finishedAt: null,
+      calculationAuthority: null, totalScopes: scopes.length, scopesCalculated: 0, ready: 0, blocked: 0, errors: 0,
+      written: 0, calculatedAt: null, scopeErrors: [] };
     for (var s = 0; s < scopes.length; s++) {
       var scope = scopes[s];
       var reqBody = { requestId: 'GAP-' + cfg.product + '-' + (s + 1), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ } } };
@@ -300,6 +317,7 @@ function gapRunBatch_(body, io, cfg) {
       summary.scopesCalculated++;
       var meta = env.meta || {};
       var calcAuthority = cfg.product === 'INVENTORY' ? (meta.calculationDate || '') : (meta.calculationMonth || '');
+      if (summary.calculationAuthority == null && calcAuthority) summary.calculationAuthority = calcAuthority;   // R4T: capture once (diagnostic)
       var lines = (env.data && env.data.lines) ? env.data.lines : [];
       var bySku = {}; lines.forEach(function (L) { var k = gapStr_(L.sku); if (!k) return; (bySku[k] = bySku[k] || []).push(L); });
       for (var sku in bySku) {
@@ -315,6 +333,7 @@ function gapRunBatch_(body, io, cfg) {
       }
     }
     summary.calculatedAt = gapBatchTimestamp_(io);
+    summary.finishedAt = summary.calculatedAt;   // R4T: batch end (diagnostic)
     return gapBatchEnvelope_(true, summary);
   } catch (e) {
     var token = (e && e.safetyToken) ? e.safetyToken : (e && e.schemaStatus) ? e.schemaStatus : 'GAP_BATCH_ERROR';

@@ -133,7 +133,7 @@ H.invBatch({ requestId: 'REQ-INV-4b' }, ioFor(ssNoFc));
 eq(invRow(ssNoFc).d90_gap_qty, rFc.d90_gap_qty, 'S4d deterministic recalc (no-forecast case): READY→recalc→READY, identical D90');
 
 section('§5 batch response is a COMPACT summary (no per-SKU payload) — §8');
-eq(Object.keys(run1.data).sort().join(','), ['blocked', 'calculatedAt', 'errors', 'product', 'ready', 'scopeErrors', 'scopesCalculated', 'totalScopes', 'written'].join(','), 'RS1 batch envelope carries ONLY the compact summary counts (no per-SKU rows returned)');
+eq(Object.keys(run1.data).sort().join(','), ['blocked', 'calculatedAt', 'calculationAuthority', 'errors', 'finishedAt', 'materializationRunId', 'product', 'ready', 'scopeErrors', 'scopesCalculated', 'startedAt', 'totalScopes', 'written'].join(','), 'RS1 batch envelope carries ONLY the compact summary counts + R4T diagnostic meta (run id / start / finish / authority) — never per-SKU rows');
 ok(!Array.isArray(run1.data.lines) && run1.data.rows === undefined, 'RS2 no lines/rows array in the manual-recalc response');
 
 console.log('\n----------------------------------------');

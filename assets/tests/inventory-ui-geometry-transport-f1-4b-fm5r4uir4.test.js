@@ -54,7 +54,7 @@ ok(/postMax[\s\S]*preMax[\s\S]*completed/.test(JS), 'T4 completion is inferred f
 var roHandler = RO.slice(RO.indexOf('function handleRecalcAllOrderPlanningGap'), RO.indexOf('window.handleRecalcAllOrderPlanningGap'));
 ok(/HTTP_TRANSPORT_ERROR/.test(roHandler) && /refreshOrderPlanningGapAfterRecalc_/.test(roHandler), 'T5 Order Planning uses the SAME contract: transport error → refetch READ');
 ok(!/recalculateOrderPlanningGapAll/.test(roHandler.slice(roHandler.indexOf('isTransport'))), 'T6 Order Planning NEVER re-runs the WRITE batch on transport failure');
-ok(/could not be confirmed/.test(JS) && /could not be confirmed/.test(RO), 'T7 both buttons show a truthful "could not be confirmed" message when the READ shows no newer result (no fabricated success)');
+ok(/unable to confirm/.test(JS) && /unable to confirm/.test(RO), 'T7 both buttons show a truthful "unable to confirm completion" message (R4T) when the READ shows no newer result (no fabricated success)');
 
 console.log('\n----------------------------------------');
 console.log('INVENTORY UI GEOMETRY + TRANSPORT (F1-4B-FM5-R4UI-R4): ' + pass + ' passed, ' + fail + ' failed');

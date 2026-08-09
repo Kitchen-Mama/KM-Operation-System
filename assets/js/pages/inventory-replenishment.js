@@ -3500,24 +3500,33 @@ window.handleRecalcAllInventoryGap = handleRecalcAllInventoryGap;
 // refetch the READ ONLY (never the WRITE), then decide from the stored calculated_at: if the newest stored row is
 // newer than the pre-recalc snapshot, the batch completed despite the lost response → report completion from the
 // refreshed data; otherwise report that completion could not be confirmed (never a fabricated success).
-function _irIsTransportError_(e) { var c = e && e.code ? String(e.code) : ''; return c === 'HTTP_TRANSPORT_ERROR' || c === 'NON_JSON_RESPONSE'; }
+// F1-4B-FM5-R4T — transport-error + recovery now delegate to the ONE shared, bounded-poll, READ-ONLY contract
+// (window.KM.gapRecalc, assets/js/utils/gap-recalc-transport.js), used identically by Inventory + Order Planning.
+function _irIsTransportError_(e) {
+  return (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc.isTransportError(e)
+    : (function () { var c = e && e.code ? String(e.code) : ''; return c === 'HTTP_TRANSPORT_ERROR' || c === 'NON_JSON_RESPONSE'; })();
+}
 // Newest calculated_at among the currently-loaded materialized rows (server 'YYYY-MM-DD HH:MM:SS' → lexical compare).
 function _irMaxCalculatedAt_() {
   var rows = (_irMatState && _irMatState.rows) || []; var mx = '';
   for (var i = 0; i < rows.length; i++) { var c = rows[i] && rows[i].calculated_at ? String(rows[i].calculated_at) : ''; if (c > mx) mx = c; }
   return mx;
 }
+// Thin delegator to the shared recovery contract: bounded READ-ONLY verification (2s/5s/10s/20s), NEVER a write
+// retry. refetchFn re-READs the materialized gap; maxFn re-reads the newest stored calculated_at.
 function _irRecalcTransportRecovery_(product, preMax, refetchFn, maxFn, restore) {
-  alert('Request connection was interrupted. ' + product + ' calculation status is being refreshed…');
+  var done = function () { if (typeof restore === 'function') restore(); };
+  if (window.KM && window.KM.gapRecalc) {
+    return window.KM.gapRecalc.recover(product, preMax, refetchFn, maxFn, { done: done });
+  }
+  // Fallback (module absent): single READ-ONLY refetch + confirm from calculated_at (no write retry).
   return Promise.resolve(typeof refetchFn === 'function' ? refetchFn() : null).then(function () {
     var postMax = (typeof maxFn === 'function') ? maxFn() : '';
-    if (postMax && (!preMax || postMax > preMax)) {
-      alert(product + ' calculation completed — refreshed from the server (the connection was interrupted but the results were saved).');
-    } else {
-      alert(product + ' calculation could not be confirmed. The last stored results are shown; check again shortly before re-running (no automatic retry was issued).');
-    }
-    if (typeof restore === 'function') restore();
-  }).catch(function () { if (typeof restore === 'function') restore(); });
+    alert(postMax && (!preMax || postMax > preMax)
+      ? (product + ' recalculation completed. The connection was interrupted while receiving the response — results refreshed.')
+      : (product + ': unable to confirm completion. Check the latest data before retrying (no automatic retry was issued).'));
+    done();
+  }).catch(done);
 }
 window._irRecalcTransportRecovery_ = _irRecalcTransportRecovery_;
 window._irIsTransportError_ = _irIsTransportError_;

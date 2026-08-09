@@ -1157,16 +1157,18 @@ function handleRecalcAllOrderPlanningGap() {
       return;
     }
     var e = (res && res.error) || {};
-    // F1-4B-FM5-R4UI-R4 §6/§7/§11.P — identical transport-recovery contract as Inventory: a transport failure does
-    // NOT prove the server batch failed. Never claim failure, never re-run the WRITE. Refetch the READ only and
-    // confirm from the stored calculated_at whether the batch advanced.
-    var isTransport = (e.code === 'HTTP_TRANSPORT_ERROR' || e.code === 'NON_JSON_RESPONSE');
-    if (isTransport) {
-      alert('Request connection was interrupted. Order Planning calculation status is being refreshed…');
+    // F1-4B-FM5-R4T — identical shared transport-recovery contract as Inventory (window.KM.gapRecalc): a transport
+    // failure does NOT prove the server batch failed. Never claim failure, never re-run the WRITE. Delegate to the
+    // bounded READ-ONLY verification (2s/5s/10s/20s) which refetches the materialized order_planning_gap and
+    // confirms from the stored calculated_at whether the batch advanced.
+    var gr = window.KM && window.KM.gapRecalc;
+    if (gr ? gr.isTransportError(e) : (e.code === 'HTTP_TRANSPORT_ERROR' || e.code === 'NON_JSON_RESPONSE')) {
+      if (gr) { gr.recover('Order Planning', preMax, refreshOrderPlanningGapAfterRecalc_, _roMaxCalculatedAt_, { done: restore }); return; }
       Promise.resolve(typeof refreshOrderPlanningGapAfterRecalc_ === 'function' ? refreshOrderPlanningGapAfterRecalc_() : null).then(function () {
         var postMax = _roMaxCalculatedAt_();
-        if (postMax && (!preMax || postMax > preMax)) alert('Order Planning calculation completed — refreshed from the server (the connection was interrupted but the results were saved).');
-        else alert('Order Planning calculation could not be confirmed. The last stored results are shown; check again shortly before re-running (no automatic retry was issued).');
+        alert(postMax && (!preMax || postMax > preMax)
+          ? 'Order Planning recalculation completed. The connection was interrupted while receiving the response — results refreshed.'
+          : 'Order Planning: unable to confirm completion. Check the latest data before retrying (no automatic retry was issued).');
         restore();
       });
       return;
