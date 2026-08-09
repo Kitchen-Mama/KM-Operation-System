@@ -1,0 +1,77 @@
+/* ============================================================================
+   Kitchen Mama Operation System — RESPONSIVE FOUNDATION (SYSTEM-RESPONSIVE-R1)
+   ----------------------------------------------------------------------------
+   The ONE canonical cross-device compatibility authority for the whole system. It is ADDITIVE and
+   NON-REGRESSIVE: it introduces the shared breakpoint/width/padding TOKENS, a few SAFE global guards, and
+   OPT-IN reusable utilities that every current and future page follows. It performs NO visual redesign, changes
+   NO business logic / formula / API, and does NOT rewrite any page's tuned layout. Existing per-page @media
+   breakpoints keep working; new code MUST use the tiers frozen here (see docs/design/RESPONSIVE_FOUNDATION.md).
+
+   Load order (index.html): base.css → components.css → layout.css → THIS FILE → page CSS. Loaded after the shell
+   owners so its foundation guards win over shell defaults, but before page CSS so a page can still override where
+   genuinely needed (page-scoped exception policy in the doc).
+
+   Kitchen Mama OS is an operation/ERP system — the primary experience is Laptop + Desktop. Phones safe-degrade
+   (horizontal scroll on wide ERP tables is intentional, never a bug). Do NOT optimize mobile-first.
+   ============================================================================ */
+
+:root {
+  /* ---- Canonical breakpoint tiers (THE authority; freeze here, never re-invent per page) ------------------
+     CSS @media cannot read var(), so these tokens are the DOCUMENTED source of truth (used by JS + the doc +
+     the reference media queries below). The five semantic tiers, by max-width unless noted:
+       Tablet   ≤ 1024px  (constrained / tablet-landscape — horizontal table scroll expected)
+       Compact  ≤ 1280px  (small laptop)
+       Laptop   ≤ 1440px
+       Desktop  ≤ 1680px
+       XL       ≥ 1681px  (ultrawide) */
+  --km-bp-tablet: 1024px;
+  --km-bp-compact: 1280px;
+  --km-bp-laptop: 1440px;
+  --km-bp-desktop: 1680px;
+  --km-bp-xl: 1920px;
+
+  /* ---- Content width + spacing contract ------------------------------------------------------------------ */
+  --km-content-max: 1680px;          /* OPT-IN cap for form/dashboard pages (.km-content-constrained); wide ERP
+                                        TABLE pages intentionally stay full-width and scroll horizontally. */
+  --km-page-pad-x: 2rem;             /* default .content-area horizontal padding (matches layout.css) */
+  --km-page-pad-x-compact: 1.25rem;  /* ≤ Compact */
+  --km-page-pad-x-tablet: 1rem;      /* ≤ Tablet */
+  --km-min-safe-width: 1024px;       /* below this a wide table scrolls horizontally rather than crushing columns */
+  --km-table-min-col: 96px;          /* default min width for a future data-table column (content-driven, not a
+                                        fixed column count — adding a column must never require a page redesign) */
+}
+
+/* ---- SAFE global guards (additive; padding + shrinkability only — never a redesign) ---------------------- */
+
+/* Every page section can shrink inside its flex/grid parent instead of forcing page-level horizontal overflow.
+   The page-level overflow guard itself stays owned by layout.css `.main-content { overflow-x: hidden }` — this
+   file never reintroduces a page-level horizontal scroller (only intentional in-table scrollers do that). */
+.module-section { min-width: 0; }
+
+/* Content padding tightens on smaller viewports so tables/cards reclaim width — PADDING ONLY, no layout change. */
+@media (max-width: 1280px) { .content-area { padding: var(--km-page-pad-x-compact); } }
+@media (max-width: 1024px) { .content-area { padding: var(--km-page-pad-x-tablet); } }
+
+/* ---- OPT-IN reusable utilities (zero-risk new classes; the doc mandates them for FUTURE tables/bars) ------ */
+
+/* Canonical table horizontal-scroll container: the scroller OWNS the overflow (never the outer page). Wrap any
+   wide table in this; pair with .km-table-min on the inner <table> so columns stay readable and scroll under the
+   min-safe width instead of being crushed. Mirrors the proven .dual-layer-table / .replen-horizon-tablewrap owners. */
+.km-table-scroll { max-width: 100%; overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; }
+.km-table-min { min-width: var(--km-min-safe-width); }
+
+/* Numeric cells: never wrap mid-number; tabular figures; right-aligned. Long free text wraps inside its cell. */
+.km-num { white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.km-wrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+
+/* Fluid media inside content (opt-in): charts/images never force the page wider than its container. */
+.km-fluid, .km-fluid-canvas { max-width: 100%; height: auto; }
+
+/* OPT-IN constrained content column for form/dashboard pages (keeps controls from dispersing on ultrawide).
+   NOT applied to wide ERP table pages, which stay full-width by design. */
+.km-content-constrained { max-width: var(--km-content-max); margin-left: auto; margin-right: auto; }
+
+/* Canonical filter/action bar wrap contract (opt-in). Large: single row; Laptop/Compact: controlled wrapping.
+   Buttons/controls never overlap — they flow to the next row. Text is NEVER shrunk to unreadable sizes. */
+.km-responsive-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--filter-gap, 1rem); min-width: 0; }
+.km-action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs, 0.5rem); }
