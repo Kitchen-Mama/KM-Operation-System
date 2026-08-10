@@ -3812,6 +3812,25 @@ function _getCloudReplenishmentData() {
 
         var currentStock = stock.available + stock.fcTransfer + stock.fcProcessing;
         var dos = IR.daysOfSupply(currentStock, avg);
+        // F1-4B-FM5-R4J-LIVE9 — align the Sales-Driven Avg Sales/day + Days of Supply to the CANONICAL horizon
+        // sales-rate (horizonBasis.avgSalesPerDay = the SAME KMCALC normalized rate D18/D30/D45/D90 uses), closing
+        // SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE. The value is CARRIED from the workspace read (never recomputed on
+        // the page — reuses IR.daysOfSupply, adds NO calculator). Forecast-Driven and the weekly Sales Trend chart
+        // are untouched. A Sales-Driven SKU whose canonical rate is unavailable shows '--' (never a silent weekly
+        // fallback); rate 0 → IR.daysOfSupply returns null → '--' (safe no-demand). When no canonical basis is
+        // resolved (e.g. workspace read off), the existing weekly display is preserved (no regression).
+        var _avgDisplay = avg.toFixed(1);
+        var _dosDisplay = (dos === null ? '--' : String(dos));
+        var _canonBasis = (typeof _irCanonicalSalesBasis_ === 'function') ? _irCanonicalSalesBasis_(mp.sku) : null;
+        if (_canonBasis && _canonBasis.demandMode === 'sales_driven') {
+          var _cr = _canonBasis.avgSalesPerDay;
+          if (_cr == null) { _avgDisplay = '--'; _dosDisplay = '--'; }
+          else {
+            _avgDisplay = (Math.round(_cr * 10) / 10).toFixed(1);
+            var _cdos = IR.daysOfSupply(currentStock, _cr);
+            _dosDisplay = (_cdos === null ? '--' : String(_cdos));
+          }
+        }
 
         // Forecast breakdown (next 3 months, Target Rule applied)
         var fcRow = fcRows.find(function (r) {
@@ -3849,10 +3868,10 @@ function _getCloudReplenishmentData() {
             thirdPartyPlan: thirdPartyPlan,              // full allocation detail (tooltip/expand)
             thirdPartyDetailHtml: _irRenderThirdPartyDetail(thirdPartyPlan),
             thirdPartyTitle: _irThirdPartyTitle(thirdPartyPlan),
-            avgDailySales: avg.toFixed(1),     // spec: 1 decimal
+            avgDailySales: _avgDisplay,        // LIVE9: canonical horizon rate for Sales-Driven; weekly otherwise (1 decimal)
             forecast60d: fc60,
             upcomingEventQty: eventQty > 0 ? eventQty : null,
-            daysOfSupply: (dos === null ? '--' : String(dos)),
+            daysOfSupply: _dosDisplay,
             needsAlert: false,                 // color now driven by IRMap.dosColorClass
             suggestedQty: need.suggestedQty,
             cnStock: cnStock,
@@ -4858,12 +4877,17 @@ function updateReplenRecoContext() {
 }
 
 // Fire the read cutover if it exists (F1-4B-B). No-op unless Workspace mode is effective + context READY.
-// FM5-R1: in materialized mode the trigger READS the stored gap (no live calculation); the live workspace read
-// is the diagnostic/fallback path (flag off). NEVER both.
+// FM5-R1: in materialized mode the trigger READS the stored gap (no live calculation) as the AUTHORITATIVE gap
+// source. F1-4B-FM5-R4J-LIVE9: the trigger now ALSO issues the one-per-scope recommendation.workspace.get so the
+// main table can CARRY the canonical Sales-Driven velocity (horizonBasis.avgSalesPerDay) used by the D-horizon —
+// closing SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE. loadRecommendationWorkspace_ self-gates on
+// workspaceApiActive('recommendation') + dedupes/caches; when it is off the rate is simply absent (no recompute).
+// The materialized gap read remains the sole gap/suggested authority — populating _irRecoState never changes which
+// source the Recommendation Summary / Suggested cell display (both prefer _irMatState).
 function _irRecoTrigger() {
   var matReady = (typeof _irUseMaterializedGapRead === 'function' && _irUseMaterializedGapRead()
     && window.KM && window.KM.DB && typeof window.KM.DB.getInventoryReplenishmentGap === 'function');
-  if (matReady) { if (typeof loadInventoryGap_ === 'function') loadInventoryGap_(); return; }
+  if (matReady && typeof loadInventoryGap_ === 'function') loadInventoryGap_();
   if (typeof loadRecommendationWorkspace_ === 'function') loadRecommendationWorkspace_();
 }
 
@@ -5038,6 +5062,15 @@ function _irRecoMapLine(L) {
     // F1-4B-FM4b: additive canonical D18/D30/D45/D90 day-horizon projection (server-owned; null when absent).
     // Pure passthrough — the page authors NO horizon math (no gap/covered/suggested computed here).
     horizons: Array.isArray(L.horizons) ? L.horizons.map(_irRecoMapHorizon) : null,
+    // F1-4B-FM5-R4J-LIVE9: additive passthrough of the canonical Sales-Driven velocity basis the horizon engine
+    // resolved (demandMode + KMCALC-normalized avgSalesPerDay + Site-Stock opening). The page authors NO rate here —
+    // it CARRIES the server value so Avg Sales/day + Days of Supply align to the SAME authority as D18/D30/D45/D90.
+    horizonBasis: (L.horizonBasis && typeof L.horizonBasis === 'object') ? {
+      demandMode: (L.horizonBasis.demandMode == null ? null : String(L.horizonBasis.demandMode)),
+      avgSalesPerDay: _irNumOrNull(L.horizonBasis.avgSalesPerDay),
+      horizonOpeningQty: _irNumOrNull(L.horizonBasis.horizonOpeningQty),
+      qualifiedIncomingCount: _irNumOrNull(L.horizonBasis.qualifiedIncomingCount)
+    } : null,
     diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
   };
 }
@@ -5087,6 +5120,19 @@ function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
 function _irRecoLinesForSku(skuData) {
   if (!skuData || !_irRecoState.scope) return null;
   return _irRecoState.linesBySku[skuData.sku] || [];
+}
+// F1-4B-FM5-R4J-LIVE9: the canonical Sales-Driven velocity basis for a SKU, sourced (never recomputed) from the
+// workspace MARKETPLACE line's horizonBasis — the SAME KMCALC-normalized rate the D18/D30/D45/D90 horizon uses.
+// Returns null when the workspace read did not resolve a basis (→ caller keeps the existing weekly display; NO
+// page-side sales-rate calculator, NO KMCALC call, NO DOM copy). Marketplace-grain (warehouse lines carry none).
+function _irCanonicalSalesBasis_(sku) {
+  if (sku == null || !_irRecoState || !_irRecoState.scope || !_irRecoState.linesBySku) return null;
+  var lines = _irRecoState.linesBySku[String(sku)];
+  if (!lines || !lines.length) return null;
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i] && lines[i].destinationType === 'MARKETPLACE' && lines[i].horizonBasis) return lines[i].horizonBasis;
+  }
+  return null;
 }
 // Invalidate any in-flight request (bump seq + abort browser response) and reset to a clean status.
 function _irRecoInvalidate(status) {
