@@ -38,8 +38,10 @@ function makeLegacy() {
   section('§2 Script load-order (index.html)');
   var html = read('../index.html');
   // match the actual <script src="…"> tags (quoted) so an earlier code-comment mention can't skew positions
-  var pNs = html.indexOf('"assets/js/core/namespace.js"'), pDb = html.indexOf('"assets/js/api/operation-system-db-api.js"'),
-      pFn = html.indexOf('"assets/js/api/km-api-foundation.js"'), pApp = html.indexOf('"assets/js/app.js"');
+  // NOTE: local asset srcs carry a ?v= cache-version (F1-UI-RUNTIME-CLOSURE-R1), so match the path WITHOUT the
+  // closing quote (the query sits between the path and the quote). Relative ordering is unaffected.
+  var pNs = html.indexOf('"assets/js/core/namespace.js'), pDb = html.indexOf('"assets/js/api/operation-system-db-api.js'),
+      pFn = html.indexOf('"assets/js/api/km-api-foundation.js'), pApp = html.indexOf('"assets/js/app.js');
   ok(pNs >= 0 && pFn >= 0, 'LO1 namespace.js + foundation both present');
   ok(pNs < pFn, 'LO2 namespace.js loads BEFORE the Foundation (window.KM exists first)');
   ok(pDb >= 0 && pDb < pFn, 'LO3 operation-system-db-api.js (KM.DB) loads BEFORE the Foundation');

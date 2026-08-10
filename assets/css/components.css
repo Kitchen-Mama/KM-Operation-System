@@ -1067,3 +1067,62 @@ table td button {
 .kmf-item span { min-width: 0; }
 .kmf-empty { padding: 8px; color: var(--filter-muted-color); font-size: var(--filter-search-font-size); font-style: italic; }
 @media (max-width: 640px) { .kmf-panel { max-width: calc(100vw - 24px); } }
+
+/* ============================================================================
+   F1-UI-RUNTIME-CLOSURE-R1 — .km-action-menu: ONE shared neutral dropdown primitive.
+   Global (this file loads before page CSS), so Inventory + Order Planning "AI Support"
+   menus render byte-identically to the SKU Details "More Options" visual system:
+   white floating panel, 1px light border, soft shadow, compact text rows, subtle grey
+   hover, thin dividers, quiet section labels, RESTRAINED danger text (never a solid
+   orange filled block), neutral disabled. Rows are <button> but carry ONLY the
+   km-action-menu classes (NEVER .btn / .replen-btn / .ro-btn / --primary), so no
+   primary/orange button rule can apply. Does NOT touch SKU Details or the existing
+   More Options menu (§6 — no destabilization). Literal fallbacks make it robust even
+   if a page-token is missing or a stale page stylesheet is cached.
+   ============================================================================ */
+.km-action-menu { position: relative; display: inline-flex; }
+.km-action-menu__trigger {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #f1f5f9; color: #334155;
+    border: 1px solid var(--border-light, #E2E8F0);
+    padding: var(--space-sm, 0.375rem) var(--space-md, 0.75rem);
+    border-radius: var(--radius-sm, 4px);
+    font-weight: var(--weight-medium, 600); font-size: 13px;
+    white-space: nowrap; cursor: pointer;
+}
+.km-action-menu__trigger:hover,
+.km-action-menu__trigger[aria-expanded="true"] { background: #e2e8f0; opacity: 1; }
+.km-action-menu__panel {
+    position: absolute; top: calc(100% + var(--space-xs, 0.5rem)); right: 0;
+    min-width: 240px; width: max-content; max-width: min(340px, calc(100vw - 24px));
+    background: #ffffff; border: 1px solid var(--border-light, #E2E8F0);
+    border-radius: var(--radius-md, 6px);
+    box-shadow: var(--shadow-soft, 0 8px 24px rgba(15,23,42,0.14));
+    padding: var(--space-xs, 0.5rem); z-index: 200;
+    display: flex; flex-direction: column; gap: 2px;
+}
+.km-action-menu__panel[hidden] { display: none; }
+.km-action-menu__section {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--km-filter-muted, #94a3b8); padding: 6px 8px 2px;
+}
+.km-action-menu__divider { height: 1px; background: var(--border-light, #E2E8F0); margin: var(--space-xs, 0.5rem) 4px; }
+.km-action-menu__item {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: none; border: none; padding: 9px 10px; border-radius: var(--radius-sm, 4px);
+    font-size: var(--font-size-body, 0.875rem); color: var(--text-primary, #2D3748);
+    cursor: pointer; white-space: nowrap;
+}
+.km-action-menu__item:hover,
+.km-action-menu__item:focus { background: var(--bg-surface, #f1f5f9); outline: none; }
+.km-action-menu__item:focus-visible { outline: 2px solid var(--km-brand-blue, #0080bb); outline-offset: -2px; background: var(--bg-surface, #f1f5f9); }
+.km-action-menu__item[disabled],
+.km-action-menu__item[aria-disabled="true"] { color: #94a3b8; background: #f8fafc; cursor: not-allowed; pointer-events: none; }
+.km-action-menu__item[disabled]:hover,
+.km-action-menu__item[aria-disabled="true"]:hover { background: #f8fafc; }
+.km-action-menu__item--danger { color: var(--km-ui-danger, #dc2626); font-weight: var(--weight-medium, 600); }
+.km-action-menu__item--danger:hover { background: #fee2e2; }
+.km-action-menu__item--danger[disabled],
+.km-action-menu__item--danger[aria-disabled="true"] { color: #94a3b8; }
+.km-action-menu__icon { font-size: 12px; line-height: 1; }
+@media (max-width: 640px) { .km-action-menu__panel { right: auto; left: 0; } }

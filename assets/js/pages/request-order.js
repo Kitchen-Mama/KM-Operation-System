@@ -1200,6 +1200,69 @@ window.recalcOrderPlanningGapAllSites = recalcOrderPlanningGapAllSites;
 window.recalcOrderPlanningGapCurrentCountry = recalcOrderPlanningGapCurrentCountry;
 window.recalcOrderPlanningGapCurrentScope = recalcOrderPlanningGapCurrentScope;
 
+// ============================================================================
+// F1-UI-RUNTIME-CLOSURE-R1 — Order Planning "AI Support" dropdown (AI Plan + Recalculate Current Scope + All Sites).
+// UI-only relocation out of the main toolbar; each item REUSES the existing handler verbatim (no second gap engine,
+// no duplicate recommendation engine). Same accessible pattern as Inventory; shared .km-action-menu visual primitive.
+// ============================================================================
+var _roAiSupportBound = false;
+function _roAiEls() {
+    return { menu: document.getElementById('roAiSupportMenu'), trigger: document.getElementById('roAiSupportTrigger'), list: document.getElementById('roAiSupportList') };
+}
+function _roAiItems() {
+    var e = _roAiEls();
+    if (!e.list) return [];
+    return Array.prototype.slice.call(e.list.querySelectorAll('.km-action-menu__item')).filter(function (b) { return !b.disabled; });
+}
+function _roAiOpen() {
+    var e = _roAiEls();
+    if (!e.list || !e.trigger || !e.list.hidden) return;
+    e.list.hidden = false; e.trigger.setAttribute('aria-expanded', 'true'); if (e.menu) e.menu.classList.add('is-open');
+    _roBindAiSupportGlobal();
+    var first = _roAiItems()[0]; if (first) first.focus();
+}
+function _roAiClose(returnFocus) {
+    var e = _roAiEls();
+    if (!e.list || e.list.hidden) return;
+    e.list.hidden = true; if (e.trigger) e.trigger.setAttribute('aria-expanded', 'false'); if (e.menu) e.menu.classList.remove('is-open');
+    if (returnFocus && e.trigger) e.trigger.focus();
+}
+function toggleRoAiSupportMenu(ev) {
+    if (ev) { try { ev.stopPropagation(); } catch (_e) {} }
+    var e = _roAiEls(); if (!e.list) return;
+    if (e.list.hidden) _roAiOpen(); else _roAiClose(false);
+}
+function runRoAiSupport(kind) {
+    _roAiClose(false);
+    if (kind === 'aiplan' && typeof handleRequestOrderAiPlan === 'function') return handleRequestOrderAiPlan();
+    if (kind === 'recalcScope' && typeof recalcOrderPlanningGapCurrentScope === 'function') return recalcOrderPlanningGapCurrentScope();
+    if (kind === 'recalcAll' && typeof handleRecalcAllOrderPlanningGap === 'function') return handleRecalcAllOrderPlanningGap();
+}
+function _roBindAiSupportGlobal() {
+    if (_roAiSupportBound) return;
+    document.addEventListener('click', function (ev) {
+        var e = _roAiEls();
+        if (!e.list || e.list.hidden) return;
+        if (ev.target && ev.target.closest && ev.target.closest('#roAiSupportMenu')) return;
+        _roAiClose(false);
+    });
+    document.addEventListener('keydown', function (ev) {
+        var e = _roAiEls();
+        if (!e.list || e.list.hidden) return;
+        var items = _roAiItems(); if (!items.length) return;
+        var idx = items.indexOf(document.activeElement);
+        if (ev.key === 'Escape') { ev.preventDefault(); _roAiClose(true); }
+        else if (ev.key === 'ArrowDown') { ev.preventDefault(); (items[(idx + 1) % items.length] || items[0]).focus(); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); (items[(idx - 1 + items.length) % items.length] || items[items.length - 1]).focus(); }
+        else if (ev.key === 'Home') { ev.preventDefault(); items[0].focus(); }
+        else if (ev.key === 'End') { ev.preventDefault(); items[items.length - 1].focus(); }
+        else if (ev.key === 'Tab') { _roAiClose(false); }
+    });
+    _roAiSupportBound = true;
+}
+window.toggleRoAiSupportMenu = toggleRoAiSupportMenu;
+window.runRoAiSupport = runRoAiSupport;
+
 // LIVE4 §6 — manual Cancel (Order Planning): ONE backend cancel write for the active runId; stop the poller; the
 // shared runJob poller then refreshes the materialized READ and resets the button (never browser-only, no reload).
 function handleCancelOrderPlanningGapJob() {

@@ -58,17 +58,24 @@
                                 <button class="replen-btn replen-btn--search" onclick="searchReplenishment()">Search</button>
                             </div>
                             <div class="replen-actions__ops">
-                                <!-- AI Plan (2026-07-28): refreshes replenishment suggestions using the EXISTING
-                                     Suggested Qty / View Recommendation calculation (renderReplenishment). It NEVER
-                                     runs Submit Plan and NEVER creates a Shipping Plan. Ordered left of Submit Plan. -->
-                                <button class="replen-btn ro-btn--ai" id="replen-ai-plan-btn" onclick="handleReplenAiPlan()" title="Generate replenishment suggestions" aria-label="Generate replenishment suggestions">
-                                    <svg class="ro-ai-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"></path><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8L19 14z"></path></svg>
-                                    <span>AI Plan</span>
-                                </button>
+                                <!-- F1-UI-RUNTIME-CLOSURE-R1 — AI Support menu: AI Plan + Recalculate (Current Scope /
+                                     All Sites) consolidated out of the main toolbar into ONE neutral dropdown (shared
+                                     .km-action-menu primitive, visual parity with SKU Details More Options). Each item
+                                     reuses the EXISTING handler verbatim (no second calc/recommendation engine). The AI
+                                     Plan + Recalculate All Sites ids are preserved ON the menu items so their existing
+                                     loading / "Calculating N/M" progress state still renders. -->
+                                <div class="km-action-menu" id="replenAiSupportMenu">
+                                    <button type="button" class="km-action-menu__trigger" id="replenAiSupportTrigger"
+                                            aria-haspopup="menu" aria-expanded="false" aria-controls="replenAiSupportList"
+                                            onclick="toggleReplenAiSupportMenu(event)">✦ AI Support</button>
+                                    <div class="km-action-menu__panel" id="replenAiSupportList" role="menu" aria-label="AI support actions" hidden>
+                                        <div class="km-action-menu__section" role="presentation">AI Support</div>
+                                        <button type="button" role="menuitem" class="km-action-menu__item" id="replen-ai-plan-btn" onclick="runReplenAiSupport('aiplan')" title="Generate replenishment suggestions">AI Plan</button>
+                                        <button type="button" role="menuitem" class="km-action-menu__item" onclick="runReplenAiSupport('recalcScope')" title="Recalculate the materialized gap for the selected Country + Marketplace">Recalculate Current Scope</button>
+                                        <button type="button" role="menuitem" class="km-action-menu__item" id="replen-recalc-all-btn" onclick="runReplenAiSupport('recalcAll')" title="Recalculate the materialized replenishment gap for all sites">Recalculate All Sites</button>
+                                    </div>
+                                </div>
                                 <button class="replen-btn replen-btn--primary" onclick="submitReplenishmentPlans()">Submit Plan</button>
-                                <!-- F1-4B-FM5 · manual batch: ONE server recalculation of ALL site scopes → UPSERT
-                                     inventory_replenishment_gap. No per-SKU HTTP loop, no browser recompute. -->
-                                <button class="replen-btn" id="replen-recalc-all-btn" onclick="handleRecalcAllInventoryGap()" title="Recalculate the materialized replenishment gap for all sites" aria-label="Recalculate all sites">Recalculate All Sites</button>
                                 <!-- F1-4B-FM5-R4J-LIVE4 — manual Cancel (backend-authoritative; shown only while a job is active). Completed rows are preserved. -->
                                 <button class="replen-btn replen-btn--cancel" id="replen-cancel-recalc-btn" onclick="handleCancelInventoryGapJob()" title="Cancel the running recalculation (completed sites are kept)" aria-label="Cancel recalculation" style="display:none">Cancel</button>
                                 <!-- Data-management actions consolidated into one "More Options" menu (renamed 2026-07-23

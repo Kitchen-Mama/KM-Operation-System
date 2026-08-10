@@ -85,10 +85,21 @@
                     <div class="ro-filter ro-filter--actions">
                         <label class="ro-confirm-status" id="ro-confirm-status">No site confirmed yet</label>
                         <div class="ro-action-group">
-                            <button type="button" class="ro-btn ro-btn--ai" id="ro-ai-plan-btn" onclick="handleRequestOrderAiPlan()" title="Generate order suggestions" aria-label="Generate order suggestions">
-                                <svg class="ro-ai-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"></path><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8L19 14z"></path></svg>
-                                <span>AI Plan</span>
-                            </button>
+                            <!-- F1-UI-RUNTIME-CLOSURE-R1 — AI Support menu (AI Plan + Recalculate Current Scope / All
+                                 Sites). Shared .km-action-menu primitive (parity with SKU Details). Each item reuses
+                                 the EXISTING handler verbatim (no second gap/recommendation engine). ids preserved on
+                                 the AI Plan + Recalculate All Sites items so existing loading/progress state renders. -->
+                            <div class="km-action-menu" id="roAiSupportMenu">
+                                <button type="button" class="km-action-menu__trigger" id="roAiSupportTrigger"
+                                        aria-haspopup="menu" aria-expanded="false" aria-controls="roAiSupportList"
+                                        onclick="toggleRoAiSupportMenu(event)">✦ AI Support</button>
+                                <div class="km-action-menu__panel" id="roAiSupportList" role="menu" aria-label="AI support actions" hidden>
+                                    <div class="km-action-menu__section" role="presentation">AI Support</div>
+                                    <button type="button" role="menuitem" class="km-action-menu__item" id="ro-ai-plan-btn" onclick="runRoAiSupport('aiplan')" title="Generate order suggestions">AI Plan</button>
+                                    <button type="button" role="menuitem" class="km-action-menu__item" onclick="runRoAiSupport('recalcScope')" title="Recalculate the materialized order-planning gap for the selected scope">Recalculate Current Scope</button>
+                                    <button type="button" role="menuitem" class="km-action-menu__item" id="ro-recalc-all-btn" onclick="runRoAiSupport('recalcAll')" title="Recalculate the materialized order-planning gap for all sites">Recalculate All Sites</button>
+                                </div>
+                            </div>
                             <select id="ro-request-type" class="ro-action-select">
                                 <option value="all">All Request</option>
                                 <option value="t1">T1 Request</option>
@@ -96,10 +107,7 @@
                                 <option value="t3">T3 Request</option>
                             </select>
                             <button type="button" class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
-                            <!-- F1-4B-FM5 · manual batch: ONE server recalculation of ALL site scopes → UPSERT
-                                 order_planning_gap. No per-SKU HTTP loop, no browser recompute. -->
-                            <button type="button" class="ro-btn" id="ro-recalc-all-btn" onclick="handleRecalcAllOrderPlanningGap()" title="Recalculate the materialized order-planning gap for all sites" aria-label="Recalculate all sites">Recalculate All Sites</button>
-                            <!-- F1-4B-FM5-R4J-LIVE4 — manual Cancel (backend-authoritative; shown only while a job is active). Completed rows are preserved. -->
+                            <!-- F1-4B-FM5-R4J-LIVE4 — manual Cancel (backend-authoritative; shown only while a job is active). Completed rows are preserved. Recalculate All Sites moved into the AI Support menu above. -->
                             <button type="button" class="ro-btn ro-btn--cancel" id="ro-cancel-recalc-btn" onclick="handleCancelOrderPlanningGapJob()" title="Cancel the running recalculation (completed sites are kept)" aria-label="Cancel recalculation" style="display:none">Cancel</button>
                         </div>
                     </div>

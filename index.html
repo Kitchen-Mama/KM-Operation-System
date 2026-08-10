@@ -5,32 +5,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- CSS 模組化架構 -->
-    <link rel="stylesheet" href="assets/css/base.css">
-    <link rel="stylesheet" href="assets/css/components.css">
-    <link rel="stylesheet" href="assets/css/layout.css">
+    <link rel="stylesheet" href="assets/css/base.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/components.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/layout.css?v=fmr1-20260810">
     <!-- SYSTEM-RESPONSIVE-R1: canonical responsive foundation (breakpoint/width/padding tokens + safe guards +
          opt-in utilities). Loaded AFTER the shell owners, BEFORE page CSS. See docs/design/RESPONSIVE_FOUNDATION.md -->
-    <link rel="stylesheet" href="assets/css/responsive-foundation.css">
+    <link rel="stylesheet" href="assets/css/responsive-foundation.css?v=fmr1-20260810">
     <!-- Core: reusable Sticky Header Framework (CSS variables + .km-sticky-* classes) -->
-    <link rel="stylesheet" href="assets/css/core/km-sticky-header.css">
-    <link rel="stylesheet" href="assets/css/pages/home.css">
-    <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css">
-    <link rel="stylesheet" href="assets/css/pages/factory-stock.css">
-    <link rel="stylesheet" href="assets/css/pages/overseas-ops.css">
-    <link rel="stylesheet" href="assets/css/pages/overseas-stock.css">
-    <link rel="stylesheet" href="assets/css/pages/fc-overview.css">
-    <link rel="stylesheet" href="assets/css/pages/request-order.css">
-    <link rel="stylesheet" href="assets/css/pages/sku-details.css">
-    <link rel="stylesheet" href="assets/css/pages/shipping-plan.css">
-    <link rel="stylesheet" href="assets/css/pages/shipping-history.css">
-    <link rel="stylesheet" href="assets/css/pages/supply-chain-canvas.css">
-    <link rel="stylesheet" href="assets/css/pages/sku-handbook.css">
-    <link rel="stylesheet" href="assets/css/pages/campaign-risk.css">
-    <link rel="stylesheet" href="assets/css/pages/procurement.css">
-    <link rel="stylesheet" href="assets/css/pages/carrier-rate-card.css">
-    <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css">
-    <link rel="stylesheet" href="assets/css/pages/global-logistics-map.css">
-    <link rel="stylesheet" href="assets/css/pages/automation-schedule.css">
+    <link rel="stylesheet" href="assets/css/core/km-sticky-header.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/home.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/overseas-ops.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/overseas-stock.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/fc-overview.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/request-order.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/sku-details.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/shipping-plan.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/shipping-history.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/supply-chain-canvas.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/sku-handbook.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/campaign-risk.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/procurement.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/carrier-rate-card.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/global-logistics-map.css?v=fmr1-20260810">
+    <link rel="stylesheet" href="assets/css/pages/automation-schedule.css?v=fmr1-20260810">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- ExcelJS — client-side XLSX generation for formatted export templates (TEMPLATE_UI_STANDARD_SPEC). -->
     <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
@@ -390,72 +390,72 @@
     
     <!-- JS 模組化架構 -->
     <!-- Core: Namespace (必須最先載入) -->
-    <script src="assets/js/core/namespace.js"></script>
-    <script src="assets/js/core/lifecycle.js"></script>
-    <script src="assets/js/core/state.js"></script>
-    <script src="assets/js/core/partial-loader.js"></script>
-    <script src="assets/js/core/sticky-header.js"></script>
+    <script src="assets/js/core/namespace.js?v=fmr1-20260810"></script>
+    <script src="assets/js/core/lifecycle.js?v=fmr1-20260810"></script>
+    <script src="assets/js/core/state.js?v=fmr1-20260810"></script>
+    <script src="assets/js/core/partial-loader.js?v=fmr1-20260810"></script>
+    <script src="assets/js/core/sticky-header.js?v=fmr1-20260810"></script>
     
     <!-- Utils -->
-    <script src="assets/js/utils/forecast-engine.js"></script>
-    <script src="assets/js/utils/i18n.js"></script>
-    <script src="assets/js/utils/sku-overrides.js"></script>
-    <script src="assets/js/utils/data.js"></script>
-    <script src="assets/js/utils/scroll-sync.js"></script>
-    <script src="assets/js/utils/template-export.js"></script>
-    <script src="assets/js/utils/resizable-columns.js"></script>
-    <script src="assets/js/utils/dual-layer-resize.js"></script>
-    <script src="assets/js/utils/tab-rail.js"></script>
-    <script src="assets/js/utils/multi-select-filter.js"></script>
-    <script src="assets/js/utils/inventory-compat.js"></script>
+    <script src="assets/js/utils/forecast-engine.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/i18n.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/sku-overrides.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/data.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/scroll-sync.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/template-export.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/resizable-columns.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/dual-layer-resize.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/tab-rail.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/multi-select-filter.js?v=fmr1-20260810"></script>
+    <script src="assets/js/utils/inventory-compat.js?v=fmr1-20260810"></script>
     <!-- F1-4B-FM5-R4T: shared manual-recalc transport-recovery contract (Inventory + Order Planning) -->
-    <script src="assets/js/utils/gap-recalc-transport.js"></script>
+    <script src="assets/js/utils/gap-recalc-transport.js?v=fmr1-20260810"></script>
     <!-- F1-4B-FM5-R1: canonical cartonization owner (KMCALC) — KMREC delegates the actionable-total carton rounding here -->
-    <script src="assets/js/core/supply-planning-calculations.js"></script>
+    <script src="assets/js/core/supply-planning-calculations.js?v=fmr1-20260810"></script>
     <!-- F1-4B-FM6: canonical Phase-1 Recommendation generator (KMREC) — reads materialized gaps → decision DTOs -->
-    <script src="assets/js/core/supply-recommendation.js"></script>
+    <script src="assets/js/core/supply-recommendation.js?v=fmr1-20260810"></script>
     <!-- F1-4B-FM6-R2: canonical Recommendation→Execution handoff (KMREX) — KMREC DTO + resolved availabilities → execution-draft DTO -->
-    <script src="assets/js/core/supply-execution-handoff.js"></script>
+    <script src="assets/js/core/supply-execution-handoff.js?v=fmr1-20260810"></script>
 
     <!-- API Adapter -->
-    <script src="assets/js/api/operation-system-db-api.js"></script>
+    <script src="assets/js/api/operation-system-db-api.js?v=fmr1-20260810"></script>
     <!-- API Foundation (Phase API-1) — dormant while USE_WORKSPACE_API=false; wraps the legacy transport only -->
-    <script src="assets/js/api/km-api-foundation.js"></script>
+    <script src="assets/js/api/km-api-foundation.js?v=fmr1-20260810"></script>
 
     <!-- Pages -->
-    <script src="assets/js/pages/home.js"></script>
-    <script src="assets/js/pages/inventory-replenishment.js"></script>
-    <script src="assets/js/pages/factory-stock.js"></script>
-    <script src="assets/js/pages/overseas-stock.js"></script>
-    <script src="assets/js/pages/overseas-ops-preview.js"></script>
-    <script src="assets/js/pages/overseas-inbound.js"></script>
-    <script src="assets/js/pages/overseas-outbound.js"></script>
-    <script src="assets/js/pages/fc-summary.js"></script>
-    <script src="assets/js/pages/forecast.js"></script>
-    <script src="assets/js/pages/request-order.js"></script>
-    <script src="assets/js/pages/sku-details.js"></script>
-    <script src="assets/js/pages/shipping-plan.js"></script>
-    <script src="assets/js/pages/shipping-history.js"></script>
-    <script src="assets/js/pages/supplychain.js"></script>
-    <script src="assets/js/pages/sku-handbook.js"></script>
-    <script src="assets/js/i18n/sku-handbook.js"></script>
-    <script src="assets/js/pages/campaign-risk.js"></script>
+    <script src="assets/js/pages/home.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/inventory-replenishment.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/factory-stock.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/overseas-stock.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/overseas-ops-preview.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/overseas-inbound.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/overseas-outbound.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/fc-summary.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/forecast.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/request-order.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/sku-details.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/shipping-plan.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/shipping-history.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/supplychain.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/sku-handbook.js?v=fmr1-20260810"></script>
+    <script src="assets/js/i18n/sku-handbook.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/campaign-risk.js?v=fmr1-20260810"></script>
     <!-- Procurement Layer (Phase 1) -->
-    <script src="assets/js/pages/request-order-draft.js"></script>
-    <script src="assets/js/pages/purchase-order-overview.js"></script>
-    <script src="assets/js/pages/purchase-order-list.js"></script>
+    <script src="assets/js/pages/request-order-draft.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/purchase-order-overview.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/purchase-order-list.js?v=fmr1-20260810"></script>
     <!-- Carrier / Route master (Carrier Rate Card v1) -->
-    <script src="assets/js/pages/carrier-rate-card.js"></script>
+    <script src="assets/js/pages/carrier-rate-card.js?v=fmr1-20260810"></script>
     <!-- SKU Regional Details (SKU Domain v2.0) -->
-    <script src="assets/js/pages/sku-regional-details.js"></script>
+    <script src="assets/js/pages/sku-regional-details.js?v=fmr1-20260810"></script>
     <!-- Global Logistics Map (Carrier / Route) — 3D Earth globe engine + vendored land asset (self-contained, no CDN) -->
-    <script src="assets/js/data/world-land-110m.js"></script>
-    <script src="assets/js/lib/km-globe.js"></script>
-    <script src="assets/js/pages/global-logistics-map.js"></script>
-    <script src="assets/js/pages/automation-schedule.js"></script>
+    <script src="assets/js/data/world-land-110m.js?v=fmr1-20260810"></script>
+    <script src="assets/js/lib/km-globe.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/global-logistics-map.js?v=fmr1-20260810"></script>
+    <script src="assets/js/pages/automation-schedule.js?v=fmr1-20260810"></script>
 
     <!-- App (Global) -->
-    <script src="assets/js/app.js"></script>
+    <script src="assets/js/app.js?v=fmr1-20260810"></script>
     
     <!-- Shared Date Picker Modal -->
     <div class="fr-date-backdrop" id="frDateBackdrop"></div>

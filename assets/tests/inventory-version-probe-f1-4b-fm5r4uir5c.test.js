@@ -56,8 +56,8 @@ ok(kmcalcCalls === 1, 'S1 KMCALC.normalizedAvgSalesPerDay is INVOKED exactly onc
 var resolveCalls = (F42.match(/recoWsResolveSalesRate_\(/g) || []).length;
 ok(resolveCalls === 3, 'S2 recoWsResolveSalesRate_ = 1 definition + 2 call sites (marketplace + warehouse); no third path — got ' + resolveCalls);
 
-section('Phase 1 — un-versioned assets confirm HTTP cache as the frontend mixed-version mechanism (no cache-bust yet)');
-ok(/href="assets\/css\/pages\/inventory-replenishment\.css"/.test(INDEX) && !/inventory-replenishment\.css\?/.test(INDEX), 'C1 the Inventory CSS is loaded WITHOUT a cache-busting query — browser/Pages cache can serve a stale copy independent of the logo');
+section('Phase 1 — assets are now CACHE-VERSIONED (F1-UI-RUNTIME-CLOSURE-R1 closed the stale-CSS vector)');
+ok(/inventory-replenishment\.css\?v=/.test(INDEX), 'C1 the Inventory CSS now carries a ?v= cache-busting query — a deploy invalidates the browser/Pages cached copy (fixes the stale neutral-vs-orange render)');
 ok(!/serviceWorker|navigator\.serviceWorker/.test(INDEX), 'C2 no service worker (rules out an SW cache layer)');
 var invCssCount = (INDEX.match(/pages\/inventory-replenishment\.css/g) || []).length;
 ok(invCssCount === 1, 'C3 exactly ONE inventory CSS link (no duplicate old inventory stylesheet overriding R5A rules) — got ' + invCssCount);

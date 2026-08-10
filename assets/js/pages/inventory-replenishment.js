@@ -5739,6 +5739,73 @@ function _replenBindActionsMenuGlobal() {
 window.toggleReplenActionsMenu = toggleReplenActionsMenu;
 window.runReplenAction = runReplenAction;
 
+// ============================================================================
+// F1-UI-RUNTIME-CLOSURE-R1 — "AI Support" dropdown (AI Plan + Recalculate Current Scope + Recalculate All Sites).
+// UI-only relocation out of the main toolbar. Each item REUSES the existing handler verbatim (no second gap engine,
+// no duplicate recommendation engine). Same accessible open/close pattern as More Options; the existing outside-click
+// closers mean opening one menu closes the other (one-at-a-time). Recalculate Current Scope uses the LIVE10 scoped
+// gap-job wrapper (recalcInventoryGapCurrentScope → CURRENT_SCOPE payload), so scoped recalc IS backend-supported.
+// ============================================================================
+var _replenAiSupportBound = false;
+function _replenAiEls() {
+    return { menu: document.getElementById('replenAiSupportMenu'), trigger: document.getElementById('replenAiSupportTrigger'), list: document.getElementById('replenAiSupportList') };
+}
+function _replenAiItems() {
+    var e = _replenAiEls();
+    if (!e.list) return [];
+    return Array.prototype.slice.call(e.list.querySelectorAll('.km-action-menu__item')).filter(function (b) { return !b.disabled; });
+}
+function _replenAiOpen() {
+    var e = _replenAiEls();
+    if (!e.list || !e.trigger || !e.list.hidden) return;
+    e.list.hidden = false; e.trigger.setAttribute('aria-expanded', 'true'); if (e.menu) e.menu.classList.add('is-open');
+    _replenBindAiSupportGlobal();
+    var first = _replenAiItems()[0]; if (first) first.focus();
+}
+function _replenAiClose(returnFocus) {
+    var e = _replenAiEls();
+    if (!e.list || e.list.hidden) return;
+    e.list.hidden = true; if (e.trigger) e.trigger.setAttribute('aria-expanded', 'false'); if (e.menu) e.menu.classList.remove('is-open');
+    if (returnFocus && e.trigger) e.trigger.focus();
+}
+function toggleReplenAiSupportMenu(ev) {
+    if (ev) { try { ev.stopPropagation(); } catch (_e) {} }
+    var e = _replenAiEls(); if (!e.list) return;
+    if (e.list.hidden) _replenAiOpen(); else _replenAiClose(false);
+}
+// One item → one existing handler (no duplicated calculation logic). Close first so a backend job's button-state
+// updates land on the (now-hidden) menu item without holding the menu open.
+function runReplenAiSupport(kind) {
+    _replenAiClose(false);
+    if (kind === 'aiplan' && typeof handleReplenAiPlan === 'function') return handleReplenAiPlan();
+    if (kind === 'recalcScope' && typeof recalcInventoryGapCurrentScope === 'function') return recalcInventoryGapCurrentScope();
+    if (kind === 'recalcAll' && typeof handleRecalcAllInventoryGap === 'function') return handleRecalcAllInventoryGap();
+}
+function _replenBindAiSupportGlobal() {
+    if (_replenAiSupportBound) return;
+    document.addEventListener('click', function (ev) {
+        var e = _replenAiEls();
+        if (!e.list || e.list.hidden) return;
+        if (ev.target && ev.target.closest && ev.target.closest('#replenAiSupportMenu')) return;
+        _replenAiClose(false);
+    });
+    document.addEventListener('keydown', function (ev) {
+        var e = _replenAiEls();
+        if (!e.list || e.list.hidden) return;
+        var items = _replenAiItems(); if (!items.length) return;
+        var idx = items.indexOf(document.activeElement);
+        if (ev.key === 'Escape') { ev.preventDefault(); _replenAiClose(true); }
+        else if (ev.key === 'ArrowDown') { ev.preventDefault(); (items[(idx + 1) % items.length] || items[0]).focus(); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); (items[(idx - 1 + items.length) % items.length] || items[items.length - 1]).focus(); }
+        else if (ev.key === 'Home') { ev.preventDefault(); items[0].focus(); }
+        else if (ev.key === 'End') { ev.preventDefault(); items[items.length - 1].focus(); }
+        else if (ev.key === 'Tab') { _replenAiClose(false); }
+    });
+    _replenAiSupportBound = true;
+}
+window.toggleReplenAiSupportMenu = toggleReplenAiSupportMenu;
+window.runReplenAiSupport = runReplenAiSupport;
+
 window.debugInventoryDemoData = function() {
     var enabled = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
     console.log('=== Inventory Demo Data Debug ===');
