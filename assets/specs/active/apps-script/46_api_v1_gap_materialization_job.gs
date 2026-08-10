@@ -81,6 +81,10 @@ function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr, nowMs) {
 // R4J-LIVE2 §5/§7 — stamp the monotonic progress clock (epoch ms). Called wherever updatedAt advances so the STALLED
 // reclaim in START can distinguish a live job (recently touched) from a killed worker (touched long ago, no re-arm).
 function gapJobTouchMs_(env, state) { if (state && env && env.nowMs) state.updatedAtMs = env.nowMs(); }
+// R4J-LIVE3 §8 — compact lifecycle diagnostics (runId + product + progress + status only; NO per-SKU payload).
+// Guarded so Node unit tests (no Apps Script Logger) are unaffected.
+function gapJobLog_(tag, state) {
+  try { if (typeof Logger !== 'undefined' && Logger.log) Logger.log('[GapJob] ' + tag + (state ? ' ' + state.product + ' run=' + state.runId + ' ' + (state.scopesProcessed != null ? state.scopesProcessed : '?') + '/' + (state.scopesTotal != null ? state.scopesTotal : '?') + ' ' + state.status : '')); } catch (e) {} }
 function gapJobPublicState_(s) {
   return { runId: s.runId, product: s.product, status: s.status,
     scopesProcessed: s.scopesProcessed, scopesTotal: s.scopesTotal, rowsProcessed: s.rowsProcessed,
@@ -127,14 +131,14 @@ function gapJobMarkDone_(env, product, state) {
   state.status = 'DONE'; state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt;
   state.lastWorkerFinishedAt = state.finishedAt;
   gapJobTouchMs_(env, state);
-  state.scopesProcessed = state.scopeCursor; gapJobWriteState_(env, product, state); return state;
+  state.scopesProcessed = state.scopeCursor; gapJobWriteState_(env, product, state); gapJobLog_('DONE', state); return state;
 }
 // R4J-LIVE §A2 — persist a TERMINAL FAILED state (never leave a job dangling PENDING/RUNNING). Always writes.
 function gapJobMarkFailed_(env, product, state, reason) {
   state.status = 'FAILED'; state.lastError = String(reason == null ? (state.lastError || 'FAILED') : reason);
   state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt; state.lastWorkerFinishedAt = state.finishedAt;
   gapJobTouchMs_(env, state);
-  gapJobWriteState_(env, product, state); return state;
+  gapJobWriteState_(env, product, state); gapJobLog_('FAILED', state); return state;
 }
 
 // ---- START (§3): quick, browser-returning; NO calculation in the request -------------------------------------
@@ -219,7 +223,7 @@ function gapJobContinue_(product, env) {
     state.lockWaits = 0;                                                                 // acquired → reset the lock-wait counter
     state.status = 'RUNNING';                                                            // §22 observable RUNNING
     state.lastWorkerStartedAt = env.timestamp(); state.updatedAt = state.lastWorkerStartedAt; gapJobTouchMs_(env, state);
-    gapJobWriteState_(env, product, state);
+    gapJobWriteState_(env, product, state); gapJobLog_('WORKER_START', state);
     // §18 the calculation context is taken from the FROZEN job state — NEVER re-resolved from the wall clock, so a
     // midnight rollover mid-job cannot change calculationDate/Month across slices.
     var ctx = { ok: true, calculationDate: state.calculationDate, calculationMonth: state.calculationMonth, planningCycle: state.planningCycle };
@@ -255,10 +259,16 @@ function gapJobContinue_(product, env) {
     state.lastProcessedScope = lastScope ? (lastScope.company + '/' + lastScope.country + '/' + lastScope.marketplace) : state.lastProcessedScope;
     if (inc.scopeErrors && inc.scopeErrors.length) state.lastError = 'SCOPE_ERRORS:' + inc.scopeErrors.length;
     state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt; gapJobTouchMs_(env, state);
-    if (state.scopeCursor >= scopes.length) return gapJobMarkDone_(env, product, state);   // §9 DONE = reached every planned scope
+    // R4J-LIVE3 §2 — CRASH-SAFE FINALIZATION. Persist the ADVANCED cursor and ALWAYS arm a continuation BEFORE the
+    // terminal decision, so a runtime termination in the finalize window self-heals: the durable state already shows
+    // scopeCursor>=scopesTotal and a scheduled tick re-enters gapJobContinue_ and marks DONE at the top-of-worker
+    // completion check (a pure state transition, no calculation, idempotent). This guarantees the §2 invariant —
+    // scopesProcessed>=scopesTotal can NEVER remain RUNNING — even if the inline DONE write below is lost. On the
+    // happy path DONE is written inline here and the armed tick simply no-ops on the terminal state (one cheap tick).
     state.status = 'RUNNING';
     try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); } catch (er3) {}
-    gapJobWriteState_(env, product, state);
+    gapJobWriteState_(env, product, state);                                                 // durable advance + armed self-heal continuation
+    if (state.scopeCursor >= scopes.length) return gapJobMarkDone_(env, product, state);     // §9 DONE = reached every planned scope
     return state;
   } catch (e) {
     // §A2 infrastructure failure (open/enumerate) — ALWAYS persist a non-dangling state; bounded retry then FAILED.

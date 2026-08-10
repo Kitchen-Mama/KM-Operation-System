@@ -107,7 +107,7 @@
   // A non-DONE poll result the UI must treat as "could not confirm completion" (recoverable) rather than a hard
   // business failure — no automatic WRITE retry is ever issued for either (§5).
   function isUnconfirmedJob(status) { return status === 'STALLED' || status === 'POLL_TIMEOUT'; }
-  function _log(tag, st) { try { if (typeof console !== 'undefined' && console.log) console.log('[GapJob] ' + tag + (st ? ' ' + ((st.product || '') + ' ' + Math.max(0, _progressOf(st)) + '/' + (st.scopesTotal != null ? st.scopesTotal : '?') + ' ' + (st.status || '')).trim() : '')); } catch (e) {} }
+  function _log(tag, st) { try { if (typeof console !== 'undefined' && console.log) console.log('[GapJob] ' + tag + (st ? ' ' + (((st.product || '') + (st.runId ? ' run=' + st.runId : '') + ' ' + Math.max(0, _progressOf(st)) + '/' + (st.scopesTotal != null ? st.scopesTotal : '?') + ' ' + (st.status || '')).trim()) : '')); } catch (e) {} }
 
   // Poll STATUS (READ ONLY) until terminal / NONE / bounded max / STALLED. statusFn()->Promise(status envelope).
   // Never writes, never re-POSTs, never calculates. opts.wait(ms)->Promise · opts.interval · opts.maxPolls ·
@@ -123,11 +123,11 @@
       return Promise.resolve(statusFn()).then(function (res) {
         var st = _stateOf(res);
         if (typeof opts.onProgress === 'function') { try { opts.onProgress(st); } catch (e) {} }
-        if (_isTerminalJob(st.status) || st.status === JOB_STATUS.NONE) return st;
+        if (_isTerminalJob(st.status) || st.status === JOB_STATUS.NONE) { _log('CLIENT_TERMINAL', st); return st; }
         // §5 stall detection — advance resets the counter; no advance for maxStallPolls consecutive non-terminal
         // polls → STOP (truthful "unconfirmed"; never an endless Calculating 0/N, never an auto WRITE retry).
         var prog = _progressOf(st);
-        if (prog > bestProgress) { bestProgress = prog; stall = 0; } else { stall++; }
+        if (prog > bestProgress) { bestProgress = prog; stall = 0; _log('PROGRESS', st); } else { stall++; }
         if (stall >= maxStallPolls) { _log('STALLED', st); return { status: 'STALLED', last: st, polls: n + 1 }; }
         if (n >= maxPolls) return { status: 'POLL_TIMEOUT', last: st };
         return wait(interval).then(function () { return loop(n + 1); });
@@ -170,7 +170,11 @@
     var ui = opts.ui || {};
     return Promise.resolve(statusFn()).then(function (res) {
       var st = _stateOf(res);
-      if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) return st;
+      // §4 a page reload must NOT resurrect a terminal job. If the backend already says DONE, refresh the
+      // materialized READ once and leave the button in its NORMAL idle state — never flash/keep Calculating.
+      if (st.status === JOB_STATUS.DONE) { _log('CLIENT_TERMINAL', st); return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { return st; }); }
+      // Any other non-active terminal/none state → nothing to resume (button stays normal). Backend state is authoritative.
+      if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) { _log('CLIENT_TERMINAL', st); return st; }
       if (typeof ui.resume === 'function') ui.resume(st);
       return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls,
         onProgress: function (s) { if (typeof ui.progress === 'function') ui.progress(s); } }).then(function (finalState) {
@@ -192,6 +196,6 @@
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
     pollJob: pollJob, runJob: runJob, resumeIfRunning: resumeIfRunning,
-    VERSION: 'gap-recalc-fm5r4jlive2-1'
+    VERSION: 'gap-recalc-fm5r4jlive3-1'
   };
 });

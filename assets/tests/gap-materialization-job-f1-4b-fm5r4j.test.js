@@ -250,6 +250,30 @@ var reclaimedStore = JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]);
 eq([reclaimedStore.status, reclaimedStore.scopeCursor], ['PENDING', 0], 'Q6 the stored state is the FRESH PENDING job (the stalled one was marked FAILED then replaced) — never two live jobs on one key');
 
 // =============================================================================================================
+section('R4J-LIVE3 §2/§9-F/§9-G — completed work is ALWAYS finalized; RUNNING can never persist at cursor==total');
+// (a) a durable RUNNING state whose cursor already reached total (the inline DONE write lost to a runtime kill,
+// rows already UPSERTed) → the very NEXT continuation finalizes to DONE + finishedAt (top-of-worker completion check).
+var eFin = fakeEnv({ scopes: invScopes(3) });
+H.start('INVENTORY', eFin);
+var seeded = JSON.parse(eFin._store[H.PROP_KEYS.INVENTORY]);
+seeded.status = 'RUNNING'; seeded.scopeCursor = 3; seeded.scopesProcessed = 3; seeded.scopesTotal = 3; seeded.finishedAt = null;
+eFin._store[H.PROP_KEYS.INVENTORY] = JSON.stringify(seeded);
+var finRes = H.cont('INVENTORY', eFin);
+eq([finRes.status, finRes.scopeCursor, finRes.finishedAt !== null], ['DONE', 3, true], 'T1 a RUNNING job with cursor==total is FINALIZED to DONE (finishedAt set) by the next continuation — never stuck at N/N');
+ok(eFin._processed.length === 0, 'T2 finalization is a PURE state transition — NO recalculation / UPSERT re-run (Inventory formula untouched)');
+// (b) crash-safe finalize: the FINAL slice persists the advanced cursor AND arms a continuation BEFORE the inline
+// DONE, so a kill in the finalize window self-heals (some later tick lands on the completion check and marks DONE).
+var eArm = fakeEnv({ scopes: invScopes(2) });
+H.start('INVENTORY', eArm);
+H.cont('INVENTORY', eArm);                                   // slice 1 (non-final): advances + schedules
+var schedBeforeFinal = eArm._scheduled.length;
+var cFinal = H.cont('INVENTORY', eArm);                      // slice 2 (FINAL): arm a self-heal tick BEFORE finalizing
+eq(cFinal.status, 'DONE', 'T3 the final slice reaches terminal DONE');
+ok(eArm._scheduled.length === schedBeforeFinal + 1, 'T4 the FINAL slice armed a self-heal continuation BEFORE the inline DONE (crash-safe finalization; old code armed none)');
+var afterFinalTick = H.cont('INVENTORY', eArm);             // the armed self-heal tick fires on an already-DONE job
+eq([afterFinalTick.status, eArm._processed.length], ['DONE', 2], 'T5 the armed self-heal tick no-ops on the terminal DONE state (idempotent; no extra slice)');
+
+// =============================================================================================================
 section('poller — runJob: START once → READ-ONLY status poll → refresh on DONE (fake clock)');
 var immediate = function () { return Promise.resolve(); };
 (function () {
@@ -316,6 +340,23 @@ section('R4J-LIVE2 §5 — the STALL guard: a stuck 0/N EXITS Calculating (never
   GR.runJob(startFn, statusFn, { wait: immediate, interval: 1, maxStallPolls: 3, ui: { starting: function () { ev.push('starting'); }, progress: function () { ev.push('progress'); }, failed: function (st) { ev.push('failed:' + (st && st.status)); } } }).then(function (r) {
     ok(startCalls === 1 && ev.indexOf('failed:STALLED') !== -1, 'P11 runJob on a stuck 0/N → START exactly once, then ui.failed(STALLED) (exit Calculating; NO automatic write retry)');
     ok(r.finalState && r.finalState.status === 'STALLED', 'P11b runJob surfaces the STALLED terminal to the caller');
+  });
+})();
+
+section('R4J-LIVE3 §4 — page reload while backend is DONE refreshes the READ but NEVER shows Calculating');
+(function () {
+  var refreshed = 0, ev = [];
+  var statusFn = function () { return Promise.resolve({ success: true, data: { status: 'DONE', scopesProcessed: 5, scopesTotal: 5, runId: 'RD' } }); };
+  GR.resumeIfRunning(statusFn, { wait: immediate, refresh: function () { refreshed++; }, ui: { resume: function () { ev.push('resume'); }, progress: function () { ev.push('progress'); }, done: function () { ev.push('done'); } } }).then(function (r) {
+    ok(r.status === 'DONE' && refreshed === 1, 'T6 resume on a DONE backend job refreshes the materialized READ exactly once (§4)');
+    ok(ev.indexOf('resume') === -1 && ev.indexOf('progress') === -1, 'T7 resume on DONE NEVER enters Calculating (no resume/progress UI) — a reload keeps the normal button (§4 no resurrection)');
+  });
+})();
+(function () {
+  // FAILED/terminal at mount → no resume, no Calculating, no refresh loop (button stays normal).
+  var statusFn = function () { return Promise.resolve({ success: true, data: { status: 'FAILED', scopesProcessed: 0, scopesTotal: 10, runId: 'RF' } }); };
+  GR.resumeIfRunning(statusFn, { wait: immediate, ui: { resume: function () { throw new Error('must not resume a FAILED job'); } } }).then(function (r) {
+    ok(r.status === 'FAILED', 'T8 resume on a terminal FAILED job does not resurrect Calculating (backend state authoritative)');
   });
 })();
 
