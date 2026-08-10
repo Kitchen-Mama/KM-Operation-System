@@ -402,12 +402,23 @@ function gapJobIsOwnedContinuationHandler_(name) {
   for (var k in GAP_JOB_CONTINUATION_HANDLERS_) { if (Object.prototype.hasOwnProperty.call(GAP_JOB_CONTINUATION_HANDLERS_, k) && GAP_JOB_CONTINUATION_HANDLERS_[k] === n) return true; }
   return false;
 }
-// §11 delete ONLY this product's own continuation triggers — NEVER runAmazonSnapshotImports, NEVER the daily
-// runDailyInventoryGapMaterialization / runDailyOrderPlanningGapMaterialization, NEVER any unrelated trigger.
+// AUTH3 §2 — SAFE delete provenance (the ONE deletion pattern used everywhere in this module): NEVER delete the
+// Trigger object returned by ScriptApp.newTrigger().create() (the proven live "Unexpected error while getting the
+// method or property deleteTrigger on object ScriptApp." cause — a create()-returned handle is not a reliable delete
+// target). ALWAYS re-read ScriptApp.getProjectTriggers() and delete the object obtained from THAT read, matched by the
+// EXACT handler. Deletes ONLY the handler passed — never runAmazonSnapshotImports, never the daily
+// runDailyInventoryGapMaterialization / runDailyOrderPlanningGapMaterialization, never any unrelated trigger. Returns
+// the number deleted (0 is harmless — a missing target is not an error). Duplicates for the same handler are all cleaned.
+function gapJobDeleteTriggersByHandler_(handler) {
+  var h = String(handler == null ? '' : handler); if (!h) return 0;
+  var triggers = ScriptApp.getProjectTriggers(), n = 0;
+  for (var i = 0; i < triggers.length; i++) { if (triggers[i].getHandlerFunction() === h) { ScriptApp.deleteTrigger(triggers[i]); n++; } }
+  return n;
+}
+// §11 delete ONLY this product's own continuation triggers (handler resolved from the trusted continuation-handler map).
 function gapJobClearContinuationTriggers_(product) {
   var h = GAP_JOB_CONTINUATION_HANDLERS_[product]; if (!h) return;
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) { if (triggers[i].getHandlerFunction() === h) ScriptApp.deleteTrigger(triggers[i]); }
+  gapJobDeleteTriggersByHandler_(h);
 }
 function gapJobDefaultEnv_(product) {
   return {
@@ -440,40 +451,50 @@ function handleGetGapJobStatus_(body) {
 function handleCancelInventoryReplenishmentGapJob_(body) { var p = (body && body.payload) || body || {}; return gapJobCancel_('INVENTORY', p.runId || null, gapJobDefaultEnv_('INVENTORY')); }
 function handleCancelOrderPlanningGapJob_(body) { var p = (body && body.payload) || body || {}; return gapJobCancel_('ORDER_PLANNING', p.runId || null, gapJobDefaultEnv_('ORDER_PLANNING')); }
 
-// ---- LIVE8 §B4/§B5 — ScriptApp trigger-authorization BOOTSTRAP + VERIFICATION ------------------------------------
-// The live START failure is CONTINUATION_SCHEDULE_FAILED / "ScriptApp.newTrigger authorization required": the project
-// identity has not granted the ScriptApp trigger-management scope (script.scriptapp) that gapJobScheduleContinuation_
-// needs. Running continueInventoryGapMaterializationJob does NOT force that grant (a manual editor run of the worker
-// reads state and returns NO_STATE without ever calling ScriptApp.newTrigger). This bounded helper forces + proves
-// the SAME authorization the START path needs, WITHOUT running any gap calculation and WITHOUT installing a permanent
-// trigger: for EACH gap continuation handler it creates a one-off trigger then immediately DELETES it. Cleanup can
-// only ever delete OUR OWN gap continuation handlers (gapJobIsOwnedContinuationHandler_) — NEVER runAmazonSnapshotImports
-// or any unrelated trigger. Testable core (injectable io) + a thin top-level USER-run editor wrapper.
-//   SUCCESS → { status:'TRIGGER_AUTHORIZATION_OK', created:true, cleanup:true, handlers:[...] }
-//   FAILURE → { status:'TRIGGER_AUTHORIZATION_FAILED', handlers:[{handler, created, cleanup, error:<EXACT exception>}] }
+// ---- LIVE8 §B4/§B5 + AUTH3 — ScriptApp trigger CREATE + CLEANUP authorization VERIFICATION -----------------------
+// LIVE8 proved trigger CREATION works after the script.scriptapp scope grant (live created:true for both handlers).
+// AUTH3 repairs the remaining live failure — "Unexpected error while getting the method or property deleteTrigger on
+// object ScriptApp." — which came from the OLD verifier deleting the Trigger object returned DIRECTLY by
+// newTrigger().create() (an unreliable delete target, Cause A). The verifier now cleans up with the SAME safe
+// provenance as every production cleanup path (gapJobDeleteTriggersByHandler_ → re-read getProjectTriggers(), delete
+// by handler). It still runs NO gap calculation and installs NO permanent trigger. CREATE and CLEANUP are classified
+// SEPARATELY so a cleanup failure is NEVER reported as an authorization failure when creation actually succeeded:
+//   CREATE ok + CLEANUP ok   → { status:'TRIGGER_AUTHORIZATION_OK',     created:true,  cleanup:true,  handlers:[...] }
+//   CREATE fails             → { status:'TRIGGER_AUTHORIZATION_FAILED', created:false, cleanup:false, handlers:[...] }
+//   CREATE ok + CLEANUP fail → { status:'TRIGGER_CLEANUP_FAILED',       created:true,  cleanup:false, handlers:[...] }
+// Cleanup is guarded to owned gap continuation handlers only (gapJobIsOwnedContinuationHandler_) — NEVER the Amazon
+// import trigger or any unrelated trigger. Testable core (injectable io) + a thin top-level USER-run editor wrapper.
 function gapJobVerifyTriggerAuth_(handlers, io) {
-  var results = [], allOk = true;
+  var results = [], createOk = true, cleanupOk = true;
   for (var i = 0; i < (handlers || []).length; i++) {
-    var h = handlers[i], created = false, cleanup = false, error = null;
+    var h = handlers[i], created = false, cleanup = false, cleaned = 0, error = null, cleanupError = null;
     try {
-      var t = io.createTrigger(h);                                   // the SAME ScriptApp.newTrigger auth the START path needs
+      io.createTrigger(h);                                       // the SAME ScriptApp.newTrigger auth the START path needs
       created = true;
-      if (io.isOwned(h)) { io.deleteTrigger(t); cleanup = true; }    // §B6 delete ONLY an owned gap continuation trigger
     } catch (e) {
-      allOk = false; error = (e && e.message) ? String(e.message) : String(e);   // §B5 surface the EXACT exception (never hidden)
+      createOk = false; error = (e && e.message) ? String(e.message) : String(e);       // §B5 surface the EXACT create exception
     }
-    results.push({ handler: h, created: created, cleanup: cleanup, error: error });
+    if (created && io.isOwned(h)) {                              // §B6 clean up ONLY an owned gap continuation handler
+      try {
+        cleaned = io.cleanupOwned(h);                            // AUTH3 §2 safe provenance (re-read getProjectTriggers, delete by handler)
+        cleanup = true;
+      } catch (ce) {
+        cleanupOk = false; cleanupError = (ce && ce.message) ? String(ce.message) : String(ce);   // surface the EXACT cleanup exception
+      }
+    }
+    results.push({ handler: h, created: created, cleanup: cleanup, cleaned: cleaned, error: error, cleanupError: cleanupError });
   }
-  return allOk ? { status: 'TRIGGER_AUTHORIZATION_OK', created: true, cleanup: true, handlers: results }
-               : { status: 'TRIGGER_AUTHORIZATION_FAILED', handlers: results };
+  if (!createOk) return { status: 'TRIGGER_AUTHORIZATION_FAILED', created: false, cleanup: false, handlers: results };
+  if (!cleanupOk) return { status: 'TRIGGER_CLEANUP_FAILED', created: true, cleanup: false, handlers: results };
+  return { status: 'TRIGGER_AUTHORIZATION_OK', created: true, cleanup: true, handlers: results };
 }
 // Top-level, USER-run from the Apps Script editor (NOT wired to any POST/trigger). Run ONCE as the project owner to
-// grant the trigger scope; it verifies BOTH products (§B8). NEVER performs a gap calculation.
+// grant + PROVE the trigger CREATE and CLEANUP scopes; it verifies BOTH products (§B8). NEVER performs a gap calculation.
 function verifyGapTriggerAuthorization() {
   var out = gapJobVerifyTriggerAuth_(
     [GAP_JOB_CONTINUATION_HANDLERS_.INVENTORY, GAP_JOB_CONTINUATION_HANDLERS_.ORDER_PLANNING],
     { createTrigger: function (h) { return ScriptApp.newTrigger(h).timeBased().after(60000).create(); },
-      deleteTrigger: function (t) { return ScriptApp.deleteTrigger(t); },
+      cleanupOwned: function (h) { return gapJobDeleteTriggersByHandler_(h); },   // AUTH3 §2 safe provenance — re-read getProjectTriggers(), never the create()-returned object
       isOwned: function (h) { return gapJobIsOwnedContinuationHandler_(h); } });
   try { if (typeof Logger !== 'undefined' && Logger.log) Logger.log('[GapJob] ' + JSON.stringify(out)); } catch (_l) {}
   return out;
