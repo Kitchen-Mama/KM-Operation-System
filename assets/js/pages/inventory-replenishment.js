@@ -5164,6 +5164,7 @@ function loadRecommendationWorkspace_() {
     _irRecoState.fromCache = true;
     _irRecoRerenderSummaries();
     _irRecoUpdateSuggestedCells();
+    _irRecoRefreshVelocityCells_();   // LIVE9V: cache-hit path also refreshes the velocity cells to the canonical rate
     return null;
   }
   if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
@@ -5190,6 +5191,7 @@ function loadRecommendationWorkspace_() {
     _irRecoCacheSet(scopeReq, env);   // FM3a: cache ONLY a successful canonical envelope (guarded inside)
     _irRecoRerenderSummaries();
     _irRecoUpdateSuggestedCells();
+    _irRecoRefreshVelocityCells_();   // LIVE9V: re-render Avg Sales/day + Days of Supply with the now-loaded canonical rate
   }).catch(function (err) {
     if (my !== _irRecoSeq) return;
     _irRecoRecordDiag(_t0);
@@ -5589,6 +5591,24 @@ function _irRecoUpdateSuggestedCells() {
     var skuData = null; for (var i = 0; i < data.length; i++) { if (data[i].sku === sku) { skuData = data[i]; break; } }
     cell.innerHTML = _irSuggestedCellHtml(skuData || { sku: sku });
   });
+}
+// F1-4B-FM5-R4J-LIVE9V — the canonical Sales-Driven velocity (horizonBasis.avgSalesPerDay) arrives via the ASYNC
+// recommendation.workspace.get, which completes AFTER the synchronous main-table render. renderReplenishment()
+// computes the Avg Sales/day + Days of Supply cells from _irCanonicalSalesBasis_, so those cells stay on the weekly
+// fallback until the table is re-rendered — and neither _irRecoRerenderSummaries (summary cards) nor
+// _irRecoUpdateSuggestedCells (Suggested cell) touches the velocity cells. This performs ONE bounded re-render of
+// the main table once a Sales-Driven canonical basis has actually loaded, so the displayed Avg Sales/day + Days of
+// Supply align to the same authority as the D-horizon. Guarded (only when a sales_driven basis is present) so a
+// Forecast-only scope never re-renders; renderReplenishment does NOT re-fire the workspace read (no loop), and the
+// scope read is deduped so this runs once per scope. NO recompute here — renderReplenishment is the sole owner.
+function _irRecoHasSalesDrivenBasis_() {
+  var by = _irRecoState && _irRecoState.linesBySku; if (!by) return false;
+  for (var sku in by) { if (!by.hasOwnProperty(sku)) continue; var ls = by[sku] || [];
+    for (var i = 0; i < ls.length; i++) { var b = ls[i] && ls[i].horizonBasis; if (b && b.demandMode === 'sales_driven' && b.avgSalesPerDay != null) return true; } }
+  return false;
+}
+function _irRecoRefreshVelocityCells_() {
+  if (_irRecoState && _irRecoState.status === 'READY' && _irRecoHasSalesDrivenBasis_() && typeof renderReplenishment === 'function') renderReplenishment();
 }
 // __IRRECO_END__ (test extraction marker — do not remove)
 
