@@ -669,6 +669,7 @@
         windowCode: windowCode, demandKey: demandKey,
         calculatedGap: (blockedReason && (gap === undefined || typeof gap !== 'number' || isNaN(gap))) ? null : gap,
         recommendedQty: recommendedQty,
+        unitsPerCarton: validUpc(f.unitsPerCarton) ? f.unitsPerCarton : null,   // F1-4B-FM6-R3D: carried for the per-source whole-carton EXECUTION decomposition (not a recommendation input)
         allocationMode: lineMode,
         allocationBreakdown: breakdown,
         unallocatedQty: unallocatedQty,

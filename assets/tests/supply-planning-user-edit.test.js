@@ -20,7 +20,8 @@ var Hm = {
 };
 var Hw = {
   shipping_allocation_drafts: ['allocation_draft_id', 'planning_cycle', 'company', 'country', 'marketplace', 'source_page', 'status', 'draft_version', 'updated_at'],
-  shipping_allocation_draft_lines: ['allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku', 'window_code', 'recommended_qty', 'planned_qty', 'selected_shipping_method', 'line_status', 'note', 'user_edited', 'user_edited_by', 'updated_at']
+  // F1-4B-FM6-R3C2/R3D: WEEKLY line grain includes the per-source nullable key columns (source_warehouse_id/route_no).
+  shipping_allocation_draft_lines: ['allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku', 'window_code', 'recommended_qty', 'planned_qty', 'selected_shipping_method', 'line_status', 'note', 'user_edited', 'user_edited_by', 'updated_at', 'source_warehouse_id', 'route_no']
 };
 function sheet(H) { var s = KMPR.createSheetSet(); Object.keys(H).forEach(function (t) { s[t].headers = H[t].slice(); }); s[KMPR.RUN_JOURNAL_TABLE].headers = KMPR.RUN_JOURNAL_HEADERS.slice(); return s; }
 function mrow(s, t) { return s[t].rows.map(function (r) { var o = {}; s[t].headers.forEach(function (h, i) { o[h] = r[i]; }); return o; }); }
@@ -161,10 +162,10 @@ section('E. shipping planned_qty edit');
 (function () {
   var s = sheet(Hw);
   s.shipping_allocation_drafts.rows.push(['SAD-1', '2026-W32', 'KM', 'US', 'AMAZON_US', 'REPLENISH', 'draft', 1, '']);
-  s.shipping_allocation_draft_lines.rows.push(['SAL-1', 'SAD-1', 'GA0450', 'ST1', 'W32', 50, 50, 'SEA', 'active', '', 'FALSE', '', '']);
+  s.shipping_allocation_draft_lines.rows.push(['SAL-1', 'SAD-1', 'GA0450', 'ST1', 'W32', 50, 50, 'SEA', 'active', '', 'FALSE', '', '', '', '']);
   var tok = tokenOf(s, 'SAD-1', 'WEEKLY_SHIPPING', 1);
   var cmd = { recommendationType: 'WEEKLY_SHIPPING', draftId: 'SAD-1', actor: 'planner', expectedToken: tok,
-    edits: [{ naturalKey: { sku: 'GA0450', site_sku: 'ST1', window_code: 'W32' }, fields: { planned_qty: 42, selected_shipping_method: 'AIR', note: 'expedite' } }] };
+    edits: [{ naturalKey: { sku: 'GA0450', site_sku: 'ST1', window_code: 'W32', source_warehouse_id: '', route_no: '' }, fields: { planned_qty: 42, selected_shipping_method: 'AIR', note: 'expedite' } }] };
   var r = KMUE.runUserDecisionEdit(cmd, makeDeps(s, 'WEEKLY_SHIPPING', 'SAD-1'));
   eq(r.status, 'COMPLETED', 'E: shipping edit COMPLETED');
   var l = mrow(s, 'shipping_allocation_draft_lines')[0];

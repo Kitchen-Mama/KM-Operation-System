@@ -178,7 +178,9 @@ section('F. shipping natural-key upsert');
       lineOps: lineOps, lineageOps: [], totals: {}, stages: R.STAGES.slice(), auditEvents: []
     };
   }
-  function wLine(sku, site, win, rec, op, extra) { var o = { op: op || 'INSERT', naturalKey: { allocation_draft_id: 'SAD-1', sku: sku, site_sku: site, window_code: win }, row: { recommended_qty: rec, planned_qty: rec } }; if (extra) for (var k in extra) { if (k === 'row') for (var j in extra.row) o.row[j] = extra.row[j]; else o[k] = extra[k]; } return o; }
+  // F1-4B-FM6-R3C2/R3D: WEEKLY natural key is the frozen 5-part key; source_warehouse_id + route_no are nullable
+  // parts that must be PRESENT (blank allowed). Default them blank (single-source/unsourced); `extra.naturalKey` overrides.
+  function wLine(sku, site, win, rec, op, extra) { var o = { op: op || 'INSERT', naturalKey: { allocation_draft_id: 'SAD-1', sku: sku, site_sku: site, window_code: win, source_warehouse_id: '', route_no: '' }, row: { recommended_qty: rec, planned_qty: rec } }; if (extra) for (var k in extra) { if (k === 'row') for (var j in extra.row) o.row[j] = extra.row[j]; else if (k === 'naturalKey') for (var m in extra.naturalKey) o.naturalKey[m] = extra.naturalKey[m]; else o[k] = extra[k]; } return o; }
   function wtok(s, v) { var snap = R.loadDraftSnapshot(s, 'SAD-1', 'WEEKLY_SHIPPING'); return R.computeExpectedToken(v, snap.lines.map(function (l) { return { lineKey: l.lineKey, userQty: l.userQty, userEdited: l.userEdited }; })); }
 
   var s = wsheet();

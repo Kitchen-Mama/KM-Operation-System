@@ -86,33 +86,91 @@
     var r = isObj(baseSnap) ? shallow(baseSnap) : {};
     r.source_warehouse_id = str(srcId);
     r.source_warehouse_code_snapshot = str(srcCode);
-    r.source_allocated_qty_snapshot = (allocQty === null || allocQty === undefined) ? '' : allocQty;
+    r.source_allocated_qty_snapshot = (allocQty === null || allocQty === undefined) ? '' : allocQty;   // RAW per-source availability — loose stays visible (§4)
     return r;
   }
+
+  // ---- F1-4B-FM6-R3D: FROZEN whole-carton source EXECUTION allocation --------
+  // Decompose the already-frozen aggregate recommendedQty R (itself a whole-carton multiple) into per-physical-source
+  // EXECUTION quantities using WHOLE CARTONS ONLY. Overseas sources fill before Factory; within a tier, sources are
+  // consumed in the deterministic allocation-sequence order. A source contributes only whole cartons of ITS OWN
+  // available units — loose residual units in a warehouse are NEVER auto-allocated (cartons cannot be combined across
+  // physical warehouses; a human may later override, §4). This is DECOMPOSITION of R, NOT a second recommendation
+  // formula: it never increases any quantity, never exceeds R, and every per-source result is a carton multiple.
+  // availableQty is the per-source CONSERVED allocated units (KMALLOC output), so carton flooring — which only ever
+  // REDUCES — can never over-allocate a shared pool (§5). wholeCartonAvailable(x,UPC) = floor(max(0,x)/UPC)*UPC.
+  function wholeCartonAvailable(x, upc) { var v = (typeof x === 'number' && isFinite(x) && x > 0) ? x : 0; return Math.floor(v / upc) * upc; }
+  function tierRank(t) { return t === 'FACTORY' ? 1 : 0; }   // OVERSEAS (0) strictly before FACTORY (1)
+  function classifyTier(e) {
+    var pt = str(e && e.sourcePoolType).toUpperCase();
+    if (pt === 'FACTORY') return 'FACTORY';
+    if (pt === 'FBA' || pt === 'THREE_PL' || pt === '3PL') return 'OVERSEAS';
+    var asrc = str(e && e.allocationSource).toUpperCase(); if (asrc === 'FACTORY') return 'FACTORY'; if (asrc === 'OVERSEAS') return 'OVERSEAS';
+    return str(e && e.allocationReason).toUpperCase().indexOf('FACTORY') !== -1 ? 'FACTORY' : 'OVERSEAS';
+  }
+  // sources: [{ sourceWarehouseId, routeNo, tier:'OVERSEAS'|'FACTORY', availableQty, seq }]
+  // returns: { perSource:[{sourceWarehouseId, routeNo, tier, availableQty, cartonAvailableQty, allocatedQty}],
+  //            uncoveredQty, overseasAllocated, factoryAllocated, recommendedQty }
+  function allocateWholeCartonSources(recommendedQty, unitsPerCarton, sources) {
+    var upc = unitsPerCarton;
+    aType(typeof upc === 'number' && isFinite(upc) && upc > 0 && Math.floor(upc) === upc, 'allocateWholeCartonSources: unitsPerCarton must be a positive integer (got ' + upc + ')');
+    var R = (typeof recommendedQty === 'number' && isFinite(recommendedQty) && recommendedQty >= 0) ? recommendedQty : 0;
+    aRange(R % upc === 0, 'allocateWholeCartonSources: recommendedQty must already be a whole-carton multiple (frozen cartonization is NOT re-run here): ' + R + ' % ' + upc);
+    var ordered = (sources || []).slice().sort(function (a, b) {
+      return (tierRank(a.tier) - tierRank(b.tier)) || ((num(a.seq) || 0) - (num(b.seq) || 0)) ||
+        cmpStr(str(a.sourceWarehouseId), str(b.sourceWarehouseId)) || cmpStr(str(a.routeNo), str(b.routeNo));
+    });
+    var remaining = R, perSource = [], overseasAllocated = 0, factoryAllocated = 0;
+    for (var i = 0; i < ordered.length; i++) {
+      var s = ordered[i], cartonAvail = wholeCartonAvailable(s.availableQty, upc);
+      var take = Math.min(remaining, cartonAvail); if (take < 0) take = 0;
+      aRange(take % upc === 0, 'allocateWholeCartonSources: per-source allocation must be a carton multiple');
+      perSource.push({ sourceWarehouseId: str(s.sourceWarehouseId), routeNo: str(s.routeNo), tier: (s.tier === 'FACTORY' ? 'FACTORY' : 'OVERSEAS'), availableQty: (num(s.availableQty) || 0), cartonAvailableQty: cartonAvail, allocatedQty: take });
+      if (s.tier === 'FACTORY') factoryAllocated += take; else overseasAllocated += take;
+      remaining -= take;
+    }
+    var uncoveredQty = remaining;
+    aRange(uncoveredQty >= 0, 'allocateWholeCartonSources: uncovered must be ≥ 0');
+    aRange(overseasAllocated + factoryAllocated + uncoveredQty === R, 'allocateWholeCartonSources: allocated + uncovered must equal recommendedQty (' + (overseasAllocated + factoryAllocated) + ' + ' + uncoveredQty + ' != ' + R + ')');
+    return { perSource: perSource, uncoveredQty: uncoveredQty, overseasAllocated: overseasAllocated, factoryAllocated: factoryAllocated, recommendedQty: R };
+  }
+
   function expandSourceFacts(type, cfg, f) {
     if (type !== 'WEEKLY_SHIPPING' || !cfg.nullableLineKey) return [f];   // only the WEEKLY per-source grain fans out
     var lin = isObj(f.lineage) ? f.lineage : {};
     var bd = Array.isArray(lin.allocationBreakdown) ? lin.allocationBreakdown : [];
     var routeNo = str(f.route_no);
+    var R = num(f.recommendedQty);
     if (f.blocked === true || bd.length === 0) {
       var one = shallow(f);
       one.source_warehouse_id = str(f.source_warehouse_id);   // blank ⇒ unsourced (all-uncovered) / single-line
       one.route_no = routeNo;
+      // single unsourced line (no per-source breakdown): the builder sets NO execution qty — the Core defaults
+      // planned_qty to the recommendation snapshot (unchanged single-source / unsourced behavior).
       one.snapshotRow = withSourceSnapshot(f.snapshotRow, one.source_warehouse_id, f.source_warehouse_code_snapshot, f.blocked === true ? null : 0);
       return [one];
     }
-    // group by (sourceWarehouseId, routeNo) → one execution line per physical source; sum allocatedQty per source
+    // group by (sourceWarehouseId, routeNo) → one execution line per physical source; sum RAW allocatedQty per source
+    // and capture the tier (Overseas vs Factory) + first allocation sequence for deterministic Overseas-first ordering.
     var order = [], byKey = {};
     for (var i = 0; i < bd.length; i++) {
       var e = bd[i]; var sid = str(e && e.sourceWarehouseId); var k = sid + SEP + routeNo;
-      if (!byKey[k]) { byKey[k] = { sid: sid, code: str(e && (e.sourceWarehouseCode || e.sourceWarehouseCodeSnapshot)), qty: 0 }; order.push(k); }
-      var q = num(e && e.allocatedQty); if (q !== null) byKey[k].qty += q;
+      if (!byKey[k]) { byKey[k] = { sid: sid, route: routeNo, code: str(e && (e.sourceWarehouseCode || e.sourceWarehouseCodeSnapshot)), qty: 0, tier: classifyTier(e), seq: num(e && e.allocationSequence) }; order.push(k); }
+      var g0 = byKey[k];
+      var q = num(e && e.allocatedQty); if (q !== null) g0.qty += q;
+      var sq = num(e && e.allocationSequence); if (sq !== null && (g0.seq === null || sq < g0.seq)) g0.seq = sq;
     }
+    // FROZEN whole-carton execution decomposition of R across the physical sources (Overseas first, then Factory).
+    var sources = order.map(function (k) { var g = byKey[k]; return { sourceWarehouseId: g.sid, routeNo: g.route, tier: g.tier, availableQty: g.qty, seq: g.seq }; });
+    var exec = (R === null) ? null : allocateWholeCartonSources(R, num(lin.unitsPerCarton), sources);
+    var execByKey = {};
+    if (exec) exec.perSource.forEach(function (p) { execByKey[p.sourceWarehouseId + SEP + p.routeNo] = p.allocatedQty; });
     return order.map(function (k) {
       var g = byKey[k], out = shallow(f);
       out.source_warehouse_id = g.sid;
       out.route_no = routeNo;
-      out.snapshotRow = withSourceSnapshot(f.snapshotRow, g.sid, g.code, g.qty);
+      out.executionQty = exec ? execByKey[g.sid + SEP + routeNo] : null;   // per-source WHOLE-CARTON execution → planned_qty
+      out.snapshotRow = withSourceSnapshot(f.snapshotRow, g.sid, g.code, g.qty);   // RAW per-source availability (loose visible)
       return out;   // recommendedQty stays the AGGREGATE (verbatim from f) — never re-split / re-cartonized
     });
   }
@@ -143,6 +201,10 @@
     assertNoLiveAnalysisAuthority(extraRow, type + ' snapshotRow');
     // partial-carton exact value is preserved verbatim — never re-rounded (REQ_PO §37)
     var commandLine = { lineKey: lineKey, recommendedQty: blocked ? null : f.recommendedQty, lineState: blocked ? 'BLOCKED' : 'OK' };
+    // F1-4B-FM6-R3D: per-source WHOLE-CARTON execution qty (planned_qty init). Only WEEKLY per-source lines carry it;
+    // MONTHLY (and any line without a computed executionQty) leaves it unset so the Core defaults planned/order qty to
+    // the recommendation snapshot (unchanged). recommended_qty stays the aggregate authority (§7).
+    if (!blocked && typeof f.executionQty === 'number' && isFinite(f.executionQty)) commandLine.userQty = f.executionQty;
     if (blocked) commandLine.reason = f.reason;
     if (f.demandKey !== undefined) commandLine.demandKey = f.demandKey;
     var detail = {
@@ -211,6 +273,10 @@
     buildLineKey: buildLineKey,
     splitLineKey: splitLineKey,
     assertNoLiveAnalysisAuthority: assertNoLiveAnalysisAuthority,
-    buildRecommendation: buildRecommendation
+    buildRecommendation: buildRecommendation,
+    // F1-4B-FM6-R3D: the FROZEN whole-carton source execution allocation rule (pure; exported for the next-slice
+    // AI-Plan wiring + tests). wholeCartonAvailable(x,UPC)=floor(max(0,x)/UPC)*UPC.
+    allocateWholeCartonSources: allocateWholeCartonSources,
+    wholeCartonAvailable: wholeCartonAvailable
   };
 });

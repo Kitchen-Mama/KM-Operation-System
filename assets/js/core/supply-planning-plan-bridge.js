@@ -181,6 +181,10 @@
         // lineage OBJECT the Plan Builder accepts, so the WEEKLY per-source execution fan-out can persist one line
         // per physical source. Non-authoritative runtime metadata — NEVER a recommendation formula input.
         allocationBreakdown: Array.isArray(line.allocationBreakdown) ? line.allocationBreakdown.slice() : [],
+        // F1-4B-FM6-R3D: units_per_carton carried so the fan-out can apply the FROZEN whole-carton EXECUTION
+        // decomposition of the aggregate recommendedQty across sources (execution eligibility only — never re-runs
+        // the recommendation/cartonization formula, which already produced recommendedQty upstream).
+        unitsPerCarton: (type === 'WEEKLY_SHIPPING' && line.unitsPerCarton !== undefined && line.unitsPerCarton !== null) ? line.unitsPerCarton : null,
         keys: Array.isArray(line.lineage) ? line.lineage.slice() : []
       };
       var planFact = {};

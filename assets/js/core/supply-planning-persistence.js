@@ -145,7 +145,9 @@
           store.lines.push({
             lineId: lineId, draftId: run.draftId, lineKey: pl.lineKey,
             recommendedQty: blocked ? null : pl.recommendedQty,
-            userQty: blocked ? null : pl.recommendedQty, // first-line init = recommended (PO-10)
+            // first-line init = the per-source WHOLE-CARTON execution qty when the plan carries one (F1-4B-FM6-R3D
+            // WEEKLY per-source lines), else the recommendation snapshot (PO-10; MONTHLY + single-source unchanged).
+            userQty: blocked ? null : (typeof pl.userQty === 'number' && isFinite(pl.userQty) ? pl.userQty : pl.recommendedQty),
             userEdited: false,
             lineStatus: blocked ? 'BLOCKED' : 'ACTIVE',
             reason: blocked ? pl.reason : null,
@@ -165,7 +167,7 @@
           counts.skipped++;
         } else { // CREATE (re-run) or REGENERATE — recompute recommended; user qty per reInit
           line.recommendedQty = pl.recommendedQty;
-          if (run.reInitUserQty === true) { line.userQty = pl.recommendedQty; line.userEdited = false; }
+          if (run.reInitUserQty === true) { line.userQty = (typeof pl.userQty === 'number' && isFinite(pl.userQty) ? pl.userQty : pl.recommendedQty); line.userEdited = false; }
           line.lineStatus = 'ACTIVE'; line.reason = null;
           counts.updated++;
         }

@@ -60,20 +60,22 @@ section('B. Weekly projection');
   eq(out.command.recommendationType, 'WEEKLY_SHIPPING', 'B: command type');
   eq(out.command.mode, 'SCHEDULED_REFRESH', 'B: command mode preserved for Core');
   eq(out.command.recommendedLines.length, 2, 'B: two command lines');
-  // stable ordering + reversible line keys
+  // stable ordering + reversible line keys. F1-4B-FM6-R3C2/R3D: WEEKLY key is the frozen 5-part key; an unsourced
+  // line (no allocationBreakdown) carries two BLANK nullable segments (source_warehouse_id + route_no).
+  var BLK = SEP + '' + SEP + '';
   eq(out.command.recommendedLines.map(function (l) { return l.lineKey; }),
-    ['GA0450' + SEP + 'ST1' + SEP + 'W32', 'GA0450' + SEP + 'ST2' + SEP + 'W32'], 'B: reversible SEP-joined line keys, stable-sorted');
+    ['GA0450' + SEP + 'ST1' + SEP + 'W32' + BLK, 'GA0450' + SEP + 'ST2' + SEP + 'W32' + BLK], 'B: reversible SEP-joined 5-part line keys, stable-sorted');
   eq(out.command.recommendedLines[0].recommendedQty, 50, 'B: recommendedQty carried (snapshot)');
   eq(out.command.recommendedLines[0].lineState, 'OK', 'B: OK lineState');
-  ok(out.command.recommendedLines[0].planned_qty === undefined && out.command.recommendedLines[0].userQty === undefined, 'B: builder does NOT set a decision qty (Core initializes planned_qty)');
+  ok(out.command.recommendedLines[0].planned_qty === undefined && out.command.recommendedLines[0].userQty === undefined, 'B: builder sets NO decision qty for an unsourced line (Core initializes planned_qty)');
   // detail map carries structured natural key + extra snapshot row (no decision col)
-  var d = out.lineDetails['GA0450' + SEP + 'ST1' + SEP + 'W32'];
-  eq(d.naturalKey, { sku: 'GA0450', site_sku: 'ST1', window_code: 'W32' }, 'B: structured natural key in detail');
-  eq(d.row, { recommended_source_warehouse_id: 'WH-CN' }, 'B: extra snapshot row preserved');
+  var d = out.lineDetails['GA0450' + SEP + 'ST1' + SEP + 'W32' + BLK];
+  eq(d.naturalKey, { sku: 'GA0450', site_sku: 'ST1', window_code: 'W32', source_warehouse_id: '', route_no: '' }, 'B: structured 5-part natural key in detail (blank nullable parts)');
+  eq(d.row, { recommended_source_warehouse_id: 'WH-CN', source_warehouse_id: '', source_warehouse_code_snapshot: '', source_allocated_qty_snapshot: 0 }, 'B: extra snapshot row preserved + per-source snapshot columns (blank source, 0 allocated)');
   ok(d.row.planned_qty === undefined && d.row.recommended_qty === undefined, 'B: detail row carries neither decision nor recommended_qty (added downstream)');
   eq(d.lineage, { allocationKey: 'AK1' }, 'B: runtime lineage retained in detail (not necessarily persisted)');
-  // splitLineKey round-trips
-  eq(PB.splitLineKey('WEEKLY_SHIPPING', out.command.recommendedLines[1].lineKey), { sku: 'GA0450', site_sku: 'ST2', window_code: 'W32' }, 'B: splitLineKey reconstructs natural key');
+  // splitLineKey round-trips (5-part)
+  eq(PB.splitLineKey('WEEKLY_SHIPPING', out.command.recommendedLines[1].lineKey), { sku: 'GA0450', site_sku: 'ST2', window_code: 'W32', source_warehouse_id: '', route_no: '' }, 'B: splitLineKey reconstructs the 5-part natural key');
   // Core accepts the command unchanged
   var gen = CORE.generateRecommendationDraft(CORE.createStore(), out.command);
   eq(gen.result.status, 'COMPLETED', 'B: Persistence Core accepts the built command → COMPLETED');

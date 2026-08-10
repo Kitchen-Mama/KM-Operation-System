@@ -17,11 +17,14 @@ function section(n) { console.log('\n== ' + n + ' =='); }
 
 // A resolved WEEKLY fact: aggregate recommendedQty + a per-source allocationBreakdown carried in lineage
 // (verbatim from KMALLOC/KMMSA, as the bridge now threads it). breakdown = [{sourceWarehouseId, allocatedQty}].
+// F1-4B-FM6-R3D: lineage also carries unitsPerCarton so the fan-out can run the whole-carton EXECUTION decomposition
+// (all fixture quantities here are multiples of 100). This test pins the R3C2 fan-out semantics — aggregate
+// recommended_qty repeated per source + raw source_allocated_qty_snapshot — which R3D preserves unchanged.
 function fact(recommendedQty, breakdown, over) {
   return Object.assign({
     sku: 'CO1100-R', site_sku: 'ST-1', window_code: 'W40-A', blocked: false,
     recommendedQty: recommendedQty,
-    lineage: { allocationBreakdown: breakdown || [] }
+    lineage: { allocationBreakdown: breakdown || [], unitsPerCarton: 100 }
   }, over || {});
 }
 function build(lines) {

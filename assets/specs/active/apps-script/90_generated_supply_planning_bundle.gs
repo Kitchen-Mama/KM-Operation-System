@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = 5c1fa95f8a8ee8de518288a048168a3601c9c375cdef27b9e4025aef70a23df9
+// bundle_sha256 = aea141da8b913ec3b804995bc070ffb6f6f6d7e3c19567ac1c575b006778dc2d
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -14,15 +14,15 @@
 //   supply-planning-incoming-adapters  6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0
 //   supply-planning-external-incoming-adapters  ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93
 //   supply-planning-supply-candidates  c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79
-//   supply-planning-persistence  e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6
+//   supply-planning-persistence  1037ad4ba8cf0fb24f6f874d49e3a816ed7a805e1874cd1ebceb05327ab2e407
 //   supply-planning-persistence-repository  0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470
 //   supply-planning-persistence-locking  ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b
-//   supply-planning-plan-builder  d97a87ca31513e14e5919c96aa76456cc5c3648741d67626d5c31c72ac5e806c
+//   supply-planning-plan-builder  f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203
 //   supply-planning-persistence-plan-builder  c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304
 //   supply-planning-recommendation-orchestrator  23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192
 //   supply-planning-user-edit  365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693
-//   supply-planning-source-facts  c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83
-//   supply-planning-plan-bridge  367dfd27ad5be614ae07c20b04fcdf8d6815532853ffec7992e7e5239e70e1e0
+//   supply-planning-source-facts  ee4685682611dee36d68e98e87e503f4e49f454dce760d13b2d752cd73613d1c
+//   supply-planning-plan-bridge  c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
@@ -2971,7 +2971,9 @@ function __kmRequire(p) {
           store.lines.push({
             lineId: lineId, draftId: run.draftId, lineKey: pl.lineKey,
             recommendedQty: blocked ? null : pl.recommendedQty,
-            userQty: blocked ? null : pl.recommendedQty, // first-line init = recommended (PO-10)
+            // first-line init = the per-source WHOLE-CARTON execution qty when the plan carries one (F1-4B-FM6-R3D
+            // WEEKLY per-source lines), else the recommendation snapshot (PO-10; MONTHLY + single-source unchanged).
+            userQty: blocked ? null : (typeof pl.userQty === 'number' && isFinite(pl.userQty) ? pl.userQty : pl.recommendedQty),
             userEdited: false,
             lineStatus: blocked ? 'BLOCKED' : 'ACTIVE',
             reason: blocked ? pl.reason : null,
@@ -2991,7 +2993,7 @@ function __kmRequire(p) {
           counts.skipped++;
         } else { // CREATE (re-run) or REGENERATE — recompute recommended; user qty per reInit
           line.recommendedQty = pl.recommendedQty;
-          if (run.reInitUserQty === true) { line.userQty = pl.recommendedQty; line.userEdited = false; }
+          if (run.reInitUserQty === true) { line.userQty = (typeof pl.userQty === 'number' && isFinite(pl.userQty) ? pl.userQty : pl.recommendedQty); line.userEdited = false; }
           line.lineStatus = 'ACTIVE'; line.reason = null;
           counts.updated++;
         }
@@ -3947,33 +3949,91 @@ function __kmRequire(p) {
     var r = isObj(baseSnap) ? shallow(baseSnap) : {};
     r.source_warehouse_id = str(srcId);
     r.source_warehouse_code_snapshot = str(srcCode);
-    r.source_allocated_qty_snapshot = (allocQty === null || allocQty === undefined) ? '' : allocQty;
+    r.source_allocated_qty_snapshot = (allocQty === null || allocQty === undefined) ? '' : allocQty;   // RAW per-source availability — loose stays visible (§4)
     return r;
   }
+
+  // ---- F1-4B-FM6-R3D: FROZEN whole-carton source EXECUTION allocation --------
+  // Decompose the already-frozen aggregate recommendedQty R (itself a whole-carton multiple) into per-physical-source
+  // EXECUTION quantities using WHOLE CARTONS ONLY. Overseas sources fill before Factory; within a tier, sources are
+  // consumed in the deterministic allocation-sequence order. A source contributes only whole cartons of ITS OWN
+  // available units — loose residual units in a warehouse are NEVER auto-allocated (cartons cannot be combined across
+  // physical warehouses; a human may later override, §4). This is DECOMPOSITION of R, NOT a second recommendation
+  // formula: it never increases any quantity, never exceeds R, and every per-source result is a carton multiple.
+  // availableQty is the per-source CONSERVED allocated units (KMALLOC output), so carton flooring — which only ever
+  // REDUCES — can never over-allocate a shared pool (§5). wholeCartonAvailable(x,UPC) = floor(max(0,x)/UPC)*UPC.
+  function wholeCartonAvailable(x, upc) { var v = (typeof x === 'number' && isFinite(x) && x > 0) ? x : 0; return Math.floor(v / upc) * upc; }
+  function tierRank(t) { return t === 'FACTORY' ? 1 : 0; }   // OVERSEAS (0) strictly before FACTORY (1)
+  function classifyTier(e) {
+    var pt = str(e && e.sourcePoolType).toUpperCase();
+    if (pt === 'FACTORY') return 'FACTORY';
+    if (pt === 'FBA' || pt === 'THREE_PL' || pt === '3PL') return 'OVERSEAS';
+    var asrc = str(e && e.allocationSource).toUpperCase(); if (asrc === 'FACTORY') return 'FACTORY'; if (asrc === 'OVERSEAS') return 'OVERSEAS';
+    return str(e && e.allocationReason).toUpperCase().indexOf('FACTORY') !== -1 ? 'FACTORY' : 'OVERSEAS';
+  }
+  // sources: [{ sourceWarehouseId, routeNo, tier:'OVERSEAS'|'FACTORY', availableQty, seq }]
+  // returns: { perSource:[{sourceWarehouseId, routeNo, tier, availableQty, cartonAvailableQty, allocatedQty}],
+  //            uncoveredQty, overseasAllocated, factoryAllocated, recommendedQty }
+  function allocateWholeCartonSources(recommendedQty, unitsPerCarton, sources) {
+    var upc = unitsPerCarton;
+    aType(typeof upc === 'number' && isFinite(upc) && upc > 0 && Math.floor(upc) === upc, 'allocateWholeCartonSources: unitsPerCarton must be a positive integer (got ' + upc + ')');
+    var R = (typeof recommendedQty === 'number' && isFinite(recommendedQty) && recommendedQty >= 0) ? recommendedQty : 0;
+    aRange(R % upc === 0, 'allocateWholeCartonSources: recommendedQty must already be a whole-carton multiple (frozen cartonization is NOT re-run here): ' + R + ' % ' + upc);
+    var ordered = (sources || []).slice().sort(function (a, b) {
+      return (tierRank(a.tier) - tierRank(b.tier)) || ((num(a.seq) || 0) - (num(b.seq) || 0)) ||
+        cmpStr(str(a.sourceWarehouseId), str(b.sourceWarehouseId)) || cmpStr(str(a.routeNo), str(b.routeNo));
+    });
+    var remaining = R, perSource = [], overseasAllocated = 0, factoryAllocated = 0;
+    for (var i = 0; i < ordered.length; i++) {
+      var s = ordered[i], cartonAvail = wholeCartonAvailable(s.availableQty, upc);
+      var take = Math.min(remaining, cartonAvail); if (take < 0) take = 0;
+      aRange(take % upc === 0, 'allocateWholeCartonSources: per-source allocation must be a carton multiple');
+      perSource.push({ sourceWarehouseId: str(s.sourceWarehouseId), routeNo: str(s.routeNo), tier: (s.tier === 'FACTORY' ? 'FACTORY' : 'OVERSEAS'), availableQty: (num(s.availableQty) || 0), cartonAvailableQty: cartonAvail, allocatedQty: take });
+      if (s.tier === 'FACTORY') factoryAllocated += take; else overseasAllocated += take;
+      remaining -= take;
+    }
+    var uncoveredQty = remaining;
+    aRange(uncoveredQty >= 0, 'allocateWholeCartonSources: uncovered must be ≥ 0');
+    aRange(overseasAllocated + factoryAllocated + uncoveredQty === R, 'allocateWholeCartonSources: allocated + uncovered must equal recommendedQty (' + (overseasAllocated + factoryAllocated) + ' + ' + uncoveredQty + ' != ' + R + ')');
+    return { perSource: perSource, uncoveredQty: uncoveredQty, overseasAllocated: overseasAllocated, factoryAllocated: factoryAllocated, recommendedQty: R };
+  }
+
   function expandSourceFacts(type, cfg, f) {
     if (type !== 'WEEKLY_SHIPPING' || !cfg.nullableLineKey) return [f];   // only the WEEKLY per-source grain fans out
     var lin = isObj(f.lineage) ? f.lineage : {};
     var bd = Array.isArray(lin.allocationBreakdown) ? lin.allocationBreakdown : [];
     var routeNo = str(f.route_no);
+    var R = num(f.recommendedQty);
     if (f.blocked === true || bd.length === 0) {
       var one = shallow(f);
       one.source_warehouse_id = str(f.source_warehouse_id);   // blank ⇒ unsourced (all-uncovered) / single-line
       one.route_no = routeNo;
+      // single unsourced line (no per-source breakdown): the builder sets NO execution qty — the Core defaults
+      // planned_qty to the recommendation snapshot (unchanged single-source / unsourced behavior).
       one.snapshotRow = withSourceSnapshot(f.snapshotRow, one.source_warehouse_id, f.source_warehouse_code_snapshot, f.blocked === true ? null : 0);
       return [one];
     }
-    // group by (sourceWarehouseId, routeNo) → one execution line per physical source; sum allocatedQty per source
+    // group by (sourceWarehouseId, routeNo) → one execution line per physical source; sum RAW allocatedQty per source
+    // and capture the tier (Overseas vs Factory) + first allocation sequence for deterministic Overseas-first ordering.
     var order = [], byKey = {};
     for (var i = 0; i < bd.length; i++) {
       var e = bd[i]; var sid = str(e && e.sourceWarehouseId); var k = sid + SEP + routeNo;
-      if (!byKey[k]) { byKey[k] = { sid: sid, code: str(e && (e.sourceWarehouseCode || e.sourceWarehouseCodeSnapshot)), qty: 0 }; order.push(k); }
-      var q = num(e && e.allocatedQty); if (q !== null) byKey[k].qty += q;
+      if (!byKey[k]) { byKey[k] = { sid: sid, route: routeNo, code: str(e && (e.sourceWarehouseCode || e.sourceWarehouseCodeSnapshot)), qty: 0, tier: classifyTier(e), seq: num(e && e.allocationSequence) }; order.push(k); }
+      var g0 = byKey[k];
+      var q = num(e && e.allocatedQty); if (q !== null) g0.qty += q;
+      var sq = num(e && e.allocationSequence); if (sq !== null && (g0.seq === null || sq < g0.seq)) g0.seq = sq;
     }
+    // FROZEN whole-carton execution decomposition of R across the physical sources (Overseas first, then Factory).
+    var sources = order.map(function (k) { var g = byKey[k]; return { sourceWarehouseId: g.sid, routeNo: g.route, tier: g.tier, availableQty: g.qty, seq: g.seq }; });
+    var exec = (R === null) ? null : allocateWholeCartonSources(R, num(lin.unitsPerCarton), sources);
+    var execByKey = {};
+    if (exec) exec.perSource.forEach(function (p) { execByKey[p.sourceWarehouseId + SEP + p.routeNo] = p.allocatedQty; });
     return order.map(function (k) {
       var g = byKey[k], out = shallow(f);
       out.source_warehouse_id = g.sid;
       out.route_no = routeNo;
-      out.snapshotRow = withSourceSnapshot(f.snapshotRow, g.sid, g.code, g.qty);
+      out.executionQty = exec ? execByKey[g.sid + SEP + routeNo] : null;   // per-source WHOLE-CARTON execution → planned_qty
+      out.snapshotRow = withSourceSnapshot(f.snapshotRow, g.sid, g.code, g.qty);   // RAW per-source availability (loose visible)
       return out;   // recommendedQty stays the AGGREGATE (verbatim from f) — never re-split / re-cartonized
     });
   }
@@ -4004,6 +4064,10 @@ function __kmRequire(p) {
     assertNoLiveAnalysisAuthority(extraRow, type + ' snapshotRow');
     // partial-carton exact value is preserved verbatim — never re-rounded (REQ_PO §37)
     var commandLine = { lineKey: lineKey, recommendedQty: blocked ? null : f.recommendedQty, lineState: blocked ? 'BLOCKED' : 'OK' };
+    // F1-4B-FM6-R3D: per-source WHOLE-CARTON execution qty (planned_qty init). Only WEEKLY per-source lines carry it;
+    // MONTHLY (and any line without a computed executionQty) leaves it unset so the Core defaults planned/order qty to
+    // the recommendation snapshot (unchanged). recommended_qty stays the aggregate authority (§7).
+    if (!blocked && typeof f.executionQty === 'number' && isFinite(f.executionQty)) commandLine.userQty = f.executionQty;
     if (blocked) commandLine.reason = f.reason;
     if (f.demandKey !== undefined) commandLine.demandKey = f.demandKey;
     var detail = {
@@ -4072,7 +4136,11 @@ function __kmRequire(p) {
     buildLineKey: buildLineKey,
     splitLineKey: splitLineKey,
     assertNoLiveAnalysisAuthority: assertNoLiveAnalysisAuthority,
-    buildRecommendation: buildRecommendation
+    buildRecommendation: buildRecommendation,
+    // F1-4B-FM6-R3D: the FROZEN whole-carton source execution allocation rule (pure; exported for the next-slice
+    // AI-Plan wiring + tests). wholeCartonAvailable(x,UPC)=floor(max(0,x)/UPC)*UPC.
+    allocateWholeCartonSources: allocateWholeCartonSources,
+    wholeCartonAvailable: wholeCartonAvailable
   };
 });
   __kmRegister("supply-planning-plan-builder", module.exports);
@@ -5207,6 +5275,7 @@ function __kmRequire(p) {
         windowCode: windowCode, demandKey: demandKey,
         calculatedGap: (blockedReason && (gap === undefined || typeof gap !== 'number' || isNaN(gap))) ? null : gap,
         recommendedQty: recommendedQty,
+        unitsPerCarton: validUpc(f.unitsPerCarton) ? f.unitsPerCarton : null,   // F1-4B-FM6-R3D: carried for the per-source whole-carton EXECUTION decomposition (not a recommendation input)
         allocationMode: lineMode,
         allocationBreakdown: breakdown,
         unallocatedQty: unallocatedQty,
@@ -5626,6 +5695,10 @@ function __kmRequire(p) {
         // lineage OBJECT the Plan Builder accepts, so the WEEKLY per-source execution fan-out can persist one line
         // per physical source. Non-authoritative runtime metadata — NEVER a recommendation formula input.
         allocationBreakdown: Array.isArray(line.allocationBreakdown) ? line.allocationBreakdown.slice() : [],
+        // F1-4B-FM6-R3D: units_per_carton carried so the fan-out can apply the FROZEN whole-carton EXECUTION
+        // decomposition of the aggregate recommendedQty across sources (execution eligibility only — never re-runs
+        // the recommendation/cartonization formula, which already produced recommendedQty upstream).
+        unitsPerCarton: (type === 'WEEKLY_SHIPPING' && line.unitsPerCarton !== undefined && line.unitsPerCarton !== null) ? line.unitsPerCarton : null,
         keys: Array.isArray(line.lineage) ? line.lineage.slice() : []
       };
       var planFact = {};
@@ -10451,4 +10524,4 @@ var KMREC = __kmModules["supply-recommendation"];
 var KMREX = __kmModules["supply-execution-handoff"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"5c1fa95f8a8ee8de518288a048168a3601c9c375cdef27b9e4025aef70a23df9","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"d97a87ca31513e14e5919c96aa76456cc5c3648741d67626d5c31c72ac5e806c"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"367dfd27ad5be614ae07c20b04fcdf8d6815532853ffec7992e7e5239e70e1e0"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"6caae57521c66aff397f9dd654b04f0ff579ff24b6ae96d5efab0700d59b43ff"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"ac046cf77ed1aa281ed9a95f1675f560afaa0c653fc68c277670c5dd40157d1f"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"aea141da8b913ec3b804995bc070ffb6f6f6d7e3c19567ac1c575b006778dc2d","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"1037ad4ba8cf0fb24f6f874d49e3a816ed7a805e1874cd1ebceb05327ab2e407"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"ee4685682611dee36d68e98e87e503f4e49f454dce760d13b2d752cd73613d1c"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"6caae57521c66aff397f9dd654b04f0ff579ff24b6ae96d5efab0700d59b43ff"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"ac046cf77ed1aa281ed9a95f1675f560afaa0c653fc68c277670c5dd40157d1f"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"}]};
