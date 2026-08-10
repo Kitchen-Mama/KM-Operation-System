@@ -786,7 +786,13 @@ function _skuFieldBlock(f, rec) {
 
 function _skuDimBlock(d, rec) {
     var mk = function (key, ph) { return '<input id="sku-f-' + key + '" class="skuf-num" type="number" placeholder="' + ph + '" value="' + _skuEsc(_skuLoadValue(rec, key)) + '">'; };
-    var unitSel = function (key, opts) {
+    var unitSel = function (key, opts, canonical) {
+        if (_skuFormMode === 'add') {
+            // F1-SKU-DETAILS-UNIT-R1 — NEW SKUs are canonical metric ONLY. The unit is LOCKED to cm/kg: a disabled
+            // select whose SOLE option is the canonical unit (its .value is still read by the collector), shown as a
+            // fixed muted label. The user cannot pick in/lb. Edit mode keeps the existing selectable behavior below.
+            return '<select id="sku-f-' + key + '" class="skuf-unit-sel skuf-unit-locked" disabled title="New SKUs use canonical metric units (cm / kg)" style="background:#F1F5F9;color:#334155;cursor:not-allowed;"><option value="' + canonical + '" selected>' + canonical + '</option></select>';
+        }
         var v = String(_skuLoadValue(rec, key) || '').trim();
         return '<select id="sku-f-' + key + '" class="skuf-unit-sel"><option value="">—</option>' +
             opts.map(function (o) { return '<option value="' + _skuEsc(o) + '"' + (o === v ? ' selected' : '') + '>' + _skuEsc(o) + '</option>'; }).join('') + '</select>';
@@ -795,10 +801,10 @@ function _skuDimBlock(d, rec) {
     return '<div style="grid-column:1 / -1;border:1px solid #EEF2F7;border-radius:8px;padding:10px 12px;">' +
         '<div style="font-size:11px;color:#475569;font-weight:600;margin-bottom:6px;">' + _skuEsc(d.title) + '</div>' +
         '<div class="skuf-dim-grid">' +
-            cell('L', mk(d.l, 'L')) + cell('W', mk(d.w, 'W')) + cell('H', mk(d.h, 'H')) + cell('Unit', unitSel(d.unit, d.unitOptions)) +
+            cell('L', mk(d.l, 'L')) + cell('W', mk(d.w, 'W')) + cell('H', mk(d.h, 'H')) + cell('Unit', unitSel(d.unit, d.unitOptions, 'cm')) +
         '</div>' +
         '<div class="skuf-wt-grid">' +
-            cell('Weight', mk(d.wt, 'Weight')) + cell('Wt Unit', unitSel(d.wtUnit, d.wtUnitOptions)) +
+            cell('Weight', mk(d.wt, 'Weight')) + cell('Wt Unit', unitSel(d.wtUnit, d.wtUnitOptions, 'kg')) +
         '</div>' +
     '</div>';
 }
@@ -978,10 +984,27 @@ function _skuAddDraftLoad_() {
     return d;
 }
 function _skuAddDraftClear_() { if (!_skuHasLocalStorage_()) return; try { localStorage.removeItem(SKU_ADD_DRAFT_KEY_); } catch (e) {} }
+// F1-SKU-DETAILS-UNIT-R1 — legacy cached-draft unit safety. NEW drafts store cm/kg only, but an OLDER draft may
+// carry in/lb. Since NO trusted unit-conversion helper exists in SKU Details, we DO NOT reinterpret the numbers
+// (19.5 in must never silently become 19.5 cm): for any dimension group whose cached unit is non-metric we CLEAR
+// that group's ambiguous numeric values and normalize the unit token to the canonical cm/kg (the user re-enters
+// under the locked metric labels). Empty or already-metric groups are preserved untouched.
+function _skuAddDraftSanitizeUnitsFields_(fields) {
+    var f = Object.assign({}, (fields || {}));
+    (SKU_DIM_GROUPS_ || []).forEach(function (d) {
+        var du = String(f[d.unit] == null ? '' : f[d.unit]).trim().toLowerCase();
+        if (du && du !== 'cm') { f[d.l] = ''; f[d.w] = ''; f[d.h] = ''; }   // non-metric legacy dimensions → drop (never reinterpret)
+        f[d.unit] = 'cm';
+        var wu = String(f[d.wtUnit] == null ? '' : f[d.wtUnit]).trim().toLowerCase();
+        if (wu && wu !== 'kg') { f[d.wt] = ''; }                            // non-metric legacy weight → drop
+        f[d.wtUnit] = 'kg';
+    });
+    return f;
+}
 // Shape a draft into the rec the existing control builders consume (_skuLoadValue reads rec.sku / rec.raw[key]).
 function _skuAddDraftAsRec_(draft) {
     if (!draft || !draft.fields) return null;
-    var f = draft.fields;
+    var f = _skuAddDraftSanitizeUnitsFields_(draft.fields);   // metric-unit safety for a legacy non-metric draft
     return { sku: f.sku || '', lifecycle: f.lifecycle || '', raw: Object.assign({}, f) };
 }
 // Explicit discard (Clear Draft button): remove the cache + reopen a clean Add form (never touches the DB).
@@ -1101,6 +1124,16 @@ function _skuCollectAndValidate(overlay) {
         if (isNum && v !== '') { var n = Number(v); if (isNaN(n) || n < 0) mark('basic', 'sku-f-' + key, key + ' must be a non-negative number.'); }
         payload[key] = v;
     });
+
+    // F1-SKU-DETAILS-UNIT-R1 — CANONICAL WRITE CONTRACT (ADD only): NEW SKUs persist metric units ONLY. Force the
+    // six unit tokens at the payload boundary — dimension→cm, weight→kg — regardless of the (locked) control value.
+    // Defensive against stale browser state / a legacy cached draft / DOM tampering leaving in/lb. ADD numbers are
+    // entered fresh under the cm/kg labels, so forcing the token is a unit-token normalization (never a numeric
+    // reinterpretation). Existing canonical field names; NO new unit columns. Edit mode is untouched (per-record).
+    if (_skuFormMode === 'add') {
+        payload.item_dimension_unit = 'cm'; payload.package_dimension_unit = 'cm'; payload.carton_dimension_unit = 'cm';
+        payload.item_weight_unit = 'kg'; payload.package_weight_unit = 'kg'; payload.carton_weight_unit = 'kg';
+    }
 
     return { payload: payload, firstErrorTab: firstErrorTab, firstErrorId: firstErrorId, errors: errors };
 }

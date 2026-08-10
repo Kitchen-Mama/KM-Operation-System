@@ -17,13 +17,20 @@ function eq(a, e, l) { if (JSON.stringify(a) !== JSON.stringify(e)) { fail++; co
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 // Extract the draft-helper block (SKU_ADD_DRAFT_KEY_ … just before handleClearSkuAddDraft) and bind its free vars.
+// The draft-helper block now includes _skuAddDraftSanitizeUnitsFields_ (F1-SKU-DETAILS-UNIT-R1), which references
+// SKU_DIM_GROUPS_ — inject a matching fixture so asRec runs end-to-end.
+var DIM_GROUPS = [
+  { l: 'item_length', w: 'item_width', h: 'item_height', unit: 'item_dimension_unit', wt: 'item_weight', wtUnit: 'item_weight_unit' },
+  { l: 'package_length', w: 'package_width', h: 'package_height', unit: 'package_dimension_unit', wt: 'package_weight', wtUnit: 'package_weight_unit' },
+  { l: 'carton_length', w: 'carton_width', h: 'carton_height', unit: 'carton_dimension_unit', wt: 'carton_weight', wtUnit: 'carton_weight_unit' }
+];
 function makeDraftApi(localStorage, formMode) {
   var start = SRC.indexOf('var SKU_ADD_DRAFT_KEY_');
   var end = SRC.indexOf('function handleClearSkuAddDraft');
   var block = SRC.slice(start, end);
   var expose = '\nreturn { load:_skuAddDraftLoad_, clear:_skuAddDraftClear_, asRec:_skuAddDraftAsRec_, ' +
     'collect:_skuAddDraftCollectFields_, any:_skuAddDraftAnyValue_, save:_skuAddDraftSave_, activeTab:_skuAddDraftActiveTab_ };';
-  return new Function('localStorage', '_skuFormMode', 'setTimeout', 'clearTimeout', block + expose)(localStorage, formMode, function () {}, function () {});
+  return new Function('localStorage', '_skuFormMode', 'setTimeout', 'clearTimeout', 'SKU_DIM_GROUPS_', block + expose)(localStorage, formMode, function () {}, function () {}, DIM_GROUPS);
 }
 function fakeLS() { var m = {}; return { getItem: function (k) { return k in m ? m[k] : null; }, setItem: function (k, v) { m[k] = String(v); }, removeItem: function (k) { delete m[k]; }, _m: m }; }
 function fakeOverlay(fields, activeTab) {
@@ -60,7 +67,9 @@ section('load / restore — valid draft round-trips; asRec seeds the existing co
   var api = makeDraftApi(ls, 'add');
   var d = api.load();
   ok(d && d.fields.sku === 'CO9999' && d.activeTab === 'sales', 'valid draft loads with fields + activeTab');
-  eq(api.asRec(d), { sku: 'CO9999', lifecycle: 'Upcoming SKU', raw: { sku: 'CO9999', lifecycle: 'Upcoming SKU', material: 'ABS + Steel', gs1_type: 'UPC' } }, 'asRec shapes {sku, lifecycle, raw} so _skuLoadValue(rec.raw[key]) prefills every control (chips/combo/enum incl.)');
+  // asRec also runs the F1-SKU-DETAILS-UNIT-R1 metric sanitizer, which normalizes the six unit tokens to cm/kg
+  // (the draft here carries no dimension values, so only the canonical unit tokens are added).
+  eq(api.asRec(d), { sku: 'CO9999', lifecycle: 'Upcoming SKU', raw: { sku: 'CO9999', lifecycle: 'Upcoming SKU', material: 'ABS + Steel', gs1_type: 'UPC', item_dimension_unit: 'cm', item_weight_unit: 'kg', package_dimension_unit: 'cm', package_weight_unit: 'kg', carton_dimension_unit: 'cm', carton_weight_unit: 'kg' } }, 'asRec shapes {sku, lifecycle, raw} (+ canonical cm/kg units) so _skuLoadValue(rec.raw[key]) prefills every control');
 })();
 
 section('I — corrupt / version-mismatch cache is ignored + cleared (modal always opens clean)');
