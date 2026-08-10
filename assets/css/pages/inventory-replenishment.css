@@ -74,6 +74,9 @@
     white-space: nowrap;
     transition: opacity 0.15s;
 }
+/* F1-4B-FM5-R4J-LIVE4 — manual Cancel button (shown only while a gap job is active). */
+#ops-section .replen-btn--cancel { margin-left: 6px; background: #b91c1c; color: #fff; }
+#ops-section .replen-btn--cancel:disabled { opacity: 0.55; cursor: default; }
 
 #ops-section .replen-btn:hover {
     opacity: 0.88;

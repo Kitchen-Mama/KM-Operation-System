@@ -152,6 +152,13 @@ function doPost(e) {
     if (action === 'gapJob.status.get') {
       return jsonResponse_(handleGetGapJobStatus_(body));
     }
+    // F1-4B-FM5-R4J-LIVE4 — manual CANCEL (WRITE): terminal CANCELLED for the active product job; per-product isolated.
+    if (action === 'inventoryReplenishmentGap.job.cancel') {
+      return jsonResponse_(handleCancelInventoryReplenishmentGapJob_(body));
+    }
+    if (action === 'orderPlanningGap.job.cancel') {
+      return jsonResponse_(handleCancelOrderPlanningGapJob_(body));
+    }
 
     // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
     if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)

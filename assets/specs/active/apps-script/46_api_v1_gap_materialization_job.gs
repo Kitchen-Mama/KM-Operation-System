@@ -49,8 +49,10 @@ var GAP_JOB_MAX_LOCK_WAITS_ = 8;                       // R4J-LIVE §A2 — boun
 // (which cannot exceed the ~6-min execution budget), so a live job is never reclaimed; but a worker killed mid-slice
 // (no re-arm) would otherwise block every future start forever via the duplicate guard — reclaim lets the user retry.
 var GAP_JOB_STALE_MS_ = 600000;
-// R4J-LIVE §A2 — the terminal set. A job NEVER stays PENDING/RUNNING after its worker irrecoverably fails.
-function gapJobIsTerminal_(status) { return status === 'DONE' || status === 'FAILED' || status === 'BLOCKED' || status === 'ERROR'; }
+// R4J-LIVE §A2 / LIVE4 — the terminal set. A job NEVER stays PENDING/RUNNING indefinitely: it always reaches one of
+// these. LIVE4 adds CANCELLED (explicit manual stop) and STALLED (authoritative no-progress detection persisted by
+// status.get). Any terminal state carries finishedAt and is never resurrected into Calculating.
+function gapJobIsTerminal_(status) { return status === 'DONE' || status === 'FAILED' || status === 'BLOCKED' || status === 'ERROR' || status === 'CANCELLED' || status === 'STALLED'; }
 
 // ---- small pure helpers -------------------------------------------------------------------------------------
 function gapJobNormalizeProduct_(p) {
@@ -74,7 +76,7 @@ function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr, nowMs) {
     scopeCursor: 0, scopesTotal: scopesTotal, scopesProcessed: 0,
     rowsProcessed: 0, readyCount: 0, blockedCount: 0, errorCount: 0,
     calculationDate: ctx.calculationDate || '', calculationMonth: ctx.calculationMonth || '', planningCycle: ctx.planningCycle || '',
-    startedAt: nowStr, updatedAt: nowStr, startedAtMs: (nowMs || 0), updatedAtMs: (nowMs || 0), finishedAt: null, lastError: null, sliceAttempts: 0,
+    startedAt: nowStr, updatedAt: nowStr, startedAtMs: (nowMs || 0), updatedAtMs: (nowMs || 0), finishedAt: null, cancelledAt: null, lastError: null, sliceAttempts: 0,
     lockWaits: 0, lastContinuationScheduledAt: null, lastWorkerStartedAt: null, lastWorkerFinishedAt: null, lastProcessedScope: null
   };
 }
@@ -90,7 +92,7 @@ function gapJobPublicState_(s) {
     scopesProcessed: s.scopesProcessed, scopesTotal: s.scopesTotal, rowsProcessed: s.rowsProcessed,
     readyCount: s.readyCount, blockedCount: s.blockedCount, errorCount: s.errorCount,
     calculationDate: s.calculationDate, calculationMonth: s.calculationMonth, planningCycle: s.planningCycle,
-    startedAt: s.startedAt, updatedAt: s.updatedAt, finishedAt: s.finishedAt, lastError: s.lastError,
+    startedAt: s.startedAt, updatedAt: s.updatedAt, finishedAt: s.finishedAt, cancelledAt: s.cancelledAt, lastError: s.lastError,
     lastContinuationScheduledAt: s.lastContinuationScheduledAt, lastWorkerStartedAt: s.lastWorkerStartedAt,
     lastWorkerFinishedAt: s.lastWorkerFinishedAt, lastProcessedScope: s.lastProcessedScope };
 }
@@ -139,6 +141,43 @@ function gapJobMarkFailed_(env, product, state, reason) {
   state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt; state.lastWorkerFinishedAt = state.finishedAt;
   gapJobTouchMs_(env, state);
   gapJobWriteState_(env, product, state); gapJobLog_('FAILED', state); return state;
+}
+// LIVE4 §1 — persist a TERMINAL CANCELLED state (manual stop). Progress/diagnostics are PRESERVED; already-written
+// gap rows are NEVER rolled back. finishedAt + cancelledAt are stamped so the UI can never resurrect Calculating.
+function gapJobMarkCancelled_(env, product, state) {
+  state.status = 'CANCELLED'; state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt;
+  state.cancelledAt = state.finishedAt; state.lastWorkerFinishedAt = state.lastWorkerFinishedAt || state.finishedAt;
+  gapJobTouchMs_(env, state); gapJobWriteState_(env, product, state); gapJobLog_('CANCELLED', state); return state;
+}
+// LIVE4 §4 — persist a TERMINAL STALLED state (decisively no progress past the stale window; killed worker, no
+// re-arm). NO calculation, NO continuation. Makes a dead non-terminal job authoritatively terminal.
+function gapJobMarkStalled_(env, product, state) {
+  state.status = 'STALLED'; state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt;
+  state.lastError = state.lastError || 'STALE_NO_PROGRESS'; gapJobTouchMs_(env, state);
+  gapJobWriteState_(env, product, state); gapJobLog_('STALLED', state); return state;
+}
+
+// ---- CANCEL (§1/§2) — canonical manual stop owner. Backend-authoritative; terminal CANCELLED; no row rollback ----
+function gapJobCancel_(product, requestedRunId, env) {
+  product = gapJobNormalizeProduct_(product);
+  if (!product) return gapBatchEnvelope_(false, null, 'INVALID_PRODUCT', 'product required (INVENTORY|ORDER_PLANNING)');
+  var lock = env.lock, locked = false;                                                   // §1.1 the SAME lock as start/worker
+  try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
+  if (lock && !locked) return gapBatchEnvelope_(false, null, 'GAP_JOB_LOCK_UNAVAILABLE', 'another gap job operation is in progress');
+  try {
+    var state = gapJobReadState_(env, product);                                          // §1.2 load current durable job
+    if (!state) return gapBatchEnvelope_(true, { product: product, status: 'NONE', runId: requestedRunId || null, cancelled: false });
+    if (requestedRunId && state.runId !== requestedRunId) {                               // §1.4 never cancel a run the caller does not own
+      return gapBatchEnvelope_(true, { product: product, status: state.status, runId: state.runId, cancelled: false, note: 'RUNID_MISMATCH' });
+    }
+    if (gapJobIsTerminal_(state.status)) return gapBatchEnvelope_(true, gapJobPublicState_(state));   // idempotent: already terminal
+    gapJobLog_('CANCEL_REQUEST', state);
+    try { env.clearContinuationTriggers(product); } catch (ec) {}                         // §1.5/§11 stop ONLY this product's worker chain
+    gapJobMarkCancelled_(env, product, state);                                            // §1.6-§1.10 terminal CANCELLED (progress preserved)
+    return gapBatchEnvelope_(true, gapJobPublicState_(state));
+  } catch (e) {
+    return gapBatchEnvelope_(false, null, 'GAP_JOB_CANCEL_ERROR', e && e.message ? String(e.message) : String(e));
+  } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
 }
 
 // ---- START (§3): quick, browser-returning; NO calculation in the request -------------------------------------
@@ -247,6 +286,11 @@ function gapJobContinue_(product, env) {
       try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); gapJobWriteState_(env, product, state); } catch (er2) {}
       return state;
     }
+    // LIVE4 §3 — honor a CANCEL / reclaim that landed DURING this slice: re-read the durable owner BEFORE advancing
+    // or re-arming. If the job was cancelled (terminal) or a new run took over, STOP immediately — a cancelled old
+    // worker must NEVER advance the cursor or re-arm a continuation (no self-resurrection). Its written rows remain.
+    var live = gapJobReadState_(env, product);
+    if (!live || live.runId !== state.runId || gapJobIsTerminal_(live.status)) { gapJobLog_('CANCELLED', live || state); return live || state; }
     // fold the slice counts into the persisted progress and advance the cursor by a COMPLETE slice (§5)
     state.sliceAttempts = 0;
     state.scopeCursor = slice.nextCursor;
@@ -291,6 +335,28 @@ function gapJobStatus_(product, runId, env) {
   if (!product) return gapBatchEnvelope_(false, null, 'INVALID_PRODUCT', 'product required (INVENTORY|ORDER_PLANNING)');
   var state = gapJobReadState_(env, product);
   if (!state) return gapBatchEnvelope_(true, { product: product, status: 'NONE', runId: runId || null });
+  // LIVE4 §4 — authoritative NON-STUCK: a non-terminal job with NO progress past the stale window is decisively dead
+  // (killed worker, no re-arm). Transition it to TERMINAL STALLED so a reload never resurrects Calculating. This is a
+  // bounded state write (NEVER a calculation, NEVER a continuation, NEVER a gap-row write); best-effort under the
+  // shared lock, with a clean re-read so a worker that just advanced is not wrongly stalled.
+  if (!gapJobIsTerminal_(state.status)) {
+    var stampMs = state.updatedAtMs || state.startedAtMs || 0;
+    if (stampMs && ((env.nowMs ? env.nowMs() : 0) - stampMs) > GAP_JOB_STALE_MS_) {
+      var lock = env.lock, locked = false;
+      try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
+      try {
+        var fresh = (locked ? gapJobReadState_(env, product) : null) || state;           // re-read under lock (avoid racing a live worker)
+        if (!gapJobIsTerminal_(fresh.status)) {
+          var s2 = fresh.updatedAtMs || fresh.startedAtMs || 0;
+          if (s2 && ((env.nowMs ? env.nowMs() : 0) - s2) > GAP_JOB_STALE_MS_) {
+            if (locked) { gapJobMarkStalled_(env, product, fresh); }                      // persist terminal STALLED
+            else { fresh.status = 'STALLED'; gapJobLog_('STALLED', fresh); }              // lock busy → report-only (a later poll persists)
+          }
+        }
+        state = fresh;
+      } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
+    }
+  }
   if (runId && state.runId !== runId) return gapBatchEnvelope_(true, { product: product, status: 'NONE', runId: runId, current: gapJobPublicState_(state) });
   return gapBatchEnvelope_(true, gapJobPublicState_(state));
 }
@@ -362,6 +428,10 @@ function handleGetGapJobStatus_(body) {
   if (!product) return gapBatchEnvelope_(false, null, 'INVALID_PRODUCT', 'product required (INVENTORY|ORDER_PLANNING)');
   return gapJobStatus_(product, p.runId || null, gapJobDefaultEnv_(product));
 }
+// LIVE4 §1/§6 — manual cancel (WRITE): terminal CANCELLED for the currently-active product job. runId optional
+// (when supplied, only that run is cancelled). Isolated per product (never the other product / import / scheduler).
+function handleCancelInventoryReplenishmentGapJob_(body) { var p = (body && body.payload) || body || {}; return gapJobCancel_('INVENTORY', p.runId || null, gapJobDefaultEnv_('INVENTORY')); }
+function handleCancelOrderPlanningGapJob_(body) { var p = (body && body.payload) || body || {}; return gapJobCancel_('ORDER_PLANNING', p.runId || null, gapJobDefaultEnv_('ORDER_PLANNING')); }
 
 // ---- TIME-TRIGGER TARGETS (NO trailing underscore — Apps Script trigger handlers must be callable by name) ----
 function continueInventoryGapMaterializationJob(e) { return gapJobContinue_('INVENTORY', gapJobDefaultEnv_('INVENTORY')); }

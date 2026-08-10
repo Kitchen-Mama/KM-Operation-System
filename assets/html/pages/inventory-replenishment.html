@@ -69,6 +69,8 @@
                                 <!-- F1-4B-FM5 · manual batch: ONE server recalculation of ALL site scopes → UPSERT
                                      inventory_replenishment_gap. No per-SKU HTTP loop, no browser recompute. -->
                                 <button class="replen-btn" id="replen-recalc-all-btn" onclick="handleRecalcAllInventoryGap()" title="Recalculate the materialized replenishment gap for all sites" aria-label="Recalculate all sites">Recalculate All Sites</button>
+                                <!-- F1-4B-FM5-R4J-LIVE4 — manual Cancel (backend-authoritative; shown only while a job is active). Completed rows are preserved. -->
+                                <button class="replen-btn replen-btn--cancel" id="replen-cancel-recalc-btn" onclick="handleCancelInventoryGapJob()" title="Cancel the running recalculation (completed sites are kept)" aria-label="Cancel recalculation" style="display:none">Cancel</button>
                                 <!-- Data-management actions consolidated into one "More Options" menu (renamed 2026-07-23
                                      to match SKU Details). Each item reuses the EXISTING handler verbatim — no second flow,
                                      no duplicate exposed buttons. The five prior buttons (Add/Import/Edit/Delete SKU,

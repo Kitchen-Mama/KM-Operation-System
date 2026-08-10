@@ -91,7 +91,7 @@
   // NEVER re-POSTs the write, and may be closed/refreshed mid-run (the backend continues). Deterministically
   // testable: wait / interval / maxPolls / all status+start fns are injectable (fake clock, no real network).
   // =============================================================================================================
-  var JOB_STATUS = { PENDING: 'PENDING', RUNNING: 'RUNNING', DONE: 'DONE', BLOCKED: 'BLOCKED', FAILED: 'FAILED', ERROR: 'ERROR', NONE: 'NONE' };
+  var JOB_STATUS = { PENDING: 'PENDING', RUNNING: 'RUNNING', DONE: 'DONE', BLOCKED: 'BLOCKED', FAILED: 'FAILED', ERROR: 'ERROR', CANCELLED: 'CANCELLED', STALLED: 'STALLED', NONE: 'NONE' };
   var DEFAULT_JOB_POLL_MS = 3000;        // read-only status poll cadence
   var DEFAULT_JOB_MAX_POLLS = 800;       // bounded guard (~40 min at 3s) — never an infinite poll
   // R4J-LIVE2 §5 — STALL guard: consecutive READ-ONLY polls with NO durable progress advance before the poller
@@ -101,7 +101,7 @@
 
   // R4J-LIVE §A2 — FAILED / ERROR / BLOCKED are terminal so the poller STOPS and the page surfaces a truthful
   // failure (never spins forever on a permanently-broken 0/N job).
-  function _isTerminalJob(status) { return status === JOB_STATUS.DONE || status === JOB_STATUS.BLOCKED || status === JOB_STATUS.FAILED || status === JOB_STATUS.ERROR; }
+  function _isTerminalJob(status) { return status === JOB_STATUS.DONE || status === JOB_STATUS.BLOCKED || status === JOB_STATUS.FAILED || status === JOB_STATUS.ERROR || status === JOB_STATUS.CANCELLED || status === JOB_STATUS.STALLED; }
   function _stateOf(res) { return (res && res.data) ? res.data : (res || {}); }
   function _progressOf(st) { return (st && typeof st.scopesProcessed === 'number') ? st.scopesProcessed : -1; }
   // A non-DONE poll result the UI must treat as "could not confirm completion" (recoverable) rather than a hard
@@ -120,6 +120,9 @@
     var maxStallPolls = opts.maxStallPolls || DEFAULT_JOB_MAX_STALL_POLLS;
     var bestProgress = -1, stall = 0;
     function loop(n) {
+      // §6 cooperative CANCEL — the page sets this once its backend cancel write has been issued; stop polling now
+      // (backend has/there will persist CANCELLED). READ-only: this never issues a write itself.
+      if (typeof opts.isCancelled === 'function' && opts.isCancelled()) { _log('CLIENT_RESET', { status: JOB_STATUS.CANCELLED }); return Promise.resolve({ status: JOB_STATUS.CANCELLED, cancelledByClient: true }); }
       return Promise.resolve(statusFn()).then(function (res) {
         var st = _stateOf(res);
         if (typeof opts.onProgress === 'function') { try { opts.onProgress(st); } catch (e) {} }
@@ -149,13 +152,20 @@
         return { started: false, error: (startRes && startRes.error) || null };
       }
       var runId = (startRes.data && startRes.data.runId) || null;
+      if (typeof opts.onRunId === 'function') { try { opts.onRunId(runId); } catch (e) {} }   // §6 give the page the runId for a targeted cancel
       _log('START', startRes.data);
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls,
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled,
         onProgress: function (st) { if (typeof ui.progress === 'function') ui.progress(st); } }).then(function (finalState) {
-        _log((finalState && finalState.status === JOB_STATUS.DONE) ? 'COMPLETED' : ((finalState && isUnconfirmedJob(finalState.status)) ? 'UNCONFIRMED' : 'FAILED'), (finalState && finalState.last) ? finalState.last : finalState);
-        if (finalState && finalState.status === JOB_STATUS.DONE) {
+        var status = finalState && finalState.status;
+        _log(status === JOB_STATUS.DONE ? 'COMPLETED' : status === JOB_STATUS.CANCELLED ? 'CANCELLED' : (isUnconfirmedJob(status) ? 'UNCONFIRMED' : 'FAILED'), (finalState && finalState.last) ? finalState.last : finalState);
+        // DONE or CANCELLED → refresh the materialized READ (cancelled keeps whatever completed); then reset the button.
+        if (status === JOB_STATUS.DONE || status === JOB_STATUS.CANCELLED) {
           if (typeof ui.refreshing === 'function') ui.refreshing();
-          return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { if (typeof ui.done === 'function') ui.done(finalState); return { started: true, runId: runId, finalState: finalState }; });
+          return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () {
+            if (status === JOB_STATUS.CANCELLED && typeof ui.cancelled === 'function') ui.cancelled(finalState);
+            else if (typeof ui.done === 'function') ui.done(finalState);
+            return { started: true, runId: runId, finalState: finalState };
+          });
         }
         if (typeof ui.failed === 'function') ui.failed(finalState || { status: JOB_STATUS.ERROR });
         return { started: true, runId: runId, finalState: finalState };
@@ -176,11 +186,16 @@
       // Any other non-active terminal/none state → nothing to resume (button stays normal). Backend state is authoritative.
       if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) { _log('CLIENT_TERMINAL', st); return st; }
       if (typeof ui.resume === 'function') ui.resume(st);
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls,
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled,
         onProgress: function (s) { if (typeof ui.progress === 'function') ui.progress(s); } }).then(function (finalState) {
-        if (finalState && finalState.status === JOB_STATUS.DONE) {
+        var status = finalState && finalState.status;
+        if (status === JOB_STATUS.DONE || status === JOB_STATUS.CANCELLED) {
           if (typeof ui.refreshing === 'function') ui.refreshing();
-          return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { if (typeof ui.done === 'function') ui.done(finalState); return finalState; });
+          return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () {
+            if (status === JOB_STATUS.CANCELLED && typeof ui.cancelled === 'function') ui.cancelled(finalState);
+            else if (typeof ui.done === 'function') ui.done(finalState);
+            return finalState;
+          });
         }
         // §5 resumed job did not complete (FAILED / STALLED / POLL_TIMEOUT) → exit Calculating truthfully; NO auto retry.
         if (typeof ui.failed === 'function') ui.failed(finalState || { status: JOB_STATUS.ERROR });
@@ -196,6 +211,6 @@
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
     pollJob: pollJob, runJob: runJob, resumeIfRunning: resumeIfRunning,
-    VERSION: 'gap-recalc-fm5r4jlive3-1'
+    VERSION: 'gap-recalc-fm5r4jlive4-1'
   };
 });

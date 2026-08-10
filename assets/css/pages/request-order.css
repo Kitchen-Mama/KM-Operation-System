@@ -420,6 +420,9 @@
     background: #3B82F6;
     color: white;
 }
+/* F1-4B-FM5-R4J-LIVE4 — manual Cancel button (shown only while a gap job is active). */
+.ro-btn--cancel { margin-left: 6px; background: #b91c1c; color: #fff; }
+.ro-btn--cancel:disabled { opacity: 0.55; cursor: default; }
 
 .ro-btn--primary:hover {
     background: #2563EB;

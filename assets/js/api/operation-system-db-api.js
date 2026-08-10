@@ -2763,6 +2763,10 @@ window.KM.DB.startInventoryReplenishmentGapJob = function(payload) { return _kmW
 window.KM.DB.startOrderPlanningGapJob = function(payload) { return _kmWeeklyCommand_('orderPlanningGap.job.start', payload || {}); };
 // { product:'INVENTORY'|'ORDER_PLANNING', runId? } → { success, data:{ status, scopesProcessed, scopesTotal, ... } }.
 window.KM.DB.getGapJobStatus = function(product, runId) { return _kmGapRead_('gapJob.status.get', { payload: { product: product, runId: runId || null } }); };
+// F1-4B-FM5-R4J-LIVE4 · manual CANCEL (WRITE, exactly once per click): terminal CANCELLED for the active product job.
+// Already-materialized rows are preserved (no rollback). runId optional (cancel only that run when supplied).
+window.KM.DB.cancelInventoryReplenishmentGapJob = function(runId) { return _kmWeeklyCommand_('inventoryReplenishmentGap.job.cancel', { payload: { runId: runId || null } }); };
+window.KM.DB.cancelOrderPlanningGapJob = function(runId) { return _kmWeeklyCommand_('orderPlanningGap.job.cancel', { payload: { runId: runId || null } }); };
 
 // F1-4B-FM5-R1 · MATERIALIZED READ (page reads STORED gap rows; NO calculation, NO whole-DB reload). Bounded
 // POST read of inventory_replenishment_gap / order_planning_gap for one scope. Text-first + fail-safe: on a

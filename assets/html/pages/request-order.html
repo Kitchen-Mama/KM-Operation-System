@@ -99,6 +99,8 @@
                             <!-- F1-4B-FM5 · manual batch: ONE server recalculation of ALL site scopes → UPSERT
                                  order_planning_gap. No per-SKU HTTP loop, no browser recompute. -->
                             <button type="button" class="ro-btn" id="ro-recalc-all-btn" onclick="handleRecalcAllOrderPlanningGap()" title="Recalculate the materialized order-planning gap for all sites" aria-label="Recalculate all sites">Recalculate All Sites</button>
+                            <!-- F1-4B-FM5-R4J-LIVE4 — manual Cancel (backend-authoritative; shown only while a job is active). Completed rows are preserved. -->
+                            <button type="button" class="ro-btn ro-btn--cancel" id="ro-cancel-recalc-btn" onclick="handleCancelOrderPlanningGapJob()" title="Cancel the running recalculation (completed sites are kept)" aria-label="Cancel recalculation" style="display:none">Cancel</button>
                         </div>
                     </div>
                 </div>

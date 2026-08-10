@@ -19,6 +19,8 @@ var F44 = read('specs/active/apps-script/44_gap_materialization_scheduler.gs');
 var ROUTER = read('specs/active/apps-script/01_router.gs');
 var INV_JS = read('js/pages/inventory-replenishment.js');
 var RO_JS = read('js/pages/request-order.js');
+var INV_HTML = read('html/pages/inventory-replenishment.html');
+var RO_HTML = read('html/pages/request-order.html');
 var DBAPI = read('js/api/operation-system-db-api.js');
 var GR = require('../js/utils/gap-recalc-transport.js');
 
@@ -31,7 +33,7 @@ function section(n) { console.log('\n== ' + n + ' =='); }
 // PRODUCTION adapters are called — the engine tests inject a fake env, so none are needed at define time).
 var PRE = 'function prodRequireSheet_(ss, name){ if (ss && ss.__missingSheet) throw new Error("MISSING_SHEET:"+name); return (ss && ss.getSheetByName) ? (ss.getSheetByName(name) || {__sheet:true}) : {__sheet:true}; }\n';
 var H = (new Function(BUNDLE + '\n' + F42 + '\n' + PRE + F43 + '\n' + F46 + '\n return {' +
-  ' start: gapJobStart_, cont: gapJobContinue_, status: gapJobStatus_,' +
+  ' start: gapJobStart_, cont: gapJobContinue_, status: gapJobStatus_, cancel: gapJobCancel_,' +
   ' orderedScopes: gapJobOrderedScopes_, nextSlice: gapJobNextSlice_,' +
   ' isOwnedCont: gapJobIsOwnedContinuationHandler_, normalizeProduct: gapJobNormalizeProduct_,' +
   ' buildAlloc: gapOpBuildSupplyAllocation_, receiverKey: gapReceiverKey_,' +
@@ -68,7 +70,7 @@ function fakeEnv(opts) {
   };
 }
 function invScopes(n) { var out = []; for (var i = 0; i < n; i++) out.push({ company: 'KM', country: 'C' + i, marketplace: 'AMAZON_C' + i }); return out; }
-function isTerminal(s) { return s === 'DONE' || s === 'FAILED' || s === 'BLOCKED' || s === 'ERROR'; }
+function isTerminal(s) { return s === 'DONE' || s === 'FAILED' || s === 'BLOCKED' || s === 'ERROR' || s === 'CANCELLED' || s === 'STALLED'; }
 function drain(env, product, max) {   // fire the continuation worker until terminal (or a bounded number of times)
   var last = null;
   for (var i = 0; i < (max || 50); i++) { last = H.cont(product, env); if (last && isTerminal(last.status)) break; }
@@ -274,6 +276,66 @@ var afterFinalTick = H.cont('INVENTORY', eArm);             // the armed self-he
 eq([afterFinalTick.status, eArm._processed.length], ['DONE', 2], 'T5 the armed self-heal tick no-ops on the terminal DONE state (idempotent; no extra slice)');
 
 // =============================================================================================================
+section('R4J-LIVE4 §1/§2 — manual CANCEL is backend-authoritative, terminal, and preserves completed rows');
+var eCan = fakeEnv({ scopes: invScopes(10) });
+var sCan = H.start('INVENTORY', eCan);
+H.cont('INVENTORY', eCan);                                    // 1 scope done (rows written; progress 1/10)
+var partial = JSON.parse(eCan._store[H.PROP_KEYS.INVENTORY]);
+var canRes = H.cancel('INVENTORY', null, eCan);
+ok(canRes.success === true && canRes.data.status === 'CANCELLED', 'CA1 cancel → terminal CANCELLED envelope');
+var canSt = H.status('INVENTORY', null, eCan).data;
+eq([canSt.status, canSt.finishedAt !== null, canSt.cancelledAt !== null], ['CANCELLED', true, true], 'CA2 durable state is terminal CANCELLED with finishedAt + cancelledAt (§J)');
+eq(canSt.scopesProcessed, partial.scopesProcessed, 'CA3 progress PRESERVED — cancel never rolls back the 1/10 already-materialized (§2)');
+ok(eCan._cleared.indexOf('INVENTORY') !== -1, 'CA4 cancel cleared ONLY this product\'s continuation triggers');
+var afterCancelCont = H.cont('INVENTORY', eCan);
+eq(afterCancelCont.status, 'CANCELLED', 'CA5/§H a cancelled worker cannot process another scope (terminal no-op at worker entry)');
+eq(eCan._processed.length, 1, 'CA6/§H no extra slice processed after cancel');
+var schedAtCancel = eCan._scheduled.length;
+H.cont('INVENTORY', eCan);
+eq(eCan._scheduled.length, schedAtCancel, 'CA7/§I a cancelled worker cannot re-arm a continuation (no self-resurrection)');
+// idempotent + run isolation
+eq(H.cancel('INVENTORY', null, eCan).data.status, 'CANCELLED', 'CA8 cancel is idempotent on an already-terminal job');
+var eMis = fakeEnv({ scopes: invScopes(3) }); var sMis = H.start('INVENTORY', eMis);
+eq(H.cancel('INVENTORY', 'SOME-OTHER-RUN', eMis).data.cancelled, false, 'CA9/§1.4 a runId the caller does not own is NOT cancelled');
+ok(JSON.parse(eMis._store[H.PROP_KEYS.INVENTORY]).status === 'PENDING', 'CA10 the live job is untouched by a mismatched-runId cancel');
+
+section('R4J-LIVE4 §3 — a cancel that lands DURING a slice stops the worker before advancing/re-arming');
+var eMid = fakeEnv({ scopes: invScopes(5) });
+eMid.processSlice = function (product, sliceScopes, ss, sheet, ctx) {
+  // simulate a cancel arriving mid-slice: mutate the durable store to CANCELLED while this slice runs
+  var s = JSON.parse(eMid._store[H.PROP_KEYS.INVENTORY]); s.status = 'CANCELLED'; s.finishedAt = 'x'; eMid._store[H.PROP_KEYS.INVENTORY] = JSON.stringify(s);
+  return { written: sliceScopes.length, ready: sliceScopes.length, blocked: 0, errors: 0, scopeErrors: [] };
+};
+H.start('INVENTORY', eMid);
+var midRes = H.cont('INVENTORY', eMid);
+eq(midRes.status, 'CANCELLED', 'MID1 worker re-reads durable state after the slice and STOPS on CANCELLED');
+eq(JSON.parse(eMid._store[H.PROP_KEYS.INVENTORY]).scopeCursor, 0, 'MID2 the cancelled worker did NOT advance the cursor');
+var schedMid = eMid._scheduled.length; H.cont('INVENTORY', eMid);
+eq(eMid._scheduled.length, schedMid, 'MID3 the cancelled worker did NOT re-arm a continuation');
+
+section('R4J-LIVE4 §4 — status.get persists TERMINAL STALLED for a decisively no-progress job (authoritative non-stuck)');
+var eStale = fakeEnv({ scopes: invScopes(4), startMs: 1000000 });
+H.start('INVENTORY', eStale);                                // PENDING, updatedAtMs = 1000000
+eStale._advanceMs(700000);                                    // 700s later, no worker ever advanced it
+var stStale = H.status('INVENTORY', null, eStale).data;
+eq([stStale.status, stStale.finishedAt !== null], ['STALLED', true], 'ST1 status.get transitions a decisively-stale non-terminal job to TERMINAL STALLED');
+eq(JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]).status, 'STALLED', 'ST2 STALLED is PERSISTED under lock (a reload can never resurrect Calculating)');
+ok(eStale._processed.length === 0, 'ST3 the STALLED transition ran NO calculation');
+
+section('R4J-LIVE4 §5 — START after a terminal (CANCELLED / STALLED) creates a FRESH job (never attaches to the dead one)');
+var freshAfterCancel = H.start('INVENTORY', eCan);
+eq([freshAfterCancel.success, freshAfterCancel.data.status, !!freshAfterCancel.data.alreadyRunning], [true, 'PENDING', false], 'E after CANCELLED → a NEW PENDING job (not alreadyRunning)');
+var freshAfterStalled = H.start('INVENTORY', eStale);
+eq([freshAfterStalled.data.status, !!freshAfterStalled.data.alreadyRunning], ['PENDING', false], 'F after STALLED → a NEW PENDING job');
+eq(JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]).scopeCursor, 0, 'F2 the fresh job starts at cursor 0');
+
+section('R4J-LIVE4 §11 — cancel isolation (Inventory vs Order Planning); owned-handler set unchanged');
+var eIso = fakeEnv({ scopes: invScopes(2) }); H.start('INVENTORY', eIso);
+H.cancel('INVENTORY', null, eIso);
+eq(eIso._cleared.filter(function (p) { return p === 'ORDER_PLANNING'; }).length, 0, 'R cancel INVENTORY never cleared an ORDER_PLANNING continuation (isolation)');
+eq([H.isOwnedCont('runAmazonSnapshotImports'), H.isOwnedCont('runDailyInventoryGapMaterialization')], [false, false], 'T/U cancel path cannot target the Amazon import / daily scheduler handlers (not job-owned)');
+
+// =============================================================================================================
 section('poller — runJob: START once → READ-ONLY status poll → refresh on DONE (fake clock)');
 var immediate = function () { return Promise.resolve(); };
 (function () {
@@ -360,6 +422,36 @@ section('R4J-LIVE3 §4 — page reload while backend is DONE refreshes the READ 
   });
 })();
 
+section('R4J-LIVE4 — poller CANCEL: cooperative stop, refresh + ui.cancelled (not failed), reload never resurrects');
+(function () {
+  // isCancelled flips true → pollJob returns CANCELLED without another status read manufacturing progress.
+  var polls = 0;
+  var statusFn = function () { polls++; return Promise.resolve({ success: true, data: { status: 'RUNNING', scopesProcessed: 2, scopesTotal: 10, runId: 'RC' } }); };
+  var flag = { c: false };
+  GR.pollJob(statusFn, { wait: immediate, interval: 1, isCancelled: function () { return flag.c; } , onProgress: function () { flag.c = true; } }).then(function (r) {
+    ok(r.status === 'CANCELLED' && r.cancelledByClient === true, 'PC1 pollJob honors the client cancel token → returns CANCELLED (cooperative stop)');
+  });
+})();
+(function () {
+  var startCalls = 0, refreshed = 0, ev = [], flag = { c: false };
+  var startFn = function () { startCalls++; return Promise.resolve({ success: true, data: { runId: 'RC2', status: 'PENDING', scopesTotal: 5 } }); };
+  var statusFn = function () { return Promise.resolve({ success: true, data: { status: 'RUNNING', scopesProcessed: 1, scopesTotal: 5, runId: 'RC2' } }); };
+  GR.runJob(startFn, statusFn, { wait: immediate, interval: 1, isCancelled: function () { return flag.c; }, refresh: function () { refreshed++; },
+    onRunId: function () { flag.c = true; },   // simulate the Cancel button firing right after START
+    ui: { starting: function () { ev.push('starting'); }, progress: function () { ev.push('progress'); }, cancelled: function () { ev.push('cancelled'); }, failed: function () { ev.push('failed'); }, done: function () { ev.push('done'); } } }).then(function (r) {
+    ok(startCalls === 1, 'PC2 START (write) called exactly once even when cancelled');
+    ok(r.finalState && r.finalState.status === 'CANCELLED' && refreshed === 1, 'PC3 runJob CANCELLED → refreshes the materialized READ once (completed rows kept)');
+    ok(ev.indexOf('cancelled') !== -1 && ev.indexOf('failed') === -1, 'PC4 CANCELLED routes to ui.cancelled (a clean reset) — NOT ui.failed');
+  });
+})();
+(function () {
+  // reload while backend already CANCELLED → resumeIfRunning must NOT resurrect Calculating.
+  var statusFn = function () { return Promise.resolve({ success: true, data: { status: 'CANCELLED', scopesProcessed: 3, scopesTotal: 10, runId: 'RC3' } }); };
+  GR.resumeIfRunning(statusFn, { wait: immediate, ui: { resume: function () { throw new Error('must not resume a CANCELLED job'); } } }).then(function (r) {
+    ok(r.status === 'CANCELLED', 'PC5 reload on a terminal CANCELLED job does not resurrect Calculating (§7)');
+  });
+})();
+
 // =============================================================================================================
 section('wiring — router / client adapters / scheduler / page cutover');
 ok(/inventoryReplenishmentGap\.job\.start/.test(ROUTER) && /orderPlanningGap\.job\.start/.test(ROUTER) && /gapJob\.status\.get/.test(ROUTER), 'W1 router dispatches job.start x2 + gapJob.status.get');
@@ -378,6 +470,15 @@ ok(/isUnconfirmedJob/.test(INV_JS) && /isUnconfirmedJob/.test(RO_JS), 'W12 both 
 ok(/could not be confirmed/.test(INV_JS) && /could not be confirmed/.test(RO_JS), 'W13 the §5 truthful "unconfirmed — check latest data before retrying" message is present on both pages');
 ok(H.INV_CHUNK === 1, 'W14 R4J-LIVE2 execution unit reduced to 1 Inventory scope/continuation (§8 within the execution budget)');
 ok(/GAP_JOB_STALE_MS_/.test(F46) && /RECLAIMED_STALLED/.test(F46), 'W15 START reclaims a demonstrably-stalled job (bounded stale window) so a killed worker never blocks retry forever');
+// LIVE4 cancel wiring
+ok(/inventoryReplenishmentGap\.job\.cancel/.test(ROUTER) && /orderPlanningGap\.job\.cancel/.test(ROUTER), 'W16 router dispatches the two job.cancel actions');
+ok(/handleCancelInventoryReplenishmentGapJob_\(body\)/.test(ROUTER) && /handleCancelOrderPlanningGapJob_\(body\)/.test(ROUTER), 'W17 router calls the 46.gs cancel handlers');
+ok(/cancelInventoryReplenishmentGapJob\b/.test(DBAPI) && /cancelOrderPlanningGapJob\b/.test(DBAPI) && /_kmWeeklyCommand_\('inventoryReplenishmentGap\.job\.cancel'/.test(DBAPI), 'W18 client exposes cancel adapters via the WRITE runner');
+ok(/function handleCancelInventoryGapJob\(\)/.test(INV_JS) && /function handleCancelOrderPlanningGapJob\(\)/.test(RO_JS), 'W19 both pages expose a Cancel handler');
+ok(/isCancelled\s*:\s*function/.test(INV_JS) && /onRunId\s*:\s*function/.test(INV_JS) && /isCancelled\s*:\s*function/.test(RO_JS) && /onRunId\s*:\s*function/.test(RO_JS), 'W20 both pages wire the shared runJob cancel token + runId capture (one lifecycle contract)');
+ok((INV_JS.match(/cancelInventoryReplenishmentGapJob\(/g) || []).length === 1 && (RO_JS.match(/cancelOrderPlanningGapJob\(/g) || []).length === 1, 'W21/§M each page issues the cancel WRITE at most once');
+ok(/id="replen-cancel-recalc-btn"[\s\S]*onclick="handleCancelInventoryGapJob\(\)"/.test(INV_HTML) && /id="ro-cancel-recalc-btn"[\s\S]*onclick="handleCancelOrderPlanningGapJob\(\)"/.test(RO_HTML), 'W22/§6 both pages render a Cancel button wired to the backend cancel handler');
+ok(/gap-recalc-fm5r4jlive4-1/.test(read('js/utils/gap-recalc-transport.js')), 'W23 transport version bumped to LIVE4');
 
 section('safety — job engine authors NO formula; job state is Script-Property only (NO new DB table)');
 var F46_CODE = F46.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');

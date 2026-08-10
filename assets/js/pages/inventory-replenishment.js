@@ -3520,7 +3520,11 @@ window.searchReplenishment = searchReplenishment;
 // Refreshing… / Completed. The backend owns the job to completion even if this tab is closed/refreshed (recovered
 // on mount by _irResumeGapJobOnMount_). On DONE the page refreshes the materialized read — NO page-side formula.
 var _irRecalcAllBusy = false;
+var _irActiveRunId = null;         // LIVE4 — the backend runId of the in-flight job (for a targeted Cancel)
+var _irCancelRequested = false;    // LIVE4 — set once by the Cancel button so the poller stops cooperatively
 function _irRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-recalc-all-btn') : null; }
+function _irCancelBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-cancel-recalc-btn') : null; }
+function _irShowCancel_(show) { var c = _irCancelBtn_(); if (c) { c.style.display = show ? '' : 'none'; if (show) c.disabled = false; } }
 function handleRecalcAllInventoryGap() {
   if (_irRecalcAllBusy) return;
   if (!(window.KM && window.KM.DB && typeof window.KM.DB.startInventoryReplenishmentGapJob === 'function')) {
@@ -3531,9 +3535,10 @@ function handleRecalcAllInventoryGap() {
   var btn = _irRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
   if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
-  _irRecalcAllBusy = true;
+  _irRecalcAllBusy = true; _irActiveRunId = null; _irCancelRequested = false;
   function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
-  function restore() { _irRecalcAllBusy = false; setBtn(label || 'Recalculate All Sites', false); }
+  // §8 the ONE deterministic reset — always hides Cancel and returns the button to idle (used by every terminal path).
+  function restore() { _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); }
   var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
   var startFn = function () { return window.KM.DB.startInventoryReplenishmentGapJob({}); };   // the WRITE POST — exactly ONCE
   var statusFn = function () { return window.KM.DB.getGapJobStatus('INVENTORY'); };            // READ-ONLY poll
@@ -3544,16 +3549,32 @@ function handleRecalcAllInventoryGap() {
   }
   return gr.runJob(startFn, statusFn, {
     refresh: refreshFn,
+    onRunId: function (rid) { _irActiveRunId = rid; },
+    isCancelled: function () { return _irCancelRequested; },
     ui: {
       starting: function () { setBtn('Starting…', true); },
-      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
-      refreshing: function () { setBtn('Refreshing…', true); },
-      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); _irShowCancel_(true); },
+      refreshing: function () { _irShowCancel_(false); setBtn('Refreshing…', true); },
+      done: function () { _irShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       failed: function (st) { alert(_irGapJobFailMsg_('Inventory', st)); restore(); }
     }
   });
 }
 window.handleRecalcAllInventoryGap = handleRecalcAllInventoryGap;
+
+// LIVE4 §6 — manual Cancel: ONE backend cancel write for the active runId, stop this poller cooperatively; the shared
+// runJob poller then refreshes the materialized READ and resets the button (never a browser-only cancel, no reload).
+function handleCancelInventoryGapJob() {
+  if (!_irRecalcAllBusy || _irCancelRequested) return;
+  var c = _irCancelBtn_(); if (c) c.disabled = true;
+  _irCancelRequested = true;   // the poller returns CANCELLED on its next tick → runJob refreshes + resets
+  try { console.info('[GapJob] CANCEL_REQUEST INVENTORY run=' + _irActiveRunId); } catch (e) {}
+  if (window.KM && window.KM.DB && typeof window.KM.DB.cancelInventoryReplenishmentGapJob === 'function') {
+    try { window.KM.DB.cancelInventoryReplenishmentGapJob(_irActiveRunId); } catch (e) {}   // exactly ONE cancel write
+  }
+}
+window.handleCancelInventoryGapJob = handleCancelInventoryGapJob;
 
 // §5/§12 — truthful terminal message. STALLED / POLL_TIMEOUT = "could not be confirmed" (recoverable, NO auto retry);
 // any other non-DONE state = a genuine failure. Either way the button returns to a retryable idle state.
@@ -3576,15 +3597,19 @@ function _irResumeGapJobOnMount_() {
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : 'Recalculate All Sites');
   if (btn && btn.dataset) btn.dataset.idleLabel = label;
   function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  function resReset() { _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false); setBtn(label, false); }
+  _irCancelRequested = false;
   return gr.resumeIfRunning(function () { return db.getGapJobStatus('INVENTORY'); }, {
     refresh: function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(); },
+    isCancelled: function () { return _irCancelRequested; },
     ui: {
-      resume: function () { _irRecalcAllBusy = true; },
-      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
-      refreshing: function () { setBtn('Refreshing…', true); },
-      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(function () { _irRecalcAllBusy = false; setBtn(label, false); }, 1500); },
+      resume: function (st) { _irRecalcAllBusy = true; if (st && st.runId) _irActiveRunId = st.runId; },   // a resumed job is cancellable too
+      progress: function (st) { if (st && st.runId) _irActiveRunId = st.runId; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); _irShowCancel_(true); },
+      refreshing: function () { _irShowCancel_(false); setBtn('Refreshing…', true); },
+      done: function () { _irShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(resReset, 1500); else resReset(); },
+      cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); if (typeof setTimeout === 'function') setTimeout(resReset, 1500); else resReset(); },
       // §5 a resumed job that ends non-DONE (stalled/failed) must NOT leave the button stuck at Calculating.
-      failed: function (st) { _irRecalcAllBusy = false; setBtn(label, false); if (st && st.status && st.status !== 'DONE') { try { console.warn(_irGapJobFailMsg_('Inventory', st)); } catch (e) {} } }
+      failed: function (st) { resReset(); if (st && st.status && st.status !== 'DONE') { try { console.warn(_irGapJobFailMsg_('Inventory', st)); } catch (e) {} } }
     }
   });
 }

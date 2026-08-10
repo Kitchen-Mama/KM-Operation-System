@@ -1137,7 +1137,11 @@ function handleRequestOrderSearch() {
 // this tab closes/refreshes (recovered on mount by _roResumeGapJobOnMount_). Manual Order Qty / Carton / Note are
 // user decision data and are NEVER touched. Shared-pool conservation is preserved server-side (per-company chunking).
 var _roRecalcAllBusy = false;
+var _roActiveRunId = null;         // LIVE4 — active backend runId (for a targeted Cancel)
+var _roCancelRequested = false;    // LIVE4 — set once by the Cancel button so the poller stops cooperatively
 function _roRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-recalc-all-btn') : null; }
+function _roCancelBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-cancel-recalc-btn') : null; }
+function _roShowCancel_(show) { var c = _roCancelBtn_(); if (c) { c.style.display = show ? '' : 'none'; if (show) c.disabled = false; } }
 function handleRecalcAllOrderPlanningGap() {
   if (_roRecalcAllBusy) return;
   if (!(window.KM && window.KM.DB && typeof window.KM.DB.startOrderPlanningGapJob === 'function')) {
@@ -1148,9 +1152,10 @@ function handleRecalcAllOrderPlanningGap() {
   var btn = _roRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
   if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
-  _roRecalcAllBusy = true;
+  _roRecalcAllBusy = true; _roActiveRunId = null; _roCancelRequested = false;
   function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
-  function restore() { _roRecalcAllBusy = false; setBtn(label || 'Recalculate All Sites', false); }
+  // §8 the ONE deterministic reset — always hides Cancel and returns the button to idle.
+  function restore() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); }
   var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
   var startFn = function () { return window.KM.DB.startOrderPlanningGapJob({}); };   // the WRITE POST — exactly ONCE
   var statusFn = function () { return window.KM.DB.getGapJobStatus('ORDER_PLANNING'); };
@@ -1161,16 +1166,32 @@ function handleRecalcAllOrderPlanningGap() {
   }
   return gr.runJob(startFn, statusFn, {
     refresh: refreshFn,
+    onRunId: function (rid) { _roActiveRunId = rid; },
+    isCancelled: function () { return _roCancelRequested; },
     ui: {
       starting: function () { setBtn('Starting…', true); },
-      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
-      refreshing: function () { setBtn('Refreshing…', true); },
-      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); _roShowCancel_(true); },
+      refreshing: function () { _roShowCancel_(false); setBtn('Refreshing…', true); },
+      done: function () { _roShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      cancelled: function () { _roShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       failed: function (st) { alert(_roGapJobFailMsg_('Order Planning', st)); restore(); }
     }
   });
 }
 window.handleRecalcAllOrderPlanningGap = handleRecalcAllOrderPlanningGap;
+
+// LIVE4 §6 — manual Cancel (Order Planning): ONE backend cancel write for the active runId; stop the poller; the
+// shared runJob poller then refreshes the materialized READ and resets the button (never browser-only, no reload).
+function handleCancelOrderPlanningGapJob() {
+  if (!_roRecalcAllBusy || _roCancelRequested) return;
+  var c = _roCancelBtn_(); if (c) c.disabled = true;
+  _roCancelRequested = true;
+  try { console.info('[GapJob] CANCEL_REQUEST ORDER_PLANNING run=' + _roActiveRunId); } catch (e) {}
+  if (window.KM && window.KM.DB && typeof window.KM.DB.cancelOrderPlanningGapJob === 'function') {
+    try { window.KM.DB.cancelOrderPlanningGapJob(_roActiveRunId); } catch (e) {}   // exactly ONE cancel write
+  }
+}
+window.handleCancelOrderPlanningGapJob = handleCancelOrderPlanningGapJob;
 
 // §5/§12 — truthful terminal message (shared contract with Inventory). STALLED / POLL_TIMEOUT = "could not be
 // confirmed" (recoverable, NO auto retry); any other non-DONE state = a genuine failure. Button returns to idle.
@@ -1192,15 +1213,19 @@ function _roResumeGapJobOnMount_() {
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : 'Recalculate All Sites');
   if (btn && btn.dataset) btn.dataset.idleLabel = label;
   function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  function resReset() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label, false); }
+  _roCancelRequested = false;
   return gr.resumeIfRunning(function () { return db.getGapJobStatus('ORDER_PLANNING'); }, {
     refresh: function () { if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') return refreshOrderPlanningGapAfterRecalc_(); },
+    isCancelled: function () { return _roCancelRequested; },
     ui: {
-      resume: function () { _roRecalcAllBusy = true; },
-      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
-      refreshing: function () { setBtn('Refreshing…', true); },
-      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(function () { _roRecalcAllBusy = false; setBtn(label, false); }, 1500); },
+      resume: function (st) { _roRecalcAllBusy = true; if (st && st.runId) _roActiveRunId = st.runId; },
+      progress: function (st) { if (st && st.runId) _roActiveRunId = st.runId; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); _roShowCancel_(true); },
+      refreshing: function () { _roShowCancel_(false); setBtn('Refreshing…', true); },
+      done: function () { _roShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(resReset, 1500); else resReset(); },
+      cancelled: function () { _roShowCancel_(false); setBtn('Cancelled — results preserved', true); if (typeof setTimeout === 'function') setTimeout(resReset, 1500); else resReset(); },
       // §5 a resumed job that ends non-DONE (stalled/failed) must NOT leave the button stuck at Calculating.
-      failed: function (st) { _roRecalcAllBusy = false; setBtn(label, false); if (st && st.status && st.status !== 'DONE') { try { console.warn(_roGapJobFailMsg_('Order Planning', st)); } catch (e) {} } }
+      failed: function (st) { resReset(); if (st && st.status && st.status !== 'DONE') { try { console.warn(_roGapJobFailMsg_('Order Planning', st)); } catch (e) {} } }
     }
   });
 }
