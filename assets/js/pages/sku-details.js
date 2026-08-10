@@ -860,7 +860,10 @@ function _buildSkuMasterFormModal() {
                 '<div role="tabpanel" data-panel="logs" style="display:none;"></div>' +
             '</div>' +
             '<div style="padding:14px 18px;border-top:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;">' +
-                '<button type="button" id="sku-tax-btn" onclick="handleSkuTaxRates()" title="Maintain Series-level HS Code & tax records (tax_referral_rates)" style="padding:8px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;color:#0F766E;">HS Code &amp; Tax Rates</button>' +
+                '<div style="display:flex;gap:8px;align-items:center;">' +
+                    '<button type="button" id="sku-tax-btn" onclick="handleSkuTaxRates()" title="Maintain Series-level HS Code & tax records (tax_referral_rates)" style="padding:8px 14px;border:1px solid #CBD5E1;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;color:#0F766E;">HS Code &amp; Tax Rates</button>' +
+                    '<button type="button" id="sku-cleardraft-btn" onclick="handleClearSkuAddDraft()" title="Discard the unsaved Add SKU draft and reset the form" style="padding:8px 14px;border:1px solid #FCA5A5;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;color:#B91C1C;display:none;">Clear Draft</button>' +
+                '</div>' +
                 '<div style="display:flex;gap:10px;">' +
                     '<button type="button" onclick="closeSkuEdit()" style="padding:8px 16px;border:1px solid #CBD5E1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>' +
                     '<button type="button" id="sku-save-btn" onclick="saveSkuMasterForm()" style="padding:8px 16px;border:none;background:#7DAB63;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>' +
@@ -868,6 +871,11 @@ function _buildSkuMasterFormModal() {
             '</div>' +
         '</div>';
     overlay.addEventListener('click', function(e) { if (e.target === overlay) closeSkuEdit(); });
+    // F1-SKU-DETAILS-DRAFT-R1 — FRONTEND-ONLY unsaved-draft autosave: a debounced snapshot on any field edit
+    // (delegated input/change; ADD mode only, guarded inside _skuAddDraftSaveDebounced_). Writes localStorage
+    // only — NO API/DB call, NO validation/submit, NO rerender.
+    overlay.addEventListener('input', function () { _skuAddDraftSaveDebounced_(overlay); });
+    overlay.addEventListener('change', function () { _skuAddDraftSaveDebounced_(overlay); });
     return overlay;
 }
 
@@ -915,15 +923,89 @@ function skuViewRegionalDetails() {
     else { showSkuStatusToast('Open SKU Regional Details from the sidebar.'); }
 }
 
+// ── F1-SKU-DETAILS-DRAFT-R1 — Add SKU unsaved-draft cache (FRONTEND-ONLY) ─────────────────────────────
+// Keeps the in-progress Add SKU form alive across accidental close / Cancel / navigation / refresh / reopen.
+// Values are snapshotted (debounced) to localStorage as the user edits; on the next Add open they seed the SAME
+// control builders edit mode uses (so chips / combos / enums / selects restore for free). It NEVER writes any DB
+// record — creation stays the sole authority of saveSkuMasterForm(). Cleared ONLY on a confirmed Create success
+// or an explicit Clear Draft. No secrets are cached (plain SKU business fields only). Any parse/version error is
+// swallowed so the modal always opens. Add-mode ONLY — Edit prefills from the live record, never the draft.
+var SKU_ADD_DRAFT_KEY_ = 'KM_SKU_DETAILS_ADD_DRAFT_V1';
+var SKU_ADD_DRAFT_VERSION_ = 1;
+var _skuAddDraftTimer = null;
+function _skuHasLocalStorage_() { try { return typeof localStorage !== 'undefined' && localStorage; } catch (e) { return false; } }
+// Snapshot every current form field generically by its canonical #sku-f-<key> value element (the SAME elements
+// the collector reads) + the active tab. Obsolete/renamed fields need no special-casing — whatever exists is saved.
+function _skuAddDraftCollectFields_(overlay) {
+    var fields = {};
+    var els = overlay.querySelectorAll('[id^="sku-f-"]');
+    Array.prototype.forEach.call(els, function (el) {
+        var key = String(el.id).slice('sku-f-'.length);
+        if (key) fields[key] = (el.value == null ? '' : String(el.value));
+    });
+    return fields;
+}
+function _skuAddDraftAnyValue_(fields) {
+    for (var k in fields) { if (fields.hasOwnProperty(k) && String(fields[k]).trim() !== '') return true; }
+    return false;
+}
+function _skuAddDraftActiveTab_(overlay) {
+    var t = overlay.querySelector('[role="tab"][aria-selected="true"]');
+    return (t && t.getAttribute('data-tab')) || 'basic';
+}
+function _skuAddDraftSave_(overlay) {
+    if (_skuFormMode !== 'add' || !overlay || !_skuHasLocalStorage_()) return;
+    try {
+        var fields = _skuAddDraftCollectFields_(overlay);
+        // Never persist an all-empty draft (avoids clobbering a real draft with a blank reopen/first paint).
+        if (!_skuAddDraftAnyValue_(fields)) { return; }
+        var draft = { version: SKU_ADD_DRAFT_VERSION_, savedAt: new Date().toISOString(), fields: fields, activeTab: _skuAddDraftActiveTab_(overlay) };
+        localStorage.setItem(SKU_ADD_DRAFT_KEY_, JSON.stringify(draft));
+    } catch (e) { /* quota / serialization — a failed draft save must never break the form */ }
+}
+function _skuAddDraftSaveDebounced_(overlay) {
+    if (_skuFormMode !== 'add') return;
+    if (_skuAddDraftTimer && typeof clearTimeout === 'function') clearTimeout(_skuAddDraftTimer);
+    _skuAddDraftTimer = (typeof setTimeout === 'function') ? setTimeout(function () { _skuAddDraftSave_(overlay); }, 400) : (function () { _skuAddDraftSave_(overlay); })();
+}
+// Read + validate the draft. Returns null on absent / corrupt / unsupported-version (never throws).
+function _skuAddDraftLoad_() {
+    if (!_skuHasLocalStorage_()) return null;
+    var raw; try { raw = localStorage.getItem(SKU_ADD_DRAFT_KEY_); } catch (e) { return null; }
+    if (!raw) return null;
+    var d; try { d = JSON.parse(raw); } catch (e) { _skuAddDraftClear_(); return null; }
+    if (!d || d.version !== SKU_ADD_DRAFT_VERSION_ || !d.fields || typeof d.fields !== 'object') { _skuAddDraftClear_(); return null; }
+    return d;
+}
+function _skuAddDraftClear_() { if (!_skuHasLocalStorage_()) return; try { localStorage.removeItem(SKU_ADD_DRAFT_KEY_); } catch (e) {} }
+// Shape a draft into the rec the existing control builders consume (_skuLoadValue reads rec.sku / rec.raw[key]).
+function _skuAddDraftAsRec_(draft) {
+    if (!draft || !draft.fields) return null;
+    var f = draft.fields;
+    return { sku: f.sku || '', lifecycle: f.lifecycle || '', raw: Object.assign({}, f) };
+}
+// Explicit discard (Clear Draft button): remove the cache + reopen a clean Add form (never touches the DB).
+function handleClearSkuAddDraft() {
+    _skuAddDraftClear_();
+    if (_skuFormMode === 'add') openSkuMasterForm('add');
+    showSkuStatusToast('Add SKU draft cleared.');
+}
+window.handleClearSkuAddDraft = handleClearSkuAddDraft;
+
 // Open the unified form. mode 'add' → blank + editable SKU + Create; 'edit' → load record + read-only SKU + Save.
 function openSkuMasterForm(mode) {
     if (!canEditSkuDetails()) { alert('You do not have permission to edit SKU Details.'); return; }
     _skuFormMode = (mode === 'add') ? 'add' : 'edit';
-    var rec = null;
+    var rec = null, _addDraft = null;
     if (_skuFormMode === 'edit') {
         if (!_selectedSku) { alert('Select a SKU row first, then click Edit SKU.'); return; }
         rec = _skuFindRecord(_selectedSku);
         if (!rec) { showSkuStatusToast('Unable to open SKU details. Please select the SKU again.'); return; }
+    } else {
+        // ADD: seed the form from the unsaved draft (if any) via the SAME control builders edit mode uses — a
+        // corrupt/obsolete draft returns null (clean form). NO DB read/write; creation stays saveSkuMasterForm's job.
+        _addDraft = _skuAddDraftLoad_();
+        if (_addDraft) rec = _skuAddDraftAsRec_(_addDraft);
     }
     var overlay = document.getElementById('sku-edit-modal-overlay');
     if (!overlay) { overlay = _buildSkuMasterFormModal(); document.body.appendChild(overlay); }
@@ -939,7 +1021,11 @@ function openSkuMasterForm(mode) {
         _skuRegionalTaxNav(rec) + '</div>';
     overlay.querySelector('[data-panel="supplier"]').innerHTML = _skuSupplierPanel();
     overlay.querySelector('[data-panel="logs"]').innerHTML = _skuLogsPanel(rec);
+    // Clear Draft — ADD-only explicit discard; shown only when an unsaved draft is actually restored.
+    var clearBtn = overlay.querySelector('#sku-cleardraft-btn'); if (clearBtn) clearBtn.style.display = (_skuFormMode === 'add' && _addDraft) ? '' : 'none';
     skuSwitchTab('basic');
+    // Restore the draft's active tab when practical (any invalid/absent value stays on basic).
+    if (_skuFormMode === 'add' && _addDraft && _addDraft.activeTab && overlay.querySelector('[role="tab"][data-tab="' + _addDraft.activeTab + '"]')) skuSwitchTab(_addDraft.activeTab);
     overlay.style.display = 'flex';
 }
 
@@ -1050,6 +1136,7 @@ function saveSkuMasterForm() {
     window.KM.DB.upsertSkuDetail(payload).then(function (data) {
         var savedSku = payload.sku;
         var baseline = data && data.factory_baseline;
+        if (payload.mode === 'add') _skuAddDraftClear_();   // confirmed Create success → discard the unsaved draft (only here, never before success)
         closeSkuEdit();
         renderSkuDetailsTable();
         if (window.renderSkuHandbook) setTimeout(function () { renderSkuHandbook(); }, 50);
