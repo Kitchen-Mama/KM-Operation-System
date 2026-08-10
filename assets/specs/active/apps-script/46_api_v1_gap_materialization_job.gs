@@ -53,6 +53,19 @@ var GAP_JOB_STALE_MS_ = 600000;
 // these. LIVE4 adds CANCELLED (explicit manual stop) and STALLED (authoritative no-progress detection persisted by
 // status.get). Any terminal state carries finishedAt and is never resurrected into Calculating.
 function gapJobIsTerminal_(status) { return status === 'DONE' || status === 'FAILED' || status === 'BLOCKED' || status === 'ERROR' || status === 'CANCELLED' || status === 'STALLED'; }
+// LIVE6 §4 — is a NON-TERMINAL job decisively dead (→ must become STALLED)? Two decisive cases, using ONLY the
+// existing frozen stale authority (GAP_JOB_STALE_MS_) — NO new timeout:
+//   (a) LEGACY leftover: a non-terminal Script-Property state with NO epoch liveness stamps at all. Current code
+//       ALWAYS stamps startedAtMs/updatedAtMs, so absent-both means the state predates the lifecycle → cannot be a
+//       genuinely-active current job → decisively stale (closes the startup resurrection of a pre-upgrade job).
+//   (b) STALE: epoch stamp present but no progress past the frozen threshold (killed worker, no re-arm).
+// A job whose epoch stamp is recent (advancing or just-started) is NOT stale → remains PENDING/RUNNING (resumable).
+function gapJobStaleNonterminal_(state, nowMs) {
+  if (!state || gapJobIsTerminal_(state.status)) return false;
+  if (state.updatedAtMs == null && state.startedAtMs == null) return true;                 // (a) legacy, no lifecycle stamp
+  var stampMs = state.updatedAtMs || state.startedAtMs || 0;
+  return !!(stampMs && ((nowMs || 0) - stampMs) > GAP_JOB_STALE_MS_);                       // (b) past the frozen stale window
+}
 
 // ---- small pure helpers -------------------------------------------------------------------------------------
 function gapJobNormalizeProduct_(p) {
@@ -339,23 +352,17 @@ function gapJobStatus_(product, runId, env) {
   // (killed worker, no re-arm). Transition it to TERMINAL STALLED so a reload never resurrects Calculating. This is a
   // bounded state write (NEVER a calculation, NEVER a continuation, NEVER a gap-row write); best-effort under the
   // shared lock, with a clean re-read so a worker that just advanced is not wrongly stalled.
-  if (!gapJobIsTerminal_(state.status)) {
-    var stampMs = state.updatedAtMs || state.startedAtMs || 0;
-    if (stampMs && ((env.nowMs ? env.nowMs() : 0) - stampMs) > GAP_JOB_STALE_MS_) {
+  if (gapJobStaleNonterminal_(state, env.nowMs ? env.nowMs() : 0)) {
       var lock = env.lock, locked = false;
       try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
       try {
         var fresh = (locked ? gapJobReadState_(env, product) : null) || state;           // re-read under lock (avoid racing a live worker)
-        if (!gapJobIsTerminal_(fresh.status)) {
-          var s2 = fresh.updatedAtMs || fresh.startedAtMs || 0;
-          if (s2 && ((env.nowMs ? env.nowMs() : 0) - s2) > GAP_JOB_STALE_MS_) {
+        if (gapJobStaleNonterminal_(fresh, env.nowMs ? env.nowMs() : 0)) {
             if (locked) { gapJobMarkStalled_(env, product, fresh); }                      // persist terminal STALLED
             else { fresh.status = 'STALLED'; gapJobLog_('STALLED', fresh); }              // lock busy → report-only (a later poll persists)
-          }
         }
         state = fresh;
       } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
-    }
   }
   if (runId && state.runId !== runId) return gapBatchEnvelope_(true, { product: product, status: 'NONE', runId: runId, current: gapJobPublicState_(state) });
   return gapBatchEnvelope_(true, gapJobPublicState_(state));

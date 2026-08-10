@@ -104,6 +104,10 @@
   function _isTerminalJob(status) { return status === JOB_STATUS.DONE || status === JOB_STATUS.BLOCKED || status === JOB_STATUS.FAILED || status === JOB_STATUS.ERROR || status === JOB_STATUS.CANCELLED || status === JOB_STATUS.STALLED; }
   function _stateOf(res) { return (res && res.data) ? res.data : (res || {}); }
   function _progressOf(st) { return (st && typeof st.scopesProcessed === 'number') ? st.scopesProcessed : -1; }
+  // LIVE6 §1/§4 — worker/continuation lifecycle evidence. A PENDING/RUNNING Script Property alone is NOT proof of a
+  // live job; a genuinely-active (or freshly-started) job shows progress, OR a scheduled continuation, OR a started
+  // worker. A lifecycle-less non-terminal state is a stale/legacy leftover → must NOT resurrect Calculating on startup.
+  function _hasLiveness(st) { return !!(st && ((typeof st.scopesProcessed === 'number' && st.scopesProcessed > 0) || st.lastContinuationScheduledAt || st.lastWorkerStartedAt)); }
   // A non-DONE poll result the UI must treat as "could not confirm completion" (recoverable) rather than a hard
   // business failure — no automatic WRITE retry is ever issued for either (§5).
   function isUnconfirmedJob(status) { return status === 'STALLED' || status === 'POLL_TIMEOUT'; }
@@ -180,11 +184,16 @@
     var ui = opts.ui || {};
     return Promise.resolve(statusFn()).then(function (res) {
       var st = _stateOf(res);
+      _log('RESUME_CHECK', st);
       // §4 a page reload must NOT resurrect a terminal job. If the backend already says DONE, refresh the
       // materialized READ once and leave the button in its NORMAL idle state — never flash/keep Calculating.
-      if (st.status === JOB_STATUS.DONE) { _log('CLIENT_TERMINAL', st); return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { return st; }); }
-      // Any other non-active terminal/none state → nothing to resume (button stays normal). Backend state is authoritative.
-      if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) { _log('CLIENT_TERMINAL', st); return st; }
+      if (st.status === JOB_STATUS.DONE) { _log('RESUME_SKIPPED', st); return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { return st; }); }
+      // §1 Any terminal / none status (FAILED / BLOCKED / ERROR / CANCELLED / STALLED / NONE) → stay idle. Backend authoritative.
+      if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) { _log('RESUME_SKIPPED', st); return st; }
+      // §1/§4 do NOT infer active state merely because a PENDING/RUNNING Script Property exists — require worker/
+      // continuation lifecycle evidence. A lifecycle-less non-terminal leftover stays idle (backend normalizes → STALLED).
+      if (!_hasLiveness(st)) { _log('RESUME_SKIPPED', st); return st; }
+      _log('RESUME_ACTIVE', st);
       if (typeof ui.resume === 'function') ui.resume(st);
       return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled,
         onProgress: function (s) { if (typeof ui.progress === 'function') ui.progress(s); } }).then(function (finalState) {
@@ -211,6 +220,6 @@
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
     pollJob: pollJob, runJob: runJob, resumeIfRunning: resumeIfRunning,
-    VERSION: 'gap-recalc-fm5r4jlive4-1'
+    VERSION: 'gap-recalc-fm5r4jlive6-1'
   };
 });

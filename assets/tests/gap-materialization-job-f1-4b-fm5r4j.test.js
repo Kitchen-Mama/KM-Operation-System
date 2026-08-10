@@ -33,7 +33,7 @@ function section(n) { console.log('\n== ' + n + ' =='); }
 // PRODUCTION adapters are called — the engine tests inject a fake env, so none are needed at define time).
 var PRE = 'function prodRequireSheet_(ss, name){ if (ss && ss.__missingSheet) throw new Error("MISSING_SHEET:"+name); return (ss && ss.getSheetByName) ? (ss.getSheetByName(name) || {__sheet:true}) : {__sheet:true}; }\n';
 var H = (new Function(BUNDLE + '\n' + F42 + '\n' + PRE + F43 + '\n' + F46 + '\n return {' +
-  ' start: gapJobStart_, cont: gapJobContinue_, status: gapJobStatus_, cancel: gapJobCancel_,' +
+  ' start: gapJobStart_, cont: gapJobContinue_, status: gapJobStatus_, cancel: gapJobCancel_, staleNonterminal: gapJobStaleNonterminal_,' +
   ' orderedScopes: gapJobOrderedScopes_, nextSlice: gapJobNextSlice_,' +
   ' isOwnedCont: gapJobIsOwnedContinuationHandler_, normalizeProduct: gapJobNormalizeProduct_,' +
   ' buildAlloc: gapOpBuildSupplyAllocation_, receiverKey: gapReceiverKey_,' +
@@ -336,6 +336,23 @@ eq(eIso._cleared.filter(function (p) { return p === 'ORDER_PLANNING'; }).length,
 eq([H.isOwnedCont('runAmazonSnapshotImports'), H.isOwnedCont('runDailyInventoryGapMaterialization')], [false, false], 'T/U cancel path cannot target the Amazon import / daily scheduler handlers (not job-owned)');
 
 // =============================================================================================================
+section('R4J-LIVE6 §4 — status.get normalizes a decisively-dead non-terminal job to TERMINAL STALLED');
+// predicate: legacy (no epoch stamps) OR past the frozen stale window → stale; fresh/advancing → not stale; terminal → not.
+eq(H.staleNonterminal({ status: 'PENDING' }, 999999999), true, 'SN1 legacy PENDING with NO epoch stamps → decisively stale');
+eq(H.staleNonterminal({ status: 'RUNNING' }, 999999999), true, 'SN2 legacy RUNNING with NO epoch stamps → decisively stale');
+eq(H.staleNonterminal({ status: 'PENDING', updatedAtMs: 1000000, startedAtMs: 1000000 }, 1000000 + 700000), true, 'SN3 epoch present, no progress > stale window → stale');
+eq(H.staleNonterminal({ status: 'RUNNING', updatedAtMs: 1000000, startedAtMs: 1000000 }, 1000000 + 1000), false, 'SN4 epoch present, recently touched → NOT stale (still resumable)');
+eq(H.staleNonterminal({ status: 'DONE' }, 999999999), false, 'SN5 terminal → not stale');
+eq(H.staleNonterminal({ status: 'PENDING', updatedAtMs: 0, startedAtMs: 0 }, 0), false, 'SN6 epoch present as 0 (fresh test/first-tick) → NOT treated as legacy (only ABSENT stamps are legacy)');
+// integration: a LEGACY leftover Script-Property (non-terminal, no epoch fields) → status.get persists STALLED.
+var eLegacy = fakeEnv({ scopes: invScopes(4) });
+eLegacy._store[H.PROP_KEYS.INVENTORY] = JSON.stringify({ runId: 'GAP-LEGACY', product: 'INVENTORY', status: 'PENDING', scopeCursor: 0, scopesTotal: 10, scopesProcessed: 0, startedAt: '2026-01-01 00:00:00', updatedAt: '2026-01-01 00:00:00' });
+var legacySt = H.status('INVENTORY', null, eLegacy).data;
+eq(legacySt.status, 'STALLED', 'SN7 a legacy no-epoch PENDING leftover is normalized to STALLED on status read (no startup resurrection)');
+eq(JSON.parse(eLegacy._store[H.PROP_KEYS.INVENTORY]).status, 'STALLED', 'SN8 STALLED is persisted (a reload sees terminal, never Calculating)');
+ok(eLegacy._processed.length === 0, 'SN9 the normalization ran NO calculation');
+
+// =============================================================================================================
 section('poller — runJob: START once → READ-ONLY status poll → refresh on DONE (fake clock)');
 var immediate = function () { return Promise.resolve(); };
 (function () {
@@ -478,7 +495,7 @@ ok(/function handleCancelInventoryGapJob\(\)/.test(INV_JS) && /function handleCa
 ok(/isCancelled\s*:\s*function/.test(INV_JS) && /onRunId\s*:\s*function/.test(INV_JS) && /isCancelled\s*:\s*function/.test(RO_JS) && /onRunId\s*:\s*function/.test(RO_JS), 'W20 both pages wire the shared runJob cancel token + runId capture (one lifecycle contract)');
 ok((INV_JS.match(/cancelInventoryReplenishmentGapJob\(/g) || []).length === 1 && (RO_JS.match(/cancelOrderPlanningGapJob\(/g) || []).length === 1, 'W21/§M each page issues the cancel WRITE at most once');
 ok(/id="replen-cancel-recalc-btn"[\s\S]*onclick="handleCancelInventoryGapJob\(\)"/.test(INV_HTML) && /id="ro-cancel-recalc-btn"[\s\S]*onclick="handleCancelOrderPlanningGapJob\(\)"/.test(RO_HTML), 'W22/§6 both pages render a Cancel button wired to the backend cancel handler');
-ok(/gap-recalc-fm5r4jlive4-1/.test(read('js/utils/gap-recalc-transport.js')), 'W23 transport version bumped to LIVE4');
+ok(/gap-recalc-fm5r4jlive6-1/.test(read('js/utils/gap-recalc-transport.js')), 'W23 transport version bumped to LIVE6');
 
 section('safety — job engine authors NO formula; job state is Script-Property only (NO new DB table)');
 var F46_CODE = F46.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
