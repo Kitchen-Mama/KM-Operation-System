@@ -49,6 +49,27 @@ var GAP_JOB_MAX_LOCK_WAITS_ = 8;                       // R4J-LIVE §A2 — boun
 // (which cannot exceed the ~6-min execution budget), so a live job is never reclaimed; but a worker killed mid-slice
 // (no re-arm) would otherwise block every future start forever via the duplicate guard — reclaim lets the user retry.
 var GAP_JOB_STALE_MS_ = 600000;
+// R4J-LIVE10 §4 — WORKER SAFE BUDGET. A continuation processes COMPLETE slices in a loop until this elapsed budget is
+// reached, then persists its checkpoint and exits CLEANLY (arming the next continuation) — it NEVER relies on the
+// Apps Script ~6-min hard kill as flow control. 4 min leaves a wide margin below the platform limit so the worker
+// always reaches its clean exit + re-arm. (A single slice that itself cannot fit the budget is caught by the
+// no-progress guard below → truthful terminal SLICE_EXCEEDS_WORKER_BUDGET; conservation forbids a finer OP split.)
+var GAP_JOB_WORKER_BUDGET_MS_ = 240000;
+// R4J-LIVE10 §3/§7 — SELF-HEAL RECOVERY trigger. Armed BEFORE any slice processing and at a delay LONGER than the
+// ~6-min hard limit, so it does NOT fire during a healthy worker run (which either completes and clears it, or arms a
+// prompt next and the next worker clears it). It survives ONLY if this worker is killed/overruns with no clean exit —
+// then it fires and re-enters the SAME runId from the last durable checkpoint. This is the browser-independent
+// guarantee: a hard kill mid-slice can never orphan the job with zero armed triggers (the pre-LIVE10 root cause).
+var GAP_JOB_RECOVERY_DELAY_MS_ = 420000;
+// R4J-LIVE10 §7/§8 — bounded AUTOMATIC same-runId recoveries before a truthful terminal. Recovery continues the SAME
+// logical run (never a fresh calculation); this bound stops an endless recovery loop for a genuinely broken job.
+var GAP_JOB_MAX_RECOVERIES_ = 5;
+// R4J-LIVE10 §13 — bounded manual EXECUTION SCOPES at the job contract. CURRENT_SCOPE / CURRENT_COUNTRY restrict the
+// receiver universe; ALL_SITES is the full universe (default / backward-compatible). Order Planning conservation:
+// the FACTORY shared pool competes company-wide (keyed company||sku across every country/marketplace), so ANY
+// sub-company OP selection is EXPANDED to the WHOLE COMPANY (the exact conservation boundary) and the expansion is
+// recorded — a partial OP run can never silently change allocation. Inventory scopes are independent → no expansion.
+var GAP_JOB_SCOPE_MODES_ = { ALL_SITES: 'ALL_SITES', CURRENT_COUNTRY: 'CURRENT_COUNTRY', CURRENT_SCOPE: 'CURRENT_SCOPE' };
 // R4J-LIVE §A2 / LIVE4 — the terminal set. A job NEVER stays PENDING/RUNNING indefinitely: it always reaches one of
 // these. LIVE4 adds CANCELLED (explicit manual stop) and STALLED (authoritative no-progress detection persisted by
 // status.get). Any terminal state carries finishedAt and is never resurrected into Calculating.
@@ -83,14 +104,19 @@ function gapJobResultTableFor_(product) {
 // bounded-retry/lock bookkeeping) — counts/timestamps only, NEVER per-SKU payloads, NO DB table. These pinpoint the
 // exact broken lifecycle edge on a live run (e.g. lastContinuationScheduledAt set but lastWorkerStartedAt null ⇒ the
 // trigger never fired ⇒ trigger auth/quota; lastWorkerStartedAt set + lastError ⇒ the slice calc failed at a scope).
-function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr, nowMs) {
+function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr, nowMs, requestedScope, appliedScope) {
   return {
     runId: runId, product: product, status: 'PENDING',
     scopeCursor: 0, scopesTotal: scopesTotal, scopesProcessed: 0,
     rowsProcessed: 0, readyCount: 0, blockedCount: 0, errorCount: 0,
     calculationDate: ctx.calculationDate || '', calculationMonth: ctx.calculationMonth || '', planningCycle: ctx.planningCycle || '',
     startedAt: nowStr, updatedAt: nowStr, startedAtMs: (nowMs || 0), updatedAtMs: (nowMs || 0), finishedAt: null, cancelledAt: null, lastError: null, sliceAttempts: 0,
-    lockWaits: 0, lastContinuationScheduledAt: null, lastWorkerStartedAt: null, lastWorkerFinishedAt: null, lastProcessedScope: null
+    lockWaits: 0, lastContinuationScheduledAt: null, lastWorkerStartedAt: null, lastWorkerFinishedAt: null, lastProcessedScope: null,
+    // R4J-LIVE10 — self-heal + no-progress bookkeeping + the resolved manual execution scope (§13). recoveryCount =
+    // automatic same-runId recoveries so far; stuckCursor/stuckCount = consecutive worker entries that made NO progress
+    // at that cursor (a killed/overrunning slice that can never fit the budget) → bounded to a truthful terminal.
+    recoveryCount: 0, stuckCursor: null, stuckCount: 0,
+    requestedScope: requestedScope || null, appliedScope: appliedScope || null
   };
 }
 // R4J-LIVE2 §5/§7 — stamp the monotonic progress clock (epoch ms). Called wherever updatedAt advances so the STALLED
@@ -107,7 +133,12 @@ function gapJobPublicState_(s) {
     calculationDate: s.calculationDate, calculationMonth: s.calculationMonth, planningCycle: s.planningCycle,
     startedAt: s.startedAt, updatedAt: s.updatedAt, finishedAt: s.finishedAt, cancelledAt: s.cancelledAt, lastError: s.lastError,
     lastContinuationScheduledAt: s.lastContinuationScheduledAt, lastWorkerStartedAt: s.lastWorkerStartedAt,
-    lastWorkerFinishedAt: s.lastWorkerFinishedAt, lastProcessedScope: s.lastProcessedScope };
+    lastWorkerFinishedAt: s.lastWorkerFinishedAt, lastProcessedScope: s.lastProcessedScope,
+    // R4J-LIVE10 — observable self-heal + scope (read-only; counts/labels only, never a per-SKU payload). `recovering`
+    // is a DERIVED transient the watchdog sets when it has just re-armed a stale run's continuation (§7/§11) so the
+    // browser can show "Recovering…" instead of a false failure — it is NOT a persisted status.
+    recoveryCount: s.recoveryCount || 0, requestedScope: s.requestedScope || null, appliedScope: s.appliedScope || null,
+    recovering: !!s.recovering };
 }
 // Stable group-by-company ordering (first-appearance order preserved). Consecutive scopes of a company are then
 // contiguous, so advancing the cursor past a whole company is clean AND a company is never split across slices.
@@ -121,6 +152,31 @@ function gapJobOrderedScopes_(scopes) {
   var out = [];
   for (i = 0; i < order.length; i++) { var arr = byCompany[order[i]]; for (var k = 0; k < arr.length; k++) out.push(arr[k]); }
   return out;
+}
+// R4J-LIVE10 §13/§23 — resolve the bounded manual EXECUTION SCOPE against the full enumerated universe. Returns
+// { scopes, appliedScope } where appliedScope records the mode ACTUALLY applied (which may be an expansion) so the
+// state + STATUS are truthful. CONSERVATION-SAFE: for ORDER_PLANNING any CURRENT_SCOPE/CURRENT_COUNTRY request is
+// EXPANDED to the whole company (the FACTORY shared pool competes company-wide) — a sub-company OP run would drop
+// competing receivers and change allocation, which is forbidden; the expansion is recorded (expandedForConservation).
+// For INVENTORY (independent scopes) the selection is exact. An empty request or ALL_SITES ⇒ the full universe.
+function gapJobSelectScopes_(allScopes, req, product) {
+  var all = (allScopes || []).slice();
+  var mode = (req && req.mode) ? String(req.mode).trim().toUpperCase() : GAP_JOB_SCOPE_MODES_.ALL_SITES;
+  if (mode !== GAP_JOB_SCOPE_MODES_.CURRENT_COUNTRY && mode !== GAP_JOB_SCOPE_MODES_.CURRENT_SCOPE) {
+    return { scopes: all, appliedScope: { mode: GAP_JOB_SCOPE_MODES_.ALL_SITES } };
+  }
+  var company = String((req && req.company) || ''), country = String((req && req.country) || ''), marketplace = String((req && req.marketplace) || '');
+  if (!company) return { scopes: all, appliedScope: { mode: GAP_JOB_SCOPE_MODES_.ALL_SITES, note: 'MISSING_COMPANY_FELL_BACK_TO_ALL_SITES' } };
+  if (product === 'ORDER_PLANNING') {
+    // conservation floor: the WHOLE company (never finer), regardless of the requested sub-company mode.
+    var comp = all.filter(function (s) { return String(s.company) === company; });
+    return { scopes: comp, appliedScope: { mode: GAP_JOB_SCOPE_MODES_.CURRENT_COUNTRY === mode || mode === GAP_JOB_SCOPE_MODES_.CURRENT_SCOPE ? 'CURRENT_COMPANY' : mode, requestedMode: mode, company: company, country: country || null, marketplace: marketplace || null, expandedForConservation: true } };
+  }
+  if (mode === GAP_JOB_SCOPE_MODES_.CURRENT_COUNTRY) {
+    return { scopes: all.filter(function (s) { return String(s.company) === company && String(s.country) === country; }), appliedScope: { mode: mode, company: company, country: country } };
+  }
+  // CURRENT_SCOPE (Inventory) — the exact company/country/marketplace triple.
+  return { scopes: all.filter(function (s) { return String(s.company) === company && String(s.country) === country && String(s.marketplace) === marketplace; }), appliedScope: { mode: mode, company: company, country: country, marketplace: marketplace } };
 }
 // The next bounded slice from `cursor`. INVENTORY: up to GAP_JOB_INV_CHUNK_SCOPES_ scopes. ORDER_PLANNING: exactly
 // one WHOLE COMPANY (all consecutive scopes sharing the company at the cursor) → shared-pool conservation boundary.
@@ -169,6 +225,27 @@ function gapJobMarkStalled_(env, product, state) {
   state.lastError = state.lastError || 'STALE_NO_PROGRESS'; gapJobTouchMs_(env, state);
   gapJobWriteState_(env, product, state); gapJobLog_('STALLED', state); return state;
 }
+// R4J-LIVE10 §7/§8 — AUTOMATIC same-runId RECOVERY (the watchdog action). A stale non-terminal job (killed worker /
+// lost first-tick) is RESUMED, never restarted and never killed: clear any orphaned trigger, arm a PROMPT
+// continuation, bump recoveryCount, and stamp updatedAtMs so the run is no longer judged stale (the freshly-armed
+// tick re-enters gapJobContinue_ from the durable cursor). It NEVER re-resolves context, NEVER starts a new run, and
+// NEVER writes a gap row — recovery continues the SAME logical calculation from its last checkpoint. Returns
+// { ok:true } once armed, or { ok:false } if arming threw (caller decides the fallback). Bounded by the caller via
+// GAP_JOB_MAX_RECOVERIES_ so a genuinely broken job cannot recover forever.
+function gapJobRearmRecovery_(env, product, state, ageMs) {
+  try { env.clearContinuationTriggers(product); } catch (ec) {}
+  try {
+    env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_);
+    state.lastContinuationScheduledAt = env.timestamp();
+  } catch (schedErr) { return { ok: false, error: (schedErr && schedErr.message) ? String(schedErr.message) : String(schedErr) }; }
+  state.recoveryCount = (state.recoveryCount || 0) + 1;
+  state.recovering = true;
+  state.status = (state.status === 'PENDING') ? 'PENDING' : 'RUNNING';
+  state.lastError = 'AUTO_RECOVERY #' + state.recoveryCount + (ageMs != null ? (' after ' + ageMs + 'ms no progress') : '');
+  state.updatedAt = env.timestamp(); gapJobTouchMs_(env, state);
+  gapJobWriteState_(env, product, state); gapJobLog_('AUTO_RECOVERY', state);
+  return { ok: true };
+}
 
 // ---- CANCEL (§1/§2) — canonical manual stop owner. Backend-authoritative; terminal CANCELLED; no row rollback ----
 function gapJobCancel_(product, requestedRunId, env) {
@@ -193,8 +270,11 @@ function gapJobCancel_(product, requestedRunId, env) {
   } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
 }
 
-// ---- START (§3): quick, browser-returning; NO calculation in the request -------------------------------------
-function gapJobStart_(product, env) {
+// ---- START (§3/§9/§13): quick, browser-returning; NO calculation in the request -------------------------------
+// requestedScope (optional) = { mode:'ALL_SITES'|'CURRENT_COUNTRY'|'CURRENT_SCOPE', company?, country?, marketplace? }.
+// Omitted ⇒ ALL_SITES (backward compatible). A live job is joined (never a 2nd job); a STALE non-terminal job is
+// SELF-HEALED on the SAME runId (§9 prefer recovery, progress preserved) until recoveries exhaust, then reclaimed.
+function gapJobStart_(product, env, requestedScope) {
   product = gapJobNormalizeProduct_(product);
   if (!product) return gapBatchEnvelope_(false, null, 'INVALID_PRODUCT', 'product required (INVENTORY|ORDER_PLANNING)');
   var lock = env.lock, locked = false;
@@ -204,25 +284,38 @@ function gapJobStart_(product, env) {
     var existing = gapJobReadState_(env, product);
     if (existing && (existing.status === 'PENDING' || existing.status === 'RUNNING')) {   // §3.3 / §17 — never a 2nd job
       // R4J-LIVE2 §5/§7 — is the existing job actually ALIVE, or a killed worker frozen at its cursor? A healthy job
-      // advances updatedAtMs every slice; a worker killed mid-slice leaves it stale with no re-arm. Only a LIVE (or
-      // too-fresh-to-judge) job blocks a duplicate; a demonstrably STALLED job is reclaimed so the user can retry.
+      // advances updatedAtMs every slice; a worker killed mid-slice leaves it stale with no re-arm. A LIVE (or
+      // too-fresh-to-judge) job is joined unchanged.
       var stampMs = existing.updatedAtMs || existing.startedAtMs || 0;
       var ageMs = (env.nowMs ? env.nowMs() : 0) - stampMs;
       if (!stampMs || ageMs <= GAP_JOB_STALE_MS_) {
         return gapBatchEnvelope_(true, { runId: existing.runId, product: product, status: existing.status, scopesTotal: existing.scopesTotal, scopesProcessed: existing.scopesProcessed, alreadyRunning: true });
       }
+      // R4J-LIVE10 §7/§9 — a demonstrably STALE non-terminal job is RECOVERED on the SAME runId (resume from its
+      // durable checkpoint — never lose the progress already materialized, never restart the whole job), UNLESS the
+      // bounded automatic recoveries are exhausted (a genuinely broken job) → reclaim to a fresh run. This is the
+      // §7 "do not wait for the user to re-click" behavior applied at the START touch-point (browser-driven watchdog).
+      if ((existing.recoveryCount || 0) < GAP_JOB_MAX_RECOVERIES_) {
+        var reheal = gapJobRearmRecovery_(env, product, existing, ageMs);
+        if (reheal.ok) {
+          return gapBatchEnvelope_(true, { runId: existing.runId, product: product, status: existing.status, scopesTotal: existing.scopesTotal, scopesProcessed: existing.scopesProcessed, alreadyRunning: true, recovering: true, recoveryCount: existing.recoveryCount });
+        }
+        // re-arm itself failed (trigger quota/auth) → fall through to a fresh reclaim below
+      }
       try { env.clearContinuationTriggers(product); } catch (ecr) {}                     // drop any orphaned trigger before reclaiming
-      gapJobMarkFailed_(env, product, existing, 'RECLAIMED_STALLED after ' + ageMs + 'ms without progress (killed worker / no re-arm)');
+      gapJobMarkFailed_(env, product, existing, 'RECLAIMED_STALLED after ' + ageMs + 'ms; automatic recoveries exhausted (killed worker / no re-arm)');
       // fall through → create a FRESH job (this is a user-initiated START, never an automatic write retry)
     }
     var ctx = env.resolveContext(product);                                              // §18 freeze the FM5-R4 canonical context now
     if (!ctx || !ctx.ok) return gapBatchEnvelope_(false, null, (ctx && ctx.code) || 'CALCULATION_CONTEXT_INVALID', (ctx && ctx.message) || 'invalid calculation context');
     var ss = env.openTarget();
     env.requireResultSheet(ss, product);                                                // fail CLOSED if the result table/header is missing (throws → catch)
-    var scopes = gapJobOrderedScopes_(env.enumerateScopes(ss) || []);
+    var sel = gapJobSelectScopes_(env.enumerateScopes(ss) || [], requestedScope, product);   // §13 bounded manual scope (OP → whole-company; conservation-safe)
+    var scopes = gapJobOrderedScopes_(sel.scopes);
+    if (!scopes.length) return gapBatchEnvelope_(false, null, 'GAP_JOB_EMPTY_SCOPE_SELECTION', 'the requested execution scope matched no eligible sites');
     var runId = env.newRunId(product);                                                   // §2 the EXISTING gapRunId_ owner
     var nowStr = env.timestamp();
-    var state = gapJobNewState_(product, runId, ctx, scopes.length, nowStr, env.nowMs ? env.nowMs() : 0);
+    var state = gapJobNewState_(product, runId, ctx, scopes.length, nowStr, env.nowMs ? env.nowMs() : 0, requestedScope || { mode: GAP_JOB_SCOPE_MODES_.ALL_SITES }, sel.appliedScope);
     // §A3 at-most-ONE continuation per product — clear any stale/orphaned continuation trigger before arming a fresh
     // one (e.g. left by a crashed prior run) so competing workers can't cause a RESCHEDULED_LOCKED stall.
     try { env.clearContinuationTriggers(product); } catch (ec) {}
@@ -237,23 +330,25 @@ function gapJobStart_(product, env) {
       return gapBatchEnvelope_(false, null, 'CONTINUATION_SCHEDULE_FAILED', state.lastError);
     }
     gapJobWriteState_(env, product, state);
-    return gapBatchEnvelope_(true, { runId: runId, product: product, status: 'PENDING', scopesTotal: scopes.length });
+    return gapBatchEnvelope_(true, { runId: runId, product: product, status: 'PENDING', scopesTotal: scopes.length, appliedScope: sel.appliedScope });
   } catch (e) {
     var token = (e && e.safetyToken) ? e.safetyToken : (e && e.schemaStatus) ? e.schemaStatus : 'GAP_JOB_START_ERROR';
     return gapBatchEnvelope_(false, null, token, e && e.message ? String(e.message) : String(e));
   } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
 }
 
-// ---- CONTINUATION WORKER (§4/§5/§10) — process ONE bounded slice, persist, re-arm or finish -------------------
+// ---- CONTINUATION WORKER (§3/§4/§5/§8/§10) — SELF-HEALING: arm a recovery path BEFORE processing, then process a
+// BUDGET-bounded run of complete slices, checkpoint per slice, and finish or arm a prompt next. A hard kill at ANY
+// point cannot orphan the job: the recovery trigger was armed FIRST and survives to re-enter the SAME runId. --------
 function gapJobContinue_(product, env) {
   product = gapJobNormalizeProduct_(product);
   if (!product) return { status: 'INVALID_PRODUCT' };
-  // §11 trigger hygiene FIRST — remove this product's own pending one-off continuation triggers (this execution is
-  // one of them) so they can never accumulate. ONLY our own continuation handlers are ever deleted.
-  try { env.clearContinuationTriggers(product); } catch (e0) {}
+  // R4J-LIVE10 §3 — DO NOT clear triggers before the lock. Only the lock HOLDER is authoritative over triggers; a
+  // pre-lock clear (the pre-LIVE10 root cause) removed this fired trigger and then, if the worker was killed during
+  // the multi-minute slice before it re-armed, left the RUNNING job with ZERO triggers → permanent stall.
   var lock = env.lock, locked = false;
   try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
-  if (lock && !locked) {                                                                // another slice is active → re-arm, but BOUNDED
+  if (lock && !locked) {                                                                // another slice is active (holds the lock) → re-arm, BOUNDED
     var ls = gapJobReadState_(env, product);
     if (ls && !gapJobIsTerminal_(ls.status)) {
       ls.lockWaits = (ls.lockWaits || 0) + 1; ls.updatedAt = env.timestamp(); gapJobTouchMs_(env, ls);
@@ -262,6 +357,8 @@ function gapJobContinue_(product, env) {
         return ls;                                                                      // do NOT re-arm a permanently blocked worker
       }
       gapJobWriteState_(env, product, ls);
+      // A non-holder NEVER clears triggers (the holder owns them). Re-arm a prompt tick so the chain survives if the
+      // holder dies; the holder's next start-of-run sweep collects this + any duplicates and normalizes to one.
       try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er) {}
     }
     return { status: 'RESCHEDULED_LOCKED', product: product };
@@ -269,63 +366,91 @@ function gapJobContinue_(product, env) {
   var product_ = product;   // stable ref for the finally-safe recovery path
   try {
     var state = gapJobReadState_(env, product);
-    if (!state) return { status: 'NO_STATE', product: product };
-    if (gapJobIsTerminal_(state.status)) return state;                                   // terminal → nothing to do
-    // §A5 worker started — this timestamp proves the continuation trigger actually FIRED (vs never firing = auth/quota).
-    state.lockWaits = 0;                                                                 // acquired → reset the lock-wait counter
-    state.status = 'RUNNING';                                                            // §22 observable RUNNING
-    state.lastWorkerStartedAt = env.timestamp(); state.updatedAt = state.lastWorkerStartedAt; gapJobTouchMs_(env, state);
-    gapJobWriteState_(env, product, state); gapJobLog_('WORKER_START', state);
-    // §18 the calculation context is taken from the FROZEN job state — NEVER re-resolved from the wall clock, so a
-    // midnight rollover mid-job cannot change calculationDate/Month across slices.
+    if (!state) { try { env.clearContinuationTriggers(product); } catch (_c0) {} return { status: 'NO_STATE', product: product }; }
+    if (gapJobIsTerminal_(state.status)) { try { env.clearContinuationTriggers(product); } catch (_c1) {} return state; }   // terminal → sweep triggers, no-op
     var ctx = { ok: true, calculationDate: state.calculationDate, calculationMonth: state.calculationMonth, planningCycle: state.planningCycle };
     var ss = env.openTarget();
     var sheet = env.requireResultSheet(ss, product);
-    var scopes = gapJobOrderedScopes_(env.enumerateScopes(ss) || []);
+    var scopes = gapJobOrderedScopes_(gapJobSelectScopes_(env.enumerateScopes(ss) || [], state.requestedScope, product).scopes);   // §13 same bounded scope every slice
     state.scopesTotal = scopes.length;
-    if (state.scopeCursor >= scopes.length) return gapJobMarkDone_(env, product, state);
-    var slice = gapJobNextSlice_(product, scopes, state.scopeCursor);
-    var inc;
-    try {
-      inc = env.processSlice(product, slice.scopes, ss, sheet, ctx) || {};              // §6 reuse the canonical calc via 43's slice processors
-    } catch (procErr) {
-      // §10 — do NOT advance the cursor (the slice re-runs; latest-state UPSERT keeps it idempotent). Bounded
-      // attempts, then TERMINAL FAILED — never an infinite RUNNING at the same cursor.
-      state.sliceAttempts = (state.sliceAttempts || 0) + 1;
-      state.lastError = (procErr && procErr.message) ? String(procErr.message) : String(procErr);
-      state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt; gapJobTouchMs_(env, state);
-      if (state.sliceAttempts >= GAP_JOB_MAX_SLICE_ATTEMPTS_) return gapJobMarkFailed_(env, product, state, state.lastError);
-      gapJobWriteState_(env, product, state);
-      try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); gapJobWriteState_(env, product, state); } catch (er2) {}
-      return state;
+    if (state.scopeCursor >= scopes.length) { try { env.clearContinuationTriggers(product); } catch (_c2) {} return gapJobMarkDone_(env, product, state); }
+    // §8/§4 NO-PROGRESS GUARD — a worker re-entering at the SAME cursor as the previous entry made no durable progress
+    // (killed/overran, or a single slice that cannot fit the budget). Bounded: after GAP_JOB_MAX_SLICE_ATTEMPTS_ such
+    // entries the job is a TRUTHFUL terminal FAILED (never an endless kill→recover loop). Conservation forbids a finer
+    // OP split, so an oversize company slice is surfaced honestly rather than silently split.
+    if (state.stuckCursor === state.scopeCursor) { state.stuckCount = (state.stuckCount || 0) + 1; }
+    else { state.stuckCursor = state.scopeCursor; state.stuckCount = 1; }
+    if (state.stuckCount > GAP_JOB_MAX_SLICE_ATTEMPTS_) {
+      try { env.clearContinuationTriggers(product); } catch (_c3) {}
+      return gapJobMarkFailed_(env, product, state, 'SLICE_EXCEEDS_WORKER_BUDGET at cursor ' + state.scopeCursor + ' (a single ' + (product === 'ORDER_PLANNING' ? 'company' : 'scope') + ' slice cannot complete within the worker budget; conservation forbids a finer split)');
     }
-    // LIVE4 §3 — honor a CANCEL / reclaim that landed DURING this slice: re-read the durable owner BEFORE advancing
-    // or re-arming. If the job was cancelled (terminal) or a new run took over, STOP immediately — a cancelled old
-    // worker must NEVER advance the cursor or re-arm a continuation (no self-resurrection). Its written rows remain.
-    var live = gapJobReadState_(env, product);
-    if (!live || live.runId !== state.runId || gapJobIsTerminal_(live.status)) { gapJobLog_('CANCELLED', live || state); return live || state; }
-    // fold the slice counts into the persisted progress and advance the cursor by a COMPLETE slice (§5)
-    state.sliceAttempts = 0;
-    state.scopeCursor = slice.nextCursor;
-    state.scopesProcessed = state.scopeCursor;
-    state.rowsProcessed += (inc.written || 0);
-    state.readyCount += (inc.ready || 0);
-    state.blockedCount += (inc.blocked || 0);
-    state.errorCount += (inc.errors || 0);
-    var lastScope = slice.scopes[slice.scopes.length - 1];
-    state.lastProcessedScope = lastScope ? (lastScope.company + '/' + lastScope.country + '/' + lastScope.marketplace) : state.lastProcessedScope;
-    if (inc.scopeErrors && inc.scopeErrors.length) state.lastError = 'SCOPE_ERRORS:' + inc.scopeErrors.length;
-    state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt; gapJobTouchMs_(env, state);
-    // R4J-LIVE3 §2 — CRASH-SAFE FINALIZATION. Persist the ADVANCED cursor and ALWAYS arm a continuation BEFORE the
-    // terminal decision, so a runtime termination in the finalize window self-heals: the durable state already shows
-    // scopeCursor>=scopesTotal and a scheduled tick re-enters gapJobContinue_ and marks DONE at the top-of-worker
-    // completion check (a pure state transition, no calculation, idempotent). This guarantees the §2 invariant —
-    // scopesProcessed>=scopesTotal can NEVER remain RUNNING — even if the inline DONE write below is lost. On the
-    // happy path DONE is written inline here and the armed tick simply no-ops on the terminal state (one cheap tick).
-    state.status = 'RUNNING';
+    // R4J-LIVE10 §3 — NORMALIZE + arm the RECOVERY trigger BEFORE any processing. We hold the lock ⇒ authoritative:
+    // sweep ALL our continuation triggers (this fired one + accumulated duplicates), then arm exactly ONE recovery
+    // trigger at a delay LONGER than the hard limit. If a kill/overrun prevents the clean exit below, THIS trigger is
+    // the survivor that re-enters the same runId. Arming FAILS CLOSED (never process with no safety net).
+    try { env.clearContinuationTriggers(product); } catch (_c4) {}
+    try { env.scheduleContinuation(product, GAP_JOB_RECOVERY_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); }
+    catch (recErr) { return gapJobMarkFailed_(env, product, state, 'RECOVERY_ARM_FAILED: ' + (recErr && recErr.message ? recErr.message : recErr)); }
+    // §A5 worker started — proves the trigger actually FIRED (vs never firing = auth/quota).
+    state.lockWaits = 0;
+    state.status = 'RUNNING';                                                            // §22 observable RUNNING
+    state.lastWorkerStartedAt = env.timestamp(); state.updatedAt = state.lastWorkerStartedAt; gapJobTouchMs_(env, state);
+    gapJobWriteState_(env, product, state); gapJobLog_('WORKER_START', state);
+    // §4 BUDGET LOOP — process COMPLETE slices until the worker budget elapses or every scope is done. Each slice is
+    // an independently-resumable unit (Inventory: GAP_JOB_INV_CHUNK_SCOPES_ scopes; Order Planning: ONE whole company
+    // = the conservation boundary). The checkpoint is persisted AFTER every complete slice so a mid-run kill loses at
+    // most the in-flight slice (which re-runs idempotently). The budget is checked BEFORE starting each slice, never
+    // relying on the ~6-min hard kill as flow control.
+    var workerStartMs = env.nowMs ? env.nowMs() : 0;
+    var budgetMs = (typeof env.workerBudgetMs === 'number') ? env.workerBudgetMs : GAP_JOB_WORKER_BUDGET_MS_;
+    while (state.scopeCursor < scopes.length) {
+      if (env.nowMs && (env.nowMs() - workerStartMs) >= budgetMs) break;                 // §4 budget exhausted → exit cleanly + arm prompt next below
+      var slice = gapJobNextSlice_(product, scopes, state.scopeCursor);
+      var inc;
+      try {
+        inc = env.processSlice(product, slice.scopes, ss, sheet, ctx) || {};             // §6 reuse the canonical calc via 43's slice processors
+      } catch (procErr) {
+        // §10 — do NOT advance the cursor (the slice re-runs; latest-state UPSERT keeps it idempotent). Bounded
+        // attempts, then TERMINAL FAILED — never an infinite RUNNING at the same cursor.
+        state.sliceAttempts = (state.sliceAttempts || 0) + 1;
+        state.lastError = (procErr && procErr.message) ? String(procErr.message) : String(procErr);
+        state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt; gapJobTouchMs_(env, state);
+        if (state.sliceAttempts >= GAP_JOB_MAX_SLICE_ATTEMPTS_) { try { env.clearContinuationTriggers(product); } catch (_c5) {} return gapJobMarkFailed_(env, product, state, state.lastError); }
+        gapJobWriteState_(env, product, state);
+        try { env.clearContinuationTriggers(product); env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); gapJobWriteState_(env, product, state); } catch (er2) {}
+        return state;                                                                    // exit; a prompt retry re-runs the same slice
+      }
+      // LIVE4 §3 — honor a CANCEL / reclaim that landed DURING this slice: re-read the durable owner BEFORE advancing.
+      // If cancelled (terminal) or a new run took over, STOP — a cancelled worker must NEVER advance or re-arm (no
+      // self-resurrection). Sweep our triggers so no stray recovery tick fires; written rows remain.
+      var live = gapJobReadState_(env, product);
+      if (!live || live.runId !== state.runId || gapJobIsTerminal_(live.status)) { try { env.clearContinuationTriggers(product); } catch (_c6) {} gapJobLog_('CANCELLED', live || state); return live || state; }
+      // advance a COMPLETE slice + fold counts; PERSIST the checkpoint (§5 durable per-slice)
+      state.sliceAttempts = 0;
+      state.stuckCursor = slice.nextCursor; state.stuckCount = 0;                         // durable progress → reset the no-progress guard
+      state.recovering = false;                                                          // real progress clears any recovery marker
+      state.scopeCursor = slice.nextCursor;
+      state.scopesProcessed = state.scopeCursor;
+      state.rowsProcessed += (inc.written || 0);
+      state.readyCount += (inc.ready || 0);
+      state.blockedCount += (inc.blocked || 0);
+      state.errorCount += (inc.errors || 0);
+      var lastScope = slice.scopes[slice.scopes.length - 1];
+      state.lastProcessedScope = lastScope ? (lastScope.company + '/' + lastScope.country + '/' + lastScope.marketplace) : state.lastProcessedScope;
+      if (inc.scopeErrors && inc.scopeErrors.length) state.lastError = 'SCOPE_ERRORS:' + inc.scopeErrors.length;
+      state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt; gapJobTouchMs_(env, state);
+      state.status = 'RUNNING';
+      gapJobWriteState_(env, product, state);                                            // durable checkpoint (recovery trigger still armed as backstop)
+    }
+    // POST-LOOP — DONE (every scope processed) or exit on budget with a PROMPT next continuation armed.
+    if (state.scopeCursor >= scopes.length) {
+      try { env.clearContinuationTriggers(product); } catch (_c7) {}                      // job complete → remove the recovery backstop
+      return gapJobMarkDone_(env, product, state);
+    }
+    // budget hit with work remaining: arm a prompt next (fast progress); the recovery trigger armed at worker start
+    // also remains as a backstop, and the next worker's start-of-run sweep normalizes to one.
     try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); } catch (er3) {}
-    gapJobWriteState_(env, product, state);                                                 // durable advance + armed self-heal continuation
-    if (state.scopeCursor >= scopes.length) return gapJobMarkDone_(env, product, state);     // §9 DONE = reached every planned scope
+    gapJobWriteState_(env, product, state);
     return state;
   } catch (e) {
     // §A2 infrastructure failure (open/enumerate) — ALWAYS persist a non-dangling state; bounded retry then FAILED.
@@ -342,24 +467,37 @@ function gapJobContinue_(product, env) {
   } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
 }
 
-// ---- STATUS (§8) — strictly READ ONLY: no write, no continuation, no calculation ----------------------------
+// ---- STATUS (§8/§10 + LIVE10 §7) — observes progress and, for a decisively-stale run, drives the AUTOMATIC WATCHDOG.
+// It NEVER runs a calculation, NEVER writes a gap row, NEVER re-resolves context, and NEVER starts a new run. Its only
+// write is the §7-authorized self-heal of the SAME runId (re-arm the continuation of the existing logical job) or, for
+// a job that cannot be recovered, a truthful terminal STALLED. So STATUS is read-only w.r.t. the calculation; the
+// lifecycle self-heal it performs is continuation of the current job, not a fresh computation.
 function gapJobStatus_(product, runId, env) {
   product = gapJobNormalizeProduct_(product);
   if (!product) return gapBatchEnvelope_(false, null, 'INVALID_PRODUCT', 'product required (INVENTORY|ORDER_PLANNING)');
   var state = gapJobReadState_(env, product);
   if (!state) return gapBatchEnvelope_(true, { product: product, status: 'NONE', runId: runId || null });
-  // LIVE4 §4 — authoritative NON-STUCK: a non-terminal job with NO progress past the stale window is decisively dead
-  // (killed worker, no re-arm). Transition it to TERMINAL STALLED so a reload never resurrects Calculating. This is a
-  // bounded state write (NEVER a calculation, NEVER a continuation, NEVER a gap-row write); best-effort under the
-  // shared lock, with a clean re-read so a worker that just advanced is not wrongly stalled.
   if (gapJobStaleNonterminal_(state, env.nowMs ? env.nowMs() : 0)) {
       var lock = env.lock, locked = false;
       try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
       try {
         var fresh = (locked ? gapJobReadState_(env, product) : null) || state;           // re-read under lock (avoid racing a live worker)
         if (gapJobStaleNonterminal_(fresh, env.nowMs ? env.nowMs() : 0)) {
-            if (locked) { gapJobMarkStalled_(env, product, fresh); }                      // persist terminal STALLED
-            else { fresh.status = 'STALLED'; gapJobLog_('STALLED', fresh); }              // lock busy → report-only (a later poll persists)
+            // LIVE6 §4 — a LEGACY leftover (non-terminal Script-Property with NO epoch stamps at all) has no lifecycle
+            // continuity to recover → it is decisively dead and becomes TERMINAL STALLED (never resurrected).
+            var legacy = (fresh.updatedAtMs == null && fresh.startedAtMs == null);
+            if (legacy || (fresh.recoveryCount || 0) >= GAP_JOB_MAX_RECOVERIES_) {
+                if (locked) { gapJobMarkStalled_(env, product, fresh); }                  // persist truthful terminal STALLED
+                else { fresh.status = 'STALLED'; gapJobLog_('STALLED', fresh); }          // lock busy → report-only (a later poll persists)
+            } else if (locked) {
+                // LIVE10 §7 — AUTOMATIC recovery of the SAME runId: re-arm the continuation, keep the job non-terminal,
+                // and mark `recovering` so the browser shows "Recovering…" (never a false failure). Bounded by
+                // recoveryCount; if arming the continuation fails, fall back to the truthful terminal STALLED.
+                var r = gapJobRearmRecovery_(env, product, fresh, null);
+                if (!r.ok) { gapJobMarkStalled_(env, product, fresh); }
+            } else {
+                fresh.recovering = true;                                                  // lock busy → report-only recovering; a later poll under lock re-arms
+            }
         }
         state = fresh;
       } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
@@ -438,8 +576,12 @@ function gapJobDefaultEnv_(product) {
 }
 
 // ---- PUBLIC router handlers (START = write/quick; STATUS = read-only) ----------------------------------------
-function handleStartInventoryReplenishmentGapJob_(body) { return gapJobStart_('INVENTORY', gapJobDefaultEnv_('INVENTORY')); }
-function handleStartOrderPlanningGapJob_(body) { return gapJobStart_('ORDER_PLANNING', gapJobDefaultEnv_('ORDER_PLANNING')); }
+// LIVE10 §13 — START accepts an OPTIONAL bounded execution scope in the payload
+// ({ scope:{ mode:'ALL_SITES'|'CURRENT_COUNTRY'|'CURRENT_SCOPE', company?, country?, marketplace? } }). Absent ⇒
+// ALL_SITES (backward compatible with the existing empty {} payload). OP sub-company scopes are expanded to the whole
+// company inside gapJobStart_ → gapJobSelectScopes_ (shared-pool conservation).
+function handleStartInventoryReplenishmentGapJob_(body) { var p = (body && body.payload) || {}; return gapJobStart_('INVENTORY', gapJobDefaultEnv_('INVENTORY'), p.scope || null); }
+function handleStartOrderPlanningGapJob_(body) { var p = (body && body.payload) || {}; return gapJobStart_('ORDER_PLANNING', gapJobDefaultEnv_('ORDER_PLANNING'), p.scope || null); }
 function handleGetGapJobStatus_(body) {
   var p = (body && body.payload) || body || {};
   var product = gapJobNormalizeProduct_(p.product);

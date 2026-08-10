@@ -59,12 +59,19 @@ function fakeEnv(opts) {
     enumerateScopes: function () { return (opts.scopes || []).slice(); },
     newRunId: function (p) { return 'GAP-' + (p === 'ORDER_PLANNING' ? 'OP' : 'INV') + '-20260810T000000-0001'; },
     timestamp: function () { clock++; return '2026-08-10 00:00:' + ('0' + (clock % 60)).slice(-2); },
+    // R4J-LIVE10 — the worker budget is injectable; default undefined ⇒ the production GAP_JOB_WORKER_BUDGET_MS_ (240000).
+    workerBudgetMs: opts.workerBudgetMs,
+    // NET-tracking scheduler: scheduleContinuation ARMS a trigger; clearContinuationTriggers REMOVES this product's armed
+    // triggers (mirrors ScriptApp one-off delete). _scheduled therefore reflects the CURRENTLY-armed triggers.
     scheduleContinuation: function (p, ms) { if (opts.scheduleThrows) throw new Error('SCHEDULE_TRIGGER_FAILED'); scheduled.push({ product: p, ms: ms }); },
-    clearContinuationTriggers: function (p) { cleared.push(p); },
+    clearContinuationTriggers: function (p) { cleared.push(p); for (var i = scheduled.length - 1; i >= 0; i--) { if (scheduled[i].product === p) scheduled.splice(i, 1); } },
     processSlice: opts.processSlice || function (product, sliceScopes, ss, sheet, ctx) {
       if (opts.throwSliceAlways) throw new Error('ALWAYS_SLICE_FAILURE');
       if (throwOnce && !throwOnce.hit) { throwOnce.hit = true; throw new Error('SIMULATED_SLICE_FAILURE'); }
       processed.push({ scopes: sliceScopes.map(function (s) { return s.company + '/' + s.country + '/' + s.marketplace; }), calcDate: ctx.calculationDate, calcMonth: ctx.calculationMonth });
+      // R4J-LIVE10 §4 — each slice consumes budget time. Default 300000ms (> the 240000 budget) ⇒ exactly ONE slice per
+      // continuation (preserves the resumable-unit assertions); a test sets sliceMs:0 to drain many slices per worker.
+      msClock += (opts.sliceMs != null ? opts.sliceMs : 300000);
       return { scopesCalculated: sliceScopes.length, written: sliceScopes.length * 2, ready: sliceScopes.length * 2, blocked: 0, errors: 0, scopeErrors: [] };
     }
   };
@@ -115,7 +122,7 @@ H.start('INVENTORY', e3);
 var f1 = H.cont('INVENTORY', e3);   // first slice throws
 eq([f1.status, f1.scopeCursor, f1.sliceAttempts], ['RUNNING', 0, 1], 'D1 slice failure keeps cursor=0 (no lost/duplicated work), attempts=1, still RUNNING');
 ok(/SIMULATED_SLICE_FAILURE/.test(f1.lastError || ''), 'D2 lastError recorded');
-eq(e3._scheduled.length, 2, 'D3 re-armed a continuation (START=1 + retry=1) — recoverable from the saved cursor');
+eq(e3._scheduled.length, 1, 'D3 re-armed a continuation (START=1 + retry=1) — recoverable from the saved cursor');
 var f2 = H.cont('INVENTORY', e3);   // retry: same slice (cursor still 0) now succeeds → reprocessed idempotently
 eq([f2.scopeCursor, f2.sliceAttempts], [1, 0], 'D4 retry reprocesses the SAME slice from cursor 0 (idempotent UPSERT) then advances by 1; attempts reset');
 eq(e3._processed[0].scopes[0], 'KM/C0/AMAZON_C0', 'D5 the retried slice is the same first scope set');
@@ -232,7 +239,7 @@ eq(merged, mono, 'K1 per-company allocation (union of company-A + company-B slic
 ok(Object.keys(mono).length > 0, 'K2 the scenario actually exercised the shared-pool allocator (non-empty result)');
 
 // =============================================================================================================
-section('R4J-LIVE2 §5/§7 — a STALLED non-terminal job is RECLAIMED by a new START; a LIVE job is never reclaimed');
+section('R4J-LIVE10 §7/§9 — a STALE non-terminal job is SELF-HEALED (same runId) by a new START; a LIVE job is never touched');
 // LIVE job: updatedAtMs advancing → the duplicate guard holds (alreadyRunning, same run, no extra worker chain).
 var eLive = fakeEnv({ scopes: invScopes(3), startMs: 1000000 });
 var live1 = H.start('INVENTORY', eLive);
@@ -240,16 +247,17 @@ eLive._advanceMs(1000);                           // 1s later — well within th
 var live2 = H.start('INVENTORY', eLive);
 eq([live2.data.alreadyRunning, live2.data.runId], [true, live1.data.runId], 'Q1 a fresh/advancing job blocks a duplicate START (alreadyRunning, same run) — §7 no duplicate job');
 eq(eLive._scheduled.length, 1, 'Q2 no extra continuation scheduled for the live job (no second worker chain)');
-// STALLED job: a worker killed just after START (progress frozen at 0/N) + > stale window elapsed → START reclaims.
+// STALE job: a worker killed just after START (progress frozen at 0/N) + > stale window elapsed → START SELF-HEALS
+// the SAME run (LIVE10 §7/§9: recover, never restart the whole job, never lose progress), bounded by recoveryCount.
 var eStale = fakeEnv({ scopes: invScopes(3), startMs: 1000000 });
 var stale1 = H.start('INVENTORY', eStale);        // PENDING, updatedAtMs=1000000, 1 continuation scheduled
 eStale._advanceMs(700000);                        // 700s later, still 0/N — the worker was killed with no re-arm
 var stale2 = H.start('INVENTORY', eStale);        // the user clicks again
-ok(stale2.success === true && stale2.data.status === 'PENDING' && !stale2.data.alreadyRunning, 'Q3 a STALLED job (no progress > 10-min window) is reclaimed → a FRESH job starts so the user can retry (§5 recoverable)');
-eq(eStale._scheduled.length, 2, 'Q4 exactly ONE new continuation scheduled for the fresh job (START#1 + reclaim START#2) — never an automatic retry');
-ok(eStale._cleared.filter(function (p) { return p === 'INVENTORY'; }).length >= 1, 'Q5 reclaim cleared the orphaned continuation trigger before starting fresh');
+eq([stale2.success, stale2.data.status, stale2.data.alreadyRunning, stale2.data.recovering, stale2.data.runId], [true, 'PENDING', true, true, stale1.data.runId], 'Q3 a stale non-terminal job is SELF-HEALED on the SAME runId (recovering=true; never a fresh job; progress preserved) — §7/§9');
+eq(eStale._scheduled.length, 1, 'Q4 exactly ONE continuation armed after self-heal (orphan cleared, recovery tick armed) — never an automatic whole-job restart');
+ok(eStale._cleared.filter(function (p) { return p === 'INVENTORY'; }).length >= 1, 'Q5 self-heal cleared the orphaned continuation trigger before arming the recovery tick');
 var reclaimedStore = JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]);
-eq([reclaimedStore.status, reclaimedStore.scopeCursor], ['PENDING', 0], 'Q6 the stored state is the FRESH PENDING job (the stalled one was marked FAILED then replaced) — never two live jobs on one key');
+eq([reclaimedStore.status, reclaimedStore.scopeCursor, reclaimedStore.runId === stale1.data.runId, reclaimedStore.recoveryCount], ['PENDING', 0, true, 1], 'Q6 the stored state is the SAME run resumed from its cursor (recoveryCount=1) — never two jobs, never a restart');
 
 // =============================================================================================================
 section('R4J-LIVE3 §2/§9-F/§9-G — completed work is ALWAYS finalized; RUNNING can never persist at cursor==total');
@@ -263,17 +271,17 @@ eFin._store[H.PROP_KEYS.INVENTORY] = JSON.stringify(seeded);
 var finRes = H.cont('INVENTORY', eFin);
 eq([finRes.status, finRes.scopeCursor, finRes.finishedAt !== null], ['DONE', 3, true], 'T1 a RUNNING job with cursor==total is FINALIZED to DONE (finishedAt set) by the next continuation — never stuck at N/N');
 ok(eFin._processed.length === 0, 'T2 finalization is a PURE state transition — NO recalculation / UPSERT re-run (Inventory formula untouched)');
-// (b) crash-safe finalize: the FINAL slice persists the advanced cursor AND arms a continuation BEFORE the inline
-// DONE, so a kill in the finalize window self-heals (some later tick lands on the completion check and marks DONE).
+// (b) LIVE10 crash-safe: each worker arms a RECOVERY trigger BEFORE processing; on a clean DONE that backstop is
+// CLEARED (no orphan tick). A kill before the clean exit leaves the recovery trigger armed → self-heals (proven in
+// the LIVE10 suite). Here we assert the happy path leaves NO dangling trigger after DONE.
 var eArm = fakeEnv({ scopes: invScopes(2) });
 H.start('INVENTORY', eArm);
-H.cont('INVENTORY', eArm);                                   // slice 1 (non-final): advances + schedules
-var schedBeforeFinal = eArm._scheduled.length;
-var cFinal = H.cont('INVENTORY', eArm);                      // slice 2 (FINAL): arm a self-heal tick BEFORE finalizing
+H.cont('INVENTORY', eArm);                                   // slice 1 (non-final): advances + arms prompt next (+recovery backstop)
+var cFinal = H.cont('INVENTORY', eArm);                      // slice 2 (FINAL): arms recovery BEFORE processing, then finalizes
 eq(cFinal.status, 'DONE', 'T3 the final slice reaches terminal DONE');
-ok(eArm._scheduled.length === schedBeforeFinal + 1, 'T4 the FINAL slice armed a self-heal continuation BEFORE the inline DONE (crash-safe finalization; old code armed none)');
-var afterFinalTick = H.cont('INVENTORY', eArm);             // the armed self-heal tick fires on an already-DONE job
-eq([afterFinalTick.status, eArm._processed.length], ['DONE', 2], 'T5 the armed self-heal tick no-ops on the terminal DONE state (idempotent; no extra slice)');
+eq(eArm._scheduled.length, 0, 'T4 after DONE no continuation trigger remains armed — the recovery backstop armed before the final slice is cleared on completion (no orphan tick)');
+var afterFinalTick = H.cont('INVENTORY', eArm);             // any late tick fires on an already-DONE job
+eq([afterFinalTick.status, eArm._processed.length], ['DONE', 2], 'T5 a late tick no-ops on the terminal DONE state (idempotent; no extra slice)');
 
 // =============================================================================================================
 section('R4J-LIVE4 §1/§2 — manual CANCEL is backend-authoritative, terminal, and preserves completed rows');
@@ -318,16 +326,23 @@ var eStale = fakeEnv({ scopes: invScopes(4), startMs: 1000000 });
 H.start('INVENTORY', eStale);                                // PENDING, updatedAtMs = 1000000
 eStale._advanceMs(700000);                                    // 700s later, no worker ever advanced it
 var stStale = H.status('INVENTORY', null, eStale).data;
-eq([stStale.status, stStale.finishedAt !== null], ['STALLED', true], 'ST1 status.get transitions a decisively-stale non-terminal job to TERMINAL STALLED');
-eq(JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]).status, 'STALLED', 'ST2 STALLED is PERSISTED under lock (a reload can never resurrect Calculating)');
-ok(eStale._processed.length === 0, 'ST3 the STALLED transition ran NO calculation');
+eq([stStale.status, stStale.recovering, stStale.recoveryCount], ['PENDING', true, 1], 'ST1 status.get on a stale non-terminal job SELF-HEALS the SAME run (recovering, recoveryCount=1) - never a false STALLED (LIVE10 §7)');
+eq(JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]).status, 'PENDING', 'ST2 the run stays non-terminal (a recovery tick was armed) - a reload shows Recovering, not a dead STALLED');
+ok(eStale._processed.length === 0, 'ST3 the recovery armed NO calculation (pure lifecycle re-arm, not a re-run)');
+// After the bounded automatic recoveries are exhausted, a still-dead job becomes a TRUTHFUL terminal STALLED.
+var eDead = fakeEnv({ scopes: invScopes(4), startMs: 1000000 });
+H.start('INVENTORY', eDead);
+for (var _rk = 0; _rk < 8; _rk++) { eDead._advanceMs(700000); H.status('INVENTORY', null, eDead); }   // repeatedly stale -> recover until the bound
+var deadSt = H.status('INVENTORY', null, eDead).data;
+eq([deadSt.status, deadSt.finishedAt !== null], ['STALLED', true], 'ST4 after GAP_JOB_MAX_RECOVERIES_ automatic recoveries a still-dead job becomes TERMINAL STALLED (never recovers forever)');
+ok(eDead._processed.length === 0, 'ST5 the watchdog never ran a calculation across all recoveries + the terminal transition');
 
 section('R4J-LIVE4 §5 — START after a terminal (CANCELLED / STALLED) creates a FRESH job (never attaches to the dead one)');
 var freshAfterCancel = H.start('INVENTORY', eCan);
 eq([freshAfterCancel.success, freshAfterCancel.data.status, !!freshAfterCancel.data.alreadyRunning], [true, 'PENDING', false], 'E after CANCELLED → a NEW PENDING job (not alreadyRunning)');
-var freshAfterStalled = H.start('INVENTORY', eStale);
-eq([freshAfterStalled.data.status, !!freshAfterStalled.data.alreadyRunning], ['PENDING', false], 'F after STALLED → a NEW PENDING job');
-eq(JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]).scopeCursor, 0, 'F2 the fresh job starts at cursor 0');
+var freshAfterStalled = H.start('INVENTORY', eDead);
+eq([freshAfterStalled.data.status, !!freshAfterStalled.data.alreadyRunning], ['PENDING', false], 'F after a TERMINAL STALLED (recoveries exhausted) a new START creates a FRESH job');
+eq(JSON.parse(eDead._store[H.PROP_KEYS.INVENTORY]).scopeCursor, 0, 'F2 the fresh job starts at cursor 0');
 
 section('R4J-LIVE4 §11 — cancel isolation (Inventory vs Order Planning); owned-handler set unchanged');
 var eIso = fakeEnv({ scopes: invScopes(2) }); H.start('INVENTORY', eIso);
@@ -482,7 +497,7 @@ ok(!/handleRecalculateInventoryReplenishmentGapBatch_|handleRecalculateOrderPlan
 ok(/startInventoryReplenishmentGapJob/.test(INV_JS) && /getGapJobStatus\('INVENTORY'\)/.test(INV_JS) && /gr\.runJob\(/.test(INV_JS), 'W8 Inventory button cut over to START→poll (gr.runJob)');
 ok(/startOrderPlanningGapJob/.test(RO_JS) && /getGapJobStatus\('ORDER_PLANNING'\)/.test(RO_JS) && /gr\.runJob\(/.test(RO_JS), 'W9 Order Planning button cut over to START→poll');
 ok(/_irResumeGapJobOnMount_/.test(INV_JS) && /_roResumeGapJobOnMount_/.test(RO_JS), 'W10 both pages resume a running job on mount/reload (§13)');
-ok((INV_JS.match(/startInventoryReplenishmentGapJob\(\{\}\)/g) || []).length === 1 && (RO_JS.match(/startOrderPlanningGapJob\(\{\}\)/g) || []).length === 1, 'W11 each page issues the START write exactly once (no repeated WRITE POST)');
+ok((INV_JS.match(/startInventoryReplenishmentGapJob\(scopeSpec \? \{ payload: \{ scope: scopeSpec \} \} : \{\}\)/g) || []).length === 1 && (RO_JS.match(/startOrderPlanningGapJob\(scopeSpec \? \{ payload: \{ scope: scopeSpec \} \} : \{\}\)/g) || []).length === 1, 'W11 each page issues the START write exactly once, threading the OPTIONAL bounded scope (LIVE10 §13; default {} = ALL_SITES)');
 ok(/isUnconfirmedJob/.test(INV_JS) && /isUnconfirmedJob/.test(RO_JS), 'W12 both pages branch on isUnconfirmedJob → truthful "could not be confirmed" (recoverable) vs a hard failure (§5/§12)');
 ok(/could not be confirmed/.test(INV_JS) && /could not be confirmed/.test(RO_JS), 'W13 the §5 truthful "unconfirmed — check latest data before retrying" message is present on both pages');
 ok(H.INV_CHUNK === 1, 'W14 R4J-LIVE2 execution unit reduced to 1 Inventory scope/continuation (§8 within the execution budget)');
@@ -495,7 +510,7 @@ ok(/function handleCancelInventoryGapJob\(\)/.test(INV_JS) && /function handleCa
 ok(/isCancelled\s*:\s*function/.test(INV_JS) && /onRunId\s*:\s*function/.test(INV_JS) && /isCancelled\s*:\s*function/.test(RO_JS) && /onRunId\s*:\s*function/.test(RO_JS), 'W20 both pages wire the shared runJob cancel token + runId capture (one lifecycle contract)');
 ok((INV_JS.match(/cancelInventoryReplenishmentGapJob\(/g) || []).length === 1 && (RO_JS.match(/cancelOrderPlanningGapJob\(/g) || []).length === 1, 'W21/§M each page issues the cancel WRITE at most once');
 ok(/id="replen-cancel-recalc-btn"[\s\S]*onclick="handleCancelInventoryGapJob\(\)"/.test(INV_HTML) && /id="ro-cancel-recalc-btn"[\s\S]*onclick="handleCancelOrderPlanningGapJob\(\)"/.test(RO_HTML), 'W22/§6 both pages render a Cancel button wired to the backend cancel handler');
-ok(/gap-recalc-fm5r4jlive7-1/.test(read('js/utils/gap-recalc-transport.js')), 'W23 transport version at LIVE7');
+ok(/gap-recalc-fm5r4jlive10-1/.test(read('js/utils/gap-recalc-transport.js')), 'W23 transport version at LIVE10');
 
 section('safety — job engine authors NO formula; job state is Script-Property only (NO new DB table)');
 var F46_CODE = F46.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');

@@ -108,6 +108,21 @@
   // live job; a genuinely-active (or freshly-started) job shows progress, OR a scheduled continuation, OR a started
   // worker. A lifecycle-less non-terminal state is a stale/legacy leftover → must NOT resurrect Calculating on startup.
   function _hasLiveness(st) { return !!(st && ((typeof st.scopesProcessed === 'number' && st.scopesProcessed > 0) || st.lastContinuationScheduledAt || st.lastWorkerStartedAt)); }
+  // R4J-LIVE10 §11 — TRANSPORT FAILURE != CALCULATION FAILURE. A lost/broken status RESPONSE (null, a transport-error
+  // envelope, or an envelope with no usable job status) must NEVER be inferred as a stalled/failed calculation. It is
+  // simply "no news this poll" — the poller keeps observing (bounded only by maxPolls), never counting it as a stall.
+  function _isTransportLost(res) {
+    if (!res) return true;                                                    // no response object at all
+    if (res.success === false && isTransportError(res.error)) return true;    // structured transport-error envelope
+    var st = (res && res.data) ? res.data : res;
+    return !(st && typeof st.status === 'string' && st.status);               // no usable job status ⇒ treat as lost, not stall
+  }
+  // R4J-LIVE10 §7 — worker/continuation liveness fingerprint. When it CHANGES between polls the backend is alive and
+  // making lifecycle progress (a long single slice, or a self-heal re-arm) even if the scope COUNT hasn't advanced —
+  // so the stall counter must reset. Empty ('|') is not evidence of liveness.
+  function _livenessKey(st) { return String((st && st.lastWorkerStartedAt) || '') + '|' + String((st && st.lastContinuationScheduledAt) || ''); }
+  // A backend that reports it is actively self-healing the SAME run (§7). The UI shows "Recovering…", not a failure.
+  function _isRecovering(st) { return !!(st && (st.recovering === true || st.status === 'RECOVERING')); }
   // A non-DONE poll result the UI must treat as "could not confirm completion" (recoverable) rather than a hard
   // business failure — no automatic WRITE retry is ever issued for either (§5).
   function isUnconfirmedJob(status) { return status === 'STALLED' || status === 'POLL_TIMEOUT'; }
@@ -122,21 +137,38 @@
     var interval = opts.interval || DEFAULT_JOB_POLL_MS;
     var maxPolls = opts.maxPolls || DEFAULT_JOB_MAX_POLLS;
     var maxStallPolls = opts.maxStallPolls || DEFAULT_JOB_MAX_STALL_POLLS;
-    var bestProgress = -1, stall = 0;
+    var bestProgress = -1, stall = 0, bestLiveness = '';
     function loop(n) {
       // §6 cooperative CANCEL — the page sets this once its backend cancel write has been issued; stop polling now
       // (backend has/there will persist CANCELLED). READ-only: this never issues a write itself.
       if (typeof opts.isCancelled === 'function' && opts.isCancelled()) { _log('CLIENT_RESET', { status: JOB_STATUS.CANCELLED }); return Promise.resolve({ status: JOB_STATUS.CANCELLED, cancelledByClient: true }); }
       return Promise.resolve(statusFn()).then(function (res) {
+        // §11 a LOST status response is NOT progress and NOT a stall — keep observing (bounded by maxPolls only). Never
+        // surfaced as progress (so the button keeps its last-known N/M) and never inferred as a failed calculation.
+        if (_isTransportLost(res)) {
+          _log('POLL_TRANSPORT_LOST', null);
+          if (n >= maxPolls) return { status: 'POLL_TIMEOUT', transportLost: true };
+          return wait(interval).then(function () { return loop(n + 1); });
+        }
         var st = _stateOf(res);
         if (typeof opts.onProgress === 'function') { try { opts.onProgress(st); } catch (e) {} }
         if (_isTerminalJob(st.status) || st.status === JOB_STATUS.NONE) { _log('CLIENT_TERMINAL', st); return st; }
-        // §5 stall detection — advance resets the counter; no advance for maxStallPolls consecutive non-terminal
-        // polls → STOP (truthful "unconfirmed"; never an endless Calculating 0/N, never an auto WRITE retry).
+        // §5/§7 stall detection — a scope-count advance, an active self-heal, OR any liveness change (long single
+        // slice / re-arm) resets the counter. Only genuinely frozen non-terminal polls accumulate toward the bound.
         var prog = _progressOf(st);
-        if (prog > bestProgress) { bestProgress = prog; stall = 0; _log('PROGRESS', st); } else { stall++; }
+        var lk = _livenessKey(st);
+        if (_isRecovering(st)) { stall = 0; bestLiveness = lk; _log('RECOVERING', st); }
+        else if (prog > bestProgress) { bestProgress = prog; bestLiveness = lk; stall = 0; _log('PROGRESS', st); }
+        else if (lk !== '|' && lk !== bestLiveness) { bestLiveness = lk; stall = 0; _log('LIVENESS', st); }
+        else { stall++; }
         if (stall >= maxStallPolls) { _log('STALLED', st); return { status: 'STALLED', last: st, polls: n + 1 }; }
         if (n >= maxPolls) return { status: 'POLL_TIMEOUT', last: st };
+        return wait(interval).then(function () { return loop(n + 1); });
+      }).catch(function () {
+        // §11 a THROWN/rejected status call is a transport loss, never a calculation failure — keep observing to the
+        // bounded max (only maxPolls ends it, as POLL_TIMEOUT); a single lost response never freezes or fails the UI.
+        _log('POLL_EXCEPTION', null);
+        if (n >= maxPolls) return { status: 'POLL_TIMEOUT', transportLost: true };
         return wait(interval).then(function () { return loop(n + 1); });
       });
     }
@@ -186,6 +218,13 @@
         if (typeof ui.failed === 'function') ui.failed(finalState || { status: JOB_STATUS.ERROR });
         return { started: true, runId: runId, finalState: finalState };
       });
+    }).catch(function (startErr) {
+      // §11 a THROWN/lost START is a transport loss (we cannot know if the job was created) — never a hard calculation
+      // failure. Surface it as UNCONFIRMED (recoverable, no auto write retry); the page's mount-resume will pick up the
+      // backend job if it did start. This guarantees the button never freezes at "Starting…".
+      try { if (typeof console !== 'undefined' && console.error) console.error('[GapJob] START_TRANSPORT_LOST', startErr && startErr.message ? startErr.message : startErr); } catch (e) {}
+      if (typeof ui.failed === 'function') ui.failed({ status: 'POLL_TIMEOUT', transportLost: true, lastError: 'START_TRANSPORT_LOST' });
+      return { started: false, transportLost: true, error: startErr };
     });
   }
 
@@ -231,7 +270,8 @@
     // R4J job lifecycle (backend-owned; browser only starts + read-only polls)
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
+    isRecovering: _isRecovering,   // LIVE10 §7/§11 — the page shows "Recovering…" while the backend self-heals the same run
     pollJob: pollJob, runJob: runJob, resumeIfRunning: resumeIfRunning,
-    VERSION: 'gap-recalc-fm5r4jlive7-1'
+    VERSION: 'gap-recalc-fm5r4jlive10-1'
   };
 });

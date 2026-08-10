@@ -1142,13 +1142,17 @@ var _roCancelRequested = false;    // LIVE4 — set once by the Cancel button so
 function _roRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-recalc-all-btn') : null; }
 function _roCancelBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-cancel-recalc-btn') : null; }
 function _roShowCancel_(show) { var c = _roCancelBtn_(); if (c) { c.style.display = show ? '' : 'none'; if (show) c.disabled = false; } }
-function handleRecalcAllOrderPlanningGap() {
+// LIVE10 §13/§14 — ONE handler, optional bounded scope. For Order Planning a sub-company scope is EXPANDED to the
+// whole company server-side (shared-pool conservation); omitted ⇒ ALL_SITES (existing button, unchanged).
+function handleRecalcAllOrderPlanningGap(scopeSpec) {
   if (_roRecalcAllBusy) return;
   if (!(window.KM && window.KM.DB && typeof window.KM.DB.startOrderPlanningGapJob === 'function')) {
     alert('Recalculation service is unavailable (Operation DB API not configured).');
     return;
   }
-  if (typeof window.confirm === 'function' && !window.confirm('Start a full recalculation of the materialized order-planning gap for ALL sites?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest T1–T4 result per site/SKU is overwritten. Manual Order Qty is never changed.')) return;
+  var _scopeMode = (scopeSpec && scopeSpec.mode) ? String(scopeSpec.mode) : 'ALL_SITES';
+  var _scopeText = (_scopeMode === 'CURRENT_SCOPE' || _scopeMode === 'CURRENT_COUNTRY') ? 'the SELECTED company (shared-pool conservation expands the selection to the whole company)' : 'ALL sites';
+  if (typeof window.confirm === 'function' && !window.confirm('Start a recalculation of the materialized order-planning gap for ' + _scopeText + '?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest T1–T4 result per site/SKU is overwritten. Manual Order Qty is never changed.')) return;
   var btn = _roRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
   if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
@@ -1157,7 +1161,7 @@ function handleRecalcAllOrderPlanningGap() {
   // §8 the ONE deterministic reset — always hides Cancel and returns the button to idle.
   function restore() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); }
   var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
-  var startFn = function () { return window.KM.DB.startOrderPlanningGapJob({}); };   // the WRITE POST — exactly ONCE
+  var startFn = function () { return window.KM.DB.startOrderPlanningGapJob(scopeSpec ? { payload: { scope: scopeSpec } } : {}); };   // the WRITE POST — exactly ONCE (optional bounded scope §13)
   var statusFn = function () { return window.KM.DB.getGapJobStatus('ORDER_PLANNING'); };
   var refreshFn = function () { if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') return refreshOrderPlanningGapAfterRecalc_(); };
   if (!gr || typeof gr.runJob !== 'function') {
@@ -1171,7 +1175,7 @@ function handleRecalcAllOrderPlanningGap() {
     isCancelled: function () { return _roCancelRequested; },
     ui: {
       starting: function () { setBtn('Starting…', true); },
-      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); _roShowCancel_(true); },
+      progress: function (st) { if (!(st && st.status)) return; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn((st && st.recovering ? 'Recovering… ' : 'Calculating… ') + n + ' / ' + m, true); _roShowCancel_(true); },   // LIVE10 §11 guard non-status polls; §7 Recovering
       refreshing: function () { _roShowCancel_(false); setBtn('Refreshing…', true); },
       done: function () { _roShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       cancelled: function () { _roShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
@@ -1180,6 +1184,21 @@ function handleRecalcAllOrderPlanningGap() {
   });
 }
 window.handleRecalcAllOrderPlanningGap = handleRecalcAllOrderPlanningGap;
+// LIVE10 §14 — STABLE AI-Assist callable contracts (no toolbar redesign in this round). Placed by a later UI round
+// under an "AI Assist" menu with the existing Generate AI Plan (handleRequestOrderAiPlan). They REUSE the one recalc
+// handler (no duplicated lifecycle). OP sub-company scopes expand to the whole company server-side (conservation).
+function _roCurrentScopeSpec_(mode) {
+  var st = (typeof requestOrderState !== 'undefined' && requestOrderState) ? requestOrderState : null;
+  var sc = st ? (st.scope || (st.filters ? st.filters.scope : null)) : null;
+  if (!sc || !sc.company) return { mode: 'ALL_SITES' };
+  return { mode: mode, company: sc.company, country: sc.country, marketplace: sc.marketplace };
+}
+function recalcOrderPlanningGapAllSites() { return handleRecalcAllOrderPlanningGap({ mode: 'ALL_SITES' }); }
+function recalcOrderPlanningGapCurrentCountry() { return handleRecalcAllOrderPlanningGap(_roCurrentScopeSpec_('CURRENT_COUNTRY')); }
+function recalcOrderPlanningGapCurrentScope() { return handleRecalcAllOrderPlanningGap(_roCurrentScopeSpec_('CURRENT_SCOPE')); }
+window.recalcOrderPlanningGapAllSites = recalcOrderPlanningGapAllSites;
+window.recalcOrderPlanningGapCurrentCountry = recalcOrderPlanningGapCurrentCountry;
+window.recalcOrderPlanningGapCurrentScope = recalcOrderPlanningGapCurrentScope;
 
 // LIVE4 §6 — manual Cancel (Order Planning): ONE backend cancel write for the active runId; stop the poller; the
 // shared runJob poller then refreshes the materialized READ and resets the button (never browser-only, no reload).
@@ -1221,7 +1240,7 @@ function _roResumeGapJobOnMount_() {
     isCancelled: function () { return _roCancelRequested; },
     ui: {
       resume: function (st) { _roRecalcAllBusy = true; if (st && st.runId) _roActiveRunId = st.runId; },
-      progress: function (st) { if (st && st.runId) _roActiveRunId = st.runId; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); _roShowCancel_(true); },
+      progress: function (st) { if (!(st && st.status)) return; if (st && st.runId) _roActiveRunId = st.runId; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn((st && st.recovering ? 'Recovering… ' : 'Calculating… ') + n + ' / ' + m, true); _roShowCancel_(true); },
       refreshing: function () { _roShowCancel_(false); setBtn('Refreshing…', true); },
       done: function () { _roShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(resReset, 1500); else resReset(); },
       cancelled: function () { _roShowCancel_(false); setBtn('Cancelled — results preserved', true); if (typeof setTimeout === 'function') setTimeout(resReset, 1500); else resReset(); },

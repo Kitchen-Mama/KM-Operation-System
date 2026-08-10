@@ -125,7 +125,7 @@ ok(/startInventoryReplenishmentGapJob\s*=\s*function[\s\S]{0,80}_kmWeeklyCommand
 
 section('shared START contract + version');
 ok(/product:\s*'INVENTORY'/.test(INV) && /product:\s*'ORDER_PLANNING'/.test(RO), 'S1 both pages pass product to runJob so the diagnostic names the product');
-ok(/gap-recalc-fm5r4jlive7-1/.test(read('js/utils/gap-recalc-transport.js')), 'S2 transport VERSION at LIVE7');
+ok(/gap-recalc-fm5r4jlive10-1/.test(read('js/utils/gap-recalc-transport.js')), 'S2 transport VERSION at LIVE10');
 ok(/START_ERROR/.test(read('js/utils/gap-recalc-transport.js')), 'S3 runJob emits a START_ERROR diagnostic on a failed START');
 
 Promise.all(jobs).then(function () {
