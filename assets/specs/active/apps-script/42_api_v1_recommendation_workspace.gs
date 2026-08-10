@@ -602,7 +602,17 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
   }
   var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
     : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, mIncoming, upc, nd.destination, planModel, salesRate);
-  if (mHz) mLine.horizons = mHz;
+  if (mHz) {
+    mLine.horizons = mHz;
+    // LIVE8 §A2/§A3/§A4 — additive READ-ONLY reconciliation diagnostic (NO formula/schema/calculation change).
+    // Surfaces the exact canonical inputs that drove the day-horizon gap — the resolved run-rate (avgSalesPerDay),
+    // the demand mode, and the Site-Stock opening — which recoWsBuildHorizons_ otherwise drops. This lets a USER
+    // reconcile a stored D-horizon gap (e.g. CO1100-R D90 = 4173) against horizons[].demandQty/coveredQty WITHOUT
+    // the Sheet, and makes any divergence between the Inventory DoS column (a SEPARATE weekly IR.avgSalesPerDay ÷ 7)
+    // and this canonical horizon rate (KMCALC §22 ladder) directly observable (SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE).
+    mLine.horizonBasis = { demandMode: planModel, avgSalesPerDay: (planModel === 'sales_driven' ? salesRate : null),
+      horizonOpeningQty: horizonOpening, qualifiedIncomingCount: (mIncoming || []).length };
+  }
   // F1-4B-FM5-R4UI-R7 §1/§4 — when the day-horizon cannot be built, PRESERVE the specific first reason so
   // materialization surfaces it verbatim (a Sales-Driven SKU with an unresolvable canonical run-rate now reports
   // SALES_BASIS_UNAVAILABLE / SALES_BASIS_AMBIGUOUS, not the generic HORIZONS_NOT_AVAILABLE that masked the real
