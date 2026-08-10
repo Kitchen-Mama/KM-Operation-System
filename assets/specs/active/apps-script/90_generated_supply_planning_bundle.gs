@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = e91f61228166b4488795a867cea26515a3a7d3d403263e24e5df346de2fb590a
+// bundle_sha256 = 02d5a8976b7118a243907b6ce235d5ee9467ad5ce32c25594ed5dc29394098a5
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -41,6 +41,7 @@
 //   supply-planning-production-writer  1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364
 //   supply-planning-verification-diagnostics  efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea
 //   supply-recommendation  3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7
+//   supply-execution-handoff  ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b
 // ============================================================================
 
 var __kmModules = {};
@@ -10200,6 +10201,145 @@ function __kmRequire(p) {
   __kmRegister("supply-recommendation", module.exports);
 })();
 
+// ----- module: supply-execution-handoff (verbatim from assets/js/core/supply-execution-handoff.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — Canonical Recommendation → Execution handoff owner (KMREX) — F1-4B-FM6-R2.
+// =============================================================================================================
+// ONE pure, deterministic Phase-1 execution-DRAFT owner. It RECEIVES a KMREC recommendation DTO (the single
+// recommendation authority) plus ALREADY-RESOLVED eligible source availabilities, and produces an EXECUTION DRAFT
+// DTO (source→destination allocation lines + covered/uncovered). It owns NO gap formula, invokes NO KMHP/KMTPP/
+// KMCALC/KMALLOC/KMMSA, reads NO sheet, and PERSISTS NOTHING. It only ALLOCATES the recommended quantity across the
+// caller-supplied eligible sources using the FROZEN Phase-1 fill order, and FORMATS the result. No Date.now / no RNG.
+//
+// FROZEN Phase-1 execution authority (F1-4B-FM6-R2 §1) — INVENTORY REPLENISHMENT:
+//   The Inventory gap (D18/D30/D45/D90) is unchanged and is computed from Site Stock + qualified incoming ONLY —
+//   Factory / Overseas NEVER reduce the gap. They participate ONLY here, AFTER KMREC produces recommendedQty R:
+//     overseasAllocated      = min(R, eligibleOverseasAvailable)
+//     remainingAfterOverseas = max(0, R - overseasAllocated)
+//     factoryAllocated       = min(remainingAfterOverseas, eligibleFactoryAvailable)
+//     uncoveredQty           = max(0, R - overseasAllocated - factoryAllocated)
+//   Invariant: overseasAllocated + factoryAllocated + uncoveredQty = R; Σ(lines) = allocatedQty; each line ≤ its
+//   eligible availability. A stored 0 available is a real 0 (no line); a MISSING (null) availability is NOT 0 — it
+//   is surfaced in unresolvedSources and never fabricated into a "0 available" line.
+//
+// ORDER PLANNING (§2): NO second allocator. The shared-pool / company-isolated / KMMSA-KMALLOC allocation already
+// ran inside gap materialization (tN_suggested), so KMREX PASSES THROUGH the KMREC per-tier T1–T4 verbatim and the
+// FROZEN actionable total (SUM_T1_T3_RAW_GAP_CARTONIZE_ONCE); T4 stays forward-visibility only. Manual Order Qty is
+// never touched (KMREX is pure and returns draft values only).
+//
+// HARD BOUNDARY (§12): DRAFT generation ONLY — never a PO / shipment / stock deduction / forecast / gap / final write.
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.core = window.KM.core || {}; window.KM.core.executionHandoff = api; window.KMREX = api; }
+  return api;
+})(this, function () {
+  'use strict';
+
+  var SOURCE_TYPE = { OVERSEAS: 'OVERSEAS_THREE_PL', FACTORY: 'FACTORY', ORDER_TIER: 'ORDER_TIER' };
+  var STATUS = { ACTION: 'ACTION', PARTIAL: 'PARTIAL', NO_ACTION: 'NO_ACTION', BLOCKED: 'BLOCKED' };
+  var OP_ACTIONABLE_TIERS = ['T1', 'T2', 'T3'];   // T4 = forward visibility only (never an execution line)
+
+  function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+  // MISSING vs ZERO: '' / null / undefined → null (never coerced to 0); a finite value (incl. 0) → that value.
+  function num(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
+  function businessKey(rec) { return [str(rec.company), str(rec.country), str(rec.marketplace), str(rec.sku)].join('||'); }
+  function lineage(rec) {
+    return {
+      recommendationId: str(rec.recommendationId) || (str(rec.product) + ':' + businessKey(rec)),
+      product: str(rec.product) || null, businessKey: businessKey(rec), sku: str(rec.sku) || null,
+      sourceFingerprint: (rec.sourceFingerprint != null ? String(rec.sourceFingerprint) : null),
+      sourceCalculatedAt: (rec.sourceCalculatedAt != null ? String(rec.sourceCalculatedAt) : null)
+    };
+  }
+
+  // INVENTORY (§1) — fill recommendedQty from eligible Overseas → Factory → uncovered. `availability` is the
+  // ALREADY-RESOLVED per-scope eligible supply for THIS recommendation (the multi-receiver shared-pool COMPETITION
+  // that decides how much of a physical pool this scope may see is the caller's frozen authority — NOT done here).
+  //   availability: { overseasAvailable, factoryAvailable, overseasSourceId?, factorySourceId?,
+  //                   overseasWarehouseId?, factoryWarehouseId?, destinationType?, destinationId? }
+  function allocateInventoryExecution(rec, availability, opts) {
+    if (!rec) return null;
+    opts = opts || {}; availability = availability || {};
+    var base = lineage(rec);
+    var now = (opts.now != null ? String(opts.now) : null);
+    function shell(status, R, allocated, uncovered, lines, unresolved) {
+      return {
+        recommendationId: base.recommendationId, product: base.product, businessKey: base.businessKey, sku: base.sku,
+        recommendedQty: R, executionLines: lines || [], allocatedQty: allocated, uncoveredQty: uncovered,
+        unresolvedSources: unresolved || [], primaryWindow: (rec.primaryWindow != null ? String(rec.primaryWindow) : null),
+        sourceFingerprint: base.sourceFingerprint, sourceCalculatedAt: base.sourceCalculatedAt, status: status, generatedAt: now
+      };
+    }
+    if (str(rec.status) === 'BLOCKED') return shell(STATUS.BLOCKED, null, null, null, [], []);   // §10 no fabricated allocation
+    var R = num(rec.suggestedQty);
+    if (str(rec.status) !== 'READY' || R == null || R <= 0) return shell(STATUS.NO_ACTION, R, 0, 0, [], []);   // §10 no positive lines
+    // resolved availabilities: null = UNRESOLVED (surfaced, never treated as a real 0); finite (incl. 0) = known.
+    var ovAvail = num(availability.overseasAvailable), facAvail = num(availability.factoryAvailable);
+    var ov = (ovAvail != null && ovAvail > 0) ? ovAvail : 0;
+    var fac = (facAvail != null && facAvail > 0) ? facAvail : 0;
+    var overseasAllocated = Math.min(R, ov);
+    var factoryAllocated = Math.min(Math.max(0, R - overseasAllocated), fac);
+    var uncoveredQty = Math.max(0, R - overseasAllocated - factoryAllocated);
+    var lines = [];
+    if (overseasAllocated > 0) lines.push({ sourceType: SOURCE_TYPE.OVERSEAS, sourceId: (availability.overseasSourceId != null ? availability.overseasSourceId : null), sourceWarehouseId: (availability.overseasWarehouseId != null ? availability.overseasWarehouseId : null), destinationType: str(availability.destinationType) || 'MARKETPLACE', destinationId: (availability.destinationId != null ? availability.destinationId : null), allocatedQty: overseasAllocated, eligibilityReason: 'OVERSEAS_ELIGIBLE_AVAILABLE', sourceAvailableQty: ovAvail });
+    if (factoryAllocated > 0) lines.push({ sourceType: SOURCE_TYPE.FACTORY, sourceId: (availability.factorySourceId != null ? availability.factorySourceId : null), sourceWarehouseId: (availability.factoryWarehouseId != null ? availability.factoryWarehouseId : null), destinationType: str(availability.destinationType) || 'MARKETPLACE', destinationId: (availability.destinationId != null ? availability.destinationId : null), allocatedQty: factoryAllocated, eligibilityReason: 'FACTORY_ELIGIBLE_AVAILABLE', sourceAvailableQty: facAvail });
+    var unresolved = [];
+    if (ovAvail == null) unresolved.push('OVERSEAS');   // §4 missing availability != zero
+    if (facAvail == null) unresolved.push('FACTORY');
+    var allocatedQty = overseasAllocated + factoryAllocated;
+    return shell(uncoveredQty === 0 ? STATUS.ACTION : STATUS.PARTIAL, R, allocatedQty, uncoveredQty, lines, unresolved);
+  }
+
+  // ORDER PLANNING (§2) — passthrough of the KMREC per-tier T1–T4 + frozen actionable total. NO re-allocation.
+  function buildOrderPlanningExecution(rec, opts) {
+    if (!rec) return null;
+    opts = opts || {};
+    var base = lineage(rec);
+    var now = (opts.now != null ? String(opts.now) : null);
+    var tiers = (rec.tiers || []).map(function (t) { return { tier: str(t.tier), month: (t.month != null ? String(t.month) : null), gapQty: num(t.gapQty), suggestedQty: num(t.suggestedQty) }; });
+    var dto = {
+      recommendationId: base.recommendationId, product: base.product, businessKey: base.businessKey, sku: base.sku,
+      tiers: tiers,
+      actionableTierCount: (rec.actionableTierCount != null ? rec.actionableTierCount : OP_ACTIONABLE_TIERS.length),
+      actionableGapQty: num(rec.actionableGapQty),
+      totalRecommendedQty: num(rec.totalRecommendedQty),
+      totalAuthority: (rec.totalAuthority != null ? String(rec.totalAuthority) : null),
+      forwardVisibility: rec.forwardVisibility || null,
+      executionLines: [], allocatedQty: null,
+      sourceFingerprint: base.sourceFingerprint, sourceCalculatedAt: base.sourceCalculatedAt,
+      status: STATUS.BLOCKED, generatedAt: now
+    };
+    if (str(rec.status) === 'BLOCKED') { dto.status = STATUS.BLOCKED; return dto; }
+    if (str(rec.status) !== 'READY') { dto.status = STATUS.NO_ACTION; return dto; }
+    // actionable draft lines = T1–T3 stored suggested (verbatim; the frozen shared-pool allocation already produced
+    // these during gap materialization). T4 is forward visibility only — NEVER an execution line.
+    var lines = [], allocated = 0;
+    tiers.forEach(function (t) {
+      if (OP_ACTIONABLE_TIERS.indexOf(t.tier) !== -1 && typeof t.suggestedQty === 'number' && t.suggestedQty > 0) {
+        lines.push({ sourceType: SOURCE_TYPE.ORDER_TIER, tier: t.tier, month: t.month, destinationType: 'ORDER_PLAN', allocatedQty: t.suggestedQty, eligibilityReason: 'ORDER_TIER_ACTIONABLE', sourceAvailableQty: null });
+        allocated += t.suggestedQty;
+      }
+    });
+    dto.executionLines = lines; dto.allocatedQty = allocated;
+    dto.status = (lines.length > 0 || (typeof dto.totalRecommendedQty === 'number' && dto.totalRecommendedQty > 0)) ? STATUS.ACTION : STATUS.NO_ACTION;
+    return dto;
+  }
+
+  return {
+    SOURCE_TYPE: SOURCE_TYPE, STATUS: STATUS, OP_ACTIONABLE_TIERS: OP_ACTIONABLE_TIERS.slice(),
+    businessKey: businessKey,
+    allocateInventoryExecution: allocateInventoryExecution,
+    buildOrderPlanningExecution: buildOrderPlanningExecution,
+    VERSION: 'kmrex-fm6r2-1'
+  };
+});
+  __kmRegister("supply-execution-handoff", module.exports);
+})();
+
 // ----- Apps Script global namespace exposure -----
 var KMCID = __kmModules["supply-planning-country-identity"];
 var KMCALC = __kmModules["supply-planning-calculations"];
@@ -10237,6 +10377,7 @@ var KMSAFE = __kmModules["supply-planning-production-safety"];
 var KMPW = __kmModules["supply-planning-production-writer"];
 var KMVD = __kmModules["supply-planning-verification-diagnostics"];
 var KMREC = __kmModules["supply-recommendation"];
+var KMREX = __kmModules["supply-execution-handoff"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"e91f61228166b4488795a867cea26515a3a7d3d403263e24e5df346de2fb590a","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"6caae57521c66aff397f9dd654b04f0ff579ff24b6ae96d5efab0700d59b43ff"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"02d5a8976b7118a243907b6ce235d5ee9467ad5ce32c25594ed5dc29394098a5","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"c5560130b507eccc4f0a90fc413c6c66942d221bae897f15d5d3051a2c4f7d79"},{"module":"supply-planning-persistence","sha256":"e8f4ca1caf9dffe9c7882867fe8ebbeb7fa17844f81d9e5f7ebb2525126cc1a6"},{"module":"supply-planning-persistence-repository","sha256":"f94f7953d9cd2feeec748dea375b1f836060b9f83e3d39a70bec5a3d062ec4e6"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"7ae3793686e90970a7b525159d64a99a532843e350da2d7995688f763b26f914"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"c5440b2e2954f6dd38ef9a4eb95d68faf4f58e923019b3d15707938325705a83"},{"module":"supply-planning-plan-bridge","sha256":"c3769a7e8993d1486ad03b8b7b3d0a6afbc063ebe027b5c7de8a954ff4ac0e44"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"64c39657f2b5d98696bb234559cd363ec37f186d375326644351a5d5eab157ae"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"6caae57521c66aff397f9dd654b04f0ff579ff24b6ae96d5efab0700d59b43ff"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"1dc03a87f63530dfd2df8a323ae6d0a19bf31dba5d248b350512bc2952a38364"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"}]};

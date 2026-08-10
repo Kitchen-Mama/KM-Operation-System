@@ -52,7 +52,8 @@ var MODULE_ORDER = [
   'supply-planning-production-safety',         // standalone safety layer (Production Safety Round S0) — before writer
   'supply-planning-production-writer',         // requires production-source + orchestrator + locking + repository + safety (Round 1S-P3 writer)
   'supply-planning-verification-diagnostics',  // requires repository + production-writer (Round 1S-P4-U read-only diagnostics)
-  'supply-recommendation'                       // F1-4B-FM6 Phase-1 recommendation generator (KMREC): reads MATERIALIZED gap rows → DTO; no deps, no formula
+  'supply-recommendation',                      // F1-4B-FM6 Phase-1 recommendation generator (KMREC): reads MATERIALIZED gap rows → DTO; no deps, no formula
+  'supply-execution-handoff'                     // F1-4B-FM6-R2 recommendation→execution handoff (KMREX): KMREC DTO + resolved availabilities → execution-draft DTO; no deps, no formula, no persistence
 ];
 
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
@@ -92,7 +93,8 @@ var GLOBALS = [
   ['KMSAFE', 'supply-planning-production-safety'],
   ['KMPW', 'supply-planning-production-writer'],
   ['KMVD', 'supply-planning-verification-diagnostics'],
-  ['KMREC', 'supply-recommendation']
+  ['KMREC', 'supply-recommendation'],
+  ['KMREX', 'supply-execution-handoff']
 ];
 
 function sha256(str) { return crypto.createHash('sha256').update(str, 'utf8').digest('hex'); }
