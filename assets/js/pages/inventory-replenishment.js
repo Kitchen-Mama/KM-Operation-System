@@ -1684,6 +1684,28 @@ function _recSummaryRows(skuData) {
 // These are safe no-op stubs kept so the toggleReplenRow call sites are unchanged; _irRemoveStickyOverlay also tears
 // down any legacy #ir-sticky-overlay node a stale (R6) build may have left in the DOM.
 function _irBindStickyScrollOnce() { _irRemoveStickyOverlay(); }
+
+// F1-4B-FM5-R4UI-R5G §1 — expanded LEFT/RIGHT bottom-baseline parity when the right `.scroll-col` shows a
+// HORIZONTAL scrollbar. That scrollbar consumes ~scrollbar-height of vertical space inside `.scroll-col`, which
+// `align-items:stretch` makes the scrollbar-free `.fixed-col` match — pushing the LEFT divider below the RIGHT one.
+// No CSS property reserves BOTTOM-scrollbar space, so we measure the LIVE scrollbar thickness (0 on overlay/macOS,
+// ~15–17px on Windows) and expose it as `--km-hscroll-gutter`; the CSS lifts the fixed panel's divider by exactly
+// that. This reads ONE metric (offsetHeight − clientHeight, with overflow-y hidden the h-scrollbar is its only
+// contributor); it is NOT a height sync and NOT a poll — it fires only on mount, expand/collapse, and window resize.
+function _irUpdateHScrollGutter_() {
+    if (typeof document === 'undefined' || !document.getElementById) return;
+    var sec = document.getElementById('ops-section'); if (!sec) return;
+    var col = sec.querySelector('.dual-layer-table .scroll-col');
+    var gutter = col ? Math.max(0, col.offsetHeight - col.clientHeight) : 0;   // horizontal scrollbar thickness (0 if none/overlay)
+    sec.style.setProperty('--km-hscroll-gutter', gutter + 'px');
+}
+var _irHScrollGutterResizeBound = false;
+function _irBindHScrollGutterResizeOnce_() {
+    if (_irHScrollGutterResizeBound || typeof window === 'undefined' || !window.addEventListener) return;
+    _irHScrollGutterResizeBound = true;
+    window.addEventListener('resize', function () { _irUpdateHScrollGutter_(); });   // event-driven, not polling
+}
+if (typeof window !== 'undefined') { window._irUpdateHScrollGutter_ = _irUpdateHScrollGutter_; }
 function _irRemoveStickyOverlay() {
     if (typeof document === 'undefined' || !document.getElementById) return;
     var ov = document.getElementById('ir-sticky-overlay');
@@ -1864,15 +1886,17 @@ function toggleReplenRow(sku) {
         scrollBody.appendChild(scrollElement);
     }
     
-    // Expand-row equal height is now CSS-native (flex-column .fixed-col / .fixed-body + the
-    // .replen-expand-panel--fixed { flex:1 } that stretches to the taller .scroll-col) — so the SKU
-    // identity panel is already full height in the FIRST paint, with NO JS measure-and-sync and NO
-    // inline height writes. This tick only seeds routes + charts (unrelated to height).
+    // Expand-row equal height is CSS-native (flex-column .fixed-col / .fixed-body + the
+    // .replen-expand-panel--fixed { flex:1 } that stretches to the taller .scroll-col) — the SKU identity panel is
+    // full height in the FIRST paint, with NO JS height sync and NO inline height writes. This tick only seeds
+    // routes + charts, then refreshes --km-hscroll-gutter (R5G §1): after async content the right column's
+    // horizontal overflow (hence its scrollbar) is settled, so the LEFT panel can reserve the matching bottom gutter.
     setTimeout(() => {
         // Seed / restore the Execution Plan routes (from Working Draft, or a default preview).
         initializeShippingAllocation(sku, skuData);
         // Initialize charts (Monthly Achievement Rate is now an honest table, not a chart — no init needed).
         initSalesTrendChart(sku, skuData);
+        if (typeof _irUpdateHScrollGutter_ === 'function') _irUpdateHScrollGutter_();
     }, 0);
 }
 
@@ -5632,6 +5656,9 @@ if (window.KM && window.KM.lifecycle) {
                 // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.
                 if (typeof initReplenRecoContext === 'function') initReplenRecoContext();
                 renderReplenishment();
+                // F1-4B-FM5-R4UI-R5G §1 — bind the (event-driven) horizontal-scrollbar gutter measurement + seed it.
+                if (typeof _irBindHScrollGutterResizeOnce_ === 'function') _irBindHScrollGutterResizeOnce_();
+                if (typeof _irUpdateHScrollGutter_ === 'function') _irUpdateHScrollGutter_();
                 // F1-4B-FM5-R4J §13 — if a backend Inventory gap job is still PENDING/RUNNING (started here before a
                 // refresh, or from another tab / the daily scheduler), resume READ-ONLY status polling and refresh on
                 // DONE. The original tab does not need to have stayed alive.

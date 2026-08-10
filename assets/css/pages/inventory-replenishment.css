@@ -1740,3 +1740,35 @@
 #ops-section .table-body-bar > .fixed-col,
 #ops-section .table-body-bar > .scroll-col { align-self: stretch; }
 #ops-section .replen-expand-panel--fixed { flex: 1 1 auto; }
+
+/* =============================================================================================================
+   F1-4B-FM5-R4UI-R5G — Inventory expanded layout FINAL CLOSURE (UI-only; no formula/backend/schema).
+   ============================================================================================================= */
+
+/* §1 — LEFT/RIGHT expanded-detail bottom-baseline parity when a HORIZONTAL SCROLLBAR is present.
+   ROOT CAUSE (audited, geometry-level): the horizontal scroll is owned by `.scroll-col` (components.css:
+   `overflow-x:auto; overflow-y:hidden`). When the detail is wider than the viewport, its horizontal scrollbar is
+   drawn at the BOTTOM of `.scroll-col`, INSIDE the border box, consuming ~scrollbar-height of vertical space. The
+   shared-height owner `.table-body-bar { align-items:stretch }` then matches the (scrollbar-free) LEFT `.fixed-col`
+   to the scroll column's OUTER border box — i.e. to a height that INCLUDES the scrollbar strip — so the LEFT
+   expand panel's bottom divider lands ~scrollbar-height BELOW the RIGHT panel's divider (whose bottom border sits
+   at the scroll CONTENT bottom, above the scrollbar). There is NO CSS property that reserves BOTTOM (horizontal)
+   scrollbar space (`scrollbar-gutter` governs only the block-axis / vertical scrollbar), so CSS alone cannot own
+   this. We account for it EXPLICITLY at the correct owner: `--km-hscroll-gutter` carries the LIVE horizontal
+   scrollbar thickness (0 on overlay/macOS, ~15–17px on Windows), measured event-driven (mount / expand / resize —
+   NOT polling, NOT a height sync) in _irUpdateHScrollGutter_, and the LEFT panel reserves exactly that much below
+   its divider via margin-bottom. CSS still owns the stretch; the variable only supplies the one metric CSS cannot
+   see. When no horizontal scrollbar exists the variable is 0px → identical to the pure-stretch behavior. */
+#ops-section .replen-expand-panel--fixed { margin-bottom: var(--km-hscroll-gutter, 0px); }
+
+/* §2 — Recommendation Summary uses NATURAL content height (title + small gap + fixed 4-row table). The card is
+   already flex:0 0 auto with no min-height (top-card 150px floor deliberately excludes it); lock that so the
+   decision-column flex can never stretch it, and remove the residual vertical whitespace INSIDE the body chain
+   (the `.replen-recsum-ws` state wrapper's padding + generous line-height, and any inherited summary/dest margin)
+   so its density matches the Monthly Achievement Rate reference WITHOUT copying that card's 150px min-height. */
+#ops-section .replen-card--recommendation-summary { flex: 0 0 auto; min-height: 0; height: auto; align-self: auto; }
+#ops-section .replen-card--recommendation-summary .replen-recsum-ws { padding: 0; margin: 0; line-height: 1.3; }
+#ops-section .replen-card--recommendation-summary .replen-horizon-summary,
+#ops-section .replen-card--recommendation-summary .replen-horizon-dest { margin: 0; }
+/* Title-to-table gap parity with Monthly Achievement (its table sits a 4px gap below the card title). */
+#ops-section .replen-card--recommendation-summary .replen-card__title { margin: 0 0 4px; }
