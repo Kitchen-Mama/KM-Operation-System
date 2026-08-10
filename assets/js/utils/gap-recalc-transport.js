@@ -94,24 +94,41 @@
   var JOB_STATUS = { PENDING: 'PENDING', RUNNING: 'RUNNING', DONE: 'DONE', BLOCKED: 'BLOCKED', FAILED: 'FAILED', ERROR: 'ERROR', NONE: 'NONE' };
   var DEFAULT_JOB_POLL_MS = 3000;        // read-only status poll cadence
   var DEFAULT_JOB_MAX_POLLS = 800;       // bounded guard (~40 min at 3s) — never an infinite poll
+  // R4J-LIVE2 §5 — STALL guard: consecutive READ-ONLY polls with NO durable progress advance before the poller
+  // gives up with a truthful "unconfirmed" state. ~4 min at 3s — long enough to absorb one healthy slice + trigger
+  // latency (so a live job is never falsely stalled), short enough that a frozen 0/N never lingers ~40 min.
+  var DEFAULT_JOB_MAX_STALL_POLLS = 80;
 
   // R4J-LIVE §A2 — FAILED / ERROR / BLOCKED are terminal so the poller STOPS and the page surfaces a truthful
   // failure (never spins forever on a permanently-broken 0/N job).
   function _isTerminalJob(status) { return status === JOB_STATUS.DONE || status === JOB_STATUS.BLOCKED || status === JOB_STATUS.FAILED || status === JOB_STATUS.ERROR; }
   function _stateOf(res) { return (res && res.data) ? res.data : (res || {}); }
+  function _progressOf(st) { return (st && typeof st.scopesProcessed === 'number') ? st.scopesProcessed : -1; }
+  // A non-DONE poll result the UI must treat as "could not confirm completion" (recoverable) rather than a hard
+  // business failure — no automatic WRITE retry is ever issued for either (§5).
+  function isUnconfirmedJob(status) { return status === 'STALLED' || status === 'POLL_TIMEOUT'; }
+  function _log(tag, st) { try { if (typeof console !== 'undefined' && console.log) console.log('[GapJob] ' + tag + (st ? ' ' + ((st.product || '') + ' ' + Math.max(0, _progressOf(st)) + '/' + (st.scopesTotal != null ? st.scopesTotal : '?') + ' ' + (st.status || '')).trim() : '')); } catch (e) {} }
 
-  // Poll STATUS (READ ONLY) until terminal / NONE / bounded max. statusFn()->Promise(status envelope). Never writes,
-  // never re-POSTs, never calculates. opts.wait(ms)->Promise · opts.interval · opts.maxPolls · opts.onProgress(state).
+  // Poll STATUS (READ ONLY) until terminal / NONE / bounded max / STALLED. statusFn()->Promise(status envelope).
+  // Never writes, never re-POSTs, never calculates. opts.wait(ms)->Promise · opts.interval · opts.maxPolls ·
+  // opts.maxStallPolls · opts.onProgress(state). STALLED = durable progress did not advance for maxStallPolls polls.
   function pollJob(statusFn, opts) {
     opts = opts || {};
     var wait = opts.wait || function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
     var interval = opts.interval || DEFAULT_JOB_POLL_MS;
     var maxPolls = opts.maxPolls || DEFAULT_JOB_MAX_POLLS;
+    var maxStallPolls = opts.maxStallPolls || DEFAULT_JOB_MAX_STALL_POLLS;
+    var bestProgress = -1, stall = 0;
     function loop(n) {
       return Promise.resolve(statusFn()).then(function (res) {
         var st = _stateOf(res);
         if (typeof opts.onProgress === 'function') { try { opts.onProgress(st); } catch (e) {} }
         if (_isTerminalJob(st.status) || st.status === JOB_STATUS.NONE) return st;
+        // §5 stall detection — advance resets the counter; no advance for maxStallPolls consecutive non-terminal
+        // polls → STOP (truthful "unconfirmed"; never an endless Calculating 0/N, never an auto WRITE retry).
+        var prog = _progressOf(st);
+        if (prog > bestProgress) { bestProgress = prog; stall = 0; } else { stall++; }
+        if (stall >= maxStallPolls) { _log('STALLED', st); return { status: 'STALLED', last: st, polls: n + 1 }; }
         if (n >= maxPolls) return { status: 'POLL_TIMEOUT', last: st };
         return wait(interval).then(function () { return loop(n + 1); });
       });
@@ -132,8 +149,10 @@
         return { started: false, error: (startRes && startRes.error) || null };
       }
       var runId = (startRes.data && startRes.data.runId) || null;
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls,
+      _log('START', startRes.data);
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls,
         onProgress: function (st) { if (typeof ui.progress === 'function') ui.progress(st); } }).then(function (finalState) {
+        _log((finalState && finalState.status === JOB_STATUS.DONE) ? 'COMPLETED' : ((finalState && isUnconfirmedJob(finalState.status)) ? 'UNCONFIRMED' : 'FAILED'), (finalState && finalState.last) ? finalState.last : finalState);
         if (finalState && finalState.status === JOB_STATUS.DONE) {
           if (typeof ui.refreshing === 'function') ui.refreshing();
           return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { if (typeof ui.done === 'function') ui.done(finalState); return { started: true, runId: runId, finalState: finalState }; });
@@ -153,12 +172,14 @@
       var st = _stateOf(res);
       if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) return st;
       if (typeof ui.resume === 'function') ui.resume(st);
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls,
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls,
         onProgress: function (s) { if (typeof ui.progress === 'function') ui.progress(s); } }).then(function (finalState) {
         if (finalState && finalState.status === JOB_STATUS.DONE) {
           if (typeof ui.refreshing === 'function') ui.refreshing();
           return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { if (typeof ui.done === 'function') ui.done(finalState); return finalState; });
         }
+        // §5 resumed job did not complete (FAILED / STALLED / POLL_TIMEOUT) → exit Calculating truthfully; NO auto retry.
+        if (typeof ui.failed === 'function') ui.failed(finalState || { status: JOB_STATUS.ERROR });
         return finalState;
       });
     });
@@ -169,7 +190,8 @@
     isTransportError: isTransportError, verify: verify, recover: recover,
     // R4J job lifecycle (backend-owned; browser only starts + read-only polls)
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
+    DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
     pollJob: pollJob, runJob: runJob, resumeIfRunning: resumeIfRunning,
-    VERSION: 'gap-recalc-fm5r4j-1'
+    VERSION: 'gap-recalc-fm5r4jlive2-1'
   };
 });

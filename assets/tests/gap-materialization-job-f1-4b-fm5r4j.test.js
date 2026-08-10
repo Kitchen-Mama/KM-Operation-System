@@ -41,10 +41,13 @@ var H = (new Function(BUNDLE + '\n' + F42 + '\n' + PRE + F43 + '\n' + F46 + '\n 
 function fakeEnv(opts) {
   opts = opts || {};
   var store = {}, scheduled = [], cleared = [], processed = [], resolveCalls = 0, clock = 0, lockHeld = false;
+  var msClock = (opts.startMs != null ? opts.startMs : 0);   // R4J-LIVE2 progress clock (epoch ms); advanceable by a test
   var throwOnce = opts.throwSliceOnce ? { hit: false } : null;
   var lockFlags = { block: opts.lockGranted === false };   // mutable so a test can let START acquire, then block continuations
   return {
     _store: store, _scheduled: scheduled, _cleared: cleared, _processed: processed, _lockFlags: lockFlags,
+    _advanceMs: function (d) { msClock += d; }, _setMs: function (v) { msClock = v; },
+    nowMs: function () { return msClock; },
     get _resolveCalls() { return resolveCalls; },
     props: { get: function (k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; }, set: function (k, v) { store[k] = v; }, del: function (k) { delete store[k]; } },
     lock: opts.noLock ? null : { acquire: function () { if (lockFlags.block) return false; if (lockHeld) return false; lockHeld = true; return true; }, release: function () { lockHeld = false; } },
@@ -92,17 +95,17 @@ section('§5/§22 — continuation processes BOUNDED chunks, RUNNING…, cursor 
 var e2 = fakeEnv({ scopes: invScopes(7) });
 H.start('INVENTORY', e2);
 var c1 = H.cont('INVENTORY', e2);
-eq([c1.status, c1.scopeCursor, c1.scopesProcessed], ['RUNNING', 3, 3], 'C1 first continuation → RUNNING, cursor 3 (chunk = 3 scopes)');
-eq(e2._processed[0].scopes, ['KM/C0/AMAZON_C0', 'KM/C1/AMAZON_C1', 'KM/C2/AMAZON_C2'], 'C2 processed exactly the first 3 scopes');
+eq([c1.status, c1.scopeCursor, c1.scopesProcessed], ['RUNNING', 1, 1], 'C1 first continuation → RUNNING, cursor 1 (R4J-LIVE2 chunk = 1 scope)');
+eq(e2._processed[0].scopes, ['KM/C0/AMAZON_C0'], 'C2 processed exactly the first scope');
 var c2 = H.cont('INVENTORY', e2);
-eq([c2.status, c2.scopeCursor], ['RUNNING', 6], 'C3 second continuation resumes at cursor 3 → 6 (not from 0)');
-var c3 = H.cont('INVENTORY', e2);
-eq([c3.status, c3.scopeCursor, c3.finishedAt !== null], ['DONE', 7, true], 'C4 last continuation (1 remaining) → DONE with finishedAt set');
-eq(e2._processed.map(function (p) { return p.scopes.length; }), [3, 3, 1], 'C5 slices were [3,3,1] (bounded; never the whole universe at once)');
+eq([c2.status, c2.scopeCursor], ['RUNNING', 2], 'C3 second continuation resumes at cursor 1 → 2 (not from 0)');
+var cLast = c2; for (var _ci = 0; _ci < 12 && cLast.status !== 'DONE'; _ci++) cLast = H.cont('INVENTORY', e2);   // drain the rest
+eq([cLast.status, cLast.scopeCursor, cLast.finishedAt !== null], ['DONE', 7, true], 'C4 draining every scope → DONE at cursor 7 with finishedAt set');
+eq(e2._processed.map(function (p) { return p.scopes.length; }), [1, 1, 1, 1, 1, 1, 1], 'C5 every slice was a single scope (bounded; never the whole universe at once)');
 var afterDone = H.cont('INVENTORY', e2);
 eq(afterDone.status, 'DONE', 'C6 continuation after DONE is a no-op (idempotent terminal)');
-eq(e2._processed.length, 3, 'C7 no extra slice processed after DONE');
-eq(GR.INV_CHUNK === undefined ? H.INV_CHUNK : H.INV_CHUNK, 3, 'C8 documented Inventory chunk size = 3 scopes/continuation');
+eq(e2._processed.length, 7, 'C7 no extra slice processed after DONE');
+eq(H.INV_CHUNK, 1, 'C8 Inventory chunk size = 1 scope/continuation (R4J-LIVE2 §8 — always within the ~6-min execution budget → the worker always re-arms)');
 
 section('§10 — a slice failure does NOT advance the cursor or lose work; bounded retry; idempotent re-run');
 var e3 = fakeEnv({ scopes: invScopes(4), throwSliceOnce: true });
@@ -112,7 +115,7 @@ eq([f1.status, f1.scopeCursor, f1.sliceAttempts], ['RUNNING', 0, 1], 'D1 slice f
 ok(/SIMULATED_SLICE_FAILURE/.test(f1.lastError || ''), 'D2 lastError recorded');
 eq(e3._scheduled.length, 2, 'D3 re-armed a continuation (START=1 + retry=1) — recoverable from the saved cursor');
 var f2 = H.cont('INVENTORY', e3);   // retry: same slice (cursor still 0) now succeeds → reprocessed idempotently
-eq([f2.scopeCursor, f2.sliceAttempts], [3, 0], 'D4 retry reprocesses the SAME slice from cursor 0 (idempotent UPSERT) then advances; attempts reset');
+eq([f2.scopeCursor, f2.sliceAttempts], [1, 0], 'D4 retry reprocesses the SAME slice from cursor 0 (idempotent UPSERT) then advances by 1; attempts reset');
 eq(e3._processed[0].scopes[0], 'KM/C0/AMAZON_C0', 'D5 the retried slice is the same first scope set');
 
 section('§8 — STATUS is strictly READ-ONLY (no write, no schedule, no calculation)');
@@ -129,7 +132,7 @@ var e5 = fakeEnv({ scopes: invScopes(7) });
 H.start('INVENTORY', e5);
 drain(e5, 'INVENTORY');
 var dates = e5._processed.map(function (p) { return p.calcDate; });
-eq(dates, ['2026-08-10', '2026-08-10', '2026-08-10'], 'F1 every slice used the START-frozen calculationDate (no midnight drift)');
+eq(dates, ['2026-08-10', '2026-08-10', '2026-08-10', '2026-08-10', '2026-08-10', '2026-08-10', '2026-08-10'], 'F1 every (single-scope) slice used the START-frozen calculationDate (no midnight drift)');
 eq(e5._resolveCalls, 1, 'F2 calc context resolved EXACTLY once (at START) — continuations never re-resolve from the wall clock');
 
 section('§14/§17 — scheduled + manual share the owner: an active job blocks a duplicate START');
@@ -188,7 +191,7 @@ var startState = JSON.parse(eDiag._store[H.PROP_KEYS.INVENTORY]);
 ok(startState.lastContinuationScheduledAt && startState.lastWorkerStartedAt === null, 'O1 after START: lastContinuationScheduledAt set, lastWorkerStartedAt still null (⇒ if it stays null live, the trigger never fired)');
 H.cont('INVENTORY', eDiag);
 var afterCont = JSON.parse(eDiag._store[H.PROP_KEYS.INVENTORY]);
-ok(afterCont.lastWorkerStartedAt && afterCont.lastWorkerFinishedAt && afterCont.lastProcessedScope === 'KM/C2/AMAZON_C2', 'O2 after a continuation: worker start/finish timestamps + lastProcessedScope recorded');
+ok(afterCont.lastWorkerStartedAt && afterCont.lastWorkerFinishedAt && afterCont.lastProcessedScope === 'KM/C0/AMAZON_C0', 'O2 after one continuation (single-scope): worker start/finish timestamps + lastProcessedScope recorded');
 var pub = H.status('INVENTORY', null, eDiag).data;
 ok('lastWorkerStartedAt' in pub && 'lastContinuationScheduledAt' in pub && 'lastProcessedScope' in pub, 'O3 STATUS surfaces the diagnostics (read-only) for live triage');
 ok(!/sku|SKU|rows\s*:\s*\[/.test(JSON.stringify(pub)), 'O4 diagnostics are counts/timestamps only — no per-SKU payload');
@@ -202,7 +205,7 @@ eq([slice0.scopes.map(function (s) { return s.company + '/' + s.country; }), sli
 var slice1 = H.nextSlice('ORDER_PLANNING', ordered, 2);
 eq([slice1.scopes.map(function (s) { return s.company + '/' + s.country; }), slice1.nextCursor], [['B/US'], 3], 'J3 OP slice 1 = the whole of company B, cursor → 3 (done)');
 var invSlice = H.nextSlice('INVENTORY', H.orderedScopes(invScopes(7)), 0);
-eq(invSlice.nextCursor, 3, 'J4 INVENTORY slices by scope count (3), independent of company');
+eq(invSlice.nextCursor, 1, 'J4 INVENTORY slices by scope count (1 per continuation), independent of company');
 
 section('§7 — SHARED-POOL CONSERVATION: per-company allocation == monolithic (real KMMSA; chunk boundary is inert)');
 // Two companies share SKU X (factory pool is keyed by SKU). Company A contends 2 marketplaces for a small pool.
@@ -225,6 +228,26 @@ var bOnly = H.buildAlloc(recv.filter(function (r) { return r.company === 'B'; })
 var merged = {}; [aOnly, bOnly].forEach(function (m) { for (var k in m) if (Object.prototype.hasOwnProperty.call(m, k)) merged[k] = m[k]; });
 eq(merged, mono, 'K1 per-company allocation (union of company-A + company-B slices) is BYTE-IDENTICAL to the monolithic allocation → chunk boundaries never change allocation');
 ok(Object.keys(mono).length > 0, 'K2 the scenario actually exercised the shared-pool allocator (non-empty result)');
+
+// =============================================================================================================
+section('R4J-LIVE2 §5/§7 — a STALLED non-terminal job is RECLAIMED by a new START; a LIVE job is never reclaimed');
+// LIVE job: updatedAtMs advancing → the duplicate guard holds (alreadyRunning, same run, no extra worker chain).
+var eLive = fakeEnv({ scopes: invScopes(3), startMs: 1000000 });
+var live1 = H.start('INVENTORY', eLive);
+eLive._advanceMs(1000);                           // 1s later — well within the stale window
+var live2 = H.start('INVENTORY', eLive);
+eq([live2.data.alreadyRunning, live2.data.runId], [true, live1.data.runId], 'Q1 a fresh/advancing job blocks a duplicate START (alreadyRunning, same run) — §7 no duplicate job');
+eq(eLive._scheduled.length, 1, 'Q2 no extra continuation scheduled for the live job (no second worker chain)');
+// STALLED job: a worker killed just after START (progress frozen at 0/N) + > stale window elapsed → START reclaims.
+var eStale = fakeEnv({ scopes: invScopes(3), startMs: 1000000 });
+var stale1 = H.start('INVENTORY', eStale);        // PENDING, updatedAtMs=1000000, 1 continuation scheduled
+eStale._advanceMs(700000);                        // 700s later, still 0/N — the worker was killed with no re-arm
+var stale2 = H.start('INVENTORY', eStale);        // the user clicks again
+ok(stale2.success === true && stale2.data.status === 'PENDING' && !stale2.data.alreadyRunning, 'Q3 a STALLED job (no progress > 10-min window) is reclaimed → a FRESH job starts so the user can retry (§5 recoverable)');
+eq(eStale._scheduled.length, 2, 'Q4 exactly ONE new continuation scheduled for the fresh job (START#1 + reclaim START#2) — never an automatic retry');
+ok(eStale._cleared.filter(function (p) { return p === 'INVENTORY'; }).length >= 1, 'Q5 reclaim cleared the orphaned continuation trigger before starting fresh');
+var reclaimedStore = JSON.parse(eStale._store[H.PROP_KEYS.INVENTORY]);
+eq([reclaimedStore.status, reclaimedStore.scopeCursor], ['PENDING', 0], 'Q6 the stored state is the FRESH PENDING job (the stalled one was marked FAILED then replaced) — never two live jobs on one key');
 
 // =============================================================================================================
 section('poller — runJob: START once → READ-ONLY status poll → refresh on DONE (fake clock)');
@@ -271,6 +294,31 @@ section('poller — START failure → failed, NO polling; pollJob bounded; resum
   });
 })();
 
+section('R4J-LIVE2 §5 — the STALL guard: a stuck 0/N EXITS Calculating (never infinite); advancing jobs are safe');
+(function () {
+  var statusFn = function () { return Promise.resolve({ success: true, data: { status: 'RUNNING', scopesProcessed: 0, scopesTotal: 10 } }); };
+  GR.pollJob(statusFn, { wait: immediate, interval: 1, maxPolls: 100000, maxStallPolls: 4 }).then(function (r) {
+    ok(r.status === 'STALLED', 'P9 pollJob on a frozen 0/N (progress never advances) → STALLED (bounded; never an endless Calculating)');
+    ok(GR.isUnconfirmedJob('STALLED') === true && GR.isUnconfirmedJob('POLL_TIMEOUT') === true && GR.isUnconfirmedJob('FAILED') === false, 'P9b STALLED/POLL_TIMEOUT = "unconfirmed" (recoverable); a real FAILED is not');
+  });
+})();
+(function () {
+  var i = 0, seq = [{ status: 'RUNNING', scopesProcessed: 0, scopesTotal: 3 }, { status: 'RUNNING', scopesProcessed: 1, scopesTotal: 3 }, { status: 'RUNNING', scopesProcessed: 2, scopesTotal: 3 }, { status: 'DONE', scopesProcessed: 3, scopesTotal: 3 }];
+  var statusFn = function () { return Promise.resolve({ success: true, data: seq[Math.min(i++, seq.length - 1)] }); };
+  GR.pollJob(statusFn, { wait: immediate, interval: 1, maxStallPolls: 2 }).then(function (r) {
+    ok(r.status === 'DONE', 'P10 an ADVANCING job is never falsely stalled (each advance resets the counter) → reaches DONE');
+  });
+})();
+(function () {
+  var startCalls = 0, ev = [];
+  var startFn = function () { startCalls++; return Promise.resolve({ success: true, data: { runId: 'RS', status: 'PENDING', scopesTotal: 5 } }); };
+  var statusFn = function () { return Promise.resolve({ success: true, data: { status: 'RUNNING', scopesProcessed: 0, scopesTotal: 5 } }); };
+  GR.runJob(startFn, statusFn, { wait: immediate, interval: 1, maxStallPolls: 3, ui: { starting: function () { ev.push('starting'); }, progress: function () { ev.push('progress'); }, failed: function (st) { ev.push('failed:' + (st && st.status)); } } }).then(function (r) {
+    ok(startCalls === 1 && ev.indexOf('failed:STALLED') !== -1, 'P11 runJob on a stuck 0/N → START exactly once, then ui.failed(STALLED) (exit Calculating; NO automatic write retry)');
+    ok(r.finalState && r.finalState.status === 'STALLED', 'P11b runJob surfaces the STALLED terminal to the caller');
+  });
+})();
+
 // =============================================================================================================
 section('wiring — router / client adapters / scheduler / page cutover');
 ok(/inventoryReplenishmentGap\.job\.start/.test(ROUTER) && /orderPlanningGap\.job\.start/.test(ROUTER) && /gapJob\.status\.get/.test(ROUTER), 'W1 router dispatches job.start x2 + gapJob.status.get');
@@ -285,6 +333,10 @@ ok(/startInventoryReplenishmentGapJob/.test(INV_JS) && /getGapJobStatus\('INVENT
 ok(/startOrderPlanningGapJob/.test(RO_JS) && /getGapJobStatus\('ORDER_PLANNING'\)/.test(RO_JS) && /gr\.runJob\(/.test(RO_JS), 'W9 Order Planning button cut over to START→poll');
 ok(/_irResumeGapJobOnMount_/.test(INV_JS) && /_roResumeGapJobOnMount_/.test(RO_JS), 'W10 both pages resume a running job on mount/reload (§13)');
 ok((INV_JS.match(/startInventoryReplenishmentGapJob\(\{\}\)/g) || []).length === 1 && (RO_JS.match(/startOrderPlanningGapJob\(\{\}\)/g) || []).length === 1, 'W11 each page issues the START write exactly once (no repeated WRITE POST)');
+ok(/isUnconfirmedJob/.test(INV_JS) && /isUnconfirmedJob/.test(RO_JS), 'W12 both pages branch on isUnconfirmedJob → truthful "could not be confirmed" (recoverable) vs a hard failure (§5/§12)');
+ok(/could not be confirmed/.test(INV_JS) && /could not be confirmed/.test(RO_JS), 'W13 the §5 truthful "unconfirmed — check latest data before retrying" message is present on both pages');
+ok(H.INV_CHUNK === 1, 'W14 R4J-LIVE2 execution unit reduced to 1 Inventory scope/continuation (§8 within the execution budget)');
+ok(/GAP_JOB_STALE_MS_/.test(F46) && /RECLAIMED_STALLED/.test(F46), 'W15 START reclaims a demonstrably-stalled job (bounded stale window) so a killed worker never blocks retry forever');
 
 section('safety — job engine authors NO formula; job state is Script-Property only (NO new DB table)');
 var F46_CODE = F46.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');

@@ -1166,11 +1166,23 @@ function handleRecalcAllOrderPlanningGap() {
       progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
       refreshing: function () { setBtn('Refreshing…', true); },
       done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
-      failed: function (st) { var why = (st && st.lastError) ? (' — ' + st.lastError) : ''; alert('Order Planning recalculation failed (status: ' + ((st && st.status) || 'unknown') + ')' + why + '.\nNo automatic retry was issued; check the latest data.'); restore(); }
+      failed: function (st) { alert(_roGapJobFailMsg_('Order Planning', st)); restore(); }
     }
   });
 }
 window.handleRecalcAllOrderPlanningGap = handleRecalcAllOrderPlanningGap;
+
+// §5/§12 — truthful terminal message (shared contract with Inventory). STALLED / POLL_TIMEOUT = "could not be
+// confirmed" (recoverable, NO auto retry); any other non-DONE state = a genuine failure. Button returns to idle.
+function _roGapJobFailMsg_(product, st) {
+  var gr = (window.KM && window.KM.gapRecalc), status = (st && st.status) || 'unknown';
+  if (gr && typeof gr.isUnconfirmedJob === 'function' && gr.isUnconfirmedJob(status)) {
+    return product + ' calculation status could not be confirmed. Check the latest data before retrying (no automatic retry was issued).';
+  }
+  var why = (st && st.lastError) ? (' — ' + st.lastError) : '';
+  return product + ' recalculation failed (status: ' + status + ')' + why + '.\nNo automatic retry was issued; check the latest data.';
+}
+window._roGapJobFailMsg_ = _roGapJobFailMsg_;
 
 // §13 mount/reload recovery — resume READ-ONLY polling if a backend Order Planning job is already PENDING/RUNNING.
 function _roResumeGapJobOnMount_() {
@@ -1186,7 +1198,9 @@ function _roResumeGapJobOnMount_() {
       resume: function () { _roRecalcAllBusy = true; },
       progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
       refreshing: function () { setBtn('Refreshing…', true); },
-      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(function () { _roRecalcAllBusy = false; setBtn(label, false); }, 1500); }
+      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(function () { _roRecalcAllBusy = false; setBtn(label, false); }, 1500); },
+      // §5 a resumed job that ends non-DONE (stalled/failed) must NOT leave the button stuck at Calculating.
+      failed: function (st) { _roRecalcAllBusy = false; setBtn(label, false); if (st && st.status && st.status !== 'DONE') { try { console.warn(_roGapJobFailMsg_('Order Planning', st)); } catch (e) {} } }
     }
   });
 }
