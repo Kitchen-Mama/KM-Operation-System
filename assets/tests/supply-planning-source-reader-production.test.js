@@ -112,7 +112,7 @@ section('C. Weekly production source → Plan Builder (read-only; recommendedQty
   eq([full.sourceDataAsOf, full.ledgerResult.demandLedger.entries[0].effectiveDemandQty], ['2026-08-01', 100], 'C2 sourceDataAsOf from snapshot evidence; demand qty 100 passes through unchanged');
   var cmd = PB.buildRecommendation(full.bridgeResult);
   eq([cmd.recommendationType, cmd.command.recommendedLines[0].recommendedQty], ['WEEKLY_SHIPPING', 96], 'C3 existing Plan Builder accepts the production-reader Weekly facts → 96');
-  eq(PB.splitLineKey('WEEKLY_SHIPPING', cmd.command.recommendedLines[0].lineKey), { sku: 'CO1100-R', site_sku: 'ST-1', window_code: 'W40-A' }, 'C4 natural key intact end-to-end');
+  eq(PB.splitLineKey('WEEKLY_SHIPPING', cmd.command.recommendedLines[0].lineKey), { sku: 'CO1100-R', site_sku: 'ST-1', window_code: 'W40-A', source_warehouse_id: 'WH-3PL', route_no: '' }, 'C4 natural key intact end-to-end (R3C2: 5-part; per-source WH-3PL)');
   eq(sa._writes.n, 0, 'C5 NO Sheet writes performed by the production reader');
 })();
 

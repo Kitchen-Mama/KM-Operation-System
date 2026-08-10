@@ -45,7 +45,14 @@
       header: 'shipping_allocation_drafts', lines: 'shipping_allocation_draft_lines',
       headerId: 'allocation_draft_id', lineDraftId: 'allocation_draft_id', lineId: 'allocation_draft_line_id',
       scope: ['planning_cycle', 'company', 'country', 'marketplace', 'source_page'],
-      lineKey: ['sku', 'site_sku', 'window_code'], userQty: 'planned_qty'
+      // F1-4B-FM6-R3C2: the WEEKLY line grain gains a per-source execution axis so ONE recommendation (one
+      // aggregate recommended_qty per sku/site/window) can persist MULTIPLE physical-source execution lines
+      // (Overseas / Factory) without changing the recommendation formula. source_warehouse_id + route_no are
+      // NULLABLE key parts (Phase 3 deterministic nullable-key normalization): a single-source, unsourced/
+      // all-uncovered, or historical line carries a BLANK value — a genuinely empty source, NOT a fake warehouse —
+      // and blank normalizes deterministically to the same key part (never rejected, never a duplicate-by-format).
+      lineKey: ['sku', 'site_sku', 'window_code', 'source_warehouse_id', 'route_no'],
+      nullableLineKey: { source_warehouse_id: 1, route_no: 1 }, userQty: 'planned_qty'
     },
     MONTHLY_ORDER: {
       header: 'request_order_allocation_drafts', lines: 'request_order_allocation_draft_lines',
@@ -192,7 +199,10 @@
       aType(isObj(op), 'lineOps[' + i + '] must be object');
       aRange(LINE_OPS[op.op] === 1, 'lineOps[' + i + '].op must be INSERT|UPDATE|SUPERSEDE');
       aType(isObj(op.naturalKey), 'lineOps[' + i + '].naturalKey required');
-      cfg.lineKey.forEach(function (kc) { aType(op.naturalKey[kc] !== undefined && op.naturalKey[kc] !== null && op.naturalKey[kc] !== '', 'lineOps[' + i + '] missing natural-key part: ' + kc); });
+      // F1-4B-FM6-R3C2: a NULLABLE key part (source_warehouse_id / route_no) may be blank (deterministic
+      // normalization — blank is a valid "unsourced" key part, not missing identity); non-nullable parts stay required.
+      var nlk = cfg.nullableLineKey || {};
+      cfg.lineKey.forEach(function (kc) { if (nlk[kc] === 1) { aType(op.naturalKey[kc] !== undefined && op.naturalKey[kc] !== null, 'lineOps[' + i + '] nullable natural-key part must be defined (may be blank): ' + kc); } else { aType(op.naturalKey[kc] !== undefined && op.naturalKey[kc] !== null && op.naturalKey[kc] !== '', 'lineOps[' + i + '] missing natural-key part: ' + kc); } });
       var nk = naturalKeyStr(cfg.lineKey, op.naturalKey);
       aRange(seen[nk] !== 1, 'duplicate lineOps natural key: ' + nk); seen[nk] = 1;
       if (op.op !== 'SUPERSEDE') {
@@ -415,7 +425,8 @@
     for (i = 0; i < command.edits.length; i++) {
       var e = command.edits[i];
       aType(isObj(e) && isObj(e.naturalKey), 'edits[' + i + '] needs a naturalKey object');
-      cfg.lineKey.forEach(function (kc) { aType(e.naturalKey[kc] !== undefined && e.naturalKey[kc] !== null && String(e.naturalKey[kc]).length > 0, 'edits[' + i + '] missing natural-key part: ' + kc); });
+      var nlkE = cfg.nullableLineKey || {};
+      cfg.lineKey.forEach(function (kc) { if (nlkE[kc] === 1) { aType(e.naturalKey[kc] !== undefined && e.naturalKey[kc] !== null, 'edits[' + i + '] nullable natural-key part must be defined (may be blank): ' + kc); } else { aType(e.naturalKey[kc] !== undefined && e.naturalKey[kc] !== null && String(e.naturalKey[kc]).length > 0, 'edits[' + i + '] missing natural-key part: ' + kc); } });
       var nk = naturalKeyStr(cfg.lineKey, e.naturalKey);
       if (seen[nk] === 1) return { status: 'DUPLICATE_LINE_KEY', reason: 'DUPLICATE_LINE_KEY:' + nk, counts: counts };
       seen[nk] = 1;

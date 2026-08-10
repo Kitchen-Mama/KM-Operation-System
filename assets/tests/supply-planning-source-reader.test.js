@@ -185,7 +185,7 @@ section('I. Integration — Reader → Ledger → Allocation → Weekly Resolver
   var bridged = BR.bridgeRecommendationFactsToPlan({ recommendationFacts: facts, mode: 'SCHEDULED_REFRESH', calculationRunId: 'RUN-1', draftVersion: 1 });
   var cmd = PB.buildRecommendation(bridged);
   eq([cmd.recommendationType, cmd.command.recommendedLines[0].recommendedQty], ['WEEKLY_SHIPPING', 96], 'I2 Plan Builder accepts bridged reader-sourced Weekly facts');
-  eq(PB.splitLineKey('WEEKLY_SHIPPING', cmd.command.recommendedLines[0].lineKey), { sku: 'CO1100-R', site_sku: 'ST-1', window_code: 'W40-A' }, 'I3 natural key intact end-to-end');
+  eq(PB.splitLineKey('WEEKLY_SHIPPING', cmd.command.recommendedLines[0].lineKey), { sku: 'CO1100-R', site_sku: 'ST-1', window_code: 'W40-A', source_warehouse_id: 'WH-3PL', route_no: '' }, 'I3 natural key intact end-to-end (R3C2: 5-part; per-source WH-3PL)');
 })();
 
 section('J. Integration — Monthly Reader → … → Plan Builder');

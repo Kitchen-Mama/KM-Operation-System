@@ -177,6 +177,10 @@
         allocationMode: line.allocationMode === undefined ? null : line.allocationMode,
         sourcePoolKey: line.sourcePoolKey === undefined ? null : line.sourcePoolKey,
         sourceWarehouseId: line.sourceWarehouseId === undefined ? null : line.sourceWarehouseId,
+        // F1-4B-FM6-R3C2: thread the per-source allocation breakdown (KMALLOC/KMMSA output) verbatim into the
+        // lineage OBJECT the Plan Builder accepts, so the WEEKLY per-source execution fan-out can persist one line
+        // per physical source. Non-authoritative runtime metadata — NEVER a recommendation formula input.
+        allocationBreakdown: Array.isArray(line.allocationBreakdown) ? line.allocationBreakdown.slice() : [],
         keys: Array.isArray(line.lineage) ? line.lineage.slice() : []
       };
       var planFact = {};

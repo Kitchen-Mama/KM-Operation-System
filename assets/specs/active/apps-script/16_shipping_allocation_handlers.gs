@@ -59,7 +59,11 @@ var SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ = [
   // user Execution Plan (qty grain — route context is on the Draft header)
   'planned_qty', 'units_per_carton', 'route_no',
   // status / audit
-  'line_status', 'override_reason', 'note', 'created_at', 'updated_at'
+  'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
+  // F1-4B-FM6-R3C2 — additive per-source execution columns (appended; order-agnostic name-based writer). One
+  // shipping line per physical source; source_allocated_qty_snapshot = KMALLOC per-source qty. recommended_qty
+  // stays the SKU/window aggregate (do NOT sum across source lines). Blank source = unsourced (not a warehouse).
+  'source_warehouse_id', 'source_warehouse_code_snapshot', 'source_allocated_qty_snapshot'
 ];
 
 var SAD_STATUSES_ = { draft: 1, site_confirmed: 1, submitted: 1, cancelled: 1 };

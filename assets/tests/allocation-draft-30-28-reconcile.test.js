@@ -32,12 +32,14 @@ var EXPECTED_LINES = ['allocation_draft_line_id', 'allocation_draft_id', 'sku', 
   'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
   'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
   'recommendation_reason', 'recommendation_flags', 'recommended_qty',
-  'planned_qty', 'units_per_carton', 'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at'];
+  'planned_qty', 'units_per_carton', 'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
+  // F1-4B-FM6-R3C2 additive per-source execution columns (appended)
+  'source_warehouse_id', 'source_warehouse_code_snapshot', 'source_allocated_qty_snapshot'];
 
 // =====================================================================================================
 section('Constants byte-for-byte = approved 30/28 (§11.1, §11.2, §11.3, §11.4)');
 ok(DRAFTS.length === 30 && JSON.stringify(DRAFTS) === JSON.stringify(EXPECTED_DRAFTS), 'R1 Draft Header constant is EXACTLY the approved 30 columns, in order');
-ok(LINES.length === 28 && JSON.stringify(LINES) === JSON.stringify(EXPECTED_LINES), 'R2 Line Header constant is EXACTLY the approved 28 columns, in order');
+ok(LINES.length === 31 && JSON.stringify(LINES) === JSON.stringify(EXPECTED_LINES), 'R2 Line Header constant is EXACTLY the approved 31 columns (28 + R3C2 source_warehouse_id/code/allocated_qty), in order');
 ok(DRAFTS.length !== 23, 'R3 no 23-column Draft Header expectation remains');
 ok(LINES.length !== 52 && LINES.indexOf('selected_source_warehouse_id') < 0 && LINES.indexOf('selected_destination_warehouse_id') < 0 &&
    LINES.indexOf('selected_shipping_method') < 0 && LINES.indexOf('user_edited') < 0 && LINES.indexOf('recommended_route_rule_id') < 0,

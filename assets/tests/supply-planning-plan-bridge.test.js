@@ -196,7 +196,7 @@ section('I. Plan Builder compatibility — REAL buildRecommendation accepts brid
   eq(wcmd.userQtyColumn, 'planned_qty', 'I4 Weekly userQty column stays Plan Builder/Persistence-owned (planned_qty)');
   var blk = wcmd.command.recommendedLines.filter(function (l) { return l.lineState === 'BLOCKED'; });
   eq([blk.length, blk[0].recommendedQty, blk[0].reason], [1, null, 'MISSING_OR_INVALID_UNITS_PER_CARTON'], 'I5 blocked line → lineState BLOCKED, recommendedQty null, reason carried through Plan Builder');
-  eq(PB.splitLineKey('WEEKLY_SHIPPING', wcmd.command.recommendedLines[0].lineKey), { sku: 'CO1100-R', site_sku: 'ST-1', window_code: 'W40-A' }, 'I6 Plan Builder reconstructs the mechanical natural key');
+  eq(PB.splitLineKey('WEEKLY_SHIPPING', wcmd.command.recommendedLines[0].lineKey), { sku: 'CO1100-R', site_sku: 'ST-1', window_code: 'W40-A', source_warehouse_id: 'WH-3PL', route_no: '' }, 'I6 Plan Builder reconstructs the mechanical natural key (R3C2: 5-part; per-source WH-3PL threaded end-to-end)');
   // Monthly through the real Plan Builder
   var mout = bridge(monthlyFacts(function (dl) { return [mf(dl, 'd1', '2026-09', 'B1', 13, 12)]; }), { mode: 'MANUAL_REGENERATE' });
   var mcmd = PB.buildRecommendation(mout);

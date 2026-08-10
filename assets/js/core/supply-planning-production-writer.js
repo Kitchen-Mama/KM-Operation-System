@@ -47,7 +47,11 @@
         'destination_stock_snapshot', 'qualified_incoming_snapshot', 'approved_supply_snapshot', 'calculated_gap_qty',
         'source_initial_available_qty_snapshot', 'source_available_before_allocation_snapshot', 'allocation_sequence',
         'recommendation_reason', 'recommendation_flags', 'recommended_qty', 'planned_qty', 'units_per_carton',
-        'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at']
+        'route_no', 'line_status', 'override_reason', 'note', 'created_at', 'updated_at',
+        // F1-4B-FM6-R3C2 additive per-source execution columns (appended; name-based writers are order-agnostic,
+        // the schema validator allows trailing extras). source_allocated_qty_snapshot = KMALLOC per-source qty;
+        // recommended_qty remains the SKU/window aggregate (do NOT sum across source lines).
+        'source_warehouse_id', 'source_warehouse_code_snapshot', 'source_allocated_qty_snapshot']
     },
     MONTHLY_ORDER: {
       header: ['request_allocation_draft_id', 'planning_cycle', 'company', 'country', 'marketplace', 'sku',

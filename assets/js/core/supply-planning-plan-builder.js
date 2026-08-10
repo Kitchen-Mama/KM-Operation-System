@@ -49,9 +49,10 @@
   // reconstruct a structured naturalKey for a SUPERSEDED line that is no longer present in the current command.
   function buildLineKey(type, obj) {
     var cfg = typeCfg(type);
+    var nlk = cfg.nullableLineKey || {};   // F1-4B-FM6-R3C2: designated-nullable key parts may be blank (deterministic)
     return cfg.lineKey.map(function (c) {
       var v = str(obj[c]);
-      aRange(v.length > 0, 'line natural-key part missing/blank: ' + c);
+      if (nlk[c] !== 1) aRange(v.length > 0, 'line natural-key part missing/blank: ' + c);
       aRange(v.indexOf(SEP) === -1, 'line natural-key part must not contain the reserved separator: ' + c);
       return v;
     }).join(SEP);
@@ -67,6 +68,53 @@
   function mapGenerationType(mode) {
     aRange(MODE_TO_GENERATION_TYPE[mode] !== undefined, 'unsupported mode → generation_type: ' + mode);
     return MODE_TO_GENERATION_TYPE[mode];
+  }
+
+  // ---- F1-4B-FM6-R3C2: per-source EXECUTION fan-out (WEEKLY_SHIPPING only) -----
+  // ONE resolved recommendation fact (aggregate recommendedQty for a sku/site/window) is expanded into one line
+  // PER physical source warehouse it draws from — carried in the fact's runtime lineage.allocationBreakdown (a
+  // list of { sourceWarehouseId, allocatedQty, ... } produced upstream by KMALLOC/KMMSA, threaded verbatim by the
+  // bridge). The aggregate recommendedQty is NEVER recomputed or split-cartonized — it is preserved on EACH source
+  // line (a per-sku/window aggregate that MUST NOT be summed across source lines). The per-source execution
+  // quantity is persisted separately as source_allocated_qty_snapshot. A blocked line, or a line with NO source
+  // allocation (all-uncovered), stays a SINGLE line with a BLANK source_warehouse_id (a genuinely-empty source,
+  // never a fabricated warehouse). Entries are grouped by sourceWarehouseId (+ route_no) so one warehouse yields
+  // exactly one line (summing its allocatedQty) — never a duplicate natural key. MONTHLY_ORDER is unchanged (1:1).
+  function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
+  function shallow(o) { var r = {}; for (var k in o) if (o.hasOwnProperty(k)) r[k] = o[k]; return r; }
+  function withSourceSnapshot(baseSnap, srcId, srcCode, allocQty) {
+    var r = isObj(baseSnap) ? shallow(baseSnap) : {};
+    r.source_warehouse_id = str(srcId);
+    r.source_warehouse_code_snapshot = str(srcCode);
+    r.source_allocated_qty_snapshot = (allocQty === null || allocQty === undefined) ? '' : allocQty;
+    return r;
+  }
+  function expandSourceFacts(type, cfg, f) {
+    if (type !== 'WEEKLY_SHIPPING' || !cfg.nullableLineKey) return [f];   // only the WEEKLY per-source grain fans out
+    var lin = isObj(f.lineage) ? f.lineage : {};
+    var bd = Array.isArray(lin.allocationBreakdown) ? lin.allocationBreakdown : [];
+    var routeNo = str(f.route_no);
+    if (f.blocked === true || bd.length === 0) {
+      var one = shallow(f);
+      one.source_warehouse_id = str(f.source_warehouse_id);   // blank ⇒ unsourced (all-uncovered) / single-line
+      one.route_no = routeNo;
+      one.snapshotRow = withSourceSnapshot(f.snapshotRow, one.source_warehouse_id, f.source_warehouse_code_snapshot, f.blocked === true ? null : 0);
+      return [one];
+    }
+    // group by (sourceWarehouseId, routeNo) → one execution line per physical source; sum allocatedQty per source
+    var order = [], byKey = {};
+    for (var i = 0; i < bd.length; i++) {
+      var e = bd[i]; var sid = str(e && e.sourceWarehouseId); var k = sid + SEP + routeNo;
+      if (!byKey[k]) { byKey[k] = { sid: sid, code: str(e && (e.sourceWarehouseCode || e.sourceWarehouseCodeSnapshot)), qty: 0 }; order.push(k); }
+      var q = num(e && e.allocatedQty); if (q !== null) byKey[k].qty += q;
+    }
+    return order.map(function (k) {
+      var g = byKey[k], out = shallow(f);
+      out.source_warehouse_id = g.sid;
+      out.route_no = routeNo;
+      out.snapshotRow = withSourceSnapshot(f.snapshotRow, g.sid, g.code, g.qty);
+      return out;   // recommendedQty stays the AGGREGATE (verbatim from f) — never re-split / re-cartonized
+    });
   }
 
   function assertNoLiveAnalysisAuthority(row, where) {
@@ -122,12 +170,16 @@
     aType(Array.isArray(input.lines), 'lines must be an array');
 
     var seen = {}, commandLines = [], detailByKey = {};
-    input.lines.forEach(function (f, i) {
-      var p = projectLine(type, cfg, f, i);
-      aRange(seen[p.commandLine.lineKey] !== 1, 'duplicate line natural key: ' + p.commandLine.lineKey);
-      seen[p.commandLine.lineKey] = 1;
-      commandLines.push(p.commandLine);
-      detailByKey[p.commandLine.lineKey] = p.detail;
+    input.lines.forEach(function (f0, i) {
+      // F1-4B-FM6-R3C2: expand ONE recommendation fact into per-physical-source execution lines (WEEKLY only;
+      // MONTHLY stays 1:1). The aggregate recommendedQty is preserved on each; source metadata rides in snapshotRow.
+      expandSourceFacts(type, cfg, f0).forEach(function (f) {
+        var p = projectLine(type, cfg, f, i);
+        aRange(seen[p.commandLine.lineKey] !== 1, 'duplicate line natural key: ' + p.commandLine.lineKey);
+        seen[p.commandLine.lineKey] = 1;
+        commandLines.push(p.commandLine);
+        detailByKey[p.commandLine.lineKey] = p.detail;
+      });
     });
     // stable ordering by lineKey (deterministic; independent of input order) — for BOTH the command lines and
     // the lineDetails key-insertion order, so the whole output serializes byte-identically regardless of input order.

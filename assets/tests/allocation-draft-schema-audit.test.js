@@ -43,7 +43,7 @@ var rLine = sadAuditBuildTableReport_('shipping_allocation_draft_lines', true, L
 ok(rLine.exactMatch === true && rLine.migrationClassification === 'NO_MIGRATION_REQUIRED', 'T4 approved 28-col line → exact match, NO_MIGRATION_REQUIRED');
 ok(DRAFTS_CANON.indexOf('recommended_source_warehouse_id') >= 0 && DRAFTS_CANON.indexOf('recommended_destination_warehouse_id') >= 0 &&
    DRAFTS_CANON.indexOf('recommended_shipping_method') >= 0 && DRAFTS_CANON.indexOf('recommendation_group_no') >= 0, 'T4b route (From/To/Method) + group_no are HEADER columns');
-ok(DRAFTS_CANON.length === 30 && LINES_CANON.length === 28, 'T4c approved schema = 30-col header / 28-col line');
+ok(DRAFTS_CANON.length === 30 && LINES_CANON.length === 31, 'T4c approved schema = 30-col header / 31-col line (R3C2: +source_warehouse_id/code/allocated_qty)');
 ok(LINES_CANON.indexOf('selected_source_warehouse_id') < 0 && LINES_CANON.indexOf('selected_shipping_method') < 0 && LINES_CANON.indexOf('user_edited') < 0, 'T4d NO selected_*/user_edited on the 28-col line');
 
 // =====================================================================================================
