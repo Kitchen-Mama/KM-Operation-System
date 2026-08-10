@@ -836,6 +836,24 @@ function closeReplenModal() {
   if (siteInput) { siteInput.value = ''; siteInput.dataset.autofill = '1'; }
 }
 
+// F1-SMALL: after a CONFIRMED successful Add SKU, reset the WHOLE modal form to a brand-new-SKU state so the
+// NEXT open never inherits the just-created SKU's field values. The Inventory Add SKU modal has NO draft cache —
+// closeReplenModal()/open reset only SKU + Site SKU, so ASIN / Product URL / Launch Date / Planning Model /
+// Fulfillment leaked across a successful create. This clears exactly those leaked DOM fields (text → blank;
+// selects → their existing HTML default option — NO invented defaults; marketplace/company/country/currency
+// re-derive on the next open via populateReplenAddSkuMarketplaces). Called ONLY on success; Cancel/close and the
+// failure branches are deliberately untouched so unsaved / failed values are preserved for retry.
+function resetReplenAddSkuForm() {
+  ['replen-add-sku', 'replen-add-site-sku', 'replen-add-asin', 'replen-add-product-url', 'replen-add-launch-date'].forEach(function (id) {
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  var siteEl = document.getElementById('replen-add-site-sku'); if (siteEl) siteEl.dataset.autofill = '1';
+  ['replen-add-model', 'replen-add-fulfillment'].forEach(function (id) {
+    var sel = document.getElementById(id); if (sel && sel.options && sel.options.length) sel.selectedIndex = 0;   // existing HTML default option
+  });
+}
+window.resetReplenAddSkuForm = resetReplenAddSkuForm;
+
 function saveReplenSku() {
   const sku = document.getElementById('replen-add-sku')?.value.trim();
   let siteSku = (document.getElementById('replen-add-site-sku')?.value || '').trim();
@@ -910,6 +928,7 @@ function saveReplenSku() {
       }
       alert('SKU "' + sku + '" ' + (rr.status || 'processed') + ' for ' + country + ' - ' + marketplace + (rr.message ? ('\n' + rr.message) : ''));
       closeReplenModal();
+      resetReplenAddSkuForm();   // F1-SMALL: confirmed success → clear leaked fields so the next Add SKU starts fresh
       renderReplenishment();
     }).catch(function(err) {
       alert('Error: ' + (err && err.message ? err.message : err));
@@ -933,6 +952,7 @@ function saveReplenSku() {
       }
       alert('SKU "' + sku + '" added to ' + country + ' - ' + marketplace);
       closeReplenModal();
+      resetReplenAddSkuForm();   // F1-SMALL: confirmed success → clear leaked fields so the next Add SKU starts fresh
       renderReplenishment();
     }).catch(function(err) {
       alert('Error: ' + err.message);
@@ -952,6 +972,7 @@ function saveReplenSku() {
   replenishmentData.push({ sku: sku, country: country, marketplace: marketplace, status: status, currentStock: 0, onTheWay: 0, thirdPartyStock: 0, avgSalesPerDay: 0, fc60Days: 0, upcomingEvent: '', daysOfSupply: 0, suggestedQty: 0, plannedQty: 0, cnStock: 0, twStock: 0 });
   if (typeof renderReplenishment === 'function') renderReplenishment();
   closeReplenModal();
+  resetReplenAddSkuForm();   // F1-SMALL: confirmed success → clear leaked fields so the next Add SKU starts fresh
   alert('SKU "' + sku + '" added (in-memory only)');
 }
 
