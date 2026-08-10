@@ -3548,6 +3548,7 @@ function handleRecalcAllInventoryGap() {
     return Promise.resolve(startFn()).then(function () { refreshFn(); restore(); }).catch(function () { restore(); });
   }
   return gr.runJob(startFn, statusFn, {
+    product: 'INVENTORY',   // LIVE7 §3 — names the product in the [GapJob] START_ERROR DevTools diagnostic
     refresh: refreshFn,
     onRunId: function (rid) { _irActiveRunId = rid; },
     isCancelled: function () { return _irCancelRequested; },

@@ -84,7 +84,7 @@ section('diagnostics + lifecycle-evidence contract (source)');
 var GRSRC = read('js/utils/gap-recalc-transport.js');
 ok(/RESUME_CHECK/.test(GRSRC) && /RESUME_ACTIVE/.test(GRSRC) && /RESUME_SKIPPED/.test(GRSRC), '§10 RESUME_CHECK / RESUME_ACTIVE / RESUME_SKIPPED diagnostics present');
 ok(/_hasLiveness/.test(GRSRC) && /lastContinuationScheduledAt/.test(GRSRC) && /lastWorkerStartedAt/.test(GRSRC), '§1/§4 resume requires worker/continuation lifecycle evidence (not a bare Script Property)');
-ok(/gap-recalc-fm5r4jlive6-1/.test(GRSRC), 'transport VERSION bumped to LIVE6');
+ok(/gap-recalc-fm5r4jlive7-1/.test(GRSRC), 'transport VERSION at LIVE7 (bumped past LIVE6)');
 
 section('backend stale authority is the ONE frozen owner (no new timeout in the frontend)');
 ok(/function gapJobStaleNonterminal_/.test(F46) && /GAP_JOB_STALE_MS_/.test(F46), '§3 the stale threshold lives in 46.gs (GAP_JOB_STALE_MS_); frontend defines NO numeric timeout');

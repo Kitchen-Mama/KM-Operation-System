@@ -495,7 +495,7 @@ ok(/function handleCancelInventoryGapJob\(\)/.test(INV_JS) && /function handleCa
 ok(/isCancelled\s*:\s*function/.test(INV_JS) && /onRunId\s*:\s*function/.test(INV_JS) && /isCancelled\s*:\s*function/.test(RO_JS) && /onRunId\s*:\s*function/.test(RO_JS), 'W20 both pages wire the shared runJob cancel token + runId capture (one lifecycle contract)');
 ok((INV_JS.match(/cancelInventoryReplenishmentGapJob\(/g) || []).length === 1 && (RO_JS.match(/cancelOrderPlanningGapJob\(/g) || []).length === 1, 'W21/§M each page issues the cancel WRITE at most once');
 ok(/id="replen-cancel-recalc-btn"[\s\S]*onclick="handleCancelInventoryGapJob\(\)"/.test(INV_HTML) && /id="ro-cancel-recalc-btn"[\s\S]*onclick="handleCancelOrderPlanningGapJob\(\)"/.test(RO_HTML), 'W22/§6 both pages render a Cancel button wired to the backend cancel handler');
-ok(/gap-recalc-fm5r4jlive6-1/.test(read('js/utils/gap-recalc-transport.js')), 'W23 transport version bumped to LIVE6');
+ok(/gap-recalc-fm5r4jlive7-1/.test(read('js/utils/gap-recalc-transport.js')), 'W23 transport version at LIVE7');
 
 section('safety — job engine authors NO formula; job state is Script-Property only (NO new DB table)');
 var F46_CODE = F46.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');

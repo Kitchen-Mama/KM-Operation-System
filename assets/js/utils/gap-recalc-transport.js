@@ -152,8 +152,20 @@
     if (typeof ui.starting === 'function') ui.starting();
     return Promise.resolve(startFn()).then(function (startRes) {
       if (!startRes || startRes.success !== true) {
-        if (typeof ui.failed === 'function') ui.failed({ status: JOB_STATUS.ERROR, error: (startRes && startRes.error) || null });
-        return { started: false, error: (startRes && startRes.error) || null };
+        // R4J-LIVE7 §0/§3 — a failed START must carry a TRUTHFUL named code (never a bare "status: ERROR"). The
+        // DB API surfaces the backend envelope's structured code/message in startRes.error {code,message,details};
+        // preserve it into the failed-state (status stays ERROR = transport terminal, but lastError carries the
+        // real stage code so the page alert names it) AND emit the mandated DevTools diagnostic so the exact first
+        // failing backend owner is visible without another generic debugging round.
+        var _err = (startRes && startRes.error) || null;
+        var _code = (_err && _err.code) || 'START_ERROR';
+        var _msg = (_err && (_err.message || _err.detail)) || null;
+        var _detail = (_err && _err.details) || null;
+        var _product = (opts && opts.product) || (_detail && _detail.product) || '';
+        try { if (typeof console !== 'undefined' && console.error) console.error('[GapJob] START_ERROR product=' + _product + ' code=' + _code + ' message=' + (_msg || '') + ' detail=' + (_detail ? JSON.stringify(_detail) : '')); } catch (e) {}
+        var _lastError = _code + ((_msg && _msg !== _code) ? (': ' + _msg) : '');
+        if (typeof ui.failed === 'function') ui.failed({ status: JOB_STATUS.ERROR, code: _code, message: _msg, detail: _detail, lastError: _lastError, error: _err });
+        return { started: false, code: _code, message: _msg, error: _err };
       }
       var runId = (startRes.data && startRes.data.runId) || null;
       if (typeof opts.onRunId === 'function') { try { opts.onRunId(runId); } catch (e) {} }   // §6 give the page the runId for a targeted cancel
@@ -220,6 +232,6 @@
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
     pollJob: pollJob, runJob: runJob, resumeIfRunning: resumeIfRunning,
-    VERSION: 'gap-recalc-fm5r4jlive6-1'
+    VERSION: 'gap-recalc-fm5r4jlive7-1'
   };
 });

@@ -2730,9 +2730,17 @@ async function _kmWeeklyCommand_(command, payload) {
     if (trimmed.charCodeAt(0) !== 123) return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Non-JSON response from Web App', { snippet: trimmed.slice(0, 80) });   // 123 = open-brace char code (JSON object start)
     var json; try { json = JSON.parse(trimmed); } catch (pe) { return _kmCmdErr_(command, 'NON_JSON_RESPONSE', 'Malformed JSON response', { snippet: trimmed.slice(0, 80) }); }
     if (!json.success) {
-        var _canon = _kmExtractCanonicalCode_(json.error);
-        // Preserve the handler's structured data (e.g. conflictIds) into error.details so the UI can render it.
-        return _kmCmdErr_(command, _canon || _kmClassifyBusinessError_(json.error), json.error || (command + ' failed'), (json.data && typeof json.data === 'object') ? json.data : null);
+        // R4J-LIVE7 §0/§3 — the gap-job family (START / CANCEL) returns a STRUCTURED envelope from gapBatchEnvelope_
+        // ({ errors:[{ code, message, details }] }), while legacy handlers return a singular { error } string. Prefer
+        // the structured code/message when present so a named START failure (CONTINUATION_SCHEDULE_FAILED /
+        // GAP_JOB_LOCK_UNAVAILABLE / CALCULATION_CONTEXT_INVALID / GAP_JOB_START_ERROR …) is surfaced VERBATIM instead
+        // of being flattened to a generic BUSINESS_COMMAND_ERROR. Falls back to the legacy path when there is no
+        // errors[] (non-gap handlers), so their classification is unchanged.
+        var _structured = (json.errors && json.errors[0]) ? json.errors[0] : null;
+        var _emsg = _structured ? (_structured.message || _structured.code) : json.error;
+        var _ecode = (_structured && _structured.code) || _kmExtractCanonicalCode_(json.error) || _kmClassifyBusinessError_(json.error);
+        // Preserve the handler's structured data (e.g. conflictIds / stage detail) into error.details for the UI.
+        return _kmCmdErr_(command, _ecode, _emsg || (command + ' failed'), (_structured && _structured.details) || ((json.data && typeof json.data === 'object') ? json.data : null));
     }
     return _kmCmdOk_(command, json.data);   // COMMITTED — the page performs the single readback via the active path
 }
