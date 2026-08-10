@@ -17,11 +17,33 @@
 // fabricate a quantity (enforced inside KMREC).
 
 // Read the STORED gap rows for a product (READ ONLY; header-mapped objects; [] when the table is absent/empty).
+// ORDER_PLANNING: additively stamp units_per_carton onto each row from sku_details — the single UPC authority the
+// manual page also uses (F1-4B-FM5-R1) — so KMREC can cartonize the actionable total ONCE. READ ONLY: no gap
+// recalculation, no schema change (units_per_carton is NOT persisted to order_planning_gap), parity with manual.
 function recGenReadGapRows_(product) {
   var io = gapMaterializationDefaultIo_();
   var ss = io.openTarget();
   var table = (product === 'ORDER_PLANNING') ? OP_GAP_TABLE_ : INV_GAP_TABLE_;
-  return gapReadObjects_(ss, table);   // reuses the 43 read helper — no calculation, no whole-DB load
+  var rows = gapReadObjects_(ss, table);   // reuses the 43 read helper — no calculation, no whole-DB load
+  if (product === 'ORDER_PLANNING' && rows && rows.length) {
+    var upcBySku = recGenUpcBySku_(ss);
+    for (var i = 0; i < rows.length; i++) {
+      var u = upcBySku[String(rows[i] && rows[i].sku)];
+      if (u != null && rows[i].units_per_carton == null) rows[i].units_per_carton = u;   // additive; never overwrite
+    }
+  }
+  return rows;
+}
+// sku → units_per_carton map from sku_details (READ ONLY). Only finite, positive values are kept.
+function recGenUpcBySku_(ss) {
+  var map = {};
+  var rows = gapReadObjects_(ss, 'sku_details');
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]; if (!r || r.sku == null) continue;
+    var n = Number(r.units_per_carton);
+    if (isFinite(n) && n > 0) map[String(r.sku)] = n;
+  }
+  return map;
 }
 
 // Shared canonical owner (§8): manual AI Plan (client-side KMREC over the loaded gap rows) and this automatic path

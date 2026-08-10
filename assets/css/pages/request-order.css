@@ -2116,6 +2116,13 @@
 #request-order-section .ro-reco-action__title { font-weight: 700; color: #1f2937; margin-bottom: 3px; }
 #request-order-section .ro-reco-action__tiers { display: flex; flex-wrap: wrap; gap: 10px; }
 #request-order-section .ro-reco-tier { color: #334155; font-variant-numeric: tabular-nums; }
+#request-order-section .ro-reco-tier--visibility { color: #94a3b8; }
+#request-order-section .ro-reco-tier--visibility em { font-style: normal; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
+/* F1-4B-FM5-R1 — the FROZEN actionable total (raw T1–T3 gaps cartonized once); "—" when units-per-carton is unavailable. */
+#request-order-section .ro-reco-action__total { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
+#request-order-section .ro-reco-action__total-label { font-weight: 700; color: #065f46; }
+#request-order-section .ro-reco-action__total-qty { font-weight: 800; font-size: 13px; color: #047857; font-variant-numeric: tabular-nums; }
+#request-order-section .ro-reco-action__total-qty--na { color: #9ca3af; }
 #request-order-section .ro-reco-action__note { margin-top: 3px; color: var(--text-secondary, #6b7280); overflow-wrap: anywhere; }
 #request-order-section .ro-reco-action--ready { background: #ecfdf5; }
 #request-order-section .ro-reco-action--none { background: #f8fafc; }

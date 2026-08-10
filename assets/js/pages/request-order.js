@@ -2868,10 +2868,22 @@ function _roRecoActionHtml(item) {
   if (row && window.KMREC.isStale(dto, row)) return '<div class="ro-reco-action ro-reco-action--stale">⚠ Recommendation outdated — run AI Plan to refresh.</div>';
   if (dto.status === 'BLOCKED') return '<div class="ro-reco-action ro-reco-action--blocked"><div class="ro-reco-action__title">Recommended Action</div><div class="ro-reco-action__note">Recommendation unavailable.</div></div>';
   if (dto.status === 'NO_ACTION') return '<div class="ro-reco-action ro-reco-action--none"><div class="ro-reco-action__title">Recommended Action</div><div class="ro-reco-action__note">No order action required across T1–T4.</div></div>';
-  var tiers = (dto.tiers || []).map(function (t) { return '<span class="ro-reco-tier">' + _roEsc(t.tier) + ': <strong>' + _roRecoFmtQty(t.suggestedQty) + '</strong></span>'; }).join('');
+  var tiers = (dto.tiers || []).map(function (t) {
+    var vis = (t.tier === 'T4') ? ' ro-reco-tier--visibility' : '';
+    var suffix = (t.tier === 'T4') ? ' <em>(visibility)</em>' : '';
+    return '<span class="ro-reco-tier' + vis + '">' + _roEsc(t.tier) + ': <strong>' + _roRecoFmtQty(t.suggestedQty) + '</strong>' + suffix + '</span>';
+  }).join('');
+  // Actionable Total (§1/§7, FROZEN): raw T1–T3 gaps cartonized ONCE. null → units-per-carton not yet available.
+  var totalHtml = (typeof dto.totalRecommendedQty === 'number' && isFinite(dto.totalRecommendedQty))
+    ? '<span class="ro-reco-action__total-qty">' + _roRecoFmtQty(dto.totalRecommendedQty) + '</span>'
+    : '<span class="ro-reco-action__total-qty ro-reco-action__total-qty--na">—</span>';
+  var totalNote = (typeof dto.totalRecommendedQty === 'number' && isFinite(dto.totalRecommendedQty))
+    ? 'Based on T1–T3 raw gaps, cartonized once. T4 is forward visibility only. Manual Order Qty is unchanged.'
+    : 'Actionable total pending — units-per-carton unavailable for this SKU. Per-tier values above are display only; Manual Order Qty is unchanged.';
   return '<div class="ro-reco-action ro-reco-action--ready"><div class="ro-reco-action__title">Recommended Order (per tier)</div>'
     + '<div class="ro-reco-action__tiers">' + tiers + '</div>'
-    + '<div class="ro-reco-action__note">Review each tier — a single total is NOT auto-summed (per-tier carton rounding). Manual Order Qty is unchanged.</div></div>';
+    + '<div class="ro-reco-action__total"><span class="ro-reco-action__total-label">Actionable Total (T1–T3)</span>' + totalHtml + '</div>'
+    + '<div class="ro-reco-action__note">' + totalNote + '</div></div>';
 }
 function handleRequestOrderAiPlan() {
   var btn = document.getElementById('ro-ai-plan-btn');
@@ -2882,8 +2894,12 @@ function handleRequestOrderAiPlan() {
     // no allocation, no Order Qty write).
     if (window.KMREC && typeof _opMatCache !== 'undefined' && _opMatCache && _opMatCache.bySku) {
       var now = (function () { try { return (new Date()).toISOString(); } catch (e) { return null; } })();
+      // sku → units-per-carton from the loaded rows (sku_details.unitsPerCarton = item.boxSize) — the SAME UPC
+      // authority the automatic backend generator uses (F1-4B-FM5-R1), so the actionable total cartonizes ONCE.
+      var upcBySku = {};
+      try { (requestOrderState.data || []).forEach(function (it) { var u = parseFloat(it && it.boxSize); if (it && it.sku != null && isFinite(u) && u > 0) upcBySku[String(it.sku)] = u; }); } catch (e) {}
       _roRecoByKey = {};
-      Object.keys(_opMatCache.bySku).forEach(function (sku) { var dto = window.KMREC.generateOrderPlanningRecommendation(_opMatCache.bySku[sku], { now: now }); if (dto) _roRecoByKey[String(sku)] = dto; });
+      Object.keys(_opMatCache.bySku).forEach(function (sku) { var dto = window.KMREC.generateOrderPlanningRecommendation(_opMatCache.bySku[sku], { now: now, unitsPerCarton: upcBySku[String(sku)] }); if (dto) _roRecoByKey[String(sku)] = dto; });
     }
     renderRequestOrderTable();   // re-render surfaces the Recommended Action note — NOT Send Request / Confirm Site
     if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); }

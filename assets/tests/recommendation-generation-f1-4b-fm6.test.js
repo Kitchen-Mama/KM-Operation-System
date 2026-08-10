@@ -56,7 +56,9 @@ ok(Array.isArray(i6.windows) && i6.windows.length === 4, 'I6b BLOCKED still reta
 
 section('INVENTORY — determinism / lineage / staleness / valid-zero');
 var KMREC_CODE = KMREC_SRC.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-ok(!/KMHP|KMTPP|KMCALC|KMALLOC|KMMSA|projectHorizons|projectTimePhasedSupply|calculateSuggestedOrderQty/.test(KMREC_CODE), 'I7 KMREC CODE invokes NO formula engine (reads stored values only)');
+// F1-4B-FM5-R1: KMREC recalculates NO gap (no gap/demand/allocation engine). It MAY call the canonical KMCALC
+// cartonizer ONCE for the frozen actionable total — that is not a gap recalculation, it is the single carton owner.
+ok(!/KMHP|KMTPP|KMALLOC|KMMSA|projectHorizons|projectTimePhasedSupply/.test(KMREC_CODE), 'I7 KMREC CODE runs NO gap/demand/allocation engine (reads stored gaps only)');
 eq(i3.sourceCalculatedAt, '2026-08-10 13:30:00', 'I8 sourceCalculatedAt retained from the gap row');
 var i3newer = invRow({ d45_suggested_qty: 2840, calculated_at: '2026-08-11 13:30:00' });
 ok(KMREC.isStale(i3, i3newer) === true, 'I9 a newer gap (advanced calculated_at) invalidates the old recommendation');
@@ -71,7 +73,9 @@ eq(o1.tiers.map(function (t) { return t.suggestedQty; }), [40, 0, 120, 80], 'O1 
 eq(o1.tiers.map(function (t) { return t.month; }), ['2026-09', '2026-10', '2026-11', '2026-12'], 'O1b tier months preserved');
 var o2 = KMREC.generateOrderPlanningRecommendation(opRow({ calculation_status: 'BLOCKED', t1_suggested_qty: 999 }), { now: 'T' });
 eq([o2.status, o2.suggestedQty, o2.totalRecommendedQty], ['BLOCKED', null, null], 'O2 BLOCKED → no quantity, no total');
-eq([o1.totalRecommendedQty, o1.totalAuthority], [null, 'ORDER_RECOMMENDATION_TOTAL_AUTHORITY_NOT_FROZEN'], 'O6/O7 total is NOT auto-summed — HALTED (ORDER_RECOMMENDATION_TOTAL_AUTHORITY_NOT_FROZEN); per-tier still available');
+// F1-4B-FM5-R1: total authority is now FROZEN (SUM_T1_T3_RAW_GAP_CARTONIZE_ONCE). No UPC supplied here → total
+// stays null (never a fabricated / Σ-of-cartonized number); the frozen authority token is present regardless.
+eq([o1.totalRecommendedQty, o1.totalAuthority], [null, 'SUM_T1_T3_RAW_GAP_CARTONIZE_ONCE'], 'O6/O7 total NOT auto-summed; authority frozen; null without units-per-carton');
 ok(Array.isArray(o1.tiers) && o1.tiers.length === 4, 'O8 tiers preserved in the DTO');
 var oNo = KMREC.generateOrderPlanningRecommendation(opRow({}), { now: 'T' });
 eq(oNo.status, 'NO_ACTION', 'O-none all tier suggested 0 → NO_ACTION');
@@ -96,7 +100,7 @@ ok(KMREC.isStale(o1, opRow({ calculated_at: '2099-01-01 00:00:00' })) === true, 
 
 section('bundle / wiring — KMREC bundled for the backend + loaded in the browser');
 ok(/supply-recommendation/.test(BUILD) && /\['KMREC', 'supply-recommendation'\]/.test(BUILD), 'B1 KMREC registered in the bundle MODULE_ORDER + GLOBALS');
-ok(/kmrec-fm6-1/.test(BUNDLE) && /supply-recommendation \(verbatim/.test(BUNDLE), 'B2 the rebuilt bundle contains the KMREC module (backend automatic path can call it)');
+ok(/kmrec-fm6r1-1/.test(BUNDLE) && /supply-recommendation \(verbatim/.test(BUNDLE), 'B2 the rebuilt bundle contains the KMREC module (backend automatic path can call it)');
 ok(/assets\/js\/core\/supply-recommendation\.js/.test(INDEX), 'B3 KMREC loaded in index.html (browser manual AI Plan)');
 
 section('DTO shape (§9) — compact canonical decision output');
