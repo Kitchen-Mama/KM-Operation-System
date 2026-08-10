@@ -138,6 +138,21 @@ function doPost(e) {
       return jsonResponse_(handleGetOrderPlanningGap_(body));
     }
 
+    // F1-4B-FM5-R4J · Backend-owned RESUMABLE gap materialization job (owner = 46_api_v1_gap_materialization_job.gs).
+    // START = a quick write that acquires the script lock, freezes the calc context, enumerates scopes, records
+    // Script-Property job state (cursor=0), schedules the first one-off continuation trigger, and returns
+    // IMMEDIATELY (no calculation in the request). The backend then owns the job across self-re-arming triggers,
+    // independent of the browser tab. STATUS is strictly READ-ONLY. No new formula, no DB schema. No business logic here.
+    if (action === 'inventoryReplenishmentGap.job.start') {
+      return jsonResponse_(handleStartInventoryReplenishmentGapJob_(body));
+    }
+    if (action === 'orderPlanningGap.job.start') {
+      return jsonResponse_(handleStartOrderPlanningGapJob_(body));
+    }
+    if (action === 'gapJob.status.get') {
+      return jsonResponse_(handleGetGapJobStatus_(body));
+    }
+
     // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
     if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
       return handleGetShippingMethodCandidates_(body);

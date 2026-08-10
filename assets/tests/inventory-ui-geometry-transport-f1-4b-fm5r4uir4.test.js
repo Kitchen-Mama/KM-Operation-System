@@ -52,9 +52,11 @@ var invHandler = JS.slice(JS.indexOf('function handleRecalcAllInventoryGap'), JS
 ok(!/recalculateInventoryReplenishmentGapAll/.test(invHandler.slice(invHandler.indexOf('_irIsTransportError_'))), 'T3 inventory NEVER re-invokes the WRITE batch on transport failure (no automatic duplicate recalc)');
 ok(/postMax[\s\S]*preMax[\s\S]*completed/.test(JS), 'T4 completion is inferred from a NEWER stored calculated_at (never assumed) — else "could not be confirmed"');
 var roHandler = RO.slice(RO.indexOf('function handleRecalcAllOrderPlanningGap'), RO.indexOf('window.handleRecalcAllOrderPlanningGap'));
-ok(/HTTP_TRANSPORT_ERROR/.test(roHandler) && /refreshOrderPlanningGapAfterRecalc_/.test(roHandler), 'T5 Order Planning uses the SAME contract: transport error → refetch READ');
-ok(!/recalculateOrderPlanningGapAll/.test(roHandler.slice(roHandler.indexOf('isTransport'))), 'T6 Order Planning NEVER re-runs the WRITE batch on transport failure');
-ok(/unable to confirm/.test(JS) && /unable to confirm/.test(RO), 'T7 both buttons show a truthful "unable to confirm completion" message (R4T) when the READ shows no newer result (no fabricated success)');
+// F1-4B-FM5-R4J — the buttons cut over to the backend-owned job (START → READ-only STATUS poll → refresh on DONE);
+// Order Planning uses the SAME shared contract as Inventory (window.KM.gapRecalc.runJob).
+ok(/startOrderPlanningGapJob/.test(roHandler) && /getGapJobStatus\('ORDER_PLANNING'\)/.test(roHandler) && /refreshOrderPlanningGapAfterRecalc_/.test(roHandler), 'T5 Order Planning uses the SAME contract: START job → poll STATUS → refresh the materialized READ on DONE');
+ok(!/recalculateOrderPlanningGapAll\(/.test(roHandler), 'T6 Order Planning NEVER POSTs the monolithic write batch (no browser-owned 14-min request, no write retry)');
+ok(/did not confirm completion/.test(JS) && /did not confirm completion/.test(RO), 'T7 both buttons show a truthful non-confirmation message on a non-DONE terminal (no fabricated success, no automatic retry)');
 
 console.log('\n----------------------------------------');
 console.log('INVENTORY UI GEOMETRY + TRANSPORT (F1-4B-FM5-R4UI-R4): ' + pass + ' passed, ' + fail + ' failed');

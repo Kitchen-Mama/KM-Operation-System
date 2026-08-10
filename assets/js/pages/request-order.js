@@ -1130,54 +1130,67 @@ function handleRequestOrderSearch() {
   renderRequestOrderTable();
 }
 
-// ---- F1-4B-FM5 · manual "Recalculate All Sites" (Order Planning Gap materialization) ----------------
-// ONE browser request → ONE bounded server batch (enumerate scopes → reuse the canonical monthlyProjection per
-// scope → UPSERT order_planning_gap). NEVER a per-SKU HTTP loop, NEVER a browser recompute. Manual Order Qty /
-// Carton / Note are user decision data and are NOT touched. The button shows the truthful batch summary.
+// ---- F1-4B-FM5-R4J · "Recalculate All Sites" (Order Planning Gap) — BACKEND-OWNED RESUMABLE JOB -------------
+// Identical lifecycle contract as Inventory (window.KM.gapRecalc.runJob): one click STARTS one backend job (quick
+// write; NO calculation in the request, NO write retry) then the page POLLS a READ-ONLY status endpoint to terminal
+// (Starting… / Calculating N/M / Refreshing… / Completed). The backend owns the ~13.5-min job to completion even if
+// this tab closes/refreshes (recovered on mount by _roResumeGapJobOnMount_). Manual Order Qty / Carton / Note are
+// user decision data and are NEVER touched. Shared-pool conservation is preserved server-side (per-company chunking).
 var _roRecalcAllBusy = false;
+function _roRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-recalc-all-btn') : null; }
 function handleRecalcAllOrderPlanningGap() {
   if (_roRecalcAllBusy) return;
-  if (!(window.KM && window.KM.DB && typeof window.KM.DB.recalculateOrderPlanningGapAll === 'function')) {
+  if (!(window.KM && window.KM.DB && typeof window.KM.DB.startOrderPlanningGapJob === 'function')) {
     alert('Recalculation service is unavailable (Operation DB API not configured).');
     return;
   }
-  if (typeof window.confirm === 'function' && !window.confirm('Recalculate the materialized order-planning gap for ALL sites now? This runs one server batch and overwrites the latest T1–T4 result per site/SKU. Manual Order Qty is never changed.')) return;
-  var btn = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-recalc-all-btn') : null;
-  var label = btn ? btn.textContent : '';
+  if (typeof window.confirm === 'function' && !window.confirm('Start a full recalculation of the materialized order-planning gap for ALL sites?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest T1–T4 result per site/SKU is overwritten. Manual Order Qty is never changed.')) return;
+  var btn = _roRecalcBtn_();
+  var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
+  if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
   _roRecalcAllBusy = true;
-  if (btn) { btn.disabled = true; btn.textContent = 'Recalculating…'; }
-  function restore() { _roRecalcAllBusy = false; if (btn) { btn.disabled = false; btn.textContent = label || 'Recalculate All Sites'; } }
-  var preMax = _roMaxCalculatedAt_();   // newest stored calculated_at BEFORE the batch (transport-recovery baseline)
-  return Promise.resolve(window.KM.DB.recalculateOrderPlanningGapAll({})).then(function (res) {
-    if (res && res.success && res.data) {
-      var d = res.data;
-      alert('Order-planning gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
-      if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') refreshOrderPlanningGapAfterRecalc_();
-      restore();
-      return;
+  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  function restore() { _roRecalcAllBusy = false; setBtn(label || 'Recalculate All Sites', false); }
+  var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
+  var startFn = function () { return window.KM.DB.startOrderPlanningGapJob({}); };   // the WRITE POST — exactly ONCE
+  var statusFn = function () { return window.KM.DB.getGapJobStatus('ORDER_PLANNING'); };
+  var refreshFn = function () { if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') return refreshOrderPlanningGapAfterRecalc_(); };
+  if (!gr || typeof gr.runJob !== 'function') {
+    setBtn('Starting…', true);
+    return Promise.resolve(startFn()).then(function () { refreshFn(); restore(); }).catch(function () { restore(); });
+  }
+  return gr.runJob(startFn, statusFn, {
+    refresh: refreshFn,
+    ui: {
+      starting: function () { setBtn('Starting…', true); },
+      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
+      refreshing: function () { setBtn('Refreshing…', true); },
+      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      failed: function (st) { alert('Order Planning recalculation did not confirm completion (status: ' + ((st && st.status) || 'unknown') + '). No automatic retry was issued — check the latest data.'); restore(); }
     }
-    var e = (res && res.error) || {};
-    // F1-4B-FM5-R4T — identical shared transport-recovery contract as Inventory (window.KM.gapRecalc): a transport
-    // failure does NOT prove the server batch failed. Never claim failure, never re-run the WRITE. Delegate to the
-    // bounded READ-ONLY verification (2s/5s/10s/20s) which refetches the materialized order_planning_gap and
-    // confirms from the stored calculated_at whether the batch advanced.
-    var gr = window.KM && window.KM.gapRecalc;
-    if (gr ? gr.isTransportError(e) : (e.code === 'HTTP_TRANSPORT_ERROR' || e.code === 'NON_JSON_RESPONSE')) {
-      if (gr) { gr.recover('Order Planning', preMax, refreshOrderPlanningGapAfterRecalc_, _roMaxCalculatedAt_, { done: restore }); return; }
-      Promise.resolve(typeof refreshOrderPlanningGapAfterRecalc_ === 'function' ? refreshOrderPlanningGapAfterRecalc_() : null).then(function () {
-        var postMax = _roMaxCalculatedAt_();
-        alert(postMax && (!preMax || postMax > preMax)
-          ? 'Order Planning recalculation completed. The connection was interrupted while receiving the response — results refreshed.'
-          : 'Order Planning: unable to confirm completion. Check the latest data before retrying (no automatic retry was issued).');
-        restore();
-      });
-      return;
-    }
-    alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
-    restore();
-  }).catch(function (err) { alert('Recalculation failed: ' + (err && err.message ? err.message : err)); restore(); });
+  });
 }
 window.handleRecalcAllOrderPlanningGap = handleRecalcAllOrderPlanningGap;
+
+// §13 mount/reload recovery — resume READ-ONLY polling if a backend Order Planning job is already PENDING/RUNNING.
+function _roResumeGapJobOnMount_() {
+  var gr = (window.KM && window.KM.gapRecalc), db = (window.KM && window.KM.DB);
+  if (!gr || typeof gr.resumeIfRunning !== 'function' || !db || typeof db.getGapJobStatus !== 'function') return;
+  var btn = _roRecalcBtn_();
+  var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : 'Recalculate All Sites');
+  if (btn && btn.dataset) btn.dataset.idleLabel = label;
+  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  return gr.resumeIfRunning(function () { return db.getGapJobStatus('ORDER_PLANNING'); }, {
+    refresh: function () { if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') return refreshOrderPlanningGapAfterRecalc_(); },
+    ui: {
+      resume: function () { _roRecalcAllBusy = true; },
+      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
+      refreshing: function () { setBtn('Refreshing…', true); },
+      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(function () { _roRecalcAllBusy = false; setBtn(label, false); }, 1500); }
+    }
+  });
+}
+window._roResumeGapJobOnMount_ = _roResumeGapJobOnMount_;
 // Newest calculated_at among the loaded materialized OP rows (server 'YYYY-MM-DD HH:MM:SS' → lexical compare).
 function _roMaxCalculatedAt_() {
   var by = (typeof _opMatCache !== 'undefined' && _opMatCache && _opMatCache.bySku) || {}; var mx = '';
@@ -2998,6 +3011,8 @@ if (window.KM && window.KM.lifecycle) {
                 if (window.initRequestOrderSection) {
                     window.initRequestOrderSection();
                 }
+                // F1-4B-FM5-R4J §13 — resume a still-running backend Order Planning gap job on mount/reload.
+                if (typeof _roResumeGapJobOnMount_ === 'function') { try { _roResumeGapJobOnMount_(); } catch (e) {} }
             });
         },
         unmount() {

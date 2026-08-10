@@ -5,10 +5,14 @@
 //       REDEPLOY. No imports. Structure-only split.
 // ============================================================
 //
-// ORCHESTRATION / SCHEDULING ONLY. This file authors NO formula. It reuses the ALREADY-PROVEN canonical batch
-// owners the manual "Recalculate All Sites" buttons call, so manual + scheduled runs share ONE pathway:
-//   • Inventory Replenishment gap → handleRecalculateInventoryReplenishmentGapBatch_ → inventory_replenishment_gap
-//   • Order Planning gap          → handleRecalculateOrderPlanningGapBatch_          → order_planning_gap
+// ORCHESTRATION / SCHEDULING ONLY. This file authors NO formula and performs NO calculation. F1-4B-FM5-R4J: the
+// daily entry points START the SAME backend-owned RESUMABLE job the manual "Recalculate All Sites" buttons start
+// (owner = 46_api_v1_gap_materialization_job.gs → gapJobStart_), so manual + scheduled share ONE logical job owner:
+//   • Inventory Replenishment gap → gapJobStart_('INVENTORY')      → inventory_replenishment_gap
+//   • Order Planning gap          → gapJobStart_('ORDER_PLANNING') → order_planning_gap
+// The ~13–14 min workload is too long for a single execution, so START only enqueues (freezes context + schedules
+// the first continuation trigger) and the backend owns the job to terminal completion. If a product job is already
+// PENDING/RUNNING, START returns it unchanged → the scheduler reports SKIPPED_ALREADY_RUNNING (no duplicate job).
 //
 // FROZEN production cadence (Asia/Taipei — mirrors the Amazon import scheduleTimezone; the Apps Script PROJECT
 // timezone MUST be Asia/Taipei so trigger atHour matches):
@@ -29,7 +33,8 @@
 // If a valid deterministic context cannot be established → CONFIG_BLOCKED (never UTC / browser / stale / blank).
 
 var GAP_SCHED_TZ_ = 'Asia/Taipei';       // frozen operational timezone (authority: import scheduleTimezone)
-var GAP_SCHED_LOCK_MS_ = 10000;          // bounded wait for the orchestration-level Apps Script lock
+// F1-4B-FM5-R4J — the bounded run lock + duplicate protection now live in gapJobStart_ (LockService, owner = 46);
+// the scheduler no longer holds its own orchestration lock (it merely STARTs the job and returns).
 var GAP_SCHED_OWNED_HANDLERS_ = ['runDailyInventoryGapMaterialization', 'runDailyOrderPlanningGapMaterialization'];
 
 // PURE — is a trigger handler one of THIS scheduler's own entry points? Used by the installer's duplicate-protection
@@ -38,71 +43,37 @@ function gapSchedIsOwnedHandler_(name) { return GAP_SCHED_OWNED_HANDLERS_.indexO
 
 function gapSchedTimestamp_() { try { return Utilities.formatDate(new Date(), GAP_SCHED_TZ_, 'yyyy-MM-dd HH:mm:ss'); } catch (e) { return ''; } }
 
-// Shared thin orchestration: bounded lock (§5, no overlap) → derive the canonical DETERMINISTIC calc context
-// (F1-4B-FM5-R4; Asia/Taipei; via the ONE owner in 43 — no Script Property, no auto-roll) → INJECT it into the
-// EXISTING canonical batch owner (§8, same as the manual button) → structured summary (§6, no fake success). A
-// single blocked/error SKU never invalidates the valid rows — the batch's READY/BLOCKED/ERROR semantics are
-// preserved verbatim. `nowMs` is an OPTIONAL test seam (production triggers pass nothing → clock is read once).
-function gapSchedRun_(jobName, jobType, invoke, nowMs) {
+// F1-4B-FM5-R4J thin orchestration — START the canonical backend-owned resumable job (owner = 46_..._job.gs) and
+// return a structured summary. gapJobStart_ owns the bounded LockService lock + duplicate protection + the FROZEN
+// FM5-R4 Asia/Taipei calculation context (Inventory → Day D; Order Planning → previous day = latest completed source
+// cycle). This function performs NO calculation and derives NO formula — it only translates the START envelope into
+// the scheduler log summary. STARTED / SKIPPED_ALREADY_RUNNING (job already active → no duplicate) / ERROR (no fake
+// success). Backend continuations then own the job to terminal completion, independent of any request lifetime.
+function gapSchedStartJob_(jobName, product) {
   var startedAt = gapSchedTimestamp_();
-  var lock = null;
-  try { lock = LockService.getScriptLock(); } catch (e) { lock = null; }
-  if (lock && !lock.tryLock(GAP_SCHED_LOCK_MS_)) {                                  // §5 another full-site recalc is active → skip safely
-    var skip = { job: jobName, status: 'SKIPPED_LOCKED', startedAt: startedAt, finishedAt: gapSchedTimestamp_(), reason: 'another gap materialization run is active' };
-    try { Logger.log('[gapScheduler] ' + JSON.stringify(skip)); } catch (_l) {}
-    return skip;
-  }
   try {
-    var ctx = gapCalcResolveContext_(jobType, nowMs);                               // §1/§2/§3 deterministic Asia/Taipei context (no Script Property)
-    if (!ctx.ok) {                                                                  // §10 no fabricated/ambiguous context
-      var blocked = { job: jobName, status: 'CONFIG_BLOCKED', code: ctx.code, message: ctx.message, startedAt: startedAt, finishedAt: gapSchedTimestamp_() };
-      try { Logger.log('[gapScheduler] ' + JSON.stringify(blocked)); } catch (_b) {}
-      return blocked;
-    }
-    var env = invoke(ctx);                                                          // §5 inject the derived context into the SAME owner the manual button calls
-    var d = (env && env.data) || {};
-    var summary = {
-      job: jobName,
-      status: (env && env.success === true) ? 'OK' : 'ERROR',                       // §6 no fake success
-      startedAt: startedAt,
-      finishedAt: gapSchedTimestamp_(),
-      timezone: GAP_SCHED_TZ_,
-      calculationAuthority: { calculationDate: ctx.calculationDate, calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle },
-      scopesProcessed: (d.scopesCalculated != null ? d.scopesCalculated : (d.totalScopes != null ? d.totalScopes : null)),
-      rowsProcessed: (d.written != null ? d.written : null),
-      readyCount: (d.ready != null ? d.ready : null),
-      blockedCount: (d.blocked != null ? d.blocked : null),
-      errorCount: (d.errors != null ? d.errors : null),
-      calculatedAt: (d.calculatedAt != null ? d.calculatedAt : null),
-      batchErrors: (env && env.errors) ? env.errors : []
-    };
+    var res = gapJobStart_(product, gapJobDefaultEnv_(product));                    // §14 the SAME owner the manual button starts
+    var d = (res && res.data) || {};
+    var status = (!res || res.success !== true) ? 'ERROR' : (d.alreadyRunning ? 'SKIPPED_ALREADY_RUNNING' : 'STARTED');
+    var summary = { job: jobName, product: product, status: status, runId: d.runId || null,
+      scopesTotal: (d.scopesTotal != null ? d.scopesTotal : null), startedAt: startedAt, finishedAt: gapSchedTimestamp_(),
+      timezone: GAP_SCHED_TZ_, batchErrors: (res && res.errors) ? res.errors : [] };
     try { Logger.log('[gapScheduler] ' + JSON.stringify(summary)); } catch (_s) {}
     return summary;
   } catch (e2) {
-    var err = { job: jobName, status: 'ERROR', startedAt: startedAt, finishedAt: gapSchedTimestamp_(), message: (e2 && e2.message ? String(e2.message) : String(e2)) };
+    var err = { job: jobName, product: product, status: 'ERROR', startedAt: startedAt, finishedAt: gapSchedTimestamp_(), message: (e2 && e2.message ? String(e2.message) : String(e2)) };
     try { Logger.log('[gapScheduler] ' + JSON.stringify(err)); } catch (_e) {}
     return err;                                                                     // no fake success
-  } finally {
-    if (lock) { try { lock.releaseLock(); } catch (_r) {} }
   }
 }
 
 // ---- NAMED SCHEDULER ENTRY POINTS (attach to Apps Script time triggers; Asia/Taipei) --------------------------
-// The optional `nowMs` argument is a test seam only — production time-triggers invoke these with no arguments.
-// Step B — daily Inventory Replenishment gap snapshot. Preferred trigger: 13:30 Asia/Taipei (after source import).
-// Canonical calculationDate = the execution's Asia/Taipei date (Day D). No manual Script Property required (§O).
-function runDailyInventoryGapMaterialization(nowMs) {
-  return gapSchedRun_('INVENTORY_GAP', 'INVENTORY', function (ctx) {
-    return handleRecalculateInventoryReplenishmentGapBatch_({ requestId: 'SCHED-INV-GAP' }, gapMaterializationDefaultIo_(ctx));
-  }, nowMs);
-}
-// Step D — daily Order Planning gap snapshot. Preferred trigger: 03:30 Asia/Taipei (Day D+1). Canonical
-// calculationDate = the PREVIOUS Asia/Taipei date (Day D) — the latest COMPLETED source cycle. No property required.
-function runDailyOrderPlanningGapMaterialization(nowMs) {
-  return gapSchedRun_('ORDER_PLANNING_GAP', 'ORDER_PLANNING', function (ctx) {
-    return handleRecalculateOrderPlanningGapBatch_({ requestId: 'SCHED-OP-GAP' }, gapMaterializationDefaultIo_(ctx));
-  }, nowMs);
-}
+// Step B — daily Inventory Replenishment gap. Preferred trigger: 13:30 Asia/Taipei (after the source import window).
+// STARTS the canonical resumable job (execution Asia/Taipei Day D context, frozen inside the job at START).
+function runDailyInventoryGapMaterialization() { return gapSchedStartJob_('INVENTORY_GAP', 'INVENTORY'); }
+// Step D — daily Order Planning gap. Preferred trigger: 03:30 Asia/Taipei (Day D+1). STARTS the canonical resumable
+// job; its ORDER_PLANNING context resolves to the PREVIOUS Asia/Taipei date (Day D = latest completed source cycle).
+function runDailyOrderPlanningGapMaterialization() { return gapSchedStartJob_('ORDER_PLANNING_GAP', 'ORDER_PLANNING'); }
 
 // ---- MANUAL, USER-RUN trigger installer (run ONCE from the Apps Script editor; NOT wired to any POST/trigger) ----
 // Duplicate-protection: deletes ONLY triggers whose handler is one of this scheduler's own entry points, then

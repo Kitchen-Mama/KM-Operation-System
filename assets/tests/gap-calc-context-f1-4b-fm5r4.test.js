@@ -11,6 +11,7 @@ var fs = require('fs'), path = require('path');
 function read(rel) { return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8'); }
 var GAP43 = read('specs/active/apps-script/43_api_v1_gap_materialization.gs');
 var SCHED44 = read('specs/active/apps-script/44_gap_materialization_scheduler.gs');
+var JOB46 = read('specs/active/apps-script/46_api_v1_gap_materialization_job.gs');
 // frontend pages (no page-side clock authority)
 var IR = read('js/pages/inventory-replenishment.js');
 var RO = read('js/pages/request-order.js');
@@ -81,7 +82,10 @@ ok(/env\.meta[\s\S]{0,80}calculationMonth/.test(RO), 'I1 the Order Planning page
 ok(!/body\.calculationDate|payload\.calculationDate|body\.calculationMonth|payload\.calculationMonth/.test(GAP43), 'I2 the gap batch derives context server-side and never consumes a browser-supplied calculationDate/Month');
 // ONE canonical context owner (43) drives both the batch owners (manual) and the scheduler (scheduled).
 ok(/gapCalcResolveContext_\('INVENTORY'\)/.test(GAP43) && /gapCalcResolveContext_\('ORDER_PLANNING'\)/.test(GAP43), 'G1 batch owners derive INVENTORY (today) / ORDER_PLANNING (prev day) via the ONE owner (manual path)');
-ok(/gapCalcResolveContext_\(jobType, nowMs\)/.test(SCHED44), 'G2 the scheduler derives the SAME context via the SAME owner and injects it (scheduled path) — manual + scheduled share the owner');
+// F1-4B-FM5-R4J — the scheduler no longer resolves context itself; it STARTs the canonical job, and the job owner
+// (46) FREEZES the context at START via the SAME gapCalcResolveContext_ owner. Manual + scheduled still share it.
+ok(/gapJobStart_\(product, gapJobDefaultEnv_\(product\)\)/.test(SCHED44), 'G2 the scheduler STARTs the canonical job owner (context now frozen inside the job, not injected by the scheduler)');
+ok(/gapCalcResolveContext_\(/.test(JOB46) && /resolveContext:\s*function/.test(JOB46), 'G2b the job owner (46) freezes context at START via the SAME gapCalcResolveContext_ owner — manual + scheduled share it');
 
 console.log('\n----------------------------------------');
 console.log('DETERMINISTIC CALC CONTEXT (F1-4B-FM5-R4): ' + pass + ' passed, ' + fail + ' failed');

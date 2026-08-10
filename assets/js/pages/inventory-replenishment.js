@@ -3457,43 +3457,68 @@ function _doReplenSearch() {
 }
 window.searchReplenishment = searchReplenishment;
 
-// ---- F1-4B-FM5 · manual "Recalculate All Sites" (Inventory Replenishment Gap materialization) --------
-// ONE browser request → ONE bounded server batch (enumerate scopes → reuse the canonical calc per scope →
-// UPSERT inventory_replenishment_gap). NEVER a per-SKU HTTP loop, NEVER a browser recompute. The button shows
-// the truthful batch summary; the materialized-read render cutover is a separate flagged slice.
+// ---- F1-4B-FM5-R4J · "Recalculate All Sites" (Inventory Replenishment Gap) — BACKEND-OWNED RESUMABLE JOB ------
+// The ~14-min all-site materialization is NO LONGER owned by the browser request. One click STARTS one backend job
+// (a quick write returning { runId, status, scopesTotal }; NO calculation in the request, NO write retry) and the
+// page then POLLS a strictly READ-ONLY status endpoint until terminal, showing Starting… / Calculating N/M /
+// Refreshing… / Completed. The backend owns the job to completion even if this tab is closed/refreshed (recovered
+// on mount by _irResumeGapJobOnMount_). On DONE the page refreshes the materialized read — NO page-side formula.
 var _irRecalcAllBusy = false;
+function _irRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-recalc-all-btn') : null; }
 function handleRecalcAllInventoryGap() {
   if (_irRecalcAllBusy) return;
-  if (!(window.KM && window.KM.DB && typeof window.KM.DB.recalculateInventoryReplenishmentGapAll === 'function')) {
+  if (!(window.KM && window.KM.DB && typeof window.KM.DB.startInventoryReplenishmentGapJob === 'function')) {
     alert('Recalculation service is unavailable (Operation DB API not configured).');
     return;
   }
-  if (typeof window.confirm === 'function' && !window.confirm('Recalculate the materialized replenishment gap for ALL sites now? This runs one server batch and overwrites the latest result per site/SKU.')) return;
-  var btn = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-recalc-all-btn') : null;
-  var label = btn ? btn.textContent : '';
+  if (typeof window.confirm === 'function' && !window.confirm('Start a full recalculation of the materialized replenishment gap for ALL sites?\n\nThis runs as a backend job that keeps going even if you close or refresh this page. The latest result per site/SKU is overwritten.')) return;
+  var btn = _irRecalcBtn_();
+  var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
+  if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
   _irRecalcAllBusy = true;
-  if (btn) { btn.disabled = true; btn.textContent = 'Recalculating…'; }
-  function restore() { _irRecalcAllBusy = false; if (btn) { btn.disabled = false; btn.textContent = label || 'Recalculate All Sites'; } }
-  var preMax = _irMaxCalculatedAt_();   // snapshot the current scope's newest stored calculated_at BEFORE the batch
-  return Promise.resolve(window.KM.DB.recalculateInventoryReplenishmentGapAll({})).then(function (res) {
-    if (res && res.success && res.data) {
-      var d = res.data;
-      alert('Inventory gap recalculated.\nScopes: ' + d.totalScopes + ' · Rows: ' + d.written + '\nREADY: ' + d.ready + ' · BLOCKED: ' + d.blocked + ' · ERRORS: ' + d.errors + '\nCalculated at: ' + (d.calculatedAt || '—'));
-      if (typeof refreshInventoryGapAfterRecalc_ === 'function') refreshInventoryGapAfterRecalc_();
-      restore();
-      return;
+  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  function restore() { _irRecalcAllBusy = false; setBtn(label || 'Recalculate All Sites', false); }
+  var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
+  var startFn = function () { return window.KM.DB.startInventoryReplenishmentGapJob({}); };   // the WRITE POST — exactly ONCE
+  var statusFn = function () { return window.KM.DB.getGapJobStatus('INVENTORY'); };            // READ-ONLY poll
+  var refreshFn = function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(); };
+  if (!gr || typeof gr.runJob !== 'function') {                                                // module absent → start + single refresh
+    setBtn('Starting…', true);
+    return Promise.resolve(startFn()).then(function () { refreshFn(); restore(); }).catch(function () { restore(); });
+  }
+  return gr.runJob(startFn, statusFn, {
+    refresh: refreshFn,
+    ui: {
+      starting: function () { setBtn('Starting…', true); },
+      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
+      refreshing: function () { setBtn('Refreshing…', true); },
+      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      failed: function (st) { alert('Inventory recalculation did not confirm completion (status: ' + ((st && st.status) || 'unknown') + '). No automatic retry was issued — check the latest data.'); restore(); }
     }
-    var e = (res && res.error) || {};
-    // F1-4B-FM5-R4UI-R4 §6/§7 — a TRANSPORT failure means the browser lost the response; it does NOT prove the
-    // server batch failed (Apps Script often finishes the DB writes after the connection drops). Do NOT claim
-    // failure and do NOT re-run the WRITE batch (that would duplicate an expensive recalc). Instead refetch the
-    // materialized READ and confirm from the stored calculated_at whether the batch actually advanced.
-    if (_irIsTransportError_(e)) { _irRecalcTransportRecovery_('Inventory', preMax, refreshInventoryGapAfterRecalc_, _irMaxCalculatedAt_, restore); return; }
-    alert('Recalculation failed: ' + (e.message || 'unknown error') + (e.code ? (' [' + e.code + ']') : ''));
-    restore();
-  }).catch(function (err) { alert('Recalculation failed: ' + (err && err.message ? err.message : err)); restore(); });
+  });
 }
 window.handleRecalcAllInventoryGap = handleRecalcAllInventoryGap;
+
+// §13 mount/reload recovery — if a backend Inventory job is already PENDING/RUNNING (e.g. started in another tab, or
+// this tab was refreshed), resume READ-ONLY status polling and refresh on DONE. The original tab need not be alive.
+function _irResumeGapJobOnMount_() {
+  var gr = (window.KM && window.KM.gapRecalc), db = (window.KM && window.KM.DB);
+  if (!gr || typeof gr.resumeIfRunning !== 'function' || !db || typeof db.getGapJobStatus !== 'function') return;
+  var btn = _irRecalcBtn_();
+  var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : 'Recalculate All Sites');
+  if (btn && btn.dataset) btn.dataset.idleLabel = label;
+  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  return gr.resumeIfRunning(function () { return db.getGapJobStatus('INVENTORY'); }, {
+    refresh: function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(); },
+    ui: {
+      resume: function () { _irRecalcAllBusy = true; },
+      progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
+      refreshing: function () { setBtn('Refreshing…', true); },
+      done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(function () { _irRecalcAllBusy = false; setBtn(label, false); }, 1500); }
+    }
+  });
+}
+window._irResumeGapJobOnMount_ = _irResumeGapJobOnMount_;
 
 // F1-4B-FM5-R4UI-R4 §6/§7 — SHARED manual-recalc transport-recovery contract (Inventory + Order Planning use it
 // identically, §11.P). A transport error = the browser never received an acknowledged batch envelope. On it we
@@ -5607,6 +5632,10 @@ if (window.KM && window.KM.lifecycle) {
                 // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.
                 if (typeof initReplenRecoContext === 'function') initReplenRecoContext();
                 renderReplenishment();
+                // F1-4B-FM5-R4J §13 — if a backend Inventory gap job is still PENDING/RUNNING (started here before a
+                // refresh, or from another tab / the daily scheduler), resume READ-ONLY status polling and refresh on
+                // DONE. The original tab does not need to have stayed alive.
+                if (typeof _irResumeGapJobOnMount_ === 'function') { try { _irResumeGapJobOnMount_(); } catch (e) {} }
             });
         },
         unmount() {

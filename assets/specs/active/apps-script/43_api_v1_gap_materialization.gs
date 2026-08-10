@@ -292,6 +292,48 @@ function gapRunId_(product, io) {
 }
 
 // ---- shared batch orchestration (Inventory + Order Planning share the enumerate→calc→map→UPSERT skeleton) --
+// F1-4B-FM5-R4J — the per-scope enumerate→calc→map→UPSERT body is extracted into gapProcessScopeSlice_ so the SAME
+// canonical calculation can be driven either over ALL scopes (the monolithic manual/all path, unchanged behavior)
+// or over a BOUNDED SLICE of scopes (the backend-owned resumable job, 46_..._job.gs). NO calculation/mapping change:
+// the loop body, the workspace.get call, cfg.map, and the latest-state UPSERT are byte-for-byte the prior logic —
+// only the surrounding batch summary/loop ownership moved. Each Inventory scope is fully independent (no shared
+// pool), so any scope subset is safe to process alone and resume-by-scope is exact.
+function gapProcessScopeSlice_(scopes, io, sheet, cfg) {
+  var acc = { scopesCalculated: 0, written: 0, ready: 0, blocked: 0, errors: 0, calculationAuthority: null, scopeErrors: [], calculatedAt: null };
+  var ts = gapBatchTimestamp_(io);
+  acc.calculatedAt = ts;
+  var ss = io.openTarget();                                              // memoized: the shared spreadsheet for this batch/slice
+  for (var s = 0; s < scopes.length; s++) {
+    var scope = scopes[s];
+    var reqBody = { requestId: 'GAP-' + cfg.product + '-' + (scope.company + '/' + scope.country + '/' + scope.marketplace), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ } } };
+    var env;
+    try { env = io.workspaceGet(reqBody, ss); } catch (e) { env = null; }
+    if (!env || env.success !== true) {
+      acc.errors++;
+      acc.scopeErrors.push({ scope: scope.company + '/' + scope.country + '/' + scope.marketplace, code: (env && env.errors && env.errors[0] && env.errors[0].code) || 'SCOPE_CALCULATION_FAILED' });
+      continue;
+    }
+    acc.scopesCalculated++;
+    var meta = env.meta || {};
+    var calcAuthority = cfg.product === 'INVENTORY' ? (meta.calculationDate || '') : (meta.calculationMonth || '');
+    if (acc.calculationAuthority == null && calcAuthority) acc.calculationAuthority = calcAuthority;
+    var lines = (env.data && env.data.lines) ? env.data.lines : [];
+    var bySku = {}; lines.forEach(function (L) { var k = gapStr_(L.sku); if (!k) return; (bySku[k] = bySku[k] || []).push(L); });
+    for (var sku in bySku) {
+      if (!Object.prototype.hasOwnProperty.call(bySku, sku)) continue;
+      var row = cfg.map(bySku[sku], scope, sku, calcAuthority);
+      row.calculated_at = ts;                                            // latest-state UPSERT by business key → idempotent on re-run
+      row.updated_at = ts;
+      gapUpsertByKey_(sheet, row);
+      acc.written++;
+      if (row.calculation_status === 'READY') acc.ready++;
+      else if (row.calculation_status === 'BLOCKED') acc.blocked++;
+      else acc.errors++;
+    }
+  }
+  return acc;
+}
+
 function gapRunBatch_(body, io, cfg) {
   io = io || gapMaterializationDefaultIo_();
   try {
@@ -300,40 +342,11 @@ function gapRunBatch_(body, io, cfg) {
     var ss = io.openTarget();
     var sheet = prodRequireSheet_(ss, cfg.table, cfg.headers);          // fail CLOSED if table/header missing/invalid
     var scopes = io.enumerateScopes ? io.enumerateScopes(ss) : gapEnumerateScopes_(ss);
+    var acc = gapProcessScopeSlice_(scopes, io, sheet, cfg);            // process ALL scopes (behavior identical to prior loop)
     // COMPACT summary ONLY (R4T §5) — counts + timestamps + run identity; NEVER per-SKU rows.
-    var summary = { product: cfg.product, materializationRunId: runId, startedAt: startedAt, finishedAt: null,
-      calculationAuthority: null, totalScopes: scopes.length, scopesCalculated: 0, ready: 0, blocked: 0, errors: 0,
-      written: 0, calculatedAt: null, scopeErrors: [] };
-    for (var s = 0; s < scopes.length; s++) {
-      var scope = scopes[s];
-      var reqBody = { requestId: 'GAP-' + cfg.product + '-' + (s + 1), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ } } };
-      var env;
-      try { env = io.workspaceGet(reqBody, ss); } catch (e) { env = null; }
-      if (!env || env.success !== true) {
-        summary.errors++;
-        summary.scopeErrors.push({ scope: scope.company + '/' + scope.country + '/' + scope.marketplace, code: (env && env.errors && env.errors[0] && env.errors[0].code) || 'SCOPE_CALCULATION_FAILED' });
-        continue;
-      }
-      summary.scopesCalculated++;
-      var meta = env.meta || {};
-      var calcAuthority = cfg.product === 'INVENTORY' ? (meta.calculationDate || '') : (meta.calculationMonth || '');
-      if (summary.calculationAuthority == null && calcAuthority) summary.calculationAuthority = calcAuthority;   // R4T: capture once (diagnostic)
-      var lines = (env.data && env.data.lines) ? env.data.lines : [];
-      var bySku = {}; lines.forEach(function (L) { var k = gapStr_(L.sku); if (!k) return; (bySku[k] = bySku[k] || []).push(L); });
-      for (var sku in bySku) {
-        if (!Object.prototype.hasOwnProperty.call(bySku, sku)) continue;
-        var row = cfg.map(bySku[sku], scope, sku, calcAuthority);
-        row.calculated_at = summary.calculatedAt || gapBatchTimestamp_(io);
-        row.updated_at = row.calculated_at;
-        gapUpsertByKey_(sheet, row);
-        summary.written++;
-        if (row.calculation_status === 'READY') summary.ready++;
-        else if (row.calculation_status === 'BLOCKED') summary.blocked++;
-        else summary.errors++;
-      }
-    }
-    summary.calculatedAt = gapBatchTimestamp_(io);
-    summary.finishedAt = summary.calculatedAt;   // R4T: batch end (diagnostic)
+    var summary = { product: cfg.product, materializationRunId: runId, startedAt: startedAt, finishedAt: acc.calculatedAt,
+      calculationAuthority: acc.calculationAuthority, totalScopes: scopes.length, scopesCalculated: acc.scopesCalculated,
+      ready: acc.ready, blocked: acc.blocked, errors: acc.errors, written: acc.written, calculatedAt: acc.calculatedAt, scopeErrors: acc.scopeErrors };
     return gapBatchEnvelope_(true, summary);
   } catch (e) {
     var token = (e && e.safetyToken) ? e.safetyToken : (e && e.schemaStatus) ? e.schemaStatus : 'GAP_BATCH_ERROR';
@@ -448,6 +461,83 @@ function handleRecalculateInventoryReplenishmentGapBatch_(body, io) {
   return gapRunBatch_(body, io, { product: 'INVENTORY', table: INV_GAP_TABLE_, headers: INV_GAP_HEADERS_, map: gapInvMapFromLines_ });
 }
 
+// F1-4B-FM5-R4J — Order Planning HARVEST→ALLOCATE→RE-PROJECT→MATERIALIZE extracted into a scope-slice processor so
+// the SAME two-pass logic drives either ALL scopes (monolithic) or a BOUNDED SLICE (the resumable job). CONSERVATION
+// INVARIANT: gapOpBuildSupplyAllocation_ groups the competing set strictly by `company||sku` (FACTORY) and
+// `company||canonicalCountry||sku` (OVERSEAS) — there is NEVER cross-company pool sharing — so a slice that contains
+// a COMPLETE COMPANY yields byte-identical allocation to the monolithic run for that company. The job therefore
+// chunks Order Planning by whole company (never splitting a company across slices); this processor re-runs the full
+// harvest→allocate→reproject over EXACTLY the passed scopes, so it MUST be handed a company-complete scope set.
+// NO calculation/allocation/mapping change — only the loop ownership moved.
+function gapProcessOrderPlanningScopeSlice_(scopes, io, ss, sheet, poolFacts, map) {
+  var acc = { scopesCalculated: 0, written: 0, ready: 0, blocked: 0, errors: 0, scopeErrors: [], allocationIssues: [], receiversConsidered: 0, scopesReprojected: 0, calculatedAt: null };
+  var ts = gapBatchTimestamp_(io);
+  acc.calculatedAt = ts;
+
+  // ---- PASS 1: harvest MONTHLY marketplace receivers (demand + required-by) across the passed competing set ----
+  var receivers = [], envByScope = {}, s, scope, env, lines;
+  for (s = 0; s < scopes.length; s++) {
+    scope = scopes[s];
+    var reqBody = { requestId: 'GAP-OP-H-' + (scope.company + '/' + scope.country + '/' + scope.marketplace), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ } } };
+    try { env = io.workspaceGet(reqBody, ss); } catch (e) { env = null; }
+    envByScope[scope.company + '||' + scope.country + '||' + scope.marketplace] = env;
+    if (!env || env.success !== true) continue;
+    lines = (env.data && env.data.lines) ? env.data.lines : [];
+    var country = gapCanonCountry_(scope.country), pkey = scope.company + '||' + country + '||' + scope.marketplace;
+    lines.forEach(function (L) {
+      if (!L || L.recommendationMode !== 'MARKETPLACE_ORDER_NEED' || L.blocked) return;   // MARKETPLACE receivers only
+      var sku = gapStr_(L.sku); if (!sku) return;
+      var demandQty = gapNum_(L.allocatedForecastQty); if (demandQty === null) return;     // no quantified demand → not competing
+      var mp = L.monthlyProjection; if (!mp || !mp.length || !gapStr_(mp[0].month)) return; // needs a T1 month for required-by
+      receivers.push({ company: scope.company, country: country, marketplace: scope.marketplace, sku: sku,
+        demandQty: demandQty, requiredByDate: gapStr_(mp[0].month) + '-01',
+        allocationPriority: (poolFacts.priorityByMkt[pkey] != null ? poolFacts.priorityByMkt[pkey] : 0),
+        key: gapReceiverKey_(scope.company, country, scope.marketplace, sku) });
+    });
+  }
+
+  // ---- ALLOCATE the shared pools ONCE across the passed competing set (conserved; per-company by construction) ----
+  var alloc = gapOpBuildSupplyAllocation_(receivers, poolFacts);
+  acc.allocationIssues = alloc.issues; acc.receiversConsidered = receivers.length;
+  var allocMap = alloc.byReceiverKey, scopeHasAlloc = {};
+  receivers.forEach(function (r) { var a = allocMap[r.key]; if (a && (a.overseasCoveredQty > 0 || a.factoryCoveredQty > 0)) scopeHasAlloc[r.company + '||' + r.country + '||' + r.marketplace] = 1; });
+
+  // ---- PASS 2 + MATERIALIZE: re-project scopes with injected allocation (else reuse harvest), map, UPSERT ----
+  for (s = 0; s < scopes.length; s++) {
+    scope = scopes[s];
+    var envKey = scope.company + '||' + scope.country + '||' + scope.marketplace;
+    var canonKey = scope.company + '||' + gapCanonCountry_(scope.country) + '||' + scope.marketplace;
+    var env2;
+    if (scopeHasAlloc[canonKey]) {
+      var reqBody2 = { requestId: 'GAP-OP-M-' + (scope.company + '/' + scope.country + '/' + scope.marketplace), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ }, supplyAllocationByReceiver: allocMap } };
+      try { env2 = io.workspaceGet(reqBody2, ss); } catch (e2) { env2 = null; }
+      if (env2 && env2.success === true) acc.scopesReprojected++;
+    } else {
+      env2 = envByScope[envKey];                                                           // Site-Stock-only projection already correct
+    }
+    if (!env2 || env2.success !== true) {
+      acc.errors++;
+      acc.scopeErrors.push({ scope: envKey, code: (env2 && env2.errors && env2.errors[0] && env2.errors[0].code) || 'SCOPE_CALCULATION_FAILED' });
+      continue;
+    }
+    acc.scopesCalculated++;
+    var calcAuthority = (env2.meta && env2.meta.calculationMonth) || '';
+    var lines2 = (env2.data && env2.data.lines) ? env2.data.lines : [];
+    var bySku = {}; lines2.forEach(function (L) { var k = gapStr_(L.sku); if (!k) return; (bySku[k] = bySku[k] || []).push(L); });
+    for (var sku2 in bySku) {
+      if (!Object.prototype.hasOwnProperty.call(bySku, sku2)) continue;
+      var row = map(bySku[sku2], scope, sku2, calcAuthority);
+      row.calculated_at = ts; row.updated_at = ts;
+      gapUpsertByKey_(sheet, row);
+      acc.written++;
+      if (row.calculation_status === 'READY') acc.ready++;
+      else if (row.calculation_status === 'BLOCKED') acc.blocked++;
+      else acc.errors++;
+    }
+  }
+  return acc;
+}
+
 // Order Planning batch — HARVEST competing receivers (one canonical read per scope) → ALLOCATE the shared lineage-net
 // pools ONCE across the full set (conserved) → RE-PROJECT each scope with its injected allocation (Site-Stock-only
 // scopes reuse the harvest pass; no wasted read) → map + UPSERT order_planning_gap. ONE bounded server batch, no
@@ -458,76 +548,13 @@ function handleRecalculateOrderPlanningGapBatch_(body, io) {
     if (!opCtx.ok) return gapBatchEnvelope_(false, null, opCtx.code, opCtx.message);
     io = gapMaterializationDefaultIo_(opCtx);
   }
-  var cfg = { product: 'ORDER_PLANNING', table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_, map: gapOpMapFromLines_ };
   try {
     var ss = io.openTarget();
-    var sheet = prodRequireSheet_(ss, cfg.table, cfg.headers);                               // fail CLOSED if missing/invalid
+    var sheet = prodRequireSheet_(ss, OP_GAP_TABLE_, OP_GAP_HEADERS_);                        // fail CLOSED if missing/invalid
     var scopes = io.enumerateScopes ? io.enumerateScopes(ss) : gapEnumerateScopes_(ss);
     var poolFacts = io.readSupplyPoolFacts ? io.readSupplyPoolFacts(ss) : gapOpReadSupplyPoolFacts_(ss);
-
-    // ---- PASS 1: harvest MONTHLY marketplace receivers (demand + required-by) across the full competing set ----
-    var receivers = [], envByScope = {}, s, scope, env, lines;
-    for (s = 0; s < scopes.length; s++) {
-      scope = scopes[s];
-      var reqBody = { requestId: 'GAP-OP-H-' + (s + 1), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ } } };
-      try { env = io.workspaceGet(reqBody, ss); } catch (e) { env = null; }
-      envByScope[scope.company + '||' + scope.country + '||' + scope.marketplace] = env;
-      if (!env || env.success !== true) continue;
-      lines = (env.data && env.data.lines) ? env.data.lines : [];
-      var country = gapCanonCountry_(scope.country), pkey = scope.company + '||' + country + '||' + scope.marketplace;
-      lines.forEach(function (L) {
-        if (!L || L.recommendationMode !== 'MARKETPLACE_ORDER_NEED' || L.blocked) return;   // MARKETPLACE receivers only
-        var sku = gapStr_(L.sku); if (!sku) return;
-        var demandQty = gapNum_(L.allocatedForecastQty); if (demandQty === null) return;     // no quantified demand → not competing
-        var mp = L.monthlyProjection; if (!mp || !mp.length || !gapStr_(mp[0].month)) return; // needs a T1 month for required-by
-        receivers.push({ company: scope.company, country: country, marketplace: scope.marketplace, sku: sku,
-          demandQty: demandQty, requiredByDate: gapStr_(mp[0].month) + '-01',
-          allocationPriority: (poolFacts.priorityByMkt[pkey] != null ? poolFacts.priorityByMkt[pkey] : 0),
-          key: gapReceiverKey_(scope.company, country, scope.marketplace, sku) });
-      });
-    }
-
-    // ---- ALLOCATE the shared pools ONCE across the complete bounded competing set (conserved) ----
-    var alloc = gapOpBuildSupplyAllocation_(receivers, poolFacts);
-    var allocMap = alloc.byReceiverKey, scopeHasAlloc = {};
-    receivers.forEach(function (r) { var a = allocMap[r.key]; if (a && (a.overseasCoveredQty > 0 || a.factoryCoveredQty > 0)) scopeHasAlloc[r.company + '||' + r.country + '||' + r.marketplace] = 1; });
-
-    // ---- PASS 2 + MATERIALIZE: re-project scopes with injected allocation (else reuse harvest), map, UPSERT ----
-    var summary = { product: cfg.product, totalScopes: scopes.length, scopesCalculated: 0, ready: 0, blocked: 0, errors: 0, written: 0, calculatedAt: null, scopeErrors: [], allocationIssues: alloc.issues, receiversConsidered: receivers.length, scopesReprojected: 0 };
-    var ts = gapBatchTimestamp_(io);
-    for (s = 0; s < scopes.length; s++) {
-      scope = scopes[s];
-      var envKey = scope.company + '||' + scope.country + '||' + scope.marketplace;
-      var canonKey = scope.company + '||' + gapCanonCountry_(scope.country) + '||' + scope.marketplace;
-      var env2;
-      if (scopeHasAlloc[canonKey]) {
-        var reqBody2 = { requestId: 'GAP-OP-M-' + (s + 1), payload: { scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace }, pagination: { page: 1, size: GAP_MAX_SKUS_ }, supplyAllocationByReceiver: allocMap } };
-        try { env2 = io.workspaceGet(reqBody2, ss); } catch (e2) { env2 = null; }
-        if (env2 && env2.success === true) summary.scopesReprojected++;
-      } else {
-        env2 = envByScope[envKey];                                                           // Site-Stock-only projection already correct
-      }
-      if (!env2 || env2.success !== true) {
-        summary.errors++;
-        summary.scopeErrors.push({ scope: envKey, code: (env2 && env2.errors && env2.errors[0] && env2.errors[0].code) || 'SCOPE_CALCULATION_FAILED' });
-        continue;
-      }
-      summary.scopesCalculated++;
-      var calcAuthority = (env2.meta && env2.meta.calculationMonth) || '';
-      var lines2 = (env2.data && env2.data.lines) ? env2.data.lines : [];
-      var bySku = {}; lines2.forEach(function (L) { var k = gapStr_(L.sku); if (!k) return; (bySku[k] = bySku[k] || []).push(L); });
-      for (var sku2 in bySku) {
-        if (!Object.prototype.hasOwnProperty.call(bySku, sku2)) continue;
-        var row = cfg.map(bySku[sku2], scope, sku2, calcAuthority);
-        row.calculated_at = ts; row.updated_at = ts;
-        gapUpsertByKey_(sheet, row);
-        summary.written++;
-        if (row.calculation_status === 'READY') summary.ready++;
-        else if (row.calculation_status === 'BLOCKED') summary.blocked++;
-        else summary.errors++;
-      }
-    }
-    summary.calculatedAt = ts;
+    var acc = gapProcessOrderPlanningScopeSlice_(scopes, io, ss, sheet, poolFacts, gapOpMapFromLines_);   // ALL scopes (behavior identical)
+    var summary = { product: 'ORDER_PLANNING', totalScopes: scopes.length, scopesCalculated: acc.scopesCalculated, ready: acc.ready, blocked: acc.blocked, errors: acc.errors, written: acc.written, calculatedAt: acc.calculatedAt, scopeErrors: acc.scopeErrors, allocationIssues: acc.allocationIssues, receiversConsidered: acc.receiversConsidered, scopesReprojected: acc.scopesReprojected };
     return gapBatchEnvelope_(true, summary);
   } catch (e) {
     var token = (e && e.safetyToken) ? e.safetyToken : (e && e.schemaStatus) ? e.schemaStatus : 'GAP_BATCH_ERROR';

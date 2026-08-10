@@ -2754,6 +2754,16 @@ window.KM.DB.completeShippingPlan = function(payload) { return _kmWeeklyCommand_
 window.KM.DB.recalculateInventoryReplenishmentGapAll = function(payload) { return _kmWeeklyCommand_('inventoryReplenishmentGap.recalculate.all', payload || {}); };
 window.KM.DB.recalculateOrderPlanningGapAll = function(payload) { return _kmWeeklyCommand_('orderPlanningGap.recalculate.all', payload || {}); };
 
+// F1-4B-FM5-R4J · Backend-owned RESUMABLE gap job. START is a QUICK write: it enqueues ONE backend job (the server
+// freezes the calc context, records Script-Property job state, and schedules the first self-re-arming continuation
+// trigger) and returns immediately with { runId, status, scopesTotal }. It NEVER waits for the ~14-min calculation
+// and NEVER re-POSTs the write. The backend then owns the job to terminal completion, independent of this browser
+// tab (the user may refresh/close). STATUS is a strictly READ-ONLY poll of the job's Script-Property progress.
+window.KM.DB.startInventoryReplenishmentGapJob = function(payload) { return _kmWeeklyCommand_('inventoryReplenishmentGap.job.start', payload || {}); };
+window.KM.DB.startOrderPlanningGapJob = function(payload) { return _kmWeeklyCommand_('orderPlanningGap.job.start', payload || {}); };
+// { product:'INVENTORY'|'ORDER_PLANNING', runId? } → { success, data:{ status, scopesProcessed, scopesTotal, ... } }.
+window.KM.DB.getGapJobStatus = function(product, runId) { return _kmGapRead_('gapJob.status.get', { payload: { product: product, runId: runId || null } }); };
+
 // F1-4B-FM5-R1 · MATERIALIZED READ (page reads STORED gap rows; NO calculation, NO whole-DB reload). Bounded
 // POST read of inventory_replenishment_gap / order_planning_gap for one scope. Text-first + fail-safe: on a
 // transport/non-JSON/business failure returns { success:false, error } so the page can show a truthful state and

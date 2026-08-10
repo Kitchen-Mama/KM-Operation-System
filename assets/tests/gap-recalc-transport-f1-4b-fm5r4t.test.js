@@ -73,30 +73,34 @@ GR.recover('Order Planning', PRE, scenario(0).refetch, function () { return PRE;
   ok(/unable to confirm/i.test(msgs2[msgs2.length - 1]), 'R3 unconfirmed → "unable to confirm completion" (no false failure)');
 });
 
-section('A/B — page outcome mapping (success vs explicit server error)');
+section('A/B — page outcome mapping (R4J cutover: START→poll job; READ-only recovery kept as transitional §15)');
 var invHandler = INV.slice(INV.indexOf('function handleRecalcAllInventoryGap'), INV.indexOf('window.handleRecalcAllInventoryGap'));
-ok(/res && res\.success && res\.data/.test(invHandler) && /refreshInventoryGapAfterRecalc_\(\)/.test(invHandler), 'A1 success envelope → summary + READ refresh (SUCCESS)');
-ok(/Recalculation failed:/.test(invHandler) && /_irIsTransportError_\(e\)/.test(invHandler), 'B1 a non-transport server error → explicit FAILED (only transport routes to recovery)');
+// R4J §12/§20 — the button no longer POSTs the 14-min batch and waits; it STARTS the backend job and polls STATUS.
+// On DONE the shared poller runs the READ-only refresh (refreshInventoryGapAfterRecalc_). SUCCESS = terminal DONE.
+ok(/startInventoryReplenishmentGapJob/.test(invHandler) && /refreshInventoryGapAfterRecalc_/.test(invHandler) && /gr\.runJob\(/.test(invHandler), 'A1 success path = START job → poll → READ refresh on DONE (via gapRecalc.runJob)');
+ok(/ui\s*:\s*\{[\s\S]*failed\s*:/.test(invHandler) && /did not confirm completion/.test(invHandler), 'B1 a non-completing job → truthful ui.failed message (no fabricated success, no automatic retry)');
 
-section('F — the WRITE batch command is POSTed exactly ONCE (never retried in recovery)');
-ok((invHandler.match(/recalculateInventoryReplenishmentGapAll\(/g) || []).length === 1, 'F2 Inventory handler calls the write command exactly once');
+section('F — the WRITE (job START) is POSTed exactly ONCE (never retried); recalculate.all no longer used by the button');
+ok((invHandler.match(/startInventoryReplenishmentGapJob\(/g) || []).length === 1, 'F2 Inventory handler issues the START write exactly once');
+ok(!/recalculateInventoryReplenishmentGapAll\(/.test(invHandler), 'F2b Inventory button no longer POSTs the monolithic recalculate.all batch');
 var roHandler = RO.slice(RO.indexOf('function handleRecalcAllOrderPlanningGap'), RO.indexOf('window.handleRecalcAllOrderPlanningGap'));
-ok((roHandler.match(/recalculateOrderPlanningGapAll\(/g) || []).length === 1, 'F3 Order Planning handler calls the write command exactly once');
-ok(!/recalculate\w*All/.test(UTIL), 'F4 the recovery module NEVER calls a recalculate/write command');
+ok((roHandler.match(/startOrderPlanningGapJob\(/g) || []).length === 1, 'F3 Order Planning handler issues the START write exactly once');
+ok(!/recalculateOrderPlanningGapAll\(/.test(roHandler), 'F3b Order Planning button no longer POSTs the monolithic recalculate.all batch');
+ok(!/recalculate\w*All/.test(UTIL) && !/\.job\.start|startInventory|startOrder/.test(UTIL), 'F4 the shared module NEVER calls a recalculate/START write command (start happens only in the page handler)');
 
-section('H/I/J — no per-SKU HTTP; both pages refresh via the READ after recovery');
-ok(/_irRecalcTransportRecovery_\('Inventory', preMax, refreshInventoryGapAfterRecalc_, _irMaxCalculatedAt_/.test(INV) && /gapRecalc\.recover\(product, preMax, refetchFn, maxFn/.test(INV), 'I1 Inventory recovery refetches the materialized READ (refreshInventoryGapAfterRecalc_) via the shared contract');
-ok(/gr\.recover\('Order Planning', preMax, refreshOrderPlanningGapAfterRecalc_, _roMaxCalculatedAt_/.test(RO), 'J1 Order Planning recovery refetches the materialized READ (refreshOrderPlanningGapAfterRecalc_) via the shared contract');
-ok(!/for\s*\([^)]*sku[^)]*\)\s*\{[^}]*fetch\(/i.test(UTIL) && !/getInventoryReplenishmentGap[\s\S]{0,40}for\s*\(/.test(UTIL), 'H1 recovery issues ONE scope READ per poll — no per-SKU HTTP loop');
+section('H/I/J — READ-only status polling; both pages refresh via the READ on DONE; no per-SKU HTTP');
+ok(/getGapJobStatus\('INVENTORY'\)/.test(INV) && /refreshInventoryGapAfterRecalc_/.test(INV) && /_irResumeGapJobOnMount_/.test(INV), 'I1 Inventory: polls READ-only STATUS, refreshes the materialized READ on DONE, resumes on mount');
+ok(/getGapJobStatus\('ORDER_PLANNING'\)/.test(RO) && /refreshOrderPlanningGapAfterRecalc_/.test(RO) && /_roResumeGapJobOnMount_/.test(RO), 'J1 Order Planning: polls READ-only STATUS, refreshes on DONE, resumes on mount');
+ok(!/for\s*\([^)]*sku[^)]*\)\s*\{[^}]*fetch\(/i.test(UTIL) && !/getInventoryReplenishmentGap[\s\S]{0,40}for\s*\(/.test(UTIL), 'H1 recovery/poll issues ONE scope READ per tick — no per-SKU HTTP loop');
 
 section('K/L/M/N — READY/BLOCKED untouched · formula untouched · payload compact · no new DB table');
-ok(/materializationRunId: runId/.test(GAP) && /startedAt: startedAt/.test(GAP) && /finishedAt = summary\.calculatedAt/.test(GAP), 'M1 batch summary carries run identity + start/finish (compact meta)');
+ok(/materializationRunId: runId/.test(GAP) && /startedAt: startedAt/.test(GAP) && /finishedAt: acc\.calculatedAt/.test(GAP), 'M1 batch summary carries run identity + start/finish (compact meta)');
 ok(!/env\.data\.lines[\s\S]{0,40}summary\.|summary\.[a-z]*rows\s*=\s*lines|summary\.skus/.test(GAP), 'M2 the summary carries COUNTS only — never the per-SKU line rows');
 ok(!/KMHP|KMTPP|KMCALC|KMPD|KMALLOC|KMMSA/.test(UTIL) && !/KMHP|KMTPP|KMCALC/.test(GAP.slice(GAP.indexOf('function gapRunId_'), GAP.indexOf('function gapRunBatch_'))), 'L1 no formula owner referenced by the transport/run-id additions');
 ok(/GAP-' \+ p \+ '-' \+ ts/.test(GAP) && !/SpreadsheetApp[\s\S]{0,40}insertSheet|new table/i.test(GAP.slice(GAP.indexOf('function gapRunId_'), GAP.indexOf('function gapRunBatch_'))), 'N1 run id is in-memory (io clock + seq) — no new DB table/schema');
 
-section('O — manual + scheduled batch owners remain identical');
-ok(/handleRecalculateInventoryReplenishmentGapBatch_\(\{ requestId: 'SCHED-INV-GAP' \}/.test(SCHED) && /handleRecalculateOrderPlanningGapBatch_\(\{ requestId: 'SCHED-OP-GAP' \}/.test(SCHED), 'O1 the scheduler invokes the SAME batch owners the manual buttons call (one pathway)');
+section('O — manual + scheduled share ONE logical job owner (R4J §14)');
+ok(/gapJobStart_\(product, gapJobDefaultEnv_\(product\)\)/.test(SCHED) && /gapSchedStartJob_\('INVENTORY_GAP', 'INVENTORY'\)/.test(SCHED) && /gapSchedStartJob_\('ORDER_PLANNING_GAP', 'ORDER_PLANNING'\)/.test(SCHED), 'O1 the scheduler STARTs the SAME gapJobStart_ owner the manual button starts (one pathway; no second calculation implementation)');
 
 section('wiring — shared module loaded once, both pages delegate');
 ok(/utils\/gap-recalc-transport\.js/.test(INDEX), 'W1 the shared module is included in index.html');
