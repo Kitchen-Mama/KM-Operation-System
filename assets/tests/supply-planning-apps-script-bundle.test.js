@@ -31,7 +31,7 @@ section('A. deterministic / reproducible output');
   eq(b1.code, b2.code, 'A: same sources → byte-identical bundle');
   eq(b1.hash, b2.hash, 'A: same sources → identical bundle hash');
   ok(/^[0-9a-f]{64}$/.test(b1.hash), 'A: bundle hash is a sha256 hex');
-  eq(b1.manifest.length, 37, 'A: manifest lists all 37 canonical modules (incl. KMREC + F1-4B-FM6-R2 supply-execution-handoff / KMREX)');
+  eq(b1.manifest.length, 38, 'A: manifest lists all 38 canonical modules (incl. KMREC + KMREX + F1-4B-FM7-R2B allocation-runtime / KMAR)');
   ok(b1.manifest.every(function (m) { return /^[0-9a-f]{64}$/.test(m.sha256); }), 'A: each manifest entry has a sha256');
 })();
 
@@ -67,7 +67,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   ok(typeof ctx.KMPR.applyPersistencePlan === 'function' && typeof ctx.KMPR.loadActiveDraftContext === 'function', 'C: KMPR repository API available');
   ok(typeof ctx.KMPL.executeLockedPersistence === 'function', 'C: KMPL.executeLockedPersistence available');
   ok(typeof ctx.KMPC.generateRecommendationDraft === 'function', 'C: KMPC Persistence Core available');
-  eq(ctx.KM_BUNDLE_INFO.modules.length, 37, 'C: KM_BUNDLE_INFO manifest present in runtime (37 modules incl. KMREX)');
+  eq(ctx.KM_BUNDLE_INFO.modules.length, 38, 'C: KM_BUNDLE_INFO manifest present in runtime (38 modules incl. KMREX + KMAR)');
 })();
 
 section('D. ported modules actually RUN end-to-end inside the bundle context');
