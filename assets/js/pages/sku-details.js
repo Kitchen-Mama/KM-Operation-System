@@ -389,6 +389,12 @@ function _skuMagnetDisplay(v) {
 // values; only sku_details.material / sku_details.product_use are written (see _skuTagSerialize).
 var SKU_MATERIAL_PRESETS_ = ['ABS Plastic', 'Stainless Steel', 'Aluminum', 'Silicone', 'PP', 'PC', 'TPR', 'Rubber', 'Glass', 'Ceramic', 'Wood', 'Paper / Cardboard', 'Other'];
 var SKU_PRODUCT_USE_PRESETS_ = ['Home Kitchen', 'Restaurant', 'Commercial Use', 'Outdoor', 'Travel', 'Gift', 'Office / Pantry', 'Hospitality', 'Other'];
+// F1-SMALL-SKU-MATERIAL: SESSION-ONLY suggestion cache for custom tag values the user adds (per field key).
+// A newly typed Material/Product Use value is offered as a suggestion for the rest of the browser session so it
+// can be reused across SKUs without retyping. This is NOT a persistent/global material master — nothing is written
+// to any DB table; the canonical material-master administration is a FUTURE Administration page (out of scope). The
+// value is still persisted only inside sku_details.material for the SKU being created (existing serialization).
+var SKU_TAG_SESSION_ADDED_ = {};
 
 // Unified SkuMasterForm field set. tab: basic | sales. type: sku | select | enum | text | textarea | number.
 // group headings render inside a tab. dim rows (L×W×H + unit) render via SKU_DIM_GROUPS_.
@@ -619,7 +625,12 @@ function skuComboAddNewKey(ev) {
 // presets not yet selected (type to filter) + a "＋ Add new …: {typed}" custom row.
 function _skuTagControl(key, raw, placeholder, presets) {
     var tags = _skuTagParse(raw);
-    _skuTagData[key] = { tags: tags.slice(), original: String(raw == null ? '' : raw), dirty: false, presets: presets || [], active: -1 };
+    // Merge this session's user-added custom values into the suggestion list (session-only; no DB master).
+    var pres = (presets || []).slice();
+    (SKU_TAG_SESSION_ADDED_[key] || []).forEach(function (x) {
+        if (!pres.some(function (p) { return String(p).toLowerCase() === String(x).toLowerCase(); })) pres.push(x);
+    });
+    _skuTagData[key] = { tags: tags.slice(), original: String(raw == null ? '' : raw), dirty: false, presets: pres, active: -1 };
     return '<div class="skuf-tagwrap">' +
         '<div class="skuf-tags" id="sku-f-' + key + '-tags" onclick="var i=document.getElementById(\'sku-f-' + key + '-input\'); if(i) i.focus();">' +
             '<span class="skuf-chips" id="sku-f-' + key + '-chips">' + _skuTagChipsHtml(key) + '</span>' +
@@ -647,10 +658,16 @@ function _skuTagRerender(key) {
 // Add one value as a chip (exact-duplicate + empty guarded). Returns true if it changed the set.
 function _skuTagAddValue(key, value) {
     var d = _skuTagData[key];
-    var v = String(value == null ? '' : value).trim();
-    if (!d || !v) return false;
+    var v = String(value == null ? '' : value).trim();   // trim: no whitespace-only duplicates (§3)
+    if (!d || !v) return false;                            // blank never added (§3 / M7)
     if (d.tags.some(function (t) { return t.toLowerCase() === v.toLowerCase(); })) return false;
     d.tags.push(v); d.dirty = true;
+    // Remember a genuinely-new (non-preset) value as a SESSION suggestion for later SKUs (no DB master; §4).
+    var known = (d.presets || []).some(function (p) { return String(p).toLowerCase() === v.toLowerCase(); });
+    if (!known) {
+        if (!SKU_TAG_SESSION_ADDED_[key]) SKU_TAG_SESSION_ADDED_[key] = [];
+        if (!SKU_TAG_SESSION_ADDED_[key].some(function (x) { return String(x).toLowerCase() === v.toLowerCase(); })) SKU_TAG_SESSION_ADDED_[key].push(v);
+    }
     return true;
 }
 // Commit the residual typed text as a tag (used on Enter/comma and flushed on Save).

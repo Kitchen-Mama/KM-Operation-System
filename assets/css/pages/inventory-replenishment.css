@@ -291,11 +291,6 @@
 #ops-section .replen-import__status--skipped { color: #d97706; }
 #ops-section .replen-import__status--error { color: #dc2626; }
 
-/* Demo badge uses purple utility */
-#ops-section .replen-control-panel .demo-badge {
-    background: var(--km-ui-utility) !important;
-}
-
 /* Legacy compat: old button classes that may still exist */
 #ops-section .replen-control-panel button {
     height: var(--km-button-height);

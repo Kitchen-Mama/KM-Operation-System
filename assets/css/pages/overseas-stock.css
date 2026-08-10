@@ -495,17 +495,6 @@
     margin-top: 16px;
 }
 
-/* Demo badge (mirror factory stock) */
-#overseas-stock-section .demo-badge {
-    background: var(--km-ui-utility, #8b5cf6);
-    color: white;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    margin-left: 12px;
-    vertical-align: middle;
-}
-
 /* ========================================
    Movement Log Date Range Picker
    Style parity with Forecast Review (.fr-date-*), duplicated under isolated
