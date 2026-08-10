@@ -87,7 +87,10 @@ ok(/#ops-section \.replen-card--recommendation-summary \.replen-horizon-table--o
 ok(/#ops-section \.replen-achv-table th,[\s\S]*?padding:\s*3px 6px/.test(CSS), 'F2 Monthly Achievement reference is 3px 6px (density benchmark)');
 ok(/#ops-section \.replen-card--recommendation-summary \.replen-horizon-dest\s*\{\s*margin:\s*0/.test(CSS), 'F3 the .replen-horizon-dest wrapper margin is zeroed inside the summary (no dead vertical space)');
 ok(/#ops-section \.replen-recsum-ws--ready\s*\{\s*background:\s*#fff/.test(CSS), 'G1 the READY container is white (no green panel/border)');
-ok(/#ops-section \.replen-card--recommendation-summary,[\s\S]*?min-height:\s*auto;[\s\S]*?height:\s*auto;[\s\S]*?flex:\s*0 0 auto;/.test(CSS) && !/replen-card--recommendation-summary[^{]*\{[^}]*min-height:\s*\d+px/.test(CSS), 'H1 summary card is content-height (min-height:auto/height:auto/flex:0 0 auto; no px floor/flex spacer)');
+// F1-4B-FM5-R4UI-R5H §B2/§B3 — the summary card now shares the top-row 150px height (Monthly Achievement parity)
+// with a TOP-ALIGNED compact body (no flex-grow, no whitespace distribution), superseding the R5E natural-height
+// contract. The fixed 4-row skeleton + cell-only patch (the true R5E invariants) remain proven elsewhere in this file.
+ok(/#ops-section \.replen-card--recommendation-summary \{[^}]*min-height:\s*150px/.test(CSS) && /#ops-section \.replen-card--recommendation-summary \{[^}]*justify-content:\s*flex-start/.test(CSS) && !/#ops-section \.replen-card--recommendation-summary[^{]*\{[^}]*flex:\s*1\b/.test(CSS), 'H1 summary card shares the 150px top-row height, content top-aligned, NO flex-grow (R5H: no whitespace distribution)');
 
 section('§3 I — one shared stretch parent owns left/right detail height (no JS pixel sync)');
 ok(/#ops-section \.table-body-bar\s*\{\s*align-items:\s*stretch/.test(CSS), 'I1 .table-body-bar{align-items:stretch} is the shared-height owner');

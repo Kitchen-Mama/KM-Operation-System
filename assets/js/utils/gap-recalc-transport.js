@@ -91,11 +91,13 @@
   // NEVER re-POSTs the write, and may be closed/refreshed mid-run (the backend continues). Deterministically
   // testable: wait / interval / maxPolls / all status+start fns are injectable (fake clock, no real network).
   // =============================================================================================================
-  var JOB_STATUS = { PENDING: 'PENDING', RUNNING: 'RUNNING', DONE: 'DONE', BLOCKED: 'BLOCKED', ERROR: 'ERROR', NONE: 'NONE' };
+  var JOB_STATUS = { PENDING: 'PENDING', RUNNING: 'RUNNING', DONE: 'DONE', BLOCKED: 'BLOCKED', FAILED: 'FAILED', ERROR: 'ERROR', NONE: 'NONE' };
   var DEFAULT_JOB_POLL_MS = 3000;        // read-only status poll cadence
   var DEFAULT_JOB_MAX_POLLS = 800;       // bounded guard (~40 min at 3s) — never an infinite poll
 
-  function _isTerminalJob(status) { return status === JOB_STATUS.DONE || status === JOB_STATUS.BLOCKED || status === JOB_STATUS.ERROR; }
+  // R4J-LIVE §A2 — FAILED / ERROR / BLOCKED are terminal so the poller STOPS and the page surfaces a truthful
+  // failure (never spins forever on a permanently-broken 0/N job).
+  function _isTerminalJob(status) { return status === JOB_STATUS.DONE || status === JOB_STATUS.BLOCKED || status === JOB_STATUS.FAILED || status === JOB_STATUS.ERROR; }
   function _stateOf(res) { return (res && res.data) ? res.data : (res || {}); }
 
   // Poll STATUS (READ ONLY) until terminal / NONE / bounded max. statusFn()->Promise(status envelope). Never writes,

@@ -1756,19 +1756,39 @@
    scrollbar space (`scrollbar-gutter` governs only the block-axis / vertical scrollbar), so CSS alone cannot own
    this. We account for it EXPLICITLY at the correct owner: `--km-hscroll-gutter` carries the LIVE horizontal
    scrollbar thickness (0 on overlay/macOS, ~15–17px on Windows), measured event-driven (mount / expand / resize —
-   NOT polling, NOT a height sync) in _irUpdateHScrollGutter_, and the LEFT panel reserves exactly that much below
-   its divider via margin-bottom. CSS still owns the stretch; the variable only supplies the one metric CSS cannot
-   see. When no horizontal scrollbar exists the variable is 0px → identical to the pure-stretch behavior. */
-#ops-section .replen-expand-panel--fixed { margin-bottom: var(--km-hscroll-gutter, 0px); }
+   NOT polling, NOT a height sync) in _irUpdateHScrollGutter_. CSS still owns the stretch; the variable only supplies
+   the one metric CSS cannot see. When no horizontal scrollbar exists the variable is 0px → identical to pure stretch.
+   R5H §B1 CORRECTION: the gutter is reserved at the COLUMN BOTTOM (.fixed-body padding-bottom), NOT as a margin
+   between the expanded panel and the next row (see the R5H block below). */
 
-/* §2 — Recommendation Summary uses NATURAL content height (title + small gap + fixed 4-row table). The card is
-   already flex:0 0 auto with no min-height (top-card 150px floor deliberately excludes it); lock that so the
-   decision-column flex can never stretch it, and remove the residual vertical whitespace INSIDE the body chain
-   (the `.replen-recsum-ws` state wrapper's padding + generous line-height, and any inherited summary/dest margin)
-   so its density matches the Monthly Achievement Rate reference WITHOUT copying that card's 150px min-height. */
-#ops-section .replen-card--recommendation-summary { flex: 0 0 auto; min-height: 0; height: auto; align-self: auto; }
-#ops-section .replen-card--recommendation-summary .replen-recsum-ws { padding: 0; margin: 0; line-height: 1.3; }
+/* =============================================================================================================
+   F1-4B-FM5-R4UI-R5H — expanded geometry regression closure (supersedes R5G §1/§2). UI-only.
+   ============================================================================================================= */
+
+/* §B1 — the R5G approach put the scrollbar gutter as `margin-bottom` on `.replen-expand-panel--fixed`, which pushed
+   EVERY following FIXED row down by the gutter relative to its SCROLL row (the reported next-SKU drift). ROOT CAUSE
+   (geometry): `.fixed-col` is stretched by align-items:stretch to `.scroll-col`'s OUTER box, which is
+   scrollbar-height TALLER than its usable content (the h-scrollbar sits at the bottom). So the fixed column has
+   scrollbar-height MORE usable vertical space than the scroll column; wherever that surplus lands (panel margin OR
+   panel height) it desyncs rows/divider. CORRECT OWNER: reserve the gutter as `padding-bottom` on `.fixed-body`
+   (the column bottom, BELOW the last row) so the fixed column's USABLE content height equals the scroll column's
+   (both = box − scrollbar). Then every expanded panel and every subsequent row aligns fixed⇄scroll, and expanding
+   SKU A changes ONLY A's detail — never B/C/D row heights. 0px when no scrollbar → unchanged. */
+#ops-section .fixed-body { padding-bottom: var(--km-hscroll-gutter, 0px); }
+
+/* §B2/§B3 — Recommendation Summary COPIES Monthly Achievement's vertical CARD/TABLE geometry (not its data): the
+   top-row cards (Stock / Forecast Breakdown / Sales Trend / Recommendation Summary) share the SAME 150px row floor
+   so all four terminate at one baseline (B3), while the INNER table stays top-aligned + compact (B2 — title, 4px
+   gap, 3px/6px cells, matching .replen-achv-table). The card body is a flex column (justify-content:flex-start by
+   default) so the fixed 4-row table sits at the TOP and any surplus card height is empty at the BOTTOM — never
+   vertically centered, never whitespace-distributed. Schema (Window/Gap/Suggested/Note × D18/D30/D45/D90) unchanged. */
+#ops-section .replen-card--recommendation-summary { min-height: 150px; height: auto; flex: 0 0 auto; align-self: auto; justify-content: flex-start; }
+#ops-section .replen-card--recommendation-summary .replen-recsum-ws { padding: 0; margin: 0; line-height: 1.3; flex: 0 0 auto; }
 #ops-section .replen-card--recommendation-summary .replen-horizon-summary,
 #ops-section .replen-card--recommendation-summary .replen-horizon-dest { margin: 0; }
-/* Title-to-table gap parity with Monthly Achievement (its table sits a 4px gap below the card title). */
+/* Title-to-table gap parity with Monthly Achievement (base card title bottom-margin 4px; its table sits a 4px gap lower). */
 #ops-section .replen-card--recommendation-summary .replen-card__title { margin: 0 0 4px; }
+/* Table vertical density parity: same 11px font, 4px table top gap, and 3px/6px cell padding as .replen-achv-table. */
+#ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook { font-size: 11px; margin-top: 4px; }
+#ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook th,
+#ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook td { padding: 3px 6px; }

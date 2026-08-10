@@ -44,7 +44,10 @@ ok(/#ops-section \.replen-card--recommendation-summary \.replen-horizon-dest\s*\
 ok(/#ops-section \.replen-card--recommendation-summary \.replen-horizon-summary\s*\{\s*margin:\s*0/.test(CSS), 'A2 the .replen-horizon-summary wrapper margin is also zeroed inside the summary card');
 // no reserved min-height larger than content: the summary card sizes to content.
 ok(/#ops-section \.replen-card--recommendation-summary,[\s\S]*?min-height:\s*auto;[\s\S]*?height:\s*auto;[\s\S]*?flex:\s*0 0 auto;/.test(CSS), 'A3 summary card is min-height:auto / height:auto / flex:0 0 auto (no floor taller than the 4-row table)');
-ok(!/replen-card--recommendation-summary[^{]*\{[^}]*min-height:\s*\d+px/.test(CSS), 'A4 no hard-coded pixel min-height on the summary card');
+// F1-4B-FM5-R4UI-R5H §B3 — the summary card now JOINS the top-row 150px shared height (parity with Monthly
+// Achievement) so the four top cards share one baseline; the residual-whitespace concern is instead met by the
+// top-aligned compact body (justify-content:flex-start, no flex-grow). So a 150px row height is EXPECTED here.
+ok(/#ops-section \.replen-card--recommendation-summary \{[^}]*min-height:\s*150px/.test(CSS) && /#ops-section \.replen-card--recommendation-summary \{[^}]*justify-content:\s*flex-start/.test(CSS), 'A4 summary card shares the 150px top-row height with content top-aligned (R5H) — not an arbitrary floor');
 // density parity with Monthly Achievement (3px 6px cells).
 ok(/#ops-section \.replen-card--recommendation-summary \.replen-horizon-table--outlook td,[\s\S]*?padding:\s*3px 6px/.test(CSS), 'A5 summary outlook cells 3px 6px == Monthly Achievement (.replen-achv-table td padding: 3px 6px)');
 ok(/#ops-section \.replen-achv-table th,[\s\S]*?padding:\s*3px 6px/.test(CSS), 'A6 Monthly Achievement benchmark is indeed 3px 6px (density reference intact)');

@@ -56,7 +56,7 @@ var roHandler = RO.slice(RO.indexOf('function handleRecalcAllOrderPlanningGap'),
 // Order Planning uses the SAME shared contract as Inventory (window.KM.gapRecalc.runJob).
 ok(/startOrderPlanningGapJob/.test(roHandler) && /getGapJobStatus\('ORDER_PLANNING'\)/.test(roHandler) && /refreshOrderPlanningGapAfterRecalc_/.test(roHandler), 'T5 Order Planning uses the SAME contract: START job → poll STATUS → refresh the materialized READ on DONE');
 ok(!/recalculateOrderPlanningGapAll\(/.test(roHandler), 'T6 Order Planning NEVER POSTs the monolithic write batch (no browser-owned 14-min request, no write retry)');
-ok(/did not confirm completion/.test(JS) && /did not confirm completion/.test(RO), 'T7 both buttons show a truthful non-confirmation message on a non-DONE terminal (no fabricated success, no automatic retry)');
+ok(/recalculation failed/.test(JS) && /No automatic retry/.test(JS) && /recalculation failed/.test(RO) && /No automatic retry/.test(RO), 'T7 both buttons show a truthful FAILED message with no automatic retry on a non-DONE terminal (R4J-LIVE)');
 
 console.log('\n----------------------------------------');
 console.log('INVENTORY UI GEOMETRY + TRANSPORT (F1-4B-FM5-R4UI-R4): ' + pass + ' passed, ' + fail + ' failed');

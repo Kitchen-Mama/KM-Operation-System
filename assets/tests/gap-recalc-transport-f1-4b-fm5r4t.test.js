@@ -78,7 +78,7 @@ var invHandler = INV.slice(INV.indexOf('function handleRecalcAllInventoryGap'), 
 // R4J §12/§20 — the button no longer POSTs the 14-min batch and waits; it STARTS the backend job and polls STATUS.
 // On DONE the shared poller runs the READ-only refresh (refreshInventoryGapAfterRecalc_). SUCCESS = terminal DONE.
 ok(/startInventoryReplenishmentGapJob/.test(invHandler) && /refreshInventoryGapAfterRecalc_/.test(invHandler) && /gr\.runJob\(/.test(invHandler), 'A1 success path = START job → poll → READ refresh on DONE (via gapRecalc.runJob)');
-ok(/ui\s*:\s*\{[\s\S]*failed\s*:/.test(invHandler) && /did not confirm completion/.test(invHandler), 'B1 a non-completing job → truthful ui.failed message (no fabricated success, no automatic retry)');
+ok(/ui\s*:\s*\{[\s\S]*failed\s*:/.test(invHandler) && /recalculation failed/.test(invHandler) && /No automatic retry/.test(invHandler), 'B1 a non-completing job → truthful ui.failed message (R4J-LIVE: "recalculation failed" + reason; no fabricated success, no automatic retry)');
 
 section('F — the WRITE (job START) is POSTed exactly ONCE (never retried); recalculate.all no longer used by the button');
 ok((invHandler.match(/startInventoryReplenishmentGapJob\(/g) || []).length === 1, 'F2 Inventory handler issues the START write exactly once');

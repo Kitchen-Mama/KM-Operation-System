@@ -38,6 +38,9 @@ var GAP_JOB_INV_CHUNK_SCOPES_ = 3;                     // Inventory: independent
 
 var GAP_JOB_PROP_KEYS_ = { INVENTORY: 'GAP_JOB_INVENTORY', ORDER_PLANNING: 'GAP_JOB_ORDER_PLANNING' };
 var GAP_JOB_CONTINUATION_HANDLERS_ = { INVENTORY: 'continueInventoryGapMaterializationJob', ORDER_PLANNING: 'continueOrderPlanningGapMaterializationJob' };
+var GAP_JOB_MAX_LOCK_WAITS_ = 8;                       // R4J-LIVE §A2 — bounded RESCHEDULED_LOCKED before FAILED (never an infinite 0/N)
+// R4J-LIVE §A2 — the terminal set. A job NEVER stays PENDING/RUNNING after its worker irrecoverably fails.
+function gapJobIsTerminal_(status) { return status === 'DONE' || status === 'FAILED' || status === 'BLOCKED' || status === 'ERROR'; }
 
 // ---- small pure helpers -------------------------------------------------------------------------------------
 function gapJobNormalizeProduct_(p) {
@@ -51,14 +54,18 @@ function gapJobResultTableFor_(product) {
     ? { table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_ }
     : { table: INV_GAP_TABLE_, headers: INV_GAP_HEADERS_ };
 }
-// The COMPLETE minimum state contract (§1). Additive `sliceAttempts` is bounded-retry bookkeeping (not a result).
+// The COMPLETE minimum state contract (§1) + R4J-LIVE §A5 additive lifecycle DIAGNOSTICS (timestamps + last scope +
+// bounded-retry/lock bookkeeping) — counts/timestamps only, NEVER per-SKU payloads, NO DB table. These pinpoint the
+// exact broken lifecycle edge on a live run (e.g. lastContinuationScheduledAt set but lastWorkerStartedAt null ⇒ the
+// trigger never fired ⇒ trigger auth/quota; lastWorkerStartedAt set + lastError ⇒ the slice calc failed at a scope).
 function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr) {
   return {
     runId: runId, product: product, status: 'PENDING',
     scopeCursor: 0, scopesTotal: scopesTotal, scopesProcessed: 0,
     rowsProcessed: 0, readyCount: 0, blockedCount: 0, errorCount: 0,
     calculationDate: ctx.calculationDate || '', calculationMonth: ctx.calculationMonth || '', planningCycle: ctx.planningCycle || '',
-    startedAt: nowStr, updatedAt: nowStr, finishedAt: null, lastError: null, sliceAttempts: 0
+    startedAt: nowStr, updatedAt: nowStr, finishedAt: null, lastError: null, sliceAttempts: 0,
+    lockWaits: 0, lastContinuationScheduledAt: null, lastWorkerStartedAt: null, lastWorkerFinishedAt: null, lastProcessedScope: null
   };
 }
 function gapJobPublicState_(s) {
@@ -66,7 +73,9 @@ function gapJobPublicState_(s) {
     scopesProcessed: s.scopesProcessed, scopesTotal: s.scopesTotal, rowsProcessed: s.rowsProcessed,
     readyCount: s.readyCount, blockedCount: s.blockedCount, errorCount: s.errorCount,
     calculationDate: s.calculationDate, calculationMonth: s.calculationMonth, planningCycle: s.planningCycle,
-    startedAt: s.startedAt, updatedAt: s.updatedAt, finishedAt: s.finishedAt, lastError: s.lastError };
+    startedAt: s.startedAt, updatedAt: s.updatedAt, finishedAt: s.finishedAt, lastError: s.lastError,
+    lastContinuationScheduledAt: s.lastContinuationScheduledAt, lastWorkerStartedAt: s.lastWorkerStartedAt,
+    lastWorkerFinishedAt: s.lastWorkerFinishedAt, lastProcessedScope: s.lastProcessedScope };
 }
 // Stable group-by-company ordering (first-appearance order preserved). Consecutive scopes of a company are then
 // contiguous, so advancing the cursor past a whole company is clean AND a company is never split across slices.
@@ -103,7 +112,14 @@ function gapJobWriteState_(env, product, state) { env.props.set(GAP_JOB_PROP_KEY
 function gapJobClearState_(env, product) { if (env.props.del) env.props.del(GAP_JOB_PROP_KEYS_[product]); }
 function gapJobMarkDone_(env, product, state) {
   state.status = 'DONE'; state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt;
+  state.lastWorkerFinishedAt = state.finishedAt;
   state.scopesProcessed = state.scopeCursor; gapJobWriteState_(env, product, state); return state;
+}
+// R4J-LIVE §A2 — persist a TERMINAL FAILED state (never leave a job dangling PENDING/RUNNING). Always writes.
+function gapJobMarkFailed_(env, product, state, reason) {
+  state.status = 'FAILED'; state.lastError = String(reason == null ? (state.lastError || 'FAILED') : reason);
+  state.finishedAt = env.timestamp(); state.updatedAt = state.finishedAt; state.lastWorkerFinishedAt = state.finishedAt;
+  gapJobWriteState_(env, product, state); return state;
 }
 
 // ---- START (§3): quick, browser-returning; NO calculation in the request -------------------------------------
@@ -126,8 +142,20 @@ function gapJobStart_(product, env) {
     var runId = env.newRunId(product);                                                   // §2 the EXISTING gapRunId_ owner
     var nowStr = env.timestamp();
     var state = gapJobNewState_(product, runId, ctx, scopes.length, nowStr);
+    // §A3 at-most-ONE continuation per product — clear any stale/orphaned continuation trigger before arming a fresh
+    // one (e.g. left by a crashed prior run) so competing workers can't cause a RESCHEDULED_LOCKED stall.
+    try { env.clearContinuationTriggers(product); } catch (ec) {}
+    // §A2 fail CLOSED at START: schedule the first continuation BEFORE persisting a RUNNING-capable state, and if
+    // scheduling THROWS (the classic live cause — the freshly-deployed script lacks ScriptApp trigger authorization,
+    // or hits the trigger quota) persist a TERMINAL FAILED (never a dangling PENDING that polls 0/N forever).
+    try {
+      env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_);                 // §3.7 hand the work to the backend
+      state.lastContinuationScheduledAt = env.timestamp();
+    } catch (schedErr) {
+      gapJobMarkFailed_(env, product, state, 'CONTINUATION_SCHEDULE_FAILED: ' + (schedErr && schedErr.message ? schedErr.message : schedErr));
+      return gapBatchEnvelope_(false, null, 'CONTINUATION_SCHEDULE_FAILED', state.lastError);
+    }
     gapJobWriteState_(env, product, state);
-    env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_);                   // §3.7 hand the work to the backend
     return gapBatchEnvelope_(true, { runId: runId, product: product, status: 'PENDING', scopesTotal: scopes.length });
   } catch (e) {
     var token = (e && e.safetyToken) ? e.safetyToken : (e && e.schemaStatus) ? e.schemaStatus : 'GAP_JOB_START_ERROR';
@@ -144,15 +172,29 @@ function gapJobContinue_(product, env) {
   try { env.clearContinuationTriggers(product); } catch (e0) {}
   var lock = env.lock, locked = false;
   try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
-  if (lock && !locked) {                                                                // another slice is active → re-arm, never run concurrently
-    try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er) {}
+  if (lock && !locked) {                                                                // another slice is active → re-arm, but BOUNDED
+    var ls = gapJobReadState_(env, product);
+    if (ls && !gapJobIsTerminal_(ls.status)) {
+      ls.lockWaits = (ls.lockWaits || 0) + 1; ls.updatedAt = env.timestamp();
+      if (ls.lockWaits >= GAP_JOB_MAX_LOCK_WAITS_) {                                     // §A2 a permanently stuck lock must NOT loop forever at 0/N
+        gapJobMarkFailed_(env, product, ls, 'LOCK_UNAVAILABLE_TIMEOUT after ' + ls.lockWaits + ' waits');
+        return ls;                                                                      // do NOT re-arm a permanently blocked worker
+      }
+      gapJobWriteState_(env, product, ls);
+      try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er) {}
+    }
     return { status: 'RESCHEDULED_LOCKED', product: product };
   }
+  var product_ = product;   // stable ref for the finally-safe recovery path
   try {
     var state = gapJobReadState_(env, product);
     if (!state) return { status: 'NO_STATE', product: product };
-    if (state.status === 'DONE' || state.status === 'ERROR' || state.status === 'BLOCKED') return state;   // terminal → nothing to do
-    if (state.status === 'PENDING') { state.status = 'RUNNING'; state.updatedAt = env.timestamp(); gapJobWriteState_(env, product, state); }  // §22 observable RUNNING
+    if (gapJobIsTerminal_(state.status)) return state;                                   // terminal → nothing to do
+    // §A5 worker started — this timestamp proves the continuation trigger actually FIRED (vs never firing = auth/quota).
+    state.lockWaits = 0;                                                                 // acquired → reset the lock-wait counter
+    state.status = 'RUNNING';                                                            // §22 observable RUNNING
+    state.lastWorkerStartedAt = env.timestamp(); state.updatedAt = state.lastWorkerStartedAt;
+    gapJobWriteState_(env, product, state);
     // §18 the calculation context is taken from the FROZEN job state — NEVER re-resolved from the wall clock, so a
     // midnight rollover mid-job cannot change calculationDate/Month across slices.
     var ctx = { ok: true, calculationDate: state.calculationDate, calculationMonth: state.calculationMonth, planningCycle: state.planningCycle };
@@ -166,15 +208,14 @@ function gapJobContinue_(product, env) {
     try {
       inc = env.processSlice(product, slice.scopes, ss, sheet, ctx) || {};              // §6 reuse the canonical calc via 43's slice processors
     } catch (procErr) {
-      // §10 — do NOT advance the cursor (the slice re-runs; latest-state UPSERT keeps it idempotent), do NOT lose
-      // completed work. Bounded attempts, then terminal ERROR.
+      // §10 — do NOT advance the cursor (the slice re-runs; latest-state UPSERT keeps it idempotent). Bounded
+      // attempts, then TERMINAL FAILED — never an infinite RUNNING at the same cursor.
       state.sliceAttempts = (state.sliceAttempts || 0) + 1;
       state.lastError = (procErr && procErr.message) ? String(procErr.message) : String(procErr);
-      state.status = (state.sliceAttempts >= GAP_JOB_MAX_SLICE_ATTEMPTS_) ? 'ERROR' : 'RUNNING';
-      if (state.status === 'ERROR') state.finishedAt = env.timestamp();
-      state.updatedAt = env.timestamp();
+      state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt;
+      if (state.sliceAttempts >= GAP_JOB_MAX_SLICE_ATTEMPTS_) return gapJobMarkFailed_(env, product, state, state.lastError);
       gapJobWriteState_(env, product, state);
-      if (state.status !== 'ERROR') { try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er2) {} }
+      try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); gapJobWriteState_(env, product, state); } catch (er2) {}
       return state;
     }
     // fold the slice counts into the persisted progress and advance the cursor by a COMPLETE slice (§5)
@@ -185,27 +226,27 @@ function gapJobContinue_(product, env) {
     state.readyCount += (inc.ready || 0);
     state.blockedCount += (inc.blocked || 0);
     state.errorCount += (inc.errors || 0);
+    var lastScope = slice.scopes[slice.scopes.length - 1];
+    state.lastProcessedScope = lastScope ? (lastScope.company + '/' + lastScope.country + '/' + lastScope.marketplace) : state.lastProcessedScope;
     if (inc.scopeErrors && inc.scopeErrors.length) state.lastError = 'SCOPE_ERRORS:' + inc.scopeErrors.length;
-    state.updatedAt = env.timestamp();
+    state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt;
     if (state.scopeCursor >= scopes.length) return gapJobMarkDone_(env, product, state);   // §9 DONE = reached every planned scope
     state.status = 'RUNNING';
+    try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); } catch (er3) {}
     gapJobWriteState_(env, product, state);
-    try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er3) {}
     return state;
   } catch (e) {
-    // infrastructure failure (open/enumerate) — keep cursor, bounded retry, never lose completed work
-    var st = gapJobReadState_(env, product);
-    if (st && st.status !== 'DONE') {
-      st.sliceAttempts = (st.sliceAttempts || 0) + 1;
-      st.lastError = (e && e.message) ? String(e.message) : String(e);
-      st.status = (st.sliceAttempts >= GAP_JOB_MAX_SLICE_ATTEMPTS_) ? 'ERROR' : 'RUNNING';
-      if (st.status === 'ERROR') st.finishedAt = env.timestamp();
-      st.updatedAt = env.timestamp();
-      gapJobWriteState_(env, product, st);
-      if (st.status !== 'ERROR') { try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er4) {} }
-      return st;
-    }
-    return { status: 'ERROR', product: product, lastError: (e && e.message) ? String(e.message) : String(e) };
+    // §A2 infrastructure failure (open/enumerate) — ALWAYS persist a non-dangling state; bounded retry then FAILED.
+    var st = gapJobReadState_(env, product_);
+    if (!st) st = gapJobNewState_(product_, 'GAP-RECOVER', {}, 0, env.timestamp());       // never return a non-persisted terminal
+    if (gapJobIsTerminal_(st.status)) return st;
+    st.sliceAttempts = (st.sliceAttempts || 0) + 1;
+    st.lastError = (e && e.message) ? String(e.message) : String(e);
+    st.lastWorkerFinishedAt = env.timestamp(); st.updatedAt = st.lastWorkerFinishedAt;
+    if (st.sliceAttempts >= GAP_JOB_MAX_SLICE_ATTEMPTS_) return gapJobMarkFailed_(env, product_, st, st.lastError);
+    gapJobWriteState_(env, product_, st);
+    try { env.scheduleContinuation(product_, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er4) {}
+    return st;
   } finally { if (lock && locked) { try { lock.release(); } catch (_r) {} } }
 }
 

@@ -26,7 +26,7 @@ ok(/#ops-section \.replen-expand-panel--fixed \{ flex: 1 1 auto;/.test(CSS), 'A3
 ok(!/offsetHeight[\s\S]{0,40}\.style\.height|\.style\.height\s*=|ResizeObserver\([\s\S]{0,80}height/.test(JS), 'A4 NO JS height sync / inline height write (CSS owns the stretch; JS never sets a panel height)');
 
 section('§1/B — the horizontal SCROLLBAR is accounted for explicitly at the correct owner');
-ok(/#ops-section \.replen-expand-panel--fixed \{ margin-bottom: var\(--km-hscroll-gutter, 0px\);/.test(CSS), 'B1 the LEFT panel reserves the scrollbar-height gutter (var --km-hscroll-gutter) below its divider');
+ok(/#ops-section \.fixed-body \{ padding-bottom: var\(--km-hscroll-gutter, 0px\);/.test(CSS), 'B1 the scrollbar-height gutter (var --km-hscroll-gutter) is reserved at the fixed COLUMN bottom (R5H §B1: .fixed-body padding-bottom, not a per-row margin)');
 ok(/function _irUpdateHScrollGutter_\(\)/.test(JS) && /offsetHeight\s*-\s*col\.clientHeight/.test(JS), 'B2 the gutter = live horizontal scrollbar thickness (offsetHeight − clientHeight, overflow-y hidden → h-scrollbar only)');
 ok(/setProperty\('--km-hscroll-gutter', gutter \+ 'px'\)/.test(JS), 'B3 the measured thickness is written to the --km-hscroll-gutter CSS variable');
 ok(/var gutter = col \? Math\.max\(0, col\.offsetHeight - col\.clientHeight\) : 0;/.test(JS), 'B4 defaults to 0 when there is no scroll column / no scrollbar (overlay/macOS safe → identical to pure stretch)');
@@ -41,10 +41,10 @@ ok(!/\.replen-expand-panel--fixed\s*\{[^}]*height:\s*\d+px/.test(CSS), 'C3 the f
 
 section('§2/D — Recommendation Summary: natural compact height (no min-height floor, no flex-grow)');
 var recCard = ruleBody('#ops-section .replen-card--recommendation-summary {');
-ok(/flex:\s*0 0 auto/.test(recCard) && /min-height:\s*0/.test(recCard) && /height:\s*auto/.test(recCard), 'D1 the summary card is flex:0 0 auto + min-height:0 + height:auto (cannot be stretched/inflated)');
+ok(/flex:\s*0 0 auto/.test(recCard) && /min-height:\s*150px/.test(recCard) && /justify-content:\s*flex-start/.test(recCard), 'D1 (R5H) summary card joins the 150px top-row height, no grow, content top-aligned (justify-content:flex-start)');
 var topFloor = ruleBody('#ops-section .replen-card--stock,');
-ok(/min-height:\s*150px/.test(topFloor) && !/recommendation-summary/.test('#ops-section .replen-card--stock,#ops-section .replen-card--lts,#ops-section .replen-card--forecast,#ops-section .replen-card--sales-trend,#ops-section .replen-card--achievement'), 'D2 the 150px top-card floor deliberately EXCLUDES Recommendation Summary (not forced tall)');
-ok(!/\.replen-card--recommendation-summary[^{]*\{[^}]*flex:\s*1\b/.test(CSS), 'D3 no flex-grow on the summary card (no vertical inflation)');
+ok(/min-height:\s*150px/.test(topFloor), 'D2 the top-row cards share the 150px row height (R5H: Recommendation Summary now joins it → four cards, one baseline)');
+ok(!/\.replen-card--recommendation-summary[^{]*\{[^}]*flex:\s*1\b/.test(CSS), 'D3 no flex-grow on the summary card (outer height may reach the row floor; content never distributes whitespace)');
 
 section('§2/E — title/table spacing matches the compact Monthly Achievement reference');
 ok(/#ops-section \.replen-card--recommendation-summary \.replen-recsum-ws \{ padding: 0; margin: 0; line-height: 1\.3;/.test(CSS), 'E1 the summary state-wrapper has zero padding/margin + compact line-height (removes top/bottom whitespace)');

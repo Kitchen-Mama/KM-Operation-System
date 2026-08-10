@@ -64,7 +64,7 @@ var NEW = CSS.slice(CSS.indexOf('UI-HOTFIX (2026-08-07)'));   // the appended eq
 ok(NEW.length > 0, 'F1a appended UI-HOTFIX block present');
 ok(!/transform:\s*translate/.test(NEW), 'F2 no transform hack');
 ok(!/margin[^:]*:\s*-/.test(NEW), 'F3 no negative-margin hack');
-ok(!/position:\s*absolute/.test(NEW) && !/\btop:\s*-?\d/.test(NEW), 'F4 no absolute/relative-top offset hack');
+ok(!/position:\s*absolute/.test(NEW) && !/[^a-z-]top:\s*-?\d/.test(NEW), 'F4 no absolute/relative-top offset hack (the `top:` property; margin-top/padding-top are not positioning hacks)');
 
 console.log('\n----------------------------------------');
 console.log('INVENTORY EXPAND-ROW HEIGHT PARITY (UI-HOTFIX): ' + pass + ' passed, ' + fail + ' failed');

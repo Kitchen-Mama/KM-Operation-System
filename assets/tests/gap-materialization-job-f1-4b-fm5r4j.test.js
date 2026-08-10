@@ -42,20 +42,22 @@ function fakeEnv(opts) {
   opts = opts || {};
   var store = {}, scheduled = [], cleared = [], processed = [], resolveCalls = 0, clock = 0, lockHeld = false;
   var throwOnce = opts.throwSliceOnce ? { hit: false } : null;
+  var lockFlags = { block: opts.lockGranted === false };   // mutable so a test can let START acquire, then block continuations
   return {
-    _store: store, _scheduled: scheduled, _cleared: cleared, _processed: processed,
+    _store: store, _scheduled: scheduled, _cleared: cleared, _processed: processed, _lockFlags: lockFlags,
     get _resolveCalls() { return resolveCalls; },
     props: { get: function (k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; }, set: function (k, v) { store[k] = v; }, del: function (k) { delete store[k]; } },
-    lock: opts.noLock ? null : { acquire: function () { if (opts.lockGranted === false) return false; if (lockHeld) return false; lockHeld = true; return true; }, release: function () { lockHeld = false; } },
+    lock: opts.noLock ? null : { acquire: function () { if (lockFlags.block) return false; if (lockHeld) return false; lockHeld = true; return true; }, release: function () { lockHeld = false; } },
     resolveContext: function (p) { resolveCalls++; return opts.ctx || { ok: true, jobType: p, calculationDate: (p === 'ORDER_PLANNING' ? '2026-08-09' : '2026-08-10'), calculationMonth: '2026-08', planningCycle: 'RECO-2026-08' }; },
     openTarget: function () { return opts.ss || { __ss: true }; },
     requireResultSheet: function () { if (opts.missingSheet) throw new Error('MISSING_SHEET'); return { __sheet: true }; },
     enumerateScopes: function () { return (opts.scopes || []).slice(); },
     newRunId: function (p) { return 'GAP-' + (p === 'ORDER_PLANNING' ? 'OP' : 'INV') + '-20260810T000000-0001'; },
     timestamp: function () { clock++; return '2026-08-10 00:00:' + ('0' + (clock % 60)).slice(-2); },
-    scheduleContinuation: function (p, ms) { scheduled.push({ product: p, ms: ms }); },
+    scheduleContinuation: function (p, ms) { if (opts.scheduleThrows) throw new Error('SCHEDULE_TRIGGER_FAILED'); scheduled.push({ product: p, ms: ms }); },
     clearContinuationTriggers: function (p) { cleared.push(p); },
     processSlice: opts.processSlice || function (product, sliceScopes, ss, sheet, ctx) {
+      if (opts.throwSliceAlways) throw new Error('ALWAYS_SLICE_FAILURE');
       if (throwOnce && !throwOnce.hit) { throwOnce.hit = true; throw new Error('SIMULATED_SLICE_FAILURE'); }
       processed.push({ scopes: sliceScopes.map(function (s) { return s.company + '/' + s.country + '/' + s.marketplace; }), calcDate: ctx.calculationDate, calcMonth: ctx.calculationMonth });
       return { scopesCalculated: sliceScopes.length, written: sliceScopes.length * 2, ready: sliceScopes.length * 2, blocked: 0, errors: 0, scopeErrors: [] };
@@ -63,9 +65,10 @@ function fakeEnv(opts) {
   };
 }
 function invScopes(n) { var out = []; for (var i = 0; i < n; i++) out.push({ company: 'KM', country: 'C' + i, marketplace: 'AMAZON_C' + i }); return out; }
+function isTerminal(s) { return s === 'DONE' || s === 'FAILED' || s === 'BLOCKED' || s === 'ERROR'; }
 function drain(env, product, max) {   // fire the continuation worker until terminal (or a bounded number of times)
   var last = null;
-  for (var i = 0; i < (max || 50); i++) { last = H.cont(product, env); if (last && (last.status === 'DONE' || last.status === 'ERROR' || last.status === 'BLOCKED')) break; }
+  for (var i = 0; i < (max || 50); i++) { last = H.cont(product, env); if (last && isTerminal(last.status)) break; }
   return last;
 }
 
@@ -149,6 +152,46 @@ eq([H.isOwnedCont('continueInventoryGapMaterializationJob'), H.isOwnedCont('cont
 eq([H.isOwnedCont('runAmazonSnapshotImports'), H.isOwnedCont('runDailyInventoryGapMaterialization'), H.isOwnedCont('runDailyOrderPlanningGapMaterialization')], [false, false, false], 'I3 Amazon import + the daily scheduler handlers are NOT job-owned (continuation cleanup can never delete them)');
 var F46_NOCOMMENT = F46.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
 ok(!/runAmazonSnapshotImports|runDailyInventoryGapMaterialization|runDailyOrderPlanningGapMaterialization/.test(F46_NOCOMMENT), 'I4 46.gs CODE never references the Amazon/daily handlers (continuation cleanup cannot touch them)');
+
+section('R4J-LIVE §A2 — FAIL-CLOSED: a worker that irrecoverably fails becomes FAILED, never infinite RUNNING 0/N');
+var eFail = fakeEnv({ scopes: invScopes(4), throwSliceAlways: true });
+H.start('INVENTORY', eFail);
+var fdrain = drain(eFail, 'INVENTORY');
+eq([fdrain.status, fdrain.scopeCursor], ['FAILED', 0], 'L1 a slice that always throws → terminal FAILED at cursor 0 (bounded retry, never infinite RUNNING)');
+ok(fdrain.finishedAt && /ALWAYS_SLICE_FAILURE/.test(fdrain.lastError || ''), 'L2 FAILED persists finishedAt + lastError (truthful failure)');
+ok((eFail._processed.length === 0) && fdrain.sliceAttempts >= 3, 'L3 exactly the bounded number of attempts, then stop (no infinite re-arm)');
+var afterFail = H.cont('INVENTORY', eFail);
+eq(afterFail.status, 'FAILED', 'L4 continuation after FAILED is a terminal no-op');
+
+section('R4J-LIVE §A2/§A3 — START fails CLOSED if the continuation cannot be scheduled (no dangling PENDING 0/N)');
+var eSched = fakeEnv({ scopes: invScopes(5), scheduleThrows: true });
+var sSched = H.start('INVENTORY', eSched);
+ok(sSched.success === false && /CONTINUATION_SCHEDULE_FAILED/.test((sSched.errors && sSched.errors[0] && sSched.errors[0].code) || ''), 'M1 trigger-scheduling failure at START → START returns an explicit failure (the "Error" the user saw)');
+var mSt = H.status('INVENTORY', null, eSched).data;
+eq(mSt.status, 'FAILED', 'M2 the stored job state is TERMINAL FAILED — NOT a dangling PENDING that would poll 0/N forever');
+ok(/CONTINUATION_SCHEDULE_FAILED/.test(mSt.lastError || ''), 'M3 lastError names the schedule failure (points at trigger auth/quota on the live run)');
+ok(eSched._cleared.indexOf('INVENTORY') !== -1, 'M4 START cleared any stale continuation trigger first (at-most-one per product)');
+
+section('R4J-LIVE §A2 — a permanently stuck LOCK becomes FAILED (bounded), never infinite RESCHEDULED_LOCKED');
+var eLock = fakeEnv({ scopes: invScopes(3) });
+H.start('INVENTORY', eLock);                                    // START acquires+releases the lock normally (job created)
+eLock._lockFlags.block = true;                                  // now simulate a permanently stuck lock for every continuation
+var lockLast = null; for (var li = 0; li < 20; li++) { lockLast = H.cont('INVENTORY', eLock); if (lockLast && lockLast.status === 'FAILED') break; }
+var lockSt = H.status('INVENTORY', null, eLock).data;
+eq(lockSt.status, 'FAILED', 'N1 after the bounded lock-wait limit the job is FAILED (never an infinite 0/N reschedule loop)');
+ok(/LOCK_UNAVAILABLE_TIMEOUT/.test(lockSt.lastError || ''), 'N2 lastError records the lock timeout');
+
+section('R4J-LIVE §A5 — lifecycle DIAGNOSTICS pinpoint the broken edge (timestamps + last scope; no per-SKU payload)');
+var eDiag = fakeEnv({ scopes: invScopes(7) });
+var sDiag = H.start('INVENTORY', eDiag);
+var startState = JSON.parse(eDiag._store[H.PROP_KEYS.INVENTORY]);
+ok(startState.lastContinuationScheduledAt && startState.lastWorkerStartedAt === null, 'O1 after START: lastContinuationScheduledAt set, lastWorkerStartedAt still null (⇒ if it stays null live, the trigger never fired)');
+H.cont('INVENTORY', eDiag);
+var afterCont = JSON.parse(eDiag._store[H.PROP_KEYS.INVENTORY]);
+ok(afterCont.lastWorkerStartedAt && afterCont.lastWorkerFinishedAt && afterCont.lastProcessedScope === 'KM/C2/AMAZON_C2', 'O2 after a continuation: worker start/finish timestamps + lastProcessedScope recorded');
+var pub = H.status('INVENTORY', null, eDiag).data;
+ok('lastWorkerStartedAt' in pub && 'lastContinuationScheduledAt' in pub && 'lastProcessedScope' in pub, 'O3 STATUS surfaces the diagnostics (read-only) for live triage');
+ok(!/sku|SKU|rows\s*:\s*\[/.test(JSON.stringify(pub)), 'O4 diagnostics are counts/timestamps only — no per-SKU payload');
 
 section('§5/§7 — Order Planning chunks by WHOLE COMPANY (never splits a company across slices)');
 var opScopes = [{ company: 'A', country: 'US', marketplace: 'AMAZON_US' }, { company: 'B', country: 'US', marketplace: 'AMAZON_US' }, { company: 'A', country: 'UK', marketplace: 'AMAZON_UK' }];

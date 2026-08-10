@@ -3517,7 +3517,7 @@ function handleRecalcAllInventoryGap() {
       progress: function (st) { var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn('Calculating… ' + n + ' / ' + m, true); },
       refreshing: function () { setBtn('Refreshing…', true); },
       done: function () { setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
-      failed: function (st) { alert('Inventory recalculation did not confirm completion (status: ' + ((st && st.status) || 'unknown') + '). No automatic retry was issued — check the latest data.'); restore(); }
+      failed: function (st) { var why = (st && st.lastError) ? (' — ' + st.lastError) : ''; alert('Inventory recalculation failed (status: ' + ((st && st.status) || 'unknown') + ')' + why + '.\nNo automatic retry was issued; check the latest data.'); restore(); }
     }
   });
 }
