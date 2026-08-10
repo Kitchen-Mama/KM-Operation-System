@@ -105,7 +105,36 @@ function onReplenAddMarketplaceChange() {
   } else {
     applyFulfillmentLock(ffSel, ffHint, ffModel, '');
   }
+  // ASIN required rule: required for Amazon marketplaces, optional otherwise — driven by the SAME owner the
+  // submit validation uses (isReplenAmazonMarketplace). Updates immediately on marketplace switch; never clears
+  // the existing ASIN value.
+  var marketplaceToken = opt ? (opt.getAttribute('data-marketplace') || '') : '';
+  updateReplenAsinRequirement(marketplaceToken);
 }
+
+// Canonical Amazon-marketplace detection (ONE owner for the ASIN required indicator + submit validation). Matches
+// by PLATFORM PREFIX of the canonical marketplace token (AMAZON_<country>, e.g. AMAZON_US / AMAZON_UK / AMAZON_CA,
+// and a literal "Amazon") — NOT a hardcoded list of Amazon countries. Non-Amazon tokens (Walmart / KM Walmart /
+// WALMART_US / …) return false. "AMAZONIA"-style false-positives are excluded by the letter boundary.
+function isReplenAmazonMarketplace(marketplaceToken) {
+  var s = String(marketplaceToken == null ? '' : marketplaceToken).trim().toUpperCase();
+  return /^AMAZON(?:$|[^A-Z])/.test(s);
+}
+// Apply the ASIN requirement to the label (* suffix) + input required state from the SAME authority. Never clears
+// the value (a marketplace switch keeps whatever ASIN was already typed).
+function updateReplenAsinRequirement(marketplaceToken) {
+  var amazon = isReplenAmazonMarketplace(marketplaceToken);
+  var label = document.getElementById('replen-add-asin-label');
+  var input = document.getElementById('replen-add-asin');
+  if (label) label.textContent = amazon ? 'ASIN *' : 'ASIN';
+  if (input) {
+    if (amazon) { input.setAttribute('required', 'required'); input.setAttribute('aria-required', 'true'); }
+    else { input.removeAttribute('required'); input.setAttribute('aria-required', 'false'); }
+    input.setAttribute('data-asin-required', amazon ? 'true' : 'false');   // shared flag (DOM required state)
+  }
+}
+window.isReplenAmazonMarketplace = isReplenAmazonMarketplace;
+window.updateReplenAsinRequirement = updateReplenAsinRequirement;
 
 // Fulfillment Model lock rule (shared by Add SKU / Edit SKU):
 //  - marketplace = platform_fulfilled | self_fulfilled  -> SKU value auto-filled + locked.
@@ -838,8 +867,11 @@ function saveReplenSku() {
     return;
   }
   if (!currency) { alert('The selected marketplace has no currency configured.'); return; }
-  // ASIN / marketplace_product_id required (case preserved; no fixed length — marketplaces differ).
-  if (!marketplaceProductId) { alert('ASIN (Marketplace Product ID) is required.'); return; }
+  // ASIN / marketplace_product_id required ONLY for Amazon marketplaces (case preserved; no fixed length —
+  // marketplaces differ). Non-Amazon marketplaces (Walmart / KM Walmart / …) accept an empty ASIN. Same
+  // authority (isReplenAmazonMarketplace) that drives the label * / input required state. Empty non-Amazon
+  // ASIN keeps the existing blank contract — NO fabricated 'N/A' / 'NONE' placeholder.
+  if (isReplenAmazonMarketplace(marketplace) && !marketplaceProductId) { alert('ASIN (Marketplace Product ID) is required for Amazon marketplaces.'); return; }
   // Product URL required. Accept any http(s) URL (do not force a specific marketplace domain).
   if (!productUrl) { alert('Product URL is required.'); return; }
   if (!/^https?:\/\/\S+/i.test(productUrl)) { alert('Product URL must be a valid http:// or https:// link.'); return; }
