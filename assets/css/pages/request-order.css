@@ -2107,3 +2107,17 @@
 #request-order-section .op-reco__table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 #request-order-section .op-reco__table .ro-num { white-space: nowrap; text-align: right; }
 #request-order-section .op-reco-diag { max-width: 100%; }
+
+/* =============================================================================================================
+   F1-4B-FM6 — deterministic Recommended Action note (AI Plan output) appended inside Block 3. Additive only:
+   the Demand Summary + Order Allocation (incl. the editable manual Order Qty) above it are untouched.
+   ============================================================================================================= */
+#request-order-section .ro-reco-action { margin-top: 8px; padding: 6px 8px; border-top: 1px solid var(--border-light, #e5e7eb); font-size: 11px; }
+#request-order-section .ro-reco-action__title { font-weight: 700; color: #1f2937; margin-bottom: 3px; }
+#request-order-section .ro-reco-action__tiers { display: flex; flex-wrap: wrap; gap: 10px; }
+#request-order-section .ro-reco-tier { color: #334155; font-variant-numeric: tabular-nums; }
+#request-order-section .ro-reco-action__note { margin-top: 3px; color: var(--text-secondary, #6b7280); overflow-wrap: anywhere; }
+#request-order-section .ro-reco-action--ready { background: #ecfdf5; }
+#request-order-section .ro-reco-action--none { background: #f8fafc; }
+#request-order-section .ro-reco-action--blocked,
+#request-order-section .ro-reco-action--stale { color: #92400e; background: #fffbeb; }

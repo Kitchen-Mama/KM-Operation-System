@@ -1792,3 +1792,18 @@
 #ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook { font-size: 11px; margin-top: 4px; }
 #ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook th,
 #ops-section .replen-card--recommendation-summary .replen-horizon-table--outlook td { padding: 3px 6px; }
+
+/* =============================================================================================================
+   F1-4B-FM6 — deterministic Recommended Action block (AI Plan output) appended UNDER the fixed gap table.
+   Compact, top-aligned, its own subtle surface; NEVER replaces the materialized 4-row gap table above it.
+   ============================================================================================================= */
+#ops-section .replen-reco-action { margin-top: 6px; padding: 6px 8px; border-top: 1px solid var(--border-light, #e5e7eb); font-size: 11px; }
+#ops-section .replen-reco-action__title { font-weight: 700; color: #1f2937; margin-bottom: 3px; }
+#ops-section .replen-reco-action__row { display: flex; justify-content: space-between; gap: 8px; line-height: 1.4; }
+#ops-section .replen-reco-action__label { color: var(--text-secondary, #6b7280); }
+#ops-section .replen-reco-action__qty { font-variant-numeric: tabular-nums; color: #065f46; }
+#ops-section .replen-reco-action__reason { margin-top: 3px; color: var(--text-secondary, #6b7280); overflow-wrap: anywhere; }
+#ops-section .replen-reco-action--ready { background: #ecfdf5; }
+#ops-section .replen-reco-action--none { background: #f8fafc; }
+#ops-section .replen-reco-action--blocked { background: #fffbeb; }
+#ops-section .replen-reco-action--stale { color: #92400e; background: #fffbeb; padding: 6px 8px; margin-top: 6px; border-top: 1px solid var(--border-light, #e5e7eb); font-size: 11px; }
