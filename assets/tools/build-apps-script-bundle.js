@@ -23,6 +23,7 @@ var MODULE_ORDER = [
   'supply-planning-ledgers',
   'supply-planning-allocations',
   'supply-planning-allocation-runtime',        // F1-4B-FM7-R2B canonical allocation runtime (requires allocations)
+  'supply-planning-factory-cohort',            // F1-4B-FM7-R2D POOL_COHORT_BATCH factory cohort allocator (requires allocation-runtime)
   'supply-planning-line-runtime',              // requires calculations + qualified-incoming
   'supply-planning-incoming-adapters',
   'supply-planning-external-incoming-adapters',
@@ -65,6 +66,7 @@ var GLOBALS = [
   ['KMLEDGER', 'supply-planning-ledgers'],
   ['KMALLOC', 'supply-planning-allocations'],
   ['KMAR', 'supply-planning-allocation-runtime'],
+  ['KMFC', 'supply-planning-factory-cohort'],
   ['KMLINE', 'supply-planning-line-runtime'],
   ['KMINC', 'supply-planning-incoming-adapters'],
   ['KMEXT', 'supply-planning-external-incoming-adapters'],

@@ -509,7 +509,14 @@
     var factoryInput = null, factoryAllocation = null;
     if (factoryDemands.length) {
       factoryInput = { masterSku: masterSku, factoryPools: factoryPools, demands: factoryDemands };
-      factoryAllocation = ALLOC.allocateFactoryDeterministic(factoryInput); // REAL §35/§40 allocator (never reimplemented)
+      // F1-4B-FM7-R2D POOL_COHORT_BATCH seam: when a conserved cross-company Factory slice is injected (the cohort
+      // already ran KMAR ONCE over the COMPLETE competing set upstream — KMFC.allocateFactoryPoolCohort), consume it
+      // VERBATIM instead of allocating this one company's demands against the full physical pool independently (which
+      // would double-use a shared warehouse_id+sku pool across companies). No injection ⇒ UNCHANGED single-company
+      // path (backward compatible). Still the frozen KMALLOC result shape either way; never a re-allocation here.
+      factoryAllocation = (input.injectedFactoryAllocation && typeof input.injectedFactoryAllocation === 'object')
+        ? input.injectedFactoryAllocation
+        : ALLOC.allocateFactoryDeterministic(factoryInput); // REAL §35/§40 allocator (never reimplemented)
     }
 
     // Deterministic ordering.
