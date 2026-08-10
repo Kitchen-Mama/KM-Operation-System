@@ -15,6 +15,10 @@
 // HARD LIMITS (F1-4B-FM6): NO gap recalculation, NO second formula engine, NO DB/schema change, NO downstream
 // write, NO scheduler wiring this round. READY rows only yield actionable recommendations; BLOCKED/ERROR never
 // fabricate a quantity (enforced inside KMREC).
+//
+// F1-4B-FM6-R1V (readiness gate): runRecommendationGeneration now FAILS CLOSED unless the product's durable gap
+// materialization job is DONE (or absent) — it never consumes a partially-refreshed gap table from an in-flight /
+// failed job. This is a READ-ONLY precondition over the 46.gs job state; still NO persistence, NO scheduler.
 
 // Read the STORED gap rows for a product (READ ONLY; header-mapped objects; [] when the table is absent/empty).
 // ORDER_PLANNING: additively stamp units_per_carton onto each row from sku_details — the single UPC authority the
@@ -46,6 +50,21 @@ function recGenUpcBySku_(ss) {
   return map;
 }
 
+// F1-4B-FM6-R1V §11 — GAP-DONE readiness gate (PURE decision over the durable gap-job state). Recommendation
+// generation must NEVER consume a partially-refreshed gap table: it is READY only when the product's gap
+// materialization job is terminal-complete (DONE) or absent (NONE = no in-flight job → a complete cycle). Any
+// in-flight / failed state (PENDING / RUNNING / FAILED / BLOCKED / ERROR — STALLED is a client-only concept, never
+// durable) DEFERS generation. This is the precondition the FUTURE automation round (GAP_DONE → recommendation) relies
+// on; NO scheduler is wired here. Manual AI Plan is unaffected (it renders already-loaded rows client-side).
+function recGenGapReadyFromState_(state) {
+  var status = (state && state.status) ? String(state.status) : 'NONE';
+  return { ready: (status === 'NONE' || status === 'DONE'), status: status };
+}
+// Read the durable gap-job state via the canonical 46.gs owner (Script Properties); null when unavailable/absent.
+function recGenReadGapJobState_(product) {
+  try { return gapJobReadState_(gapJobDefaultEnv_(product), product); } catch (e) { return null; }
+}
+
 // Shared canonical owner (§8): manual AI Plan (client-side KMREC over the loaded gap rows) and this automatic path
 // BOTH call KMREC — one generator. Returns a compact summary envelope; NO per-SKU payload is written anywhere.
 function runRecommendationGeneration(product) {
@@ -54,6 +73,9 @@ function runRecommendationGeneration(product) {
   if (p === 'OP' || p === 'ORDERPLANNING') p = 'ORDER_PLANNING';
   if (p !== 'INVENTORY' && p !== 'ORDER_PLANNING') return { ok: false, code: 'INVALID_PRODUCT', message: 'product required (INVENTORY|ORDER_PLANNING)' };
   if (typeof KMREC === 'undefined' || !KMREC || typeof KMREC.generateBatch !== 'function') return { ok: false, code: 'KMREC_NOT_BUNDLED', message: 'recommendation generator not bundled' };
+  // §11 fail-closed: never generate a recommendation from an incomplete/failed gap cycle (partial rows).
+  var ready = recGenGapReadyFromState_(recGenReadGapJobState_(p));
+  if (!ready.ready) return { ok: false, code: 'GAP_JOB_NOT_DONE', message: 'gap materialization job is ' + ready.status + '; recommendation deferred until DONE', product: p, jobStatus: ready.status };
   try {
     var rows = recGenReadGapRows_(p);
     var res = KMREC.generateBatch(p, rows, {});   // SAME owner + rules as the manual button (earliest-window / per-tier / no-total)
