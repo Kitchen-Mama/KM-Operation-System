@@ -87,6 +87,28 @@
 .glm-check input { accent-color: var(--glm-brand); }
 .glm-field-row { display: flex; gap: 10px; }
 .glm-field-row .glm-field { flex: 1; min-width: 0; }
+
+/* ---- Compact horizontal filter bar (R8B §2; presentation only — same data-filter semantics) ---- */
+.glm-filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 9px 12px; padding: 12px 14px; margin-bottom: 14px; border: 1px solid var(--glm-line); border-radius: var(--glm-r); background: var(--glm-surface); box-shadow: var(--glm-shadow-sm); }
+.glm-field--inline { margin-bottom: 0; flex: 0 0 auto; min-width: 132px; }
+.glm-field--inline > span { font-size: 10px; }
+.glm-field--search { flex: 1 1 220px; min-width: 200px; }
+.glm-filterbar__checks { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; align-self: center; }
+.glm-filterbar__checks .glm-check { margin-bottom: 0; }
+.glm-filterbar > .glm-btn { align-self: center; }
+
+/* ---- One coherent status-summary region (R8B §3): lifecycle status + operational indicators ---- */
+.glm-summary { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; margin-bottom: 16px; }
+.glm-summary__group { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.glm-summary__label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--glm-ink-4); }
+.glm-summary .glm-status-summary, .glm-summary .glm-kpis { margin-bottom: 0; }
+
+/* ---- Card backend-status pill (R8B §5; backend-derived, never computed in JS) ---- */
+.glm-ship__statusrow { margin-top: 6px; }
+.glm-ship__status { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--glm-line); background: var(--glm-surface-2); color: var(--glm-ink-2); text-transform: capitalize; }
+.glm-ship__status--partially_received { background: rgba(217,119,6,0.12); border-color: rgba(217,119,6,0.35); color: #b45309; }
+.glm-ship__status--received, .glm-ship__status--completed, .glm-ship__status--delivered { background: rgba(22,163,74,0.12); border-color: rgba(22,163,74,0.35); color: #15803d; }
+.glm-ship__status--in_transit, .glm-ship__status--shipped, .glm-ship__status--arrived, .glm-ship__status--ready_to_ship { background: rgba(2,132,199,0.12); border-color: rgba(2,132,199,0.35); color: #0369a1; }
 .glm-filter-actions { display: flex; gap: 8px; margin-top: 8px; }
 
 /* buttons */
@@ -126,7 +148,13 @@
 .glm-map-controls { position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; gap: 7px; z-index: 4; }
 .glm-map-controls .glm-btn { width: 40px; height: 40px; padding: 0; text-align: center; font-size: 18px; background: var(--glm-dark-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-color: var(--glm-dark-line); color: var(--glm-dark-ink); box-shadow: 0 6px 18px rgba(2,6,23,0.3); }
 .glm-map-controls .glm-btn:hover { background: rgba(30,41,59,0.92); border-color: rgba(148,163,184,0.4); }
-.glm-map-toggles { position: absolute; left: 14px; top: 14px; z-index: 4; display: flex; flex-direction: column; gap: 6px; }
+.glm-map-toggles { position: absolute; left: 14px; top: 70px; z-index: 4; display: flex; flex-direction: column; gap: 6px; }
+/* Map View / layer selector (R8B) — relocated into the map surface, upper-left, above the arc/pin toggles. */
+.glm-map-view { position: absolute; left: 14px; top: 14px; z-index: 5; }
+.glm-map-view__lbl { display: inline-flex; align-items: center; gap: 8px; background: var(--glm-dark-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid var(--glm-dark-line); border-radius: var(--glm-r-xs); padding: 6px 10px; color: var(--glm-dark-ink); box-shadow: 0 6px 18px rgba(2,6,23,0.25); }
+.glm-map-view__lbl > span { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--glm-dark-ink); opacity: 0.85; }
+.glm-map-view select { border: 1px solid var(--glm-dark-line); border-radius: var(--glm-r-xs); background: rgba(15,23,42,0.6); color: var(--glm-dark-ink); font-size: 12.5px; font-weight: 600; padding: 5px 8px; cursor: pointer; }
+.glm-map-view select:focus { outline: none; border-color: var(--glm-brand); box-shadow: 0 0 0 3px var(--glm-brand-soft); }
 .glm-check--map { background: var(--glm-dark-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid var(--glm-dark-line); color: var(--glm-dark-ink); border-radius: var(--glm-r-xs); padding: 6px 11px; font-size: 11.5px; font-weight: 600; margin: 0; box-shadow: 0 6px 18px rgba(2,6,23,0.25); }
 
 /* legend (collapsible dark glass, does not cover the globe) */

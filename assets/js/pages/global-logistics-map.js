@@ -272,14 +272,18 @@
     if (state.error) { b.innerHTML = '<div class="glm-state glm-state--error"><p class="glm-state__title">Could not load data</p><p class="glm-state__msg">' + esc(state.error) + '</p><button type="button" class="glm-btn" data-act="retry">Retry</button></div>'; var rb = r.querySelector('[data-act="retry"]'); if (rb) rb.onclick = function () { boot(true); }; return; }
     if (meta) { var vms = allVms(); meta.textContent = vms.length + ' shipments · ' + state.rm.shipmentRoutes.length + ' route nodes · ' + state.rm.shipmentEvents.length + ' events · ' + state.rm.locations.length + ' logistics locations.'; }
 
-    var sideHtml = (state.mode === 'template') ? renderTemplateSide() : (state.mode === 'global') ? renderGlobalRefSide() : (renderFilters() + renderShipmentList());
+    // Phase-1 frozen IA (F1-SHIPMENT-MAP-R8B): Title → compact Filter Bar → Status Summary → Main Workspace
+    // (LEFT shipment cards start at the top; RIGHT world map). Filters no longer sit in the left column above
+    // the list; the On the Way / Route Template / Global Reference modes move into the map surface.
+    var isRuntime = state.mode === 'runtime';
+    var sideHtml = (state.mode === 'template') ? renderTemplateSide() : (state.mode === 'global') ? renderGlobalRefSide() : renderShipmentList();
     b.innerHTML =
       renderTopBar() +
       renderSourceBanner() +
       (state.partial ? renderPartialNote() : '') +
       (state.debug ? renderDiagPanel() : '') +
-      (state.mode === 'runtime' ? renderKpiStrip() : '') +
-      (state.mode === 'runtime' ? renderStatusSummary() : '') +
+      (isRuntime ? renderFilterBar() : '') +
+      (isRuntime ? renderSummaryRegion() : '') +
       '<div class="glm-main">' +
         '<div class="glm-side">' + sideHtml + '</div>' +
         '<div class="glm-mapwrap">' + renderMapShell() + '</div>' +
@@ -290,11 +294,10 @@
   }
 
   var MODE_TABS = [{ id: 'runtime', label: 'On the Way' }, { id: 'template', label: 'Route Template' }, { id: 'global', label: 'Global Reference' }];
+  // The map-layer modes are no longer a primary page-level tab row (R8B) — they live inside the map surface
+  // (renderMapShell → data-mode-select). The top bar keeps only the admin Refresh control.
   function renderTopBar() {
     return '<div class="glm-topbar">' +
-      '<div class="glm-modebar" role="tablist" aria-label="Map layer">' + MODE_TABS.map(function (m) {
-        return '<button type="button" role="tab" aria-selected="' + (state.mode === m.id) + '" class="glm-mode' + (state.mode === m.id ? ' is-active' : '') + '" data-mode="' + m.id + '">' + esc(m.label) + '</button>';
-      }).join('') + '</div>' +
       '<div class="glm-topbar__admin"><button type="button" class="glm-btn" data-act="refresh">↻ Refresh</button></div>' +
       '</div>';
   }
@@ -322,40 +325,52 @@
     }).join('') + (f.kpi ? '<button type="button" class="glm-btn glm-btn--small" data-act="clear-kpi">Clear KPI filter</button>' : '') + '</div>';
   }
 
-  // §13 backend-status summary above the map/list (reflects the SAME filtered collection that drives list + map).
+  // §13 backend-status summary (reflects the SAME filtered collection that drives list + map). Returns the
+  // lifecycle stat cards; renderSummaryRegion nests it beside the operational KPIs in ONE coherent region.
   function renderStatusSummary() {
     var sm = glmStatusSummary(filteredVms()).filter(function (b) { return b.key !== 'other' || b.count > 0; });
-    return '<div class="glm-status-summary" role="group" aria-label="Shipment status summary">' + sm.map(function (b) {
+    return '<div class="glm-status-summary" role="group" aria-label="Shipment lifecycle status summary">' + sm.map(function (b) {
       var title = (b.key === 'other' && b.statuses && b.statuses.length) ? ' title="' + esc(b.statuses.join(', ')) + '"' : '';
       return '<div class="glm-statcard glm-statcard--' + b.key + '"' + title + '><span class="glm-statcard__value">' + num(b.count) + '</span><span class="glm-statcard__label">' + esc(b.label) + '</span></div>';
     }).join('') + '</div>';
   }
 
-  // ---------- filters panel ----------
-  function selHtml(label, key, opts, cur) {
-    return '<label class="glm-field"><span>' + esc(label) + '</span><select data-filter="' + key + '"><option value="">All</option>' +
+  // ONE coherent status-summary region (R8B §3): lifecycle statuses (backend shipment.status) and operational
+  // indicators (KPI flags) coexist visually but remain DIFFERENT data concepts — never merged semantically.
+  function renderSummaryRegion() {
+    return '<div class="glm-summary">' +
+      '<div class="glm-summary__group"><span class="glm-summary__label">Lifecycle status</span>' + renderStatusSummary() + '</div>' +
+      '<div class="glm-summary__group"><span class="glm-summary__label">Operational</span>' + renderKpiStrip() + '</div>' +
+      '</div>';
+  }
+
+  // ---------- filters (compact horizontal bar; presentation only — SAME data-filter keys + semantics) ----------
+  function selHtml(label, key, opts, cur, cls) {
+    return '<label class="glm-field' + (cls ? ' ' + cls : '') + '"><span>' + esc(label) + '</span><select data-filter="' + key + '"><option value="">All</option>' +
       opts.map(function (o) { return '<option value="' + esc(o) + '"' + (cur === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>';
   }
-  function renderFilters() {
-    var vms = allVms(), f = state.filters;
+  function renderFilterBar() {
+    var vms = allVms(), f = state.filters, IL = 'glm-field--inline';
     var tplOpts = optSet(vms, function (v) { return v.routeTemplateId; });
-    return '<div class="glm-panel"><h3 class="glm-panel__title">Shipment Runtime Filters</h3>' +
-      '<label class="glm-field"><span>Search — Shipment / Tracking / Container</span><input type="text" data-filter="search" value="' + esc(f.search) + '" placeholder="Search…"></label>' +
-      selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company) +
-      selHtml('Origin Country', 'originCountry', optSet(vms, function (v) { return v.originCountry; }), f.originCountry) +
-      selHtml('Destination Country', 'destCountry', optSet(vms, function (v) { return v.destCountry; }), f.destCountry) +
-      selHtml('Destination Warehouse', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse) +
-      selHtml('Carrier', 'carrier', optSet(vms, function (v) { return v.carrier; }), f.carrier) +
-      selHtml('Shipping Method / Transport Mode', 'method', optSet(vms, function (v) { return v.method; }), f.method) +
-      selHtml('Shipment Status', 'status', optSet(vms, function (v) { return v.status; }), f.status) +
-      selHtml('Current Stage', 'stage', optSet(vms, function (v) { return v.stage; }), f.stage) +
-      (tplOpts.length ? selHtml('Route Template', 'routeTemplateId', tplOpts, f.routeTemplateId) : '') +
-      '<div class="glm-field-row"><label class="glm-field"><span>ETA From</span><input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '"></label>' +
-      '<label class="glm-field"><span>ETA To</span><input type="date" data-filter="etaTo" value="' + esc(f.etaTo) + '"></label></div>' +
-      '<label class="glm-check"><input type="checkbox" data-filter="exceptionOnly"' + (f.exceptionOnly ? ' checked' : '') + '> Exception only</label>' +
-      '<label class="glm-check"><input type="checkbox" data-filter="delayedOnly"' + (f.delayedOnly ? ' checked' : '') + '> Delayed only</label>' +
-      '<label class="glm-check"><input type="checkbox" data-filter="arrivingSoon"' + (f.arrivingSoon ? ' checked' : '') + '> Arriving within 7 days</label>' +
-      '<div class="glm-filter-actions"><button type="button" class="glm-btn" data-act="clear-filters">Clear Filters</button></div>' +
+    return '<div class="glm-filterbar" role="group" aria-label="Shipment filters">' +
+      '<label class="glm-field glm-field--inline glm-field--search"><span>Search</span><input type="text" data-filter="search" value="' + esc(f.search) + '" placeholder="Shipment / Tracking / Container…"></label>' +
+      selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company, IL) +
+      selHtml('Origin', 'originCountry', optSet(vms, function (v) { return v.originCountry; }), f.originCountry, IL) +
+      selHtml('Destination', 'destCountry', optSet(vms, function (v) { return v.destCountry; }), f.destCountry, IL) +
+      selHtml('Dest Warehouse', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, IL) +
+      selHtml('Carrier', 'carrier', optSet(vms, function (v) { return v.carrier; }), f.carrier, IL) +
+      selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, IL) +
+      selHtml('Status', 'status', optSet(vms, function (v) { return v.status; }), f.status, IL) +
+      selHtml('Stage', 'stage', optSet(vms, function (v) { return v.stage; }), f.stage, IL) +
+      (tplOpts.length ? selHtml('Route Template', 'routeTemplateId', tplOpts, f.routeTemplateId, IL) : '') +
+      '<label class="glm-field glm-field--inline"><span>ETA From</span><input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '"></label>' +
+      '<label class="glm-field glm-field--inline"><span>ETA To</span><input type="date" data-filter="etaTo" value="' + esc(f.etaTo) + '"></label>' +
+      '<div class="glm-filterbar__checks">' +
+        '<label class="glm-check"><input type="checkbox" data-filter="exceptionOnly"' + (f.exceptionOnly ? ' checked' : '') + '> Exception</label>' +
+        '<label class="glm-check"><input type="checkbox" data-filter="delayedOnly"' + (f.delayedOnly ? ' checked' : '') + '> Delayed</label>' +
+        '<label class="glm-check"><input type="checkbox" data-filter="arrivingSoon"' + (f.arrivingSoon ? ' checked' : '') + '> Arriving ≤7d</label>' +
+      '</div>' +
+      '<button type="button" class="glm-btn glm-btn--small" data-act="clear-filters">Clear Filters</button>' +
       '</div>';
   }
 
@@ -373,11 +388,15 @@
       var pl = resolveShipmentPlacement(v);
       var flag = v.flags.exception ? '<span class="glm-badge glm-badge--danger">Exception</span>' : (v.flags.delayed ? '<span class="glm-badge glm-badge--danger">Delayed</span>' : (v.flags.arrivingSoon ? '<span class="glm-badge glm-badge--good">Arriving Soon</span>' : ''));
       var posBadge = pl.kind === 'pending' ? '<span class="glm-badge glm-badge--pending">Coord Pending</span>' : (pl.kind !== 'current' ? '<span class="glm-badge glm-badge--neutral">' + esc(pl.kind) + '</span>' : '');
+      // backend-derived shipment status (never computed here) — Partially Received / Received are visibly distinct.
+      var st = low(v.status), stCls = st ? st.replace(/[^a-z0-9]+/g, '-') : 'unknown';
+      var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '">' + esc(v.status || '—') + '</span>';
       return '<div class="glm-ship' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" tabindex="0" role="button" aria-label="Shipment ' + esc(v.shipmentNo) + '">' +
         '<div class="glm-ship__hd"><span class="glm-ship__no">' + esc(v.shipmentNo) + '</span>' + flag + '</div>' +
         '<div class="glm-ship__route">' + esc(v.originCountry || v.shipFrom || '?') + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + ' ' + posBadge + '</div>' +
         '<div class="glm-ship__meta">' + esc(v.carrier || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
         '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || '—') + '</div>' +
+        '<div class="glm-ship__statusrow">' + statusPill + '</div>' +
         '</div>';
     }).join('');
     return '<div class="glm-panel"><h3 class="glm-panel__title">Shipments (' + vms.length + ')</h3><div class="glm-shiplist">' + rows + '</div></div>';
@@ -389,6 +408,10 @@
     return '' +
       '<div class="glm-globe-slot" data-glm="globe-slot"></div>' +
       '<div class="glm-tip" data-glm="tip" aria-hidden="true"></div>' +
+      '<div class="glm-map-view"><label class="glm-map-view__lbl"><span>Map View</span>' +
+        '<select data-mode-select aria-label="Map view / layer">' + MODE_TABS.map(function (m) {
+          return '<option value="' + m.id + '"' + (state.mode === m.id ? ' selected' : '') + '>' + esc(m.label) + '</option>';
+        }).join('') + '</select></label></div>' +
       '<div class="glm-map-controls">' +
         '<button type="button" class="glm-btn" data-act="zoom-in" aria-label="Zoom in">+</button>' +
         '<button type="button" class="glm-btn" data-act="zoom-out" aria-label="Zoom out">&minus;</button>' +
@@ -818,6 +841,8 @@
   function bindRuntime() {
     var r = root(); if (!r) return;
     r.querySelectorAll('[data-mode]').forEach(function (b) { b.onclick = function () { var m = b.getAttribute('data-mode'); if (m === state.mode) return; state.mode = m; state.selectedShipmentId = ''; state.didFocus = false; render(); }; });
+    // R8B: map-layer mode now lives inside the map surface as a compact selector.
+    r.querySelectorAll('[data-mode-select]').forEach(function (sel) { sel.onchange = function () { var m = sel.value; if (m === state.mode) return; state.mode = m; state.selectedShipmentId = ''; state.didFocus = false; render(); }; });
     r.querySelectorAll('[data-kpi]').forEach(function (b) { b.onclick = function () { var k = b.getAttribute('data-kpi'); state.filters.kpi = (state.filters.kpi === k) ? '' : k; state.selectedShipmentId = ''; render(); }; });
     r.querySelectorAll('[data-filter]').forEach(function (el) {
       var key = el.getAttribute('data-filter');
