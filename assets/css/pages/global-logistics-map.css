@@ -286,3 +286,14 @@
   .glm-globe-host { animation: none; }
   .glm-kpi, .glm-ship, .glm-btn, .glm-step, .glm-mode { transition: none; }
 }
+
+/* Shipment Receipt + Route Progress (F1-SHIPMENT-RECEIPT-R1B) — minimal, drawer-scoped. */
+.glm-recv-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.glm-recv-table th, .glm-recv-table td { padding: 6px 8px; border-bottom: 1px solid var(--glm-border, rgba(148,163,184,0.25)); text-align: left; }
+.glm-recv-table th.glm-num, .glm-recv-table td.glm-num { text-align: right; }
+.glm-recv-input { width: 84px; text-align: right; padding: 4px 6px; border: 1px solid var(--glm-border, rgba(148,163,184,0.5)); border-radius: 6px; background: transparent; color: inherit; font: inherit; }
+.glm-recv-input[readonly] { opacity: 0.6; cursor: not-allowed; }
+.glm-receipt-note { font-size: 11px; margin: 2px 0 6px; }
+.glm-receipt-msg { min-height: 16px; font-size: 12px; margin: 6px 0 0; }
+.glm-receipt-msg--error { color: #dc2626; }
+.glm-receipt-msg--ok { color: #16a34a; }

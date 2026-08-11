@@ -195,6 +195,16 @@ function doPost(e) {
       return handleConfirmShipmentAndDispatch_(body);
     }
 
+    // Shipment Receipt + Route Progress (F1-SHIPMENT-RECEIPT-R1B). Receipt = cumulative write to the LIVE
+    // shipment_lines.shipment_received_qty + backend-derived shipments.status; route advance = forward-only
+    // current-point set on shipment_routes node statuses. See 31_shipment_receipt_route_handlers.gs.
+    if (action === 'shipment.receipt.update') {
+      return handleUpdateShipmentReceipt_(body);
+    }
+    if (action === 'shipment.route.advance') {
+      return handleAdvanceShipmentRoutePoint_(body);
+    }
+
     // Procurement Layer (Phase 1) — Request Order / Purchase Order.
     if (action === 'createRequestOrderDraft') {
       return handleCreateRequestOrderDraft_(body);

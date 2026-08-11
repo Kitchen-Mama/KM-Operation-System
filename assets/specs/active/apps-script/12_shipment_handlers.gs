@@ -64,7 +64,13 @@ var SHIPMENT_LINES_HEADERS_ = [
   // Execution Snapshot = a verbatim COPY of the Decision Snapshot (ARCHITECTURE §4A). Never recalculated.
   'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
   'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_fc_context', 'snapshot_event_context',
-  'snapshot_avg_sales_source', 'snapshot_avg_sales_warning'
+  'snapshot_avg_sales_source', 'snapshot_avg_sales_warning',
+  // Receipt authority (F1-SHIPMENT-RECEIPT-R1B — CONTRACT DRIFT REPAIR). shipment_received_qty ALREADY
+  // EXISTS in the LIVE DB (user-confirmed 2026-08-11); this line only aligns the repo/Apps Script header
+  // contract to that live column. It is CUMULATIVE physically-received quantity. NO duplicate received
+  // field is added; remaining_qty is runtime-derived (max(shipment_qty - shipment_received_qty, 0)) and is
+  // NOT persisted. Historical blanks normalize to 0 at read time (never a bulk row rewrite).
+  'shipment_received_qty'
 ];
 
 // Execution-layer fields a user MAY edit on a Shipment (everything else — identity, the six-key

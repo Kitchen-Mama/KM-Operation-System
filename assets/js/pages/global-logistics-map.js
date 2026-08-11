@@ -94,6 +94,7 @@
     var db = window.KM.DB;
     var rm = {
       shipments: (db.getShipments && db.getShipments()) || [],
+      shipmentLines: (db.getShipmentLines && db.getShipmentLines()) || [],
       shipmentRoutes: (db.getShipmentRoutes && db.getShipmentRoutes()) || [],
       shipmentEvents: (db.getShipmentEvents && db.getShipmentEvents()) || [],
       warehouses: (db.getWarehouses && db.getWarehouses()) || [],
@@ -112,8 +113,9 @@
     Object.keys(eventsByShip).forEach(function (k) { eventsByShip[k].sort(function (a, b) { return (a.eventSequence - b.eventSequence) || String(a.eventTime).localeCompare(String(b.eventTime)); }); eventsByShip[k] = dedupeEvents(eventsByShip[k]); });
     var nodesByShip = {}; rm.shipmentRoutes.forEach(function (n) { (nodesByShip[n.shipmentId] = nodesByShip[n.shipmentId] || []).push(n); });
     Object.keys(nodesByShip).forEach(function (k) { nodesByShip[k].sort(function (a, b) { return a.sequenceNo - b.sequenceNo; }); });
+    var linesByShip = {}; rm.shipmentLines.forEach(function (l) { (linesByShip[l.shipmentId] = linesByShip[l.shipmentId] || []).push(l); });
     state.rm = rm;
-    state.idx = { locById: locById, locByWh: locByWh, locByFactory: locByFactory, whById: whById, eventsByShip: eventsByShip, nodesByShip: nodesByShip };
+    state.idx = { locById: locById, locByWh: locByWh, locByFactory: locByFactory, whById: whById, eventsByShip: eventsByShip, nodesByShip: nodesByShip, linesByShip: linesByShip };
     state.vms = buildShipmentViewModels();
     var missing = [];
     if (!rm.shipmentRoutes.length) missing.push('shipment_routes');
@@ -535,6 +537,126 @@
       kv('Verification', l.verificationStatus) + kv('Warehouse', l.warehouseId) + kv('Factory', l.factoryId) + '</section>';
     openDrawer();
   }
+  // ---------- Receipt + Route-Progress (F1-SHIPMENT-RECEIPT-R1B) ----------
+  // Actor identity for backend writes (best-effort; backend defaults to system_user when absent).
+  function glmActor() { try { return (window.KM && (KM.currentUserEmail || (KM.currentUser && KM.currentUser.email))) || 'global-logistics-map'; } catch (e) { return 'global-logistics-map'; } }
+  // Rebuild the read model from the (already-refreshed) DB cache and re-open the shipment, so the drawer
+  // reflects the new receipt / route state. The write adapters force-reload the cache, so NO extra fetch.
+  function afterShipmentWrite(shipmentId) {
+    try { buildReadModel(); } catch (e) {}
+    if (state.vms[shipmentId]) selectShipment(shipmentId); else { state.selectedShipmentId = ''; render(); }
+  }
+  function receiptMsg(text, tone) {
+    var el = document.querySelector('[data-glm="receipt-msg"]'); if (!el) return;
+    el.textContent = text || ''; el.className = 'glm-receipt-msg' + (tone ? ' glm-receipt-msg--' + tone : '');
+  }
+  // The current node's sequence (the one flagged `current` in shipment_routes), else -1.
+  function currentNodeSeq(vm) { return vm.currentNode ? vm.currentNode.sequenceNo : -1; }
+  // Canonical node identity used for a route advance (template node id preferred; route id fallback).
+  function nodeIdentity(n) { return n.routeTemplateNodeId || n.shipmentRouteId || ''; }
+  // Deterministic receiving-capable node = terminal (max sequence) node, refined by warehouse/receiving/
+  // arrival/delivery semantics when the LAST such node exists. Mirrors backend shipReceivingCapableNodeId_.
+  function receivingCapableSeq(vm) {
+    var nodes = (vm.nodes || []).slice().sort(function (a, b) { return a.sequenceNo - b.sequenceNo; });
+    if (!nodes.length) return -1;
+    var rx = /warehouse|receiv|arriv|deliver|destination|fba|fulfil|\bfc\b/i, semantic = -1;
+    nodes.forEach(function (n) { if (rx.test((n.nodeType || '') + ' ' + (n.nodeCode || '') + ' ' + (n.plannedEventType || ''))) semantic = n.sequenceNo; });
+    return semantic >= 0 ? semantic : nodes[nodes.length - 1].sequenceNo;
+  }
+  function shipmentLinesFor(id) { return (state.idx.linesByShip && state.idx.linesByShip[id]) || []; }
+  // Derived receipt status (display mirror of the backend deriver) from the shipment's authoritative lines.
+  function derivedReceiptStatus(lines) {
+    if (!lines.length) return '';
+    var anyReceived = false, allFull = true;
+    lines.forEach(function (l) { var s = parseFloat(l.shipmentQty) || 0, r = parseFloat(l.shipmentReceivedQty) || 0; if (r > 0) anyReceived = true; if (r < s) allFull = false; });
+    if (!anyReceived) return '';
+    return allFull ? 'received' : 'partially_received';
+  }
+  function receiptPanelHtml(vm) {
+    var nodes = (vm.nodes || []).slice().sort(function (a, b) { return a.sequenceNo - b.sequenceNo; });
+    var curSeq = currentNodeSeq(vm);
+    // CURRENT ROUTE POINT selector — options come ONLY from this shipment's snapshotted route nodes.
+    var routeSection;
+    if (!nodes.length) {
+      routeSection = '<p class="glm-muted">No route nodes snapshotted for this shipment — advance is unavailable until the route is created (Confirm & Dispatch).</p>';
+    } else {
+      var opts = nodes.map(function (n) {
+        var backward = n.sequenceNo < curSeq;   // backward moves are blocked by the backend; disable in UI
+        var lbl = '#' + n.sequenceNo + ' · ' + (n.nodeName || n.locationName || n.nodeCode || ('Node ' + n.sequenceNo)) + (n.status ? ' (' + n.status + ')' : '');
+        return '<option value="' + esc(nodeIdentity(n)) + '"' + (low(n.status) === 'current' ? ' selected' : '') + (backward ? ' disabled' : '') + '>' + esc(lbl) + '</option>';
+      }).join('');
+      routeSection = '<label class="glm-field"><span>Current Route Point</span><select data-route-select>' + opts + '</select></label>' +
+        '<div class="glm-filter-actions"><button type="button" class="glm-btn" data-act="route-advance">Update Route Point</button></div>';
+    }
+    // RECEIVING table — shipment_qty read-only; shipment_received_qty editable cumulative; remaining derived.
+    var lines = shipmentLinesFor(vm.shipmentId);
+    var fullyReceived = lines.length > 0 && derivedReceiptStatus(lines) === 'received';
+    var recvRows = lines.length ? lines.map(function (l) {
+      var shipped = parseFloat(l.shipmentQty) || 0, recv = parseFloat(l.shipmentReceivedQty) || 0, remain = Math.max(shipped - recv, 0);
+      return '<tr>' +
+        '<td>' + esc(l.sku || l.shipmentLineId) + '</td>' +
+        '<td class="glm-num">' + num(shipped) + '</td>' +
+        '<td class="glm-num"><input type="number" class="glm-recv-input" min="' + recv + '" max="' + shipped + '" step="1" value="' + recv + '" data-recv-line="' + esc(l.shipmentLineId) + '" data-shipped="' + shipped + '" data-prev="' + recv + '"' + (fullyReceived ? ' readonly' : '') + '></td>' +
+        '<td class="glm-num" data-remain-line="' + esc(l.shipmentLineId) + '">' + num(remain) + '</td>' +
+        '</tr>';
+    }).join('') : '';
+    var recvSection = lines.length
+      ? '<table class="glm-recv-table"><thead><tr><th>SKU</th><th class="glm-num">Shipped</th><th class="glm-num">Received</th><th class="glm-num">Remaining</th></tr></thead><tbody>' + recvRows + '</tbody></table>' +
+        '<div class="glm-filter-actions"><button type="button" class="glm-btn" data-act="receipt-save"' + (fullyReceived ? ' disabled' : '') + '>Save Receipt</button></div>' +
+        (fullyReceived ? '<p class="glm-muted">Fully received — inputs are locked.</p>' : '') +
+        (receivingCapableSeq(vm) >= 0 && curSeq >= 0 && curSeq < receivingCapableSeq(vm) ? '<p class="glm-muted">Shipment has not yet reached its destination/receiving node — receipt is still allowed but typically recorded at the final node.</p>' : '')
+      : '<p class="glm-muted">No shipment lines loaded for this shipment.</p>';
+    var derived = derivedReceiptStatus(lines);
+    return '<section class="glm-dsec"><h4>Route Progress (shipment_routes)</h4>' + routeSection + '</section>' +
+      '<section class="glm-dsec"><h4>Receiving</h4>' +
+        kv('Derived Receipt Status', derived || '—') +
+        '<p class="glm-muted glm-receipt-note">Status is system-derived from received quantities — it is never set directly.</p>' +
+        recvSection +
+        '<p class="glm-receipt-msg" data-glm="receipt-msg" role="status" aria-live="polite"></p>' +
+      '</section>';
+  }
+  function wireReceiptControls(vm) {
+    var r = root(); if (!r) return;
+    // live Remaining recompute as the user types (no write)
+    r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
+      inp.oninput = function () {
+        var shipped = parseFloat(inp.getAttribute('data-shipped')) || 0;
+        var v = parseFloat(inp.value); if (!isFinite(v)) v = 0;
+        var cell = r.querySelector('[data-remain-line="' + cssEsc(inp.getAttribute('data-recv-line')) + '"]');
+        if (cell) cell.textContent = num(Math.max(shipped - v, 0));
+      };
+    });
+    var saveBtn = r.querySelector('[data-act="receipt-save"]');
+    if (saveBtn) saveBtn.onclick = function () {
+      if (!(window.KM.DB && window.KM.DB.updateShipmentReceipt)) { receiptMsg('Receipt API unavailable.', 'error'); return; }
+      var lines = [];
+      r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
+        var v = parseFloat(inp.value); if (!isFinite(v)) return;
+        lines.push({ shipment_line_id: inp.getAttribute('data-recv-line'), shipment_received_qty: v });
+      });
+      if (!lines.length) { receiptMsg('Nothing to save.', 'error'); return; }
+      saveBtn.disabled = true; receiptMsg('Saving receipt…', '');
+      window.KM.DB.updateShipmentReceipt({ shipment_id: vm.shipmentId, lines: lines, actor: glmActor() }).then(function (resp) {
+        if (resp && resp.success) { afterShipmentWrite(vm.shipmentId); }
+        else {
+          saveBtn.disabled = false;
+          var detail = (resp && resp.invalid_lines && resp.invalid_lines.length) ? (' [' + resp.invalid_lines.map(function (x) { return (x.shipment_line_id || '?') + ':' + x.code; }).join(', ') + ']') : '';
+          receiptMsg((resp && resp.error ? resp.error : 'Receipt save failed.') + detail, 'error');
+        }
+      });
+    };
+    var advBtn = r.querySelector('[data-act="route-advance"]');
+    if (advBtn) advBtn.onclick = function () {
+      if (!(window.KM.DB && window.KM.DB.advanceShipmentRoutePoint)) { receiptMsg('Route API unavailable.', 'error'); return; }
+      var sel = r.querySelector('[data-route-select]'); if (!sel || !sel.value) { receiptMsg('Select a route point.', 'error'); return; }
+      advBtn.disabled = true; receiptMsg('Updating route point…', '');
+      window.KM.DB.advanceShipmentRoutePoint({ shipment_id: vm.shipmentId, route_template_node_id: sel.value, actor: glmActor() }).then(function (resp) {
+        if (resp && resp.success) { afterShipmentWrite(vm.shipmentId); }
+        else { advBtn.disabled = false; receiptMsg((resp && resp.error ? resp.error : 'Route update failed.'), 'error'); }
+      });
+    };
+  }
+
   function openShipmentDrawer(id) {
     var vm = state.vms[id]; var els = drawerEls(); if (!vm || !els) return;
     openDrawerCommon();
@@ -567,9 +689,11 @@
         '<div class="glm-kv"><span class="glm-kv__k">Current Position</span><span class="glm-kv__v">' + posLine + '</span></div>' +
         kv('ETA', vm.eta) + kv('Latest Event', vm.latestEvent ? (vm.latestEvent.eventType || vm.latestEvent.eventStatus) : '') + kv('Latest Updated', vm.latestUpdated) +
         (vm.flags.exception ? '<div class="glm-warn">Exception / delayed — needs attention.</div>' : (vm.flags.delayed ? '<div class="glm-warn">Past ETA and not yet delivered.</div>' : '')) + '</section>' +
+      receiptPanelHtml(vm) +
       '<section class="glm-dsec"><h4>Route (shipment_routes)</h4><div class="glm-steps">' + routeSteps + '</div></section>' +
       '<section class="glm-dsec"><h4>Event Timeline (actual only)</h4><div class="glm-steps">' + timeline + '</div></section>';
     openDrawer();
+    wireReceiptControls(vm);
   }
   function openDrawer() {
     var els = drawerEls(); if (!els || !els.dr) return;

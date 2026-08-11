@@ -1001,6 +1001,15 @@ function normalizeShipmentLineRecord(raw) {
         shipmentQty: parseFloat((r.shipment_qty === '' || r.shipment_qty == null) ? r.qty : r.shipment_qty) || 0,
         qty: parseFloat((r.shipment_qty === '' || r.shipment_qty == null) ? r.qty : r.shipment_qty) || 0,
         factoryStockAllocationQty: (r.factory_stock_allocation_qty === '' || r.factory_stock_allocation_qty == null) ? '' : (parseFloat(r.factory_stock_allocation_qty) || 0),
+        // Receipt authority (F1-SHIPMENT-RECEIPT-R1B). shipment_received_qty = CUMULATIVE physically-received
+        // qty (live DB column; blank/null historical rows normalize to 0). remainingQty is runtime-derived
+        // = max(shipmentQty - received, 0) and is NEVER persisted. shipment_qty stays immutable.
+        shipmentReceivedQty: (r.shipment_received_qty === '' || r.shipment_received_qty == null) ? 0 : (parseFloat(r.shipment_received_qty) || 0),
+        remainingQty: (function () {
+            var shipped = parseFloat((r.shipment_qty === '' || r.shipment_qty == null) ? r.qty : r.shipment_qty) || 0;
+            var recv = (r.shipment_received_qty === '' || r.shipment_received_qty == null) ? 0 : (parseFloat(r.shipment_received_qty) || 0);
+            return Math.max(shipped - recv, 0);
+        })(),
         // CANONICAL shipment_carton_qty with legacy carton_qty read-fallback. cartonQty kept as UI alias.
         shipmentCartonQty: parseFloat((r.shipment_carton_qty === '' || r.shipment_carton_qty == null) ? r.carton_qty : r.shipment_carton_qty) || 0,
         cartonQty: parseFloat((r.shipment_carton_qty === '' || r.shipment_carton_qty == null) ? r.carton_qty : r.shipment_carton_qty) || 0,
@@ -2635,6 +2644,60 @@ window.KM.DB.confirmShipmentAndDispatch = async function(payload) {
         return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' };
     }
     if (json && json.success) { await loadOperationDb({ force: true }); }   // refresh cache so On-the-Way sees it
+    return json;
+};
+
+// Shipment Receipt (F1-SHIPMENT-RECEIPT-R1B). CUMULATIVE receipt against the live shipment_received_qty
+// column; the backend derives shipments.status (partially_received / received) — never authored here.
+// Payload (snake_case): { shipment_id (required), lines: [ { shipment_line_id, shipment_received_qty } ],
+// actor? }. shipment_received_qty is the NEW CUMULATIVE total (not a per-save increment). Returns the FULL
+// backend response { success, data?, error?, code?, invalid_lines? } WITHOUT throwing. Reloads the DB cache
+// ONLY on success so On-the-Way immediately reflects the new receipt + derived status.
+window.KM.DB.updateShipmentReceipt = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateShipmentReceipt skipped');
+        return { success: false, error: 'API not configured', code: 'config' };
+    }
+    var json;
+    try {
+        var resp = await fetch(OP_DB_API_BASE_URL, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(Object.assign({ action: 'shipment.receipt.update' }, payload))
+        });
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, code: 'network' };
+        json = await resp.json();
+    } catch (e) {
+        return { success: false, error: (e && e.message) ? e.message : String(e), code: 'network' };
+    }
+    if (json && json.success) { await loadOperationDb({ force: true }); }
+    return json;
+};
+
+// Shipment Route Progress (F1-SHIPMENT-RECEIPT-R1B). Set the CURRENT route point on the shipment's
+// snapshotted shipment_routes nodes (forward-only; backward fails closed; same-node is an idempotent
+// no-op). Payload (snake_case): { shipment_id (required), route_template_node_id (required — canonical
+// node identity from this shipment's route), actor? }. Returns the FULL backend response WITHOUT throwing.
+window.KM.DB.advanceShipmentRoutePoint = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, advanceShipmentRoutePoint skipped');
+        return { success: false, error: 'API not configured', code: 'config' };
+    }
+    var json;
+    try {
+        var resp = await fetch(OP_DB_API_BASE_URL, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(Object.assign({ action: 'shipment.route.advance' }, payload))
+        });
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, code: 'network' };
+        json = await resp.json();
+    } catch (e) {
+        return { success: false, error: (e && e.message) ? e.message : String(e), code: 'network' };
+    }
+    if (json && json.success) { await loadOperationDb({ force: true }); }
     return json;
 };
 
