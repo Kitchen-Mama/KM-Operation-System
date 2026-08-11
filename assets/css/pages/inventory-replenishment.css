@@ -134,21 +134,59 @@
    / .more-options-item): neutral light-grey trigger (#f1f5f9 / #334155), white panel with a thin border +
    soft shadow, flat left-aligned items. Same token values as sku-details.css (no orange / toy look).
    Menu interaction, keyboard nav and click-outside close are unchanged (JS untouched). */
+/* More Options = NEUTRAL utility (§4): lowest toolbar priority — light-grey surface, subtle border, dark neutral
+   text, never orange. Geometry now shares the toolbar-action contract (--km-button-* : same height/radius/padding
+   as Search, Submit, AI Support) so all four toolbar controls are exactly the same height + vertically aligned. */
 #ops-section .replen-actions-menu__trigger {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
+    box-sizing: border-box;
+    height: var(--km-button-height, 36px);
+    min-height: var(--km-button-height, 36px);
     background: #f1f5f9;
     color: #334155;
     border: 1px solid var(--border-light);
-    padding: var(--space-sm) var(--space-md);
-    border-radius: var(--radius-sm);
+    padding: 0 var(--km-button-padding-x, 14px);
+    border-radius: var(--km-button-radius, 6px);
     font-weight: var(--weight-medium);
+    font-size: 13px;
+    line-height: 1;
     white-space: nowrap;
     cursor: pointer;
 }
 #ops-section .replen-actions-menu__trigger:hover { background: #e2e8f0; opacity: 1; }
 #ops-section .replen-actions-menu__trigger[aria-expanded="true"] { background: #e2e8f0; }
+
+/* F1-UI-PLANNING-ACTION-HIERARCHY-R1 — AI Support = the PLANNING-WORKFLOW secondary CTA (§2): it belongs to the same
+   orange planning family as Submit Plan but sits ONE level below it — a restrained ghost/outlined treatment (white
+   surface + warm-orange border + text), NOT a heavy filled block. Geometry inherits the shared .km-action-menu__trigger
+   contract, so it is exactly as tall as Search + Submit Plan. This distinguishes it from the neutral-grey More Options
+   (utility) and the blue Search (operational). */
+#ops-section .km-action-menu__trigger {
+    background: #fff;
+    color: var(--warm-orange, #FF8C42);
+    border-color: var(--warm-orange, #FF8C42);
+}
+#ops-section .km-action-menu__trigger:hover,
+#ops-section .km-action-menu__trigger[aria-expanded="true"] {
+    background: rgba(255, 140, 66, 0.08);
+    color: var(--warm-orange, #FF8C42);
+    opacity: 1;
+}
+/* §6 — inside AI Support, AI Plan is the primary planning action: restrained emphasis (brand text + weight + a very
+   subtle warm surface), NEVER a full-orange filled row. Recalculate Current Scope / All Sites stay neutral. Styled by
+   id (no markup change) so the existing loading / progress state on #replen-ai-plan-btn is untouched. */
+#replen-ai-plan-btn.km-action-menu__item {
+    color: var(--warm-orange, #FF8C42);
+    font-weight: 600;
+    background: rgba(255, 140, 66, 0.06);
+}
+#replen-ai-plan-btn.km-action-menu__item:hover,
+#replen-ai-plan-btn.km-action-menu__item:focus {
+    background: rgba(255, 140, 66, 0.12);
+}
 
 #ops-section .replen-actions-menu__list {
     position: absolute;

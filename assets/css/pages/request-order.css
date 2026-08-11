@@ -1834,6 +1834,38 @@
 }
 .ro-action-group .ro-btn { padding: 0 16px; }
 
+/* F1-UI-PLANNING-ACTION-HIERARCHY-R1 — Order Planning AI Support: SAME planning-family treatment as the Inventory
+   toolbar (restrained ghost-orange, one level below the Send Request CTA), sized to THIS page's action-row contract
+   (--filter-* : height/radius/font shared with Send Request + the Request Type select on the same row) so every
+   control in the action group is exactly the same height + vertically aligned. Parity with Inventory = the shared
+   .km-action-menu class + the same visual hierarchy; the pixel height matches each page's established row system. */
+.ro-action-group .km-action-menu__trigger {
+    height: var(--filter-height);
+    min-height: var(--filter-height);
+    border-radius: var(--filter-border-radius);
+    font-size: var(--filter-font-size);
+    padding: 0 16px;
+    background: #fff;
+    color: var(--warm-orange, #FF8C42);
+    border-color: var(--warm-orange, #FF8C42);
+}
+.ro-action-group .km-action-menu__trigger:hover,
+.ro-action-group .km-action-menu__trigger[aria-expanded="true"] {
+    background: rgba(255, 140, 66, 0.08);
+    color: var(--warm-orange, #FF8C42);
+    opacity: 1;
+}
+/* §6 — AI Plan primary emphasis inside the OP AI Support menu (restrained; never a full-orange block). */
+#ro-ai-plan-btn.km-action-menu__item {
+    color: var(--warm-orange, #FF8C42);
+    font-weight: 600;
+    background: rgba(255, 140, 66, 0.06);
+}
+#ro-ai-plan-btn.km-action-menu__item:hover,
+#ro-ai-plan-btn.km-action-menu__item:focus {
+    background: rgba(255, 140, 66, 0.12);
+}
+
 /* Narrow viewports (System Repair 2 Part C) — stack the toolbar into a single full-width column so every
    filter and the action group stay fully visible; the page still never scrolls sideways. Wider laptop/
    desktop widths (1280–1920) are handled by the flex-wrap reflow above. */
