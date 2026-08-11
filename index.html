@@ -54,8 +54,8 @@
                 <span class="menu-label sidebar-toggle-label">Menu</span>
                 <span class="sidebar-toggle-icon">&#9664;</span>
             </div>
-            <div class="menu-item" onclick="showSection('ops')" title="Inventory">
-                <span class="menu-icon">📦</span><span class="menu-label">Inventory</span>
+            <div class="menu-item" onclick="showSection('ops')" title="Site Inventory">
+                <span class="menu-icon">🏬</span><span class="menu-label">Site Inventory</span>
             </div>
             <!-- Warehouse 父子選單 (Factory Inventory / Overseas Inventory / Overseas Inbound / Overseas Outbound).
                  Warehouse Master remains under Admin / Master Data (out of this group). -->
@@ -117,24 +117,6 @@
                 </div>
             </div>
             
-            <!-- SKU Management 父子選單 — SKU master + regional + tax reference (SKU Domain v2.0 layers) -->
-            <div class="menu-parent"
-                 data-menu-id="sku-management"
-                 onclick="toggleMenu('sku-management')" title="SKU Management">
-                <span class="menu-icon">📝</span><span class="menu-label">SKU Management</span>
-            </div>
-            <div class="menu-children" data-parent="sku-management">
-                <div class="menu-item" onclick="showSection('skuDetails')" title="SKU Details">
-                    <span class="menu-label">SKU Details</span>
-                </div>
-                <div class="menu-item" onclick="showSection('sku-regional-details')" title="SKU Regional Details">
-                    <span class="menu-label">SKU Regional Details</span>
-                </div>
-                <div class="menu-item menu-item--disabled" style="position: relative;" title="Tax & Referral Rates (planned)">
-                    <span class="menu-label">Tax &amp; Referral Rates</span>
-                    <span class="stage-badge">Soon</span>
-                </div>
-            </div>
             <!-- Shipment Center 父子選單 (Decision + Execution Layers) -->
             <div class="menu-parent"
                  data-menu-id="shipment"
@@ -172,21 +154,6 @@
                     <span class="menu-label">Purchase Order Overview</span>
                 </div>
             </div>
-            <!-- Carrier / Route 父子選單 — Carrier / Route master layer (Carrier Rate Card v1) -->
-            <div class="menu-parent"
-                 data-menu-id="carrier"
-                 onclick="toggleMenu('carrier')" title="Carrier / Route">
-                <span class="menu-icon">🚚</span><span class="menu-label">Carrier / Route</span>
-            </div>
-            <div class="menu-children" data-parent="carrier">
-                <div class="menu-item" onclick="showSection('carrier-rate-card')" title="Carrier Rate Card">
-                    <span class="menu-label">Carrier Rate Card</span>
-                </div>
-            </div>
-            <div class="menu-item menu-item--disabled" style="position: relative;" title="Shipping Management">
-                <span class="menu-icon">🚢</span><span class="menu-label">Shipping Management</span>
-                <span class="stage-badge">Stage 2</span>
-            </div>
             <!-- Campaign Performance 父子選單 -->
             <div class="menu-parent"
                  data-menu-id="campaign"
@@ -198,6 +165,43 @@
                 <div class="menu-item"
                      onclick="showSection('campaign-risk')" title="Promotion Risk Tracker">
                     <span class="menu-label">Promotion Risk Tracker</span>
+                </div>
+            </div>
+            <!-- SKU Management 父子選單 — SKU master + regional + tax reference (SKU Domain v2.0 layers). Moved below Campaign Performance (F1-SMALL-NAV-IA-R1). -->
+            <div class="menu-parent"
+                 data-menu-id="sku-management"
+                 onclick="toggleMenu('sku-management')" title="SKU Management">
+                <span class="menu-icon">📝</span><span class="menu-label">SKU Management</span>
+            </div>
+            <div class="menu-children" data-parent="sku-management">
+                <div class="menu-item" onclick="showSection('skuDetails')" title="SKU Details">
+                    <span class="menu-label">SKU Details</span>
+                </div>
+                <div class="menu-item" onclick="showSection('sku-regional-details')" title="SKU Regional Details">
+                    <span class="menu-label">SKU Regional Details</span>
+                </div>
+                <div class="menu-item menu-item--disabled" style="position: relative;" title="Tax & Referral Rates (planned)">
+                    <span class="menu-label">Tax &amp; Referral Rates</span>
+                    <span class="stage-badge">Soon</span>
+                </div>
+            </div>
+            <!-- Pricing Center 父子選單 — pricing / reference layer (Carrier Rate Card v1; Container Rate Card + Warehouse Pricing planned). Renamed from "Carrier / Route"; internal routing key 'carrier' preserved (F1-SMALL-NAV-IA-R1). -->
+            <div class="menu-parent"
+                 data-menu-id="carrier"
+                 onclick="toggleMenu('carrier')" title="Pricing Center">
+                <span class="menu-icon">💰</span><span class="menu-label">Pricing Center</span>
+            </div>
+            <div class="menu-children" data-parent="carrier">
+                <div class="menu-item" onclick="showSection('carrier-rate-card')" title="Carrier Rate Card">
+                    <span class="menu-label">Carrier Rate Card</span>
+                </div>
+                <div class="menu-item menu-item--disabled" style="position: relative;" title="Container Rate Card (planned)">
+                    <span class="menu-label">Container Rate Card</span>
+                    <span class="stage-badge">Soon</span>
+                </div>
+                <div class="menu-item menu-item--disabled" style="position: relative;" title="Warehouse Pricing (planned)">
+                    <span class="menu-label">Warehouse Pricing</span>
+                    <span class="stage-badge">Soon</span>
                 </div>
             </div>
             

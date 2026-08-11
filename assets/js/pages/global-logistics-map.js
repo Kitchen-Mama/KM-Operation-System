@@ -156,7 +156,9 @@
     var missing = [];
     if (!rm.shipmentRoutes.length) missing.push('shipment_routes');
     if (!rm.shipmentEvents.length) missing.push('shipment_events');
-    state.partial = missing.length ? ('Runtime route/event data not yet populated (' + missing.join(', ') + '). Shipments still appear — with a drawable position when coordinates resolve, otherwise in the Coordinate Pending tray. No demo data is substituted.') : '';
+    // F1-SMALL-NAV-IA-R1: describe DATA COMPLETENESS (not system wiring — route/event owners are wired since
+    // R8/R9). Condition unchanged: no shipment_routes and/or no shipment_events rows in the current dataset.
+    state.partial = missing.length ? ('Historical or partially configured shipments may not yet have route nodes, events, or coordinates (' + missing.join(', ') + '). Shipment records remain available — shown with a drawable position when coordinates resolve, otherwise in the Coordinate Pending tray. No demo data is substituted.') : '';
   }
 
   function buildShipmentViewModels() {
@@ -307,7 +309,7 @@
   }
   // Compact, collapsible runtime-data note (never a big bar covering the globe).
   function renderPartialNote() {
-    return '<details class="glm-note"><summary>⚠ Runtime route/event data incomplete</summary><p>' + esc(state.partial) + '</p></details>';
+    return '<details class="glm-note"><summary>⚠ Some shipments have incomplete route history</summary><p>' + esc(state.partial) + '</p></details>';
   }
   function renderDiagPanel() {
     var d = state.diag; if (!d) return '<div class="glm-warn">Diagnostics: no data-chain diagnostics captured yet.</div>';
