@@ -125,6 +125,47 @@ function shipReceivingCapableNodeId_(nodes) {
   return list[list.length - 1].id;   // structural fallback: terminal node
 }
 
+// ---- Overseas destination inventory posting (F1-SHIPMENT-RECEIPT-R3-REVISED) — pure decision helpers ----
+
+// Deterministic exactly-once movement identity for a receipt posting: shipment_line_id + ':' + cumulative.
+// The cumulative received level is encoded so a repeat of the SAME cumulative is a proven no-op (§7).
+function shipReceiptMovementRef_(shipmentLineId, cumulativeReceived) {
+  return String(shipmentLineId) + ':' + String(Math.round(shipReceiptNum_(cumulativeReceived)));
+}
+
+// Decide whether a receipt posts to LOCAL overseas inventory. Reuses the EXISTING canonical Overseas
+// eligibility (active + non-factory) via overseasImportWarehouseIssue_ — invents NO new warehouse-type
+// model. Platform/FBA/WMS + blank + factory + inactive + unknown all SKIP (receipt still succeeds — §0.B/§9);
+// ONLY an eligible managed-Overseas warehouse POSTs.
+function shipReceiptPostingDecision_(destWarehouseId, whIssue) {
+  if (!destWarehouseId) return 'SKIP_NO_DESTINATION';   // platform / no managed destination → not an error
+  if (whIssue === null || whIssue === undefined) return 'POST';
+  if (whIssue === 'WAREHOUSE_NOT_FOUND') return 'SKIP_NOT_MANAGED';   // e.g. platform-managed (not a warehouses row)
+  if (whIssue === 'WAREHOUSE_INACTIVE') return 'SKIP_INACTIVE';
+  if (whIssue === 'WAREHOUSE_NOT_OVERSEAS') return 'SKIP_FACTORY';    // never credit a Factory warehouse (§13)
+  return 'SKIP_INELIGIBLE';
+}
+
+// Highest cumulative already posted to inventory for a line, read from the movement ledger's reference_ids
+// (each = shipment_line_id + ':' + cumulative). 0 when none. This makes posting reconcile against the LEDGER
+// (not the in-request delta), so a crash between the received_qty write and the inventory write is repaired
+// exactly-once on the next call. refs = reference_id strings of reference_type='shipment_receipt' movements.
+function shipReceiptLastPostedCumulative_(refs, shipmentLineId) {
+  var max = 0;
+  (refs || []).forEach(function (ref) {
+    var s = String(ref); var i = s.lastIndexOf(':'); if (i <= 0) return;
+    if (s.slice(0, i) !== String(shipmentLineId)) return;
+    var n = parseFloat(s.slice(i + 1)); if (isFinite(n) && n > max) max = n;
+  });
+  return max;
+}
+
+// The amount to post now = currentCumulativeReceived - lastPostedCumulative (never negative). Receipt
+// posts the DELTA only, reconciled through the ledger (never the cumulative total, never shipment_qty).
+function shipReceiptPostAmount_(currentReceived, lastPosted) {
+  return Math.max(shipReceiptNum_(currentReceived) - shipReceiptNum_(lastPosted), 0);
+}
+
 // __SHIP_RECEIPT_PURE_END__
 
 // ============================================================
@@ -247,10 +288,19 @@ function handleUpdateShipmentReceipt_(body) {
       }
     }
 
+    // ---- Managed-Overseas destination inventory posting (F1-SHIPMENT-RECEIPT-R3-REVISED) ----
+    // Platform/FBA/WMS, blank, factory, inactive, unknown destinations → receipt succeeds, NO local
+    // inventory mutation (§0.B/§9). Managed Overseas → wh_available_stock += (currentReceived −
+    // lastPostedCumulative), reconciled EXACTLY-ONCE through overseas_inventory_movements
+    // (reference_type='shipment_receipt', reference_id=SL:cumulative). wh_on_the_way_qty is intentionally
+    // NOT touched (OVERSEAS_ON_THE_WAY_DOUBLE_COUNT_RISK — see completion report). Factory never credited (§13).
+    var posting = shipReceiptPostToOverseas_(ss, shipmentId, shipSheet, resultLines, actor, now);
+
     lock.releaseLock();
     return jsonResponse_({
       success: true,
       data: {
+        posting: posting,
         shipment_id: shipmentId,
         status: statusWritten || null,
         status_derived: derived.status || null,
@@ -262,6 +312,144 @@ function handleUpdateShipmentReceipt_(body) {
   } catch (err) {
     try { lock.releaseLock(); } catch (e) {}
     return jsonResponse_({ success: false, error: 'Receipt update failed: ' + (err && err.message ? err.message : err), code: 'WRITE' });
+  }
+}
+
+// Canonical overseas_inventory_movements header (mirrors 05_'s OVS_MOV_HEADERS; shared additive contract).
+var SHIP_RECEIPT_OVS_MOV_HEADERS_ = [
+  'movement_id', 'movement_date', 'warehouse_id', 'sku', 'site_sku',
+  'movement_type', 'movement_scope', 'from_stock_type', 'to_stock_type',
+  'wh_quantity', 'wh_quantity_before', 'wh_quantity_after',
+  'wh_before_physical_stock', 'wh_after_physical_stock',
+  'wh_before_reserved_stock', 'wh_after_reserved_stock',
+  'wh_before_available_stock', 'wh_after_available_stock',
+  'reference_type', 'reference_id', 'source_module', 'created_by', 'created_at', 'note'
+];
+
+// Post confirmed receipt quantities to LOCAL overseas inventory (available bucket), reconciled exactly-once
+// through the movement ledger. Runs INSIDE the receipt handler's ScriptLock (§6 — one transaction boundary;
+// no second frontend API, no second inventory writer). Returns a posting summary; NEVER throws to the caller
+// (a posting failure leaves the received_qty persisted and is repaired by ledger reconciliation on retry).
+function shipReceiptPostToOverseas_(ss, shipmentId, shipSheet, resultLines, actor, now) {
+  var posting = { status: 'SKIP_NO_DESTINATION', warehouse_id: '', lines: [] };
+  try {
+    // Resolve the canonical destination warehouse identity (NEVER from display text / warehouse_code).
+    var sm = shipmentReadSheet_(shipSheet);
+    var mId = sm.col('shipment_id'), mDest = sm.col('destination_warehouse_id'), mWid = sm.col('warehouse_id');
+    var drow = -1;
+    for (var d0 = 1; d0 < sm.rows.length; d0++) { if (String(sm.rows[d0][mId]).trim() === shipmentId) { drow = d0; break; } }
+    var destWhId = (drow !== -1 && mDest !== -1) ? String(sm.rows[drow][mDest] || '').trim() : '';
+    if (!destWhId && drow !== -1 && mWid !== -1) destWhId = String(sm.rows[drow][mWid] || '').trim();   // transitional compat
+    posting.warehouse_id = destWhId;
+
+    // Classify the destination via the EXISTING canonical Overseas eligibility (active + non-factory).
+    var whIssue = null;
+    if (destWhId) {
+      var whSheet = ss.getSheetByName('warehouses');
+      var whRec = null;
+      if (whSheet) {
+        var wr = shipmentReadSheet_(whSheet);
+        var wId = wr.col('warehouse_id'), wAct = wr.col('is_active'), wFac = wr.col('is_factory_warehouse'), wSt = wr.col('status');
+        for (var w0 = 1; w0 < wr.rows.length; w0++) {
+          if (String(wr.rows[w0][wId] || '').trim() !== destWhId) continue;
+          whRec = {
+            isActive: wAct !== -1 ? overseasImportTruthy_(wr.rows[w0][wAct]) : (wSt !== -1 ? (String(wr.rows[w0][wSt] || '').trim().toLowerCase() === 'active') : true),
+            isFactory: wFac !== -1 ? overseasImportTruthy_(wr.rows[w0][wFac]) : false
+          };
+          break;
+        }
+      }
+      whIssue = overseasImportWarehouseIssue_(whRec);
+    }
+    var decision = shipReceiptPostingDecision_(destWhId, whIssue);
+    posting.status = decision;
+    if (decision !== 'POST') return posting;   // platform / factory / inactive / unknown → receipt succeeds, no posting
+
+    var snapSheet = ss.getSheetByName('overseas_inventory_snapshot');
+    if (!snapSheet) { posting.status = 'SKIP_NO_OVERSEAS_TABLE'; return posting; }
+    var movSheet = fcWriteEnsureSheet_(ss, 'overseas_inventory_movements', SHIP_RECEIPT_OVS_MOV_HEADERS_);
+    fcWriteEnsureColumns_(movSheet, SHIP_RECEIPT_OVS_MOV_HEADERS_);
+
+    // Ledger: reference_ids of prior shipment_receipt movements (the exactly-once authority).
+    var mv = shipmentReadSheet_(movSheet);
+    var mvType = mv.col('reference_type'), mvRef = mv.col('reference_id');
+    var postedRefs = [];
+    for (var m0 = 1; m0 < mv.rows.length; m0++) {
+      if (mvType !== -1 && String(mv.rows[m0][mvType]).trim() === 'shipment_receipt' && mvRef !== -1) postedRefs.push(String(mv.rows[m0][mvRef]).trim());
+    }
+
+    // Snapshot index (this destination only). available bucket = wh_available_stock (legacy available_stock).
+    var snap = shipmentReadSheet_(snapSheet);
+    var snWh = snap.col('warehouse_id'), snSku = snap.col('sku');
+    var snAvail = snap.col('wh_available_stock'); if (snAvail === -1) snAvail = snap.col('available_stock');
+    var snUpd = snap.col('updated_at'), snLastMov = snap.col('last_movement_at');
+    if (snWh === -1 || snSku === -1 || snAvail === -1) { posting.status = 'SKIP_NO_AVAILABLE_COLUMN'; return posting; }
+    var bySku = {};
+    for (var s0 = 1; s0 < snap.rows.length; s0++) {
+      if (String(snap.rows[s0][snWh] || '').trim() !== destWhId) continue;
+      bySku[String(snap.rows[s0][snSku] || '').trim()] = { rowIdx: s0 + 1, avail: shipReceiptNum_(snap.rows[s0][snAvail]) };
+    }
+
+    var postedCount = 0;
+    for (var rl = 0; rl < resultLines.length; rl++) {
+      var lineId = resultLines[rl].shipment_line_id;
+      var sku = resultLines[rl].sku;
+      var cumReceived = shipReceiptNum_(resultLines[rl].shipment_received_qty);
+      var ref = shipReceiptMovementRef_(lineId, cumReceived);
+      if (postedRefs.indexOf(ref) !== -1) { posting.lines.push({ sku: sku, warehouse_id: destWhId, delta: 0, reference_id: ref, idempotent: true }); continue; }
+      var lastPosted = shipReceiptLastPostedCumulative_(postedRefs, lineId);
+      var postAmt = shipReceiptPostAmount_(cumReceived, lastPosted);
+      if (postAmt <= 0) { posting.lines.push({ sku: sku, warehouse_id: destWhId, delta: 0, reference_id: ref, idempotent: true }); continue; }
+
+      var rec = bySku[sku];
+      var before, after, targetRow, created = false;
+      if (rec) { before = rec.avail; after = before + postAmt; targetRow = rec.rowIdx; snapSheet.getRange(targetRow, snAvail + 1).setValue(after); }
+      else {
+        // §0.D — create the canonical row (available = delta; other qty default 0; site_sku NOT invented).
+        before = 0; after = postAmt; created = true;
+        var newId = 'OISN-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+        var obj = { snapshot_id: newId, overseas_inventory_id: newId, snapshot_date: (typeof shipmentToday_ === 'function' ? shipmentToday_() : now),
+          warehouse_id: destWhId, sku: sku, wh_available_stock: after, wh_reserved_stock: 0, wh_damaged_stock: 0, wh_on_the_way_qty: 0,
+          available_stock: after, reserved_stock: 0, damaged_stock: 0, on_the_way_qty: 0,
+          created_at: now, updated_at: now, note: 'auto-created by shipment receipt ' + shipmentId };
+        shipmentAppendByHeader_(snapSheet, obj);
+        var snap2 = shipmentReadSheet_(snapSheet);
+        for (var s1 = snap2.rows.length - 1; s1 >= 1; s1--) {
+          if (String(snap2.rows[s1][snap2.col('warehouse_id')] || '').trim() === destWhId && String(snap2.rows[s1][snap2.col('sku')] || '').trim() === sku) { targetRow = s1 + 1; break; }
+        }
+      }
+      if (snUpd !== -1 && targetRow) snapSheet.getRange(targetRow, snUpd + 1).setValue(now);
+      if (snLastMov !== -1 && targetRow) snapSheet.getRange(targetRow, snLastMov + 1).setValue(now);
+      SpreadsheetApp.flush();
+
+      // Append the ledger row AFTER the balance write; on failure, revert the balance (05_ compensation
+      // pattern) so no ledger row + reverted balance = as-if-not-posted → clean retry (no double / no loss).
+      try {
+        shipmentAppendByHeader_(movSheet, {
+          movement_id: 'OVMV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8),
+          movement_date: (typeof shipmentToday_ === 'function' ? shipmentToday_() : now),
+          warehouse_id: destWhId, sku: sku, movement_type: 'shipment_receipt', movement_scope: 'available_stock',
+          from_stock_type: '', to_stock_type: 'available',
+          wh_quantity: postAmt, wh_quantity_before: before, wh_quantity_after: after,
+          wh_before_available_stock: before, wh_after_available_stock: after,
+          reference_type: 'shipment_receipt', reference_id: ref, source_module: 'shipment_receipt',
+          created_by: actor, created_at: now, note: 'shipment ' + shipmentId + ' line ' + lineId
+        });
+      } catch (movErr) {
+        try { snapSheet.getRange(targetRow, snAvail + 1).setValue(created ? 0 : before); SpreadsheetApp.flush(); } catch (e2) {}
+        posting.status = 'POSTING_ERROR'; posting.error = String(movErr && movErr.message ? movErr.message : movErr);
+        return posting;
+      }
+      postedRefs.push(ref);
+      if (rec) rec.avail = after; else bySku[sku] = { rowIdx: targetRow, avail: after };
+      posting.lines.push({ sku: sku, warehouse_id: destWhId, delta: postAmt, before_available: before, after_available: after, reference_id: ref, idempotent: false, row_created: created });
+      postedCount++;
+    }
+    posting.status = postedCount > 0 ? 'POSTED' : 'POSTED_IDEMPOTENT';
+    return posting;
+  } catch (postErr) {
+    posting.status = 'POSTING_ERROR'; posting.error = String(postErr && postErr.message ? postErr.message : postErr);
+    return posting;
   }
 }
 

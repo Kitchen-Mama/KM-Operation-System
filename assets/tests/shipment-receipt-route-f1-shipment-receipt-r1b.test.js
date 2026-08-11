@@ -119,9 +119,11 @@ ok(/lRecvCol \+ 1\)\.setValue/.test(SRC31), 'receipt writer writes shipment_rece
 ok(!/lQtyCol \+ 1\)\.setValue/.test(SRC31), 'receipt writer NEVER writes the shipment_qty cell (immutable)');
 // backend derives status (never trusts frontend); no 2nd shipments CRUD writer (no append to shipments).
 ok(/shipDeriveReceiptStatus_\(authoritative\)/.test(SRC31), 'status is backend-derived from authoritative lines');
-ok(!/shipmentAppendByHeader_/.test(SRC31), 'no second shipments writer (no append) in receipt module');
-// no inventory / factory-stock / PO / forecast mutation from this module.
-ok(!/factory_stock|overseas_inventory|amazon_inventory|purchase_order|fc_regular_forecast/.test(SRC31), 'no inventory/PO/forecast mutation in receipt module');
+// no second shipments/shipment_lines writer: appends only target overseas snapshot/movement sheets (R3), never shipSheet/lineSheet.
+ok(!/shipmentAppendByHeader_\(\s*(shipSheet|lineSheet)/.test(SRC31), 'no append to shipments/shipment_lines in receipt module');
+// no FACTORY / Amazon / PO / forecast mutation from this module. (Overseas inventory posting is added in
+// R3-REVISED and is asserted by that round's test; R1B only guarantees the FORBIDDEN tables are untouched.)
+ok(!/factory_stock|amazon_inventory|purchase_order|fc_regular_forecast/.test(SRC31), 'no factory/amazon/PO/forecast mutation in receipt module');
 // router wiring.
 ok(/shipment\.receipt\.update/.test(SRC01) && /handleUpdateShipmentReceipt_/.test(SRC01), 'router wires shipment.receipt.update');
 ok(/shipment\.route\.advance/.test(SRC01) && /handleAdvanceShipmentRoutePoint_/.test(SRC01), 'router wires shipment.route.advance');
