@@ -3582,7 +3582,10 @@ function handleRecalcAllInventoryGap(scopeSpec) {
       starting: function () { setBtn('Starting…', true); },
       progress: function (st) { if (!(st && st.status)) return; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn((st && st.recovering ? 'Recovering… ' : 'Calculating… ') + n + ' / ' + m, true); _irShowCancel_(true); },   // LIVE10 §11 guard non-status polls; §7 show Recovering while the backend self-heals
       refreshing: function () { _irShowCancel_(false); setBtn('Refreshing…', true); },
-      done: function () { _irShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
+      // F1-SMALL-GAP-JOB-DONE-NOTICE-R1: this MANUAL runJob done() fires only on terminal DONE, AFTER refresh() — so the
+      // notice is truthful and never precedes fresh data. Keyed to _irActiveRunId (one notice per manual run). The
+      // resume-on-mount done() below deliberately does NOT announce, so scheduled/resumed jobs stay silent.
+      done: function (finalState) { _irShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       failed: function (st) { alert(_irGapJobFailMsg_('Inventory', st)); restore(); }
     }

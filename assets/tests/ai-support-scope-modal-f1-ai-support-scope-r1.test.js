@@ -124,7 +124,7 @@ section('U/V — terminal/idle + DB-refresh behavior owned by the EXISTING job (
 ok(/gr\.runJob|window\.KM\.gapRecalc/.test(INV_JS + RO_JS), 'U/V scoped recalc rides the existing gr.runJob lifecycle (terminal→idle + DB refresh owner)');
 
 section('cache-version + wiring — new module is loaded and version bumped');
-ok(/scope-select-modal\.js\?v=aiscope-20260811/.test(INDEX), 'index.html loads scope-select-modal.js with the bumped cache token');
+ok(/scope-select-modal\.js\?v=[\w-]+/.test(INDEX), 'index.html loads scope-select-modal.js with a cache token (bumped per later rounds)');
 ok(!/\?v=fmr1-20260810/.test(INDEX), 'no stale ?v=fmr1-20260810 remains (all local assets refetch)');
 ok(MOD._version === 'ai-support-scope-r1', 'scope modal module version tag present');
 

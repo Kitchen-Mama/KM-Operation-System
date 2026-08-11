@@ -264,9 +264,69 @@
     });
   }
 
+  // ===========================================================================================================
+  // F1-SMALL-GAP-JOB-DONE-NOTICE-R1 — MANUAL completion notice (frontend-only; no calc/job/poll/DB effect).
+  // A one-shot success announcement fired ONCE per MANUAL runId. It is a PURE dedupe + dispatch helper: the page
+  // calls it from its MANUAL runJob ui.done (which the transport invokes only on terminal DONE, AFTER refresh) and
+  // supplies the product message; `notify` is injectable (tests pass a fake). The resume/mount path NEVER calls it
+  // (its ui.done stays silent), so scheduled/background/resumed jobs are never announced (§6). Keyed to runId so a
+  // repeated DONE poll or a re-announce for the same runId is a no-op (§7). Default notify = a small non-blocking
+  // success toast when a DOM exists, else alert() (reuses the existing alert-style owner — no new framework, §8).
+  // ===========================================================================================================
+  var _announcedRuns = {}, _announcedOrder = [];
+  function _defaultDoneNotify(message) {
+    try {
+      if (typeof document !== 'undefined' && document.body) {
+        var t = document.createElement('div');
+        t.className = 'km-gap-done-toast';
+        t.setAttribute('role', 'status');
+        t.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:3000;max-width:320px;background:#ffffff;color:#166534;border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.16);padding:12px 14px;font-size:13px;line-height:1.45;white-space:pre-line;opacity:0;transition:opacity .2s ease;';
+        t.textContent = message;
+        document.body.appendChild(t);
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { t.style.opacity = '1'; }); else t.style.opacity = '1';
+        setTimeout(function () { t.style.opacity = '0'; setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 250); }, 4200);
+        return;
+      }
+      if (typeof alert === 'function') alert(message);
+    } catch (e) { try { if (typeof alert === 'function') alert(message); } catch (e2) {} }
+  }
+  // Announce a MANUAL job's terminal DONE exactly once. runId = the manual run's id (dedupe key). Returns true if it
+  // notified, false if it was a duplicate for a runId already announced. `notify` overridable (default = the toast).
+  function announceManualDone(runId, message, notify) {
+    var key = (runId == null || runId === '') ? '' : String(runId);
+    if (key) {
+      if (_announcedRuns[key]) return false;                                   // §7 exactly one notice per runId
+      _announcedRuns[key] = 1; _announcedOrder.push(key);
+      if (_announcedOrder.length > 50) { var old = _announcedOrder.shift(); delete _announcedRuns[old]; }  // bounded memory
+    }
+    (typeof notify === 'function' ? notify : _defaultDoneNotify)(String(message == null ? '' : message));
+    return true;
+  }
+
+  // PURE message formatter — the page supplies the display product label ('Inventory' / 'Order Planning') + the
+  // manual scopeSpec + the terminal job state; scope counts are used ONLY when already present on the DONE payload
+  // (no extra backend read). ALL_SITES → "N / N scopes processed."; a concrete current scope → "— country / mkt.".
+  function formatDoneMessage(product, scopeSpec, finalState) {
+    var p = String(product == null ? '' : product);
+    var st = finalState || {};
+    var total = (typeof st.scopesTotal === 'number') ? st.scopesTotal : null;
+    var proc = (typeof st.scopesProcessed === 'number') ? st.scopesProcessed : (total != null ? total : null);
+    var mode = scopeSpec && scopeSpec.mode;
+    var base = p + ' recalculation completed successfully.';
+    if (mode === 'ALL_SITES') {
+      return (total != null) ? (base + '\n' + (proc != null ? proc : total) + ' / ' + total + ' scopes processed.') : (base + '\nAll sites.');
+    }
+    var parts = [];
+    if (scopeSpec && scopeSpec.country) parts.push(String(scopeSpec.country));
+    if (scopeSpec && scopeSpec.marketplace) parts.push(String(scopeSpec.marketplace));
+    if (parts.length) return p + ' recalculation completed — ' + parts.join(' / ') + '.';
+    return (total != null) ? (base + '\n' + (proc != null ? proc : total) + ' / ' + total + ' scope' + (total === 1 ? '' : 's') + ' processed.') : base;
+  }
+
   return {
     CLASSIFICATION: CLASSIFICATION, OUTCOME: OUTCOME, DEFAULT_SCHEDULE: DEFAULT_SCHEDULE.slice(),
     isTransportError: isTransportError, verify: verify, recover: recover,
+    announceManualDone: announceManualDone, formatDoneMessage: formatDoneMessage,   // F1-SMALL-GAP-JOB-DONE-NOTICE-R1 (manual terminal-DONE notice; dedup by runId)
     // R4J job lifecycle (backend-owned; browser only starts + read-only polls)
     JOB_STATUS: JOB_STATUS, DEFAULT_JOB_POLL_MS: DEFAULT_JOB_POLL_MS, DEFAULT_JOB_MAX_POLLS: DEFAULT_JOB_MAX_POLLS,
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
