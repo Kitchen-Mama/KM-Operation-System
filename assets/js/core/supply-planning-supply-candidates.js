@@ -73,6 +73,16 @@
     return { value: 0, invalid: false }; // both absent/blank → missing quantity source, not "invalid"
   }
 
+  // F1-SHIPMENT-INCOMING-R4 — cumulative received qty (shipment_lines.shipment_received_qty). Blank/null → 0.
+  // A present-but-malformed or negative value resolves to 0 and is flagged (never fabricates negative incoming).
+  // Returns { value: >=0, invalid }.
+  function resolveReceived(v) {
+    if (isBlank(v)) return { value: 0, invalid: false };
+    var n = parseFloat(v);
+    if (isFinite(n) && n >= 0) return { value: n, invalid: false };
+    return { value: 0, invalid: true };
+  }
+
   // B4-R2 destination semantics reproduced purely. Canonical destination_warehouse_id is primary; legacy
   // warehouse_id is fallback ONLY when canonical is absent/blank. warehouse_code / name / address / display text
   // and origin/source warehouse are NEVER identity (not passed in). String id "0" is preserved. Missing → null.
@@ -112,6 +122,14 @@
     var q = resolveQuantity(line.shipmentQty, line.legacyQty);
     var dest = resolveDestination(shipment.destinationWarehouseId, shipment.legacyWarehouseId);
 
+    // F1-SHIPMENT-INCOMING-R4 — REMAINING incoming = MAX(0, shipmentQty − shipment_received_qty). This is the
+    // single Planning incoming authority: a partially_received line contributes only its UNRECEIVED remainder
+    // (removing the transient double count vs the already-credited overseas available), and a fully-received
+    // line contributes 0 (Gate 7 REMAINING_QUANTITY_POSITIVE then excludes it). quantityOriginal keeps the
+    // full shipped qty for lineage/audit; wh_on_the_way_qty is NEVER used as a compensating term.
+    var recv = resolveReceived(line.shipmentReceivedQty);
+    var remaining = Math.max(0, q.value - recv.value);
+
     // Deterministic stable identities — only from immutable shipment + line ids (NO status/eta/qty/label/date).
     var sourceRef = 'shipment:' + shipmentId;
     var sourceLineRef = 'shipment:' + shipmentId + ':' + shipmentLineId;
@@ -123,6 +141,8 @@
     if (company === null) reviewFlags.push('MISSING_COMPANY');
     if (dest.source === 'MISSING') reviewFlags.push('MISSING_DESTINATION_IDENTITY');
     if (q.invalid) reviewFlags.push('INVALID_QUANTITY');
+    if (recv.invalid) reviewFlags.push('INVALID_RECEIVED_QUANTITY');
+    if (recv.value > q.value) reviewFlags.push('RECEIVED_EXCEEDS_SHIPPED');   // defensive (§3); backend receipt writer also blocks over-receipt
     if (eta === null) reviewFlags.push('MISSING_ETA');
     if (status === null) reviewFlags.push('MISSING_STATUS');
 
@@ -143,7 +163,8 @@
       destinationWarehouseId: dest.id,
       destinationIdentitySource: dest.source,
       quantityOriginal: q.value,
-      quantityRemaining: q.value, // B4-R3 does NOT subtract received/cancelled/allocated/consumed (later batches)
+      quantityReceived: recv.value, // cumulative shipment_received_qty (0 when blank)
+      quantityRemaining: remaining, // R4: MAX(0, shipmentQty − received) — the single Planning incoming authority
       eta: eta,
       sourceUpdatedAt: sourceUpdatedAt,
       status: status, // raw status preserved (trimmed); status interpretation is B4-R4

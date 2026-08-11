@@ -508,6 +508,23 @@ function procShipmentLineQty_(rowVals, cShipQty, cLegacyQty) {
   return 0;
 }
 
+/** F1-SHIPMENT-INCOMING-R4 — REMAINING shipment-incoming for a line = MAX(0, shipmentQty − shipment_received_qty).
+ *  shipmentQty via procShipmentLineQty_ (canonical shipment_qty, legacy qty fallback). received: canonical
+ *  shipment_received_qty, blank/absent/invalid/negative → 0 (never fabricates negative incoming). This removes
+ *  the partially_received double count: a partially-received line now contributes only its unreceived remainder,
+ *  and a fully-received line contributes 0. wh_on_the_way_qty is NEVER used as a compensating term. Pure/read-only. */
+function procShipmentRemainingQty_(rowVals, cShipQty, cLegacyQty, cReceived) {
+  var shipped = procShipmentLineQty_(rowVals, cShipQty, cLegacyQty);
+  var received = 0;
+  if (cReceived !== -1) {
+    var raw = rowVals[cReceived];
+    var blank = (raw === '' || raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === ''));
+    if (!blank) { var n = parseFloat(raw); received = (isFinite(n) && n > 0) ? n : 0; }
+  }
+  var remaining = shipped - received;
+  return remaining > 0 ? remaining : 0;
+}
+
 /** B4-R2 (Canonical Shipment Destination Identity Planning-Read Alignment): resolve a shipment's canonical
  *  DESTINATION identity for the B-4 planning read. `shipments.destination_warehouse_id` is PRIMARY; legacy
  *  `shipments.warehouse_id` (the old destination identity, still mirrored by 12_shipment_handlers.gs §708-712)
@@ -566,12 +583,13 @@ function procurementOnTheWayMaps_(ss) {
     if (ld.length >= 2) {
       var lh = ld[0].map(function (x) { return String(x).trim().toLowerCase(); });
       var cSid = lh.indexOf('shipment_id'), cSku = lh.indexOf('sku'), cShipQty = lh.indexOf('shipment_qty'), cLegacyQty = lh.indexOf('qty');
+      var cReceived = lh.indexOf('shipment_received_qty');   // R4: net cumulative receipt from incoming
       if (cSid !== -1 && cSku !== -1 && (cShipQty !== -1 || cLegacyQty !== -1)) {
         for (var j = 1; j < ld.length; j++) {
           var sid = procSrcNorm_(ld[j][cSid]);
           if (!active[sid]) continue;   // parent not active (or status join unavailable)
           var sku = procSrcNorm_(ld[j][cSku]); if (!sku) continue;
-          var qty = procShipmentLineQty_(ld[j], cShipQty, cLegacyQty);
+          var qty = procShipmentRemainingQty_(ld[j], cShipQty, cLegacyQty, cReceived);   // R4: REMAINING, not full shipped
           var ap = active[sid];
           var ek = sku.toLowerCase() + '|' + ap.country.toLowerCase() + '|' + ap.marketplace.toLowerCase();
           exact[ek] = (exact[ek] || 0) + qty;

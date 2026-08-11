@@ -29,6 +29,7 @@ function extractFn(src, name) {
 // eval the real source functions into this scope (function declarations hoist into local scope).
 eval(extractFn(GS, 'procSrcNorm_'));
 eval(extractFn(GS, 'procShipmentLineQty_'));
+eval(extractFn(GS, 'procShipmentRemainingQty_'));   // F1-SHIPMENT-INCOMING-R4 dependency of procurementOnTheWayMaps_
 eval(extractFn(GS, 'procShipmentDestId_'));   // dependency of procurementOnTheWayMaps_ (added in B4-R2)
 eval(extractFn(GS, 'procurementOnTheWayMaps_'));
 

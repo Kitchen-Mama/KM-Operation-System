@@ -303,6 +303,8 @@
           shipmentLineId: nonEmpty(r.shipment_line_id) ? str(r.shipment_line_id) : undefined,
           sku: nonEmpty(r.sku) ? str(r.sku) : str(scope.sku),
           shipmentQty: has(r, 'shipment_qty') ? r.shipment_qty : undefined,
+          // R4 — cumulative receipt so the candidate can net REMAINING incoming (blank/absent → 0 downstream).
+          shipmentReceivedQty: has(r, 'shipment_received_qty') ? r.shipment_received_qty : undefined,
           siteSku: nonEmpty(r.site_sku) ? str(r.site_sku) : undefined
         }
       };

@@ -6,6 +6,53 @@
 // records a target-days figure in the shipping-plan Decision Snapshot (snapshot_target_days / allocation draft).
 var REPLEN_TARGET_DAYS = 90;
 
+// F1-SHIPMENT-INCOMING-R4 — canonical MUTUALLY-EXCLUSIVE ETA bucket model for the "Shipping Shipment" card.
+// A shipment line's REMAINING incoming (max(0, shipment_qty − shipment_received_qty)) lands in EXACTLY ONE
+// bucket by its ETA distance in whole days from today. NOT cumulative (a +25-day line is 19_30 ONLY, never
+// also 0_18). Boundaries: 0–18 (0..18) · 19–30 · 31–45 · 45+ (>=46). ETA before today (< 0) is OVERDUE — the
+// planning authority has no canonical overdue treatment (reported SHIPMENT_OVERDUE_BUCKET_AUTHORITY_GAP), so
+// this returns a distinct 'overdue' key by default; pass foldOverdueIntoEarliest=true to fold it into 0_18.
+// Pure: no clock (caller supplies etaDays), no locale, no mutation.
+function _irShipmentEtaBucket(etaDays, foldOverdueIntoEarliest) {
+  var d = parseFloat(etaDays);
+  if (!isFinite(d)) return 'unknown';
+  if (d < 0) return foldOverdueIntoEarliest ? 'd0_18' : 'overdue';
+  if (d <= 18) return 'd0_18';
+  if (d <= 30) return 'd19_30';
+  if (d <= 45) return 'd31_45';
+  return 'd45_plus';
+}
+
+// Frontend mirror of the canonical remaining-incoming authority (backend owner = supply candidate
+// quantityRemaining / procShipmentRemainingQty_). max(0, shipmentQty − receivedQty); blank/invalid → 0.
+function _irRemainingIncoming(shipmentQty, receivedQty) {
+  var s = parseFloat(shipmentQty); if (!isFinite(s) || s < 0) s = 0;
+  var r = parseFloat(receivedQty); if (!isFinite(r) || r < 0) r = 0;
+  var rem = s - r;
+  return rem > 0 ? rem : 0;
+}
+
+// Aggregate remaining incoming into the four mutually-exclusive ETA buckets. lines = [{ etaDays, remaining }].
+// Returns { d0_18, d19_30, d31_45, d45_plus, overdue } (numbers). This is the bucket MODEL the card consumes
+// once wired to real shipment data; it never double-counts a line across buckets.
+function _irBucketRemainingByEta(lines, foldOverdueIntoEarliest) {
+  var b = { d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, overdue: 0, unknown: 0 };
+  (lines || []).forEach(function (ln) {
+    var key = _irShipmentEtaBucket(ln.etaDays, foldOverdueIntoEarliest);
+    var q = parseFloat(ln.remaining); if (!isFinite(q) || q < 0) q = 0;
+    b[key] = (b[key] || 0) + q;
+  });
+  return b;
+}
+if (typeof window !== 'undefined') {
+  window._irShipmentEtaBucket = _irShipmentEtaBucket;
+  window._irRemainingIncoming = _irRemainingIncoming;
+  window._irBucketRemainingByEta = _irBucketRemainingByEta;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { _irShipmentEtaBucket: _irShipmentEtaBucket, _irRemainingIncoming: _irRemainingIncoming, _irBucketRemainingByEta: _irBucketRemainingByEta };
+}
+
 function openReplenAddSkuModal() {
   const modal = document.getElementById('replen-add-sku-modal');
   const overlay = document.getElementById('replen-modal-overlay');

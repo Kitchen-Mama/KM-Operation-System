@@ -28,6 +28,7 @@ function extractFn(src, name) {
 eval(extractFn(GS, 'procSrcNorm_'));
 eval(extractFn(GS, 'procShipmentDestId_'));
 eval(extractFn(GS, 'procShipmentLineQty_'));
+eval(extractFn(GS, 'procShipmentRemainingQty_'));   // F1-SHIPMENT-INCOMING-R4 dependency of procurementOnTheWayMaps_
 eval(extractFn(GS, 'procurementOnTheWayMaps_'));
 
 var fail = 0, pass = 0;
