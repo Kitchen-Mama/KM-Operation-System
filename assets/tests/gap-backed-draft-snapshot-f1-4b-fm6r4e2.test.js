@@ -174,8 +174,10 @@ section('D/§4 — the 47_ gap-backed path recomputes NO quantity + creates NO s
   ok(/request_order_allocation_drafts/.test(r4e2) && /request_order_allocation_draft_lines/.test(r4e2), 'D6 read-back reads the canonical draft header + lines');
   ok(/requestOrderDraft\.generateFromGap/.test(GS_ROUTER) && /handleGenerateRequestOrderDraftFromGap_/.test(GS_ROUTER), 'D7 router wires generateFromGap');
   ok(/requestOrderDraft\.getActive/.test(GS_ROUTER) && /handleGetActiveRequestOrderDraftReadback_/.test(GS_ROUTER), 'D8 router wires getActive read-back');
-  // frontend NOT wired this round
-  ok(!/generateFromGap|startRequestOrderDraftJob/.test(read('js/pages/request-order.js')), 'D9 request-order.js does not call the gap-backed generation (generateFromGap / job start) — generation is a later round');
+  // frontend generation wired in R4E3 — via the RESUMABLE JOB (startRequestOrderDraftJob), never the per-SKU
+  // direct generateFromGap fan-out (which would be one POST per SKU). See ai-plan-canonical-job-f1-4b-fm6r4e3.
+  var r4e2Front = read('js/pages/request-order.js');
+  ok(/startRequestOrderDraftJob/.test(r4e2Front) && !/generateFromGap/.test(r4e2Front), 'D9 request-order.js drives the resumable draft JOB (F1-4B-FM6-R4E3), never the per-SKU generateFromGap fan-out');
 })();
 
 console.log('\n----------------------------------------');

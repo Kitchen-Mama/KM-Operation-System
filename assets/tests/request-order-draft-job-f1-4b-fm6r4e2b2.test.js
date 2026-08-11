@@ -239,8 +239,9 @@ section('D/§19/§21/§23 — no triggers/scheduler, no allocation/formula/secon
   // 24_ still delegates to KMPW (no second persister) and the public handler wraps the extracted plain-result core
   ok(/rpoGenerateRecommendationDraftLockedResult_/.test(GS24) && /KMPW\.persistProductionRecommendation/.test(GS24), 'N7 24_ plain-result core still delegates to KMPW');
   ok(/function handleGenerateRecommendationDraftLocked_\(body\)\s*\{\s*return jsonResponse_\(rpoGenerateRecommendationDraftLockedResult_\(body\)\)/.test(GS24), 'N8 public handler wraps the core (backward compatible)');
-  // frontend not wired this round
-  ok(!/startRequestOrderDraftJob|continueRequestOrderDraftJob|requestOrderDraft\.job\.start|requestOrderDraft\.job\.continue/.test(read('js/pages/request-order.js')), 'N9 request-order.js does not START/CONTINUE the draft job (the generation flow is the later R4E3 round; R4E3-PRE only wires getActive read-back + canonical edit)');
+  // frontend wiring moved to R4E3 — the AI Plan action now DRIVES this backend job (start → continue → getActive).
+  var RO_JS = read('js/pages/request-order.js');
+  ok(/startRequestOrderDraftJob/.test(RO_JS) && /continueRequestOrderDraftJob/.test(RO_JS), 'N9 request-order.js NOW drives this job (F1-4B-FM6-R4E3 wires start + continue over the R4E2-B2 backend; see ai-plan-canonical-job-f1-4b-fm6r4e3.test.js)');
 })();
 
 console.log('\n----------------------------------------');

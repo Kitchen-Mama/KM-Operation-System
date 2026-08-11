@@ -109,6 +109,8 @@
                             <button type="button" class="ro-btn ro-btn--primary" onclick="handleSendRequest()">Send Request</button>
                             <!-- F1-4B-FM5-R4J-LIVE4 — manual Cancel (backend-authoritative; shown only while a job is active). Completed rows are preserved. Recalculate All Sites moved into the AI Support menu above. -->
                             <button type="button" class="ro-btn ro-btn--cancel" id="ro-cancel-recalc-btn" onclick="handleCancelOrderPlanningGapJob()" title="Cancel the running recalculation (completed sites are kept)" aria-label="Cancel recalculation" style="display:none">Cancel</button>
+                            <!-- F1-4B-FM6-R4E3 — contextual AI Plan Cancel (backend-authoritative; shown ONLY while the scope draft job runs). Drafts already created are preserved. -->
+                            <button type="button" class="ro-btn ro-btn--cancel" id="ro-ai-plan-cancel-btn" onclick="handleCancelRequestOrderDraftJob()" title="Cancel the running AI Plan (drafts already created are kept)" aria-label="Cancel AI Plan" style="display:none">Cancel AI Plan</button>
                         </div>
                     </div>
                 </div>

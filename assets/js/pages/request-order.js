@@ -1771,6 +1771,11 @@ function renderExpandPanel(item) {
   // available." message is suppressed (it must never show alongside canonical lines). When the workspace is
   // OFF (kill switch), the legacy tier Suggested behavior is preserved verbatim.
   var allocEmpty = (anySuggested || _opRecoEnabled()) ? '' : '<div class="ro-rec-empty">No recommendation available.</div>';
+  // §12 — a SKU the scope read-back reported as NO_DRAFT gets a restrained marker (execution row unavailable). This
+  // NEVER recreates a second editable quantity authority: Order Qty edits for a non-canonical SKU stay in-memory
+  // planning scratch (never persisted as a canonical draft) — the ordinary planning view, not an AI Plan execution row.
+  var noDraftNote = (typeof _roIsNoDraftSku_ === 'function' && _roIsNoDraftSku_(item.sku))
+    ? '<div class="ro-rec-nodraft" title="This SKU has no active AI Plan draft; run AI Plan to generate one.">No active AI Plan draft</div>' : '';
 
   // Incoming-supply empty state (F.6): no scheduled/completed across the next 3 months.
   var foHasData = foMonths.some(function (mo) { var rec = foBySku[_roYmKey(mo)]; return rec && (rec.scheduled > 0 || rec.completed > 0); });
@@ -1834,6 +1839,7 @@ function renderExpandPanel(item) {
           </div>
           <div class="ro-block-sub">
             <div class="ro-subtitle">Order Allocation</div>
+            ${noDraftNote}
             ${allocEmpty}
             <table class="ro-expand-table ro-rec-table"><thead><tr><th>Tier · Month</th><th>Suggested</th><th>Order Qty</th><th>Carton</th><th>Note</th></tr></thead><tbody>${allocRows}</tbody></table>
           </div>
@@ -3090,6 +3096,18 @@ function handleRequestOrderAiPlan(scope) {
     }
     renderRequestOrderTable();   // re-render surfaces the Recommended Action note — NOT Send Request / Confirm Site
     if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-success'); setTimeout(function () { if (btn) btn.classList.remove('is-success'); }, 1200); }
+    // F1-4B-FM6-R4E3 §2/§6/§7/§14 — for a CONCRETE scope, AI Plan now ALSO executes the canonical production path:
+    // requestOrderDraft.job.start → poll job.continue to terminal → ONE getActive → render Order Allocation from the
+    // PERSISTED DB drafts (the execution authority). The KMREC render above is DISPLAY-ONLY (informational summary),
+    // NOT the execution source. No browser per-SKU fan-out; one logical scope job. When no concrete scope is available
+    // (scope modal unavailable / demo), the KMREC summary refresh is the only effect (honest boundary — the backend
+    // job requires company+country+marketplace and never starts scopeless).
+    try {
+      var _cs = (scope && scope.company && scope.country && scope.marketplace)
+        ? { company: scope.company, country: scope.country, marketplace: scope.marketplace }
+        : (typeof _roCanonicalScope_ === 'function' ? _roCanonicalScope_() : null);
+      if (_cs && typeof _roRunAiPlanJob_ === 'function') { _roRunAiPlanJob_(_cs); }
+    } catch (e2) { /* job kickoff failure never breaks the local KMREC render */ }
   } catch (err) {
     if (btn) { btn.classList.remove('is-loading'); btn.classList.add('is-error'); setTimeout(function () { if (btn) btn.classList.remove('is-error'); }, 1600); }
     console.error('[AI Plan] recommendation generation failed:', err);
@@ -3247,6 +3265,9 @@ if (window.KM && window.KM.lifecycle) {
                 // F1-4B-FM6-R4E3-PRE §18/§21 — restore persisted canonical Request Order drafts for the current
                 // concrete scope (one getActive read) so a reload shows saved order_qty as execution authority.
                 if (typeof _roLoadCanonicalDraftsOnMount_ === 'function') { try { _roLoadCanonicalDraftsOnMount_(); } catch (e) {} }
+                // F1-4B-FM6-R4E3 §16 — if a scope AI Plan draft job is still RUNNING for the current scope, resume
+                // driving it (progress + contextual cancel) instead of starting a duplicate.
+                if (typeof _roResumeAiPlanJobOnMount_ === 'function') { try { _roResumeAiPlanJobOnMount_(); } catch (e) {} }
             });
         },
         unmount() {
@@ -3265,8 +3286,13 @@ if (window.KM && window.KM.lifecycle) {
 // planning behavior and NEVER auto-create a draft (AI Plan remains the draft-creation boundary).
 // ============================================================
 var _roCanonicalDraftBySku = {};   // sku(UPPER) → { draftId, draftVersion, expectedToken, status, conflict, lines:{ 'T1':{request_month, order_qty, recommended_qty, ...} } }
+var _roNoDraftSkus = {};           // §12 — sku(UPPER) → true for SKUs the last scope read-back reported as NO_DRAFT
 
 function _roCanonKey_(sku) { return String(sku == null ? '' : sku).trim().toUpperCase(); }
+// §12 — this SKU was explicitly reported NO_DRAFT by the scope read-back (execution row unavailable; NEVER a silent
+// frontend recompute fallback). Only true AFTER a getActive read-back — a SKU with no canonical draft and no read-back
+// keeps the ordinary planning view (the whole page is not "no draft" before AI Plan is ever run).
+function _roIsNoDraftSku_(sku) { return !!_roNoDraftSkus[_roCanonKey_(sku)]; }
 // A concrete scope for the scope-level getActive read. Best-effort (§18/§21): the last AI Plan scope when it carries
 // a concrete company/country/marketplace; otherwise null (skip — full page-filter derivation is a later R4E3 concern).
 function _roCanonicalScope_() {
@@ -3324,6 +3350,9 @@ function _roLoadCanonicalDraftsForScope_(scope) {
     });
     (data.conflicts || []).forEach(function (c) { var sku = _roCanonKey_(c.sku); if (sku) next[sku] = { conflict: true, conflictIds: c.conflictIds || [] }; });
     _roCanonicalDraftBySku = next;
+    // §12 — record the scope's NO_DRAFT SKUs from THIS read-back so the grid can mark them "No active AI Plan draft"
+    // (never a silent second quantity authority / frontend recompute fallback). Set is per-read (replaced each time).
+    _roNoDraftSkus = {}; (data.noDraftSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) _roNoDraftSkus[k] = true; });
     if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
     return next;
   }).catch(function () { return null; });
@@ -3379,4 +3408,163 @@ if (typeof window !== 'undefined') {
   window._roLoadCanonicalDraftsForScope_ = _roLoadCanonicalDraftsForScope_;
   window._roSaveOrderQtyToCanonicalDraft_ = _roSaveOrderQtyToCanonicalDraft_;
   window._roIsCanonicalDraftSku_ = _roIsCanonicalDraftSku_;
+  window._roIsNoDraftSku_ = _roIsNoDraftSku_;
+}
+
+// ============================================================
+// F1-4B-FM6-R4E3 — AI Plan → canonical resumable draft job → DB read-back → editable Order Allocation.
+// The AI Plan action drives ONE logical scope job through the EXISTING R4E2-B2 backend (start → poll continue to
+// terminal → ONE getActive), then renders Order Allocation from the PERSISTED drafts (execution authority). There is
+// NO browser per-SKU fan-out (the backend job slices SKUs; the browser issues 1 start + N bounded continues + 1
+// getActive), NO second job/persister/edit-writer, NO gap/factory/shipment recompute. Order Qty edits still flow
+// through the R4E3-PRE locked decision writer. KMREC stays display-only. Send Request is NOT touched (R4E4/R4E5).
+// ============================================================
+var _roAiPlanBusy = false;          // one logical AI Plan job driven at a time (§3 — no duplicate start / no fan-out)
+var _roAiPlanRunId = null;          // active backend runId (echoed to continue/cancel; the job state is single + global)
+var _roAiPlanTotal = 0;             // snapshot SKU total for restrained "N / M" progress
+var _roAiPlanCancelRequested = false;
+var _RO_AI_PLAN_CONTINUE_DELAY_MS = 350;   // one continuation at a time (never a per-SKU burst)
+var _RO_AI_PLAN_BUSY_RETRY_MS = 900;       // §3 respect a live lease held by another continuation → wait, retry
+
+// --- PURE dispositions (testable; consume the KM.DB adapter envelope) ---------------------------------------
+// START disposition: RUN (fresh or resumed same-scope) | BUSY (another scope's single-slot job) | FAIL (truthful code).
+function _roAiPlanStartDisposition_(res) {
+  if (!res || !res.success) return { action: 'FAIL', code: (res && res.error && res.error.code) || 'AI_PLAN_START_FAILED' };
+  var d = res.data || {};
+  if (d.alreadyRunning && d.busy) return { action: 'BUSY', code: 'ANOTHER_JOB_RUNNING' };   // different scope owns the one slot
+  return { action: 'RUN', runId: d.runId || null, total: d.total || 0, resumed: !!d.alreadyRunning };
+}
+// CONTINUE disposition: DONE | FAILED (fail closed — never treated as success) | CANCELLED | BUSY | MORE | NONE.
+function _roAiPlanContinueDisposition_(res) {
+  if (!res || !res.success) return { action: 'FAIL', code: (res && res.error && res.error.code) || 'AI_PLAN_CONTINUE_FAILED' };
+  var d = res.data || {};
+  if (d.busy) return { action: 'BUSY' };
+  if (d.status === 'DONE') return { action: 'DONE', done: d.cursor || 0, total: d.total || 0 };
+  if (d.status === 'FAILED') return { action: 'FAILED', code: d.lastError || 'FAILED' };   // GAP_GENERATION_CHANGED, etc.
+  if (d.status === 'CANCELLED') return { action: 'CANCELLED' };
+  if (d.status === 'NONE') return { action: 'NONE' };
+  if (d.hasMore || (d.cursor != null && d.total != null && d.cursor < d.total)) return { action: 'MORE', done: d.cursor || 0, total: d.total || 0 };
+  return { action: 'DONE', done: d.cursor || 0, total: d.total || 0 };
+}
+// PURE truthful terminal message (never converts a backend failure into a success — §4).
+function _roAiPlanFailMsg_(code) {
+  var c = String(code == null ? '' : code);
+  if (/GAP_GENERATION_CHANGED/.test(c)) return 'Order Planning data changed during AI Plan. Recalculate the gap, then run AI Plan again. (No partial result was applied.)';
+  if (/ORDER_PLANNING_GAP_NOT_READY/.test(c)) return 'The Order Planning gap is not ready yet. Recalculate it first, then run AI Plan.';
+  if (/REQUEST_ORDER_DRAFT_EMPTY_SCOPE/.test(c)) return 'No eligible SKUs for AI Plan in this scope.';
+  if (/REQUEST_ORDER_DRAFT_JOB_STATE_LIMIT/.test(c)) return 'This scope is too large for one AI Plan run. Narrow the scope, then try again.';
+  if (/ANOTHER_JOB_RUNNING/.test(c)) return 'Another AI Plan is still running. Please wait for it to finish.';
+  if (/LOCK_UNAVAILABLE/.test(c)) return 'AI Plan is briefly busy. Please try again in a moment.';
+  return 'AI Plan could not be completed (' + (c || 'unknown') + '). No partial result was applied.';
+}
+// PURE scope equality (company/country/marketplace) — used to decide §16 resume ownership.
+function _roAiPlanScopeMatches_(a, b) {
+  if (!a || !b) return false;
+  function n(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+  return n(a.company) === n(b.company) && n(a.country) === n(b.country) && n(a.marketplace) === n(b.marketplace);
+}
+
+// --- restrained progress UI (§5) — the AI Support trigger shows the running state; a contextual Cancel appears only
+// while active and is hidden on terminal. No permanent debug Cancel is added to the toolbar. -------------------
+function _roAiPlanTrigger_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('roAiSupportTrigger') : null; }
+function _roAiPlanCancelBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('ro-ai-plan-cancel-btn') : null; }
+function _roAiPlanSetProgress_(text, running) {
+  var t = _roAiPlanTrigger_();
+  if (t) { if (running) { if (t.dataset && t.dataset.idleLabel == null) t.dataset.idleLabel = t.textContent; t.textContent = '✦ ' + text; t.setAttribute('aria-busy', 'true'); } }
+  var c = _roAiPlanCancelBtn_(); if (c) { c.style.display = running ? '' : 'none'; if (running) c.disabled = false; }
+}
+function _roAiPlanResetUi_() {
+  _roAiPlanBusy = false; _roAiPlanRunId = null; _roAiPlanTotal = 0; _roAiPlanCancelRequested = false;
+  var t = _roAiPlanTrigger_();
+  if (t) { var idle = (t.dataset && t.dataset.idleLabel) ? t.dataset.idleLabel : '✦ AI Support'; t.textContent = idle; t.removeAttribute('aria-busy'); if (t.dataset) delete t.dataset.idleLabel; }
+  var c = _roAiPlanCancelBtn_(); if (c) { c.style.display = 'none'; c.disabled = false; }
+}
+
+// --- the driver: START (once) → CONTINUE loop (one at a time) → DONE → getActive (once) → render ---------------
+function _roAiPlanDelay_(fn, ms) { if (typeof setTimeout === 'function') setTimeout(fn, ms); else fn(); }
+function _roRunAiPlanJob_(scope) {
+  if (_roAiPlanBusy) return Promise.resolve(null);                                   // §3 never start a duplicate job
+  var db = window.KM && window.KM.DB;
+  if (!db || typeof db.startRequestOrderDraftJob !== 'function' || typeof db.continueRequestOrderDraftJob !== 'function') return Promise.resolve(null);
+  if (!scope || !scope.company || !scope.country || !scope.marketplace) return Promise.resolve(null);   // scopeless → KMREC-only
+  _roAiPlanBusy = true; _roAiPlanCancelRequested = false; _roAiPlanRunId = null; _roAiPlanTotal = 0;
+  _roAiPlanSetProgress_('AI Plan · Starting…', true);
+  return Promise.resolve(db.startRequestOrderDraftJob(scope)).then(function (res) {
+    var disp = _roAiPlanStartDisposition_(res);
+    if (disp.action === 'FAIL') { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return null; }
+    if (disp.action === 'BUSY') { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return null; }
+    _roAiPlanRunId = disp.runId; _roAiPlanTotal = disp.total || 0;
+    _roAiPlanSetProgress_('AI Plan · ' + (disp.total ? '0 / ' + disp.total : 'Generating…'), true);
+    return _roAiPlanDriveContinue_(scope);
+  }).catch(function () { _roAiPlanResetUi_(); return null; });
+}
+function _roAiPlanDriveContinue_(scope) {
+  var db = window.KM && window.KM.DB;
+  function step() {
+    if (_roAiPlanCancelRequested) return;   // the cancel handler owns the terminal reload
+    Promise.resolve(db.continueRequestOrderDraftJob(_roAiPlanRunId)).then(function (res) {
+      if (_roAiPlanCancelRequested) return;
+      var disp = _roAiPlanContinueDisposition_(res);
+      if (disp.action === 'BUSY') { _roAiPlanDelay_(step, _RO_AI_PLAN_BUSY_RETRY_MS); return; }   // §3 respect a live lease
+      if (disp.action === 'MORE') { _roAiPlanSetProgress_('AI Plan · ' + disp.done + ' / ' + (_roAiPlanTotal || disp.total || 0), true); _roAiPlanDelay_(step, _RO_AI_PLAN_CONTINUE_DELAY_MS); return; }
+      if (disp.action === 'DONE') { _roAiPlanFinishDone_(scope); return; }
+      if (disp.action === 'CANCELLED') { _roAiPlanFinishCancelled_(scope, true); return; }   // externally cancelled → announce (the user-cancel path returned early above)
+      if (disp.action === 'FAILED' || disp.action === 'FAIL') { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_(disp.code)); return; }   // §4 fail closed
+      _roAiPlanResetUi_();   // NONE / unknown → stop silently (no success claim)
+    }).catch(function () { _roAiPlanResetUi_(); _roNotify_(_roAiPlanFailMsg_('AI_PLAN_CONTINUE_ERROR')); });
+  }
+  step();
+}
+// §6/§7/§17 — DONE: ONE scope getActive read-back → render Order Allocation from persisted drafts → one success toast.
+function _roAiPlanFinishDone_(scope) {
+  _roAiPlanSetProgress_('AI Plan · Reading drafts…', true);
+  return Promise.resolve(_roLoadCanonicalDraftsForScope_(scope)).then(function () {
+    _roAiPlanResetUi_(); _roNotify_('AI Plan completed. Order Allocation has been updated.');
+  }).catch(function () { _roAiPlanResetUi_(); });
+}
+// §18 — CANCELLED is NOT a failure: stop polling, reload the canonical drafts already created (preserved), notify once.
+function _roAiPlanFinishCancelled_(scope, announce) {
+  return Promise.resolve(_roLoadCanonicalDraftsForScope_(scope)).then(function () {
+    _roAiPlanResetUi_(); if (announce !== false) _roNotify_('AI Plan cancelled — drafts already created were kept.');
+  }).catch(function () { _roAiPlanResetUi_(); });
+}
+// §18/§5 — contextual Cancel: ONE backend cancel write for the active run; stop the poller; reload preserved drafts.
+function handleCancelRequestOrderDraftJob() {
+  if (!_roAiPlanBusy || _roAiPlanCancelRequested) return;
+  _roAiPlanCancelRequested = true;
+  var c = _roAiPlanCancelBtn_(); if (c) c.disabled = true;
+  var db = window.KM && window.KM.DB;
+  if (db && typeof db.cancelRequestOrderDraftJob === 'function') {
+    return Promise.resolve(db.cancelRequestOrderDraftJob(_roAiPlanRunId)).then(function () {
+      return _roAiPlanFinishCancelled_(_roCanonicalScope_(), true);
+    }).catch(function () { _roAiPlanResetUi_(); });
+  }
+  _roAiPlanResetUi_();
+}
+// §16 — resume a still-RUNNING scope job on mount/reload rather than starting a duplicate. The single global job's
+// status is read with a null runId; we adopt (drive + show progress) ONLY when it belongs to the current scope.
+// If the backend cannot identify an owned running job for this scope, we do nothing (the getActive read-back already
+// restores any existing drafts) — we never invent a job or add a second job table.
+function _roResumeAiPlanJobOnMount_() {
+  if (_roAiPlanBusy) return;
+  var db = window.KM && window.KM.DB, scope = (typeof _roCanonicalScope_ === 'function') ? _roCanonicalScope_() : null;
+  if (!db || typeof db.getRequestOrderDraftJobStatus !== 'function' || !scope) return;
+  return Promise.resolve(db.getRequestOrderDraftJobStatus(null)).then(function (res) {
+    if (!res || !res.success || _roAiPlanBusy) return;
+    var d = res.data || {};
+    if (d.status === 'RUNNING' && _roAiPlanScopeMatches_(d.scope, scope)) {
+      _roAiPlanBusy = true; _roAiPlanCancelRequested = false; _roAiPlanRunId = d.runId || null; _roAiPlanTotal = d.total || 0;
+      _roAiPlanSetProgress_('AI Plan · ' + ((d.cursor || 0) + ' / ' + (d.total || 0)), true);
+      _roAiPlanDriveContinue_(scope);
+    }
+  }).catch(function () {});
+}
+if (typeof window !== 'undefined') {
+  window._roRunAiPlanJob_ = _roRunAiPlanJob_;
+  window._roAiPlanStartDisposition_ = _roAiPlanStartDisposition_;
+  window._roAiPlanContinueDisposition_ = _roAiPlanContinueDisposition_;
+  window._roAiPlanFailMsg_ = _roAiPlanFailMsg_;
+  window._roAiPlanScopeMatches_ = _roAiPlanScopeMatches_;
+  window._roResumeAiPlanJobOnMount_ = _roResumeAiPlanJobOnMount_;
+  window.handleCancelRequestOrderDraftJob = handleCancelRequestOrderDraftJob;
 }
