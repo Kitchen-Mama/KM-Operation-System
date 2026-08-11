@@ -328,6 +328,23 @@ function doPost(e) {
       return handleGetActiveRequestOrderDraftReadback_(body);
     }
 
+    // F1-4B-FM6-R4E2-B2 — REQUEST-DRIVEN resumable scope draft job (48_). ONE logical job for a scope-wide AI Plan:
+    // START snapshots eligible READY-gap SKUs; the client polls CONTINUE (bounded slice each) until DONE; STATUS is
+    // read-only; CANCEL is terminal (created drafts preserved). No time trigger / scheduler / browser fan-out. The
+    // per-SKU authority is the SAME R4E2 locked persister (recommended_qty verbatim from order_planning_gap).
+    if (action === 'requestOrderDraft.job.start') {
+      return handleStartRequestOrderDraftJob_(body);
+    }
+    if (action === 'requestOrderDraft.job.continue') {
+      return handleContinueRequestOrderDraftJob_(body);
+    }
+    if (action === 'requestOrderDraft.job.status') {
+      return handleGetRequestOrderDraftJobStatus_(body);
+    }
+    if (action === 'requestOrderDraft.job.cancel') {
+      return handleCancelRequestOrderDraftJob_(body);
+    }
+
     // Phase 2C Round 1H — LOCKED user-decision-edit boundary (25_): edit planned_qty/order_qty/etc under
     // ScriptLock + terminal guard + optimistic token, separate from engine generation and from Submit.
     if (action === 'updateRecommendationDecisionLocked') {

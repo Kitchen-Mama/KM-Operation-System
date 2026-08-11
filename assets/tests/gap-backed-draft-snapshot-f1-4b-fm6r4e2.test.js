@@ -169,7 +169,7 @@ section('D/§4 — the 47_ gap-backed path recomputes NO quantity + creates NO s
   ok(!/calculateGap|calculateSuggestedOrderQty|resolveMonthlyRecommendationFacts|KMSF|KMCALC|KMALLOC|KMAR|KMMSA/.test(body), 'D1 no gap/quantity recompute + no allocation engine in the gap-backed path');
   ok(!/insertSheet|createSheet|procurementEnsureSheet_/.test(body), 'D2 read-back creates NO sheet (read-only; uses gapReadObjects_)');
   ok(/formulaVersion:\s*'ORDER_PLANNING_GAP'/.test(r4e2) && /facts:\s*\{\s*lines:/.test(r4e2), 'D3 injects verbatim gap facts via the existing body.facts seam');
-  ok(/handleGenerateRecommendationDraftLocked_\(genBody\)/.test(r4e2), 'D4 persistence delegated to the EXISTING locked writer (no second persister)');
+  ok(/rpoGenerateRecommendationDraftLockedResult_\(b\.body\)/.test(r4e2), 'D4 persistence delegated to the EXISTING locked writer core (no second persister)');
   ok(/R4E2_ACTIONABLE_TIERS_\s*=\s*\['T1',\s*'T2',\s*'T3'\]/.test(r4e2) && !/'T4'/.test(slice(GS47, '// __GAPDRAFT_PURE_START__', '// __GAPDRAFT_PURE_END__')), 'D5 T4 is never an actionable tier');
   ok(/request_order_allocation_drafts/.test(r4e2) && /request_order_allocation_draft_lines/.test(r4e2), 'D6 read-back reads the canonical draft header + lines');
   ok(/requestOrderDraft\.generateFromGap/.test(GS_ROUTER) && /handleGenerateRequestOrderDraftFromGap_/.test(GS_ROUTER), 'D7 router wires generateFromGap');

@@ -51,16 +51,28 @@ function rpoResolveFacts_(body) {
   return KMPS.resolveProductionFacts(SpreadsheetApp.getActiveSpreadsheet(), body);   // bundled pure runtime; no formula here
 }
 
-// Router action: generateRecommendationDraftLocked.
+// Router action: generateRecommendationDraftLocked. Thin wrapper — the compute returns a PLAIN result object so
+// other backend owners (F1-4B-FM6-R4E2-B2 resumable scope job) can call it per SKU and introspect the outcome;
+// only this public handler wraps it in the ContentService envelope (jsonResponse_ is opaque to backend callers).
 function handleGenerateRecommendationDraftLocked_(body) {
+  return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_(body));
+}
+
+// PLAIN-result core of the locked generate path — returns { success, data|error, stage? } (NOT jsonResponse_).
+// opts.skipSchemaValidation: a scope job validates the authorized schemas ONCE per continuation, then skips the
+// per-SKU revalidation (the tables cannot change mid-continuation). Behavior is otherwise byte-identical to the
+// single-SKU call; no algorithm here — delegates to KMPW.
+function rpoGenerateRecommendationDraftLockedResult_(body, opts) {
   rpoBundle_();
   var type = body && body.recommendationType;
-  if (!KMPR.TABLES[type]) return jsonResponse_({ success: false, error: 'unknown recommendationType', stage: 'input' });
+  if (!KMPR.TABLES[type]) return { success: false, error: 'unknown recommendationType', stage: 'input' };
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   // Production Safety Round S0: fail closed BEFORE any lock/write if the target Spreadsheet is wrong or any
   // authorized table schema is missing/blank/malformed. Never creates or repairs a Sheet (RULE S0-2/S0-5).
-  try { rpoValidateSchema_(ss); }
-  catch (e) { return jsonResponse_({ success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null }); }
+  if (!(opts && opts.skipSchemaValidation === true)) {
+    try { rpoValidateSchema_(ss); }
+    catch (e) { return { success: false, error: (e && e.message) || 'RECOMMENDATION_SCHEMA_NOT_READY', stage: 'schema_validation', schemaValidation: (e && e.schemaValidation) || null }; }
+  }
   var cfg = KMPR.TABLES[type], tables = [cfg.header, cfg.lines, KMPR.RUN_JOURNAL_TABLE];
   var query = { recommendationType: type, planningCycle: body.planningCycle, businessScope: body.businessScope };
 
@@ -100,7 +112,7 @@ function handleGenerateRecommendationDraftLocked_(body) {
     confirmRegenerateOverUserEdits: body.confirmRegenerateOverUserEdits === true,
     actor: (body.actor || body.updated_by || 'system'), now: procurementTimestamp_()
   }, deps);
-  return jsonResponse_({ success: result.success, data: result });
+  return { success: result.success, data: result };
 }
 
 // KEYED-DELTA write-back (§25): write ONLY the rows that changed + rows appended, via targeted setValues. Never

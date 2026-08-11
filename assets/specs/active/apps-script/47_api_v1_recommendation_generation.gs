@@ -140,7 +140,126 @@ function recGenMapGapRowToFacts_(gapRow, upc) {
   }
   return { ready: true, lines: lines, sku: sku };
 }
+
+// PURE: build the exact body the locked generate core consumes for one gap-backed SKU. Returns { ok:true, body } or
+// { ok:false, reason }. recommendation quantity + snapshot come VERBATIM from the gap row (recGenMapGapRowToFacts_);
+// this only shapes the persister command (scope + mode + facts). No DB, no formula.
+function recGenBuildGapDraftBody_(scope1, gapRow, upc, opts) {
+  var built = recGenMapGapRowToFacts_(gapRow, upc);
+  if (!built.ready) return { ok: false, reason: built.reason || 'ORDER_PLANNING_GAP_NOT_READY' };
+  var sourceCalculatedAt = r4e2Str_(gapRow.calculated_at) || r4e2Str_(gapRow.updated_at);
+  return { ok: true, body: {
+    recommendationType: 'MONTHLY_ORDER',
+    mode: (opts && opts.mode) || 'MANUAL_REGENERATE',
+    planningCycle: (opts && opts.planningCycle) || r4e2Str_(gapRow.calculation_month) || '',
+    businessScope: { company: scope1.company, country: scope1.country, marketplace: scope1.marketplace, sku: scope1.sku,
+      draft_purpose: (opts && opts.draft_purpose) || 'regular' },
+    confirmRegenerateOverUserEdits: !!(opts && opts.confirmRegenerateOverUserEdits === true),
+    actor: (opts && opts.actor) || 'system',
+    facts: { lines: built.lines, ready: true, formulaVersion: 'ORDER_PLANNING_GAP', sourceDataAsOf: sourceCalculatedAt }
+  } };
+}
+
+// PURE: map the locked-writer PLAIN result (from rpoGenerateRecommendationDraftLockedResult_) → a COMPACT per-SKU
+// batch outcome { sku, status, draftId?, code? }. Reuses the exact R4E2 semantics surfaced by KMORCH/KMPW:
+// COMPLETED→CREATED/REUSED/REGENERATED (by coreAction); BLOCKED_CONFLICT with reason DUPLICATE/FOREIGN/CONFIRMATION.
+function recGenSummarizeDraftResult_(sku, res) {
+  var d = (res && res.data) || {};
+  if (res && res.success === true && d.status === 'COMPLETED') {
+    var st = (d.coreAction === 'CREATE') ? 'CREATED' : (d.coreAction === 'REFRESH') ? 'REUSED' : (d.coreAction === 'REGENERATE') ? 'REGENERATED' : 'GENERATED';
+    return { sku: sku, status: st, draftId: d.draftId || null };
+  }
+  var reason = d.reason || (res && res.error) || 'GENERATION_FAILED';
+  if (reason === 'REGENERATE_NEEDS_CONFIRMATION') return { sku: sku, status: 'REGENERATE_NEEDS_CONFIRMATION', code: reason, draftId: d.draftId || null };
+  if (d.status === 'BLOCKED_CONFLICT' || reason === 'DUPLICATE_ACTIVE_DRAFT' || reason === 'FOREIGN_DRAFT_ADOPT_REQUIRED') return { sku: sku, status: 'BLOCKED_CONFLICT', code: String(reason) };
+  if (String(reason).indexOf('SOURCE_NOT_READY') === 0) return { sku: sku, status: 'NOT_READY', code: String(reason) };
+  return { sku: sku, status: 'FAILED', code: String(reason) };
+}
+
+// PURE: eligible-SKU enumeration for a scope = the STORED order_planning_gap rows for {company,country,marketplace}
+// with calculation_status READY, sorted SKU ASC (deterministic). This is the scope job's SKU-snapshot authority
+// (§5/§15) — a materialized READY gap row is the eligibility signal, never a frontend cache. Returns [{sku,row}].
+function recGenEnumerateEligibleGapRows_(allGapRows, scope) {
+  var lc = function (v) { return r4e2Str_(v).toLowerCase(); };
+  var company = lc(scope.company), country = lc(scope.country), marketplace = lc(scope.marketplace);
+  var out = [];
+  for (var i = 0; i < (allGapRows || []).length; i++) {
+    var r = allGapRows[i];
+    if (lc(r.company) !== company || lc(r.country) !== country || lc(r.marketplace) !== marketplace) continue;
+    if (r4e2Str_(r.calculation_status).toUpperCase() !== 'READY') continue;
+    var sku = r4e2Str_(r.sku); if (!sku) continue;
+    out.push({ sku: sku, row: r });
+  }
+  out.sort(function (a, b) { return a.sku < b.sku ? -1 : (a.sku > b.sku ? 1 : 0); });
+  return out;
+}
+
+// PURE read-back assembly helpers (over already-read draft header/line rows). T1/T2/T3 only; T4 never appears.
+function recGenReadbackLineDto_(l) {
+  return { request_month: r4e2Str_(l.request_month), request_bucket: r4e2Str_(l.request_bucket),
+    calculated_gap_qty_snapshot: r4e2Num_(l.calculated_gap_qty_snapshot),
+    recommended_qty: r4e2Num_(l.recommended_qty), order_qty: r4e2Num_(l.order_qty),
+    units_per_carton: r4e2Num_(l.units_per_carton), carton_qty: r4e2Num_(l.carton_qty),
+    allocation_method: r4e2Str_(l.allocation_method), line_status: r4e2Str_(l.line_status),
+    user_edited: (r4e2Str_(l.user_edited).toLowerCase() === 'true') };
+}
+function recGenActiveHeadersForSku_(headerRows, scope, sku, planningCycle) {
+  var lc = function (v) { return r4e2Str_(v).toLowerCase(); };
+  var out = [];
+  for (var i = 0; i < (headerRows || []).length; i++) {
+    var h = headerRows[i];
+    if (lc(h.company) !== lc(scope.company) || lc(h.country) !== lc(scope.country) || lc(h.marketplace) !== lc(scope.marketplace) || lc(h.sku) !== lc(sku)) continue;
+    if (planningCycle && r4e2Str_(h.planning_cycle) !== planningCycle) continue;
+    var st = lc(h.status);
+    if (st !== 'draft' && st !== 'site_confirmed') continue;   // active only
+    out.push(h);
+  }
+  return out;
+}
+function recGenLinesForDraft_(lineRows, draftId) {
+  var order = { T1: 1, T2: 2, T3: 3 }, lines = [];
+  for (var j = 0; j < (lineRows || []).length; j++) {
+    var l = lineRows[j];
+    if (r4e2Str_(l.request_allocation_draft_id) !== draftId) continue;
+    var bucket = r4e2Str_(l.request_bucket);
+    if (!order[bucket]) continue;   // T1/T2/T3 only (T4 never persisted)
+    lines.push(recGenReadbackLineDto_(l));
+  }
+  lines.sort(function (a, b) { return order[a.request_bucket] - order[b.request_bucket]; });
+  return lines;
+}
+function recGenHeaderDto_(h, scope, sku) {
+  return { request_allocation_draft_id: r4e2Str_(h.request_allocation_draft_id), planning_cycle: r4e2Str_(h.planning_cycle),
+    company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku, status: r4e2Str_(h.status),
+    calculation_run_id: r4e2Str_(h.calculation_run_id), formula_version: r4e2Str_(h.formula_version),
+    source_data_as_of: r4e2Str_(h.source_data_as_of), draft_version: r4e2Num_(h.draft_version) };
+}
+// PURE: scope-level read-back over eligible SKUs → { drafts:[{header,lines}], conflicts:[{sku,conflictIds}], noDraftSkus:[] }.
+// Distinguishes PERSISTED (1 active) / NO_DRAFT (0) / BLOCKED_CONFLICT (>1) per SKU. Sorted SKU ASC (§18).
+function recGenBuildScopeReadback_(headerRows, lineRows, eligibleSkus, scope, planningCycle) {
+  var drafts = [], conflicts = [], noDraftSkus = [];
+  for (var i = 0; i < (eligibleSkus || []).length; i++) {
+    var sku = eligibleSkus[i];
+    var hs = recGenActiveHeadersForSku_(headerRows, scope, sku, planningCycle);
+    if (hs.length === 0) { noDraftSkus.push(sku); continue; }
+    if (hs.length > 1) { conflicts.push({ sku: sku, conflictIds: hs.map(function (h) { return r4e2Str_(h.request_allocation_draft_id); }) }); continue; }
+    var h = hs[0];
+    drafts.push({ header: recGenHeaderDto_(h, scope, sku), lines: recGenLinesForDraft_(lineRows, r4e2Str_(h.request_allocation_draft_id)) });
+  }
+  drafts.sort(function (a, b) { return a.header.sku < b.header.sku ? -1 : (a.header.sku > b.header.sku ? 1 : 0); });
+  return { scope: scope, drafts: drafts, conflicts: conflicts, noDraftSkus: noDraftSkus };
+}
 // __GAPDRAFT_PURE_END__
+
+// BACKEND-ONLY per-SKU compact generator (used by the resumable scope job, R4E2-B2). Builds the gap-backed body and
+// persists via the locked plain-result core, returning a COMPACT outcome. opts.skipSchemaValidation lets the job
+// validate the authorized schemas ONCE per continuation. NO KMSF, NO gap recompute, NO factory reallocation.
+function recGenGenerateOneSkuCompact_(scope1, gapRow, upc, opts) {
+  var b = recGenBuildGapDraftBody_(scope1, gapRow, upc, opts);
+  if (!b.ok) return { sku: scope1.sku, status: 'NOT_READY', code: b.reason };
+  var res = rpoGenerateRecommendationDraftLockedResult_(b.body, { skipSchemaValidation: !!(opts && opts.skipSchemaValidation === true) });
+  return recGenSummarizeDraftResult_(scope1.sku, res);
+}
 
 // BACKEND-ONLY gap-backed MONTHLY_ORDER draft generation. Reads the STORED order_planning_gap row for the exact
 // scope (READ ONLY, verbatim), enforces the §6 readiness gates (durable gap-job DONE/absent + row READY + valid
@@ -171,81 +290,46 @@ function handleGenerateRequestOrderDraftFromGap_(body) {
   var rows = (read.data && read.data.rows) || [];
   var gapRow = rows.length ? rows[0] : null;
   var upc = recGenUpcBySku_(ss)[sku];                                                        // single canonical UPC authority (sku_details)
-  var built = recGenMapGapRowToFacts_(gapRow, upc);
-  if (!built.ready) { return jsonResponse_({ success: false, error: built.reason || 'ORDER_PLANNING_GAP_NOT_READY' }); }
   // §6 durable binding (strongest available): bind the draft to the gap generation via the row's calculated_at —
   // no per-row gap runId exists (documented limitation; not solved with a schema change this round). formula_version
-  // marks the gap-backed authority path so the draft is distinguishable from a KMSF-computed one.
-  var sourceCalculatedAt = r4e2Str_(gapRow.calculated_at) || r4e2Str_(gapRow.updated_at);
-  var genBody = {
-    recommendationType: 'MONTHLY_ORDER',
-    mode: (body && body.mode) || 'MANUAL_REGENERATE',
-    planningCycle: (body && body.planningCycle) || r4e2Str_(gapRow.calculation_month) || '',
-    businessScope: { company: company, country: country, marketplace: marketplace, sku: sku,
-      draft_purpose: (body && body.draft_purpose) || 'regular' },
-    confirmRegenerateOverUserEdits: !!(body && body.confirmRegenerateOverUserEdits === true),
-    actor: (body && (body.actor || body.updated_by)) || 'system',
-    facts: { lines: built.lines, ready: true, formulaVersion: 'ORDER_PLANNING_GAP', sourceDataAsOf: sourceCalculatedAt }
-  };
-  return handleGenerateRecommendationDraftLocked_(genBody);   // existing locked persister (KMPW/KMPR); body.facts short-circuits KMSF
+  // ('ORDER_PLANNING_GAP') marks the gap-backed authority path so the draft is distinguishable from a KMSF-computed one.
+  var b = recGenBuildGapDraftBody_({ company: company, country: country, marketplace: marketplace, sku: sku }, gapRow, upc, {
+    mode: body && body.mode, planningCycle: body && body.planningCycle, draft_purpose: body && body.draft_purpose,
+    confirmRegenerateOverUserEdits: body && body.confirmRegenerateOverUserEdits === true, actor: body && (body.actor || body.updated_by) });
+  if (!b.ok) { return jsonResponse_({ success: false, error: b.reason || 'ORDER_PLANNING_GAP_NOT_READY' }); }
+  return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_(b.body));   // existing locked persister (KMPW/KMPR); body.facts short-circuits KMSF
 }
 
-// §10 BACKEND-ONLY read-back: return the single ACTIVE Request Order draft (header + T1/T2/T3 lines) for the scope,
-// reading request_order_allocation_drafts / _lines VERBATIM (header-mapped). ACTIVE = draft | site_confirmed. This is
-// the canonical read the NEXT (UI) round will call; NO frontend is wired here. Read-only: never creates a sheet.
+// §10/§17 BACKEND-ONLY read-back over request_order_allocation_drafts / _lines VERBATIM (header-mapped). Read-only;
+// never creates a sheet. SKU PRESENT → the single active draft (R4E2 one-SKU DTO, unchanged, backward compatible).
+// SKU OMITTED → SCOPE-LEVEL: enumerate eligible READY-gap SKUs and classify each as PERSISTED / NO_DRAFT /
+// BLOCKED_CONFLICT — one request returns the whole Order Allocation grid for the future R4E3 UI. ACTIVE = draft|site_confirmed.
 function handleGetActiveRequestOrderDraftReadback_(body) {
   try {
     var scope = (body && body.scope) || body || {};
     var company = r4e2Str_(scope.company), country = r4e2Str_(scope.country),
         marketplace = r4e2Str_(scope.marketplace), sku = r4e2Str_(scope.sku),
         planningCycle = r4e2Str_(scope.planningCycle || (body && body.planningCycle));
-    if (!company || !country || !marketplace || !sku) {
-      return jsonResponse_({ success: false, error: 'INVALID_SCOPE', message: 'company + country + marketplace + sku required' });
+    if (!company || !country || !marketplace) {
+      return jsonResponse_({ success: false, error: 'INVALID_SCOPE', message: 'company + country + marketplace required' });
     }
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var lc = function (v) { return r4e2Str_(v).toLowerCase(); };
-    var headers = gapReadObjects_(ss, 'request_order_allocation_drafts');   // [] when absent → NO_ACTIVE_DRAFT
-    var actives = [];
-    for (var i = 0; i < headers.length; i++) {
-      var h = headers[i];
-      if (lc(h.company) !== lc(company) || lc(h.country) !== lc(country) || lc(h.marketplace) !== lc(marketplace) || lc(h.sku) !== lc(sku)) continue;
-      if (planningCycle && r4e2Str_(h.planning_cycle) !== planningCycle) continue;
-      var st = lc(h.status);
-      if (st !== 'draft' && st !== 'site_confirmed') continue;   // active only
-      actives.push(h);
+    var scope3 = { company: company, country: country, marketplace: marketplace };
+    var headerRows = gapReadObjects_(ss, 'request_order_allocation_drafts');   // [] when absent
+    var lineRows = gapReadObjects_(ss, 'request_order_allocation_draft_lines');
+    if (sku) {   // one-SKU (backward compatible with R4E2)
+      var hs = recGenActiveHeadersForSku_(headerRows, scope3, sku, planningCycle);
+      if (hs.length === 0) return jsonResponse_({ success: true, data: { status: 'NO_ACTIVE_DRAFT', header: null, lines: [] } });
+      if (hs.length > 1) return jsonResponse_({ success: true, data: { status: 'BLOCKED_CONFLICT', header: null, lines: [], conflictIds: hs.map(function (h) { return r4e2Str_(h.request_allocation_draft_id); }) } });
+      var h0 = hs[0];
+      return jsonResponse_({ success: true, data: { status: 'ACTIVE_DRAFT_FOUND',
+        header: recGenHeaderDto_(h0, scope3, sku), lines: recGenLinesForDraft_(lineRows, r4e2Str_(h0.request_allocation_draft_id)) } });
     }
-    if (!actives.length) return jsonResponse_({ success: true, data: { status: 'NO_ACTIVE_DRAFT', header: null, lines: [] } });
-    if (actives.length > 1) {
-      return jsonResponse_({ success: true, data: { status: 'BLOCKED_CONFLICT', header: null, lines: [],
-        conflictIds: actives.map(function (a) { return r4e2Str_(a.request_allocation_draft_id); }) } });
-    }
-    var draft = actives[0], draftId = r4e2Str_(draft.request_allocation_draft_id);
-    var order = { T1: 1, T2: 2, T3: 3 };
-    var allLines = gapReadObjects_(ss, 'request_order_allocation_draft_lines');
-    var lines = [];
-    for (var j = 0; j < allLines.length; j++) {
-      var l = allLines[j];
-      if (r4e2Str_(l.request_allocation_draft_id) !== draftId) continue;
-      var bucket = r4e2Str_(l.request_bucket);
-      if (!order[bucket]) continue;   // T1/T2/T3 only (T4 is never persisted)
-      lines.push({
-        request_month: r4e2Str_(l.request_month), request_bucket: bucket,
-        calculated_gap_qty_snapshot: r4e2Num_(l.calculated_gap_qty_snapshot),
-        recommended_qty: r4e2Num_(l.recommended_qty), order_qty: r4e2Num_(l.order_qty),
-        units_per_carton: r4e2Num_(l.units_per_carton), carton_qty: r4e2Num_(l.carton_qty),
-        allocation_method: r4e2Str_(l.allocation_method), line_status: r4e2Str_(l.line_status),
-        user_edited: (r4e2Str_(l.user_edited).toLowerCase() === 'true')
-      });
-    }
-    lines.sort(function (a, b) { return order[a.request_bucket] - order[b.request_bucket]; });
-    return jsonResponse_({ success: true, data: {
-      status: 'ACTIVE_DRAFT_FOUND',
-      header: { request_allocation_draft_id: draftId, planning_cycle: r4e2Str_(draft.planning_cycle),
-        company: company, country: country, marketplace: marketplace, sku: sku, status: r4e2Str_(draft.status),
-        calculation_run_id: r4e2Str_(draft.calculation_run_id), formula_version: r4e2Str_(draft.formula_version),
-        source_data_as_of: r4e2Str_(draft.source_data_as_of), draft_version: r4e2Num_(draft.draft_version) },
-      lines: lines
-    } });
+    // scope-level read-back — eligibility = READY order_planning_gap rows for the scope (deterministic SKU ASC).
+    var eligible = recGenEnumerateEligibleGapRows_(gapReadObjects_(ss, OP_GAP_TABLE_), scope3).map(function (e) { return e.sku; });
+    var rb = recGenBuildScopeReadback_(headerRows, lineRows, eligible, scope3, planningCycle);
+    return jsonResponse_({ success: true, data: { status: 'SCOPE_READBACK', scope: scope3, total: eligible.length,
+      drafts: rb.drafts, conflicts: rb.conflicts, noDraftSkus: rb.noDraftSkus } });
   } catch (e) {
     return jsonResponse_({ success: false, error: 'READBACK_ERROR', message: String(e && e.message ? e.message : e) });
   }
