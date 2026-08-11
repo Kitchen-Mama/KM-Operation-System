@@ -411,11 +411,22 @@ function gapOpReadSupplyPoolFacts_(ss) {
 // company-wide; OVERSEAS once per (company, canonicalCountry, sku). 0 receivers → nothing; 1 → 100% of the eligible
 // pool; >1 → conserved KMMSA/KMALLOC. Independent pools, independently conserved (§6). Returns the per-receiver
 // {overseasCoveredQty, factoryCoveredQty} keyed by the canonical receiver key + any allocation issues.
-function gapOpBuildSupplyAllocation_(receivers, poolFacts) {
+//
+// F1-4B-FM7-R2G-B — CONTENDED FACTORY ROUTING. `contention` (optional) = { contendedSkus:{sku:1}, partition:{receiverKey:factoryQty} }
+// pre-computed cross-company (KMAR) over the COMPLETE competing set (§3/§4/§5). For a CONTENDED sku the per-receiver
+// Factory coverage is READ from the partition — this function NEVER re-allocates the physical pool for a contended sku
+// (that is exactly the double-use defect). Fail closed (§12): a contended receiver missing from the partition THROWS
+// FACTORY_CONTENTION_PARTITION_MISSING rather than silently falling back to a company-local full-pool allocation. For an
+// UNCONTESTED sku (≤1 company has eligible Factory demand) the existing company-local KMMSA path is physically safe
+// (only one company can consume the pool). This function does NOT itself discover contention — the caller supplies it
+// (the resumable per-company slice from the persisted pre-pass; the monolithic path inline over its full receiver set).
+function gapOpBuildSupplyAllocation_(receivers, poolFacts, contention) {
   var out = {}, issues = [];
   if (typeof KMMSA === 'undefined' || !KMMSA || typeof KMMSA.allocateMarketplaceReceiverSupply !== 'function') {
     return { byReceiverKey: out, issues: [{ scope: '', code: 'KMMSA_NOT_BUNDLED' }] };
   }
+  var contendedSkus = (contention && contention.contendedSkus) || {};
+  var partition = (contention && contention.partition) || {};
   var byCompanySku = {}, byCompanyCountrySku = {};
   (receivers || []).forEach(function (r) {
     var cc = gapCanonCountry_(r.country);   // canonical (UK ≡ GB) so the group key matches the canonical pool key
@@ -423,6 +434,7 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts) {
     (byCompanyCountrySku[r.company + '||' + cc + '||' + r.sku] = byCompanyCountrySku[r.company + '||' + cc + '||' + r.sku] || []).push(r);
   });
   function ensure(k) { if (!out[k]) out[k] = { overseasCoveredQty: 0, factoryCoveredQty: 0 }; return out[k]; }
+  function recvKeyOf(r) { return r.key || gapReceiverKey_(r.company, r.country, r.marketplace, r.sku); }
   function msaReceivers(list, eligiblePoolTypes) {
     return list.map(function (r) {
       var o = { company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku, demandQty: r.demandQty, allocationPriority: r.allocationPriority, requiredByDate: r.requiredByDate };
@@ -431,13 +443,21 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts) {
     });
   }
   Object.keys(byCompanySku).forEach(function (cs) {                                          // FACTORY — company-wide
-    var list = byCompanySku[cs], pools = poolFacts.factoryPoolsBySku[list[0].sku] || [];
+    var list = byCompanySku[cs], sku = list[0].sku, pools = poolFacts.factoryPoolsBySku[sku] || [];
     if (!pools.length) return;                                                               // no factory pool → 0 (valid)
-    var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: list[0].sku, factoryPools: pools, eligibleFactoryWarehouseIds: poolFacts.eligibleFactoryWarehouseIds, receivers: msaReceivers(list) });
+    if (contendedSkus[sku]) {                                                                // §10/§12 CONTENDED — consume the pre-pass partition; NEVER re-allocate the full pool
+      list.forEach(function (r) {
+        var rk = recvKeyOf(r);
+        if (!Object.prototype.hasOwnProperty.call(partition, rk)) throw new RangeError('FACTORY_CONTENTION_PARTITION_MISSING: ' + rk);
+        ensure(rk).factoryCoveredQty += (partition[rk] || 0);
+      });
+      return;
+    }
+    var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: sku, factoryPools: pools, eligibleFactoryWarehouseIds: poolFacts.eligibleFactoryWarehouseIds, receivers: msaReceivers(list) });
     if (!res || res.blocked) { issues.push({ scope: cs, code: (res && res.issues && res.issues[0] && res.issues[0].code) || 'FACTORY_ALLOCATION_BLOCKED' }); return; }
     for (var k in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k)) ensure(k).factoryCoveredQty += (res.byReceiver[k].allocatedFactoryQty || 0);
   });
-  Object.keys(byCompanyCountrySku).forEach(function (ccs) {                                   // OVERSEAS — per country
+  Object.keys(byCompanyCountrySku).forEach(function (ccs) {                                   // OVERSEAS — per country (untouched by R2G-B, §21)
     var list = byCompanyCountrySku[ccs], pools = poolFacts.overseasPoolsByKey[ccs] || [];
     if (!pools.length) return;
     var res = KMMSA.allocateMarketplaceReceiverSupply({ company: list[0].company, masterSku: list[0].sku, overseasPools: pools, receivers: msaReceivers(list, ['THREE_PL']) });
@@ -445,6 +465,110 @@ function gapOpBuildSupplyAllocation_(receivers, poolFacts) {
     for (var k2 in res.byReceiver) if (Object.prototype.hasOwnProperty.call(res.byReceiver, k2)) ensure(k2).overseasCoveredQty += (res.byReceiver[k2].allocatedOverseasQty || 0);
   });
   return { byReceiverKey: out, issues: issues };
+}
+
+// ============================================================================================================
+// F1-4B-FM7-R2G-B — CONTENDED FACTORY CROSS-COMPANY PRE-PASS (selective conservation)
+// ------------------------------------------------------------------------------------------------------------
+// The physical Factory pool identity is warehouse_id + sku (company-agnostic). Cross-company arbitration is required
+// ONLY when the SAME physical pool has eligible demand from >= 2 companies; for an uncontended sku only one company can
+// consume the pool, so the existing company-local allocation is physically safe. The resumable job chunks Order
+// Planning by ONE WHOLE COMPANY per slice, so a per-company slice can never see the cross-company competing set — this
+// pre-pass computes the conserved contended-sku allocation ONCE (over the complete competing set) so each company slice
+// only CONSUMES its precomputed slice. Reuses the FROZEN KMAR cross-company allocator (itself KMALLOC §35). No new DB
+// table, no reservation ledger, no stock write, no second demand engine.
+
+// §1 CANDIDATE DISCOVERY — cheap canonical superset (NO workspaceGet). A sku is a candidate iff it is listed by >= 2
+// distinct companies in marketplace_skus AND a physical factory_stock pool exists for it. This over-includes (a
+// candidate may turn out uncontended once canonical demand is harvested) but can NEVER under-include a genuinely
+// cross-company-contended Factory sku (§13/§14): any such sku is, by definition, listed by >= 2 companies and has
+// factory stock. candidateScopes = the distinct (company,country,marketplace) sites that list a candidate sku (the only
+// scopes whose canonical demand must be harvested to confirm contention).
+function gapOpFindFactoryContentionCandidates_(ss, poolFacts) {
+  var rows = gapReadObjects_(ss, 'marketplace_skus');
+  var companiesBySku = {}, scopeRowsBySku = {};
+  rows.forEach(function (r) {
+    var company = gapStr_(r.company), country = gapStr_(r.country), marketplace = gapStr_(r.marketplace), sku = gapStr_(r.sku);
+    if (!company || !country || !marketplace || !sku) return;
+    (companiesBySku[sku] = companiesBySku[sku] || {})[company] = 1;
+    (scopeRowsBySku[sku] = scopeRowsBySku[sku] || []).push({ company: company, country: country, marketplace: marketplace });
+  });
+  var candidateSkus = {}, scopeSeen = {}, candidateScopes = [];
+  Object.keys(companiesBySku).forEach(function (sku) {
+    if (Object.keys(companiesBySku[sku]).length < 2) return;                                  // < 2 companies → no cross-company contention possible
+    if (!(poolFacts.factoryPoolsBySku[sku] || []).length) return;                             // no physical factory pool → nothing to contend
+    candidateSkus[sku] = 1;
+    scopeRowsBySku[sku].forEach(function (s) {
+      var k = s.company + '||' + s.country + '||' + s.marketplace;
+      if (scopeSeen[k]) return; scopeSeen[k] = 1; candidateScopes.push(s);
+    });
+  });
+  return { candidateSkus: candidateSkus, candidateScopes: candidateScopes,
+    candidateSkuCount: Object.keys(candidateSkus).length, candidateScopeCount: candidateScopes.length };
+}
+
+// §3/§4/§5 CONFIRM CONTENTION + CONSERVE. From the harvested competing receiver set, a Factory-pooled sku with eligible
+// demand from >= 2 DISTINCT companies is CONTENDED; it is allocated ONCE cross-company via KMAR over the deduped
+// physical pool (poolKey = warehouse_id+sku, counted once) + the union of every company's demands. demandKey = the
+// canonical receiver key so the conserved per-receiver quantity is read straight back into the partition. A sku with
+// <= 1 company is left to the existing company-local path (uncontended). Returns
+// { contendedSkus:{sku:1}, partition:{receiverKey:factoryQty}, issues, contendedSkuCount, contendedReceiverCount }.
+function gapOpComputeFactoryContention_(receivers, poolFacts) {
+  var contendedSkus = {}, partition = {}, issues = [];
+  if (typeof KMAR === 'undefined' || !KMAR || typeof KMAR.allocateFactoryCrossCompany !== 'function') {
+    return { contendedSkus: contendedSkus, partition: partition, issues: [{ code: 'KMAR_NOT_BUNDLED' }], contendedSkuCount: 0, contendedReceiverCount: 0 };
+  }
+  var bySku = {};
+  (receivers || []).forEach(function (r) {
+    var sku = gapStr_(r.sku); if (!sku) return;
+    if (!(poolFacts.factoryPoolsBySku[sku] || []).length) return;                             // only Factory-pooled skus can contend
+    var rk = r.key || gapReceiverKey_(r.company, r.country, r.marketplace, r.sku);
+    var g = bySku[sku] || (bySku[sku] = { companies: {}, byCompany: {} });
+    g.companies[r.company] = 1;
+    (g.byCompany[r.company] = g.byCompany[r.company] || []).push({ r: r, key: rk });
+  });
+  var eids = poolFacts.eligibleFactoryWarehouseIds || [];
+  Object.keys(bySku).forEach(function (sku) {
+    var g = bySku[sku], companies = Object.keys(g.companies).sort();
+    if (companies.length < 2) return;                                                         // UNCONTESTED — one company; existing per-company path is safe
+    var pools = poolFacts.factoryPoolsBySku[sku] || [];
+    var perCompany = companies.map(function (co) {
+      var demands = g.byCompany[co].map(function (x) {
+        var r = x.r;
+        return { demandKey: x.key, company: co, marketplace: gapStr_(r.marketplace) || x.key, destinationWarehouseId: x.key,
+          requiredByDate: gapStr_(r.requiredByDate), allocationPriority: (r.allocationPriority != null ? r.allocationPriority : 0),
+          demandQty: r.demandQty, eligibleFactoryWarehouseIds: eids.slice() };
+      });
+      return { company: co, factoryPools: pools, demands: demands };
+    });
+    var res;
+    try { res = KMAR.allocateFactoryCrossCompany(sku, perCompany); }
+    catch (e) { issues.push({ sku: sku, code: 'FACTORY_CROSS_COMPANY_ALLOCATION_ERROR', message: e && e.message ? String(e.message) : String(e) }); return; }
+    contendedSkus[sku] = 1;
+    companies.forEach(function (co) { g.byCompany[co].forEach(function (x) { if (!Object.prototype.hasOwnProperty.call(partition, x.key)) partition[x.key] = 0; }); });   // seed every contended receiver (fail-closed completeness)
+    (res && res.allocations ? res.allocations : []).forEach(function (a) {
+      if (Object.prototype.hasOwnProperty.call(partition, a.demandKey)) partition[a.demandKey] += (a.allocatedQty || 0);
+    });
+  });
+  var rc = 0; for (var k in partition) if (Object.prototype.hasOwnProperty.call(partition, k)) rc++;
+  return { contendedSkus: contendedSkus, partition: partition, issues: issues, contendedSkuCount: Object.keys(contendedSkus).length, contendedReceiverCount: rc };
+}
+
+// §6 FULL PRE-PASS OWNER — discover candidates → (if any) harvest ONLY the candidate scopes' canonical demand
+// (reusing the exact Order Planning projection, filtered to candidate skus to bound the work) → confirm + conserve
+// contention. Returns the compact contention partition + measurements (§26). No persistence (the job owns state).
+function gapOpRunFactoryContentionPrepass_(io, ss, poolFacts) {
+  var discovery = gapOpFindFactoryContentionCandidates_(ss, poolFacts);
+  if (!discovery.candidateScopeCount) {                                                       // §16 no-candidate fast path — NO expensive harvest
+    return { contention: { contendedSkus: {}, partition: {} }, candidateSkuCount: discovery.candidateSkuCount,
+      candidateScopeCount: 0, harvestedReceiverCount: 0, contendedSkuCount: 0, contendedReceiverCount: 0, issues: [] };
+  }
+  var harvested = gapOpHarvestReceivers_(discovery.candidateScopes, io, ss, poolFacts, { skuFilter: discovery.candidateSkus });
+  var contention = gapOpComputeFactoryContention_(harvested.receivers, poolFacts);
+  return { contention: { contendedSkus: contention.contendedSkus, partition: contention.partition },
+    candidateSkuCount: discovery.candidateSkuCount, candidateScopeCount: discovery.candidateScopeCount,
+    harvestedReceiverCount: harvested.receivers.length, contendedSkuCount: contention.contendedSkuCount,
+    contendedReceiverCount: contention.contendedReceiverCount, issues: contention.issues };
 }
 
 // ---- PUBLIC batch owners (one bounded server batch per manual button) ---------------------------------
@@ -469,12 +593,13 @@ function handleRecalculateInventoryReplenishmentGapBatch_(body, io) {
 // chunks Order Planning by whole company (never splitting a company across slices); this processor re-runs the full
 // harvest→allocate→reproject over EXACTLY the passed scopes, so it MUST be handed a company-complete scope set.
 // NO calculation/allocation/mapping change — only the loop ownership moved.
-function gapProcessOrderPlanningScopeSlice_(scopes, io, ss, sheet, poolFacts, map) {
-  var acc = { scopesCalculated: 0, written: 0, ready: 0, blocked: 0, errors: 0, scopeErrors: [], allocationIssues: [], receiversConsidered: 0, scopesReprojected: 0, calculatedAt: null };
-  var ts = gapBatchTimestamp_(io);
-  acc.calculatedAt = ts;
-
-  // ---- PASS 1: harvest MONTHLY marketplace receivers (demand + required-by) across the passed competing set ----
+// F1-4B-FM7-R2G-B — PASS-1 harvest extracted so BOTH the scope-slice processor and the contention pre-pass reuse the
+// EXACT SAME canonical Order Planning projection (no second demand engine, §2). `opts.skuFilter` (a {sku:1} map)
+// restricts the harvested receivers to candidate skus (the pre-pass bounds work to candidates); absent = every sku.
+// Returns { receivers, envByScope } (envByScope keyed company||country||marketplace, used by PASS 2 Site-Stock reuse).
+function gapOpHarvestReceivers_(scopes, io, ss, poolFacts, opts) {
+  opts = opts || {};
+  var skuFilter = opts.skuFilter || null;
   var receivers = [], envByScope = {}, s, scope, env, lines;
   for (s = 0; s < scopes.length; s++) {
     scope = scopes[s];
@@ -487,6 +612,7 @@ function gapProcessOrderPlanningScopeSlice_(scopes, io, ss, sheet, poolFacts, ma
     lines.forEach(function (L) {
       if (!L || L.recommendationMode !== 'MARKETPLACE_ORDER_NEED' || L.blocked) return;   // MARKETPLACE receivers only
       var sku = gapStr_(L.sku); if (!sku) return;
+      if (skuFilter && !skuFilter[sku]) return;                                            // pre-pass: candidate skus only (bounds the work)
       var demandQty = gapNum_(L.allocatedForecastQty); if (demandQty === null) return;     // no quantified demand → not competing
       var mp = L.monthlyProjection; if (!mp || !mp.length || !gapStr_(mp[0].month)) return; // needs a T1 month for required-by
       receivers.push({ company: scope.company, country: country, marketplace: scope.marketplace, sku: sku,
@@ -495,9 +621,32 @@ function gapProcessOrderPlanningScopeSlice_(scopes, io, ss, sheet, poolFacts, ma
         key: gapReceiverKey_(scope.company, country, scope.marketplace, sku) });
     });
   }
+  return { receivers: receivers, envByScope: envByScope };
+}
 
-  // ---- ALLOCATE the shared pools ONCE across the passed competing set (conserved; per-company by construction) ----
-  var alloc = gapOpBuildSupplyAllocation_(receivers, poolFacts);
+// F1-4B-FM7-R2G-B — `contention` (optional) = the pre-computed cross-company Factory partition the resumable
+// per-company slice MUST consume (it can never see the cross-company set itself). When it is ABSENT (the monolithic
+// all-scopes path, which harvests every company at once), contention is computed INLINE over this call's full receiver
+// set — so both paths conserve identically (§L monolithic == resumable). A per-company slice ALWAYS receives the
+// persisted pre-pass object (possibly empty-but-present) and never inline-recomputes, so a chunk boundary can never
+// resurrect the double-use.
+function gapProcessOrderPlanningScopeSlice_(scopes, io, ss, sheet, poolFacts, map, contention) {
+  var acc = { scopesCalculated: 0, written: 0, ready: 0, blocked: 0, errors: 0, scopeErrors: [], allocationIssues: [], receiversConsidered: 0, scopesReprojected: 0, calculatedAt: null, contendedSkuCount: 0, contendedReceiverCount: 0 };
+  var ts = gapBatchTimestamp_(io);
+  acc.calculatedAt = ts;
+
+  // ---- PASS 1: harvest MONTHLY marketplace receivers (demand + required-by) across the passed competing set ----
+  var harvested = gapOpHarvestReceivers_(scopes, io, ss, poolFacts);
+  var receivers = harvested.receivers, envByScope = harvested.envByScope, s, scope;
+
+  // §L — injected pre-pass contention (resumable slice) OR inline over the full set (monolithic). `!= null` treats both
+  // undefined (monolithic call) and null the same → inline; an empty-but-present object (pre-pass found nothing) is used.
+  var effectiveContention = (contention != null) ? contention : gapOpComputeFactoryContention_(receivers, poolFacts);
+  acc.contendedSkuCount = (effectiveContention && effectiveContention.contendedSkus) ? Object.keys(effectiveContention.contendedSkus).length : 0;
+  acc.contendedReceiverCount = (effectiveContention && effectiveContention.partition) ? Object.keys(effectiveContention.partition).length : 0;
+
+  // ---- ALLOCATE the shared pools ONCE across the passed competing set (conserved; contended skus via the pre-pass) ----
+  var alloc = gapOpBuildSupplyAllocation_(receivers, poolFacts, effectiveContention);
   acc.allocationIssues = alloc.issues; acc.receiversConsidered = receivers.length;
   var allocMap = alloc.byReceiverKey, scopeHasAlloc = {};
   receivers.forEach(function (r) { var a = allocMap[r.key]; if (a && (a.overseasCoveredQty > 0 || a.factoryCoveredQty > 0)) scopeHasAlloc[r.company + '||' + r.country + '||' + r.marketplace] = 1; });

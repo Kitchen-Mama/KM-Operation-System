@@ -41,6 +41,16 @@ var GAP_JOB_MAX_SLICE_ATTEMPTS_ = 3;                   // bounded retry of a fai
 var GAP_JOB_INV_CHUNK_SCOPES_ = 1;
 // Order Planning chunk = ONE WHOLE COMPANY (the shared-pool conservation boundary) — computed by gapJobNextSlice_.
 
+// F1-4B-FM7-R2G-B — SAFE per-value budget for the contended-Factory partition persisted inside the OP job state
+// (§9). Script Properties allow ~9216 bytes per VALUE; the target is <= 75% (margin, never one byte below the hard
+// limit). A serialized contention partition above this is a TRUTHFUL terminal CONTENDED_FACTORY_PARTITION_SIZE_LIMIT —
+// multi-property splitting is a separate authorized lifecycle design, never a silent fallback to per-company double-use.
+var GAP_JOB_PARTITION_SAFE_BYTES_ = 6912;
+// F1-4B-FM7-R2G-B — Order Planning job phases. A factory-contention PRE-PASS runs ONCE before the per-company slices so
+// the cross-company conserved allocation is computed over the COMPLETE competing set (a per-company slice can never see
+// it). INVENTORY has no shared pool → it starts directly in COMPANY_SLICES.
+var GAP_JOB_PHASES_ = { FACTORY_PREPASS: 'FACTORY_PREPASS', COMPANY_SLICES: 'COMPANY_SLICES' };
+
 var GAP_JOB_PROP_KEYS_ = { INVENTORY: 'GAP_JOB_INVENTORY', ORDER_PLANNING: 'GAP_JOB_ORDER_PLANNING' };
 var GAP_JOB_CONTINUATION_HANDLERS_ = { INVENTORY: 'continueInventoryGapMaterializationJob', ORDER_PLANNING: 'continueOrderPlanningGapMaterializationJob' };
 var GAP_JOB_MAX_LOCK_WAITS_ = 8;                       // R4J-LIVE §A2 — bounded RESCHEDULED_LOCKED before FAILED (never an infinite 0/N)
@@ -116,7 +126,12 @@ function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr, nowMs, reques
     // automatic same-runId recoveries so far; stuckCursor/stuckCount = consecutive worker entries that made NO progress
     // at that cursor (a killed/overrunning slice that can never fit the budget) → bounded to a truthful terminal.
     recoveryCount: 0, stuckCursor: null, stuckCount: 0,
-    requestedScope: requestedScope || null, appliedScope: appliedScope || null
+    requestedScope: requestedScope || null, appliedScope: appliedScope || null,
+    // R2G-B — Order Planning runs a Factory-contention PRE-PASS before the per-company slices; Inventory has none.
+    // factoryContention (private, NEVER surfaced in public state) = { contendedSkus:{}, partition:{receiverKey:qty} }.
+    phase: (product === 'ORDER_PLANNING' ? GAP_JOB_PHASES_.FACTORY_PREPASS : GAP_JOB_PHASES_.COMPANY_SLICES),
+    prepassAttempts: 0, factoryContention: null,
+    factoryCandidateCount: 0, factoryContendedCount: 0, factoryContendedReceiverCount: 0, factoryPrepassMs: null, factoryPartitionBytes: null
   };
 }
 // R4J-LIVE2 §5/§7 — stamp the monotonic progress clock (epoch ms). Called wherever updatedAt advances so the STALLED
@@ -138,6 +153,10 @@ function gapJobPublicState_(s) {
     // is a DERIVED transient the watchdog sets when it has just re-armed a stale run's continuation (§7/§11) so the
     // browser can show "Recovering…" instead of a false failure — it is NOT a persisted status.
     recoveryCount: s.recoveryCount || 0, requestedScope: s.requestedScope || null, appliedScope: s.appliedScope || null,
+    // R2G-B — Factory-contention diagnostics: COUNTS + bytes + phase ONLY (never the partition, never a receiver key/
+    // sku payload — §8/§29 Test 2). Key names deliberately avoid the 'sku' substring so the no-payload guard holds.
+    phase: s.phase || null, factoryCandidateCount: s.factoryCandidateCount || 0, factoryContendedCount: s.factoryContendedCount || 0,
+    factoryContendedReceiverCount: s.factoryContendedReceiverCount || 0, factoryPrepassMs: (s.factoryPrepassMs == null ? null : s.factoryPrepassMs), factoryPartitionBytes: (s.factoryPartitionBytes == null ? null : s.factoryPartitionBytes),
     recovering: !!s.recovering };
 }
 // Stable group-by-company ordering (first-appearance order preserved). Consecutive scopes of a company are then
@@ -371,6 +390,53 @@ function gapJobContinue_(product, env) {
     var ctx = { ok: true, calculationDate: state.calculationDate, calculationMonth: state.calculationMonth, planningCycle: state.planningCycle };
     var ss = env.openTarget();
     var sheet = env.requireResultSheet(ss, product);
+    // R2G-B — FACTORY-CONTENTION PRE-PASS PHASE (Order Planning only). Runs ONCE, in its OWN worker, BEFORE the
+    // per-company slices: it computes the cross-company conserved allocation for genuinely-contended Factory skus over
+    // the COMPLETE competing set (a per-company slice can never see it) and persists a COMPACT partition into job state.
+    // Crash-safe (recovery armed first), bounded (prepassAttempts → truthful terminal, never a silent per-company
+    // double-use fallback), and size-gated (§9). On success it hands off to a prompt continuation for the slices.
+    if (product === 'ORDER_PLANNING' && state.phase === GAP_JOB_PHASES_.FACTORY_PREPASS && typeof env.runFactoryPrepass === 'function') {
+      state.prepassAttempts = (state.prepassAttempts || 0) + 1;
+      if (state.prepassAttempts > GAP_JOB_MAX_SLICE_ATTEMPTS_) {                              // §7 cannot complete within budget across bounded attempts
+        try { env.clearContinuationTriggers(product); } catch (_pp0) {}
+        return gapJobMarkFailed_(env, product, state, 'CONTENDED_FACTORY_PREPASS_EXCEEDS_WORKER_BUDGET (contention pre-pass did not complete within the worker budget across ' + state.prepassAttempts + ' attempts)');
+      }
+      try { env.clearContinuationTriggers(product); } catch (_pp1) {}                          // hold the lock ⇒ authoritative; arm the recovery backstop BEFORE any work
+      try { env.scheduleContinuation(product, GAP_JOB_RECOVERY_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); }
+      catch (ppRec) { return gapJobMarkFailed_(env, product, state, 'RECOVERY_ARM_FAILED: ' + (ppRec && ppRec.message ? ppRec.message : ppRec)); }
+      state.status = 'RUNNING'; state.lastWorkerStartedAt = env.timestamp(); state.updatedAt = state.lastWorkerStartedAt; gapJobTouchMs_(env, state);
+      gapJobWriteState_(env, product, state); gapJobLog_('PREPASS_START', state);
+      var ppStartMs = env.nowMs ? env.nowMs() : 0, pre;
+      try { pre = env.runFactoryPrepass(product, ss, ctx) || {}; }
+      catch (ppErr) {                                                                          // bounded retry (idempotent — recomputes from current source), then terminal
+        state.lastError = (ppErr && ppErr.message) ? String(ppErr.message) : String(ppErr);
+        state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt; gapJobTouchMs_(env, state);
+        if (state.prepassAttempts >= GAP_JOB_MAX_SLICE_ATTEMPTS_) { try { env.clearContinuationTriggers(product); } catch (_pp2) {} return gapJobMarkFailed_(env, product, state, 'FACTORY_PREPASS_FAILED: ' + state.lastError); }
+        gapJobWriteState_(env, product, state);
+        try { env.clearContinuationTriggers(product); env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); gapJobWriteState_(env, product, state); } catch (_pp3) {}
+        return state;
+      }
+      var contention = pre.contention || { contendedSkus: {}, partition: {} };
+      var partitionBytes = JSON.stringify(contention).length;                                 // §9 measure ACTUAL serialized bytes (not entry count)
+      if (partitionBytes > GAP_JOB_PARTITION_SAFE_BYTES_) {                                    // truthful terminal; never auto-split, never fall back to double-use
+        try { env.clearContinuationTriggers(product); } catch (_pp4) {}
+        return gapJobMarkFailed_(env, product, state, 'CONTENDED_FACTORY_PARTITION_SIZE_LIMIT: ' + partitionBytes + ' bytes > safe ' + GAP_JOB_PARTITION_SAFE_BYTES_ + ' (contended receivers=' + (pre.contendedReceiverCount || 0) + '); multi-property partition storage is a separate authorized design');
+      }
+      state.factoryContention = contention;
+      state.factoryCandidateCount = pre.candidateSkuCount || 0;
+      state.factoryContendedCount = pre.contendedSkuCount || 0;
+      state.factoryContendedReceiverCount = pre.contendedReceiverCount || 0;
+      state.factoryPartitionBytes = partitionBytes;
+      state.factoryPrepassMs = (env.nowMs ? env.nowMs() : 0) - ppStartMs;
+      state.prepassAttempts = 0;
+      state.phase = GAP_JOB_PHASES_.COMPANY_SLICES;                                            // pre-pass done → the per-company slices consume the partition
+      state.lastWorkerFinishedAt = env.timestamp(); state.updatedAt = state.lastWorkerFinishedAt; gapJobTouchMs_(env, state);
+      // clean worker boundary: clear the recovery backstop, arm a PROMPT continuation for the first company slice.
+      try { env.clearContinuationTriggers(product); env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); state.lastContinuationScheduledAt = env.timestamp(); } catch (_pp5) {}
+      gapJobWriteState_(env, product, state); gapJobLog_('PREPASS_DONE', state);
+      return state;
+    }
+    ctx.factoryContention = state.factoryContention || null;                                   // R2G-B — the per-company slice consumes the persisted pre-pass partition
     var scopes = gapJobOrderedScopes_(gapJobSelectScopes_(env.enumerateScopes(ss) || [], state.requestedScope, product).scopes);   // §13 same bounded scope every slice
     state.scopesTotal = scopes.length;
     if (state.scopeCursor >= scopes.length) { try { env.clearContinuationTriggers(product); } catch (_c2) {} return gapJobMarkDone_(env, product, state); }
@@ -514,10 +580,25 @@ function gapJobProcessSlice_(product, sliceScopes, ss, sheet, ctx) {
   var io = gapMaterializationDefaultIo_(calcContext);
   io.openTarget = function () { return ss; };                                           // share the already-open spreadsheet
   if (product === 'ORDER_PLANNING') {
-    var poolFacts = gapOpReadSupplyPoolFacts_(ss);                                       // bounded pool read; allocation is per-company by construction
-    return gapProcessOrderPlanningScopeSlice_(sliceScopes, io, ss, sheet, poolFacts, gapOpMapFromLines_);
+    var poolFacts = gapOpReadSupplyPoolFacts_(ss);                                       // bounded pool read
+    // R2G-B — inject the persisted contention partition so contended Factory skus consume the pre-pass cross-company
+    // allocation (uncontended skus stay on the company-local path). Present-but-empty ⇒ no contention (never re-inline).
+    var contention = (ctx && ctx.factoryContention) ? ctx.factoryContention : { contendedSkus: {}, partition: {} };
+    return gapProcessOrderPlanningScopeSlice_(sliceScopes, io, ss, sheet, poolFacts, gapOpMapFromLines_, contention);
   }
   return gapProcessScopeSlice_(sliceScopes, io, sheet, { product: 'INVENTORY', map: gapInvMapFromLines_ });
+}
+
+// R2G-B — production adapter for the Factory-contention PRE-PASS. Builds the SAME materialization io the slice
+// processor uses (frozen job calc-context) and delegates to 43's pre-pass owner. Order Planning only; anything else is
+// a no-op empty partition. Lives here as a thin lifecycle adapter — the allocation authority stays entirely in 43.
+function gapJobRunFactoryPrepass_(product, ss, ctx) {
+  if (product !== 'ORDER_PLANNING') return { contention: { contendedSkus: {}, partition: {} }, candidateSkuCount: 0, candidateScopeCount: 0, contendedSkuCount: 0, contendedReceiverCount: 0 };
+  var calcContext = { ok: true, jobType: product, calculationDate: ctx.calculationDate, calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle, timezone: GAP_JOB_TZ_ };
+  var io = gapMaterializationDefaultIo_(calcContext);
+  io.openTarget = function () { return ss; };                                           // share the already-open spreadsheet
+  var poolFacts = gapOpReadSupplyPoolFacts_(ss);
+  return gapOpRunFactoryContentionPrepass_(io, ss, poolFacts);
 }
 
 // ---- PRODUCTION side-effect adapters (Apps Script globals; not exercised by Node tests) ----------------------
@@ -571,7 +652,8 @@ function gapJobDefaultEnv_(product) {
     nowMs: function () { try { return new Date().getTime(); } catch (e) { return 0; } },   // R4J-LIVE2 §5/§7 monotonic progress clock (epoch ms)
     scheduleContinuation: function (p, ms) { return gapJobScheduleContinuation_(gapJobNormalizeProduct_(p), ms); },
     clearContinuationTriggers: function (p) { return gapJobClearContinuationTriggers_(gapJobNormalizeProduct_(p)); },
-    processSlice: function (p, sliceScopes, ss, sheet, ctx) { return gapJobProcessSlice_(gapJobNormalizeProduct_(p), sliceScopes, ss, sheet, ctx); }
+    processSlice: function (p, sliceScopes, ss, sheet, ctx) { return gapJobProcessSlice_(gapJobNormalizeProduct_(p), sliceScopes, ss, sheet, ctx); },
+    runFactoryPrepass: function (p, ss, ctx) { return gapJobRunFactoryPrepass_(gapJobNormalizeProduct_(p), ss, ctx); }   // R2G-B — Order Planning contention pre-pass adapter
   };
 }
 
