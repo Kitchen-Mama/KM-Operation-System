@@ -204,6 +204,10 @@ function doPost(e) {
     if (action === 'shipment.route.advance') {
       return handleAdvanceShipmentRoutePoint_(body);
     }
+    // F1-SHIPMENT-MAP-R10: bounded ETA-only writer (shipments.eta; never status/route/receipt).
+    if (action === 'shipment.eta.update') {
+      return handleUpdateShipmentEta_(body);
+    }
 
     // Procurement Layer (Phase 1) — Request Order / Purchase Order.
     if (action === 'createRequestOrderDraft') {

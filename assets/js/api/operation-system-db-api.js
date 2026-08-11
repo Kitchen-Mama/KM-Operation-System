@@ -2703,6 +2703,31 @@ window.KM.DB.advanceShipmentRoutePoint = async function(payload) {
     return json;
 };
 
+// Shipment ETA update (F1-SHIPMENT-MAP-R10). Bounded canonical writer — updates ONLY shipments.eta.
+// Payload (snake_case): { shipment_id (required), eta (YYYY-MM-DD, required), actor? }. Returns the FULL
+// backend response WITHOUT throwing; force-reloads the cache on success so the drawer reflects DB truth.
+window.KM.DB.updateShipmentEta = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updateShipmentEta skipped');
+        return { success: false, error: 'API not configured', code: 'config' };
+    }
+    var json;
+    try {
+        var resp = await fetch(OP_DB_API_BASE_URL, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(Object.assign({ action: 'shipment.eta.update' }, payload))
+        });
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, code: 'network' };
+        json = await resp.json();
+    } catch (e) {
+        return { success: false, error: (e && e.message) ? e.message : String(e), code: 'network' };
+    }
+    if (json && json.success) { await loadOperationDb({ force: true }); }
+    return json;
+};
+
 // Backfill / migration: scan ALL existing marketplace_skus rows and create/update sku_regional_details.
 // Creates missing regional rows and updates only site_sku + marketplace_product_id on existing rows;
 // never touches compliance-document fields. Returns

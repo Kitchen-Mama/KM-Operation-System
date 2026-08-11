@@ -335,3 +335,12 @@
 .glm-receipt-msg { min-height: 16px; font-size: 12px; margin: 6px 0 0; }
 .glm-receipt-msg--error { color: #dc2626; }
 .glm-receipt-msg--ok { color: #16a34a; }
+/* Collapsible Receiving section (F1-SHIPMENT-MAP-R10). Default collapsed; auto-expands via the `open` attr. */
+.glm-recv { border: 1px solid var(--glm-line); border-radius: var(--glm-r-sm); background: var(--glm-surface-2); }
+.glm-recv__summary { cursor: pointer; padding: 9px 12px; font-size: 12.5px; font-weight: 600; color: var(--glm-ink-2); list-style: none; }
+.glm-recv__summary::-webkit-details-marker { display: none; }
+.glm-recv__summary::before { content: "▸ "; color: var(--glm-ink-4); }
+.glm-recv[open] .glm-recv__summary::before { content: "▾ "; }
+.glm-recv__body { padding: 2px 12px 12px; }
+.glm-recv__hdrow { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 4px 0 8px; }
+.glm-recv__hint { font-size: 10.5px; text-align: right; }

@@ -202,6 +202,20 @@ function shipEventShouldAppend_(existingSourceIds, sourceId) {
   return (existingSourceIds || []).indexOf(String(sourceId)) < 0;
 }
 
+// F1-SHIPMENT-MAP-R10 — canonical ETA validation (pure). Accepts a strict real-calendar YYYY-MM-DD; returns
+// { ok, value, code }. Blank / malformed → INVALID_ETA (an ETA edit must supply a valid date). No clock / no
+// locale / no parse-guess. A past date is VALID (an overdue ETA is a legitimate, still-visible fact — §5).
+function shipEtaValidate_(v) {
+  var s = String(v == null ? '' : v).trim();
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return { ok: false, value: '', code: 'INVALID_ETA' };
+  var y = +m[1], mo = +m[2], d = +m[3];
+  if (mo < 1 || mo > 12 || d < 1) return { ok: false, value: '', code: 'INVALID_ETA' };
+  var dim = [31, ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (d > dim[mo - 1]) return { ok: false, value: '', code: 'INVALID_ETA' };
+  return { ok: true, value: s, code: 'OK' };
+}
+
 // __SHIP_RECEIPT_PURE_END__
 
 // Canonical shipment_events header (mirrors 22_'s dispatch EVENT_HEADERS — the SAME table + column contract;
@@ -670,5 +684,50 @@ function handleAdvanceShipmentRoutePoint_(body) {
   } catch (err) {
     try { lock.releaseLock(); } catch (e) {}
     return jsonResponse_({ success: false, error: 'Route advance failed: ' + (err && err.message ? err.message : err), code: 'WRITE' });
+  }
+}
+
+// ============================================================
+// action `shipment.eta.update` — bounded canonical ETA writer (F1-SHIPMENT-MAP-R10).
+// Body: { shipment_id, eta (YYYY-MM-DD), actor? }. Writes ONLY shipments.eta (+ updated_at/updated_by where
+// present). Never touches status / route / receipt / carton / warehouse — a dedicated bounded owner rather
+// than the broad handleUpdateShipment_ (which runs carton/ship-gate side effects). A past ETA is valid (§5).
+// ============================================================
+function handleUpdateShipmentEta_(body) {
+  body = body || {};
+  var b0 = (body.payload && typeof body.payload === 'object') ? body.payload : body;
+  var shipmentId = String(b0.shipment_id || b0.shipmentId || '').trim();
+  var actor = String(b0.actor || b0.updated_by || 'system_user').trim();
+  var etaCheck = shipEtaValidate_(b0.eta != null ? b0.eta : b0.ETA);
+  if (!shipmentId) return jsonResponse_({ success: false, error: 'Missing shipment_id', code: 'INPUT' });
+  if (!etaCheck.ok) return jsonResponse_({ success: false, error: 'ETA must be a valid date (YYYY-MM-DD).', code: etaCheck.code });
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var shipSheet = ss.getSheetByName('shipments');
+  if (!shipSheet) return jsonResponse_({ success: false, error: 'shipments sheet not found', code: 'LOAD' });
+
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', code: 'LOCK' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK' }); }
+
+  try {
+    var sh = shipmentReadSheet_(shipSheet);
+    var sIdCol = sh.col('shipment_id'), sEtaCol = sh.col('eta');
+    var sUpdAt = sh.col('updated_at'), sUpdBy = sh.col('updated_by');
+    if (sIdCol === -1 || sEtaCol === -1) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'shipments is missing a required column (shipment_id / eta).', code: 'CONTRACT' }); }
+    var row = -1;
+    for (var i = 1; i < sh.rows.length; i++) { if (String(sh.rows[i][sIdCol]).trim() === shipmentId) { row = i + 1; break; } }
+    if (row === -1) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Shipment not found: ' + shipmentId, code: 'NOT_FOUND' }); }
+
+    var now = shipmentTimestamp_();
+    shipSheet.getRange(row, sEtaCol + 1).setValue(etaCheck.value);   // ONLY the eta cell (+ audit stamps below)
+    if (sUpdAt !== -1) shipSheet.getRange(row, sUpdAt + 1).setValue(now);
+    if (sUpdBy !== -1) shipSheet.getRange(row, sUpdBy + 1).setValue(actor);
+    SpreadsheetApp.flush();
+    lock.releaseLock();
+    return jsonResponse_({ success: true, data: { shipment_id: shipmentId, eta: etaCheck.value } });
+  } catch (err) {
+    try { lock.releaseLock(); } catch (e) {}
+    return jsonResponse_({ success: false, error: 'ETA update failed: ' + (err && err.message ? err.message : err), code: 'WRITE' });
   }
 }
