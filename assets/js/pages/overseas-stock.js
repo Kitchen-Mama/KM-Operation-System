@@ -644,10 +644,43 @@ function openOverseasImportModal() {
     _showOverseasModal('overseas-import-modal');
 }
 
+// F1-INVENTORY-IMPORT-WAREHOUSE-SAFETY-R1 — warehouse identity hardening. The template is now an .xlsx built by the
+// shared generic builder (KM.templateExport) with warehouse_id as a DROPDOWN restricted to canonical ACTIVE,
+// NON-FACTORY (Overseas/3PL) warehouses — the SAME is_active + is_factory_warehouse fields the server re-validates —
+// so an admin can never free-type an arbitrary / Factory / inactive warehouse identity into the snapshot import.
+// warehouse_id is the sole canonical identity (no free-text warehouse column). Legacy .csv is still ACCEPTED on
+// import (backward compatible) but is never the generated format. Falls back to the safe .csv template only if the
+// ExcelJS engine is unavailable (still dropdown-less, but the server validation is the authoritative gate).
 function downloadOverseasImportTemplate() {
-    var headers = OVERSEAS_IMPORT_HEADERS.join(',');
-    var sample = 'WH-RESUS-US-3PL-WINIT,SAMPLE-SKU,0,0,0,0,,';
-    var csv = headers + '\n' + sample + '\n';
+    var whs = ((window.KM && window.KM.DB && window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])
+        .filter(function (w) { return w && w.isFactoryWarehouse !== true && w.isActive !== false; });
+    var whIds = whs.map(function (w) { return w.warehouseId; }).filter(Boolean);
+    if (!(window.KM && window.KM.templateExport && window.KM.templateExport.buildAndDownload)) { _downloadOverseasCsvTemplateFallback_(whIds[0] || 'WH-RESUS-US-3PL-WINIT'); return; }
+    var skus = ((window.KM.DB && window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).map(function (s) { return s.sku; }).filter(Boolean);
+    var columns = [
+        { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 26, comment: 'REQUIRED. Canonical Overseas/3PL warehouse_id (dropdown — active, non-factory only). The server re-validates identity; Factory / inactive / unknown warehouses are rejected.', dropdown: whIds.slice(0, 200) },
+        { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. Canonical SKU.' },
+        { key: 'available_stock', header: 'available_stock', kind: 'business', width: 14, comment: 'Number >= 0 (decimals round UP). Blank = 0.' },
+        { key: 'reserved_stock', header: 'reserved_stock', kind: 'business', width: 14, comment: 'Number >= 0. Blank = 0.' },
+        { key: 'damaged_stock', header: 'damaged_stock', kind: 'business', width: 14, comment: 'Number >= 0. Blank = 0.' },
+        { key: 'on_the_way_qty', header: 'on_the_way_qty', kind: 'business', width: 14, comment: 'Number >= 0. Blank = 0.' },
+        { key: 'on_the_way_eta', header: 'on_the_way_eta', kind: 'business', width: 16, comment: 'Optional ISO date YYYY-MM-DD.' },
+        { key: 'note', header: 'note', kind: 'business', width: 30, comment: 'Optional note.' }
+    ];
+    var spec = {
+        filename: 'Overseas_Inventory_Snapshot_Import_Template.xlsx',
+        sheetName: 'Overseas Inventory Import',
+        instructionRow: 'Snapshot refresh — imported quantities BECOME the current overseas snapshot for warehouse_id + sku. warehouse_id must be a canonical ACTIVE, NON-FACTORY (Overseas/3PL) warehouse (dropdown); the server rejects Factory / inactive / unknown warehouses.',
+        masterTemplate: true,
+        columns: columns,
+        exampleRow: { warehouse_id: (whIds[0] || 'WH-RESUS-US-3PL-WINIT'), sku: (skus[0] || 'SAMPLE-SKU'), available_stock: 0, reserved_stock: 0, damaged_stock: 0, on_the_way_qty: 0, on_the_way_eta: '', note: '' },
+        system: { template_id: 'overseas_inventory_import', template_name: 'Overseas Inventory Snapshot Import', template_version: '2', module: 'overseas_inventory', export_mode: 'import', source_system: 'operation-system' }
+    };
+    window.KM.templateExport.buildAndDownload(spec).catch(function (err) { alert('Template download failed: ' + (err && err.message ? err.message : err)); });
+}
+// Safe .csv fallback ONLY when ExcelJS is unavailable — a single eligible example id, never an arbitrary literal.
+function _downloadOverseasCsvTemplateFallback_(exampleWhId) {
+    var csv = OVERSEAS_IMPORT_HEADERS.join(',') + '\n' + (exampleWhId + ',SAMPLE-SKU,0,0,0,0,,') + '\n';
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -709,25 +742,96 @@ function _ovsRenderImportResult(data) {
     box.innerHTML = html;
 }
 
+// Read a .csv file into the CSV-shaped `cells` 2D array (Promise).
+function _parseOverseasCsvFile(file) {
+    return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onerror = function () { reject(new Error('Could not read the selected file.')); };
+        reader.onload = function (e) { try { resolve(_parseOverseasCsv(e.target.result)); } catch (err) { reject(new Error('Failed to parse CSV: ' + (err && err.message ? err.message : err))); } };
+        reader.readAsText(file);
+    });
+}
+// ExcelJS cell → plain trimmed text (formula → computed result; rich text flattened; Date → ISO date).
+function _ovsCellText(cell) {
+    var v = cell ? cell.value : null;
+    if (v == null) return '';
+    if (typeof v === 'object') {
+        if (v.result != null) return String(v.result);
+        if (v.text != null) return String(v.text);
+        if (Array.isArray(v.richText)) return v.richText.map(function (t) { return t.text; }).join('');
+        if (v instanceof Date) return v.toISOString().slice(0, 10);
+        return '';
+    }
+    return String(v);
+}
+function _ovsXlsxRowValues(row) {
+    var out = [];
+    var n = row && row.cellCount ? row.cellCount : (row && row.actualCellCount ? row.actualCellCount : 0);
+    var last = Math.max(n, (row && row._cells ? row._cells.length : 0), 32);
+    for (var c = 1; c <= last; c++) out.push(_ovsCellText(row.getCell(c)).trim());
+    return out;
+}
+// Parse a KM.templateExport .xlsx into the same `cells` 2D array [headerRow, ...dataRows] the CSV path produces —
+// skipping the hidden _SYSTEM sheet, the pre-header instruction row(s), the example row (row_type='example'), blanks.
+function _parseOverseasXlsx(file) {
+    return new Promise(function (resolve, reject) {
+        if (!(window.ExcelJS && window.ExcelJS.Workbook)) { reject(new Error('XLSX engine (ExcelJS) not loaded. Use the .csv template instead.')); return; }
+        var reader = new FileReader();
+        reader.onerror = function () { reject(new Error('Could not read the selected file.')); };
+        reader.onload = function () {
+            var wb = new window.ExcelJS.Workbook();
+            wb.xlsx.load(reader.result).then(function () {
+                var ws = null;
+                wb.eachSheet(function (sheet) { if (!ws && String(sheet.name) !== '_SYSTEM') ws = sheet; });
+                if (!ws) { reject(new Error('No worksheet found in the workbook.')); return; }
+                var headerRowIdx = -1, headers = [];
+                for (var r = 1; r <= Math.min(ws.rowCount, 12); r++) {
+                    var lc = _ovsXlsxRowValues(ws.getRow(r)).map(function (v) { return String(v).trim().toLowerCase(); });
+                    if (lc.indexOf('warehouse_id') >= 0 && lc.indexOf('sku') >= 0) { headerRowIdx = r; headers = lc; break; }
+                }
+                if (headerRowIdx < 0) { reject(new Error('Header row (warehouse_id, sku) not found in the workbook.')); return; }
+                while (headers.length && headers[headers.length - 1] === '') headers.pop();
+                var rowTypeIdx = headers.indexOf('row_type');
+                var cells = [headers];
+                for (var rr = headerRowIdx + 1; rr <= ws.rowCount; rr++) {
+                    var vals = _ovsXlsxRowValues(ws.getRow(rr));
+                    if (!vals.length || vals.every(function (c) { return String(c).trim() === ''; })) continue;
+                    if (rowTypeIdx >= 0 && String(vals[rowTypeIdx] || '').trim().toLowerCase() === 'example') continue;
+                    cells.push(vals);
+                }
+                resolve(cells);
+            }).catch(function (e) { reject(new Error('Could not parse the workbook: ' + (e && e.message ? e.message : e))); });
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
 function runOverseasImport() {
     var runBtn = document.getElementById('overseas-import-run-btn');
     if (runBtn && runBtn.dataset.mode === 'done') { closeOverseasModals(); return; }
 
     var fileEl = document.getElementById('overseas-import-file');
-    if (!fileEl || !fileEl.files || !fileEl.files.length) { alert('Please choose a CSV file first.'); return; }
+    if (!fileEl || !fileEl.files || !fileEl.files.length) { alert('Please choose an .xlsx or .csv file first.'); return; }
     if (!(window.KM && window.KM.DB && window.KM.DB.importOverseasInventorySnapshotBatch)) { alert('Import API is not available.'); return; }
 
     var file = fileEl.files[0];
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        var cells;
-        try { cells = _parseOverseasCsv(e.target.result); } catch (err) { _ovsRenderImportError('Failed to parse CSV: ' + (err && err.message ? err.message : err)); return; }
+    var name = String(file.name || '').toLowerCase();
+    var isXlsx = /\.xlsx$/.test(name), isCsv = /\.csv$/.test(name);
+    if (!isXlsx && !isCsv) { _ovsRenderImportError('Unsupported file type. Use .xlsx or .csv.'); return; }
+    (isXlsx ? _parseOverseasXlsx(file) : _parseOverseasCsvFile(file))
+        .then(function (cells) { _ovsProcessImportCells(cells, runBtn); })
+        .catch(function (err) { _ovsRenderImportError((err && err.message) ? err.message : 'Could not read the file.'); });
+}
+
+// Shared row extraction + backend call (fed by either the .xlsx or .csv parser). warehouse_id identity is
+// re-validated on the server (active + non-factory); this client pass only does field/number shape checks.
+function _ovsProcessImportCells(cells, runBtn) {
         if (!cells || cells.length < 2) { _ovsRenderImportError('No data rows found (need a header row + at least one data row).'); return; }
         var headers = cells[0].map(function(h) { return String(h == null ? '' : h).trim().toLowerCase(); });
         var idxOf = {};
         OVERSEAS_IMPORT_HEADERS.forEach(function(h) { idxOf[h] = headers.indexOf(h); });
-        if (idxOf['warehouse_id'] === -1) { _ovsRenderImportError('CSV is missing the required "warehouse_id" header.'); return; }
-        if (idxOf['sku'] === -1) { _ovsRenderImportError('CSV is missing the required "sku" header.'); return; }
+        if (idxOf['warehouse_id'] === -1) { _ovsRenderImportError('File is missing the required "warehouse_id" header.'); return; }
+        if (idxOf['sku'] === -1) { _ovsRenderImportError('File is missing the required "sku" header.'); return; }
 
         var rows = [];
         var clientErrors = [];
@@ -799,9 +903,6 @@ function runOverseasImport() {
                 if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 _ovsRenderImportError(err && err.message ? err.message : 'Import request failed.');
             });
-    };
-    reader.onerror = function() { _ovsRenderImportError('Could not read the selected file.'); };
-    reader.readAsText(file);
 }
 
 // ----------------------------------------------------------------------------

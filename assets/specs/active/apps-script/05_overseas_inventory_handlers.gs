@@ -7,6 +7,35 @@
 // ============================================================
 
 // ========================================
+// F1-INVENTORY-IMPORT-WAREHOUSE-SAFETY-R1 — canonical Overseas warehouse eligibility (identity hardening)
+// ----------------------------------------------------------------------------------------------------
+// Server-side re-validation is MANDATORY (the template dropdown is convenience only). An imported
+// warehouse_id must be a canonical warehouse that is ACTIVE and NOT a Factory warehouse — a Factory
+// warehouse_id is the Factory-Inventory import's exclusive domain, and admitting one here would write
+// physical stock into the wrong pool and contaminate downstream allocation/planning. Reuses the SAME
+// canonical classification fields as the Factory rule (is_active + is_factory_warehouse), inverted — it
+// invents NO second warehouse-type model. Pure (no SpreadsheetApp/clock/write) so it is unit-testable.
+// __OVSIMPORT_PURE_START__ (test extraction marker — do not remove)
+function overseasImportTruthy_(v) {
+  if (v === true) return true; if (v === false) return false;
+  var s = String(v == null ? '' : v).trim().toLowerCase();
+  return s === 'true' || s === 'yes' || s === '1' || s === 'y' || s === 'active';
+}
+// whRec = { isActive:bool, isFactory:bool } | null (null ⇒ not in warehouses). Returns an issue code or null.
+function overseasImportWarehouseIssue_(whRec) {
+  if (!whRec) return 'WAREHOUSE_NOT_FOUND';
+  if (whRec.isActive === false) return 'WAREHOUSE_INACTIVE';
+  if (whRec.isFactory === true) return 'WAREHOUSE_NOT_OVERSEAS';   // a Factory warehouse is not an eligible Overseas/3PL target
+  return null;
+}
+function overseasImportWarehouseMessage_(code) {
+  return code === 'WAREHOUSE_INACTIVE' ? 'warehouse is inactive (not an eligible target)'
+    : code === 'WAREHOUSE_NOT_OVERSEAS' ? 'warehouse is a Factory warehouse — not an eligible Overseas/3PL target'
+    : 'warehouse_id not found in warehouses';
+}
+// __OVSIMPORT_PURE_END__ (test extraction marker — do not remove)
+
+// ========================================
 // Overseas Inventory Snapshot Batch Import Handler
 // ========================================
 
@@ -71,12 +100,19 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     return jsonResponse_({ success: false, error: 'Missing required header(s): ' + missingHeaders.join(', ') });
   }
 
-  // --- warehouses: set of valid warehouse_id ---
+  // --- warehouses: canonical eligibility record per warehouse_id (identity hardening — active + non-factory) ---
   var wh_id = whHeaders.indexOf('warehouse_id');
-  var validWarehouses = {};
+  var wh_active = whHeaders.indexOf('is_active');
+  var wh_factory = whHeaders.indexOf('is_factory_warehouse');
+  var wh_status = whHeaders.indexOf('status');
+  var warehouseById = {};
   for (var w = 1; w < whData.length; w++) {
     var wid = String(whData[w][wh_id] || '').trim();
-    if (wid) validWarehouses[wid] = true;
+    if (!wid) continue;
+    warehouseById[wid] = {
+      isActive: wh_active >= 0 ? overseasImportTruthy_(whData[w][wh_active]) : (wh_status >= 0 ? (String(whData[w][wh_status] || '').trim().toLowerCase() === 'active') : true),
+      isFactory: wh_factory >= 0 ? overseasImportTruthy_(whData[w][wh_factory]) : false
+    };
   }
 
   // --- existing snapshot business-key map (warehouse_id|sku) ---
@@ -111,8 +147,9 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
       continue;
     }
 
-    if (!validWarehouses[warehouseId]) {
-      results.push(Object.assign({}, baseResult, { status: 'error', message: 'warehouse_id not found in warehouses', snapshot_id: '' }));
+    var whIssue = overseasImportWarehouseIssue_(warehouseById[warehouseId]);
+    if (whIssue) {
+      results.push(Object.assign({}, baseResult, { status: 'error', message: overseasImportWarehouseMessage_(whIssue), snapshot_id: '' }));
       continue;
     }
 
