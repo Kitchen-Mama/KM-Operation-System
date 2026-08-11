@@ -317,6 +317,17 @@ function doPost(e) {
       return handleGenerateRecommendationDraftLocked_(body);
     }
 
+    // F1-4B-FM6-R4E2 — BACKEND-ONLY gap-backed MONTHLY_ORDER draft generation + active-draft read-back (47_). The
+    // generation persists via the SAME locked writer (generateRecommendationDraftLocked) with recommended_qty sourced
+    // VERBATIM from order_planning_gap.tN_suggested_qty (never KMSF/calculateGap). No frontend wiring / no Order
+    // Allocation reroute / no Send Request change this round — these are the backend contract the next UI round calls.
+    if (action === 'requestOrderDraft.generateFromGap') {
+      return handleGenerateRequestOrderDraftFromGap_(body);
+    }
+    if (action === 'requestOrderDraft.getActive') {
+      return handleGetActiveRequestOrderDraftReadback_(body);
+    }
+
     // Phase 2C Round 1H — LOCKED user-decision-edit boundary (25_): edit planned_qty/order_qty/etc under
     // ScriptLock + terminal guard + optimistic token, separate from engine generation and from Submit.
     if (action === 'updateRecommendationDecisionLocked') {
