@@ -166,7 +166,85 @@ function shipReceiptPostAmount_(currentReceived, lastPosted) {
   return Math.max(shipReceiptNum_(currentReceived) - shipReceiptNum_(lastPosted), 0);
 }
 
+// ---- Lifecycle event helpers (F1-SHIPMENT-MAP-R9) — pure; idempotency identity = source_event_id ----
+// (matches the existing 22_ departed_origin convention `confirm:<id>` + the Map's (source|source_event_id)
+// dedupe). shipment_events is the ONE canonical history; these helpers add NO table and NO second store.
+
+// Next monotonic event_sequence within a shipment = MAX(existing) + 1 (blank/non-finite ignored). Computed
+// under the parent mutation's ScriptLock (single writer). departed_origin is 1, so the first appended
+// lifecycle event is 2, etc.
+function shipEventNextSequence_(existingSeqs) {
+  var max = 0;
+  (existingSeqs || []).forEach(function (s) { var n = parseFloat(s); if (isFinite(n) && n > max) max = n; });
+  return max + 1;
+}
+
+// Map the AUTHORITATIVE derived shipment status → its lifecycle event type. Only the two Phase-1 receipt
+// transitions emit; anything else (blank / none_received) emits nothing. A 0→full receipt derives `received`
+// directly, so it emits `received` only (never a spurious partial_receipt).
+function shipLifecycleEventType_(derivedStatus) {
+  var s = String(derivedStatus == null ? '' : derivedStatus).trim().toLowerCase();
+  if (s === SHIP_RECEIPT_PARTIAL_) return 'partial_receipt';
+  if (s === SHIP_RECEIPT_FULL_) return 'received';
+  return '';
+}
+
+// Deterministic source_event_id identities (the durable idempotency key; no new column).
+//   route node reached: one per shipment × target route row  → 'route:<shipmentId>:<shipmentRouteId>'
+//   receipt lifecycle : one per shipment × lifecycle state    → 'receipt-<received|partial>:<shipmentId>'
+function shipRouteEventSourceId_(shipmentId, shipmentRouteId) { return 'route:' + String(shipmentId) + ':' + String(shipmentRouteId); }
+function shipReceiptEventSourceId_(shipmentId, eventType) { return 'receipt-' + (eventType === 'received' ? 'received' : 'partial') + ':' + String(shipmentId); }
+
+// Append ONLY when this shipment has no event carrying the same source_event_id yet (idempotent; a retry
+// after a successful append is a proven no-op — same key already present).
+function shipEventShouldAppend_(existingSourceIds, sourceId) {
+  if (!sourceId) return false;
+  return (existingSourceIds || []).indexOf(String(sourceId)) < 0;
+}
+
 // __SHIP_RECEIPT_PURE_END__
+
+// Canonical shipment_events header (mirrors 22_'s dispatch EVENT_HEADERS — the SAME table + column contract;
+// no second history store). Reused by the route/receipt lifecycle appenders below.
+var SHIP_EVENT_HEADERS_ = ['shipment_event_id', 'shipment_id', 'shipment_route_id', 'event_sequence', 'event_time', 'event_type', 'event_status', 'location_name', 'country', 'city', 'latitude', 'longitude', 'source', 'source_event_id', 'raw_status', 'note', 'created_by', 'created_at', 'updated_by', 'updated_at'];
+
+// Append-if-absent ONE canonical shipment_events lifecycle row, idempotent by source_event_id. Runs INSIDE
+// the parent command's ScriptLock (the single writer; monotonic event_sequence = MAX(existing)+1). It NEVER
+// throws to the caller: a failed append leaves the already-committed receipt/route mutation intact, and a
+// later retry re-appends because the source_event_id is still absent (§3/§7 — no unsafe compensation, the
+// primary transaction is never rolled back for a trailing history write). Returns a small summary.
+function shipAppendLifecycleEvent_(ss, ev) {
+  try {
+    var sheet = fcWriteEnsureSheet_(ss, 'shipment_events', SHIP_EVENT_HEADERS_);
+    fcWriteEnsureColumns_(sheet, SHIP_EVENT_HEADERS_);
+    var rd = shipmentReadSheet_(sheet);
+    var cSid = rd.col('source_event_id'), cShip = rd.col('shipment_id'), cSeq = rd.col('event_sequence');
+    var existingSourceIds = [], seqs = [];
+    for (var i = 1; i < rd.rows.length; i++) {
+      if (cShip === -1 || String(rd.rows[i][cShip]).trim() !== String(ev.shipment_id)) continue;
+      if (cSeq !== -1) seqs.push(rd.rows[i][cSeq]);
+      if (cSid !== -1) existingSourceIds.push(String(rd.rows[i][cSid]).trim());
+    }
+    if (!shipEventShouldAppend_(existingSourceIds, ev.source_event_id)) {
+      return { appended: false, idempotent: true, event_type: ev.event_type, source_event_id: ev.source_event_id };
+    }
+    var seq = shipEventNextSequence_(seqs);
+    fcWriteAppendByHeader_(sheet, {
+      shipment_event_id: 'SEV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8),
+      shipment_id: ev.shipment_id, shipment_route_id: ev.shipment_route_id || '',
+      event_sequence: seq, event_time: ev.now, event_type: ev.event_type, event_status: ev.event_status || '',
+      location_name: ev.location_name || '', country: ev.country || '', city: ev.city || '',
+      latitude: (ev.latitude === undefined || ev.latitude === null) ? '' : ev.latitude,
+      longitude: (ev.longitude === undefined || ev.longitude === null) ? '' : ev.longitude,
+      source: 'system', source_event_id: ev.source_event_id, raw_status: ev.raw_status || '',
+      note: ev.note || '', created_by: ev.actor || 'system_user', created_at: ev.now,
+      updated_by: ev.actor || 'system_user', updated_at: ev.now
+    });
+    return { appended: true, idempotent: false, event_type: ev.event_type, source_event_id: ev.source_event_id, event_sequence: seq };
+  } catch (e) {
+    return { appended: false, idempotent: false, error: String(e && e.message ? e.message : e), event_type: ev.event_type };
+  }
+}
 
 // ============================================================
 // action `shipment.receipt.update` — cumulative receipt writer + backend status derivation.
@@ -296,6 +374,23 @@ function handleUpdateShipmentReceipt_(body) {
     // NOT touched (OVERSEAS_ON_THE_WAY_DOUBLE_COUNT_RISK — see completion report). Factory never credited (§13).
     var posting = shipReceiptPostToOverseas_(ss, shipmentId, shipSheet, resultLines, actor, now);
 
+    // ---- Shipment-level lifecycle event (F1-SHIPMENT-MAP-R9) — append AFTER the receipt/status/inventory
+    // writes (trailing consequence within the SAME lock). ONE event per lifecycle transition: derived
+    // `partially_received` → partial_receipt; derived `received` → received. NOT per SKU line. Idempotent by
+    // source_event_id (repeat identical save re-derives the same status → the key already exists → no dup).
+    // Never throws (a failed append leaves the committed receipt intact; a retry re-appends). ----
+    var lifecycleEvent = null;
+    var evType = shipLifecycleEventType_(derived.status);
+    if (evType) {
+      lifecycleEvent = shipAppendLifecycleEvent_(ss, {
+        shipment_id: shipmentId, shipment_route_id: '',
+        event_type: evType, event_status: (evType === 'received' ? SHIP_RECEIPT_FULL_ : SHIP_RECEIPT_PARTIAL_),
+        source_event_id: shipReceiptEventSourceId_(shipmentId, evType),
+        raw_status: (evType === 'received' ? 'SHIPMENT RECEIVED' : 'SHIPMENT PARTIALLY RECEIVED'),
+        note: 'Lifecycle event derived from cumulative receipt.', actor: actor, now: now
+      });
+    }
+
     lock.releaseLock();
     return jsonResponse_({
       success: true,
@@ -306,7 +401,8 @@ function handleUpdateShipmentReceipt_(body) {
         status_derived: derived.status || null,
         status_reason: derived.reason,
         lines_applied: applied, lines_idempotent: idempotent,
-        lines: resultLines
+        lines: resultLines,
+        lifecycle_event: lifecycleEvent
       }
     });
   } catch (err) {
@@ -483,6 +579,7 @@ function handleAdvanceShipmentRoutePoint_(body) {
     var rSeqCol = rs.col('sequence_no');
     var rStatusCol = rs.col('status');
     var rUpdCol = rs.col('updated_at');
+    var rLocName = rs.col('location_name'), rCountry = rs.col('country'), rCity = rs.col('city'), rLat = rs.col('latitude'), rLng = rs.col('longitude');
     if (rShipCol === -1 || rSeqCol === -1 || rStatusCol === -1) {
       lock.releaseLock();
       return jsonResponse_({ success: false, error: 'shipment_routes is missing required columns (shipment_id / sequence_no / status).', code: 'CONTRACT' });
@@ -499,6 +596,11 @@ function handleAdvanceShipmentRoutePoint_(body) {
         routeTemplateNodeId: tid, shipmentRouteId: srid,
         seq: Math.round(shipReceiptNum_(rs.rows[r][rSeqCol])),
         status: String(rs.rows[r][rStatusCol] || '').trim(),
+        locationName: rLocName !== -1 ? String(rs.rows[r][rLocName] || '').trim() : '',
+        country: rCountry !== -1 ? String(rs.rows[r][rCountry] || '').trim() : '',
+        city: rCity !== -1 ? String(rs.rows[r][rCity] || '').trim() : '',
+        latitude: rLat !== -1 ? rs.rows[r][rLat] : '',
+        longitude: rLng !== -1 ? rs.rows[r][rLng] : '',
         rowIdx: r + 1
       });
     }
@@ -530,6 +632,25 @@ function handleAdvanceShipmentRoutePoint_(body) {
       SpreadsheetApp.flush();
     }
 
+    // ---- route_node_reached lifecycle event (F1-SHIPMENT-MAP-R9) — ONLY on a real forward ADVANCE to a new
+    // node (never on IDEMPOTENT same-node; never on a rejected ROUTE_BACKWARD, which returned above). Bound to
+    // the TARGET shipment_route row; location comes from the canonical route snapshot (no re-geocode).
+    // Idempotent by source_event_id 'route:<shipmentId>:<shipmentRouteId>'. Never throws (trailing write). ----
+    var routeEvent = null;
+    if (move.code === 'ADVANCED') {
+      var tgt = null;
+      for (var t = 0; t < nodes.length; t++) { if (String(nodes[t].id) === String(targetId)) { tgt = nodes[t]; break; } }
+      if (tgt && tgt.shipmentRouteId) {
+        routeEvent = shipAppendLifecycleEvent_(ss, {
+          shipment_id: shipmentId, shipment_route_id: tgt.shipmentRouteId,
+          event_type: 'route_node_reached', event_status: 'current',
+          source_event_id: shipRouteEventSourceId_(shipmentId, tgt.shipmentRouteId),
+          location_name: tgt.locationName, country: tgt.country, city: tgt.city, latitude: tgt.latitude, longitude: tgt.longitude,
+          raw_status: 'ROUTE NODE REACHED', note: 'Route advanced to node #' + tgt.seq + '.', actor: actor, now: now
+        });
+      }
+    }
+
     var summary = move.desired.map(function (n) {
       var src = null; for (var k = 0; k < nodes.length; k++) { if (String(nodes[k].id) === String(n.id)) { src = nodes[k]; break; } }
       return { route_template_node_id: src ? src.routeTemplateNodeId : '', shipment_route_id: src ? src.shipmentRouteId : '', sequence_no: n.seq, status: n.status };
@@ -542,7 +663,8 @@ function handleAdvanceShipmentRoutePoint_(body) {
         idempotent: move.code === 'IDEMPOTENT',
         current_sequence_no: move.targetSeq,
         current_route_template_node_id: targetTemplateNode || (summary.filter(function (n) { return n.status === 'current'; })[0] || {}).route_template_node_id || '',
-        nodes: summary
+        nodes: summary,
+        route_event: routeEvent
       }
     });
   } catch (err) {
