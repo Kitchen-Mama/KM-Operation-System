@@ -291,8 +291,13 @@
 #ops-section .replen-import__status--skipped { color: #d97706; }
 #ops-section .replen-import__status--error { color: #dc2626; }
 
-/* Legacy compat: old button classes that may still exist */
-#ops-section .replen-control-panel button {
+/* Legacy compat: old button classes that may still exist.
+   F1-AI-SUPPORT-SCOPE-R1: this catch-all (specificity 1,1,1 via the trailing `button` type) was the RUNTIME
+   winner painting the AI Support (.km-action-menu__*) and More Options (.replen-actions-menu__*) dropdown
+   buttons solid orange — it outranked their neutral rules (.km-action-menu__item = 0,1,0; the scoped
+   .replen-actions-menu__item = 1,1,0). NARROWED to exclude both menus' trigger + item buttons so they fall
+   back to their own neutral SKU-Details-style rules. All OTHER legacy toolbar buttons are unchanged. */
+#ops-section .replen-control-panel button:not(.km-action-menu__trigger):not(.km-action-menu__item):not(.replen-actions-menu__trigger):not(.replen-actions-menu__item) {
     height: var(--km-button-height);
     padding: 0 var(--km-button-padding-x);
     border: none;
@@ -306,7 +311,7 @@
     transition: opacity 0.15s;
 }
 
-#ops-section .replen-control-panel button:hover {
+#ops-section .replen-control-panel button:not(.km-action-menu__trigger):not(.km-action-menu__item):not(.replen-actions-menu__trigger):not(.replen-actions-menu__item):hover {
     opacity: 0.88;
 }
 

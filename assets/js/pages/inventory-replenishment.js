@@ -3723,9 +3723,15 @@ function _irRecoActionHtml(skuData) {
         + '<div class="replen-reco-action__reason">' + escapeReplenHtml(dto.reason) + '</div>'
         + '</div>';
 }
-function handleReplenAiPlan() {
+function handleReplenAiPlan(scope) {
     var btn = document.getElementById('replen-ai-plan-btn');
     if (btn && btn.disabled) return;
+    // F1-AI-SUPPORT-SCOPE-R1: capture the user-chosen { company, country, marketplace, marketplaceId } DTO when the
+    // scope modal supplied one. HONEST BOUNDARY: the canonical page-level AI Plan generator (window.KMREC) is not
+    // yet FM6-R4 scope-parameterized — it deterministically derives from the MATERIALIZED gap rows already loaded
+    // for the on-screen scope. The DTO is threaded + retained (window._irAiPlanScope) so FM6-R4 can later route it
+    // to the canonical persister → DB draft → Execution Plan; this round does NOT invent a scope-filtered engine.
+    if (scope && typeof scope === 'object') { window._irAiPlanScope = scope; }
     if (btn) { btn.disabled = true; btn.classList.remove('is-success', 'is-error'); btn.classList.add('is-loading'); }
     try {
         // Deterministic generation from the MATERIALIZED gap rows already loaded for the scope (no gap recalc, no API).
@@ -5775,11 +5781,44 @@ function toggleReplenAiSupportMenu(ev) {
 }
 // One item → one existing handler (no duplicated calculation logic). Close first so a backend job's button-state
 // updates land on the (now-hidden) menu item without holding the menu open.
+// F1-AI-SUPPORT-SCOPE-R1: "AI Plan" and "Recalculate Current Scope" now open the shared scope-selection modal so
+// the user picks a CONCRETE Country / Marketplace before running; on Confirm they delegate to the SAME existing
+// handlers (no new route/engine). "Recalculate All Sites" is unchanged (runs directly against the all-sites job).
 function runReplenAiSupport(kind) {
     _replenAiClose(false);
-    if (kind === 'aiplan' && typeof handleReplenAiPlan === 'function') return handleReplenAiPlan();
-    if (kind === 'recalcScope' && typeof recalcInventoryGapCurrentScope === 'function') return recalcInventoryGapCurrentScope();
+    if (kind === 'aiplan') return _openReplenScopeModal('aiplan');
+    if (kind === 'recalcScope') return _openReplenScopeModal('recalc');
     if (kind === 'recalcAll' && typeof handleRecalcAllInventoryGap === 'function') return handleRecalcAllInventoryGap();
+}
+// Prefill the modal from the current toolbar scope (DOM-held). The Marketplace select value is a marketplace_id
+// on the live path; "All"/blank is left unselected (never silently treated as a concrete current scope — §6).
+function _irScopeModalPrefill_() {
+    var c = document.getElementById('replenCountry');
+    var m = document.getElementById('replenMarketplace');
+    return { country: (c && c.value) ? String(c.value) : '', marketplaceId: (m && m.value) ? String(m.value) : '' };
+}
+function _openReplenScopeModal(action) {
+    if (!(window.KM && window.KM.scopeModal && typeof window.KM.scopeModal.open === 'function')) {
+        // Graceful fallback if the shared modal is unavailable: use the argument-less current-on-screen scope path.
+        if (action === 'aiplan' && typeof handleReplenAiPlan === 'function') return handleReplenAiPlan();
+        if (action === 'recalc' && typeof recalcInventoryGapCurrentScope === 'function') return recalcInventoryGapCurrentScope();
+        return;
+    }
+    window.KM.scopeModal.open({
+        title: 'AI Support — Inventory',
+        subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
+        prefill: _irScopeModalPrefill_(),
+        onConfirm: function (scope) {
+            if (action === 'aiplan') {
+                if (typeof handleReplenAiPlan === 'function') handleReplenAiPlan(scope);
+            } else {
+                // EXISTING CURRENT_SCOPE gap job (LIVE10 contract) — one site scope = one existing job. No new route.
+                if (typeof handleRecalcAllInventoryGap === 'function') {
+                    handleRecalcAllInventoryGap({ mode: 'CURRENT_SCOPE', company: scope.company, country: scope.country, marketplace: scope.marketplace });
+                }
+            }
+        }
+    });
 }
 function _replenBindAiSupportGlobal() {
     if (_replenAiSupportBound) return;

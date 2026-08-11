@@ -1126,3 +1126,50 @@ table td button {
 .km-action-menu__item--danger[aria-disabled="true"] { color: #94a3b8; }
 .km-action-menu__icon { font-size: 12px; line-height: 1; }
 @media (max-width: 640px) { .km-action-menu__panel { right: auto; left: 0; } }
+
+/* ============================================================================
+   Scope Selection Modal (F1-AI-SUPPORT-SCOPE-R1) — a small, SHARED, page-agnostic modal that lets a manual
+   user choose a concrete Country / Marketplace scope before running "AI Plan" or "Recalculate Current Scope"
+   on either the Inventory Replenishment or Order Planning page. Visually imitates the existing Add SKU
+   (`fc-modal`) primitive — centered white card, dimmed backdrop, 8px radius, soft shadow, compact spacing,
+   right-aligned Cancel / Confirm — but lives in components.css (unscoped) so ONE definition serves both
+   pages regardless of their section id. Literal fallbacks keep it robust if a page token is missing.
+   ============================================================================ */
+.km-scope-modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.5); z-index: 2200;
+}
+.km-scope-modal-overlay.is-open { display: block; }
+.km-scope-modal {
+    display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 2201; background: #ffffff; border-radius: 8px; padding: 1.5rem 1.75rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.18), 0 10px 10px -5px rgba(0, 0, 0, 0.08);
+    width: min(440px, calc(100vw - 48px)); box-sizing: border-box; max-height: 90vh; overflow-y: auto;
+}
+.km-scope-modal.is-open { display: block; }
+.km-scope-modal__title { margin: 0 0 2px; font-size: 1.05rem; font-weight: 700; color: var(--text-primary, #2D3748); }
+.km-scope-modal__subtitle { margin: 0 0 16px; font-size: 12px; color: var(--text-secondary, #64748b); }
+.km-scope-modal__body { display: flex; flex-direction: column; gap: 12px; }
+.km-scope-modal__field { display: flex; flex-direction: column; gap: 4px; }
+.km-scope-modal__field label { font-size: 12px; font-weight: 600; color: var(--text-primary, #334155); }
+.km-scope-modal__field select {
+    height: 36px; padding: 0 10px; border: 1px solid var(--border-light, #E2E8F0);
+    border-radius: var(--radius-sm, 4px); font-size: 13px; background: #ffffff; color: var(--text-primary, #2D3748);
+    box-sizing: border-box;
+}
+.km-scope-modal__field select:disabled { background: #f8fafc; color: #94a3b8; cursor: not-allowed; }
+.km-scope-modal__context {
+    font-size: 12px; color: var(--text-secondary, #64748b); background: #f8fafc;
+    border: 1px solid var(--border-light, #E2E8F0); border-radius: var(--radius-sm, 4px); padding: 6px 10px;
+}
+.km-scope-modal__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.km-scope-modal__btn {
+    height: 36px; padding: 0 16px; border: none; border-radius: var(--radius-sm, 4px);
+    font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.km-scope-modal__btn--cancel { background: #6b7280; color: #ffffff; }
+.km-scope-modal__btn--cancel:hover { opacity: 0.9; }
+.km-scope-modal__btn--primary { background: #3b82f6; color: #ffffff; }
+.km-scope-modal__btn--primary:hover { opacity: 0.9; }
+.km-scope-modal__btn--primary[disabled],
+.km-scope-modal__btn--primary[aria-disabled="true"] { background: #cbd5e1; color: #eef2f7; cursor: not-allowed; opacity: 1; }

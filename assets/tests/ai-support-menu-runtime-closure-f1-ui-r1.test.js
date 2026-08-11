@@ -61,8 +61,10 @@ ok(/#ops-section \.replen-actions-menu__item\s*\{[\s\S]*?background:\s*none/.tes
 ok(/\.more-options-item\s*\{[\s\S]*?background:\s*none/.test(SKU_CSS), 'C8 SKU Details reference rows are background:none (the visual authority)');
 
 section('D — handler REUSE (no second gap/recommendation engine)');
-ok(/function runReplenAiSupport[\s\S]*?handleReplenAiPlan\(\)[\s\S]*?recalcInventoryGapCurrentScope\(\)[\s\S]*?handleRecalcAllInventoryGap\(\)/.test(INV_JS), 'D1 Inventory AI Support dispatches to the EXISTING AI Plan / scoped-recalc / recalc-all handlers');
-ok(/function runRoAiSupport[\s\S]*?handleRequestOrderAiPlan\(\)[\s\S]*?recalcOrderPlanningGapCurrentScope\(\)[\s\S]*?handleRecalcAllOrderPlanningGap\(\)/.test(RO_JS), 'D2 Order Planning AI Support dispatches to the existing handlers');
+// F1-AI-SUPPORT-SCOPE-R1 SUPERSEDES the direct dispatch: aiplan + recalcScope now open the shared scope modal
+// first (which delegates to the SAME existing handlers on Confirm — still no second engine); recalcAll stays direct.
+ok(/function runReplenAiSupport[\s\S]*?_openReplenScopeModal\('aiplan'\)[\s\S]*?_openReplenScopeModal\('recalc'\)[\s\S]*?handleRecalcAllInventoryGap\(\)/.test(INV_JS), 'D1 Inventory AI Support: aiplan+recalcScope open the scope modal; recalcAll stays direct (existing handlers reused)');
+ok(/function runRoAiSupport[\s\S]*?_openRoScopeModal\('aiplan'\)[\s\S]*?_openRoScopeModal\('recalc'\)[\s\S]*?handleRecalcAllOrderPlanningGap\(\)/.test(RO_JS), 'D2 Order Planning AI Support: aiplan+recalcScope open the scope modal; recalcAll stays direct');
 // no new calculation/recommendation engine introduced in the menu code
 ok(!/allocateFactory|allocateOverseas|Math\.ceil\(.*\* ?18|new .*Engine|function .*Recommendation.*generate/i.test(RO_JS.match(/runRoAiSupport[\s\S]{0,1200}/)[0]), 'D3 AI Support dispatcher contains no calculation/allocation/recommendation logic');
 

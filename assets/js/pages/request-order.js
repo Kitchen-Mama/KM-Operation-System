@@ -1232,11 +1232,59 @@ function toggleRoAiSupportMenu(ev) {
     var e = _roAiEls(); if (!e.list) return;
     if (e.list.hidden) _roAiOpen(); else _roAiClose(false);
 }
+// F1-AI-SUPPORT-SCOPE-R1: "AI Plan" and "Recalculate Current Scope" open the shared scope-selection modal so the
+// user picks a CONCRETE Country / Marketplace first; on Confirm they delegate to the SAME existing handlers (no new
+// route/engine). "Recalculate All Sites" is unchanged. (OP semantics: a sub-company scope is expanded to the whole
+// company server-side for shared-pool conservation — the modal still passes the concrete {company,country,marketplace}.)
 function runRoAiSupport(kind) {
     _roAiClose(false);
-    if (kind === 'aiplan' && typeof handleRequestOrderAiPlan === 'function') return handleRequestOrderAiPlan();
-    if (kind === 'recalcScope' && typeof recalcOrderPlanningGapCurrentScope === 'function') return recalcOrderPlanningGapCurrentScope();
+    if (kind === 'aiplan') return _openRoScopeModal('aiplan');
+    if (kind === 'recalcScope') return _openRoScopeModal('recalc');
     if (kind === 'recalcAll' && typeof handleRecalcAllOrderPlanningGap === 'function') return handleRecalcAllOrderPlanningGap();
+}
+// Prefill from the current OP toolbar scope (requestOrderState.filters — multi-select arrays). Only prefill a
+// concrete value: a single selected country, and a marketplace ONLY when it resolves unambiguously to one active
+// marketplace_id under that country. All/ambiguous → left unselected (never silently treated as current scope — §6).
+function _roScopeModalPrefill_() {
+    var out = { country: '', marketplaceId: '' };
+    try {
+        var st = (typeof requestOrderState !== 'undefined' && requestOrderState) ? requestOrderState : null;
+        var f = st ? st.filters : null;
+        if (f && Array.isArray(f.country) && f.country.length === 1) out.country = String(f.country[0]);
+        if (out.country && f && Array.isArray(f.marketplace) && f.marketplace.length === 1 && window.KM && window.KM.scopeModal) {
+            var groups = (st && st.marketplaceGroups) || {};
+            var ids = groups[f.marketplace[0]] || [];
+            if (ids && typeof ids.length === 'number') {
+                var all = (window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+                var inCountry = window.KM.scopeModal.marketplacesForCountry(all, out.country);
+                var match = inCountry.filter(function (m) { return Array.prototype.indexOf.call(ids, String(m.marketplaceId)) !== -1; });
+                if (match.length === 1) out.marketplaceId = String(match[0].marketplaceId);
+            }
+        }
+    } catch (e) {}
+    return out;
+}
+function _openRoScopeModal(action) {
+    if (!(window.KM && window.KM.scopeModal && typeof window.KM.scopeModal.open === 'function')) {
+        if (action === 'aiplan' && typeof handleRequestOrderAiPlan === 'function') return handleRequestOrderAiPlan();
+        if (action === 'recalc' && typeof recalcOrderPlanningGapCurrentScope === 'function') return recalcOrderPlanningGapCurrentScope();
+        return;
+    }
+    window.KM.scopeModal.open({
+        title: 'AI Support — Order Planning',
+        subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
+        prefill: _roScopeModalPrefill_(),
+        onConfirm: function (scope) {
+            if (action === 'aiplan') {
+                if (typeof handleRequestOrderAiPlan === 'function') handleRequestOrderAiPlan(scope);
+            } else {
+                // EXISTING CURRENT_SCOPE gap job (LIVE10 contract). No new route; server expands sub-company scope.
+                if (typeof handleRecalcAllOrderPlanningGap === 'function') {
+                    handleRecalcAllOrderPlanningGap({ mode: 'CURRENT_SCOPE', company: scope.company, country: scope.country, marketplace: scope.marketplace });
+                }
+            }
+        }
+    });
 }
 function _roBindAiSupportGlobal() {
     if (_roAiSupportBound) return;
@@ -3007,9 +3055,15 @@ function _roRecoActionHtml(item) {
     + '<div class="ro-reco-action__total"><span class="ro-reco-action__total-label">Actionable Total (T1–T3)</span>' + totalHtml + '</div>'
     + '<div class="ro-reco-action__note">' + totalNote + '</div></div>';
 }
-function handleRequestOrderAiPlan() {
+function handleRequestOrderAiPlan(scope) {
   var btn = document.getElementById('ro-ai-plan-btn');
   if (btn && btn.disabled) return;
+  // F1-AI-SUPPORT-SCOPE-R1: capture the user-chosen { company, country, marketplace, marketplaceId } DTO when the
+  // scope modal supplied one. HONEST BOUNDARY: the canonical page-level AI Plan generator (window.KMREC) is not yet
+  // FM6-R4 scope-parameterized — it deterministically derives from the MATERIALIZED gap rows already loaded for the
+  // on-screen scope. The DTO is threaded + retained (window._roAiPlanScope) for the future FM6-R4 canonical persister
+  // path; this round does NOT invent a scope-filtered engine.
+  if (scope && typeof scope === 'object') { window._roAiPlanScope = scope; }
   if (btn) { btn.disabled = true; btn.classList.remove('is-success', 'is-error'); btn.classList.add('is-loading'); }
   try {
     // Deterministic generation from the MATERIALIZED gap rows already loaded for the scope (no gap recalc, no API,
