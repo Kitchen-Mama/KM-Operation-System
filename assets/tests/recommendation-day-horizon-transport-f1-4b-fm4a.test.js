@@ -47,7 +47,7 @@ function mpTables() {
 // =============================================================================
 section('bundle registration');
 ok(H.hasKMHP, 'KMHP bundled + callable');
-ok(H.bundleInfo && H.bundleInfo.modules.length === 39 && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-horizon-projection'; }), 'KM_BUNDLE_INFO = 39 modules incl. horizon-projection (F1-4B-FM7-R2D added KMFC factory-cohort)');
+ok(H.bundleInfo && H.bundleInfo.modules.length === 40 && H.bundleInfo.modules.some(function (m) { return m.module === 'supply-planning-horizon-projection'; }), 'KM_BUNDLE_INFO = 39 modules incl. horizon-projection (F1-4B-FM7-R2D added KMFC factory-cohort)');
 
 section('calc-DATE authority (Script Property; fail-closed; no clock)');
 ok(H.calcDate(io('2026-08', '', null)).error.code === 'RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED', 'missing → NOT_CONFIGURED');
@@ -65,7 +65,7 @@ ok(hz(lm, 'D30').requiredByDate === '2026-09-06' && hz(lm, 'D30').demandQty === 
 ok(hz(lm, 'D90').requiredByDate === '2026-11-05', 'M4 D90: reqBy 2026-11-05 (multi-month window)');
 ok(Array.isArray(lm.monthlyProjection) && lm.monthlyProjection.length === 4, 'M5 monthlyProjection STILL present (non-regression)');
 ok(envM.meta.calculationDate === '2026-08-07', 'M6 meta carries the calc-DATE anchor');
-ok(cM.getSheetByName === 17 && cM.write === 0, 'M7 one targeted read (17 tables incl. fc_target_rules + FM5-R4UI-R3 daily/weekly sales); ZERO writes — horizons add no write');
+ok(cM.getSheetByName === 19 && cM.write === 0, 'M7 one targeted read (17 tables incl. fc_target_rules + FM5-R4UI-R3 daily/weekly sales); ZERO writes — horizons add no write');
 
 section('additive fail-closed — calc-DATE absent → horizons omitted, OP response unaffected');
 var cN = {}; var envN = H.handle(body(), io('2026-08', '', makeSs(mpTables(), cN)));

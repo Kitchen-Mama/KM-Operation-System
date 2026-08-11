@@ -31,11 +31,12 @@
   var req = (typeof require !== 'undefined') ? require : null;
   var api = factory(
     req ? req('./supply-planning-source-reader-production.js') : (root.KMSRP || (root.KM && root.KM.sourceReaderProduction)),
-    req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts))
+    req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts)),
+    req ? req('./supply-planning-shipment-line-source.js') : (root.KMSLS || (root.KM && root.KM.shipmentLineSource))
   );
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
   if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.sourceProjection = api; }
-})(this, function (KMSRP, KMSF) {
+})(this, function (KMSRP, KMSF, KMSLS) {
   'use strict';
 
   // ---- primitives (fail-closed; no coercion of MISSING to a default) --------------------------------------
@@ -138,6 +139,9 @@
     var fac = normalizeCanonical(snaps.factoryStock, 'sourceSnapshots.factoryStock');
     var plans = normalizeCanonical(snaps.shippingPlans, 'sourceSnapshots.shippingPlans');
     var ships = normalizeCanonical(snaps.shipments, 'sourceSnapshots.shipments');
+    // R7C: shipment INCOMING physical grain = shipment_lines (+ frozen receiver lineage via shipping_plan_lines).
+    var shipLines = normalizeCanonical(snaps.shipmentLines, 'sourceSnapshots.shipmentLines');
+    var planLines = normalizeCanonical(snaps.shippingPlanLines, 'sourceSnapshots.shippingPlanLines');
 
     var whById = indexBy(whRows, 'warehouse_id');
     var upcBySku = {}; skuRows.forEach(function (r) { if (nonEmpty(r.sku) && has(r, 'units_per_carton')) upcBySku[str(r.sku)] = r.units_per_carton; });
@@ -282,33 +286,15 @@
     });
     if (plans.length) asOfByType.shippingPlans = maxAsOf(planAsOf);
 
-    // shipments → canonical B4-R3 shipmentInputs [{shipment,line}] (canonical shipment_id/shipment_line_id identity
-    // → lineage shipment:<id>:<lineId>; shipment_qty; destination_warehouse_id w/ legacy warehouse_id fallback; eta;
-    // raw status preserved for the bridge). Malformed rows lacking canonical identity fail closed via ADAPT_FAILED.
-    var shipmentInputs = ships.map(function (r) {
-      shipAsOf.push(r.source_data_as_of);
-      return {
-        shipment: {
-          shipmentId: nonEmpty(r.shipment_id) ? str(r.shipment_id) : undefined,
-          company: str(r.company) || str(scope.company),
-          country: nonEmpty(r.country) ? str(r.country) : (nonEmpty(scope.country) ? str(scope.country) : undefined),
-          marketplace: nonEmpty(r.marketplace) ? str(r.marketplace) : (nonEmpty(scope.marketplace) ? str(scope.marketplace) : undefined),
-          destinationWarehouseId: nonEmpty(r.destination_warehouse_id) ? str(r.destination_warehouse_id) : undefined,
-          legacyWarehouseId: nonEmpty(r.warehouse_id) ? str(r.warehouse_id) : undefined,
-          eta: has(r, 'eta') ? r.eta : undefined,
-          status: has(r, 'status') ? r.status : undefined,
-          sourceUpdatedAt: nonEmpty(r.source_data_as_of) ? str(r.source_data_as_of) : undefined
-        },
-        line: {
-          shipmentLineId: nonEmpty(r.shipment_line_id) ? str(r.shipment_line_id) : undefined,
-          sku: nonEmpty(r.sku) ? str(r.sku) : str(scope.sku),
-          shipmentQty: has(r, 'shipment_qty') ? r.shipment_qty : undefined,
-          // R4 — cumulative receipt so the candidate can net REMAINING incoming (blank/absent → 0 downstream).
-          shipmentReceivedQty: has(r, 'shipment_received_qty') ? r.shipment_received_qty : undefined,
-          siteSku: nonEmpty(r.site_sku) ? str(r.site_sku) : undefined
-        }
-      };
-    });
+    // R7C: shipment INCOMING is assembled at shipment_LINE grain by the ONE canonical owner (KMSLS) — physical
+    // qty from shipment_lines, receiver FROZEN by dispatch lineage (shipping_plan_line_id → shipping_plan_lines →
+    // shipping_plans). The SAME owner feeds the MARKETPLACE path (recommendation workspace → KMDR), so neither
+    // path derives physical qty / receiver identity from the shipment header. Malformed / unresolved rows fail
+    // closed via the resolver + KMSF/KMQI scope gates (never a header-scope fabrication).
+    ships.forEach(function (r) { shipAsOf.push(r.source_data_as_of); });
+    var slBuilt = KMSLS.buildShipmentLineCandidates({ shipmentLines: shipLines, shipments: ships, shippingPlanLines: planLines, shippingPlans: plans });
+    var shipmentInputs = slBuilt.shipmentInputs;
+    (slBuilt.issues || []).forEach(function (x) { addIssue('SUPPLY', 'shipment_line@' + x.i, x.reason); });
     if (ships.length) asOfByType.shipments = maxAsOf(shipAsOf);
 
     // Canonical lifecycle bridge. Shipments require a strict Required-By (evaluateQualifiedIncoming §2F) + a run

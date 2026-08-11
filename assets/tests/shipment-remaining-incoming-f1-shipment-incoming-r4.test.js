@@ -98,7 +98,9 @@ ok(!/wh_on_the_way_qty/.test(stripComments(PROJ)), 'source projection never read
 ok(/procShipmentRemainingQty_/.test(SRC13) && !/overseas_inventory_snapshot[\s\S]{0,80}on_the_way/.test(SRC13), 'procurement incoming = shipment-derived remaining, not overseas snapshot on_the_way');
 
 // ===== source projection threads received; bundle regenerated with the remaining authority =====
-ok(/shipmentReceivedQty:\s*has\(r, 'shipment_received_qty'\)/.test(PROJ), 'projection threads shipment_received_qty into the candidate line');
+// R7C: the shipment INCOMING assembly (incl. received-qty threading) moved to the ONE canonical line owner,
+// which the projection delegates to. The R4 remaining authority (MAX(0, shipmentQty − received)) is unchanged.
+ok(/shipmentReceivedQty:\s*has\(ln, 'shipment_received_qty'\)/.test(fs.readFileSync(path.join(CORE, 'supply-planning-shipment-line-source.js'), 'utf8')) && /buildShipmentLineCandidates/.test(PROJ), 'canonical line owner threads shipment_received_qty; projection delegates to it');
 ok(/quantityReceived/.test(BUNDLE) && /MAX\(0, shipmentQty . received\)|MAX\(0, shipmentQty − received\)/.test(BUNDLE), 'bundle regenerated: candidate remaining authority present in 90_ generated bundle');
 
 // ===== §1 partially_received stays eligible (status filter unchanged) — procurement CLOSED set excludes received but NOT partially_received =====

@@ -28,6 +28,7 @@ var MODULE_ORDER = [
   'supply-planning-incoming-adapters',
   'supply-planning-external-incoming-adapters',
   'supply-planning-supply-candidates',
+  'supply-planning-shipment-line-source',      // F1-SHIPMENT-INCOMING-R7C canonical shipment-line incoming + receiver resolver (requires supply-candidates)
   'supply-planning-persistence',
   'supply-planning-persistence-repository',
   'supply-planning-persistence-locking',
@@ -71,6 +72,7 @@ var GLOBALS = [
   ['KMINC', 'supply-planning-incoming-adapters'],
   ['KMEXT', 'supply-planning-external-incoming-adapters'],
   ['KMCAND', 'supply-planning-supply-candidates'],
+  ['KMSLS', 'supply-planning-shipment-line-source'],
   ['KMPC', 'supply-planning-persistence'],
   ['KMPR', 'supply-planning-persistence-repository'],
   ['KMPL', 'supply-planning-persistence-locking'],

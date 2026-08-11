@@ -24,6 +24,7 @@ eval(/var _IR_TERMINAL_SHIPMENT_STATUS = \{[^}]*\};/.exec(IR)[0]);
 eval(extractFn(IR, '_irShipmentEtaBucket'));
 eval(extractFn(IR, '_irRemainingIncoming'));
 eval(extractFn(IR, '_irReceiverKey'));
+eval(extractFn(IR, '_irIsSpecificReceiver'));
 eval(extractFn(IR, '_irEtaMs'));
 eval(extractFn(IR, '_irBuildShipmentRemainingByReceiver'));
 
@@ -90,7 +91,7 @@ ok(/sheetEnsureColumns_\(shipmentLineSheet, \[[^\]]*'shipping_plan_line_id'/.tes
 // normalizer exposes it
 ok(/shippingPlanLineId: String\(r\.shipping_plan_line_id/.test(API), 'normalizer exposes shippingPlanLineId');
 // projection prefers frozen lineage, falls back to header scope
-ok(/ln\.shippingPlanLineId && lineRecv\[ln\.shippingPlanLineId\]/.test(IR), 'projection prefers frozen lineage receiver');
+ok(/lineRecv\[ln\.shippingPlanLineId\]/.test(IR) && /_irIsSpecificReceiver/.test(IR), 'projection prefers frozen lineage receiver; present-but-unresolved lineage fails closed (R7C parity)');
 // H — destination warehouse identity is NOT used as the receiver key (company/country/marketplace/sku only)
 ok(!/destination_warehouse|destinationWarehouseId/.test(extractFn(IR, '_irBuildShipmentRemainingByReceiver')), 'H destination warehouse identity not conflated with marketplace receiver');
 // no live FC Share anywhere in the projection / lineage build

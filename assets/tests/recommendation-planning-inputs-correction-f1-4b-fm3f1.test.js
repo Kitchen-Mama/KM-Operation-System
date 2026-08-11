@@ -83,7 +83,7 @@ eq(HZ(lm, 'D18').demandQty, 1800, 'HZ1 D18 (Aug 8–25) = 18 × (adjusted 3100/3
 eq(HZ(lm, 'D18').openingSupplyQty, 7374, 'HZ2 horizon opening = Site Stock 7374 (same Authority-A owner)');
 
 section('request-count / write-safety / demand owner (no page-side formula)');
-ok(cM.getSheetByName === 17 && cM.write === 0, 'ONE read (17 tables incl. fc_target_rules + FM5-R4UI-R3 daily/weekly sales); ZERO writes');
+ok(cM.getSheetByName === 19 && cM.write === 0, 'ONE read (17 tables incl. fc_target_rules + FM5-R4UI-R3 daily/weekly sales); ZERO writes');
 ok(/KMPD\.planningDemandByMonth/.test(HANDLER) && /KMPD\.currentMonthRemainingDemand/.test(HANDLER), 'demand owned by canonical KMPD (no handler FC×Target)');
 ok(!/\* *r\.target|fc *\* *target|target_percentage *\/ *100/i.test(HANDLER), 'no page/handler-side FC×Target arithmetic');
 

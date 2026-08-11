@@ -144,9 +144,15 @@ section('F. shipping_plans → canonical bridge (F1-3b; approved vocab; canonica
 
 section('G. shipments → canonical bridge (F1-3b; B4-R3 lineage; SC-11.4 authorities)');
 (function () {
-  // Canonical shipment identity: shipment_id + shipment_line_id → B4-R3 lineage shipment:<id>:<lineId>. eta before
-  // requiredByDate (2026-09-01). Classification delegated to KMSF.projectSupplyLifecycle (evaluateQualifiedIncoming).
-  function withShip(extra) { var i = weeklyCanonical(); i.sourceSnapshots.shipments = [Object.assign({ sku: 'CO1100-R', company: 'KM', shipment_qty: 30, destination_warehouse_id: 'WH-3PL', shipment_id: 'SH1', shipment_line_id: 'SL1', eta: '2026-08-20', source_data_as_of: '2026-08-01' }, extra)]; return SP.projectRecommendationProductionSources(i); }
+  // R7C: shipment INCOMING physical grain = shipment_lines; the shipment HEADER carries the receiver (blank
+  // lineage → header fallback resolves to the specific {KM,US,AMAZON_US} scope receiver). Canonical B4-R3 lineage
+  // shipment:<id>:<lineId>. eta before requiredByDate (2026-09-01). Classification delegated to KMSF.
+  function withShip(extra) {
+    var i = weeklyCanonical();
+    i.sourceSnapshots.shipments = [Object.assign({ company: 'KM', country: 'US', marketplace: 'AMAZON_US', destination_warehouse_id: 'WH-3PL', shipment_id: 'SH1', eta: '2026-08-20', source_data_as_of: '2026-08-01' }, extra)];
+    i.sourceSnapshots.shipmentLines = [{ shipment_id: 'SH1', shipment_line_id: 'SL1', sku: 'CO1100-R', shipment_qty: 30 }];
+    return SP.projectRecommendationProductionSources(i);
+  }
   function shipEntry(p) { var r = p.supplySourceEntries.filter(function (x) { return x.supply_lineage_ref.indexOf('shipment:') === 0; }); return r.length ? r[0] : null; }
   function bucketOf(p) { var e = shipEntry(p); return e ? e.lifecycle_bucket : null; }
   eq([bucketOf(withShip({ status: 'shipped' })), (shipEntry(withShip({ status: 'shipped' })) || {}).supply_lineage_ref], ['SHIPPED_IN_TRANSIT', 'shipment:SH1:SL1'], 'G1 shipped → SHIPPED_IN_TRANSIT + canonical B4-R3 lineage shipment:SH1:SL1');
@@ -165,10 +171,13 @@ section('G. shipments → canonical bridge (F1-3b; B4-R3 lineage; SC-11.4 author
   ['planned', 'completed', 'partial_received', 'partially_received', 'stuck', 'weird_token'].forEach(function (s) {
     ok(issueReasons(withShip({ status: s })).some(function (r) { return r.indexOf('UNKNOWN_STATUS') >= 0; }), 'G9 non-canonical ' + s + ' → UNKNOWN_STATUS fail-closed');
   });
-  // malformed row lacking canonical shipment identity → fail closed via the B4-R3 adapter (never a synthetic lineage)
-  var i2 = weeklyCanonical(); i2.sourceSnapshots.shipments = [{ status: 'shipped', sku: 'CO1100-R', company: 'KM', shipment_qty: 30, destination_warehouse_id: 'WH-3PL', shipment_line_id: 'SL1', source_data_as_of: '2026-08-01' }];
+  // malformed row lacking canonical shipment identity → fail closed (never a synthetic lineage). A shipment_line
+  // whose shipment_id resolves to no parent shipment header fails closed as a structured issue.
+  var i2 = weeklyCanonical();
+  i2.sourceSnapshots.shipments = [{ status: 'shipped', company: 'KM', country: 'US', marketplace: 'AMAZON_US', destination_warehouse_id: 'WH-3PL', eta: '2026-08-20', source_data_as_of: '2026-08-01' }];
+  i2.sourceSnapshots.shipmentLines = [{ shipment_line_id: 'SL1', sku: 'CO1100-R', shipment_qty: 30 }];   // no shipment_id → parent not found
   var noId = SP.projectRecommendationProductionSources(i2);
-  ok(shipEntry(noId) === null && issueReasons(noId).some(function (r) { return r.indexOf('ADAPT_FAILED') >= 0; }), 'G10 missing shipment_id → fail closed (ADAPT_FAILED; no unstable synthetic lineage)');
+  ok(shipEntry(noId) === null && issueReasons(noId).some(function (r) { return r.indexOf('SHIPMENT_NOT_FOUND') >= 0 || r.indexOf('ADAPT_FAILED') >= 0; }), 'G10 shipment_line without a resolvable parent shipment → fail closed (no unstable synthetic lineage)');
   // CURRENT_STOCK is never derived from shipment status
   eq(withShip({ status: 'shipped' }).supplySourceEntries.filter(function (x) { return x.supply_lineage_ref.indexOf('shipment:') === 0 && x.lifecycle_bucket === 'CURRENT_STOCK'; }).length, 0, 'G11 CURRENT_STOCK never derived from shipment status');
 })();

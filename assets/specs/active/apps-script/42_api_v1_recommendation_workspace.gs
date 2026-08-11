@@ -515,11 +515,31 @@ function recoWsBuildMonthlyProjection_(months, openingSupplyQty, demandByMonth, 
 // Factory allocation (keyed by the canonical KMMSA receiver key). When absent the monthly opening supply is Site
 // Stock only — byte-identical to the pre-R2b behaviour. The allocation is COMPOSED into the monthly opening supply
 // ONLY (order planning); the Inventory day-horizon (D18/D30/D45/D90) opening stays Site-Stock-only (§18 unchanged).
+// F1-SHIPMENT-INCOMING-R7C: canonical shipment-LINE incoming candidates, built ONCE per request (indexes cached
+// on `read`) by the SAME owner (KMSLS) that feeds the WAREHOUSE projection — so MARKETPLACE order-need incoming
+// never re-derives shipment physical qty / merged receiver identity from shipment headers. Physical grain =
+// shipment_lines; receiver FROZEN by dispatch lineage (shipping_plan_line_id → shipping_plan_lines → plans).
+function recoWsShipmentLineCandidates_(read) {
+  if (read.__slCandidates) return read.__slCandidates;
+  var snaps = read.snapshots || {};
+  read.__slCandidates = KMSLS.buildShipmentLineCandidates({
+    shipmentLines: recoWsToRowObjects_(snaps.shipmentLines),
+    shipments: recoWsToRowObjects_(snaps.shipments),
+    shippingPlanLines: recoWsToRowObjects_(snaps.shippingPlanLines),
+    shippingPlans: recoWsToRowObjects_(snaps.shippingPlans)
+  });
+  return read.__slCandidates;
+}
+
 function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supplyAllocationByReceiver) {
   var snaps = read.snapshots || {};
   var mktRows = recoWsToRowObjects_(snaps.marketplaces), whRows = recoWsToRowObjects_(snaps.warehouses);
   var amazonRows = recoWsToRowObjects_(snaps.amazonInventorySnapshot);
-  var shipmentRows = recoWsToRowObjects_(snaps.shipments).filter(function (r) { return recoWsStr_(r.company) === scope.company && recoWsStr_(r.country) === scope.country; });
+  // MARKETPLACE incoming = line-grain candidates for THIS sku, adapted to the KMDR shape (receiver from frozen
+  // lineage; UNRESOLVED / merged → blank marketplace → KMDR identity fails closed; no header-qty derivation).
+  var shipmentRows = recoWsShipmentLineCandidates_(read).candidates
+    .filter(function (e) { return recoWsStr_(e.candidate.sku) === sku; })
+    .map(function (e) { return KMSLS.toMarketplaceIncomingCandidate(e); });
   var fcRows = recoWsToRowObjects_(snaps.fcRegularForecast);
   var skuDetailRows = recoWsToRowObjects_(snaps.skuDetails);
   var upc = recoWsUpcBySku_(skuDetailRows)[sku];

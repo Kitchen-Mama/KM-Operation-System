@@ -30,10 +30,13 @@ function shipInput(id, status, qty, eta, wh) {
 function lifecycle(inputs, requiredBy) {
   return SF.projectSupplyLifecycle({ shipments: { shipmentInputs: inputs, scope: SCOPE, requiredByDate: requiredBy || '2026-12-01' } });
 }
+// R7C: a combined header+line fixture; weekly() splits it into the canonical shipments header + shipment_lines.
 function shipRow(id, status, qty, eta, wh) {
-  return { sku: 'CO1100-R', company: 'KM', shipment_qty: qty, destination_warehouse_id: wh || 'WH-3PL',
+  return { sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', shipment_qty: qty, destination_warehouse_id: wh || 'WH-3PL',
            shipment_id: id, shipment_line_id: id + '-L1', eta: eta, status: status, source_data_as_of: '2026-08-01' };
 }
+function _shipHeaders(ships) { return (ships || []).map(function (r) { return { shipment_id: r.shipment_id, company: r.company, country: r.country, marketplace: r.marketplace, destination_warehouse_id: r.destination_warehouse_id, eta: r.eta, status: r.status, source_data_as_of: r.source_data_as_of }; }); }
+function _shipLines(ships) { return (ships || []).map(function (r) { return { shipment_id: r.shipment_id, shipment_line_id: r.shipment_line_id, sku: r.sku, shipment_qty: r.shipment_qty, shipment_received_qty: r.shipment_received_qty }; }); }
 function weekly(ships, over) {
   var base = {
     recommendationType: 'WEEKLY_SHIPPING', planningCycle: '2026-W40',
@@ -48,7 +51,7 @@ function weekly(ships, over) {
       marketplaces: [{ marketplace: 'AMAZON_US', allocation_priority: 1 }],
       fcRegularForecast: [{ forecast_id: 'F1', year: 2026, company: 'KM', country: 'US', marketplace: 'AMAZON_US', sku: 'CO1100-R', sep: 100 }],
       overseasInventorySnapshot: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-R', site_sku: 'ST-1', wh_available_stock: 100, snapshot_date: '2026-08-01' }],
-      shipments: ships
+      shipments: _shipHeaders(ships), shipmentLines: _shipLines(ships)
     },
     receiverFacts: [{ receiverKey: 'R1', demandRef: 'FC:F1', eligiblePoolTypes: 'THREE_PL', survivalNeedQty: 50, allocationPriority: 1, demandWeight: 1, fulfillmentModel: 'self_fulfilled', destinationWarehouseId: 'WH-3PL' }],
     planningFacts: [{ demandRef: 'FC:F1', siteSku: 'ST-1', windowCode: 'W40-A', calculatedGap: 100, unitsPerCarton: 12 }]

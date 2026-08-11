@@ -47,6 +47,10 @@
     { key: 'factoryStock', sheet: 'factory_stock', required: false },
     { key: 'shippingPlans', sheet: 'shipping_plans', required: false },
     { key: 'shipments', sheet: 'shipments', required: false },
+    // F1-SHIPMENT-INCOMING-R7C: shipment INCOMING physical grain = shipment_lines (with frozen dispatch receiver
+    // lineage via shipping_plan_lines → shipping_plans). Read once per canonical snapshot; NO per-line DB read.
+    { key: 'shipmentLines', sheet: 'shipment_lines', required: false },
+    { key: 'shippingPlanLines', sheet: 'shipping_plan_lines', required: false },
     // F1-4B-FM1-T: multi-warehouse demand-allocation ratios (read-only; missing → structured source issue, never a default).
     { key: 'replenishmentDemandAllocationRules', sheet: 'replenishment_demand_allocation_rules', required: false },
     // F1-4B-FM3f-1 (Authority E): Target % rules — read-only; missing → 100% (frozen fallback), never invented.

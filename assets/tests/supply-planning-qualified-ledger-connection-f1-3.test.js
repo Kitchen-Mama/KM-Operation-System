@@ -47,7 +47,14 @@ function issueReasons(p) { return p.issues.map(function (x) { return String(x.re
 function hasIssue(p, sub) { return issueReasons(p).some(function (r) { return r.indexOf(sub) >= 0; }); }
 function entryByLineage(p, prefix) { var r = p.supplySourceEntries.filter(function (x) { return String(x.supply_lineage_ref).indexOf(prefix) === 0; }); return r.length ? r[0] : null; }
 function withPlan(status, extra) { var i = weekly(); i.sourceSnapshots.shippingPlans = [Object.assign({ status: status, sku: 'CO1100-R', company: 'KM', approved_qty: 40, destination_warehouse_id: 'WH-3PL', shipping_plan_id: 'SP1', shipping_plan_line_id: 'SPL1', source_data_as_of: '2026-08-01' }, extra)]; return SP.projectRecommendationProductionSources(i); }
-function withShip(status, extra) { var i = weekly(); i.sourceSnapshots.shipments = [Object.assign({ status: status, sku: 'CO1100-R', company: 'KM', shipment_qty: 30, destination_warehouse_id: 'WH-3PL', shipment_id: 'SH1', shipment_line_id: 'SL1', eta: '2026-08-20', source_data_as_of: '2026-08-01' }, extra)]; return SP.projectRecommendationProductionSources(i); }
+// R7C: shipment INCOMING physical grain = shipment_lines; the header carries the specific {KM,US,AMAZON_US}
+// receiver (blank lineage → header fallback → scope receiver). `extra` applies to the header (status, etc.).
+function withShip(status, extra) {
+  var i = weekly();
+  i.sourceSnapshots.shipments = [Object.assign({ status: status, company: 'KM', country: 'US', marketplace: 'AMAZON_US', destination_warehouse_id: 'WH-3PL', shipment_id: 'SH1', eta: '2026-08-20', source_data_as_of: '2026-08-01' }, extra)];
+  i.sourceSnapshots.shipmentLines = [{ shipment_id: 'SH1', shipment_line_id: 'SL1', sku: 'CO1100-R', shipment_qty: 30 }];
+  return SP.projectRecommendationProductionSources(i);
+}
 
 // ---- canonical-bridge fixtures (direct KMSF.projectSupplyLifecycle / KMQI) ----------------------------------
 function shipInput(id, status, qty, eta) {
@@ -90,9 +97,10 @@ section('A. Production path — two-path result (Current Stock direct; incoming 
   // 18. Canonical B4-R3 shipment lineage shipment:<id>:<lineId> — never the old ship:<lineId> format.
   eq((entryByLineage(withShip('shipped'), 'shipment:') || {}).supply_lineage_ref, 'shipment:SH1:SL1', '18 canonical B4-R3 shipment lineage shipment:SH1:SL1 (not ship:SL1)');
 
-  // 19. Missing canonical shipment identity → fail closed (ADAPT_FAILED); no synthetic/unstable lineage.
+  // 19. Unresolvable shipment identity → fail closed; no synthetic/unstable lineage. R7C: a shipment_line whose
+  // shipment_id matches no shipment header fails closed (SHIPMENT_NOT_FOUND) — never a fabricated entry.
   var noId = withShip('shipped', { shipment_id: '' });
-  ok(entryByLineage(noId, 'shipment:') === null && hasIssue(noId, 'ADAPT_FAILED'), '19 missing shipment_id → ADAPT_FAILED fail-closed (no synthetic lineage)');
+  ok(entryByLineage(noId, 'shipment:') === null && (hasIssue(noId, 'SHIPMENT_NOT_FOUND') || hasIssue(noId, 'ADAPT_FAILED')), '19 unresolvable shipment identity → fail closed (no synthetic lineage)');
 })();
 
 // =====================================================================================================

@@ -52,6 +52,13 @@ function _irBucketRemainingByEta(lines, foldOverdueIntoEarliest) {
 function _irReceiverKey(company, country, marketplace, sku) {
   return [company, country, marketplace, sku].map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); }).join('|');
 }
+// R7C: mirrors the core owner's isSpecificReceiver — a receiver is specific only with a company + country +
+// a non-merged marketplace (blank / multi / merged / mixed / combined are NOT a specific receiver).
+function _irIsSpecificReceiver(company, country, marketplace) {
+  var c = String(company == null ? '' : company).trim(), cy = String(country == null ? '' : country).trim();
+  var m = String(marketplace == null ? '' : marketplace).trim().toLowerCase();
+  return c.length > 0 && cy.length > 0 && m.length > 0 && !/multi|merged|mixed|combined/.test(m);
+}
 // Strict YYYY-MM-DD → UTC ms (midnight). Returns null on anything else (no clock, no locale).
 function _irEtaMs(s) {
   var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(s == null ? '' : s).trim());
@@ -84,8 +91,18 @@ function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs, 
     var etaMs = _irEtaMs(s.eta);
     var days = (etaMs === null) ? null : Math.floor((etaMs - todayMs) / 86400000);
     var bucket = (days === null) ? 'unknown' : _irShipmentEtaBucket(days);   // negative → 'overdue'
-    // FROZEN lineage receiver wins (1:1 shipment_line→plan_line); else the shipment header scope.
-    var rcv = (ln.shippingPlanLineId && lineRecv[ln.shippingPlanLineId]) ? lineRecv[ln.shippingPlanLineId] : s;
+    // R7C card parity with the core resolver (KMSLS): FROZEN lineage wins (1:1 shipment_line→plan_line). A
+    // PRESENT-but-unresolvable lineage FAILS CLOSED — it must NOT silently fall back to the shipment header
+    // (that would mis-attribute a merged line to a MULTI/wrong header). Only a BLANK lineage uses header scope
+    // (ordinary rows correct; a MULTI header then yields a '…|multi|…' key excluded from specific receivers).
+    var rcv;
+    if (ln.shippingPlanLineId) {
+      var lr = lineRecv[ln.shippingPlanLineId];
+      if (!lr || !_irIsSpecificReceiver(lr.company, lr.country, lr.marketplace)) return;   // present but unresolved → fail closed
+      rcv = lr;
+    } else {
+      rcv = s;   // blank lineage → header scope
+    }
     var key = _irReceiverKey(rcv.company, rcv.country, rcv.marketplace, ln.sku);
     var rec = map[key] || (map[key] = { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0 });
     rec[bucket] += remaining;
@@ -97,10 +114,11 @@ if (typeof window !== 'undefined') {
   window._irRemainingIncoming = _irRemainingIncoming;
   window._irBucketRemainingByEta = _irBucketRemainingByEta;
   window._irReceiverKey = _irReceiverKey;
+  window._irIsSpecificReceiver = _irIsSpecificReceiver;
   window._irBuildShipmentRemainingByReceiver = _irBuildShipmentRemainingByReceiver;
 }
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _irShipmentEtaBucket: _irShipmentEtaBucket, _irRemainingIncoming: _irRemainingIncoming, _irBucketRemainingByEta: _irBucketRemainingByEta, _irReceiverKey: _irReceiverKey, _irEtaMs: _irEtaMs, _irBuildShipmentRemainingByReceiver: _irBuildShipmentRemainingByReceiver };
+  module.exports = { _irShipmentEtaBucket: _irShipmentEtaBucket, _irRemainingIncoming: _irRemainingIncoming, _irBucketRemainingByEta: _irBucketRemainingByEta, _irReceiverKey: _irReceiverKey, _irIsSpecificReceiver: _irIsSpecificReceiver, _irEtaMs: _irEtaMs, _irBuildShipmentRemainingByReceiver: _irBuildShipmentRemainingByReceiver };
 }
 
 function openReplenAddSkuModal() {
