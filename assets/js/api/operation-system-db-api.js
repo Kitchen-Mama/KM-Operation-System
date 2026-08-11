@@ -1025,6 +1025,8 @@ function normalizeShipmentLineRecord(raw) {
         grossWeight: (r.gross_weight === '' || r.gross_weight == null) ? '' : (parseFloat(r.gross_weight) || 0),
         netWeight: (r.net_weight === '' || r.net_weight == null) ? '' : (parseFloat(r.net_weight) || 0),
         purchaseOrderLineId: String(r.purchase_order_line_id || '').trim(),
+        // R6 — FROZEN receiver lineage (blank on historical rows → merged stays fail-closed/MULTI).
+        shippingPlanLineId: String(r.shipping_plan_line_id || '').trim(),
         note: String(r.note || '').trim(),
         createdAt: String(r.created_at || '').trim(),
         updatedAt: String(r.updated_at || '').trim(),

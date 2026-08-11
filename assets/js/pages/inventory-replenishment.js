@@ -65,9 +65,15 @@ var _IR_TERMINAL_SHIPMENT_STATUS = { completed: 1, received: 1, closed: 1, cance
 // d45_plus, unknown } } of REMAINING incoming (MAX(0, shipment_qty − shipment_received_qty)), bucketed
 // mutually-exclusively by the shipment ETA distance in whole days from todayMs. Terminal shipments and
 // fully-received lines contribute 0. wh_on_the_way_* is NEVER read. Pure (todayMs supplied by caller).
-function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs) {
+// lineReceiverById (R6, optional): shipping_plan_line_id → { company, country, marketplace } FROZEN receiver
+// lineage. When a shipment line carries valid lineage, the line is attributed to that receiver (this is how a
+// MERGED/MULTI shipment's lines land on their real receivers — deterministic, dispatch-time, never live FC
+// Share). When absent (historical rows / ordinary shipments), the shipment HEADER scope is used (ordinary =
+// correct; MULTI header → '…|multi|…' → excluded from any specific-marketplace receiver, exactly as R5).
+function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs, lineReceiverById) {
   var byId = {};
   (shipments || []).forEach(function (s) { if (s && s.shipmentId) byId[s.shipmentId] = s; });
+  var lineRecv = lineReceiverById || {};
   var map = {};
   (shipmentLines || []).forEach(function (ln) {
     if (!ln) return;
@@ -78,7 +84,9 @@ function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs) 
     var etaMs = _irEtaMs(s.eta);
     var days = (etaMs === null) ? null : Math.floor((etaMs - todayMs) / 86400000);
     var bucket = (days === null) ? 'unknown' : _irShipmentEtaBucket(days);   // negative → 'overdue'
-    var key = _irReceiverKey(s.company, s.country, s.marketplace, ln.sku);
+    // FROZEN lineage receiver wins (1:1 shipment_line→plan_line); else the shipment header scope.
+    var rcv = (ln.shippingPlanLineId && lineRecv[ln.shippingPlanLineId]) ? lineRecv[ln.shippingPlanLineId] : s;
+    var key = _irReceiverKey(rcv.company, rcv.country, rcv.marketplace, ln.sku);
     var rec = map[key] || (map[key] = { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0 });
     rec[bucket] += remaining;
   });
@@ -3900,9 +3908,21 @@ function _getCloudReplenishmentData() {
     // attribution (MERGED_SHIPMENT_FROZEN_SHARE_AUTHORITY_GAP — see completion report).
     var shipments = get('getShipments');
     var shipmentLines = get('getShipmentLines');
+    // R6 — FROZEN receiver lineage map: shipping_plan_line_id → {company,country,marketplace} resolved via
+    // shipping_plan_lines → shipping_plans. Lets a merged (MULTI) shipment's lines attribute to their real
+    // receivers deterministically (dispatch-time lineage; NOT live FC Share, NOT destination text).
+    var planLinesReg = get('getShippingPlanLines');
+    var plansReg = get('getShippingPlans');
+    var _planById = {}; plansReg.forEach(function (p) { if (p && p.shippingPlanId) _planById[p.shippingPlanId] = p; });
+    var lineReceiverById = {};
+    planLinesReg.forEach(function (pl) {
+        if (!pl || !pl.shippingPlanLineId) return;
+        var p = _planById[pl.shippingPlanId] || {};
+        lineReceiverById[pl.shippingPlanLineId] = { company: p.company || '', country: p.country || '', marketplace: p.marketplace || '' };
+    });
     var _irNow = new Date();
     var _irTodayMs = Date.UTC(_irNow.getFullYear(), _irNow.getMonth(), _irNow.getDate());
-    var shipRemainByReceiver = _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, _irTodayMs);
+    var shipRemainByReceiver = _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, _irTodayMs, lineReceiverById);
 
     var monthNames = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
     var MK = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];

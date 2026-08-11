@@ -60,7 +60,13 @@ var SHIPMENT_LINES_HEADERS_ = [
   // shipment_carton_cbm = CANONICAL renamed column (was carton_cbm; now LINE-TOTAL, legacy fallback only).
   'shipment_qty', 'factory_stock_allocation_qty', 'shipment_carton_qty', 'carton_no_start', 'carton_no_end',
   'units_per_carton', 'shipment_carton_cbm', 'gross_weight', 'net_weight',
-  'purchase_order_line_id', 'note', 'created_at', 'updated_at',
+  'purchase_order_line_id',
+  // F1-SHIPMENT-INCOMING-R6 — FROZEN receiver lineage. 1:1 dispatch mapping (one shipping_plan_line →
+  // one shipment_line, proven no SKU consolidation), so a single id is sufficient (NO CSV / JSON-in-cell).
+  // Resolves the merged (MULTI) shipment's per-line receiver via shipping_plan_line_id → shipping_plan_lines
+  // → shipping_plans {company,country,marketplace}. Blank on historical rows (fail-closed / MULTI).
+  'shipping_plan_line_id',
+  'note', 'created_at', 'updated_at',
   // Execution Snapshot = a verbatim COPY of the Decision Snapshot (ARCHITECTURE §4A). Never recalculated.
   'snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply',
   'snapshot_suggested_qty', 'snapshot_target_days', 'snapshot_fc_context', 'snapshot_event_context',
@@ -350,7 +356,7 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     'master_tracking_number', 'is_cross_dock', 'temperature_requirement', 'hazmat_flag',
     'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee', 'estimated_total_cost', 'estimated_unit_cost',
     'total_cost_actual']);
-  sheetEnsureColumns_(shipmentLineSheet, ['carton_no_start', 'carton_no_end', 'shipment_carton_qty', 'shipment_qty', 'shipment_carton_cbm']);
+  sheetEnsureColumns_(shipmentLineSheet, ['carton_no_start', 'carton_no_end', 'shipment_carton_qty', 'shipment_qty', 'shipment_carton_cbm', 'shipping_plan_line_id']);
   sheetEnsureColumns_(planSheet, ['transferred_to_shipment_at', 'transferred_shipment_id']);
 
   // Idempotency: one Shipment Draft per approved plan (Phase 1). Skip if one already exists.
@@ -531,6 +537,9 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
       shipment_id: shipmentId,
       sku: plv(lr, 'sku'),
       shipment_qty: shipmentNum_(plv(lr, 'approved_qty')),
+      // FROZEN receiver lineage (R6): the EXACT source shipping_plan_line for this physical line (1:1).
+      // Never derived from SKU/marketplace text/FC Share; immutable once the shipment is dispatched.
+      shipping_plan_line_id: plv(lr, 'shipping_plan_line_id'),
       shipment_carton_qty: shipmentNum_(planCartonQty(lr)),
       units_per_carton: shipmentNum_(plv(lr, 'units_per_carton')),
       // Logistics: COPIED from the plan line (Execution Snapshot — never recalculated).
