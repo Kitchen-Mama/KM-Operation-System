@@ -50,8 +50,10 @@ ok(!/<span class="menu-label">Shipping Management<\/span>/.test(NAV) && !/stage-
   ok(new RegExp(rx).test(NAV), '23 route key preserved: ' + rx);
 });
 
-// ---- On-the-Way warning copy (data completeness, not system wiring) + condition preserved ----
-ok(/Some shipments have incomplete route history/.test(MAP), 'K new warning summary describes data incompleteness');
+// ---- On-the-Way data-completeness copy (data completeness, not system wiring) + condition preserved ----
+// R8C §11 supersedes the page-wide banner: the completeness message is now PER-SHIPMENT (glmShipmentIssues →
+// card badge + drawer "Route history incomplete"), not a global summary. The internal state.partial copy is retained.
+ok(/Route history incomplete/.test(MAP), 'K completeness surfaced per shipment (R8C: page-wide banner replaced by per-shipment issue detail)');
 ok(/route nodes, events, or coordinates/.test(MAP), 'K secondary copy explains historical/partial data; records remain available');
 ok(!/Runtime route\/event data not yet populated/.test(MAP) && !/Runtime route\/event data incomplete/.test(MAP), 'K old wiring-implying copy removed');
 ok(/if \(!rm\.shipmentRoutes\.length\) missing\.push\('shipment_routes'\)/.test(MAP) && /if \(!rm\.shipmentEvents\.length\) missing\.push\('shipment_events'\)/.test(MAP), 'L/9 warning CONDITION unchanged (no shipment_routes and/or no shipment_events rows)');

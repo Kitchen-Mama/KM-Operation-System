@@ -19,7 +19,8 @@ function extractFn(src, name) {
   throw new Error('unbalanced: ' + name);
 }
 var render = extractFn(SRC, 'render');
-var topbar = extractFn(SRC, 'renderTopBar');
+// R8C supersedes the R8B body top bar: Refresh moved into the page header (glm-head__bar); the body no longer
+// renders a glm-topbar. renderTopBar was removed, so there is nothing to extract here.
 var mapshell = extractFn(SRC, 'renderMapShell');
 var listFn = extractFn(SRC, 'renderShipmentList');
 
@@ -44,11 +45,11 @@ ok(/data-mode-select/.test(mapshell) && /MODE_TABS\.map/.test(mapshell), 'G map 
 ok(/glm-map-view/.test(mapshell) && /glm-map-view/.test(CSS), 'G Map View selector overlays the map surface');
 ok(/runtime/.test(SRC) && /template/.test(SRC) && /global/.test(SRC), 'G all three modes (runtime/template/global) preserved');
 ok(/data-mode-select/.test(extractFn(SRC, 'bindRuntime')), 'G Map View selector is wired (mode change → render)');
-ok(!/glm-modebar/.test(topbar) && !/data-mode/.test(topbar), 'F top bar carries no mode control (only admin Refresh)');
+ok(!/glm-topbar/.test(render) && !/data-mode="/.test(render), 'F body render carries no top bar / mode control (Map View lives in the map surface; Refresh moved to the page header — R8C)');
 
-// §3 — ONE coherent summary region containing BOTH lifecycle status + operational KPIs (distinct concepts).
+// §3 — ONE coherent summary region containing BOTH Shipment Status + Attention (distinct concepts; R8C names).
 var region = extractFn(SRC, 'renderSummaryRegion');
-ok(/renderStatusSummary\(\)/.test(region) && /renderKpiStrip\(\)/.test(region), '§3 one region nests lifecycle status + operational indicators');
+ok(/renderStatusSummary\(\)/.test(region) && /renderAttentionRow\(\)/.test(region), '§3 one region nests Shipment Status + Attention (R8C: renderKpiStrip → renderAttentionRow)');
 ok(/glmStatusSummary\(filteredVms\(\)\)/.test(SRC), '§3 status summary consumes the SAME filtered collection as list + map');
 
 // §5 — card shows backend-derived status (never computed in JS); partial/received visibly distinct.

@@ -103,6 +103,17 @@
     });
     return out;
   }
+  // §12 PER-SHIPMENT ISSUE AUTHORITY (R8C) — derive a shipment's data/route-completeness issues from the SAME facts
+  // already computed elsewhere (route-node count + resolved placement kind). This is NOT a new validation engine:
+  // it only re-expresses existing detected gaps (no shipment_routes rows; no drawable coordinate). Pure + testable.
+  // facts = { nodeCount:Number, placementKind:'current'|'destination'|'origin'|'pending' }.
+  function glmShipmentIssues(facts) {
+    facts = facts || {};
+    var types = [];
+    if (!facts.nodeCount) types.push({ code: 'NO_ROUTE_NODES', label: 'Route Issue', detail: 'Route history incomplete — no route nodes are currently available for this shipment.' });
+    if (facts.placementKind === 'pending') types.push({ code: 'COORDINATE_PENDING', label: 'Coordinate Pending', detail: 'No map coordinates are available yet, so this shipment cannot be plotted. It stays listed and selectable.' });
+    return { hasIssue: types.length > 0, types: types };
+  }
 
   // ---------- data ----------
   function ensureDb(force, cb) {
@@ -279,10 +290,10 @@
     // the list; the On the Way / Route Template / Global Reference modes move into the map surface.
     var isRuntime = state.mode === 'runtime';
     var sideHtml = (state.mode === 'template') ? renderTemplateSide() : (state.mode === 'global') ? renderGlobalRefSide() : renderShipmentList();
+    // R8C §11/§17 — Refresh moved into the page header (top-right); the page-wide incomplete-route banner is gone
+    // (issues now surface per-shipment). Order: source banner (fallback only) → filters → Shipment Status + Attention.
     b.innerHTML =
-      renderTopBar() +
       renderSourceBanner() +
-      (state.partial ? renderPartialNote() : '') +
       (state.debug ? renderDiagPanel() : '') +
       (isRuntime ? renderFilterBar() : '') +
       (isRuntime ? renderSummaryRegion() : '') +
@@ -296,21 +307,15 @@
   }
 
   var MODE_TABS = [{ id: 'runtime', label: 'On the Way' }, { id: 'template', label: 'Route Template' }, { id: 'global', label: 'Global Reference' }];
-  // The map-layer modes are no longer a primary page-level tab row (R8B) — they live inside the map surface
-  // (renderMapShell → data-mode-select). The top bar keeps only the admin Refresh control.
-  function renderTopBar() {
-    return '<div class="glm-topbar">' +
-      '<div class="glm-topbar__admin"><button type="button" class="glm-btn" data-act="refresh">↻ Refresh</button></div>' +
-      '</div>';
-  }
+  // R8C — Refresh moved into the page header (glm-head__bar, top-right). The map-layer modes live inside the map
+  // surface (renderMapShell → data-mode-select), so there is no longer a separate top bar in the body.
   function renderSourceBanner() {
     if (state.sourceMode === 'mock') return '<div class="glm-warn glm-warn--danger">⚠ Operation DB API failed — showing <strong>FALLBACK data (not production)</strong>' + ((window._opDbCache && window._opDbCache._apiError) ? (': ' + esc(window._opDbCache._apiError)) : '') + '. Click <strong>↻ Refresh</strong> to retry the live API.</div>';
     return '';
   }
-  // Compact, collapsible runtime-data note (never a big bar covering the globe).
-  function renderPartialNote() {
-    return '<details class="glm-note"><summary>⚠ Some shipments have incomplete route history</summary><p>' + esc(state.partial) + '</p></details>';
-  }
+  // R8C §11 — the former page-wide route-completeness banner is removed; per-shipment issues are surfaced on each
+  // shipment card + explained in the drawer (glmShipmentIssues). state.partial is retained as an internal
+  // completeness signal only (no longer rendered as a page-level warning).
   function renderDiagPanel() {
     var d = state.diag; if (!d) return '<div class="glm-warn">Diagnostics: no data-chain diagnostics captured yet.</div>';
     var rows = Object.keys(d.tables || {}).map(function (t) { var x = d.tables[t]; return '<tr><td>' + esc(t) + '</td><td class="glm-num">' + x.raw + '</td><td class="glm-num">' + x.kept + '</td><td class="glm-muted" style="font-size:10px;">' + esc((x.sampleKeys || []).join(', ') || '—') + '</td></tr>'; }).join('');
@@ -318,13 +323,33 @@
       '<div class="glm-table-wrap"><table class="glm-table" style="width:100%;font-size:11.5px;"><thead><tr><th>table</th><th class="glm-num">raw</th><th class="glm-num">kept</th><th>raw column keys (first row)</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<p class="glm-hint glm-muted">raw 0 → getter/sheet/router; raw N &amp; kept 0 → normalizer/column-name filter (compare the raw keys to the expected canonical columns); source mock → API failed.</p></div>';
   }
-  function renderKpiStrip() {
-    var f = state.filters;
-    return '<div class="glm-kpis" role="group" aria-label="Shipment KPIs">' + computeKpis().map(function (k) {
-      var active = f.kpi === k.id;
-      return '<button type="button" class="glm-kpi glm-kpi--' + k.tone + (active ? ' is-active' : '') + '" data-kpi="' + k.id + '" aria-pressed="' + active + '">' +
-        '<span class="glm-kpi__value">' + num(k.value) + '</span><span class="glm-kpi__label">' + esc(k.label) + '</span></button>';
-    }).join('') + (f.kpi ? '<button type="button" class="glm-btn glm-btn--small" data-act="clear-kpi">Clear KPI filter</button>' : '') + '</div>';
+  // R8C §7/§8/§9 — Attention is a LOW-visual-weight chip row (not six equal big cards). "On the Way" is dropped
+  // (see attentionIndicators — it is the baseline active population already surfaced by Shipment Status, not an
+  // alert). Priority-ordered; only nonzero ALERT chips show by default; "Delivered Today" + any zero-value
+  // indicators live under a restrained "More ▾" so nothing is lost. Chips reuse the EXISTING data-kpi filter (§16).
+  var ATTENTION_ORDER = ['delayed', 'exception', 'arrivingSoon', 'customs', 'deliveredToday'];
+  function attentionIndicators() {
+    var all = computeKpis().filter(function (k) { return k.id !== 'onTheWay'; });   // §8 On the Way removed from Attention
+    all.sort(function (a, b) { return ATTENTION_ORDER.indexOf(a.id) - ATTENTION_ORDER.indexOf(b.id); });
+    return all;
+  }
+  function attentionChipHtml(k) {
+    var active = state.filters.kpi === k.id;
+    return '<button type="button" class="glm-chip glm-chip--' + k.tone + (active ? ' is-active' : '') + '" data-kpi="' + k.id + '" aria-pressed="' + active + '">' +
+      '<span class="glm-chip__label">' + esc(k.label) + '</span><span class="glm-chip__count">' + num(k.value) + '</span></button>';
+  }
+  function renderAttentionRow() {
+    var all = attentionIndicators();
+    var primary = all.filter(function (k) { return k.id !== 'deliveredToday' && k.value > 0; });   // §7 nonzero alerts only
+    var more = all.filter(function (k) { return primary.indexOf(k) < 0; });                         // §9 Delivered Today + zero-value → More
+    var chips = primary.map(attentionChipHtml).join('');
+    var empty = primary.length ? '' : '<span class="glm-attention__empty">No attention items</span>';   // §E no row of six zeros
+    var moreHtml = more.length
+      ? '<details class="glm-attention__more"><summary>More</summary><div class="glm-attention__morechips">' + more.map(attentionChipHtml).join('') + '</div></details>'
+      : '';
+    var clear = state.filters.kpi ? '<button type="button" class="glm-btn glm-btn--small" data-act="clear-kpi">Clear</button>' : '';
+    return '<div class="glm-attention" role="group" aria-label="Attention indicators">' +
+      '<div class="glm-attention__chips">' + chips + empty + '</div>' + moreHtml + clear + '</div>';
   }
 
   // §13 backend-status summary (reflects the SAME filtered collection that drives list + map). Returns the
@@ -337,12 +362,12 @@
     }).join('') + '</div>';
   }
 
-  // ONE coherent status-summary region (R8B §3): lifecycle statuses (backend shipment.status) and operational
-  // indicators (KPI flags) coexist visually but remain DIFFERENT data concepts — never merged semantically.
+  // R8C §5/§6/§7/§17 — Shipment Status is the PRIMARY summary (backend shipment.status); Attention is the SECONDARY
+  // alert row. They stay DIFFERENT data concepts (never merged semantically) — renamed for non-technical clarity.
   function renderSummaryRegion() {
     return '<div class="glm-summary">' +
-      '<div class="glm-summary__group"><span class="glm-summary__label">Lifecycle status</span>' + renderStatusSummary() + '</div>' +
-      '<div class="glm-summary__group"><span class="glm-summary__label">Operational</span>' + renderKpiStrip() + '</div>' +
+      '<div class="glm-summary__group glm-summary__group--status"><span class="glm-summary__label">Shipment Status</span>' + renderStatusSummary() + '</div>' +
+      '<div class="glm-summary__group glm-summary__group--attention"><span class="glm-summary__label">Attention</span>' + renderAttentionRow() + '</div>' +
       '</div>';
   }
 
@@ -351,27 +376,22 @@
     return '<label class="glm-field' + (cls ? ' ' + cls : '') + '"><span>' + esc(label) + '</span><select data-filter="' + key + '"><option value="">All</option>' +
       opts.map(function (o) { return '<option value="' + esc(o) + '"' + (cur === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>';
   }
+  // R8C §3/§4 — simplified filter bar. VISIBLE: Search · Company · Destination (canonical destination-warehouse
+  // identity) · Carrier · Method · ETA From · ETA To · Clear Filters. REMOVED controls (Origin, a duplicate
+  // country-Destination, a separate Dest Warehouse, Status, Stage, Route Template, Exception/Delayed/Arriving
+  // checkboxes) — their underlying filter LOGIC in filteredVms() is retained but the state is neutralized on init
+  // (clearFilters) so no hidden control can pin the view. Attention chips (below) cover exception/delayed/arriving.
   function renderFilterBar() {
     var vms = allVms(), f = state.filters, IL = 'glm-field--inline';
-    var tplOpts = optSet(vms, function (v) { return v.routeTemplateId; });
     return '<div class="glm-filterbar" role="group" aria-label="Shipment filters">' +
       '<label class="glm-field glm-field--inline glm-field--search"><span>Search</span><input type="text" data-filter="search" value="' + esc(f.search) + '" placeholder="Shipment / Tracking / Container…"></label>' +
       selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company, IL) +
-      selHtml('Origin', 'originCountry', optSet(vms, function (v) { return v.originCountry; }), f.originCountry, IL) +
-      selHtml('Destination', 'destCountry', optSet(vms, function (v) { return v.destCountry; }), f.destCountry, IL) +
-      selHtml('Dest Warehouse', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, IL) +
+      // ONE canonical Destination control = destination-warehouse identity (name/code), never a duplicated country + warehouse pair.
+      selHtml('Destination', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, IL) +
       selHtml('Carrier', 'carrier', optSet(vms, function (v) { return v.carrier; }), f.carrier, IL) +
       selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, IL) +
-      selHtml('Status', 'status', optSet(vms, function (v) { return v.status; }), f.status, IL) +
-      selHtml('Stage', 'stage', optSet(vms, function (v) { return v.stage; }), f.stage, IL) +
-      (tplOpts.length ? selHtml('Route Template', 'routeTemplateId', tplOpts, f.routeTemplateId, IL) : '') +
       '<label class="glm-field glm-field--inline"><span>ETA From</span><input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '"></label>' +
       '<label class="glm-field glm-field--inline"><span>ETA To</span><input type="date" data-filter="etaTo" value="' + esc(f.etaTo) + '"></label>' +
-      '<div class="glm-filterbar__checks">' +
-        '<label class="glm-check"><input type="checkbox" data-filter="exceptionOnly"' + (f.exceptionOnly ? ' checked' : '') + '> Exception</label>' +
-        '<label class="glm-check"><input type="checkbox" data-filter="delayedOnly"' + (f.delayedOnly ? ' checked' : '') + '> Delayed</label>' +
-        '<label class="glm-check"><input type="checkbox" data-filter="arrivingSoon"' + (f.arrivingSoon ? ' checked' : '') + '> Arriving ≤7d</label>' +
-      '</div>' +
       '<button type="button" class="glm-btn glm-btn--small" data-act="clear-filters">Clear Filters</button>' +
       '</div>';
   }
@@ -390,11 +410,15 @@
       var pl = resolveShipmentPlacement(v);
       var flag = v.flags.exception ? '<span class="glm-badge glm-badge--danger">Exception</span>' : (v.flags.delayed ? '<span class="glm-badge glm-badge--danger">Delayed</span>' : (v.flags.arrivingSoon ? '<span class="glm-badge glm-badge--good">Arriving Soon</span>' : ''));
       var posBadge = pl.kind === 'pending' ? '<span class="glm-badge glm-badge--pending">Coord Pending</span>' : (pl.kind !== 'current' ? '<span class="glm-badge glm-badge--neutral">' + esc(pl.kind) + '</span>' : '');
+      // §12/§13 — restrained per-shipment issue pill (route history incomplete). Coordinate-pending keeps its own
+      // Coord Pending badge (above); this pill flags the route-data gap so the user sees WHICH shipment has it.
+      var issues = glmShipmentIssues({ nodeCount: v.nodes.length, placementKind: pl.kind });
+      var issueBadge = issues.types.some(function (t) { return t.code === 'NO_ROUTE_NODES'; }) ? '<span class="glm-badge glm-badge--issue" title="Route history incomplete">⚠ Route Issue</span>' : '';
       // backend-derived shipment status (never computed here) — Partially Received / Received are visibly distinct.
       var st = low(v.status), stCls = st ? st.replace(/[^a-z0-9]+/g, '-') : 'unknown';
       var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '">' + esc(v.status || '—') + '</span>';
       return '<div class="glm-ship' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" tabindex="0" role="button" aria-label="Shipment ' + esc(v.shipmentNo) + '">' +
-        '<div class="glm-ship__hd"><span class="glm-ship__no">' + esc(v.shipmentNo) + '</span>' + flag + '</div>' +
+        '<div class="glm-ship__hd"><span class="glm-ship__no">' + esc(v.shipmentNo) + '</span>' + flag + issueBadge + '</div>' +
         '<div class="glm-ship__route">' + esc(v.originCountry || v.shipFrom || '?') + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + ' ' + posBadge + '</div>' +
         '<div class="glm-ship__meta">' + esc(v.carrier || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
         '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || '—') + '</div>' +
@@ -783,6 +807,11 @@
     var pos = resolveCurrentPosition(vm), pl = resolveShipmentPlacement(vm);
     var posLine = pos.drawable ? (pos.lat.toFixed(3) + ', ' + pos.lng.toFixed(3) + ' · ' + esc(pos.source))
       : '<span class="glm-badge glm-badge--pending">Coordinate Pending</span>' + (pl.kind !== 'pending' ? ' <span class="glm-muted">(shown at ' + esc(pl.kind) + ' endpoint)</span>' : '');
+    // §14 — explain the shipment's data/route issues in the drawer (same detector as the card badge; no page banner).
+    var issues = glmShipmentIssues({ nodeCount: vm.nodes.length, placementKind: pl.kind });
+    var issueSection = issues.hasIssue
+      ? '<section class="glm-dsec glm-dsec--issue"><h4>⚠ Attention</h4>' + issues.types.map(function (t) { return '<p class="glm-issue__line"><strong>' + esc(t.label) + '</strong><br>' + esc(t.detail) + '</p>'; }).join('') + '</section>'
+      : '';
     var routeSteps = vm.nodes.map(function (n) {
       var sc = nodeStatusClass(n.status), c = resolveNodeCoord(n);
       return '<div class="glm-step glm-step--' + sc + '"><div class="glm-step__seq">#' + n.sequenceNo + ' <span class="glm-tag glm-tag--' + sc + '">' + esc(sc) + '</span></div>' +
@@ -809,6 +838,7 @@
         '<div class="glm-kv"><span class="glm-kv__k">Map Position</span><span class="glm-kv__v">' + posLine + '</span></div>' +
         kv('Latest Event', vm.latestEvent ? (vm.latestEvent.eventType || vm.latestEvent.eventStatus) : '') + kv('Latest Updated', vm.latestUpdated) +
         (vm.flags.exception ? '<div class="glm-warn">Exception / delayed — needs attention.</div>' : (vm.flags.delayed ? '<div class="glm-warn">Past ETA and not yet delivered (still active — remains visible).</div>' : '')) + '</section>' +
+      issueSection +
       receiptPanelHtml(vm) +
       '<section class="glm-dsec"><h4>Route (shipment_routes)</h4><div class="glm-steps">' + routeSteps + '</div></section>' +
       '<section class="glm-dsec"><h4>Event Timeline (actual only)</h4><div class="glm-steps">' + timeline + '</div></section>';

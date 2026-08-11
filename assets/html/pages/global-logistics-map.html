@@ -6,8 +6,12 @@
      Route key `global-logistics-map` / section id `global-logistics-map-section`. -->
             <section id="global-logistics-map-section" class="module-section glm">
                 <div class="glm-head">
-                    <h2 class="glm-head__title">On-the-Way Shipment Map</h2>
-                    <p class="glm-head__sub">Where shipments are on the way — plotted on the world map. Built on the Global Logistics reference layer (physical locations, gateways, and standard route templates).</p>
+                    <!-- F1-SHIPMENT-MAP-R8C §1/§2 — compact header: title + Refresh on one row, one concise subtitle below. -->
+                    <div class="glm-head__bar">
+                        <h2 class="glm-head__title">On-the-Way Shipment Map</h2>
+                        <button type="button" class="glm-btn glm-head__refresh" data-act="refresh">↻ Refresh</button>
+                    </div>
+                    <p class="glm-head__sub">Track active shipments, route progress, ETA, and receiving status.</p>
                     <p class="glm-head__meta" data-glm="meta"></p>
                 </div>
                 <div class="glm-body" data-glm="body"></div>
