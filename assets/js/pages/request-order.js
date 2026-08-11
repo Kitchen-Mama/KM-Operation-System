@@ -2887,9 +2887,12 @@ async function handleSendRequest() {
   // Collect eligible allocation lines from the confirmed, filtered rows (only order_qty > 0).
   // Each line carries its bucket/month + the same source snapshots used by the 下單系統 table.
   const rows = _applyRequestOrderFilters(requestOrderState.data).filter(_roIsRowConfirmed);
-  const drafts = [];        // { item, lines: [{ bucket, month, orderQty, note, upc, carton, looseUnits, isPartial, ... }] }
+  const sendCycle = String(new Date().getFullYear());   // R4E5B — one stable planning cycle for this Send (manual id + execution key)
+  const drafts = [];        // { item, lines:[...], isCanonical, allocDraftId } — allocDraftId is the canonical lineage FK
   let partialCount = 0;     // manual partial-carton lines (allowed — recorded, never blocked)
   rows.forEach(function(item) {
+    // R4E5B §14/§18 — an already-executed (terminal submitted) SKU is never re-executed by a new Send.
+    if (typeof _roIsSubmittedSku_ === 'function' && _roIsSubmittedSku_(item.sku)) return;
     const edits = requestOrderState.allocEdits[_roAllocKey(item)] || {};
     const upc = parseFloat(item.boxSize) || 0;
     const lines = [];
@@ -2923,7 +2926,13 @@ async function handleSendRequest() {
         factoryStock: (item.factoryStock == null ? '' : item.factoryStock)
       });
     });
-    if (lines.length) drafts.push({ item: item, lines: lines });
+    // R4E5B §3/§5/§10 — the canonical allocation lineage FK for every line of this SKU: the AI/canonical draft id
+    // when one exists, else a DETERMINISTIC manual draft id (stable across retries → stable execution key).
+    var isCanon = (typeof _roIsCanonicalDraftSku_ === 'function') && _roIsCanonicalDraftSku_(item.sku);
+    var allocDraftId = isCanon
+      ? ((_roCanonicalDraftBySku[_roCanonKey_(item.sku)] || {}).draftId || '')
+      : _roManualDraftId_(item.company, item.country, item.marketplace, item.sku, sendCycle);
+    if (lines.length) drafts.push({ item: item, lines: lines, isCanonical: isCanon, allocDraftId: allocDraftId });
   });
 
   // NOTE: partial cartons are ALLOWED (non-blocking). They are recorded (full cartons + loose units +
@@ -2952,6 +2961,7 @@ async function handleSendRequest() {
         request_bucket: l.bucket, request_month: l.month,           // bucket PRESERVED per line (never merged)
         // country/marketplace flow into request_order_line_sources (source of truth for site allocation).
         country: d.item.country || '', marketplace: d.item.marketplace || '',
+        request_allocation_draft_id: d.allocDraftId || '',          // R4E5B canonical lineage FK + execution-key input
         units_per_carton: l.upc || '',
         calculation_method: l.isPartial ? 'manual_partial_carton' : 'manual_order_allocation', line_status: 'draft',
         note: (d.item.company || '--') + ' / ' + (d.item.country || '--') + ' / ' + (d.item.marketplace || '--') +
@@ -2982,49 +2992,56 @@ async function handleSendRequest() {
   // here (nothing downstream reads allocation status 'submitted'; Request Order/PO consume request_orders below).
   const DB = window.KM.DB;
   try {
-    const cycle = String(new Date().getFullYear());
-    const staleSkus = [];   // §9 fail-closed: canonical drafts that changed since the user last viewed them
+    const cycle = sendCycle;
+    const staleSkus = [];        // §9 fail-closed: canonical drafts that changed since the user last viewed them
+    const coveredDraftIds = [];  // §12 every allocation draft advanced to submitted AFTER request execution succeeds
     for (var di = 0; di < drafts.length; di++) {
       const d = drafts[di];
       const sku = d.item.sku;
-      if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(sku)) {
+      if (d.isCanonical) {
         // CONFIRM the existing canonical draft in place — reuse its id (NO second active authority). §9 optimistic
         // lock: pass the canonical token; the backend fails closed on a stale token / terminal status.
         const refD = _roCanonicalDraftBySku[_roCanonKey_(sku)];
         const tok = await _roEnsureDraftToken_(sku);
         try {
           await DB.upsertRequestOrderAllocationDraft({ request_allocation_draft_id: refD.draftId, status: 'site_confirmed', expectedToken: tok, updated_by: 'request-order' });
+          coveredDraftIds.push(refD.draftId);
         } catch (ce) {
           if (/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH|IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(String(ce && ce.message))) { staleSkus.push(sku); continue; }
           throw ce;
         }
       } else {
-        // MANUAL path (unchanged) — one canonical manual draft (user_created) + its lines. order_qty already
-        // reflects the manual effective value (never a live recompute); recommended_qty snapshot stays blank.
-        const hdr = await DB.upsertRequestOrderAllocationDraft({
-          planning_cycle: cycle, company: d.item.company || '', country: d.item.country || '',
-          marketplace: d.item.marketplace || '', sku: d.item.sku,
-          category_snapshot: d.item.category || '', series_snapshot: d.item.series || '',
-          status: 'site_confirmed', generation_type: 'user_created', draft_purpose: 'regular',
-          draft_version: 1, created_by: 'request-order'
-        });
-        const draftId = hdr && (hdr.request_allocation_draft_id || hdr.requestAllocationDraftId);
-        if (draftId) {
-          await DB.upsertRequestOrderAllocationDraftLines({
-            request_allocation_draft_id: draftId,
-            lines: d.lines.map(function(l) {
-              return {
-                request_month: l.month, request_bucket: l.bucket, order_qty: l.orderQty,
-                carton_qty: l.carton, units_per_carton: l.upc,
-                factory_available_qty_snapshot: l.factoryStock, destination_stock_snapshot: l.siteStock,
-                third_party_available_qty_snapshot: l.thirdPartyStock, regular_demand_snapshot: l.fcQty,
-                target_pct_snapshot: l.targetPct,
-                note: (l.isPartial ? ('[PARTIAL ' + (l.carton || 0) + 'ctn+' + (l.looseUnits || 0) + 'loose; suggested ' + l.suggestedQty + '; diff ' + l.orderVsSuggested + '] ') : '') + (l.note || ''),
-                allocation_method: l.isPartial ? 'manual_partial_carton' : 'manual'
-              };
-            })
+        // MANUAL path — ONE canonical manual draft addressed by a DETERMINISTIC id (d.allocDraftId), so a retry
+        // find-or-updates the SAME row (idempotent; never a new active authority). order_qty is the manual effective
+        // value (never a live recompute); recommended_qty snapshot stays blank; generation_type = user_created.
+        try {
+          await DB.upsertRequestOrderAllocationDraft({
+            request_allocation_draft_id: d.allocDraftId,
+            planning_cycle: cycle, company: d.item.company || '', country: d.item.country || '',
+            marketplace: d.item.marketplace || '', sku: d.item.sku,
+            category_snapshot: d.item.category || '', series_snapshot: d.item.series || '',
+            status: 'site_confirmed', generation_type: 'user_created', draft_purpose: 'regular',
+            draft_version: 1, created_by: 'request-order'
           });
+        } catch (me) {
+          if (/IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(String(me && me.message))) { staleSkus.push(sku); continue; }
+          throw me;
         }
+        await DB.upsertRequestOrderAllocationDraftLines({
+          request_allocation_draft_id: d.allocDraftId,
+          lines: d.lines.map(function(l) {
+            return {
+              request_month: l.month, request_bucket: l.bucket, order_qty: l.orderQty,
+              carton_qty: l.carton, units_per_carton: l.upc,
+              factory_available_qty_snapshot: l.factoryStock, destination_stock_snapshot: l.siteStock,
+              third_party_available_qty_snapshot: l.thirdPartyStock, regular_demand_snapshot: l.fcQty,
+              target_pct_snapshot: l.targetPct,
+              note: (l.isPartial ? ('[PARTIAL ' + (l.carton || 0) + 'ctn+' + (l.looseUnits || 0) + 'loose; suggested ' + l.suggestedQty + '; diff ' + l.orderVsSuggested + '] ') : '') + (l.note || ''),
+              allocation_method: l.isPartial ? 'manual_partial_carton' : 'manual'
+            };
+          })
+        });
+        coveredDraftIds.push(d.allocDraftId);
       }
     }
 
@@ -3038,23 +3055,34 @@ async function handleSendRequest() {
       return;
     }
 
-    // Downstream Request Order (request_orders) — UNCHANGED mechanism; quantities already sourced from the
-    // canonical persisted order_qty (or the manual effective value) when `drafts` was assembled above.
+    // §6/§16 EXACTLY-ONCE downstream execution — one Request Order per series, idempotency-guarded server-side by the
+    // deterministic execution key (source_ref_type=request_order_allocation_batch, source_ref_id=ROEXEC-…) computed
+    // from the covered allocation-draft-id SET. A double-click / two-tab / retry / lost response converges to ONE
+    // Request Order (created or reused). Lines carry request_allocation_draft_id (canonical lineage) + persisted qty.
     const createdNos = [];
+    let reusedCount = 0;
     const seriesKeys = Object.keys(bySeries);
     for (var si = 0; si < seriesKeys.length; si++) {
       const series = seriesKeys[si];
       const res = await DB.createRequestOrderDraft({
-        company: '', source: 'manual', source_ref_type: 'request_order_allocation',
+        company: '', source: 'manual', source_ref_type: 'request_order_allocation_batch',
+        planning_cycle: cycle, series: series,
         note: 'Send Request — series ' + series + ' (supplier/factory pending)',
         lines: bySeries[series]
       });
       if (res && (res.request_order_no || res.requestOrderNo)) createdNos.push(res.request_order_no || res.requestOrderNo);
+      if (res && res.reused) reusedCount++;
     }
 
-    // Reload the canonical drafts so the grid reflects the new site_confirmed state (single active authority).
+    // §11/§12 — advance the covered allocation drafts draft/site_confirmed → submitted ONLY NOW that the Request
+    // Order execution is proven to exist. Idempotent: an already-submitted draft is a safe no-op (§13). A submit
+    // failure surfaces below; a retry reuses the existing Request Order (by key) and finishes the lifecycle (§15).
+    if (coveredDraftIds.length) await DB.submitRequestOrderAllocationDrafts({ draft_ids: coveredDraftIds, submitted_by: 'request-order' });
+
+    // §16 success ONLY after the execution boundary is satisfied. §20 submitted leaves the active set on reload.
     if (typeof _roLoadCanonicalDraftsForScope_ === 'function') { _roLoadCanonicalDraftsForScope_(_roCanonicalScope_()); }
-    alert('✅ Send Request 完成\n\n' + typeLabel + '\n建立 Request Order Draft: ' + createdNos.length + ' 筆' +
+    alert('✅ Send Request 完成\n\n' + typeLabel + '\nRequest Order: ' + createdNos.length + ' 筆' +
+      (reusedCount ? ('（其中 ' + reusedCount + ' 筆為既有訂單，未重複建立）') : '') +
       (createdNos.length ? ('\n' + createdNos.join(', ')) : '') +
       '\n\n請到 Request Order Draft 頁面進行 Approve / Convert to PO。');
     renderRequestOrderTable();
@@ -3355,6 +3383,17 @@ function _roSendOrderQty_(item, idx, bucket, edit) {
   if (ref && ref.line.order_qty != null && ref.line.order_qty !== '') return Number(ref.line.order_qty);
   return _roEffectiveOrderQty(item, idx, edit);
 }
+// F1-4B-FM6-R4E5B — DETERMINISTIC manual allocation-draft id (grain + planning cycle). A manual (no-AI) Send must
+// be idempotent across retries: reusing this stable id makes upsertRequestOrderAllocationDraft find-or-update the
+// SAME row (never a new one), so the backend execution key stays stable → exactly one Request Order. Byte-stable.
+function _roManualDraftId_(company, country, marketplace, sku, cycle) {
+  function s(v) { return String(v == null ? '' : v).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_'); }
+  return 'RAD-M-' + [s(company), s(country), s(marketplace), s(sku), s(cycle)].join('-');
+}
+// §14/§18/§20 — SKUs already executed (terminal submitted allocation) per the last scope read-back. Excluded from a
+// new Send so a re-send never creates a second Request Order.
+var _roSubmittedSkus = {};
+function _roIsSubmittedSku_(sku) { return !!_roSubmittedSkus[_roCanonKey_(sku)]; }
 // __RO_EDIT_PURE_START__
 // PURE — the locked decision-edit command for ONE order_qty change. order_qty ONLY (recommended_qty / gap snapshot /
 // UPC are system-owned and never included). naturalKey = the canonical MONTHLY line grain {request_month, request_bucket}.
@@ -3389,6 +3428,8 @@ function _roLoadCanonicalDraftsForScope_(scope) {
     // §12 — record the scope's NO_DRAFT SKUs from THIS read-back so the grid can mark them "No active AI Plan draft"
     // (never a silent second quantity authority / frontend recompute fallback). Set is per-read (replaced each time).
     _roNoDraftSkus = {}; (data.noDraftSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) _roNoDraftSkus[k] = true; });
+    // R4E5B §14/§18/§20 — record already-executed (terminal submitted) SKUs so a re-send excludes them.
+    _roSubmittedSkus = {}; (data.submittedSkus || []).forEach(function (s) { var k = _roCanonKey_(s); if (k) _roSubmittedSkus[k] = true; });
     if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
     return next;
   }).catch(function () { return null; });

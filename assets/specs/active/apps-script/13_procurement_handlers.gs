@@ -61,7 +61,10 @@ var REQUEST_ORDER_LINE_SOURCES_HEADERS_ = [
   'forecast_qty', 'current_stock', 'on_the_way_qty', 'shortage_qty',
   'reallocation_qty', 'recommended_qty', 'requested_qty', 'approved_qty',
   'allocation_method', 'source_bucket', 'source_priority', 'source_type', 'note',
-  'created_at', 'updated_at'
+  'created_at', 'updated_at',
+  // F1-4B-FM6-R4E5B — canonical allocation lineage FK: the exact request_order_allocation_drafts row that
+  // caused this source contribution. Additive; historical rows stay blank (backward-compatible, never guessed).
+  'request_allocation_draft_id'
 ];
 
 // FINAL purchase_orders schema (PO v2). order_status is CANONICAL; legacy `status`, `expected_ready_date`,
@@ -635,23 +638,107 @@ function procurementFindRow_(sheet, idColName, idValue) {
 
 // ---- createRequestOrderDraft --------------------------------------
 
+// ============================================================
+// F1-4B-FM6-R4E5B — Request Order exactly-once execution + allocation lineage.
+// ============================================================
+// __RO_EXEC_PURE_START__
+// §1 canonical execution serialization (PURE, deterministic): company | planning_cycle | series | sorted-unique
+// allocation-draft-id set. Independent of timestamp / actor / row order / qty / frontend state. Same logical
+// input → byte-identical string; a different draft-id SET → a different string. (Node-testable; no Utilities.)
+function roExecCanonicalString_(company, planningCycle, series, draftIds) {
+  function s(v) { return String(v == null ? '' : v).trim(); }
+  var seen = {}, arr = [];
+  (draftIds || []).forEach(function (d) { var x = s(d); if (x && !seen[x]) { seen[x] = 1; arr.push(x); } });
+  arr.sort();
+  return [s(company), s(planningCycle), s(series), arr.join(',')].join('|');
+}
+// __RO_EXEC_PURE_END__
+// §1 the durable execution/idempotency key = ROEXEC-<sha256(canonical)>. The hash is the ONLY non-pure step
+// (Utilities); the determinism authority is the pure canonical string above.
+function roExecutionKey_(company, planningCycle, series, draftIds) {
+  var canon = roExecCanonicalString_(company, planningCycle, series, draftIds);
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, canon, Utilities.Charset.UTF_8);
+  var hex = digest.map(function (b) { return ('0' + ((b < 0 ? b + 256 : b)).toString(16)).slice(-2); }).join('');
+  return 'ROEXEC-' + hex.substring(0, 32).toUpperCase();
+}
+// §6 idempotency lookup — NON-cancelled request_orders whose source_ref_type + source_ref_id match the execution
+// identity. Bounded single read of request_orders (one scan per Send-series execution; §28). Legacy rows with a
+// blank source_ref_id never match a real ROEXEC key (§26).
+function roFindByExecutionKey_(roSheet, srcType, execKey) {
+  var data = roSheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var h = data[0].map(function (x) { return String(x).trim(); });
+  var cType = h.indexOf('source_ref_type'), cId = h.indexOf('source_ref_id'), cStatus = h.indexOf('request_status');
+  var cRoId = h.indexOf('request_order_id'), cNo = h.indexOf('request_order_no');
+  if (cType === -1 || cId === -1) return [];
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][cType]).trim() !== srcType) continue;
+    if (String(data[i][cId]).trim() !== execKey) continue;
+    var st = cStatus !== -1 ? String(data[i][cStatus]).trim().toLowerCase() : '';
+    if (st === 'cancelled') continue;
+    out.push({ request_order_id: String(data[i][cRoId]).trim(), request_order_no: cNo !== -1 ? String(data[i][cNo]).trim() : '' });
+  }
+  return out;
+}
+// §8 compensation — delete every row this execution wrote (all share request_order_id), bottom-up, across the
+// three tables. Scoped to THIS request_order_id only (never another execution's rows).
+function roDeleteRequestOrderById_(ss, roId) {
+  ['request_order_lines', 'request_order_line_sources', 'request_orders'].forEach(function (name) {
+    var sh = ss.getSheetByName(name); if (!sh) return;
+    var data = sh.getDataRange().getValues(); if (data.length < 2) return;
+    var c = data[0].map(function (x) { return String(x).trim(); }).indexOf('request_order_id'); if (c === -1) return;
+    for (var i = data.length - 1; i >= 1; i--) { if (String(data[i][c]).trim() === roId) sh.deleteRow(i + 1); }
+  });
+}
+
 /**
  * Create ONE Request Order Draft (Procurement Planning Draft) + its lines. Body:
  *   { company?, supplier_id?, supplier_name?, factory_id?, warehouse_id?, source?, currency?,
- *     note?, created_by?, source_ref_type?, source_ref_id?,
+ *     note?, created_by?, source_ref_type?, source_ref_id?, planning_cycle?, series?,
  *     lines: [ { sku, product_name?, series?, requested_qty, units_per_carton?, supplier_id?,
  *                supplier_name?, supplier_sku?, unit_cost?, currency?, need_reason?,
- *                related_entity_type?, related_entity_id? } ] }
+ *                request_allocation_draft_id?, related_entity_type?, related_entity_id? } ] }
  * status=draft, request_order_version=1, parent=self. approved_qty defaults to requested_qty.
+ *
+ * R4E5B EXACTLY-ONCE: when source_ref_type = 'request_order_allocation_batch', creation is idempotency-guarded
+ * under the canonical ScriptLock — the execution key (§1) is stored in source_ref_id and pre-checked so a
+ * double-click / two-tab / network-retry / lost-response converges to MAX ONE Request Order. Other callers
+ * (manual procurement drafts with no allocation batch) keep the existing unguarded append behavior.
  */
+var RO_EXEC_SOURCE_REF_TYPE_ = 'request_order_allocation_batch';
 function handleCreateRequestOrderDraft_(body) {
   var lines = (body && body.lines) || [];
   if (!lines.length) return jsonResponse_({ success: false, error: 'No lines provided' });
+  var srcType = String((body && body.source_ref_type) || '').trim();
+  if (srcType !== RO_EXEC_SOURCE_REF_TYPE_) return roCreateRequestOrderCore_(body, '');   // non-allocation caller: unchanged
 
+  // §6/§7 exactly-once under the canonical lock: compute key → pre-check → reuse / fail-closed / create.
+  var execKey = roExecutionKey_(body.company, body.planning_cycle, body.series, lines.map(function (l) { return l && l.request_allocation_draft_id; }));
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try {
+    var ssX = SpreadsheetApp.getActiveSpreadsheet();
+    var roSheetX = procurementEnsureSheet_(ssX, 'request_orders', REQUEST_ORDERS_HEADERS_);
+    var existing = roFindByExecutionKey_(roSheetX, RO_EXEC_SOURCE_REF_TYPE_, execKey);
+    if (existing.length === 1) return jsonResponse_({ success: true, data: { request_order_id: existing[0].request_order_id, request_order_no: existing[0].request_order_no, reused: true, execution_key: execKey } });
+    if (existing.length > 1) return jsonResponse_({ success: false, error: 'REQUEST_ORDER_EXECUTION_DUPLICATE_CONFLICT', stage: 'idempotency', detail: existing.map(function (x) { return x.request_order_no; }).join(',') });
+    return roCreateRequestOrderCore_(body, execKey);
+  } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort */ } }
+}
+
+// The row-writing core (create exactly one Request Order + lines + sources). execKey (when non-blank) is stored as
+// source_ref_id. Header/line/source writes are compensated (deleted by request_order_id) on any failure (§8).
+function roCreateRequestOrderCore_(body, execKey) {
+  var lines = (body && body.lines) || [];
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var roSheet = procurementEnsureSheet_(ss, 'request_orders', REQUEST_ORDERS_HEADERS_);
   var rolSheet = procurementEnsureSheet_(ss, 'request_order_lines', REQUEST_ORDER_LINES_HEADERS_);
   var srcSheet = procurementEnsureSheet_(ss, 'request_order_line_sources', REQUEST_ORDER_LINE_SOURCES_HEADERS_);
+  // §3/§20 additive-column ensure — add request_allocation_draft_id to an EXISTING sheet (the canonical ensure
+  // owner; procurementAppendByHeader_ only writes columns that physically exist, so this must run first).
+  try { sheetEnsureColumns_(srcSheet, ['request_allocation_draft_id']); } catch (eCol) { /* ensure best-effort; historical blank OK */ }
   var upcMap = procurementUpcMap_(ss);
   var infoMap = procurementSkuInfoMap_(ss);
 
@@ -687,6 +774,9 @@ function handleCreateRequestOrderDraft_(body) {
   var distinctSku = {};   // total_sku = COUNT(DISTINCT sku), never line count
   var buckets = [];
 
+  // §8 atomicity — all rows written below share request_order_id; on ANY failure compensate (delete-by-id) so no
+  // orphan header/lines/sources remain, then surface the failure (retry then re-creates exactly once via the key).
+  try {
   for (var j = 0; j < lines.length; j++) {
     var l = lines[j] || {};
     var sku = String(l.sku || '').trim();
@@ -775,6 +865,9 @@ function handleCreateRequestOrderDraft_(body) {
       source_bucket: bucket,                                         // T1 / T2 / T3
       source_priority: procurementSourcePriority_(bucket),           // T1=1 / T2=2 / T3=3
       source_type: 'request_order_draft',
+      // §3/§10 canonical allocation lineage FK — the EXACT request_order_allocation_drafts row that produced this
+      // contribution (supplied verbatim by the caller from canonical DB truth; never derived from sku/status/time).
+      request_allocation_draft_id: String((l.request_allocation_draft_id) || '').trim(),
       note: String(l.note || '').trim(),
       created_at: now,
       updated_at: now
@@ -808,7 +901,9 @@ function handleCreateRequestOrderDraft_(body) {
     currency: currency,
     source: source,
     source_ref_type: String((body && body.source_ref_type) || '').trim(),
-    source_ref_id: String((body && body.source_ref_id) || '').trim(),
+    // §2 idempotency authority: the deterministic execution key (when this is an allocation-batch execution);
+    // otherwise the caller's own source_ref_id (unchanged for non-allocation callers).
+    source_ref_id: String(execKey || (body && body.source_ref_id) || '').trim(),
     created_by: createdBy,
     created_at: now,
     note: String((body && body.note) || '').trim(),
@@ -816,7 +911,13 @@ function handleCreateRequestOrderDraft_(body) {
     updated_at: now
   });
 
-  return jsonResponse_({ success: true, data: { request_order_id: requestOrderId, request_order_no: requestOrderNo, line_count: lineCount, total_qty: totalQty } });
+  return jsonResponse_({ success: true, data: { request_order_id: requestOrderId, request_order_no: requestOrderNo, line_count: lineCount, total_qty: totalQty, execution_key: (execKey || ''), reused: false } });
+  } catch (writeErr) {
+    // §8 compensation — remove any header/line/source rows this execution wrote, then surface the failure. A retry
+    // recomputes the SAME execution key and creates exactly one Request Order (no orphan, no duplicate).
+    try { roDeleteRequestOrderById_(ss, requestOrderId); } catch (compErr) { /* best-effort cleanup */ }
+    return jsonResponse_({ success: false, error: 'REQUEST_ORDER_WRITE_FAILED:' + (writeErr && writeErr.message ? writeErr.message : writeErr), stage: 'write', compensated: true });
+  }
 }
 
 // ---- updateRequestOrderStatus -------------------------------------

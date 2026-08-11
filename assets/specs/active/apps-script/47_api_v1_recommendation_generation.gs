@@ -234,20 +234,38 @@ function recGenHeaderDto_(h, scope, sku) {
     calculation_run_id: r4e2Str_(h.calculation_run_id), formula_version: r4e2Str_(h.formula_version),
     source_data_as_of: r4e2Str_(h.source_data_as_of), draft_version: r4e2Num_(h.draft_version) };
 }
-// PURE: scope-level read-back over eligible SKUs → { drafts:[{header,lines}], conflicts:[{sku,conflictIds}], noDraftSkus:[] }.
-// Distinguishes PERSISTED (1 active) / NO_DRAFT (0) / BLOCKED_CONFLICT (>1) per SKU. Sorted SKU ASC (§18).
+// F1-4B-FM6-R4E5B §14/§18/§20 — SKUs whose allocation for this scope(+cycle) is TERMINAL `submitted` (already
+// executed into a Request Order). Reported so the client can EXCLUDE them from a new Send (re-send safety) and show
+// them as executed — WITHOUT keeping a submitted draft artificially active (getActive active set is unchanged).
+function recGenSubmittedSkusForScope_(headerRows, scope, planningCycle) {
+  var lc = function (v) { return r4e2Str_(v).toLowerCase(); }, seen = {}, out = [];
+  for (var i = 0; i < (headerRows || []).length; i++) {
+    var h = headerRows[i];
+    if (lc(h.company) !== lc(scope.company) || lc(h.country) !== lc(scope.country) || lc(h.marketplace) !== lc(scope.marketplace)) continue;
+    if (planningCycle && r4e2Str_(h.planning_cycle) !== planningCycle) continue;
+    if (lc(h.status) !== 'submitted') continue;
+    var sku = r4e2Str_(h.sku); if (sku && !seen[sku]) { seen[sku] = 1; out.push(sku); }
+  }
+  out.sort();
+  return out;
+}
+// PURE: scope-level read-back over eligible SKUs → { drafts:[{header,lines}], conflicts:[{sku,conflictIds}],
+// noDraftSkus:[], submittedSkus:[] }. Distinguishes PERSISTED (1 active) / NO_DRAFT (0) / BLOCKED_CONFLICT (>1) per
+// SKU. Sorted SKU ASC (§18). submittedSkus is additive (existing consumers ignore it).
 function recGenBuildScopeReadback_(headerRows, lineRows, eligibleSkus, scope, planningCycle) {
   var drafts = [], conflicts = [], noDraftSkus = [];
+  var submittedSkus = recGenSubmittedSkusForScope_(headerRows, scope, planningCycle);
+  var submittedSet = {}; submittedSkus.forEach(function (s) { submittedSet[String(s).toLowerCase()] = 1; });
   for (var i = 0; i < (eligibleSkus || []).length; i++) {
     var sku = eligibleSkus[i];
     var hs = recGenActiveHeadersForSku_(headerRows, scope, sku, planningCycle);
-    if (hs.length === 0) { noDraftSkus.push(sku); continue; }
+    if (hs.length === 0) { if (!submittedSet[String(sku).toLowerCase()]) noDraftSkus.push(sku); continue; }   // already-executed ≠ never-planned
     if (hs.length > 1) { conflicts.push({ sku: sku, conflictIds: hs.map(function (h) { return r4e2Str_(h.request_allocation_draft_id); }) }); continue; }
     var h = hs[0];
     drafts.push({ header: recGenHeaderDto_(h, scope, sku), lines: recGenLinesForDraft_(lineRows, r4e2Str_(h.request_allocation_draft_id)) });
   }
   drafts.sort(function (a, b) { return a.header.sku < b.header.sku ? -1 : (a.header.sku > b.header.sku ? 1 : 0); });
-  return { scope: scope, drafts: drafts, conflicts: conflicts, noDraftSkus: noDraftSkus };
+  return { scope: scope, drafts: drafts, conflicts: conflicts, noDraftSkus: noDraftSkus, submittedSkus: submittedSkus };
 }
 // __GAPDRAFT_PURE_END__
 

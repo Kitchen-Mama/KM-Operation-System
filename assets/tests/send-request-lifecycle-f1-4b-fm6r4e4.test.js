@@ -61,7 +61,7 @@ _snap = { draft: null };
 eq(raVerifyDraftToken_('D1', { draft_version: 2, userEditFingerprint: 'FP-0' }).error, 'DRAFT_NOT_FOUND', 'missing draft → fail closed');
 
 console.log('\n== §3/§16 confirm in place (no competing active row) ==');
-ok(/_roIsCanonicalDraftSku_\(sku\)/.test(send), 'Send routes canonical-draft SKUs to the confirm path');
+ok(/_roIsCanonicalDraftSku_\(item\.sku\)/.test(send) && /if \(d\.isCanonical\)/.test(send), 'Send routes canonical-draft SKUs to the confirm path (R4E5B: routing captured as d.isCanonical)');
 ok(/upsertRequestOrderAllocationDraft\(\{ request_allocation_draft_id: refD\.draftId, status: 'site_confirmed', expectedToken: tok, updated_by: 'request-order' \}\)/.test(send), '§3/§16 canonical SKU CONFIRMS the SAME draft in place (reuse id; NO new active row)');
 ok(!/request_allocation_draft_id: refD\.draftId[\s\S]{0,120}generation_type/.test(send), '§4 confirm does NOT set generation_type (provenance preserved by the in-place update)');
 ok(/refD\.draftId/.test(send) && /_roCanonicalDraftBySku\[_roCanonKey_\(sku\)\]/.test(send), 'confirm reuses the CACHED canonical draft id (from ONE getActive; no per-SKU readback fan-out)');
@@ -76,7 +76,9 @@ ok(/if \(staleSkus\.length\) \{[\s\S]{0,400}return;/.test(send), '§9 any stale 
 ok(/staleSkus[\s\S]{0,400}_roLoadCanonicalDraftsForScope_/.test(send), '§9 fail-closed reloads the latest canonical truth for review + retry');
 
 console.log('\n== §3/§17 no submit-to-terminal; downstream preserved ==');
-ok(!/submitRequestOrderAllocationDrafts/.test(send), '§3/§17 the submit-to-terminal step is retired — confirmation END STATE is site_confirmed (active)');
+// R4E4 retired the submit step; F1-4B-FM6-R4E5B RESTORES it as the post-execution lifecycle (site_confirmed →
+// submitted ONLY after the Request Order execution succeeds). See send-request-exactly-once-f1-4b-fm6r4e5b.test.js.
+ok(/submitRequestOrderAllocationDrafts\(\{ draft_ids: coveredDraftIds/.test(send), '§11 (R4E5B) submit runs AFTER request execution, over the covered draft ids');
 ok(/createRequestOrderDraft/.test(send), '§14/§17.K downstream Request Order (request_orders) creation preserved (consumable by the existing path)');
 
 console.log('\n== §10/§18 no frontend recommendation/gap recompute for execution (I) ==');
