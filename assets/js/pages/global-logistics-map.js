@@ -273,8 +273,6 @@
       return true;
     });
   }
-  // Shipments in the runtime view with no drawable placement → Coordinate Pending tray.
-  function pendingShipments() { return filteredVms().filter(function (v) { return resolveShipmentPlacement(v).kind === 'pending'; }); }
 
   // ---------- render shell ----------
   function render() {
@@ -333,32 +331,33 @@
     all.sort(function (a, b) { return ATTENTION_ORDER.indexOf(a.id) - ATTENTION_ORDER.indexOf(b.id); });
     return all;
   }
-  function attentionChipHtml(k) {
-    var active = state.filters.kpi === k.id;
-    return '<button type="button" class="glm-chip glm-chip--' + k.tone + (active ? ' is-active' : '') + '" data-kpi="' + k.id + '" aria-pressed="' + active + '">' +
-      '<span class="glm-chip__label">' + esc(k.label) + '</span><span class="glm-chip__count">' + num(k.value) + '</span></button>';
+  // R11 §1 — ONE shared compact KPI tile used by BOTH Shipment Status and Attention (same height/radius/border/
+  // typography/padding; only the semantic accent differs). `clickable` renders a data-kpi filter button (Attention);
+  // otherwise a display-only div (Shipment Status). Data logic stays separate — only presentation is unified.
+  function glmKpiTileHtml(opts) {
+    var accent = ' glm-kpi-tile--' + opts.accent;
+    var title = opts.title ? ' title="' + esc(opts.title) + '"' : '';
+    var inner = '<span class="glm-kpi-tile__value">' + num(opts.value) + '</span><span class="glm-kpi-tile__label">' + esc(opts.label) + '</span>';
+    if (opts.clickable) {
+      var active = state.filters.kpi === opts.kpi;
+      return '<button type="button" class="glm-kpi-tile glm-kpi-tile--clickable' + accent + (active ? ' is-active' : '') + '" data-kpi="' + opts.kpi + '" aria-pressed="' + active + '"' + title + '>' + inner + '</button>';
+    }
+    return '<div class="glm-kpi-tile' + accent + '"' + title + '>' + inner + '</div>';
   }
+  // §2 — Attention shows ALL categories, ALWAYS (no More/collapse); each is a clickable KPI-filter tile (§16).
   function renderAttentionRow() {
     var all = attentionIndicators();
-    var primary = all.filter(function (k) { return k.id !== 'deliveredToday' && k.value > 0; });   // §7 nonzero alerts only
-    var more = all.filter(function (k) { return primary.indexOf(k) < 0; });                         // §9 Delivered Today + zero-value → More
-    var chips = primary.map(attentionChipHtml).join('');
-    var empty = primary.length ? '' : '<span class="glm-attention__empty">No attention items</span>';   // §E no row of six zeros
-    var moreHtml = more.length
-      ? '<details class="glm-attention__more"><summary>More</summary><div class="glm-attention__morechips">' + more.map(attentionChipHtml).join('') + '</div></details>'
-      : '';
+    var tiles = all.map(function (k) { return glmKpiTileHtml({ accent: k.tone, value: k.value, label: k.label, clickable: true, kpi: k.id }); }).join('');
     var clear = state.filters.kpi ? '<button type="button" class="glm-btn glm-btn--small" data-act="clear-kpi">Clear</button>' : '';
-    return '<div class="glm-attention" role="group" aria-label="Attention indicators">' +
-      '<div class="glm-attention__chips">' + chips + empty + '</div>' + moreHtml + clear + '</div>';
+    return '<div class="glm-kpirail" role="group" aria-label="Attention indicators">' + tiles + clear + '</div>';
   }
 
-  // §13 backend-status summary (reflects the SAME filtered collection that drives list + map). Returns the
-  // lifecycle stat cards; renderSummaryRegion nests it beside the operational KPIs in ONE coherent region.
+  // §13 backend-status summary (reflects the SAME filtered collection that drives list + map). Display-only tiles
+  // (no filter — R8C §16), rendered in the SAME shared KPI-tile family as Attention.
   function renderStatusSummary() {
     var sm = glmStatusSummary(filteredVms()).filter(function (b) { return b.key !== 'other' || b.count > 0; });
-    return '<div class="glm-status-summary" role="group" aria-label="Shipment lifecycle status summary">' + sm.map(function (b) {
-      var title = (b.key === 'other' && b.statuses && b.statuses.length) ? ' title="' + esc(b.statuses.join(', ')) + '"' : '';
-      return '<div class="glm-statcard glm-statcard--' + b.key + '"' + title + '><span class="glm-statcard__value">' + num(b.count) + '</span><span class="glm-statcard__label">' + esc(b.label) + '</span></div>';
+    return '<div class="glm-kpirail glm-kpirail--status" role="group" aria-label="Shipment lifecycle status summary">' + sm.map(function (b) {
+      return glmKpiTileHtml({ accent: b.key, value: b.count, label: b.label, title: (b.key === 'other' && b.statuses && b.statuses.length) ? b.statuses.join(', ') : '' });
     }).join('') + '</div>';
   }
 
@@ -390,8 +389,16 @@
       selHtml('Destination', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, IL) +
       selHtml('Carrier', 'carrier', optSet(vms, function (v) { return v.carrier; }), f.carrier, IL) +
       selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, IL) +
-      '<label class="glm-field glm-field--inline"><span>ETA From</span><input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '"></label>' +
-      '<label class="glm-field glm-field--inline"><span>ETA To</span><input type="date" data-filter="etaTo" value="' + esc(f.etaTo) + '"></label>' +
+      // R11 §6/§7 — ONE "ETA Date" control (was ETA From + ETA To). The from→to RANGE SEMANTICS are frozen
+      // (data-filter="etaFrom"/"etaTo" over shipments.eta — §8), presented as a single labeled range field echoing
+      // the Forecast Review Date filter's label treatment. (Forecast's Date is a page-private custom calendar popup
+      // in forecast.js — not a shared abstraction — so its style is matched, not its popup reused.)
+      '<label class="glm-field glm-field--inline glm-field--eta"><span>ETA Date</span>' +
+        '<span class="glm-eta-range">' +
+          '<input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '" aria-label="ETA from">' +
+          '<span class="glm-eta-range__sep" aria-hidden="true">–</span>' +
+          '<input type="date" data-filter="etaTo" value="' + esc(f.etaTo) + '" aria-label="ETA to">' +
+        '</span></label>' +
       '<button type="button" class="glm-btn glm-btn--small" data-act="clear-filters">Clear Filters</button>' +
       '</div>';
   }
@@ -417,12 +424,14 @@
       // backend-derived shipment status (never computed here) — Partially Received / Received are visibly distinct.
       var st = low(v.status), stCls = st ? st.replace(/[^a-z0-9]+/g, '-') : 'unknown';
       var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '">' + esc(v.status || '—') + '</span>';
+      // R11 §9/§12 — ROW 1: Shipment ID alone (full card width). ROW 2: compact badges (status · flags · issue ·
+      // coord pending) — never competing with the ID width. ROW 3+: route / method / stage · ETA.
       return '<div class="glm-ship' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" tabindex="0" role="button" aria-label="Shipment ' + esc(v.shipmentNo) + '">' +
-        '<div class="glm-ship__hd"><span class="glm-ship__no">' + esc(v.shipmentNo) + '</span>' + flag + issueBadge + '</div>' +
-        '<div class="glm-ship__route">' + esc(v.originCountry || v.shipFrom || '?') + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + ' ' + posBadge + '</div>' +
+        '<div class="glm-ship__idrow"><span class="glm-ship__no">' + esc(v.shipmentNo) + '</span></div>' +
+        '<div class="glm-ship__badges">' + statusPill + flag + issueBadge + posBadge + '</div>' +
+        '<div class="glm-ship__route">' + esc(v.originCountry || v.shipFrom || '?') + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
         '<div class="glm-ship__meta">' + esc(v.carrier || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
         '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || '—') + '</div>' +
-        '<div class="glm-ship__statusrow">' + statusPill + '</div>' +
         '</div>';
     }).join('');
     return '<div class="glm-panel"><h3 class="glm-panel__title">Shipments (' + vms.length + ')</h3><div class="glm-shiplist">' + rows + '</div></div>';
@@ -430,7 +439,6 @@
 
   // ---------- map shell (persistent WebGL globe host) ----------
   function renderMapShell() {
-    var pend = (state.mode === 'runtime') ? pendingShipments() : [];
     return '' +
       '<div class="glm-globe-slot" data-glm="globe-slot"></div>' +
       '<div class="glm-tip" data-glm="tip" aria-hidden="true"></div>' +
@@ -448,17 +456,9 @@
           '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showPlannedRoute"' + (state.showPlannedRoute ? ' checked' : '') + '> Route arcs</label>' +
           '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showReference"' + (state.showReference ? ' checked' : '') + '> Reference pins</label>' +
         '</div>' : '') +
-      (pend.length ? renderPendingTray(pend) : '') +
+      // R11 §13/§14 — the map surface is NOT a second shipment list. The former Coordinate-Pending tray is removed;
+      // coordinate-pending shipments remain in the canonical LEFT list (with their Coord Pending badge, clickable).
       '<details class="glm-legend" data-glm="legend"><summary>Legend</summary>' + legendHtml() + '</details>';
-  }
-  function renderPendingTray(pend) {
-    var items = pend.map(function (v) {
-      return '<button type="button" class="glm-tray__item' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" aria-label="Coordinate pending shipment ' + esc(v.shipmentNo) + '">' +
-        '<span class="glm-tray__ico" aria-hidden="true">◌</span>' +
-        '<span class="glm-tray__no">' + esc(v.shipmentNo) + '</span>' +
-        '<span class="glm-tray__meta">' + esc(v.status || '—') + ' · ' + esc(shipMode(v)) + ' · ETA ' + esc(v.eta || '—') + '</span></button>';
-    }).join('');
-    return '<div class="glm-tray" role="group" aria-label="Coordinate Pending shipments"><div class="glm-tray__hd">◌ Coordinate Pending (' + pend.length + ')</div><div class="glm-tray__list">' + items + '</div></div>';
   }
   function legendHtml() {
     function row(c, lbl) { return '<div class="glm-legend__row"><span class="glm-legend__dot glm-mk--' + c + '"></span>' + esc(lbl) + '</div>'; }

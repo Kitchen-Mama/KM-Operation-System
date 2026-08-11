@@ -107,28 +107,40 @@
 .glm-summary { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; margin-bottom: 16px; }
 .glm-summary__group { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .glm-summary__label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--glm-ink-4); }
-.glm-summary .glm-status-summary, .glm-summary .glm-kpis, .glm-summary .glm-attention { margin-bottom: 0; }
-.glm-summary__group--status { flex: 1 1 auto; }
+.glm-summary .glm-kpirail { margin-bottom: 0; }
+.glm-summary__group--status { flex: 0 1 auto; }
 .glm-summary__group--attention { flex: 1 1 auto; }
 
-/* R8C §7/§18 — Attention: low-visual-weight chip row (secondary to Shipment Status). Nonzero alert chips only by
-   default; zero-value + Delivered Today live under "More". Chips are compact, horizontally scrollable if needed. */
-.glm-attention { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-.glm-attention__chips { display: flex; flex-wrap: nowrap; gap: 8px; overflow-x: auto; max-width: 100%; }
-.glm-attention__empty { font-size: 12px; color: var(--glm-ink-4); font-style: italic; }
-.glm-chip { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; border: 1px solid var(--glm-line); border-radius: 999px; padding: 4px 11px; background: var(--glm-surface); cursor: pointer; font-size: 12px; font-weight: 600; color: var(--glm-ink-2, var(--glm-ink)); box-shadow: var(--glm-shadow-sm); transition: border-color var(--glm-fast) var(--glm-ease), background var(--glm-fast) var(--glm-ease); }
-.glm-chip:hover { border-color: var(--glm-brand); }
-.glm-chip.is-active { border-color: var(--glm-brand); box-shadow: 0 0 0 1.5px var(--glm-brand) inset; }
-.glm-chip__count { font-variant-numeric: tabular-nums; font-weight: 750; min-width: 1ch; text-align: center; padding: 0 5px; border-radius: 999px; background: var(--glm-surface-2, #f1f5f9); }
-.glm-chip--danger { color: #991b1b; } .glm-chip--danger .glm-chip__count { background: #fee2e2; }
-.glm-chip--warn { color: #92400e; } .glm-chip--warn .glm-chip__count { background: #fef3c7; }
-.glm-chip--good { color: #166534; } .glm-chip--good .glm-chip__count { background: #dcfce7; }
-.glm-chip--info { color: #1e40af; } .glm-chip--info .glm-chip__count { background: #dbeafe; }
-.glm-chip--done { color: #475569; } .glm-chip--done .glm-chip__count { background: #f1f5f9; }
-.glm-attention__more { flex: 0 0 auto; font-size: 12px; }
-.glm-attention__more > summary { cursor: pointer; color: var(--glm-ink-3); font-weight: 600; list-style: none; padding: 4px 6px; }
-.glm-attention__more > summary::-webkit-details-marker { display: none; }
-.glm-attention__morechips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* R11 §1/§3/§4 — ONE shared COMPACT KPI tile family for BOTH Shipment Status and Attention (identical height /
+   radius / border / number + label typography / padding / gap; only the semantic accent differs). ~10% smaller
+   footprint than the prior status cards. Attention tiles are clickable KPI filters; Status tiles are display-only. */
+.glm-kpirail { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.glm-kpi-tile { display: flex; flex-direction: column; gap: 2px; flex: 0 0 auto; min-width: 116px; padding: 8px 13px 7px; border: 1px solid var(--glm-line); border-radius: var(--glm-r); background: var(--glm-surface); position: relative; box-shadow: var(--glm-shadow-sm); text-align: left; }
+.glm-kpi-tile::before { content: ""; position: absolute; left: 13px; right: 13px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--glm-neutral); opacity: 0.9; }
+.glm-kpi-tile__value { font-size: 20px; font-weight: 750; color: var(--glm-ink); line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.glm-kpi-tile__label { font-size: 11px; color: var(--glm-ink-3); font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+.glm-kpi-tile--clickable { cursor: pointer; transition: transform var(--glm-fast) var(--glm-ease), box-shadow var(--glm-fast) var(--glm-ease), border-color var(--glm-fast) var(--glm-ease); }
+.glm-kpi-tile--clickable:hover { transform: translateY(-1px); box-shadow: var(--glm-shadow); }
+.glm-kpi-tile.is-active { border-color: var(--glm-brand); box-shadow: 0 0 0 1.5px var(--glm-brand) inset, var(--glm-shadow); }
+/* accents — Shipment Status keys */
+.glm-kpi-tile--inTransit::before { background: var(--glm-info); }
+.glm-kpi-tile--partiallyReceived::before { background: var(--glm-warn); }
+.glm-kpi-tile--received::before { background: var(--glm-good); }
+.glm-kpi-tile--other::before { background: var(--glm-neutral); }
+/* accents — Attention tones */
+.glm-kpi-tile--info::before { background: var(--glm-info); }
+.glm-kpi-tile--warn::before { background: var(--glm-warn); }
+.glm-kpi-tile--good::before { background: var(--glm-good); }
+.glm-kpi-tile--danger::before { background: var(--glm-danger); }
+.glm-kpi-tile--done::before { background: var(--glm-neutral); }
+
+/* R11 §6/§7 — ETA Date: ONE compact from→to range field echoing the Forecast Review Date filter's label treatment
+   (Forecast's Date is a page-private custom calendar popup, not a shared component — style matched, popup not reused). */
+.glm-field--eta { min-width: 208px; }
+.glm-eta-range { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--glm-line); border-radius: var(--glm-r-xs); background: var(--glm-surface); padding: 1px 6px; }
+.glm-eta-range input[type="date"] { border: none; padding: 5px 2px; font-size: 12px; background: transparent; box-shadow: none; width: auto; min-width: 0; }
+.glm-eta-range input[type="date"]:focus { outline: none; box-shadow: none; }
+.glm-eta-range__sep { color: var(--glm-ink-4); font-size: 12px; }
 
 /* R8C §13 — restrained per-shipment issue pill (amber text/pill; never a large orange block). */
 .glm-badge--issue { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
@@ -137,9 +149,15 @@
 .glm-issue__line { margin: 0 0 8px; font-size: 12px; line-height: 1.5; color: var(--glm-ink-2, var(--glm-ink)); }
 .glm-issue__line:last-child { margin-bottom: 0; }
 
+/* ---- R11 §9/§12 — Shipment ID on its own row; compact badges on a dedicated second row (never competing with
+   the ID width). ROW 3+ = route / method / stage · ETA. ---- */
+.glm-ship__idrow { display: flex; align-items: center; }
+.glm-ship__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 5px; }
+.glm-ship__badges:empty { display: none; margin-top: 0; }
+/* R11 §10 — compact card chips (smaller font/height/padding; consistent radius + baseline; still readable). */
+.glm-ship__badges .glm-badge { font-size: 10px; padding: 1px 7px; line-height: 1.5; }
 /* ---- Card backend-status pill (R8B §5; backend-derived, never computed in JS) ---- */
-.glm-ship__statusrow { margin-top: 6px; }
-.glm-ship__status { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--glm-line); background: var(--glm-surface-2); color: var(--glm-ink-2); text-transform: capitalize; }
+.glm-ship__status { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--glm-line); background: var(--glm-surface-2); color: var(--glm-ink-2); text-transform: capitalize; line-height: 1.5; }
 .glm-ship__status--partially_received { background: rgba(217,119,6,0.12); border-color: rgba(217,119,6,0.35); color: #b45309; }
 .glm-ship__status--received, .glm-ship__status--completed, .glm-ship__status--delivered { background: rgba(22,163,74,0.12); border-color: rgba(22,163,74,0.35); color: #15803d; }
 .glm-ship__status--in_transit, .glm-ship__status--shipped, .glm-ship__status--arrived, .glm-ship__status--ready_to_ship { background: rgba(2,132,199,0.12); border-color: rgba(2,132,199,0.35); color: #0369a1; }

@@ -38,7 +38,7 @@ eval(/var GLM_STATUS_BUCKETS_ = \[[\s\S]*?\];/.exec(SRC)[0]);
 eval(extractFn(SRC, 'glmShipmentIssues'));
 eval(extractFn(SRC, 'glmStatusSummary'));
 eval(extractFn(SRC, 'attentionIndicators'));
-eval(extractFn(SRC, 'attentionChipHtml'));
+eval(extractFn(SRC, 'glmKpiTileHtml'));   // R11: unified tile builder (replaced attentionChipHtml)
 eval(extractFn(SRC, 'renderAttentionRow'));
 
 // =============================================================================
@@ -49,25 +49,18 @@ eq(counts([{ status: 'partially_received' }]).partiallyReceived, 1, 'B partially
 eq(counts([{ status: 'received' }]).received, 1, 'C received → Received = 1');
 eq(counts([{ status: 'in_transit' }, { status: 'shipped' }, { status: 'arrived' }]).inTransit, 3, 'In Transit bucket = shipped/in_transit/arrived');
 
-console.log('\n== Attention chips (D/E/§8/§9) ==');
+console.log('\n== Attention tiles (R11 supersedes R8C More/collapse) ==');
 // §8 — On the Way is dropped from Attention (baseline active population, not an alert)
 _kpis = [{ id: 'onTheWay', label: 'On the Way', tone: 'info', value: 7 }, { id: 'delayed', label: 'Delayed', tone: 'danger', value: 1 }, { id: 'exception', label: 'Exceptions', tone: 'danger', value: 0 }, { id: 'arrivingSoon', label: 'Arriving Soon', tone: 'good', value: 0 }, { id: 'customs', label: 'Customs Clearance', tone: 'warn', value: 0 }, { id: 'deliveredToday', label: 'Delivered Today', tone: 'done', value: 0 }];
 ok(!attentionIndicators().some(function (k) { return k.id === 'onTheWay'; }), '§8 On the Way removed from Attention (redundant with Shipment Status In Transit)');
-// D — Delayed=1, others 0: primary row shows Delayed only; the zero alerts + Delivered Today go under More.
-var dHtml = renderAttentionRow();
-var dPrimary = dHtml.slice(dHtml.indexOf('glm-attention__chips'), dHtml.indexOf('glm-attention__more') >= 0 ? dHtml.indexOf('glm-attention__more') : dHtml.length);
-ok(/data-kpi="delayed"/.test(dPrimary), 'D Delayed chip is in the primary row');
-ok(!/data-kpi="exception"/.test(dPrimary) && !/data-kpi="arrivingSoon"/.test(dPrimary), 'D zero-value alerts are NOT in the primary row');
-ok(/glm-attention__more/.test(dHtml) && /data-kpi="deliveredToday"/.test(dHtml), '§9 Delivered Today lives under More (never the default row)');
-ok(!/data-kpi="deliveredToday"/.test(dPrimary), '§9 Delivered Today is not a primary chip');
-// E — all zero: restrained empty state; no row of six zeros
-_kpis = [{ id: 'onTheWay', label: 'On the Way', tone: 'info', value: 0 }, { id: 'delayed', label: 'Delayed', tone: 'danger', value: 0 }, { id: 'exception', label: 'Exceptions', tone: 'danger', value: 0 }, { id: 'arrivingSoon', label: 'Arriving Soon', tone: 'good', value: 0 }, { id: 'customs', label: 'Customs', tone: 'warn', value: 0 }, { id: 'deliveredToday', label: 'Delivered Today', tone: 'done', value: 0 }];
-var eHtml = renderAttentionRow();
-var ePrimary = eHtml.slice(eHtml.indexOf('glm-attention__chips'), eHtml.indexOf('glm-attention__more'));
-ok(/glm-attention__empty/.test(eHtml) && !/data-kpi=/.test(ePrimary), 'E all-zero → restrained empty state, no zero chips in the primary row');
-// §16 — chips reuse the existing data-kpi filter; active class reflects state.filters.kpi
+// R11 §2 — ALL attention categories always visible (no More/collapse), even zero-value ones (§5)
+var aHtml = renderAttentionRow();
+ok(/data-kpi="delayed"/.test(aHtml) && /data-kpi="exception"/.test(aHtml) && /data-kpi="arrivingSoon"/.test(aHtml) && /data-kpi="customs"/.test(aHtml) && /data-kpi="deliveredToday"/.test(aHtml), 'R11 §2/§5 every Attention category is always rendered (incl. zero-value)');
+ok(!/glm-attention__more/.test(aHtml) && !/<details/.test(aHtml) && !/>More</.test(aHtml), 'R11 §2 the More/collapse control is removed');
+ok(/glm-kpi-tile/.test(aHtml) && !/glm-attention__empty/.test(aHtml), 'R11 §1 Attention renders unified KPI tiles (no separate chip/empty-state family)');
+// §16 — tiles reuse the existing data-kpi filter; active class reflects state.filters.kpi
 state.filters.kpi = 'delayed'; _kpis = [{ id: 'delayed', label: 'Delayed', tone: 'danger', value: 2 }];
-ok(/data-kpi="delayed"[^>]*/.test(renderAttentionRow()) && /is-active/.test(renderAttentionRow()), '§16 active KPI filter reflected on the chip (existing filter behavior preserved)');
+ok(/data-kpi="delayed"[^>]*/.test(renderAttentionRow()) && /is-active/.test(renderAttentionRow()), '§16 active KPI filter reflected on the tile (existing filter behavior preserved)');
 state.filters.kpi = '';
 
 console.log('\n== Per-shipment issue detector (F/G/H) ==');
@@ -115,8 +108,8 @@ console.log('\n== §13/§14 issue UX ==');
 ok(/glmShipmentIssues\(\{ nodeCount: v\.nodes\.length, placementKind: pl\.kind \}\)/.test(listFn) && /glm-badge--issue/.test(listFn), '§13 card derives issues from existing facts + shows a restrained issue pill');
 ok(/glmShipmentIssues\(\{ nodeCount: vm\.nodes\.length, placementKind: pl\.kind \}\)/.test(drawer) && /glm-dsec--issue/.test(drawer), '§14 drawer explains the issue (same detector; no second engine)');
 ok(/\.glm-badge--issue\s*\{[^}]*#fef3c7/.test(CSS), '§13/§18 issue pill is amber (restrained; not a large orange block)');
-ok(/\.glm-chip\s*\{/.test(CSS) && /\.glm-attention__chips\s*\{[^}]*overflow-x:\s*auto/.test(CSS), '§7/§10 Attention chips are compact + horizontally scrollable');
-ok(/\.glm-status-summary\s*\{[^}]*flex-wrap:\s*nowrap/.test(CSS), '§10 Shipment Status stays a stable single row (no awkward 2+1 wrap)');
+ok(/\.glm-kpi-tile\s*\{/.test(CSS) && /\.glm-kpirail\s*\{[^}]*flex-wrap:\s*wrap/.test(CSS), 'R11 §1/§3 Attention + Status share the compact KPI-tile family in a wrapping rail');
+ok(/\.glm-kpirail\s*\{[^}]*align-items:\s*stretch/.test(CSS), 'R11 §3 KPI tiles share one baseline / equal height (align-items: stretch)');
 
 console.log('\n== §20 no backend/business change ==');
 ok(!/getShipments\s*=|updateShipment\b\s*=|shipment_events|\.status\s*=/.test(SRC.replace(/glm-ship__status/g, '')) || true, '§20 (map page is read/UI only — no new backend writer introduced)');
