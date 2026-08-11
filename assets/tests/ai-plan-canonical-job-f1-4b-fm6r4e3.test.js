@@ -186,11 +186,12 @@ ok(!_roAiPlanScopeMatches_({ company: 'KM', country: 'US', marketplace: 'AMAZON_
   var cancelFn = extractFn(RO, 'handleCancelRequestOrderDraftJob');
   ok(/cancelRequestOrderDraftJob\(_roAiPlanRunId\)/.test(cancelFn) && /_roAiPlanFinishCancelled_/.test(cancelFn), '§18 cancel calls the canonical backend cancel once then reloads preserved drafts');
 
-  // §19/§30 Send Request UNCHANGED — still uses _roEffectiveOrderQty + creates its own site_confirmed draft; NOT the canonical display path
+  // R4E3 boundary — Send Request was NOT wired to the canonical draft in R4E3 (its collision was documented and
+  // deferred). F1-4B-FM6-R4E4 supersedes this: Send now sources canonical persisted order_qty (_roSendOrderQty_)
+  // and confirms the existing draft in place. See send-request-lifecycle-f1-4b-fm6r4e4.test.js for the full behavior.
   var send = extractFn(RO, 'handleSendRequest');
-  ok(/_roEffectiveOrderQty\(item, idx, e\)/.test(send) && !/_roRowOrderQtyDisplay_/.test(send), '§19/§30 Send Request payload still reads _roEffectiveOrderQty (untouched; not the canonical draft display)');
-  ok(/status: 'site_confirmed', generation_type: 'user_created'/.test(send), "§20 Send Request still upserts its OWN status:'site_confirmed' generation_type:'user_created' draft (collision risk documented; fix deferred to R4E4/R4E5)");
-  ok(!/startRequestOrderDraftJob|continueRequestOrderDraftJob|updateRecommendationDecisionLocked/.test(send), '§19 Send Request does NOT touch the AI Plan job or the locked edit writer');
+  ok(/_roSendOrderQty_\(item, idx, b, e\)/.test(send), 'R4E4 Send Request sources canonical persisted order_qty (_roSendOrderQty_), not a live recompute');
+  ok(!/startRequestOrderDraftJob|continueRequestOrderDraftJob/.test(send), '§19 Send Request does NOT drive the AI Plan job');
 
   // adapters reused (no new transport / second persister)
   ok(/startRequestOrderDraftJob = function\(scope/.test(DBAPI) && /continueRequestOrderDraftJob = function\(runId/.test(DBAPI) && /getActiveRequestOrderDrafts = function\(scope/.test(DBAPI), 'adapters: start/continue/getActive already exist (reused, not re-created)');

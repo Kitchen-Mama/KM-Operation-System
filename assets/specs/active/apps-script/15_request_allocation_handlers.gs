@@ -129,9 +129,32 @@ function handleUpsertRequestOrderAllocationDraft_(body) {
         var st0 = cS0 !== -1 ? String(sh0.getRange(f0.row, cS0 + 1).getValue()).trim().toLowerCase() : '';
         if (st0 === 'submitted' || st0 === 'cancelled') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:' + st0, stage: 'terminal' });
       }
+      // F1-4B-FM6-R4E4 §9 — OPTIMISTIC LOCK on a lifecycle transition (e.g. Send Request confirming an existing
+      // draft: draft → site_confirmed). When the caller supplies expectedToken it must match the CURRENT canonical
+      // token (draft_version + user-edit fingerprint) — otherwise a newer user/system edit happened and we FAIL
+      // CLOSED (never a last-write-wins confirm). Additive/optional: callers that omit expectedToken are unaffected.
+      if (body && body.expectedToken != null) {
+        var tv = raVerifyDraftToken_(id0, body.expectedToken);
+        if (!tv.ok) return jsonResponse_({ success: false, error: tv.error, stage: 'concurrency' });
+      }
     }
     return raUpsertDraftHeaderCore_(body);
   } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+}
+
+// §9 — verify a client-held optimistic-lock token against the CURRENT canonical draft token, reusing the EXISTING
+// authority (KMPR.computeExpectedToken over the draft snapshot — the same token getRecommendationDraftToken emits and
+// the locked line-edit writer enforces). No new token scheme. Fails closed when the bundle/draft is unavailable.
+function raVerifyDraftToken_(draftId, expectedToken) {
+  if (expectedToken == null) return { ok: true };
+  if (typeof KMPR === 'undefined' || !KMPR.TABLES || !KMPR.TABLES['MONTHLY_ORDER']) return { ok: false, error: 'CONCURRENCY_TOKEN_UNAVAILABLE' };
+  var cfg = KMPR.TABLES['MONTHLY_ORDER'];
+  var b = rprBuildSheetSet_(SpreadsheetApp.getActiveSpreadsheet(), [cfg.header, cfg.lines, KMPR.RUN_JOURNAL_TABLE]);
+  var snap = KMPR.loadDraftSnapshot(b.set, draftId, 'MONTHLY_ORDER');
+  if (!snap || !snap.draft) return { ok: false, error: 'DRAFT_NOT_FOUND' };
+  var cur = KMPR.computeExpectedToken(snap.draft.draft_version, (snap.lines || []).map(function (l) { return { lineKey: l.lineKey, userQty: l.userQty, userEdited: l.userEdited }; }));
+  var okMatch = String(cur.draft_version) === String(expectedToken.draft_version) && String(cur.userEditFingerprint) === String(expectedToken.userEditFingerprint);
+  return okMatch ? { ok: true } : { ok: false, error: 'CONCURRENCY_TOKEN_MISMATCH' };
 }
 
 // Private single-keyed-row header upsert core (reached ONLY under lock via the public handler above).
