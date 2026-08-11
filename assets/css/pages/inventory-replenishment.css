@@ -1848,3 +1848,7 @@
 #ops-section .replen-reco-action--none { background: #f8fafc; }
 #ops-section .replen-reco-action--blocked { background: #fffbeb; }
 #ops-section .replen-reco-action--stale { color: #92400e; background: #fffbeb; padding: 6px 8px; margin-top: 6px; border-top: 1px solid var(--border-light, #e5e7eb); font-size: 11px; }
+
+/* F1-SHIPMENT-INCOMING-R5 — Shipping Shipment overdue row (shown only when overdue remaining > 0). */
+#ops-section .replen-card__row--overdue .replen-card__label,
+#ops-section .replen-card__row--overdue .replen-card__value { color: #dc2626; font-weight: 600; }

@@ -44,13 +44,55 @@ function _irBucketRemainingByEta(lines, foldOverdueIntoEarliest) {
   });
   return b;
 }
+// F1-SHIPMENT-INCOMING-R5 — canonical receiver identity + shipment→receiver remaining-incoming projection.
+// Receiver key = company|country|marketplace|sku (lowercased). NEVER derived from destination display text
+// or warehouse_code; warehouse identity is separate. A MULTI-marketplace (merged) shipment keys as
+// '…|multi|…' so it never lands on a specific-marketplace receiver row (merged per-receiver split has no
+// frozen shipment-line→plan-line linkage — MERGED_SHIPMENT_FROZEN_SHARE_AUTHORITY_GAP; excluded here).
+function _irReceiverKey(company, country, marketplace, sku) {
+  return [company, country, marketplace, sku].map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); }).join('|');
+}
+// Strict YYYY-MM-DD → UTC ms (midnight). Returns null on anything else (no clock, no locale).
+function _irEtaMs(s) {
+  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(s == null ? '' : s).trim());
+  if (!m) return null;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+}
+// Terminal shipment statuses contribute ZERO incoming (mirrors the procurement CLOSED set / R4 filter).
+var _IR_TERMINAL_SHIPMENT_STATUS = { completed: 1, received: 1, closed: 1, cancelled: 1, canceled: 1, delivered: 1 };
+
+// ONE projection owner: shipments + shipment_lines → { receiverKey → { overdue, d0_18, d19_30, d31_45,
+// d45_plus, unknown } } of REMAINING incoming (MAX(0, shipment_qty − shipment_received_qty)), bucketed
+// mutually-exclusively by the shipment ETA distance in whole days from todayMs. Terminal shipments and
+// fully-received lines contribute 0. wh_on_the_way_* is NEVER read. Pure (todayMs supplied by caller).
+function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs) {
+  var byId = {};
+  (shipments || []).forEach(function (s) { if (s && s.shipmentId) byId[s.shipmentId] = s; });
+  var map = {};
+  (shipmentLines || []).forEach(function (ln) {
+    if (!ln) return;
+    var s = byId[ln.shipmentId]; if (!s) return;
+    if (_IR_TERMINAL_SHIPMENT_STATUS[String(s.status || '').trim().toLowerCase()]) return;   // terminal → 0
+    var remaining = _irRemainingIncoming(ln.shipmentQty, ln.shipmentReceivedQty);
+    if (remaining <= 0) return;   // fully received / nothing remaining
+    var etaMs = _irEtaMs(s.eta);
+    var days = (etaMs === null) ? null : Math.floor((etaMs - todayMs) / 86400000);
+    var bucket = (days === null) ? 'unknown' : _irShipmentEtaBucket(days);   // negative → 'overdue'
+    var key = _irReceiverKey(s.company, s.country, s.marketplace, ln.sku);
+    var rec = map[key] || (map[key] = { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0 });
+    rec[bucket] += remaining;
+  });
+  return map;
+}
 if (typeof window !== 'undefined') {
   window._irShipmentEtaBucket = _irShipmentEtaBucket;
   window._irRemainingIncoming = _irRemainingIncoming;
   window._irBucketRemainingByEta = _irBucketRemainingByEta;
+  window._irReceiverKey = _irReceiverKey;
+  window._irBuildShipmentRemainingByReceiver = _irBuildShipmentRemainingByReceiver;
 }
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _irShipmentEtaBucket: _irShipmentEtaBucket, _irRemainingIncoming: _irRemainingIncoming, _irBucketRemainingByEta: _irBucketRemainingByEta };
+  module.exports = { _irShipmentEtaBucket: _irShipmentEtaBucket, _irRemainingIncoming: _irRemainingIncoming, _irBucketRemainingByEta: _irBucketRemainingByEta, _irReceiverKey: _irReceiverKey, _irEtaMs: _irEtaMs, _irBuildShipmentRemainingByReceiver: _irBuildShipmentRemainingByReceiver };
 }
 
 function openReplenAddSkuModal() {
@@ -1905,9 +1947,11 @@ function toggleReplenRow(sku) {
                             </article>
                             <article class="replen-card replen-card--shipping">
                                 <h4 class="replen-card__title">Shipping Shipment</h4>
+                                ${(skuData?.shipOverdue || 0) > 0 ? ('<div class="replen-card__row replen-card__row--overdue"><span class="replen-card__label">Overdue</span><span class="replen-card__value">' + (skuData.shipOverdue) + '</span></div>') : ''}
                                 <div class="replen-card__row"><span class="replen-card__label">Within 18 days</span><span class="replen-card__value">${skuData?.within18days || 0}</span></div>
                                 <div class="replen-card__row"><span class="replen-card__label">Within 30 days</span><span class="replen-card__value">${skuData?.within30days || 0}</span></div>
                                 <div class="replen-card__row"><span class="replen-card__label">Within 45 days</span><span class="replen-card__value">${skuData?.within45days || 0}</span></div>
+                                <div class="replen-card__row"><span class="replen-card__label">45+ days</span><span class="replen-card__value">${skuData?.within45plus || 0}</span></div>
                             </article>
                             <article class="replen-card replen-card--third-party">
                                 <h4 class="replen-card__title">3rd Party Stock</h4>
@@ -3849,6 +3893,17 @@ function _getCloudReplenishmentData() {
     var factory = get('getFactoryStock');
     var skuDetails = get('getSkuDetails');
 
+    // F1-SHIPMENT-INCOMING-R5 — Shipping Shipment card now derives from REAL shipment authority (NOT the
+    // mock/dead within* block, NOT wh_on_the_way_*). Build the receiver→remaining-incoming-by-ETA map ONCE
+    // for this marketplace scope. REMAINING = MAX(0, shipment_qty − shipment_received_qty); terminal
+    // shipments + fully-received lines contribute 0; MULTI/merged shipments are excluded from per-marketplace
+    // attribution (MERGED_SHIPMENT_FROZEN_SHARE_AUTHORITY_GAP — see completion report).
+    var shipments = get('getShipments');
+    var shipmentLines = get('getShipmentLines');
+    var _irNow = new Date();
+    var _irTodayMs = Date.UTC(_irNow.getFullYear(), _irNow.getMonth(), _irNow.getDate());
+    var shipRemainByReceiver = _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, _irTodayMs);
+
     var monthNames = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
     var MK = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     var cm = new Date().getMonth();
@@ -3873,6 +3928,9 @@ function _getCloudReplenishmentData() {
             marketplaceId: marketplaceId,
             series: det.series || '', category: det.category || det.productLine || ''
         };
+        // R5 — real Shipping Shipment buckets for THIS receiver (canonical company/country/marketplace/sku).
+        var shipRem = shipRemainByReceiver[_irReceiverKey(scopeMkt.company, scopeMkt.country, scopeMkt.marketplace, mp.sku)]
+            || { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0 };
 
         var inv = IR.latestSnapshot(invSnaps, scope);
         var health = IR.latestSnapshot(healthSnaps, scope);
@@ -3989,8 +4047,9 @@ function _getCloudReplenishmentData() {
             // Long Term Storage
             over90: lts.over90,
             over180: lts.over180,
-            // Shipping Shipment (pending)
-            within18days: 0, within30days: 0, within45days: 0,
+            // Shipping Shipment — REAL shipment-derived remaining incoming, mutually-exclusive ETA buckets (R5).
+            within18days: shipRem.d0_18, within30days: shipRem.d19_30, within45days: shipRem.d31_45,
+            within45plus: shipRem.d45_plus, shipOverdue: shipRem.overdue,
             // 3rd Party detail (only aggregate available in Phase 1)
             winitStock: 0, onusStock: 0,
             // Forecast breakdown (next 3 months)
