@@ -23,7 +23,7 @@
   var DELIVERED_SET = { received: 1, completed: 1, delivered: 1, closed: 1 };
   var EXCLUDE_SET = { cancelled: 1 };
   var MOVING_SET = { shipped: 1, in_transit: 1 };
-  var RUNTIME_SET = { shipped: 1, in_transit: 1, arrived: 1, partial_received: 1, received: 1, completed: 1, delivered: 1 };
+  var RUNTIME_SET = { shipped: 1, in_transit: 1, arrived: 1, partial_received: 1, partially_received: 1, received: 1, completed: 1, delivered: 1 };
 
   // marker colors (rgb 0..1)
   var COL = {
@@ -67,6 +67,42 @@
   function parseDate(s) { s = String(s == null ? '' : s).trim(); if (!s) return null; var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]); var t = Date.parse(s); return isNaN(t) ? null : t; }
   function tpeTodayMs() { var d; try { d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); } catch (e) { d = new Date().toISOString().slice(0, 10); } return Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)); }
   function prefersReducedMotion() { try { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
+
+  // ---------- pure helpers (F1-SHIPMENT-MAP-R8; dependency-free — mirrored/extracted by the test) ----------
+  // §13 status summary: bucket shipments by their BACKEND status (never an invented lifecycle). Conservative
+  // grouping — In Transit (shipped/in_transit/arrived/ready_to_ship), Partially Received (partially_received +
+  // legacy partial_received), Received (received/completed/delivered). Any status outside the known vocabulary
+  // falls into Other (surfaced with its raw status list, never silently reclassified). Pure; input never mutated.
+  var GLM_STATUS_BUCKETS_ = [
+    { key: 'inTransit', label: 'In Transit', match: { shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1 } },
+    { key: 'partiallyReceived', label: 'Partially Received', match: { partially_received: 1, partial_received: 1 } },
+    { key: 'received', label: 'Received', match: { received: 1, completed: 1, delivered: 1 } }
+  ];
+  function glmStatusSummary(vms) {
+    var counts = { inTransit: 0, partiallyReceived: 0, received: 0, other: 0 }, otherStatuses = {};
+    (vms || []).forEach(function (v) {
+      var st = String(v && v.status != null ? v.status : '').trim().toLowerCase(), placed = false;
+      for (var i = 0; i < GLM_STATUS_BUCKETS_.length; i++) { if (GLM_STATUS_BUCKETS_[i].match[st]) { counts[GLM_STATUS_BUCKETS_[i].key]++; placed = true; break; } }
+      if (!placed) { counts.other++; if (st) otherStatuses[st] = (otherStatuses[st] || 0) + 1; }
+    });
+    var out = GLM_STATUS_BUCKETS_.map(function (b) { return { key: b.key, label: b.label, count: counts[b.key] }; });
+    out.push({ key: 'other', label: 'Other', count: counts.other, statuses: Object.keys(otherStatuses).sort() });
+    return out;
+  }
+  // §9.1 receipt Save collects ONLY the lines whose cumulative received value actually changed (a resend of the
+  // same cumulative is a backend idempotent no-op — never queued). pairs = [{ shipment_line_id, value, prev }].
+  // Non-finite value → skipped (nothing to write). Returns the backend line payload for changed lines only.
+  function glmReceiptChangedLines(pairs) {
+    var out = [];
+    (pairs || []).forEach(function (p) {
+      if (!p || !p.shipment_line_id) return;
+      var v = parseFloat(p.value); if (!isFinite(v)) return;
+      var prev = parseFloat(p.prev); if (!isFinite(prev)) prev = 0;
+      if (v === prev) return;   // unchanged cumulative → not submitted
+      out.push({ shipment_line_id: p.shipment_line_id, shipment_received_qty: v });
+    });
+    return out;
+  }
 
   // ---------- data ----------
   function ensureDb(force, cb) {
@@ -243,6 +279,7 @@
       (state.partial ? renderPartialNote() : '') +
       (state.debug ? renderDiagPanel() : '') +
       (state.mode === 'runtime' ? renderKpiStrip() : '') +
+      (state.mode === 'runtime' ? renderStatusSummary() : '') +
       '<div class="glm-main">' +
         '<div class="glm-side">' + sideHtml + '</div>' +
         '<div class="glm-mapwrap">' + renderMapShell() + '</div>' +
@@ -283,6 +320,15 @@
       return '<button type="button" class="glm-kpi glm-kpi--' + k.tone + (active ? ' is-active' : '') + '" data-kpi="' + k.id + '" aria-pressed="' + active + '">' +
         '<span class="glm-kpi__value">' + num(k.value) + '</span><span class="glm-kpi__label">' + esc(k.label) + '</span></button>';
     }).join('') + (f.kpi ? '<button type="button" class="glm-btn glm-btn--small" data-act="clear-kpi">Clear KPI filter</button>' : '') + '</div>';
+  }
+
+  // §13 backend-status summary above the map/list (reflects the SAME filtered collection that drives list + map).
+  function renderStatusSummary() {
+    var sm = glmStatusSummary(filteredVms()).filter(function (b) { return b.key !== 'other' || b.count > 0; });
+    return '<div class="glm-status-summary" role="group" aria-label="Shipment status summary">' + sm.map(function (b) {
+      var title = (b.key === 'other' && b.statuses && b.statuses.length) ? ' title="' + esc(b.statuses.join(', ')) + '"' : '';
+      return '<div class="glm-statcard glm-statcard--' + b.key + '"' + title + '><span class="glm-statcard__value">' + num(b.count) + '</span><span class="glm-statcard__label">' + esc(b.label) + '</span></div>';
+    }).join('') + '</div>';
   }
 
   // ---------- filters panel ----------
@@ -629,12 +675,12 @@
     var saveBtn = r.querySelector('[data-act="receipt-save"]');
     if (saveBtn) saveBtn.onclick = function () {
       if (!(window.KM.DB && window.KM.DB.updateShipmentReceipt)) { receiptMsg('Receipt API unavailable.', 'error'); return; }
-      var lines = [];
+      var pairs = [];
       r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
-        var v = parseFloat(inp.value); if (!isFinite(v)) return;
-        lines.push({ shipment_line_id: inp.getAttribute('data-recv-line'), shipment_received_qty: v });
+        pairs.push({ shipment_line_id: inp.getAttribute('data-recv-line'), value: inp.value, prev: inp.getAttribute('data-prev') });
       });
-      if (!lines.length) { receiptMsg('Nothing to save.', 'error'); return; }
+      var lines = glmReceiptChangedLines(pairs);   // §9.1 — only changed cumulative values are submitted
+      if (!lines.length) { receiptMsg('No changes to save.', ''); return; }
       saveBtn.disabled = true; receiptMsg('Saving receipt…', '');
       window.KM.DB.updateShipmentReceipt({ shipment_id: vm.shipmentId, lines: lines, actor: glmActor() }).then(function (resp) {
         if (resp && resp.success) { afterShipmentWrite(vm.shipmentId); }
