@@ -175,7 +175,7 @@ section('D/§4 — the 47_ gap-backed path recomputes NO quantity + creates NO s
   ok(/requestOrderDraft\.generateFromGap/.test(GS_ROUTER) && /handleGenerateRequestOrderDraftFromGap_/.test(GS_ROUTER), 'D7 router wires generateFromGap');
   ok(/requestOrderDraft\.getActive/.test(GS_ROUTER) && /handleGetActiveRequestOrderDraftReadback_/.test(GS_ROUTER), 'D8 router wires getActive read-back');
   // frontend NOT wired this round
-  ok(!/generateFromGap|getActive/.test(read('js/pages/request-order.js')), 'D9 request-order.js is NOT wired to the new backend actions this round');
+  ok(!/generateFromGap|startRequestOrderDraftJob/.test(read('js/pages/request-order.js')), 'D9 request-order.js does not call the gap-backed generation (generateFromGap / job start) — generation is a later round');
 })();
 
 console.log('\n----------------------------------------');

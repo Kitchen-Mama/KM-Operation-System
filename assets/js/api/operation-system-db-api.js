@@ -2799,6 +2799,21 @@ window.KM.DB.getInventoryReplenishmentGap = function(scope) { return _kmGapRead_
 // { company, country, marketplace, sku? } → { success, data:{ rows:[ order_planning_gap rows ] } }.
 window.KM.DB.getOrderPlanningGap = function(scope) { return _kmGapRead_('orderPlanningGap.get', { payload: { scope: scope || {} } }); };
 
+// F1-4B-FM6-R4E2-B2 / R4E3-PRE — Request Order canonical draft: request-driven resumable scope job + scope
+// read-back + LOCKED incremental order_qty edit. The browser drives ONE logical job (START → poll CONTINUE →
+// terminal), reads the whole scope back once (getActive), and persists a single edited order_qty via the EXISTING
+// locked decision writer (updateRecommendationDecisionLocked) under the optimistic-lock token — never a second writer.
+window.KM.DB.startRequestOrderDraftJob = function(scope, opts) { return _kmWeeklyCommand_('requestOrderDraft.job.start', { payload: Object.assign({ scope: scope || {} }, opts || {}) }); };
+window.KM.DB.continueRequestOrderDraftJob = function(runId) { return _kmWeeklyCommand_('requestOrderDraft.job.continue', { payload: { runId: runId || null } }); };
+window.KM.DB.getRequestOrderDraftJobStatus = function(runId) { return _kmGapRead_('requestOrderDraft.job.status', { payload: { runId: runId || null } }); };
+window.KM.DB.cancelRequestOrderDraftJob = function(runId) { return _kmWeeklyCommand_('requestOrderDraft.job.cancel', { payload: { runId: runId || null } }); };
+// scope read-back (SKU omitted → { drafts, conflicts, noDraftSkus }). READ ONLY. { success, data:{...} }.
+window.KM.DB.getActiveRequestOrderDrafts = function(scope) { return _kmGapRead_('requestOrderDraft.getActive', { payload: { scope: scope || {} } }); };
+// canonical concurrency token for a draft (25_) → { success, data:{ expectedToken:{draft_version,userEditFingerprint} } }.
+window.KM.DB.getRecommendationDraftToken = function(recommendationType, draftId) { return _kmWeeklyCommand_('getRecommendationDraftToken', { recommendationType: recommendationType, draftId: draftId }); };
+// canonical LOCKED user-decision edit (25_). payload: { recommendationType, draftId, edits:[{naturalKey,fields}], expectedToken, actor? }.
+window.KM.DB.updateRecommendationDecisionLocked = function(payload) { return _kmWeeklyCommand_('updateRecommendationDecisionLocked', payload || {}); };
+
 // ADMIN-AUTOMATION-R1 · Automation Schedule Settings. GET is read-only (opening the Admin page mutates nothing);
 // UPDATE writes the Script-Property config + reconciles ONLY the owned time trigger, then returns the normalized
 // config + trigger status. Both use the canonical text-first runners (never throw; transport/business classified).

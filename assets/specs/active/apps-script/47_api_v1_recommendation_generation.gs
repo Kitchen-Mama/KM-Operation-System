@@ -269,7 +269,8 @@ function recGenGenerateOneSkuCompact_(scope1, gapRow, upc, opts) {
 // holds recommended_qty immutable within a draft_version) — a manually edited order_qty is still preserved by the
 // existing user-edit protection (preserveUserQty), and a regenerate over user edits requires explicit confirmation.
 function handleGenerateRequestOrderDraftFromGap_(body) {
-  var scope = (body && body.scope) || body || {};
+  var body0 = (body && body.payload) || body || {};   // accept {payload:{...}} (adapter convention) or flat
+  var scope = body0.scope || body0;
   var company = r4e2Str_(scope.company), country = r4e2Str_(scope.country),
       marketplace = r4e2Str_(scope.marketplace), sku = r4e2Str_(scope.sku);
   if (!company || !country || !marketplace || !sku) {
@@ -294,8 +295,8 @@ function handleGenerateRequestOrderDraftFromGap_(body) {
   // no per-row gap runId exists (documented limitation; not solved with a schema change this round). formula_version
   // ('ORDER_PLANNING_GAP') marks the gap-backed authority path so the draft is distinguishable from a KMSF-computed one.
   var b = recGenBuildGapDraftBody_({ company: company, country: country, marketplace: marketplace, sku: sku }, gapRow, upc, {
-    mode: body && body.mode, planningCycle: body && body.planningCycle, draft_purpose: body && body.draft_purpose,
-    confirmRegenerateOverUserEdits: body && body.confirmRegenerateOverUserEdits === true, actor: body && (body.actor || body.updated_by) });
+    mode: body0.mode, planningCycle: body0.planningCycle, draft_purpose: body0.draft_purpose,
+    confirmRegenerateOverUserEdits: body0.confirmRegenerateOverUserEdits === true, actor: body0.actor || body0.updated_by });
   if (!b.ok) { return jsonResponse_({ success: false, error: b.reason || 'ORDER_PLANNING_GAP_NOT_READY' }); }
   return jsonResponse_(rpoGenerateRecommendationDraftLockedResult_(b.body));   // existing locked persister (KMPW/KMPR); body.facts short-circuits KMSF
 }
@@ -306,10 +307,11 @@ function handleGenerateRequestOrderDraftFromGap_(body) {
 // BLOCKED_CONFLICT — one request returns the whole Order Allocation grid for the future R4E3 UI. ACTIVE = draft|site_confirmed.
 function handleGetActiveRequestOrderDraftReadback_(body) {
   try {
-    var scope = (body && body.scope) || body || {};
+    var b0 = (body && body.payload) || body || {};   // accept {payload:{scope}} (adapter convention) or flat {scope}
+    var scope = b0.scope || b0;
     var company = r4e2Str_(scope.company), country = r4e2Str_(scope.country),
         marketplace = r4e2Str_(scope.marketplace), sku = r4e2Str_(scope.sku),
-        planningCycle = r4e2Str_(scope.planningCycle || (body && body.planningCycle));
+        planningCycle = r4e2Str_(scope.planningCycle || b0.planningCycle);
     if (!company || !country || !marketplace) {
       return jsonResponse_({ success: false, error: 'INVALID_SCOPE', message: 'company + country + marketplace required' });
     }

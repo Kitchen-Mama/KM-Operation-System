@@ -240,7 +240,7 @@ section('D/§19/§21/§23 — no triggers/scheduler, no allocation/formula/secon
   ok(/rpoGenerateRecommendationDraftLockedResult_/.test(GS24) && /KMPW\.persistProductionRecommendation/.test(GS24), 'N7 24_ plain-result core still delegates to KMPW');
   ok(/function handleGenerateRecommendationDraftLocked_\(body\)\s*\{\s*return jsonResponse_\(rpoGenerateRecommendationDraftLockedResult_\(body\)\)/.test(GS24), 'N8 public handler wraps the core (backward compatible)');
   // frontend not wired this round
-  ok(!/requestOrderDraft\.job\.|generateFromGap|getActive/.test(read('js/pages/request-order.js')), 'N9 request-order.js is NOT wired to the backend job this round');
+  ok(!/startRequestOrderDraftJob|continueRequestOrderDraftJob|requestOrderDraft\.job\.start|requestOrderDraft\.job\.continue/.test(read('js/pages/request-order.js')), 'N9 request-order.js does not START/CONTINUE the draft job (the generation flow is the later R4E3 round; R4E3-PRE only wires getActive read-back + canonical edit)');
 })();
 
 console.log('\n----------------------------------------');

@@ -1742,7 +1742,9 @@ function renderExpandPanel(item) {
     var sug = _roTierSuggested(item, i);
     if (sug != null) anySuggested = true;
     var e = edits[t] || {};
-    var eff = _roEffectiveOrderQty(item, i, e);   // Order Qty default UNCHANGED (frozen write path; §18)
+    // DISPLAY value: a PERSISTED canonical-draft row shows its DB order_qty (reload authority, R4E3-PRE §10);
+    // otherwise the frozen effective value. _roEffectiveOrderQty (the Send Request payload owner) is UNCHANGED.
+    var eff = _roRowOrderQtyDisplay_(item, i, t, e);
     var cb = _roCartonBreak(eff == null ? '' : eff, box);
     var note = e.note != null ? String(e.note).replace(/"/g, '&quot;') : '';
     var qtyVal = (eff == null) ? '' : eff;
@@ -1897,6 +1899,12 @@ function _roAllocEdit(input) {
   }
   rec[bucket].month = input.dataset.month || rec[bucket].month || '';
   _roRecomputeAllocRow(input);
+  // R4E3-PRE: for a row backed by a PERSISTED canonical draft, persist this committed order_qty incrementally to
+  // request_order_allocation_draft_lines via the EXISTING locked decision writer (onchange → one write per committed
+  // value; no keystroke storm). NO_DRAFT / conflict rows keep the in-memory planning behavior above (never auto-create).
+  if (rec[bucket].orderQty !== '' && rec[bucket].orderQty != null && _roIsCanonicalDraftSku_(input.dataset.sku)) {
+    _roSaveOrderQtyToCanonicalDraft_(input.dataset.sku, bucket, rec[bucket].orderQty, input);
+  }
 }
 // Live in-place refresh of the carton breakdown + partial warning for one Order-Qty row (no full
 // re-render → never clears other unsaved edits; J.7). NON-blocking for partial cartons.
@@ -3236,10 +3244,139 @@ if (window.KM && window.KM.lifecycle) {
                 }
                 // F1-4B-FM5-R4J §13 — resume a still-running backend Order Planning gap job on mount/reload.
                 if (typeof _roResumeGapJobOnMount_ === 'function') { try { _roResumeGapJobOnMount_(); } catch (e) {} }
+                // F1-4B-FM6-R4E3-PRE §18/§21 — restore persisted canonical Request Order drafts for the current
+                // concrete scope (one getActive read) so a reload shows saved order_qty as execution authority.
+                if (typeof _roLoadCanonicalDraftsOnMount_ === 'function') { try { _roLoadCanonicalDraftsOnMount_(); } catch (e) {} }
             });
         },
         unmount() {
             console.log('[RequestOrder] unmount');
         }
     });
+}
+
+// ============================================================
+// F1-4B-FM6-R4E3-PRE — Canonical incremental order_qty edit persistence.
+// A Request Order row backed by a PERSISTED canonical draft (created by the R4E2-B2 job, discovered via
+// requestOrderDraft.getActive) persists Order Qty edits incrementally to request_order_allocation_draft_lines
+// through the EXISTING locked decision writer (updateRecommendationDecisionLocked) under the optimistic-lock token.
+// recommended_qty / gap snapshot / UPC stay system-owned (never in the edit). NO second writer, NO Send Request
+// change, NO PO/shipment/stock write, NO formula. NO_DRAFT / conflict / foreign rows keep the existing in-memory
+// planning behavior and NEVER auto-create a draft (AI Plan remains the draft-creation boundary).
+// ============================================================
+var _roCanonicalDraftBySku = {};   // sku(UPPER) → { draftId, draftVersion, expectedToken, status, conflict, lines:{ 'T1':{request_month, order_qty, recommended_qty, ...} } }
+
+function _roCanonKey_(sku) { return String(sku == null ? '' : sku).trim().toUpperCase(); }
+// A concrete scope for the scope-level getActive read. Best-effort (§18/§21): the last AI Plan scope when it carries
+// a concrete company/country/marketplace; otherwise null (skip — full page-filter derivation is a later R4E3 concern).
+function _roCanonicalScope_() {
+  var s = window._roAiPlanScope;
+  if (s && s.company && s.country && s.marketplace) return { company: s.company, country: s.country, marketplace: s.marketplace };
+  return null;
+}
+// Is this SKU an ACTIVE persisted-draft execution authority (edits go to the canonical writer, not in-memory only)?
+function _roIsCanonicalDraftSku_(sku) {
+  var d = _roCanonicalDraftBySku[_roCanonKey_(sku)];
+  return !!(d && d.draftId && !d.conflict);
+}
+function _roCanonicalRowFor_(sku, bucket) {
+  var d = _roCanonicalDraftBySku[_roCanonKey_(sku)];
+  if (!d || d.conflict || !d.lines) return null;
+  var l = d.lines[String(bucket)];
+  return l ? { draft: d, line: l } : null;
+}
+// DISPLAY Order Qty for the grid (NOT the Send Request payload): an in-flight local edit wins; else a persisted
+// canonical-draft row shows its DB order_qty; else the frozen effective value. _roEffectiveOrderQty is untouched.
+function _roRowOrderQtyDisplay_(item, idx, bucket, edit) {
+  if (edit && edit.orderQty != null && edit.orderQty !== '') return Number(edit.orderQty);
+  var ref = _roCanonicalRowFor_(item && item.sku, bucket);
+  if (ref && ref.line.order_qty != null && ref.line.order_qty !== '') return Number(ref.line.order_qty);
+  return _roEffectiveOrderQty(item, idx, edit);
+}
+// __RO_EDIT_PURE_START__
+// PURE — the locked decision-edit command for ONE order_qty change. order_qty ONLY (recommended_qty / gap snapshot /
+// UPC are system-owned and never included). naturalKey = the canonical MONTHLY line grain {request_month, request_bucket}.
+function _roBuildOrderQtyEditCommand_(draftId, requestMonth, requestBucket, orderQty, expectedToken) {
+  return {
+    recommendationType: 'MONTHLY_ORDER', draftId: String(draftId),
+    edits: [{ naturalKey: { request_month: String(requestMonth), request_bucket: String(requestBucket) }, fields: { order_qty: Number(orderQty) } }],
+    expectedToken: expectedToken, actor: 'request-order'
+  };
+}
+// __RO_EDIT_PURE_END__
+// restrained toast (reuse the gap-recalc toast owner; alert fallback). No large new UI.
+function _roNotify_(msg) {
+  try { var gr = window.KM && window.KM.gapRecalc; if (gr && typeof gr.announceManualDone === 'function') { gr.announceManualDone(null, String(msg), null); return; } } catch (e) {}
+  try { if (typeof window !== 'undefined' && typeof window.alert === 'function') window.alert(String(msg)); } catch (e2) {}
+}
+// Populate _roCanonicalDraftBySku from ONE scope-level getActive read. Best-effort: on failure keep the existing
+// planning view (§15). Never creates a draft. Re-renders so persisted order_qty shows immediately.
+function _roLoadCanonicalDraftsForScope_(scope) {
+  var db = window.KM && window.KM.DB;
+  if (!db || typeof db.getActiveRequestOrderDrafts !== 'function' || !scope || !scope.company) return Promise.resolve(null);
+  return Promise.resolve(db.getActiveRequestOrderDrafts(scope)).then(function (res) {
+    var data = (res && res.data) || {};
+    var next = {};
+    (data.drafts || []).forEach(function (d) {
+      var h = d.header || {}; var sku = _roCanonKey_(h.sku); if (!sku) return;
+      var lines = {}; (d.lines || []).forEach(function (l) { lines[String(l.request_bucket)] = l; });
+      next[sku] = { draftId: h.request_allocation_draft_id, draftVersion: h.draft_version, expectedToken: null, status: h.status, conflict: false, lines: lines };
+    });
+    (data.conflicts || []).forEach(function (c) { var sku = _roCanonKey_(c.sku); if (sku) next[sku] = { conflict: true, conflictIds: c.conflictIds || [] }; });
+    _roCanonicalDraftBySku = next;
+    if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
+    return next;
+  }).catch(function () { return null; });
+}
+function _roLoadCanonicalDraftsOnMount_() { return _roLoadCanonicalDraftsForScope_(_roCanonicalScope_()); }
+// Fetch + cache the optimistic-lock token for a draft (§3). Returns {draft_version, userEditFingerprint} or null.
+function _roEnsureDraftToken_(sku) {
+  var d = _roCanonicalDraftBySku[_roCanonKey_(sku)];
+  if (!d || !d.draftId) return Promise.resolve(null);
+  if (d.expectedToken) return Promise.resolve(d.expectedToken);
+  var db = window.KM && window.KM.DB;
+  if (!db || typeof db.getRecommendationDraftToken !== 'function') return Promise.resolve(null);
+  return Promise.resolve(db.getRecommendationDraftToken('MONTHLY_ORDER', d.draftId)).then(function (res) {
+    var tok = (res && res.data && res.data.expectedToken) || null; if (tok) d.expectedToken = tok; return tok;
+  }).catch(function () { return null; });
+}
+// Persist ONE committed order_qty to the canonical draft via the LOCKED decision writer. Optimistic-lock:
+// CONCURRENCY/VERSION conflict → reload the latest draft + notify (never overwrite newer state); terminal/blocked →
+// mark the row blocked. Success → update the local execution value + force a token refresh (version bumped).
+function _roSaveOrderQtyToCanonicalDraft_(sku, bucket, orderQty, input) {
+  var ref = _roCanonicalRowFor_(sku, bucket);
+  if (!ref) return;   // NO_DRAFT / conflict → existing in-memory behavior only (no canonical write)
+  var db = window.KM && window.KM.DB;
+  if (!db || typeof db.updateRecommendationDecisionLocked !== 'function') return;
+  var month = ref.line.request_month;
+  if (input && input.classList) { input.classList.add('is-saving'); input.title = 'Saving…'; }
+  return _roEnsureDraftToken_(sku).then(function (tok) {
+    if (!tok) { if (input && input.classList) input.classList.remove('is-saving'); return; }
+    var cmd = _roBuildOrderQtyEditCommand_(ref.draft.draftId, month, bucket, orderQty, tok);
+    return Promise.resolve(db.updateRecommendationDecisionLocked(cmd)).then(function (res) {
+      var d = (res && res.data) || (res && res.error && res.error.details) || {};
+      var okv = res && res.success && d.status === 'COMPLETED';
+      var reason = d.reason || (res && res.error && res.error.code) || '';
+      if (input && input.classList) input.classList.remove('is-saving');
+      if (okv) {
+        ref.line.order_qty = Number(orderQty);   // local execution authority updated
+        ref.draft.expectedToken = null;           // version bumped → refresh before the next edit
+        if (input) { input.title = 'Saved'; if (input.classList) input.classList.remove('is-invalid'); }
+      } else if (/CONCURRENCY_TOKEN_MISMATCH|VERSION_CONFLICT|TOKEN_MISMATCH/.test(String(reason))) {
+        _roNotify_('Order Planning data changed while editing — reloading the latest draft.');
+        _roLoadCanonicalDraftsForScope_(_roCanonicalScope_());
+      } else if (/IMMUTABLE_TERMINAL_STATUS|BLOCKED_CONFLICT/.test(String(reason))) {
+        if (input && input.classList) input.classList.add('is-invalid'); if (input) input.title = 'Draft conflict — review required';
+      } else {
+        if (input && input.classList) input.classList.add('is-invalid'); if (input) input.title = 'Save failed — retry';
+      }
+    });
+  }).catch(function () { if (input && input.classList) input.classList.remove('is-saving'); });
+}
+if (typeof window !== 'undefined') {
+  window._roBuildOrderQtyEditCommand_ = _roBuildOrderQtyEditCommand_;
+  window._roRowOrderQtyDisplay_ = _roRowOrderQtyDisplay_;
+  window._roLoadCanonicalDraftsForScope_ = _roLoadCanonicalDraftsForScope_;
+  window._roSaveOrderQtyToCanonicalDraft_ = _roSaveOrderQtyToCanonicalDraft_;
+  window._roIsCanonicalDraftSku_ = _roIsCanonicalDraftSku_;
 }
