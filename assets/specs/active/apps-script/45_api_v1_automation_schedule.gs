@@ -51,8 +51,13 @@ var AUTOMATION_JOBS_ = [
   { key: 'orderPlanningGap', label: 'Order Planning Gap Materialization', handler: 'runDailyOrderPlanningGapMaterialization',
     implemented: true, weeklyCapable: false, orderStep: 4,
     defaults: { enabled: true, frequency: 'DAILY', hour: 3, minute: 30 } },
-  { key: 'weeklyRecommendation', label: 'Weekly Recommendation', handler: null,
-    implemented: false, weeklyCapable: true, orderStep: 3,
+  // F1-6A-WEEKLY-RECOMMENDATION-SCHEDULER-R1 — wired to the canonical trigger target runWeeklyRecommendation (47_),
+  // which delegates to the ONE shared recommendation owner (runRecommendationGeneration → KMREC). implemented:true
+  // releases the enable-guard (§78), the not-implemented force-disable (§127), and auto-allowlists the handler (§64),
+  // making it schedulable WEEKLY through the existing automationSchedule.update API + trigger reconciler. No page,
+  // adapter, router, or CSS change. defaults stay disabled (the USER must opt in).
+  { key: 'weeklyRecommendation', label: 'Weekly Recommendation', handler: 'runWeeklyRecommendation',
+    implemented: true, weeklyCapable: true, orderStep: 3,
     defaults: { enabled: false, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } }
 ];
 

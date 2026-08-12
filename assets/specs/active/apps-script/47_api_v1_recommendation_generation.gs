@@ -90,6 +90,39 @@ function runRecommendationGeneration(product) {
 function runInventoryRecommendationGeneration() { return runRecommendationGeneration('INVENTORY'); }
 function runOrderPlanningRecommendationGeneration() { return runRecommendationGeneration('ORDER_PLANNING'); }
 
+// F1-6A-WEEKLY-RECOMMENDATION-SCHEDULER-R1 — the Weekly Recommendation TRIGGER TARGET (wired to the Administration
+// automation schedule via 45_'s registry). THIN execution/timing owner ONLY: it resolves the canonical deterministic
+// planning cycle, then delegates to the ONE shared recommendation owner (runRecommendationGeneration → KMREC, the
+// SAME generator the manual AI Plan uses). It authors NO recommendation / gap / forecast / inventory math and writes
+// nothing itself. Because the shared owner is a NON-PERSISTENT summary that is gap-DONE gated, a duplicate trigger
+// firing, a near-simultaneous second execution, a Run-Now collision, or a retry after timeout are all inherently
+// idempotent (no draft is written, so no duplicate active draft can be produced). Defensive: no-op unless the job is
+// still enabled in the canonical config (the trigger lifecycle already guarantees this; re-checked to survive a
+// stale/orphan trigger left by a schedule edit). Runs both planning products; each is independently deferred by its
+// own gap-DONE gate inside the owner.
+function runWeeklyRecommendation() {
+  // Defensive enabled gate — the reconciler only creates this trigger when enabled and deletes it when disabled, so
+  // this is belt-and-suspenders against an orphan trigger. Never throws.
+  try {
+    var cfg = automationReadConfig_(automationDefaultIo_());
+    if (!cfg || !cfg.weeklyRecommendation || cfg.weeklyRecommendation.enabled !== true) {
+      return { ok: true, skipped: true, reason: 'WEEKLY_RECOMMENDATION_DISABLED' };
+    }
+  } catch (e) { /* config unavailable → fall through and let the owner's own gates decide */ }
+  var out = { ok: false, handlerVersion: 'f1-6a-weekly-recommendation-r1', results: {} };
+  ['INVENTORY', 'ORDER_PLANNING'].forEach(function (p) {
+    // Deterministic planning cycle (Asia/Taipei, RECO-YYYY-MM) via the canonical gap calc-context resolver — the
+    // scheduler SUPPLIES the cycle for observability/lineage; the runtime never guesses it. (43_ owner.)
+    var cycle = '';
+    try { var ctx = gapCalcResolveContext_(p); if (ctx && ctx.ok) cycle = ctx.planningCycle; } catch (e2) {}
+    var res = runRecommendationGeneration(p);   // ONE canonical owner — no second engine, no math here
+    out.results[p] = { planningCycle: cycle, result: res };
+    if (res && res.ok) out.ok = true;
+  });
+  try { Logger.log('[runWeeklyRecommendation] ' + JSON.stringify(out)); } catch (_l) {}
+  return out;
+}
+
 // ============================================================
 // F1-4B-FM6-R4E2 — Request Order Draft Snapshot Completeness (gap authority → canonical persisted draft).
 // BACKEND CONTRACT ONLY: a gap-backed MONTHLY_ORDER draft generation path + an active-draft read-back. NO frontend

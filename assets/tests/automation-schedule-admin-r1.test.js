@@ -64,7 +64,7 @@ var jm = jobsOf(g);
 ok(jm.amazonImport && jm.amazonImport.hour === 12 && jm.amazonImport.minute === 30, 'A2 Amazon Import default 12:30');
 ok(jm.inventoryGap && jm.inventoryGap.hour === 13 && jm.inventoryGap.minute === 30, 'A3 Inventory Gap default 13:30');
 ok(jm.orderPlanningGap && jm.orderPlanningGap.hour === 3 && jm.orderPlanningGap.minute === 30, 'A4 Order Planning Gap default 03:30');
-ok(jm.weeklyRecommendation && jm.weeklyRecommendation.status === 'COMING_SOON' && jm.weeklyRecommendation.enabled === false, 'A5 Weekly Recommendation = COMING_SOON, disabled');
+ok(jm.weeklyRecommendation && jm.weeklyRecommendation.status === 'DISABLED' && jm.weeklyRecommendation.enabled === false && jm.weeklyRecommendation.implemented === true, 'A5 Weekly Recommendation = DISABLED (now implemented via F1-6A; opt-in, default off)');
 
 section('B — config update persists + is read back');
 var ioB = makeIo([]);
@@ -92,7 +92,7 @@ var uE = H.update({ payload: { key: 'orderPlanningGap', config: { enabled: true,
 ok(uE.data.applied.reconcile.created === 1 && ioE._log.created[0].norm.frequency === 'DAILY', 'E1 DAILY trigger created with DAILY frequency');
 
 section('F — weekly schedule representation + validation');
-ok(jm.weeklyRecommendation.weeklyCapable === true && jm.weeklyRecommendation.status === 'COMING_SOON', 'F1 Weekly Recommendation shown as a weekly-capable Coming Soon row');
+ok(jm.weeklyRecommendation.weeklyCapable === true && jm.weeklyRecommendation.status === 'DISABLED', 'F1 Weekly Recommendation is a weekly-capable, disabled (opt-in) row');
 ok(H.validate(H.jobByKey('inventoryGap'), { enabled: true, frequency: 'WEEKLY', hour: 14, minute: 0 }).error.code === 'INVALID_DAY_OF_WEEK', 'F2 WEEKLY without dayOfWeek rejected');
 var wOk = H.validate(H.jobByKey('inventoryGap'), { enabled: true, frequency: 'WEEKLY', dayOfWeek: 'monday', hour: 14, minute: 0 });
 ok(wOk.ok === true && wOk.config.dayOfWeek === 'MONDAY', 'F3 WEEKLY with a valid dayOfWeek accepted + canonicalized');
@@ -126,12 +126,15 @@ var ioL = makeIo([INV]);
 H.update({ payload: { key: 'inventoryGap', config: { enabled: false, frequency: 'DAILY', hour: 13, minute: 30 } } }, ioL);
 ok(countHandler(ioL, INV) === 0, 'L1 disabling removes the owned trigger and creates none');
 
-section('M — Weekly Recommendation cannot be enabled while its handler is unavailable');
+section('M — Weekly Recommendation is now schedulable (F1-6A: handler runWeeklyRecommendation wired)');
 var ioM = makeIo([]);
 var uM = H.update({ payload: { key: 'weeklyRecommendation', config: { enabled: true, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } } }, ioM);
-ok(uM.success === false && uM.errors[0].code === 'WEEKLY_RECOMMENDATION_NOT_AVAILABLE', 'M1 enabling Weekly Recommendation is rejected');
-ok(ioM._triggers.length === 0, 'M2 no trigger was created for the unavailable handler');
-ok(H.allowlist().indexOf('runWeeklyRecommendation') === -1 && H.allowlist().length === 3, 'M3 the allowlist contains ONLY the three implemented handlers (no weekly handler)');
+ok(uM.success === true, 'M1 enabling Weekly Recommendation is accepted (handler implemented)');
+ok(countHandler(ioM, 'runWeeklyRecommendation') === 1 && ioM._log.created[0].norm.frequency === 'WEEKLY' && ioM._log.created[0].norm.dayOfWeek === 'MONDAY', 'M2 exactly one WEEKLY runWeeklyRecommendation trigger created (Monday 14:00)');
+ok(H.allowlist().indexOf('runWeeklyRecommendation') !== -1 && H.allowlist().length === 4, 'M3 the allowlist now contains all four implemented handlers (incl. the weekly handler)');
+ok(jobsOf(H.get({}, ioM)).weeklyRecommendation.enabled === true && jobsOf(H.get({}, ioM)).weeklyRecommendation.status === 'ENABLED', 'M4 the persisted enabled weekly schedule reads back ENABLED');
+var uMoff = H.update({ payload: { key: 'weeklyRecommendation', config: { enabled: false, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } } }, ioM);
+ok(uMoff.success === true && countHandler(ioM, 'runWeeklyRecommendation') === 0, 'M5 disabling Weekly Recommendation removes its trigger (execution stops)');
 
 section('N — GET (page load) writes NOTHING (no property write, no trigger mutation)');
 var ioN = makeIo([AMZ]);
