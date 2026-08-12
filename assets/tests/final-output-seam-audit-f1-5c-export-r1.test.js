@@ -74,14 +74,16 @@ allGs().forEach(function (f) {
 ok(docEngineHits.length === 0, '§K NO document/output engine in any .gs (generated_documents/document_templates/DocumentApp/exportPdf absent) — R1 must not have built one; hits=' + docEngineHits.join(','));
 ok(!/'shipment_detail'|'generateDocument'|'exportDocument'|'exportShippingDetail'|'generatePackingList'|'generateCommercialInvoice'/.test(ROUTER), '§12 router exposes NO document/export action (Export Center absent)');
 
-console.log('\n== §13 / §16-C HALT sentinel: company legal entity / shipper / consignee has NO canonical owner ==');
+console.log('\n== §13 / §16-C party-authority owner (R1 gap CLOSED by R2A — exactly ONE owner) ==');
+// R1 verdict C proved this authority had NO owner. F1-5C-EXPORT-R2A closed it in 33_party_authority_handlers.gs.
+// This sentinel now guards the OTHER direction: the party (shipper/seller-of-record/consignee/legal-entity)
+// authority must have EXACTLY ONE canonical owner — never zero (regression) and never a second competing owner.
 var entityHits = [];
 allGs().forEach(function (f) {
   var src = gs(f);
-  // word-boundary scan for a persisted shipper/consignee/legal-entity authority (header columns or handlers)
-  if (/\b(shipper|consignee|seller_of_record|legal_name|legal_entity|exporter_of_record)\b/i.test(src)) entityHits.push(f);
+  if (/\b(resolveShipmentShipper_|partyResolveShipmentShipper_|company_legal_entities|SellerOfRecord|resolveConsignee)\b/i.test(src)) entityHits.push(f);
 });
-ok(entityHits.length === 0, '§13 no shipper/consignee/legal-entity authority exists yet (FINAL_OUTPUT_AUTHORITY_GAP verdict C is real); hits=' + entityHits.join(','));
+ok(entityHits.length === 1 && entityHits[0] === '33_party_authority_handlers.gs', '§13 party authority has exactly ONE canonical owner = 33_party_authority_handlers.gs (R2A); hits=' + entityHits.join(','));
 
 console.log('\n== §F factory is resolved from warehouse, never inferred from company (shared-factory rule) ==');
 ok(/procurementResolveFactoryId_/.test(ALLOC) || /procurementResolveFactoryId_/.test(POH), '§F factory resolved via procurementResolveFactoryId_(warehouse) — not derived from company');
