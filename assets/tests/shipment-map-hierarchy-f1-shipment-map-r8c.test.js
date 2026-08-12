@@ -22,7 +22,7 @@ var SRC = read('js/pages/global-logistics-map.js');
 var CSS = read('css/pages/global-logistics-map.css');
 var HTML = read('html/pages/global-logistics-map.html');
 var render = extractFn(SRC, 'render');
-var filterBar = extractFn(SRC, 'renderFilterBar');
+var filterBar = extractFn(SRC, 'renderPanelFilters');   // R12 — filters relocated into the Map Control Panel (same owners/keys)
 var region = extractFn(SRC, 'renderSummaryRegion');
 var listFn = extractFn(SRC, 'renderShipmentList');
 var drawer = extractFn(SRC, 'openShipmentDrawer');
@@ -96,8 +96,8 @@ console.log('\n== §5/§6/§7/§17 status vs attention ==');
 ok(/Shipment Status/.test(region) && /Attention/.test(region), '§5 renamed: Shipment Status + Attention');
 ok(!/Lifecycle status/.test(region) && !/>Operational</.test(region), '§5 old "Lifecycle status" / "Operational" labels gone');
 ok(/renderStatusSummary\(\)/.test(region) && /renderAttentionRow\(\)/.test(region), '§6/§7 Shipment Status (primary) + Attention (secondary) in one region');
-var iFilter = render.indexOf('renderFilterBar()'), iSummary = render.indexOf('renderSummaryRegion()'), iMain = render.indexOf('glm-main');
-ok(iFilter > -1 && iFilter < iSummary && iSummary < iMain, '§17 order: filters → status/attention → main workspace');
+var iSummary = render.indexOf('renderSummaryRegion()'), iMain = render.indexOf('glm-main');
+ok(iSummary > -1 && iSummary < iMain, 'R12 order: full-width status/attention rail → main workspace (filters relocated into the in-map Map Control Panel)');
 
 console.log('\n== §11 global banner removed ==');
 ok(!/renderPartialNote/.test(SRC), '§11 renderPartialNote removed');

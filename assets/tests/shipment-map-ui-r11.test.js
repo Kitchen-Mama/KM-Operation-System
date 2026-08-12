@@ -21,7 +21,7 @@ var SRC = read('js/pages/global-logistics-map.js');
 var CSS = read('css/pages/global-logistics-map.css');
 var status = extractFn(SRC, 'renderStatusSummary');
 var attention = extractFn(SRC, 'renderAttentionRow');
-var filterBar = extractFn(SRC, 'renderFilterBar');
+var filterBar = extractFn(SRC, 'renderPanelFilters');   // R12 — filters relocated into the Map Control Panel (same keys/semantics)
 var list = extractFn(SRC, 'renderShipmentList');
 var mapShell = extractFn(SRC, 'renderMapShell');
 
@@ -65,7 +65,9 @@ ok(!/renderPartialNote/.test(SRC) && !/Some shipments have incomplete route hist
 console.log('\n== Part D — no shipment-card list inside the map (K/L/M) ==');
 ok(!/renderPendingTray/.test(SRC) && !/glm-tray__item/.test(SRC), 'K the map-surface Coordinate-Pending shipment tray is removed');
 ok(!/renderPendingTray/.test(mapShell) && !/glm-tray/.test(mapShell), 'K map shell renders no shipment-card list overlay');
-ok(/data-mode-select/.test(mapShell) && /data-toggle="showPlannedRoute"/.test(mapShell) && /data-act="zoom-in"/.test(mapShell), '§14 map keeps only map-relevant controls (view / arcs / zoom)');
+var mcpPanel = extractFn(SRC, 'renderMapControlPanel');   // R12 — View/Layers relocated into the panel
+ok(/renderMapControlPanel\(\)/.test(mapShell) && /data-act="zoom-in"/.test(mapShell), '§14/R12 map shell = globe + Map Control Panel + SEPARATE right-side zoom controls');
+ok(/data-mode-select/.test(mcpPanel) && /data-toggle="showPlannedRoute"/.test(mcpPanel), 'R12 Map View + layer toggles live inside the Map Control Panel');
 // L/M — canonical selection unchanged
 var sel = extractFn(SRC, 'selectShipment');
 ok(/state\.selectedShipmentId = id/.test(sel) && /openShipmentDrawer\(id\)/.test(sel) && /state\.globe/.test(sel), 'L/M left-list click → single selection → globe focus + drawer (unchanged)');

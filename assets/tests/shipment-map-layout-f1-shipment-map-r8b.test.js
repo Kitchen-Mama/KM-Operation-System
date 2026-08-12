@@ -24,16 +24,16 @@ var render = extractFn(SRC, 'render');
 var mapshell = extractFn(SRC, 'renderMapShell');
 var listFn = extractFn(SRC, 'renderShipmentList');
 
-// A/B — Title → compact Filter Bar → Status Summary → Main (order proven by position in render()).
-var iFilter = render.indexOf('renderFilterBar()'), iSummary = render.indexOf('renderSummaryRegion()'), iMain = render.indexOf('glm-main');
-ok(iFilter > -1 && iSummary > -1 && iMain > -1, 'render() composes filter bar + summary region + main workspace');
-ok(iFilter < iSummary && iSummary < iMain, 'A/B order: compact filters → status summary → main workspace');
+// A/B — R12: Title → full-width Status/Attention rail → Main (filters relocated into the in-map Map Control Panel).
+var iSummary = render.indexOf('renderSummaryRegion()'), iMain = render.indexOf('glm-main');
+ok(iSummary > -1 && iMain > -1, 'render() composes the status/attention rail + main workspace');
+ok(iSummary < iMain, 'A/B order (R12): status/attention rail → main workspace (filters now inside the map panel)');
 
 // C — Shipment list is the LEFT workspace content and is NOT nested below a filter panel.
 ok(/:\s*renderShipmentList\(\);/.test(render), 'C runtime side renders the shipment list directly (list starts top-left)');
 ok(!/renderFilters\b/.test(SRC), 'C legacy tall renderFilters panel removed (filters no longer above the list)');
 ok(!/renderFilterBar\(\)\s*\+\s*renderShipmentList/.test(SRC), 'C filters are not concatenated into the left list column');
-ok(/data-filter="search"/.test(extractFn(SRC, 'renderFilterBar')) && /glm-filterbar/.test(SRC), 'C filters live in the compact glm-filterbar');
+ok(/data-filter="search"/.test(extractFn(SRC, 'renderPanelFilters')) && /glm-pfilters/.test(SRC), 'C filters live in the Map Control Panel (glm-pfilters) — R12 relocation');
 
 // E — list has its own bounded scroll region (CSS).
 ok(/\.glm-shiplist\s*\{[^}]*overflow-y:\s*auto/.test(CSS) && /\.glm-shiplist\s*\{[^}]*max-height/.test(CSS), 'E shipment list has bounded independent scroll');
@@ -41,8 +41,11 @@ ok(/\.glm-shiplist\s*\{[^}]*overflow-y:\s*auto/.test(CSS) && /\.glm-shiplist\s*\
 // F/G — map-layer modes moved INTO the map; no primary page-level tab row; all three preserved.
 ok(!/glm-modebar/.test(SRC), 'F no primary page-level mode tab row (glm-modebar removed)');
 ok(!/data-mode="/.test(SRC), 'F no page-level data-mode tab buttons emitted');
-ok(/data-mode-select/.test(mapshell) && /MODE_TABS\.map/.test(mapshell), 'G map surface owns the Map View selector (built from MODE_TABS)');
-ok(/glm-map-view/.test(mapshell) && /glm-map-view/.test(CSS), 'G Map View selector overlays the map surface');
+// R12 — the Map View selector moved from the map shell into the in-map Map Control Panel (still map-surface-owned:
+// renderMapShell embeds renderMapControlPanel()).
+var mcp = extractFn(SRC, 'renderMapControlPanel');
+ok(/data-mode-select/.test(mcp) && /MODE_TABS\.map/.test(mcp), 'G the Map View selector (built from MODE_TABS) lives in the map-surface control panel');
+ok(/renderMapControlPanel\(\)/.test(mapshell) && /\.glm-mcp\s*\{/.test(CSS), 'G the Map Control Panel overlays the map surface');
 ok(/runtime/.test(SRC) && /template/.test(SRC) && /global/.test(SRC), 'G all three modes (runtime/template/global) preserved');
 ok(/data-mode-select/.test(extractFn(SRC, 'bindRuntime')), 'G Map View selector is wired (mode change → render)');
 ok(!/glm-topbar/.test(render) && !/data-mode="/.test(render), 'F body render carries no top bar / mode control (Map View lives in the map surface; Refresh moved to the page header — R8C)');

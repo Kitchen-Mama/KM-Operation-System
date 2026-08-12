@@ -288,12 +288,12 @@
     // the list; the On the Way / Route Template / Global Reference modes move into the map surface.
     var isRuntime = state.mode === 'runtime';
     var sideHtml = (state.mode === 'template') ? renderTemplateSide() : (state.mode === 'global') ? renderGlobalRefSide() : renderShipmentList();
-    // R8C §11/§17 — Refresh moved into the page header (top-right); the page-wide incomplete-route banner is gone
-    // (issues now surface per-shipment). Order: source banner (fallback only) → filters → Shipment Status + Attention.
+    // R12 — filters relocated into the in-map Map Control Panel (renderMapControlPanel). The page body now leads
+    // with the FULL-WIDTH Shipment Status + Attention rail, then the LEFT list / RIGHT map workspace. Refresh stays
+    // in the page header (top-right); per-shipment issues surface on each card (no page-wide banner).
     b.innerHTML =
       renderSourceBanner() +
       (state.debug ? renderDiagPanel() : '') +
-      (isRuntime ? renderFilterBar() : '') +
       (isRuntime ? renderSummaryRegion() : '') +
       '<div class="glm-main">' +
         '<div class="glm-side">' + sideHtml + '</div>' +
@@ -375,31 +375,54 @@
     return '<label class="glm-field' + (cls ? ' ' + cls : '') + '"><span>' + esc(label) + '</span><select data-filter="' + key + '"><option value="">All</option>' +
       opts.map(function (o) { return '<option value="' + esc(o) + '"' + (cur === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>';
   }
-  // R8C §3/§4 — simplified filter bar. VISIBLE: Search · Company · Destination (canonical destination-warehouse
-  // identity) · Carrier · Method · ETA From · ETA To · Clear Filters. REMOVED controls (Origin, a duplicate
-  // country-Destination, a separate Dest Warehouse, Status, Stage, Route Template, Exception/Delayed/Arriving
-  // checkboxes) — their underlying filter LOGIC in filteredVms() is retained but the state is neutralized on init
-  // (clearFilters) so no hidden control can pin the view. Attention chips (below) cover exception/delayed/arriving.
-  function renderFilterBar() {
-    var vms = allVms(), f = state.filters, IL = 'glm-field--inline';
-    return '<div class="glm-filterbar" role="group" aria-label="Shipment filters">' +
-      '<label class="glm-field glm-field--inline glm-field--search"><span>Search</span><input type="text" data-filter="search" value="' + esc(f.search) + '" placeholder="Shipment / Tracking / Container…"></label>' +
-      selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company, IL) +
-      // ONE canonical Destination control = destination-warehouse identity (name/code), never a duplicated country + warehouse pair.
-      selHtml('Destination', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, IL) +
-      selHtml('Carrier', 'carrier', optSet(vms, function (v) { return v.carrier; }), f.carrier, IL) +
-      selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, IL) +
-      // R11 §6/§7 — ONE "ETA Date" control (was ETA From + ETA To). The from→to RANGE SEMANTICS are frozen
-      // (data-filter="etaFrom"/"etaTo" over shipments.eta — §8), presented as a single labeled range field echoing
-      // the Forecast Review Date filter's label treatment. (Forecast's Date is a page-private custom calendar popup
-      // in forecast.js — not a shared abstraction — so its style is matched, not its popup reused.)
-      '<label class="glm-field glm-field--inline glm-field--eta"><span>ETA Date</span>' +
-        '<span class="glm-eta-range">' +
-          '<input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '" aria-label="ETA from">' +
-          '<span class="glm-eta-range__sep" aria-hidden="true">–</span>' +
-          '<input type="date" data-filter="etaTo" value="' + esc(f.etaTo) + '" aria-label="ETA to">' +
-        '</span></label>' +
-      '<button type="button" class="glm-btn glm-btn--small" data-act="clear-filters">Clear Filters</button>' +
+  // R12 — ONE consolidated in-map control panel (upper-left, collapsible): View · Filters · Layers · Legend. It
+  // REPLACES the page-level filter bar + the separate in-map Map View selector, layer toggles and bottom legend.
+  // Every existing data-* owner is preserved verbatim (data-mode-select, data-filter keys, data-toggle, the legend
+  // renderer) so the existing handlers in bindRuntime bind unchanged. The right-side zoom controls
+  // (.glm-map-controls) stay SEPARATE (§11) so the panel never covers them. Collapsed → only the ☰ header renders
+  // (no hidden focusable children — §14). Default collapsed on narrow viewports.
+  function renderMapControlPanel() {
+    if (state.mapPanelCollapsed == null) state.mapPanelCollapsed = (typeof window !== 'undefined' && window.innerWidth > 0 && window.innerWidth < 1024);
+    var collapsed = !!state.mapPanelCollapsed;
+    var isRuntime = state.mode === 'runtime';
+    var head =
+      '<button type="button" class="glm-mcp__toggle" data-act="toggle-map-panel" aria-expanded="' + (!collapsed) + '" aria-controls="glm-mcp-body" title="' + (collapsed ? 'Expand map controls' : 'Collapse map controls') + '">' +
+        '<span class="glm-mcp__icon" aria-hidden="true">☰</span><span class="glm-mcp__title">Map Controls</span>' +
+      '</button>';
+    if (collapsed) return '<div class="glm-mcp is-collapsed" data-glm="map-panel">' + head + '</div>';
+    var mapView =
+      '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">View</span>' +
+        '<label class="glm-field glm-field--panel"><span>Map View</span><select data-mode-select aria-label="Map view / layer">' +
+          MODE_TABS.map(function (m) { return '<option value="' + m.id + '"' + (state.mode === m.id ? ' selected' : '') + '>' + esc(m.label) + '</option>'; }).join('') +
+        '</select></label></div>';
+    var filters = isRuntime ? '<div class="glm-mcp__sec glm-mcp__sec--filters"><span class="glm-mcp__lbl">Filters</span>' + renderPanelFilters() + '</div>' : '';
+    var layers = isRuntime ?
+      '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Layers</span>' +
+        '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showPlannedRoute"' + (state.showPlannedRoute ? ' checked' : '') + '> Route arcs</label>' +
+        '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showReference"' + (state.showReference ? ' checked' : '') + '> Reference pins</label>' +
+      '</div>' : '';
+    // §12 legend RELOCATED into the panel — reuse the SAME legendHtml() renderer (no duplicate, no second legend).
+    var legend = '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Legend</span><div class="glm-mcp__legend">' + legendHtml() + '</div></div>';
+    return '<div class="glm-mcp" data-glm="map-panel">' + head +
+      '<div class="glm-mcp__body" id="glm-mcp-body">' + mapView + filters + layers + legend + '</div></div>';
+  }
+  // R12 — the approved filter controls, relocated into the panel with IDENTICAL data-filter keys + semantics as the
+  // retired filter bar: search · company · destWarehouse (canonical Destination) · carrier · method · etaFrom/etaTo
+  // (frozen ETA range) · clear-filters. Removed controls (Origin / Status / Stage / Exception·Delayed·Arriving
+  // checkboxes) are NOT reintroduced. Stacked full-width for the panel (no horizontal overflow).
+  function renderPanelFilters() {
+    var vms = allVms(), f = state.filters, PC = 'glm-field--panel';
+    return '<div class="glm-pfilters" role="group" aria-label="Shipment filters">' +
+      '<label class="glm-field glm-field--panel glm-field--search"><span>Search</span><input type="text" data-filter="search" value="' + esc(f.search) + '" placeholder="Shipment / Tracking / Container…"></label>' +
+      selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company, PC) +
+      selHtml('Destination', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, PC) +
+      selHtml('Carrier', 'carrier', optSet(vms, function (v) { return v.carrier; }), f.carrier, PC) +
+      selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, PC) +
+      '<label class="glm-field glm-field--panel glm-field--eta"><span>ETA Date</span><span class="glm-eta-range">' +
+        '<input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '" aria-label="ETA from">' +
+        '<span class="glm-eta-range__sep" aria-hidden="true">–</span>' +
+        '<input type="date" data-filter="etaTo" value="' + esc(f.etaTo) + '" aria-label="ETA to"></span></label>' +
+      '<button type="button" class="glm-btn glm-btn--small glm-pfilters__clear" data-act="clear-filters">Clear Filters</button>' +
       '</div>';
   }
 
@@ -439,26 +462,18 @@
 
   // ---------- map shell (persistent WebGL globe host) ----------
   function renderMapShell() {
+    // R12 — the map surface holds: the WebGL globe, the tooltip, ONE consolidated Map Control Panel (upper-left:
+    // View · Filters · Layers · Legend), and the right-side zoom controls (kept SEPARATE from the panel — §11).
+    // The former standalone Map View selector, layer toggles and bottom-left legend are consolidated into the panel.
     return '' +
       '<div class="glm-globe-slot" data-glm="globe-slot"></div>' +
       '<div class="glm-tip" data-glm="tip" aria-hidden="true"></div>' +
-      '<div class="glm-map-view"><label class="glm-map-view__lbl"><span>Map View</span>' +
-        '<select data-mode-select aria-label="Map view / layer">' + MODE_TABS.map(function (m) {
-          return '<option value="' + m.id + '"' + (state.mode === m.id ? ' selected' : '') + '>' + esc(m.label) + '</option>';
-        }).join('') + '</select></label></div>' +
+      renderMapControlPanel() +
       '<div class="glm-map-controls">' +
         '<button type="button" class="glm-btn" data-act="zoom-in" aria-label="Zoom in">+</button>' +
         '<button type="button" class="glm-btn" data-act="zoom-out" aria-label="Zoom out">&minus;</button>' +
         '<button type="button" class="glm-btn" data-act="reset" aria-label="Reset view">⤢</button>' +
-      '</div>' +
-      (state.mode === 'runtime' ?
-        '<div class="glm-map-toggles">' +
-          '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showPlannedRoute"' + (state.showPlannedRoute ? ' checked' : '') + '> Route arcs</label>' +
-          '<label class="glm-check glm-check--map"><input type="checkbox" data-toggle="showReference"' + (state.showReference ? ' checked' : '') + '> Reference pins</label>' +
-        '</div>' : '') +
-      // R11 §13/§14 — the map surface is NOT a second shipment list. The former Coordinate-Pending tray is removed;
-      // coordinate-pending shipments remain in the canonical LEFT list (with their Coord Pending badge, clickable).
-      '<details class="glm-legend" data-glm="legend"><summary>Legend</summary>' + legendHtml() + '</details>';
+      '</div>';
   }
   function legendHtml() {
     function row(c, lbl) { return '<div class="glm-legend__row"><span class="glm-legend__dot glm-mk--' + c + '"></span>' + esc(lbl) + '</div>'; }
@@ -948,6 +963,9 @@
     var acts = {
       'zoom-in': function () { if (state.globe) state.globe.zoomIn(); }, 'zoom-out': function () { if (state.globe) state.globe.zoomOut(); }, 'reset': function () { if (state.globe) state.globe.reset(); },
       'drawer-close': closeDrawer, 'clear-filters': clearFilters, 'clear-kpi': function () { state.filters.kpi = ''; render(); },
+      // R12 — collapse/expand the in-map Map Control Panel (canonical UI state; no duplicate DOM). Focus returns to
+      // the toggle after the re-render (§14 keyboard/focus behavior).
+      'toggle-map-panel': function () { state.mapPanelCollapsed = !state.mapPanelCollapsed; render(); var rr = root(); var tb = rr && rr.querySelector('[data-act="toggle-map-panel"]'); if (tb) try { tb.focus(); } catch (e) {} },
       'refresh': function () { boot(true); },
       'ref-clear': function () { state.ref = { search: '', country: '', type: '' }; render(); },
       'ref-fit': function () {

@@ -41,8 +41,8 @@
 .glm-mode:hover { color: var(--glm-ink); }
 .glm-mode.is-active { background: var(--glm-surface); color: var(--glm-brand); box-shadow: var(--glm-shadow-sm); }
 
-/* Legacy summary cards (template / global modes) */
-.glm-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+/* Legacy summary cards (template / global modes). R12: the runtime Status+Attention rail is the flex `.glm-summary`
+   defined below (full-width); this stale grid rule is retired to avoid dueling definitions. */
 .glm-card { border: 1px solid var(--glm-line); border-radius: var(--glm-r); padding: 13px 15px; background: var(--glm-surface); box-shadow: var(--glm-shadow-sm); }
 .glm-card__value { font-size: 22px; font-weight: 750; color: var(--glm-ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
 .glm-card__label { font-size: 11.5px; color: var(--glm-ink-3); margin-top: 3px; }
@@ -108,14 +108,19 @@
 .glm-summary__group { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .glm-summary__label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--glm-ink-4); }
 .glm-summary .glm-kpirail { margin-bottom: 0; }
-.glm-summary__group--status { flex: 0 1 auto; }
-.glm-summary__group--attention { flex: 1 1 auto; }
+/* R12 — full-width rail: groups grow in proportion to their tile count (status 3 : attention 5) so tiles are
+   ~equal width across the whole row, and wrap as WHOLE units (never a single card onto a third row). */
+.glm-summary__group--status { flex: 3 1 300px; }
+.glm-summary__group--attention { flex: 5 1 500px; }
+/* R12 responsive — one row on wide desktop; groups wrap as whole units on medium; each group takes a full row on
+   small (balanced 2-row: Status row + Attention row) and tiles may shrink to fit (§6). */
+@media (max-width: 900px) { .glm-summary__group--status, .glm-summary__group--attention { flex-basis: 100%; } .glm-summary .glm-kpi-tile { min-width: 0; } }
 
 /* R11 §1/§3/§4 — ONE shared COMPACT KPI tile family for BOTH Shipment Status and Attention (identical height /
    radius / border / number + label typography / padding / gap; only the semantic accent differs). ~10% smaller
    footprint than the prior status cards. Attention tiles are clickable KPI filters; Status tiles are display-only. */
 .glm-kpirail { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
-.glm-kpi-tile { display: flex; flex-direction: column; gap: 2px; flex: 0 0 auto; min-width: 116px; padding: 8px 13px 7px; border: 1px solid var(--glm-line); border-radius: var(--glm-r); background: var(--glm-surface); position: relative; box-shadow: var(--glm-shadow-sm); text-align: left; }
+.glm-kpi-tile { display: flex; flex-direction: column; gap: 2px; flex: 1 1 116px; min-width: 116px; padding: 8px 13px 7px; border: 1px solid var(--glm-line); border-radius: var(--glm-r); background: var(--glm-surface); position: relative; box-shadow: var(--glm-shadow-sm); text-align: left; }
 .glm-kpi-tile::before { content: ""; position: absolute; left: 13px; right: 13px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--glm-neutral); opacity: 0.9; }
 .glm-kpi-tile__value { font-size: 20px; font-weight: 750; color: var(--glm-ink); line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .glm-kpi-tile__label { font-size: 11px; color: var(--glm-ink-3); font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
@@ -200,6 +205,32 @@
 .glm-map-controls { position: absolute; top: 14px; right: 14px; display: flex; flex-direction: column; gap: 7px; z-index: 4; }
 .glm-map-controls .glm-btn { width: 40px; height: 40px; padding: 0; text-align: center; font-size: 18px; background: var(--glm-dark-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-color: var(--glm-dark-line); color: var(--glm-dark-ink); box-shadow: 0 6px 18px rgba(2,6,23,0.3); }
 .glm-map-controls .glm-btn:hover { background: rgba(30,41,59,0.92); border-color: rgba(148,163,184,0.4); }
+
+/* R12 — consolidated in-map Map Control Panel (upper-left, collapsible): View · Filters · Layers · Legend.
+   Sits above the WebGL canvas (z-index 6) but the right-side zoom controls stay clear (§11). Body scrolls so the
+   panel never spills over the globe. */
+.glm-mcp { position: absolute; left: 14px; top: 14px; z-index: 6; width: 264px; max-width: calc(100% - 84px); display: flex; flex-direction: column; max-height: calc(100% - 28px); background: var(--glm-dark-glass); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid var(--glm-dark-line); border-radius: var(--glm-r-sm); box-shadow: 0 10px 26px rgba(2,6,23,0.34); overflow: hidden; }
+.glm-mcp.is-collapsed { width: auto; }
+.glm-mcp__toggle { display: inline-flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 9px 12px; min-height: 40px; background: transparent; border: 0; color: var(--glm-dark-ink); cursor: pointer; font: inherit; text-align: left; }
+.glm-mcp__toggle:hover { background: rgba(148,163,184,0.12); }
+.glm-mcp__toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--glm-brand-soft) inset; }
+.glm-mcp__icon { font-size: 15px; line-height: 1; }
+.glm-mcp__title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.glm-mcp__body { display: flex; flex-direction: column; gap: 12px; padding: 4px 12px 12px; overflow-y: auto; border-top: 1px solid var(--glm-dark-line); }
+.glm-mcp__sec { display: flex; flex-direction: column; gap: 7px; }
+.glm-mcp__lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--glm-dark-ink); opacity: 0.68; }
+.glm-mcp__legend { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #cbd5e1; }
+.glm-mcp .glm-check--map { color: var(--glm-dark-ink); margin-bottom: 0; font-size: 12px; }
+/* panel filter fields — stacked, full-width, dark-themed; no horizontal overflow (§8) */
+.glm-pfilters { display: flex; flex-direction: column; gap: 8px; }
+.glm-field--panel { margin-bottom: 0; gap: 3px; }
+.glm-field--panel > span { color: var(--glm-dark-ink); opacity: 0.72; font-size: 10px; }
+.glm-field--panel select, .glm-field--panel input[type="text"], .glm-field--panel input[type="date"] { background: rgba(15,23,42,0.55); border-color: var(--glm-dark-line); color: var(--glm-dark-ink); }
+.glm-field--panel .glm-eta-range { display: flex; align-items: center; gap: 6px; }
+.glm-field--panel .glm-eta-range input { min-width: 0; }
+.glm-pfilters__clear { align-self: flex-start; margin-top: 2px; }
+@media (max-width: 1100px) { .glm-mcp { width: 244px; } }
+@media (max-width: 640px) { .glm-mcp { width: calc(100% - 84px); max-width: 300px; } }
 .glm-map-toggles { position: absolute; left: 14px; top: 70px; z-index: 4; display: flex; flex-direction: column; gap: 6px; }
 /* Map View / layer selector (R8B) — relocated into the map surface, upper-left, above the arc/pin toggles. */
 .glm-map-view { position: absolute; left: 14px; top: 14px; z-index: 5; }
