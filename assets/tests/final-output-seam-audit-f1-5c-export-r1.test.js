@@ -65,16 +65,16 @@ console.log('\n== §16 / §J existing snapshot = shipping_plan_lines.snapshot_* 
 ok(/snapshot_current_stock/.test(PLAN), '§J planning snapshot lives on shipping_plan_lines.snapshot_* (SKU Shipping Details display source)');
 ok(/snapshot_current_stock/.test(SHIP), 'execution snapshot copied onto shipment_lines (verbatim, never recalculated)');
 
-console.log('\n== §K / §16-D no document RENDERER engine yet (R2B builds the DATA snapshot; renderers = R3) ==');
-// R2B (34_) builds the immutable DATA snapshot — that is expected. What must still be absent is a document
-// RENDERER / template engine (DocumentApp / PDF export / renderTemplate) and the frozen document-registry tables
-// (generated_documents / document_templates / document_template_fields) as CODE (comments are stripped first).
+console.log('\n== §K / §16-D no FILE-renderer engine yet (R2B=snapshot, R3A=model, R3B=template runtime; files = R3C) ==');
+// Evolution: R2B (34_) builds the DATA snapshot; R3A (35_) the presentation model; R3B (36_) the persisted
+// document_templates/_fields/generated_documents runtime — all expected. What must STILL be absent is actual
+// binary FILE generation: DocumentApp / PDF export / getAs / renderTemplate (deferred to R3C). Comments stripped.
 var docEngineHits = [];
 allGs().forEach(function (f) {
   var code = gs(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-  if (/generated_documents|document_templates|document_template_fields|DocumentApp|exportPdf|\.getAs\(|renderTemplate/i.test(code)) docEngineHits.push(f);
+  if (/DocumentApp|exportPdf|\.getAs\(|renderTemplate|createFile\(|makeCopy\(/i.test(code)) docEngineHits.push(f);
 });
-ok(docEngineHits.length === 0, '§K NO document renderer / template engine in any .gs (renderers deferred to R3); hits=' + docEngineHits.join(','));
+ok(docEngineHits.length === 0, '§K NO binary file-renderer in any .gs (DocumentApp/PDF/getAs/makeCopy — deferred to R3C); hits=' + docEngineHits.join(','));
 ok(!/'generateDocument'|'exportDocument'|'exportShippingDetail'|'generatePackingList'|'generateCommercialInvoice'/.test(ROUTER), '§12 router exposes NO document RENDERER/export action (Export Center absent)');
 
 console.log('\n== §13 / §16-C party-authority owner (R1 gap CLOSED by R2A — exactly ONE owner) ==');

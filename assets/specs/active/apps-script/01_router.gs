@@ -216,6 +216,25 @@ function doPost(e) {
       return handleRenderShipmentDocument_(body);
     }
 
+    // F1-5C-EXPORT-R3B — persisted document template / field-mapping / generated-document runtime. Renders via the
+    // R3A renderer (snapshot only), resolves ONE active document_templates row, maps document_template_fields, and
+    // idempotently upserts a generated_documents lifecycle record. See 36_document_template_handlers.gs.
+    if (action === 'documentTemplate.list') {
+      return handleDocumentTemplateList_(body);
+    }
+    if (action === 'documentTemplate.getFields') {
+      return handleDocumentTemplateGetFields_(body);
+    }
+    if (action === 'shipmentDocument.generate') {
+      return handleShipmentDocumentGenerate_(body);
+    }
+    if (action === 'shipmentDocument.get') {
+      return handleShipmentDocumentGet_(body);
+    }
+    if (action === 'shipmentDocument.list') {
+      return handleShipmentDocumentList_(body);
+    }
+
     // Shipment Receipt + Route Progress (F1-SHIPMENT-RECEIPT-R1B). Receipt = cumulative write to the LIVE
     // shipment_lines.shipment_received_qty + backend-derived shipments.status; route advance = forward-only
     // current-point set on shipment_routes node statuses. See 31_shipment_receipt_route_handlers.gs.
