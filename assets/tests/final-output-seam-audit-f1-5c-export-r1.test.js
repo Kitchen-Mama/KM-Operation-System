@@ -65,25 +65,29 @@ console.log('\n== §16 / §J existing snapshot = shipping_plan_lines.snapshot_* 
 ok(/snapshot_current_stock/.test(PLAN), '§J planning snapshot lives on shipping_plan_lines.snapshot_* (SKU Shipping Details display source)');
 ok(/snapshot_current_stock/.test(SHIP), 'execution snapshot copied onto shipment_lines (verbatim, never recalculated)');
 
-console.log('\n== §11 / §K / §16-D no final-output snapshot table + no second document engine in runtime ==');
+console.log('\n== §K / §16-D no document RENDERER engine yet (R2B builds the DATA snapshot; renderers = R3) ==');
+// R2B (34_) builds the immutable DATA snapshot — that is expected. What must still be absent is a document
+// RENDERER / template engine (DocumentApp / PDF export / renderTemplate) and the frozen document-registry tables
+// (generated_documents / document_templates / document_template_fields) as CODE (comments are stripped first).
 var docEngineHits = [];
 allGs().forEach(function (f) {
-  var src = gs(f);
-  if (/generated_documents|document_templates|document_template_fields|DocumentApp|exportPdf|renderTemplate/i.test(src)) docEngineHits.push(f);
+  var code = gs(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  if (/generated_documents|document_templates|document_template_fields|DocumentApp|exportPdf|\.getAs\(|renderTemplate/i.test(code)) docEngineHits.push(f);
 });
-ok(docEngineHits.length === 0, '§K NO document/output engine in any .gs (generated_documents/document_templates/DocumentApp/exportPdf absent) — R1 must not have built one; hits=' + docEngineHits.join(','));
-ok(!/'shipment_detail'|'generateDocument'|'exportDocument'|'exportShippingDetail'|'generatePackingList'|'generateCommercialInvoice'/.test(ROUTER), '§12 router exposes NO document/export action (Export Center absent)');
+ok(docEngineHits.length === 0, '§K NO document renderer / template engine in any .gs (renderers deferred to R3); hits=' + docEngineHits.join(','));
+ok(!/'generateDocument'|'exportDocument'|'exportShippingDetail'|'generatePackingList'|'generateCommercialInvoice'/.test(ROUTER), '§12 router exposes NO document RENDERER/export action (Export Center absent)');
 
 console.log('\n== §13 / §16-C party-authority owner (R1 gap CLOSED by R2A — exactly ONE owner) ==');
 // R1 verdict C proved this authority had NO owner. F1-5C-EXPORT-R2A closed it in 33_party_authority_handlers.gs.
-// This sentinel now guards the OTHER direction: the party (shipper/seller-of-record/consignee/legal-entity)
-// authority must have EXACTLY ONE canonical owner — never zero (regression) and never a second competing owner.
+// This sentinel now guards the OTHER direction: the party authority must be DEFINED in exactly ONE canonical owner
+// — never zero (regression) and never a second competing owner. Consumers (e.g. R2B's 34_ aggregator) call the
+// resolver but must NOT redefine it, so match the DEFINITION (function/header-const), not call-sites.
 var entityHits = [];
 allGs().forEach(function (f) {
   var src = gs(f);
-  if (/\b(resolveShipmentShipper_|partyResolveShipmentShipper_|company_legal_entities|SellerOfRecord|resolveConsignee)\b/i.test(src)) entityHits.push(f);
+  if (/function partyResolveShipmentShipper_|var COMPANY_LEGAL_ENTITIES_HEADERS_/.test(src)) entityHits.push(f);
 });
-ok(entityHits.length === 1 && entityHits[0] === '33_party_authority_handlers.gs', '§13 party authority has exactly ONE canonical owner = 33_party_authority_handlers.gs (R2A); hits=' + entityHits.join(','));
+ok(entityHits.length === 1 && entityHits[0] === '33_party_authority_handlers.gs', '§13 party authority DEFINED in exactly ONE canonical owner = 33_ (R2A); consumers may reference it; hits=' + entityHits.join(','));
 
 console.log('\n== §F factory is resolved from warehouse, never inferred from company (shared-factory rule) ==');
 ok(/procurementResolveFactoryId_/.test(ALLOC) || /procurementResolveFactoryId_/.test(POH), '§F factory resolved via procurementResolveFactoryId_(warehouse) — not derived from company');

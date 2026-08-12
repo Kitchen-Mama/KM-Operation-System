@@ -200,6 +200,16 @@ function doPost(e) {
       return handleConfirmShipmentAndDispatch_(body);
     }
 
+    // F1-5C-EXPORT-R2B — canonical immutable final-output snapshot. finalize = idempotent post-dispatch
+    // materialization (bound to shipments.status=in_transit; NOT inside the dispatch transaction); get = the ONE
+    // frozen read owner (no re-resolve of masters). See 34_shipment_final_output_handlers.gs.
+    if (action === 'finalizeShipmentFinalOutput') {
+      return handleFinalizeShipmentFinalOutput_(body);
+    }
+    if (action === 'getShipmentFinalOutput') {
+      return handleGetShipmentFinalOutput_(body);
+    }
+
     // Shipment Receipt + Route Progress (F1-SHIPMENT-RECEIPT-R1B). Receipt = cumulative write to the LIVE
     // shipment_lines.shipment_received_qty + backend-derived shipments.status; route advance = forward-only
     // current-point set on shipment_routes node statuses. See 31_shipment_receipt_route_handlers.gs.
