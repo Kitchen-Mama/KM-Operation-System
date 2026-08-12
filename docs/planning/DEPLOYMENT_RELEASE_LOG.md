@@ -281,3 +281,28 @@ Next mainline:               USER live run per §33 on a HEAD-synced deployment 
 ```
 
 **STATUS: LIVE ACCEPTANCE BLOCKED_BY_DEPLOYMENT — agent has no production access + Apps Script not confirmed on HEAD; USER deployment (readiness §28) required before any LIVE_VERIFIED gate.**
+
+---
+
+## Entry — 2026-08-12 · F1-PHASE1-LIVE-DEPLOYMENT-CLOSURE-R1 (deployment readiness closure)
+
+```
+Release ID:                  F1-PHASE1-LIVE-DEPLOYMENT-CLOSURE-R1-2026-08-12-deploy-readiness
+Git HEAD:                    33a4a54  (F1-PHASE1-LIVE-ACCEPTANCE-R1 ledger)   ·   origin/main 92b54b0 (HEAD 1 ahead — USER to push)
+Working tree:                clean   ·   unpushed: 1 (33a4a54)
+Verdict:                     B. READY_AFTER_REMAINING_USER_ACTIONS
+Code side (agent-proven):    HEAD known · bundle CURRENT (40 modules · sha256 aaf5b07f2292f9e876459f38d5c9533f1451357f1781e3e3622684f4c2918782 · --check PASS) ·
+                             schema contracts match (14/22/30/23/30 + SFO + required cols) · active .gs = 49 (sync ALL as ONE new version; drift-proof;
+                             28_/41_ are READ-ONLY editor diagnostics, harmless; no temp/pasted-and-deleted file present) · last full regression 213 files / 4 baseline.
+Web App deployment:          NEW version REQUIRED (router doPost actions + new trigger targets added since baseline). Source paste alone insufficient.
+Remaining (USER, §14):       push 33a4a54 → back up DB → run releaseReadinessVerifySchema_ (all OK; provision missing via R2A-LIVE/R2B/R3B snippets) →
+                             confirm master data (KM/ResTW/ResUS legal entities, SHIPDETAIL/PL templates+fields, warehouses/locations/SKU/factory-stock) →
+                             sync all 49 .gs → Save → NEW Web App version (capture id) → TZ Asia/Taipei → grant OAuth →
+                             Administration Save&Apply the 5 automations → releaseReadinessListTriggers_ (5 recurring ≤1, legacy 0) →
+                             redeploy GitHub Pages from main → re-verify schema + Drive templates/folders.
+Halt conditions:             none tripped in code; all §16 conditions are USER-verifiable via the two read-only verifiers before R2.
+Code/DB/schema impact:       NONE (readiness doc + ledger entry only). No .gs / bundle / frontend / DB change.
+Next slice:                  complete §14 + both verifiers PASS → flips to A. READY_FOR_PHASE1_LIVE_ACCEPTANCE → run F1-PHASE1-LIVE-ACCEPTANCE-R2.
+```
+
+**STATUS: READY_AFTER_REMAINING_USER_ACTIONS — code/repo side READY; production deployment + read-only verifiers are the USER-owned gate to authorize Live Acceptance R2.**
