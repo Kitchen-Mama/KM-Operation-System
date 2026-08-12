@@ -1529,12 +1529,28 @@ function handleCancelRequestOrderTier_(body) {
  * Creates purchase_orders (status=draft) + purchase_order_lines (copied from request_order_lines:
  *   approved_qty -> ordered_qty, unit_cost, line_amount, carton_qty, ...). Sets the SOURCE request's
  *   status = converted_to_po (the request recording its own conversion — the ONLY write back, per
- *   Immutable Flow). Idempotency: a request already converted_to_po is rejected.
+ *   Immutable Flow).
+ *
+ * F1-5A-PO-R2 — DURABLE EXACTLY-ONCE. The execution identity is the EXISTING lineage `request_order_id`
+ * (no POEXEC key, no new table, no schema). One Request Order produces ONE canonical conversion result =
+ * the 0–2 bucket-group POs (T1 and/or T2_T3) its active lines require; the same conversion is never
+ * executed twice. The whole detect→decide→write→transition sequence runs under the canonical ScriptLock
+ * and RE-READS the request inside the lock, so a double-click / two-tab / retry / lost-response converges
+ * to that one result (created, recovered, or reused). Duplicate/unexpected persisted PO groups and
+ * orphan partial writes FAIL CLOSED rather than silently picking one. Quantity mapping is unchanged
+ * (approved_qty → ordered_qty); no gap/forecast/AI recompute.
  */
 function handleCreatePurchaseOrderFromRequest_(body) {
   var roId = String((body && body.request_order_id) || '').trim();
   var actor = String((body && body.actor) || 'operation-system').trim();
   if (!roId) return jsonResponse_({ success: false, error: 'Missing request_order_id' });
+
+  // §3 durable convergence — the entire sequence is serialized by the canonical ScriptLock (frontend
+  // confirm/disable is UX only, never the idempotency authority).
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var roSheet = ss.getSheetByName('request_orders');
@@ -1543,15 +1559,16 @@ function handleCreatePurchaseOrderFromRequest_(body) {
   if (!rolSheet) return jsonResponse_({ success: false, error: 'request_order_lines sheet not found' });
   sheetEnsureColumns_(roSheet, ['request_status']);   // ensure canonical column before findRow
 
+  // §3 RE-READ the Request Order INSIDE the lock — never trust a pre-lock snapshot.
   var ref = procurementFindRow_(roSheet, 'request_order_id', roId);
   if (!ref) return jsonResponse_({ success: false, error: 'Request order not found: ' + roId });
   var col = ref.col;
   var curStatus = procurementReqStatus_(ref);   // canonical request_status (fallback legacy status)
-  if (curStatus === 'converted_to_po') return jsonResponse_({ success: false, error: 'Request order already converted to a Purchase Order' });
-  if (curStatus !== 'approved') return jsonResponse_({ success: false, error: 'Only an Approved request can be converted (current: ' + curStatus + ')' });
-
-  var poSheet = procurementEnsureSheet_(ss, 'purchase_orders', PURCHASE_ORDERS_HEADERS_);
-  var polSheet = procurementEnsureSheet_(ss, 'purchase_order_lines', PURCHASE_ORDER_LINES_HEADERS_);
+  // Eligible = approved (new/recover) OR converted_to_po (idempotent reuse / inconsistency check). Anything
+  // else (draft / pending_approval / cancelled) is not convertible.
+  if (curStatus !== 'approved' && curStatus !== 'converted_to_po') {
+    return jsonResponse_({ success: false, error: 'Only an Approved request can be converted (current: ' + curStatus + ')' });
+  }
 
   var now = procurementTimestamp_();
   var today = procurementToday_();
@@ -1562,18 +1579,16 @@ function handleCreatePurchaseOrderFromRequest_(body) {
   var supplierName = String(roVal('supplier_name') || '').trim();
   var warehouseId = String(roVal('warehouse_id') || '').trim();
   // factory_id resolved from warehouse_id via the warehouses master; fall back to the request's factory_id,
-  // then the warehouse_id itself (never crash / never blank-out silently).
+  // then the warehouse_id itself (never crash / never blank-out silently). Authority UNCHANGED (R2).
   var factoryId = procurementResolveFactoryId_(ss, warehouseId, String(roVal('factory_id') || '').trim());
   var currency = String(roVal('currency') || '').trim();
 
   // ---- read request lines once; group ACTIVE (non-cancelled) lines by PO bucket group ----
   // Bucket group: T1 → 'T1'; T2/T3 → 'T2_T3'. Each line keeps its ORIGINAL request_bucket (T1/T2/T3).
-  // Ensure the back-reference column exists BEFORE reading (so its index is valid on legacy sheets).
   sheetEnsureColumns_(rolSheet, ['purchase_order_line_id']);
   var data = rolSheet.getDataRange().getValues();
   var lh = data[0].map(function (x) { return String(x).trim(); });
   function lc(n) { return lh.indexOf(n); }
-  var lineIdCol = lc('request_order_line_id');
   var poLineIdBackCol = lc('purchase_order_line_id');
   var groups = { 'T1': [], 'T2_T3': [] };
   for (var i = 1; i < data.length; i++) {
@@ -1587,162 +1602,332 @@ function handleCreatePurchaseOrderFromRequest_(body) {
     var groupKey = (bucket === 'T2' || bucket === 'T3') ? 'T2_T3' : 'T1';   // blank/legacy → T1
     groups[groupKey].push({ rowIndex: i, bucket: (bucket || 'T1') });
   }
-
-  if (!groups['T1'].length && !groups['T2_T3'].length) {
+  var expectedGroups = ['T1', 'T2_T3'].filter(function (g) { return groups[g].length; });
+  if (!expectedGroups.length) {
     return jsonResponse_({ success: false, error: 'Request order has no active (non-cancelled) lines to convert' });
   }
 
+  // ---- §4 canonical existing-conversion detection (persisted lineage ONLY: purchase_orders.request_order_id) ----
+  var det = poFindConversionState_(ss, roId, expectedGroups);
+  // Orphan partial write (POL rows whose purchase_order_id has no header) — do NOT guess/auto-delete another
+  // execution's rows; surface the exact missing identity (§5E).
+  if (det.orphanPoIds.length) {
+    return jsonResponse_({ success: false, error: 'PO_CREATION_ATOMICITY_GAP', stage: 'detect',
+      detail: 'purchase_order_lines exist for ' + roId + ' whose purchase_order_id has no header (orphan partial write): ' + det.orphanPoIds.join(',') });
+  }
+  // Duplicate persisted bucket group (Case D) or an unexpected group — FAIL CLOSED (never pick the latest).
+  if (det.conflict) {
+    return jsonResponse_({ success: false, error: 'PO_CONVERSION_STATE_INCONSISTENT', stage: 'detect',
+      detail: 'duplicate/unexpected PO bucket group(s) for ' + roId + ': ' + det.conflictDetail.join('; ') });
+  }
+  var completeExisting = det.missingGroups.length === 0;
+
+  // ---- decision matrix (RO status × persisted PO result) ----
+  if (curStatus === 'converted_to_po') {
+    // §6 already-converted: reuse the canonical PO result idempotently; if it is not durably complete, the
+    // persisted state is inconsistent → FAIL CLOSED (never fabricate/recreate silently).
+    if (completeExisting) return poReuseResponse_(roId, det, { reused: true });
+    return jsonResponse_({ success: false, error: 'PO_CONVERSION_STATE_INCONSISTENT', stage: 'status',
+      detail: 'request is converted_to_po but the canonical PO result is incomplete (missing bucket group(s): ' + det.missingGroups.join(',') + ')' });
+  }
+  // curStatus === 'approved'
+  if (completeExisting) {
+    // §5C/§6 lost-response / status-write-failed recovery: the full PO set is already durable — repair the
+    // lifecycle transition only (no second PO set).
+    poSetRoConverted_(roSheet, ref, actor, now);
+    return poReuseResponse_(roId, det, { reused: true, repaired: true });
+  }
+
+  // NEW conversion (0 present) or RECOVER (some groups present) — create ONLY the MISSING bucket groups.
+  var ctx = { rolSheet: rolSheet, poLineIdBackCol: poLineIdBackCol, data: data, lc: lc,
+    now: now, today: today, roId: roId, actor: actor, company: company, supplierId: supplierId,
+    supplierName: supplierName, warehouseId: warehouseId, factoryId: factoryId, currency: currency };
+  var createdSummaries = [], createdPoIds = [];
+  try {
+    det.missingGroups.forEach(function (groupKey) {
+      var summary = poCreateBucketGroup_(ss, ctx, groupKey, groups[groupKey]);
+      createdPoIds.push(summary.purchase_order_id);
+      createdSummaries.push(summary);
+    });
+  } catch (writeErr) {
+    // §5E scoped compensation — remove ONLY the rows THIS execution created (by their purchase_order_id) and
+    // clear their RO-line back-refs; never touch another execution's rows. Retry then reconverges.
+    try { poDeleteCreatedThisRun_(ss, roId, createdPoIds); } catch (compErr) { /* best-effort */ }
+    return jsonResponse_({ success: false, error: 'PO_CREATION_WRITE_FAILED:' + (writeErr && writeErr.message ? writeErr.message : writeErr), stage: 'write', compensated: true });
+  }
+
+  // Conversion is now durably complete → the request records its OWN conversion (only write back to request_orders).
+  poSetRoConverted_(roSheet, ref, actor, now);
+
+  var allPos = det.presentSummaries.concat(createdSummaries)
+    .sort(function (a, b) { return (a.request_bucket === 'T1' ? 0 : 1) - (b.request_bucket === 'T1' ? 0 : 1); });
+  return jsonResponse_({ success: true, data: {
+    request_order_id: roId,
+    purchase_orders: allPos,
+    po_count: allPos.length,
+    purchase_order_id: allPos[0].purchase_order_id,
+    purchase_order_no: allPos[0].purchase_order_no,
+    reused: false,
+    recovered: det.presentSummaries.length > 0
+  } });
+
+  } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+}
+
+// F1-5A-PO-R2 §4 — canonical existing-conversion detection for a request_order_id, using PERSISTED LINEAGE ONLY
+// (purchase_orders.request_order_id + request_bucket group). Never dedupes by time/qty/sku/factory/actor/latest.
+// Returns per expected group: present (exactly 1 non-cancelled header) / missing (0); flags duplicate or
+// unexpected groups (conflict) and orphan purchase_order_lines (POL whose purchase_order_id has no header).
+function poFindConversionState_(ss, roId, expectedGroups) {
+  function normGroup(b) { b = String(b || '').trim().toUpperCase(); return (b === 'T2' || b === 'T3' || b === 'T2_T3') ? 'T2_T3' : 'T1'; }
+  var expected = { 'T1': expectedGroups.indexOf('T1') !== -1, 'T2_T3': expectedGroups.indexOf('T2_T3') !== -1 };
+  var headersByGroup = { 'T1': [], 'T2_T3': [] };
+  var headerIds = {};   // ALL headers (incl. cancelled) — for orphan-line detection
+  var poSheet = ss.getSheetByName('purchase_orders');
+  if (poSheet) {
+    var pd = poSheet.getDataRange().getValues();
+    if (pd.length >= 2) {
+      var ph = pd[0].map(function (x) { return String(x).trim(); });
+      var cRo = ph.indexOf('request_order_id'), cId = ph.indexOf('purchase_order_id'),
+          cNo = ph.indexOf('po_no'), cBucket = ph.indexOf('request_bucket'),
+          cStatus = ph.indexOf('order_status'), cQty = ph.indexOf('total_qty');
+      for (var i = 1; i < pd.length; i++) {
+        if (cRo === -1 || String(pd[i][cRo]).trim() !== roId) continue;
+        var poId = cId !== -1 ? String(pd[i][cId]).trim() : '';
+        if (poId) headerIds[poId] = 1;
+        var st = cStatus !== -1 ? String(pd[i][cStatus]).trim().toLowerCase() : '';
+        if (st === 'cancelled') continue;   // a cancelled PO is not a live conversion artifact
+        var g = normGroup(cBucket !== -1 ? pd[i][cBucket] : 'T1');
+        var no = cNo !== -1 ? String(pd[i][cNo]).trim() : '';
+        headersByGroup[g].push({ purchase_order_id: poId, purchase_order_no: no, po_no: no,
+          request_bucket: g, total_qty: cQty !== -1 ? (parseFloat(pd[i][cQty]) || 0) : 0 });
+      }
+    }
+  }
+  // orphan purchase_order_lines for this RO (partial write survivor) — POL whose purchase_order_id has NO header.
+  var orphanPoIds = {};
+  var polSheet = ss.getSheetByName('purchase_order_lines');
+  if (polSheet) {
+    var ld = polSheet.getDataRange().getValues();
+    if (ld.length >= 2) {
+      var lhx = ld[0].map(function (x) { return String(x).trim(); });
+      var cLRo = lhx.indexOf('request_order_id'), cLPo = lhx.indexOf('purchase_order_id');
+      if (cLRo !== -1 && cLPo !== -1) {
+        for (var j = 1; j < ld.length; j++) {
+          if (String(ld[j][cLRo]).trim() !== roId) continue;
+          var lpo = String(ld[j][cLPo]).trim();
+          if (lpo && !headerIds[lpo]) orphanPoIds[lpo] = 1;
+        }
+      }
+    }
+  }
+  var conflict = false, conflictDetail = [];
+  ['T1', 'T2_T3'].forEach(function (g) {
+    if (headersByGroup[g].length > 1) { conflict = true; conflictDetail.push(g + ' x' + headersByGroup[g].length); }
+    if (headersByGroup[g].length >= 1 && !expected[g]) { conflict = true; conflictDetail.push('unexpected ' + g); }
+  });
+  var presentGroups = [], presentSummaries = [], missingGroups = [];
+  expectedGroups.forEach(function (g) {
+    if (headersByGroup[g].length === 1) { presentGroups.push(g); presentSummaries.push(headersByGroup[g][0]); }
+    else if (headersByGroup[g].length === 0) missingGroups.push(g);
+    // length > 1 already recorded as a conflict above
+  });
+  return { headersByGroup: headersByGroup, conflict: conflict, conflictDetail: conflictDetail,
+    orphanPoIds: Object.keys(orphanPoIds), presentGroups: presentGroups, presentSummaries: presentSummaries,
+    missingGroups: missingGroups };
+}
+
+// F1-5A-PO-R2 — create ONE purchase order for a single bucket group (T1 / T2_T3) from the RO's active lines.
+// Quantity mapping UNCHANGED (approved_qty → ordered_qty); no gap/forecast/AI recompute. Returns a summary.
+function poCreateBucketGroup_(ss, ctx, groupKey, members) {
+  var poSheet = procurementEnsureSheet_(ss, 'purchase_orders', PURCHASE_ORDERS_HEADERS_);
+  var polSheet = procurementEnsureSheet_(ss, 'purchase_order_lines', PURCHASE_ORDER_LINES_HEADERS_);
+  var data = ctx.data, lc = ctx.lc, now = ctx.now, today = ctx.today, roId = ctx.roId, actor = ctx.actor;
   function cellNum(row, name) { return lc(name) !== -1 ? (parseFloat(data[row][lc(name)]) || 0) : 0; }
   function cellStr(row, name) { return lc(name) !== -1 ? String(data[row][lc(name)] || '').trim() : ''; }
-  // Date-only (yyyy-MM-dd) copy of a schedule cell — strips any time/timezone (D).
   function cellDate(row, name) { return lc(name) !== -1 ? procurementDateOnly_(data[row][lc(name)]) : ''; }
 
-  // Create ONE purchase order per non-empty bucket group.
-  var createdPOs = [];
-  ['T1', 'T2_T3'].forEach(function (groupKey) {
-    var members = groups[groupKey];
-    if (!members.length) return;   // never create an empty PO header
+  var purchaseOrderId = 'PO-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+  var purchaseOrderNo = 'PO-' + today.replace(/-/g, '') + '-' + Utilities.getUuid().substring(0, 4).toUpperCase() + '-' + groupKey;
 
-    var purchaseOrderId = 'PO-' + Utilities.getUuid().substring(0, 10).toUpperCase();
-    var purchaseOrderNo = 'PO-' + today.replace(/-/g, '') + '-' + Utilities.getUuid().substring(0, 4).toUpperCase() + '-' + groupKey;
+  var totalQty = 0, totalCartons = 0, totalAmount = 0, distinctSku = {};
+  var s0 = members[0].rowIndex;
+  var hdrInspection = cellDate(s0, 'inspection_date');
+  var hdrCompletion = cellDate(s0, 'expected_ready_date');
+  var hdrShip = cellDate(s0, 'expected_ship_date');
 
-    var totalQty = 0, totalCartons = 0, totalAmount = 0, distinctSku = {};
-    // Representative tier schedule (first member) → header dates.
-    var s0 = members[0].rowIndex;
-    var hdrInspection = cellDate(s0, 'inspection_date');            // date-only
-    var hdrCompletion = cellDate(s0, 'expected_ready_date');        // expected_completion_date ← expected_ready_date (date-only)
-    var hdrShip = cellDate(s0, 'expected_ship_date');               // date-only
+  members.forEach(function (m) {
+    var row = m.rowIndex;
+    var sku = cellStr(row, 'sku');
+    var orderedQty = cellNum(row, 'approved_qty');
+    var upc = cellNum(row, 'units_per_carton');
+    var carton = lc('carton_qty') !== -1 ? cellNum(row, 'carton_qty') : ((upc > 0) ? Math.ceil(orderedQty / upc) : 0);
+    var ucRaw = lc('unit_cost') !== -1 ? data[row][lc('unit_cost')] : '';
+    var hasUc = (ucRaw !== '' && ucRaw != null && !isNaN(parseFloat(ucRaw)));
+    var unitCost = hasUc ? parseFloat(ucRaw) : '';
+    var lineAmount = hasUc ? Math.round(orderedQty * unitCost * 100) / 100 : '';
+    var poLineId = 'POL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
 
-    members.forEach(function (m) {
-      var row = m.rowIndex;
-      var sku = cellStr(row, 'sku');
-      var orderedQty = cellNum(row, 'approved_qty');
-      var upc = cellNum(row, 'units_per_carton');
-      var carton = lc('carton_qty') !== -1 ? cellNum(row, 'carton_qty') : ((upc > 0) ? Math.ceil(orderedQty / upc) : 0);
-      var ucRaw = lc('unit_cost') !== -1 ? data[row][lc('unit_cost')] : '';
-      var hasUc = (ucRaw !== '' && ucRaw != null && !isNaN(parseFloat(ucRaw)));
-      var unitCost = hasUc ? parseFloat(ucRaw) : '';
-      var lineAmount = hasUc ? Math.round(orderedQty * unitCost * 100) / 100 : '';
-      var poLineId = 'POL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
-
-      procurementAppendByHeader_(polSheet, {
-        purchase_order_line_id: poLineId,
-        purchase_order_id: purchaseOrderId,
-        request_order_line_id: cellStr(row, 'request_order_line_id'),
-        request_order_id: roId,
-        request_bucket: m.bucket,                                   // ORIGINAL T1 / T2 / T3
-        sku: sku,
-        company: cellStr(row, 'company'),
-        series: cellStr(row, 'series'),
-        factory_item_no: cellStr(row, 'factory_item_no'),
-        factory_item_name: cellStr(row, 'factory_item_name'),
-        supplier_id: cellStr(row, 'supplier_id') || supplierId,
-        supplier_name: cellStr(row, 'supplier_name') || supplierName,
-        supplier_sku: cellStr(row, 'supplier_sku'),
-        supplier_warehouse_id: cellStr(row, 'supplier_warehouse_id'),
-        km_qty: cellNum(row, 'km_qty'),
-        resus_qty: cellNum(row, 'resus_qty'),
-        restw_qty: cellNum(row, 'restw_qty'),
-        recommended_qty: lc('recommended_qty') !== -1 ? cellNum(row, 'recommended_qty') : '',
-        requested_qty: cellNum(row, 'requested_qty'),
-        approved_qty: orderedQty,
-        ordered_qty: orderedQty,
-        completed_qty: 0,
-        shipped_qty: 0,
-        // remaining_qty = available-to-ship = completed_qty − shipped_qty (both 0 at creation → 0).
-        // NOT ordered_qty: no completed goods means no available remaining qty (PO Remaining / Shipment source).
-        remaining_qty: 0,
-        carton_qty: carton,
-        units_per_carton: upc,
-        unit_cost: unitCost,
-        line_amount: lineAmount,
-        currency: cellStr(row, 'currency') || currency,
-        line_status: cellStr(row, 'line_status') || 'draft',
-        inspection_date: cellDate(row, 'inspection_date'),                 // date-only
-        expected_completion_date: cellDate(row, 'expected_ready_date'),    // ← request_order_lines.expected_ready_date (date-only)
-        expected_ship_date: cellDate(row, 'expected_ship_date'),           // date-only
-        related_shipment_id: '',
-        note: cellStr(row, 'note'),
-        created_at: now,
-        updated_at: now
-      });
-
-      // Back-reference the request line to its created PO line (active converted lines only).
-      if (poLineIdBackCol !== -1) rolSheet.getRange(row + 1, poLineIdBackCol + 1).setValue(poLineId);
-
-      totalQty += orderedQty;
-      totalCartons += carton;   // total_cartons = SUM(purchase_order_lines.carton_qty)
-      if (hasUc) totalAmount += orderedQty * unitCost;
-      if (sku) distinctSku[sku.toLowerCase()] = 1;
-    });
-
-    var subtotal = (totalAmount > 0 ? Math.round(totalAmount * 100) / 100 : '');
-    procurementAppendByHeader_(poSheet, {
+    procurementAppendByHeader_(polSheet, {
+      purchase_order_line_id: poLineId,
       purchase_order_id: purchaseOrderId,
-      po_no: purchaseOrderNo,
-      km_po_no: '',
-      warehouse_id: warehouseId,
-      supplier_name: supplierName,
-      order_status: 'draft',                       // canonical (legacy `status` no longer written)
-      order_date: '',                              // Send PO date — blank at Convert (Convert = Draft creation)
-      deposit_due_date: '',                        // = order_date + 5 business days; blank at Convert (order_date blank) — stamped at Send PO
-
-      inspection_date: hdrInspection,
-      expected_completion_date: hdrCompletion,     // ← request line expected_ready_date
-      expected_ship_date: hdrShip,
-      subtotal_amount: subtotal,
-      deposit_amount: '',                          // blank (no payment-term ratio yet)
-      balance_amount: '',                          // blank (deposit blank)
-      paid_amount: '',
-      payment_status: 'unpaid',                    // default convention
-      payment_term_id: '',
-      currency: currency,
-      note: '',
-      purchase_order_no: purchaseOrderNo,          // back-compat (mirrors po_no)
-      po_version: 1,
-      parent_purchase_order_id: purchaseOrderId,
+      request_order_line_id: cellStr(row, 'request_order_line_id'),
       request_order_id: roId,
-      company: company,
-      supplier_id: supplierId,
-      factory_id: factoryId,
-      total_sku: Object.keys(distinctSku).length,  // COUNT(DISTINCT sku)
-      total_qty: totalQty,
-      total_cartons: totalCartons,                 // SUM(purchase_order_lines.carton_qty)
-      total_amount: subtotal,
-      supplier_expected_ready_date: '',            // BLANK at Convert (future supplier-confirmation add-on; use expected_completion_date as working date)
-      supplier_confirmed_ready_date: '',           // BLANK at Convert
-      request_bucket: groupKey,                     // T1 or T2_T3
-      created_by: actor,
+      request_bucket: m.bucket,                                   // ORIGINAL T1 / T2 / T3
+      sku: sku,
+      company: cellStr(row, 'company'),
+      series: cellStr(row, 'series'),
+      factory_item_no: cellStr(row, 'factory_item_no'),
+      factory_item_name: cellStr(row, 'factory_item_name'),
+      supplier_id: cellStr(row, 'supplier_id') || ctx.supplierId,
+      supplier_name: cellStr(row, 'supplier_name') || ctx.supplierName,
+      supplier_sku: cellStr(row, 'supplier_sku'),
+      supplier_warehouse_id: cellStr(row, 'supplier_warehouse_id'),
+      km_qty: cellNum(row, 'km_qty'),
+      resus_qty: cellNum(row, 'resus_qty'),
+      restw_qty: cellNum(row, 'restw_qty'),
+      recommended_qty: lc('recommended_qty') !== -1 ? cellNum(row, 'recommended_qty') : '',   // display snapshot only
+      requested_qty: cellNum(row, 'requested_qty'),
+      approved_qty: orderedQty,
+      ordered_qty: orderedQty,                                    // = approved_qty (= persisted requested_qty); no recompute
+      completed_qty: 0,
+      shipped_qty: 0,
+      remaining_qty: 0,                                           // available-to-ship = completed − shipped (0 at create)
+      carton_qty: carton,
+      units_per_carton: upc,
+      unit_cost: unitCost,
+      line_amount: lineAmount,
+      currency: cellStr(row, 'currency') || ctx.currency,
+      line_status: cellStr(row, 'line_status') || 'draft',
+      inspection_date: cellDate(row, 'inspection_date'),
+      expected_completion_date: cellDate(row, 'expected_ready_date'),
+      expected_ship_date: cellDate(row, 'expected_ship_date'),
+      related_shipment_id: '',
+      note: cellStr(row, 'note'),
       created_at: now,
-      updated_by: actor,
       updated_at: now
     });
 
-    createdPOs.push({
-      purchase_order_id: purchaseOrderId,
-      purchase_order_no: purchaseOrderNo,
-      po_no: purchaseOrderNo,
-      request_bucket: groupKey,
-      line_count: members.length,
-      total_qty: totalQty
-    });
+    // Back-reference the request line to its created PO line (one RO line → one bucket group → one PO line).
+    if (ctx.poLineIdBackCol !== -1) ctx.rolSheet.getRange(row + 1, ctx.poLineIdBackCol + 1).setValue(poLineId);
+
+    totalQty += orderedQty;
+    totalCartons += carton;
+    if (hasUc) totalAmount += orderedQty * unitCost;
+    if (sku) distinctSku[sku.toLowerCase()] = 1;
   });
 
-  // The request records its OWN conversion (the only write back to request_orders).
+  var subtotal = (totalAmount > 0 ? Math.round(totalAmount * 100) / 100 : '');
+  procurementAppendByHeader_(poSheet, {
+    purchase_order_id: purchaseOrderId,
+    po_no: purchaseOrderNo,
+    km_po_no: '',
+    warehouse_id: ctx.warehouseId,
+    supplier_name: ctx.supplierName,
+    order_status: 'draft',
+    order_date: '',
+    deposit_due_date: '',
+    inspection_date: hdrInspection,
+    expected_completion_date: hdrCompletion,
+    expected_ship_date: hdrShip,
+    subtotal_amount: subtotal,
+    deposit_amount: '',
+    balance_amount: '',
+    paid_amount: '',
+    payment_status: 'unpaid',
+    payment_term_id: '',
+    currency: ctx.currency,
+    note: '',
+    purchase_order_no: purchaseOrderNo,
+    po_version: 1,
+    parent_purchase_order_id: purchaseOrderId,
+    request_order_id: roId,
+    company: ctx.company,
+    supplier_id: ctx.supplierId,
+    factory_id: ctx.factoryId,
+    total_sku: Object.keys(distinctSku).length,
+    total_qty: totalQty,
+    total_cartons: totalCartons,
+    total_amount: subtotal,
+    supplier_expected_ready_date: '',
+    supplier_confirmed_ready_date: '',
+    request_bucket: groupKey,                     // T1 or T2_T3
+    created_by: actor,
+    created_at: now,
+    updated_by: actor,
+    updated_at: now
+  });
+
+  return { purchase_order_id: purchaseOrderId, purchase_order_no: purchaseOrderNo, po_no: purchaseOrderNo,
+    request_bucket: groupKey, line_count: members.length, total_qty: totalQty };
+}
+
+// F1-5A-PO-R2 — the request records its OWN conversion (the ONLY write back to request_orders).
+function poSetRoConverted_(roSheet, ref, actor, now) {
   sheetEnsureColumns_(roSheet, ['request_status', 'updated_by', 'updated_at']);
   function setRo(name, value) { var c = ref.col(name); if (c !== -1) roSheet.getRange(ref.row, c + 1).setValue(value); }
   setRo('request_status', 'converted_to_po');   // canonical status (legacy `status` no longer written)
   setRo('updated_by', actor);
   setRo('updated_at', now);
+}
 
-  // Back-compat: expose the first PO at the top level; full list in purchase_orders.
-  return jsonResponse_({ success: true, data: {
-    request_order_id: roId,
-    purchase_orders: createdPOs,
-    po_count: createdPOs.length,
-    purchase_order_id: createdPOs[0].purchase_order_id,
-    purchase_order_no: createdPOs[0].purchase_order_no
-  } });
+// F1-5A-PO-R2 §6 — idempotent reuse/repair response over the persisted canonical PO result (never re-creates).
+function poReuseResponse_(roId, det, flags) {
+  var pos = det.presentSummaries.slice()
+    .sort(function (a, b) { return (a.request_bucket === 'T1' ? 0 : 1) - (b.request_bucket === 'T1' ? 0 : 1); });
+  var data = { request_order_id: roId, purchase_orders: pos, po_count: pos.length,
+    purchase_order_id: pos.length ? pos[0].purchase_order_id : '',
+    purchase_order_no: pos.length ? pos[0].purchase_order_no : '' };
+  for (var k in flags) if (flags.hasOwnProperty(k)) data[k] = flags[k];
+  return jsonResponse_({ success: true, data: data });
+}
+
+// F1-5A-PO-R2 §5E — SCOPED compensation: delete ONLY the purchase_orders / purchase_order_lines rows whose
+// purchase_order_id was created by THIS failed execution, and clear the RO-line back-refs that pointed to
+// those PO lines. Never deletes another execution's rows.
+function poDeleteCreatedThisRun_(ss, roId, poIds) {
+  if (!poIds || !poIds.length) return;
+  var idset = {}; poIds.forEach(function (x) { if (x) idset[x] = 1; });
+  var deletedPolIds = {};
+  var polSheet = ss.getSheetByName('purchase_order_lines');
+  if (polSheet) {
+    var ld = polSheet.getDataRange().getValues();
+    if (ld.length >= 2) {
+      var lh = ld[0].map(function (x) { return String(x).trim(); });
+      var cPo = lh.indexOf('purchase_order_id'), cPol = lh.indexOf('purchase_order_line_id');
+      for (var i = ld.length - 1; i >= 1; i--) {
+        if (cPo !== -1 && idset[String(ld[i][cPo]).trim()]) {
+          if (cPol !== -1) deletedPolIds[String(ld[i][cPol]).trim()] = 1;
+          polSheet.deleteRow(i + 1);
+        }
+      }
+    }
+  }
+  var poSheet = ss.getSheetByName('purchase_orders');
+  if (poSheet) {
+    var pd = poSheet.getDataRange().getValues();
+    if (pd.length >= 2) {
+      var ph = pd[0].map(function (x) { return String(x).trim(); });
+      var cId = ph.indexOf('purchase_order_id');
+      for (var j = pd.length - 1; j >= 1; j--) {
+        if (cId !== -1 && idset[String(pd[j][cId]).trim()]) poSheet.deleteRow(j + 1);
+      }
+    }
+  }
+  var rolSheet = ss.getSheetByName('request_order_lines');
+  if (rolSheet) {
+    var rd = rolSheet.getDataRange().getValues();
+    if (rd.length >= 2) {
+      var rh = rd[0].map(function (x) { return String(x).trim(); });
+      var cRo = rh.indexOf('request_order_id'), cBack = rh.indexOf('purchase_order_line_id');
+      if (cRo !== -1 && cBack !== -1) {
+        for (var k = 1; k < rd.length; k++) {
+          if (String(rd[k][cRo]).trim() !== roId) continue;
+          if (deletedPolIds[String(rd[k][cBack]).trim()]) rolSheet.getRange(k + 1, cBack + 1).setValue('');
+        }
+      }
+    }
+  }
 }
 
 /** Resolve factory_id from a warehouse_id via the warehouses master (warehouse_id → factory_id when present).

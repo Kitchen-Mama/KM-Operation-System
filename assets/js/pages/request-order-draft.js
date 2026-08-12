@@ -767,15 +767,23 @@
             .catch(function (e) { alert('Reject failed: ' + (e && e.message ? e.message : e)); });
     }
 
+    // F1-5A-PO-R2 — in-flight guard is UX ONLY (prevents the second network call on a fast double-click). The
+    // idempotency AUTHORITY is the backend ScriptLock + request_order_id detection; the frontend never decides
+    // whether conversion already happened. An idempotent reuse/repair (data.reused / data.repaired) is surfaced.
+    var _convertInFlight = {};
     function convertToPo(id) {
+        if (_convertInFlight[id]) return;
         if (!confirm('Convert this approved request into Purchase Order(s)?\n\nActive T1 → one PO; active T2+T3 → one combined PO. Cancelled lines are excluded.')) return;
+        _convertInFlight[id] = true;
         window.KM.DB.createPurchaseOrderFromRequest({ request_order_id: id, actor: 'operation-system' })
             .then(function (data) {
                 // PO v2 may create up to two POs (T1 and T2_T3). Support the array; fall back to the single-PO shape.
                 var pos = (data && data.purchase_orders) || [];
+                var reused = data && (data.reused || data.repaired);
                 var msg;
                 if (pos.length) {
-                    msg = pos.length + ' Purchase Order' + (pos.length > 1 ? 's' : '') + ' created:\n\n' +
+                    msg = (reused ? 'Already converted — showing the existing ' : '') +
+                        pos.length + ' Purchase Order' + (pos.length > 1 ? 's' : '') + (reused ? ':' : ' created:') + '\n\n' +
                         pos.map(function (p) { return '• ' + (p.request_bucket || '') + ': ' + (p.po_no || p.purchase_order_no || p.purchase_order_id); }).join('\n');
                 } else {
                     msg = 'Purchase Order created: ' + ((data && data.purchase_order_no) || 'OK');
@@ -783,7 +791,8 @@
                 alert(msg + '\n\nOpen Purchase Order Workspace to continue.');
                 loadAndRender();
             })
-            .catch(function (e) { alert('Convert failed: ' + (e && e.message ? e.message : e)); });
+            .catch(function (e) { alert('Convert failed: ' + (e && e.message ? e.message : e)); })
+            .then(function () { _convertInFlight[id] = false; });   // release the UX guard (runs after success or failure)
     }
 
     function done(id) {
