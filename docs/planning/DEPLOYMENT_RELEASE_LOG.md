@@ -190,3 +190,66 @@ Notes:                       Git tracking ref shows origin/main == HEAD (no push
 ```
 
 **STATUS: GIT CLOSED (origin/main == HEAD) · APPS SCRIPT NOT DEPLOYED · LIVE VERIFICATION PENDING (USER-owned).**
+
+---
+
+## Entry — 2026-08-12 · F1-PHASE1-RELEASE-READINESS-R1 (cumulative Phase-1 deployment reconciliation)
+
+```
+Release ID:                  F1-PHASE1-RELEASE-READINESS-R1-2026-08-12-cumulative-phase1-reconciliation
+Environment:                 (git tracking-ref CLOSED · Apps Script deployment + live verification USER-OWNED, PENDING)
+Git branch:                  main
+Git HEAD:                    c7ecc9b  (F1-6B-AUTOMATION-RECOMMENDATION-CLOSURE-R1 split Weekly Inventory / Monthly Order)
+origin/main (local ref):     c7ecc9b   ·   0 ahead / 0 behind   ·   working tree clean   (reflog: USER pushes per round)
+Verdict:                     B. READY_AFTER_USER_DEPLOYMENT_ACTIONS  (no schema/version/runtime drift; USER deploy+seed+trigger+OAuth pending)
+Last DEPLOYED baseline:      226b027 (2026-08-10 FM5-R4J-LIVE5 ledger) — 23 of 49 .gs changed since; MANY new tables/handlers since.
+
+Cumulative Apps Script sync set (drift-proof = re-sync ALL 49 .gs as ONE new deployment version; 23 changed since baseline):
+  01_router · 05_overseas_inventory · 12_shipment · 13_procurement · 15_request_allocation · 16_shipping_allocation ·
+  22_shipment_dispatch · 24_recommendation_orchestrator · 31_shipment_receipt_route · 32_shipment_line_allocation ·
+  33_party_authority · 34_shipment_final_output · 35_shipment_document_renderer · 36_document_template ·
+  37_shipment_document_file_renderer · 42_recommendation_workspace · 43_gap_materialization · 45_automation_schedule ·
+  46_gap_materialization_job · 47_recommendation_generation · 48_request_order_draft_job · 49_weekly_recommendation_job ·
+  90_generated_supply_planning_bundle
+Deployment version:          NEW Web App version REQUIRED — 01_router.gs gained new doPost actions (final-output / document /
+                             draft-job) + new named trigger targets (runWeeklyInventoryRecommendation ·
+                             runMonthlyOrderRecommendation · continueWeeklyRecommendationJob). Router change ⇒ new /exec version.
+Bundle:                      CURRENT — 90_generated_supply_planning_bundle.gs · 40 modules ·
+                             sha256 aaf5b07f2292f9e876459f38d5c9533f1451357f1781e3e3622684f4c2918782 · build --check PASS. No rebuild.
+Frontend (GitHub Pages) set: index.html · api/operation-system-db-api.js · pages/{automation-schedule, global-logistics-map,
+                             inventory-replenishment, overseas-stock, request-order, request-order-draft, shipping-history,
+                             sku-details}.js · core/supply-planning-*.js (compiled into 90_) · utils/{demo-shared-data,
+                             gap-recalc-transport, scope-select-modal}.js · css/{components, pages/global-logistics-map,
+                             pages/inventory-replenishment, pages/overseas-stock, pages/request-order}.css ·
+                             html/pages/{global-logistics-map, inventory-replenishment, request-order}.html   (ONE redeploy from main)
+Schema contract drift:       NONE — shipment_line_allocations=14 · company_legal_entities=22 · document_templates=30 ·
+                             document_template_fields=23 · generated_documents=30 · SFO snapshot/line/line_pos present ·
+                             request_allocation_draft_id / shipment_received_qty / shipping_plan_line_id present. (source contracts)
+DB migration:                USER — provision (if absent live) the 3 SFO snapshot tables + 3 document-runtime tables +
+                             company_legal_entities via the R2A-LIVE/R2B/R3B USER-run snippets. Runtime fails closed
+                             (SCHEMA_NOT_PROVISIONED) if absent — never silent. Read-only verifier: releaseReadinessVerifySchema_.
+Required seed data:          USER — company_legal_entities (KM/ResTW/ResUS active) · logistics_locations (destinations) ·
+                             document_templates SHIPDETAIL+PL (real template_file_id, google_sheet, output_folder_id) ·
+                             document_template_fields mappings · sku_details/warehouses/tax_referral_rates for the fixture.
+Trigger readiness:           5 recurring canonical (runAmazonSnapshotImports · runDailyInventoryGapMaterialization ·
+                             runDailyOrderPlanningGapMaterialization · runWeeklyInventoryRecommendation ·
+                             runMonthlyOrderRecommendation), max one each, TZ Asia/Taipei; continuation triggers transient-only.
+                             Legacy runWeeklyRecommendation NOT in 45_ registry (count 0) + auto-swept on Save & Apply; a lingering
+                             LIVE one is USER-deleted. Read-only verifier: releaseReadinessListTriggers_. This audit deletes NOTHING.
+OAuth scopes (first-run):    spreadsheets · script.scriptapp (trigger create/delete) · drive (template copy + generated Sheet +
+                             folder read) · drive→PDF export (getAs application/pdf + createFile). USER grants once.
+Authorization:               PENDING — USER runs one editor function each for ScriptApp + Drive/PDF to grant all scopes pre-E2E.
+Residuals (none block core E2E): weekly-inventory persistence not canonical · Last-Run history UI absent · Customs
+                             LEGAL_IMPORTER_AUTHORITY_GAP · CI/Booking families · post-dispatch reversal · 4 baseline test failures.
+Tests:                       Full regression 212 files — ONLY the 4 known baseline failures (none new). Focused Phase-1 suites green.
+DB/schema impact (this round): NONE · Formula impact: NONE · Runtime change: NONE (audit + docs only).
+Changed files (this round):  docs/planning/F1_PHASE1_RELEASE_READINESS_R1.md (new) · DEPLOYMENT_RELEASE_LOG.md (this entry). DOCS ONLY.
+Deployed by:                 (pending USER)
+Next authorized slice:       F1-PHASE1-E2E-FINAL — ONLY after the USER deployment steps + read-only live checks in
+                             F1_PHASE1_RELEASE_READINESS_R1.md §28/§29/§30 pass.
+Notes:                       Git tracking ref shows origin/main == HEAD (USER pushes per round). OPEN items are ALL USER-owned:
+                             full .gs sync + new deployment version, Pages redeploy, live table provisioning + seed data,
+                             trigger attach + legacy sweep, OAuth grant. No agent-side production-readiness defect found.
+```
+
+**STATUS: GIT CLOSED (origin/main == HEAD) · READY_AFTER_USER_DEPLOYMENT_ACTIONS · APPS SCRIPT NOT DEPLOYED (USER-owned).**
