@@ -178,12 +178,15 @@ function handleDocumentTemplateGetFields_(body) {
 
 // Generate the persisted lifecycle record for a shipment document. Renders via the R3A renderer (snapshot-only),
 // resolves ONE active template, maps placeholders, fails closed on required-missing, and idempotently upserts a
-// generated_documents record. Binary file/PDF generation deferred to R3C (file fields left blank).
+// generated_documents record. R3C: when body.generate_file is true, ALSO produces the real Drive file from the
+// configured template asset (37_ renderer) and writes its metadata back into the frozen generated_documents file
+// columns. When generate_file is falsy the R3B behavior is preserved exactly (record + mapping, no file).
 function handleShipmentDocumentGenerate_(body) {
   var shipmentId = dtStr_(body && body.shipment_id);
   var docTypeIn = dtUc_(body && body.document_type);
   var actor = dtStr_(body && body.actor) || 'system';
   var regenerate = !!(body && body.regenerate);
+  var wantFile = !!(body && body.generate_file);   // R3C opt-in: generate the real file (default off = R3B behavior)
   if (!shipmentId) return jsonResponse_({ success: false, error: 'SHIPMENT_ID_REQUIRED' });
   var docEnum = DOC_TYPE_ENUM_[docTypeIn];
   if (!docEnum) return jsonResponse_({ success: false, error: 'UNSUPPORTED_DOCUMENT_TYPE', supported: ['SHIPDETAIL', 'PL'] });
@@ -217,8 +220,25 @@ function handleShipmentDocumentGenerate_(body) {
     var existing = sfoRowsAsObjects_(genSheet).filter(function (r) {
       return dtGeneratedKey_(r.related_entity_id, r.document_type, r.template_id, r.template_version) === key && (dtLc_(r.status) === 'generated' || dtLc_(r.status) === 'regenerated');
     });
+    var fileMeta = { document_type: docEnum, shipment_id: shipmentId, shipment_no: dtStr_(h.shipment_no), snapshot_id: dtStr_(h.snapshot_id), snapshot_version: dtStr_(h.snapshot_version), dispatch_date: dtStr_(h.dispatch_date) };
     if (existing.length && !regenerate) {
-      return jsonResponse_({ success: true, reused: true, document_id: dtStr_(existing[0].document_id), template_id: dtStr_(tpl.template_id), template_version: dtNum_(tpl.template_version), status: dtStr_(existing[0].status), placeholder_values: mapped.values, note: 'Existing generated document reused (idempotent).' });
+      var ex = existing[0];
+      // R3C: if a file is wanted and this record has none yet, generate it and update THIS row (idempotent reuse).
+      if (wantFile && !dtStr_(ex.file_id)) {
+        var frx = dfoGenerateFile_(dfoDefaultIo_(), tpl, mapped, fileMeta, {});
+        if (!frx.ok) return jsonResponse_({ success: false, shipment_id: shipmentId, document_type: docTypeIn, template_id: dtStr_(tpl.template_id), error: frx.error, message: frx.message, type: frx.type, supported: frx.supported, partial_file_id: frx.partial_file_id });
+        dtUpdateGeneratedFile_(genSheet, dtStr_(ex.document_id), frx, shipmentTimestamp_());
+        return jsonResponse_({ success: true, reused: true, generated_file: true, document_id: dtStr_(ex.document_id), template_id: dtStr_(tpl.template_id), template_version: dtNum_(tpl.template_version), file_name: frx.file_name, file_id: frx.file_id, file_url: frx.file_url, pdf_file_url: frx.pdf_file_url, download_url: (frx.pdf_file_url || frx.file_url) });
+      }
+      return jsonResponse_({ success: true, reused: true, document_id: dtStr_(ex.document_id), template_id: dtStr_(tpl.template_id), template_version: dtNum_(tpl.template_version), status: dtStr_(ex.status), file_url: dtStr_(ex.file_url), pdf_file_url: dtStr_(ex.pdf_file_url), download_url: (dtStr_(ex.pdf_file_url) || dtStr_(ex.file_url)), placeholder_values: mapped.values, note: 'Existing generated document reused (idempotent).' });
+    }
+    // R3C: generate the file BEFORE persisting the row, so a failed file generation never leaves a false "generated"
+    // record with no file. (A file created then a DB failure re-runs to REUSE the same row by key — bounded orphan.)
+    var fileFields = { file_name: '', file_id: '', file_url: '', pdf_file_id: '', pdf_file_url: '' };
+    if (wantFile) {
+      var fr = dfoGenerateFile_(dfoDefaultIo_(), tpl, mapped, fileMeta, {});
+      if (!fr.ok) return jsonResponse_({ success: false, shipment_id: shipmentId, document_type: docTypeIn, template_id: dtStr_(tpl.template_id), error: fr.error, message: fr.message, type: fr.type, supported: fr.supported, partial_file_id: fr.partial_file_id });
+      fileFields = { file_name: fr.file_name, file_id: fr.file_id, file_url: fr.file_url, pdf_file_id: fr.pdf_file_id, pdf_file_url: fr.pdf_file_url };
     }
     var now = shipmentTimestamp_();
     var docId = 'GDOC-' + Utilities.getUuid().substring(0, 12).toUpperCase();
@@ -227,13 +247,13 @@ function handleShipmentDocumentGenerate_(body) {
       related_entity_type: 'shipment', related_entity_id: shipmentId, document_type: docEnum,
       series: '', sku: '', supplier_id: '', factory_id: dtStr_(h.factory_id), carrier_id: dtStr_(h.carrier_id) || dtStr_(body && body.carrier_id),
       country: dtStr_(h.country), marketplace: dtStr_(h.marketplace), language: dtStr_(body && body.language),
-      file_name: '', file_id: '', file_url: '', pdf_file_id: '', pdf_file_url: '', output_folder_id: dtStr_(tpl.output_folder_id),
+      file_name: fileFields.file_name, file_id: fileFields.file_id, file_url: fileFields.file_url, pdf_file_id: fileFields.pdf_file_id, pdf_file_url: fileFields.pdf_file_url, output_folder_id: dtStr_(tpl.output_folder_id),
       generated_by: actor, generated_at: now, status: (existing.length ? 'regenerated' : 'generated'), email_status: 'not_sent', email_sent_at: '',
       regenerated_from_document_id: (existing.length ? dtStr_(existing[0].document_id) : ''),
-      note: 'R3B lifecycle record; binary file/PDF deferred to R3C.', created_at: now, updated_at: now
+      note: (wantFile ? 'R3C generated file from the configured template asset.' : 'R3B lifecycle record; file generation not requested.'), created_at: now, updated_at: now
     };
     dtAppendByHeader_(genSheet, row);
-    return jsonResponse_({ success: true, reused: false, regenerated: existing.length > 0, document_id: docId, template_id: dtStr_(tpl.template_id), template_version: dtNum_(tpl.template_version), status: row.status, snapshot_id: dtStr_(h.snapshot_id), placeholder_values: mapped.values });
+    return jsonResponse_({ success: true, reused: false, regenerated: existing.length > 0, generated_file: wantFile, document_id: docId, template_id: dtStr_(tpl.template_id), template_version: dtNum_(tpl.template_version), status: row.status, snapshot_id: dtStr_(h.snapshot_id), file_name: fileFields.file_name, file_id: fileFields.file_id, file_url: fileFields.file_url, pdf_file_url: fileFields.pdf_file_url, download_url: (fileFields.pdf_file_url || fileFields.file_url), placeholder_values: mapped.values });
   } catch (err) {
     return jsonResponse_({ success: false, error: 'DOCUMENT_GENERATION_FAILED: ' + (err && err.message ? err.message : err), shipment_id: shipmentId });
   } finally { try { lock.releaseLock(); } catch (e2) {} }
@@ -245,6 +265,22 @@ function dtAppendByHeader_(sheet, obj) {
   var row = new Array(headers.length).fill('');
   for (var i = 0; i < headers.length; i++) { if (obj.hasOwnProperty(headers[i]) && obj[headers[i]] !== undefined && obj[headers[i]] !== null) row[i] = obj[headers[i]]; }
   sheet.appendRow(row);
+}
+
+// R3C — write generated file metadata back onto an existing generated_documents row (by document_id) into the frozen
+// file columns only. Never touches factual/lineage columns. No new column.
+function dtUpdateGeneratedFile_(sheet, documentId, fr, now) {
+  var d = sheet.getDataRange().getValues();
+  var head = d[0].map(function (x) { return String(x).trim(); });
+  var cId = head.indexOf('document_id');
+  var set = { file_name: fr.file_name, file_id: fr.file_id, file_url: fr.file_url, pdf_file_id: fr.pdf_file_id, pdf_file_url: fr.pdf_file_url, updated_at: now };
+  for (var r = 1; r < d.length; r++) {
+    if (String(d[r][cId]).trim() === String(documentId).trim()) {
+      Object.keys(set).forEach(function (k) { var c = head.indexOf(k); if (c !== -1) sheet.getRange(r + 1, c + 1).setValue(set[k]); });
+      return true;
+    }
+  }
+  return false;
 }
 
 function handleShipmentDocumentGet_(body) {

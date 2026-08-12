@@ -65,16 +65,17 @@ console.log('\n== §16 / §J existing snapshot = shipping_plan_lines.snapshot_* 
 ok(/snapshot_current_stock/.test(PLAN), '§J planning snapshot lives on shipping_plan_lines.snapshot_* (SKU Shipping Details display source)');
 ok(/snapshot_current_stock/.test(SHIP), 'execution snapshot copied onto shipment_lines (verbatim, never recalculated)');
 
-console.log('\n== §K / §16-D no FILE-renderer engine yet (R2B=snapshot, R3A=model, R3B=template runtime; files = R3C) ==');
-// Evolution: R2B (34_) builds the DATA snapshot; R3A (35_) the presentation model; R3B (36_) the persisted
-// document_templates/_fields/generated_documents runtime — all expected. What must STILL be absent is actual
-// binary FILE generation: DocumentApp / PDF export / getAs / renderTemplate (deferred to R3C). Comments stripped.
+console.log('\n== §K / §16-D binary file-renderer is confined to ONE sanctioned owner (R3C 37_) — no second engine ==');
+// Evolution: R2B (34_) DATA snapshot; R3A (35_) presentation model; R3B (36_) persisted template/generated-document
+// runtime; R3C (37_) the ONE binary file renderer. The raw Drive/PDF primitives (DriveApp/getAs/makeCopy/createFile)
+// must live ONLY in 37_shipment_document_file_renderer.gs — never a second file engine elsewhere. Comments stripped.
 var docEngineHits = [];
 allGs().forEach(function (f) {
+  if (f === '37_shipment_document_file_renderer.gs') return;   // the sanctioned R3C renderer
   var code = gs(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-  if (/DocumentApp|exportPdf|\.getAs\(|renderTemplate|createFile\(|makeCopy\(/i.test(code)) docEngineHits.push(f);
+  if (/DriveApp|DocumentApp|exportPdf|\.getAs\(|renderTemplate|createFile\(|makeCopy\(/i.test(code)) docEngineHits.push(f);
 });
-ok(docEngineHits.length === 0, '§K NO binary file-renderer in any .gs (DocumentApp/PDF/getAs/makeCopy — deferred to R3C); hits=' + docEngineHits.join(','));
+ok(docEngineHits.length === 0, '§K binary file-renderer confined to 37_ only (no second file engine); hits=' + docEngineHits.join(','));
 ok(!/'generateDocument'|'exportDocument'|'exportShippingDetail'|'generatePackingList'|'generateCommercialInvoice'/.test(ROUTER), '§12 router exposes NO document RENDERER/export action (Export Center absent)');
 
 console.log('\n== §13 / §16-C party-authority owner (R1 gap CLOSED by R2A — exactly ONE owner) ==');

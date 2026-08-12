@@ -2649,6 +2649,33 @@ window.KM.DB.confirmShipmentAndDispatch = async function(payload) {
     return json;
 };
 
+// F1-5C-EXPORT-R3C — generate (and optionally render the real Drive file for) a shipment document from the frozen
+// R2B snapshot via the canonical R3A/R3B/R3C backend chain. The frontend performs NO placeholder mapping / totals /
+// master resolution / template selection / version choice — it only sends { shipment_id, document_type,
+// generate_file, regenerate? } and opens the returned download_url. Returns the full backend envelope (success +
+// document_id + file/download refs, or a fail-closed error/reason such as DOCUMENT_TEMPLATE_ASSET_MISSING).
+window.KM.DB.generateShipmentDocument = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, generateShipmentDocument skipped');
+        return { success: false, error: 'API not configured', stage: 'config' };
+    }
+    try {
+        var resp = await fetch(OP_DB_API_BASE_URL, {
+            method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(Object.assign({ action: 'shipmentDocument.generate' }, payload || {}))
+        });
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, stage: 'network' };
+        return await resp.json();
+    } catch (e) { return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' }; }
+};
+// Open/download a generated document result in a new tab (download_url = PDF when present, else the editable file).
+// Presentation only — the frontend never builds document content.
+window.KM.DB.openGeneratedDocument = function(res) {
+    var url = res && (res.download_url || res.pdf_file_url || res.file_url);
+    if (url && typeof window !== 'undefined' && window.open) { window.open(url, '_blank', 'noopener'); return true; }
+    return false;
+};
+
 // F1-5B-SHIP-R3C — reconcile canonical DRAFT PO→FIFO allocations for a shipment. Thin adapter to the SINGLE R3A
 // backend authority (action: generateShipmentLineAllocations); the frontend performs NO FIFO / capacity / shipped
 // math. One shipment-scoped call reconciles all lines (no per-SKU fan-out). Refreshes the cache on success so the
