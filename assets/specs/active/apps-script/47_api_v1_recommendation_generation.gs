@@ -90,35 +90,44 @@ function runRecommendationGeneration(product) {
 function runInventoryRecommendationGeneration() { return runRecommendationGeneration('INVENTORY'); }
 function runOrderPlanningRecommendationGeneration() { return runRecommendationGeneration('ORDER_PLANNING'); }
 
-// F1-6A-WEEKLY-RECOMMENDATION-SCHEDULER-R1 — the Weekly Recommendation TRIGGER TARGET (wired to the Administration
-// automation schedule via 45_'s registry). THIN execution/timing owner ONLY: it resolves the canonical deterministic
-// planning cycle, then delegates to the ONE shared recommendation owner (runRecommendationGeneration → KMREC, the
-// SAME generator the manual AI Plan uses). It authors NO recommendation / gap / forecast / inventory math and writes
-// nothing itself. Because the shared owner is a NON-PERSISTENT summary that is gap-DONE gated, a duplicate trigger
-// firing, a near-simultaneous second execution, a Run-Now collision, or a retry after timeout are all inherently
-// idempotent (no draft is written, so no duplicate active draft can be produced). Defensive: no-op unless the job is
-// still enabled in the canonical config (the trigger lifecycle already guarantees this; re-checked to survive a
-// stale/orphan trigger left by a schedule edit). Runs both planning products; each is independently deferred by its
-// own gap-DONE gate inside the owner.
+// F1-6A-WEEKLY-RECOMMENDATION-SCHEDULER-R1 / F1-6B-PHASE1-E2E-PRE-CLOSURE-R1 Part A — the Weekly Recommendation
+// TRIGGER TARGET (wired to the Administration automation schedule via 45_'s registry). THIN execution/timing owner
+// ONLY: it authors NO recommendation / gap / forecast / inventory math and writes no draft itself.
+//   ORDER_PLANNING → F1-6B upgrade: instead of the old NON-PERSISTENT summary, it now STARTS the backend-driven
+//     resumable persistence run (49_ weeklyRecoStart_) that drives the EXISTING 48_ job browserlessly to persist
+//     ACTIONABLE request_order_allocation_drafts (mode SCHEDULED_REFRESH → the SAME canonical persistence authority
+//     the manual AI Plan uses). The self-arming continuation chain completes with NO browser. Duplicate fire /
+//     overlap / retry are idempotent (49_ single-run + 48_ single-active + locked-persister BLOCKED_CONFLICT/user-edit
+//     protection). The weekly trigger returns fast; the worker chain does the work.
+//   INVENTORY → retains the existing NON-PERSISTENT summary (runRecommendationGeneration → KMREC). There is NO
+//     resumable, backend-drivable persistence job for INVENTORY (WEEKLY_SHIPPING) — 48_ is ORDER_PLANNING-only and
+//     the inventory workspace is READ-ONLY/browser-driven — so persisting it here would be a SECOND engine (forbidden).
+//     The summary is gap-DONE gated and writes nothing, so a duplicate fire is inherently idempotent.
+// Defensive: no-op unless the job is still enabled in the canonical config (belt-and-suspenders vs a stale/orphan
+// trigger left by a schedule edit). Never throws.
 function runWeeklyRecommendation() {
-  // Defensive enabled gate — the reconciler only creates this trigger when enabled and deletes it when disabled, so
-  // this is belt-and-suspenders against an orphan trigger. Never throws.
   try {
     var cfg = automationReadConfig_(automationDefaultIo_());
     if (!cfg || !cfg.weeklyRecommendation || cfg.weeklyRecommendation.enabled !== true) {
       return { ok: true, skipped: true, reason: 'WEEKLY_RECOMMENDATION_DISABLED' };
     }
-  } catch (e) { /* config unavailable → fall through and let the owner's own gates decide */ }
-  var out = { ok: false, handlerVersion: 'f1-6a-weekly-recommendation-r1', results: {} };
-  ['INVENTORY', 'ORDER_PLANNING'].forEach(function (p) {
-    // Deterministic planning cycle (Asia/Taipei, RECO-YYYY-MM) via the canonical gap calc-context resolver — the
-    // scheduler SUPPLIES the cycle for observability/lineage; the runtime never guesses it. (43_ owner.)
-    var cycle = '';
-    try { var ctx = gapCalcResolveContext_(p); if (ctx && ctx.ok) cycle = ctx.planningCycle; } catch (e2) {}
-    var res = runRecommendationGeneration(p);   // ONE canonical owner — no second engine, no math here
-    out.results[p] = { planningCycle: cycle, result: res };
-    if (res && res.ok) out.ok = true;
-  });
+  } catch (e) { /* config unavailable → fall through and let the owners' own gates decide */ }
+  var out = { ok: false, handlerVersion: 'f1-6b-weekly-recommendation-r1', results: {} };
+  // ORDER_PLANNING — START the canonical persistence run (49_). This is the SAME 48_ job / 24_ locked persister the
+  // manual AI Plan uses; the scheduler only supplies timing + the deterministic planning cycle (resolved in 49_).
+  try {
+    var started = weeklyRecoStart_(weeklyRecoDefaultEnv_());   // arms the browserless continuation chain; persists drafts
+    out.results.ORDER_PLANNING = { mode: 'PERSISTENCE_RUN', result: started };
+    if (started && started.success) out.ok = true;
+  } catch (eOP) {
+    out.results.ORDER_PLANNING = { mode: 'PERSISTENCE_RUN', error: (eOP && eOP.message) ? String(eOP.message) : String(eOP) };
+  }
+  // INVENTORY — the existing non-persistent summary (no resumable persistence authority; not a second engine).
+  var invCycle = '';
+  try { var ctx = gapCalcResolveContext_('INVENTORY'); if (ctx && ctx.ok) invCycle = ctx.planningCycle; } catch (e2) {}
+  var invRes = runRecommendationGeneration('INVENTORY');   // ONE canonical owner — no second engine, no math here
+  out.results.INVENTORY = { mode: 'SUMMARY', planningCycle: invCycle, result: invRes };
+  if (invRes && invRes.ok) out.ok = true;
   try { Logger.log('[runWeeklyRecommendation] ' + JSON.stringify(out)); } catch (_l) {}
   return out;
 }

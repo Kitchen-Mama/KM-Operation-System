@@ -24,14 +24,18 @@ var GS43 = read('specs/active/apps-script/43_api_v1_gap_materialization.gs');
 var runWeeklyFn = extractFn(GS47, 'runWeeklyRecommendation');
 
 // Build runWeeklyRecommendation with injected global stubs (records delegation + supplies deterministic cycle).
+// F1-6B Part A: ORDER_PLANNING now STARTS the canonical persistence run (49_ weeklyRecoStart_) instead of the old
+// summary; INVENTORY retains the runRecommendationGeneration summary. Both delegated owners are injected as stubs.
 function buildWeekly(cfg, calcCtx) {
-  var calls = { runGen: [], readConfig: 0 };
-  var fn = new Function('automationReadConfig_', 'automationDefaultIo_', 'gapCalcResolveContext_', 'runRecommendationGeneration', 'Logger',
+  var calls = { runGen: [], readConfig: 0, weeklyStart: 0 };
+  var fn = new Function('automationReadConfig_', 'automationDefaultIo_', 'gapCalcResolveContext_', 'runRecommendationGeneration', 'weeklyRecoStart_', 'weeklyRecoDefaultEnv_', 'Logger',
     runWeeklyFn + '\n return runWeeklyRecommendation;')(
     function () { calls.readConfig++; return cfg; },
     function () { return {}; },
     function (jobType) { calls.calcCtx = (calls.calcCtx || []); calls.calcCtx.push(jobType); return calcCtx; },
     function (product) { calls.runGen.push(product); return { ok: true, product: product, summary: { count: 1 } }; },
+    function () { calls.weeklyStart++; return { success: true, data: { runId: 'WREC-1', status: 'PENDING', scopesTotal: 2 } }; },
+    function () { return {}; },
     { log: function () {} });
   return { fn: fn, calls: calls };
 }
@@ -45,27 +49,29 @@ ok(/defaults: \{ enabled: false, frequency: 'WEEKLY', dayOfWeek: 'MONDAY'/.test(
 // the other three implemented jobs are unchanged
 ['amazonImport', 'inventoryGap', 'orderPlanningGap'].forEach(function (k) { ok(new RegExp("key: '" + k + "'").test(JB), 'unchanged job present: ' + k); });
 
-console.log('\n== L/S enabled: delegates to the ONE canonical runtime for both products + deterministic cycle ==');
+console.log('\n== L/S enabled (F1-6B): ORDER_PLANNING starts the canonical PERSISTENCE run; INVENTORY stays a summary ==');
 var en = buildWeekly({ weeklyRecommendation: { enabled: true } }, { ok: true, planningCycle: 'RECO-2026-08' });
 var rEn = en.fn();
-eq(en.calls.runGen, ['INVENTORY', 'ORDER_PLANNING'], 'L delegates to runRecommendationGeneration for both planning products');
-ok(rEn.ok === true, 'L returns ok when the owner succeeds');
-eq(rEn.results.ORDER_PLANNING.planningCycle, 'RECO-2026-08', 'S planning cycle supplied deterministically (RECO-YYYY-MM via gapCalcResolveContext_)');
-eq(en.calls.calcCtx, ['INVENTORY', 'ORDER_PLANNING'], 'S cycle resolved per product via the canonical calc-context owner');
+eq(en.calls.runGen, ['INVENTORY'], 'L ORDER_PLANNING no longer summarized — INVENTORY only retains the summary owner');
+ok(en.calls.weeklyStart === 1, 'L ORDER_PLANNING delegates to the 49_ persistence run (weeklyRecoStart_) — the SAME 48_/24_ authority as manual AI Plan');
+ok(rEn.ok === true, 'L returns ok when the owners succeed');
+eq(rEn.results.ORDER_PLANNING.mode, 'PERSISTENCE_RUN', 'S ORDER_PLANNING result carries the persistence-run outcome (not an in-memory summary)');
+eq(en.calls.calcCtx, ['INVENTORY'], 'S planning cycle for OP is resolved inside 49_ (deterministic); the handler resolves only the INVENTORY summary cycle');
 
 console.log('\n== K/N/O/P disabled + defensive: no-op, no delegation (idempotent by construction) ==');
 var dis = buildWeekly({ weeklyRecommendation: { enabled: false } }, { ok: true, planningCycle: 'RECO-2026-08' });
 var rDis = dis.fn();
 ok(rDis.skipped === true && rDis.reason === 'WEEKLY_RECOMMENDATION_DISABLED', 'K disabled schedule -> skipped (does not execute)');
 eq(dis.calls.runGen, [], 'K disabled -> the recommendation runtime is NOT invoked');
-// non-persistent owner (stub returns summary only) -> repeated invocation cannot create duplicate drafts
+// F1-6B: duplicate firing re-delegates; idempotency now comes from the 49_ single-run + 48_ single-active +
+// 24_ locked-persister (BLOCKED_CONFLICT / user-edit protection) — weeklyRecoStart_ JOINS a live run, never a 2nd.
 var twice = buildWeekly({ weeklyRecommendation: { enabled: true } }, { ok: true, planningCycle: 'RECO-2026-08' });
 twice.fn(); twice.fn();
-eq(twice.calls.runGen.length, 4, 'N/O duplicate/near-simultaneous firing just re-delegates (owner is non-persistent summary -> no duplicate draft)');
+eq([twice.calls.weeklyStart, twice.calls.runGen.length], [2, 2], 'N/O duplicate/near-simultaneous firing just re-delegates (49_ joins the live run → no duplicate active draft)');
 
 console.log('\n== M no copied recommendation/gap/forecast math in the scheduler handler ==');
 ok(!/KMREC|generateBatch|calculateGap|calculateSuggested|forecast|recommended_qty|units_per_carton/i.test(runWeeklyFn), 'M handler contains NO recommendation/gap/forecast formula (delegation only)');
-ok(/runRecommendationGeneration\(p\)/.test(runWeeklyFn), 'M handler delegates to the ONE shared owner');
+ok(/weeklyRecoStart_\(weeklyRecoDefaultEnv_\(\)\)/.test(runWeeklyFn) && /runRecommendationGeneration\('INVENTORY'\)/.test(runWeeklyFn), 'M handler delegates: ORDER_PLANNING → 49_ persistence run, INVENTORY → the shared summary owner');
 ok(!/setValue|appendRow|prodRequireSheet_|SpreadsheetApp|insertSheet/.test(runWeeklyFn), 'M handler writes nothing itself');
 
 console.log('\n== T no second engine/table; U canonical owner unchanged ==');

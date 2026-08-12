@@ -690,6 +690,9 @@ function _shNextStatus(status) {
 var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped'];
 // Shipment Overview = official records only (shipped onward).
 var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 };
+// F1-6B Part B — statuses at which the frozen R2B final-output snapshot exists (post confirm-and-dispatch), so
+// Shipping Detail / Packing List documents can be generated. Purely a UX gate — the backend is fail-closed regardless.
+var SH_DOC_READY_STATUSES = { in_transit: 1, arrived: 1, received: 1, closed: 1 };
 // Done marker: hidden from the Draft workspace (still shown in Overview; row never deleted).
 function _shHiddenFromDraft(s) { return !!(s.hiddenFromDraftAt && String(s.hiddenFromDraftAt).trim()); }
 
@@ -1085,6 +1088,10 @@ function _shRenderDbCard(s, planLines, mode) {
         // Overview: official records advance through the post-ship lifecycle (no factory-stock effects).
         var next = _shNextStatus(status);
         if (next && status !== 'closed') actionsHtml = btn("shAdvanceStatus('" + sid + "', '" + next + "')", 'Advance → ' + _shEsc(SH_STATUS_LABEL[next] || next), '#3B82F6');
+        // F1-6B Part B — Shipping Detail / Packing List documents for a dispatched shipment (the frozen R2B snapshot
+        // exists). Thin: the frontend only sends { shipment_id, document_type, generate_file } and opens the returned
+        // download_url via the existing R3C adapters — NO placeholder mapping / totals / template / master / file build.
+        if (SH_DOC_READY_STATUSES[status]) actionsHtml += _shDocActionsHtml(sid);
     }
 
     return '' +
@@ -1277,6 +1284,85 @@ function shShip(shipmentId) {
         alert('Shipment marked as Shipped.');
         _shLoadAndRender();
     }).catch(function(err) { alert('Ship failed: ' + (err && err.message ? err.message : err)); });
+}
+
+// ============================================================================================================
+// F1-6B-PHASE1-E2E-PRE-CLOSURE-R1 Part B — Shipment Document (Shipping Detail / Packing List) last-mile UI.
+// A COMPACT Generate / Download group on the dispatched-shipment overview card. The frontend stays THIN: it sends
+// only { shipment_id, document_type, generate_file:true } to the canonical R3C backend (KM.DB.generateShipmentDocument)
+// and opens the returned download_url (KM.DB.openGeneratedDocument). It performs NO placeholder mapping, totals,
+// template selection/version, master lookup, PO aggregation, FIFO, or file/PDF construction — the backend owns all of
+// it. Only SHIPDETAIL + PL are exposed here; Customs / CI / Booking are NOT (Customs stays LEGAL_IMPORTER_AUTHORITY_GAP
+// on the backend and is never surfaced as ready). Double-click is guarded here (button disabled in-flight) AND the
+// backend is idempotent (reuse-by-key), so no duplicate document is created.
+// ============================================================================================================
+var _shDocResultCache = {};   // shipmentId|docType → last successful generate envelope (for the Download/Open link)
+var SH_DOC_TYPES = { SHIPDETAIL: 'Shipping Detail', PL: 'Packing List' };
+
+// Compact document action group (rendered inside the overview card's action area). Inline-styled to match the card's
+// existing per-shipment controls; the rows flex-wrap so a narrow screen never overflows.
+function _shDocActionsHtml(sid) {
+    function row(docType, label) {
+        var base = 'sh-doc-' + _shEsc(sid) + '-' + docType;
+        return '<div class="sh-doc-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">' +
+                   '<span style="font-size:13px;color:#334155;min-width:96px;">' + _shEsc(label) + '</span>' +
+                   '<button id="' + base + '-gen" onclick="shGenerateShipmentDoc(\'' + _shEsc(sid) + '\',\'' + docType + '\',this)" ' +
+                       'style="background:#6366F1;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;">Generate</button>' +
+                   '<span id="' + base + '-status" style="font-size:12px;color:#64748B;"></span>' +
+               '</div>';
+    }
+    return '<div class="sh-doc-actions" style="margin-top:12px;padding-top:12px;border-top:1px dashed #E2E8F0;">' +
+               '<div style="font-size:13px;font-weight:600;color:#1E293B;margin-bottom:2px;">Documents</div>' +
+               row('SHIPDETAIL', SH_DOC_TYPES.SHIPDETAIL) +
+               row('PL', SH_DOC_TYPES.PL) +
+           '</div>';
+}
+
+// Map a fail-closed backend code to a short human label (never fabricates readiness).
+function _shDocErrLabel(reason) {
+    var r = String(reason || '');
+    if (/ASSET_TYPE_UNSUPPORTED/.test(r)) return 'Template type unsupported';
+    if (/ASSET_MISSING|TEMPLATE_NOT_CONFIGURED|TEMPLATE_AMBIGUOUS/.test(r)) return 'Template not configured';
+    if (/REQUIRED_FIELD_GAP|NOT_READY|READINESS|SNAPSHOT/i.test(r)) return 'Not ready';
+    return 'Error: ' + r;
+}
+
+// Generate (Shipping Detail | Packing List) via the canonical R3C backend, then surface Download/Open. States:
+// Generating… → Generated/Ready (+Download link, button becomes Regenerate) | a fail-closed reason. Double-click safe.
+function shGenerateShipmentDoc(shipmentId, docType, btnEl) {
+    var db = window.KM && window.KM.DB;
+    var statusEl = document.getElementById('sh-doc-' + shipmentId + '-' + docType + '-status');
+    if (!db || typeof db.generateShipmentDocument !== 'function') {
+        if (statusEl) { statusEl.style.color = '#DC2626'; statusEl.textContent = 'Unavailable'; }
+        return;
+    }
+    if (btnEl) { if (btnEl.disabled) return; btnEl.disabled = true; }   // §B11 double-click guard (backend also idempotent)
+    if (statusEl) { statusEl.style.color = '#64748B'; statusEl.textContent = 'Generating…'; }
+    return Promise.resolve(db.generateShipmentDocument({ shipment_id: shipmentId, document_type: docType, generate_file: true })).then(function (res) {
+        if (btnEl) btnEl.disabled = false;
+        if (res && res.success && (res.download_url || res.pdf_file_url || res.file_url)) {
+            _shDocResultCache[shipmentId + '|' + docType] = res;
+            if (btnEl) btnEl.textContent = 'Regenerate';
+            if (statusEl) {
+                statusEl.style.color = '#059669';
+                statusEl.innerHTML = (res.reused ? 'Ready · ' : 'Generated · ') +
+                    '<a href="#" onclick="return shOpenShipmentDoc(\'' + _shEsc(shipmentId) + '\',\'' + docType + '\')" style="color:#2563EB;text-decoration:underline;">Download / Open</a>';
+            }
+        } else {
+            var reason = (res && (res.reason || res.error)) || 'Not ready';
+            if (statusEl) { statusEl.style.color = '#DC2626'; statusEl.textContent = _shDocErrLabel(reason); }
+        }
+    }).catch(function () {
+        if (btnEl) btnEl.disabled = false;
+        if (statusEl) { statusEl.style.color = '#DC2626'; statusEl.textContent = 'Error'; }
+    });
+}
+
+// Open/download the last generated document result (presentation only — the frontend builds no content).
+function shOpenShipmentDoc(shipmentId, docType) {
+    var db = window.KM && window.KM.DB, res = _shDocResultCache[shipmentId + '|' + docType];
+    if (db && res && typeof db.openGeneratedDocument === 'function') db.openGeneratedDocument(res);
+    return false;
 }
 
 // Confirm Shipment (2026-07-24) — the canonical dispatch action. Validates client-side, persists the
