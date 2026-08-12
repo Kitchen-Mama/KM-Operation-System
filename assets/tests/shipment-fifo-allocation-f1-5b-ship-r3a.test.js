@@ -176,7 +176,10 @@ ok(/slaResolveShipmentFactory_/.test(handler) && /procurementResolveFactoryId_/.
 ok(/company = slaStr_\(ship\.company\)/.test(handler), '§5 shipment business company = persisted shipments.company (never inferred)');
 ok(!/factory[\s\S]{0,40}company|company[\s\S]{0,40}=[\s\S]{0,20}factory_id/.test(extractFn(GS, 'slaIsEligible_')), '§0B eligibility never infers company from factory or vice-versa');
 ok(/generateShipmentLineAllocations/.test(ROUTER) && /handleGenerateShipmentLineAllocations_/.test(ROUTER), 'router wires the canonical action (single owner)');
-ok(/var SHIPMENT_LINE_ALLOCATIONS_HEADERS_ = \[/.test(GS) && /'allocation_status'/.test(GS) && /'fifo_rank'/.test(GS) && /'purchase_order_line_id'/.test(GS), '§9 canonical schema declared (status + fifo_rank + PO-line FK)');
+ok(/var SHIPMENT_LINE_ALLOCATIONS_HEADERS_ = \[/.test(GS) && /'allocation_status'/.test(GS) && /'allocated_qty'/.test(GS) && /'purchase_order_line_id'/.test(GS) && /'shipment_line_id'/.test(GS), 'canonical schema declared (live 14-col contract: status + allocated_qty + PO-line/shipment-line FKs)');
+var HEADERS = GS.slice(GS.indexOf('var SHIPMENT_LINE_ALLOCATIONS_HEADERS_'), GS.indexOf('];', GS.indexOf('var SHIPMENT_LINE_ALLOCATIONS_HEADERS_')));
+ok(!/'fifo_rank'|'company'|'factory_id'|'purchase_order_id'|'executed_at'|'reversed_by'/.test(HEADERS), 'schema matches LIVE 14-col (no fifo_rank/company/factory_id/purchase_order_id/executed_at)');
+ok(/'shipped_qty'/.test(HEADERS) && /'released_by'/.test(HEADERS) && /'note'/.test(HEADERS), 'schema includes reserved shipped_qty + released_* + note (present but NOT authority)');
 
 console.log('\n----------------------------------------');
 console.log('SHIPMENT FIFO ALLOCATION (F1-5B-SHIP-R3A): ' + pass + ' passed, ' + fail + ' failed');

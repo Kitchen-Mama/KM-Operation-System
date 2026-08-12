@@ -143,6 +143,13 @@ function handleConfirmShipmentAndDispatch_(body) {
     });
     if (stockErrors.length) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Insufficient factory stock for: ' + stockErrors.join('; ') + '. No stock was deducted.', stage: 'stock' }); }
 
+    // ---------- F1-5B-SHIP-R3B — VALIDATE + PLAN canonical PO allocation execution (before any write) ----------
+    // Reuses the ONE R3A allocation authority (32_) — no second FIFO here. Fail closed (no partial dispatch): every
+    // qty>0 shipment line must have a draft allocation set summing to shipment_qty; capacity is revalidated inside
+    // this lock; legacy shipped_qty drift is surfaced, never guessed. shipped_qty is reconciled (never incremented).
+    var slaPlan = slaPrepareExecution_(ss, shipmentId);
+    if (!slaPlan.ok) { lock.releaseLock(); return jsonResponse_({ success: false, error: slaPlan.error, stage: 'po_allocation', detail: slaPlan.detail || null, shipment_id: shipmentId }); }
+
     // ============ ALL VALIDATION PASSED — begin staged writes ============
     var now = shipmentTimestamp_();
     var today = shipmentToday_();
@@ -228,12 +235,18 @@ function handleConfirmShipmentAndDispatch_(body) {
     var ub = s.col('updated_by'); if (ub !== -1) shipSheet.getRange(row, ub + 1).setValue(actor);
     SpreadsheetApp.flush();
 
+    // 5) F1-5B-SHIP-R3B — EXECUTE PO allocations (draft → executed) + reconcile purchase_order_lines.shipped_qty /
+    // remaining_qty, under the SAME rollback stack (all-or-nothing with factory stock + shipment lifecycle §6).
+    var slaExec = slaApplyExecution_(ss, slaPlan, actor, now, rollback);
+    SpreadsheetApp.flush();
+
     lock.releaseLock();
     return jsonResponse_({
       success: true,
       data: {
         shipment_id: shipmentId, status: CSD_INTRANSIT_, route_template_id: templateId,
         route_nodes_created: routeNodesCreated, events_created: 1, stock_movements_created: movementsCreated,
+        po_allocations_executed: slaExec.executed_allocations, po_lines_reconciled: slaExec.reconciled_po_lines,
         actual_departure_date: today, warnings: tplRes.warnings || []
       }
     });

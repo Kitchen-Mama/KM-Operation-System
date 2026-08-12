@@ -1,3 +1,10 @@
+> **SCHEMA CORRECTION (2026-08-12, superseded by R3B).** The **actual live** `shipment_line_allocations` has **14
+> columns**, not the "19 headers" this report stated: `shipment_line_allocation_id, shipment_line_id,
+> purchase_order_line_id, sku, allocated_qty, shipped_qty, allocation_status, created_by, created_at, updated_at,
+> released_by, released_at, release_reason, note`. The runtime (`32_`) was corrected to this live contract in R3B
+> (commit after `bfa9bed`). **Do NOT run the 19-column migration below** — the live table already exists and must
+> not be re-migrated. See [F1_5B_SHIP_R3B_DISPATCH_PO_EXECUTION.md](F1_5B_SHIP_R3B_DISPATCH_PO_EXECUTION.md).
+
 # F1-5B-SHIP-R3A — FIFO Allocation Schema + Canonical Draft Allocation Foundation
 
 **Outcome: IMPLEMENTED (draft-allocation foundation).** All four R2 HALT authorities are USER-frozen and proven compatible with the existing architecture; no HALT condition re-triggered. Backend-only. `shipped_qty` NOT executed (R3B). Requires a **USER-authorized migration before the table is live** (§25). Baseline: [F1_5B_SHIP_R2_FIFO_ALLOCATION_AUDIT.md](F1_5B_SHIP_R2_FIFO_ALLOCATION_AUDIT.md).

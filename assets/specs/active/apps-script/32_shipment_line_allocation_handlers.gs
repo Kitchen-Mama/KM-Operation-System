@@ -18,21 +18,22 @@
 // Requires the shipment_line_allocations sheet to exist (USER-authorized migration — §8/§10). Runtime FAILS
 // CLOSED (SHIPMENT_LINE_ALLOCATIONS_SCHEMA_MISSING) if absent — never auto-creates, never silently skips.
 
-// Minimal canonical schema (§9). Denormalized shipment_id/purchase_order_id/sku/company/factory_id are scope
-// guards + readback/diagnostics only (NEVER authority). executed_at + reversal_* are R3B lifecycle lineage.
+// CANONICAL LIVE schema — the exact 14 production columns (USER-confirmed 2026-08-12). This is the authoritative
+// contract; the R3A draft report's "19 headers" was superseded by the live table (no re-migration). allocated_qty
+// is the PO-consumption qty; allocation_status is the lifecycle (draft → executed → reversed); released_* are
+// reserved for release/reversal (deferred). allocation-level shipped_qty is RESERVED/unused — it is NOT a second
+// shipped-quantity authority (PO shipped_qty is reconciled from Σ executed allocated_qty in R3B). NEVER written here.
 var SHIPMENT_LINE_ALLOCATIONS_HEADERS_ = [
   'shipment_line_allocation_id',   // PK  (SLA-…)
-  'shipment_id',                   // parent shipment (scoping + bulk ops)
   'shipment_line_id',              // FK → shipment_lines.shipment_line_id (physical qty owner)
-  'purchase_order_id',             // denormalized parent (readback / documents)
   'purchase_order_line_id',        // FK → purchase_order_lines (the consumed PO line)
-  'sku', 'company', 'factory_id',  // denormalized scope guard + diagnostics (not authority)
+  'sku',                           // denormalized readback / diagnostics (not authority)
   'allocated_qty',                 // this allocation's consumed qty (PO-consumption lineage ONLY)
+  'shipped_qty',                   // RESERVED/unused — NEVER an authority (do not write; see header note)
   'allocation_status',             // draft | executed | reversed
-  'fifo_rank',                     // deterministic order this allocation was generated at (audit)
-  'created_by', 'created_at', 'updated_by', 'updated_at',
-  'executed_at',                   // R3B stamp (draft → executed at dispatch)
-  'reversed_by', 'reversed_at', 'reversal_reason'   // reversal lineage (R3B / policy round)
+  'created_by', 'created_at', 'updated_at',
+  'released_by', 'released_at', 'release_reason',   // reserved for release/reversal (deferred)
+  'note'
 ];
 
 // eligible PO header statuses (issued / executable only; pre-issue draft & pending_approval NEVER eligible).
@@ -257,16 +258,18 @@ function handleGenerateShipmentLineAllocations_(body) {
       }
     }
     var now = procurementTimestamp_();
+    var skuByLine = {}; scopes.forEach(function (s) { skuByLine[s.shipment_line_id] = s.sku; });
     var persisted = [];
     plan.results.forEach(function (res) {
       res.allocations.forEach(function (a) {
+        // Persist ONLY the live 14-column contract. shipped_qty + released_* are left blank (reserved). sku is
+        // populated (live column). company/factory/fifo_rank/executed_at do not exist in the live schema and are
+        // recomputed at dispatch — never stored here.
         var sla = { shipment_line_allocation_id: 'SLA-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
-          shipment_id: shipmentId, shipment_line_id: res.shipment_line_id, purchase_order_id: a.purchase_order_id,
-          purchase_order_line_id: a.purchase_order_line_id, sku: '', company: company, factory_id: factoryId,
-          allocated_qty: a.allocated_qty, allocation_status: 'draft', fifo_rank: a.fifo_rank,
-          created_by: actor, created_at: now, updated_by: actor, updated_at: now,
-          executed_at: '', reversed_by: '', reversed_at: '', reversal_reason: '' };
-        procurementAppendByHeader_(slaSheet, sla);
+          shipment_line_id: res.shipment_line_id, purchase_order_line_id: a.purchase_order_line_id,
+          sku: skuByLine[res.shipment_line_id] || '', allocated_qty: a.allocated_qty, allocation_status: 'draft',
+          created_by: actor, created_at: now, updated_at: now };
+        procurementAppendByHeader_(slaSheet, sla);   // writes only physically-present columns (14-col live schema)
         persisted.push({ shipment_line_id: res.shipment_line_id, purchase_order_line_id: a.purchase_order_line_id, allocated_qty: a.allocated_qty, fifo_rank: a.fifo_rank });
       });
     });
@@ -274,4 +277,113 @@ function handleGenerateShipmentLineAllocations_(body) {
     return jsonResponse_({ success: true, data: { shipment_id: shipmentId, company: company, factory_id: factoryId,
       allocations: persisted, line_count: scopes.length, shipped_qty_changed: false } });
   } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
+}
+
+// ============================================================================================================
+// F1-5B-SHIP-R3B — Confirm & Dispatch → canonical PO allocation EXECUTION (draft → executed + shipped_qty
+// reconciliation). These run INSIDE the existing Confirm & Dispatch ScriptLock (22_) — NO lock here (no nesting).
+// There is NO second FIFO here: R3B validates + executes the DRAFT allocations R3A already produced; the ONE FIFO
+// authority stays in R3A. shipped_qty is RECONCILED (set = Σ executed allocated_qty), NEVER incremented.
+// ============================================================================================================
+
+// Validate + plan execution for a shipment. Reads only; returns a durable plan (row indices captured) or a
+// fail-closed error. Idempotent by reconciliation: re-preparing after execution yields the same shipped_qty.
+function slaPrepareExecution_(ss, shipmentId) {
+  var slaSheet = ss.getSheetByName('shipment_line_allocations');
+  if (!slaSheet) return { ok: false, error: 'SHIPMENT_LINE_ALLOCATIONS_SCHEMA_MISSING' };
+  var lineSheet = ss.getSheetByName('shipment_lines'), polSheet = ss.getSheetByName('purchase_order_lines');
+  if (!lineSheet || !polSheet) return { ok: false, error: 'shipment_lines/purchase_order_lines sheet not found' };
+
+  // shipment lines for this shipment -> shipment_qty per line
+  var ld = lineSheet.getDataRange().getValues(); if (ld.length < 2) return { ok: false, error: 'Shipment has no lines' };
+  var lh = ld[0].map(slaStr_);
+  var lLine = lh.indexOf('shipment_line_id'), lShip = lh.indexOf('shipment_id');
+  var lQty = lh.indexOf('shipment_qty'); if (lQty === -1) lQty = lh.indexOf('qty');
+  var qtyByLine = {}, lineIds = {};
+  for (var i = 1; i < ld.length; i++) {
+    if (slaStr_(ld[i][lShip]) !== shipmentId) continue;
+    var lid = slaStr_(ld[i][lLine]); if (!lid) continue;
+    qtyByLine[lid] = slaNum_(ld[i][lQty]); lineIds[lid] = 1;
+  }
+  if (!Object.keys(lineIds).length) return { ok: false, error: 'Shipment has no lines' };
+
+  // allocations - split this-shipment rows (with row index) vs OTHER shipments executed reservations
+  var ad = slaSheet.getDataRange().getValues(); var ah = ad[0].map(slaStr_);
+  var aLine = ah.indexOf('shipment_line_id'), aPol = ah.indexOf('purchase_order_line_id'),
+      aQty = ah.indexOf('allocated_qty'), aStat = ah.indexOf('allocation_status'), aUpd = ah.indexOf('updated_at');
+  if (aStat === -1 || aQty === -1 || aPol === -1 || aLine === -1) return { ok: false, error: 'SHIPMENT_LINE_ALLOCATIONS_SCHEMA_MISSING' };
+  var thisAlloc = [], executedByPolOthers = {};
+  for (var r = 1; r < ad.length; r++) {
+    var lid2 = slaStr_(ad[r][aLine]), pol = slaStr_(ad[r][aPol]), q = slaNum_(ad[r][aQty]), st = slaLc_(ad[r][aStat]);
+    if (lineIds[lid2]) thisAlloc.push({ row: r + 1, lid: lid2, pol: pol, qty: q, status: st });
+    else if (st === 'executed') executedByPolOthers[pol] = (executedByPolOthers[pol] || 0) + q;
+  }
+
+  // conservation: each qty>0 line draft|executed allocation sum must equal shipment_qty
+  var sumByLine = {};
+  thisAlloc.forEach(function (a) { if (a.status === 'draft' || a.status === 'executed') sumByLine[a.lid] = (sumByLine[a.lid] || 0) + a.qty; });
+  var missing = [], mismatch = [];
+  Object.keys(qtyByLine).forEach(function (lid) {
+    if (qtyByLine[lid] <= 0) return;
+    if (!(lid in sumByLine)) missing.push(lid);
+    else if (sumByLine[lid] !== qtyByLine[lid]) mismatch.push({ shipment_line_id: lid, shipment_qty: qtyByLine[lid], allocated: sumByLine[lid] });
+  });
+  if (missing.length) return { ok: false, error: 'SHIPMENT_PO_ALLOCATION_MISSING', detail: { shipment_line_ids: missing } };
+  if (mismatch.length) return { ok: false, error: 'SHIPMENT_PO_ALLOCATION_QTY_MISMATCH', detail: { lines: mismatch } };
+
+  // per-PO-line consumption from THIS shipment (draft + already-executed) and this shipment already-executed
+  var thisByPol = {}, thisExecutedByPol = {};
+  thisAlloc.forEach(function (a) {
+    if (a.status === 'draft' || a.status === 'executed') thisByPol[a.pol] = (thisByPol[a.pol] || 0) + a.qty;
+    if (a.status === 'executed') thisExecutedByPol[a.pol] = (thisExecutedByPol[a.pol] || 0) + a.qty;
+  });
+
+  // PO line index
+  var pd = polSheet.getDataRange().getValues(); var ph = pd[0].map(slaStr_);
+  var pPol = ph.indexOf('purchase_order_line_id'), pComp = ph.indexOf('completed_qty'),
+      pShip = ph.indexOf('shipped_qty'), pRem = ph.indexOf('remaining_qty');
+  var polRow = {};
+  for (var p = 1; p < pd.length; p++) { var id = slaStr_(pd[p][pPol]); if (id) polRow[id] = { row: p + 1, completed: slaNum_(pd[p][pComp]), shipped: pShip !== -1 ? slaNum_(pd[p][pShip]) : 0, remaining: pRem !== -1 ? slaNum_(pd[p][pRem]) : 0 }; }
+
+  var poReconcile = [];
+  var pols = Object.keys(thisByPol);
+  for (var k = 0; k < pols.length; k++) {
+    var polId = pols[k], pr = polRow[polId];
+    if (!pr) return { ok: false, error: 'PO_LINE_NOT_FOUND', detail: { purchase_order_line_id: polId } };
+    var others = executedByPolOthers[polId] || 0;
+    // drift - persisted shipped_qty must equal executed allocation sum across ALL shipments (others + this
+    // shipment already-executed). Legacy shipped_qty with no executed lineage (and != 0) fails closed.
+    var executedAll = others + (thisExecutedByPol[polId] || 0);
+    if (pr.shipped !== executedAll && !(pr.shipped === 0 && executedAll === 0)) {
+      return { ok: false, error: 'PO_SHIPPED_QTY_LEGACY_BASELINE_UNRESOLVED', detail: { purchase_order_line_id: polId, persisted_shipped_qty: pr.shipped, executed_allocation_sum: executedAll } };
+    }
+    var newShipped = others + thisByPol[polId];   // reconciliation target = other-executed + this shipment full consumption
+    // capacity - executed consumption must never exceed physically completed production.
+    if (newShipped > pr.completed) return { ok: false, error: 'PO_CAPACITY_CHANGED_BEFORE_DISPATCH', detail: { purchase_order_line_id: polId, completed_qty: pr.completed, would_be_shipped: newShipped } };
+    poReconcile.push({ row: pr.row, pol: polId, completed: pr.completed, newShipped: newShipped, newRemaining: Math.max(0, pr.completed - newShipped), prevShipped: pr.shipped, prevRemaining: pr.remaining });
+  }
+
+  var allocFlips = thisAlloc.filter(function (a) { return a.status === 'draft'; }).map(function (a) { return { row: a.row }; });
+  return { ok: true, cols: { aStat: aStat, aUpd: aUpd, pShip: pShip, pRem: pRem }, allocFlips: allocFlips, poReconcile: poReconcile, already_executed: allocFlips.length === 0 };
+}
+
+// Apply the prepared plan: flip this shipment DRAFT allocations -> executed, and reconcile purchase_order_lines
+// shipped_qty (SET = executed sum, never +=) + remaining_qty (= max(0, completed - shipped)). NO lock (runs inside
+// the dispatch lock). Pushes compensation onto rollback for the caller undoAll (all-or-nothing).
+function slaApplyExecution_(ss, plan, actor, now, rollback) {
+  var slaSheet = ss.getSheetByName('shipment_line_allocations'), polSheet = ss.getSheetByName('purchase_order_lines');
+  var c = plan.cols;
+  plan.allocFlips.forEach(function (f) {
+    var prev = slaSheet.getRange(f.row, c.aStat + 1).getValue();
+    slaSheet.getRange(f.row, c.aStat + 1).setValue('executed');
+    if (rollback) rollback.push({ kind: 'cell', sheet: slaSheet, row: f.row, col: c.aStat, prev: prev });
+    if (c.aUpd !== -1) { var pu = slaSheet.getRange(f.row, c.aUpd + 1).getValue(); slaSheet.getRange(f.row, c.aUpd + 1).setValue(now); if (rollback) rollback.push({ kind: 'cell', sheet: slaSheet, row: f.row, col: c.aUpd, prev: pu }); }
+  });
+  plan.poReconcile.forEach(function (rc) {
+    var ps = polSheet.getRange(rc.row, c.pShip + 1).getValue();
+    polSheet.getRange(rc.row, c.pShip + 1).setValue(rc.newShipped);     // reconciliation SET (not +=)
+    if (rollback) rollback.push({ kind: 'cell', sheet: polSheet, row: rc.row, col: c.pShip, prev: ps });
+    if (c.pRem !== -1) { var pr = polSheet.getRange(rc.row, c.pRem + 1).getValue(); polSheet.getRange(rc.row, c.pRem + 1).setValue(rc.newRemaining); if (rollback) rollback.push({ kind: 'cell', sheet: polSheet, row: rc.row, col: c.pRem, prev: pr }); }
+  });
+  return { executed_allocations: plan.allocFlips.length, reconciled_po_lines: plan.poReconcile.length };
 }
