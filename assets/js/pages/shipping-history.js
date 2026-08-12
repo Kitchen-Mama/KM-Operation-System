@@ -1356,9 +1356,24 @@ function _shRunConfirm(shipmentId, execPayload) {
     if (!go) return;
     go.disabled = true; go.textContent = 'Confirming…'; if (cancel) cancel.disabled = true;
     if (status) { status.style.color = '#0369a1'; status.textContent = 'Persisting fields…'; }
-    // 1) Persist the card's field edits (Save; no status change). 2) Single atomic dispatch command.
+    // 1) Persist the card's field edits (Save; no status change). 2) R3C — reconcile canonical DRAFT PO allocations
+    // from the just-persisted shipment_lines (ONE shipment-scoped call to the R3A authority; NO frontend FIFO /
+    // capacity math). 3) Single atomic dispatch command (R3B executes draft→executed + reconciles shipped_qty).
     Promise.resolve(window.KM.DB.updateShipment(execPayload)).then(function () {
-        if (status) status.textContent = 'Confirming & dispatching…';
+        if (status) status.textContent = 'Preparing PO allocation…';
+        return window.KM.DB.generateShipmentLineAllocations({ shipment_id: shipmentId, actor: 'operation-system' });
+    }).then(function (alloc) {
+        // R3C §6 — allocation readiness gate (UX only; R3B remains the in-lock execution authority). Fail closed:
+        // the physical shipment draft stays saved, but dispatch does NOT proceed until PO allocation is valid.
+        if (!alloc || alloc.success === false) {
+            var aerr = (alloc && alloc.error) || 'Allocation could not be prepared';
+            var d0 = (alloc && alloc.detail) || {};
+            var shortfall = (d0.shortage_qty != null) ? (' — need ' + d0.shipment_qty + ', available ' + d0.available_capacity + ', short ' + d0.shortage_qty) : '';
+            if (status) { status.style.color = '#b91c1c'; status.innerHTML = '<strong>PO Allocation — Needs Attention:</strong> ' + _shEsc(aerr) + _shEsc(shortfall) + '.<br>The shipment draft is saved; resolve PO capacity before dispatching.'; }
+            go.disabled = false; go.textContent = 'Confirm & Dispatch'; if (cancel) cancel.disabled = false;
+            throw { _handled: true };   // stop the chain WITHOUT dispatching
+        }
+        if (status) status.textContent = 'PO allocation ready — confirming & dispatching…';
         return window.KM.DB.confirmShipmentAndDispatch({ shipment_id: shipmentId, actor: 'operation-system' });
     }).then(function (res) {
         if (!res || res.success === false) {
@@ -1384,6 +1399,7 @@ function _shRunConfirm(shipmentId, execPayload) {
             });
         }
     }).catch(function (err) {
+        if (err && err._handled) return;   // R3C allocation-readiness block already surfaced its own message
         if (status) { status.style.color = '#b91c1c'; status.textContent = 'Confirm failed: ' + (err && err.message ? err.message : err) + ' — shipment_id: ' + shipmentId; }
         go.disabled = false; go.textContent = 'Confirm & Dispatch'; if (cancel) cancel.disabled = false;
     });

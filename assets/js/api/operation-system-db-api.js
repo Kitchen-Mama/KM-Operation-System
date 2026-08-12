@@ -2649,6 +2649,32 @@ window.KM.DB.confirmShipmentAndDispatch = async function(payload) {
     return json;
 };
 
+// F1-5B-SHIP-R3C — reconcile canonical DRAFT PO→FIFO allocations for a shipment. Thin adapter to the SINGLE R3A
+// backend authority (action: generateShipmentLineAllocations); the frontend performs NO FIFO / capacity / shipped
+// math. One shipment-scoped call reconciles all lines (no per-SKU fan-out). Refreshes the cache on success so the
+// draft shipment_line_allocations are visible before Confirm & Dispatch (R3B).
+window.KM.DB.generateShipmentLineAllocations = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, generateShipmentLineAllocations skipped');
+        return { success: false, error: 'API not configured', stage: 'config' };
+    }
+    var json;
+    try {
+        var resp = await fetch(OP_DB_API_BASE_URL, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(Object.assign({ action: 'generateShipmentLineAllocations' }, payload))
+        });
+        if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, stage: 'network' };
+        json = await resp.json();
+    } catch (e) {
+        return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' };
+    }
+    if (json && json.success) { await loadOperationDb({ force: true }); }   // refresh cache so draft allocations are visible
+    return json;
+};
+
 // Shipment Receipt (F1-SHIPMENT-RECEIPT-R1B). CUMULATIVE receipt against the live shipment_received_qty
 // column; the backend derives shipments.status (partially_received / received) — never authored here.
 // Payload (snake_case): { shipment_id (required), lines: [ { shipment_line_id, shipment_received_qty } ],
