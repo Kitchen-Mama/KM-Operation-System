@@ -9,6 +9,19 @@
   var WEEKDAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
   var _busy = {};   // per-job in-flight guard (prevents duplicate submission)
 
+  // F1-6B-AUTOMATION-SCHEDULE-UI-GROUPING-R2 — PRESENTATION-ONLY grouping of the automation cards into three visible
+  // sections. `members` are the EXISTING registry keys (server view keys) in the exact required display order; this map
+  // moves NO runtime ownership to the frontend and duplicates NO registry data — it only decides which server-provided
+  // card renders inside which section, and in what order (never alphabetical / never raw iteration order).
+  var AUTOMATION_GROUPS = [
+    { key: 'source', title: 'Source Data', desc: 'Feeds the planning pipelines below.',
+      members: ['amazonImport'] },
+    { key: 'inventory', title: 'Inventory Planning', desc: 'Builds inventory gaps, then weekly inventory recommendations.',
+      members: ['inventoryGap', 'weeklyInventoryRecommendation'] },
+    { key: 'order', title: 'Order Planning', desc: 'Builds order gaps, then monthly order recommendations.',
+      members: ['orderPlanningGap', 'monthlyOrderRecommendation'] }
+  ];
+
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function el(id) { return document.getElementById(id); }
   function pad2(n) { return ('0' + n).slice(-2); }
@@ -90,11 +103,39 @@
     if (e) e.value = String(val);
   }
 
+  // Build the three grouped sections (real DOM containers, not headings between flat siblings). Each group renders its
+  // member cards inside its own .automation-group__cards container, in the mapped order. A card whose key is NOT in the
+  // presentation map (e.g. a future automation) is never dropped — it falls into an "Other" group so nothing vanishes.
+  // Empty groups are omitted (§11). Returns '' when there are no jobs (caller shows the empty-state).
+  function renderGroupsHtml(jobs) {
+    var byKey = {}; (jobs || []).forEach(function (j) { byKey[j.key] = j; });
+    var placed = {}, html = '';
+    AUTOMATION_GROUPS.forEach(function (g) {
+      var cards = g.members.map(function (k) { var j = byKey[k]; if (!j) return ''; placed[k] = 1; return renderJobCard(j); }).filter(Boolean);
+      if (!cards.length) return;   // §11 — no empty group panel
+      html += '<section class="automation-group automation-group--' + esc(g.key) + '" data-group="' + esc(g.key) + '">'
+        + '<header class="automation-group__head">'
+        + '<h3 class="automation-group__title">' + esc(g.title) + '</h3>'
+        + '<p class="automation-group__desc">' + esc(g.desc) + '</p>'
+        + '</header>'
+        + '<div class="automation-group__cards">' + cards.join('') + '</div>'
+        + '</section>';
+    });
+    var leftovers = (jobs || []).filter(function (j) { return !placed[j.key]; });
+    if (leftovers.length) {
+      html += '<section class="automation-group automation-group--other" data-group="other">'
+        + '<header class="automation-group__head"><h3 class="automation-group__title">Other</h3></header>'
+        + '<div class="automation-group__cards">' + leftovers.map(renderJobCard).join('') + '</div>'
+        + '</section>';
+    }
+    return html;
+  }
+
   function render(view) {
     var host = el('auto-sched-cards');
     if (!host) return;
     var jobs = (view && view.jobs) || [];
-    host.innerHTML = jobs.map(renderJobCard).join('') || '<div class="auto-sched-loading">No automations configured.</div>';
+    host.innerHTML = renderGroupsHtml(jobs) || '<div class="auto-sched-loading">No automations configured.</div>';
 
     // Seed the hour/minute/day selects (option lists are static; set the current value per card).
     jobs.forEach(function (job) {

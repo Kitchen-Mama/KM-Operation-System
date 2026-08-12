@@ -12,12 +12,9 @@
     Scheduled execution time is approximate — Apps Script time triggers run within a scheduling window, not to the exact minute.
   </div>
 
-  <div class="auto-sched-flow" aria-hidden="true">
-    <span class="auto-sched-flow__step">Source Import</span><span class="auto-sched-flow__arrow">→</span>
-    <span class="auto-sched-flow__step">Inventory Gap</span><span class="auto-sched-flow__arrow">→</span>
-    <span class="auto-sched-flow__step">Recommendation</span>
-    <span class="auto-sched-flow__aside">Order Planning runs separately at 03:30 using the previous completed source day.</span>
-  </div>
+  <!-- F1-6B-AUTOMATION-SCHEDULE-UI-GROUPING-R2 — the old single-branch flow (Source Import → Inventory Gap →
+       Recommendation) was misleading after the Weekly/Monthly split. The truthful SOURCE DATA → INVENTORY PLANNING /
+       ORDER PLANNING relationship is now shown by the three grouped sections rendered into #auto-sched-cards. -->
 
   <div id="auto-sched-warnings" class="auto-sched-warnings" hidden></div>
 

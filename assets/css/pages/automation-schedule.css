@@ -15,22 +15,32 @@
   border-left: 3px solid var(--km-brand-blue, #0080bb); border-radius: 6px;
 }
 
-#automation-schedule-section .auto-sched-flow {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  font-size: 12px; color: #475569; margin: 0 0 16px;
-}
-#automation-schedule-section .auto-sched-flow__step { padding: 3px 10px; background: #eef2f7; border-radius: 999px; font-weight: 600; }
-#automation-schedule-section .auto-sched-flow__arrow { color: #94a3b8; font-weight: 700; }
-#automation-schedule-section .auto-sched-flow__aside { flex-basis: 100%; color: #94a3b8; font-size: 11px; margin-top: 2px; }
-
 #automation-schedule-section .auto-sched-warnings { margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
 #automation-schedule-section .auto-sched-warn {
   padding: 8px 12px; font-size: 12px; line-height: 1.4; color: #92400e;
   background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; border-radius: 6px;
 }
 
-#automation-schedule-section .auto-sched-cards { display: flex; flex-direction: column; gap: 14px; }
+/* F1-6B-AUTOMATION-SCHEDULE-UI-GROUPING-R2 — three visible groups (Source Data / Inventory Planning / Order Planning).
+   Restrained: a section label + 1-line helper + a subtle left rule on the card stack. No colored panels/banners. */
+#automation-schedule-section .auto-sched-cards { display: flex; flex-direction: column; gap: 22px; }
+#automation-schedule-section .automation-group { display: block; }
+#automation-schedule-section .automation-group__head { margin: 0 0 10px; }
+#automation-schedule-section .automation-group__title {
+  margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: #334155;
+}
+#automation-schedule-section .automation-group__desc { margin: 2px 0 0; font-size: 12px; color: #94a3b8; }
+#automation-schedule-section .automation-group__cards {
+  display: flex; flex-direction: column; gap: 14px;
+  padding-left: 12px; border-left: 2px solid var(--border-light, #e5e7eb);
+}
 #automation-schedule-section .auto-sched-loading { color: #94a3b8; font-size: 13px; padding: 16px 0; }
+
+@media (max-width: 640px) {
+  /* Narrow: drop the left rule/indent so cards use full width (no horizontal overflow); groups still stack + labeled. */
+  #automation-schedule-section .automation-group__cards { padding-left: 0; border-left: none; }
+}
 
 #automation-schedule-section .auto-card {
   background: #fff; border: 1px solid var(--border-light, #e5e7eb); border-radius: 8px;
