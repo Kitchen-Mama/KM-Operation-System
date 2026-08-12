@@ -253,3 +253,31 @@ Notes:                       Git tracking ref shows origin/main == HEAD (USER pu
 ```
 
 **STATUS: GIT CLOSED (origin/main == HEAD) · READY_AFTER_USER_DEPLOYMENT_ACTIONS · APPS SCRIPT NOT DEPLOYED (USER-owned).**
+
+---
+
+## Entry — 2026-08-12 · F1-PHASE1-LIVE-ACCEPTANCE-R1 (live pre-flight — BLOCKED_BY_DEPLOYMENT)
+
+```
+Release ID:                  F1-PHASE1-LIVE-ACCEPTANCE-R1-2026-08-12-live-preflight
+Git HEAD:                    92b54b0  (F1-PHASE1-E2E-FINAL-R1 acceptance audit)
+origin/main (local ref):     92b54b0  ·  0 ahead / 0 behind  ·  working tree clean
+Bundle:                      CURRENT — 40 modules · sha256 aaf5b07f2292f9e876459f38d5c9533f1451357f1781e3e3622684f4c2918782 · --check PASS
+Verdict:                     C. PHASE1_LIVE_ACCEPTANCE_BLOCKED_BY_DEPLOYMENT
+Reason:                      (1) The agent has NO production access — it cannot execute or observe the live Apps Script
+                             project / DB / Drive / browser, so it cannot convert any gate to LIVE_VERIFIED. (2) The
+                             live Apps Script is NOT confirmed synced to HEAD (this ledger's own latest status =
+                             "APPS SCRIPT NOT DEPLOYED"; last deployed baseline 226b027, 24 .gs changed since). §0
+                             forbids diagnosing business logic against stale/unconfirmed runtime.
+Evidence this round:         Code side SOURCE_PROVEN (git aligned, bundle current, schema contracts match). Live side
+                             NOT_VERIFIED for ALL business gates (no live access; deployment pending). No LIVE_VERIFIED
+                             gate claimed. No business-flow failure reported (would be against stale runtime).
+Unblock (USER, in order):    Execute F1_PHASE1_RELEASE_READINESS_R1.md §28 (provision live tables + seed → paste ALL 49
+                             .gs → NEW Web App deployment version → TZ Asia/Taipei → grant OAuth → attach 5 triggers +
+                             sweep legacy → redeploy Pages), then run the §33 / F1_PHASE1_E2E_FINAL_R1.md §33 live
+                             checklist and report each stage's LIVE values back for a LIVE-VERIFIED follow-up round.
+Code/DB/schema impact:       NONE (audit + ledger entry only). No .gs change, no bundle rebuild, no frontend change.
+Next mainline:               USER live run per §33 on a HEAD-synced deployment → then a LIVE-VERIFIED acceptance round.
+```
+
+**STATUS: LIVE ACCEPTANCE BLOCKED_BY_DEPLOYMENT — agent has no production access + Apps Script not confirmed on HEAD; USER deployment (readiness §28) required before any LIVE_VERIFIED gate.**
