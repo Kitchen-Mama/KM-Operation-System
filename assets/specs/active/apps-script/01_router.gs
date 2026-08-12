@@ -210,6 +210,12 @@ function doPost(e) {
       return handleGetShipmentFinalOutput_(body);
     }
 
+    // F1-5C-EXPORT-R3A — render Shipping Detail / Packing List from the frozen R2B snapshot (presentation only;
+    // no live-master read, no persisted generated document). See 35_shipment_document_renderer.gs.
+    if (action === 'renderShipmentDocument') {
+      return handleRenderShipmentDocument_(body);
+    }
+
     // Shipment Receipt + Route Progress (F1-SHIPMENT-RECEIPT-R1B). Receipt = cumulative write to the LIVE
     // shipment_lines.shipment_received_qty + backend-derived shipments.status; route advance = forward-only
     // current-point set on shipment_routes node statuses. See 31_shipment_receipt_route_handlers.gs.
