@@ -90,46 +90,66 @@ function runRecommendationGeneration(product) {
 function runInventoryRecommendationGeneration() { return runRecommendationGeneration('INVENTORY'); }
 function runOrderPlanningRecommendationGeneration() { return runRecommendationGeneration('ORDER_PLANNING'); }
 
-// F1-6A-WEEKLY-RECOMMENDATION-SCHEDULER-R1 / F1-6B-PHASE1-E2E-PRE-CLOSURE-R1 Part A — the Weekly Recommendation
-// TRIGGER TARGET (wired to the Administration automation schedule via 45_'s registry). THIN execution/timing owner
-// ONLY: it authors NO recommendation / gap / forecast / inventory math and writes no draft itself.
-//   ORDER_PLANNING → F1-6B upgrade: instead of the old NON-PERSISTENT summary, it now STARTS the backend-driven
-//     resumable persistence run (49_ weeklyRecoStart_) that drives the EXISTING 48_ job browserlessly to persist
-//     ACTIONABLE request_order_allocation_drafts (mode SCHEDULED_REFRESH → the SAME canonical persistence authority
-//     the manual AI Plan uses). The self-arming continuation chain completes with NO browser. Duplicate fire /
-//     overlap / retry are idempotent (49_ single-run + 48_ single-active + locked-persister BLOCKED_CONFLICT/user-edit
-//     protection). The weekly trigger returns fast; the worker chain does the work.
-//   INVENTORY → retains the existing NON-PERSISTENT summary (runRecommendationGeneration → KMREC). There is NO
-//     resumable, backend-drivable persistence job for INVENTORY (WEEKLY_SHIPPING) — 48_ is ORDER_PLANNING-only and
-//     the inventory workspace is READ-ONLY/browser-driven — so persisting it here would be a SECOND engine (forbidden).
-//     The summary is gap-DONE gated and writes nothing, so a duplicate fire is inherently idempotent.
-// Defensive: no-op unless the job is still enabled in the canonical config (belt-and-suspenders vs a stale/orphan
-// trigger left by a schedule edit). Never throws.
-function runWeeklyRecommendation() {
-  try {
-    var cfg = automationReadConfig_(automationDefaultIo_());
-    if (!cfg || !cfg.weeklyRecommendation || cfg.weeklyRecommendation.enabled !== true) {
-      return { ok: true, skipped: true, reason: 'WEEKLY_RECOMMENDATION_DISABLED' };
-    }
-  } catch (e) { /* config unavailable → fall through and let the owners' own gates decide */ }
-  var out = { ok: false, handlerVersion: 'f1-6b-weekly-recommendation-r1', results: {} };
-  // ORDER_PLANNING — START the canonical persistence run (49_). This is the SAME 48_ job / 24_ locked persister the
-  // manual AI Plan uses; the scheduler only supplies timing + the deterministic planning cycle (resolved in 49_).
-  try {
-    var started = weeklyRecoStart_(weeklyRecoDefaultEnv_());   // arms the browserless continuation chain; persists drafts
-    out.results.ORDER_PLANNING = { mode: 'PERSISTENCE_RUN', result: started };
-    if (started && started.success) out.ok = true;
-  } catch (eOP) {
-    out.results.ORDER_PLANNING = { mode: 'PERSISTENCE_RUN', error: (eOP && eOP.message) ? String(eOP.message) : String(eOP) };
-  }
-  // INVENTORY — the existing non-persistent summary (no resumable persistence authority; not a second engine).
-  var invCycle = '';
-  try { var ctx = gapCalcResolveContext_('INVENTORY'); if (ctx && ctx.ok) invCycle = ctx.planningCycle; } catch (e2) {}
-  var invRes = runRecommendationGeneration('INVENTORY');   // ONE canonical owner — no second engine, no math here
-  out.results.INVENTORY = { mode: 'SUMMARY', planningCycle: invCycle, result: invRes };
-  if (invRes && invRes.ok) out.ok = true;
-  try { Logger.log('[runWeeklyRecommendation] ' + JSON.stringify(out)); } catch (_l) {}
+// F1-6B-AUTOMATION-RECOMMENDATION-CLOSURE-R1 — the ambiguous single Weekly Recommendation (which ran BOTH products)
+// is SPLIT into TWO canonical, product-isolated TRIGGER TARGETS wired via 45_'s registry. Each is a THIN
+// execution/timing owner: it defensively checks its OWN enabled state, enforces its OWN prerequisite Gap (via the
+// canonical gap-DONE gate inside the runtime — never a stale/partial fallback), invokes the ONE canonical runtime /
+// persistence pipeline, and returns a truthful result. NO recommendation/gap/forecast math, NO copied KMREC, NO direct
+// draft writes here.
+
+// Defensive per-job enabled gate — reads the canonical 45_ config; never throws (belt-and-suspenders vs a stale/orphan
+// trigger left by a schedule edit; the reconciler already guarantees the trigger only exists while enabled).
+function recGenAutomationEnabled_(key) {
+  try { var cfg = automationReadConfig_(automationDefaultIo_()); return !!(cfg && cfg[key] && cfg[key].enabled === true); }
+  catch (e) { return true; }   // config unavailable → let the runtime's own gap gate decide (never a fake success)
+}
+
+// WEEKLY INVENTORY RECOMMENDATION (INVENTORY ONLY). Requires the Inventory Gap to be DONE/READY (enforced by
+// runRecommendationGeneration's §11 gap-DONE gate → GAP_JOB_NOT_DONE when not ready = a truthful BLOCKED, never a
+// success). INVENTORY has NO resumable, backend-drivable actionable-draft persister (48_ is ORDER_PLANNING-only; the
+// inventory workspace/draft path is browser-driven per-SKU upserts), so persisting inventory drafts here would be a
+// SECOND engine (forbidden) — the gap-gated canonical runtime IS the inventory scheduled behavior. Never invokes
+// ORDER_PLANNING. Runs browserless.
+function runWeeklyInventoryRecommendation() {
+  if (!recGenAutomationEnabled_('weeklyInventoryRecommendation')) return { ok: true, skipped: true, product: 'INVENTORY', reason: 'WEEKLY_INVENTORY_RECOMMENDATION_DISABLED' };
+  var cycle = '';
+  try { var ctx = gapCalcResolveContext_('INVENTORY'); if (ctx && ctx.ok) cycle = ctx.planningCycle; } catch (e) {}
+  var res = runRecommendationGeneration('INVENTORY');   // ONE canonical owner (KMREC); gap-DONE gated; BLOCKED if not ready
+  var blocked = !(res && res.ok);
+  var out = { ok: !!(res && res.ok), product: 'INVENTORY', mode: 'SUMMARY', planningCycle: cycle,
+    status: blocked ? 'BLOCKED' : 'OK', reason: blocked ? ((res && (res.code || res.jobStatus)) || 'INVENTORY_GAP_NOT_READY') : null, result: res };
+  try { Logger.log('[runWeeklyInventoryRecommendation] ' + JSON.stringify(out)); } catch (_l) {}
   return out;
+}
+
+// MONTHLY ORDER RECOMMENDATION (ORDER_PLANNING ONLY; default day 10 Asia/Taipei via 45_). Requires the Order Planning
+// Gap to be DONE/READY (enforced inside the 49_ persistence run: weeklyRecoStart_ gates on the OP gap-DONE state and
+// each 48_ scope START re-gates → SKIPPED/BLOCKED when not ready, never a stale fallback). STARTS the backend-driven
+// resumable persistence run (49_) that drives the EXISTING 48_ job browserlessly to persist ACTIONABLE
+// request_order_allocation_drafts (mode SCHEDULED_REFRESH → the SAME canonical persistence authority the manual AI
+// Plan uses). Never invokes INVENTORY. NO draft write here (49_/48_/24_ own it).
+function runMonthlyOrderRecommendation() {
+  if (!recGenAutomationEnabled_('monthlyOrderRecommendation')) return { ok: true, skipped: true, product: 'ORDER_PLANNING', reason: 'MONTHLY_ORDER_RECOMMENDATION_DISABLED' };
+  var out = { ok: false, product: 'ORDER_PLANNING', mode: 'PERSISTENCE_RUN' };
+  try {
+    var started = weeklyRecoStart_(weeklyRecoDefaultEnv_());   // 49_ OP scheduled-persistence run (arms the browserless chain)
+    out.result = started; out.ok = !!(started && started.success);
+    var d = (started && started.data) || {};
+    if (d.status === 'SKIPPED') { out.status = 'BLOCKED'; out.reason = d.reason || 'ORDER_PLANNING_GAP_NOT_READY'; }
+    else { out.status = out.ok ? 'OK' : 'ERROR'; }
+  } catch (e) { out.status = 'ERROR'; out.error = (e && e.message) ? String(e.message) : String(e); }
+  try { Logger.log('[runMonthlyOrderRecommendation] ' + JSON.stringify(out)); } catch (_l) {}
+  return out;
+}
+
+// RETIRED backward-compat shim (§3/§16). The old ambiguous handler is removed from the 45_ registry. If a
+// pre-migration trigger for it still exists, this shim (a) SELF-DELETES that trigger (safe re-read/delete-by-handler,
+// reusing the 46_ primitive) so it fires at most once more, and (b) runs INVENTORY ONLY — the ambiguous ORDER_PLANNING
+// coupling is gone. It NEVER runs both products. New deployments never create this trigger.
+function runWeeklyRecommendation() {
+  try { gapJobDeleteTriggersByHandler_('runWeeklyRecommendation'); } catch (e) {}
+  var res = runWeeklyInventoryRecommendation();
+  return { ok: !!(res && res.ok), retired: true, delegatedTo: 'runWeeklyInventoryRecommendation', result: res };
 }
 
 // ============================================================

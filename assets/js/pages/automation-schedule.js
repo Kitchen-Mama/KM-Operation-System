@@ -26,6 +26,13 @@
     }).join('');
   }
 
+  // F1-6B — day-of-month options 1–28 (matches the server 1–28 validation so a monthly trigger fires every month).
+  function monthDayOptions(sel) {
+    var o = '';
+    for (var i = 1; i <= 28; i++) o += '<option value="' + i + '"' + (i === sel ? ' selected' : '') + '>' + i + '</option>';
+    return o;
+  }
+
   // Build ONE implemented-automation card. Fields are seeded from the server view (human-friendly labels; the
   // technical handler lives only under the Details expander — no Script ID / URL / secret is ever rendered).
   function renderJobCard(job) {
@@ -41,8 +48,13 @@
     }
 
     var isWeekly = job.frequency === 'WEEKLY';
+    var isMonthly = job.frequency === 'MONTHLY';
     var triggerCls = job.triggerActive ? 'active' : 'inactive';
     var triggerText = job.triggerActive ? ('Trigger: Active' + (job.triggerCount > 1 ? ' (' + job.triggerCount + ' found — Save & Apply normalizes to one)' : '')) : 'Trigger: None';
+    // Frequency options are data-driven: Daily always; Weekly if the job is weekly-capable (or already weekly);
+    // Monthly if the job is monthly-capable (or already monthly). Product isolation is by handler, never by frequency.
+    var showWeekly = job.weeklyCapable || isWeekly;
+    var showMonthly = job.monthlyCapable || isMonthly;
 
     return '<div class="auto-card" data-key="' + esc(job.key) + '">'
       + '<div class="auto-card__head">'
@@ -52,10 +64,12 @@
       + '<div class="auto-card__grid">'
       +   '<div class="auto-field"><label class="auto-toggle"><input type="checkbox" data-field="enabled"' + (job.enabled ? ' checked' : '') + '> Enabled</label></div>'
       +   '<div class="auto-field"><label>Frequency</label><select data-field="frequency">'
-      +     '<option value="DAILY"' + (!isWeekly ? ' selected' : '') + '>Daily</option>'
-      +     '<option value="WEEKLY"' + (isWeekly ? ' selected' : '') + '>Weekly</option>'
+      +     '<option value="DAILY"' + (!isWeekly && !isMonthly ? ' selected' : '') + '>Daily</option>'
+      +     (showWeekly ? '<option value="WEEKLY"' + (isWeekly ? ' selected' : '') + '>Weekly</option>' : '')
+      +     (showMonthly ? '<option value="MONTHLY"' + (isMonthly ? ' selected' : '') + '>Monthly</option>' : '')
       +   '</select></div>'
       +   '<div class="auto-field auto-field--dow"' + (isWeekly ? '' : ' style="display:none"') + '><label>Day of Week</label><select data-field="dayOfWeek">' + weekdayOptions(job.dayOfWeek || 'MONDAY') + '</select></div>'
+      +   '<div class="auto-field auto-field--dom"' + (isMonthly ? '' : ' style="display:none"') + '><label>Day of Month</label><select data-field="dayOfMonth">' + monthDayOptions(job.dayOfMonth || 10) + '</select></div>'
       +   '<div class="auto-field"><label>Target Time (Asia/Taipei)</label><div class="auto-time-inputs">'
       +     '<select data-field="hour">' + twoDigitOptions(23) + '</select><span class="auto-time-colon">:</span>'
       +     '<select data-field="minute">' + twoDigitOptions(59) + '</select></div></div>'
@@ -90,11 +104,13 @@
       selectVal(card, 'hour', job.hour);
       selectVal(card, 'minute', job.minute);
       if (job.dayOfWeek) selectVal(card, 'dayOfWeek', job.dayOfWeek);
-      // Toggle the day-of-week field when frequency changes.
+      if (job.dayOfMonth != null) selectVal(card, 'dayOfMonth', job.dayOfMonth);
+      // Toggle the day-of-week / day-of-month field when frequency changes (WEEKLY → dow, MONTHLY → dom, else none).
       var freq = card.querySelector('[data-field="frequency"]');
       if (freq) freq.addEventListener('change', function () {
-        var dow = card.querySelector('.auto-field--dow');
+        var dow = card.querySelector('.auto-field--dow'), dom = card.querySelector('.auto-field--dom');
         if (dow) dow.style.display = (freq.value === 'WEEKLY') ? '' : 'none';
+        if (dom) dom.style.display = (freq.value === 'MONTHLY') ? '' : 'none';
       });
     });
 
@@ -114,6 +130,7 @@
     function checked(field) { var e = card.querySelector('[data-field="' + field + '"]'); return !!(e && e.checked); }
     var cfg = { enabled: checked('enabled'), frequency: v('frequency'), hour: parseInt(v('hour'), 10), minute: parseInt(v('minute'), 10) };
     if (cfg.frequency === 'WEEKLY') cfg.dayOfWeek = v('dayOfWeek');
+    if (cfg.frequency === 'MONTHLY') cfg.dayOfMonth = parseInt(v('dayOfMonth'), 10);
     return cfg;
   }
 
@@ -168,7 +185,8 @@
       case 'WEEKLY_RECOMMENDATION_NOT_AVAILABLE': return 'This automation is not available yet and cannot be enabled.';
       case 'INVALID_TIME': return 'Please enter a valid target time.';
       case 'INVALID_DAY_OF_WEEK': return 'Please choose a day of the week for a weekly schedule.';
-      case 'INVALID_FREQUENCY': return 'Please choose Daily or Weekly.';
+      case 'INVALID_DAY_OF_MONTH': return 'Please choose a day of the month (1–28) for a monthly schedule.';
+      case 'INVALID_FREQUENCY': return 'Please choose Daily, Weekly or Monthly.';
       case 'NOT_AUTHORIZED': return 'You are not authorized to change automation schedules.';
       default: return 'Could not update the schedule. Please try again.';
     }

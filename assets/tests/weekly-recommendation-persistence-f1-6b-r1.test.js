@@ -198,9 +198,9 @@ section('A11/A16 — timeout+retry safe; trigger-arm failure fails CLOSED (no da
   eq(wkState(env).status, 'FAILED', 'A11 persisted terminal (a retry sees FAILED, not an endless 0/N)');
 })();
 
-section('A18 — Administration disable still prevents execution (defensive gate in runWeeklyRecommendation, 45_-owned config)');
+section('A18 — Administration disable still prevents execution (defensive per-job gate, 45_-owned config)');
 (function () {
-  ok(/weeklyRecommendation\.enabled !== true/.test(GS47) && /WEEKLY_RECOMMENDATION_DISABLED/.test(GS47), 'A18 the trigger target no-ops unless the canonical config enables it');
+  ok(/recGenAutomationEnabled_\('monthlyOrderRecommendation'\)/.test(GS47) && /MONTHLY_ORDER_RECOMMENDATION_DISABLED/.test(GS47), 'A18 the Monthly Order trigger target no-ops unless the canonical config enables it');
 })();
 
 section('A5/A7/A2 — INTEGRATION: scheduler drives the REAL 48_ job (SHARED lock) → converges on the manual authority');
@@ -249,10 +249,10 @@ ok(/Script Properties/i.test(GS49) && /KM_WEEKLY_RECO_RUN/.test(GS49) && !/new (
 ok(/WEEKLY_RECO_PRODUCT_\s*=\s*'ORDER_PLANNING'/.test(GS49), 'A17g scheduler persistence scoped to ORDER_PLANNING (the Request Order workflow)');
 ok(/INVENTORY/.test(GS47) && /SUMMARY/.test(GS47), 'A17h INVENTORY retained as the existing non-persistent summary (no second engine for inventory)');
 
-section('A19/A20 — Administration scheduler + RO workflow untouched');
-ok(/key: 'weeklyRecommendation'/.test(GS45) && /handler: 'runWeeklyRecommendation'/.test(GS45), 'A19 45_ registry still owns the single WEEKLY trigger (runWeeklyRecommendation); max-one-trigger reconciler unchanged');
-ok(/continueWeeklyRecommendationJob/.test(GS49) && !/continueWeeklyRecommendationJob/.test(GS45), 'A19b the one-off continuation handler is DISTINCT from the recurring 45_ weekly trigger (never in the 45_ allowlist)');
-ok(/function runWeeklyRecommendation\(\)/.test(GS47) && /weeklyRecoStart_\(weeklyRecoDefaultEnv_\(\)\)/.test(GS47), 'A20 runWeeklyRecommendation starts the persistence run via 49_ (RO/PO workflow itself unchanged)');
+section('A19/A20 — Administration scheduler + RO workflow untouched (F1-6B: Monthly Order owns the persistence run)');
+ok(/key: 'monthlyOrderRecommendation'/.test(GS45) && /handler: 'runMonthlyOrderRecommendation'/.test(GS45), 'A19 45_ registry owns the MONTHLY Order Recommendation trigger (runMonthlyOrderRecommendation); max-one-trigger reconciler unchanged');
+ok(/continueWeeklyRecommendationJob/.test(GS49) && !/continueWeeklyRecommendationJob/.test(GS45), 'A19b the one-off continuation handler is DISTINCT from the recurring 45_ trigger (never in the 45_ allowlist)');
+ok(/function runMonthlyOrderRecommendation\(\)/.test(GS47) && /weeklyRecoStart_\(weeklyRecoDefaultEnv_\(\)\)/.test(GS47), 'A20 runMonthlyOrderRecommendation starts the persistence run via 49_ (RO/PO workflow itself unchanged)');
 
 // =============================================================================
 console.log('\n----------------------------------------');

@@ -2,6 +2,9 @@
 // Kitchen Mama Operation System — Apps Script (modularized source mirror)
 // 49_api_v1_weekly_recommendation_job.gs — F1-6B-PHASE1-E2E-PRE-CLOSURE-R1 Part A
 //   Scheduled Recommendation → ACTIONABLE persisted AI Plan draft (backend-driven, browserless).
+//   F1-6B-AUTOMATION-RECOMMENDATION-CLOSURE-R1: this is the ORDER_PLANNING scheduled-persistence run. It is now owned
+//   by the MONTHLY Order Recommendation automation (47_ runMonthlyOrderRecommendation → weeklyRecoStart_); the internal
+//   `weeklyReco*` names are historical (the F1-6A "weekly" origin) but functionally correct — it drives the 48_ job.
 // NOTE: All .gs files share ONE global scope. Copy them together and REDEPLOY. Loads AFTER 43 (gapBatchEnvelope_ /
 //       OP_GAP_TABLE_ / gapReadObjects_ / gapCalcResolveContext_), 46 (SAFE trigger primitives — reused verbatim),
 //       47 (gap-DONE gate + eligible-SKU enumeration), 48 (the canonical resumable per-scope draft-persistence job).

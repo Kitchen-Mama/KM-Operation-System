@@ -34,8 +34,15 @@
 
 var AUTOMATION_SCHEDULE_PROP_KEY_ = 'KM_AUTOMATION_SCHEDULE_CONFIG';
 var AUTOMATION_TZ_ = 'Asia/Taipei';
-var AUTOMATION_SCHEDULE_HANDLER_VERSION_ = 'admin-automation-r1';
+var AUTOMATION_SCHEDULE_HANDLER_VERSION_ = 'f1-6b-automation-recommendation-closure-r1';
 var AUTOMATION_WEEKDAYS_ = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+// F1-6B — MONTHLY day-of-month is validated 1–28 so a monthly trigger ALWAYS fires every calendar month (a day 29–31
+// would silently skip short months on Apps Script onMonthDay). Day 10 is the canonical Monthly Order default (§13).
+var AUTOMATION_MONTH_DAY_MIN_ = 1, AUTOMATION_MONTH_DAY_MAX_ = 28;
+// F1-6B — RETIRED handlers: the ambiguous single "Weekly Recommendation" (which ran BOTH products) is split into two
+// product-isolated automations below. Its old handler is never re-created (not in the registry → not allowlisted for
+// create) but IS swept/deleted on every Save & Apply so a pre-migration trigger cannot keep firing the old path.
+var AUTOMATION_RETIRED_HANDLERS_ = ['runWeeklyRecommendation'];
 
 // The ONE place automations are declared. A future automation is added HERE (+ its real handler) with NO page or
 // API redesign. `implemented:false` (no handler yet) renders as "Coming Soon" and can NEVER be enabled or given a
@@ -51,14 +58,18 @@ var AUTOMATION_JOBS_ = [
   { key: 'orderPlanningGap', label: 'Order Planning Gap Materialization', handler: 'runDailyOrderPlanningGapMaterialization',
     implemented: true, weeklyCapable: false, orderStep: 4,
     defaults: { enabled: true, frequency: 'DAILY', hour: 3, minute: 30 } },
-  // F1-6A-WEEKLY-RECOMMENDATION-SCHEDULER-R1 — wired to the canonical trigger target runWeeklyRecommendation (47_),
-  // which delegates to the ONE shared recommendation owner (runRecommendationGeneration → KMREC). implemented:true
-  // releases the enable-guard (§78), the not-implemented force-disable (§127), and auto-allowlists the handler (§64),
-  // making it schedulable WEEKLY through the existing automationSchedule.update API + trigger reconciler. No page,
-  // adapter, router, or CSS change. defaults stay disabled (the USER must opt in).
-  { key: 'weeklyRecommendation', label: 'Weekly Recommendation', handler: 'runWeeklyRecommendation',
-    implemented: true, weeklyCapable: true, orderStep: 3,
-    defaults: { enabled: false, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } }
+  // F1-6B-AUTOMATION-RECOMMENDATION-CLOSURE-R1 — the ambiguous single "Weekly Recommendation" (F1-6A), which ran BOTH
+  // INVENTORY + ORDER_PLANNING, is RETIRED and split into TWO canonical, product-isolated automations. Each binds to a
+  // product-specific trigger target (47_) that enforces its OWN prerequisite Gap and enters the ONE canonical runtime/
+  // persistence pipeline (no second engine). `product` is documentation only — product isolation is guaranteed by the
+  // handler binding, never by frequency. defaults stay disabled (opt-in). A stored legacy weeklyRecommendation config
+  // is migrated to weeklyInventoryRecommendation in automationReadConfig_ (never copied to the Monthly automation).
+  { key: 'weeklyInventoryRecommendation', label: 'Weekly Inventory Recommendation', handler: 'runWeeklyInventoryRecommendation',
+    implemented: true, weeklyCapable: true, monthlyCapable: false, orderStep: 3, product: 'INVENTORY',
+    defaults: { enabled: false, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } },
+  { key: 'monthlyOrderRecommendation', label: 'Monthly Order Recommendation', handler: 'runMonthlyOrderRecommendation',
+    implemented: true, weeklyCapable: false, monthlyCapable: true, orderStep: 5, product: 'ORDER_PLANNING',
+    defaults: { enabled: false, frequency: 'MONTHLY', dayOfMonth: 10, hour: 14, minute: 0 } }
 ];
 
 // ---- PURE helpers ---------------------------------------------------------------------------------------------
@@ -68,6 +79,10 @@ function automationJobByKey_(key) { var k = automationStr_(key); for (var i = 0;
 // so its trigger can never be created and no un-owned handler can ever be deleted by the reconciler.
 function automationAllowedHandlers_() { var out = []; for (var i = 0; i < AUTOMATION_JOBS_.length; i++) { var j = AUTOMATION_JOBS_[i]; if (j.implemented && j.handler) out.push(j.handler); } return out; }
 function automationHandlerAllowed_(handler) { return automationAllowedHandlers_().indexOf(automationStr_(handler)) !== -1; }
+// F1-6B — a handler may be DELETED by the reconciler if it is a current allowlisted handler OR a RETIRED handler (so a
+// pre-migration trigger can be swept). Retired handlers are NEVER creatable (they are not in the registry allowlist).
+function automationHandlerRetired_(handler) { return AUTOMATION_RETIRED_HANDLERS_.indexOf(automationStr_(handler)) !== -1; }
+function automationHandlerDeletable_(handler) { return automationHandlerAllowed_(handler) || automationHandlerRetired_(handler); }
 
 function automationIsInt_(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v; }
 function automationCanonWeekday_(v) { var s = automationStr_(v).toUpperCase(); return AUTOMATION_WEEKDAYS_.indexOf(s) !== -1 ? s : null; }
@@ -82,7 +97,7 @@ function automationValidateJobConfig_(job, raw) {
   // §12/§M — a job with no real handler (Weekly Recommendation) can NEVER be enabled until its owner exists.
   if (enabled && !job.implemented) return { ok: false, error: { code: 'WEEKLY_RECOMMENDATION_NOT_AVAILABLE', message: job.label + ' has no handler yet and cannot be enabled' } };
   var frequency = automationStr_(raw.frequency).toUpperCase() || (job.defaults.frequency || 'DAILY');
-  if (frequency !== 'DAILY' && frequency !== 'WEEKLY') return { ok: false, error: { code: 'INVALID_FREQUENCY', message: 'frequency must be DAILY or WEEKLY' } };
+  if (frequency !== 'DAILY' && frequency !== 'WEEKLY' && frequency !== 'MONTHLY') return { ok: false, error: { code: 'INVALID_FREQUENCY', message: 'frequency must be DAILY, WEEKLY or MONTHLY' } };
   var hour = raw.hour, minute = raw.minute;
   if (!automationIsInt_(hour) || hour < 0 || hour > 23) return { ok: false, error: { code: 'INVALID_TIME', message: 'hour must be an integer 0–23 (Asia/Taipei)' } };
   if (!automationIsInt_(minute) || minute < 0 || minute > 59) return { ok: false, error: { code: 'INVALID_TIME', message: 'minute must be an integer 0–59 (Asia/Taipei)' } };
@@ -91,6 +106,13 @@ function automationValidateJobConfig_(job, raw) {
     var wd = automationCanonWeekday_(raw.dayOfWeek);
     if (!wd) return { ok: false, error: { code: 'INVALID_DAY_OF_WEEK', message: 'dayOfWeek is required for a WEEKLY schedule' } };
     out.dayOfWeek = wd;
+  } else if (frequency === 'MONTHLY') {
+    // §13/§17 — day-of-month in the canonical Asia/Taipei clock; 1–28 guarantees a firing every calendar month.
+    var dom = raw.dayOfMonth;
+    if (!automationIsInt_(dom) || dom < AUTOMATION_MONTH_DAY_MIN_ || dom > AUTOMATION_MONTH_DAY_MAX_) {
+      return { ok: false, error: { code: 'INVALID_DAY_OF_MONTH', message: 'dayOfMonth must be an integer ' + AUTOMATION_MONTH_DAY_MIN_ + '–' + AUTOMATION_MONTH_DAY_MAX_ + ' (Asia/Taipei; guarantees a firing every month)' } };
+    }
+    out.dayOfMonth = dom;
   }
   return { ok: true, config: out };
 }
@@ -116,17 +138,26 @@ function automationDependencyWarnings_(cfgByKey) {
 function automationReadConfig_(io) {
   var stored = {};
   try { var raw = io.getConfig(); if (raw) { var p = JSON.parse(raw); if (p && p.jobs && typeof p.jobs === 'object') stored = p.jobs; } } catch (e) { stored = {}; }
+  // F1-6B MIGRATION (§3) — a legacy stored 'weeklyRecommendation' block (the retired ambiguous automation) is
+  // reinterpreted as 'weeklyInventoryRecommendation' (same enabled/frequency/day/time), deterministically, ONCE. It is
+  // NEVER copied into the Monthly Order automation (which keeps its own day-10 default). The old key is then dropped.
+  if (stored.weeklyRecommendation && typeof stored.weeklyRecommendation === 'object' && !stored.weeklyInventoryRecommendation) {
+    stored.weeklyInventoryRecommendation = stored.weeklyRecommendation;
+  }
+  if (stored.weeklyRecommendation) { try { delete stored.weeklyRecommendation; } catch (_d) { stored.weeklyRecommendation = undefined; } }
   var jobs = {};
   for (var i = 0; i < AUTOMATION_JOBS_.length; i++) {
     var j = AUTOMATION_JOBS_[i], s = (stored[j.key] && typeof stored[j.key] === 'object') ? stored[j.key] : null;
     var c = { enabled: j.defaults.enabled === true, frequency: j.defaults.frequency, hour: j.defaults.hour, minute: j.defaults.minute, updatedAt: null };
     if (j.defaults.dayOfWeek) c.dayOfWeek = j.defaults.dayOfWeek;
+    if (j.defaults.dayOfMonth != null) c.dayOfMonth = j.defaults.dayOfMonth;
     if (s) {
       if (typeof s.enabled === 'boolean') c.enabled = s.enabled;
       if (s.frequency) c.frequency = automationStr_(s.frequency).toUpperCase();
       if (automationIsInt_(s.hour)) c.hour = s.hour;
       if (automationIsInt_(s.minute)) c.minute = s.minute;
       if (s.dayOfWeek) c.dayOfWeek = automationCanonWeekday_(s.dayOfWeek) || c.dayOfWeek;
+      if (automationIsInt_(s.dayOfMonth)) c.dayOfMonth = s.dayOfMonth;
       if (s.updatedAt) c.updatedAt = automationStr_(s.updatedAt);
     }
     if (!j.implemented) c.enabled = false;   // §12/§M — never surface a not-implemented job as enabled
@@ -150,6 +181,19 @@ function automationReconcileTrigger_(io, job, norm) {
   return { reconciled: true, deleted: deleted, created: created, present: created > 0, descriptor: descriptor };
 }
 
+// F1-6B §3/§16 — sweep (delete) every RETIRED handler's trigger. Called on Save & Apply so migrating to the split
+// automations retires the old ambiguous runWeeklyRecommendation trigger. Deletes ONLY retired handlers (guarded by
+// automationHandlerDeletable_ in the io); never touches a live automation / import / form / unknown handler. Returns a
+// truthful { handler: deletedCount } map (0 = nothing to sweep — harmless).
+function automationSweepRetiredTriggers_(io) {
+  var out = {};
+  for (var i = 0; i < AUTOMATION_RETIRED_HANDLERS_.length; i++) {
+    var h = AUTOMATION_RETIRED_HANDLERS_[i];
+    try { out[h] = io.deleteTriggersByHandler(h); } catch (e) { out[h] = 0; }
+  }
+  return out;
+}
+
 // Read-only trigger presence for a handler (GET path — NEVER mutates). count>1 is reported truthfully (e.g. a
 // pre-existing manually-created duplicate) so the UI shows the real state; a Save & Apply then normalizes to one.
 function automationTriggerStatus_(io, handler) {
@@ -171,10 +215,11 @@ function automationDefaultIo_() {
       try { var all = ScriptApp.getProjectTriggers(); for (var i = 0; i < all.length; i++) out.push({ handler: all[i].getHandlerFunction() }); } catch (e) {}
       return out;
     },
-    // Deletes ONLY triggers whose handler matches AND is on the allowlist. The allowlist guard here is a hard
-    // backstop: even if a caller passes an unexpected handler, an un-owned trigger can never be removed.
+    // Deletes ONLY triggers whose handler matches AND is DELETABLE (a current allowlisted handler OR a retired one).
+    // The guard is a hard backstop: even if a caller passes an unexpected handler, an un-owned trigger can never be
+    // removed. Retired handlers (F1-6B: runWeeklyRecommendation) are deletable so a pre-migration trigger is swept.
     deleteTriggersByHandler: function (handler) {
-      if (!automationHandlerAllowed_(handler)) return 0;
+      if (!automationHandlerDeletable_(handler)) return 0;
       var n = 0;
       try {
         var all = ScriptApp.getProjectTriggers();
@@ -183,12 +228,13 @@ function automationDefaultIo_() {
       return n;
     },
     createTrigger: function (handler, norm) {
-      if (!automationHandlerAllowed_(handler)) return null;
+      if (!automationHandlerAllowed_(handler)) return null;   // retired handlers are deletable but NEVER creatable
       var b = ScriptApp.newTrigger(handler).timeBased();
       if (norm.frequency === 'WEEKLY') { b = b.onWeekDay(ScriptApp.WeekDay[norm.dayOfWeek]).atHour(norm.hour).nearMinute(norm.minute); }
+      else if (norm.frequency === 'MONTHLY') { b = b.onMonthDay(norm.dayOfMonth).atHour(norm.hour).nearMinute(norm.minute); }
       else { b = b.everyDays(1).atHour(norm.hour).nearMinute(norm.minute); }
       b.create();
-      return { handler: handler, frequency: norm.frequency, hour: norm.hour, minute: norm.minute, dayOfWeek: norm.dayOfWeek || null };
+      return { handler: handler, frequency: norm.frequency, hour: norm.hour, minute: norm.minute, dayOfWeek: norm.dayOfWeek || null, dayOfMonth: (norm.dayOfMonth != null ? norm.dayOfMonth : null) };
     }
   };
 }
@@ -208,11 +254,11 @@ function automationBuildView_(io, cfgByKey) {
     var j = AUTOMATION_JOBS_[i], c = cfgByKey[j.key];
     var status = j.handler ? automationTriggerStatus_(io, j.handler) : { present: false, count: 0 };
     var view = {
-      key: j.key, label: j.label, implemented: j.implemented, weeklyCapable: j.weeklyCapable,
+      key: j.key, label: j.label, implemented: j.implemented, weeklyCapable: j.weeklyCapable, monthlyCapable: j.monthlyCapable === true,
       status: j.implemented ? (c.enabled ? 'ENABLED' : 'DISABLED') : 'COMING_SOON',
       enabled: c.enabled, frequency: c.frequency, hour: c.hour, minute: c.minute,
       timeLabel: ('0' + c.hour).slice(-2) + ':' + ('0' + c.minute).slice(-2), timezone: AUTOMATION_TZ_,
-      dayOfWeek: c.dayOfWeek || null, lastUpdatedAt: c.updatedAt || null,
+      dayOfWeek: c.dayOfWeek || null, dayOfMonth: (c.dayOfMonth != null ? c.dayOfMonth : null), lastUpdatedAt: c.updatedAt || null,
       triggerActive: status.present, triggerCount: status.count,
       details: { handler: j.handler || null }   // technical name only; NO Script ID / URL / secret
     };
@@ -263,19 +309,23 @@ function handleAutomationScheduleUpdate_(body, io) {
     var norm = v.config;
     var saved = { enabled: norm.enabled, frequency: norm.frequency, hour: norm.hour, minute: norm.minute, updatedAt: io.stamp() };
     if (norm.dayOfWeek) saved.dayOfWeek = norm.dayOfWeek;
+    if (norm.dayOfMonth != null) saved.dayOfMonth = norm.dayOfMonth;
     // Write back the FULL merged jobs map (strip the transient updatedAt-less defaults into concrete stored blocks).
     var toStore = {};
-    for (var k in cfgByKey) { if (Object.prototype.hasOwnProperty.call(cfgByKey, k)) { var cc = cfgByKey[k]; toStore[k] = { enabled: cc.enabled, frequency: cc.frequency, hour: cc.hour, minute: cc.minute }; if (cc.dayOfWeek) toStore[k].dayOfWeek = cc.dayOfWeek; if (cc.updatedAt) toStore[k].updatedAt = cc.updatedAt; } }
+    for (var k in cfgByKey) { if (Object.prototype.hasOwnProperty.call(cfgByKey, k)) { var cc = cfgByKey[k]; toStore[k] = { enabled: cc.enabled, frequency: cc.frequency, hour: cc.hour, minute: cc.minute }; if (cc.dayOfWeek) toStore[k].dayOfWeek = cc.dayOfWeek; if (cc.dayOfMonth != null) toStore[k].dayOfMonth = cc.dayOfMonth; if (cc.updatedAt) toStore[k].updatedAt = cc.updatedAt; } }
     toStore[key] = saved;
     automationWriteConfig_(io, toStore);
 
     // Reconcile ONLY this job's owned trigger (delete matching handler → create ≤1). Never touches other handlers.
     var recon = automationReconcileTrigger_(io, job, norm);
+    // F1-6B §16 — every Save & Apply sweeps any RETIRED handler trigger (the old ambiguous runWeeklyRecommendation),
+    // so the split can never leave a 3rd hidden Recommendation trigger firing the old both-products path.
+    var retired = automationSweepRetiredTriggers_(io);
 
     // Readback the resulting truthful state (§7.7 "re-reading after update must report exactly the resulting state").
     var after = automationReadConfig_(io);
     var view = automationBuildView_(io, after);
-    view.applied = { key: key, reconcile: recon };
+    view.applied = { key: key, reconcile: recon, retiredSwept: retired };
     return automationEnvelope_(true, view);
   } catch (e) {
     return automationEnvelope_(false, null, [{ code: 'AUTOMATION_SCHEDULE_UPDATE_ERROR', message: (e && e.message) ? String(e.message) : String(e) }]);

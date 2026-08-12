@@ -25,6 +25,7 @@ var H = (new Function(SRC + '\n return {'
   + ' get: handleAutomationScheduleGet_, update: handleAutomationScheduleUpdate_,'
   + ' validate: automationValidateJobConfig_, reconcile: automationReconcileTrigger_,'
   + ' readConfig: automationReadConfig_, allowed: automationHandlerAllowed_, allowlist: automationAllowedHandlers_,'
+  + ' deletable: automationHandlerDeletable_,'
   + ' warnings: automationDependencyWarnings_, jobByKey: automationJobByKey_, PROP_KEY: AUTOMATION_SCHEDULE_PROP_KEY_ };'))();
 
 // In-memory io mirroring the production contract (incl. the allowlist delete-guard).
@@ -40,14 +41,14 @@ function makeIo(triggerHandlers, configJson) {
     setConfig: function (v) { props[H.PROP_KEY] = v; log.wrote = (log.wrote || 0) + 1; },
     getTriggers: function () { return triggers.map(function (t) { return { handler: t.handler }; }); },
     deleteTriggersByHandler: function (handler) {
-      if (!H.allowed(handler)) return 0;                                  // production guard mirrored
+      if (!H.deletable(handler)) return 0;                                // production guard mirrored (allowlisted OR retired)
       var n = 0; for (var i = triggers.length - 1; i >= 0; i--) { if (triggers[i].handler === handler) { triggers.splice(i, 1); n++; } }
       log.deleted.push({ handler: handler, n: n }); return n;
     },
     createTrigger: function (handler, norm) {
-      if (!H.allowed(handler)) return null;
+      if (!H.allowed(handler)) return null;                               // retired handlers are deletable but NEVER creatable
       triggers.push({ handler: handler, norm: norm }); log.created.push({ handler: handler, norm: norm });
-      return { handler: handler, frequency: norm.frequency, hour: norm.hour, minute: norm.minute, dayOfWeek: norm.dayOfWeek || null };
+      return { handler: handler, frequency: norm.frequency, hour: norm.hour, minute: norm.minute, dayOfWeek: norm.dayOfWeek || null, dayOfMonth: (norm.dayOfMonth != null ? norm.dayOfMonth : null) };
     },
     _triggers: triggers, _props: props, _log: log
   };
@@ -64,7 +65,10 @@ var jm = jobsOf(g);
 ok(jm.amazonImport && jm.amazonImport.hour === 12 && jm.amazonImport.minute === 30, 'A2 Amazon Import default 12:30');
 ok(jm.inventoryGap && jm.inventoryGap.hour === 13 && jm.inventoryGap.minute === 30, 'A3 Inventory Gap default 13:30');
 ok(jm.orderPlanningGap && jm.orderPlanningGap.hour === 3 && jm.orderPlanningGap.minute === 30, 'A4 Order Planning Gap default 03:30');
-ok(jm.weeklyRecommendation && jm.weeklyRecommendation.status === 'DISABLED' && jm.weeklyRecommendation.enabled === false && jm.weeklyRecommendation.implemented === true, 'A5 Weekly Recommendation = DISABLED (now implemented via F1-6A; opt-in, default off)');
+// F1-6B — the ambiguous Weekly Recommendation is split into two product-isolated automations (opt-in, default off).
+ok(!jm.weeklyRecommendation, 'A5 the ambiguous Weekly Recommendation entry is retired (no longer surfaced)');
+ok(jm.weeklyInventoryRecommendation && jm.weeklyInventoryRecommendation.status === 'DISABLED' && jm.weeklyInventoryRecommendation.frequency === 'WEEKLY' && jm.weeklyInventoryRecommendation.implemented === true, 'A5a Weekly Inventory Recommendation = WEEKLY, DISABLED (opt-in)');
+ok(jm.monthlyOrderRecommendation && jm.monthlyOrderRecommendation.status === 'DISABLED' && jm.monthlyOrderRecommendation.frequency === 'MONTHLY' && jm.monthlyOrderRecommendation.dayOfMonth === 10, 'A5b Monthly Order Recommendation = MONTHLY, day 10, DISABLED (opt-in)');
 
 section('B — config update persists + is read back');
 var ioB = makeIo([]);
@@ -92,7 +96,7 @@ var uE = H.update({ payload: { key: 'orderPlanningGap', config: { enabled: true,
 ok(uE.data.applied.reconcile.created === 1 && ioE._log.created[0].norm.frequency === 'DAILY', 'E1 DAILY trigger created with DAILY frequency');
 
 section('F — weekly schedule representation + validation');
-ok(jm.weeklyRecommendation.weeklyCapable === true && jm.weeklyRecommendation.status === 'DISABLED', 'F1 Weekly Recommendation is a weekly-capable, disabled (opt-in) row');
+ok(jm.weeklyInventoryRecommendation.weeklyCapable === true && jm.weeklyInventoryRecommendation.status === 'DISABLED', 'F1 Weekly Inventory Recommendation is a weekly-capable, disabled (opt-in) row');
 ok(H.validate(H.jobByKey('inventoryGap'), { enabled: true, frequency: 'WEEKLY', hour: 14, minute: 0 }).error.code === 'INVALID_DAY_OF_WEEK', 'F2 WEEKLY without dayOfWeek rejected');
 var wOk = H.validate(H.jobByKey('inventoryGap'), { enabled: true, frequency: 'WEEKLY', dayOfWeek: 'monday', hour: 14, minute: 0 });
 ok(wOk.ok === true && wOk.config.dayOfWeek === 'MONDAY', 'F3 WEEKLY with a valid dayOfWeek accepted + canonicalized');
@@ -104,7 +108,10 @@ ok(jm.inventoryGap.timezone === 'Asia/Taipei', 'G2 each job carries Asia/Taipei'
 section('H/I — only the matching handler trigger is touched; unrelated triggers untouched');
 var ioHI = makeIo([AMZ, INV, 'someFormSubmitHandler', OPG, 'onEditEmailNotifier']);
 H.update({ payload: { key: 'inventoryGap', config: { enabled: true, frequency: 'DAILY', hour: 13, minute: 30 } } }, ioHI);
-ok(ioHI._log.deleted.length === 1 && ioHI._log.deleted[0].handler === INV, 'H1 delete targeted ONLY the inventory-gap handler');
+// The reconcile deletes ONLY the inventory-gap handler; a separate retired-handler sweep runs too but deletes nothing
+// here (no runWeeklyRecommendation present). So the ONLY handler actually removed is the inventory-gap one.
+var realDeletes = ioHI._log.deleted.filter(function (d) { return d.n > 0; });
+ok(realDeletes.length === 1 && realDeletes[0].handler === INV, 'H1 the only handler actually deleted is the inventory-gap handler');
 ok(countHandler(ioHI, AMZ) === 1 && countHandler(ioHI, OPG) === 1, 'I1 Amazon + Order-Planning triggers untouched');
 ok(countHandler(ioHI, 'someFormSubmitHandler') === 1 && countHandler(ioHI, 'onEditEmailNotifier') === 1, 'I2 unrelated form + email triggers untouched');
 ok(countHandler(ioHI, INV) === 1, 'I3 exactly one inventory-gap trigger remains after reconcile');
@@ -126,15 +133,23 @@ var ioL = makeIo([INV]);
 H.update({ payload: { key: 'inventoryGap', config: { enabled: false, frequency: 'DAILY', hour: 13, minute: 30 } } }, ioL);
 ok(countHandler(ioL, INV) === 0, 'L1 disabling removes the owned trigger and creates none');
 
-section('M — Weekly Recommendation is now schedulable (F1-6A: handler runWeeklyRecommendation wired)');
+section('M — the two split Recommendation automations are schedulable (F1-6B)');
 var ioM = makeIo([]);
-var uM = H.update({ payload: { key: 'weeklyRecommendation', config: { enabled: true, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } } }, ioM);
-ok(uM.success === true, 'M1 enabling Weekly Recommendation is accepted (handler implemented)');
-ok(countHandler(ioM, 'runWeeklyRecommendation') === 1 && ioM._log.created[0].norm.frequency === 'WEEKLY' && ioM._log.created[0].norm.dayOfWeek === 'MONDAY', 'M2 exactly one WEEKLY runWeeklyRecommendation trigger created (Monday 14:00)');
-ok(H.allowlist().indexOf('runWeeklyRecommendation') !== -1 && H.allowlist().length === 4, 'M3 the allowlist now contains all four implemented handlers (incl. the weekly handler)');
-ok(jobsOf(H.get({}, ioM)).weeklyRecommendation.enabled === true && jobsOf(H.get({}, ioM)).weeklyRecommendation.status === 'ENABLED', 'M4 the persisted enabled weekly schedule reads back ENABLED');
-var uMoff = H.update({ payload: { key: 'weeklyRecommendation', config: { enabled: false, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } } }, ioM);
-ok(uMoff.success === true && countHandler(ioM, 'runWeeklyRecommendation') === 0, 'M5 disabling Weekly Recommendation removes its trigger (execution stops)');
+var uMw = H.update({ payload: { key: 'weeklyInventoryRecommendation', config: { enabled: true, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } } }, ioM);
+ok(uMw.success === true && countHandler(ioM, 'runWeeklyInventoryRecommendation') === 1, 'M1 Weekly Inventory Recommendation → exactly one WEEKLY trigger (runWeeklyInventoryRecommendation)');
+var uMm = H.update({ payload: { key: 'monthlyOrderRecommendation', config: { enabled: true, frequency: 'MONTHLY', dayOfMonth: 10, hour: 14, minute: 0 } } }, ioM);
+ok(uMm.success === true && countHandler(ioM, 'runMonthlyOrderRecommendation') === 1, 'M2 Monthly Order Recommendation → exactly one MONTHLY trigger (runMonthlyOrderRecommendation)');
+var monTrig = ioM._log.created.filter(function (c) { return c.handler === 'runMonthlyOrderRecommendation'; })[0];
+ok(monTrig && monTrig.norm.frequency === 'MONTHLY' && monTrig.norm.dayOfMonth === 10, 'M2a MONTHLY trigger carries dayOfMonth 10');
+var allow = H.allowlist();
+ok(allow.indexOf('runWeeklyInventoryRecommendation') !== -1 && allow.indexOf('runMonthlyOrderRecommendation') !== -1 && allow.indexOf('runWeeklyRecommendation') === -1 && allow.length === 5, 'M3 allowlist has both split handlers + NOT the retired one (5 implemented handlers)');
+ok(jobsOf(H.get({}, ioM)).monthlyOrderRecommendation.dayOfMonth === 10 && jobsOf(H.get({}, ioM)).weeklyInventoryRecommendation.status === 'ENABLED', 'M4 persisted split schedules read back (Monthly day 10; Weekly ENABLED)');
+var uMoff = H.update({ payload: { key: 'monthlyOrderRecommendation', config: { enabled: false, frequency: 'MONTHLY', dayOfMonth: 10, hour: 14, minute: 0 } } }, ioM);
+ok(uMoff.success === true && countHandler(ioM, 'runMonthlyOrderRecommendation') === 0, 'M5 disabling Monthly Order removes its trigger (execution stops)');
+// retirement sweep: a lingering old ambiguous trigger is deleted on any Save & Apply.
+var ioMr = makeIo(['runWeeklyRecommendation']);
+var uMr = H.update({ payload: { key: 'weeklyInventoryRecommendation', config: { enabled: true, frequency: 'WEEKLY', dayOfWeek: 'MONDAY', hour: 14, minute: 0 } } }, ioMr);
+ok(countHandler(ioMr, 'runWeeklyRecommendation') === 0 && uMr.data.applied.retiredSwept.runWeeklyRecommendation === 1, 'M6 a pre-migration runWeeklyRecommendation trigger is SWEPT on Save & Apply (no 3rd hidden trigger)');
 
 section('N — GET (page load) writes NOTHING (no property write, no trigger mutation)');
 var ioN = makeIo([AMZ]);
