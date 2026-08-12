@@ -13,7 +13,43 @@ This round has two halves:
    template — neither is in scope). Therefore the live audit is **NOT AVAILABLE** in this
    environment and is delivered as an exact, ready-to-run **read-only diagnostic** in §D.
 
-> **LIVE_PRODUCTION_COLLISION_AUDIT_NOT_AVAILABLE**
+> **LIVE_PRODUCTION_COLLISION_AUDIT_NOT_AVAILABLE** *(from the repo environment — resolved live below)*
+
+---
+
+## LIVE RESULT — FROZEN (recorded 2026-08-12 under F1-4B-FM6-R4E5D)
+
+The read-only diagnostic (`r4e5cCollisionAudit()` + `r4e5cSchemaColumnCheck()`) was run by the
+USER against the live production spreadsheet. Verbatim result:
+
+| Audit metric | Live count |
+|---|---|
+| §1 ACTIVE collisions (`ACTIVE_COUNT>1`) | **0** |
+| §2 ROEXEC Request Orders (non-cancelled) | **0** |
+| §2 duplicate ROEXEC execution keys | **0** |
+| §2 legacy unresolved Request Orders (blank `source_ref_id`) | **6** |
+| §3 dangling lineage | **0** |
+| §3 allocation referenced by >1 distinct Request Order | **0** |
+| §3 ROEXEC without source rows | **0** |
+| §4A submitted allocation without lineage | **20** |
+| §4C draft + site_confirmed collision (same grain) | **0** |
+| §4D multiple active manual drafts | **0** |
+| CAT-D critical | **0** |
+| Schema: `request_order_line_sources.request_allocation_draft_id` | **ABSENT** (→ closed in R4E5D) |
+
+**Classification of the non-zero rows — `HISTORICAL_IDENTITY_UNAVAILABLE` (NOT runtime corruption):**
+- The **6 legacy unresolved Request Orders** and the **20 historical submitted allocations without
+  new lineage** were created **before** the R4E5B execution-identity / lineage contract existed.
+  Their allocation→Request-Order linkage was never persisted under any authority, so it cannot be
+  reconstructed without guessing. Per the R4E5C/R4E5D negative constraints they are **NOT**
+  matched, backfilled, cancelled, or rewritten — no dedupe by date/qty/SKU/series/timestamp/actor.
+- ROEXEC count = 0 is expected: the exactly-once execution path had not yet run in production at
+  audit time (and the lineage column was absent, so it could not have persisted lineage — see R4E5D).
+
+**DECISION (frozen):** R4E5B architecture **APPROVED**. **No active collisions, no duplicate
+executions, no CAT-D.** Destructive historical migration **performed = NO / authorized = NO**.
+Remaining work = production schema closure + temp-diagnostic removal, executed in
+[R4E5D_SCHEMA_CLOSURE_AND_FM6_AUDIT.md](R4E5D_SCHEMA_CLOSURE_AND_FM6_AUDIT.md).
 
 ---
 
