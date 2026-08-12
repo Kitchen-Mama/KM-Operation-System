@@ -184,6 +184,11 @@ function doPost(e) {
       return handleCreateShipmentFromPlan_(body);
     }
 
+    // F1-5B-SHIP-R3A — generate/reconcile DRAFT PO→FIFO→shipment_line allocations (no shipped_qty mutation).
+    if (action === 'generateShipmentLineAllocations') {
+      return handleGenerateShipmentLineAllocations_(body);
+    }
+
     if (action === 'updateShipment') {
       return handleUpdateShipment_(body);
     }
