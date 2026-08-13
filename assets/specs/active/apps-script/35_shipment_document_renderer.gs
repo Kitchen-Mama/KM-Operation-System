@@ -57,9 +57,20 @@ function docFamilyStatus_(snap, family, headerCol) {
   return { status: docUc_(snap.header[headerCol]) || 'BLOCKED', reason: '' };
 }
 
-// Shared header block (identity + shipper + seller + consignee + carrier + factory + totals + PO numbers) — all
-// values are FROZEN snapshot fields; no lookup.
-function docHeaderBlock_(h, poLineage) {
+// Totals are DERIVED here (LEAN-R1 §3) as a pure Σ over the FROZEN snapshot lines — never persisted, never read from
+// the live shipments totals, never re-multiplied by cartons. Deterministic and immutable (input is snapshot-only).
+function docTotals_(lines) {
+  var t = { qty: 0, cartons: 0, gross_weight: 0, net_weight: 0, cbm: 0 };
+  (lines || []).forEach(function (l) {
+    t.qty += docNum_(l.shipment_qty); t.cartons += docNum_(l.shipment_carton_qty);
+    t.gross_weight += docNum_(l.gross_weight); t.net_weight += docNum_(l.net_weight); t.cbm += docNum_(l.cbm);
+  });
+  return t;
+}
+
+// Shared header block (identity + shipper + seller + consignee + carrier + factory + totals + PO numbers) — party/
+// carrier/factory values are FROZEN snapshot fields (no lookup); totals are derived from the frozen lines (§3).
+function docHeaderBlock_(h, lines, poLineage) {
   return {
     shipment_id: docStr_(h.shipment_id), shipment_no: docStr_(h.shipment_no), reference_id: docStr_(h.reference_id),
     dispatch_date: docStr_(h.dispatch_date), etd: docStr_(h.etd), eta: docStr_(h.eta),
@@ -70,7 +81,7 @@ function docHeaderBlock_(h, poLineage) {
     carrier_name: docStr_(h.carrier_name), shipping_method: docStr_(h.shipping_method),
     factory: { id: docStr_(h.factory_id), name: docStr_(h.factory_name) },
     po_numbers: docDistinctPoNos_(poLineage),
-    totals: { qty: docNum_(h.shipment_total_qty), cartons: docNum_(h.shipment_total_cartons), gross_weight: docNum_(h.shipment_total_gross_weight), net_weight: docNum_(h.shipment_total_net_weight), cbm: docNum_(h.shipment_total_cbm) }
+    totals: docTotals_(lines)
   };
 }
 
@@ -90,7 +101,8 @@ function docRenderShippingDetail_(snap) {
       carton_no_start: docStr_(l.carton_no_start), carton_no_end: docStr_(l.carton_no_end),
       gs1_code: docStr_(l.gs1_code), gs1_type: docStr_(l.gs1_type),
       country_of_origin: docUc_(l.country_of_origin), hs_code: docStr_(l.hs_code),
-      declared_currency: docUc_(l.declared_currency), declared_unit_value: docNum_(l.declared_unit_value), declared_total_value: docNum_(l.declared_total_value),
+      // declared_total_value DERIVED (LEAN-R1 §5): unit × physical qty — both frozen; never persisted as a duplicate.
+      declared_currency: docUc_(l.declared_currency), declared_unit_value: docNum_(l.declared_unit_value), declared_total_value: docNum_(l.declared_unit_value) * docNum_(l.shipment_qty),
       gross_weight: docNum_(l.gross_weight), net_weight: docNum_(l.net_weight), cbm: docNum_(l.cbm),
       carton_length: docNum_(l.carton_length), carton_width: docNum_(l.carton_width), carton_height: docNum_(l.carton_height),
       po_allocations: docLinePos_(l.shipment_line_id, snap.po_lineage)
@@ -98,7 +110,7 @@ function docRenderShippingDetail_(snap) {
   });
   return { ok: true, document_type: 'SHIPDETAIL', template_key: 'SHIPDETAIL_STANDARD',
     shipment_id: docStr_(h.shipment_id), snapshot_id: docStr_(h.snapshot_id), snapshot_version: docNum_(h.snapshot_version),
-    header: docHeaderBlock_(h, snap.po_lineage), lines: lines };
+    header: docHeaderBlock_(h, snap.lines, snap.po_lineage), lines: lines };
 }
 
 // PACKING LIST — physical / logistics view only (no commercial/declared/HS). Physical qty = snapshot shipment_qty.
@@ -121,7 +133,7 @@ function docRenderPackingList_(snap) {
   });
   return { ok: true, document_type: 'PL', template_key: 'PL_STANDARD',
     shipment_id: docStr_(h.shipment_id), snapshot_id: docStr_(h.snapshot_id), snapshot_version: docNum_(h.snapshot_version),
-    header: docHeaderBlock_(h, snap.po_lineage), lines: lines };
+    header: docHeaderBlock_(h, snap.lines, snap.po_lineage), lines: lines };
 }
 // __DOC_PURE_END__
 

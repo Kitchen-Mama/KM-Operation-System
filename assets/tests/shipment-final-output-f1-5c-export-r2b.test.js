@@ -67,7 +67,9 @@ eq(us.hs_code, '7323.10', '§11 latest effective HS wins (7323.10)'); eq(us.decl
 eq(sfoResolveCustoms_(TR, 'GA', 'CA', '2026-07-01').hs_code, '9999.00', '§11 country-specific HS by duty_country (CA != US)');
 eq(sfoResolveCustoms_(TR, 'GA', 'US', '2025-06-01').resolved, false, '§11 asOf before all effective_from -> no match (no fabricated fallback)');
 eq(sfoResolveCustoms_(TR, 'ZZ', 'US', '2026-07-01').resolved, false, '§11 no match -> resolved:false (no global fallback)');
-eq(sfoBuildLine_(line({ qty: 10 }), {}, '', { declared_unit_value: 5, declared_currency: 'USD', hs_code: '7323.10', country_of_origin: 'CN' }, 'L1').declared_total_value, 50, '§11 declared_total = unit x shipment_qty (5 x 10)');
+var lnLean = sfoBuildLine_(line({ qty: 10 }), {}, '', { declared_unit_value: 5, declared_currency: 'USD', hs_code: '7323.10', country_of_origin: 'CN' }, 'L1');
+eq(lnLean.declared_unit_value, 5, '§11 declared_unit_value frozen (5) — the exact resolved customs value stays');
+ok(!('declared_total_value' in lnLean), 'LEAN-R1 §5 declared_total_value NOT persisted (pure arithmetic; renderer derives unit × qty)');
 
 console.log('\n== §9 GS1 frozen from sku_details (not units_per_carton) ==');
 var gl = sfoBuildLine_(line({ qty: 10, upc: 24 }), { gs1_code: '0123456789012', gs1_type: 'UPC', units_per_carton: 24, product_name: 'Can Opener' }, '', {}, 'L1');
@@ -124,8 +126,10 @@ var codeOnly = GS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g
 ok(!/prodMigrateCreateSheet_\s*\(|prodMigrateAppendColumns_\s*\(/.test(codeOnly), '§21 handler NEVER invokes a migration twin (production-safety INIT.4)');
 ok(/var SFO_SNAPSHOT_HEADERS_ =/.test(GS) && /var SFO_LINE_HEADERS_ =/.test(GS) && /var SFO_LINE_PO_HEADERS_ =/.test(GS), '§3 three normalized tables (header / lines / line-PO lineage)');
 ok(!/generated_documents|document_templates|document_template_fields/.test(codeOnly), 'names do not collide with the frozen document layer');
-['snapshot_id', 'shipment_id', 'shipper_legal_name', 'consignee_location_id', 'shipment_total_qty', 'customs_ready'].forEach(function (c) { ok(new RegExp("'" + c + "'").test(GS), 'snapshot header owns ' + c); });
+['snapshot_id', 'shipment_id', 'shipper_legal_name', 'consignee_location_id', 'customs_ready'].forEach(function (c) { ok(new RegExp("'" + c + "'").test(GS), 'snapshot header owns ' + c); });
 ['shipment_line_id', 'shipment_qty', 'gs1_code', 'hs_code', 'declared_unit_value'].forEach(function (c) { ok(new RegExp("'" + c + "'").test(GS), 'snapshot line owns ' + c); });
+// LEAN-R1: pure-derived facts are no longer persisted (Σ totals + declared_total_value); the renderer computes them.
+['shipment_total_qty', 'shipment_total_cartons', 'shipment_total_gross_weight', 'shipment_total_net_weight', 'shipment_total_cbm', 'declared_total_value'].forEach(function (c) { ok(!new RegExp("'" + c + "'").test(GS), 'LEAN-R1 snapshot no longer persists derived ' + c); });
 ['purchase_order_line_id', 'po_no', 'allocated_qty'].forEach(function (c) { ok(new RegExp("'" + c + "'").test(GS), 'lineage owns ' + c); });
 
 console.log('\n== §24 router: one finalize + one read owner ==');

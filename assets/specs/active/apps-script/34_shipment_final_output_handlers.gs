@@ -42,7 +42,9 @@ var SFO_SNAPSHOT_HEADERS_ = [
   'consignee_location_id', 'consignee_warehouse_id', 'consignee_name',
   'consignee_address_line_1', 'consignee_address_line_2', 'consignee_city', 'consignee_state_or_region', 'consignee_postal_code', 'consignee_country',
   'factory_id', 'factory_name',
-  'shipment_total_qty', 'shipment_total_cartons', 'shipment_total_gross_weight', 'shipment_total_net_weight', 'shipment_total_cbm',
+  // F1-5C-FINAL-OUTPUT-SCHEMA-LEAN-R1: the 5 header totals (shipment_total_qty/cartons/gross/net/cbm) are DERIVABLE
+  // (Σ over the frozen snapshot LINES) and are no longer persisted (§3/§11 — never store a pure aggregate). The
+  // renderer (35_) computes them from shipment_final_output_lines; it never re-reads the live shipments totals.
   'shipping_detail_ready', 'packing_list_ready', 'commercial_invoice_ready', 'booking_ready', 'customs_ready', 'readiness_detail',
   'finalized_by', 'finalized_at', 'created_at', 'updated_at'
 ];
@@ -51,7 +53,11 @@ var SFO_LINE_HEADERS_ = [
   'snapshot_line_id', 'snapshot_id', 'shipment_id', 'shipment_line_id', 'sku', 'site_sku',
   'product_name_en', 'product_name_cn', 'shipment_qty', 'shipment_carton_qty', 'carton_no_start', 'carton_no_end', 'units_per_carton',
   'gross_weight', 'net_weight', 'cbm', 'carton_length', 'carton_width', 'carton_height',
-  'gs1_code', 'gs1_type', 'country_of_origin', 'hs_code', 'declared_currency', 'declared_unit_value', 'declared_total_value',
+  // declared_total_value REMOVED (F1-5C-FINAL-OUTPUT-SCHEMA-LEAN-R1 §5) — it is pure arithmetic
+  // (declared_unit_value × shipment_qty, both frozen here); the renderer derives it. Frozen customs facts
+  // (country_of_origin / hs_code / declared_currency / declared_unit_value) STAY: tax_referral_rates has no fully
+  // immutable identity (correction mode mutates values in place), so the exact resolved values must remain frozen.
+  'gs1_code', 'gs1_type', 'country_of_origin', 'hs_code', 'declared_currency', 'declared_unit_value',
   'material', 'product_use', 'note', 'created_at'
 ];
 
@@ -145,8 +151,7 @@ function sfoBuildLine_(line, master, siteSku, customs, lineId) {
     country_of_origin: sfoUc_(c.country_of_origin),
     hs_code: sfoStr_(c.hs_code),
     declared_currency: sfoUc_(c.declared_currency),
-    declared_unit_value: declaredUnit,
-    declared_total_value: declaredUnit * qty,
+    declared_unit_value: declaredUnit,   // declared_total_value (= declaredUnit × qty) is DERIVED by the renderer, not persisted (LEAN-R1 §5)
     material: sfoStr_(m.material),
     product_use: sfoStr_(m.product_use),
     note: sfoStr_(line.note)
@@ -172,9 +177,10 @@ function sfoBuildLinePos_(shipmentLineId, executedAllocsForLine, poByLineId, mkI
 }
 
 // Header business facts — freezes shipper/seller (R2A), consignee (R2A), factory (warehouse-resolved, NOT company),
-// carrier, and shipment totals. shipper is driven ONLY by shipment.company (no factory/warehouse/destination input).
-function sfoBuildHeader_(shipment, shipper, seller, consignee, factory, carrier, totals) {
-  var sp = shipper || {}, sl = seller || {}, cg = consignee || {}, fc = factory || {}, cr = carrier || {}, t = totals || {};
+// and carrier. shipper is driven ONLY by shipment.company (no factory/warehouse/destination input). Shipment totals
+// are NOT frozen here (LEAN-R1 §3) — they are a pure Σ over the frozen snapshot lines, derived by the renderer.
+function sfoBuildHeader_(shipment, shipper, seller, consignee, factory, carrier) {
+  var sp = shipper || {}, sl = seller || {}, cg = consignee || {}, fc = factory || {}, cr = carrier || {};
   return {
     shipment_id: sfoStr_(shipment.shipment_id),
     shipment_no: sfoStr_(shipment.shipment_no),
@@ -216,22 +222,12 @@ function sfoBuildHeader_(shipment, shipper, seller, consignee, factory, carrier,
     consignee_city: sfoStr_(cg.city), consignee_state_or_region: sfoStr_(cg.state_or_region),
     consignee_postal_code: sfoStr_(cg.postal_code), consignee_country: sfoUc_(cg.country),
     // factory (physical source; warehouse-resolved, never company)
-    factory_id: sfoStr_(fc.factory_id), factory_name: sfoStr_(fc.factory_name),
-    // totals
-    shipment_total_qty: sfoNum_(t.qty), shipment_total_cartons: sfoNum_(t.cartons),
-    shipment_total_gross_weight: sfoNum_(t.gross), shipment_total_net_weight: sfoNum_(t.net), shipment_total_cbm: sfoNum_(t.cbm)
+    factory_id: sfoStr_(fc.factory_id), factory_name: sfoStr_(fc.factory_name)
   };
 }
 
-// Line totals from the frozen snapshot LINES (physical authority), not from PO/recommendation data.
-function sfoTotals_(lines) {
-  var t = { qty: 0, cartons: 0, gross: 0, net: 0, cbm: 0 };
-  (lines || []).forEach(function (l) {
-    t.qty += sfoNum_(l.shipment_qty); t.cartons += sfoNum_(l.shipment_carton_qty);
-    t.gross += sfoNum_(l.gross_weight); t.net += sfoNum_(l.net_weight); t.cbm += sfoNum_(l.cbm);
-  });
-  return t;
-}
+// LEAN-R1 §3: header totals are no longer persisted or built here. The document renderer (35_) computes the Σ over
+// the frozen snapshot LINES on demand (physical authority) — never from live shipments, never re-multiplied.
 
 // Per-document-family readiness. Missing legal importer blocks ONLY documents that require it (customs) — the base
 // snapshot and Shipping Detail / Packing List still proceed (§15/§16). No hardcoding purely by document name:
@@ -356,7 +352,7 @@ function sfoBuildSnapshot_(ss, shipmentId) {
     outPos = outPos.concat(pos);
   });
 
-  var header = sfoBuildHeader_(shipment, shipperR.shipper, sellerR.seller_of_record, consigneeR.consignee, factory, carrier, sfoTotals_(outLines));
+  var header = sfoBuildHeader_(shipment, shipperR.shipper, sellerR.seller_of_record, consigneeR.consignee, factory, carrier);
   var readiness = sfoDocumentReadiness_(header, outLines);
   return { ok: true, header: header, lines: outLines, line_pos: outPos, readiness: readiness };
 }
