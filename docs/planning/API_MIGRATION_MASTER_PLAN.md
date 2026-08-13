@@ -184,3 +184,15 @@ DISPLAY_ONLY in Workspace mode (derivation survives only as the dormant Legacy f
 (41/0 equivalence suite; full regression only the 4 known baseline failures). No `.gs`/DB/bundle change; frontend
 deploy only; `40_` deployment presence = USER_VERIFY. app.js global prime KEPT (removal not yet globally safe).
 See `F1_7B_API_SHARED_INFRA_WEEKLY_SHIPPING_CUTOVER_R1.md`. Next: BATCH C (purchaseOrder/requestOrder workspace).
+
+### F1-7C-R1 delta (2026-08-13) — Purchase Order scoped read DONE
+`purchaseOrder` is now a CANONICAL workspace (new backend `50_api_v1_purchase_order_workspace.gs` + router action
+`purchaseOrder.workspace.get`; kill switch `setWorkspaceEnabled('purchaseOrder', false)`). Both PO pages
+(`purchase-order-overview.js`, `purchase-order-list.js`) render from the scoped workspace — no broad Operation DB for
+primary render, scoped post-write refresh. **remaining_qty is backend-owned** (`max(0, completed - shipped)`, the same
+projection 13_ persists); the list page's client fallback is downgraded to Legacy-only. Adapter reuses the canonical
+db-api normalizers → BEFORE == AFTER. shipped_qty passed verbatim; no FIFO/shipment/factory-stock touched.
+**Apps Script sync + new /exec REQUIRED** (new route/handler) — deploy backend before/with the frontend (canonical-ON),
+or hold with the kill switch. Bundle/DB unchanged. Full regression only the 4 known baseline failures. Batch F still
+owns the ~40-writer internal WRITE_FORCES_FULL_RELOAD + app.js global-prime removal. See
+`F1_7C_PO_WORKSPACE_AND_CUTOVER_R1.md`. Next: `requestOrder` or `shipment` workspace.

@@ -111,6 +111,13 @@ function doPost(e) {
       return jsonResponse_(handleWeeklyShippingWorkspaceGet_(body));
     }
 
+    // API v1 · Purchase Order READ-ONLY Workspace (Phase F1-7C). A body-carrying READ (no write); owner =
+    // 50_api_v1_purchase_order_workspace.gs. Reads only the PO tables (never getOperationDb). The only projection is
+    // the canonical read-model remaining_qty = max(0, completed - shipped); no FIFO / shipment / business write here.
+    if (action === 'purchaseOrder.workspace.get') {
+      return jsonResponse_(handlePurchaseOrderWorkspaceGet_(body));
+    }
+
     // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
     // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
     // never writes/persists/creates a draft). No business logic here.

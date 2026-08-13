@@ -2353,6 +2353,32 @@ window.KM.DB.getPurchaseOrders = function() {
     return window._opDbCache.purchaseOrders || [];
 };
 
+// F1-7C: expose the canonical PO normalizers so a scoped-workspace page adapter can produce records IDENTICAL to the
+// broad-cache getters from the workspace DTO's raw passthrough (guarantees BEFORE == AFTER). Read-only, pure mappers.
+window.KM.DB.normalizePurchaseOrder = function(raw) { return normalizePurchaseOrderRecord(raw); };
+window.KM.DB.normalizePurchaseOrderLine = function(raw) { return normalizePurchaseOrderLineRecord(raw); };
+
+// F1-7C: adapt the scoped purchaseOrder workspace View-Model to the SAME record shapes the PO pages consume from the
+// broad cache — orders/lines via the canonical normalizers (BEFORE == AFTER), plus the scoped sku/warehouse subsets.
+// remaining_qty is BACKEND-OWNED: the DTO always supplies it, so the page never derives max(0, completed - shipped).
+window.KM.DB.adaptPurchaseOrderWorkspace = function(data) {
+    data = data || {};
+    var orders = (data.purchaseOrders || []).map(function(p) { return normalizePurchaseOrderRecord((p && p.raw) || {}); });
+    var lines = [];
+    var det = data.detailsByPurchaseOrderId || {};
+    Object.keys(det).forEach(function(poId) {
+        (((det[poId] || {}).lines) || []).forEach(function(l) {
+            var n = normalizePurchaseOrderLineRecord((l && l.raw) || {});
+            // Backend-owned remaining_qty (persisted, else max(0, completed - shipped)) — override so it is always present.
+            if (l && l.remainingQty != null && l.remainingQty !== '') n.remainingQty = parseFloat(l.remainingQty) || 0;
+            lines.push(n);
+        });
+    });
+    var skuDetails = (data.skuDetails || []).map(function(s) { return { sku: s.sku, category: s.category, series: s.series }; });
+    var warehouses = (data.warehouses || []).map(function(w) { return { warehouseId: w.warehouseId, warehouseName: w.warehouseName }; });
+    return { orders: orders, lines: lines, skuDetails: skuDetails, warehouses: warehouses };
+};
+
 window.KM.DB.getRequestOrderAllocationDrafts = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.requestOrderAllocationDrafts || [];

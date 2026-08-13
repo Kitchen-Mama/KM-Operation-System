@@ -148,10 +148,10 @@ function makeLegacy() {
   section('§10 Active-page source non-impact (all page modules)');
   var pagesDir = path.join(__dirname, '..', 'js', 'pages');
   var pageFiles = fs.readdirSync(pagesDir).filter(function (f) { return /\.js$/.test(f); });
-  // Cut-over pages that consume KM.api on a READ path: shipping-plan.js (API-3A, weeklyShipping),
-  // inventory-replenishment.js (F1-4B-B, recommendation) and request-order.js (F1-4B-FM2, Order Planning
-  // recommendation — all behind default-false flags). Every OTHER page stays independent of the Foundation.
-  var CUTOVER_PAGES = { 'shipping-plan.js': 1, 'inventory-replenishment.js': 1, 'request-order.js': 1 };
+  // Cut-over pages that consume KM.api on a READ path: shipping-plan.js (weeklyShipping, canonical),
+  // inventory-replenishment.js + request-order.js (recommendation), and purchase-order-overview.js +
+  // purchase-order-list.js (F1-7C, purchaseOrder canonical). Every OTHER page stays independent of the Foundation.
+  var CUTOVER_PAGES = { 'shipping-plan.js': 1, 'inventory-replenishment.js': 1, 'request-order.js': 1, 'purchase-order-overview.js': 1, 'purchase-order-list.js': 1 };
   var referencing = pageFiles.filter(function (f) { return !CUTOVER_PAGES[f] && /KM\.api\b|apiFoundation|km-api-foundation/.test(fs.readFileSync(path.join(pagesDir, f), 'utf8')); });
   ok(referencing.length === 0, 'PG1 only the READ cutover pages use KM.api; the other ' + (pageFiles.length - Object.keys(CUTOVER_PAGES).length) + ' pages remain independent (' + (referencing.join(',') || 'clean') + ')');
   // and each cutover page uses KM.api for READ only (getWorkspace/workspaceApiActive) — never a write command

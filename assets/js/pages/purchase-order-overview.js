@@ -51,6 +51,59 @@
     // Canonical order_status (falls back to legacy status for old rows).
     function poStatus(o) { return String(o.orderStatus || o.status || '').trim().toLowerCase(); }
 
+    // ---- F1-7C · scoped Purchase Order workspace read cutover (mirrors the F1-7B Weekly pattern) ----
+    function _poEffectiveWorkspace() {
+        return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+            window.KM.api.workspaceApiActive('purchaseOrder'));
+    }
+    var _poReadModel = null;   // workspace-sourced {orders, lines, skuDetails, warehouses}, or null = Legacy (broad cache)
+    var _poReadSeq = 0;
+    var _poRegion = null;
+    function _poRegion_() {
+        if (_poRegion) return _poRegion;
+        if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+        var el = document.getElementById('po-groups'); if (!el) return null;
+        _poRegion = window.KM.loadState.bindElement(el, 'Loading purchase orders…');
+        return _poRegion;
+    }
+    // Scoped read: Workspace (canonical) → getWorkspace('purchaseOrder') → adapt; Legacy → broad cache. Fail-closed.
+    // This is also the scoped POST-WRITE refresh (loadAndRender re-enters here) — never a broad reload FROM Workspace mode.
+    function _poRefresh_() {
+        var mySeq = ++_poReadSeq;
+        var rg = _poRegion_();
+        if (_poEffectiveWorkspace()) {
+            var el = document.getElementById('po-groups');
+            var hasContent = !!(el && el.firstElementChild && !el.querySelector('.procurement-empty') && !el.querySelector('.km-region-loading'));
+            if (rg) rg.beginLoad(hasContent);
+            if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _poRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Purchase Order Workspace API unavailable.' }); return; }
+            Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { page: { number: 1, size: 2000 } })).then(function (env) {
+                if (mySeq !== _poReadSeq) return;
+                if (env && env.success) {
+                    _poReadModel = window.KM.DB.adaptPurchaseOrderWorkspace(env.data);
+                    if (rg) rg.set(_poReadModel.orders.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+                    renderFromDb();
+                } else {
+                    _poRenderError_((env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Purchase Order workspace request failed.' });
+                }
+            }).catch(function (e) { if (mySeq !== _poReadSeq) return; _poRenderError_({ code: 'PO_READ_FAILED', message: String(e && e.message || e) }); });
+            return;
+        }
+        // Legacy broad-DB path (unchanged behavior) — the broad load lives ONLY here.
+        _poReadModel = null;
+        if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+            window.KM.DB.loadOperationDb({ force: true }).then(renderFromDb).catch(renderFromDb);
+        } else {
+            renderFromDb();
+        }
+    }
+    function _poRenderError_(err) {
+        _poReadModel = null;
+        var rg = _poRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+        var groups = document.getElementById('po-groups');
+        if (groups) groups.innerHTML = '<div class="procurement-empty" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']</div>';
+        hideToolbar();
+    }
+
     var PO_STATUS_LABEL = {
         draft: 'Draft', issued: 'Issued / Sent', supplier_confirmed: 'Supplier Confirmed',
         confirmed: 'Supplier Confirmed', in_production: 'In Production', partial_completed: 'Partial Completed',
@@ -86,14 +139,14 @@
     // ---- lookups (built per render) ----
     function whNameMap() {
         var m = {};
-        ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || []).forEach(function (w) {
+        (_poReadModel ? _poReadModel.warehouses : ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])).forEach(function (w) {
             if (w.warehouseId) m[String(w.warehouseId).trim().toUpperCase()] = w.warehouseName || '';
         });
         return m;
     }
     function skuSeriesMap() {
         var m = {};
-        ((window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).forEach(function (s) {
+        (_poReadModel ? _poReadModel.skuDetails : ((window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [])).forEach(function (s) {
             if (s.sku && s.series) m[String(s.sku).trim().toUpperCase()] = s.series;
         });
         return m;
@@ -141,8 +194,9 @@
 
     // Build one view-model per PO.
     function buildModels() {
-        var orders = (window.KM.DB.getPurchaseOrders && window.KM.DB.getPurchaseOrders()) || [];
-        var lines = (window.KM.DB.getPurchaseOrderLines && window.KM.DB.getPurchaseOrderLines()) || [];
+        // F1-7C: source from the scoped Purchase Order workspace read-model when canonical; else the Legacy broad cache.
+        var orders = _poReadModel ? _poReadModel.orders : ((window.KM.DB.getPurchaseOrders && window.KM.DB.getPurchaseOrders()) || []);
+        var lines = _poReadModel ? _poReadModel.lines : ((window.KM.DB.getPurchaseOrderLines && window.KM.DB.getPurchaseOrderLines()) || []);
         var whMap = whNameMap(), ssMap = skuSeriesMap();
         var byPo = {};
         lines.forEach(function (l) { (byPo[l.purchaseOrderId] = byPo[l.purchaseOrderId] || []).push(l); });
@@ -198,11 +252,7 @@
             return;
         }
         if (note) note.innerHTML = '';
-        if (!window._opDbCache && window.KM.DB.loadOperationDb) {
-            window.KM.DB.loadOperationDb({ force: true }).then(renderFromDb).catch(renderFromDb);
-        } else {
-            renderFromDb();
-        }
+        _poRefresh_();   // Workspace (canonical) or Legacy — the broad-DB load lives only in the Legacy branch.
     }
 
     function hideToolbar() {

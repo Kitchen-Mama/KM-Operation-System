@@ -339,8 +339,9 @@
     // Non-canonical workspaces keep the hybrid gate (master AND per-workspace, both default false).
     // F1-7B-R1: weeklyShipping READ is now production-canonical (its API-3A read cutover is complete + verified).
     // Canonical = master-flag-independent; the ONLY gate/kill-switch is setWorkspaceEnabled('weeklyShipping', false).
-    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true };
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false, recommendation: true };
+    // F1-7C: purchaseOrder READ is now production-canonical too.
+    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: false, requestOrder: false, purchaseOrder: true, shipment: false, fcSummary: false, skuDetails: false, recommendation: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
@@ -456,6 +457,35 @@
       });
     }
     register('recommendation', { label: 'Recommendation', tables: getWorkspace('recommendation').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: recommendationResolver });
+
+    // ---- F1-7C · Purchase Order READ workspace resolver -----------------------------------------------------
+    // Scoped read for the PO pages. The client sends filters/sort/page/include; the server (50_) owns the read-model,
+    // including the CANONICAL remaining_qty = max(0, completed - shipped). No client formula, no FIFO, no shipment calc.
+    function buildPurchaseOrderRequestDTO(params) {
+      params = params || {};
+      return {
+        apiVersion: API_VERSION, action: 'purchaseOrder.workspace.get', requestId: makeRequestId(params.requestId),
+        payload: {
+          filters: isObj(params.filters) ? params.filters : {},
+          search: (params.search == null || params.search === '') ? null : String(params.search),
+          sort: (Array.isArray(params.sort) && params.sort.length) ? params.sort : [{ field: 'order_date', direction: 'desc' }],
+          page: { number: (params.page && params.page.number) || 1, size: (params.page && params.page.size) || 2000 },
+          include: Object.assign({ summary: true, orders: true, details: true, filterOptions: true }, isObj(params.include) ? params.include : {})
+        },
+        context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
+      };
+    }
+    function purchaseOrderResolver(params, helpers, opts) {
+      var signal = opts && opts.signal, seq = opts && opts.sequence;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildPurchaseOrderRequestDTO(params);
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
+        var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
+        env.meta.workspace = 'purchaseOrder'; env.meta.action = dto.action;
+        return env;
+      });
+    }
+    register('purchaseOrder', { label: 'Purchase Order', tables: getWorkspace('purchaseOrder').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: purchaseOrderResolver });
 
     // ---- F1-4B-FM2A · Recommendation Workspace console diagnostic (SAFE, bounded; no network, no secrets) ------
     // A single read-only view for a controlled single-tester activation. It reflects the ACTUAL last request

@@ -33,6 +33,64 @@
             window.KM.DB.isCloudWriteEnabled() && window.KM.DB.getPurchaseOrders);
     }
 
+    // ---- F1-7C · scoped Purchase Order workspace read cutover (mirrors the F1-7B Weekly pattern) ----
+    function _polEffectiveWorkspace() {
+        return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+            window.KM.api.workspaceApiActive('purchaseOrder'));
+    }
+    var _polReadModel = null;   // workspace-sourced {orders, lines, skuDetails, warehouses}, or null = Legacy (broad cache)
+    var _polReadSeq = 0;
+    var _polRegion = null;
+    function _polRegion_() {
+        if (_polRegion) return _polRegion;
+        if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+        _polRegion = window.KM.loadState.createRegion({ render: function (state) {
+            var tb = document.getElementById('pol-tbody'); if (!tb) return;
+            if (state === window.KM.loadState.STATES.INITIAL_LOADING) {
+                tb.innerHTML = '<tr><td colspan="9" class="procurement-empty">Loading purchase orders…</td></tr>';
+            }   // READY / EMPTY / ERROR / REFRESHING → renderRows / _polRenderError_ paint the real content.
+        } });
+        return _polRegion;
+    }
+    // Scoped read: Workspace (canonical) → getWorkspace('purchaseOrder') → adapt; Legacy → broad cache. Fail-closed.
+    function _polRefresh_() {
+        var mySeq = ++_polReadSeq;
+        var rg = _polRegion_();
+        if (_polEffectiveWorkspace()) {
+            var _tb = document.getElementById('pol-tbody');
+            var _hasRows = !!(_tb && _tb.querySelector('tr') && !_tb.querySelector('.procurement-empty'));
+            if (rg) rg.beginLoad(_hasRows);
+            if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _polRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Purchase Order Workspace API unavailable.' }); return; }
+            Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { page: { number: 1, size: 2000 } })).then(function (env) {
+                if (mySeq !== _polReadSeq) return;
+                if (env && env.success) {
+                    _polReadModel = window.KM.DB.adaptPurchaseOrderWorkspace(env.data);
+                    if (rg) rg.set(_polReadModel.orders.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+                    renderRows();
+                } else {
+                    _polRenderError_((env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Purchase Order workspace request failed.' });
+                }
+            }).catch(function (e) { if (mySeq !== _polReadSeq) return; _polRenderError_({ code: 'PO_READ_FAILED', message: String(e && e.message || e) }); });
+            return;
+        }
+        // Legacy broad-DB path (unchanged behavior) — no silent fallback FROM Workspace mode (this branch is Legacy-only).
+        _polReadModel = null;
+        if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+            window.KM.DB.loadOperationDb({ force: true }).then(renderRows).catch(renderRows);
+        } else {
+            renderRows();
+        }
+    }
+    // Fail-closed bounded region error (never a legacy full-DB render, never a "No records" empty-state).
+    function _polRenderError_(err) {
+        _polReadModel = null;
+        var rg = _polRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+        var tbody = document.getElementById('pol-tbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']</td></tr>';
+        var meta0 = document.getElementById('pol-result-meta'); if (meta0) meta0.innerHTML = '';
+        var pg0 = document.getElementById('pol-pagination'); if (pg0) pg0.style.display = 'none';
+    }
+
     // Pagination (25 PO rows / page). Reset to 1 on filter / search / reset / date-apply / tab-switch.
     var POL_PAGE_SIZE = 25;
     var polPage = 1;
@@ -65,11 +123,7 @@
             return;
         }
         if (note) note.innerHTML = '';
-        if (!window._opDbCache && window.KM.DB.loadOperationDb) {
-            window.KM.DB.loadOperationDb({ force: true }).then(renderRows).catch(renderRows);
-        } else {
-            renderRows();
-        }
+        _polRefresh_();   // Workspace (canonical) or Legacy — the broad-DB load lives only in the Legacy branch.
     }
 
     // ── Tab classification (In Production vs Ready / Completed) ─────────────────
@@ -96,15 +150,16 @@
     // buildModels() joins sku_details (category/series) and warehouses (factory name), groups
     // purchase_order_lines by purchase_order_id, and computes PO-level qty + distinct-SKU totals.
     function buildModels() {
-        var orders = window.KM.DB.getPurchaseOrders() || [];
-        var lines = window.KM.DB.getPurchaseOrderLines() || [];
+        // F1-7C: source from the scoped Purchase Order workspace read-model when canonical; else the Legacy broad cache.
+        var orders = _polReadModel ? _polReadModel.orders : (window.KM.DB.getPurchaseOrders() || []);
+        var lines = _polReadModel ? _polReadModel.lines : (window.KM.DB.getPurchaseOrderLines() || []);
 
         var skuInfo = {};
-        ((window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).forEach(function (s) {
+        (_polReadModel ? _polReadModel.skuDetails : ((window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [])).forEach(function (s) {
             skuInfo[String(s.sku || '').toLowerCase()] = { category: s.category || '', series: s.series || '' };
         });
         var whName = {};
-        ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || []).forEach(function (w) {
+        (_polReadModel ? _polReadModel.warehouses : ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])).forEach(function (w) {
             if (w.warehouseId) whName[String(w.warehouseId).trim().toUpperCase()] = w.warehouseName || '';
         });
         // Factory display, fallback order: (1) warehouse_name by warehouse_id, (2) warehouse_name by
@@ -130,9 +185,11 @@
                 var info = skuInfo[String(l.sku || '').toLowerCase()] || { category: '', series: '' };
                 var category = info.category || '';
                 var series = l.series || info.series || '';
-                // remaining_qty = available-to-ship = completed_qty − shipped_qty (clamp ≥ 0).
-                var rem = (l.remainingQty === '' || l.remainingQty == null)
-                    ? Math.max(0, num(l.completedQty) - num(l.shippedQty)) : num(l.remainingQty);
+                // remaining_qty = available-to-ship = completed_qty − shipped_qty (clamp ≥ 0). BACKEND-OWNED: in
+                // Workspace mode the DTO always supplies it (never client-derived); the max(0, completed − shipped)
+                // fallback survives ONLY for old broad-cache (Legacy) rows whose persisted cell is blank (F1-7C §9).
+                var rem = (_polReadModel || (l.remainingQty !== '' && l.remainingQty != null))
+                    ? num(l.remainingQty) : Math.max(0, num(l.completedQty) - num(l.shippedQty));
                 var sku = String(l.sku || '').trim();
                 if (sku) distinct[sku.toLowerCase()] = sku;
                 if (series) seriesSet[series] = 1;

@@ -44,7 +44,7 @@ eq(seen, ['INITIAL_LOADING', 'READY', 'REFRESHING'], 'render fired once per lega
 
 // ---- §2/§3 activation: weeklyShipping is CANONICAL + default-enabled ----
 console.log('\n== weeklyShipping activated as canonical workspace ==');
-ok(/var WORKSPACE_CANONICAL = \{ recommendation: true, weeklyShipping: true \}/.test(FND), 'weeklyShipping is CANONICAL (master-flag-independent)');
+ok(/var WORKSPACE_CANONICAL = \{[^}]*weeklyShipping: true/.test(FND), 'weeklyShipping is CANONICAL (master-flag-independent)');
 ok(/WORKSPACE_ENABLED_DEFAULT = \{ weeklyShipping: true,/.test(FND), 'weeklyShipping per-workspace flag defaults ON');
 ok(/function setWorkspaceEnabled/.test(FND), 'kill switch setWorkspaceEnabled present');
 // canonical gate: workspaceApiActive returns wsEnabled[n] for a canonical+implemented workspace (source-proven)
