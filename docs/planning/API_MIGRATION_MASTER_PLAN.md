@@ -196,3 +196,21 @@ db-api normalizers → BEFORE == AFTER. shipped_qty passed verbatim; no FIFO/shi
 or hold with the kill switch. Bundle/DB unchanged. Full regression only the 4 known baseline failures. Batch F still
 owns the ~40-writer internal WRITE_FORCES_FULL_RELOAD + app.js global-prime removal. See
 `F1_7C_PO_WORKSPACE_AND_CUTOVER_R1.md`. Next: `requestOrder` or `shipment` workspace.
+
+### F1-7D-R1 delta (2026-08-13) — Request Order scoped read DONE
+`requestOrder` is now a CANONICAL workspace (new backend `51_api_v1_request_order_workspace.gs` + router action
+`requestOrder.workspace.get`; kill switch `setWorkspaceEnabled('requestOrder', false)`). The Request Order **Draft page**
+(`request-order-draft.js` — persisted Draft/Pending/Approved cards) renders from the scoped workspace — no broad
+Operation DB for primary render, scoped post-write refresh, fail-closed on error, `KM.loadState` region. The workspace
+composes ONLY persisted `request_orders`/`request_order_lines` (+ masters the page consumes) — **no Gap/Forecast/
+Recommendation, no draft generation/persistence, no RO→PO, no second engine**; `request_order_line_sources` read
+OPTIONAL/missing-safe (write path documented PENDING). Adapter reuses the canonical + master db-api normalizers with the
+same per-array filters → BEFORE == AFTER. **Scope note:** the larger `request-order.js` (AI-Plan/下單系統 first-layer
+table) is a DIFFERENT read model that reconstructs Forecast/stock/PO-remaining client-side and owns `_opMatCache`; its
+gap/draft path is already scoped. It is **NOT migrated** this round (would need a backend Forecast/inventory read owner,
+forbidden by the transport-only guardrail) — deferred as its own bounded round. `_opMatCache` unchanged. Writes stay on
+`KM.DB.*` (payload/authority unchanged); the ~40-writer internal WRITE_FORCES_FULL_RELOAD + app.js global-prime removal
+remain Batch F. **Apps Script sync + new /exec REQUIRED** (new route/handler) — deploy backend before/with the frontend
+(canonical-ON), or hold with the kill switch. Bundle/DB unchanged. Full regression only the 4 known baseline failures.
+See `F1_7D_REQUEST_ORDER_WORKSPACE_AND_CUTOVER_R1.md`. Next: `shipment` workspace (or `fcSummary`/`skuDetails`); the
+`request-order.js` first-layer table as a separate Forecast/inventory-read-owner round.

@@ -41,6 +41,70 @@
     // when request_order_line_sources has no rows for a SKU/company.
     var roLinesCache = {};
 
+    // ---- F1-7D · scoped Request Order workspace read cutover (mirrors the F1-7B Weekly / F1-7C PO pattern) ----
+    // The Draft page's PRIMARY render (and every post-write refresh) sources persisted request_orders /
+    // request_order_lines from ONE scoped workspace — never the whole Operation DB. It carries NO Gap/Forecast/
+    // Recommendation/RO->PO logic; the workspace composes persisted truth only (see 51_).
+    function _roEffectiveWorkspace() {
+        return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+            window.KM.api.workspaceApiActive('requestOrder'));
+    }
+    // Workspace-sourced {orders, lines, lineSources, warehouses, skuDetails, supplierPriceList}, or null = Legacy (broad cache).
+    var _roReadModel = null;
+    var _roReadSeq = 0;
+    var _roRegion = null;
+    function _roRegion_() {
+        if (_roRegion) return _roRegion;
+        if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+        var el = document.getElementById('ro-groups'); if (!el) return null;
+        _roRegion = window.KM.loadState.bindElement(el, 'Loading request orders…');
+        return _roRegion;
+    }
+    // Read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
+    function _roGetOrders() { return _roReadModel ? _roReadModel.orders : ((window.KM.DB.getRequestOrders && window.KM.DB.getRequestOrders()) || []); }
+    function _roGetLines() { return _roReadModel ? _roReadModel.lines : ((window.KM.DB.getRequestOrderLines && window.KM.DB.getRequestOrderLines()) || []); }
+    function _roGetLineSources() { return _roReadModel ? _roReadModel.lineSources : ((window.KM.DB.getRequestOrderLineSources && window.KM.DB.getRequestOrderLineSources()) || []); }
+    function _roGetWarehousesArr() { return _roReadModel ? _roReadModel.warehouses : ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || []); }
+    function _roGetSkuMaster() { return _roReadModel ? _roReadModel.skuDetails : ((window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []); }
+    function _roGetSupplierPriceListArr() { return _roReadModel ? _roReadModel.supplierPriceList : ((window.KM.DB.getSupplierPriceList && window.KM.DB.getSupplierPriceList()) || []); }
+
+    // Scoped read: Workspace (canonical) → getWorkspace('requestOrder') → adapt; Legacy → broad cache. Fail-closed.
+    // This is ALSO the scoped POST-WRITE refresh (loadAndRender re-enters here) — never a broad reload FROM Workspace mode.
+    function _roRefresh_() {
+        var mySeq = ++_roReadSeq;
+        var rg = _roRegion_();
+        if (_roEffectiveWorkspace()) {
+            var el = document.getElementById('ro-groups');
+            var hasContent = !!(el && el.firstElementChild && !el.querySelector('.procurement-empty') && !el.querySelector('.km-region-loading'));
+            if (rg) rg.beginLoad(hasContent);
+            if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _roRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Request Order Workspace API unavailable.' }); return; }
+            Promise.resolve(window.KM.api.getWorkspace('requestOrder', { page: { number: 1, size: 2000 } })).then(function (env) {
+                if (mySeq !== _roReadSeq) return;
+                if (env && env.success) {
+                    _roReadModel = window.KM.DB.adaptRequestOrderWorkspace(env.data);
+                    if (rg) rg.set(_roReadModel.orders.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+                    renderFromDb();
+                } else {
+                    _roRenderError_((env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Request Order workspace request failed.' });
+                }
+            }).catch(function (e) { if (mySeq !== _roReadSeq) return; _roRenderError_({ code: 'RO_READ_FAILED', message: String(e && e.message || e) }); });
+            return;
+        }
+        // Legacy broad-DB path (unchanged behavior) — the broad load lives ONLY here.
+        _roReadModel = null;
+        if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+            window.KM.DB.loadOperationDb({ force: true }).then(renderFromDb).catch(renderFromDb);
+        } else {
+            renderFromDb();
+        }
+    }
+    function _roRenderError_(err) {
+        _roReadModel = null;
+        var rg = _roRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+        var groups = document.getElementById('ro-groups');
+        if (groups) groups.innerHTML = '<div class="procurement-empty" style="color:#B91C1C;">Request Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']</div>';
+    }
+
     // ---- load + render ----
     function loadAndRender() {
         var groups = document.getElementById('ro-groups');
@@ -54,19 +118,15 @@
         }
         if (note) note.innerHTML = '';
 
-        if (!window._opDbCache && window.KM.DB.loadOperationDb) {
-            window.KM.DB.loadOperationDb({ force: true }).then(renderFromDb).catch(renderFromDb);
-        } else {
-            renderFromDb();
-        }
+        _roRefresh_();   // Workspace (canonical) or Legacy — the broad-DB load lives only in the Legacy branch.
     }
 
     function renderFromDb() {
         var groupsEl = document.getElementById('ro-groups');
         if (!groupsEl) return;
 
-        var orders = window.KM.DB.getRequestOrders() || [];
-        var lines = window.KM.DB.getRequestOrderLines() || [];
+        var orders = _roGetOrders();
+        var lines = _roGetLines();
         var linesByRo = {};
         lines.forEach(function (l) { (linesByRo[l.requestOrderId] = linesByRo[l.requestOrderId] || []).push(l); });
 
@@ -109,7 +169,7 @@
     // warehouse_id (upper) -> warehouse_name, for the Factory/WH display (spec: show warehouse_name).
     function roWhNameMap() {
         var m = {};
-        ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || []).forEach(function (w) {
+        _roGetWarehousesArr().forEach(function (w) {
             if (w.warehouseId) m[String(w.warehouseId).trim().toUpperCase()] = w.warehouseName || '';
         });
         return m;
@@ -674,7 +734,7 @@
         var lineIds = {};
         cardLines.forEach(function (l) { if (l.requestOrderLineId) lineIds[l.requestOrderLineId] = 1; });
 
-        var sources = (window.KM.DB.getRequestOrderLineSources && window.KM.DB.getRequestOrderLineSources()) || [];
+        var sources = _roGetLineSources();
         var matched = sources.filter(function (s) {
             if (s.requestOrderLineId && lineIds[s.requestOrderLineId]) return true;
             return (s.requestOrderId === id && s.sku === sku && (String(s.company || '').trim() || '—') === company);
@@ -812,9 +872,11 @@
     // ==== New Manual Draft — front-end data-source contracts (no new DB tables, no mock data) ========
     // Company / Supplier / Factory / SKU are all Dropdowns sourced from EXISTING providers; the locked
     // commercial fields are resolved (never fabricated). See the Completion Report for the Spec Gaps.
-    function _roActiveWarehouses() { return (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? (window.KM.DB.getWarehouses() || []) : []; }
-    function _roSkuMaster() { return (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? (window.KM.DB.getSkuDetails() || []) : []; }
-    function _roSupplierPriceList() { return (window.KM && window.KM.DB && window.KM.DB.getSupplierPriceList) ? (window.KM.DB.getSupplierPriceList() || []) : []; }
+    // F1-7D: source the create-modal masters from the scoped read-model when the workspace is canonical (so the
+    // modal never depends on a broad Operation DB load); Legacy mode reads the broad-cache getters unchanged.
+    function _roActiveWarehouses() { return _roGetWarehousesArr(); }
+    function _roSkuMaster() { return _roGetSkuMaster(); }
+    function _roSupplierPriceList() { return _roGetSupplierPriceListArr(); }
     function _roEq(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
     function _roActiveFlag(v) { return v !== false; }   // tri-state: only an explicit false is inactive
 

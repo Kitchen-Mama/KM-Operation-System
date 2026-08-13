@@ -2379,6 +2379,38 @@ window.KM.DB.adaptPurchaseOrderWorkspace = function(data) {
     return { orders: orders, lines: lines, skuDetails: skuDetails, warehouses: warehouses };
 };
 
+// F1-7D: expose the canonical Request Order normalizers so a scoped-workspace page adapter produces records IDENTICAL
+// to the broad-cache getters from the workspace DTO's raw passthrough (guarantees BEFORE == AFTER). Read-only mappers.
+window.KM.DB.normalizeRequestOrder = function(raw) { return normalizeRequestOrderRecord(raw); };
+window.KM.DB.normalizeRequestOrderLine = function(raw) { return normalizeRequestOrderLineRecord(raw); };
+
+// F1-7D: adapt the scoped requestOrder workspace View-Model to the SAME record shapes the Request Order Draft page
+// consumes from the broad cache. Orders/lines run through the canonical normalizers on the DTO `raw` passthrough; the
+// master subsets (line sources / warehouses / sku_details / supplier_price_list) run through their SAME normalizers.
+// The per-array filters MATCH normalizeOperationDb so the adapted arrays equal the legacy getters exactly (BEFORE ==
+// AFTER). Composes persisted truth ONLY — no Gap/Forecast/Recommendation, no draft engine, no RO->PO.
+window.KM.DB.adaptRequestOrderWorkspace = function(data) {
+    data = data || {};
+    var orders = (data.requestOrders || []).map(function(o) { return normalizeRequestOrderRecord((o && o.raw) || {}); })
+        .filter(function(r) { return r.requestOrderId; });
+    var lines = [];
+    var det = data.detailsByRequestOrderId || {};
+    Object.keys(det).forEach(function(roId) {
+        (((det[roId] || {}).lines) || []).forEach(function(l) {
+            var n = normalizeRequestOrderLineRecord((l && l.raw) || {});
+            if (n.requestOrderLineId || n.requestOrderId) lines.push(n);
+        });
+    });
+    var lineSources = (data.lineSources || []).map(function(s) { return normalizeRequestOrderLineSourceRecord(s || {}); });
+    var warehouses = (data.warehouses || []).map(function(w) { return normalizeWarehouseRecord(w || {}); })
+        .filter(function(r) { return r.warehouseId || r.warehouseName; });
+    var skuDetails = (data.skuDetails || []).map(function(d) { return normalizeSkuDetailsRecord(d || {}); })
+        .filter(function(r) { return r.sku; });
+    var supplierPriceList = (data.supplierPriceList || []).map(function(r) { return normalizeSupplierPriceListRecord(r || {}); })
+        .filter(function(r) { return r.sku; });
+    return { orders: orders, lines: lines, lineSources: lineSources, warehouses: warehouses, skuDetails: skuDetails, supplierPriceList: supplierPriceList };
+};
+
 window.KM.DB.getRequestOrderAllocationDrafts = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.requestOrderAllocationDrafts || [];

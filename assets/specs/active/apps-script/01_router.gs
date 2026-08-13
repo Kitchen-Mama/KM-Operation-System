@@ -118,6 +118,14 @@ function doPost(e) {
       return jsonResponse_(handlePurchaseOrderWorkspaceGet_(body));
     }
 
+    // API v1 · Request Order READ-ONLY Workspace (Phase F1-7D). A body-carrying READ (no write); owner =
+    // 51_api_v1_request_order_workspace.gs. Reads only the RO tables + the masters the Draft page consumes (never
+    // getOperationDb). Composes persisted request_orders/request_order_lines ONLY — no Gap/Forecast/Recommendation,
+    // no draft generation/persistence, no RO->PO conversion. No business logic here.
+    if (action === 'requestOrder.workspace.get') {
+      return jsonResponse_(handleRequestOrderWorkspaceGet_(body));
+    }
+
     // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
     // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
     // never writes/persists/creates a draft). No business logic here.

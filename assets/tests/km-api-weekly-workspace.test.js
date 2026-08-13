@@ -152,7 +152,7 @@ function makeLegacy() { var calls = []; return { _calls: calls, getOperationDb: 
   var lg = makeLegacy(); invokeCalls = [];
   var api = KMAPI.createApiFoundation({ legacy: lg, idGen: function () { return 'REQ-CGEN01'; }, workspaceInvoke: function (a, d, s) { invokeCalls.push({ action: a, dto: d, signal: s }); return Promise.resolve(serverOk(d.requestId)); } });
   ok(api.registry.get('weeklyShipping').status === 'IMPLEMENTED', 'CR1 weeklyShipping IMPLEMENTED');
-  ok(api.registry.get('requestOrder').status === 'REGISTERED', 'CR2 other workspaces still REGISTERED');
+  ok(api.registry.get('shipment').status === 'REGISTERED', 'CR2 other workspaces still REGISTERED');
 
   // CR3 — F1-7B cutover: weeklyShipping is now PRODUCTION-CANONICAL → active by DEFAULT and INDEPENDENT of the
   // master USE_WORKSPACE_API flag (same contract as recommendation). No per-workspace override needed.

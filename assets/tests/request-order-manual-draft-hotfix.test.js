@@ -31,10 +31,15 @@ var BE = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-scr
 section('A. Frontend line resolver (REAL _roResolveCommercial) — SKU authority + Supplier optional');
 var feEnv = (function () {
   var window = { KM: { DB: { getSkuDetails: function () { return []; }, getSupplierPriceList: function () { return []; } } } };
+  // F1-7D: _roSkuMaster/_roSupplierPriceList now delegate to the read-model accessors; with _roReadModel=null they
+  // fall through to the SAME mocked KM.DB getters (Legacy path) → identical resolver behavior.
+  var _roReadModel = null;
   eval(extractVar(FE, /var RO_TERMINAL_LIFECYCLE = \{[^}]*\};/));
   eval(extractFn(FE, '_roEq'));
   eval(extractFn(FE, '_roActiveFlag'));
   eval(extractFn(FE, '_roSkuTerminal'));
+  eval(extractFn(FE, '_roGetSkuMaster'));
+  eval(extractFn(FE, '_roGetSupplierPriceListArr'));
   eval(extractFn(FE, '_roSkuMaster'));
   eval(extractFn(FE, '_roSupplierPriceList'));
   eval(extractFn(FE, '_roResolveCommercial'));

@@ -95,7 +95,7 @@ ok(/shippedQty: poWsNum_\(r\.shipped_qty\)/.test(GS50), 'shipped_qty passed thro
 ok(/purchase_orders|purchase_order_lines|warehouses|sku_details/.test(GS50) && !/'shipments'|'purchase_order_line/.test(code50.replace(/purchase_order_lines/g, 'x')), '50_ table scope = the 4 PO tables');
 
 console.log('\n== activation + router ==');
-ok(/WORKSPACE_CANONICAL = \{ recommendation: true, weeklyShipping: true, purchaseOrder: true \}/.test(FND), 'purchaseOrder is CANONICAL');
+ok(/WORKSPACE_CANONICAL = \{[^}]*purchaseOrder: true/.test(FND), 'purchaseOrder is CANONICAL');
 ok(/WORKSPACE_ENABLED_DEFAULT = \{ weeklyShipping: true,[^}]*purchaseOrder: true/.test(FND), 'purchaseOrder per-workspace flag defaults ON');
 ok(/register\('purchaseOrder', \{[^}]*status: WORKSPACE_STATUS\.IMPLEMENTED, resolver: purchaseOrderResolver/.test(FND), 'purchaseOrder registered IMPLEMENTED with resolver');
 ok(/action === 'purchaseOrder\.workspace\.get'/.test(ROUTER) && /handlePurchaseOrderWorkspaceGet_\(body\)/.test(ROUTER), 'router dispatches purchaseOrder.workspace.get');
