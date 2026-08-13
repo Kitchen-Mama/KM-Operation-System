@@ -25,14 +25,9 @@ ok(!/key: 'weeklyRecommendation'/.test(JB), 'the ambiguous weeklyRecommendation 
 ok(/AUTOMATION_RETIRED_HANDLERS_ = \['runWeeklyRecommendation'\]/.test(GS45), 'runWeeklyRecommendation is declared RETIRED (deletable, never creatable)');
 ok(/key: 'weeklyInventoryRecommendation'/.test(JB) && /key: 'monthlyOrderRecommendation'/.test(JB), 'split into two product-isolated automations');
 
-console.log('\n== retiring shim: old handler runs INVENTORY only + self-deletes its trigger ==');
-var shim = new Function('gapJobDeleteTriggersByHandler_', 'runWeeklyInventoryRecommendation',
-  (function () { var s = GS47.indexOf('function runWeeklyRecommendation('); var i = GS47.indexOf('{', s), d = 0; for (; i < GS47.length; i++) { if (GS47[i] === '{') d++; else if (GS47[i] === '}') { d--; if (!d) return GS47.slice(s, i + 1); } } })()
-  + '\n return runWeeklyRecommendation;');
-var calls = { del: [], inv: 0 };
-var shimRes = shim(function (h) { calls.del.push(h); }, function () { calls.inv++; return { ok: true, product: 'INVENTORY' }; })();
-ok(calls.del.length === 1 && calls.del[0] === 'runWeeklyRecommendation', 'shim self-deletes its own lingering trigger (safe delete-by-handler)');
-ok(calls.inv === 1 && shimRes.retired === true && shimRes.delegatedTo === 'runWeeklyInventoryRecommendation', 'shim delegates to INVENTORY only (never ORDER_PLANNING) — ambiguous coupling gone');
+console.log('\n== legacy handler FULLY REMOVED (F1-6B-AUTOMATION-LEGACY-WEEKLY-CLEANUP-R1) ==');
+ok(GS47.indexOf('function runWeeklyRecommendation(') === -1, 'runWeeklyRecommendation is no longer DEFINED in 47_ (Apps Script function selector no longer exposes it)');
+ok(/AUTOMATION_RETIRED_HANDLERS_ = \['runWeeklyRecommendation'\]/.test(GS45) && /function automationSweepRetiredTriggers_/.test(GS45), 'trigger cleanup for the legacy handler stays in 45_ (retired-handler sweep) — a live legacy trigger is still swept on Save & Apply');
 
 console.log('\n== the two product-isolated handlers exist ==');
 ok(/function runWeeklyInventoryRecommendation\(\)/.test(GS47), 'runWeeklyInventoryRecommendation exists');

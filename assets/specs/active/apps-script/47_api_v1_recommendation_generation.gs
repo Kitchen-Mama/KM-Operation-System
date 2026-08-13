@@ -142,15 +142,14 @@ function runMonthlyOrderRecommendation() {
   return out;
 }
 
-// RETIRED backward-compat shim (§3/§16). The old ambiguous handler is removed from the 45_ registry. If a
-// pre-migration trigger for it still exists, this shim (a) SELF-DELETES that trigger (safe re-read/delete-by-handler,
-// reusing the 46_ primitive) so it fires at most once more, and (b) runs INVENTORY ONLY — the ambiguous ORDER_PLANNING
-// coupling is gone. It NEVER runs both products. New deployments never create this trigger.
-function runWeeklyRecommendation() {
-  try { gapJobDeleteTriggersByHandler_('runWeeklyRecommendation'); } catch (e) {}
-  var res = runWeeklyInventoryRecommendation();
-  return { ok: !!(res && res.ok), retired: true, delegatedTo: 'runWeeklyInventoryRecommendation', result: res };
-}
+// F1-6B-AUTOMATION-LEGACY-WEEKLY-CLEANUP-R1 — the legacy ambiguous handler runWeeklyRecommendation is FULLY REMOVED
+// (no longer defined here, so the Apps Script function selector no longer exposes it). It is not in the 45_ registry
+// (never schedulable / never creatable). Cleanup of any pre-migration LIVE trigger for it is owned by the canonical
+// reconciler: 45_ AUTOMATION_RETIRED_HANDLERS_ (['runWeeklyRecommendation']) + automationSweepRetiredTriggers_ delete
+// that handler's trigger on every Save & Apply (string-based, independent of this function). Legacy stored-config
+// migration (weeklyRecommendation → weeklyInventoryRecommendation) also lives in 45_ automationReadConfig_ and is
+// unaffected. The two canonical targets are runWeeklyInventoryRecommendation (INVENTORY) + runMonthlyOrderRecommendation
+// (ORDER_PLANNING) above.
 
 // ============================================================
 // F1-4B-FM6-R4E2 — Request Order Draft Snapshot Completeness (gap authority → canonical persisted draft).
