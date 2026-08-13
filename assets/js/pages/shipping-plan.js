@@ -710,8 +710,28 @@ function _spRenderReadError_(err) {
     ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.innerHTML = (id === 'shippingPlanCards') ? banner : ''; });
 }
 
+// F1-7B-R1: bounded loading state for the primary cards region (shared KM.loadState contract). INITIAL_LOADING
+// on first load (no content), REFRESHING on a reload/post-write refresh (content stays visible). A failure here
+// is region-scoped (ERROR) and never blanks unrelated app regions. No-op if the helper/DOM is unavailable.
+var _spLoadRegion = null;
+function _spEnsureLoadRegion_() {
+    if (_spLoadRegion) return _spLoadRegion;
+    if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+    var el = document.getElementById('shippingPlanCards');
+    if (!el) return null;
+    _spLoadRegion = window.KM.loadState.bindElement(el, 'Loading shipping plans…');
+    return _spLoadRegion;
+}
+function _spRegionHasContent_() {
+    if (typeof document === 'undefined') return false;
+    var el = document.getElementById('shippingPlanCards');
+    return !!(el && el.querySelector('.sp-card'));   // real card content already visible
+}
+
 function renderShippingPlanFromDb() {
     var mySeq = ++_spReadSeq;
+    var region = _spEnsureLoadRegion_();
+    if (region) region.beginLoad(_spRegionHasContent_());   // INITIAL_LOADING or REFRESHING
     Promise.resolve(loadWeeklyShippingReadModel_()).then(function(model) {
         if (mySeq !== _spReadSeq) return;   // a newer load superseded this one → ignore stale response
         _spRenderReadModel_(model);
@@ -723,7 +743,9 @@ function renderShippingPlanFromDb() {
 
 function _spRenderReadModel_(model) {
     _spSkuLogiCache = null;   // rebuild the sku logistics lookup from the freshest cache each render
-    if (model.error) { _spRenderReadError_(model.error); return; }
+    var _region = _spLoadRegion;   // may be null (no DOM/helper)
+    if (model.error) { if (_region) _region.set(window.KM.loadState.STATES.ERROR); _spRenderReadError_(model.error); return; }
+    if (_region) _region.set(((model.plans || []).length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
     var plans = model.plans || [];
     var lines = model.lines || [];
     // Map which plans already have a shipment (robust Done-button detection). Legacy populates this;
@@ -1253,9 +1275,12 @@ if (window.KM && window.KM.lifecycle) {
             _ensureShippingPlanMarkup().then(function() {
                 var sec = document.getElementById('shippingplan-section');
                 if (sec) sec.classList.add('active');
-                // Cloud mode: ensure the operation DB cache is loaded so shipping_plans render
-                // even on a direct visit (Submit Plan also reloads the cache after writing).
-                if (_spUseDb() && !window._opDbCache && window.KM.DB.loadOperationDb) {
+                // F1-7B-R1: the canonical weeklyShipping Workspace is the PRIMARY read — it needs NO broad
+                // Operation DB. Render straight from the scoped workspace (independent of app.js's global prime).
+                // Only the LEGACY read path still requires the broad cache; do not force-load it in Workspace mode.
+                if (_spEffectiveWorkspace()) {
+                    renderShippingPlan();
+                } else if (_spUseDb() && !window._opDbCache && window.KM.DB.loadOperationDb) {
                     window.KM.DB.loadOperationDb({ force: true }).then(renderShippingPlan).catch(renderShippingPlan);
                 } else {
                     renderShippingPlan();

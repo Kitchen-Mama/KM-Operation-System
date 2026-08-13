@@ -76,8 +76,9 @@ function makeLegacy() {
   // =====================================================================================================
   section('Feature Flag routing (default legacy)');
   ok(api.getFlags().USE_WORKSPACE_API === false, 'F1 default flag false');
-  var wsLegacy = await run(api.client.getWorkspace('weeklyShipping'));
-  ok(wsLegacy.success === true && wsLegacy.meta.source === 'legacy' && wsLegacy.meta.mode === 'legacy', 'F2 flag OFF → getWorkspace routes to LEGACY');
+  // weeklyShipping is now CANONICAL (F1-7B); use a still-non-canonical workspace to demonstrate master-flag routing.
+  var wsLegacy = await run(api.client.getWorkspace('requestOrder'));
+  ok(wsLegacy.success === true && wsLegacy.meta.source === 'legacy' && wsLegacy.meta.mode === 'legacy', 'F2 flag OFF → non-canonical getWorkspace routes to LEGACY');
   api.setWorkspaceApiEnabled(true);
   // requestOrder is still REGISTERED-only → master ON routes to the workspace path and fails closed.
   var wsWs = await run(api.client.getWorkspace('requestOrder'));

@@ -103,12 +103,12 @@ function wsApi(fetchFn, getUrl, legacy) {
   ok(st.weeklyEnabled === true, 'DS3 weeklyEnabled reflects the effective flag');
   delete global.window;   // clear leaked window so the default instance has no URL authority
   var stOff = KMAPI.createApiFoundation({}).getTransportStatus();
-  ok(stOff.configured === false && stOff.weeklyEnabled === false, 'DS4 default instance (no URL authority): not configured, weekly off');
+  ok(stOff.configured === false && stOff.weeklyEnabled === true, 'DS4 default instance (no URL authority): not configured; weeklyShipping canonical-enabled (reads fail-closed until configured, never legacy)');
 
   // =====================================================================================================
   section('Production defaults + Legacy non-impact + safety');
   var def = KMAPI.createApiFoundation({ legacy: makeLegacy() });
-  ok(def.getFlags().USE_WORKSPACE_API === false && def.getWorkspaceFlags().weeklyShipping === false, 'PD1 production flags remain false');
+  ok(def.getFlags().USE_WORKSPACE_API === false && def.getWorkspaceFlags().weeklyShipping === true, 'PD1 production: master flag stays false; weeklyShipping is canonical-enabled (F1-7B cutover)');
   ok(/window\.KM\.DB\.getApiBaseUrl = function\(\) \{ return isOperationDbApiConfigured\(\)/.test(DBAPI_SRC), 'LG1 getter is read-only (returns URL when configured, else "")');
   ok(/getOperationDb/.test(DBAPI_SRC) && /OP_DB_API_BASE_URL \+ '\?action=getOperationDb/.test(DBAPI_SRC), 'LG2 Legacy getOperationDb transport unchanged');
   ok(FND_SRC.indexOf('Date.now') < 0 && FND_SRC.indexOf('Math.random') < 0, 'SAFE1 no wall-clock / RNG added');

@@ -174,3 +174,13 @@ Full evidence map: `F1_7A_SYSTEM_API_TRANSPORT_LOADING_AUDIT_R1.md`. This refres
 **Recommended immediate next slice (consistent with §6/§7):** finish **API-3B verification** of the already-built `weeklyShipping` read cutover, then flip API-3A to Workspace on the Verification Copy, then **API-3 weekly writes with targeted invalidation** (the Cache seam) — this is the smallest reversible step that first breaks the WRITE_FORCES_FULL_RELOAD pattern on one proven page before generalizing. Then implement `purchaseOrder`/`requestOrder`/`fcSummary`/`shipment` workspaces in the §6 API-5+ dependency order (Recommendation LAST). Each slice reports the §14-style version block and preserves the §12 frozen contracts (BEFORE == AFTER on the same fixture).
 
 **E2E status:** `F1-PHASE1-LIVE-ACCEPTANCE-R2 = PAUSED_BY_USER_FOR_API_MIGRATION` (ledgers preserved; resumes after the migration final gate).
+
+### F1-7B-R1 delta (2026-08-13) — Weekly Shipping read migration DONE
+`weeklyShipping` is now a **CANONICAL** workspace (master-flag-independent; kill switch
+`KM.api.setWorkspaceEnabled('weeklyShipping', false)`) — joining `recommendation`. The Shipping Plan page's primary
+production render is scoped-workspace driven with **no broad Operation DB** and **scoped post-write refresh** (no
+full-DB reload). Shared `KM.loadState` loading-state contract added (`km-loading-state.js`). `_spLineDisplay` proven
+DISPLAY_ONLY in Workspace mode (derivation survives only as the dormant Legacy fallback). BEFORE == AFTER
+(41/0 equivalence suite; full regression only the 4 known baseline failures). No `.gs`/DB/bundle change; frontend
+deploy only; `40_` deployment presence = USER_VERIFY. app.js global prime KEPT (removal not yet globally safe).
+See `F1_7B_API_SHARED_INFRA_WEEKLY_SHIPPING_CUTOVER_R1.md`. Next: BATCH C (purchaseOrder/requestOrder workspace).

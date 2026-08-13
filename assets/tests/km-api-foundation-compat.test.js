@@ -56,10 +56,12 @@ function makeLegacy() {
   var apiLive = KMAPI.createApiFoundation({});      // no injected legacy → resolves window.KM.DB live
   ok(g.window.KM.api === undefined || typeof g.window.KM.api === 'object', 'NS0 namespace intact');
   g.window.KM.DB = { getOperationDb: function () { return { v: 'V1' }; } };
-  var r1 = await run(apiLive.client.getWorkspace('weeklyShipping'));
+  // requestOrder is non-canonical + master-flag OFF → legacy delegation, so this exercises call-time KM.DB
+  // resolution (weeklyShipping is now canonical → workspace, so it no longer touches legacy KM.DB).
+  var r1 = await run(apiLive.client.getWorkspace('requestOrder'));
   ok(r1.success === true && r1.data.v === 'V1', 'NS1 KM.DB attached AFTER construction is resolved (no stale capture)');
   g.window.KM.DB = { getOperationDb: function () { return { v: 'V2' }; } };   // D: replaced later
-  var r2 = await run(apiLive.client.getWorkspace('weeklyShipping'));
+  var r2 = await run(apiLive.client.getWorkspace('requestOrder'));
   ok(r2.success === true && r2.data.v === 'V2', 'NS2 REPLACED KM.DB is resolved on the next call (call-time authority)');
   // namespace preservation: loading the module did not clobber a pre-existing KM member
   g.window.KM.somethingExisting = 42;
@@ -98,8 +100,8 @@ function makeLegacy() {
   // F1-4B-FM2B PRODUCTION CUTOVER: recommendation is the FIRST CANONICAL workspace — its per-workspace flag
   // now defaults TRUE (active-by-default, master-flag-independent; kill switch = setWorkspaceEnabled). Every
   // OTHER workspace stays default false behind the hybrid gate.
-  ok(Object.keys(api.getWorkspaceFlags()).length === 8 && api.getWorkspaceFlags().weeklyShipping === false && api.getWorkspaceFlags().recommendation === true, 'FF8 per-workspace flag map present (8); recommendation defaults TRUE (canonical), the rest default false');
-  ok(api.isCanonicalWorkspace('recommendation') === true && api.isCanonicalWorkspace('weeklyShipping') === false, 'FF8a recommendation is canonical; weeklyShipping is not');
+  ok(Object.keys(api.getWorkspaceFlags()).length === 8 && api.getWorkspaceFlags().weeklyShipping === true && api.getWorkspaceFlags().recommendation === true, 'FF8 per-workspace flag map present (8); recommendation + weeklyShipping default TRUE (canonical), the rest default false');
+  ok(api.isCanonicalWorkspace('recommendation') === true && api.isCanonicalWorkspace('weeklyShipping') === true, 'FF8a recommendation + weeklyShipping are canonical (F1-7B cutover)');
   // recommendation active-by-default with master flag OFF (canonical, master-flag-independent).
   ok(api.workspaceApiActive('recommendation') === true && api.effectiveMode('recommendation') === 'workspace', 'FF8b recommendation active by default (master flag OFF) — no console command required');
   // single kill switch restores legacy for recommendation ONLY.

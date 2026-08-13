@@ -154,15 +154,19 @@ function makeLegacy() { var calls = []; return { _calls: calls, getOperationDb: 
   ok(api.registry.get('weeklyShipping').status === 'IMPLEMENTED', 'CR1 weeklyShipping IMPLEMENTED');
   ok(api.registry.get('requestOrder').status === 'REGISTERED', 'CR2 other workspaces still REGISTERED');
 
+  // CR3 — F1-7B cutover: weeklyShipping is now PRODUCTION-CANONICAL → active by DEFAULT and INDEPENDENT of the
+  // master USE_WORKSPACE_API flag (same contract as recommendation). No per-workspace override needed.
   var r0 = await run(api.client.getWorkspace('weeklyShipping'));
-  ok(r0.success === true && r0.meta.source === 'legacy' && lg._calls.some(function (c) { return c[0] === 'getOperationDb'; }) && invokeCalls.length === 0, 'CR3 master flag OFF → legacy (no workspace invoke)');
+  ok(r0.success === true && r0.meta.source === 'workspace' && invokeCalls.length === 1, 'CR3 canonical default → workspace (master-flag-independent)');
 
-  api.setWorkspaceApiEnabled(true);
-  lg._calls.length = 0;
+  // CR4 — kill switch: disabling the per-workspace flag restores Legacy even for a canonical workspace.
+  api.setWorkspaceEnabled('weeklyShipping', false);
+  lg._calls.length = 0; invokeCalls.length = 0;
   var r1 = await run(api.client.getWorkspace('weeklyShipping'));
-  ok(r1.success === true && r1.meta.source === 'legacy' && invokeCalls.length === 0, 'CR4 master ON but weekly per-workspace OFF → still legacy (disabled Weekly = legacy)');
+  ok(r1.success === true && r1.meta.source === 'legacy' && lg._calls.some(function (c) { return c[0] === 'getOperationDb'; }) && invokeCalls.length === 0, 'CR4 kill switch (per-workspace OFF) → legacy');
 
   api.setWorkspaceEnabled('weeklyShipping', true);
+  api.setWorkspaceApiEnabled(true);   // master ON — no effect on canonical weeklyShipping; precondition for the OW1 non-canonical check
   lg._calls.length = 0; invokeCalls.length = 0;
   var r2 = await run(api.client.getWorkspace('weeklyShipping', { filters: { country: 'US' } }));
   ok(r2.success === true && r2.meta.source === 'workspace', 'CR5 master ON + weekly ON → workspace path');

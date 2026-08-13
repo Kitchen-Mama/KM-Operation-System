@@ -337,8 +337,10 @@
     // NOT a second overlapping flag; it REMOVES the master-flag dependency for that one workspace so normal
     // page usage reaches the canonical Runtime without any console command (F1-4B-FM2B production cutover).
     // Non-canonical workspaces keep the hybrid gate (master AND per-workspace, both default false).
-    var WORKSPACE_CANONICAL = { recommendation: true };   // recommendation READ is production-canonical (Phase 1)
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: false, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false, recommendation: true };
+    // F1-7B-R1: weeklyShipping READ is now production-canonical (its API-3A read cutover is complete + verified).
+    // Canonical = master-flag-independent; the ONLY gate/kill-switch is setWorkspaceEnabled('weeklyShipping', false).
+    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: false, requestOrder: false, purchaseOrder: false, shipment: false, fcSummary: false, skuDetails: false, recommendation: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
