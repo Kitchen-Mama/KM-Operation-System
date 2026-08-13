@@ -126,6 +126,15 @@ function doPost(e) {
       return jsonResponse_(handleRequestOrderWorkspaceGet_(body));
     }
 
+    // API v1 · AI-Plan Layer-1 RAW read owner (Phase F1-7E-PREREQ-1). A body-carrying READ (no write); owner =
+    // 52_api_v1_open_po_remaining_owner.gs. Reads only purchase_orders + purchase_order_lines (never getOperationDb).
+    // Exposes the RAW informational fact open_po_remaining_raw_qty per SKU (OPEN-PO statuses; persisted remaining_qty
+    // preferred, else the current browser fallback). NOT the canonical PO remaining (50_) and NOT consumed by the AI
+    // Plan yet (composed later in PREREQ-5). No business logic here.
+    if (action === 'openPoRemaining.raw.get') {
+      return jsonResponse_(handleOpenPoRemainingRawGet_(body));
+    }
+
     // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
     // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
     // never writes/persists/creates a draft). No business logic here.

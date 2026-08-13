@@ -258,3 +258,23 @@ max(shipped, completed))` differs from canonical `max(0, completed − shipped)`
 PDR-2 (freeze the N+1..N+3 time-anchor as client-supplied/frozen cycle, not server clock). Next: **PREREQ-1
 Open-PO-Remaining-per-SKU scoped read owner** (canonical F1-7C reuse). F1-PHASE1-LIVE-ACCEPTANCE-R2 =
 PAUSED_BY_USER_FOR_API_MIGRATION (unchanged).
+
+### F1-7E-PREREQ-1-R1 delta (2026-08-13) — Open-PO-Remaining raw read owner DONE
+New backend owner `52_api_v1_open_po_remaining_owner.gs` + router action `openPoRemaining.raw.get` exposes the AI-Plan
+Layer-1 RAW fact `open_po_remaining_raw_qty` per SKU. **PDR-1 resolved = OPTION (a):** the owner reproduces the CURRENT
+browser `ongoing()` exactly — persisted `remaining_qty` preferred, else the browser fallback `max(0, ordered −
+max(shipped, completed))` (NOT the canonical `max(0, completed − shipped)` on blank rows; convergence is a separate
+business task). Grain = per SKU, OPEN-PO statuses {issued, in_production, partial_completed, partial_shipped,
+ready_to_ship, confirmed} (verified == source RO_OPEN_PO_STATUS), **company-independent** (shared factory pipeline;
+`scope` echoed, never filters — factory_id never determines company). Dedicated owner (NOT folded into 50_) to keep the
+canonical PO-line `remaining_qty` (50_) and this Layer-1 informational aggregate as distinct authority classes; 50_
+untouched. Reads only purchase_orders + purchase_order_lines; never getOperationDb; read-only; no FIFO/shipment/second
+engine. **BEFORE == AFTER proven** by a gold-standard suite (28/0) running the real `ongoing()` over real db-api
+normalizers vs the real backend on raw rows, incl. KM/ResTW/ResUS shared-factory. No AI-Plan cutover (request-order.js
+still broad-cache; owner composed later in PREREQ-5). **Apps Script sync + new /exec REQUIRED** (52_ + router; safe to
+deploy independently — nothing consumes it yet). No frontend/bundle/DB change. Full regression: only the 4 known baseline
+failures. See `F1_7E_PREREQ_1_OPEN_PO_REMAINING_SCOPED_OWNER_R1.md`.
+
+**PREREQ status:** PREREQ-0 = DONE · PREREQ-1 = DONE · PREREQ-2 = NOT_STARTED · PREREQ-3 = NOT_STARTED · PREREQ-4 =
+NOT_STARTED · PREREQ-5 = NOT_STARTED. Next: **PREREQ-2 fcSummary scoped raw-forecast owner** (raw fc_regular_forecast +
+fc_special_events prep-month, no Target%/blend; honor PDR-2 time-anchor).
