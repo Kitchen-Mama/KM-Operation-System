@@ -154,6 +154,14 @@ function doPost(e) {
       return jsonResponse_(handleRawInventoryGet_(body));
     }
 
+    // API v1 · AI-Plan Layer-1 lead-time read owner (Phase F1-7E-PREREQ-4). A body-carrying READ (no write); owner =
+    // 55_api_v1_lead_time_owner.gs. Reads only supplier_price_list (never getOperationDb). Exposes leadTimeDays per SKU
+    // (active + latest effective_from; null when none/blank — EMPTY != ZERO). NOT a planning engine and NOT consumed by
+    // the AI Plan yet (composed later in PREREQ-5). No business logic here.
+    if (action === 'leadTime.raw.get') {
+      return jsonResponse_(handleLeadTimeRawGet_(body));
+    }
+
     // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
     // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
     // never writes/persists/creates a draft). No business logic here.

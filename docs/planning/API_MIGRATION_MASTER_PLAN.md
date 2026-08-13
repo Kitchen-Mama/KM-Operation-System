@@ -319,3 +319,22 @@ regression: only the 4 known baseline failures. See `F1_7E_PREREQ_3_SCOPED_RAW_I
 **PREREQ status:** PREREQ-0 DONE · PREREQ-1 DONE · PREREQ-2 DONE · PREREQ-3 DONE · PREREQ-4 NOT_STARTED · PREREQ-5
 NOT_STARTED. Next: **PREREQ-4 lead-time read** (supplier_price_list latest-active lead_time_days per SKU; reproduce browser
 leadTime()).
+
+### F1-7E-PREREQ-4-R1 delta (2026-08-13) — lead-time read owner DONE; all Layer-1 facts now have backend owners
+New backend owner `55_api_v1_lead_time_owner.gs` + router action `leadTime.raw.get` exposes `leadTimeDays` per SKU.
+Reproduces browser `leadTime()` EXACTLY: group supplier_price_list by UPPER(sku) (SKU-only — company/country/marketplace/
+supplier/factory ALL ignored/CONTEXT_ONLY); filter active (is_active ∈ {active,true,yes,1}); sort effective_from DESC
+(stable, V8 both sides); take first; leadTimeDays = null when no active row / blank cell, else parseFloat||0 (EMPTY null
+!= ZERO 0). Dedicated bounded owner (no existing supplier_price_list lead-time read owner; carrier/master-data lead_time
+are different concepts); reads only supplier_price_list, missing-safe; never getOperationDb; read-only; no cross-domain
+reads / second engine. **BEFORE == AFTER proven** by a gold-standard suite (27/0) running the real browser leadTime() over
+the real db-api normalizer vs the real backend on raw rows. No AI-Plan cutover. **Apps Script sync + new /exec REQUIRED**
+(55_ + router; deploy independently). No frontend/bundle/DB change. Full regression: only the 4 known baseline failures.
+See `F1_7E_PREREQ_4_LEAD_TIME_SCOPED_OWNER_R1.md`.
+
+**PREREQ status:** PREREQ-0 DONE · PREREQ-1 DONE · PREREQ-2 DONE · PREREQ-3 DONE · PREREQ-4 DONE · PREREQ-5 NOT_STARTED.
+**All AI-Plan Layer-1 facts now have a backend authority** (Basic FC + Special FC → `53_` fcSummary.raw.get; Site/Overseas/
+Factory → `54_` rawInventory.get; Open-PO-Remaining → `52_` openPoRemaining.raw.get; Lead Time → `55_` leadTime.raw.get;
+Gap → `43_` orderPlanningGap.get; Recommendation → `42_` recommendation.workspace.get). Next: **PREREQ-5 AI-Plan
+first-layer COMPOSER + cutover** (compose the owners + already-scoped Gap/Recommendation; cut request-order.js first-layer
+off _opDbCache; a COMPOSER, not a second engine).
