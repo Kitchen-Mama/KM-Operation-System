@@ -2999,6 +2999,10 @@ async function _kmGapRead_(action, payload) {
 window.KM.DB.getInventoryReplenishmentGap = function(scope) { return _kmGapRead_('inventoryReplenishmentGap.get', { payload: { scope: scope || {} } }); };
 // { company, country, marketplace, sku? } → { success, data:{ rows:[ order_planning_gap rows ] } }.
 window.KM.DB.getOrderPlanningGap = function(scope) { return _kmGapRead_('orderPlanningGap.get', { payload: { scope: scope || {} } }); };
+// F1-7E-PREREQ-5 · AI-Plan first-layer COMPOSER read (56_). payload { planning_cycle } → { success, data:{ planningCycle,
+// windowMonths, rows:[ the SAME first-layer rows _buildRequestOrderRowsFromDb builds ] } }. READ ONLY; scoped composer
+// (never getOperationDb); composes the 52_/53_/54_/55_ Layer-1 owners + identity. Layer-2 Gap/Recommendation unchanged.
+window.KM.DB.getAiPlanFirstLayer = function(payload) { return _kmGapRead_('aiPlanFirstLayer.get', { payload: payload || {} }); };
 
 // F1-4B-FM6-R4E2-B2 / R4E3-PRE — Request Order canonical draft: request-driven resumable scope job + scope
 // read-back + LOCKED incremental order_qty edit. The browser drives ONE logical job (START → poll CONTINUE →

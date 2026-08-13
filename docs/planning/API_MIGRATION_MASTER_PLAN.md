@@ -338,3 +338,28 @@ Factory → `54_` rawInventory.get; Open-PO-Remaining → `52_` openPoRemaining.
 Gap → `43_` orderPlanningGap.get; Recommendation → `42_` recommendation.workspace.get). Next: **PREREQ-5 AI-Plan
 first-layer COMPOSER + cutover** (compose the owners + already-scoped Gap/Recommendation; cut request-order.js first-layer
 off _opDbCache; a COMPOSER, not a second engine).
+
+### F1-7E-PREREQ-5-R1 delta (2026-08-13) — AI-Plan first-layer scoped read DONE
+New backend COMPOSER `56_api_v1_ai_plan_first_layer.gs` + router action `aiPlanFirstLayer.get` returns the AI-Plan
+first-layer rows byte-identical to `_buildRequestOrderRowsFromDb`, by REUSING the 52_/53_/54_/55_ pure Layer-1 fact
+functions + identity (marketplace_skus/sku_details) — NO new formula, NO second engine, NO duplicated arithmetic. Reads a
+targeted table set (never getOperationDb). NULL-fidelity preserved exactly (facts feed both the display "--"/"0"/"-"
+distinctions AND the allocation-draft snapshot writes). planning_cycle is client-resolved from `_roTpeNow()` (PDR-2;
+server never uses its clock). **Frontend cutover:** `request-order.js` first-layer primary read = `KM.DB.getAiPlanFirstLayer`
+(scoped) → only the DATA SOURCE of `requestOrderState.data` changed (all render/filter/second-layer/allocation logic
+untouched → whole-page BEFORE == AFTER); no broad Operation DB in the first-layer assembly; fail-closed bounded ERROR (no
+silent legacy fallback); `KM.loadState` region; kill switch `window.KM_FLAGS.USE_AI_PLAN_FIRST_LAYER_COMPOSER` (canonical
+default ON). Secondary same-page panels (Edit Target %/FC Update/forecast breakdown — reachable only from an expanded row)
+lazy-load the broad cache on first expand, so the first-layer stays composer-only. Legacy `_buildRequestOrderRowsFromDb`
+is DORMANT (kill-switch only). `_opMatCache` unchanged (second-layer materialized-gap cache, not the first-layer
+authority). Composer uses `KM.DB` (not a foundation workspace) → km-api-foundation.js untouched, no registry contract
+churn. **BEFORE == AFTER proven** by a master gold-standard suite (154/0) running the real `_buildRequestOrderRowsFromDb`
+over real db-api normalizers vs the real composer, comparing every row field (KM/ResTW/ResUS, shared factory, null-vs-zero,
+year-crossing, empty, error). Full regression: only the 4 known baseline failures. Bundle unchanged (aaf5b07); DB NONE.
+**Apps Script sync + new /exec REQUIRED — CUMULATIVE: sync 52_+53_+54_+55_+56_+01_router.gs together (PREREQ-1..5 may not
+have been individually deployed); backend before the canonical-ON frontend.** Frontend deploy: request-order.js +
+operation-system-db-api.js. See `F1_7E_PREREQ_5_AI_PLAN_FIRST_LAYER_COMPOSER_AND_CUTOVER_R1.md`.
+
+**PREREQ status:** PREREQ-0..5 ALL DONE. **AI Plan first-layer scoped read = DONE.** (Full system API migration NOT
+complete — Shipment/On-the-Way, the ~40-writer WRITE_FORCES_FULL_RELOAD, app.js global prime, and request-order.js
+SECONDARY surfaces remain.) Live Acceptance remains PAUSED_BY_USER_FOR_API_MIGRATION.

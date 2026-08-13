@@ -395,9 +395,64 @@ function _buildRequestOrderRowsFromDb() {
   });
 }
 
+// ===== F1-7E-PREREQ-5 · AI-Plan first-layer scoped COMPOSER cutover =====
+// The canonical primary read for the first-layer table is the scoped 56_ composer (KM.DB.getAiPlanFirstLayer), which
+// REUSES the 52_/53_/54_/55_ Layer-1 owners + identity to return rows byte-identical to _buildRequestOrderRowsFromDb.
+// NO broad Operation DB is used for first-layer factual assembly. Layer-2 Gap/Recommendation stay on their existing
+// scoped paths; Layer-3 human decision stays on the draft flow. Kill switch (mirrors USE_MATERIALIZED_GAP_READ):
+// window.KM_FLAGS.USE_AI_PLAN_FIRST_LAYER_COMPOSER = false → legacy broad-cache path. Canonical default ON.
+function _opUseFirstLayerComposer() {
+  if (typeof window !== 'undefined' && window.KM_FLAGS && typeof window.KM_FLAGS.USE_AI_PLAN_FIRST_LAYER_COMPOSER === 'boolean') return window.KM_FLAGS.USE_AI_PLAN_FIRST_LAYER_COMPOSER;
+  return true;
+}
+function _opFirstLayerReady() { return !!(window.KM && window.KM.DB && typeof window.KM.DB.getAiPlanFirstLayer === 'function'); }
+// planning_cycle authority (PDR-2): resolve the current Asia/Taipei cycle from the SAME _roTpeNow() the browser window
+// uses (deterministic per request; the server NEVER uses its clock; matches the legacy current-month window → BEFORE==AFTER).
+function _opFirstLayerCycle() { var n = _roTpeNow(); return 'RECO-' + n.year + '-' + String(n.monthIdx + 1).padStart(2, '0'); }
+
+var _opFirstLayerSeq = 0;
+var _opFirstLayerRegion = null;
+function _opFirstLayerRegion_() {
+  if (_opFirstLayerRegion) return _opFirstLayerRegion;
+  if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+  var el = document.getElementById('ro-scroll-body'); if (!el) return null;
+  _opFirstLayerRegion = window.KM.loadState.bindElement(el, 'Loading AI Plan…');
+  return _opFirstLayerRegion;
+}
+// Scoped first-layer read (canonical) + scoped refresh entry. Fail-closed: bounded region ERROR — NO silent legacy
+// broad fallback. The broad-DB load lives ONLY in the Legacy branch of initRequestOrderSection.
+function _opLoadFirstLayerComposer_() {
+  var my = ++_opFirstLayerSeq;
+  var rg = _opFirstLayerRegion_();
+  var el = (typeof document !== 'undefined') ? document.getElementById('ro-scroll-body') : null;
+  var hasContent = !!(el && el.querySelector && el.querySelector('.ro-row-wrapper'));
+  if (rg) rg.beginLoad(hasContent);
+  Promise.resolve(window.KM.DB.getAiPlanFirstLayer({ planning_cycle: _opFirstLayerCycle() })).then(function (res) {
+    if (my !== _opFirstLayerSeq) return;
+    if (res && res.success) {
+      requestOrderState.data = (res.data && res.data.rows) || [];
+      if (rg) rg.set(requestOrderState.data.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+      _roRenderAll();
+    } else {
+      _opFirstLayerError_((res && res.errors && res.errors[0]) || (res && res.error) || { code: 'READ_FAILED', message: 'AI Plan first-layer read failed' });
+    }
+  }).catch(function (e) { if (my !== _opFirstLayerSeq) return; _opFirstLayerError_({ code: 'AI_PLAN_READ_FAILED', message: String(e && e.message || e) }); });
+}
+function _opFirstLayerError_(err) {
+  requestOrderState.data = [];
+  var rg = _opFirstLayerRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+  var fixedBody = (typeof document !== 'undefined') ? document.getElementById('ro-fixed-body') : null;
+  var scrollBody = (typeof document !== 'undefined') ? document.getElementById('ro-scroll-body') : null;
+  if (fixedBody) fixedBody.innerHTML = '';
+  if (scrollBody) scrollBody.innerHTML = '<div class="ro-empty-state" style="color:#B91C1C;">AI Plan read error: ' + _roEsc((err && err.message) || 'failed') + ' [' + _roEsc((err && err.code) || 'READ_FAILED') + ']</div>';
+}
+
 function initRequestOrderSection() {
   // Data source priority: live DB (google-sheet) → Demo Data → empty. NEVER the Inventory DOM.
   if (_roUseDb()) {
+    // F1-7E-PREREQ-5: canonical first-layer = scoped composer (no broad Operation DB for first-layer assembly).
+    if (_opUseFirstLayerComposer() && _opFirstLayerReady()) { _opLoadFirstLayerComposer_(); return; }
+    // Legacy broad-cache path (kill-switch only) — the ONLY place a broad Operation DB load happens.
     if (!window._opDbCache && window.KM.DB.loadOperationDb) {
       window.KM.DB.loadOperationDb({ force: true }).then(_roInitWithData).catch(_roInitWithData);
       return;
@@ -1951,7 +2006,14 @@ function toggleRequestOrderSkuExpand(sku, country, marketplace, company) {
 // Toggle a row's second layer by its composite row key, then re-sync the expand-panel heights.
 function _roToggleRowByKey(rowKey) {
   if (rowKey == null) return;
+  var _expanding = (requestOrderState.expandedRowKey !== rowKey);
   requestOrderState.expandedRowKey = (requestOrderState.expandedRowKey === rowKey) ? null : rowKey;
+  // F1-7E-PREREQ-5: the first-layer is composer-sourced (no broad cache). The SECOND-layer expand surfaces
+  // (forecast breakdown / Edit Target % / FC Update) still read the broad Operation DB cache — lazy-load it on the
+  // FIRST expand so those panels keep working, WITHOUT the first-layer render ever depending on the broad DB.
+  if (_expanding && _opUseFirstLayerComposer() && !window._opDbCache && window.KM && window.KM.DB && window.KM.DB.loadOperationDb) {
+    window.KM.DB.loadOperationDb({ force: true }).then(function () { if (requestOrderState.expandedRowKey === rowKey) renderRequestOrderTable(); }).catch(function () {});
+  }
   renderRequestOrderTable();
   // F1-4B-FM2: fire (or invalidate) the flag-gated, READ-ONLY Order-Planning recommendation read for the
   // newly-expanded row. One request per expanded scope; closing the row (or the feature OFF) invalidates +

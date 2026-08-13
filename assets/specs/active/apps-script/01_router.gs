@@ -162,6 +162,14 @@ function doPost(e) {
       return jsonResponse_(handleLeadTimeRawGet_(body));
     }
 
+    // API v1 · AI-Plan first-layer COMPOSER (Phase F1-7E-PREREQ-5). A body-carrying READ (no write); owner =
+    // 56_api_v1_ai_plan_first_layer.gs. Reads a TARGETED table set (never getOperationDb) and REUSES the 52_/53_/54_/55_
+    // pure Layer-1 fact functions to return the SAME rows the browser _buildRequestOrderRowsFromDb() builds. NO new
+    // formula, NO second engine; Layer-2 Gap/Recommendation stay on their existing scoped paths. No business logic here.
+    if (action === 'aiPlanFirstLayer.get') {
+      return jsonResponse_(handleAiPlanFirstLayerGet_(body));
+    }
+
     // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
     // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
     // never writes/persists/creates a draft). No business logic here.
