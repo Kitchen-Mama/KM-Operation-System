@@ -145,6 +145,15 @@ function doPost(e) {
       return jsonResponse_(handleFcSummaryRawGet_(body));
     }
 
+    // API v1 · AI-Plan Layer-1 RAW inventory read owner (Phase F1-7E-PREREQ-3). A body-carrying READ (no write); owner =
+    // 54_api_v1_raw_inventory_owner.gs. Reads only amazon_inventory_snapshot + overseas_inventory_snapshot +
+    // factory_stock + warehouses (never getOperationDb). Exposes siteStockRawQty (latest snapshot) + overseasStockRawQty
+    // (pooled) + factoryStockRawQty (shared per-SKU pool) — RAW pools, NO allocation, NOT the recommendation supply, and
+    // NOT consumed by the AI Plan yet (composed later in PREREQ-5). No business logic here.
+    if (action === 'rawInventory.get') {
+      return jsonResponse_(handleRawInventoryGet_(body));
+    }
+
     // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
     // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
     // never writes/persists/creates a draft). No business logic here.

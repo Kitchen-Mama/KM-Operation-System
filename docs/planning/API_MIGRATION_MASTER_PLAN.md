@@ -299,3 +299,23 @@ Full regression: only the 4 known baseline failures. See `F1_7E_PREREQ_2_FC_SUMM
 **PREREQ status:** PREREQ-0 DONE · PREREQ-1 DONE · PREREQ-2 DONE · PREREQ-3 NOT_STARTED · PREREQ-4 NOT_STARTED ·
 PREREQ-5 NOT_STARTED. Next: **PREREQ-3 scoped raw-inventory read owner** (raw amazon_inventory_snapshot latest strict
 scope + overseas_inventory_snapshot Σ + factory_stock Σ; raw pools only, no allocation).
+
+### F1-7E-PREREQ-3-R1 delta (2026-08-13) — scoped raw-inventory read owner DONE
+New backend owner `54_api_v1_raw_inventory_owner.gs` + router action `rawInventory.get` exposes three AI-Plan Layer-1 RAW
+facts per SKU/site: `siteStockRawQty` (latest amazon_inventory_snapshot row for the site: available+fc_transfer+
+fc_processing), `overseasStockRawQty` (Σ overseas_inventory_snapshot.available_stock over same-country NON-factory
+warehouses, POOLED — no latest dedup), `factoryStockRawQty` (Σ factory_stock.current_stock per SKU, company/factory-
+INDEPENDENT shared pool). Reproduces browser siteStock()/thirdParty()/factoryBySku EXACTLY (incl. blank-marketplace→
+'Amazon' default, lexicographic latest-snapshot, warehouse country + is_factory exclusion, canonical fac_current_stock).
+Per-fact scope asymmetry preserved (site: sku+country+marketplace; overseas: sku+country; factory: sku only —
+company/factory always IGNORED). Dedicated bounded owner (does NOT reuse KMPS/KMHP/KMTPP allocated supply — different
+facts); reads only the 4 inventory/warehouse tables, missing-safe; never getOperationDb; read-only; NO allocation/gap/
+recommendation/second engine. **Shared-factory proven:** KM==ResTW==ResUS == same raw factory pool (1200). **BEFORE ==
+AFTER proven** by a gold-standard suite (46/0) running the real browser aggregations over real db-api normalizers vs the
+real backend on raw rows. No AI-Plan cutover (request-order.js still broad-cache; composed later in PREREQ-5). **Apps
+Script sync + new /exec REQUIRED** (54_ + router; safe to deploy independently). No frontend/bundle/DB change. Full
+regression: only the 4 known baseline failures. See `F1_7E_PREREQ_3_SCOPED_RAW_INVENTORY_OWNER_R1.md`.
+
+**PREREQ status:** PREREQ-0 DONE · PREREQ-1 DONE · PREREQ-2 DONE · PREREQ-3 DONE · PREREQ-4 NOT_STARTED · PREREQ-5
+NOT_STARTED. Next: **PREREQ-4 lead-time read** (supplier_price_list latest-active lead_time_days per SKU; reproduce browser
+leadTime()).
