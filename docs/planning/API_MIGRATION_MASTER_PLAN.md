@@ -214,3 +214,19 @@ remain Batch F. **Apps Script sync + new /exec REQUIRED** (new route/handler) �
 (canonical-ON), or hold with the kill switch. Bundle/DB unchanged. Full regression only the 4 known baseline failures.
 See `F1_7D_REQUEST_ORDER_WORKSPACE_AND_CUTOVER_R1.md`. Next: `shipment` workspace (or `fcSummary`/`skuDetails`); the
 `request-order.js` first-layer table as a separate Forecast/inventory-read-owner round.
+
+### F1-7E-R1 delta (2026-08-13) — AI-Plan first-layer cutover HALTED (audit-only)
+Attempted to cut `request-order.js`'s first-layer planning table off the broad Operation DB. **HALT** —
+`FORECAST_BACKEND_AUTHORITY_NOT_ESTABLISHED` + `INVENTORY_BACKEND_AUTHORITY_NOT_ESTABLISHED`. Audit proved NO reusable
+canonical backend read owner composes the first-layer per-SKU columns: the raw `basicT3`/special-event forecast Σ (over
+an Asia/Taipei-`now` window) has no owner and does NOT equal the recommendation workspace's Target%-adjusted blended
+`allocatedForecastQty` (reusing it = `BUSINESS_EQUIVALENCE_FAILED`); raw factory_stock/overseas Σ per SKU exist only as
+*allocated* qty inside the gap allocator, not raw pools; open-PO-remaining-per-SKU has no owner (F1-7C `remaining_qty` is
+PO-line-keyed); lead-time is read by no backend. Backing the page = ≥4 new read authorities + relocating four browser-only
+business rules → forbidden by §2/§4/§5/§14/§19. The second-layer Gap/Recommendation path (materialized `order_planning_gap`
++ `recommendation.workspace.get`) is ALREADY scoped and unchanged; `_opMatCache` unchanged (transient canonical-DTO cache,
+not a second authority). No `.gs`/router/frontend/bundle/DB change. **Smallest prerequisite:** PREREQ-0 DECISION round
+(redefine columns to canonical facts vs. build raw-aggregate owners), then PREREQ-1 open-PO-remaining-per-SKU (canonical
+F1-7C reuse), PREREQ-2 fcSummary forecast owner, PREREQ-3 scoped inventory owner, PREREQ-4 lead-time, then the composed
+first-layer cutover. See `F1_7E_PLANNING_READ_OWNERS_AND_AI_PLAN_CUTOVER_R1.md`. request-order.js remains broad-cache-
+dependent (first-layer + Target-Rules editor + forecast-breakdown surfaces); global-prime removal stays Batch F.
