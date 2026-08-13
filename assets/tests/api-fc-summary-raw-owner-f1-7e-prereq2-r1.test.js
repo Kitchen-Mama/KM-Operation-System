@@ -157,7 +157,11 @@ ok(!/\.setValue\(|appendRow|insertSheet|deleteRow|\.setValues\(/.test(code53), '
 ok(!/generateRecommendation|order_planning_gap|slaFifoCompare_|purchase_order_lines|factory_stock/.test(code53), '53_ reads no gap/recommendation/PO/factory tables (no second engine)');
 ok(/fc_regular_forecast/.test(GS53) && /fc_special_events/.test(GS53) && !/campaigns|marketplace_skus|sku_details/.test(slice(GS53, 'var FCR_TABLES_', 'var FCR_MONTH_KEYS_')), '53_ table scope = fc_regular_forecast + fc_special_events only');
 ok(/action === 'fcSummary\.raw\.get'/.test(ROUTER) && /handleFcSummaryRawGet_\(body\)/.test(ROUTER), 'router dispatches fcSummary.raw.get');
-ok(/action === 'fcSummary\.raw\.get'/.test(ROUTER) && ROUTER.indexOf("action === 'fcSummary.workspace.get'") < 0, 'bounded raw action (does NOT claim the broader fcSummary.workspace.get slot)');
+// F1-7G: the broader fcSummary.workspace.get slot now exists (owner 58_) — the 53_ raw owner stays a DISTINCT bounded
+// action dispatched to a DIFFERENT handler (it never absorbed the workspace slot).
+ok(/action === 'fcSummary\.raw\.get'/.test(ROUTER) && /handleFcSummaryRawGet_\(body\)/.test(ROUTER) &&
+   /action === 'fcSummary\.workspace\.get'/.test(ROUTER) && /handleFcSummaryWorkspaceGet_\(body\)/.test(ROUTER) &&
+   ROUTER.indexOf('handleFcSummaryRawGet_') !== ROUTER.indexOf('handleFcSummaryWorkspaceGet_'), 'bounded raw action stays DISTINCT from the fcSummary.workspace.get slot (separate handlers)');
 // no AI-Plan cutover this round
 ok(/function basicT3\(/.test(ROJS) && /function _roSpecialEventsTotal\(/.test(ROJS) && /loadOperationDb\(\{ force: true \}\)/.test(ROJS), 'request-order.js still owns basicT3()/_roSpecialEventsTotal() + broad cache (NO cutover)');
 ok(ROJS.indexOf('fcSummary.raw.get') < 0 && ROJS.indexOf('basicFcRawT3Qty') < 0, 'request-order.js does NOT yet consume the new owner (PREREQ-5)');

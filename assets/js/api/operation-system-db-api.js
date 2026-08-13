@@ -2436,6 +2436,20 @@ window.KM.DB.adaptShipmentWorkspace = function(data) {
     return out;
 };
 
+// F1-7G: adapt the scoped FC Summary workspace View-Model to the SAME arrays the FC Summary page consumes from the broad
+// cache — each table run through its canonical normalizer with the SAME per-array filter normalizeOperationDb applies, so
+// the adapted arrays equal the legacy getters (getFcRegularForecast / getFcSpecialEvents / getFcTargetRules /
+// getMarketplaces) exactly, including the preserved `.raw` passthrough the render getters read. Composes persisted raw
+// forecast rows ONLY (no Target% adjustment, no blending, no Gap/Recommendation; the Event Assist WRITE path is untouched).
+window.KM.DB.adaptFcSummaryWorkspace = function(data) {
+    data = data || {};
+    var fcRegularForecast = (data.fcRegularForecast || []).map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; });
+    var fcSpecialEvents = (data.fcSpecialEvents || []).map(normalizeFcSpecialEventRecord).filter(function(r) { return r.event || r.sku || r.scopeId; });
+    var fcTargetRules = (data.fcTargetRules || []).map(normalizeFcTargetRuleRecord).filter(function(r) { return r.scopeId || r.ruleId; });
+    var marketplaces = (data.marketplaces || []).map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; });
+    return { fcRegularForecast: fcRegularForecast, fcSpecialEvents: fcSpecialEvents, fcTargetRules: fcTargetRules, marketplaces: marketplaces };
+};
+
 window.KM.DB.getRequestOrderAllocationDrafts = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.requestOrderAllocationDrafts || [];

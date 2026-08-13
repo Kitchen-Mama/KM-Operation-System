@@ -135,6 +135,16 @@ function doPost(e) {
       return jsonResponse_(handleShipmentWorkspaceGet_(body));
     }
 
+    // API v1 · FC Summary READ-ONLY Workspace (Phase F1-7G). A body-carrying READ (no write); owner =
+    // 58_api_v1_fc_summary_workspace.gs. Reads only the FC Summary primary-render table set — fc_regular_forecast,
+    // fc_special_events, fc_target_rules, marketplaces (never getOperationDb). Returns raw passthrough of the FULL FC
+    // tables (the page's Year dropdown + non-cascading filter universes need the complete set; client keeps all
+    // filtering/pagination). Emits ONLY raw persisted forecast rows — no Target% adjustment, no blending, no Gap/
+    // Recommendation, and NOT the bounded 53_ raw-fact owner. No business logic here.
+    if (action === 'fcSummary.workspace.get') {
+      return jsonResponse_(handleFcSummaryWorkspaceGet_(body));
+    }
+
     // API v1 · AI-Plan Layer-1 RAW read owner (Phase F1-7E-PREREQ-1). A body-carrying READ (no write); owner =
     // 52_api_v1_open_po_remaining_owner.gs. Reads only purchase_orders + purchase_order_lines (never getOperationDb).
     // Exposes the RAW informational fact open_po_remaining_raw_qty per SKU (OPEN-PO statuses; persisted remaining_qty

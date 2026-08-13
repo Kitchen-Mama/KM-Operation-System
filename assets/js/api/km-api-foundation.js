@@ -340,8 +340,8 @@
     // F1-7B-R1: weeklyShipping READ is now production-canonical (its API-3A read cutover is complete + verified).
     // Canonical = master-flag-independent; the ONLY gate/kill-switch is setWorkspaceEnabled('weeklyShipping', false).
     // F1-7C: purchaseOrder READ is now production-canonical too.
-    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true };
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: false, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: false, skuDetails: false, recommendation: true };
+    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: false, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: false, recommendation: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
@@ -546,6 +546,35 @@
       });
     }
     register('shipment', { label: 'Shipment', tables: getWorkspace('shipment').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: shipmentResolver });
+
+    // ---- F1-7G · FC Summary READ workspace resolver ---------------------------------------------------------
+    // Scoped read for the FC Summary page primary render (Regular/Special-Event/Target-Rule tables + filter/year
+    // universes). The server (58_) returns raw passthrough of the FULL four primary-render tables (fc_regular_forecast,
+    // fc_special_events, fc_target_rules, marketplaces); the client keeps ALL filtering/SKU-search/pagination (the
+    // page is deliberately non-cascading, so it needs the complete set). Emits ONLY raw persisted forecast rows — no
+    // Target% adjustment, no blending, no Gap/Recommendation. The page's SECONDARY builder/import surfaces are NOT
+    // served here (they stay on the broad cache, lazy). NOT the bounded 53_ fcSummary.raw.get owner.
+    function buildFcSummaryRequestDTO(params) {
+      params = params || {};
+      return {
+        apiVersion: API_VERSION, action: 'fcSummary.workspace.get', requestId: makeRequestId(params.requestId),
+        payload: {
+          include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
+        },
+        context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
+      };
+    }
+    function fcSummaryResolver(params, helpers, opts) {
+      var signal = opts && opts.signal, seq = opts && opts.sequence;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildFcSummaryRequestDTO(params);
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
+        var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
+        env.meta.workspace = 'fcSummary'; env.meta.action = dto.action;
+        return env;
+      });
+    }
+    register('fcSummary', { label: 'FC Summary', tables: getWorkspace('fcSummary').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: fcSummaryResolver });
 
     // ---- F1-4B-FM2A · Recommendation Workspace console diagnostic (SAFE, bounded; no network, no secrets) ------
     // A single read-only view for a controlled single-tester activation. It reflects the ACTUAL last request

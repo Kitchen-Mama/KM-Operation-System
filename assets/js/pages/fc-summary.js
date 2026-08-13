@@ -841,11 +841,14 @@ function saveFcChanges() {
     window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_base_edit' })
       .then(function (res) {
         if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _fcSetSaveEnabled(true); return; }
-        // Success — the adapter has reloaded the canonical DB; reconcile the view from it.
+        // Success — reconcile the view. Workspace mode: scoped fcSummary re-read (the primary render ignores the broad
+        // cache the writer reloaded); Legacy: render-only from the reloaded cache. Then exit edit + confirm.
         var s = (res && res.summary) || {};
-        exitEditMode();   // clears dirty, unlocks scope, re-renders from canonical cache
-        alert('Base Forecast saved — ' + toWrite.length + ' row(s), ' + counts.changed + ' cell(s) updated' +
-          (s.created != null ? ('.\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : '.'));
+        _fcAfterWrite(function () {
+          exitEditMode();   // clears dirty, unlocks scope, re-renders from the scoped read-model / canonical cache
+          alert('Base Forecast saved — ' + toWrite.length + ' row(s), ' + counts.changed + ' cell(s) updated' +
+            (s.created != null ? ('.\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : '.'));
+        });
       })
       .catch(function (err) { alert('Save failed: ' + (err && err.message ? err.message : err)); _fcSetSaveEnabled(true); });
     return;
@@ -1058,9 +1061,11 @@ function saveEventChanges() {
         if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _fcEventSetSaveEnabled(true); return; }
         var s = (res && res.data && res.data.summary) || (res && res.summary) || {};
         if (s.skipped) { alert('Save failed for ' + s.skipped + ' of ' + toWrite.length + ' event(s) — see per-row reasons; edits preserved.'); _fcEventSetSaveEnabled(true); return; }
-        exitEventEditMode();   // adapter reloaded canonical DB → reconcile view
-        alert('Special Events saved — ' + toWrite.length + ' event(s), ' + counts.changed + ' updated.' +
-          (s.updated != null ? ('\nUpdated: ' + s.updated + '  Created: ' + s.created + '  Skipped: ' + s.skipped) : ''));
+        _fcAfterWrite(function () {
+          exitEventEditMode();   // scoped fcSummary re-read (Workspace) / reloaded canonical cache (Legacy) → reconcile view
+          alert('Special Events saved — ' + toWrite.length + ' event(s), ' + counts.changed + ' updated.' +
+            (s.updated != null ? ('\nUpdated: ' + s.updated + '  Created: ' + s.created + '  Skipped: ' + s.skipped) : ''));
+        });
       })
       .catch(function (err) { alert('Save failed: ' + (err && err.message ? err.message : err)); _fcEventSetSaveEnabled(true); });
     return;
@@ -1235,7 +1240,7 @@ function saveNewTargetRule() {
     months.forEach(m => { payload[`${m}_pct`] = percentages[m]; });
     if (!window.KM.DB.upsertFcTargetRule) { alert('Target rule write API not available.'); return; }
     window.KM.DB.upsertFcTargetRule(payload)
-      .then(() => { renderTargetRulesTable(); closeFcModal(); alert('Target rule saved to DB'); })
+      .then(() => { _fcAfterWrite(function () { renderTargetRulesTable(); closeFcModal(); alert('Target rule saved to DB'); }); })
       .catch(err => alert('Save failed: ' + (err && err.message ? err.message : err)));
     return;
   }
@@ -1335,7 +1340,7 @@ function deleteTargetRule(ruleId) {
   if (_fcUseDb()) {
     if (!window.KM.DB.deleteFcTargetRule) { alert('Target rule delete API not available.'); return; }
     window.KM.DB.deleteFcTargetRule({ target_rule_id: ruleId })
-      .then(() => { renderTargetRulesTable(); })
+      .then(() => { _fcAfterWrite(function () { renderTargetRulesTable(); }); })
       .catch(err => alert('Delete failed: ' + (err && err.message ? err.message : err)));
     return;
   }
@@ -1594,6 +1599,9 @@ function proceedToFcMode() {
 
 // Open Regular Forecast Builder modal.
 function openRegularUpdateModal() {
+  // SECONDARY surface: the builder reads marketplace_skus / sku_details from the broad cache. In Workspace mode the
+  // primary render never loads it, so lazy-load it here (once) before populating the builder, then re-open.
+  if (_fcEffectiveWorkspace() && !window._opDbCache) { _fcEnsureBroadCacheThen(openRegularUpdateModal); return; }
   var now = new Date();
   document.getElementById('regular-target-year').value = fcTargetYear;
   document.getElementById('regular-base-year').value = fcTargetYear - 1;
@@ -1637,7 +1645,7 @@ function onRegularSkuChange() { onRegularScopeChange(); }
 function _fcResolveMarketplaceKey(value) {
   value = String(value == null ? '' : value).trim();
   if (!value) return '';
-  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var mkts = _fcGetMarketplaces();   // Workspace (scoped) → read-model; Legacy → getMarketplaces()
   function lo(v){ return String(v == null ? '' : v).trim().toLowerCase(); }
   // Already a canonical key?
   if (mkts.some(function(m){ return lo(m.marketplace) === lo(value); })) return value;
@@ -1651,7 +1659,7 @@ function _fcResolveMarketplaceKey(value) {
 function _fcMarketplaceLabel(key, company, country) {
   key = String(key == null ? '' : key).trim();
   if (!key) return '';
-  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var mkts = _fcGetMarketplaces();   // Workspace (scoped) → read-model; Legacy → getMarketplaces()
   function up(v){ return String(v == null ? '' : v).trim().toUpperCase(); }
   var exact = mkts.filter(function(m){ return up(m.marketplace) === up(key) &&
     (!company || up(m.company) === up(company)) && (!country || up(m.country) === up(country)) &&
@@ -1665,8 +1673,8 @@ function _fcMarketplaceLabel(key, company, country) {
 // Deduped by value+label PAIR so distinct display names for the same key are all kept (never
 // collapsed on key alone). fc_regular_forecast keys not in the registry appear canonical-only.
 function _fcMarketplaceOptions() {
-  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
-  var fcRows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var mkts = _fcGetMarketplaces();          // Workspace (scoped) → read-model; Legacy → getMarketplaces()
+  var fcRows = _fcGetRegularForecast();     // Workspace (scoped) → read-model; Legacy → getFcRegularForecast()
   var out = [], seenPair = {}, seenValue = {};
   function add(value, label) {
     value = String(value == null ? '' : value).trim(); if (!value) return;
@@ -2198,6 +2206,9 @@ var _evtGroups = [];   // batch-mode group cards: { category, series, regularPri
 
 // Open Event Modal (Scope → Event Info → Mode → Single-SKU rows OR Category/Series group cards).
 function openEventModal() {
+  // SECONDARY surface: the Special Event Builder reads campaigns / marketplace_skus / sku_details / pricing_list from
+  // the broad cache. In Workspace mode the primary render never loads it, so lazy-load it here (once) before opening.
+  if (_fcEffectiveWorkspace() && !window._opDbCache) { _fcEnsureBroadCacheThen(openEventModal); return; }
   document.getElementById('event-target-year').value = fcTargetYear;
   var flagEl = document.getElementById('event-name-input'); if (flagEl) flagEl.value = 'Normal';
   var sdEl = document.getElementById('event-start-date'); if (sdEl) sdEl.value = '';
@@ -3211,9 +3222,11 @@ async function saveEventUpdate() {
       });
       written++;
     }
-    if (typeof renderFcEventTable === 'function') renderFcEventTable();
-    closeFcModal();
-    alert('Saved. campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
+    _fcAfterWrite(function () {
+      if (typeof renderFcEventTable === 'function') renderFcEventTable();
+      closeFcModal();
+      alert('Saved. campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
+    });
   } catch (e) {
     alert('Special Event Save failed — nothing further was written after the error:\n\n' + (e && e.message ? e.message : e) +
       '\n\nIf the campaign writer actions are not deployed yet, redeploy the Apps Script Web App (source ready in 20_campaign_write_handlers.gs). No fake success is reported.');
@@ -3282,11 +3295,13 @@ function saveRegularUpdate() {
       .then(function(res){
         if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _setRegularSaveEnabled(true); return; }
         var s = (res && res.summary) || {};
-        renderFcRegularTable();
-        closeFcModal();
-        alert('Regular Forecast saved — ' + monthLbl + ' ' + P.targetYear + ' (only this month updated).\n' +
-          'Rows written: ' + toWrite.length +
-          (s.created != null ? ('\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : ''));
+        _fcAfterWrite(function () {
+          renderFcRegularTable();
+          closeFcModal();
+          alert('Regular Forecast saved — ' + monthLbl + ' ' + P.targetYear + ' (only this month updated).\n' +
+            'Rows written: ' + toWrite.length +
+            (s.created != null ? ('\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : ''));
+        });
       })
       .catch(function(err){ alert('Save failed: ' + (err && err.message ? err.message : err)); _setRegularSaveEnabled(true); });
     return;
@@ -3403,10 +3418,113 @@ window.debugFcSummaryDemoData = function() {
 // Cloud (Demo OFF) DB connection: fc_regular_forecast
 // ========================================
 
+// ----------------------------------------------------------------------------------------------------------
+// F1-7G · scoped FC Summary workspace read cutover (mirrors the F1-7B/7C/7D/7F pattern)
+// The FC Summary PRIMARY render (Regular / Special-Event / Target-Rule tables + the Year dropdown + the
+// non-cascading filter universes) sources fc_regular_forecast / fc_special_events / fc_target_rules /
+// marketplaces from ONE scoped `fcSummary` workspace — NO broad Operation DB for the primary render.
+// Kill switch: KM.api.setWorkspaceEnabled('fcSummary', false) → instant Legacy broad-cache. Canonical default ON.
+// The page's SECONDARY builder/import modals still read the broad cache (marketplace_skus / sku_details /
+// campaigns / pricing_list), lazily loaded ONLY when such a modal opens — the primary render never depends on it.
+// The Special Event WRITE path (incl. Event Assist) is UNCHANGED here — its browser-computed forecast authority is
+// flagged separately as EVENT_ASSIST_AUTHORITY_REDESIGN_REQUIRED (a deferred, separately-authorized redesign).
+// ----------------------------------------------------------------------------------------------------------
+function _fcEffectiveWorkspace() {
+  return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+    window.KM.api.workspaceApiActive('fcSummary'));
+}
+var _fcReadModel = null;   // workspace-sourced { fcRegularForecast, fcSpecialEvents, fcTargetRules, marketplaces } or null = Legacy
+var _fcReadSeq = 0;
+
+// read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
+function _fcGetRegularForecast() {
+  if (_fcReadModel) return _fcReadModel.fcRegularForecast;
+  return (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+}
+function _fcGetSpecialEvents() {
+  if (_fcReadModel) return _fcReadModel.fcSpecialEvents;
+  return (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
+}
+function _fcGetTargetRules() {
+  if (_fcReadModel) return _fcReadModel.fcTargetRules;
+  return (window.KM && window.KM.DB && window.KM.DB.getFcTargetRules) ? window.KM.DB.getFcTargetRules() : [];
+}
+function _fcGetMarketplaces() {
+  if (_fcReadModel) return _fcReadModel.marketplaces;
+  return (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+}
+
+// Lazy broad-cache load for the SECONDARY builder/import modals (they still read marketplace_skus / sku_details /
+// campaigns / pricing_list from the broad cache). The PRIMARY render never depends on this. No-op once loaded.
+function _fcEnsureBroadCacheThen(cb) {
+  if (window._opDbCache) { if (typeof cb === 'function') cb(); return; }
+  var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) ? window.KM.DB.loadOperationDb : (window.reloadOperationDb || null);
+  if (!loader) { if (typeof cb === 'function') cb(); return; }
+  loader({ force: true }).then(function () { if (typeof cb === 'function') cb(); }).catch(function () { if (typeof cb === 'function') cb(); });
+}
+
+// Bounded loading/error region for the primary FC tables (reuses KM.loadState — no new loading infra).
+var _fcRegionCtl = null;
+function _fcRegion_() {
+  if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+  if (_fcRegionCtl) return _fcRegionCtl;
+  _fcRegionCtl = window.KM.loadState.createRegion({
+    render: function (state) {
+      var S = window.KM.loadState.STATES;
+      if (state === S.INITIAL_LOADING) {
+        var msg = '<div class="empty-row">Loading FC Summary…</div>';
+        var reg = document.getElementById('fc-regular-scroll-body'); if (reg) reg.innerHTML = msg;
+        var evt = document.getElementById('fc-event-scroll-body'); if (evt) evt.innerHTML = msg;
+      }
+      // READY / EMPTY / REFRESHING / ERROR → the render fns / _fcRenderError_ own the DOM.
+    }
+  });
+  return _fcRegionCtl;
+}
+function _fcRenderError_(err) {
+  _fcReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
+  var rg = _fcRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+  var code = (err && err.code) || 'FC_SUMMARY_READ_FAILED';
+  var message = (err && err.message) || 'FC Summary read failed';
+  var html = '<div class="empty-row" style="color:#B91C1C;">FC Summary read error: ' + message + ' [' + code + ']</div>';
+  var reg = document.getElementById('fc-regular-scroll-body'); if (reg) reg.innerHTML = html;
+  var evt = document.getElementById('fc-event-scroll-body'); if (evt) evt.innerHTML = html;
+  var rf = document.getElementById('fc-regular-fixed-body'); if (rf) rf.innerHTML = '';
+  var ef = document.getElementById('fc-event-fixed-body'); if (ef) ef.innerHTML = '';
+}
+
+// Scoped read: Workspace (canonical) → getWorkspace('fcSummary') → adapt → _fcReadModel. Fail-closed (throws on error;
+// NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.
+function _fcWorkspaceRefresh_() {
+  var mySeq = ++_fcReadSeq;
+  var rg = _fcRegion_(); if (rg) rg.beginLoad(!!_fcReadModel);
+  if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+    return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'FC Summary Workspace API unavailable.' });
+  }
+  return Promise.resolve(window.KM.api.getWorkspace('fcSummary', {})).then(function (env) {
+    if (mySeq !== _fcReadSeq) return _fcReadModel;   // a newer read superseded this one
+    if (env && env.success && env.data) {
+      _fcReadModel = window.KM.DB.adaptFcSummaryWorkspace(env.data);
+      if (rg) rg.set(_fcReadModel.fcRegularForecast.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+      return _fcReadModel;
+    }
+    throw (env && env.errors && env.errors[0]) || { code: 'FC_SUMMARY_READ_FAILED', message: 'FC Summary workspace request failed.' };
+  });
+}
+
+// Post-write reconcile: in Workspace mode re-read the scoped fcSummary workspace so the primary render reflects the write
+// (the broad cache the db-api writer reloaded is IGNORED by the primary render), THEN run cb (the page's own
+// exit-edit / close-modal / re-render). Legacy mode (or Demo): run cb immediately (the writer already reloaded the cache).
+function _fcAfterWrite(cb) {
+  var live = (typeof _fcUseDb !== 'function') || _fcUseDb();
+  if (!_fcEffectiveWorkspace() || !live) { if (typeof cb === 'function') cb(); return; }
+  _fcWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _fcRenderError_(err); });
+}
+
 // Map fc_regular_forecast rows to the Regular Forecast render shape.
 // Source of truth is fc_regular_forecast ONLY (no marketplace_skus universe supplementation here).
 function _getDbFcRegularData() {
-    var fcRows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+    var fcRows = _fcGetRegularForecast();   // Workspace (scoped) → read-model; Legacy → getFcRegularForecast()
     return fcRows.map(function(r) {
         return {
             sku: r.sku,
@@ -3432,7 +3550,7 @@ function _fcUseDb() {
 
 // Map fc_special_events rows → Event Forecast render shape (Demo OFF). Source = getFcSpecialEvents().
 function _getDbFcEventData() {
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
+    var rows = _fcGetSpecialEvents();   // Workspace (scoped) → read-model; Legacy → getFcSpecialEvents()
     return rows.map(function(r) {
         var raw = r.raw || {};
         return {
@@ -3457,7 +3575,7 @@ function _getDbFcEventData() {
 // Extra UI columns (year / category / series / sku) are read from raw for round-trip fidelity.
 var _FC_MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 function _getDbTargetRules() {
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcTargetRules) ? window.KM.DB.getFcTargetRules() : [];
+    var rows = _fcGetTargetRules();   // Workspace (scoped) → read-model; Legacy → getFcTargetRules()
     return rows.map(function(r) {
         var raw = r.raw || {};
         var fallback = (r.targetPercentage != null) ? r.targetPercentage : 100;
@@ -3500,7 +3618,7 @@ function _populateFcFilterOptionsFromDb() {
 function _populateFcYearFromDb() {
     var sel = document.getElementById('fc-year-select');
     if (!sel) return;
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+    var rows = _fcGetRegularForecast();   // Workspace (scoped) → read-model; Legacy → getFcRegularForecast()
     var years = [];
     rows.forEach(function(r) { var y = String(r.year || '').trim(); if (y && years.indexOf(y) === -1) years.push(y); });
     years.sort(function(a, b) { return Number(b) - Number(a); });
@@ -3531,6 +3649,15 @@ function _fcSummaryEnsureDbAndRender() {
         renderFcEventTable();
         if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable();  // live fc_target_rules
     };
+
+    // Canonical: scoped fcSummary workspace (NO broad Operation DB for the primary render). Fail-closed on error —
+    // a bounded FC region error, never a silent legacy broad fallback (that path lives ONLY in the Legacy branch).
+    if (_fcEffectiveWorkspace()) {
+        _fcWorkspaceRefresh_().then(afterLoad).catch(function (err) { _fcRenderError_(err); });
+        return;
+    }
+
+    // Legacy (kill switch OFF): the original broad-cache path — unchanged.
     if (!window._opDbCache) {
         var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
             ? window.KM.DB.loadOperationDb
@@ -3567,7 +3694,7 @@ var FC_IMPORT_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 
 var _fcImportResolved = null; // { company, country, marketplace, marketplaceId }
 
 function _fcImportActiveMarketplaces() {
-    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    var list = _fcGetMarketplaces();   // Workspace (scoped) → read-model; Legacy → getMarketplaces()
     return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
 }
 
@@ -3841,9 +3968,10 @@ function runFcImport() {
                 };
                 var mergedResults = clientErrors.concat(data.results || []);
                 _fcRenderImportResult({ summary: mergedSummary, results: mergedResults }, 0);
-                // Wrapper already reloaded the DB cache on success — re-render the Regular Forecast table.
+                // Re-render the Regular Forecast table. Workspace: scoped fcSummary re-read (the primary render ignores
+                // the broad cache the import wrapper reloaded); Legacy: render from the reloaded cache.
                 fcPaginationState.currentPage = 1;
-                renderFcRegularTable();
+                _fcAfterWrite(function () { renderFcRegularTable(); });
                 // Clean success (no errors) → switch the action button to "Done" (completion action).
                 // Any errors → keep it as "Import" so the user can fix and retry.
                 if (mergedSummary.error === 0 && runBtn) {

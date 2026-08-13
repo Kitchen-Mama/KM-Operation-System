@@ -385,3 +385,35 @@ two shipment pages to CUTOVER_PAGES. Full regression: only the 4 known baseline 
 **Workspace status:** IMPLEMENTED/canonical = weeklyShipping, recommendation, purchaseOrder, requestOrder, shipment.
 REGISTERED-only = inventoryReplenishment, fcSummary, skuDetails. Next: fcSummary/skuDetails workspaces, request-order.js
 secondary surfaces, or Batch F (writer-reload + global-prime retirement).
+
+### F1-7G-R1 delta (2026-08-13) — FC Summary scoped read DONE (Event Assist redesign DEFERRED)
+`fcSummary` is now a CANONICAL workspace (new backend `58_api_v1_fc_summary_workspace.gs` + router action
+`fcSummary.workspace.get`; kill switch `setWorkspaceEnabled('fcSummary', false)`) — DISTINCT from the bounded `53_`
+`fcSummary.raw.get` AI-Plan Layer-1 owner (no collision). `fc-summary.js`'s PRIMARY render (Regular / Special-Event /
+Target-Rule tables + the Year dropdown + the non-cascading filter universes) sources fc_regular_forecast /
+fc_special_events / fc_target_rules / marketplaces from the scoped workspace — no broad Operation DB for the primary
+render, scoped post-write refresh (`_fcAfterWrite`), fail-closed (`FC_SUMMARY_READ_FAILED`; no silent legacy fallback),
+`KM.loadState` region. The workspace returns RAW passthrough of the FULL four tables (bounded by a non-silent `capped`
+backstop) — server-side period/scope narrowing would shrink the Year/filter universes, so it stays a follow-up (BEFORE ==
+AFTER). db-api `adaptFcSummaryWorkspace` re-normalizes with the SAME normalizers + per-array filters as
+`normalizeOperationDb` → arrays byte-identical to getFcRegularForecast/getFcSpecialEvents/getFcTargetRules/getMarketplaces
+(proven: the ACTUAL `_getDbFcRegularData`/`_getDbFcEventData`/`_getDbTargetRules` yield identical render shapes from the
+read-model vs the getters). RAW vs ADJUSTED forecast authorities stay distinct: 58_ emits ONLY raw persisted rows (no
+Target%, no blending, no Gap/Recommendation). **Target% is NOT applied to any displayed/written forecast on this page**
+(the browser `base×target%` multiply is debug-only/unwired) → no frontend parallel canonical Forecast READ authority.
+The page's SECONDARY builder/import modals still read the broad cache, **lazy-loaded on modal open** (`_fcEnsureBroadCacheThen`),
+so the primary render never depends on it. **§4 Event Assist — `EVENT_ASSIST_FRONTEND_WRITE_AUTHORITY_PRESENT`:** the
+growth/adjust magnitude is browser-computed (`Math.round(base×(1+g/100))`) and persisted verbatim as `fc_special_events.fc_qty`
+(the backend validates but does not recompute it). Correcting it needs a NEW backend forecast-derivation owner + a changed
+Special Event write contract = a Forecast redesign → **`EVENT_ASSIST_AUTHORITY_REDESIGN_REQUIRED`**, raised as a SCOPED,
+DEFERRED write-authority HALT (NOT mixed into this transport cutover; the Special Event write path is left byte-identical).
+**Apps Script sync + new /exec REQUIRED** (58_ + router; deploy backend before/with the canonical-ON frontend, or hold
+with the kill switch). Frontend deploy: km-api-foundation.js + operation-system-db-api.js + fc-summary.js. Bundle/DB
+unchanged. Contract tests: PREREQ-2 workspace-slot assertion updated (slot now legitimately filled, distinct handler);
+foundation R3b now "the other two" (inventoryReplenishment, skuDetails); compat CUTOVER_PAGES += fc-summary.js. Full
+regression: only the 4 known baseline failures. See `F1_7G_FC_SUMMARY_WORKSPACE_AND_CUTOVER_R1.md`.
+
+**Workspace status:** IMPLEMENTED/canonical = weeklyShipping, recommendation, purchaseOrder, requestOrder, shipment, **fcSummary**.
+REGISTERED-only = inventoryReplenishment, skuDetails. Next: skuDetails workspace, fc-summary.js SECONDARY surfaces +
+the DEFERRED Event Assist authority redesign, request-order.js secondary surfaces, or Batch F (writer-reload +
+global-prime retirement). Do NOT begin automatically.
