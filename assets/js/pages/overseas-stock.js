@@ -634,13 +634,102 @@ function openOverseasInfo(idx) {
 var OVERSEAS_IMPORT_HEADERS = ['warehouse_id', 'sku', 'available_stock', 'reserved_stock', 'damaged_stock', 'on_the_way_qty', 'on_the_way_eta', 'note'];
 var OVERSEAS_QTY_FIELDS = ['available_stock', 'reserved_stock', 'damaged_stock', 'on_the_way_qty'];
 
-function openOverseasImportModal() {
+// ===== F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1 — relationally-filtered import scope (Company/Country/Warehouse) =====
+// Company / Country / Warehouse come ONLY from the canonical `warehouses` master (active, NON-factory = Overseas/3PL).
+// The three selectors relationally constrain one another; a valid scope gates BOTH the scoped template download and the
+// file import. `warehouse_id` is the sole identity authority; company/country are resolved from it (never inferred).
+// The server re-validates the scope + every row — this frontend filtering is UX only.
+var _ovsImportScope = { company: '', country: '', warehouseId: '' };
+
+function _ovsEligibleWarehouses() {
+    return ((window.KM && window.KM.DB && window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])
+        .filter(function (w) { return w && w.warehouseId && w.isFactoryWarehouse !== true && w.isActive !== false; });
+}
+function _ovsWhById(id) { var t = String(id || '').trim(); return _ovsEligibleWarehouses().filter(function (w) { return String(w.warehouseId).trim() === t; })[0] || null; }
+function _ovsWhCompany(w) { return String((w && w.company) || '').trim(); }
+function _ovsWhCountry(w) { return String((w && w.country) || '').trim(); }
+function _ovsDistinctSorted(arr) { var seen = {}, out = []; (arr || []).forEach(function (v) { v = String(v || '').trim(); if (v && !seen[v]) { seen[v] = 1; out.push(v); } }); return out.sort(); }
+
+// Relational option sets: companies constrained by the current COUNTRY; countries by the current COMPANY; warehouses by BOTH.
+function _ovsScopeOptions() {
+    var whs = _ovsEligibleWarehouses(), sc = _ovsImportScope;
+    var companies = _ovsDistinctSorted(whs.filter(function (w) { return !sc.country || _ovsWhCountry(w) === sc.country; }).map(_ovsWhCompany));
+    var countries = _ovsDistinctSorted(whs.filter(function (w) { return !sc.company || _ovsWhCompany(w) === sc.company; }).map(_ovsWhCountry));
+    var warehouses = whs.filter(function (w) { return (!sc.company || _ovsWhCompany(w) === sc.company) && (!sc.country || _ovsWhCountry(w) === sc.country); });
+    return { companies: companies, countries: countries, warehouses: warehouses };
+}
+function _ovsImportScopeValid() {
+    var sc = _ovsImportScope;
+    if (!sc.company || !sc.country || !sc.warehouseId) return false;
+    var w = _ovsWhById(sc.warehouseId);
+    return !!(w && _ovsWhCompany(w) === sc.company && _ovsWhCountry(w) === sc.country);
+}
+function _ovsSanitizeFilePart_(s) { return String(s || '').trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'NA'; }
+
+function onOverseasImportScopeChange(kind, value) {
+    var sc = _ovsImportScope;
+    value = String(value == null ? '' : value).trim();
+    if (kind === 'warehouse') {
+        sc.warehouseId = value;
+        var w = _ovsWhById(value);
+        if (w) { sc.company = _ovsWhCompany(w); sc.country = _ovsWhCountry(w); }   // converge company/country to the warehouse
+    } else if (kind === 'company') { sc.company = value; }
+    else if (kind === 'country') { sc.country = value; }
+    // prune impossible combinations
+    if (sc.warehouseId) {
+        var cw = _ovsWhById(sc.warehouseId);
+        if (!cw || (sc.company && _ovsWhCompany(cw) !== sc.company) || (sc.country && _ovsWhCountry(cw) !== sc.country)) sc.warehouseId = '';
+    }
+    if (sc.company && sc.country) {
+        var any = _ovsEligibleWarehouses().some(function (w2) { return _ovsWhCompany(w2) === sc.company && _ovsWhCountry(w2) === sc.country; });
+        if (!any) { if (kind === 'company') sc.country = ''; else if (kind === 'country') sc.company = ''; }
+    }
+    _ovsClearImportFile_();   // switching scope invalidates any file prepared for the previous warehouse context
+    _ovsRenderImportScope();
+}
+
+function _ovsRenderImportScope() {
+    var opts = _ovsScopeOptions(), sc = _ovsImportScope;
+    function fill(id, values, selected, placeholder) {
+        var el = document.getElementById(id); if (!el) return;
+        el.innerHTML = '<option value="">' + placeholder + '</option>' +
+            values.map(function (v) { return '<option value="' + _ovsEscapeHtml(v) + '"' + (v === selected ? ' selected' : '') + '>' + _ovsEscapeHtml(v) + '</option>'; }).join('');
+        el.value = selected || '';
+    }
+    fill('overseas-import-company', opts.companies, sc.company, opts.companies.length ? 'Select company…' : 'No eligible warehouses');
+    fill('overseas-import-country', opts.countries, sc.country, opts.countries.length ? 'Select country…' : '—');
+    var whEl = document.getElementById('overseas-import-warehouse');
+    if (whEl) {
+        whEl.innerHTML = '<option value="">' + (opts.warehouses.length ? 'Select warehouse…' : 'No eligible warehouses') + '</option>' +
+            opts.warehouses.map(function (w) { var label = (w.warehouseName ? w.warehouseName + ' — ' : '') + w.warehouseId; return '<option value="' + _ovsEscapeHtml(w.warehouseId) + '"' + (w.warehouseId === sc.warehouseId ? ' selected' : '') + '>' + _ovsEscapeHtml(label) + '</option>'; }).join('');
+        whEl.value = sc.warehouseId || '';
+    }
+    var valid = _ovsImportScopeValid();
+    var readout = document.getElementById('overseas-import-scope-readout');
+    if (readout) {
+        if (valid) {
+            var vw = _ovsWhById(sc.warehouseId);
+            readout.style.display = 'block';
+            readout.innerHTML = '<strong>Import Scope</strong> — Company: <strong>' + _ovsEscapeHtml(sc.company) + '</strong> · Country: <strong>' + _ovsEscapeHtml(sc.country) + '</strong> · Warehouse: <strong>' + _ovsEscapeHtml((vw && vw.warehouseName ? vw.warehouseName + ' / ' : '') + sc.warehouseId) + '</strong>';
+        } else { readout.style.display = 'none'; readout.innerHTML = ''; }
+    }
+    var link = document.getElementById('overseas-import-template-link');
+    if (link) { link.style.opacity = valid ? '1' : '0.45'; link.style.pointerEvents = valid ? '' : 'none'; link.setAttribute('aria-disabled', valid ? 'false' : 'true'); }
     var fileEl = document.getElementById('overseas-import-file');
-    if (fileEl) fileEl.value = '';
-    var resultEl = document.getElementById('overseas-import-result');
-    if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+    if (fileEl) fileEl.disabled = !valid;
     var runBtn = document.getElementById('overseas-import-run-btn');
-    if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; runBtn.dataset.mode = ''; }
+    if (runBtn) runBtn.disabled = !valid || !(fileEl && fileEl.files && fileEl.files.length) || runBtn.dataset.mode === 'done';
+}
+function _ovsClearImportFile_() {
+    var fileEl = document.getElementById('overseas-import-file'); if (fileEl) fileEl.value = '';
+    var resultEl = document.getElementById('overseas-import-result'); if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+    var runBtn = document.getElementById('overseas-import-run-btn'); if (runBtn) { runBtn.textContent = 'Import'; runBtn.dataset.mode = ''; }
+}
+
+function openOverseasImportModal() {
+    _ovsImportScope = { company: '', country: '', warehouseId: '' };
+    _ovsClearImportFile_();
+    _ovsRenderImportScope();
     _showOverseasModal('overseas-import-modal');
 }
 
@@ -652,13 +741,18 @@ function openOverseasImportModal() {
 // import (backward compatible) but is never the generated format. Falls back to the safe .csv template only if the
 // ExcelJS engine is unavailable (still dropdown-less, but the server validation is the authoritative gate).
 function downloadOverseasImportTemplate() {
-    var whs = ((window.KM && window.KM.DB && window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])
-        .filter(function (w) { return w && w.isFactoryWarehouse !== true && w.isActive !== false; });
-    var whIds = whs.map(function (w) { return w.warehouseId; }).filter(Boolean);
-    if (!(window.KM && window.KM.templateExport && window.KM.templateExport.buildAndDownload)) { _downloadOverseasCsvTemplateFallback_(whIds[0] || 'WH-RESUS-US-3PL-WINIT'); return; }
+    // F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1: the template is SCOPED to the selected warehouse. Only a valid
+    // Company/Country/Warehouse context produces a template; warehouse_id is fixed to the selected one (single-value
+    // dropdown + prefilled example row). The user never determines company/country/warehouse_name.
+    if (!_ovsImportScopeValid()) { alert('Select Company, Country and Warehouse first.'); return; }
+    var sc = _ovsImportScope;
+    var selWh = _ovsWhById(sc.warehouseId);
+    var whName = (selWh && selWh.warehouseName) || sc.warehouseId;
+    var fnamePart = _ovsSanitizeFilePart_(sc.company) + '_' + _ovsSanitizeFilePart_(sc.country) + '_' + _ovsSanitizeFilePart_(sc.warehouseId);
+    if (!(window.KM && window.KM.templateExport && window.KM.templateExport.buildAndDownload)) { _downloadOverseasCsvTemplateFallback_(sc.warehouseId, fnamePart); return; }
     var skus = ((window.KM.DB && window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).map(function (s) { return s.sku; }).filter(Boolean);
     var columns = [
-        { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 26, comment: 'REQUIRED. Canonical Overseas/3PL warehouse_id (dropdown — active, non-factory only). The server re-validates identity; Factory / inactive / unknown warehouses are rejected.', dropdown: whIds.slice(0, 200) },
+        { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 26, comment: 'REQUIRED. Prefilled with the selected warehouse (' + sc.warehouseId + '). Do NOT change — one file = one warehouse; the server rejects any other warehouse_id.', dropdown: [sc.warehouseId] },
         { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. Canonical SKU.' },
         { key: 'available_stock', header: 'available_stock', kind: 'business', width: 14, comment: 'Number >= 0 (decimals round UP). Blank = 0.' },
         { key: 'reserved_stock', header: 'reserved_stock', kind: 'business', width: 14, comment: 'Number >= 0. Blank = 0.' },
@@ -668,24 +762,24 @@ function downloadOverseasImportTemplate() {
         { key: 'note', header: 'note', kind: 'business', width: 30, comment: 'Optional note.' }
     ];
     var spec = {
-        filename: 'Overseas_Inventory_Snapshot_Import_Template.xlsx',
+        filename: 'Overseas_Inventory_' + fnamePart + '_Import_Template.xlsx',
         sheetName: 'Overseas Inventory Import',
-        instructionRow: 'Snapshot refresh — imported quantities BECOME the current overseas snapshot for warehouse_id + sku. warehouse_id must be a canonical ACTIVE, NON-FACTORY (Overseas/3PL) warehouse (dropdown); the server rejects Factory / inactive / unknown warehouses.',
+        instructionRow: 'This import updates ONE overseas warehouse only — Company: ' + sc.company + ' · Country: ' + sc.country + ' · Warehouse: ' + whName + ' (' + sc.warehouseId + '). warehouse_id is prefilled; do not mix warehouses. Imported quantities BECOME the current snapshot for warehouse_id + sku. The server rejects any other / Factory / inactive / unknown warehouse.',
         masterTemplate: true,
         columns: columns,
-        exampleRow: { warehouse_id: (whIds[0] || 'WH-RESUS-US-3PL-WINIT'), sku: (skus[0] || 'SAMPLE-SKU'), available_stock: 0, reserved_stock: 0, damaged_stock: 0, on_the_way_qty: 0, on_the_way_eta: '', note: '' },
-        system: { template_id: 'overseas_inventory_import', template_name: 'Overseas Inventory Snapshot Import', template_version: '2', module: 'overseas_inventory', export_mode: 'import', source_system: 'operation-system' }
+        exampleRow: { warehouse_id: sc.warehouseId, sku: (skus[0] || 'SAMPLE-SKU'), available_stock: 0, reserved_stock: 0, damaged_stock: 0, on_the_way_qty: 0, on_the_way_eta: '', note: '' },
+        system: { template_id: 'overseas_inventory_import', template_name: 'Overseas Inventory Snapshot Import', template_version: '3', module: 'overseas_inventory', export_mode: 'import', source_system: 'operation-system', scope_company: sc.company, scope_country: sc.country, scope_warehouse_id: sc.warehouseId }
     };
     window.KM.templateExport.buildAndDownload(spec).catch(function (err) { alert('Template download failed: ' + (err && err.message ? err.message : err)); });
 }
-// Safe .csv fallback ONLY when ExcelJS is unavailable — a single eligible example id, never an arbitrary literal.
-function _downloadOverseasCsvTemplateFallback_(exampleWhId) {
+// Safe .csv fallback ONLY when ExcelJS is unavailable — prefilled with the SELECTED scoped warehouse_id, never arbitrary.
+function _downloadOverseasCsvTemplateFallback_(exampleWhId, fnamePart) {
     var csv = OVERSEAS_IMPORT_HEADERS.join(',') + '\n' + (exampleWhId + ',SAMPLE-SKU,0,0,0,0,,') + '\n';
     var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = 'overseas_inventory_snapshot_import_template.csv';
+    a.download = 'Overseas_Inventory_' + (fnamePart || 'Import') + '_Template.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -810,6 +904,7 @@ function runOverseasImport() {
     var runBtn = document.getElementById('overseas-import-run-btn');
     if (runBtn && runBtn.dataset.mode === 'done') { closeOverseasModals(); return; }
 
+    if (!_ovsImportScopeValid()) { alert('Select a valid Company / Country / Warehouse scope first.'); return; }
     var fileEl = document.getElementById('overseas-import-file');
     if (!fileEl || !fileEl.files || !fileEl.files.length) { alert('Please choose an .xlsx or .csv file first.'); return; }
     if (!(window.KM && window.KM.DB && window.KM.DB.importOverseasInventorySnapshotBatch)) { alert('Import API is not available.'); return; }
@@ -874,7 +969,10 @@ function _ovsProcessImportCells(cells, runBtn) {
         }
 
         if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Importing...'; }
-        window.KM.DB.importOverseasInventorySnapshotBatch(rows, { createdBy: 'operation-system' })
+        // F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1: carry the SELECTED context; the server re-validates the scope +
+        // every row against the canonical warehouses master (frontend filtering is UX only).
+        var _ovsScope = { company: _ovsImportScope.company, country: _ovsImportScope.country, warehouse_id: _ovsImportScope.warehouseId };
+        window.KM.DB.importOverseasInventorySnapshotBatch(rows, { createdBy: 'operation-system', scope: _ovsScope })
             .then(function(result) {
                 if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
                 if (!result || result.success === false) {
@@ -1317,6 +1415,8 @@ window.closeOverseasModals = closeOverseasModals;
 window.openOverseasImportModal = openOverseasImportModal;
 window.downloadOverseasImportTemplate = downloadOverseasImportTemplate;
 window.runOverseasImport = runOverseasImport;
+window.onOverseasImportScopeChange = onOverseasImportScopeChange;   // F1-UX scoped import selectors (inline onchange)
+window._ovsRenderImportScope = _ovsRenderImportScope;               // file-input onchange re-evaluates the Import gate
 window.openOverseasAdjustModal = openOverseasAdjustModal;
 window.onOverseasAdjustRecordChange = onOverseasAdjustRecordChange;
 window.onOverseasAdjustQtyInput = onOverseasAdjustQtyInput;

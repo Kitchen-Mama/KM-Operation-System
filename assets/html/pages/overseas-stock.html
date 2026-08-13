@@ -221,30 +221,49 @@
                 <!-- ============ Modals ============ -->
                 <div class="ovs-modal-overlay" id="overseas-modal-overlay" onclick="closeOverseasModals()"></div>
 
-                <!-- Import Inventory Modal -->
+                <!-- Import Inventory Modal (F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1: scoped to ONE warehouse) -->
                 <div class="ovs-modal" id="overseas-import-modal">
                     <div class="ovs-modal-content ovs-modal-content--large">
-                        <h3>Import Overseas Inventory Snapshot (CSV)</h3>
+                        <h3>Import Overseas Inventory Snapshot</h3>
                         <div class="ovs-modal-body">
                             <p style="font-size:12px;color:#475569;line-height:1.5;margin:0 0 8px;">
-                                CSV columns: <strong>warehouse_id, sku, available_stock, reserved_stock, damaged_stock, on_the_way_qty, on_the_way_eta, note</strong>.<br>
-                                Do NOT include company / country / warehouse_name / warehouse_type — they are resolved from <strong>warehouse_id</strong>. First row must be the header row.<br>
+                                This import updates <strong>ONE overseas warehouse</strong> only. Select the scope, then download the
+                                scoped template — <strong>warehouse_id is prefilled</strong>. Do not mix warehouses in one file.<br>
+                                Company / country / warehouse name are resolved from <strong>warehouse_id</strong> (do not type them).
                                 Quantities must be numbers ≥ 0 (decimals round up). Non-numeric values are rejected.
                             </p>
+                            <!-- STEP 1 — Import Scope (relationally filtered from the canonical warehouses master) -->
+                            <div class="ovs-form-row" id="overseas-import-scope-row">
+                                <div class="ovs-form-group">
+                                    <label>Company *</label>
+                                    <select id="overseas-import-company" onchange="onOverseasImportScopeChange('company', this.value)"></select>
+                                </div>
+                                <div class="ovs-form-group">
+                                    <label>Country *</label>
+                                    <select id="overseas-import-country" onchange="onOverseasImportScopeChange('country', this.value)"></select>
+                                </div>
+                                <div class="ovs-form-group">
+                                    <label>Warehouse *</label>
+                                    <select id="overseas-import-warehouse" onchange="onOverseasImportScopeChange('warehouse', this.value)"></select>
+                                </div>
+                            </div>
+                            <div id="overseas-import-scope-readout" style="display:none;margin:0 0 12px;padding:8px 12px;background:#f1f5f9;border-radius:6px;font-size:12px;color:#334155;"></div>
+                            <!-- STEP 2 — scoped template -->
                             <p style="margin:0 0 12px;">
-                                <a href="#" id="overseas-import-template-link" onclick="downloadOverseasImportTemplate(); return false;" style="font-weight:600;color:#0080bb;text-decoration:underline;cursor:pointer;">Download CSV Template</a>
+                                <a href="#" id="overseas-import-template-link" onclick="downloadOverseasImportTemplate(); return false;" style="font-weight:600;color:#0080bb;text-decoration:underline;cursor:pointer;">Download Template</a>
                             </p>
+                            <!-- STEP 3 — upload -->
                             <div class="ovs-form-row">
                                 <div class="ovs-form-group">
-                                    <label>CSV File *</label>
-                                    <input type="file" id="overseas-import-file" accept=".csv,text/csv">
+                                    <label>Inventory File (.xlsx / .csv) *</label>
+                                    <input type="file" id="overseas-import-file" accept=".xlsx,.csv,text/csv" onchange="_ovsRenderImportScope()" disabled>
                                 </div>
                             </div>
                             <div id="overseas-import-result" style="display:none;margin-top:12px;max-height:240px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px 12px;font-size:12px;"></div>
                         </div>
                         <div class="ovs-modal-actions">
                             <button class="btn btn-secondary" onclick="closeOverseasModals()">Close</button>
-                            <button class="btn btn-primary" id="overseas-import-run-btn" onclick="runOverseasImport()">Import</button>
+                            <button class="btn btn-primary" id="overseas-import-run-btn" onclick="runOverseasImport()" disabled>Import</button>
                         </div>
                     </div>
                 </div>

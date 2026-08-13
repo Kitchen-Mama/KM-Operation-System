@@ -70,7 +70,10 @@ ok(!/validWarehouses\[warehouseId\]\s*\)/.test(ovsCode), 'the old existence-only
 section('§3/§4/§11/K — templates offer warehouse_id ONLY as an eligibility-filtered dropdown (no free text)');
 // Overseas template: ExcelJS builder, dropdown of ACTIVE NON-FACTORY warehouse ids.
 var ovsTplFn = OVS_JS.slice(OVS_JS.indexOf('function downloadOverseasImportTemplate'), OVS_JS.indexOf('function _downloadOverseasCsvTemplateFallback_'));
-ok(/templateExport\.buildAndDownload/.test(ovsTplFn) && /dropdown:\s*whIds/.test(ovsTplFn), 'K Overseas template uses the KM.templateExport builder with a warehouse_id dropdown');
+// F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1: the template is now SCOPED to the ONE selected warehouse (dropdown = the
+// selected warehouse_id only), replacing the former all-eligible-ids dropdown. Eligibility (active, non-factory) is now
+// enforced by the relational scope selectors (_ovsEligibleWarehouses) + the server scope gate.
+ok(/templateExport\.buildAndDownload/.test(ovsTplFn) && /dropdown:\s*\[sc\.warehouseId\]/.test(ovsTplFn), 'K Overseas template uses the KM.templateExport builder with the selected warehouse_id (scoped dropdown)');
 ok(/isFactoryWarehouse !== true && \w*\.?isActive !== false/.test(OVS_JS) || /isFactoryWarehouse !== true[\s\S]{0,40}isActive !== false/.test(OVS_JS), 'Overseas dropdown filtered to active NON-factory (Overseas/3PL) warehouses');
 ok(!/a\.download = 'overseas_inventory_snapshot_import_template\.csv'[\s\S]{0,80}csv \+/.test(OVS_JS), 'the free-text CSV template is no longer the primary generated format (xlsx dropdown is)');
 // Factory template (regression): dropdown of ACTIVE FACTORY warehouse ids.

@@ -33,6 +33,41 @@ function overseasImportWarehouseMessage_(code) {
     : code === 'WAREHOUSE_NOT_OVERSEAS' ? 'warehouse is a Factory warehouse — not an eligible Overseas/3PL target'
     : 'warehouse_id not found in warehouses';
 }
+
+// F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1 — server-side IMPORT SCOPE gate (PURE, fail-closed, whole-batch).
+// A scoped import declares the selected { company, country, warehouse_id } context (the UI selection is part of the
+// contract, NOT trusted from the CSV). BEFORE any mutation this proves: (1) the selected warehouse exists + is eligible
+// (active, non-factory) — reusing overseasImportWarehouseIssue_; (2) the selected company/country match the canonical
+// warehouses facts (never inferred, never CSV-authoritative); (3) EVERY row's warehouse_id equals the selected one
+// (one file = one warehouse). Any mismatch fails the WHOLE batch (no partial import, no silent row rewrite).
+// whRec (from warehouseById) = { isActive, isFactory, company, country }. Returns { ok:true } or
+// { ok:false, code, message, details }. When scope.warehouse_id is absent the gate is a no-op (legacy per-row path).
+function overseasImportEq_(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
+function overseasImportScopeCheck_(rows, scope, warehouseById) {
+  scope = scope || {};
+  var selWh = String(scope.warehouse_id || '').trim();
+  if (!selWh) return { ok: true };   // no declared scope → legacy per-row eligibility path (backward compatible)
+  var rec = (warehouseById || {})[selWh] || null;
+  var issue = overseasImportWarehouseIssue_(rec);
+  if (issue) {
+    return { ok: false, code: 'IMPORT_WAREHOUSE_SCOPE_INVALID', message: 'Selected warehouse invalid: ' + overseasImportWarehouseMessage_(issue) + ' (' + selWh + ')', details: { warehouse_id: selWh, issue: issue } };
+  }
+  var selCompany = String(scope.company || '').trim();
+  var selCountry = String(scope.country || '').trim();
+  if (selCompany && rec.company != null && String(rec.company).trim() !== '' && !overseasImportEq_(rec.company, selCompany)) {
+    return { ok: false, code: 'IMPORT_WAREHOUSE_SCOPE_MISMATCH', message: 'Selected company "' + selCompany + '" does not match warehouse ' + selWh + ' (canonical company "' + rec.company + '")', details: { warehouse_id: selWh, expected_company: rec.company, actual_company: selCompany } };
+  }
+  if (selCountry && rec.country != null && String(rec.country).trim() !== '' && !overseasImportEq_(rec.country, selCountry)) {
+    return { ok: false, code: 'IMPORT_WAREHOUSE_SCOPE_MISMATCH', message: 'Selected country "' + selCountry + '" does not match warehouse ' + selWh + ' (canonical country "' + rec.country + '")', details: { warehouse_id: selWh, expected_country: rec.country, actual_country: selCountry } };
+  }
+  for (var i = 0; i < (rows || []).length; i++) {
+    var rwh = String((rows[i] || {}).warehouse_id || '').trim();
+    if (rwh && rwh !== selWh) {
+      return { ok: false, code: 'IMPORT_WAREHOUSE_SCOPE_MISMATCH', message: 'Row ' + (i + 1) + ' warehouse_id "' + rwh + '" does not match the selected warehouse "' + selWh + '". One import file = one warehouse.', details: { expected_warehouse_id: selWh, row_number: (i + 1), actual_warehouse_id: rwh } };
+    }
+  }
+  return { ok: true };
+}
 // __OVSIMPORT_PURE_END__ (test extraction marker — do not remove)
 
 // ========================================
@@ -105,14 +140,30 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
   var wh_active = whHeaders.indexOf('is_active');
   var wh_factory = whHeaders.indexOf('is_factory_warehouse');
   var wh_status = whHeaders.indexOf('status');
+  var wh_company = whHeaders.indexOf('company');   // scoped-import context: canonical company/country facts per warehouse
+  var wh_country = whHeaders.indexOf('country');
   var warehouseById = {};
   for (var w = 1; w < whData.length; w++) {
     var wid = String(whData[w][wh_id] || '').trim();
     if (!wid) continue;
     warehouseById[wid] = {
       isActive: wh_active >= 0 ? overseasImportTruthy_(whData[w][wh_active]) : (wh_status >= 0 ? (String(whData[w][wh_status] || '').trim().toLowerCase() === 'active') : true),
-      isFactory: wh_factory >= 0 ? overseasImportTruthy_(whData[w][wh_factory]) : false
+      isFactory: wh_factory >= 0 ? overseasImportTruthy_(whData[w][wh_factory]) : false,
+      company: wh_company >= 0 ? String(whData[w][wh_company] || '').trim() : '',
+      country: wh_country >= 0 ? String(whData[w][wh_country] || '').trim() : ''
     };
+  }
+
+  // F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1 — server-side scope gate. When the request declares a selected
+  // { company, country, warehouse_id } context (options.scope | scope), validate it against the canonical warehouses
+  // facts and require EVERY row to belong to that ONE warehouse — BEFORE any mutation. Fail-closed for the whole batch
+  // (no partial import, no silent row rewrite). Absent scope → legacy per-row eligibility path (backward compatible).
+  var importScope = (options && options.scope) || body.scope || null;
+  if (importScope) {
+    var scopeGate = overseasImportScopeCheck_(rows, importScope, warehouseById);
+    if (!scopeGate.ok) {
+      return jsonResponse_({ success: false, error: scopeGate.message, code: scopeGate.code, details: scopeGate.details || null });
+    }
   }
 
   // --- existing snapshot business-key map (warehouse_id|sku) ---
