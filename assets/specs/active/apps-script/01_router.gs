@@ -135,6 +135,16 @@ function doPost(e) {
       return jsonResponse_(handleOpenPoRemainingRawGet_(body));
     }
 
+    // API v1 · AI-Plan Layer-1 RAW forecast read owner (Phase F1-7E-PREREQ-2). A body-carrying READ (no write); owner =
+    // 53_api_v1_fc_summary_raw_owner.gs. Reads only fc_regular_forecast + fc_special_events (never getOperationDb).
+    // Exposes basicFcRawT3Qty (raw fc_regular_forecast N+1..N+3 sum) + specialEventFcRawQty (raw fc_special_events
+    // prep-month sum) per SKU, anchored on planning_cycle (NOT the clock). NO Target%, NO blending, NO Recommendation/
+    // Gap; NOT the fcSummary workspace and NOT consumed by the AI Plan yet (composed later in PREREQ-5). No business
+    // logic here.
+    if (action === 'fcSummary.raw.get') {
+      return jsonResponse_(handleFcSummaryRawGet_(body));
+    }
+
     // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
     // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
     // never writes/persists/creates a draft). No business logic here.

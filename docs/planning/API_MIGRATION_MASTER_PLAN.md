@@ -278,3 +278,24 @@ failures. See `F1_7E_PREREQ_1_OPEN_PO_REMAINING_SCOPED_OWNER_R1.md`.
 **PREREQ status:** PREREQ-0 = DONE · PREREQ-1 = DONE · PREREQ-2 = NOT_STARTED · PREREQ-3 = NOT_STARTED · PREREQ-4 =
 NOT_STARTED · PREREQ-5 = NOT_STARTED. Next: **PREREQ-2 fcSummary scoped raw-forecast owner** (raw fc_regular_forecast +
 fc_special_events prep-month, no Target%/blend; honor PDR-2 time-anchor).
+
+### F1-7E-PREREQ-2-R1 delta (2026-08-13) — FC-Summary raw forecast read owner DONE
+New backend owner `53_api_v1_fc_summary_raw_owner.gs` + router action `fcSummary.raw.get` exposes two AI-Plan Layer-1 RAW
+facts per SKU/site/cycle: `basicFcRawT3Qty` (raw fc_regular_forecast N+1..N+3 sum) and `specialEventFcRawQty` (raw
+fc_special_events prep-month sum). **PDR-2 resolved:** time authority = `planning_cycle` "RECO-YYYY-MM" (REQUIRED,
+fail-closed on malformed); window = anchor+1..anchor+3 with year wrap (== browser `_roMonthWindow(1,3)`); never the
+server/browser clock. Reproduces `basicT3()` (group by UPPER(sku)|UPPER(country)|LOWER(marketplace), company-independent;
+per-window-month row-by-year-else-first; parseFloat month cells) and `_roSpecialEventsTotal()` (conditional-wildcard scope
+incl. company + scope_type=sku; prep-month = start−30d with the period-fallback ported; 100% each event once) EXACTLY —
+no Target%, no blending, Basic and Special kept separate. Dedicated bounded owner (action `.raw.get`, NOT the broader
+`fcSummary.workspace.get` slot — no authority conflict); reads only fc_regular_forecast + fc_special_events, missing-safe
+(match browser graceful-empty); never getOperationDb; read-only; no second forecast engine; KMPD/recommendation/gap
+untouched. **BEFORE == AFTER proven** by a gold-standard suite (40/0) running the real browser basicT3()/
+_roSpecialEventsTotal() over real db-api normalizers with a frozen `_roTpeNow` anchor == planning_cycle, incl. year
+crossing. No AI-Plan cutover (request-order.js still broad-cache; composed later in PREREQ-5). **Apps Script sync + new
+/exec REQUIRED** (53_ + router; safe to deploy independently — nothing consumes it yet). No frontend/bundle/DB change.
+Full regression: only the 4 known baseline failures. See `F1_7E_PREREQ_2_FC_SUMMARY_RAW_FORECAST_OWNER_R1.md`.
+
+**PREREQ status:** PREREQ-0 DONE · PREREQ-1 DONE · PREREQ-2 DONE · PREREQ-3 NOT_STARTED · PREREQ-4 NOT_STARTED ·
+PREREQ-5 NOT_STARTED. Next: **PREREQ-3 scoped raw-inventory read owner** (raw amazon_inventory_snapshot latest strict
+scope + overseas_inventory_snapshot Σ + factory_stock Σ; raw pools only, no allocation).
