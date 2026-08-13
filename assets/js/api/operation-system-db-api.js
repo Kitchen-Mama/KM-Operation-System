@@ -2411,6 +2411,31 @@ window.KM.DB.adaptRequestOrderWorkspace = function(data) {
     return { orders: orders, lines: lines, lineSources: lineSources, warehouses: warehouses, skuDetails: skuDetails, supplierPriceList: supplierPriceList };
 };
 
+// F1-7F: expose the canonical Shipment normalizers so a scoped-workspace page adapter produces records IDENTICAL to the
+// broad-cache getters from the workspace DTO's raw passthrough (BEFORE == AFTER). Read-only, pure mappers.
+window.KM.DB.normalizeShipment = function(raw) { return normalizeShipmentRecord(raw); };
+window.KM.DB.normalizeShipmentLine = function(raw) { return normalizeShipmentLineRecord(raw); };
+
+// F1-7F: adapt the scoped shipment workspace View-Model to the SAME arrays the Shipment pages consume from the broad
+// cache — each table run through its canonical normalizer with the SAME per-array filter normalizeOperationDb applies,
+// so the adapted arrays equal the legacy getters exactly. Composes persisted shipment facts ONLY (no FIFO/allocation/
+// PO/receipt/factory authority). Map-extra arrays are present only when the workspace was called with their include.
+window.KM.DB.adaptShipmentWorkspace = function(data) {
+    data = data || {};
+    var shipments = (data.shipments || []).map(function(s) { return normalizeShipmentRecord((s && s.raw) || {}); }).filter(function(r) { return r.shipmentId; });
+    var shipmentLines = (data.shipmentLines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; });
+    var warehouses = (data.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; });
+    var carrierRateCards = (data.carrierRateCards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; });
+    var out = { shipments: shipments, shipmentLines: shipmentLines, warehouses: warehouses, carrierRateCards: carrierRateCards };
+    // Map-extras (On-the-Way) — same normalizers + filters as normalizeOperationDb; [] when the include was not requested.
+    out.shipmentRoutes = (data.shipmentRoutes || []).map(normalizeShipmentRouteRecord).filter(function(r) { return r.shipmentRouteId || r.shipmentId || r.locationName || r.latitude !== null; });
+    out.shipmentEvents = (data.shipmentEvents || []).map(normalizeShipmentEventRecord).filter(function(r) { return r.shipmentEventId || r.shipmentId || r.eventType; });
+    out.logisticsLocations = (data.logisticsLocations || []).map(normalizeLogisticsLocationRecord).filter(function(r) { return r.logisticsLocationId || r.locationCode || r.locationName || r.warehouseId || r.factoryId || r.latitude !== null; });
+    out.shipmentRouteTemplates = (data.shipmentRouteTemplates || []).map(normalizeShipmentRouteTemplateRecord).filter(function(r) { return r.routeTemplateId || r.routeTemplateName || r.destinationCountry || r.originCountry; });
+    out.shipmentRouteTemplateNodes = (data.shipmentRouteTemplateNodes || []).map(normalizeShipmentRouteTemplateNodeRecord).filter(function(r) { return r.routeTemplateNodeId || r.routeTemplateId || r.nodeName || r.nodeCode || r.latitude !== null; });
+    return out;
+};
+
 window.KM.DB.getRequestOrderAllocationDrafts = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.requestOrderAllocationDrafts || [];

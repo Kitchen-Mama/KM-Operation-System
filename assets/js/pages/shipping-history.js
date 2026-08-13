@@ -709,12 +709,69 @@ function _shDistinct(arr) {
 //   Shipment Overview → #shippinghistory-section   (full filter bar; shipped onward)
 // ============================================================
 
-// Re-render whichever Shipment page is currently active. Called by the card action handlers
-// after a write (updateShipment already reloads the DB, so render-only is correct here).
+// ---- F1-7F · scoped Shipment workspace read cutover (mirrors the F1-7B/7C/7D pattern) ----
+// The Shipment Draft/Overview primary read sources shipments/shipment_lines (+ carrier_rate_cards/warehouses) from ONE
+// scoped `shipment` workspace — no broad Operation DB for the primary render. Kill switch: setWorkspaceEnabled('shipment',
+// false). Canonical default ON.
+function _shEffectiveWorkspace() {
+    return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+        window.KM.api.workspaceApiActive('shipment'));
+}
+var _shReadModel = null;   // workspace-sourced { shipments, shipmentLines, carrierRateCards, warehouses, ... }, or null = Legacy
+var _shReadSeq = 0;
+var _shRegionEl = null, _shRegion = null;
+// read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
+function _shGetShipments() { return _shReadModel ? _shReadModel.shipments : ((window.KM.DB.getShipments && window.KM.DB.getShipments()) || []); }
+function _shGetShipmentLines() { return _shReadModel ? _shReadModel.shipmentLines : ((window.KM.DB.getShipmentLines && window.KM.DB.getShipmentLines()) || []); }
+function _shGetCarrierRateCards() { return _shReadModel ? _shReadModel.carrierRateCards : ((window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || []); }
+function _shGetWarehouses() { return _shReadModel ? _shReadModel.warehouses : ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || []); }
+
+function _shActiveListEl_() {
+    var draftSec = document.getElementById('shipment-draft-section');
+    if (draftSec && draftSec.classList.contains('active')) return draftSec.querySelector('.history-list') || draftSec.querySelector('[class*="list"]');
+    var ovSec = document.getElementById('shippinghistory-section');
+    return ovSec ? (ovSec.querySelector('.history-list')) : null;
+}
+function _shRegion_() {
+    if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+    var el = _shActiveListEl_(); if (!el) return null;
+    if (_shRegion && _shRegionEl === el) return _shRegion;
+    _shRegionEl = el; _shRegion = window.KM.loadState.bindElement(el, 'Loading shipments…');
+    return _shRegion;
+}
+// Scoped read: Workspace (canonical) → getWorkspace('shipment') → adapt → renderFn. Fail-closed (bounded region ERROR;
+// NO silent legacy broad fallback). Also the scoped POST-WRITE refresh path.
+function _shRefresh_(renderFn) {
+    var mySeq = ++_shReadSeq;
+    var rg = _shRegion_();
+    if (rg) rg.beginLoad(!!_shReadModel);
+    if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _shRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Shipment Workspace API unavailable.' }); return; }
+    Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 } })).then(function (env) {
+        if (mySeq !== _shReadSeq) return;
+        if (env && env.success) {
+            _shReadModel = window.KM.DB.adaptShipmentWorkspace(env.data);
+            if (rg) rg.set(_shReadModel.shipments.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+            if (typeof renderFn === 'function') renderFn();
+        } else {
+            _shRenderError_((env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Shipment workspace request failed.' });
+        }
+    }).catch(function (e) { if (mySeq !== _shReadSeq) return; _shRenderError_({ code: 'SHIPMENT_READ_FAILED', message: String(e && e.message || e) }); });
+}
+function _shRenderError_(err) {
+    _shReadModel = null;
+    var rg = _shRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+    var el = _shActiveListEl_();
+    if (el) { el.hidden = false; el.innerHTML = '<div style="color:#B91C1C;padding:12px;font-size:13px;">Shipment read error: ' + _shEsc((err && err.message) || 'failed') + ' [' + _shEsc((err && err.code) || 'READ_FAILED') + ']</div>'; }
+}
+
+// Re-render whichever Shipment page is currently active. Called by the card action handlers after a write. In Workspace
+// mode this is a SCOPED re-read of the shipment workspace (never a broad reload); in Legacy mode render-only (the write
+// adapters already reloaded the broad cache).
 function _shLoadAndRender() {
     var draftSec = document.getElementById('shipment-draft-section');
-    if (draftSec && draftSec.classList.contains('active')) { renderShipmentDraft(); return; }
-    renderShipmentOverview();
+    var active = (draftSec && draftSec.classList.contains('active')) ? renderShipmentDraft : renderShipmentOverview;
+    if (_shEffectiveWorkspace()) { _shReadModel = null; _shRefresh_(active); return; }
+    active();
 }
 
 // ---- Shipment Draft page --------------------------------------------------
@@ -773,13 +830,15 @@ function renderShipmentDraft() {
         emptyStateEl.hidden = false; listEl.hidden = true; listEl.innerHTML = '';
         return;
     }
-    if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+    if (_shEffectiveWorkspace()) {
+        if (!_shReadModel) { _shRefresh_(renderShipmentDraft); return; }   // scoped read; re-enters here when ready
+    } else if (!window._opDbCache && window.KM.DB.loadOperationDb) {
         window.KM.DB.loadOperationDb({ force: true }).then(renderShipmentDraft).catch(renderShipmentDraft);
         return;
     }
 
-    var shipments = window.KM.DB.getShipments() || [];
-    var lines = window.KM.DB.getShipmentLines() || [];
+    var shipments = _shGetShipments();
+    var lines = _shGetShipmentLines();
     var linesByShipment = {};
     lines.forEach(function(l) { (linesByShipment[l.shipmentId] = linesByShipment[l.shipmentId] || []).push(l); });
 
@@ -828,14 +887,16 @@ function renderShipmentOverview() {
         renderHistoryResults(historyState.hasSearched ? filterHistoryData(historyState.data, collectFilterParams()) : []);
         return;
     }
-    if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+    if (_shEffectiveWorkspace()) {
+        if (!_shReadModel) { _shRefresh_(renderShipmentOverview); return; }   // scoped read; re-enters here when ready
+    } else if (!window._opDbCache && window.KM.DB.loadOperationDb) {
         window.KM.DB.loadOperationDb({ force: true }).then(renderShipmentOverview).catch(renderShipmentOverview);
         return;
     }
     historyState.hasSearched = true;
 
-    var shipments = window.KM.DB.getShipments() || [];
-    var lines = window.KM.DB.getShipmentLines() || [];
+    var shipments = _shGetShipments();
+    var lines = _shGetShipmentLines();
     var linesByShipment = {};
     lines.forEach(function(l) { (linesByShipment[l.shipmentId] = linesByShipment[l.shipmentId] || []).push(l); });
 
@@ -949,7 +1010,7 @@ function _shRenderDbCard(s, planLines, mode) {
     // distinct nonblank carrier_rate_cards.customs_type (never invented). Prefill = the shipment's stored
     // value, else the selected Rate Card's customs_type. Read from the stored snapshot in Overview (never
     // live-resolved), so a later rate-card change cannot silently mutate a confirmed shipment.
-    var _rateCards = (window.KM && KM.DB && typeof KM.DB.getCarrierRateCards === 'function') ? (KM.DB.getCarrierRateCards() || []) : [];
+    var _rateCards = _shGetCarrierRateCards();
     var _customsVal = String(s.shipmentsCustomsType || s.customsType || '').trim();
     if (!_customsVal && s.rateCardId) {
         var _rc = _rateCards.filter(function(c) { return String(c.rateCardId || '').trim() === String(s.rateCardId).trim(); })[0];
@@ -986,7 +1047,7 @@ function _shRenderDbCard(s, planLines, mode) {
             return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
                 '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(disp) || '--') + '</div></div>';
         }
-        var all = (window.KM && KM.DB && typeof KM.DB.getWarehouses === 'function') ? (KM.DB.getWarehouses() || []) : [];
+        var all = _shGetWarehouses();
         var company = String(s.company || '').trim();
         var country = String(s.country || '').trim();
         function eq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
@@ -1387,8 +1448,8 @@ function shConfirmShipment(shipmentId) {
     if (totalQty <= 0) missing.push('Total Qty');
     if (missing.length) { alert('Cannot Confirm — please complete:\n\n• ' + missing.join('\n• ')); return; }
 
-    var s = (window.KM.DB.getShipments() || []).filter(function (x) { return x.shipmentId === shipmentId; })[0] || {};
-    var lines = (window.KM.DB.getShipmentLines() || []).filter(function (l) { return l.shipmentId === shipmentId; });
+    var s = _shGetShipments().filter(function (x) { return x.shipmentId === shipmentId; })[0] || {};
+    var lines = _shGetShipmentLines().filter(function (l) { return l.shipmentId === shipmentId; });
     var units = lines.reduce(function (a, l) { return a + (l.shipmentQty || l.qty || 0); }, 0);
     _shOpenConfirmModal(shipmentId, {
         no: s.externalShipmentId || s.shipmentNo || shipmentId,

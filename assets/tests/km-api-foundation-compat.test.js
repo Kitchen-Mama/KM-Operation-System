@@ -56,12 +56,12 @@ function makeLegacy() {
   var apiLive = KMAPI.createApiFoundation({});      // no injected legacy → resolves window.KM.DB live
   ok(g.window.KM.api === undefined || typeof g.window.KM.api === 'object', 'NS0 namespace intact');
   g.window.KM.DB = { getOperationDb: function () { return { v: 'V1' }; } };
-  // shipment is non-canonical + master-flag OFF → legacy delegation, so this exercises call-time KM.DB
-  // resolution (weeklyShipping/requestOrder are now canonical → workspace, so they no longer touch legacy KM.DB).
-  var r1 = await run(apiLive.client.getWorkspace('shipment'));
+  // inventoryReplenishment is non-canonical + master-flag OFF → legacy delegation, so this exercises call-time KM.DB
+  // resolution (weeklyShipping/requestOrder/shipment are now canonical → workspace, so they no longer touch legacy KM.DB).
+  var r1 = await run(apiLive.client.getWorkspace('inventoryReplenishment'));
   ok(r1.success === true && r1.data.v === 'V1', 'NS1 KM.DB attached AFTER construction is resolved (no stale capture)');
   g.window.KM.DB = { getOperationDb: function () { return { v: 'V2' }; } };   // D: replaced later
-  var r2 = await run(apiLive.client.getWorkspace('shipment'));
+  var r2 = await run(apiLive.client.getWorkspace('inventoryReplenishment'));
   ok(r2.success === true && r2.data.v === 'V2', 'NS2 REPLACED KM.DB is resolved on the next call (call-time authority)');
   // namespace preservation: loading the module did not clobber a pre-existing KM member
   g.window.KM.somethingExisting = 42;
@@ -86,8 +86,8 @@ function makeLegacy() {
   var legacyCallsAfter = lg._calls.filter(function (x) { return x[0] === 'updateShippingPlanStatus'; }).length;
   ok(legacyCallsAfter === 1, 'FF3 exactly ONE legacy invocation (no dual execution)');
   api.setWorkspaceApiEnabled(true);
-  // shipment remains REGISTERED-only (weeklyShipping/requestOrder graduated to IMPLEMENTED) → master ON fails closed.
-  var w1 = await run(api.client.getWorkspace('shipment'));
+  // inventoryReplenishment remains REGISTERED-only (weeklyShipping/requestOrder/shipment graduated to IMPLEMENTED) → master ON fails closed.
+  var w1 = await run(api.client.getWorkspace('inventoryReplenishment'));
   ok(w1.success === false && w1.errors[0].code === 'WORKSPACE_NOT_IMPLEMENTED', 'FF4 flag true + unimplemented → fail-closed WORKSPACE_NOT_IMPLEMENTED');
   var legacyReadCalls = lg._calls.filter(function (x) { return x[0] === 'getOperationDb'; }).length;
   ok(legacyReadCalls === 0, 'FF5 workspace-mode did NOT fall back to legacy (no silent dual/fallback execution)');
@@ -152,7 +152,7 @@ function makeLegacy() {
   // inventory-replenishment.js + request-order.js (recommendation), purchase-order-overview.js +
   // purchase-order-list.js (F1-7C, purchaseOrder canonical), and request-order-draft.js (F1-7D, requestOrder
   // canonical). Every OTHER page stays independent of the Foundation.
-  var CUTOVER_PAGES = { 'shipping-plan.js': 1, 'inventory-replenishment.js': 1, 'request-order.js': 1, 'purchase-order-overview.js': 1, 'purchase-order-list.js': 1, 'request-order-draft.js': 1 };
+  var CUTOVER_PAGES = { 'shipping-plan.js': 1, 'inventory-replenishment.js': 1, 'request-order.js': 1, 'purchase-order-overview.js': 1, 'purchase-order-list.js': 1, 'request-order-draft.js': 1, 'shipping-history.js': 1, 'global-logistics-map.js': 1 };
   var referencing = pageFiles.filter(function (f) { return !CUTOVER_PAGES[f] && /KM\.api\b|apiFoundation|km-api-foundation/.test(fs.readFileSync(path.join(pagesDir, f), 'utf8')); });
   ok(referencing.length === 0, 'PG1 only the READ cutover pages use KM.api; the other ' + (pageFiles.length - Object.keys(CUTOVER_PAGES).length) + ' pages remain independent (' + (referencing.join(',') || 'clean') + ')');
   // and each cutover page uses KM.api for READ only (getWorkspace/workspaceApiActive) — never a write command

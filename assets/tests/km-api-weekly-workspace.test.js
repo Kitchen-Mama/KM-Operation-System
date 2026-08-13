@@ -152,7 +152,7 @@ function makeLegacy() { var calls = []; return { _calls: calls, getOperationDb: 
   var lg = makeLegacy(); invokeCalls = [];
   var api = KMAPI.createApiFoundation({ legacy: lg, idGen: function () { return 'REQ-CGEN01'; }, workspaceInvoke: function (a, d, s) { invokeCalls.push({ action: a, dto: d, signal: s }); return Promise.resolve(serverOk(d.requestId)); } });
   ok(api.registry.get('weeklyShipping').status === 'IMPLEMENTED', 'CR1 weeklyShipping IMPLEMENTED');
-  ok(api.registry.get('shipment').status === 'REGISTERED', 'CR2 other workspaces still REGISTERED');
+  ok(api.registry.get('inventoryReplenishment').status === 'REGISTERED', 'CR2 other workspaces still REGISTERED');
 
   // CR3 — F1-7B cutover: weeklyShipping is now PRODUCTION-CANONICAL → active by DEFAULT and INDEPENDENT of the
   // master USE_WORKSPACE_API flag (same contract as recommendation). No per-workspace override needed.
@@ -211,7 +211,7 @@ function makeLegacy() { var calls = []; return { _calls: calls, getOperationDb: 
   section('Cache TTL=0 + no write methods invoked + other workspaces unaffected');
   ok(api.cache.ttl === 0 && api.cache.get('weeklyShipping') === null, 'CA1 cache disabled (TTL 0)');
   ok(!lg._calls.some(function (c) { return c[0] === 'updateShippingPlanStatus'; }), 'WR1 no Weekly WRITE method invoked by the read workspace');
-  var other = await run(api.client.getWorkspace('shipment'));   // master ON, shipment unimplemented + not enabled
+  var other = await run(api.client.getWorkspace('inventoryReplenishment'));   // master ON, inventoryReplenishment unimplemented + not enabled
   ok(other.success === false && other.errors[0].code === 'WORKSPACE_NOT_IMPLEMENTED', 'OW1 other (unimplemented) workspace still fails closed, unaffected by Weekly enablement');
 
   // =====================================================================================================

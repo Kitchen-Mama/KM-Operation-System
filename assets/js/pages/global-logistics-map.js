@@ -116,7 +116,28 @@
   }
 
   // ---------- data ----------
+  // F1-7F · scoped Shipment workspace read cutover. The On-the-Way map primary read sources shipments/lines + route/
+  // event/location/template tables from ONE scoped `shipment` workspace (map includes) — no broad Operation DB. Kill
+  // switch: setWorkspaceEnabled('shipment', false). Canonical default ON.
+  function _glmEffectiveWorkspace() {
+    return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+      window.KM.api.workspaceApiActive('shipment'));
+  }
+  var _glmReadModel = null;   // adapted shipment workspace arrays, or null = Legacy (broad cache)
+  var _glmReadSeq = 0;
   function ensureDb(force, cb) {
+    if (_glmEffectiveWorkspace()) {
+      if (!force && _glmReadModel) { cb(true); return; }
+      if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { state.error = 'Shipment Workspace API unavailable [WORKSPACE_UNAVAILABLE].'; cb(false); return; }
+      var mySeq = ++_glmReadSeq;
+      Promise.resolve(window.KM.api.getWorkspace('shipment', { include: { routes: true, events: true, locations: true, templates: true }, page: { number: 1, size: 3000 } })).then(function (env) {
+        if (mySeq !== _glmReadSeq) return;
+        if (env && env.success) { _glmReadModel = window.KM.DB.adaptShipmentWorkspace(env.data); cb(true); }
+        else { var e0 = (env && env.errors && env.errors[0]) || {}; state.error = 'Shipment workspace request failed [' + (e0.code || 'WORKSPACE_ERROR') + '].'; cb(false); }   // fail-closed: NO silent legacy broad fallback
+      }).catch(function (e) { if (mySeq !== _glmReadSeq) return; state.error = 'Shipment map read failed: ' + String(e && e.message || e) + ' [MAP_READ_FAILED].'; cb(false); });
+      return;
+    }
+    // Legacy broad-DB path (kill-switch only) — the ONLY place a broad Operation DB load happens.
     var mode = (window.KM.DB && window.KM.DB.getDataSourceMode) ? window.KM.DB.getDataSourceMode() : (window._opDbCache ? 'unknown' : 'not-loaded');
     if (!force && window._opDbCache && mode === 'google-sheet') { cb(true); return; }
     var loader = (window.KM.DB && window.KM.DB.loadOperationDb) ? window.KM.DB.loadOperationDb : (window.reloadOperationDb || null);
@@ -139,7 +160,13 @@
 
   function buildReadModel() {
     var db = window.KM.DB;
-    var rm = {
+    // F1-7F: source from the scoped shipment workspace read-model when canonical; else the Legacy broad-cache getters.
+    var m = _glmReadModel;
+    var rm = m ? {
+      shipments: m.shipments, shipmentLines: m.shipmentLines, shipmentRoutes: m.shipmentRoutes,
+      shipmentEvents: m.shipmentEvents, warehouses: m.warehouses, locations: m.logisticsLocations,
+      routeTemplates: m.shipmentRouteTemplates, routeTemplateNodes: m.shipmentRouteTemplateNodes
+    } : {
       shipments: (db.getShipments && db.getShipments()) || [],
       shipmentLines: (db.getShipmentLines && db.getShipmentLines()) || [],
       shipmentRoutes: (db.getShipmentRoutes && db.getShipmentRoutes()) || [],
@@ -653,8 +680,14 @@
   // Rebuild the read model from the (already-refreshed) DB cache and re-open the shipment, so the drawer
   // reflects the new receipt / route state. The write adapters force-reload the cache, so NO extra fetch.
   function afterShipmentWrite(shipmentId) {
-    try { buildReadModel(); } catch (e) {}
-    if (state.vms[shipmentId]) selectShipment(shipmentId); else { state.selectedShipmentId = ''; render(); }
+    // F1-7F: in Workspace mode, re-read the SCOPED shipment workspace (the write adapters reloaded the broad cache,
+    // which the map now ignores) — never a page-level broad reload. Legacy mode rebuilds from the refreshed cache.
+    var _rebuild = function () {
+      try { buildReadModel(); } catch (e) {}
+      if (state.vms[shipmentId]) selectShipment(shipmentId); else { state.selectedShipmentId = ''; render(); }
+    };
+    if (_glmEffectiveWorkspace()) { ensureDb(true, function (ok) { if (ok) _rebuild(); else render(); }); return; }
+    _rebuild();
   }
   function receiptMsg(text, tone) {
     var el = document.querySelector('[data-glm="receipt-msg"]'); if (!el) return;
@@ -985,7 +1018,8 @@
     state.loading = true; state.error = ''; render();
     ensureDb(!!force, function (ok) {
       state.loading = false;
-      if (!ok && !window._opDbCache) { state.error = 'Operation database is not loaded.'; render(); return; }
+      // Fail-closed: ensureDb sets a specific state.error in Workspace mode; preserve it (no silent broad fallback).
+      if (!ok) { if (!state.error) state.error = 'Operation database is not loaded.'; render(); return; }
       state.sourceMode = (window.KM.DB && window.KM.DB.getDataSourceMode) ? window.KM.DB.getDataSourceMode() : 'unknown';
       state.diag = (window.KM.DB && window.KM.DB.getDataDiagnostics) ? window.KM.DB.getDataDiagnostics() : null;
       try { buildReadModel(); } catch (e) { state.error = String(e && e.message || e); render(); return; }

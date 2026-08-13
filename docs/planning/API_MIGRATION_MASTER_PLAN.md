@@ -363,3 +363,25 @@ operation-system-db-api.js. See `F1_7E_PREREQ_5_AI_PLAN_FIRST_LAYER_COMPOSER_AND
 **PREREQ status:** PREREQ-0..5 ALL DONE. **AI Plan first-layer scoped read = DONE.** (Full system API migration NOT
 complete — Shipment/On-the-Way, the ~40-writer WRITE_FORCES_FULL_RELOAD, app.js global prime, and request-order.js
 SECONDARY surfaces remain.) Live Acceptance remains PAUSED_BY_USER_FOR_API_MIGRATION.
+
+### F1-7F-R1 delta (2026-08-13) — Shipment + On-the-Way scoped read DONE
+`shipment` is now a CANONICAL workspace (new backend `57_api_v1_shipment_workspace.gs` + router action
+`shipment.workspace.get`; kill switch `setWorkspaceEnabled('shipment', false)`). Both active Shipment surfaces render
+from the scoped workspace — `shipping-history.js` (Draft + Overview) off the BASE tables (shipments, shipment_lines,
+warehouses, carrier_rate_cards), and `global-logistics-map.js` (On-the-Way) additionally off the include-gated MAP tables
+(shipment_routes, shipment_events, logistics_locations, shipment_route_templates, shipment_route_template_nodes) — no
+broad Operation DB for primary render, scoped post-write refresh, fail-closed (no silent legacy fallback), `KM.loadState`
+region. The db-api `adaptShipmentWorkspace` re-normalizes the DTO raw arrays with the SAME normalizers + per-array filters
+as `normalizeOperationDb` → BEFORE == AFTER. `derivedReceiptStatus` proven DISPLAY_ONLY (backend `v.status` remains
+authoritative); no FIFO/allocation/PO-shipped/receipt/factory-stock/Final-Output authority moved (57_ is read-only; source
+guards). MAP-extra tables read only when the include flag is set (bounded includes; missing-safe). **Apps Script sync +
+new /exec REQUIRED** (57_ + router; deploy backend before/with the canonical-ON frontend, or hold with the kill switch).
+Frontend deploy: km-api-foundation.js + operation-system-db-api.js + shipping-history.js + global-logistics-map.js.
+Bundle/DB unchanged. Contract tests repointed the REGISTERED-only example shipment → inventoryReplenishment + added the
+two shipment pages to CUTOVER_PAGES. Full regression: only the 4 known baseline failures. Batch F still owns the
+~40-writer internal WRITE_FORCES_FULL_RELOAD + app.js global-prime removal. See
+`F1_7F_SHIPMENT_AND_ON_THE_WAY_WORKSPACE_CUTOVER_R1.md`.
+
+**Workspace status:** IMPLEMENTED/canonical = weeklyShipping, recommendation, purchaseOrder, requestOrder, shipment.
+REGISTERED-only = inventoryReplenishment, fcSummary, skuDetails. Next: fcSummary/skuDetails workspaces, request-order.js
+secondary surfaces, or Batch F (writer-reload + global-prime retirement).

@@ -126,6 +126,15 @@ function doPost(e) {
       return jsonResponse_(handleRequestOrderWorkspaceGet_(body));
     }
 
+    // API v1 · Shipment READ-ONLY Workspace (Phase F1-7F). A body-carrying READ (no write); owner =
+    // 57_api_v1_shipment_workspace.gs. Reads only the Shipment table set (never getOperationDb); the On-the-Way MAP
+    // tables (routes/events/locations/templates) are returned only when the include flag is set. Composes persisted
+    // shipment facts ONLY — no FIFO, no allocation reconstruction, no PO shipped/receipt/factory-stock authority. No
+    // business logic here.
+    if (action === 'shipment.workspace.get') {
+      return jsonResponse_(handleShipmentWorkspaceGet_(body));
+    }
+
     // API v1 · AI-Plan Layer-1 RAW read owner (Phase F1-7E-PREREQ-1). A body-carrying READ (no write); owner =
     // 52_api_v1_open_po_remaining_owner.gs. Reads only purchase_orders + purchase_order_lines (never getOperationDb).
     // Exposes the RAW informational fact open_po_remaining_raw_qty per SKU (OPEN-PO statuses; persisted remaining_qty
