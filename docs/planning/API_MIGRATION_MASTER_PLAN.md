@@ -230,3 +230,31 @@ not a second authority). No `.gs`/router/frontend/bundle/DB change. **Smallest p
 F1-7C reuse), PREREQ-2 fcSummary forecast owner, PREREQ-3 scoped inventory owner, PREREQ-4 lead-time, then the composed
 first-layer cutover. See `F1_7E_PLANNING_READ_OWNERS_AND_AI_PLAN_CUTOVER_R1.md`. request-order.js remains broad-cache-
 dependent (first-layer + Target-Rules editor + forecast-breakdown surfaces); global-prime removal stays Batch F.
+
+### F1-7E-PREREQ-0-R1 delta (2026-08-13) — AI-Plan Three-Layer Fact Authority Contract (decision only)
+Formal fact-authority contract for the AI-Plan first layer. No runtime change. Establishes a **three-layer fact model**:
+**Layer 1 RAW/OPERATIONAL** (Basic FC, Special Event FC, Site/Overseas/Factory Stock, Open-PO Remaining, Lead Time — raw
+aggregations of persisted operational rows), **Layer 2 CANONICAL PLANNING** (adjusted demand, allocated supply, gap,
+recommended/suggested — owned by the existing engine; already scoped via 42_/43_), **Layer 3 HUMAN DECISION** (chosen
+order qty, manual allocation → RO → PO). Every first-layer field classified + mapped to its authority + future owner in
+`F1_7E_PREREQ_0_AI_PLAN_FACT_AUTHORITY_DECISION_R1.md`. FINAL GATE PASS (Raw ≠ Canonical ≠ Human, unambiguous). No HALT.
+
+**FROZEN API-MIGRATION CONTRACT (governs all remaining API-migration rounds):**
+1. API migration = TRANSPORT / READ-OWNER migration unless a separate business-change task explicitly authorizes otherwise.
+2. Migration MUST NOT silently change displayed business semantics.
+3. RAW OPERATIONAL FACT and CANONICAL PLANNING FACT are DIFFERENT authority classes.
+4. Existing canonical Planning APIs MUST NOT be reused for Raw Facts when the semantic meaning differs (e.g. raw forecast
+   ≠ Target%-adjusted demand; `factory_stock_raw_qty` 1,200 ≠ `allocated_factory_supply_qty` 700).
+5. Browser-side Raw Fact aggregation SHOULD move to backend scoped read owners.
+6. Moving aggregation backend MUST preserve BEFORE FACT == AFTER FACT.
+7. Canonical Planning facts MUST NEVER be recomputed in the frontend.
+8. The AI-Plan read workspace is a COMPOSER, not a second engine.
+9. HUMAN DECISION FACTS remain distinct from both Raw and Planning facts.
+10. Shared Factory: `factory_id` NEVER determines company; KM / ResTW / ResUS remain independent company scopes even when
+    sharing a factory.
+
+Two PRODUCT_DECISION_REQUIRED items recorded for implementers: PDR-1 (Open-PO-Remaining fallback `max(0, ordered −
+max(shipped, completed))` differs from canonical `max(0, completed − shipped)` — decide reproduce-exact vs converge);
+PDR-2 (freeze the N+1..N+3 time-anchor as client-supplied/frozen cycle, not server clock). Next: **PREREQ-1
+Open-PO-Remaining-per-SKU scoped read owner** (canonical F1-7C reuse). F1-PHASE1-LIVE-ACCEPTANCE-R2 =
+PAUSED_BY_USER_FOR_API_MIGRATION (unchanged).
