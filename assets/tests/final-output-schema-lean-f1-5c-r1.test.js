@@ -46,8 +46,9 @@ console.log('\n== NO OVER-REMOVAL: frozen party VALUES stay (§2 HALT — master
   .forEach(function (c) { ok(HEAD.indexOf(c) !== -1, 'header keeps stable FK ' + c); });
 
 console.log('\n== NO OVER-REMOVAL: frozen customs + master/display line facts stay (§4/§5) ==');
+// (material / product_use removed in LEAN-R2 — see final-output-schema-lean-f1-5c-r2.test.js)
 ['country_of_origin', 'hs_code', 'declared_currency', 'declared_unit_value', 'gs1_code', 'gs1_type',
- 'product_name_en', 'product_name_cn', 'site_sku', 'carton_length', 'carton_width', 'carton_height', 'material', 'product_use']
+ 'product_name_en', 'product_name_cn', 'site_sku', 'carton_length', 'carton_width', 'carton_height']
   .forEach(function (c) { ok(LINE.indexOf(c) !== -1, 'line STILL freezes ' + c); });
 
 console.log('\n== NO OVER-REMOVAL: multi-PO lineage FKs + historical po_no stay (§6 re-parent DECLINED) ==');

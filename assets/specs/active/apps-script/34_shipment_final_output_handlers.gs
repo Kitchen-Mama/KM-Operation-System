@@ -32,7 +32,10 @@
 
 var SFO_SNAPSHOT_HEADERS_ = [
   'snapshot_id', 'shipment_id', 'snapshot_version', 'status', 'superseded_by', 'superseded_reason',
-  'shipment_no', 'reference_id', 'company', 'country', 'marketplace', 'status_at_finalization',
+  // status_at_finalization REMOVED (LEAN-R2 §5) — finalization is bound to the dispatch/in_transit boundary
+  // (sfoIsDispatched_), so the shipment status at finalize is a fixed, derivable fact with no runtime/document/history
+  // consumer. snapshot.status (final/superseded) is the snapshot lifecycle itself and is retained below.
+  'shipment_no', 'reference_id', 'company', 'country', 'marketplace',
   'source_warehouse_id', 'destination_warehouse_id', 'destination_type', 'warehouse_code', 'ship_from', 'ship_to',
   'carrier_id', 'carrier_name', 'shipping_method', 'etd', 'eta', 'dispatch_date',
   'booking_no', 'container_no', 'invoice_no', 'currency',
@@ -57,8 +60,13 @@ var SFO_LINE_HEADERS_ = [
   // (declared_unit_value × shipment_qty, both frozen here); the renderer derives it. Frozen customs facts
   // (country_of_origin / hs_code / declared_currency / declared_unit_value) STAY: tax_referral_rates has no fully
   // immutable identity (correction mode mutates values in place), so the exact resolved values must remain frozen.
+  // material / product_use REMOVED (LEAN-R2 §2) — descriptive SKU master attributes NOT rendered by any Phase-1
+  // document (SHIPDETAIL / PL); their later mutation does not falsify an issued Phase-1 document. Relationship-
+  // resolve from sku_details if a future customs/CI document needs them (see FINAL_OUTPUT_RELATIONSHIP_RESOLVED_
+  // DISPLAY_AUDIT). The renderer-consumed display facts (product_name_en/cn, site_sku, gs1_code/type, carton dims)
+  // are RETAINED frozen — removing them would force the snapshot-only renderer to re-read live masters (a redesign).
   'gs1_code', 'gs1_type', 'country_of_origin', 'hs_code', 'declared_currency', 'declared_unit_value',
-  'material', 'product_use', 'note', 'created_at'
+  'note', 'created_at'
 ];
 
 var SFO_LINE_PO_HEADERS_ = [
@@ -152,8 +160,7 @@ function sfoBuildLine_(line, master, siteSku, customs, lineId) {
     hs_code: sfoStr_(c.hs_code),
     declared_currency: sfoUc_(c.declared_currency),
     declared_unit_value: declaredUnit,   // declared_total_value (= declaredUnit × qty) is DERIVED by the renderer, not persisted (LEAN-R1 §5)
-    material: sfoStr_(m.material),
-    product_use: sfoStr_(m.product_use),
+    // material / product_use NOT frozen (LEAN-R2 §2) — no Phase-1 document renders them; relationship-resolve later if needed.
     note: sfoStr_(line.note)
   };
 }
@@ -188,7 +195,6 @@ function sfoBuildHeader_(shipment, shipper, seller, consignee, factory, carrier)
     company: sfoUc_(shipment.company),
     country: sfoUc_(shipment.country),
     marketplace: sfoStr_(shipment.marketplace),
-    status_at_finalization: sfoLc_(shipment.status),
     source_warehouse_id: sfoStr_(shipment.source_warehouse_id),
     destination_warehouse_id: sfoStr_(shipment.destination_warehouse_id || shipment.warehouse_id),
     destination_type: sfoStr_(shipment.destination_type),
@@ -269,8 +275,8 @@ function sfoSkuMasterMap_(ss) {
     if (!map[sku]) map[sku] = {
       product_name: r.product_name, product_name_cn: r.product_name_cn, series: sfoStr_(r.series),
       gs1_code: r.gs1_code, gs1_type: r.gs1_type, units_per_carton: r.units_per_carton,
-      carton_length: r.carton_length, carton_width: r.carton_width, carton_height: r.carton_height,
-      material: r.material, product_use: r.product_use
+      carton_length: r.carton_length, carton_width: r.carton_width, carton_height: r.carton_height
+      // material / product_use no longer loaded — not frozen into the snapshot (LEAN-R2 §2)
     };
   });
   return map;
