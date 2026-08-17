@@ -434,7 +434,13 @@ function _opFirstLayerRegion_() {
 }
 // Scoped first-layer read (canonical) + scoped refresh entry. Fail-closed: bounded region ERROR — NO silent legacy
 // broad fallback. The broad-DB load lives ONLY in the Legacy branch of initRequestOrderSection.
-function _opLoadFirstLayerComposer_() {
+// F1-7M-A1 · optional refGate: a Promise for a scoped read (the marketplace reference) fired in the SAME wave as the
+// composer read at first-open. When supplied, the SUCCESS render is deferred until BOTH resolve, so the marketplace
+// dropdown is populated on the first _roRenderAll — identical render ordering to the prior serial chain, but the two
+// independent reads are now in flight together instead of one-after-the-other. refGate ALWAYS resolves (its loader
+// swallows failure → []), so it never blocks the render indefinitely. Reload/refresh callers pass no gate → the render
+// stays synchronous inside this .then (byte-identical to the prior behavior; the ref is already loaded at mount).
+function _opLoadFirstLayerComposer_(refGate) {
   var my = ++_opFirstLayerSeq;
   var rg = _opFirstLayerRegion_();
   var el = (typeof document !== 'undefined') ? document.getElementById('ro-scroll-body') : null;
@@ -444,8 +450,12 @@ function _opLoadFirstLayerComposer_() {
     if (my !== _opFirstLayerSeq) return;
     if (res && res.success) {
       requestOrderState.data = (res.data && res.data.rows) || [];
-      if (rg) rg.set(requestOrderState.data.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
-      _roRenderAll();
+      var _render = function () {
+        if (my !== _opFirstLayerSeq) return;   // a newer composer load superseded this one → drop the stale render
+        if (rg) rg.set(requestOrderState.data.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+        _roRenderAll();
+      };
+      if (refGate) { Promise.resolve(refGate).then(_render); } else { _render(); }
     } else {
       _opFirstLayerError_((res && res.errors && res.errors[0]) || (res && res.error) || { code: 'READ_FAILED', message: 'AI Plan first-layer read failed' });
     }
@@ -464,9 +474,12 @@ function initRequestOrderSection() {
   // Data source priority: live DB (google-sheet) → Demo Data → empty. NEVER the Inventory DOM.
   if (_roUseDb()) {
     // F1-7E-PREREQ-5: canonical first-layer = scoped composer (no broad Operation DB for first-layer assembly).
-    // F1-7J-A2: load the bounded marketplace reference FIRST (so the scope/marketplace dropdowns render populated on the
-    // first _roRenderAll), then the composer. Both are scoped reads — NO broad Operation DB in the canonical path.
-    if (_opUseFirstLayerComposer() && _opFirstLayerReady()) { _roLoadMarketplaceRef_().then(function () { _opLoadFirstLayerComposer_(); }); return; }
+    // F1-7J-A2 + F1-7M-A1: the bounded marketplace reference and the first-layer composer are INDEPENDENT scoped reads.
+    // Fire BOTH in the SAME synchronous wave (both HTTP requests in flight together, no longer marketplace-then-composer
+    // serial) and hand the ref promise to the composer as its render gate, so the composer still waits for the ref before
+    // the first _roRenderAll (marketplace dropdown populated) — identical render ordering, one fewer serial hop. NO broad
+    // Operation DB in the canonical path.
+    if (_opUseFirstLayerComposer() && _opFirstLayerReady()) { var _mktRefPromise = _roLoadMarketplaceRef_(); _opLoadFirstLayerComposer_(_mktRefPromise); return; }
     // Legacy broad-cache path (kill-switch only) — the ONLY place a broad Operation DB load happens.
     if (!window._opDbCache && window.KM.DB.loadOperationDb) {
       window.KM.DB.loadOperationDb({ force: true }).then(_roInitWithData).catch(_roInitWithData);

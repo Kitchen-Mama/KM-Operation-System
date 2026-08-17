@@ -685,3 +685,24 @@ secondary/modals · write flows · Apps Script handlers · DOM/UX). Every ms/pay
   reference session cache) → F1-7M-D (DOM/render + button feedback) → F1-7M-E (backend read-cost + final regression).
   Each preserves API facts / outputs / error semantics / idempotency / write authority. Authority redesigns
   (Event Assist / Incoming Inventory / sitePlanningAllocation) stay SEPARATE. Do NOT begin F1-7M-A automatically.
+
+## F1-7M-A-P0-SERIAL-REQUEST-ELIMINATION-R1 (perf track, atomic) — **DONE**
+PRE HEAD `cad7b6e`. Removed proven-unnecessary SERIAL latency only. Full detail:
+`F1_7M_A_P0_SERIAL_REQUEST_ELIMINATION_R1.md`. **Frontend-only** (Apps Script/router/exec/bundle/schema = NO).
+- **A1 (shipped):** RO/AI-Plan first-open — the bounded marketplace-reference read and the first-layer composer read
+  now fire in ONE wave (were `_roLoadMarketplaceRef_().then(composer)` serial). The composer takes an optional render
+  gate = the ref promise, so the first `_roRenderAll` still waits for BOTH (marketplace dropdown populated → identical
+  render ordering). Reload/refresh path (no gate) unchanged. Serial waves 2→1; request count 2→2 (sequencing only, NOT
+  elimination). `assets/js/pages/request-order.js`.
+- **A2 (HALT `RO_SEND_TOKEN_EQUIVALENCE_NOT_PROVEN`, no change):** baseline premise was wrong — the manual Send lines
+  path (`d.isCanonical===false`) holds NO token and never calls `_roEnsureDraftToken_`; the db-api's single
+  `getRecommendationDraftToken` read (only when `expectedToken===undefined`) is the NECESSARY fail-closed conflict guard,
+  not a redundant fetch. Relocating it = same GET (no reduction); skipping it (`expectedToken:null`) = bypass optimistic
+  locking (forbidden). Runtime UNCHANGED.
+- **FC Special Event (`BATCH_ENDPOINT_REQUIRED`, deferred):** `handleUpsertFcSpecialEvent_`→`fcSpecialEventUpsert_` is an
+  UNLOCKED read-scan-then-`sheet.appendRow` writer (no LockService; router lock is recommendation-only). Parallelizing
+  the existing per-SKU writes could race on append → NOT safe-parallel. Serial loop left UNCHANGED; batch contract
+  documented and deferred to **F1-7M-A2-FC-SPECIAL-EVENT-BATCH-R1** (needs an Apps Script deployment).
+- **Invariants held:** writer full-reload 0 · app prime 0 · canonical broad 0 · no business/formula/schema/API-contract
+  change. Tests: new `api-serial-request-elimination-f1-7m-a-r1` 28/0; composer suite contract-updated 154/0; full
+  regression 232 pass / 4 known-baseline fail / 0 new. Next: F1-7M-B (post-write bounded readback) — await explicit spec.

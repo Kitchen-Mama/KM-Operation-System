@@ -192,8 +192,10 @@ ok(/function _opUseFirstLayerComposer\(\)/.test(ROJS) && /USE_AI_PLAN_FIRST_LAYE
 ok(/function _opFirstLayerCycle\(\)[\s\S]*?_roTpeNow\(\)/.test(ROJS) && /'RECO-'/.test(ROJS), 'planning_cycle resolved client-side from _roTpeNow (PDR-2; server never uses its clock)');
 // init routes the canonical first-layer to the composer; the broad load lives ONLY in the Legacy branch
 var initFn = extractFn(ROJS, 'initRequestOrderSection');
-// F1-7J-A2: the canonical branch now loads the bounded marketplace reference FIRST, then the composer (both scoped reads).
-ok(/_opUseFirstLayerComposer\(\) && _opFirstLayerReady\(\)/.test(initFn) && /_roLoadMarketplaceRef_\(\)\.then\([\s\S]*_opLoadFirstLayerComposer_\(\)/.test(initFn) && /return;/.test(initFn), 'init routes canonical first-layer to the scoped composer (after the scoped marketplace reference load)');
+// F1-7M-A1: the canonical branch now fires the bounded marketplace reference AND the composer in the SAME wave (both
+// scoped reads in flight together), handing the ref promise to the composer as its render gate — no longer the prior
+// _roLoadMarketplaceRef_().then(composer) serial chain.
+ok(/_opUseFirstLayerComposer\(\) && _opFirstLayerReady\(\)/.test(initFn) && /var _mktRefPromise = _roLoadMarketplaceRef_\(\);\s*_opLoadFirstLayerComposer_\(_mktRefPromise\);/.test(initFn) && /return;/.test(initFn), 'init routes canonical first-layer to the scoped composer, firing the marketplace ref + composer in one parallel wave (ref promise gates the render)');
 // the composer load path has NO broad-DB call (fail-closed, no silent legacy fallback)
 var loadFn = extractFn(ROJS, '_opLoadFirstLayerComposer_');
 ok(!/getOperationDb|loadOperationDb|_opDbCache/.test(loadFn), 'composer read path has NO getOperationDb/loadOperationDb/_opDbCache (first-layer assembly independent of broad DB)');
