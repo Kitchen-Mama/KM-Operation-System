@@ -39,9 +39,11 @@ ok(RO.indexOf('_roLoadMarketplaceRef_().then(function () { _opLoadFirstLayerComp
 ok(/var _mktRefPromise = _roLoadMarketplaceRef_\(\);\s*_opLoadFirstLayerComposer_\(_mktRefPromise\);/.test(RO),
   'first-open captures the ref promise and hands it to the composer as a render gate (both reads start in the same wave)');
 ok(/function _opLoadFirstLayerComposer_\(refGate\)/.test(RO), '_opLoadFirstLayerComposer_ takes an optional refGate render-gate param');
-// The reload/refresh path still calls the composer with NO gate (render stays synchronous — unchanged).
-ok(/_roEnsureL2Tables\(true\)\.then\(function \(\) \{ _opLoadFirstLayerComposer_\(\); \}\)/.test(RO),
-  'reload path (_roReloadAndRerender) still calls _opLoadFirstLayerComposer_() with no gate — unchanged behavior');
+// The reload path hands the composer a refresh-gate (updated by F1-7M-B2: bounded single-table refresh or full-set
+// fallback, fired in the same wave as the composer). The A1 no-gate FIRST-OPEN behavior is asserted above; this only
+// confirms A1 did not itself serialize the reload — the reload's own bounded/parallel shape is owned by B2's suite.
+ok(/_opLoadFirstLayerComposer_\(refreshP\)/.test(RO) && /function _roReloadAndRerender\(changedTables\)/.test(RO),
+  'reload path (_roReloadAndRerender) re-reads the composer via a refresh gate (no serial ref→composer chain)');
 
 // ===================================================================================================================
 console.log('\n== A1 behavioral: parallel start, render waits for BOTH, single composer request, bounded error ==');

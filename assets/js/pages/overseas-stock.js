@@ -32,9 +32,21 @@ function _osGet(key) {
     return (window.KM && window.KM.DB && window.KM.DB[g]) ? (window.KM.DB[g]() || []) : [];
 }
 var _OS_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'];
+// F1-7M-B5 bounded readback: an overseas write can only mutate overseas_inventory_snapshot + overseas_inventory_movements
+// (proven — 05_overseas_inventory_handlers.gs writes only those; warehouses is read-only for validation, sku_details is
+// not referenced at all). warehouses + sku_details are mount-loaded static reference, so re-read ONLY the two mutable
+// tables and MERGE their fresh slices onto the retained model. normalizeOperationDb returns every key (empties for absent
+// ones), so only the two named camelCase slices are overlaid — a blanket assign would clobber the retained static tables.
+var _OS_MUTABLE_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements'];
 function _osAfterWrite(cb) {
     if (!_osScopedActive()) { if (cb) cb(); return; }
-    window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osReadModel = m; if (cb) cb(); }).catch(function () { if (cb) cb(); });
+    if (!_osReadModel) {
+        window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osReadModel = m; if (cb) cb(); }).catch(function () { if (cb) cb(); });
+        return;
+    }
+    window.KM.DB.loadScopedTables(_OS_MUTABLE_TABLES)
+        .then(function (m) { _osReadModel = Object.assign({}, _osReadModel, { overseasInventorySnapshot: m.overseasInventorySnapshot, overseasInventoryMovements: m.overseasInventoryMovements }); if (cb) cb(); })
+        .catch(function () { if (cb) cb(); });
 }
 
 function initOverseasStockPage() {

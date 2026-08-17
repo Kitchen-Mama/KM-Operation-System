@@ -86,7 +86,9 @@ ok(/_roEnsureL2Tables\(false\)/.test(toggle) && toggle.indexOf('loadOperationDb'
 var send = extractAssignedFn(RO, 'async function handleSendRequest');
 ok(/await _roEnsureL2Tables\(false\)/.test(send), 'Send path ensures the bounded FC/factory/PO tables before building snapshots (reachable without expanding)');
 var reload = extractFn(RO, '_roReloadAndRerender');
-ok(/_opUseFirstLayerComposer\(\) && _opFirstLayerReady\(\)/.test(reload) && /_roEnsureL2Tables\(true\)/.test(reload) && /_opLoadFirstLayerComposer_\(\)/.test(reload), 'save-reload: canonical mode re-reads bounded FC tables then re-fetches the SCOPED composer');
+// F1-7M-B2: the reload path now re-reads the bounded FC table(s) (full-set force fallback OR the B2 single changed table)
+// and hands that refresh to the composer as a render gate — composer re-read + bounded refresh both retained, no broad build.
+ok(/_opUseFirstLayerComposer\(\) && _opFirstLayerReady\(\)/.test(reload) && /_roEnsureL2Tables\(true\)/.test(reload) && /_opLoadFirstLayerComposer_\(refreshP\)/.test(reload), 'save-reload: canonical mode re-reads the bounded FC tables then re-fetches the SCOPED composer (gated on the refresh)');
 ok(/_buildRequestOrderRowsFromDb/.test(reload), 'save-reload keeps the legacy broad rebuild ONLY on the legacy branch (composer branch returns first)');
 
 // ===================================================================================================================

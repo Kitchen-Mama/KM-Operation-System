@@ -706,3 +706,25 @@ PRE HEAD `cad7b6e`. Removed proven-unnecessary SERIAL latency only. Full detail:
 - **Invariants held:** writer full-reload 0 · app prime 0 · canonical broad 0 · no business/formula/schema/API-contract
   change. Tests: new `api-serial-request-elimination-f1-7m-a-r1` 28/0; composer suite contract-updated 154/0; full
   regression 232 pass / 4 known-baseline fail / 0 new. Next: F1-7M-B (post-write bounded readback) — await explicit spec.
+
+## F1-7M-B-POST-WRITE-BOUNDED-READBACK-R1 (perf track, atomic) — **DONE**
+PRE HEAD `927d205`. Reduced post-write readback over-fetch; post-write state stays SERVER-AUTHORITATIVE (no optimistic
+mutation). Full detail: `F1_7M_B_POST_WRITE_BOUNDED_READBACK_R1.md`. **Frontend-only** (Apps Script/router/exec/bundle/
+schema = NO). Invariants held: writer full-reload 0 · app prime 0 · canonical broad 0; no business/formula/schema change.
+- **B2 (shipped) RO Target%/FC edit:** the shared post-write path now re-reads ONLY the single table the write mutates
+  (Target%→`fc_target_rules`, FC→`fc_regular_forecast`) instead of the full 7-table `_RO_L2_TABLES`, and fires that
+  bounded refresh in the SAME wave as the composer re-read (was serial), gating the render on the refresh. Composer
+  re-read retained as the first-layer FC authority; Target% authority = the bounded `fc_target_rules` getTable (composer
+  never carries target%). 8→2 requests, 7→1 refresh tables, 2→1 waves. `request-order.js`.
+- **B4 (shipped) Factory / B5 (shipped) Overseas:** post-write refresh now re-reads ONLY the mutable tables
+  (factory_stock+movements / overseas snapshot+movements) and MERGES them onto the retained read-model, dropping the
+  static `sku_details`+`warehouses` re-fetch (proven: the writers' only sheet-write targets are the mutable tables; the
+  static tables are mount-loaded reference the write cannot mutate). 4→2 tables each. Merge overlays only the mutable
+  camelCase keys (normalizeOperationDb returns all keys, so a blanket assign would clobber the retained static tables).
+  `factory-stock.js`, `overseas-stock.js`.
+- **Deferred (source-grounded):** B1 Shipment + B3 IR = NEW_BOUNDED_ENDPOINT_REQUIRED (workspace GETs have no id/scope
+  filter + emit includes as full unscoped tables / IR row is a ~19-table join; writer responses carry only ids → need a
+  backend endpoint/deploy). B6 PO = no exact `purchaseOrderId` filter (needs a backend filter). B7 RO Draft = exact
+  `requestOrderId` filter exists but a safe bound needs delete/cancel-aware list reconciliation (frontend follow-up).
+- Tests: new `api-post-write-bounded-readback-f1-7m-b-r1` 39/0; A/7L reload-shape contract-updated (28/0, 56/0); full
+  regression 233 pass / 4 known-baseline fail / 0 new. Next: F1-7M-C (lazy include / reference session cache) — await spec.

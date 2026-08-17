@@ -21,10 +21,23 @@ function _fsGet(key) {
 }
 // Post-write reconcile: canonical → scoped re-read (the writer refreshed the broad cache the page no longer reads);
 // Legacy → run cb immediately (writer already reloaded the broad cache). Writer payloads/side effects are UNCHANGED.
+// F1-7M-B4 bounded readback: a factory write can only mutate factory_stock + factory_stock_movements (proven — the
+// sole setValue/appendRow targets in 21_factory_inventory_handlers.gs). sku_details and warehouses are static reference
+// the write CANNOT modify and are already held in _fsReadModel from mount, so re-read ONLY the two mutable tables and
+// MERGE their fresh slices onto the retained model instead of re-fetching all four. normalizeOperationDb returns EVERY
+// table key (empties for absent ones), so only the two named camelCase slices are overlaid — a blanket assign would
+// clobber the retained skuDetails/warehouses with []. Fallback: model not yet primed (no mount load) → full 4-table
+// read (unchanged behavior). Server stays authoritative for the mutable facts; no local mutation, no stale-fact cache.
 function _fsAfterWrite(cb) {
     if (!_fsScopedActive()) { if (cb) cb(); return; }
-    window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
-        .then(function (m) { _fsReadModel = m; if (cb) cb(); })
+    if (!_fsReadModel) {
+        window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
+            .then(function (m) { _fsReadModel = m; if (cb) cb(); })
+            .catch(function () { if (cb) cb(); });
+        return;
+    }
+    window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements'])
+        .then(function (m) { _fsReadModel = Object.assign({}, _fsReadModel, { factoryStock: m.factoryStock, factoryStockMovements: m.factoryStockMovements }); if (cb) cb(); })
         .catch(function () { if (cb) cb(); });
 }
 

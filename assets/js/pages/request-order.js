@@ -2578,9 +2578,23 @@ function _roCloseModal() {
 // which re-renders the table + the still-open expand from fresh data — NO whole Operation DB, and the first
 // layer is refreshed by its canonical owner (the composer), NOT the legacy broad _buildRequestOrderRowsFromDb
 // (which needs first-layer-only tables absent from the bounded set). Legacy path is unchanged.
-function _roReloadAndRerender() {
+// F1-7M-B2 · changedTables = the canonical table(s) the just-committed write ACTUALLY modified (Target% → fc_target_rules;
+// FC → fc_regular_forecast). When the full L2 set is already primed (_roL2Ready) and the caller names the changed table,
+// re-read ONLY that table instead of the whole 7-table _RO_L2_TABLES set — the other 6 are server-unchanged by the edit
+// and stay validly cached, and the first-layer fact is re-read authoritatively by the composer. The bounded refresh is
+// fired in the SAME wave as the composer (independent reads) and handed to the composer as its render gate, so the
+// still-open expand panel renders only after the changed table's fresh value is in cache. Fallback (no named table / cache
+// not yet primed) = the prior full-set force refresh, unchanged. Server stays authoritative — this narrows WHICH bounded
+// reads run, never replaces a readback with a local guess.
+function _roReloadAndRerender(changedTables) {
   if (_opUseFirstLayerComposer() && _opFirstLayerReady()) {
-    _roEnsureL2Tables(true).then(function () { _opLoadFirstLayerComposer_(); }).catch(function () { _opLoadFirstLayerComposer_(); });
+    var refreshP;
+    if (changedTables && changedTables.length && _roL2Ready && window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function') {
+      refreshP = Promise.resolve(window.KM.DB.refreshCacheTables(changedTables)).catch(function () {});
+    } else {
+      refreshP = _roEnsureL2Tables(true);   // full L2 refresh (unchanged behavior) — same .catch-swallow error semantics
+    }
+    _opLoadFirstLayerComposer_(refreshP);   // composer fires in the same wave; its success render waits for refreshP
     return;
   }
   try { if (_roUseDb()) requestOrderState.data = _buildRequestOrderRowsFromDb(); } catch (e) { /* keep prior data */ }
@@ -2606,7 +2620,9 @@ function _roCollectEditInputs(prefix, months) {
 
 // Bind Cancel + Save on an editor modal. saveFn() must return a Promise (or throw on validation). Handles
 // disabled-while-saving + loading / success / error status (no alert; no optimistic fake success).
-function _roBindEditModal(saveFn) {
+// changedTables (F1-7M-B2): the canonical table(s) this modal's write mutates, forwarded to _roReloadAndRerender so the
+// post-write readback re-reads only the changed table (bounded) instead of the full 7-table L2 set. Omitted → full refresh.
+function _roBindEditModal(saveFn, changedTables) {
   var save = document.getElementById('ro-modal-save');
   var cancel = document.getElementById('ro-modal-cancel');
   if (cancel) cancel.addEventListener('click', _roCloseModal);
@@ -2621,7 +2637,7 @@ function _roBindEditModal(saveFn) {
     p.then(function(res) {
       if (res && res.success === false) { save.disabled = false; save.textContent = 'Save'; if (status) { status.className = 'ro-modal-status is-error'; status.textContent = 'Save failed: ' + (res.error || 'unknown error'); } return; }
       if (status) { status.className = 'ro-modal-status is-success'; status.textContent = 'Saved.'; }
-      _roReloadAndRerender();
+      _roReloadAndRerender(changedTables);
       setTimeout(_roCloseModal, 600);
     }).catch(function(err) {
       save.disabled = false; save.textContent = 'Save';
@@ -2703,7 +2719,8 @@ function handleEditTargetPct(sku, country, marketplace) {
     '<div class="ro-modal-status" id="ro-modal-status" role="status" aria-live="polite"></div>' +
     '<div class="ro-date-actions"><button type="button" class="btn" id="ro-modal-cancel">Cancel</button><button type="button" class="btn btn-primary" id="ro-modal-save">Save Target %</button></div>';
   _roOpenModal('Edit Target % (N+1 ~ N+3)', body, { hideDefaultActions: true });
-  _roBindEditModal(function() { return _roSaveTargetPct(item, _roCollectEditInputs('ro-tgt-new-', next3)); });
+  // F1-7M-B2: a Target% write mutates ONLY fc_target_rules → bounded post-write refresh of just that table.
+  _roBindEditModal(function() { return _roSaveTargetPct(item, _roCollectEditInputs('ro-tgt-new-', next3)); }, ['fc_target_rules']);
 }
 
 // FC Update — editable N+1..N+3 Base FC (Month / Current / New). Writes to canonical fc_regular_forecast.
@@ -2732,7 +2749,9 @@ function handleFcUpdate(sku, country, marketplace) {
     '<div class="ro-modal-status" id="ro-modal-status" role="status" aria-live="polite"></div>' +
     '<div class="ro-date-actions"><button type="button" class="btn" id="ro-modal-cancel">Cancel</button><button type="button" class="btn btn-primary" id="ro-modal-save">Save Base FC</button></div>';
   _roOpenModal('FC Update (N+1 ~ N+3)', body, { hideDefaultActions: true });
-  _roBindEditModal(function() { return _roSaveFc(item, _roCollectEditInputs('ro-fc-new-', next3)); });
+  // F1-7M-B2: an FC write mutates ONLY fc_regular_forecast → bounded post-write refresh of just that table (the first-layer
+  // Base FC fact is re-read authoritatively by the composer; this refresh serves the still-open second-layer expand panel).
+  _roBindEditModal(function() { return _roSaveFc(item, _roCollectEditInputs('ro-fc-new-', next3)); }, ['fc_regular_forecast']);
 }
 
 // Site confirmation (Fix 1) — now DB-backed via request_order_site_confirmations. `confirmedSites` is
