@@ -155,6 +155,17 @@ function doPost(e) {
       return jsonResponse_(handleSkuDetailsWorkspaceGet_(body));
     }
 
+    // API v1 · Inventory Replenishment READ-ONLY Workspace (Phase F1-7I). A body-carrying READ (no write); owner =
+    // 60_api_v1_inventory_replenishment_workspace.gs. Reads only the Inventory Replenishment primary-render table set
+    // (the 19 tables the page's main-table assembly consumes) — never getOperationDb. Returns raw passthrough of the
+    // FULL tables (the page derives scope + assembles per-SKU rows client-side; server-side narrowing would risk drift).
+    // Authors NO Gap/Recommendation/allocation/FIFO/PO and creates NO Request Order (FLOW-A: Gap → Recommendation →
+    // Shipping Plan → Shipment). Gap/Recommendation/allocation-draft stay on their existing separate scoped owners. No
+    // business logic here.
+    if (action === 'inventoryReplenishment.workspace.get') {
+      return jsonResponse_(handleInventoryReplenishmentWorkspaceGet_(body));
+    }
+
     // API v1 · AI-Plan Layer-1 RAW read owner (Phase F1-7E-PREREQ-1). A body-carrying READ (no write); owner =
     // 52_api_v1_open_po_remaining_owner.gs. Reads only purchase_orders + purchase_order_lines (never getOperationDb).
     // Exposes the RAW informational fact open_po_remaining_raw_qty per SKU (OPEN-PO statuses; persisted remaining_qty

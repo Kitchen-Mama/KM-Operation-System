@@ -2468,6 +2468,37 @@ window.KM.DB.adaptSkuDetailsWorkspace = function(data) {
     return out;
 };
 
+// F1-7I: adapt the scoped Inventory Replenishment workspace View-Model to the SAME arrays the page's main-table assembly
+// (_getCloudReplenishmentData's local get()) consumes from the broad cache — each table run through its canonical
+// normalizer with the SAME per-array filter normalizeOperationDb applies, KEYED BY GETTER NAME so the page's get(name)
+// choke point returns byte-identical arrays to the legacy KM.DB.getX() getters (BEFORE == AFTER), incl. the preserved
+// `.raw` passthrough. Transports raw persisted rows ONLY — no Gap/Recommendation/allocation/FIFO/PO/incoming authority
+// (the incoming reconstruction stays presentation-side over these rows; Gap/Reco/draft-SSOT stay on their own scoped owners).
+window.KM.DB.adaptInventoryReplenishmentWorkspace = function(data) {
+    data = data || {};
+    return {
+        getMarketplaces: (data.marketplaces || []).map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; }),
+        getMarketplaceSkus: (data.marketplace_skus || []).map(normalizeMarketplaceSkuRecord).filter(function(r) { return r.sku; }),
+        getSkuDetails: (data.sku_details || []).map(normalizeSkuDetailsRecord).filter(function(r) { return r.sku; }),
+        getWarehouses: (data.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; }),
+        getAmazonInventorySnapshot: (data.amazon_inventory_snapshot || []).map(normalizeAmazonInventorySnapshotRecord).filter(function(r) { return r.sku; }),
+        getAmazonInventoryHealthSnapshot: (data.amazon_inventory_health_snapshot || []).map(normalizeAmazonInventoryHealthSnapshotRecord).filter(function(r) { return r.sku; }),
+        getAmazonDailySalesSnapshot: (data.amazon_daily_sales_snapshot || []).map(normalizeAmazonDailySalesSnapshotRecord).filter(function(r) { return r.sku; }),
+        getAmazonWeeklySalesSnapshot: (data.amazon_weekly_sales_snapshot || []).map(normalizeAmazonWeeklySalesSnapshotRecord).filter(function(r) { return r.sku; }),
+        getFcRegularForecast: (data.fc_regular_forecast || []).map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; }),
+        getFcTargetRules: (data.fc_target_rules || []).map(normalizeFcTargetRuleRecord).filter(function(r) { return r.scopeId || r.ruleId; }),
+        getFcSpecialEvents: (data.fc_special_events || []).map(normalizeFcSpecialEventRecord).filter(function(r) { return r.event || r.sku || r.scopeId; }),
+        getOverseasInventorySnapshot: (data.overseas_inventory_snapshot || []).map(normalizeOverseasInventorySnapshotRecord).filter(function(r) { return r.warehouseId && r.sku; }),
+        getFactoryStock: (data.factory_stock || []).map(normalizeFactoryStockRecord).filter(function(r) { return r.factoryStockId || r.sku; }),
+        getShipments: (data.shipments || []).map(normalizeShipmentRecord).filter(function(r) { return r.shipmentId; }),
+        getShipmentLines: (data.shipment_lines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; }),
+        getShippingPlans: (data.shipping_plans || []).map(normalizeShippingPlanRecord).filter(function(r) { return r.shippingPlanId; }),
+        getShippingPlanLines: (data.shipping_plan_lines || []).map(normalizeShippingPlanLineRecord).filter(function(r) { return r.shippingPlanLineId || r.shippingPlanId; }),
+        getShippingAllocationDrafts: (data.shipping_allocation_drafts || []).map(normalizeShippingAllocationDraftRecord).filter(function(r) { return r.allocationDraftId; }),
+        getShippingAllocationDraftLines: (data.shipping_allocation_draft_lines || []).map(normalizeShippingAllocationDraftLineRecord).filter(function(r) { return r.allocationDraftLineId || r.allocationDraftId; })
+    };
+};
+
 window.KM.DB.getRequestOrderAllocationDrafts = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.requestOrderAllocationDrafts || [];

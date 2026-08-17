@@ -56,12 +56,13 @@ function makeLegacy() {
   var apiLive = KMAPI.createApiFoundation({});      // no injected legacy → resolves window.KM.DB live
   ok(g.window.KM.api === undefined || typeof g.window.KM.api === 'object', 'NS0 namespace intact');
   g.window.KM.DB = { getOperationDb: function () { return { v: 'V1' }; } };
-  // inventoryReplenishment is non-canonical + master-flag OFF → legacy delegation, so this exercises call-time KM.DB
-  // resolution (weeklyShipping/requestOrder/shipment are now canonical → workspace, so they no longer touch legacy KM.DB).
-  var r1 = await run(apiLive.client.getWorkspace('inventoryReplenishment'));
+  // All default workspaces are now canonical (F1-7I). Register a synthetic non-canonical REGISTERED-only workspace so
+  // master-flag-OFF legacy delegation exercises call-time KM.DB resolution.
+  apiLive.registry.register('customWs', { tables: ['t'], legacyRead: 'getOperationDb' });
+  var r1 = await run(apiLive.client.getWorkspace('customWs'));
   ok(r1.success === true && r1.data.v === 'V1', 'NS1 KM.DB attached AFTER construction is resolved (no stale capture)');
   g.window.KM.DB = { getOperationDb: function () { return { v: 'V2' }; } };   // D: replaced later
-  var r2 = await run(apiLive.client.getWorkspace('inventoryReplenishment'));
+  var r2 = await run(apiLive.client.getWorkspace('customWs'));
   ok(r2.success === true && r2.data.v === 'V2', 'NS2 REPLACED KM.DB is resolved on the next call (call-time authority)');
   // namespace preservation: loading the module did not clobber a pre-existing KM member
   g.window.KM.somethingExisting = 42;
@@ -86,8 +87,9 @@ function makeLegacy() {
   var legacyCallsAfter = lg._calls.filter(function (x) { return x[0] === 'updateShippingPlanStatus'; }).length;
   ok(legacyCallsAfter === 1, 'FF3 exactly ONE legacy invocation (no dual execution)');
   api.setWorkspaceApiEnabled(true);
-  // inventoryReplenishment remains REGISTERED-only (weeklyShipping/requestOrder/shipment graduated to IMPLEMENTED) → master ON fails closed.
-  var w1 = await run(api.client.getWorkspace('inventoryReplenishment'));
+  // All default workspaces are now IMPLEMENTED (F1-7I); a synthetic REGISTERED-only workspace exercises fail-closed.
+  api.registry.register('customWs', { tables: ['t'], legacyRead: 'getOperationDb' });
+  var w1 = await run(api.client.getWorkspace('customWs'));
   ok(w1.success === false && w1.errors[0].code === 'WORKSPACE_NOT_IMPLEMENTED', 'FF4 flag true + unimplemented → fail-closed WORKSPACE_NOT_IMPLEMENTED');
   var legacyReadCalls = lg._calls.filter(function (x) { return x[0] === 'getOperationDb'; }).length;
   ok(legacyReadCalls === 0, 'FF5 workspace-mode did NOT fall back to legacy (no silent dual/fallback execution)');

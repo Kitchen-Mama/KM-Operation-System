@@ -1044,7 +1044,7 @@ function saveReplenSku() {
       alert('SKU "' + sku + '" ' + (rr.status || 'processed') + ' for ' + country + ' - ' + marketplace + (rr.message ? ('\n' + rr.message) : ''));
       closeReplenModal();
       resetReplenAddSkuForm();   // F1-SMALL: confirmed success → clear leaked fields so the next Add SKU starts fresh
-      renderReplenishment();
+      _irAfterWrite(function () { renderReplenishment(); });   // Workspace: scoped re-read; Legacy: render-only
     }).catch(function(err) {
       alert('Error: ' + (err && err.message ? err.message : err));
     });
@@ -1068,7 +1068,7 @@ function saveReplenSku() {
       alert('SKU "' + sku + '" added to ' + country + ' - ' + marketplace);
       closeReplenModal();
       resetReplenAddSkuForm();   // F1-SMALL: confirmed success → clear leaked fields so the next Add SKU starts fresh
-      renderReplenishment();
+      _irAfterWrite(function () { renderReplenishment(); });   // Workspace: scoped re-read; Legacy: render-only
     }).catch(function(err) {
       alert('Error: ' + err.message);
     });
@@ -3597,6 +3597,81 @@ window.addNewCountry = addNewCountry;
 
 
 
+// ----------------------------------------------------------------------------------------------------------
+// F1-7I · scoped Inventory Replenishment workspace read cutover (mirrors the F1-7B/7F/7G/7H pattern)
+// The PRIMARY render (the main replenishment table assembled by _getCloudReplenishmentData) sources its 19 tables from
+// ONE scoped `inventoryReplenishment` workspace — NO broad Operation DB for the primary render. Kill switch:
+// KM.api.setWorkspaceEnabled('inventoryReplenishment', false) → instant Legacy broad-cache. Canonical default ON.
+// Inventory Gap (inventoryReplenishmentGap.get), Recommendation (recommendation.workspace.get) and the allocation-draft
+// SSOT (getShippingAllocationDraftWorkspace) are ALREADY scoped and stay on their own owners (not duplicated here). The
+// incoming reconstruction stays presentation-side over the scoped raw rows (deferred INCOMING_INVENTORY_AUTHORITY_
+// REDESIGN_REQUIRED). FLOW-A preserved: this path creates NO Request Order / Purchase Order.
+// ----------------------------------------------------------------------------------------------------------
+function _irEffectiveWorkspace() {
+    return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+        window.KM.api.workspaceApiActive('inventoryReplenishment'));
+}
+var _irReadModel = null;   // workspace-sourced { getX: [...] } keyed by getter name, or null = Legacy
+var _irReadSeq = 0;
+
+// Read-model-first table access: Workspace mode → scoped DTO array; Legacy → the broad-cache getter unchanged.
+function _irWsGet(name) {
+    if (_irReadModel) return _irReadModel[name] || [];
+    return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];
+}
+
+// Bounded loading/error region for the main table (reuses KM.loadState — no new loading infra).
+var _irRegionCtl = null;
+function _irRegion_() {
+    if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+    if (_irRegionCtl) return _irRegionCtl;
+    _irRegionCtl = window.KM.loadState.createRegion({
+        render: function (state) {
+            var S = window.KM.loadState.STATES;
+            if (state === S.INITIAL_LOADING) {
+                var b = document.getElementById('replenScrollBody');
+                if (b) b.innerHTML = '<div class="replen-empty" style="color:#64748B;padding:8px;">Loading Inventory Replenishment…</div>';
+            }
+        }
+    });
+    return _irRegionCtl;
+}
+function _irRenderError_(err) {
+    _irReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
+    var rg = _irRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+    var code = (err && err.code) || 'INVENTORY_REPLENISHMENT_READ_FAILED';
+    var message = (err && err.message) || 'Inventory Replenishment read failed';
+    var html = '<div class="replen-empty" style="color:#B91C1C;padding:8px;">Inventory Replenishment read error: ' + message + ' [' + code + ']</div>';
+    var b = document.getElementById('replenScrollBody'); if (b) b.innerHTML = html;
+    var f = document.getElementById('replenFixedBody'); if (f) f.innerHTML = '';
+}
+
+// Scoped read: Workspace (canonical) → getWorkspace('inventoryReplenishment') → adapt → _irReadModel. Fail-closed (throws;
+// NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.
+function _irWorkspaceRefresh_() {
+    var mySeq = ++_irReadSeq;
+    var rg = _irRegion_(); if (rg) rg.beginLoad(!!_irReadModel);
+    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+        return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'Inventory Replenishment Workspace API unavailable.' });
+    }
+    return Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', {})).then(function (env) {
+        if (mySeq !== _irReadSeq) return _irReadModel;   // a newer read superseded this one
+        if (env && env.success && env.data) {
+            _irReadModel = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
+            if (rg) rg.set((_irReadModel.getMarketplaceSkus && _irReadModel.getMarketplaceSkus.length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+            return _irReadModel;
+        }
+        throw (env && env.errors && env.errors[0]) || { code: 'INVENTORY_REPLENISHMENT_READ_FAILED', message: 'Inventory Replenishment workspace request failed.' };
+    });
+}
+
+// Post-write reconcile: Workspace mode → scoped re-read then cb (the primary render ignores the broad cache the db-api
+// writer reloaded); Legacy → cb immediately (the writer already reloaded the cache).
+function _irAfterWrite(cb) {
+    if (!_irEffectiveWorkspace()) { if (typeof cb === 'function') cb(); return; }
+    _irWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _irRenderError_(err); });
+}
+
 // ========================================
 // Search-triggered loading (Demo OFF + Cloud Read)
 // ========================================
@@ -3610,7 +3685,19 @@ function searchReplenishment() {
         return;
     }
 
-    // Demo OFF: if the DB cache isn't loaded yet, load once, populate filters, then search.
+    // Canonical: scoped inventoryReplenishment workspace (NO broad Operation DB for the primary render). Fetch once (the
+    // scope-independent full read model), populate filters + search. Fail-closed — a bounded region error, never a silent
+    // legacy broad fallback (the broad load below lives ONLY in the Legacy branch).
+    if (_irEffectiveWorkspace()) {
+        if (_irReadModel) { populateReplenFiltersFromRegistry(); _doReplenSearch(); return; }
+        _irWorkspaceRefresh_().then(function () {
+            populateReplenFiltersFromRegistry();
+            _doReplenSearch();
+        }).catch(function (err) { _irRenderError_(err); });
+        return;
+    }
+
+    // Legacy (kill switch OFF): if the DB cache isn't loaded yet, load once, populate filters, then search.
     if (!window._opDbCache) {
         var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
             ? window.KM.DB.loadOperationDb
@@ -3885,7 +3972,9 @@ function _getCloudReplenishmentData() {
     if (!marketplaceId || !DB || !DB.getMarketplaceSkus || !IR) return [];
 
     function eqv(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
-    function get(name) { return (DB[name]) ? (DB[name]() || []) : []; }
+    // F1-7I: single choke point — Workspace mode reads the scoped read-model (keyed by getter name); Legacy reads the
+    // broad-cache getter unchanged. The whole main-table assembly below therefore needs NO broad Operation DB in Workspace mode.
+    function get(name) { if (_irReadModel) return _irReadModel[name] || []; return (DB[name]) ? (DB[name]() || []) : []; }
 
     // Source tables — all safe [] when not yet exposed to the frontend.
     var marketplacesReg = get('getMarketplaces');
@@ -4235,7 +4324,7 @@ function openEditSkuModal() {
     if (!item) { alert('SKU not found in current results: ' + selectedSku); return; }
 
     // Also try to get marketplace_skus record for current values
-    var mpSkus = (window.KM && window.KM.DB && window.KM.DB.getMarketplaceSkus) ? window.KM.DB.getMarketplaceSkus() : [];
+    var mpSkus = _irWsGet('getMarketplaceSkus');   // Workspace (scoped) → read-model; Legacy → getMarketplaceSkus()
     var _selCompany = item.company || _replenSelectedCompany();
     function _eqLo(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
     var mpRecord = mpSkus.find(function(mp) {
@@ -4324,7 +4413,7 @@ function saveEditSku() {
             }
             alert('SKU updated successfully.');
             closeEditSkuModal();
-            renderReplenishment();
+            _irAfterWrite(function () { renderReplenishment(); });   // Workspace: scoped re-read; Legacy: render-only
         }).catch(function(err) {
             alert('Error: ' + err.message);
         });
@@ -4670,7 +4759,7 @@ function _replenDemoOn() {
 }
 
 function _replenActiveMarketplaces() {
-    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    var list = _irWsGet('getMarketplaces');   // Workspace (scoped) → read-model; Legacy → getMarketplaces()
     return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
 }
 
@@ -6115,19 +6204,28 @@ if (window.KM && window.KM.lifecycle) {
                 // matches the stored context (see _allocationDraftRowsFor); otherwise it stays dormant.
                 _restoreAllocationDraftFromSession();
                 if (typeof bindReplenFilterDependencies === 'function') bindReplenFilterDependencies();
-                if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
-                // F1-4B-B-PRE: initialize the page-local Recommendation Context inputs (destination /
-                // calculation month / planning cycle). Populates options + restores explicit session
-                // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.
-                if (typeof initReplenRecoContext === 'function') initReplenRecoContext();
-                renderReplenishment();
-                // F1-4B-FM5-R4UI-R5G §1 — bind the (event-driven) horizontal-scrollbar gutter measurement + seed it.
-                if (typeof _irBindHScrollGutterResizeOnce_ === 'function') _irBindHScrollGutterResizeOnce_();
-                if (typeof _irUpdateHScrollGutter_ === 'function') _irUpdateHScrollGutter_();
-                // F1-4B-FM5-R4J §13 — if a backend Inventory gap job is still PENDING/RUNNING (started here before a
-                // refresh, or from another tab / the daily scheduler), resume READ-ONLY status polling and refresh on
-                // DONE. The original tab does not need to have stayed alive.
-                if (typeof _irResumeGapJobOnMount_ === 'function') { try { _irResumeGapJobOnMount_(); } catch (e) {} }
+                // F1-7I: the post-markup init (filter options + reco-context + first render). In Workspace mode this runs
+                // AFTER the scoped read-model is fetched, so the filter dropdowns + primary render need NO broad Operation DB.
+                var _irMountAfterLoad = function () {
+                    if (typeof populateReplenFiltersFromRegistry === 'function') populateReplenFiltersFromRegistry();
+                    // F1-4B-B-PRE: initialize the page-local Recommendation Context inputs (destination /
+                    // calculation month / planning cycle). Populates options + restores explicit session
+                    // selections + refreshes the readiness indicator. Does NOT call the Recommendation API.
+                    if (typeof initReplenRecoContext === 'function') initReplenRecoContext();
+                    renderReplenishment();
+                    // F1-4B-FM5-R4UI-R5G §1 — bind the (event-driven) horizontal-scrollbar gutter measurement + seed it.
+                    if (typeof _irBindHScrollGutterResizeOnce_ === 'function') _irBindHScrollGutterResizeOnce_();
+                    if (typeof _irUpdateHScrollGutter_ === 'function') _irUpdateHScrollGutter_();
+                    // F1-4B-FM5-R4J §13 — if a backend Inventory gap job is still PENDING/RUNNING (started here before a
+                    // refresh, or from another tab / the daily scheduler), resume READ-ONLY status polling and refresh on
+                    // DONE. The original tab does not need to have stayed alive.
+                    if (typeof _irResumeGapJobOnMount_ === 'function') { try { _irResumeGapJobOnMount_(); } catch (e) {} }
+                };
+                if (_irEffectiveWorkspace()) {
+                    _irWorkspaceRefresh_().then(_irMountAfterLoad).catch(function (err) { _irRenderError_(err); });
+                } else {
+                    _irMountAfterLoad();
+                }
             });
         },
         unmount() {

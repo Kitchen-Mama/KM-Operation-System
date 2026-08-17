@@ -448,3 +448,42 @@ fcSummary, **skuDetails**. REGISTERED-only = inventoryReplenishment. Next: sku-r
 SKU surface — trivial: same workspace + include.regional), inventoryReplenishment workspace, the DEFERRED Event Assist
 authority redesign, request-order.js secondary surfaces, or Batch F (writer-reload + global-prime retirement). Do NOT
 begin automatically.
+
+### F1-7I-R1 delta (2026-08-13) — Inventory Replenishment scoped read DONE (LAST registered-only workspace → 0 remaining)
+`inventoryReplenishment` is now a CANONICAL workspace (new backend `60_api_v1_inventory_replenishment_workspace.gs` +
+router action `inventoryReplenishment.workspace.get`; kill switch `setWorkspaceEnabled('inventoryReplenishment', false)`) —
+the registered stub is now IMPLEMENTED. **This was the LAST registered-only workspace: 0 registered-only remain.**
+`inventory-replenishment.js`'s PRIMARY render (the main replenishment table assembled by `_getCloudReplenishmentData`)
+sources its 19 tables from the scoped workspace via a single choke point (the assembly's local `get()` + `_replenActiveMarketplaces`
+now consult the read-model) — no broad Operation DB for the primary render (mount + search fetch the workspace instead of
+`loadOperationDb({force:true})`), scoped post-write refresh (`_irAfterWrite`), fail-closed (`INVENTORY_REPLENISHMENT_READ_FAILED`;
+no silent legacy fallback), `KM.loadState` region. The workspace returns raw passthrough of the FULL tables (bounded by a
+non-silent `capped` backstop; the page derives scope + assembles client-side, so server-side narrowing would risk drift).
+db-api `adaptInventoryReplenishmentWorkspace` maps each table through the SAME normalizer + per-array filter as
+`normalizeOperationDb`, **keyed by getter name**, so `get(name)` returns byte-identical arrays to the legacy getters
+(proven 66/0). **§2 frozen quantity authorities preserved**; **Gap (inventoryReplenishmentGap.get), Recommendation
+(recommendation.workspace.get), allocation-draft SSOT (getShippingAllocationDraftWorkspace) stay on their EXISTING separate
+scoped owners** — the workspace does NOT duplicate them. **§18 FLOW-A guard PROVEN**: the page/workspace create NO Request
+Order / Purchase Order / Order-Planning-Gap / AI Plan (Inventory Gap → Recommendation → Shipping Plan → Shipment); Submit
+Plan → `createShippingPlansBatch` (Weekly Shipping Plan runtime). **§10 Add-SKU** initializes marketplace_skus + pricing_list
++ fc_regular_forecast, **never factory_stock** (boundary intact). **§8 Incoming-inventory — `INCOMING_INVENTORY_AUTHORITY_REDESIGN_REQUIRED`
+(scoped, DEFERRED):** the frontend `_irBuildShipmentRemainingByReceiver` reconstructs a canonical incoming fact
+(MAX(0, shipment_qty − shipment_received_qty) + ETA bucketing + shipping-plan-lineage receiver attribution); NO backend
+authority exposes the same fact (shipment.workspace.get deliberately leaves remaining/attribution presentation-side; the
+code self-flags MERGED_SHIPMENT_FROZEN_SHARE_AUTHORITY_GAP / SHIPMENT_OVERDUE_BUCKET_AUTHORITY_GAP). Moving it to a new
+canonical incoming owner = a receipt-semantics redesign → DEFERRED (not mixed into this transport cutover); the
+reconstruction stays presentation-side over the scoped raw rows → BEFORE == AFTER (§20 allows a non-backend-owned incoming
+formula + display math). **Apps Script sync + new /exec REQUIRED** (60_ + router; deploy backend before/with the canonical-ON
+frontend, or hold with the kill switch). Frontend deploy: km-api-foundation.js + operation-system-db-api.js +
+inventory-replenishment.js. Bundle/DB unchanged. Contract tests: all four "unimplemented/non-canonical example" tests
+(foundation R3b/R6/F2/F3/L4, compat NS1/NS2/FF4, weekly CR2/OW1, recommendation-cutover A6) repointed to a synthetic
+`customWs` since no registered-only workspace remains. Full regression: only the 4 known baseline failures. See
+`F1_7I_INVENTORY_REPLENISHMENT_WORKSPACE_AND_CUTOVER_R1.md`.
+
+**Workspace status:** IMPLEMENTED/canonical = weeklyShipping, recommendation, purchaseOrder, requestOrder, shipment,
+fcSummary, skuDetails, **inventoryReplenishment**. **REGISTERED-only = NONE (0).** All 8 registered page workspaces are now
+scoped-read canonical. **The primary-read API migration is COMPLETE for every registered page workspace** — but the full
+system migration is NOT done: DEFERRED secondary surfaces remain (sku-regional-details.js; fc-summary.js builder + Event
+Assist redesign; request-order.js secondary panels; inventory-replenishment.js expand-panel Monthly Achievement / Execution
+Plan; the incoming-inventory authority redesign) and **Batch F** (retire the ~40-writer WRITE_FORCES_FULL_RELOAD + app.js
+global prime). Do NOT begin automatically.

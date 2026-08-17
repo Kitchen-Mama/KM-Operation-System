@@ -44,8 +44,10 @@ function mkt(over) { var L = { recommendationLineId: 'M1', recommendationMode: '
   ok(api.getWorkspaceFlags().recommendation === true, 'A3 recommendation per-workspace flag defaults TRUE');
   ok(api.workspaceApiActive('recommendation') === true, 'A4 recommendation ACTIVE by default with the master flag OFF (no console command)');
   ok(api.effectiveMode('recommendation') === 'workspace', 'A5 effective mode = workspace by default');
-  // other workspaces unaffected: still legacy until master + their flag are on.
-  ok(api.effectiveMode('inventoryReplenishment') === 'legacy' && api.workspaceApiActive('inventoryReplenishment') === false, 'A6 non-canonical workspaces remain gated (master OFF → legacy) — cutover is scoped to recommendation');
+  // other (non-canonical) workspaces unaffected: still legacy until master + their flag are on. All default workspaces are
+  // now canonical (F1-7I), so use a synthetic non-canonical registered-only workspace to prove the gate.
+  api.registry.register('customWs', { tables: ['t'], legacyRead: 'getOperationDb' });
+  ok(api.effectiveMode('customWs') === 'legacy' && api.workspaceApiActive('customWs') === false, 'A6 non-canonical workspaces remain gated (master OFF → legacy) — cutover is scoped to recommendation');
 
   section('B. Single emergency kill switch (rollback) — no overlapping flags');
   api.setWorkspaceEnabled('recommendation', false);

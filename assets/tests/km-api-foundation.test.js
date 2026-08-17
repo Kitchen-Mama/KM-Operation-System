@@ -48,12 +48,16 @@ function makeLegacy() {
   ok(api.registry.get('recommendation').status === 'IMPLEMENTED', 'R3a2 recommendation is IMPLEMENTED (F1-4B-A)');
   ok(api.registry.get('fcSummary').status === 'IMPLEMENTED', 'R3a3 fcSummary is IMPLEMENTED (F1-7G)');
   ok(api.registry.get('skuDetails').status === 'IMPLEMENTED', 'R3a4 skuDetails is IMPLEMENTED (F1-7H)');
-  ok(api.registry.list().filter(function (w) { return w.name !== 'weeklyShipping' && w.name !== 'recommendation' && w.name !== 'purchaseOrder' && w.name !== 'requestOrder' && w.name !== 'shipment' && w.name !== 'fcSummary' && w.name !== 'skuDetails'; }).every(function (w) { return w.status === 'REGISTERED' && w.implemented === false; }), 'R3b only inventoryReplenishment remains REGISTERED-only');
+  ok(api.registry.get('inventoryReplenishment').status === 'IMPLEMENTED', 'R3a5 inventoryReplenishment is IMPLEMENTED (F1-7I)');
+  // F1-7I migrated the LAST registered-only workspace → every registered workspace is now IMPLEMENTED (0 registered-only).
+  ok(api.registry.list().every(function (w) { return w.status === 'IMPLEMENTED' && w.implemented === true; }), 'R3b ALL registered workspaces are now IMPLEMENTED (0 registered-only)');
   ok(api.registry.get('weeklyShipping').tables.indexOf('shipping_plans') >= 0, 'R4 registry carries the table set');
   api.registry.register('customWs', { tables: ['t'] });
   ok(api.registry.has('customWs'), 'R5 register() adds a new workspace');
-  var rw = api.workspaceResolver.resolve('inventoryReplenishment');
-  ok(rw.found === true && rw.implemented === false && rw.status === 'REGISTERED', 'R6 WorkspaceResolver.resolve reports registered/not-implemented');
+  // All default workspaces are now IMPLEMENTED (F1-7I). Use the synthetic REGISTERED-only `customWs` (registered above,
+  // no resolver) as the not-implemented example for the resolver/routing mechanism tests.
+  var rw = api.workspaceResolver.resolve('customWs');
+  ok(rw.found === true && rw.implemented === false && rw.status === 'REGISTERED', 'R6 WorkspaceResolver.resolve reports a registered/not-implemented workspace (synthetic customWs)');
   ok(api.workspaceResolver.resolve('ghost').found === false, 'R7 resolver reports unknown workspace');
 
   // =====================================================================================================
@@ -78,12 +82,13 @@ function makeLegacy() {
   // =====================================================================================================
   section('Feature Flag routing (default legacy)');
   ok(api.getFlags().USE_WORKSPACE_API === false, 'F1 default flag false');
-  // weeklyShipping/requestOrder/shipment are now CANONICAL (F1-7B/7D/7F); use `inventoryReplenishment` (still non-canonical, REGISTERED-only) to demonstrate master-flag routing.
-  var wsLegacy = await run(api.client.getWorkspace('inventoryReplenishment'));
+  // All default workspaces are now CANONICAL (F1-7B..7I); use the synthetic non-canonical REGISTERED-only `customWs`
+  // (no resolver) to demonstrate master-flag routing.
+  var wsLegacy = await run(api.client.getWorkspace('customWs'));
   ok(wsLegacy.success === true && wsLegacy.meta.source === 'legacy' && wsLegacy.meta.mode === 'legacy', 'F2 flag OFF → non-canonical getWorkspace routes to LEGACY');
   api.setWorkspaceApiEnabled(true);
-  // inventoryReplenishment is still REGISTERED-only → master ON routes to the workspace path and fails closed.
-  var wsWs = await run(api.client.getWorkspace('inventoryReplenishment'));
+  // customWs is REGISTERED-only (no resolver) → master ON routes to the workspace path and fails closed.
+  var wsWs = await run(api.client.getWorkspace('customWs'));
   ok(wsWs.success === false && wsWs.errors[0].code === 'WORKSPACE_NOT_IMPLEMENTED' && wsWs.meta.source === 'workspace', 'F3 flag ON → registered-only workspace returns WORKSPACE_NOT_IMPLEMENTED');
   api.setWorkspaceApiEnabled(false); // restore
 
@@ -95,7 +100,9 @@ function makeLegacy() {
   ok(cmd.success === true && cmd.data.updated === true && cmd.data.id === 'SP-1', 'L1 executeCommand delegates to the legacy method and returns its data');
   ok(legacy._calls.some(function (c) { return c[0] === 'updateShippingPlanStatus' && c[1].id === 'SP-1'; }), 'L2 the underlying legacy function was actually invoked with the payload');
   ok(cmd.meta.source === 'legacy', 'L3 meta records legacy source');
-  var wsRead = await run(api2.client.getWorkspace('inventoryReplenishment'));
+  // Register a synthetic non-canonical REGISTERED-only workspace on api2 (all defaults are now canonical/IMPLEMENTED).
+  api2.registry.register('customWs', { tables: ['t'], legacyRead: 'getOperationDb' });
+  var wsRead = await run(api2.client.getWorkspace('customWs'));
   ok(wsRead.success === true && legacy._calls.some(function (c) { return c[0] === 'getOperationDb'; }), 'L4 legacy-mode workspace read delegates to getOperationDb (today\'s behavior preserved)');
   var unknown = await run(api2.client.executeCommand('noSuchLegacyAction', {}));
   ok(unknown.success === false && unknown.errors[0].code === 'UNKNOWN_ACTION', 'L5 unknown legacy action → UNKNOWN_ACTION (fail closed, no throw)');
