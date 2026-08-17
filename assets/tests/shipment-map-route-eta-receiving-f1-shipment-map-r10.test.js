@@ -47,7 +47,7 @@ ok(!/\bstatus\b/.test(etaFn) && !/shipment_received_qty/.test(etaFn) && !/shipme
 ok(/sUpdAt !== -1[\s\S]{0,60}updated_at/.test(GS) || /col\('updated_at'\)/.test(etaFn), 'ETA writer stamps updated_at/updated_by where present');
 ok(/action === 'shipment\.eta\.update'[\s\S]{0,80}handleUpdateShipmentEta_/.test(ROUTER), 'router routes shipment.eta.update → handleUpdateShipmentEta_');
 var etaAdapter = DBAPI.slice(DBAPI.indexOf('updateShipmentEta = async function'), DBAPI.indexOf('updateShipmentEta = async function') + 1400);
-ok(/action: 'shipment\.eta\.update'/.test(etaAdapter) && /loadOperationDb\(\{ force: true \}\)/.test(etaAdapter), 'DB adapter posts shipment.eta.update + force-reloads on success');
+ok(/action: 'shipment\.eta\.update'/.test(etaAdapter) && /if \(json && json\.success\) \{ await _kmWriterPostWrite_\(\); \}/.test(etaAdapter), 'DB adapter posts shipment.eta.update + runs the post-write seam on success (F1-7K: page owns scoped readback; no whole-DB reload)');
 
 // ===== drawer UX (source guards) =====
 var wire = extractFn(MAP, 'wireReceiptControls');

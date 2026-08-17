@@ -607,3 +607,26 @@ NO .gs/router/exec). Full detail: `F1_7J_A3_REMAINING_NON_WORKSPACE_PRIMARY_SCOP
 - **Readiness:** Batch F (F1-7K) = READY to start (no authority blocker; it is the writer-invalidation work). app.js prime
   removal (F1-7L) = NOT ready — gated on the IR allocation-draft hydrate (HALT E) + the 2 secondary lazy reads + the broad
   load still used by the 13 Legacy branches + 47 writers. Do NOT begin Batch F / prime removal / authority redesign automatically.
+
+## F1-7K-BATCH-F-WRITER-FULL-RELOAD-RETIREMENT-R1 (WRITE_FORCES_FULL_RELOAD: 47 → 0) — Batch F = **DONE**
+PRE HEAD `655d3bc`. TRANSPORT/INVALIDATION only; no formula/authority/schema/response-shape/idempotency/transaction
+change; **FRONTEND-ONLY** (operation-system-db-api.js + inventory-replenishment.js — NO .gs/router/exec/bundle/DB). Full
+detail: `F1_7K_BATCH_F_WRITER_FULL_RELOAD_RETIREMENT_R1.md`.
+- **PRE inventory confirmed EXACTLY 47** (43 direct + 4 via `_kmShippingPost_(…,reloadAfter=true)`); no drift. The
+  `_kmWeeklyCommand_` writers already did NO reload (the target pattern); page callers already re-read scoped after write.
+- **Mechanism (no new cache, no TTL):** ONE seam `_kmWriterPostWrite_()` replaces every writer reload; it reloads the
+  whole DB ONLY when `_kmScopedPostureActive_()` is false (an auto-coupled read-only probe of `KM_WRITER_FULL_RELOAD` /
+  `KM_SCOPED_PAGE_READS` / all 8 canonical `workspaceApiActive`). Default posture → does NOTHING → **47→0**; any read-side
+  kill switch AUTO-re-arms the old reload (single-lever rollback stays fresh). Plus a bounded `_kmRefreshCacheTables_`
+  (§13 targeted slice patch) for `upsertRequestOrderSiteConfirmations` (broad-cache primary surface in every mode), and a
+  1-line IR CSV-import readback routed through the existing `_irAfterWrite` (matches the single-row Add path).
+- **Error/idempotency:** the seam sits in each writer's SUCCESS branch only → a failed write never invalidates; token/lease/
+  double-click guards untouched. **§14 secondary readers** (RO 2nd-layer expand, fc-summary modals) left in place —
+  self-heal on open (documented, not redesigned). **app.js prime UNCHANGED** (F1-7L owns removal).
+- **Debt Δ:** **writer full-reload 47→0**; whole-DB reload CALLS in db-api 45→2 (seam fallback + debug util); ACTIVE_PRIMARY
+  broad 0 (unchanged); ACTIVE_SECONDARY 2; BACKGROUND 2; LEGACY_ONLY 13; app-prime-dependent 1 (HALT E, untouched). Tests:
+  new suite 152/0 + 5 stale-contract assertion updates; full regression 233 files, only the 4 baselines; bundle unchanged
+  (aaf5b07). **Deploy: Apps Script sync NO, router NO, /exec NO, DB/bundle NO; frontend YES** (operation-system-db-api.js +
+  inventory-replenishment.js). Rollback: revert, or `window.KM_WRITER_FULL_RELOAD=true`.
+- **Readiness:** Batch F = DONE. app.js prime removal (F1-7L) still NOT ready (HALT E + secondary lazy reads + 13 Legacy
+  branches). Full API migration NOT done. Do NOT begin F1-7L / authority redesign automatically.

@@ -25,7 +25,7 @@ console.log('\n== DB API adapter — thin bridge to the ONE R3A authority ==');
 ok(/window\.KM\.DB\.generateShipmentLineAllocations = async function/.test(API), 'generateShipmentLineAllocations DB method exists');
 ok(/action: 'generateShipmentLineAllocations'/.test(API), 'adapter posts the canonical router action');
 var apiFn = API.slice(API.indexOf('window.KM.DB.generateShipmentLineAllocations = async'), API.indexOf('window.KM.DB.generateShipmentLineAllocations = async') + 1300);
-ok(/loadOperationDb\(\{ force: true \}\)/.test(apiFn), 'adapter refreshes canonical DB cache on success (draft allocations visible)');
+ok(/if \(json && json\.success\) \{ await _kmWriterPostWrite_\(\); \}/.test(apiFn), 'adapter runs the post-write seam on success (F1-7K: shipment page owns the scoped readback that makes draft allocations visible)');
 ok(!/order_date|allocated_qty|completed_qty|\.sort\(|shipped_qty/.test(apiFn), 'adapter contains NO FIFO / capacity / shipped math (pure transport)');
 
 console.log('\n== §3 write order: Save → reconcile → dispatch ==');

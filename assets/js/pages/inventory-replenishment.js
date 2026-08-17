@@ -4747,8 +4747,10 @@ function runReplenImport() {
                 };
                 var mergedResults = clientErrors.concat(data.results || []);
                 renderReplenImportResult({ summary: mergedSummary, results: mergedResults });
-                // Refresh table after a successful import (wrapper already reloaded the DB cache).
-                if (typeof renderReplenishment === 'function') renderReplenishment();
+                // Batch F (F1-7K): the writer no longer reloads the whole DB, so this import owns its readback the
+                // same way the single-row Add path does — _irAfterWrite does a scoped IR re-read in Workspace mode
+                // (Legacy render-only, where the writer's posture-gated fallback already refreshed the cache).
+                _irAfterWrite(function () { if (typeof renderReplenishment === 'function') renderReplenishment(); });
             })
             .catch(function(err) {
                 if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }

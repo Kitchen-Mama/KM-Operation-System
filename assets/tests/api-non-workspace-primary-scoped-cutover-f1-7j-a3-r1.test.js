@@ -126,8 +126,9 @@ ok(/_crcAfterWrite\(/.test(CRC_JS), 'carrier-rate-card: post-write scoped refres
 
 // ===================================================================================================================
 console.log('\n== §11 Batch-F blocker reconciliation (source-grounded) ==');
-// Batch F = replace the ~47 writer post-write loadOperationDb({force:true}) with scoped reconciliation.
-ok((DBAPI.match(/loadOperationDb\(\{\s*force:\s*true\s*\}\)/g) || []).length >= 40, 'Batch-F: writer full-reloads still present (untouched this round — 47→47)');
+// Batch F = replace the 47 writer post-write loadOperationDb({force:true}) with scoped reconciliation.
+// A3 left them untouched (47→47); F1-7K has since retired them to the _kmWriterPostWrite_ seam (47→0).
+ok(DBAPI.indexOf('_kmWriterPostWrite_') !== -1, 'Batch-F (F1-7K done): writer full-reloads retired to the _kmWriterPostWrite_ seam');
 // 1+2+3 (incoming / sitePlanning / event-assist) read through scoped choke points → not a full-reload consumer.
 ok(/function _irBuildShipmentRemainingByReceiver/.test(IR_JS), 'Batch-F item1: incoming reconstruction exists (reads via IR scoped get() — not a writer-reload consumer)');
 ok(/no movement, no reserve|display-only|DISPLAY_ONLY/i.test(IR_JS), 'Batch-F item2: sitePlanningAllocation is display-only (no write/readback coupling)');

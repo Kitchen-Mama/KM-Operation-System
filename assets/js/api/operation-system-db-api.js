@@ -2609,12 +2609,64 @@ window.KM.DB.isCloudWriteEnabled = function() {
     return isOperationDbApiConfigured() && getOperationDbDataSourceMode() === 'google-sheet';
 };
 
+// ── Batch F (F1-7K) — WRITE_FORCES_FULL_RELOAD retirement ─────────────────────────────────────────
+// A successful write no longer refreshes the WHOLE Operation DB. Canonical/scoped consumer pages own their
+// bounded post-write readback (getWorkspace / loadScopedTables / _xAfterWrite / targeted re-read), so the
+// shared global window._opDbCache is deliberately ignored by them and may go stale — acceptable (§13). This
+// ONE seam replaces every direct writer's former whole-DB `loadOperationDb({ force: true })`.
+//
+// _kmScopedPostureActive_() returns true ONLY when we can POSITIVELY confirm the read side is fully scoped
+// (every consumer re-reads its own slice; none renders from the broad cache). In that posture the seam does
+// NOTHING → the 47 whole-DB writer reloads become 0. Otherwise (any read-side kill switch engaged, Foundation
+// unavailable, or anything uncertain) it falls back to the OLD whole-DB reload so a rollback stays
+// fresh-after-write with NO second lever. Read-only posture probe — no new cache, no TTL, no mutation logic.
+//   Levers that automatically re-arm the reload (mirror the exact signals pages use to pick Legacy render):
+//     • window.KM_WRITER_FULL_RELOAD === true  → explicit master rollback for ALL writers (§23)
+//     • window.KM_SCOPED_PAGE_READS === false  → the F1-7J-A3 non-workspace scoped-page kill switch
+//     • setWorkspaceEnabled(name, false)       → any canonical workspace rolled back to Legacy render
+var _KM_CANONICAL_WORKSPACES_ = ['weeklyShipping', 'recommendation', 'purchaseOrder', 'requestOrder',
+    'shipment', 'fcSummary', 'skuDetails', 'inventoryReplenishment'];
+function _kmScopedPostureActive_() {
+    try {
+        if (typeof window === 'undefined') return false;
+        if (window.KM_WRITER_FULL_RELOAD === true) return false;      // explicit rollback → reload
+        if (window.KM_SCOPED_PAGE_READS === false) return false;       // A3 scoped-page kill switch → reload
+        var api = window.KM && window.KM.api;
+        if (!api || typeof api.workspaceApiActive !== 'function') return false;   // Foundation absent → can't confirm → reload
+        for (var i = 0; i < _KM_CANONICAL_WORKSPACES_.length; i++) {
+            if (api.workspaceApiActive(_KM_CANONICAL_WORKSPACES_[i]) !== true) return false;   // a workspace rolled back → reload
+        }
+        return true;   // fully scoped → consumers own their readback → NO whole-DB reload
+    } catch (e) { return false; }   // any uncertainty → fall back to the old whole-DB reload (fail-safe)
+}
+// The single post-write seam every direct writer now awaits instead of loadOperationDb({ force: true }).
+async function _kmWriterPostWrite_() {
+    if (!_kmScopedPostureActive_()) { await loadOperationDb({ force: true }); }
+}
+// Bounded targeted cache patch (§1 option C / §13-sanctioned) — re-GET only the named tables via the EXISTING
+// getTable action, run the SAME normalizeOperationDb per-table logic, and patch ONLY those slices into the
+// global cache. Used where a PRIMARY surface reads a broad-cache slice directly in EVERY mode (no scoped
+// read-model), so the post-write readback must keep that one slice fresh without any whole-DB reload.
+var _KM_TABLE_CACHE_KEY_ = { request_order_site_confirmations: 'requestOrderSiteConfirmations' };
+async function _kmRefreshCacheTables_(tableNames) {
+    var names = (tableNames || []).filter(Boolean);
+    if (!names.length) return;
+    var rawDb = {};
+    await Promise.all(names.map(async function (n) { rawDb[n] = await getOperationDbTableFromSheet(n); }));
+    var norm = normalizeOperationDb(rawDb);
+    if (!window._opDbCache) window._opDbCache = normalizeOperationDb({});
+    names.forEach(function (n) {
+        var key = _KM_TABLE_CACHE_KEY_[n];
+        if (key && Object.prototype.hasOwnProperty.call(norm, key)) window._opDbCache[key] = norm[key];
+    });
+}
+
 window.KM.DB.updateSkuLifecycle = async function(sku, lifecycle) {
     if (window.KM.DB.isCloudWriteEnabled()) {
         // Cloud mode: sku_details.lifecycle is the SINGLE authority — write the sheet, then re-read fresh.
         // (F1-S1: no browser lifecycle override exists to clear anymore.)
         var result = await updateSkuLifecycleInSheet(sku, lifecycle);
-        await loadOperationDb({ force: true });
+        await _kmWriterPostWrite_();
         return result;
     } else {
         // Mock / no-cloud mode: lifecycle is NOT persisted to the browser (F1-S1 — authority = sku_details
@@ -2668,7 +2720,7 @@ window.KM.DB.upsertMarketplace = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -2686,7 +2738,7 @@ window.KM.DB.upsertMarketplaceSku = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -2704,7 +2756,7 @@ window.KM.DB.updateMarketplaceSkuModel = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -2730,7 +2782,7 @@ window.KM.DB.upsertSkuDetail = async function(payload) {
         if (json.error_code) e.error_code = json.error_code;
         throw e;
     }
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -2753,7 +2805,7 @@ window.KM.DB.upsertSkuRegionalDetail = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert regional detail failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -2778,7 +2830,7 @@ window.KM.DB.upsertTaxReferralRate = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert tax referral rate failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -2801,7 +2853,7 @@ window.KM.DB.upsertTaxRateComponent = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert tax rate component failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -2829,7 +2881,7 @@ window.KM.DB.confirmShipmentAndDispatch = async function(payload) {
     } catch (e) {
         return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' };
     }
-    if (json && json.success) { await loadOperationDb({ force: true }); }   // refresh cache so On-the-Way sees it
+    if (json && json.success) { await _kmWriterPostWrite_(); }   // refresh cache so On-the-Way sees it
     return json;
 };
 
@@ -2882,7 +2934,7 @@ window.KM.DB.generateShipmentLineAllocations = async function(payload) {
     } catch (e) {
         return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' };
     }
-    if (json && json.success) { await loadOperationDb({ force: true }); }   // refresh cache so draft allocations are visible
+    if (json && json.success) { await _kmWriterPostWrite_(); }   // refresh cache so draft allocations are visible
     return json;
 };
 
@@ -2910,7 +2962,7 @@ window.KM.DB.updateShipmentReceipt = async function(payload) {
     } catch (e) {
         return { success: false, error: (e && e.message) ? e.message : String(e), code: 'network' };
     }
-    if (json && json.success) { await loadOperationDb({ force: true }); }
+    if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
 };
 
@@ -2936,7 +2988,7 @@ window.KM.DB.advanceShipmentRoutePoint = async function(payload) {
     } catch (e) {
         return { success: false, error: (e && e.message) ? e.message : String(e), code: 'network' };
     }
-    if (json && json.success) { await loadOperationDb({ force: true }); }
+    if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
 };
 
@@ -2961,7 +3013,7 @@ window.KM.DB.updateShipmentEta = async function(payload) {
     } catch (e) {
         return { success: false, error: (e && e.message) ? e.message : String(e), code: 'network' };
     }
-    if (json && json.success) { await loadOperationDb({ force: true }); }
+    if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
 };
 
@@ -2983,7 +3035,7 @@ window.KM.DB.syncMarketplaceSkusToSkuRegionalDetails = async function() {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Sync regional details failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3003,7 +3055,7 @@ window.KM.DB.createShippingPlansBatch = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Create shipping plans failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3164,7 +3216,7 @@ async function _kmShippingPost_(action, payload, errMsg, reloadAfter) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || errMsg);
-    if (reloadAfter) await loadOperationDb({ force: true });
+    if (reloadAfter) await _kmWriterPostWrite_();
     return json.data;
 }
 // READ: Execution Plan method recommendation + Weekly L1 cascade { origin_country?, destination_country|country, planning_date?, skus?, shipping_method?, last_mile_delivery? }.
@@ -3197,7 +3249,7 @@ window.KM.DB.createShipmentFromPlan = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Create shipment failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3219,7 +3271,7 @@ window.KM.DB.updateShipment = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update shipment failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3247,7 +3299,7 @@ window.KM.DB.createRequestOrderDraft = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Create request order failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3263,7 +3315,7 @@ window.KM.DB.upsertRequestOrderAllocationDraft = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert allocation draft failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3295,7 +3347,7 @@ window.KM.DB.upsertRequestOrderAllocationDraftLines = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error((json.data && json.data.reason) || json.error || 'Upsert allocation draft lines failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3307,7 +3359,7 @@ window.KM.DB.submitRequestOrderAllocationDrafts = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Submit allocation drafts failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3351,7 +3403,10 @@ window.KM.DB.upsertRequestOrderSiteConfirmations = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert site confirmations failed');
-    await loadOperationDb({ force: true });
+    // Batch F: this PRIMARY surface (request-order.js _roLoadConfirmationsFromDb → getRequestOrderSiteConfirmations)
+    // reads the broad-cache slice directly in EVERY mode (no scoped read-model), so keep just that ONE slice fresh
+    // via a bounded targeted re-read instead of a whole-DB reload.
+    await _kmRefreshCacheTables_(['request_order_site_confirmations']);
     return json.data;
 };
 
@@ -3460,7 +3515,7 @@ window.KM.DB.importCarrierRateTemplate = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Import carrier rate cards failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3480,7 +3535,7 @@ window.KM.DB.updateRequestOrderStatus = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update request order status failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3500,7 +3555,7 @@ window.KM.DB.updateRequestOrderLineQty = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update request order line qty failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3520,7 +3575,7 @@ window.KM.DB.cancelRequestOrderTier = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Cancel request order tier failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3540,7 +3595,7 @@ window.KM.DB.createPurchaseOrderFromRequest = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Create purchase order failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3560,7 +3615,7 @@ window.KM.DB.updatePurchaseOrderStatus = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update purchase order status failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3579,7 +3634,7 @@ window.KM.DB.updatePurchaseOrderLine = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update purchase order line failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3602,7 +3657,7 @@ window.KM.DB.updatePurchaseOrderHeader = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Update purchase order header failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3625,7 +3680,7 @@ window.KM.DB.receivePurchaseOrderLines = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Receive purchase order lines failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3653,7 +3708,7 @@ window.KM.DB.upsertCampaign = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert campaign failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3671,7 +3726,7 @@ window.KM.DB.upsertCampaignSkuLines = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert campaign_sku_lines failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3689,7 +3744,7 @@ window.KM.DB.upsertFcSpecialEvent = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert special event failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3708,7 +3763,7 @@ window.KM.DB.importFcSpecialEventsBatch = async function(rows, options) {
     });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (json && json.success) { await loadOperationDb({ force: true }); }
+    if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
 };
 
@@ -3727,7 +3782,7 @@ window.KM.DB.deleteFcSpecialEvent = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Delete special event failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3747,7 +3802,7 @@ window.KM.DB.upsertFcTargetRule = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert target rule failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3766,7 +3821,7 @@ window.KM.DB.deleteFcTargetRule = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Delete target rule failed');
-    await loadOperationDb({ force: true });
+    await _kmWriterPostWrite_();
     return json.data;
 };
 
@@ -3789,7 +3844,7 @@ window.KM.DB.importMarketplaceSkusBatch = async function(rows, options) {
     var json = await resp.json();
     // Reload DB only after a successful import; return the full API result either way.
     if (json && json.success) {
-        await loadOperationDb({ force: true });
+        await _kmWriterPostWrite_();
     }
     return json;
 };
@@ -3814,7 +3869,7 @@ window.KM.DB.importFcRegularForecastBatch = async function(rows, options) {
     var json = await resp.json();
     // Reload DB only after a successful import; return the full API result either way.
     if (json && json.success) {
-        await loadOperationDb({ force: true });
+        await _kmWriterPostWrite_();
     }
     return json;
 };
@@ -3841,7 +3896,7 @@ window.KM.DB.importOverseasInventorySnapshotBatch = async function(rows, options
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (json && json.success) {
-        await loadOperationDb({ force: true });
+        await _kmWriterPostWrite_();
     }
     return json;
 };
@@ -3860,7 +3915,7 @@ window.KM.DB.adjustOverseasInventory = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (json && json.success) {
-        await loadOperationDb({ force: true });
+        await _kmWriterPostWrite_();
     }
     return json;
 };
@@ -3883,7 +3938,7 @@ window.KM.DB.adjustFactoryInventory = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (json && json.success) {
-        await loadOperationDb({ force: true });
+        await _kmWriterPostWrite_();
     }
     return json;
 };
@@ -3987,7 +4042,7 @@ window.debugOperationDb = function() {
 window.reloadOperationDb = async function(options) {
     console.log('[OP DB] Reloading (force)...');
     window._opDbCache = null;
-    await loadOperationDb({ force: true });
+    await loadOperationDb({ force: true });   // explicit manual/debug whole-DB reload (NOT a writer path)
     if (window.renderSkuDetailsTable) renderSkuDetailsTable();
     if (window.renderSkuHandbook) renderSkuHandbook();
     console.log('[OP DB] Reload complete. Mode:', getOperationDbDataSourceMode(), 'SKUs:', (window._opDbCache.skuDetails || []).length, 'at', OperationDbState.lastLoadedAt);

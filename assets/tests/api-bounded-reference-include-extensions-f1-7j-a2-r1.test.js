@@ -161,9 +161,11 @@ ok(/function _execWarehouseCandidates\(\)[\s\S]*_irWsGet\('getWarehouses'\)/.tes
 ok((IR_JS.match(/window\.KM\.DB\.getCarrierLeadTimes\(\)|window\.KM\.DB\.getCarrierRateCards\(\)/g) || []).length === 0, 'S6: no direct broad carrier getter calls remain');
 
 // ===================================================================================================================
-console.log('\n== GENERAL · no new authority / allocation-draft untouched / writer reload untouched ==');
+console.log('\n== GENERAL · no new authority / allocation-draft untouched (writer reloads later retired by F1-7K Batch F) ==');
 ok(/function _hydrateAllocationDraftFromDb\(ctx\)[\s\S]*getShippingAllocationDrafts\(\)/.test(IR_JS), 'HALT E respected: _hydrateAllocationDraftFromDb UNCHANGED (still reads raw drafts/lines sync)');
-ok((DBAPI.match(/loadOperationDb\(\{\s*force:\s*true\s*\}\)/g) || []).length >= 40, 'writers still force-reload (untouched — count unchanged, Batch F not in scope)');
+// F1-7K (Batch F) has since retired the whole-DB writer reload: direct writers now route their post-write through
+// the _kmWriterPostWrite_ seam (posture-gated), so the A2-era `loadOperationDb({force:true})` count is intentionally 0.
+ok(DBAPI.indexOf('_kmWriterPostWrite_') !== -1, 'writer post-write reload retired by F1-7K: direct writers route through the _kmWriterPostWrite_ seam');
 ok(!/carrierBooking|selectCarrier\(|recommendCarrier\(/.test(IR_JS), 'no carrier selection/booking authority introduced (reference data only)');
 
 // -------------------------------------------------------------------------------------------------------------------

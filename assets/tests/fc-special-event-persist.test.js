@@ -80,7 +80,7 @@ ok(/fcSpecialEventUpsert_\(ss, r, actor\)/.test(batchSrc), 'H1 batch loops the S
 ok(/missing_campaign_id/.test(batchSrc) && /missing_event_name/.test(batchSrc) && /invalid_fc_qty/.test(batchSrc), 'H2 per-row validation mirrors handleUpsertFcSpecialEvent_ (fail closed, no partial silent success)');
 ok(/summary/.test(batchSrc) && /created/.test(batchSrc) && /skipped/.test(batchSrc), 'H3 deterministic per-batch summary returned');
 ok(/action === 'importFcSpecialEventsBatch'/.test(stripComments(GS01)) && /handleImportFcSpecialEventsBatch_\(body\)/.test(GS01), 'H4 router registers importFcSpecialEventsBatch → handler');
-ok(/importFcSpecialEventsBatch = async function/.test(API) && /if \(json && json\.success\) \{ await loadOperationDb/.test(API), 'H5 api wrapper posts one batch + reloads canonical DB on success (readback)');
+ok(/importFcSpecialEventsBatch = async function/.test(API) && /if \(json && json\.success\) \{ await _kmWriterPostWrite_\(\); \}/.test(API), 'H5 api wrapper posts one batch + runs the post-write seam on success only (F1-7K: page owns scoped readback; no whole-DB reload)');
 ok(!/insertSheet|getRange\(1,/.test(batchSrc), 'H6 batch handler performs no direct Sheet creation / row-1 write (delegates to the S0.5-safe shared writer)');
 
 section('§15 — legacy disposition');
