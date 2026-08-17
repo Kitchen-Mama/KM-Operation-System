@@ -145,6 +145,16 @@ function doPost(e) {
       return jsonResponse_(handleFcSummaryWorkspaceGet_(body));
     }
 
+    // API v1 · SKU Details READ-ONLY Workspace (Phase F1-7H). A body-carrying READ (no write); owner =
+    // 59_api_v1_sku_details_workspace.gs. Reads only the SKU Details master/reference table set — sku_details,
+    // tax_referral_rates, tax_rate_components (BASE); marketplace_skus, sku_regional_details (include.regional) — never
+    // getOperationDb. Returns raw passthrough of the FULL tables (the pages' filter/lifecycle/country universes need the
+    // complete set; client keeps all filtering/pagination). Authors NO write side effects — does NOT create sku_details/
+    // marketplace_skus and does NOT initialize Factory Stock (that stays with master-SKU creation). No business logic here.
+    if (action === 'skuDetails.workspace.get') {
+      return jsonResponse_(handleSkuDetailsWorkspaceGet_(body));
+    }
+
     // API v1 · AI-Plan Layer-1 RAW read owner (Phase F1-7E-PREREQ-1). A body-carrying READ (no write); owner =
     // 52_api_v1_open_po_remaining_owner.gs. Reads only purchase_orders + purchase_order_lines (never getOperationDb).
     // Exposes the RAW informational fact open_po_remaining_raw_qty per SKU (OPEN-PO statuses; persisted remaining_qty

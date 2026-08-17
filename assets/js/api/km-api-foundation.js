@@ -94,7 +94,7 @@
     { name: 'fcSummary', label: 'FC Summary',
       tables: ['fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'campaigns', 'campaign_sku_lines', 'marketplace_skus'], legacyRead: 'getOperationDb' },
     { name: 'skuDetails', label: 'SKU Details',
-      tables: ['sku_details', 'marketplace_skus', 'tax_referral_rates', 'sku_regional_details'], legacyRead: 'getOperationDb' },
+      tables: ['sku_details', 'tax_referral_rates', 'tax_rate_components', 'marketplace_skus', 'sku_regional_details'], legacyRead: 'getOperationDb' },
     // Recommendation READ-ONLY workspace (F1-4B-A) — targeted canonical tables consumed by KMPA/KMPS (never getOperationDb).
     { name: 'recommendation', label: 'Recommendation',
       tables: ['sku_details', 'marketplace_skus', 'warehouses', 'marketplaces', 'fc_regular_forecast', 'fc_special_events',
@@ -340,8 +340,8 @@
     // F1-7B-R1: weeklyShipping READ is now production-canonical (its API-3A read cutover is complete + verified).
     // Canonical = master-flag-independent; the ONLY gate/kill-switch is setWorkspaceEnabled('weeklyShipping', false).
     // F1-7C: purchaseOrder READ is now production-canonical too.
-    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true };
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: false, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: false, recommendation: true };
+    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true, skuDetails: true };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: false, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: true, recommendation: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
@@ -575,6 +575,35 @@
       });
     }
     register('fcSummary', { label: 'FC Summary', tables: getWorkspace('fcSummary').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: fcSummaryResolver });
+
+    // ---- F1-7H · SKU Details READ workspace resolver --------------------------------------------------------
+    // Scoped read for the SKU Details master-data surface. The server (59_) returns raw passthrough of the master/
+    // reference tables: BASE = sku_details + tax_referral_rates + tax_rate_components (sku-details.js primary render +
+    // Tax subpage); include.regional adds marketplace_skus + sku_regional_details (the SECONDARY regional page — a
+    // deferred, trivial follow-up). Emits ONLY raw persisted master/reference rows — NO write side effects, NO Factory
+    // Stock initialization (that stays with master-SKU creation), NO Forecast/Gap/Recommendation. The client keeps ALL
+    // filtering/search/pagination (the page needs the complete set for its lifecycle sections + option universes).
+    function buildSkuDetailsRequestDTO(params) {
+      params = params || {};
+      return {
+        apiVersion: API_VERSION, action: 'skuDetails.workspace.get', requestId: makeRequestId(params.requestId),
+        payload: {
+          include: Object.assign({ summary: true }, isObj(params.include) ? params.include : {})
+        },
+        context: { actor: (params.context && params.context.actor) || null, clientVersion: (params.context && params.context.clientVersion) || null }
+      };
+    }
+    function skuDetailsResolver(params, helpers, opts) {
+      var signal = opts && opts.signal, seq = opts && opts.sequence;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildSkuDetailsRequestDTO(params);
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
+        var env = normalizeWorkspaceEnvelope(serverEnv, dto, seq);
+        env.meta.workspace = 'skuDetails'; env.meta.action = dto.action;
+        return env;
+      });
+    }
+    register('skuDetails', { label: 'SKU Details', tables: getWorkspace('skuDetails').tables, legacyRead: 'getOperationDb', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: skuDetailsResolver });
 
     // ---- F1-4B-FM2A · Recommendation Workspace console diagnostic (SAFE, bounded; no network, no secrets) ------
     // A single read-only view for a controlled single-tester activation. It reflects the ACTUAL last request

@@ -417,3 +417,34 @@ regression: only the 4 known baseline failures. See `F1_7G_FC_SUMMARY_WORKSPACE_
 REGISTERED-only = inventoryReplenishment, skuDetails. Next: skuDetails workspace, fc-summary.js SECONDARY surfaces +
 the DEFERRED Event Assist authority redesign, request-order.js secondary surfaces, or Batch F (writer-reload +
 global-prime retirement). Do NOT begin automatically.
+
+### F1-7H-R1 delta (2026-08-13) — SKU Details scoped read DONE (regional page DEFERRED)
+`skuDetails` is now a CANONICAL workspace (new backend `59_api_v1_sku_details_workspace.gs` + router action
+`skuDetails.workspace.get`; kill switch `setWorkspaceEnabled('skuDetails', false)`) — the registered stub is now
+IMPLEMENTED. `sku-details.js`'s PRIMARY render (the four SKU lifecycle tables + the per-Series HS-code / Tax subpage)
+sources sku_details / tax_referral_rates / tax_rate_components from the scoped workspace — no broad Operation DB for the
+primary render, scoped post-write refresh (`_skAfterWrite`), fail-closed (`SKU_DETAILS_READ_FAILED`; no silent legacy
+fallback), `KM.loadState` region. The workspace returns RAW passthrough of the FULL tables (bounded by a non-silent
+`capped` backstop; the pages' lifecycle sections + Category/Series universes need the complete set) with the `regional`
+tables (marketplace_skus + sku_regional_details) **include-gated** and ready for the deferred sku-regional-details.js
+cutover. db-api `adaptSkuDetailsWorkspace` re-normalizes with the SAME normalizers + per-array filters as
+`normalizeOperationDb` → arrays byte-identical to getSkuDetails/getTaxReferralRates/getTaxRateComponents/getMarketplaceSkus/
+getSkuRegionalDetails (proven: the ACTUAL `getAllSkuDataWithOverrides` grouping + `_skuDistinctValues` universes yield
+identical output from the read-model vs the getters). The shared `getAllSkuDataWithOverrides(sourceItems)` gained an
+optional read-model arg (backward compatible). **§1/§12 Factory Stock invariant PROVEN unchanged:** master-SKU creation
+initializes a `factory_stock` (=0) baseline ONLY on the non-running → "Running in the Market" transition
+(`handleUpsertSkuDetail_` → `ensureFactoryStockBaseline_`), NOT on mere creation and NOT on marketplace-SKU creation — no
+divergence; this READ workspace never touches factory_stock and the write paths (upsertSkuDetail, updateSkuLifecycle,
+upsertTaxReferralRate) are byte-identical. **§6 HS-code** stays owned by tax_referral_rates (upsertTaxReferralRate);
+read-only transport. **Apps Script sync + new /exec REQUIRED** (59_ + router; deploy backend before/with the canonical-ON
+frontend, or hold with the kill switch). Frontend deploy: km-api-foundation.js + operation-system-db-api.js +
+sku-details.js + utils/sku-overrides.js. Bundle/DB unchanged. Contract tests: foundation R3b now "only
+inventoryReplenishment REGISTERED-only" (+ skuDetails IMPLEMENTED); compat CUTOVER_PAGES += sku-details.js; skuDetails
+registration table list updated to include tax_rate_components. Full regression: only the 4 known baseline failures. See
+`F1_7H_SKU_DETAILS_WORKSPACE_AND_CUTOVER_R1.md`.
+
+**Workspace status:** IMPLEMENTED/canonical = weeklyShipping, recommendation, purchaseOrder, requestOrder, shipment,
+fcSummary, **skuDetails**. REGISTERED-only = inventoryReplenishment. Next: sku-regional-details.js (the deferred SECONDARY
+SKU surface — trivial: same workspace + include.regional), inventoryReplenishment workspace, the DEFERRED Event Assist
+authority redesign, request-order.js secondary surfaces, or Batch F (writer-reload + global-prime retirement). Do NOT
+begin automatically.

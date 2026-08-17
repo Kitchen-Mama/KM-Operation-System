@@ -43,11 +43,12 @@ function makeLegacy() {
   ok(JSON.stringify(names) === JSON.stringify(['fcSummary', 'inventoryReplenishment', 'purchaseOrder', 'recommendation', 'requestOrder', 'shipment', 'skuDetails', 'weeklyShipping']),
     'R1 the 8 canonical workspaces are registered (incl. recommendation, F1-4B-A)');
   ok(api.registry.has('weeklyShipping') && !api.registry.has('nope'), 'R2 has() works');
-  // API-2 / F1-4B-A / F1-7C / F1-7D / F1-7F / F1-7G: weeklyShipping + recommendation + purchaseOrder + requestOrder + shipment + fcSummary are IMPLEMENTED; the other two (inventoryReplenishment, skuDetails) REGISTERED-only.
+  // API-2 / F1-4B-A / F1-7C / F1-7D / F1-7F / F1-7G / F1-7H: weeklyShipping + recommendation + purchaseOrder + requestOrder + shipment + fcSummary + skuDetails are IMPLEMENTED; only inventoryReplenishment REGISTERED-only.
   ok(api.registry.get('weeklyShipping').status === 'IMPLEMENTED', 'R3a weeklyShipping is IMPLEMENTED (API-2)');
   ok(api.registry.get('recommendation').status === 'IMPLEMENTED', 'R3a2 recommendation is IMPLEMENTED (F1-4B-A)');
   ok(api.registry.get('fcSummary').status === 'IMPLEMENTED', 'R3a3 fcSummary is IMPLEMENTED (F1-7G)');
-  ok(api.registry.list().filter(function (w) { return w.name !== 'weeklyShipping' && w.name !== 'recommendation' && w.name !== 'purchaseOrder' && w.name !== 'requestOrder' && w.name !== 'shipment' && w.name !== 'fcSummary'; }).every(function (w) { return w.status === 'REGISTERED' && w.implemented === false; }), 'R3b the other two workspaces (inventoryReplenishment, skuDetails) remain REGISTERED-only');
+  ok(api.registry.get('skuDetails').status === 'IMPLEMENTED', 'R3a4 skuDetails is IMPLEMENTED (F1-7H)');
+  ok(api.registry.list().filter(function (w) { return w.name !== 'weeklyShipping' && w.name !== 'recommendation' && w.name !== 'purchaseOrder' && w.name !== 'requestOrder' && w.name !== 'shipment' && w.name !== 'fcSummary' && w.name !== 'skuDetails'; }).every(function (w) { return w.status === 'REGISTERED' && w.implemented === false; }), 'R3b only inventoryReplenishment remains REGISTERED-only');
   ok(api.registry.get('weeklyShipping').tables.indexOf('shipping_plans') >= 0, 'R4 registry carries the table set');
   api.registry.register('customWs', { tables: ['t'] });
   ok(api.registry.has('customWs'), 'R5 register() adds a new workspace');

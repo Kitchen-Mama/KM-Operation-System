@@ -64,15 +64,17 @@ function resolveSkuImageUrl(imageUrl) {
     return url;
 }
 
-// Get all SKU data with overrides applied, grouped by lifecycle
-function getAllSkuDataWithOverrides() {
-    // Try KM.DB first (Google Sheet or mock via API adapter)
+// Get all SKU data with overrides applied, grouped by lifecycle.
+// F1-7H: optional `sourceItems` — the SKU Details page passes its scoped-workspace read-model in canonical mode so the
+// primary render no longer depends on the broad `_opDbCache`. When omitted (Legacy / sku-handbook), it reads the getter.
+function getAllSkuDataWithOverrides(sourceItems) {
+    // Scoped read-model (workspace) when provided; else KM.DB getter (Google Sheet or mock via API adapter).
     var baseItems = [];
-    if (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) {
-        var dbItems = window.KM.DB.getSkuDetails();
-        if (dbItems && dbItems.length > 0) {
-            baseItems = dbItems.map(function(i) { return Object.assign({}, i, { _originalGroup: i.lifecycle || 'Running in the Market' }); });
-        }
+    var dbItems = Array.isArray(sourceItems)
+        ? sourceItems
+        : ((window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : null);
+    if (dbItems && dbItems.length > 0) {
+        baseItems = dbItems.map(function(i) { return Object.assign({}, i, { _originalGroup: i.lifecycle || 'Running in the Market' }); });
     }
     // Fallback to raw mock arrays if DB not loaded yet
     if (baseItems.length === 0) {

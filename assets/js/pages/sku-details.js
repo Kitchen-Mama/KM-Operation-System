@@ -74,8 +74,105 @@
 // SKU Details Page Logic
 // ========================================
 
+// ----------------------------------------------------------------------------------------------------------
+// F1-7H · scoped SKU Details workspace read cutover (mirrors the F1-7B/7C/7D/7F/7G pattern)
+// The SKU Details PRIMARY render (the four lifecycle tables + the per-Series HS-code / Tax subpage) sources
+// sku_details / tax_referral_rates / tax_rate_components from ONE scoped `skuDetails` workspace — NO broad Operation DB
+// for the primary render. Kill switch: KM.api.setWorkspaceEnabled('skuDetails', false) → instant Legacy broad-cache.
+// Canonical default ON. This transports READ facts ONLY — the write paths (upsertSkuDetail incl. its Factory Stock
+// baseline trigger, updateSkuLifecycle, upsertTaxReferralRate) are UNCHANGED. The SECONDARY sku-regional-details.js page
+// is a deferred follow-up (the workspace already supports it via include.regional).
+// ----------------------------------------------------------------------------------------------------------
+function _skEffectiveWorkspace() {
+    return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+        window.KM.api.workspaceApiActive('skuDetails'));
+}
+var _skReadModel = null;   // workspace-sourced { skuDetails, taxReferralRates, taxRateComponents, ... } or null = Legacy
+var _skReadSeq = 0;
+
+// read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
+function _skGetSkuDetails() {
+    if (_skReadModel) return _skReadModel.skuDetails;
+    return (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? (window.KM.DB.getSkuDetails() || []) : [];
+}
+function _skGetTaxReferralRates() {
+    if (_skReadModel) return _skReadModel.taxReferralRates;
+    return (window.KM && window.KM.DB && window.KM.DB.getTaxReferralRates) ? (window.KM.DB.getTaxReferralRates() || []) : [];
+}
+function _skGetTaxRateComponents() {
+    if (_skReadModel) return _skReadModel.taxRateComponents;
+    return (window.KM && window.KM.DB && window.KM.DB.getTaxRateComponents) ? (window.KM.DB.getTaxRateComponents() || []) : [];
+}
+
+// Bounded loading/error region for the primary SKU tables (reuses KM.loadState — no new loading infra).
+var _skRegionCtl = null;
+function _skRegion_() {
+    if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+    if (_skRegionCtl) return _skRegionCtl;
+    _skRegionCtl = window.KM.loadState.createRegion({
+        render: function (state) {
+            var S = window.KM.loadState.STATES;
+            if (state === S.INITIAL_LOADING) {
+                var fb = document.getElementById('runningFixedBody');
+                if (fb) fb.innerHTML = '<div class="fixed-row" style="color:#64748B;font-style:italic;">Loading SKU Details…</div>';
+            }
+            // READY / EMPTY / REFRESHING / ERROR → the render fns / _skRenderError_ own the DOM.
+        }
+    });
+    return _skRegionCtl;
+}
+function _skRenderError_(err) {
+    _skReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
+    var rg = _skRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+    var code = (err && err.code) || 'SKU_DETAILS_READ_FAILED';
+    var message = (err && err.message) || 'SKU Details read failed';
+    var html = '<div class="fixed-row" style="color:#B91C1C;">SKU Details read error: ' + message + ' [' + code + ']</div>';
+    ['upcoming', 'running', 'phasing', 'closure'].forEach(function (s, idx) {
+        var fb = document.getElementById(s + 'FixedBody'); var sb = document.getElementById(s + 'ScrollBody');
+        if (fb) fb.innerHTML = (idx === 0) ? html : '';
+        if (sb) sb.innerHTML = '';
+    });
+}
+
+// Scoped read: Workspace (canonical) → getWorkspace('skuDetails') → adapt → _skReadModel. Fail-closed (throws on error;
+// NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.
+function _skWorkspaceRefresh_(include) {
+    var mySeq = ++_skReadSeq;
+    var rg = _skRegion_(); if (rg) rg.beginLoad(!!_skReadModel);
+    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+        return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'SKU Details Workspace API unavailable.' });
+    }
+    var params = include ? { include: include } : {};
+    return Promise.resolve(window.KM.api.getWorkspace('skuDetails', params)).then(function (env) {
+        if (mySeq !== _skReadSeq) return _skReadModel;   // a newer read superseded this one
+        if (env && env.success && env.data) {
+            _skReadModel = window.KM.DB.adaptSkuDetailsWorkspace(env.data);
+            if (rg) rg.set(_skReadModel.skuDetails.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+            return _skReadModel;
+        }
+        throw (env && env.errors && env.errors[0]) || { code: 'SKU_DETAILS_READ_FAILED', message: 'SKU Details workspace request failed.' };
+    });
+}
+
+// Mount + post-write entry: Workspace mode → scoped fetch then render (fail-closed); Legacy mode → render from broad cache.
+function _skLoadAndRender() {
+    if (_skEffectiveWorkspace()) {
+        _skWorkspaceRefresh_().then(function () { renderSkuDetailsTable(); }).catch(function (err) { _skRenderError_(err); });
+        return;
+    }
+    renderSkuDetailsTable();
+}
+
+// Post-write reconcile: Workspace mode → scoped re-read of the skuDetails workspace (the primary render ignores the broad
+// cache the db-api writer reloaded), then run cb; Legacy mode → run cb immediately (the writer already reloaded the cache).
+function _skAfterWrite(cb) {
+    if (!_skEffectiveWorkspace()) { if (typeof cb === 'function') cb(); return; }
+    _skWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _skRenderError_(err); });
+}
+
 function renderSkuDetailsTable() {
-    const groups = window.getAllSkuDataWithOverrides ? getAllSkuDataWithOverrides() : null;
+    var _skSrc = _skEffectiveWorkspace() ? _skGetSkuDetails() : undefined;   // Workspace → read-model; Legacy → getter (undefined)
+    const groups = window.getAllSkuDataWithOverrides ? getAllSkuDataWithOverrides(_skSrc) : null;
     if (groups) {
         renderSkuLifecycleTable('upcoming', groups['Upcoming SKU']);
         renderSkuLifecycleTable('running', groups['Running in the Market']);
@@ -207,9 +304,11 @@ function handleSkuStatusChange(sku, newLifecycle) {
 
     if (window.KM && window.KM.DB && window.KM.DB.updateSkuLifecycle) {
         window.KM.DB.updateSkuLifecycle(sku, newLifecycle).then(function() {
-            renderSkuDetailsTable();
-            if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
-            showSkuStatusToast('Lifecycle updated.');
+            _skAfterWrite(function () {   // Workspace: scoped skuDetails re-read; Legacy: render-only
+                renderSkuDetailsTable();
+                if (window.renderSkuHandbook) setTimeout(function() { renderSkuHandbook(); }, 50);
+                showSkuStatusToast('Lifecycle updated.');
+            });
         }).catch(function(err) {
             showSkuStatusToast('Error: ' + (err.message || err));
             // Revert dropdown
@@ -312,7 +411,7 @@ function handleAddSku() {
 var _selectedSku = null;
 
 function _skuFindRecord(sku) {
-    var list = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? (window.KM.DB.getSkuDetails() || []) : [];
+    var list = _skGetSkuDetails();   // Workspace (scoped) → read-model; Legacy → getSkuDetails()
     for (var i = 0; i < list.length; i++) { if (String(list[i].sku) === String(sku)) return list[i]; }
     return null;
 }
@@ -473,7 +572,7 @@ function _skuTagSerialize(tags) {
 // Read live from KM.DB so newly-saved values become available after the next cache refresh. Case is
 // preserved; duplicates that differ only by case are collapsed. Natural sort.
 function _skuDistinctValues(field) {
-    var list = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? (window.KM.DB.getSkuDetails() || []) : [];
+    var list = _skGetSkuDetails();   // Workspace (scoped) → read-model; Legacy → getSkuDetails()
     var seen = {}, out = [];
     list.forEach(function (r) {
         var v = (r && r.raw && r.raw[field] != null) ? r.raw[field] : (r ? r[field] : '');
@@ -1188,9 +1287,11 @@ function saveSkuMasterForm() {
         var baseline = data && data.factory_baseline;
         if (payload.mode === 'add') _skuAddDraftClear_();   // confirmed Create success → discard the unsaved draft (only here, never before success)
         closeSkuEdit();
-        renderSkuDetailsTable();
-        if (window.renderSkuHandbook) setTimeout(function () { renderSkuHandbook(); }, 50);
-        selectSkuRow(savedSku);
+        _skAfterWrite(function () {   // Workspace: scoped skuDetails re-read so the table reflects the write; Legacy: render-only
+            renderSkuDetailsTable();
+            if (window.renderSkuHandbook) setTimeout(function () { renderSkuHandbook(); }, 50);
+            selectSkuRow(savedSku);
+        });
         var msg = (_skuFormMode === 'add') ? 'SKU created.' : 'Saved.';
         if (baseline && baseline.triggered) {
             if (baseline.status === 'ok') msg += ' Factory baseline ensured (' + (baseline.created ? baseline.created.length : 0) + ' new, ' + (baseline.skipped ? baseline.skipped.length : 0) + ' existing).';
@@ -1288,8 +1389,8 @@ function closeSkuTax() { var o = document.getElementById('sku-tax-modal-overlay'
 function _renderSkuTaxList() {
     var body = document.getElementById('sku-tax-body');
     if (!body) return;
-    var rates = (window.KM && KM.DB && KM.DB.getTaxReferralRates) ? (KM.DB.getTaxReferralRates() || []) : [];
-    var comps = (window.KM && KM.DB && KM.DB.getTaxRateComponents) ? (KM.DB.getTaxRateComponents() || []) : [];
+    var rates = _skGetTaxReferralRates();   // Workspace (scoped) → read-model; Legacy → getTaxReferralRates()
+    var comps = _skGetTaxRateComponents();  // Workspace (scoped) → read-model; Legacy → getTaxRateComponents()
     var rows = rates.filter(function(r) { return String(r.series || '').trim().toUpperCase() === String(_taxSeries).toUpperCase(); });
     // Sort: duty country, then origin, then effective_from descending (newest first).
     rows.sort(function(a, b) {
@@ -1361,7 +1462,7 @@ function _renderSkuTaxList() {
 
 // Open the parent-rate form. mode: 'add' | 'edit' | 'version'. On edit/version, prefill from taxRateId.
 function openSkuTaxForm(mode, taxRateId) {
-    var rates = (window.KM && KM.DB && KM.DB.getTaxReferralRates) ? (KM.DB.getTaxReferralRates() || []) : [];
+    var rates = _skGetTaxReferralRates();   // Workspace (scoped) → read-model; Legacy → getTaxReferralRates()
     var src = null;
     if (taxRateId) { for (var i = 0; i < rates.length; i++) { if (String(rates[i].taxRateId) === String(taxRateId)) { src = rates[i]; break; } } }
     var body = document.getElementById('sku-tax-body');
@@ -1453,7 +1554,7 @@ function saveSkuTaxRate() {
         var warn = (data && data.warnings && data.warnings.length) ? ('\n\nWarning:\n' + data.warnings.join('\n')) : '';
         showSkuStatusToast('Tax rate saved.');
         if (warn) alert('Saved: ' + ((data && data.tax_rate_id) || '') + warn);
-        _renderSkuTaxList();
+        _skAfterWrite(function () { _renderSkuTaxList(); });   // Workspace: scoped skuDetails re-read (tax tables); Legacy: render-only
     }).catch(function(err) {
         showSkuStatusToast('Error: ' + (err && err.message ? err.message : err));
     });
@@ -1819,7 +1920,7 @@ if (window.KM && window.KM.lifecycle) {
             _ensureSkuDetailsMarkup().then(function() {
                 var sec = document.getElementById('sku-section');
                 if (sec) sec.classList.add('active');
-                renderSkuDetailsTable();
+                _skLoadAndRender();   // Workspace: scoped fetch → render (fail-closed); Legacy: render from broad cache
                 setTimeout(function() {
                     if (window.initSkuScroll) initSkuScroll();
                     if (window.initSkuResizableColumns) initSkuResizableColumns();   // resizable columns pilot
@@ -1991,7 +2092,7 @@ window.handleRefreshDb = handleRefreshDb;
 // Debug helper for template tools
 window.debugSkuTemplateTools = function() {
     var mode = (window.KM && window.KM.DB && window.KM.DB.getDataSourceMode) ? window.KM.DB.getDataSourceMode() : 'unknown';
-    var dbItems = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    var dbItems = _skGetSkuDetails();   // Workspace (scoped) → read-model; Legacy → getSkuDetails()
     console.log('=== SKU Template Tools Debug ===');
     console.log('Data Source Mode:', mode);
     console.log('Export source:', dbItems.length > 0 ? 'KM.DB (' + dbItems.length + ' SKUs)' : 'mock fallback');

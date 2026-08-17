@@ -2450,6 +2450,24 @@ window.KM.DB.adaptFcSummaryWorkspace = function(data) {
     return { fcRegularForecast: fcRegularForecast, fcSpecialEvents: fcSpecialEvents, fcTargetRules: fcTargetRules, marketplaces: marketplaces };
 };
 
+// F1-7H: adapt the scoped SKU Details workspace View-Model to the SAME arrays the SKU pages consume from the broad cache —
+// each table run through its canonical normalizer with the SAME per-array filter normalizeOperationDb applies, so the
+// adapted arrays equal the legacy getters (getSkuDetails / getTaxReferralRates / getTaxRateComponents / getMarketplaceSkus
+// / getSkuRegionalDetails) exactly, including the preserved `.raw` passthrough the render/edit paths read. Transports raw
+// persisted master/reference rows ONLY (no write side effects, no Factory Stock init, no Forecast/Gap/Recommendation). The
+// 'regional' arrays are present only when the workspace was called with include.regional.
+window.KM.DB.adaptSkuDetailsWorkspace = function(data) {
+    data = data || {};
+    var skuDetails = (data.skuDetails || []).map(normalizeSkuDetailsRecord).filter(function(r) { return r.sku; });
+    var taxReferralRates = (data.taxReferralRates || []).map(normalizeTaxReferralRateRecord).filter(function(r) { return r.taxRateId || r.series; });
+    var taxRateComponents = (data.taxRateComponents || []).map(normalizeTaxRateComponentRecord).filter(function(r) { return r.taxComponentId || r.taxRateId; });
+    var out = { skuDetails: skuDetails, taxReferralRates: taxReferralRates, taxRateComponents: taxRateComponents };
+    // 'regional' arrays (sku-regional-details.js) — same normalizers + filters as normalizeOperationDb; present only when include.regional.
+    out.marketplaceSkus = (data.marketplaceSkus || []).map(normalizeMarketplaceSkuRecord).filter(function(r) { return r.sku; });
+    out.skuRegionalDetails = (data.skuRegionalDetails || []).map(normalizeSkuRegionalDetailRecord).filter(function(r) { return r.regionalDetailId || r.sku; });
+    return out;
+};
+
 window.KM.DB.getRequestOrderAllocationDrafts = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.requestOrderAllocationDrafts || [];
