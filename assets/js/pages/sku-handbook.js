@@ -48,12 +48,34 @@ function normalizeSkuHandbookItem(item, lifecycleGroup) {
     };
 }
 
+// F1-7J-A3 · bounded scoped read cutover — SKU Handbook was the last legitimate app-prime-dependent primary surface
+// (getSkuKnowledgeItems reads the broad cache with no self-load). Canonical mode sources its 3 knowledge tables
+// (sku_details, product_features, sku_handbook_summaries) from ONE bounded getTable-based scoped read
+// (KM.DB.loadScopedTables) — NO whole-DB loadOperationDb, NO app-prime dependency. Kill switch:
+// window.KM_SCOPED_PAGE_READS = false → Legacy. The knowledge merge reuses the SAME buildSkuKnowledgeItems as the broad
+// getter (BEFORE == AFTER). Fail-closed: canonical-but-not-loaded returns [] (NEVER a silent broad read).
+var _skuhReadModel = null;
+function _skuhScopedActive() {
+    return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
+        window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
+        window.KM.DB.getDataSourceMode && window.KM.DB.getDataSourceMode() === 'google-sheet';
+}
+function _skuhKnowledgeItems() {
+    if (_skuhScopedActive()) {
+        if (_skuhReadModel && window.buildSkuKnowledgeItems) {
+            return window.buildSkuKnowledgeItems(_skuhReadModel.skuDetails || [], _skuhReadModel.productFeatures || [], _skuhReadModel.skuHandbookSummaries || []);
+        }
+        return [];   // canonical but not yet loaded / load failed → fail-closed, NO broad read
+    }
+    return (window.KM && window.KM.DB && window.KM.DB.getSkuKnowledgeItems) ? window.KM.DB.getSkuKnowledgeItems() : [];
+}
+
 function getSkuHandbookData() {
     const all = [];
 
-    // Try KM.DB.getSkuKnowledgeItems first (merged with product_features & summaries)
-    if (window.KM && window.KM.DB && window.KM.DB.getSkuKnowledgeItems) {
-        var knowledgeItems = window.KM.DB.getSkuKnowledgeItems();
+    // Knowledge items merged with product_features & summaries (scoped read-model in canonical mode; broad getter in Legacy).
+    {
+        var knowledgeItems = _skuhKnowledgeItems();
         if (knowledgeItems && knowledgeItems.length > 0) {
             knowledgeItems.forEach(function(item) {
                 var lc = window.getNormalizedSkuStatus ? getNormalizedSkuStatus(item) : (item.lifecycle || 'Running in the Market');
@@ -661,7 +683,16 @@ function clearSkuHandbookFilters() {
 
 function initSkuHandbook() {
     updateSkuhLangButtons();
-    renderSkuHandbook();
+    // F1-7J-A3: canonical → bounded scoped read of the 3 knowledge tables (no whole-DB prime dependency), then render;
+    // Legacy/demo → render from the broad getter. Fail-closed: on scoped-read failure render an empty knowledge set
+    // (an empty scoped model), NEVER a silent broad read.
+    if (_skuhScopedActive() && !_skuhReadModel) {
+        window.KM.DB.loadScopedTables(['sku_details', 'product_features', 'sku_handbook_summaries'])
+            .then(function (m) { _skuhReadModel = m; renderSkuHandbook(); })
+            .catch(function () { _skuhReadModel = { skuDetails: [], productFeatures: [], skuHandbookSummaries: [] }; renderSkuHandbook(); });
+    } else {
+        renderSkuHandbook();
+    }
 
     // Bind free-text search (instant). The Product Line / Brand / Lifecycle dropdowns are the shared
     // KM.ui.multiFilter component (mounted in renderSkuHandbookFilters) — no page-local dropdown wiring.

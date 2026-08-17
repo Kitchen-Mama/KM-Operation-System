@@ -35,9 +35,31 @@
     // Carrier ids already warned about (missing carriers-master row) — warn once per session (F5).
     var crcWarnedCarriers = {};
 
-    // ---- data accessors ----
-    function getCards() { return (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || []; }
-    function getCarriers() { return (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || []; }
+    // ---- F1-7J-A3 · bounded scoped read cutover ----
+    // Canonical mode sources the 3 tables this page reads (carrier_rate_cards, carriers, carrier_lead_times) from ONE
+    // bounded getTable-based scoped read (KM.DB.loadScopedTables) — NO whole-DB loadOperationDb, NO app-prime dependency.
+    // Kill switch: window.KM_SCOPED_PAGE_READS = false → Legacy. BEFORE == AFTER (same normalizers + filters). This is the
+    // Carrier Rate Card MANAGEMENT page's own bounded owner — NOT coupled to the IR carrierPlanning include.
+    var _crcReadModel = null;   // scoped read-model or null = Legacy
+    var _CRC_TABLES = ['carrier_rate_cards', 'carriers', 'carrier_lead_times'];
+    function _crcScopedActive() {
+        return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
+            window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
+            window.KM.DB.getDataSourceMode && window.KM.DB.getDataSourceMode() === 'google-sheet';
+    }
+    function _crcGet(key, getterName) {
+        if (_crcReadModel) return _crcReadModel[key] || [];
+        return (window.KM.DB[getterName] && window.KM.DB[getterName]()) || [];
+    }
+    function _crcAfterWrite(cb) {
+        if (!_crcScopedActive()) { if (cb) cb(); return; }
+        window.KM.DB.loadScopedTables(_CRC_TABLES).then(function (m) { _crcReadModel = m; if (cb) cb(); }).catch(function () { if (cb) cb(); });
+    }
+
+    // ---- data accessors (read-model-first) ----
+    function getCards() { return _crcGet('carrierRateCards', 'getCarrierRateCards'); }
+    function getCarriers() { return _crcGet('carriers', 'getCarriers'); }
+    function getLeadTimes() { return _crcGet('carrierLeadTimes', 'getCarrierLeadTimes'); }
 
     // ============================================================
     // F1 — Date-RANGE picker (self-contained; mirrors Forecast Review's contract, own crc- state/IDs).
@@ -236,7 +258,12 @@
         }
         if (note) note.innerHTML = '';
 
-        if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+        // F1-7J-A3: canonical → bounded scoped read (carrier_rate_cards + carriers + carrier_lead_times); Legacy
+        // kill-switch → broad loadOperationDb. Fail-closed: on scoped-read failure init WITHOUT a broad fallback.
+        if (_crcScopedActive()) {
+            if (_crcReadModel) { _crcInit(); return; }
+            window.KM.DB.loadScopedTables(_CRC_TABLES).then(function (m) { _crcReadModel = m; _crcInit(); }).catch(function () { _crcInit(); });
+        } else if (!window._opDbCache && window.KM.DB.loadOperationDb) {
             window.KM.DB.loadOperationDb({ force: true }).then(_crcInit).catch(_crcInit);
         } else {
             _crcInit();
@@ -476,7 +503,7 @@
     function _crcLtBase(carrierId, origin, dest) { return up(carrierId) + '|' + up(origin) + '|' + up(dest); }
     function _crcLeadTimeMap() {
         var full = {}, legacy = {};
-        var rows = (window.KM.DB.getCarrierLeadTimes && window.KM.DB.getCarrierLeadTimes()) || [];
+        var rows = getLeadTimes();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         rows.forEach(function (lt) {
             var base = _crcLtBase(lt.carrierId, lt.originCountry, lt.destinationCountry);
             var fullKey = _crcLtKey(base, lt.shippingMethod, lt.lastMileDelivery);
@@ -608,14 +635,14 @@
         var fCarrier = _crcSingleCarrier();
         if (!fCarrier) { alert('Please select exactly one carrier before exporting Update Template.'); return; }
 
-        var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
+        var carriers = getCarriers();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         var nameById = {};
         carriers.forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName || c.carrierId; });
         var carrierName = nameById[fCarrier] || fCarrier;
 
         // Scope: that carrier's ACTIVE rows only (independent of the date/country filters, so the carrier
         // receives their full current rate set).
-        var all = (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || [];
+        var all = getCards();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         var scoped = all.filter(function (c) {
             return String(c.carrierId || '') === fCarrier && String(c.status || 'active').toLowerCase() !== 'inactive';
         });
@@ -640,7 +667,7 @@
     // last_mile_delivery / warehouse / city / zip / country rows. Does not require a prior Search.
     function exportMasterTemplate() {
         if (!useDb()) { alert('Enable the cloud DB first.'); return; }
-        var all = (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || [];
+        var all = getCards();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         if (!all.length) {
             if (!confirm('No carrier rate cards loaded. Export a Master Template with only the example row (set up new routes from scratch)?')) return;
         }
@@ -813,11 +840,11 @@
         // Carrier id comes from an explicit arg (Update Rate Card modal) or the page filter.
         var fCarrier = (typeof carrierIdArg === 'string' && carrierIdArg) ? carrierIdArg : _crcSingleCarrier();
         if (!fCarrier) { alert('Please select exactly one carrier before exporting Update Template.'); return; }
-        var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
+        var carriers = getCarriers();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         var nameById = {};
         carriers.forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName || c.carrierId; });
         var carrierName = nameById[fCarrier] || fCarrier;
-        var all = (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || [];
+        var all = getCards();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         var scoped = all.filter(function (c) {
             return String(c.carrierId || '') === fCarrier && String(c.status || 'active').toLowerCase() !== 'inactive';
         });
@@ -834,10 +861,10 @@
     function exportMasterTemplateXlsx() {
         if (!useDb()) { alert('Enable the cloud DB first.'); return; }
         if (!crcXlsxReady()) return;
-        var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
+        var carriers = getCarriers();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         var nameById = {};
         carriers.forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = c.carrierName || c.carrierId; });
-        var all = (window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || [];
+        var all = getCards();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         if (!all.length && !confirm('No carrier rate cards loaded. Export a Master Template with only the example row?')) return;
         var rows = all.map(function (r) { return crcRowToTemplateObj(r, 'master', nameById); });
         var spec = crcBuildTemplateSpec('master', rows, null);
@@ -903,7 +930,8 @@
         var payload = { rows: parsed.rows, columns: parsed.columns, source_file_name: fileName || 'carrier_rate_template', mode: mode };
         if (carrierScopeId) payload.carrier_scope = { carrier_id: carrierScopeId };
         window.KM.DB.importCarrierRateTemplate(payload)
-            .then(function (data) { _crcShowImportResult(data, mode); if (crcSearched) search(); })
+            // F1-7J-A3: canonical → scoped re-read before re-search (writer refreshed the broad cache the page no longer reads).
+            .then(function (data) { _crcShowImportResult(data, mode); _crcAfterWrite(function () { if (crcSearched) search(); }); })
             .catch(function (err) { alert('Import failed: ' + (err && err.message ? err.message : err)); });
     }
 
@@ -960,7 +988,7 @@
     function updModalPopulateCarriers() {
         var sel = document.getElementById('crcUpdCarrier');
         if (!sel) return;
-        var carriers = (window.KM.DB.getCarriers && window.KM.DB.getCarriers()) || [];
+        var carriers = getCarriers();   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         var cur = sel.value;
         var opts = carriers.filter(function (c) { return c.carrierId; })
             .map(function (c) { return { id: c.carrierId, label: c.carrierName || c.carrierId }; })

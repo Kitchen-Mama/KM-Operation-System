@@ -23,7 +23,31 @@ var _crViewState = 'no-scope';        // 'no-scope' | 'no-sku' | 'ready' | 'erro
 // --- Helpers ---
 function _crEqv(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
 function _crActive(status) { var s = String(status == null ? '' : status).trim().toLowerCase(); return s === '' || s === 'active'; }
-function _crDB() { return (window.KM && window.KM.DB) || {}; }
+// F1-7J-A3 · bounded scoped read cutover. Canonical mode sources the 5 tables Campaign Risk reads
+// (campaigns, campaign_sku_lines, marketplace_skus, sku_details, marketplaces) from ONE bounded getTable-based scoped read
+// (KM.DB.loadScopedTables) — NO whole-DB loadOperationDb, NO app-prime dependency. Kill switch:
+// window.KM_SCOPED_PAGE_READS = false → Legacy broad-cache. The scoped object is _opDbCache-shaped so `_crDB()` returns a
+// thin shim whose getters read the read-model (BEFORE == AFTER: same normalizers + filters as the broad getters).
+var _crReadModel = null;   // scoped read-model (normalizeOperationDb-shaped) or null = Legacy
+var _CR_SHIM = null;
+function _crScopedActive() {
+    return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
+        window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
+        window.KM.DB.getDataSourceMode && window.KM.DB.getDataSourceMode() === 'google-sheet';
+}
+function _crDB() {
+    if (_crReadModel) {
+        if (!_CR_SHIM) _CR_SHIM = {
+            getSkuDetails: function () { return _crReadModel.skuDetails || []; },
+            getMarketplaceSkus: function () { return _crReadModel.marketplaceSkus || []; },
+            getCampaigns: function () { return _crReadModel.campaigns || []; },
+            getCampaignSkuLines: function () { return _crReadModel.campaignSkuLines || []; },
+            getMarketplaces: function () { return _crReadModel.marketplaces || []; }
+        };
+        return _CR_SHIM;
+    }
+    return (window.KM && window.KM.DB) || {};
+}
 function crScopeReady() { var s = CampaignRiskState; return !!(s.country && s.marketplace && s.company); }
 function _crEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
@@ -589,6 +613,16 @@ function crRenderScoped() {
 function crReload() {
     if (_crViewState === 'error') _crViewState = 'ready';
     var done = function () { _crViewState = _crViewState === 'error' ? 'error' : (crScopeReady() ? 'ready' : 'no-scope'); populateCrSiteFilters(); crRenderScoped(); };
+    // F1-7J-A3: canonical → bounded scoped read (never depends on the app prime / whole-DB cache); fail-closed error state
+    // (no silent broad fallback). Legacy kill-switch retains the broad loadOperationDb.
+    if (_crScopedActive()) {
+        if (_crReadModel) { done(); return; }
+        var tok = ++_crLoadToken;
+        window.KM.DB.loadScopedTables(['campaigns', 'campaign_sku_lines', 'marketplace_skus', 'sku_details', 'marketplaces'])
+            .then(function (m) { if (tok !== _crLoadToken) return; _crReadModel = m; _CR_SHIM = null; done(); })
+            .catch(function () { if (tok !== _crLoadToken) return; _crViewState = 'error'; crRenderScoped(); });
+        return;
+    }
     if (window._opDbCache) { done(); return; }
     var token = ++_crLoadToken;
     var loader = (_crDB().loadOperationDb) || window.reloadOperationDb;

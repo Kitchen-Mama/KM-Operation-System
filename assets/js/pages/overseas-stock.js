@@ -15,6 +15,28 @@ var _overseasMovementSearched = false; // Movement Log renders rows only after S
 
 // Month list not needed here; Overseas Stock has no month columns.
 
+// F1-7J-A3 · bounded scoped read cutover. Canonical mode sources Overseas Stock's 4 tables (overseas_inventory_snapshot,
+// overseas_inventory_movements, warehouses, sku_details) from ONE bounded getTable-based scoped read
+// (KM.DB.loadScopedTables) — NO whole-DB loadOperationDb, NO app-prime dependency. Kill switch:
+// window.KM_SCOPED_PAGE_READS = false → Legacy. BEFORE == AFTER (same normalizers + filters). Raw overseas inventory
+// stays DISTINCT from site inventory / sitePlanningAllocation / incoming (read-only transport only).
+var _osReadModel = null;   // scoped read-model or null = Legacy
+function _osScopedActive() {
+    return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
+        window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
+        window.KM.DB.getDataSourceMode && window.KM.DB.getDataSourceMode() === 'google-sheet';
+}
+function _osGet(key) {
+    if (_osReadModel) return _osReadModel[key] || [];
+    var g = 'get' + key.charAt(0).toUpperCase() + key.slice(1);
+    return (window.KM && window.KM.DB && window.KM.DB[g]) ? (window.KM.DB[g]() || []) : [];
+}
+var _OS_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'];
+function _osAfterWrite(cb) {
+    if (!_osScopedActive()) { if (cb) cb(); return; }
+    window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osReadModel = m; if (cb) cb(); }).catch(function () { if (cb) cb(); });
+}
+
 function initOverseasStockPage() {
     console.log('✅ Overseas Stock: initOverseasStockPage called');
     var root = document.querySelector('#overseas-stock-section');
@@ -23,9 +45,14 @@ function initOverseasStockPage() {
         return;
     }
 
-    // Ensure DB cache is loaded once, then re-init. (Overseas Stock has no demo data layer;
-    // it always reads from the Google Sheet DB via KM.DB.)
-    if (!window._opDbCache && !_overseasDbLoadTried) {
+    // Ensure page data is loaded once, then re-init. (Overseas Stock has no demo data layer.)
+    // F1-7J-A3: canonical → bounded scoped read; Legacy kill-switch → broad loadOperationDb. Fail-closed (no broad fallback).
+    if (_osScopedActive() && !_osReadModel && !_overseasDbLoadTried) {
+        _overseasDbLoadTried = true;
+        window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osReadModel = m; initOverseasStockPage(); }).catch(function () { initOverseasStockPage(); });
+        return;
+    }
+    if (!_osScopedActive() && !window._opDbCache && !_overseasDbLoadTried) {
         _overseasDbLoadTried = true;
         var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
             ? window.KM.DB.loadOperationDb
@@ -172,7 +199,7 @@ function _overseasGetFilter(container, type) {
 // company / country / warehouse_name / warehouse_type live ONLY on `warehouses` and are
 // joined into the snapshot view by warehouse_id (NOT stored on the snapshot row).
 function _overseasWarehouseMap() {
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? window.KM.DB.getWarehouses() : [];
+    var rows = _osGet('warehouses');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var map = {};
     rows.forEach(function(w) {
         if (w.warehouseId) map[w.warehouseId] = w;
@@ -181,7 +208,7 @@ function _overseasWarehouseMap() {
 }
 
 function _overseasSkuMetaMap() {
-    var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    var details = _osGet('skuDetails');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var map = {};
     details.forEach(function(d) { if (d.sku) map[d.sku] = { category: d.category || '', series: d.series || '' }; });
     return map;
@@ -190,7 +217,7 @@ function _overseasSkuMetaMap() {
 // Snapshot view: source of truth = overseas_inventory_snapshot ONLY.
 // warehouses join → company / country / warehouse_name; sku_details join → category / series.
 function _getDbOverseasSnapshotData() {
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getOverseasInventorySnapshot) ? window.KM.DB.getOverseasInventorySnapshot() : [];
+    var rows = _osGet('overseasInventorySnapshot');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var whMap = _overseasWarehouseMap();
     var skuMeta = _overseasSkuMetaMap();
     return rows.map(function(r) {
@@ -362,7 +389,7 @@ function renderOverseasSnapshotTable(root) {
 // warehouses join (by warehouse_id) → country / marketplace / warehouse_name;
 // sku_details join (by sku) → category / series. None of these are stored on the movement row.
 function _getDbOverseasMovementData() {
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getOverseasInventoryMovements) ? window.KM.DB.getOverseasInventoryMovements() : [];
+    var rows = _osGet('overseasInventoryMovements');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var whMap = _overseasWarehouseMap();
     var skuMeta = _overseasSkuMetaMap();
     return rows.map(function(m) {
@@ -642,7 +669,7 @@ var OVERSEAS_QTY_FIELDS = ['available_stock', 'reserved_stock', 'damaged_stock',
 var _ovsImportScope = { company: '', country: '', warehouseId: '' };
 
 function _ovsEligibleWarehouses() {
-    return ((window.KM && window.KM.DB && window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])
+    return (_osGet('warehouses') || [])
         .filter(function (w) { return w && w.warehouseId && w.isFactoryWarehouse !== true && w.isActive !== false; });
 }
 function _ovsWhById(id) { var t = String(id || '').trim(); return _ovsEligibleWarehouses().filter(function (w) { return String(w.warehouseId).trim() === t; })[0] || null; }
@@ -750,7 +777,7 @@ function downloadOverseasImportTemplate() {
     var whName = (selWh && selWh.warehouseName) || sc.warehouseId;
     var fnamePart = _ovsSanitizeFilePart_(sc.company) + '_' + _ovsSanitizeFilePart_(sc.country) + '_' + _ovsSanitizeFilePart_(sc.warehouseId);
     if (!(window.KM && window.KM.templateExport && window.KM.templateExport.buildAndDownload)) { _downloadOverseasCsvTemplateFallback_(sc.warehouseId, fnamePart); return; }
-    var skus = ((window.KM.DB && window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).map(function (s) { return s.sku; }).filter(Boolean);
+    var skus = (_osGet('skuDetails') || []).map(function (s) { return s.sku; }).filter(Boolean);
     var columns = [
         { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 26, comment: 'REQUIRED. Prefilled with the selected warehouse (' + sc.warehouseId + '). Do NOT change — one file = one warehouse; the server rejects any other warehouse_id.', dropdown: [sc.warehouseId] },
         { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. Canonical SKU.' },
@@ -992,9 +1019,12 @@ function _ovsProcessImportCells(cells, runBtn) {
                 _ovsRenderImportResult({ summary: mergedSummary, results: mergedResults });
                 // Wrapper already reloaded the DB cache on success — refresh filters + re-render tables.
                 var root = document.querySelector('#overseas-stock-section');
-                _refreshOverseasFilters(root);
-                renderOverseasSnapshotTable(root);
-                renderOverseasMovementTable(root);
+                // F1-7J-A3: canonical → scoped re-read before re-render (writer refreshed the broad cache the page no longer reads).
+                _osAfterWrite(function () {
+                    _refreshOverseasFilters(root);
+                    renderOverseasSnapshotTable(root);
+                    renderOverseasMovementTable(root);
+                });
                 if (mergedSummary.error === 0 && runBtn) { runBtn.textContent = 'Done'; runBtn.dataset.mode = 'done'; }
             })
             .catch(function(err) {
@@ -1162,11 +1192,13 @@ function runOverseasAdjust() {
             false
         );
         if (runBtn) { runBtn.textContent = 'Done'; }
-        // Adapter already re-GET the DB cache (loadOperationDb force). Refresh filters + re-render both tables.
+        // F1-7J-A3: canonical → scoped re-read before re-render (writer refreshed the broad cache the page no longer reads).
         var root = document.querySelector('#overseas-stock-section');
-        _refreshOverseasFilters(root);
-        renderOverseasSnapshotTable(root);
-        if (_overseasActiveTab === 'movement') { _overseasMovementSearched = true; renderOverseasMovementTable(root); }
+        _osAfterWrite(function () {
+            _refreshOverseasFilters(root);
+            renderOverseasSnapshotTable(root);
+            if (_overseasActiveTab === 'movement') { _overseasMovementSearched = true; renderOverseasMovementTable(root); }
+        });
     }).catch(function(err) {
         _overseasAdjustSubmitting = false;
         if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Confirm Adjustment'; }

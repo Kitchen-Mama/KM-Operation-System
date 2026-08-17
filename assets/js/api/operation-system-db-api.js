@@ -2155,6 +2155,24 @@ window.KM.DB.getApiBaseUrl = function() { return isOperationDbApiConfigured() ? 
 
 window.KM.DB.loadOperationDb = loadOperationDb;
 
+// F1-7J-A3: bounded SCOPED read — fetch ONLY the named tables via the EXISTING generic getTable action, then run the
+// SAME `normalizeOperationDb` per-table logic → a `_opDbCache`-shaped object with exactly those tables populated
+// (byte-identical to the broad getters, since it's the identical normalizer + per-array filter) and every other table
+// []. Reuses getTable (NO new API/route). NEVER mutates the global window._opDbCache (returns a private scoped object the
+// caller holds as a page read-model). Rejects on transport error → the page shows a bounded ERROR, NEVER a silent broad
+// fallback. This is how the non-workspace primary pages drop their whole-DB loadOperationDb dependency.
+window.KM.DB.loadScopedTables = async function(tableNames) {
+    var names = (tableNames || []).filter(Boolean);
+    var rawDb = {};
+    await Promise.all(names.map(async function(n) {
+        rawDb[n] = await getOperationDbTableFromSheet(n);
+    }));
+    var scoped = normalizeOperationDb(rawDb);
+    scoped._sourceMode = 'google-sheet';
+    scoped._scopedTables = names.slice();
+    return scoped;
+};
+
 window.KM.DB.getSkuDetails = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.skuDetails || [];

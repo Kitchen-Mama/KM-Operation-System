@@ -85,6 +85,9 @@ var WHS = [
 ];
 var window = { KM: { DB: { getWarehouses: function () { return WHS; } } } };
 var _ovsImportScope = { company: '', country: '', warehouseId: '' };
+// F1-7J-A3: the eligible-warehouses helper now reads via _osGet (scoped read-model, or the broad getter in Legacy).
+var _osReadModel = null;   // Legacy in this test → _osGet falls back to the window.KM.DB.getWarehouses stub above
+eval(extractFn(OVS_JS, '_osGet'));
 eval(['_ovsEligibleWarehouses', '_ovsWhById', '_ovsWhCompany', '_ovsWhCountry', '_ovsDistinctSorted', '_ovsScopeOptions', '_ovsImportScopeValid'
 ].map(function (n) { return extractFn(OVS_JS, n); }).join('\n'));
 

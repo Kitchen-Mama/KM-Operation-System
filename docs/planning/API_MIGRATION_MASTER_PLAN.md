@@ -580,3 +580,30 @@ app-prime change. Full detail: `F1_7J_A2_BOUNDED_REFERENCE_AND_INCLUDE_EXTENSION
   60_) + new /exec; frontend YES (operation-system-db-api.js, shipping-plan.js, request-order.js, inventory-replenishment.js);
   router NO; DB/bundle NO.** All additive/backward-compatible — deploy backend before the canonical frontend. **Batch F NOT
   ready** (A3 + deferred authority items remain). Do NOT begin A3 automatically.
+
+### F1-7J-A3-R1 delta (2026-08-17) — remaining 6 non-workspace primary pages scoped (ACTIVE_PRIMARY broad = 0)
+PRE HEAD `b08be3c`. TRANSPORT/READ-MODEL only; BEFORE==AFTER; **FRONTEND-ONLY** (reuses the existing `getTable` action —
+NO .gs/router/exec). Full detail: `F1_7J_A3_REMAINING_NON_WORKSPACE_PRIMARY_SCOPED_READ_CUTOVER_R1.md`.
+- **Enabler:** new frontend `KM.DB.loadScopedTables(names)` = per-table `getTable` fetch + the SAME `normalizeOperationDb`
+  → a `_opDbCache`-shaped object with exactly those tables (byte-identical to the broad getters), other tables []. Never
+  mutates the global cache; fail-closed (no silent broad fallback). Proven partial-normalize == full for the scoped tables.
+- **6 pages cut over** (read-model-first accessor + bounded scoped mount load + `KM_SCOPED_PAGE_READS` kill switch + scoped
+  `_xAfterWrite` on writers): **factory-stock** (factory_stock/movements/sku_details/warehouses; shared-factory NOT
+  company-owned, no init change), **overseas-stock** (overseas snapshot/movements/warehouses/sku_details), **overseas-ops-preview**
+  (warehouses/overseas_snapshot/shipments/shipment_lines; preview, no writes), **campaign-risk** (`_crDB()` shim;
+  campaigns/campaign_sku_lines/marketplace_skus/sku_details/marketplaces; calc untouched), **carrier-rate-card**
+  (carrier_rate_cards/carriers/carrier_lead_times; own bounded owner, NOT the IR carrierPlanning include),
+  **sku-handbook** (sku_details/product_features/sku_handbook_summaries via the SAME buildSkuKnowledgeItems; fail-closed —
+  renders with empty `_opDbCache`; the last legitimate app-prime read surface, resolved).
+- **§11 Batch-F blocker reconciliation (source-grounded):** **0 of 4** deferred authority debts (Incoming Inventory,
+  sitePlanningAllocation, Event Assist, allocation-draft hydrate) technically block Batch F — none couples a writer
+  full-reload to a consumer for its fact with no scoped alternative. Only the **IR allocation-draft hydrate** blocks
+  app.js-prime removal (bare broad getters; HALT E). **Corrects A2 §19:** those authority items are NOT Batch-F prerequisites.
+- **Debt Δ:** ACTIVE_PRIMARY non-workspace broad surfaces **6→0** (§12 PASS target met); ACTIVE_PRIMARY loadOperationDb
+  5→0 (→LEGACY_ONLY 8→13); ACTIVE_SECONDARY 2 (unchanged); BACKGROUND 2; **writer full-reload 47→47 (untouched)**;
+  app-prime-dependent surfaces **2→1** (only IR allocation-draft hydrate). Tests: new suite 49/0 + 1 harness repoint; full
+  regression 232 files, only the 4 baselines; bundle unchanged (aaf5b07). **Deploy: Apps Script sync NO, router NO, /exec
+  NO, DB/bundle NO; frontend YES** (operation-system-db-api.js + the 6 pages). Kill switch `window.KM_SCOPED_PAGE_READS=false`.
+- **Readiness:** Batch F (F1-7K) = READY to start (no authority blocker; it is the writer-invalidation work). app.js prime
+  removal (F1-7L) = NOT ready — gated on the IR allocation-draft hydrate (HALT E) + the 2 secondary lazy reads + the broad
+  load still used by the 13 Legacy branches + 47 writers. Do NOT begin Batch F / prime removal / authority redesign automatically.

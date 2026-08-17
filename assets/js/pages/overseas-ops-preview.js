@@ -38,8 +38,31 @@
   }
   OO.esc = esc; OO.num = num;
 
-  // Load the DB cache once (same pattern as overseas-stock.js). cb() is called on success or failure.
+  // F1-7J-A3 · bounded scoped read cutover (read-only PREVIEW page — no writes). Canonical mode sources the 4 tables this
+  // preview reads (warehouses, overseas_inventory_snapshot, shipments, shipment_lines) from ONE bounded getTable-based
+  // scoped read — NO whole-DB loadOperationDb, NO app-prime dependency. Kill switch: window.KM_SCOPED_PAGE_READS = false →
+  // Legacy. BEFORE == AFTER (same normalizers + filters). Nothing is written or posted (preview only).
+  var _oopReadModel = null;
+  function _oopScopedActive() {
+    return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
+      window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
+      window.KM.DB.getDataSourceMode && window.KM.DB.getDataSourceMode() === 'google-sheet';
+  }
+  function _oopGet(key) {
+    if (_oopReadModel) return _oopReadModel[key] || [];
+    var g = 'get' + key.charAt(0).toUpperCase() + key.slice(1);
+    return (window.KM && window.KM.DB && window.KM.DB[g]) ? (window.KM.DB[g]() || []) : [];
+  }
+
+  // Load the page data once. cb() is called on success or failure.
   function ensureDb(cb) {
+    if (_oopScopedActive()) {
+      if (_oopReadModel) { cb(true); return; }
+      window.KM.DB.loadScopedTables(['warehouses', 'overseas_inventory_snapshot', 'shipments', 'shipment_lines'])
+        .then(function (m) { _oopReadModel = m; cb(true); })
+        .catch(function () { cb(false); });
+      return;
+    }
     if (window._opDbCache) { cb(true); return; }
     var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) ? window.KM.DB.loadOperationDb
       : (window.reloadOperationDb || null);
@@ -49,13 +72,13 @@
 
   // Qualifying overseas warehouses: active, NOT a factory warehouse (spec §9 / §1 classification).
   function qualifyingWarehouses() {
-    var whs = (window.KM.DB && window.KM.DB.getWarehouses) ? window.KM.DB.getWarehouses() : [];
+    var whs = _oopGet('warehouses');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     return whs.filter(function (w) {
       return w && w.warehouseId && w.isFactoryWarehouse !== true && w.isActive !== false;
     });
   }
   function warehouseById(id) {
-    var whs = (window.KM.DB && window.KM.DB.getWarehouses) ? window.KM.DB.getWarehouses() : [];
+    var whs = _oopGet('warehouses');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     for (var i = 0; i < whs.length; i++) if (whs[i].warehouseId === id) return whs[i];
     return null;
   }
@@ -67,7 +90,7 @@
 
   // Real current overseas inventory at (warehouse, sku) — used by the Movement Impact projection.
   function snapshotAt(warehouseId, sku) {
-    var snap = (window.KM.DB && window.KM.DB.getOverseasInventorySnapshot) ? window.KM.DB.getOverseasInventorySnapshot() : [];
+    var snap = _oopGet('overseasInventorySnapshot');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     for (var i = 0; i < snap.length; i++) {
       if (snap[i].warehouseId === warehouseId && snap[i].sku === sku) return snap[i];
     }
@@ -78,8 +101,8 @@
   // overseas (non-factory) warehouse. Each is the draft the Formal Shipment orchestrator would
   // auto-create (§9). Session overrides (status / entered qty) are overlaid on top.
   function buildOps(cfg) {
-    var shipments = (window.KM.DB && window.KM.DB.getShipments) ? window.KM.DB.getShipments() : [];
-    var lines = (window.KM.DB && window.KM.DB.getShipmentLines) ? window.KM.DB.getShipmentLines() : [];
+    var shipments = _oopGet('shipments');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
+    var lines = _oopGet('shipmentLines');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var linesByShipment = {};
     lines.forEach(function (l) {
       if (!l.shipmentId) return;
@@ -273,7 +296,7 @@
 
     // ---------- create (preview) ----------
     function openCreate() {
-      var shipments = (window.KM.DB && window.KM.DB.getShipments) ? window.KM.DB.getShipments() : [];
+      var shipments = _oopGet('shipments');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
       var whs = OO.qualifyingWarehouses();
       var shipOpts = shipments.map(function (s) {
         return '<option value="' + esc(s.shipmentId) + '">' + esc((s.shipmentNo || s.shipmentId) + ' — ' + (s.company || '') + ' → ' + OO.warehouseLabel(s.warehouseId)) + '</option>';
@@ -297,9 +320,9 @@
         var shipId = r.querySelector('[data-cf="shipment"]').value;
         var whId = r.querySelector('[data-cf="warehouse"]').value;
         if (!shipId || !whId) return;
-        var shipments2 = window.KM.DB.getShipments();
+        var shipments2 = _oopGet('shipments');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
         var s = null; for (var i = 0; i < shipments2.length; i++) if (shipments2[i].shipmentId === shipId) { s = shipments2[i]; break; }
-        var lines = (window.KM.DB.getShipmentLines() || []).filter(function (l) { return l.shipmentId === shipId; });
+        var lines = (_oopGet('shipmentLines') || []).filter(function (l) { return l.shipmentId === shipId; });
         var key = shipId + '::' + whId;
         var op = makeOp(cfg, key, s || {}, OO.warehouseById(whId), lines, null);
         op.createdInPreview = true; op.status = cfg.initialStatus;

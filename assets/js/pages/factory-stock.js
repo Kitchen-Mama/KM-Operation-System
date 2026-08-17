@@ -2,6 +2,32 @@
 
 var _factoryDbLoadTried = false;
 
+// F1-7J-A3 · bounded scoped read cutover. Canonical mode sources Factory Stock's 4 tables (factory_stock,
+// factory_stock_movements, sku_details, warehouses) from ONE bounded getTable-based scoped read (KM.DB.loadScopedTables)
+// — NO whole-DB loadOperationDb, NO app-prime dependency. Kill switch: window.KM_SCOPED_PAGE_READS = false → Legacy.
+// BEFORE == AFTER: the scoped object is _opDbCache-shaped (same normalizers + filters), so _fsGet(key) equals the broad
+// getter. Factory Stock stays NOT company-owned (shared-factory pool summed as-is; no factory→company inference); no
+// Factory Stock initialization semantics change (read-only transport).
+var _fsReadModel = null;   // scoped read-model or null = Legacy
+function _fsScopedActive() {
+    return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
+        window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
+        window.KM.DB.getDataSourceMode && window.KM.DB.getDataSourceMode() === 'google-sheet';
+}
+function _fsGet(key) {
+    if (_fsReadModel) return _fsReadModel[key] || [];
+    var g = 'get' + key.charAt(0).toUpperCase() + key.slice(1);
+    return (window.KM && window.KM.DB && window.KM.DB[g]) ? (window.KM.DB[g]() || []) : [];
+}
+// Post-write reconcile: canonical → scoped re-read (the writer refreshed the broad cache the page no longer reads);
+// Legacy → run cb immediately (writer already reloaded the broad cache). Writer payloads/side effects are UNCHANGED.
+function _fsAfterWrite(cb) {
+    if (!_fsScopedActive()) { if (cb) cb(); return; }
+    window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
+        .then(function (m) { _fsReadModel = m; if (cb) cb(); })
+        .catch(function () { if (cb) cb(); });
+}
+
 function initFactoryStockPage() {
     console.log('✅ Factory Stock: initFactoryStockPage called');
     const root = document.querySelector('#factory-stock-section');
@@ -12,8 +38,17 @@ function initFactoryStockPage() {
 
     var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
 
-    // Demo OFF: ensure the DB cache is loaded once, then re-init.
-    if (!demoOn && !window._opDbCache && !_factoryDbLoadTried) {
+    // Demo OFF: ensure the page data is loaded once, then re-init.
+    // F1-7J-A3: canonical → bounded scoped read (factory_stock + movements + sku_details + warehouses); Legacy kill-switch
+    // → broad loadOperationDb. Fail-closed: on scoped-read failure re-init WITHOUT a broad fallback (renders empty/bounded).
+    if (!demoOn && _fsScopedActive() && !_fsReadModel && !_factoryDbLoadTried) {
+        _factoryDbLoadTried = true;
+        window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
+            .then(function (m) { _fsReadModel = m; initFactoryStockPage(); })
+            .catch(function () { initFactoryStockPage(); });
+        return;
+    }
+    if (!demoOn && !_fsScopedActive() && !window._opDbCache && !_factoryDbLoadTried) {
         _factoryDbLoadTried = true;
         var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb)
             ? window.KM.DB.loadOperationDb
@@ -341,10 +376,10 @@ function _getDbFactoryStockData() {
     // In Production / Pending Shipout: NO authoritative wired source on factory_stock (only fac_current_stock /
     //   fac_reserved_stock exist). They are intentionally left null → rendered "—" (not fabricated / not derived
     //   from unrelated statuses). Documented gap: WAREHOUSE_OPERATIONS_SPEC §6A read-only joins not implemented.
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getFactoryStock) ? window.KM.DB.getFactoryStock() : [];
+    var rows = _fsGet('factoryStock');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var whMap = _factoryWarehouseMap();
     var skuMeta = {};
-    var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    var details = _fsGet('skuDetails');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     details.forEach(function(d) { if (d.sku) skuMeta[d.sku] = { category: d.category || '', series: d.series || '' }; });
     return rows.map(function(r) {
         var meta = skuMeta[r.sku] || { category: '', series: '' };
@@ -470,14 +505,14 @@ function _fmvEscapeHtml(s) {
 }
 
 function _factoryWarehouseMap() {
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? window.KM.DB.getWarehouses() : [];
+    var rows = _fsGet('warehouses');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var map = {};
     rows.forEach(function(w) { if (w.warehouseId) map[w.warehouseId] = w; });
     return map;
 }
 
 function _factorySkuMetaMap() {
-    var details = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
+    var details = _fsGet('skuDetails');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var map = {};
     details.forEach(function(d) { if (d.sku) map[d.sku] = { category: d.category || '', series: d.series || '' }; });
     return map;
@@ -485,7 +520,7 @@ function _factorySkuMetaMap() {
 
 // Joined movement rows. locationName = warehouse name (by warehouse_id) || factory_name field.
 function _getDbFactoryMovementData() {
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getFactoryStockMovements) ? window.KM.DB.getFactoryStockMovements() : [];
+    var rows = _fsGet('factoryStockMovements');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var whMap = _factoryWarehouseMap();
     var skuMeta = _factorySkuMetaMap();
     return rows.map(function(m) {
@@ -1098,13 +1133,15 @@ function confirmFactoryInventoryAdjustment() {
             '<div>Reference: ' + _fmvEscapeHtml(d.reference_id || '') + '</div>' +
             '<div>Available: ' + _fmvEscapeHtml(String(d.before_available)) + ' &rarr; ' + _fmvEscapeHtml(String(d.after_available)) + ' (' + _fmvSignedQty(d.quantity) + ')</div>', false);
         if (btn) { btn.textContent = 'Done'; }
-        // Adapter already re-GET the DB cache (loadOperationDb force). Re-render snapshot (keeps filters);
-        // refresh the movement log if its tab is visible so the new row shows immediately.
+        // F1-7J-A3: the writer re-GET the broad cache; canonical mode re-reads the SCOPED tables before re-render (keeps
+        // filters); refresh the movement log if its tab is visible so the new row shows immediately.
         var root = document.querySelector('#factory-stock-section');
-        renderFactoryStockTable(root);
-        var movPanel = root && root.querySelector('[data-fs-panel="movement"]');
-        var movVisible = movPanel && movPanel.style.display !== 'none';
-        if (movVisible) { _factoryMovementSearched = true; renderFactoryMovementTable(root); }
+        _fsAfterWrite(function () {
+            renderFactoryStockTable(root);
+            var movPanel = root && root.querySelector('[data-fs-panel="movement"]');
+            var movVisible = movPanel && movPanel.style.display !== 'none';
+            if (movVisible) { _factoryMovementSearched = true; renderFactoryMovementTable(root); }
+        });
     }).catch(function(err) {
         _factoryAdjustSubmitting = false;
         if (btn) { btn.disabled = false; btn.textContent = 'Confirm Adjustment'; }
@@ -1171,10 +1208,10 @@ function closeFactoryImportModal() { var o = _fiiEl('factory-import-overlay'), m
 // comment stating they must match canonical values (F0-HOTFIX-FI1 §5 fallback).
 function downloadFactoryImportTemplate() {
   if (!(window.KM && window.KM.templateExport && window.KM.templateExport.buildAndDownload)) { alert('Template engine (ExcelJS) not available.'); return; }
-  var whs = ((window.KM.DB && window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || [])
+  var whs = (_fsGet('warehouses') || [])
     .filter(function (w) { return w && w.isFactoryWarehouse === true && w.isActive !== false; });
   var whIds = whs.map(function (w) { return w.warehouseId; }).filter(Boolean);
-  var skus = ((window.KM.DB && window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []).map(function (s) { return s.sku; }).filter(Boolean);
+  var skus = (_fsGet('skuDetails') || []).map(function (s) { return s.sku; }).filter(Boolean);
   var columns = [
     { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 22, comment: 'REQUIRED. Canonical factory warehouse_id (dropdown). Identity — warehouse_code never overrides it.', dropdown: whIds.slice(0, 200) },
     { key: 'warehouse_code', header: 'warehouse_code', kind: 'business', width: 18, comment: 'Optional human-readable check. Conflicting with warehouse_id rejects the row (WAREHOUSE_ID_CODE_MISMATCH).' },
@@ -1424,6 +1461,17 @@ function _fiiRenderResult(resp, isErr) {
 }
 function _fiiRefreshAfterCommit() {
   var root = document.querySelector('#factory-stock-section');
+  // F1-7J-A3: canonical → scoped re-read (bounded); Legacy → the existing targeted broad re-GET (refreshFactoryStockTables).
+  if (_fsScopedActive()) {
+    return new Promise(function (resolve) {
+      _fsAfterWrite(function () {
+        if (typeof renderFactoryStockTable === 'function') renderFactoryStockTable(root);
+        var mp = root && root.querySelector('[data-fs-panel="movement"]');
+        if (mp && mp.style.display !== 'none' && typeof renderFactoryMovementTable === 'function') { _factoryMovementSearched = true; renderFactoryMovementTable(root); }
+        resolve();
+      });
+    });
+  }
   if (!(window.KM && window.KM.DB && window.KM.DB.refreshFactoryStockTables)) { if (typeof renderFactoryStockTable === 'function') renderFactoryStockTable(root); return; }
   return Promise.resolve(window.KM.DB.refreshFactoryStockTables())
     .then(function () {
