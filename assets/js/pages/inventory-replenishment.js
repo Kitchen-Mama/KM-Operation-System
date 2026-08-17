@@ -2657,11 +2657,23 @@ window._allocDraftInitialLoad = _allocDraftInitialLoad;
 // Restore the working draft. SSOT = DB (Round 4 Decision E): try DB hydrate for the current scope
 // first (DB wins); sessionStorage is only a recovery cache used when the DB has nothing / is not
 // configured (headless). Never let a stale cache overwrite a successful DB load.
-function _restoreAllocationDraftFromSession() {
+async function _restoreAllocationDraftFromSession() {
     try {
         var ctx = _replenCtx();
         if (typeof _allocDraftInitialLoad === 'function') { try { _allocDraftInitialLoad(); } catch (e) {} }   // C2-D2A-UI: truthful targeted readback + persistence panel
         if (ctx && (ctx.country || ctx.marketplace) && typeof _hydrateAllocationDraftFromDb === 'function') {
+            // F1-7L (HALT E resolved): feed the UNCHANGED sync hydrate from a BOUNDED scoped read of the two
+            // canonical draft tables (the SAME tables + normalizer the broad getters used) instead of the retired
+            // whole-DB startup prime. The hydrate's country+marketplace/latest-updatedAt selection + bySku
+            // transform are byte-identical — only the data transport moved off the global prime. (The scoped
+            // getShippingAllocationDraftWorkspace SSOT is NOT used here: it requires planning_cycle + exact company
+            // and hard-conflicts on >1 active — a different selection contract — so it is not BEFORE==AFTER.)
+            try {
+                if (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function' &&
+                    typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) {
+                    await window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']);
+                }
+            } catch (e) { /* bounded load failed → fall through to the sessionStorage recovery cache below (as before) */ }
             if (_hydrateAllocationDraftFromDb(ctx)) return;   // DB SSOT loaded → do not overlay the cache
         }
         var raw = sessionStorage.getItem(REPLEN_ALLOC_DRAFT_KEY);

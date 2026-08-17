@@ -202,9 +202,9 @@ var errFn = extractFn(ROJS, '_opFirstLayerError_');
 ok(!/loadOperationDb|_buildRequestOrderRowsFromDb/.test(errFn), 'error path does NOT fall back to the legacy broad-cache render');
 // KM.loadState region reused (no new loading framework)
 ok(/KM\.loadState\.bindElement/.test(ROJS) && /KM\.loadState\.STATES\.(READY|EMPTY|ERROR)/.test(ROJS), 'reuses KM.loadState region (INITIAL_LOADING/READY/EMPTY/ERROR)');
-// second-layer secondary surfaces lazy-load broad cache on expand (first-layer never depends on it)
+// second-layer secondary surfaces lazy-load their BOUNDED tables on expand (F1-7L: no whole-DB load; first-layer never depends on it)
 var toggleFn = extractFn(ROJS, '_roToggleRowByKey');
-ok(/_opUseFirstLayerComposer\(\) && !window\._opDbCache[\s\S]*?loadOperationDb/.test(toggleFn), 'secondary expand surfaces lazy-load broad cache (first-layer stays composer-only)');
+ok(/_opUseFirstLayerComposer\(\)[\s\S]*?_roEnsureL2Tables\(false\)/.test(toggleFn) && toggleFn.indexOf('loadOperationDb') === -1, 'secondary expand surfaces lazy-load the BOUNDED second-layer tables (F1-7L; first-layer stays composer-only, no whole-DB load)');
 // the legacy _buildRequestOrderRowsFromDb remains (kill-switch path) but is NOT the canonical primary read
 ok(/function _buildRequestOrderRowsFromDb\(/.test(ROJS), 'legacy _buildRequestOrderRowsFromDb retained for the kill-switch path (DORMANT in canonical mode)');
 

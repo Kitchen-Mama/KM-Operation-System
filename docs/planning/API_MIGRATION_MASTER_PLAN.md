@@ -630,3 +630,30 @@ detail: `F1_7K_BATCH_F_WRITER_FULL_RELOAD_RETIREMENT_R1.md`.
   inventory-replenishment.js). Rollback: revert, or `window.KM_WRITER_FULL_RELOAD=true`.
 - **Readiness:** Batch F = DONE. app.js prime removal (F1-7L) still NOT ready (HALT E + secondary lazy reads + 13 Legacy
   branches). Full API migration NOT done. Do NOT begin F1-7L / authority redesign automatically.
+
+## F1-7L-APP-PRIME-DEPENDENCY-RETIREMENT-AND-GLOBAL-PRIME-REMOVAL-R1 (CANONICAL_STARTUP_WHOLE_DB_PRIME: 1 → 0) — **DONE**
+PRE HEAD `132f302`. READ TRANSPORT / CACHE-DEPENDENCY retirement only; no authority/formula/schema/writer/idempotency
+change; **FRONTEND-ONLY** (6 JS files — NO .gs/router/exec/bundle/DB). Full detail:
+`F1_7L_APP_PRIME_DEPENDENCY_RETIREMENT_AND_GLOBAL_PRIME_REMOVAL_R1.md`.
+- **Audit (no drift):** PRIMARY 0, SECONDARY 2 (RO 2nd-layer expand, FC Regular/Event modals), APP_PRIME_DEPENDENT 1
+  (IR allocation-draft hydrate), WRITER 0. All 16 pages first-open SELF-SUFFICIENT; all 16 Legacy branches self-load.
+- **HALT E RESOLVED (byte-identical):** the sync IR `_hydrateAllocationDraftFromDb` is fed by a BOUNDED scoped read of
+  the SAME two canonical draft tables (`refreshCacheTables`) awaited before it — same tables/normalizer/selection/
+  transform → byte-identical; the async, `planning_cycle`+company-scoped SSOT was rejected as it changes the selection
+  contract. Draft authority untouched (deferred).
+- **Secondary → bounded:** RO expand+Send+save use `_roEnsureL2Tables` (7 tables) + save re-reads then re-fetches the
+  scoped composer (not the broad `_buildRequestOrderRowsFromDb`); FC modals use `_fcEnsureBroadCacheThen`→bounded
+  `_FC_SECONDARY_TABLES` (7) + reset-on-write. Event Assist calc byte-identical (transport only). SKU-Details Refresh-DB
+  → scoped `_skWorkspaceRefresh_` in canonical (legacy keeps whole-DB).
+- **Prime removed:** app.js `DOMContentLoaded` makes NO `loadOperationDb` (localStorage warning preserved). `_opDbCache`
+  is NOT canonical startup state — only an on-demand bounded scratch (doc §10). No delayed/background prime.
+- **Debt Δ:** startup whole-DB prime **1→0**; ACTIVE_SECONDARY broad **2→0**; APP_PRIME_DEPENDENT **1→0**; writer 0;
+  PRIMARY 0; BACKGROUND 2→1 (only the `reloadOperationDb` debug util); LEGACY_ONLY 16 (rollback preserved). Enabler:
+  `KM.DB.refreshCacheTables` + 15-table `_KM_TABLE_CACHE_KEY_`. Tests: new suite 56/0 + 2 stale-contract updates; full
+  regression 234 files, only the 4 baselines; bundle unchanged (aaf5b07). **Deploy: Apps Script sync NO, router NO,
+  /exec NO, DB/bundle NO; frontend YES** (6 files). Rollback: revert, re-add the prime line, or a page kill switch.
+- **STATUS — READ-SIDE API MIGRATION COMPLETE (canonical posture):** WRITE_FORCES_FULL_RELOAD 0 · ACTIVE_PRIMARY 0 ·
+  ACTIVE_SECONDARY 0 · APP_PRIME_READ_DEPENDENCY 0 · CANONICAL_STARTUP_WHOLE_DB_PRIME 0. Remaining transport debt is
+  Legacy-rollback-only (16 kill-switch self-loads + `reloadOperationDb` debug util — intentionally retained). Deferred
+  product/authority rounds (NOT transport): Event Assist authority redesign, Incoming Inventory reconstruction,
+  sitePlanningAllocation. Do NOT begin authority redesign or generic perf/UI optimization automatically.

@@ -3454,13 +3454,22 @@ function _fcGetMarketplaces() {
   return (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
 }
 
-// Lazy broad-cache load for the SECONDARY builder/import modals (they still read marketplace_skus / sku_details /
-// campaigns / pricing_list from the broad cache). The PRIMARY render never depends on this. No-op once loaded.
+// F1-7L: bounded scoped load for the SECONDARY builder/import modals (Regular + Special Event/Event Assist).
+// They read sku_details / marketplace_skus / campaigns / pricing_list (+ fc_regular_forecast / fc_special_events /
+// marketplaces) via the broad KM.DB.get*() getters. Instead of the retired whole-DB startup prime (or the old
+// whole-DB lazy load), fetch ONLY these tables via the bounded getTable path (KM.DB.refreshCacheTables) — the SAME
+// normalizer the broad getters use → every modal fact + the Event Assist calc inputs stay BEFORE==AFTER. The
+// PRIMARY render never depends on this. Loaded once per page; _fcResetSecondaryCache() (called on any FC write)
+// forces the next modal open to re-read fresh. Legacy/unconfigured → the getters degrade exactly as before.
+var _FC_SECONDARY_TABLES = ['sku_details', 'marketplace_skus', 'campaigns', 'pricing_list', 'fc_regular_forecast', 'fc_special_events', 'marketplaces'];
+var _fcSecondaryLoaded = false;
+function _fcResetSecondaryCache() { _fcSecondaryLoaded = false; }
 function _fcEnsureBroadCacheThen(cb) {
-  if (window._opDbCache) { if (typeof cb === 'function') cb(); return; }
-  var loader = (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) ? window.KM.DB.loadOperationDb : (window.reloadOperationDb || null);
-  if (!loader) { if (typeof cb === 'function') cb(); return; }
-  loader({ force: true }).then(function () { if (typeof cb === 'function') cb(); }).catch(function () { if (typeof cb === 'function') cb(); });
+  var done = function () { if (typeof cb === 'function') cb(); };
+  if (_fcSecondaryLoaded) { done(); return; }
+  var rc = (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function') ? window.KM.DB.refreshCacheTables : null;
+  if (!rc) { done(); return; }   // unconfigured/legacy → getters degrade as before (no whole-DB reload)
+  rc(_FC_SECONDARY_TABLES).then(function () { _fcSecondaryLoaded = true; done(); }).catch(done);
 }
 
 // Bounded loading/error region for the primary FC tables (reuses KM.loadState — no new loading infra).
@@ -3516,6 +3525,9 @@ function _fcWorkspaceRefresh_() {
 // (the broad cache the db-api writer reloaded is IGNORED by the primary render), THEN run cb (the page's own
 // exit-edit / close-modal / re-render). Legacy mode (or Demo): run cb immediately (the writer already reloaded the cache).
 function _fcAfterWrite(cb) {
+  // F1-7L: a FC write changed the underlying tables the secondary modals read; drop the bounded modal-cache flag
+  // so the next builder/import/Event-Assist modal open re-reads fresh (bounded) rather than a stale slice.
+  if (typeof _fcResetSecondaryCache === 'function') _fcResetSecondaryCache();
   var live = (typeof _fcUseDb !== 'function') || _fcUseDb();
   if (!_fcEffectiveWorkspace() || !live) { if (typeof cb === 'function') cb(); return; }
   _fcWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _fcRenderError_(err); });

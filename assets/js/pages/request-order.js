@@ -31,6 +31,19 @@ function _roUseDb() {
     window.KM.DB.getDataSourceMode() === 'google-sheet' && window.KM.DB.getMarketplaceSkus);
 }
 
+// F1-7L: the SECOND-LAYER expand panel + the Send path read these facts (FC regular/special/target, factory
+// stock, warehouses, PO headers/lines) via the broad KM.DB.get*() getters. Instead of the retired whole-DB
+// startup prime (or the old expand-time whole-DB self-load), load ONLY these tables via the bounded scoped
+// getTable path (KM.DB.refreshCacheTables) — the SAME normalizer the broad getters use, so every second-layer
+// fact stays BEFORE==AFTER. Once per page load (guard); force=true re-reads after a second-layer FC/Target write.
+var _RO_L2_TABLES = ['fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'warehouses', 'purchase_orders', 'purchase_order_lines'];
+var _roL2Ready = false;
+function _roEnsureL2Tables(force) {
+  if (!_roUseDb() || !(window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')) return Promise.resolve();
+  if (_roL2Ready && !force) return Promise.resolve();
+  return window.KM.DB.refreshCacheTables(_RO_L2_TABLES).then(function () { _roL2Ready = true; }).catch(function () {});
+}
+
 // Small helpers.
 function _roEsc(s) {
   return String(s == null ? '' : s)
@@ -2032,10 +2045,11 @@ function _roToggleRowByKey(rowKey) {
   var _expanding = (requestOrderState.expandedRowKey !== rowKey);
   requestOrderState.expandedRowKey = (requestOrderState.expandedRowKey === rowKey) ? null : rowKey;
   // F1-7E-PREREQ-5: the first-layer is composer-sourced (no broad cache). The SECOND-layer expand surfaces
-  // (forecast breakdown / Edit Target % / FC Update) still read the broad Operation DB cache — lazy-load it on the
-  // FIRST expand so those panels keep working, WITHOUT the first-layer render ever depending on the broad DB.
-  if (_expanding && _opUseFirstLayerComposer() && !window._opDbCache && window.KM && window.KM.DB && window.KM.DB.loadOperationDb) {
-    window.KM.DB.loadOperationDb({ force: true }).then(function () { if (requestOrderState.expandedRowKey === rowKey) renderRequestOrderTable(); }).catch(function () {});
+  // (forecast breakdown / Edit Target % / FC Update) read FC/factory/warehouse/PO facts. F1-7L: lazy-load ONLY
+  // those bounded tables on the FIRST expand (KM.DB.refreshCacheTables — NOT the whole Operation DB), so the
+  // panels keep working WITHOUT the retired startup prime and WITHOUT ever loading the whole DB.
+  if (_expanding && _opUseFirstLayerComposer()) {
+    _roEnsureL2Tables(false).then(function () { if (requestOrderState.expandedRowKey === rowKey) renderRequestOrderTable(); });
   }
   renderRequestOrderTable();
   // F1-4B-FM2: fire (or invalidate) the flag-gated, READ-ONLY Order-Planning recommendation read for the
@@ -2545,9 +2559,17 @@ function _roCloseModal() {
   var o = document.querySelector('.ro-modal-overlay'); if (o) o.remove();
 }
 
-// Re-read the fresh cache (adapter force-reloads it before its write promise resolves) and re-render the
-// table, keeping the currently expanded row open.
+// Re-render after a second-layer FC/Target write, keeping the currently expanded row open.
+// F1-7L: canonical (composer) mode re-reads the bounded second-layer FC tables (KM.DB.refreshCacheTables,
+// force) and then re-fetches the SCOPED first-layer composer (_opLoadFirstLayerComposer_ → _roRenderAll),
+// which re-renders the table + the still-open expand from fresh data — NO whole Operation DB, and the first
+// layer is refreshed by its canonical owner (the composer), NOT the legacy broad _buildRequestOrderRowsFromDb
+// (which needs first-layer-only tables absent from the bounded set). Legacy path is unchanged.
 function _roReloadAndRerender() {
+  if (_opUseFirstLayerComposer() && _opFirstLayerReady()) {
+    _roEnsureL2Tables(true).then(function () { _opLoadFirstLayerComposer_(); }).catch(function () { _opLoadFirstLayerComposer_(); });
+    return;
+  }
   try { if (_roUseDb()) requestOrderState.data = _buildRequestOrderRowsFromDb(); } catch (e) { /* keep prior data */ }
   if (typeof renderRequestOrderTable === 'function') renderRequestOrderTable();
   requestAnimationFrame(function() { try { syncExpandPanelHeights(); } catch (e) {} });
@@ -2968,6 +2990,11 @@ async function handleSendRequest() {
     alert('Please confirm all site scopes before sending this request.\n\nPending (' + buckets.join('+') + '): ' + pendingSites.join(', '));
     return;
   }
+
+  // F1-7L: the per-line FC snapshot (_roFcForItemMonth → getFcRegularForecast) reads the broad-cache FC slice.
+  // Send is reachable without expanding a row, so ensure the bounded second-layer tables are loaded here (no
+  // whole Operation DB, no startup prime) before building the send snapshots.
+  try { await _roEnsureL2Tables(false); } catch (e) {}
 
   // Collect eligible allocation lines from the confirmed, filtered rows (only order_qty > 0).
   // Each line carries its bucket/month + the same source snapshots used by the 下單系統 table.

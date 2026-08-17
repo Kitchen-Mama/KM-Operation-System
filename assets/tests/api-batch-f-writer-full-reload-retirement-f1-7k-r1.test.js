@@ -192,8 +192,9 @@ ok(/function _irAfterWrite\(cb\)\s*\{[\s\S]*_irWorkspaceRefresh_\(\)/.test(IR_JS
 
 // ===================================================================================================================
 console.log('\n== §14/§15/§34-§38 debt untouched: app.js prime + authority-debt code unchanged ==');
-// §15/§34 app.js global prime remains (F1-7L owns its removal, NOT this round).
-ok(APP_JS.indexOf('loadOperationDb') !== -1, 'app.js global Operation DB prime still present (F1-7L owns removal)');
+// §15/§34 at F1-7K the app.js global prime remained; F1-7L has since removed it (writer-reload retirement is
+// independent of the startup prime, so this Batch-F suite only asserts app.js has no WRITER reload path).
+ok(!/_kmWriterPostWrite_|force: true/.test(APP_JS), 'app.js contains no writer full-reload path (Batch-F invariant holds regardless of the F1-7L prime removal)');
 // §38 allocation-draft writers already used _kmWeeklyCommand_ (NO whole-DB reload) — unchanged, still no force reload.
 ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines', 'submitShippingAllocationDrafts', 'cancelShippingAllocationDraft'].forEach(function (name) {
   var line = extractAssignedFn(DBAPI, 'window.KM.DB.' + name + ' =');

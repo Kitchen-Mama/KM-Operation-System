@@ -2078,6 +2078,18 @@ window.resetSkuColumnWidths = resetSkuColumnWidths;
 // Refresh DB button handler
 function handleRefreshDb() {
     showSkuStatusToast('Loading...');
+    // F1-7L: canonical posture refreshes ONLY the scoped skuDetails workspace read-model + re-renders — no whole
+    // Operation DB reload. (The old reloadOperationDb refreshed the broad cache, which the scoped render ignores,
+    // so it had no visible effect in canonical mode.) Legacy kill-switch posture keeps the whole-DB reload.
+    if (typeof _skEffectiveWorkspace === 'function' && _skEffectiveWorkspace() && typeof _skWorkspaceRefresh_ === 'function') {
+        _skWorkspaceRefresh_().then(function() {
+            renderSkuDetailsTable();
+            showSkuStatusToast('Reload successful.');
+        }).catch(function(err) {
+            showSkuStatusToast('Reload failed: ' + ((err && err.message) || err));
+        });
+        return;
+    }
     if (window.reloadOperationDb) {
         window.reloadOperationDb({ force: true }).then(function() {
             showSkuStatusToast('Reload successful.');

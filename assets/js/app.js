@@ -377,19 +377,18 @@ if (typeof initFcSkuDecisionSection === 'function') {
 
 // 初始化時載入紀錄和世界時間
 window.addEventListener('DOMContentLoaded', () => {
-    // Load Operation DB (Google Sheet or mock fallback)
-    if (window.KM && window.KM.DB && window.KM.DB.loadOperationDb) {
-        window.KM.DB.loadOperationDb({ force: true }).then(function() {
-            console.log('[App] Operation DB loaded. Mode:', window.KM.DB.getDataSourceMode());
-            // Warn about legacy localStorage overrides
-            try {
-                var legacyData = JSON.parse(localStorage.getItem('km_sku_data_overrides_v1')) || {};
-                if (Object.keys(legacyData).length > 0) {
-                    console.warn('[App] Legacy imported SKU records detected in localStorage (' + Object.keys(legacyData).length + ' records). Run debugLegacySkuOverrides() for details.');
-                }
-            } catch(e) {}
-        });
-    }
+    // F1-7L: NO whole Operation DB startup prime. Startup no longer fetches/normalizes the entire Operation DB into
+    // window._opDbCache. Each page/workspace loads its OWN bounded/scoped data on mount (canonical); the remaining
+    // secondary surfaces (RO 2nd-layer expand, FC builder/import modals) + the IR allocation-draft hydrate load
+    // their own bounded tables on demand (KM.DB.refreshCacheTables); Legacy kill-switch branches self-load the broad
+    // DB on demand. _opDbCache is NO LONGER canonical startup state (see F1_7L doc §10). The legacy-localStorage
+    // override warning is preserved here (it reads localStorage, never the Operation DB).
+    try {
+        var legacyData = JSON.parse(localStorage.getItem('km_sku_data_overrides_v1')) || {};
+        if (Object.keys(legacyData).length > 0) {
+            console.warn('[App] Legacy imported SKU records detected in localStorage (' + Object.keys(legacyData).length + ' records). Run debugLegacySkuOverrides() for details.');
+        }
+    } catch(e) {}
     // 設定初始頁面生命週期（首頁）— MUST run before the other startup inits.
     // Home markup is partial-loaded (Phase 1): switchTo('home-section') triggers the Home mount,
     // which loads the partial and renders. Running it first ensures a failure in any later init

@@ -2643,11 +2643,34 @@ function _kmScopedPostureActive_() {
 async function _kmWriterPostWrite_() {
     if (!_kmScopedPostureActive_()) { await loadOperationDb({ force: true }); }
 }
-// Bounded targeted cache patch (§1 option C / §13-sanctioned) — re-GET only the named tables via the EXISTING
-// getTable action, run the SAME normalizeOperationDb per-table logic, and patch ONLY those slices into the
-// global cache. Used where a PRIMARY surface reads a broad-cache slice directly in EVERY mode (no scoped
-// read-model), so the post-write readback must keep that one slice fresh without any whole-DB reload.
-var _KM_TABLE_CACHE_KEY_ = { request_order_site_confirmations: 'requestOrderSiteConfirmations' };
+// Bounded targeted cache patch (§1 option C / §13-sanctioned; extended in F1-7L) — re-GET only the named tables
+// via the EXISTING getTable action, run the SAME normalizeOperationDb per-table logic, and patch ONLY those
+// slices into the global cache. Used where a PRIMARY/SECONDARY surface reads a broad-cache slice directly (no
+// scoped read-model) and must stay fresh WITHOUT any whole-DB reload — and (F1-7L) so the remaining secondary
+// surfaces + the IR allocation-draft hydrate can drop the app.js startup prime by loading their own bounded
+// slices on demand. Patches even when a table is now empty (explicit key map, not a non-empty diff), so a
+// cleared table correctly clears its slice. Reuses the IDENTICAL normalizer/filter → byte-identical to the
+// broad getters (BEFORE == AFTER). NOTE: _opDbCache is NOT canonical startup state after F1-7L — it is only an
+// on-demand bounded scratch for these documented compatibility surfaces + legacy kill-switch branches (doc §10).
+var _KM_TABLE_CACHE_KEY_ = {
+    request_order_site_confirmations: 'requestOrderSiteConfirmations',
+    // F1-7L bounded secondary/hydrate reads:
+    shipping_allocation_drafts: 'shippingAllocationDrafts',
+    shipping_allocation_draft_lines: 'shippingAllocationDraftLines',
+    fc_regular_forecast: 'fcRegularForecast',
+    fc_special_events: 'fcSpecialEvents',
+    fc_target_rules: 'fcTargetRules',
+    factory_stock: 'factoryStock',
+    warehouses: 'warehouses',
+    purchase_orders: 'purchaseOrders',
+    purchase_order_lines: 'purchaseOrderLines',
+    sku_details: 'skuDetails',
+    marketplace_skus: 'marketplaceSkus',
+    campaigns: 'campaigns',
+    campaign_sku_lines: 'campaignSkuLines',
+    pricing_list: 'pricingList',
+    marketplaces: 'marketplaces'
+};
 async function _kmRefreshCacheTables_(tableNames) {
     var names = (tableNames || []).filter(Boolean);
     if (!names.length) return;
@@ -2660,6 +2683,10 @@ async function _kmRefreshCacheTables_(tableNames) {
         if (key && Object.prototype.hasOwnProperty.call(norm, key)) window._opDbCache[key] = norm[key];
     });
 }
+// F1-7L: exposed bounded scoped loader for the remaining secondary surfaces (RO 2nd-layer expand, FC builder/
+// import modals) + the IR allocation-draft hydrate — the replacement for the retired whole-DB startup prime.
+// Fetches ONLY the named tables (getTable) and patches their slices into _opDbCache. NEVER a whole-DB reload.
+window.KM.DB.refreshCacheTables = _kmRefreshCacheTables_;
 
 window.KM.DB.updateSkuLifecycle = async function(sku, lifecycle) {
     if (window.KM.DB.isCloudWriteEnabled()) {
