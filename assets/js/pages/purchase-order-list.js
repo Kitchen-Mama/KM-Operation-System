@@ -544,11 +544,14 @@
     function goPage(p) { polPage = Math.max(1, p); renderRows(); }
 
     // View → lightweight modal listing the PO lines.
+    // F1-7J-A: read-model-first (Workspace → _polReadModel; Legacy → broad getters) — same accessor pattern as
+    // renderRows (lines 154-155). Opening the modal in canonical mode requires ZERO broad-DB fetch. BEFORE==AFTER:
+    // the purchaseOrder adapter yields the same orders/lines arrays; no remaining_qty is computed here.
     function view(id) {
-        var orders = window.KM.DB.getPurchaseOrders() || [];
+        var orders = _polReadModel ? _polReadModel.orders : (window.KM.DB.getPurchaseOrders() || []);
         var o = orders.filter(function (x) { return x.purchaseOrderId === id; })[0];
         if (!o) { alert('Purchase order not found.'); return; }
-        var lines = (window.KM.DB.getPurchaseOrderLines() || []).filter(function (l) { return l.purchaseOrderId === id; });
+        var lines = (_polReadModel ? _polReadModel.lines : (window.KM.DB.getPurchaseOrderLines() || [])).filter(function (l) { return l.purchaseOrderId === id; });
         var rows = lines.map(function (l) {
             return '<tr>' +
                 '<td>' + dash(l.sku) + '</td>' +

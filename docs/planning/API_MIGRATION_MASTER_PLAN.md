@@ -520,3 +520,34 @@ the approximate figures ("~40 writers", "≈6 broad-cache") with EXACT counts. F
   (incoming-inventory authority) → F1-7J-C (Event Assist authority) → F1-7J-D (site-planning pool + residual cleanup) →
   F1-7K Batch F (retire 47 writer full-reloads) → F1-7L (remove app.js prime) → F1-7M (performance) → resume
   F1-PHASE1-LIVE-ACCEPTANCE-R2. No Apps Script sync / /exec / frontend deploy / DB change (audit only). Do NOT begin automatically.
+
+### F1-7J-A-R1 delta (2026-08-17) — existing-workspace secondary wiring + SKU Regional primary cutover (3 done, 3 HALT)
+PRE HEAD `2d35c7f`. TRANSPORT/WIRING only; BEFORE==AFTER; NO new API/workspace/formula/authority/schema/writer/app-prime
+change. Full detail: `F1_7J_A_EXISTING_WORKSPACE_SECONDARY_AND_SKU_REGIONAL_CUTOVER_R1.md`.
+- **DONE B** — PO detail modal `view()` (purchase-order-list.js) now read-model-first (`_polReadModel.orders/lines`, the
+  same accessor as `renderRows`); zero broad fetch on open; `remaining_qty` stays backend-owned (no fallback promoted).
+- **DONE D** — 7 IR reference/registry lookups (marketplaces ×6 + `_irctxWarehouses`) routed through the existing
+  `_irWsGet` choke point (Workspace → `_irReadModel`; Legacy → getter). BEFORE==AFTER (same normalizers, F1-7I). The
+  Execution-Plan warehouse read (`:3020`) + carrier reads stay for A2/A3.
+- **DONE F** — **sku-regional-details.js WHOLE PAGE** cut over to the EXISTING `skuDetails` workspace with
+  `include.regional` (59_ already returns marketplace_skus + sku_regional_details under include.regional; adapter already
+  maps them). Mirrors F1-7H: read-model-first accessors, KM.loadState region, fail-closed (no silent broad fallback),
+  scoped post-write `_srdAfterWrite`. Write path (upsertSkuRegionalDetail + marketplace_skus identity sync) UNCHANGED; NO
+  Factory Stock init; NO company-from-factory; shared KM/ResUS/ResTW rows distinct. **NO new workspace/API** (reuses
+  skuDetails). Legacy kill-switch retained.
+- **HALT A** `F1_7J_A_UNEXPECTED_BACKEND_REQUIREMENT` — the weekly payload does NOT emit sku_details (40_
+  `weeklyWorkspaceBuild_` reads only plans/lines/warehouses/carriers; sku_details is read-SCOPE only, not projected); the
+  line-logistics live recompute needs carton dims → requires a 40_ projection (A2). **Corrects the F1-7J audit's imprecise
+  "sku_details already in weeklyShipping payload".** shipping-plan.js unchanged.
+- **HALT C** `REQUEST_ORDER_SCOPE_EXISTING_READ_MODEL_NOT_EQUIVALENT` — request-order.js (AI-plan page) has no on-page
+  scoped read model carrying the full marketplace master (composer returns `{rows}`; recommendation marketplaces are lazy +
+  scope-subset). Resolver unchanged.
+- **HALT E** `IR_ALLOCATION_DRAFT_SSOT_NOT_BEFORE_EQUALS_AFTER` — §7 forbids the BEFORE==AFTER `_irWsGet` raw-table route
+  and mandates the SSOT `getShippingAllocationDraftWorkspace`, but that SSOT is async + requires a complete
+  planning_cycle scope + returns a different `{draft,lines}` shape → not equivalent to the sync country/marketplace hydrate.
+  Impasse → product decision (J-B/J-D). Hydrate unchanged.
+- **Debt Δ:** active broad-cache loaders 60→59; secondary broad surfaces 14→~10; **writer full-reloads 47→47 (untouched)**;
+  app-prime-dependent surfaces 7→4 (S3 PO-view + S5 IR reference resolved; SKU-Regional primary-broad dependency removed);
+  workspaces 8/8, registered-only 0 (no new workspace). Tests: new suite 45/0; full regression 230 files, only the 4 known
+  baselines; bundle unchanged (aaf5b07). Deploy: frontend only (purchase-order-list.js, inventory-replenishment.js,
+  sku-regional-details.js) + compat test repoint; NO Apps Script sync / /exec / DB / bundle. Do NOT begin A2 automatically.

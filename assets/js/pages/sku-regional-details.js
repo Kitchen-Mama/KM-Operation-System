@@ -57,7 +57,102 @@
         return !!(window.KM && window.KM.DB && window.KM.DB.getDataSourceMode &&
             window.KM.DB.getDataSourceMode() === 'google-sheet' && window.KM.DB.getSkuRegionalDetails);
     }
-    function _rows() { return (window.KM.DB.getSkuRegionalDetails && window.KM.DB.getSkuRegionalDetails()) || []; }
+
+    // ------------------------------------------------------------------------------------------------------
+    // F1-7J-A · scoped SKU Details workspace read cutover for the SECONDARY Regional page (mirrors F1-7H sku-details.js).
+    // This PRIMARY page render sources its 5 tables — sku_regional_details + sku_details + marketplace_skus +
+    // tax_referral_rates + tax_rate_components — from the EXISTING `skuDetails` workspace with include.regional (the
+    // backend 59_ already returns the two 'regional' tables when include.regional is set). NO broad Operation DB for the
+    // primary render. Kill switch: KM.api.setWorkspaceEnabled('skuDetails', false) → instant Legacy broad-cache. Canonical
+    // default ON. Transports READ facts ONLY — the write path (upsertSkuRegionalDetail, incl. its marketplace_skus identity
+    // sync) is UNCHANGED; NO new workspace, NO new API, NO Factory Stock init, NO company-from-factory inference. The
+    // adapter (adaptSkuDetailsWorkspace) re-normalizes with the SAME normalizers + per-array filters as normalizeOperationDb,
+    // so the arrays equal getSkuRegionalDetails/getSkuDetails/getMarketplaceSkus/getTaxReferralRates/getTaxRateComponents
+    // exactly (BEFORE == AFTER).
+    // ------------------------------------------------------------------------------------------------------
+    function _srdEffectiveWorkspace() {
+        return !!(window.KM && window.KM.api && typeof window.KM.api.workspaceApiActive === 'function' &&
+            window.KM.api.workspaceApiActive('skuDetails'));
+    }
+    var _srdReadModel = null;   // workspace-sourced { skuRegionalDetails, skuDetails, marketplaceSkus, taxReferralRates, taxRateComponents } or null = Legacy
+    var _srdReadSeq = 0;
+
+    // read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
+    function _srdGetRegional() {
+        if (_srdReadModel) return _srdReadModel.skuRegionalDetails || [];
+        return (window.KM.DB.getSkuRegionalDetails && window.KM.DB.getSkuRegionalDetails()) || [];
+    }
+    function _srdGetMasters() {
+        if (_srdReadModel) return _srdReadModel.skuDetails || [];
+        return (window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [];
+    }
+    function _srdGetMktSkus() {
+        if (_srdReadModel) return _srdReadModel.marketplaceSkus || [];
+        return (window.KM.DB.getMarketplaceSkus && window.KM.DB.getMarketplaceSkus()) || [];
+    }
+    function _srdGetTaxRates() {
+        if (_srdReadModel) return _srdReadModel.taxReferralRates || [];
+        return (window.KM.DB.getTaxReferralRates && window.KM.DB.getTaxReferralRates()) || [];
+    }
+    function _srdGetTaxComponents() {
+        if (_srdReadModel) return _srdReadModel.taxRateComponents || [];
+        return (window.KM.DB.getTaxRateComponents && window.KM.DB.getTaxRateComponents()) || [];
+    }
+
+    // Bounded loading/error region (reuses KM.loadState — no new loading infra). INITIAL_LOADING / READY / EMPTY / ERROR.
+    var _srdRegionCtl = null;
+    function _srdRegion_() {
+        if (typeof document === 'undefined' || !(window.KM && window.KM.loadState)) return null;
+        if (_srdRegionCtl) return _srdRegionCtl;
+        _srdRegionCtl = window.KM.loadState.createRegion({
+            render: function (state) {
+                if (state === window.KM.loadState.STATES.INITIAL_LOADING) {
+                    var w = el('srd-list');
+                    if (w) w.innerHTML = '<div class="srd-skel"><span style="width:60%"></span><span style="width:80%"></span></div><div class="srd-skel"><span style="width:50%"></span><span style="width:70%"></span></div>';
+                }
+                // READY / EMPTY / ERROR / REFRESHING → render() / _srdRenderError_ own the DOM.
+            }
+        });
+        return _srdRegionCtl;
+    }
+    // Fail-closed: NEVER fall back to the broad cache for the primary render (do NOT call render(), whose accessors would
+    // otherwise read the broad getters when _srdReadModel is null).
+    function _srdRenderError_(err) {
+        _srdReadModel = null;
+        var rg = _srdRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
+        var code = (err && err.code) || 'SKU_REGIONAL_READ_FAILED';
+        var message = (err && err.message) || 'SKU Regional read failed';
+        var note = el('srd-mode-note');
+        if (note) note.innerHTML = '<span class="srd-note--error">Couldn’t load regional details: ' + esc(message) + ' [' + esc(code) + ']. <button type="button" class="srd-btn srd-btn--default" onclick="srdRetry()">Retry</button></span>';
+        _empty('SKU Regional read error.');
+    }
+
+    // Scoped read: Workspace (canonical) → getWorkspace('skuDetails', {include:{regional:true}}) → adapt → _srdReadModel.
+    // Fail-closed (rejects; NO silent legacy broad fallback). Keeps the prior read-model until the new one is assigned.
+    function _srdWorkspaceRefresh_() {
+        var mySeq = ++_srdReadSeq;
+        var rg = _srdRegion_(); if (rg) rg.beginLoad(!!_srdReadModel);
+        if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+            return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'SKU Details Workspace API unavailable.' });
+        }
+        return Promise.resolve(window.KM.api.getWorkspace('skuDetails', { include: { regional: true } })).then(function (env) {
+            if (mySeq !== _srdReadSeq) return _srdReadModel;   // a newer read superseded this one
+            if (env && env.success && env.data) {
+                _srdReadModel = window.KM.DB.adaptSkuDetailsWorkspace(env.data);
+                if (rg) rg.set((_srdReadModel.skuRegionalDetails && _srdReadModel.skuRegionalDetails.length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
+                return _srdReadModel;
+            }
+            throw (env && env.errors && env.errors[0]) || { code: 'SKU_REGIONAL_READ_FAILED', message: 'SKU Details workspace request failed.' };
+        });
+    }
+    // Post-write reconcile: Workspace mode → scoped re-read then cb (primary render ignores the broad cache the writer
+    // reloaded); Legacy mode → cb immediately (the writer already reloaded the broad cache).
+    function _srdAfterWrite(cb) {
+        if (!_srdEffectiveWorkspace()) { if (typeof cb === 'function') cb(); return; }
+        _srdWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _srdRenderError_(err); });
+    }
+
+    function _rows() { return _srdGetRegional(); }
 
     function srdToast(msg) {
         var t = el('srd-toast');
@@ -69,10 +164,10 @@
     // ---- Joins (built once per render pass over the cached arrays) ----
     function buildIndexes() {
         _srdMasterIndex = {};
-        var masters = (window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [];
+        var masters = _srdGetMasters();
         masters.forEach(function (m) { if (m && m.sku) _srdMasterIndex[lc(m.sku)] = m; });
         _srdMktIndex = {};
-        var mkts = (window.KM.DB.getMarketplaceSkus && window.KM.DB.getMarketplaceSkus()) || [];
+        var mkts = _srdGetMktSkus();
         mkts.forEach(function (m) {
             var k = lc(m.sku) + '||' + lc(m.company) + '||' + lc(m.country) + '||' + lc(m.marketplace);
             (_srdMktIndex[k] = _srdMktIndex[k] || []).push(m);
@@ -129,7 +224,7 @@
         return out;
     }
     function populateFilters() {
-        var masters = (window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [];
+        var masters = _srdGetMasters();
         var cats = distinct(masters.map(function (m) { return (m.raw && m.raw.category) || m.category; }));
         var sers = distinct(masters.map(function (m) { return m.series || (m.raw && m.raw.series); }));
         // ONE shared searchable multi-select per filter (KM.ui.multiFilter). create() is idempotent:
@@ -216,7 +311,7 @@
         var m = masterBySku(sku);
         var series = String(mSeries(m)).trim();
         if (!series) return { series: '', row: null, reason: 'no-series' };
-        var rates = (window.KM.DB.getTaxReferralRates && window.KM.DB.getTaxReferralRates()) || [];
+        var rates = _srdGetTaxRates();
         var cands = rates.filter(function (t) { return lc(t.series) === lc(series) && up(t.dutyCountry) === up(dutyCode); });
         if (!cands.length) return { series: series, row: null, reason: 'none' };
         var t0 = todayIso();
@@ -236,7 +331,7 @@
     }
     function taxComponentsFor(taxRateId) {
         if (!taxRateId) return [];
-        var comps = (window.KM.DB.getTaxRateComponents && window.KM.DB.getTaxRateComponents()) || [];
+        var comps = _srdGetTaxComponents();
         return comps.filter(function (c) { return String(c.taxRateId) === String(taxRateId); });
     }
 
@@ -493,7 +588,9 @@
             srdState.selectedSku = sku;
             srdState.activeCountry = up(country);
             srdState.activeRecordKey = data && data.regional_detail_id ? data.regional_detail_id : (lc(sku) + '||' + lc(company) + '||' + lc(country) + '||' + lc(marketplace));
-            render();
+            // F1-7J-A: scoped post-write reconcile (Workspace → re-read skuDetails include.regional then render; Legacy →
+            // render immediately, the writer already reloaded the broad cache). No page-level broad Operation DB reload.
+            _srdAfterWrite(function () { render(); });
             srdToast('Saved.' + (data && data.synced ? ' marketplace_skus identity synced.' : (data && data.synced === false ? ' (No matching marketplace_skus row to sync.)' : '')));
         }).catch(function (err) {
             _srdSaving = false;
@@ -587,8 +684,13 @@
             if (seq !== _srdReqSeq) return;
             if (note) note.innerHTML = '<span class="srd-note--error">Couldn’t load regional details. <button type="button" class="srd-btn srd-btn--default" onclick="srdRetry()">Retry</button></span>';
         };
-        if (!window._opDbCache && window.KM.DB.loadOperationDb) window.KM.DB.loadOperationDb({ force: true }).then(done).catch(fail);
-        else done();
+        // F1-7J-A: canonical → scoped skuDetails workspace (include.regional); NO broad Operation DB, fail-closed (no silent
+        // legacy fallback). Legacy kill-switch mode retains the broad-cache load unchanged.
+        if (_srdEffectiveWorkspace()) {
+            _srdWorkspaceRefresh_().then(function () { if (seq !== _srdReqSeq) return; render(); }).catch(function (err) { if (seq !== _srdReqSeq) return; _srdRenderError_(err); });
+        } else if (!window._opDbCache && window.KM.DB.loadOperationDb) {
+            window.KM.DB.loadOperationDb({ force: true }).then(done).catch(fail);
+        } else { done(); }
     }
     function srdRetry() { var n = el('srd-mode-note'); if (n) n.innerHTML = ''; loadAndInit(); }
 

@@ -168,7 +168,7 @@ function setSelectValueEnsureOption(sel, val) {
 function populateReplenAddSkuMarketplaces() {
   var sel = document.getElementById('replen-add-marketplace');
   if (!sel) return;
-  var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var list = _irWsGet('getMarketplaces');   // F1-7J-A: read-model-first (Workspace → _irReadModel; Legacy → getter) — BEFORE==AFTER
   var active = list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
   sel.innerHTML = '';
   if (active.length === 0) {
@@ -4355,7 +4355,7 @@ function openEditSkuModal() {
     document.getElementById('edit-sku-launch-date').value = _editSkuTarget.launchDate || '';
 
     // Fulfillment Model with the same lock rule, resolved from the marketplace registry.
-    var _mpReg = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces ? window.KM.DB.getMarketplaces() : []).find(function(m) {
+    var _mpReg = _irWsGet('getMarketplaces').find(function(m) {   // F1-7J-A: read-model-first — BEFORE==AFTER
         if (mpRecord && mpRecord.marketplaceId && m.marketplaceId === mpRecord.marketplaceId) return true;
         return String(m.country || '').toLowerCase() === String(_editSkuTarget.country || '').toLowerCase()
             && String(m.marketplace || '').toLowerCase() === String(_editSkuTarget.marketplace || '').toLowerCase();
@@ -4443,7 +4443,7 @@ var REPLEN_VALID_MODELS = ['sales_driven', 'forecast_driven'];
 var _replenImportResolved = null; // { company, country, marketplace, marketplaceId, currency, displayName }
 
 function _replenImportActiveMarketplaces() {
-    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    var list = _irWsGet('getMarketplaces');   // F1-7J-A: read-model-first (Workspace → _irReadModel; Legacy → getter) — BEFORE==AFTER
     return list.filter(function(m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; });
 }
 
@@ -4773,7 +4773,7 @@ function _replenSelectedScope() {
     if (_replenDemoOn()) {
         return { company: '', country: country, marketplace: mpVal, marketplaceId: '' };
     }
-    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    var list = _irWsGet('getMarketplaces');   // F1-7J-A: read-model-first (Workspace → _irReadModel; Legacy → getter) — BEFORE==AFTER
     var rec = mpVal ? list.find(function(m){ return String(m.marketplaceId) === String(mpVal); }) : null;
     if (!rec) return { company: '', country: country, marketplace: '', marketplaceId: mpVal };
     return { company: rec.company || '', country: rec.country || country, marketplace: rec.marketplace || '', marketplaceId: rec.marketplaceId || mpVal };
@@ -4852,7 +4852,7 @@ function refreshReplenMarketplaceOptions() {
 function _replenMarketplaceLabel(key, company, country) {
     key = String(key == null ? '' : key).trim();
     if (!key) return '';
-    var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+    var list = _irWsGet('getMarketplaces');   // F1-7J-A: read-model-first (Workspace → _irReadModel; Legacy → getter) — BEFORE==AFTER
     function up(v){ return String(v == null ? '' : v).trim().toUpperCase(); }
     var exact = list.filter(function(m){ return up(m.marketplace) === up(key) &&
         (!company || up(m.company) === up(company)) && (!country || up(m.country) === up(country)) &&
@@ -5129,16 +5129,16 @@ var _irctxLastContext = null;   // last normalized context model (INTERNAL; read
 var _irInternalContext = { destinationWarehouseId: null, calculationMonth: null, planningCycle: null };
 
 function _irctxWarehouses() {
-  // Reads the ALREADY-loaded canonical warehouse cache (same accessor the page uses today). No new
-  // fetch, no whole-DB reload, never getOperationDb.
-  return (window.KM && window.KM.DB && window.KM.DB.getWarehouses) ? (window.KM.DB.getWarehouses() || []) : [];
+  // F1-7J-A: read-model-first — Workspace mode reads the scoped IR read-model (warehouses are in the IR workspace
+  // payload); Legacy reads the broad getter unchanged. No new fetch, no whole-DB reload, never getOperationDb. BEFORE==AFTER.
+  return _irWsGet('getWarehouses');
 }
 // Internal context scope = the page's selected scope + the marketplace's fulfillment model.
 function _irctxScope() {
   var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope()
     : { company: '', country: '', marketplace: '', marketplaceId: '' };
   var ff = '';
-  var list = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var list = _irWsGet('getMarketplaces');   // F1-7J-A: read-model-first (Workspace → _irReadModel; Legacy → getter) — BEFORE==AFTER
   var rec = scope.marketplaceId ? list.find(function (m) { return String(m.marketplaceId) === String(scope.marketplaceId); }) : null;
   if (rec) ff = rec.fulfillmentModel || '';
   return { company: scope.company, country: scope.country, marketplace: scope.marketplace, marketplaceId: scope.marketplaceId, fulfillmentModel: ff };
