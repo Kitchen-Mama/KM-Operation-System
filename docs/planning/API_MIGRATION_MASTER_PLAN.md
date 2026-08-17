@@ -657,3 +657,31 @@ change; **FRONTEND-ONLY** (6 JS files — NO .gs/router/exec/bundle/DB). Full de
   Legacy-rollback-only (16 kill-switch self-loads + `reloadOperationDb` debug util — intentionally retained). Deferred
   product/authority rounds (NOT transport): Event Assist authority redesign, Incoming Inventory reconstruction,
   sitePlanningAllocation. Do NOT begin authority redesign or generic perf/UI optimization automatically.
+
+## Deployment note (post-migration) — F1-7K-HOTFIX (router closure + envelope) `70a90df` — production RESTORED
+The F1-7I `inventoryReplenishment.workspace.get` handler had never been deployed (live Apps Script predated F1-7I),
+causing a production `[WORKSPACE_ERROR]` on Site Inventory. Fix commit `70a90df` (pushed): removed 5 dangling
+unimplemented Weekly-Plan router dispatches (closure PASS, 0 dangling) + hardened the foundation failure envelope
+(errors[] → string `error` as BACKEND_ERROR → generic). USER then synced ALL 60 `.gs` from `70a90df`, created a new
+/exec, redeployed Pages; live acceptance (R2) PASS: Site Inventory + 8/8 core canonical reads green, no
+WORKSPACE_ERROR/BACKEND_ERROR/ReferenceError. **PRODUCTION_BACKEND_RESTORED = YES.**
+
+## F1-7M-PERFORMANCE-AND-INTERACTION-BASELINE-R1 (measure/audit only — performance track OPENED) — **DONE (baseline)**
+PRE HEAD `70a90df`. AUDIT/MEASUREMENT/DECISION ONLY — NO runtime/business/schema change; **doc-only commit**. Full
+detail: `F1_7M_PERFORMANCE_AND_INTERACTION_BASELINE_R1.md`. Evidence: 5 read-only source audits (core pages ·
+secondary/modals · write flows · Apps Script handlers · DOM/UX). Every ms/payload figure is `LIVE_MEASUREMENT_REQUIRED`.
+- **Migration invariants re-confirmed:** startup whole-DB prime 0 · writer full reload 0 · active primary/secondary broad
+  0 · app-prime dependency 0. 12/14 pages = 1 clean scoped read/wave on first open.
+- **Top findings (evidence-cited):** (P0) bounded post-write readback for the 3 heaviest surfaces — Shipment (full
+  size-3000 + all map includes per single-shipment write), RO Target%/FC (`_roReloadAndRerender` = 7-table refresh THEN
+  composer, for a 1-table change), IR (full 19-table workspace per single sku); RO/AI-Plan first-open serial→parallel
+  (`request-order.js:469`); RO Send hidden token fetch (`upsertRequestOrderAllocationDraftLines:3364`). (Backend) 43_ gap
+  batch re-reads all 19 canonical snapshots per scope (~14m — largest ABSOLUTE cost, but manual batch; `preReadSnapshots`
+  seam exists); 42_ per-SKU re-normalization; 60_ IR LAZY_INCLUDE (allocation-draft + shipping-plan lineage). (Render)
+  IR/sku-details/shipment-list unpaginated all-row rebuilds; shipping-plan 5-section rebuild per command; On-the-Way full
+  render + globe recompute per keystroke. (UX) shipping-plan `_spRunCommand_` guard-but-no-visual; PO-overview no
+  double-click guard. Modal/expand lazy-load already near-optimal.
+- **Roadmap:** F1-7M-A (P0 dup/serial elimination) → F1-7M-B (post-write bounded readback) → F1-7M-C (lazy include /
+  reference session cache) → F1-7M-D (DOM/render + button feedback) → F1-7M-E (backend read-cost + final regression).
+  Each preserves API facts / outputs / error semantics / idempotency / write authority. Authority redesigns
+  (Event Assist / Incoming Inventory / sitePlanningAllocation) stay SEPARATE. Do NOT begin F1-7M-A automatically.
