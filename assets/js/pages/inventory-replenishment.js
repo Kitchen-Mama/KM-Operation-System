@@ -2897,8 +2897,7 @@ function _execRateCardUsable(rc) {
 // (From not yet chosen) — then origin is not constrained; destination + marketplace still narrow the set.
 // A rate card field that is blank does not exclude it (blank = wildcard on that axis).
 function _execRateCardMethods(originCountry, destCountry, marketplace) {
-    var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
-    var cards = (DB && DB.getCarrierRateCards) ? (DB.getCarrierRateCards() || []) : [];
+    var cards = _irCarrierGet('getCarrierRateCards');   // F1-7J-A2: scoped carrier reference (Workspace) / broad getter (Legacy)
     function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
     var seen = {}, out = [];
     cards.forEach(function (rc) {
@@ -2974,7 +2973,7 @@ function _irComputeRouteEta(destCountry, route) {
     if (!method) return { text: '—', available: false };
     var key = _irMethodToLeadKey(method);
     if (!key) return { text: 'Lead time unavailable', available: false };
-    var rows = (window.KM && window.KM.DB && window.KM.DB.getCarrierLeadTimes) ? window.KM.DB.getCarrierLeadTimes() : [];
+    var rows = _irCarrierGet('getCarrierLeadTimes');   // F1-7J-A2: scoped carrier reference (Workspace) / broad getter (Legacy)
     function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
     var matches = rows.filter(function (r) {
         return lo(r.shippingMethod) === lo(key) &&
@@ -3016,8 +3015,7 @@ function _execWhType(w) { return String((w && w.warehouseType) || '').trim().toU
 
 function _execWarehouseCandidates() {
     var scope = _replenSelectedScope();
-    var DB = (window.KM && window.KM.DB) ? window.KM.DB : null;
-    var whs = (DB && DB.getWarehouses) ? (DB.getWarehouses() || []) : [];
+    var whs = _irWsGet('getWarehouses');   // F1-7J-A2: warehouses from the scoped IR read-model (Workspace) / broad getter (Legacy)
 
     // One central candidate contract for EVERY site (System Repair 1) — see inventory-compat.js
     // IRWarehouse.buildCandidates. Classification is by warehouse master fields (warehouse_type /
@@ -3209,6 +3207,17 @@ function syncExpandPanelHeight(sku) {
 function initializeShippingAllocation(sku, skuData) {
     const methodsList = document.getElementById(`shipping-methods-${sku}`);
     if (!methodsList || !skuData) return;
+
+    // F1-7J-A2: lazily load the scoped carrier reference (carrier_lead_times + carrier_rate_cards) ONCE via the IR
+    // workspace include.carrierPlanning, then refresh this SKU's method options + ETAs. The routes below render
+    // immediately (a brief "unavailable" state before the reference resolves); Legacy mode resolves instantly from the
+    // broad getter. No broad Operation DB in the canonical path.
+    if (typeof _irLoadCarrierPlanning_ === 'function') {
+        _irLoadCarrierPlanning_().then(function () {
+            if (typeof _execRebuildMethodOptions === 'function') _execRebuildMethodOptions(sku);
+            if (typeof _irUpdateRouteEtas === 'function') _irUpdateRouteEtas(sku);
+        });
+    }
 
     // 1) If a Working Draft exists for this SKU (same context), rebuild the Execution Plan from it
     //    so PM edits survive collapse / expand. This is a pure render — it must NOT re-capture.
@@ -3618,6 +3627,32 @@ var _irReadSeq = 0;
 function _irWsGet(name) {
     if (_irReadModel) return _irReadModel[name] || [];
     return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];
+}
+
+// F1-7J-A2 · SECONDARY Execution-Plan carrier reference (carrier_lead_times + carrier_rate_cards). Loaded LAZILY (once
+// per page load) via the EXISTING inventoryReplenishment workspace with include.carrierPlanning — NOT part of the primary
+// render (secondary-panel-only). Canonical mode reads this scoped model (fail-closed: [] until loaded, NO broad fallback);
+// Legacy mode reads the broad getter unchanged. Reference data only — the page keeps its existing ETA / method logic.
+var _irCarrierModel = null;   // { getCarrierLeadTimes:[...], getCarrierRateCards:[...] } or null (not yet loaded / Legacy)
+var _irCarrierSeq = 0;
+function _irCarrierGet(name) {
+    if (_irEffectiveWorkspace()) return _irCarrierModel ? (_irCarrierModel[name] || []) : [];   // scoped only — no broad fallback
+    return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];   // Legacy
+}
+function _irLoadCarrierPlanning_() {
+    if (!_irEffectiveWorkspace()) return Promise.resolve(null);        // Legacy → carrier from broad getter, no fetch
+    if (_irCarrierModel) return Promise.resolve(_irCarrierModel);      // cache once per page load
+    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) return Promise.resolve(null);
+    var my = ++_irCarrierSeq;
+    return Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', { include: { carrierPlanning: true } })).then(function (env) {
+        if (my !== _irCarrierSeq) return _irCarrierModel;
+        if (env && env.success && env.data) {
+            var adapted = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
+            _irCarrierModel = { getCarrierLeadTimes: adapted.getCarrierLeadTimes || [], getCarrierRateCards: adapted.getCarrierRateCards || [] };
+            return _irCarrierModel;
+        }
+        return null;
+    }).catch(function () { return null; });   // reference read: never throw into the panel (bounded unavailable state)
 }
 
 // Bounded loading/error region for the main table (reuses KM.loadState — no new loading infra).

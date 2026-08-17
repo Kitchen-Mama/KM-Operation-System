@@ -122,8 +122,9 @@ function makeLegacy() { var calls = []; return { _calls: calls, getOperationDb: 
   var env = handleWeeklyShippingWorkspaceGet_({ requestId: 'REQ-ABC123', payload: {} }, io);
   ok(env.success === true && env.meta.requestId === 'REQ-ABC123', 'H1 success + client requestId echoed');
   ok(env.meta.serverDurationMs === 5 && typeof env.meta.serverDurationMs === 'number', 'H2 serverDurationMs diagnostic present (deterministic clock)');
-  ok(env.meta.tablesRead === 4 && env.meta.source === 'workspace' && env.meta.apiVersion === '1', 'H3 tablesRead=4, canonical meta');
-  ok(JSON.stringify(io._reads) === JSON.stringify(['shipping_plans', 'shipping_plan_lines', 'warehouses', 'carriers']), 'H4 reads ONLY the 4 Weekly tables, once each — never getOperationDb');
+  // F1-7J-A2: weekly now reads a 5th table — sku_details — to project the bounded line-logistics facts (NOT getOperationDb).
+  ok(env.meta.tablesRead === 5 && env.meta.source === 'workspace' && env.meta.apiVersion === '1', 'H3 tablesRead=5, canonical meta');
+  ok(JSON.stringify(io._reads) === JSON.stringify(['shipping_plans', 'shipping_plan_lines', 'warehouses', 'carriers', 'sku_details']), 'H4 reads ONLY the 5 Weekly tables, once each — never getOperationDb');
   ok(env.data.plans.length === 3, 'H5 view model returned');
 
   section('RequestId hardening');

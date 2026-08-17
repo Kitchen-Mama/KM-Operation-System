@@ -200,7 +200,9 @@ ok(/function _irctxWarehouses\(\)\s*\{[\s\S]*_irWsGet\('getWarehouses'\)/.test(I
 ok((IR_JS.match(/window\.KM\.DB\.getMarketplaces\(\)/g) || []).length === 0, 'D: no direct window.KM.DB.getMarketplaces() calls remain');
 
 // ===================================================================================================================
-console.log('\n== A · HALT proof: weeklyShipping payload does NOT carry sku_details ==');
+// A · previously HALTED (F1_7J_A_UNEXPECTED_BACKEND_REQUIREMENT) — RESOLVED in F1-7J-A2 (40_ now projects a bounded
+// SKU-logistics set). See api-bounded-reference-include-extensions-f1-7j-a2-r1.test.js for the full BEFORE==AFTER proof.
+console.log('\n== A · RESOLVED in A2: weeklyShipping now projects bounded SKU logistics ==');
 eval(['weeklyWsStr_', 'weeklyWsNum_', 'weeklyWsLc_'].map(function (n) { return extractFn(GS40, n); }).join('\n'));
 eval(extractFn(GS40, 'weeklyWorkspaceBuild_'));
 // stub the helpers weeklyWorkspaceBuild_ calls (we only assert the OUTPUT KEYS, not full mapping)
@@ -214,16 +216,18 @@ function weeklyBuildFilterOptions_() { return null; }
 function weeklyBuildSummary_() { return null; }
 function weeklyBuildDetails_() { return {}; }
 function weeklyDataVersion_() { return 'v'; }
-var wkVm = weeklyWorkspaceBuild_({ shipping_plans: [{ shipping_plan_id: 'SP1' }], shipping_plan_lines: [], warehouses: [], carriers: [], sku_details: rawTables.sku_details }, {});
-ok(!('skuDetails' in wkVm) && !('sku_details' in wkVm), 'A: weekly View-Model emits NO sku_details array (only filters/summary/plans/detailsByPlanId/pagination/dataVersion)');
-eq(Object.keys(wkVm).sort(), ['dataVersion', 'detailsByPlanId', 'filters', 'pagination', 'plans', 'summary'], 'A: weekly payload keys — sku_details absent → line-logistics carton dims unavailable → backend projection required (HALT)');
-ok(/_spSkuDetail[\s\S]*getSkuDetails\(\)/.test(read('js/pages/shipping-plan.js')), 'A: shipping-plan _spSkuDetail still reads broad getSkuDetails (unchanged — HALTED, not silently backend-changed)');
+var wkVm = weeklyWorkspaceBuild_({ shipping_plans: [{ shipping_plan_id: 'SP1' }], shipping_plan_lines: [{ shipping_plan_id: 'SP1', sku: 'GA0450' }], warehouses: [], carriers: [], sku_details: rawTables.sku_details }, {});
+ok('skuDetails' in wkVm, 'A: weekly View-Model now EMITS a skuDetails projection (A resolved in A2)');
+eq(wkVm.skuDetails.map(function (r) { return r.sku; }), ['GA0450'], 'A: projection bounded to the page-line SKUs');
+ok(/_spWsSkuDetails/.test(read('js/pages/shipping-plan.js')), 'A: shipping-plan _spSkuDetail reads the scoped SKU projection in Workspace mode');
 
 // ===================================================================================================================
-console.log('\n== C · HALT proof: RO scope resolver has no on-page scoped marketplace master ==');
-ok(/getAiPlanFirstLayer[\s\S]*?res\.data && res\.data\.rows/.test(RO_JS), 'C: first-layer composer returns {rows} only — no marketplaces array');
-ok(/_roScopeModalPrefill_[\s\S]*window\.KM\.DB\.getMarketplaces/.test(RO_JS), 'C: scope resolver still reads broad getMarketplaces (unchanged — HALTED)');
-ok(!/adaptRequestOrderWorkspace|_roReadModel/.test(RO_JS), 'C: request-order.js (AI-plan page) has NO requestOrder read-model to reuse (that is request-order-draft.js)');
+// C · previously HALTED (REQUEST_ORDER_SCOPE_EXISTING_READ_MODEL_NOT_EQUIVALENT) — RESOLVED in F1-7J-A2 (bounded
+// marketplace reference via the existing getTable('marketplaces') read). Full proof in the A2 suite.
+console.log('\n== C · RESOLVED in A2: RO scope resolver uses a bounded marketplace reference ==');
+ok(/getAiPlanFirstLayer[\s\S]*?res\.data && res\.data\.rows/.test(RO_JS), 'C: first-layer composer returns {rows} only — no marketplaces array (why a dedicated reference read was needed)');
+ok(/_roMarketplaceUniverse\(\)/.test(RO_JS) && /getMarketplaceReference/.test(read('js/api/operation-system-db-api.js')), 'C: scope resolver now reads the bounded marketplace reference universe (resolved)');
+ok(!/adaptRequestOrderWorkspace|_roReadModel/.test(RO_JS), 'C: request-order.js (AI-plan page) still has NO requestOrder read-model (the reference read is dedicated, not the draft workspace)');
 
 // ===================================================================================================================
 console.log('\n== E · HALT proof: allocation-draft SSOT is not BEFORE==AFTER-equivalent to the sync hydrate ==');

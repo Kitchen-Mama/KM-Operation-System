@@ -64,7 +64,12 @@ var SIR_WORKSPACE_TABLES_ = [
   { name: 'shipping_plans',                  requiredCols: [], optional: true },
   { name: 'shipping_plan_lines',             requiredCols: [], optional: true },
   { name: 'shipping_allocation_drafts',       requiredCols: [], optional: true },
-  { name: 'shipping_allocation_draft_lines',  requiredCols: [], optional: true }
+  { name: 'shipping_allocation_draft_lines',  requiredCols: [], optional: true },
+  // F1-7J-A2: carrier reference tables for the SECONDARY Execution-Plan panel (ETA + method options). INCLUDE-gated
+  // ('carrierPlanning') + missing-safe — NOT read on the primary render (no read cost, base payload unchanged) unless
+  // the caller sets include.carrierPlanning. Reference data only; the workspace authors NO carrier selection/booking.
+  { name: 'carrier_lead_times', requiredCols: [], optional: true, include: 'carrierPlanning' },
+  { name: 'carrier_rate_cards', requiredCols: [], optional: true, include: 'carrierPlanning' }
 ];
 
 // Generous safety backstop. In real data these tables are well under this; the cap only guards a runaway payload and is
@@ -96,7 +101,9 @@ function sirWorkspaceBuild_(tables, payload) {
   var out = { summary: null, capped: {}, counts: {} };
   var summary = {};
   for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
-    var name = SIR_WORKSPACE_TABLES_[i].name;
+    var spec = SIR_WORKSPACE_TABLES_[i];
+    var name = spec.name;
+    if (spec.include && !include[spec.include]) continue;   // F1-7J-A2: skip un-requested include tables → base payload identical (BEFORE==AFTER)
     var c = sirCap_(tables[name] || []);
     out[name] = c.rows;                 // raw passthrough, keyed by table name
     out.capped[name] = c.capped;
@@ -146,10 +153,12 @@ function handleInventoryReplenishmentWorkspaceGet_(body, io) {
   var reqId = sirWsStr_(body && body.requestId) || ('REQ-S' + ('000000' + seq).slice(-6));
   try {
     var payload = (body && body.payload) || {};
+    var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
     var ss = io.openTarget();
     var tables = {}, readCount = 0;
     for (var i = 0; i < SIR_WORKSPACE_TABLES_.length; i++) {
       var spec = SIR_WORKSPACE_TABLES_[i];
+      if (spec.include && !include[spec.include]) continue;   // F1-7J-A2: skip un-requested include tables (no read cost)
       tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, spec.optional === true);
       readCount++;
     }

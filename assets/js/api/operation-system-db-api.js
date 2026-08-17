@@ -2384,6 +2384,11 @@ window.KM.DB.adaptPurchaseOrderWorkspace = function(data) {
 window.KM.DB.normalizeRequestOrder = function(raw) { return normalizeRequestOrderRecord(raw); };
 window.KM.DB.normalizeRequestOrderLine = function(raw) { return normalizeRequestOrderLineRecord(raw); };
 
+// F1-7J-A2: expose the canonical sku_details normalizer so the Weekly Shipping read-model adapter can re-normalize the
+// bounded SKU-logistics projection (40_ `skuDetails`) into records IDENTICAL to the broad-cache getSkuDetails() records
+// (BEFORE == AFTER for _spLineLogistics carton dims + weights). Read-only mapper.
+window.KM.DB.normalizeSkuDetail = function(raw) { return normalizeSkuDetailsRecord(raw); };
+
 // F1-7D: adapt the scoped requestOrder workspace View-Model to the SAME record shapes the Request Order Draft page
 // consumes from the broad cache. Orders/lines run through the canonical normalizers on the DTO `raw` passthrough; the
 // master subsets (line sources / warehouses / sku_details / supplier_price_list) run through their SAME normalizers.
@@ -2495,7 +2500,12 @@ window.KM.DB.adaptInventoryReplenishmentWorkspace = function(data) {
         getShippingPlans: (data.shipping_plans || []).map(normalizeShippingPlanRecord).filter(function(r) { return r.shippingPlanId; }),
         getShippingPlanLines: (data.shipping_plan_lines || []).map(normalizeShippingPlanLineRecord).filter(function(r) { return r.shippingPlanLineId || r.shippingPlanId; }),
         getShippingAllocationDrafts: (data.shipping_allocation_drafts || []).map(normalizeShippingAllocationDraftRecord).filter(function(r) { return r.allocationDraftId; }),
-        getShippingAllocationDraftLines: (data.shipping_allocation_draft_lines || []).map(normalizeShippingAllocationDraftLineRecord).filter(function(r) { return r.allocationDraftLineId || r.allocationDraftId; })
+        getShippingAllocationDraftLines: (data.shipping_allocation_draft_lines || []).map(normalizeShippingAllocationDraftLineRecord).filter(function(r) { return r.allocationDraftLineId || r.allocationDraftId; }),
+        // F1-7J-A2: carrier reference (Execution-Plan panel) — present ONLY when the workspace was called with
+        // include.carrierPlanning; [] otherwise. Same normalizers + filters as normalizeOperationDb → equal to the broad
+        // getCarrierLeadTimes / getCarrierRateCards getters (BEFORE == AFTER). Reference data only (no carrier selection).
+        getCarrierLeadTimes: (data.carrier_lead_times || []).map(normalizeCarrierLeadTimeRecord).filter(function(r) { return r.leadTimeId || r.carrierId; }),
+        getCarrierRateCards: (data.carrier_rate_cards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; })
     };
 };
 
@@ -2534,6 +2544,16 @@ window.KM.DB.getCarriers = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.carriers || [];
 };
+// F1-7J-A2: bounded marketplace REFERENCE read for the Request Order scope resolver — reuses the EXISTING generic
+// getTable('marketplaces') GET action (single-table server read; NO new API/route), then runs the SAME normalizer + the
+// SAME per-array filter as normalizeOperationDb so the result equals getMarketplaces() exactly (BEFORE == AFTER). Async;
+// never getOperationDb / never the broad cache. The server-side filterRows_('marketplaces') keeps rows with
+// marketplace_id||marketplace — identical to the filter below — so no row-parity drift.
+window.KM.DB.getMarketplaceReference = async function() {
+    var rows = await getOperationDbTableFromSheet('marketplaces');
+    return (rows || []).map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; });
+};
+
 window.KM.DB.getCarrierRateCards = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.carrierRateCards || [];

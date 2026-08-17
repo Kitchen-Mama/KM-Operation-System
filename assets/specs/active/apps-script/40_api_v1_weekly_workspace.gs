@@ -28,7 +28,10 @@ var WEEKLY_WORKSPACE_TABLES_ = [
   { name: 'shipping_plans',      requiredCols: ['shipping_plan_id', 'status'] },
   { name: 'shipping_plan_lines', requiredCols: ['shipping_plan_id', 'sku'] },
   { name: 'warehouses',          requiredCols: ['warehouse_id'] },
-  { name: 'carriers',            requiredCols: ['carrier_id'] }
+  { name: 'carriers',            requiredCols: ['carrier_id'] },
+  // F1-7J-A2: sku_details is read ONLY to project the line-logistics facts for the SKUs on the returned page's lines
+  // (carton dims + weights). It is NEVER returned in full — the builder filters to the page-line SKU set below.
+  { name: 'sku_details',         requiredCols: ['sku'] }
 ];
 
 // Allow-listed sort fields (View-Model field → raw comparator). Anything else → VALIDATION_FAILED.
@@ -251,11 +254,26 @@ function weeklyWorkspaceBuild_(tables, payload) {
   var sorted = weeklySortPlans_(filtered, payload.sort);
   var pageResult = weeklyPaginate_(sorted, payload.page);
 
+  // F1-7J-A2: bounded SKU logistics projection — raw sku_details rows for ONLY the SKUs present on the returned page's
+  // plan lines (shipping-plan.js `_spLineLogistics` reads carton dims + weights from these to LIVE-recompute CBM/gross/
+  // net while editing a line qty). NEVER the full sku_details master. Raw passthrough → the client re-normalizes with the
+  // SAME normalizer as the broad getter (BEFORE == AFTER). Gated with details (lines) since it exists to support them.
+  var skuDetailsProjection = [];
+  if (include.details !== false) {
+    var pageSkus = {};
+    for (var pi = 0; pi < pageResult.items.length; pi++) {
+      var plines = linesByPlan[pageResult.items[pi].planId] || [];
+      for (var li = 0; li < plines.length; li++) { var sk = weeklyWsStr_(plines[li].sku); if (sk) pageSkus[sk] = 1; }
+    }
+    skuDetailsProjection = (tables.sku_details || []).filter(function (r) { return pageSkus[weeklyWsStr_(r.sku)]; });
+  }
+
   return {
     filters: { options: (include.filterOptions !== false) ? weeklyBuildFilterOptions_(mappedAll, warehouses) : null, applied: f },
     summary: (include.summary !== false) ? weeklyBuildSummary_(filtered) : null,
     plans: (include.plans !== false) ? pageResult.items : [],
     detailsByPlanId: (include.details !== false) ? weeklyBuildDetails_(pageResult.items, linesByPlan) : {},
+    skuDetails: skuDetailsProjection,   // raw passthrough, bounded to the page's line SKUs (F1-7J-A2)
     pagination: { pageNumber: pageResult.pageNumber, pageSize: pageResult.pageSize, totalItems: pageResult.totalItems, totalPages: pageResult.totalPages },
     dataVersion: weeklyDataVersion_(filtered)
   };

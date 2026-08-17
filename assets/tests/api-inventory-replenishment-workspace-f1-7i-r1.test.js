@@ -50,7 +50,9 @@ eval(['normalizeMarketplaceRecord', 'normalizeMarketplaceSkuRecord', 'normalizeS
       'normalizeAmazonInventorySnapshotRecord', 'normalizeAmazonInventoryHealthSnapshotRecord', 'normalizeAmazonDailySalesSnapshotRecord',
       'normalizeAmazonWeeklySalesSnapshotRecord', 'normalizeFcRegularForecastRecord', 'normalizeFcTargetRuleRecord', 'normalizeFcSpecialEventRecord',
       'normalizeOverseasInventorySnapshotRecord', 'normalizeFactoryStockRecord', 'normalizeShipmentRecord', 'normalizeShipmentLineRecord',
-      'normalizeShippingPlanRecord', 'normalizeShippingPlanLineRecord', 'normalizeShippingAllocationDraftRecord', 'normalizeShippingAllocationDraftLineRecord']
+      'normalizeShippingPlanRecord', 'normalizeShippingPlanLineRecord', 'normalizeShippingAllocationDraftRecord', 'normalizeShippingAllocationDraftLineRecord',
+      // F1-7J-A2: carrier reference normalizers (adapter now maps getCarrierLeadTimes/getCarrierRateCards under include.carrierPlanning)
+      'normalizeCarrierLeadTimeRecord', 'normalizeCarrierRateCardRecord']
   .map(function (n) { return extractFn(DBAPI, n); }).join('\n'));
 // eval the ACTUAL adapter (assigns window.KM.DB.adaptInventoryReplenishmentWorkspace)
 eval(extractAssignedFn(DBAPI, 'window.KM.DB.adaptInventoryReplenishmentWorkspace = function') + ';');

@@ -451,7 +451,9 @@ function initRequestOrderSection() {
   // Data source priority: live DB (google-sheet) → Demo Data → empty. NEVER the Inventory DOM.
   if (_roUseDb()) {
     // F1-7E-PREREQ-5: canonical first-layer = scoped composer (no broad Operation DB for first-layer assembly).
-    if (_opUseFirstLayerComposer() && _opFirstLayerReady()) { _opLoadFirstLayerComposer_(); return; }
+    // F1-7J-A2: load the bounded marketplace reference FIRST (so the scope/marketplace dropdowns render populated on the
+    // first _roRenderAll), then the composer. Both are scoped reads — NO broad Operation DB in the canonical path.
+    if (_opUseFirstLayerComposer() && _opFirstLayerReady()) { _roLoadMarketplaceRef_().then(function () { _opLoadFirstLayerComposer_(); }); return; }
     // Legacy broad-cache path (kill-switch only) — the ONLY place a broad Operation DB load happens.
     if (!window._opDbCache && window.KM.DB.loadOperationDb) {
       window.KM.DB.loadOperationDb({ force: true }).then(_roInitWithData).catch(_roInitWithData);
@@ -486,10 +488,31 @@ function _roRenderAll() {
 function _roMarketplaceKey(item) {
   return (item && item.marketplaceId != null && item.marketplaceId !== '') ? String(item.marketplaceId) : String(item.marketplace || '');
 }
+// F1-7J-A2 · bounded marketplace REFERENCE for scope resolution. Canonical (composer) mode sources the FULL active
+// marketplace master from KM.DB.getMarketplaceReference() (reuses the existing getTable('marketplaces') bounded read —
+// no new API) cached in _roMarketplaceRef; Legacy (kill-switch) mode reads the broad getMarketplaces() unchanged. The
+// universe is identical either way (same normalizer + filter). Fail-closed: canonical mode NEVER falls back to the broad
+// cache (empty universe on ref failure — a bounded degradation, never a silent broad read).
+var _roMarketplaceRef = null;   // canonical scoped marketplace master (loaded at mount), or null before load
+function _roCanonicalMarketplaceRef_() {
+  return _roUseDb() && typeof _opUseFirstLayerComposer === 'function' && _opUseFirstLayerComposer();
+}
+function _roMarketplaceUniverse() {
+  if (_roCanonicalMarketplaceRef_()) return _roMarketplaceRef || [];   // scoped ref only — no broad fallback
+  return (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? (window.KM.DB.getMarketplaces() || []) : [];
+}
+// Load the scoped marketplace reference once per mount (always resolves — a failure yields [] so the caller proceeds
+// fail-closed without a broad read). Returns a Promise.
+function _roLoadMarketplaceRef_() {
+  if (!(window.KM && window.KM.DB && typeof window.KM.DB.getMarketplaceReference === 'function')) { _roMarketplaceRef = []; return Promise.resolve([]); }
+  return Promise.resolve(window.KM.DB.getMarketplaceReference())
+    .then(function (list) { _roMarketplaceRef = list || []; return _roMarketplaceRef; })
+    .catch(function () { _roMarketplaceRef = []; return _roMarketplaceRef; });
+}
+
 // Active marketplaces from the master (`marketplaces`). Blank/active/enabled statuses count as active.
 function _roActiveMarketplaces() {
-  var DB = (window.KM && window.KM.DB) || {};
-  return ((DB.getMarketplaces && DB.getMarketplaces()) || []).filter(function(m) {
+  return _roMarketplaceUniverse().filter(function(m) {
     if (!m.marketplaceId) return false;
     var st = _roLower(m.status);
     return st === '' || st === 'active' || st === 'true' || st === 'enabled' || st === '1' || st === 'yes';
@@ -1313,7 +1336,7 @@ function _roScopeModalPrefill_() {
             var groups = (st && st.marketplaceGroups) || {};
             var ids = groups[f.marketplace[0]] || [];
             if (ids && typeof ids.length === 'number') {
-                var all = (window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+                var all = _roMarketplaceUniverse();   // F1-7J-A2: canonical = scoped ref; Legacy = broad getter
                 var inCountry = window.KM.scopeModal.marketplacesForCountry(all, out.country);
                 var match = inCountry.filter(function (m) { return Array.prototype.indexOf.call(ids, String(m.marketplaceId)) !== -1; });
                 if (match.length === 1) out.marketplaceId = String(match[0].marketplaceId);

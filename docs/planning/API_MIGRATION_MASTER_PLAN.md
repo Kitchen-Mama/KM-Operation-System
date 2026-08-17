@@ -551,3 +551,32 @@ change. Full detail: `F1_7J_A_EXISTING_WORKSPACE_SECONDARY_AND_SKU_REGIONAL_CUTO
   workspaces 8/8, registered-only 0 (no new workspace). Tests: new suite 45/0; full regression 230 files, only the 4 known
   baselines; bundle unchanged (aaf5b07). Deploy: frontend only (purchase-order-list.js, inventory-replenishment.js,
   sku-regional-details.js) + compat test repoint; NO Apps Script sync / /exec / DB / bundle. Do NOT begin A2 automatically.
+
+### F1-7J-A2-R1 delta (2026-08-17) — bounded reference/include extensions: A, C, S6 all RESOLVED
+PRE HEAD `6452ab1`. TRANSPORT/REFERENCE only; BEFORE==AFTER; ADDITIVE backend; NO new authority/formula/schema/writer/
+app-prime change. Full detail: `F1_7J_A2_BOUNDED_REFERENCE_AND_INCLUDE_EXTENSIONS_R1.md`. Resolves the three F1-7J-A HALTs.
+- **A DONE** — weekly line-logistics: `40_` now projects a BOUNDED `skuDetails` set (only the returned page's line SKUs;
+  raw passthrough; gated with include.details; tablesRead 4→5). shipping-plan.js `_spSkuDetail` reads the projection
+  (re-normalized via new `KM.DB.normalizeSkuDetail`) in Workspace mode; `_spLineLogistics` display math unchanged →
+  BEFORE==AFTER. `F1_7J_A_UNEXPECTED_BACKEND_REQUIREMENT` cleared.
+- **C DONE (REUSE, no new API)** — RO marketplace scope: new db-api `KM.DB.getMarketplaceReference()` REUSES the existing
+  generic `getTable('marketplaces')` action (server `filterRows_` keeps marketplace_id||marketplace — same as the client
+  filter) → equals `getMarketplaces()`. request-order.js loads it once at mount (before the composer) into
+  `_roMarketplaceRef`; `_roActiveMarketplaces`/`_roScopeModalPrefill_` read `_roMarketplaceUniverse()` (fail-closed, no
+  broad fallback). Full active universe preserved (BEFORE scope options == AFTER). `REQUEST_ORDER_SCOPE_EXISTING_READ_MODEL_
+  NOT_EQUIVALENT` cleared.
+- **S6+S8 DONE** — IR carrier planning: `60_` gains `carrier_lead_times` + `carrier_rate_cards` as INCLUDE-gated
+  (`carrierPlanning`) tables (read + build loops skip them when not requested → base primary payload byte-identical). db-api
+  adapter maps getCarrierLeadTimes/getCarrierRateCards. inventory-replenishment.js lazily fetches
+  `include.carrierPlanning` ONCE when the Execution Plan renders (`_irLoadCarrierPlanning_` → `_irCarrierModel`), and
+  `_irComputeRouteEta`/`_execRateCardMethods` read `_irCarrierGet` (fail-closed); `_execWarehouseCandidates` →
+  `_irWsGet('getWarehouses')`. ETA + method logic unchanged (no server-side carrier selection) → BEFORE==AFTER.
+- **HALT E untouched** (`_hydrateAllocationDraftFromDb` unchanged); Incoming Inventory / sitePlanningAllocation / Event
+  Assist / RO expand / FC builders byte-identical.
+- **Debt Δ:** broad-cache loaders 59→59 (routes broad-getter READS, not loader calls); secondary broad surfaces ~10→~6;
+  **writer full-reloads 47→47 (untouched)**; app-prime-dependent surfaces 4→1 (only S1 SKU Handbook remains; S7
+  allocation-draft = HALT E, IR Monthly-Achievement = dead-stub — out of scope). Tests: new suite 29/0 + 5 additive-contract
+  repoints; full regression 231 files, only the 4 baselines; bundle unchanged (aaf5b07). **Deploy: Apps Script sync YES (40_,
+  60_) + new /exec; frontend YES (operation-system-db-api.js, shipping-plan.js, request-order.js, inventory-replenishment.js);
+  router NO; DB/bundle NO.** All additive/backward-compatible — deploy backend before the canonical frontend. **Batch F NOT
+  ready** (A3 + deferred authority items remain). Do NOT begin A3 automatically.

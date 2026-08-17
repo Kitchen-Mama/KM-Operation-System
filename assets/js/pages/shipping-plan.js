@@ -660,7 +660,11 @@ function _spAdaptWorkspaceToRecords(data) {
         var d = detailsByPlanId[p.planId];
         ((d && d.lines) || []).forEach(function(l) { lines.push(_spWorkspaceLineRecord(l, p.planId)); });
     });
-    return { plans: plans, lines: lines };
+    // F1-7J-A2: bounded SKU logistics projection (40_ `skuDetails`, only the page's line SKUs) re-normalized through the
+    // SAME canonical normalizer as the broad getSkuDetails() → BEFORE == AFTER for _spLineLogistics carton dims/weights.
+    var norm = (typeof window !== 'undefined' && window.KM && window.KM.DB && window.KM.DB.normalizeSkuDetail) ? window.KM.DB.normalizeSkuDetail : function(x){ return x; };
+    var skuDetails = ((data && data.skuDetails) || []).map(function(r){ return norm(r); }).filter(function(r){ return r && r.sku; });
+    return { plans: plans, lines: lines, skuDetails: skuDetails };
 }
 function _spBuildLegacyLiveMaps_() {
     var shipmentMap = {};
@@ -688,7 +692,8 @@ function loadWeeklyShippingReadModel_() {
             if (env && env.success) {
                 var rec = _spAdaptWorkspaceToRecords(env.data);
                 // Workspace mode: shipmentMap empty (plan transferred_* drives Done) + live=null (snapshot-primary).
-                return { source: 'workspace', plans: rec.plans, lines: rec.lines, shipmentMap: {}, live: null, meta: env.meta };
+                // skuDetails = the bounded SKU logistics projection (F1-7J-A2) for the line-editor recompute.
+                return { source: 'workspace', plans: rec.plans, lines: rec.lines, skuDetails: rec.skuDetails, shipmentMap: {}, live: null, meta: env.meta };
             }
             return { source: 'workspace', error: (env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Weekly Workspace request failed.' }, meta: env && env.meta };
         });
@@ -743,6 +748,9 @@ function renderShippingPlanFromDb() {
 
 function _spRenderReadModel_(model) {
     _spSkuLogiCache = null;   // rebuild the sku logistics lookup from the freshest cache each render
+    // F1-7J-A2: in Workspace mode the SKU logistics facts come from the scoped read-model projection (NOT the broad
+    // cache). null in Legacy mode → _spSkuDetail falls back to getSkuDetails() unchanged.
+    _spWsSkuDetails = (model && model.source === 'workspace') ? (model.skuDetails || []) : null;
     var _region = _spLoadRegion;   // may be null (no DOM/helper)
     if (model.error) { if (_region) _region.set(window.KM.loadState.STATES.ERROR); _spRenderReadError_(model.error); return; }
     if (_region) _region.set(((model.plans || []).length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
@@ -981,10 +989,14 @@ function toggleSpDbCard(planId) {
 // sku_details logistics lookup (rebuilt each render). Used for the live header CBM/weight totals
 // and the post-Save local cache patch. Mirrors the Apps Script logistics formula (cm only for now).
 var _spSkuLogiCache = null;
+var _spWsSkuDetails = null;   // F1-7J-A2: Workspace-mode SKU logistics projection (null = Legacy → broad getter)
 function _spSkuDetail(sku) {
     if (!_spSkuLogiCache) {
         _spSkuLogiCache = {};
-        var list = (window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || [];
+        // F1-7J-A2: canonical (Workspace) mode reads the scoped SKU projection; Legacy reads the broad getter unchanged.
+        // No silent broad fallback in Workspace mode: _spWsSkuDetails is [] (not null) whenever a workspace model rendered.
+        var list = _spWsSkuDetails ? _spWsSkuDetails
+            : ((window.KM.DB.getSkuDetails && window.KM.DB.getSkuDetails()) || []);
         list.forEach(function(d) { if (d.sku) _spSkuLogiCache[String(d.sku).trim().toLowerCase()] = d; });
     }
     return _spSkuLogiCache[String(sku || '').trim().toLowerCase()] || null;
