@@ -409,7 +409,21 @@
       outMeta.requestId = dto.requestId; outMeta.source = SOURCE.WORKSPACE; outMeta.workspace = 'weeklyShipping'; outMeta.action = dto.action; outMeta.sequence = seq;
       // A server business failure MUST stay success:false (never masked); a nested {success:false} is not a success.
       if (serverEnv.success !== true) {
-        return { success: false, data: null, meta: outMeta, errors: (Array.isArray(serverEnv.errors) && serverEnv.errors.length) ? serverEnv.errors : [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: null }] };
+        // F1-7K-HOTFIX-ROUTER-CLOSURE-R1 — error-envelope hardening. Precedence (unchanged errors[] behavior first):
+        //   1. serverEnv.errors[] (array)      → surfaced verbatim (byte-compatible with prior behavior)
+        //   2. serverEnv.error (non-empty str) → { code:'BACKEND_ERROR', message: <that string> } — previously DROPPED,
+        //      which masked real router-level failures (unknown action / top-level catch) as the generic WORKSPACE_ERROR.
+        //   3. neither                         → the generic WORKSPACE_ERROR (unchanged fallback).
+        // No stack/secret is exposed beyond the already-returned safe message; success behavior is untouched.
+        var _outErrs;
+        if (Array.isArray(serverEnv.errors) && serverEnv.errors.length) {
+          _outErrs = serverEnv.errors;
+        } else if (typeof serverEnv.error === 'string' && serverEnv.error.trim()) {
+          _outErrs = [{ code: 'BACKEND_ERROR', message: serverEnv.error, details: null }];
+        } else {
+          _outErrs = [{ code: 'WORKSPACE_ERROR', message: 'workspace returned failure', details: null }];
+        }
+        return { success: false, data: null, meta: outMeta, errors: _outErrs };
       }
       return { success: true, data: (serverEnv.data === undefined ? null : serverEnv.data), meta: outMeta, errors: [] };
     }

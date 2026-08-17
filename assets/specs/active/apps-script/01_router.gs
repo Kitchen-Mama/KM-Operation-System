@@ -263,21 +263,15 @@ function doPost(e) {
     if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
       return handleGetShippingMethodCandidates_(body);
     }
-    if (action === 'getWeeklyPlanRateCandidates') {   // Weekly L2 rough candidates (user picks; never auto-selected)
-      return handleGetWeeklyPlanRateCandidates_(body);
-    }
-    if (action === 'updateShippingPlanRationale') {   // Weekly L1 write (clears carrier/cost, bumps version)
-      return handleUpdateShippingPlanRationale_(body);
-    }
-    if (action === 'selectShippingPlanCarrier') {     // Weekly L2 write (snapshot carrier+rate+cost; NO rate_card_id)
-      return handleSelectShippingPlanCarrier_(body);
-    }
-    if (action === 'combineShippingPlans') {
-      return handleCombineShippingPlans_(body);
-    }
-    if (action === 'uncombineShippingPlans') {
-      return handleUncombineShippingPlans_(body);
-    }
+    // F1-7K-HOTFIX-ROUTER-CLOSURE-R1: the Weekly Plan Layer-1 (Rationale) / Layer-2 (Carrier & Cost) / Combined-Plan
+    // actions — getWeeklyPlanRateCandidates, updateShippingPlanRationale, selectShippingPlanCarrier,
+    // combineShippingPlans, uncombineShippingPlans — were dispatched here but their handlers were NEVER implemented in
+    // the backend (ROUTER_HANDLER_CLOSURE failure: dispatch → undefined function → ReferenceError if ever called).
+    // Audited: ZERO live frontend callers (the db-api _kmShippingPost_ stubs exist but are unwired). An action must not
+    // be advertised/dispatched before its handler contract exists, so these five dispatches are REMOVED to make the
+    // Apps Script source a clean deployable unit. NO business functionality was implemented or changed. If a caller is
+    // ever wired, its POST now falls through to the unknown-action default and returns a clean fail-closed envelope
+    // (surfaced as BACKEND_ERROR by the hardened foundation) instead of a runtime ReferenceError.
 
     if (action === 'createShipmentFromPlan') {
       return handleCreateShipmentFromPlan_(body);
