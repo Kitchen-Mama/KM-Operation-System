@@ -487,3 +487,36 @@ system migration is NOT done: DEFERRED secondary surfaces remain (sku-regional-d
 Assist redesign; request-order.js secondary panels; inventory-replenishment.js expand-panel Monthly Achievement / Execution
 Plan; the incoming-inventory authority redesign) and **Batch F** (retire the ~40-writer WRITE_FORCES_FULL_RELOAD + app.js
 global prime). Do NOT begin automatically.
+
+### F1-7J-R1 delta (2026-08-17) — FINAL remaining-migration MASTER AUDIT (AUDIT ONLY; no runtime change)
+Baseline HEAD `c636c8a` (= origin/main). Whole-system audit after 8/8 registered page workspaces became canonical. Replaces
+the approximate figures ("~40 writers", "≈6 broad-cache") with EXACT counts. Full map: `F1_7J_REMAINING_SECONDARY_SURFACES_AND_AUTHORITY_MASTER_AUDIT_R1.md`.
+- **Workspaces:** 8/8 IMPLEMENTED + canonical; **REGISTERED-only = 0**. Primary render of every canonical workspace page
+  requires NO broad DB. `getOperationDb(` JS accessor = **0 active** (1 dead defensive call at db-api.js:889).
+- **Broad-cache canonical-active consumers = 60**: 6 PRIMARY (non-workspace pages: factory-stock, overseas-stock,
+  overseas-ops-preview, campaign-risk, carrier-rate-card, sku-regional-details) + 5 SECONDARY lazy-load sites (fc-summary
+  builders + RO expand) + 2 BACKGROUND (app.js prime, sku-details manual refresh) + 47 WRITE-REFRESH. Excluded: ~12
+  kill-switch legacy fallbacks (gated OFF in canonical mode), 1 dead, console/debug helpers.
+- **Secondary broad-cache surfaces = 14** (§2): 3 self-heal via lazy load; the rest read broad getters directly. Fixes:
+  most reuse an EXISTING workspace/readModel (`_irWsGet`, `_polReadModel`, weeklyShipping sku_details, recommendation
+  marketplaces, scoped allocation-draft SSOT); only carrier_lead_times (IR Execution-Plan ETA) needs a new bounded read.
+- **Writer full-reload = EXACTLY 47** (§4), by domain: SKU 7, Settings 1, Tax 2, Forecast 8, Request Order 8, Purchase
+  Order 5, Shipping Plan 5, Shipment 7, Inventory 3, Carrier 1. 8 are wired but have NO page caller; 39 live-callable. 44
+  map to a canonical workspace (Batch-F-ready via scoped invalidation — consumer pages already re-read scoped post-write);
+  the 3 Inventory + 1 Carrier writers are blocked until their non-workspace pages migrate.
+- **app.js prime-dependent surfaces = 7** (§5): 1 PRIMARY (SKU Handbook — needs product_features + sku_handbook_summaries,
+  a new bounded read) + 6 SECONDARY (S2 weekly line-logistics, S3 PO-list view modal, S4 RO scope resolver, S5 IR reference
+  lookups, S6 IR carrier_lead_times [new read], S7 IR allocation-draft hydrate). 5 fixable by wiring to an existing
+  workspace, 2 need a new bounded read, 0 need authority redesign. The 6 self-loading non-workspace pages don't fail
+  without the prime but keep it useful → prime removal is gated on migrating both sets.
+- **Frontend business authority debt = 3** (§3), NONE blocks Batch F (all persisted writes already scoped-reconcile):
+  incoming-inventory reconstruction (`INCOMING_INVENTORY_AUTHORITY_REDESIGN_REQUIRED`, read-side, deferred), site-planning
+  18-day 3PL pool (`FRONTEND_PLANNING_AUTHORITY_REMAINS`, display, deferred), Event Assist persisted fc_qty
+  (`EVENT_ASSIST_AUTHORITY_REDESIGN_REQUIRED`, deferred).
+- **Domain boundaries (§7): NO active violation** — IR = Gap→Recommendation→ShippingPlan→Shipment (not Request Order);
+  Procurement = Gap→AI Plan→RO→PO; Shipment consumes existing PO lines via FIFO; shared factory ≠ company; raw ≠ allocated/adjusted.
+- **Ordered remaining plan (§10):** F1-7J-A (secondary surfaces reusing existing workspaces) → F1-7J-A2 (small include
+  extensions: SKU Handbook, carrier_lead_times) → F1-7J-A3 (remaining 6 non-workspace pages → scoped reads) → F1-7J-B
+  (incoming-inventory authority) → F1-7J-C (Event Assist authority) → F1-7J-D (site-planning pool + residual cleanup) →
+  F1-7K Batch F (retire 47 writer full-reloads) → F1-7L (remove app.js prime) → F1-7M (performance) → resume
+  F1-PHASE1-LIVE-ACCEPTANCE-R2. No Apps Script sync / /exec / frontend deploy / DB change (audit only). Do NOT begin automatically.
