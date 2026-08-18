@@ -27,8 +27,15 @@ const requestOrderState = {
 // Live DB (google-sheet) is the authoritative source. Demo Data is the fallback for local preview.
 // The page NEVER reads the Inventory Replenishment DOM.
 function _roUseDb() {
-  return !!(window.KM && window.KM.DB && window.KM.DB.getDataSourceMode &&
-    window.KM.DB.getDataSourceMode() === 'google-sheet' && window.KM.DB.getMarketplaceSkus);
+  // F1-7M-B2-HOTFIX (Shape-2 cold-start): cloud eligibility INDEPENDENT of whether the broad _opDbCache has been primed
+  // (F1-7L zero-prime). Order Planning's canonical first-layer is the scoped 56_ composer (getAiPlanFirstLayer) + the
+  // bounded marketplace reference — neither needs _opDbCache. The former getDataSourceMode()==='google-sheet' test was
+  // false on a cold session (cache not startup-primed), so initRequestOrderSection wrongly skipped the composer and
+  // rendered "No Request Order data available…". Broad KM.DB.get*() getters stay null-safe ([] until their scoped loaders
+  // run), so this only OPENS the canonical path — it does not read an unprimed cache. Explicit mock / unconfigured API →
+  // isScopedReadEligible() false → Demo/empty branch preserved (no accidental production API call).
+  return !!(window.KM && window.KM.DB && typeof window.KM.DB.isScopedReadEligible === 'function' &&
+    window.KM.DB.isScopedReadEligible() && window.KM.DB.getMarketplaceSkus);
 }
 
 // F1-7L: the SECOND-LAYER expand panel + the Send path read these facts (FC regular/special/target, factory

@@ -24,8 +24,14 @@
     function dash(v) { var s = String(v == null ? '' : v).trim(); return s ? esc(s) : ''; }
 
     function useDb() {
-        return !!(window.KM && window.KM.DB && window.KM.DB.getDataSourceMode &&
-            window.KM.DB.getDataSourceMode() === 'google-sheet' && window.KM.DB.getCarrierRateCards);
+        // F1-7M-B2-HOTFIX (Shape-2 cold-start): cloud eligibility INDEPENDENT of whether the broad _opDbCache is primed
+        // (F1-7L zero-prime). loadAndInit's `if (!useDb())` banner gate (256) sits BEFORE the canonical scoped branch
+        // (_crcScopedActive → loadScopedTables, 265), so the former getDataSourceMode()==='google-sheet' test (false on a
+        // cold session) showed the "Connect the Operation DB … demo mode" banner and the 1ca7d13 scoped fix never ran.
+        // Swap to the shared cache-independent posture; the scoped read-model / broad getters stay null-safe. Explicit
+        // mock / unconfigured API → isScopedReadEligible() false → demo banner preserved (no accidental API call).
+        return !!(window.KM && window.KM.DB && typeof window.KM.DB.isScopedReadEligible === 'function' &&
+            window.KM.DB.isScopedReadEligible() && window.KM.DB.getCarrierRateCards);
     }
 
     // Last search result (normalized rate-card rows) — source for Template Export.
