@@ -531,22 +531,36 @@ function recoWsShipmentLineCandidates_(read) {
   return read.__slCandidates;
 }
 
+// F1-7M-E REUSE_MAP — per-request memoized {headers,rows} -> row-object materialization. The recommendation runtime
+// loops once PER SKU (recoWsScopeSkus_ / the for-loop in handleRecommendationWorkspaceGet_), and the MARKETPLACE +
+// WAREHOUSE expanders each re-ran recoWsToRowObjects_ for snapshots that are CONSTANT across SKUs (O(N_skus x M_tables)
+// redundant materialization). Cache the materialized row-objects on `read` — the SAME per-request cache precedent as
+// read.__slCandidates (already shared across the per-SKU loop) — so each snapshot is materialized ONCE per request.
+// OUTPUT-IDENTICAL: recoWsToRowObjects_ is deterministic and the consumers are PURE (read-only filter/map/indexOf that
+// build new structures; they never mutate the row-objects), so the cached array is the SAME deep value every SKU would
+// have rebuilt. A snapshot absent from `read.snapshots` yields [] — identical to recoWsToRowObjects_(undefined).
+function recoWsRows_(read, key) {
+  if (!read.__rowCache) read.__rowCache = {};
+  if (read.__rowCache[key] === undefined) read.__rowCache[key] = recoWsToRowObjects_((read.snapshots || {})[key]);
+  return read.__rowCache[key];
+}
+
 function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supplyAllocationByReceiver) {
   var snaps = read.snapshots || {};
-  var mktRows = recoWsToRowObjects_(snaps.marketplaces), whRows = recoWsToRowObjects_(snaps.warehouses);
-  var amazonRows = recoWsToRowObjects_(snaps.amazonInventorySnapshot);
+  var mktRows = recoWsRows_(read, 'marketplaces'), whRows = recoWsRows_(read, 'warehouses');
+  var amazonRows = recoWsRows_(read, 'amazonInventorySnapshot');
   // MARKETPLACE incoming = line-grain candidates for THIS sku, adapted to the KMDR shape (receiver from frozen
   // lineage; UNRESOLVED / merged → blank marketplace → KMDR identity fails closed; no header-qty derivation).
   var shipmentRows = recoWsShipmentLineCandidates_(read).candidates
     .filter(function (e) { return recoWsStr_(e.candidate.sku) === sku; })
     .map(function (e) { return KMSLS.toMarketplaceIncomingCandidate(e); });
-  var fcRows = recoWsToRowObjects_(snaps.fcRegularForecast);
-  var skuDetailRows = recoWsToRowObjects_(snaps.skuDetails);
+  var fcRows = recoWsRows_(read, 'fcRegularForecast');
+  var skuDetailRows = recoWsRows_(read, 'skuDetails');
   var upc = recoWsUpcBySku_(skuDetailRows)[sku];
   var skuRow = null; for (var si = 0; si < skuDetailRows.length; si++) { if (recoWsStr_(skuDetailRows[si].sku) === sku) { skuRow = skuDetailRows[si]; break; } }
   var skuMeta = { sku: sku, series: skuRow ? recoWsStr_(skuRow.series) : '', category: skuRow ? recoWsStr_(skuRow.category) : '', company: scope.company };
-  var tgtRows = recoWsToRowObjects_(snaps.fcTargetRules);
-  var evtRows = recoWsToRowObjects_(snaps.fcSpecialEvents).filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; });
+  var tgtRows = recoWsRows_(read, 'fcTargetRules');
+  var evtRows = recoWsRows_(read, 'fcSpecialEvents').filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; });
   var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'MARKETPLACE', company: scope.company, country: scope.country, marketplace: scope.marketplace }, { marketplaces: mktRows });
   if (!nd.ok) {
     var code = (nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_AUTHORITY_UNRESOLVED';
@@ -646,13 +660,13 @@ function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supply
 // reconstructs allocatedSupplyQty. Rule/warehouse problems fail closed as blocked lines with canonical tokens.
 function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
   var snaps = read.snapshots || {}, lines = [];
-  var whRows = recoWsToRowObjects_(snaps.warehouses), ruleRows = recoWsToRowObjects_(snaps.replenishmentDemandAllocationRules), fcRows = recoWsToRowObjects_(snaps.fcRegularForecast);
-  var skuDetailRowsW = recoWsToRowObjects_(snaps.skuDetails);
+  var whRows = recoWsRows_(read, 'warehouses'), ruleRows = recoWsRows_(read, 'replenishmentDemandAllocationRules'), fcRows = recoWsRows_(read, 'fcRegularForecast');
+  var skuDetailRowsW = recoWsRows_(read, 'skuDetails');
   var upc = recoWsUpcBySku_(skuDetailRowsW)[sku];   // F1-4B-FM3c-2: carton owner input (per-tier suggestedOrderQty)
   var skuRowW = null; for (var swi = 0; swi < skuDetailRowsW.length; swi++) { if (recoWsStr_(skuDetailRowsW[swi].sku) === sku) { skuRowW = skuDetailRowsW[swi]; break; } }
   var skuMetaW = { sku: sku, series: skuRowW ? recoWsStr_(skuRowW.series) : '', category: skuRowW ? recoWsStr_(skuRowW.category) : '', company: scope.company };
-  var tgtRowsW = recoWsToRowObjects_(snaps.fcTargetRules);
-  var evtRowsW = recoWsToRowObjects_(snaps.fcSpecialEvents).filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; });
+  var tgtRowsW = recoWsRows_(read, 'fcTargetRules');
+  var evtRowsW = recoWsRows_(read, 'fcSpecialEvents').filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; });
   var whById = {}; whRows.forEach(function (w) { var id = recoWsStr_(w.warehouse_id); if (id) whById[id] = w; });
   var scopeObj = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
   var active = KMDA.readActiveAllocationRules(ruleRows, scopeObj, calc.calculationMonth);
