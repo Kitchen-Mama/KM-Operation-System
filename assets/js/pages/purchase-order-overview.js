@@ -635,8 +635,43 @@
         var btn = overlay.querySelector('.pc-btn--primary'), key = id + ':edit';
         if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write
         window.KM.DB.updatePurchaseOrderHeader(payload)
-            .then(function () { _poEndCmd(key, btn); closeModal(); loadAndRender(); })
+            // F1-7M-B2-3: confirmEdit is STATUS-INVARIANT (edits dates/payment/note only, never order_status) → the PO
+            // keeps its group/section/position, so a bounded single-PO readback + in-place merge is coherent. sendPo/
+            // receive/cancel stay on the full loadAndRender readback (section-move / removal → not single-PO reconcilable).
+            .then(function () { _poEndCmd(key, btn); closeModal(); _poBoundedReadback_(id); })
             .catch(function (e) { _poEndCmd(key, btn); alert('Save failed: ' + (e && e.message ? e.message : e)); });
+    }
+
+    // F1-7M-B2-3 · bounded post-write readback for a status-invariant PO edit: re-read ONLY the written PO
+    // (filters.purchaseOrderId) and merge it in place, instead of the full up-to-2000-order workspace. Server stays
+    // authoritative (fresh header+lines). Sequence-guarded via _poReadSeq (a newer full reload wins). On ANY failure or a
+    // not-found bounded result, degrade to the full loadAndRender readback — fresh FULL data, never a silent stale.
+    function _poBoundedReadback_(id) {
+        if (!_poEffectiveWorkspace() || !(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { loadAndRender(); return; }
+        var mySeq = ++_poReadSeq;
+        Promise.resolve(window.KM.api.getWorkspace('purchaseOrder', { filters: { purchaseOrderId: id }, include: { summary: false, filterOptions: false } })).then(function (env) {
+            if (mySeq !== _poReadSeq) return;   // a newer read superseded this bounded readback
+            if (env && env.success && _poReadModel && _poMergeOnePo_(id, window.KM.DB.adaptPurchaseOrderWorkspace(env.data))) {
+                renderFromDb();
+            } else {
+                loadAndRender();   // not-found / no held model / adapt miss → fresh FULL readback (not stale)
+            }
+        }).catch(function () { if (mySeq !== _poReadSeq) return; loadAndRender(); });
+    }
+    // Merge ONE PO's fresh order + lines into the held read-model (status-invariant → replace in place, position preserved).
+    // Reference masters (skuDetails/warehouses) + the toolbar option universe are untouched. Returns false if the bounded
+    // read did not contain the PO (→ caller degrades to full readback).
+    function _poMergeOnePo_(id, bounded) {
+        if (!_poReadModel || !bounded) return false;
+        var one = (bounded.orders || []).filter(function (o) { return String(o.purchaseOrderId) === String(id); })[0];
+        if (!one) return false;
+        var orders = _poReadModel.orders || [], idx = -1;
+        for (var i = 0; i < orders.length; i++) { if (String(orders[i].purchaseOrderId) === String(id)) { idx = i; break; } }
+        if (idx >= 0) orders[idx] = one; else orders.push(one);
+        _poReadModel.orders = orders;
+        _poReadModel.lines = (_poReadModel.lines || []).filter(function (l) { return String(l.purchaseOrderId) !== String(id); })
+            .concat((bounded.lines || []).filter(function (l) { return String(l.purchaseOrderId) === String(id); }));
+        return true;
     }
 
     // ---- shared modal (reuses .pc-modal) ----

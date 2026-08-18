@@ -686,8 +686,41 @@
       try { buildReadModel(); } catch (e) {}
       if (state.vms[shipmentId]) selectShipment(shipmentId); else { state.selectedShipmentId = ''; render(); }
     };
-    if (_glmEffectiveWorkspace()) { ensureDb(true, function (ok) { if (ok) _rebuild(); else render(); }); return; }
+    if (_glmEffectiveWorkspace()) {
+      // F1-7M-B2-1: bounded post-write readback — re-read ONLY the written shipment (filters.shipmentId; routes+events
+      // scoped to it server-side) and merge its mutable facts into the held read-model, RETAINING the static reference
+      // tables (locations / route templates / nodes) already loaded — instead of the full size-3000 workspace + all
+      // includes. Server stays authoritative for the shipment's rows. First load (no held model) / any failure / a
+      // not-found bounded result → full ensureDb refresh (fresh, never a silent stale).
+      if (_glmReadModel) { _glmBoundedReadback_(shipmentId, _rebuild); return; }
+      ensureDb(true, function (ok) { if (ok) _rebuild(); else render(); }); return;
+    }
     _rebuild();
+  }
+  function _glmBoundedReadback_(shipmentId, rebuild) {
+    if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { ensureDb(true, function (ok) { if (ok) rebuild(); else render(); }); return; }
+    var mySeq = ++_glmReadSeq;
+    Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: shipmentId }, include: { routes: true, events: true } })).then(function (env) {
+      if (mySeq !== _glmReadSeq) return;   // superseded by a newer read
+      if (env && env.success && _glmReadModel && _glmMergeShipment_(shipmentId, window.KM.DB.adaptShipmentWorkspace(env.data))) { rebuild(); }
+      else { ensureDb(true, function (ok) { if (ok) rebuild(); else render(); }); }   // not-found / miss → fresh full refresh
+    }).catch(function () { if (mySeq !== _glmReadSeq) return; ensureDb(true, function (ok) { if (ok) rebuild(); else render(); }); });
+  }
+  // Merge ONE shipment's mutable facts (its shipments row + lines + routes + events) into the held read-model, RETAINING
+  // the static reference tables (locations / route templates / nodes / warehouses / carrier rate cards). Returns false if
+  // the bounded read did not contain the shipment (→ caller degrades to a full refresh). Old rows for the id are removed
+  // before the fresh rows are added, so a route/event that disappeared server-side does not linger.
+  function _glmMergeShipment_(shipmentId, mini) {
+    if (!_glmReadModel || !mini) return false;
+    var sid = String(shipmentId);
+    var one = (mini.shipments || []).filter(function (s) { return String(s.shipmentId) === sid; })[0];
+    if (!one) return false;
+    function repl(arr, rows) { return (arr || []).filter(function (r) { return String(r.shipmentId) !== sid; }).concat((rows || []).filter(function (r) { return String(r.shipmentId) === sid; })); }
+    _glmReadModel.shipments = (_glmReadModel.shipments || []).filter(function (s) { return String(s.shipmentId) !== sid; }).concat([one]);
+    _glmReadModel.shipmentLines = repl(_glmReadModel.shipmentLines, mini.shipmentLines);
+    _glmReadModel.shipmentRoutes = repl(_glmReadModel.shipmentRoutes, mini.shipmentRoutes);
+    _glmReadModel.shipmentEvents = repl(_glmReadModel.shipmentEvents, mini.shipmentEvents);
+    return true;   // logisticsLocations / route templates / nodes / warehouses / carrierRateCards → RETAINED (not overwritten)
   }
   function receiptMsg(text, tone) {
     var el = document.querySelector('[data-glm="receipt-msg"]'); if (!el) return;

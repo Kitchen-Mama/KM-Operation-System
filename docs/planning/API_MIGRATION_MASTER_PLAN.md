@@ -775,3 +775,27 @@ readback-freshness change. Full detail: `F1_7M_D_DOM_RENDER_AND_INTERACTION_FEED
   (no production row-count evidence; PO Overview/List already paginate 25/page).
 - Tests: new `ui-render-and-interaction-feedback-f1-7m-d-r1` 31/0; full regression 235 pass / 4 known-baseline fail / 0 new.
   Next: F1-7M-E (backend algorithm cost — 43_/42_/56_/58_) — a dedicated Apps Script slice; await spec.
+
+## F1-7M-B2-BOUNDED-BACKEND-READBACK-ENDPOINTS-R1 (perf track, backend+frontend) — **DONE (needs Apps Script deploy)**
+PRE HEAD `dbc9e8a`. Retire F1-7M-B-deferred high-cost post-write readbacks via additive exact-id backend filters + bounded
+frontend cutover. Full detail: `F1_7M_B2_BOUNDED_BACKEND_READBACK_ENDPOINTS_R1.md`. **Requires an Apps Script deployment**
+(50_/57_ synced + new /exec version). Invariants held: writer full-reload 0 · app prime 0 · canonical broad 0; no
+authority/formula/schema/idempotency/optimistic change; WRITE→SERVER-READBACK freshness preserved.
+- **B2-3 PO (shipped):** additive `filters.purchaseOrderId` on `50_api_v1_purchase_order_workspace.gs` (2 lines mirroring
+  the existing `requestOrderId` exact-match; filter-absent byte-identical; reference tables emitted from own arrays, never
+  filtered). Frontend: `confirmEdit` (STATUS-INVARIANT) now does a bounded `{filters:{purchaseOrderId}, include:{summary:
+  false,filterOptions:false}}` readback + in-place merge (retain other orders + masters); sendPo/receive/cancel keep the
+  full readback (section-move/removal). `_poReadSeq` stale-guarded; miss/failure → full readback.
+- **B2-1 Shipment (shipped):** additive `filters.shipmentId` on `57_api_v1_shipment_workspace.gs` (3 edits: normalize key,
+  filter clause, conditional routes/events scoping; shipment_lines auto-scopes via existing pageLines; locations/templates/
+  nodes stay REFERENCE). Frontend MAP: receipt/eta/route-advance now do a bounded `{filters:{shipmentId}, include:{routes,
+  events}}` readback + merge the one shipment's 4 arrays, RETAINING the mount-held static reference; `_glmReadSeq` guarded;
+  miss/failure → full ensureDb. History stays on full readback (status-section movement).
+- **B2-2 IR (HALT):** `BOUNDED_READ_REQUIRES_SCHEMA_CHANGE` (getDataRange full-sheet read, no Sheets index) + `NOT_EQUIVALENT`
+  (row = scope-wide 3PL-pool allocation + full shipment/plan lineage, not a single-SKU projection). Readback UNCHANGED.
+- **Read-cost (honest, §16):** PAYLOAD_BOUNDED only — Sheets reads all rows before in-memory filter, so backend sheet-read
+  cost is NOT reduced (no schema change); the win is payload + client normalization/render. **Deploy-order safe:** the
+  frontend merges extract the one entity by id, so they work against the OLD backend (full list → extract/degrade) and the
+  NEW backend (bounded) alike.
+- Tests: new `api-bounded-backend-readback-endpoints-f1-7m-b2-r1` 46/0; 7c/7f workspace suites confirm filter-absent parity;
+  full regression 236 pass / 4 known-baseline fail / 0 new. Next: F1-7M-E (backend algorithm cost) — await spec + this deploy.

@@ -80,6 +80,10 @@ function poNormalizeFilters_(filters, search) {
     company: f(filters.company), status: f(filters.status), factoryId: f(filters.factoryId),
     warehouseId: f(filters.warehouseId), requestBucket: f(filters.requestBucket), supplierId: f(filters.supplierId),
     requestOrderId: f(filters.requestOrderId),
+    // F1-7M-B2-3: OPTIONAL exact-PO filter for a bounded post-write readback. Absent → null → the clause below is inert
+    // (filter-absent response byte-identical). Present → only that PO survives; reference tables (warehouses/sku_details)
+    // are emitted from their own arrays and are structurally never touched by this order-level filter.
+    purchaseOrderId: f(filters.purchaseOrderId),
     search: (function () { var s = poWsStr_(search); return s === '' ? null : s.toLowerCase(); })()
   };
 }
@@ -134,6 +138,7 @@ function poFilterOrders_(mapped, f) {
     if (f.requestBucket && p.requestBucket !== f.requestBucket) return false;
     if (f.supplierId && p.supplierId !== f.supplierId) return false;
     if (f.requestOrderId && p.requestOrderId !== f.requestOrderId) return false;
+    if (f.purchaseOrderId && p.purchaseOrderId !== f.purchaseOrderId) return false;   // F1-7M-B2-3 exact-PO bounded readback
     if (f.search) { var hay = (p.purchaseOrderId + ' ' + p.poNo + ' ' + p.company + ' ' + p.supplierName + ' ' + p.requestOrderId).toLowerCase(); if (hay.indexOf(f.search) < 0) return false; }
     return true;
   });

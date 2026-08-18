@@ -97,6 +97,9 @@ function shipNormalizeFilters_(filters, search) {
     company: f(filters.company), status: f(filters.status), country: f(filters.country),
     destinationWarehouseId: f(filters.destinationWarehouseId), carrierId: f(filters.carrierId),
     shippingPlanId: f(filters.shippingPlanId),
+    // F1-7M-B2-1: OPTIONAL exact-shipment filter for a bounded post-write readback. Absent → null → inert (filter-absent
+    // response byte-identical). Present → only that shipment survives, and its routes/events are scoped to match (below).
+    shipmentId: f(filters.shipmentId),
     search: (function () { var s = shipWsStr_(search); return s === '' ? null : s.toLowerCase(); })()
   };
 }
@@ -109,6 +112,7 @@ function shipFilterShipments_(mapped, f) {
     if (f.destinationWarehouseId && p.destinationWarehouseId !== f.destinationWarehouseId) return false;
     if (f.carrierId && p.carrierId !== f.carrierId) return false;
     if (f.shippingPlanId && p.shippingPlanId !== f.shippingPlanId) return false;
+    if (f.shipmentId && p.shipmentId !== f.shipmentId) return false;   // F1-7M-B2-1 exact-shipment bounded readback
     if (f.search) { var hay = (p.shipmentId + ' ' + p.shipmentNo + ' ' + p.trackingNumber + ' ' + p.containerNo + ' ' + p.company).toLowerCase(); if (hay.indexOf(f.search) < 0) return false; }
     return true;
   });
@@ -192,9 +196,11 @@ function shipWorkspaceBuild_(tables, payload) {
     carrierRateCards: carrierRateCards,
     pagination: { pageNumber: pageResult.pageNumber, pageSize: pageResult.pageSize, totalItems: pageResult.totalItems, totalPages: pageResult.totalPages }
   };
-  // MAP-extra tables (On-the-Way) — returned ONLY when requested (bounded includes).
-  if (include.routes) out.shipmentRoutes = tables.shipment_routes || [];
-  if (include.events) out.shipmentEvents = tables.shipment_events || [];
+  // MAP-extra tables (On-the-Way) — returned ONLY when requested (bounded includes). F1-7M-B2-1: when the exact-shipment
+  // filter is active, scope routes/events to that shipment's id too (they carry shipment_id); filter-absent → full tables
+  // exactly as before. logistics_locations / route templates / template_nodes carry NO shipment_id → REFERENCE, unscoped.
+  if (include.routes) out.shipmentRoutes = f.shipmentId ? (tables.shipment_routes || []).filter(function (r) { return pageIds[shipWsStr_(r.shipment_id)]; }) : (tables.shipment_routes || []);
+  if (include.events) out.shipmentEvents = f.shipmentId ? (tables.shipment_events || []).filter(function (r) { return pageIds[shipWsStr_(r.shipment_id)]; }) : (tables.shipment_events || []);
   if (include.locations) out.logisticsLocations = tables.logistics_locations || [];
   if (include.templates) { out.shipmentRouteTemplates = tables.shipment_route_templates || []; out.shipmentRouteTemplateNodes = tables.shipment_route_template_nodes || []; }
   return out;
