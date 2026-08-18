@@ -13,6 +13,10 @@ const requestOrderState = {
     dateRange: null
   },
   data: [],
+  // F1-7M-UX explicit-Search gate: normal result rows render ONLY after the user presses Search. Flips true in
+  // handleRequestOrderSearch; false on a Country/Marketplace/Clear scope change. Filters / Category counts / alert
+  // hooks are NOT gated by this (they render independently).
+  searched: false,
   expandedRowKey: null,   // composite row identity: sku|company|country|marketplace (NOT sku-only —
                           // so CO1100-R/US/Amazon and CO1100-R/CA/Amazon expand independently)
   // Pagination (Mapping v2 Part 1). Filtering + category tab apply BEFORE pagination; page resets
@@ -948,6 +952,7 @@ function updateRequestOrderFilter(filterType) {
   // when either changes (BEFORE the row render) so the counts always reflect the current Country+Marketplace scope.
   // _populateRequestOrderCategoryTabs resets an out-of-scope active Category to "All" (existing behavior).
   if (filterType === 'country' || filterType === 'marketplace') {
+    requestOrderState.searched = false;   // F1-7M-UX: scope change → back to PRE_SEARCH (no stale rows from the prior query)
     _populateRequestOrderCategoryTabs();
   }
 
@@ -975,6 +980,8 @@ function clearRequestOrderFilters() {
   if (tabs) tabs.querySelectorAll('.ro-tab').forEach(function (t) {
     t.classList.toggle('ro-tab--active', t.getAttribute('data-category') === 'All');
   });
+  requestOrderState.searched = false;   // F1-7M-UX: Clear resets the query → PRE_SEARCH
+  _populateRequestOrderCategoryTabs();  // scope reset to full universe → recompute Category counts
   renderRequestOrderTable();
 }
 window.clearRequestOrderFilters = clearRequestOrderFilters;
@@ -1263,6 +1270,7 @@ function handleRequestOrderSearch() {
   const input = document.querySelector('.ro-filter-sku');
   requestOrderState.filters.sku = input ? String(input.value || '').trim() : '';
   requestOrderState.page = 1;
+  requestOrderState.searched = true;   // F1-7M-UX: explicit Search → reveal the current scoped result rows
   renderRequestOrderTable();
 }
 
@@ -1579,6 +1587,20 @@ function _applyRequestOrderFilters(data) {
 }
 
 function renderRequestOrderTable() {
+  // F1-7M-UX explicit-Search gate (SINGLE centralized gate): normal Order Planning result rows are shown ONLY after
+  // the user presses Search. Before that — initial mount, or after a Country/Marketplace/Clear scope change — render a
+  // NEUTRAL pre-search state. This is PRE_SEARCH, deliberately distinct from EMPTY / "No Data" / Demo / disconnected /
+  // error. Because the gate lives here, async arrivals (first-layer composer, gap/recommendation callbacks, post-write
+  // refresh) can NEVER expose rows before Search. Filters, Category chips/counts and alert/notification hooks are
+  // populated by _roRenderAll (not here), so they stay visible regardless of searched.
+  if (!requestOrderState.searched) {
+    var psFixed = document.getElementById('ro-fixed-body');
+    var psScroll = document.getElementById('ro-scroll-body');
+    if (psFixed) psFixed.innerHTML = '';
+    if (psScroll) psScroll.innerHTML = '<div class="ro-empty-state ro-presearch-state">Select filters and press Search to view results.</div>';
+    if (typeof _roRenderPagination === 'function') _roRenderPagination(0, 1, 0, 0);
+    return;
+  }
   // 如果沒有數據，顯示提示訊息
   if (!requestOrderState.data || requestOrderState.data.length === 0) {
     const fixedBody = document.getElementById('ro-fixed-body');

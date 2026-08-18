@@ -62,7 +62,9 @@ ok(byId.length === 1 && byId[0].sku === 'X', 'Marketplace scope resolves via mar
 // source wiring
 ok(/var data = _roCountryMarketplaceScopedRows\(\);/.test(RO), '_populateRequestOrderCategoryTabs sources the scoped rows (not unscoped requestOrderState.data)');
 var upd = extractFn(RO, 'updateRequestOrderFilter');
-ok(/if \(filterType === 'country' \|\| filterType === 'marketplace'\) \{\s*\n\s*_populateRequestOrderCategoryTabs\(\);/.test(upd), 'Country/Marketplace change recomputes the Category tabs (counts respond to scope)');
+// The recompute lives inside the country||marketplace branch (F1-7M-UX inserted a searched=false line between the
+// guard and the recompute — order-independent; assert both the guard and the recompute call are present in it).
+ok(/if \(filterType === 'country' \|\| filterType === 'marketplace'\) \{/.test(upd) && /_populateRequestOrderCategoryTabs\(\);/.test(upd), 'Country/Marketplace change recomputes the Category tabs (counts respond to scope)');
 var catIdx = upd.indexOf('_populateRequestOrderCategoryTabs()'), renderIdx = upd.indexOf('renderRequestOrderTable()');
 ok(catIdx !== -1 && renderIdx !== -1 && catIdx < renderIdx, 'category recompute runs BEFORE the row render');
 // No business-formula surface touched: the composer/gap/recommendation reads are unchanged.
