@@ -12,7 +12,9 @@ var _fsReadModel = null;   // scoped read-model or null = Legacy
 function _fsScopedActive() {
     return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
         window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
-        window.KM.DB.getDataSourceMode && window.KM.DB.getDataSourceMode() === 'google-sheet';
+        // F1-7M-B2-HOTFIX: cache-independent cloud eligibility (cold _opDbCache==null is still scoped-active) — was
+        // getDataSourceMode() === 'google-sheet', which forced the first scoped page per session onto legacy getOperationDb.
+        window.KM.DB.isScopedReadEligible && window.KM.DB.isScopedReadEligible();
 }
 function _fsGet(key) {
     if (_fsReadModel) return _fsReadModel[key] || [];

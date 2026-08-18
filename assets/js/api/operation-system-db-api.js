@@ -2658,6 +2658,21 @@ window.KM.DB.isCloudWriteEnabled = function() {
     return isOperationDbApiConfigured() && getOperationDbDataSourceMode() === 'google-sheet';
 };
 
+// F1-7M-B2-HOTFIX (SCOPED_ACTIVE_PREDICATE_COLD_START_DEFECT) — cloud SCOPED-READ eligibility that is INDEPENDENT of
+// whether the broad window._opDbCache has already been primed. F1-7L deliberately removed the startup whole-DB prime, so
+// a cold canonical scoped page has window._opDbCache == null → getDataSourceMode() === 'not-loaded'. The former per-page
+// predicate required getDataSourceMode() === 'google-sheet' (reachable ONLY AFTER a broad load), so the FIRST scoped page
+// opened in a session wrongly failed the predicate and fell back to the legacy whole-DB loadOperationDb (getOperationDb) —
+// violating the F1-7L zero-prime posture. Scoped-read eligibility is a CONFIGURATION fact (the Operation DB API is
+// configured AND we are not in an explicit mock posture), NOT a cache-load fact: cold 'not-loaded' IS eligible; only an
+// explicit 'mock' posture (unconfigured API, or a prior load that fell back to mock) is not. This deliberately DIFFERS
+// from isCloudWriteEnabled (writes still require a confirmed 'google-sheet' cache) and does NOT change getDataSourceMode()
+// semantics — DATA-SOURCE CONFIGURATION stays separate from CACHE-LOAD STATE. Demo posture is handled page-side (each
+// demo-capable page short-circuits on KM.DemoData.isEnabled() BEFORE its scoped predicate) and is unaffected here.
+window.KM.DB.isScopedReadEligible = function() {
+    return isOperationDbApiConfigured() && getOperationDbDataSourceMode() !== 'mock';
+};
+
 // ── Batch F (F1-7K) — WRITE_FORCES_FULL_RELOAD retirement ─────────────────────────────────────────
 // A successful write no longer refreshes the WHOLE Operation DB. Canonical/scoped consumer pages own their
 // bounded post-write readback (getWorkspace / loadScopedTables / _xAfterWrite / targeted re-read), so the
