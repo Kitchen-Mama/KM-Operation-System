@@ -105,8 +105,10 @@ var mpRaw = [
 // getMarketplaces() universe == getMarketplaceReference() universe (same normalizer + filter).
 var universe = mpRaw.map(normalizeMarketplaceRecord).filter(function (r) { return r.marketplaceId || r.marketplace; });
 eq(universe.length, 4, 'C: universe keeps all 4 real marketplaces (multi-country, multi-company, inactive, blank-field), drops junk');
-// getMarketplaceReference() uses the SAME map+filter (source assertion — it calls getOperationDbTableFromSheet then this exact pipeline).
-ok(/getMarketplaceReference\s*=\s*async function\(\)\s*\{[\s\S]*getOperationDbTableFromSheet\('marketplaces'\)[\s\S]*normalizeMarketplaceRecord[\s\S]*r\.marketplaceId \|\| r\.marketplace/.test(DBAPI), 'C: getMarketplaceReference reuses getTable(marketplaces) + SAME normalizer/filter as getMarketplaces');
+// getMarketplaceReference() uses the SAME map+filter (source assertion — its loader calls getOperationDbTableFromSheet
+// then this exact pipeline). F1-7M-C1: the pipeline now lives inside the loader routed through KM.referenceCache (session
+// dedup); the getTable + normalizer + filter are byte-identical → BEFORE==AFTER row universe.
+ok(/getMarketplaceReference\s*=\s*function\(\)\s*\{[\s\S]*getOperationDbTableFromSheet\('marketplaces'\)[\s\S]*normalizeMarketplaceRecord[\s\S]*r\.marketplaceId \|\| r\.marketplace[\s\S]*referenceCache\.get\('marketplaces', loader\)/.test(DBAPI), 'C: getMarketplaceReference reuses getTable(marketplaces) + SAME normalizer/filter as getMarketplaces (now via KM.referenceCache session dedup)');
 // server-side filterRows_(marketplaces) parity: keeps marketplace_id||marketplace — identical to the client filter → no row drift.
 ok(/case 'marketplaces':[\s\S]*hasId \|\| hasMp/.test(CORE), 'C: filterRows_(marketplaces) keeps marketplace_id||marketplace (same as client filter — BEFORE==AFTER row set)');
 ok(ROUTER.indexOf("action === 'getTable'") >= 0, 'C: reuses the EXISTING getTable GET action — NO new router action');

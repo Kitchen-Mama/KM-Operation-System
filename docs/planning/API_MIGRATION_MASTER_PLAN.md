@@ -728,3 +728,29 @@ schema = NO). Invariants held: writer full-reload 0 · app prime 0 · canonical 
   `requestOrderId` filter exists but a safe bound needs delete/cancel-aware list reconciliation (frontend follow-up).
 - Tests: new `api-post-write-bounded-readback-f1-7m-b-r1` 39/0; A/7L reload-shape contract-updated (28/0, 56/0); full
   regression 233 pass / 4 known-baseline fail / 0 new. Next: F1-7M-C (lazy include / reference session cache) — await spec.
+
+## F1-7M-C-LAZY-INCLUDE-AND-REFERENCE-SESSION-CACHE-R1 (perf track, atomic) — **DONE**
+PRE HEAD `b76c69b`. Reduce repeated REFERENCE requests WITHOUT caching business facts and WITHOUT a global cache. Full
+detail: `F1_7M_C_LAZY_INCLUDE_AND_REFERENCE_SESSION_CACHE_R1.md`. **Frontend-only** (Apps Script/router/exec/bundle/
+schema = NO). Invariants held: writer full-reload 0 · app prime 0 · canonical broad 0; no _opDbCache authority / broad
+read / prime reintroduced; no business/formula/schema change.
+- **Infra (new) `KM.referenceCache`:** minimal keyed promise-memo — `get(key,loader)` shares ONE in-flight request per
+  key + retains the settled SUCCESS value for the session; failed loads never retained (next get retries); explicit
+  `invalidate/invalidateMany/clear`; epoch drops a load resolving after an invalidation. REFERENCE-ONLY, in-memory (no
+  LocalStorage), no TTL, no business-table keys. Layered ABOVE getOperationDbTableFromSheet (which cache-busts) — not a
+  global _opDbCache.
+- **C1 (shipped) marketplace master:** `getMarketplaceReference()` routes through `referenceCache.get('marketplaces',
+  loader)` (loader byte-identical: getTable('marketplaces') + normalizeMarketplaceRecord + marketplaceId||marketplace
+  filter → BEFORE==AFTER universe); `upsertMarketplace` invalidates the key AFTER a confirmed-successful write (only
+  marketplace writer; importMarketplaceSkusBatch writes marketplace_skus, does not invalidate). Repeated RO opens /
+  concurrent / cross-consumer marketplace fetches dedupe to 1 until invalidated. `operation-system-db-api.js`.
+- **Deferred/no-op (source-grounded):** C2 warehouse (no writer = safe, but consumers read sync off _opDbCache →
+  rerouting is broad; some workspaces return a scoped 2-field subset), C3 carrier (only `carriers` identity is
+  reference; rate_cards+lead_times are volatile business facts; sync getter), C4 SKU options (marginal — no page fetches
+  sku_details solely for category/series). C5 IR lazy-include = the 7 expand-only base tables are BUSINESS FACTS
+  (shipments/allocation-drafts); making them first-expand-lazy needs an additive 60_ include tag + a core IR row-builder
+  refactor + Apps Script deploy → deferred as a coordinated backend slice; IR primary payload UNCHANGED. C6 once-guards
+  (Carrier _crcReadModel/_irCarrierModel, FC _fcSecondaryLoaded+reset, RO _roL2Ready+force-invalidate) ALL already exist
+  → nothing to change; SKU Regional guard moot (no regional load wired yet).
+- Tests: new `api-reference-session-cache-f1-7m-c-r1` 45/0; F1-7J-A2 getMarketplaceReference shape contract-updated
+  (ALL GREEN); full regression 234 pass / 4 known-baseline fail / 0 new. Next: F1-7M-D (DOM/render + interaction) — await spec.

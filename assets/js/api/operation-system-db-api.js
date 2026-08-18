@@ -2147,6 +2147,45 @@ async function loadOperationDb(options) {
 if (!window.KM) window.KM = {};
 if (!window.KM.DB) window.KM.DB = {};
 
+// ========================================
+// F1-7M-C · KM.referenceCache — session dedup for REFERENCE/master data ONLY (never business facts).
+// ========================================
+// A minimal keyed promise-memo: get(key, loader) shares ONE in-flight request per key and retains the settled
+// SUCCESS value for the current session; a FAILED loader is never retained (next get retries the server). Explicit
+// invalidate(key) after that reference's own writer forces the next get to refetch. NOT a global data cache — it is
+// REFERENCE-ONLY, keyed by resource, in-memory (no LocalStorage / no cross-session persistence), with NO TTL, NO hidden
+// background refresh, and NO business-table keys (inventory/forecast/gap/recommendation/status/quantities/rate-cards/
+// lead-times/sku_details rows must NEVER be cached here). It does NOT reintroduce window._opDbCache authority.
+(function () {
+    var store = {};   // key -> { promise, settled, value } — success only; failures are deleted, never retained
+    var epoch = {};   // key -> invalidation counter; a load that resolves after an invalidation is dropped, not stored
+    function get(key, loader) {
+        if (store[key]) return store[key].promise;   // settled OR in-flight → concurrent callers share the same Promise
+        var myEpoch = (epoch[key] || 0);
+        var entry = { promise: null, settled: false, value: undefined };
+        var p;
+        try { p = Promise.resolve(loader()); } catch (e) { p = Promise.reject(e); }
+        entry.promise = p.then(function (val) {
+            // Retain only if this key was NOT invalidated while the load was in flight (else drop → next get refetches).
+            if ((epoch[key] || 0) === myEpoch) { entry.settled = true; entry.value = val; }
+            else if (store[key] === entry) { delete store[key]; }
+            return val;
+        }).catch(function (err) {
+            if (store[key] === entry) delete store[key];   // failed load is NEVER cached (no stale-on-error fallback)
+            throw err;
+        });
+        store[key] = entry;
+        return entry.promise;
+    }
+    function invalidate(key) { epoch[key] = (epoch[key] || 0) + 1; delete store[key]; }
+    function invalidateMany(keys) { (keys || []).forEach(function (k) { invalidate(k); }); }
+    function clear() { Object.keys(store).forEach(function (k) { epoch[k] = (epoch[k] || 0) + 1; }); store = {}; }
+    window.KM.referenceCache = {
+        get: get, invalidate: invalidate, invalidateMany: invalidateMany, clear: clear,
+        _hasSettled: function (key) { return !!(store[key] && store[key].settled); }   // test/diagnostic only
+    };
+})();
+
 // SINGLE canonical frontend Web App endpoint authority (READ-ONLY getter, API Transport Hotfix T1). The API
 // Foundation's ApiTransport resolves the Web App URL through this at call time — it does NOT duplicate the
 // literal URL. Returns '' when unconfigured (→ fail-closed TRANSPORT_NOT_CONFIGURED). Exposes no new secret:
@@ -2567,9 +2606,19 @@ window.KM.DB.getCarriers = function() {
 // SAME per-array filter as normalizeOperationDb so the result equals getMarketplaces() exactly (BEFORE == AFTER). Async;
 // never getOperationDb / never the broad cache. The server-side filterRows_('marketplaces') keeps rows with
 // marketplace_id||marketplace — identical to the filter below — so no row-parity drift.
-window.KM.DB.getMarketplaceReference = async function() {
-    var rows = await getOperationDbTableFromSheet('marketplaces');
-    return (rows || []).map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; });
+// F1-7M-C1: the marketplace master is SESSION_REFERENCE_SAFE (all callers expect the identical full master — same
+// normalizer + same marketplaceId||marketplace filter, no active-filter baked in). Route through KM.referenceCache so
+// repeated calls (RO re-mount / any consumer, in one session) share ONE getTable fetch instead of re-fetching every
+// call; invalidated after the only marketplace writer (upsertMarketplace). The loader is byte-identical to the prior
+// body → BEFORE==AFTER row universe. Fail-closed: a failed fetch is not cached (next call retries), never a stale/broad
+// fallback. Falls back to a raw fetch if the cache is somehow absent (defensive; the IIFE above always installs it).
+window.KM.DB.getMarketplaceReference = function() {
+    var loader = function () {
+        return getOperationDbTableFromSheet('marketplaces').then(function (rows) {
+            return (rows || []).map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; });
+        });
+    };
+    return (window.KM && window.KM.referenceCache) ? window.KM.referenceCache.get('marketplaces', loader) : loader();
 };
 
 window.KM.DB.getCarrierRateCards = function() {
@@ -2747,6 +2796,9 @@ window.KM.DB.upsertMarketplace = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Upsert failed');
+    // F1-7M-C1: this is the ONLY writer that mutates the `marketplaces` master → invalidate its session reference AFTER
+    // a confirmed-successful write (a failed write above threw, so the cache stays valid → no premature invalidation).
+    if (window.KM && window.KM.referenceCache) window.KM.referenceCache.invalidate('marketplaces');
     await _kmWriterPostWrite_();
     return json.data;
 };
