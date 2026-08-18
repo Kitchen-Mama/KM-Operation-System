@@ -634,16 +634,35 @@ function _roRebuildDropdown(filterType, vals) {
   if (text) text.textContent = 'All';
 }
 
-// Category tabs (Part 2) — built from distinct sku_details.category present in the data. "All" first.
-// Uses the SHARED Category Tab Rail (.km-tab-rail / .km-tab-rail__tab + count badge) so the Order System
-// matches Inventory Replenishment / Promotion Risk. Each tab shows Name + Count; counts reflect the
-// current (other-filter) data set — selecting a Category never zeroes the other Category counts (they are
-// computed from requestOrderState.data, not the post-category-filtered rows). Single-row horizontal scroll
-// + active-into-view are handled by KM.ui.tabRail.
+// F1-7M-B2-HOTFIX: rows scoped to the CURRENT Country + Marketplace selection ONLY (never Category / SKU / showMode).
+// This is the source for the Category chip universe + counts, so the counts represent the records applicable to the
+// selected scope and recompute when Country/Marketplace changes. Mirrors the country + marketplace clauses of
+// _applyRequestOrderFilters EXACTLY (no new authority; marketplace identity via the marketplace_id set, never the
+// display string). No formula/authority change — a pure view-scoping of the existing rows.
+function _roCountryMarketplaceScopedRows() {
+  var out = requestOrderState.data || [];
+  var f = requestOrderState.filters || {};
+  var cf = f.country || [];
+  if (cf.length) out = out.filter(function (item) { return cf.indexOf(item.country) !== -1; });
+  var mf = f.marketplace || [];
+  if (mf.length) {
+    var idset = (typeof _roSelectedMarketplaceIdSet === 'function') ? _roSelectedMarketplaceIdSet() : null;
+    if (idset) out = out.filter(function (item) { return idset[_roMarketplaceKey(item)]; });
+    else out = out.filter(function (item) { return mf.indexOf(item.marketplace) !== -1; });
+  }
+  return out;
+}
+// Category tabs (Part 2) — built from distinct sku_details.category present in the CURRENT Country+Marketplace scope.
+// "All" first. Uses the SHARED Category Tab Rail (.km-tab-rail / .km-tab-rail__tab + count badge) so the Order System
+// matches Inventory Replenishment / Promotion Risk. Each tab shows Name + Count; counts reflect the current
+// Country+Marketplace-scoped set — selecting a Category never zeroes the other Category counts (they are computed from
+// the scoped rows, NOT the post-category-filtered rows). F1-7M-B2-HOTFIX: the scope source is
+// _roCountryMarketplaceScopedRows() (was the unscoped requestOrderState.data), so Country/Marketplace changes recompute
+// the universe + counts. Single-row horizontal scroll + active-into-view are handled by KM.ui.tabRail.
 function _populateRequestOrderCategoryTabs() {
   var container = document.getElementById('ro-category-tabs');
   if (!container) return;
-  var data = requestOrderState.data || [];
+  var data = _roCountryMarketplaceScopedRows();
   var cats = _roDistinct(data.map(function(i) { return i.category; }));
   var active = requestOrderState.categoryTab || 'All';
   if (active !== 'All' && cats.indexOf(active) === -1) { active = 'All'; requestOrderState.categoryTab = 'All'; }
@@ -924,6 +943,12 @@ function updateRequestOrderFilter(filterType) {
   // selection (no US/first-match fallback). _roRebuildMarketplaceDropdown prunes invalid selections.
   if (filterType === 'country') {
     _roRebuildMarketplaceDropdown();
+  }
+  // F1-7M-B2-HOTFIX: Country/Marketplace scope drives the Category chip universe + counts — recompute them immediately
+  // when either changes (BEFORE the row render) so the counts always reflect the current Country+Marketplace scope.
+  // _populateRequestOrderCategoryTabs resets an out-of-scope active Category to "All" (existing behavior).
+  if (filterType === 'country' || filterType === 'marketplace') {
+    _populateRequestOrderCategoryTabs();
   }
 
   requestOrderState.page = 1;   // filter change → back to page 1 (Part 1)

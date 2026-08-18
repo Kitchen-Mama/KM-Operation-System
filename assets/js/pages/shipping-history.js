@@ -661,8 +661,16 @@ function toggleHistoryCard(shipmentId) {
 // Snapshot) READ-ONLY and never recalculates it; only execution-layer fields are editable.
 // ========================================
 function _shUseDb() {
-    return !!(window.KM && window.KM.DB && window.KM.DB.isCloudWriteEnabled &&
-        window.KM.DB.isCloudWriteEnabled() && window.KM.DB.getShipments);
+    // F1-7M-B2-HOTFIX (Shape-2 cold-start): cloud eligibility INDEPENDENT of whether the broad _opDbCache is primed
+    // (F1-7L zero-prime). The canonical Shipment Draft/Overview read is the scoped `shipment` workspace (getWorkspace via
+    // _shEffectiveWorkspace / workspaceApiActive('shipment'), cache-independent); the legacy kill-switch path loads the
+    // broad cache on demand. The former isCloudWriteEnabled() gate required getDataSourceMode()==='google-sheet' (== broad
+    // cache already loaded), never true on a cold F1-7L session → the false "Connect the Operation DB … Shipment Drafts"
+    // banner. isScopedReadEligible() (API configured AND not explicit mock) is the shared cache-independent posture and
+    // gates writes correctly too. A genuine no-drafts result stays a distinct EMPTY state ("No shipment drafts …"), NOT
+    // this disconnected banner. Explicit mock / unconfigured → banner preserved.
+    return !!(window.KM && window.KM.DB && typeof window.KM.DB.isScopedReadEligible === 'function' &&
+        window.KM.DB.isScopedReadEligible() && window.KM.DB.getShipments);
 }
 function _shEsc(s) {
     return String(s == null ? '' : s)
