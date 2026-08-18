@@ -24,8 +24,16 @@
     function dash(v) { var s = String(v == null ? '' : v).trim(); return s ? esc(s) : '--'; }
 
     function useDb() {
-        return !!(window.KM && window.KM.DB && window.KM.DB.isCloudWriteEnabled &&
-            window.KM.DB.isCloudWriteEnabled() && window.KM.DB.getRequestOrders);
+        // F1-7M-B2-HOTFIX (Shape-2 cold-start): cloud eligibility INDEPENDENT of whether the broad _opDbCache is primed
+        // (F1-7L zero-prime). The canonical read is the scoped requestOrder workspace (getWorkspace via
+        // _roDraftEffectiveWorkspace / workspaceApiActive('requestOrder'), cache-independent); the legacy kill-switch path
+        // loads the broad cache on demand. The former isCloudWriteEnabled() gate required getDataSourceMode()==='google-sheet'
+        // (== broad cache already loaded), never true on a cold F1-7L session → the "Demo mode — connect the Operation DB"
+        // banner. isScopedReadEligible() (API configured AND not explicit mock) is the shared cache-independent posture and
+        // also correctly gates the create/manage write actions (a write POST works whenever configured). Mock/unconfigured
+        // → banner preserved.
+        return !!(window.KM && window.KM.DB && typeof window.KM.DB.isScopedReadEligible === 'function' &&
+            window.KM.DB.isScopedReadEligible() && window.KM.DB.getRequestOrders);
     }
 
     var RO_STATUS_LABEL = {

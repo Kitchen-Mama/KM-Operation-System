@@ -29,8 +29,14 @@
     // Canonical order_status (falls back to legacy status for old rows).
     function poStatus(o) { return String(o.orderStatus || o.status || '').trim().toLowerCase(); }
     function useDb() {
-        return !!(window.KM && window.KM.DB && window.KM.DB.isCloudWriteEnabled &&
-            window.KM.DB.isCloudWriteEnabled() && window.KM.DB.getPurchaseOrders);
+        // F1-7M-B2-HOTFIX (Shape-2 cold-start): cloud eligibility INDEPENDENT of whether the broad _opDbCache is primed
+        // (F1-7L zero-prime). The canonical read is the scoped purchaseOrder workspace (getWorkspace via
+        // _polEffectiveWorkspace / workspaceApiActive('purchaseOrder'), cache-independent); the legacy kill-switch path loads
+        // the broad cache on demand. The former isCloudWriteEnabled() gate required getDataSourceMode()==='google-sheet'
+        // (== broad cache already loaded), never true on a cold F1-7L session → the "Demo mode" banner. isScopedReadEligible()
+        // (API configured AND not explicit mock) is the shared cache-independent posture and also gates writes correctly.
+        return !!(window.KM && window.KM.DB && typeof window.KM.DB.isScopedReadEligible === 'function' &&
+            window.KM.DB.isScopedReadEligible() && window.KM.DB.getPurchaseOrders);
     }
 
     // ---- F1-7C · scoped Purchase Order workspace read cutover (mirrors the F1-7B Weekly pattern) ----

@@ -83,6 +83,11 @@
     }
     var _srdReadModel = null;   // workspace-sourced { skuRegionalDetails, skuDetails, marketplaceSkus, taxReferralRates, taxRateComponents } or null = Legacy
     var _srdReadSeq = 0;
+    var _srdInFlight = false;   // F1-7M-B2-HOTFIX: in-flight guard — a rapid re-mount must not fire a duplicate workspace fetch
+    // F1-7M-B2-HOTFIX: explicit same-session invalidation seam. Drops the canonical read-model so the NEXT mount re-reads
+    // from the server. This-surface writes already refresh via _srdAfterWrite; this is exposed (window.srdInvalidate) for any
+    // external surface that mutates sku_details / marketplace_skus / sku_regional_details to force a fresh read on re-entry.
+    function _srdInvalidate_() { _srdReadModel = null; }
 
     // read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
     function _srdGetRegional() {
@@ -684,6 +689,12 @@
         }
         if (note) note.innerHTML = '';
         bindOnce();
+        // F1-7M-B2-HOTFIX same-session re-entry reuse: if the canonical read-model is already valid, render immediately
+        // from it — no blocking skeleton, no duplicate workspace fetch. This-surface writes keep it fresh (_srdAfterWrite);
+        // a failed load nulls it (_srdRenderError_) so Retry re-reads; _srdInvalidate_() drops it for external staleness.
+        if (_srdEffectiveWorkspace() && _srdReadModel) { render(); return; }
+        // in-flight dedupe: a rapid re-mount while the first fetch is still running must not issue a second request.
+        if (_srdEffectiveWorkspace() && _srdInFlight) return;
         el('srd-list').innerHTML = '<div class="srd-skel"><span style="width:60%"></span><span style="width:80%"></span></div><div class="srd-skel"><span style="width:50%"></span><span style="width:70%"></span></div>';
         var seq = ++_srdReqSeq;
         var done = function () { if (seq !== _srdReqSeq) return; render(); };
@@ -694,7 +705,8 @@
         // F1-7J-A: canonical → scoped skuDetails workspace (include.regional); NO broad Operation DB, fail-closed (no silent
         // legacy fallback). Legacy kill-switch mode retains the broad-cache load unchanged.
         if (_srdEffectiveWorkspace()) {
-            _srdWorkspaceRefresh_().then(function () { if (seq !== _srdReqSeq) return; render(); }).catch(function (err) { if (seq !== _srdReqSeq) return; _srdRenderError_(err); });
+            _srdInFlight = true;
+            _srdWorkspaceRefresh_().then(function () { _srdInFlight = false; if (seq !== _srdReqSeq) return; render(); }).catch(function (err) { _srdInFlight = false; if (seq !== _srdReqSeq) return; _srdRenderError_(err); });
         } else if (!window._opDbCache && window.KM.DB.loadOperationDb) {
             window.KM.DB.loadOperationDb({ force: true }).then(done).catch(fail);
         } else { done(); }
@@ -718,6 +730,7 @@
     window.srdBackToResults = srdBackToResults;
     window.srdRetry = srdRetry;
     window.srdRender = render;
+    window.srdInvalidate = _srdInvalidate_;   // F1-7M-B2-HOTFIX: external same-session invalidation hook (see _srdInvalidate_)
     window.initSkuRegionalDetailsPage = loadAndInit;
 
     function ensureMarkup() {
