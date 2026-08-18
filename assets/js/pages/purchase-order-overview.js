@@ -395,8 +395,8 @@
         }
         // Draft
         return '<button class="sp-btn sp-btn-submit" onclick="poSave(' + id + ')">Save</button>' +
-               '<button class="sp-btn sp-btn-submit" onclick="poSendPo(' + id + ')">Send PO</button>' +
-               '<button class="sp-btn sp-btn-cancel" onclick="poCancel(' + id + ')">Cancel</button>';
+               '<button class="sp-btn sp-btn-submit" onclick="poSendPo(' + id + ', this)">Send PO</button>' +
+               '<button class="sp-btn sp-btn-cancel" onclick="poCancel(' + id + ', this)">Cancel</button>';
     }
 
     // Block 1 — SKU Summary (aggregated by SKU; Ordered READ-ONLY). Columns:
@@ -539,6 +539,23 @@
             '<button class="pc-btn pc-btn--primary" onclick="poConfirmReceive(\'' + esc(id) + '\')">Confirm Receive</button>');
     }
 
+    // F1-7M-D3 · per-command in-flight guard + button feedback. PO Overview write commands had NO double-click guard:
+    // a rapid second click fired a DUPLICATE write. This suppresses the SECOND identical client write (keyed by
+    // po-id + action) and gives an immediate "Processing…" affordance on the pressed button — purely client-side; the
+    // backend idempotency is UNCHANGED. The key clears on success (after the canonical loadAndRender readback) AND on
+    // failure (button restored). It never disables the whole page — only the one pressed control; unrelated cards stay live.
+    var _poInFlightCmds = {};
+    function _poBeginCmd(key, btn) {
+        if (_poInFlightCmds[key]) return false;   // second click before completion → no second write
+        _poInFlightCmds[key] = true;
+        if (btn) { btn.dataset.poLabel = btn.textContent; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = 'Processing…'; }
+        return true;
+    }
+    function _poEndCmd(key, btn) {
+        delete _poInFlightCmds[key];
+        if (btn && btn.isConnected) { btn.disabled = false; btn.removeAttribute('aria-busy'); if (btn.dataset.poLabel != null) { btn.textContent = btn.dataset.poLabel; delete btn.dataset.poLabel; } }
+    }
+
     function confirmReceive(id) {
         var overlay = document.getElementById('po-modal');
         if (!overlay) return;
@@ -553,9 +570,11 @@
         });
         if (invalid) { alert(invalid); return; }
         if (!lines.length) { alert('Enter a Receive Qty greater than 0 on at least one line.'); return; }
+        var btn = overlay.querySelector('.pc-btn--primary'), key = id + ':receive';
+        if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write
         window.KM.DB.receivePurchaseOrderLines({ purchase_order_id: id, lines: lines, actor: 'operation-system' })
-            .then(function () { closeModal(); loadAndRender(); })
-            .catch(function (e) { alert('Receive failed: ' + (e && e.message ? e.message : e)); });
+            .then(function () { _poEndCmd(key, btn); closeModal(); loadAndRender(); })
+            .catch(function (e) { _poEndCmd(key, btn); alert('Receive failed: ' + (e && e.message ? e.message : e)); });
     }
 
     // ========================================
@@ -613,9 +632,11 @@
             any = true;
         });
         if (!any) { alert('Nothing to save.'); return; }
+        var btn = overlay.querySelector('.pc-btn--primary'), key = id + ':edit';
+        if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write
         window.KM.DB.updatePurchaseOrderHeader(payload)
-            .then(function () { closeModal(); loadAndRender(); })
-            .catch(function (e) { alert('Save failed: ' + (e && e.message ? e.message : e)); });
+            .then(function () { _poEndCmd(key, btn); closeModal(); loadAndRender(); })
+            .catch(function (e) { _poEndCmd(key, btn); alert('Save failed: ' + (e && e.message ? e.message : e)); });
     }
 
     // ---- shared modal (reuses .pc-modal) ----
@@ -640,7 +661,7 @@
     function save(id) { edit(id); }
     function update(id) { edit(id); }
 
-    function sendPo(id) {
+    function sendPo(id, btn) {
         var card = document.getElementById('po-card-' + id);
         var status = card ? String(card.getAttribute('data-status') || '') : '';
         if (status !== 'draft') {
@@ -648,16 +669,20 @@
             return;
         }
         if (!confirm('Send / issue this PO to the supplier? (order_status: draft → issued)')) return;
+        var key = id + ':issue';
+        if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write (status precheck reads DOM, unchanged until readback)
         window.KM.DB.updatePurchaseOrderStatus({ purchase_order_id: id, transition: 'issue', actor: 'operation-system' })
-            .then(function () { loadAndRender(); })
-            .catch(function (e) { alert('Send PO failed: ' + (e && e.message ? e.message : e)); });
+            .then(function () { _poEndCmd(key, btn); loadAndRender(); })
+            .catch(function (e) { _poEndCmd(key, btn); alert('Send PO failed: ' + (e && e.message ? e.message : e)); });
     }
 
-    function cancel(id) {
+    function cancel(id, btn) {
         if (!confirm('Cancel this PO? It will be kept in the database.')) return;
+        var key = id + ':cancel';
+        if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write
         window.KM.DB.updatePurchaseOrderStatus({ purchase_order_id: id, transition: 'cancel', actor: 'operation-system' })
-            .then(function () { loadAndRender(); })
-            .catch(function (e) { alert('Cancel failed: ' + (e && e.message ? e.message : e)); });
+            .then(function () { _poEndCmd(key, btn); loadAndRender(); })
+            .catch(function (e) { _poEndCmd(key, btn); alert('Cancel failed: ' + (e && e.message ? e.message : e)); });
     }
 
     // ---- selectors / pagination ----

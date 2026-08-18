@@ -754,3 +754,24 @@ read / prime reintroduced; no business/formula/schema change.
   → nothing to change; SKU Regional guard moot (no regional load wired yet).
 - Tests: new `api-reference-session-cache-f1-7m-c-r1` 45/0; F1-7J-A2 getMarketplaceReference shape contract-updated
   (ALL GREEN); full regression 234 pass / 4 known-baseline fail / 0 new. Next: F1-7M-D (DOM/render + interaction) — await spec.
+
+## F1-7M-D-DOM-RENDER-AND-INTERACTION-FEEDBACK-R1 (perf track, atomic) — **DONE**
+PRE HEAD `d88daab`. Improve perceived interaction speed + cut render waste; no backend/authority/formula/persistence/
+readback-freshness change. Full detail: `F1_7M_D_DOM_RENDER_AND_INTERACTION_FEEDBACK_R1.md`. **Frontend-only**
+(Apps Script/router/exec/bundle/schema = NO). Invariants held: writer full-reload 0 · app prime 0 · canonical broad 0.
+- **D3 (shipped) PO Overview double-click guard + feedback:** the 4 write commands (confirmReceive/confirmEdit/sendPo/
+  cancel) had NO in-flight guard → double-click fired duplicate writes. Added a keyed guard (po-id+action) that suppresses
+  the 2nd click + shows "Processing…"/aria-busy on the pressed button; clears on success (after the canonical loadAndRender
+  readback) AND failure. Backend idempotency unchanged; page never globally disabled. `purchase-order-overview.js`.
+- **D2 (shipped) On-the-Way search debounce:** each keystroke ran the full render() (innerHTML + bindRuntime re-bind +
+  globe setMarkers/setArcs; filteredVms ×3). Now the filter state updates synchronously per keystroke and the render is
+  coalesced into ONE trailing 180ms call (latest wins, stale timer cancelled). Pure client filter — no API tied to search;
+  list+map read the same state → never desync. Select/date onchange stay immediate. `global-logistics-map.js`.
+- **D5 (shipped) Factory/Overseas initial-loading:** bounded INITIAL_LOADING affordance (KM.loadState) replaces the
+  blank-until-data region on first load; the render replaces it. `factory-stock.js`, `overseas-stock.js`.
+- **Deferred (source-grounded):** D1 Weekly section-render + button feedback (guard already exists → no correctness gap;
+  status-moving commands need 2-section reconciliation, feedback needs onclick element-wiring); D5 Carrier (already shows a
+  Search-prompt placeholder) + SKU-Handbook (distinct mount) loading; D6/D7 pagination = PAGINATION_LIVE_MEASUREMENT_REQUIRED
+  (no production row-count evidence; PO Overview/List already paginate 25/page).
+- Tests: new `ui-render-and-interaction-feedback-f1-7m-d-r1` 31/0; full regression 235 pass / 4 known-baseline fail / 0 new.
+  Next: F1-7M-E (backend algorithm cost — 43_/42_/56_/58_) — a dedicated Apps Script slice; await spec.

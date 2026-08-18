@@ -28,6 +28,15 @@ function _fsGet(key) {
 // table key (empties for absent ones), so only the two named camelCase slices are overlaid — a blanket assign would
 // clobber the retained skuDetails/warehouses with []. Fallback: model not yet primed (no mount load) → full 4-table
 // read (unchanged behavior). Server stays authoritative for the mutable facts; no local mutation, no stale-fact cache.
+// F1-7M-D5 · paint a bounded INITIAL_LOADING affordance into the table body while the FIRST scoped read is in flight
+// (was a blank region until data). Region-scoped only (never a whole-app mask); the subsequent render fully replaces the
+// placeholder (READY/EMPTY). Reuses the shared KM.loadState contract. No-op if the region/loadState is unavailable.
+function _fsShowInitialLoading_(root) {
+    try {
+        var el = root && root.querySelector('#factory-stock-scroll-body');
+        if (el && window.KM && window.KM.loadState) window.KM.loadState.bindElement(el, 'Loading factory stock…').beginLoad(false);
+    } catch (e) {}
+}
 function _fsAfterWrite(cb) {
     if (!_fsScopedActive()) { if (cb) cb(); return; }
     if (!_fsReadModel) {
@@ -56,6 +65,7 @@ function initFactoryStockPage() {
     // → broad loadOperationDb. Fail-closed: on scoped-read failure re-init WITHOUT a broad fallback (renders empty/bounded).
     if (!demoOn && _fsScopedActive() && !_fsReadModel && !_factoryDbLoadTried) {
         _factoryDbLoadTried = true;
+        _fsShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
         window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
             .then(function (m) { _fsReadModel = m; initFactoryStockPage(); })
             .catch(function () { initFactoryStockPage(); });

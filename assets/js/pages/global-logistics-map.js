@@ -975,12 +975,12 @@
     r.querySelectorAll('[data-kpi]').forEach(function (b) { b.onclick = function () { var k = b.getAttribute('data-kpi'); state.filters.kpi = (state.filters.kpi === k) ? '' : k; state.selectedShipmentId = ''; render(); }; });
     r.querySelectorAll('[data-filter]').forEach(function (el) {
       var key = el.getAttribute('data-filter');
-      if (el.tagName === 'INPUT' && el.type === 'text') { el.oninput = function () { state.filters[key] = el.value; renderKeepFocus('[data-filter="' + key + '"]'); }; }
+      if (el.tagName === 'INPUT' && el.type === 'text') { el.oninput = function () { state.filters[key] = el.value; debouncedSearchRender('[data-filter="' + key + '"]'); }; }
       else { el.onchange = function () { state.filters[key] = (el.type === 'checkbox') ? el.checked : el.value; render(); }; }
     });
     r.querySelectorAll('[data-ref]').forEach(function (el) {
       var key = el.getAttribute('data-ref');
-      if (el.tagName === 'INPUT' && el.type === 'text') { el.oninput = function () { state.ref[key] = el.value; renderKeepFocus('[data-ref="' + key + '"]'); }; }
+      if (el.tagName === 'INPUT' && el.type === 'text') { el.oninput = function () { state.ref[key] = el.value; debouncedSearchRender('[data-ref="' + key + '"]'); }; }
       else { el.onchange = function () { state.ref[key] = el.value; render(); }; }
     });
     r.querySelectorAll('[data-tpl]').forEach(function (el) { el.onchange = function () { state.selectedTemplateId = el.value; state.didFocus = false; render(); }; });
@@ -1011,6 +1011,19 @@
     Object.keys(acts).forEach(function (a) { r.querySelectorAll('[data-act="' + a + '"]').forEach(function (b) { b.onclick = acts[a]; }); });
   }
   function renderKeepFocus(selector) { render(); var r = root(); var el = r && r.querySelector(selector); if (el) { el.focus(); try { var v = el.value; el.setSelectionRange(v.length, v.length); } catch (e) {} } }
+  // F1-7M-D2 · the search boxes filter ALREADY-LOADED data client-side (no mutation, latest-input-wins). Each keystroke
+  // used to run the FULL render() — whole-body innerHTML rewrite + bindRuntime re-bind + globe setMarkers/setArcs, with
+  // filteredVms() computed 3×. Coalesce a burst of keystrokes into ONE trailing render (~180ms) so the expensive globe
+  // recompute runs once for the final input. The filter STATE is still updated synchronously per keystroke (both the list
+  // and the globe read the SAME state.filters/state.ref at render time → they can never disagree); the native input keeps
+  // focus/caret during the debounce window; the trailing renderKeepFocus restores focus after the coalesced render — same
+  // observable behavior as before, minus the per-keystroke render storms. The discrete select/date onchange stay immediate.
+  var SEARCH_RENDER_DEBOUNCE_MS = 180;
+  var _searchRenderTimer = null;
+  function debouncedSearchRender(selector) {
+    if (_searchRenderTimer) clearTimeout(_searchRenderTimer);
+    _searchRenderTimer = setTimeout(function () { _searchRenderTimer = null; renderKeepFocus(selector); }, SEARCH_RENDER_DEBOUNCE_MS);
+  }
   function clearFilters() { state.filters = { search: '', company: '', originCountry: '', destCountry: '', destWarehouse: '', carrier: '', method: '', status: '', stage: '', routeTemplateId: '', etaFrom: '', etaTo: '', exceptionOnly: false, delayedOnly: false, arrivingSoon: false, kpi: '' }; state.selectedShipmentId = ''; render(); }
 
   // ---------- boot / lifecycle ----------

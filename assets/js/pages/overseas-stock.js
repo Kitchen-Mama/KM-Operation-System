@@ -49,6 +49,15 @@ function _osAfterWrite(cb) {
         .catch(function () { if (cb) cb(); });
 }
 
+// F1-7M-D5 · bounded INITIAL_LOADING affordance in the snapshot table body while the FIRST scoped read is in flight
+// (was a blank region until data). Region-scoped only; the subsequent render fully replaces the placeholder. No-op if
+// the region/loadState is unavailable.
+function _osShowInitialLoading_(root) {
+    try {
+        var el = root && root.querySelector('#overseas-snapshot-scroll-body');
+        if (el && window.KM && window.KM.loadState) window.KM.loadState.bindElement(el, 'Loading overseas stock…').beginLoad(false);
+    } catch (e) {}
+}
 function initOverseasStockPage() {
     console.log('✅ Overseas Stock: initOverseasStockPage called');
     var root = document.querySelector('#overseas-stock-section');
@@ -61,6 +70,7 @@ function initOverseasStockPage() {
     // F1-7J-A3: canonical → bounded scoped read; Legacy kill-switch → broad loadOperationDb. Fail-closed (no broad fallback).
     if (_osScopedActive() && !_osReadModel && !_overseasDbLoadTried) {
         _overseasDbLoadTried = true;
+        _osShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
         window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osReadModel = m; initOverseasStockPage(); }).catch(function () { initOverseasStockPage(); });
         return;
     }
