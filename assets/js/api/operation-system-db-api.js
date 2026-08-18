@@ -539,7 +539,7 @@ function normalizeWarehouseRecord(raw) {
 function normalizeOverseasInventorySnapshotRecord(raw) {
     var r = raw || {};
     return {
-        snapshotId: String(r.snapshot_id || '').trim(),
+        snapshotId: String(r.overseas_inventory_id || r.snapshot_id || '').trim(),
         snapshotDate: String(r.snapshot_date || '').trim(),
         warehouseId: String(r.warehouse_id || '').trim(),
         sku: String(r.sku || '').trim(),

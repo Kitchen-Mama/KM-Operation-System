@@ -70,13 +70,13 @@ var v = normFromFiltered.filter(function (r) { return r.sku === 'KM-1002'; })[0]
 ok(v && v.availableStock === 0, 'zero-quantity valid row is retained with availableStock=0 (NOT treated as no-data)');
 
 // ===================================================================================================================
-console.log('\n== §5 snapshot_id ↔ overseas_inventory_id mapping drift (identity debt) ==');
-ok(/snapshotId: String\(r\.snapshot_id \|\| ''\)\.trim\(\)/.test(DBAPI), 'normalizer reads r.snapshot_id (NOT overseas_inventory_id)');
-ok(normFromFiltered[0].snapshotId === '', 'OVERSEAS_SNAPSHOT_ID_MAPPING_DEBT: live overseas_inventory_id → normalized snapshotId is BLANK');
-ok(normFromFiltered[0].warehouseId === 'WH-US-01' && normFromFiltered[0].sku === 'KM-1001', 'row still survives despite blank snapshotId (id is NOT a filter field — read-neutral)');
-// The import header-validation contract requires a snapshot_id header (writer side) — documents the writer drift.
-var GS03 = 0; // (informational) writer validation lives in 05_; asserted separately below.
-ok(/plainReq = \['snapshot_id'/.test(read('specs/active/apps-script/05_overseas_inventory_handlers.gs')), 'import header validation REQUIRES a snapshot_id header (would reject the live overseas_inventory_id header)');
+console.log('\n== §5 identity contract RESOLVED — overseas_inventory_id canonical (legacy snapshot_id fallback) ==');
+ok(/snapshotId: String\(r\.overseas_inventory_id \|\| r\.snapshot_id \|\| ''\)\.trim\(\)/.test(DBAPI), 'normalizer reads canonical overseas_inventory_id first, legacy snapshot_id fallback');
+ok(normFromFiltered[0].snapshotId === 'OISN-0001', 'live overseas_inventory_id → normalized snapshotId resolves the canonical identity');
+ok(normFromFiltered[0].warehouseId === 'WH-US-01' && normFromFiltered[0].sku === 'KM-1001', 'valid row survives; identity is read-neutral (not a filter field)');
+var OVS = read('specs/active/apps-script/05_overseas_inventory_handlers.gs');
+ok(!/plainReq = \['snapshot_id'/.test(OVS), 'import header validation NO LONGER requires a legacy snapshot_id header');
+ok(/var plainReq = \['warehouse_id', 'sku', 'site_sku'/.test(OVS), 'plainReq now leads with warehouse_id (identity validated separately via snIdCol)');
 
 // ===================================================================================================================
 console.log('\n== VERDICT (audit) ==');

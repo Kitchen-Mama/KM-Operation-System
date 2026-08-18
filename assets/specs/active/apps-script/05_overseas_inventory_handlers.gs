@@ -83,8 +83,8 @@ function overseasImportScopeCheck_(rows, scope, warehouseById) {
  * snapshot row; the snapshot only stores warehouse_id and joins warehouses at read time).
  *
  * Business key: warehouse_id + sku.
- * - Existing key -> update stock fields / on_the_way_eta / note / updated_at; preserve snapshot_id + site_sku.
- * - New key      -> create with snapshot_id = OISN-{8hex}.
+ * - Existing key -> update stock fields / on_the_way_eta / note / updated_at; preserve overseas_inventory_id + site_sku.
+ * - New key      -> create with overseas_inventory_id = OISN-{8hex} (legacy snapshot_id header still accepted).
  * Quantities must be numeric and >= 0; decimals are rounded UP (CEILING). Non-numeric -> row error.
  * warehouse_id must exist in `warehouses`. Header-validated before any write.
  * Snapshot-only refresh: this importer does NOT write overseas_inventory_movements rows.
@@ -116,6 +116,10 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
   var snapData = snapSheet.getDataRange().getValues();
   var snapHeaders = snapData[0].map(function(h) { return String(h).trim().toLowerCase(); });
   var snCol = function(n) { return snapHeaders.indexOf(n); };
+  // F1-7M-B2-HOTFIX-OVERSEAS-IMPORT-IDENTITY-CONTRACT: canonical PERSISTED identity is overseas_inventory_id;
+  // snapshot_id is a legacy READ-compatibility alias ONLY (the live production sheet renamed snapshot_id ->
+  // overseas_inventory_id). No second persisted identity column is added; the id stays server-generated.
+  var snIdCol = function() { var i = snapHeaders.indexOf('overseas_inventory_id'); return i !== -1 ? i : snapHeaders.indexOf('snapshot_id'); };
   // Prefer the canonical wh_ header; fall back to the legacy header until the live sheet is renamed.
   var snPref = function(canon) { var i = snapHeaders.indexOf(canon); return i !== -1 ? i : snapHeaders.indexOf(WH_LEGACY_[canon] || canon); };
   var snHas = function(canon) { return snPref(canon) !== -1; };
@@ -125,10 +129,14 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
   var whHeaders = whData[0].map(function(h) { return String(h).trim().toLowerCase(); });
 
   // --- Required-header validation (before any writes). wh_* accept canonical OR legacy header. ---
-  var plainReq = ['snapshot_id', 'warehouse_id', 'sku', 'site_sku', 'note', 'created_at', 'updated_at'];
+  // Identity (overseas_inventory_id, legacy snapshot_id) is validated separately via snIdCol — it is SERVER-generated,
+  // never a user CSV field — so it is NOT in plainReq. Requiring the legacy `snapshot_id` header here previously
+  // rejected the live production sheet (which uses overseas_inventory_id) and blocked every import.
+  var plainReq = ['warehouse_id', 'sku', 'site_sku', 'note', 'created_at', 'updated_at'];
   var whReq = qtyFields.concat(['wh_on_the_way_eta']);
   var missingHeaders = [];
   plainReq.forEach(function(h) { if (snapHeaders.indexOf(h) === -1) missingHeaders.push('overseas_inventory_snapshot.' + h); });
+  if (snIdCol() === -1) missingHeaders.push('overseas_inventory_snapshot.overseas_inventory_id (or legacy snapshot_id)');
   whReq.forEach(function(h) { if (!snHas(h)) missingHeaders.push('overseas_inventory_snapshot.' + h + ' (or legacy ' + WH_LEGACY_[h] + ')'); });
   if (whHeaders.indexOf('warehouse_id') === -1) missingHeaders.push('warehouses.warehouse_id');
   if (missingHeaders.length) {
@@ -175,7 +183,7 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     if (!rwh || !rsku) continue;
     var k0 = rwh + '|' + rsku;
     if (bkToRow[k0] === undefined) {
-      bkToRow[k0] = { row: r + 1, snapshotId: snCol('snapshot_id') !== -1 ? String(snapData[r][snCol('snapshot_id')] || '').trim() : '' };
+      bkToRow[k0] = { row: r + 1, snapshotId: snIdCol() !== -1 ? String(snapData[r][snIdCol()] || '').trim() : '' };
     }
   }
 
@@ -242,7 +250,7 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     } else {
       var sid = 'OISN-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
       var newRow = new Array(snapHeaders.length).fill('');
-      if (snCol('snapshot_id') !== -1) newRow[snCol('snapshot_id')] = sid;
+      if (snIdCol() !== -1) newRow[snIdCol()] = sid;
       if (snCol('warehouse_id') !== -1) newRow[snCol('warehouse_id')] = warehouseId;
       if (snCol('sku') !== -1) newRow[snCol('sku')] = sku;
       qtyFields.forEach(function(f) { var ci = snPref(f); if (ci !== -1) newRow[ci] = qtyVals[f]; });
