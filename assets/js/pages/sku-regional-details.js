@@ -54,8 +54,15 @@
     function el(id) { return document.getElementById(id); }
 
     function useDb() {
-        return !!(window.KM && window.KM.DB && window.KM.DB.getDataSourceMode &&
-            window.KM.DB.getDataSourceMode() === 'google-sheet' && window.KM.DB.getSkuRegionalDetails);
+        // F1-7M-B2-HOTFIX (Shape-2 cold-start gate): cloud eligibility INDEPENDENT of whether the broad _opDbCache has
+        // been primed (F1-7L zero-prime). This page's PRIMARY read is the skuDetails workspace (getWorkspace via
+        // _srdEffectiveWorkspace, cache-independent); the legacy kill-switch path loads the broad cache on demand. The
+        // former test required getDataSourceMode()==='google-sheet' (i.e. the broad cache ALREADY loaded), so a cold
+        // canonical session wrongly showed the "Connect the Operation DB … demo mode" banner. Cloud-read eligibility is a
+        // CONFIGURATION fact (API configured AND not explicit mock) — the SAME posture as the Shape-1 predicates (1ca7d13).
+        // Explicit mock / unconfigured API → isScopedReadEligible() false → demo banner preserved (no accidental API call).
+        return !!(window.KM && window.KM.DB && typeof window.KM.DB.isScopedReadEligible === 'function' &&
+            window.KM.DB.isScopedReadEligible() && window.KM.DB.getSkuRegionalDetails);
     }
 
     // ------------------------------------------------------------------------------------------------------
