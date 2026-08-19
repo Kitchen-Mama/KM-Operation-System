@@ -17,12 +17,12 @@ var src = fs.readFileSync(BUNDLE_PATH, 'utf8');
 
 // =================================================================================================================
 section('Source: weekly globals declared exactly once (no duplicates)');
-['KMWSA', 'KMWIA', 'KMWRD', 'KMWRT', 'KMWRB'].forEach(function (g) {
+['KMWSA', 'KMWIA', 'KMWRD', 'KMWRT', 'KMWRB', 'KMWHA'].forEach(function (g) {
   var re = new RegExp('var ' + g + ' = __kmModules\\[', 'g');
   var n = (src.match(re) || []).length;
   ok(n === 1, 'global ' + g + ' declared exactly once (found ' + n + ')');
 });
-['supply-planning-weekly-source-allocation', 'supply-planning-weekly-input-assembler', 'supply-planning-weekly-recommendation-draft', 'supply-planning-weekly-recommendation-runtime', 'supply-planning-weekly-recommendation-batch'].forEach(function (m) {
+['supply-planning-weekly-source-allocation', 'supply-planning-weekly-input-assembler', 'supply-planning-weekly-recommendation-draft', 'supply-planning-weekly-recommendation-runtime', 'supply-planning-weekly-recommendation-batch', 'supply-planning-weekly-harvest-adapter'].forEach(function (m) {
   ok(src.indexOf('"' + m + '"') !== -1, 'module registered in bundle: ' + m);
 });
 // existing globals still present (no regression)
@@ -49,6 +49,7 @@ if (evalOk) {
   ok(sandbox.KMWRD && typeof sandbox.KMWRD.persistWeeklyRecommendationDraft === 'function', 'AW KMWRD.persistWeeklyRecommendationDraft resolves');
   ok(sandbox.KMWRT && typeof sandbox.KMWRT.generateWeeklyShippingRecommendationDraft === 'function', 'AY KMWRT.generateWeeklyShippingRecommendationDraft resolves');
   ok(sandbox.KMWRB && typeof sandbox.KMWRB.generateWeeklyShippingRecommendationBatch === 'function', 'KMWRB.generateWeeklyShippingRecommendationBatch resolves (D-2a batch owner)');
+  ok(sandbox.KMWHA && typeof sandbox.KMWHA.mapWeeklyHarvestToBatchRequest === 'function', 'KMWHA.mapWeeklyHarvestToBatchRequest resolves (D-2b harvest adapter)');
   eq(sandbox.KMWRT && sandbox.KMWRT._version, 'f1-7n-d-1-r1', 'KMWRT version tag resolves via bundle');
   // existing recommendation globals still resolve (no bundle regression)
   ok(sandbox.KMORCH && typeof sandbox.KMORCH.runRecommendationGeneration === 'function', 'KMORCH still resolves');

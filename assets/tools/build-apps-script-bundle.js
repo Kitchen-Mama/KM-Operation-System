@@ -43,6 +43,7 @@ var MODULE_ORDER = [
   'supply-planning-weekly-recommendation-draft', // F1-7N-C1 weekly persistence adapter (requires weekly-source-allocation + plan-bridge + orchestrator)
   'supply-planning-weekly-recommendation-runtime', // F1-7N-D-1 weekly generation-pipeline owner (requires input-assembler + weekly-source-allocation + weekly-recommendation-draft)
   'supply-planning-weekly-recommendation-batch', // F1-7N-D-2a (company,country) batch owner (requires input-assembler + weekly-source-allocation + plan-bridge + orchestrator)
+  'supply-planning-weekly-harvest-adapter',    // F1-7N-D-2b pure harvest→batch-request join (no deps)
   'supply-planning-source-reader',             // requires source-facts
   'supply-planning-recommendation-source-integration', // requires source-reader + ledgers + source-facts + plan-bridge
   'supply-planning-source-reader-production',  // requires source-reader + source-integration (Round 1S-P1 production reader)
@@ -92,6 +93,7 @@ var GLOBALS = [
   ['KMWRD', 'supply-planning-weekly-recommendation-draft'],
   ['KMWRT', 'supply-planning-weekly-recommendation-runtime'],
   ['KMWRB', 'supply-planning-weekly-recommendation-batch'],
+  ['KMWHA', 'supply-planning-weekly-harvest-adapter'],
   ['KMSR', 'supply-planning-source-reader'],
   ['KMSI', 'supply-planning-recommendation-source-integration'],
   ['KMSRP', 'supply-planning-source-reader-production'],

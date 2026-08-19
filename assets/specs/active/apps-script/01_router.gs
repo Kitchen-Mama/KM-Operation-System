@@ -475,6 +475,14 @@ function doPost(e) {
       return handleGetActiveRequestOrderDraftReadback_(body);
     }
 
+    // F1-7N-D-2b — WEEKLY AI PLAN live generation owner (61_). Harvests canonical facts → KMWHA → KMWRB
+    // (company,country) batch → per-marketplace K3 shipping_allocation_drafts via the frozen orchestrator + C1
+    // semantics. Generation universe = company+country (marketplace is readback context only). Persists ONLY the
+    // shipping-allocation draft tables; no Request Order / PO / shipment; no inventory reservation.
+    if (action === 'weeklyAiPlan.generate') {
+      return handleGenerateWeeklyAiPlanDraft_(body);
+    }
+
     // F1-4B-FM6-R4E2-B2 — REQUEST-DRIVEN resumable scope draft job (48_). ONE logical job for a scope-wide AI Plan:
     // START snapshots eligible READY-gap SKUs; the client polls CONTINUE (bounded slice each) until DONE; STATUS is
     // read-only; CANCEL is terminal (created drafts preserved). No time trigger / scheduler / browser fan-out. The
