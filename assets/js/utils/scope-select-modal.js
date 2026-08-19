@@ -64,13 +64,35 @@
     return !!(scope && str(scope.company) && str(scope.country) && str(scope.marketplace));
   }
 
+  // Legacy synchronous read of the BROAD cache. After F1-7L zero-prime this is null/[] on a cold session — kept only
+  // as a warm-session seed / defensive fallback, never the authoritative cold source (see getMarketplacesAsync).
   function getMarketplaces() {
     try { return (typeof window !== 'undefined' && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? (window.KM.DB.getMarketplaces() || []) : []; }
     catch (e) { return []; }
   }
 
+  // F1-7N — COLD-ELIGIBLE marketplace source. The Country/Marketplace universe must survive a cold F1-7L session
+  // where the broad _opDbCache is unprimed. Route through the EXISTING scoped reference owner
+  // window.KM.DB.getMarketplaceReference() (F1-7J-A2: bounded getTable('marketplaces') read, same normalizer+filter as
+  // getMarketplaces() → BEFORE==AFTER row universe, session-cached via KM.referenceCache, NEVER the broad cache / never
+  // getOperationDb). No new API/route. Falls back to the broad getter only if the reference owner is unavailable or
+  // returns empty (defensive; warm-session parity). Always resolves a Promise.
+  function getMarketplacesAsync() {
+    try {
+      if (typeof window !== 'undefined' && window.KM && window.KM.DB && typeof window.KM.DB.getMarketplaceReference === 'function') {
+        var p = window.KM.DB.getMarketplaceReference();
+        if (p && typeof p.then === 'function') {
+          return p.then(function (list) { return (list && list.length) ? list : getMarketplaces(); })
+                  .catch(function () { return getMarketplaces(); });
+        }
+        if (p && p.length) return Promise.resolve(p);              // defensive: a synchronous return
+      }
+    } catch (e) {}
+    return Promise.resolve(getMarketplaces());
+  }
+
   // ---- DOM (singleton; guarded) ---------------------------------------------------------------------------
-  var _dom = null, _state = null;
+  var _dom = null, _state = null, _openToken = 0;
 
   function ensureDom() {
     if (typeof document === 'undefined') return null;
@@ -168,21 +190,43 @@
     if (typeof cb === 'function') cb(scope);
   }
 
-  // open({ title, subtitle, prefill:{country, marketplaceId}, onConfirm })
+  // Apply a resolved marketplace universe to the two selects (Country → Marketplace), honoring a prefill/kept selection.
+  function _applyList(list, prefill) {
+    _state.list = Array.isArray(list) ? list : [];
+    var p = prefill || {};
+    fillCountries(_state.list, p.country);
+    fillMarketplaces(_state.list, _dom.country.value, p.marketplaceId);
+    refreshConfirm();
+  }
+
+  // open({ title, subtitle, confirmLabel, prefill:{country, marketplaceId}, onConfirm })
   function open(opts) {
     opts = opts || {};
     var d = ensureDom();
     if (!d) return;
-    var list = getMarketplaces();
-    _state = { list: list, onConfirm: opts.onConfirm, scope: null };
+    var prefill = opts.prefill || {};
+    // Synchronous seed from the broad cache — populates instantly on a WARM session; [] on a cold F1-7L session.
+    var seed = getMarketplaces();
+    _state = { list: seed, onConfirm: opts.onConfirm, scope: null };
     d.title.textContent = str(opts.title) || 'AI Support';
     d.subtitle.textContent = str(opts.subtitle) || 'Select the scope';
-    var prefill = opts.prefill || {};
-    fillCountries(list, prefill.country);
-    fillMarketplaces(list, d.country.value, prefill.marketplaceId);
-    refreshConfirm();
+    // F1-7N — distinct per-action confirm label so "AI Plan" and "Recalculate" read as different workflows.
+    d.confirm.textContent = str(opts.confirmLabel) || 'Confirm';
+    _applyList(seed, prefill);
+    // F1-7N — cold affordance: when the broad seed is empty, show a transient loading hint until the reference resolves.
+    if (!seed.length) { d.country.innerHTML = '<option value="">Loading…</option>'; d.country.disabled = true; d.marketplace.disabled = true; }
     d.overlay.classList.add('is-open');
     d.modal.classList.add('is-open');
+    // F1-7N — authoritative COLD-ELIGIBLE refill from the scoped marketplace reference owner (never the broad cache).
+    // Guarded by an open token so a stale async fill from a prior open cannot clobber a reopened modal.
+    var myToken = ++_openToken;
+    getMarketplacesAsync().then(function (list) {
+      if (!_state || myToken !== _openToken) return;               // modal closed or reopened → drop this stale fill
+      d.country.disabled = false;
+      // preserve any selection the user already made against the warm seed; else honor the prefill.
+      var keep = { country: d.country.value || prefill.country, marketplaceId: d.marketplace.value || prefill.marketplaceId };
+      _applyList((list && list.length) ? list : seed, keep);
+    });
     try { if (d.country.value) { (d.marketplace.value ? d.marketplace : d.country).focus(); } else { d.country.focus(); } } catch (e) { }
   }
 
@@ -200,9 +244,11 @@
     marketplacesForCountry: marketplacesForCountry,
     resolveScope: resolveScope,
     isConcreteScope: isConcreteScope,
+    // F1-7N cold-eligible marketplace source (tested directly)
+    _resolveMarketplacesAsync: getMarketplacesAsync,
     // DOM
     open: open,
     close: close,
-    _version: 'ai-support-scope-r1'
+    _version: 'f1-7n-cold-ref-r1'
   };
 });

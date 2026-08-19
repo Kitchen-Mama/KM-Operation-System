@@ -6090,8 +6090,9 @@ function _openReplenScopeModal(action) {
         return;
     }
     window.KM.scopeModal.open({
-        title: 'AI Support — Inventory',
+        title: action === 'aiplan' ? 'AI Plan — Inventory' : 'Recalculate Current Scope — Inventory',
         subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
+        confirmLabel: action === 'aiplan' ? 'Generate AI Plan' : 'Recalculate Scope',
         prefill: _irScopeModalPrefill_(),
         onConfirm: function (scope) {
             if (action === 'aiplan') {

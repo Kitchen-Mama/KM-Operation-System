@@ -1418,8 +1418,9 @@ function _openRoScopeModal(action) {
         return;
     }
     window.KM.scopeModal.open({
-        title: 'AI Support — Order Planning',
+        title: action === 'aiplan' ? 'AI Plan — Order Planning' : 'Recalculate Current Scope — Order Planning',
         subtitle: action === 'aiplan' ? 'Select the scope for AI Plan' : 'Select the scope to recalculate',
+        confirmLabel: action === 'aiplan' ? 'Generate AI Plan' : 'Recalculate Scope',
         prefill: _roScopeModalPrefill_(),
         onConfirm: function (scope) {
             if (action === 'aiplan') {
