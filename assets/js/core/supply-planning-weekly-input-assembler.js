@@ -202,6 +202,7 @@
         });
         weeklyPlanningFacts.push({
           recommendationType: 'WEEKLY_SHIPPING', sku: laneSku, siteSku: siteSku, windowCode: windowCode,
+          marketplace: str(lane.marketplace),  // carried so a (company,country) batch run can fan lines out per K3 marketplace
           demandKey: demandKey, destinationWarehouseId: dest, requiredByDate: str(reqBy[windowCode]),
           calculatedGap: demandQty,            // §35A.7 DTO alias at the B boundary: calculatedGap := incrementalNeedQty
           cumulativeGapQty: cum[idx],          // canonical cumulative preserved (resolver ignores it)

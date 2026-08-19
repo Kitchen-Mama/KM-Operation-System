@@ -87,6 +87,7 @@ var j = assemble({ lanes: [lane({ cumulativeGapByWindow: { D18: 10, D30: 20 } })
 eq(j.builderInput.overseasInput.receivers.map(function (r) { return r.demandKey; }), ['SKU1|DEST-1|D18', 'SKU1|DEST-1|D30'], 'J keys differ by window; identical across receivers/demands/facts');
 eq(j.builderInput.factory.demands.map(function (d) { return d.demandKey; }), ['SKU1|DEST-1|D18', 'SKU1|DEST-1|D30'], 'J factory demands share the same demandKey');
 eq(j.builderInput.weeklyPlanningFacts.map(function (f) { return f.demandKey; }), ['SKU1|DEST-1|D18', 'SKU1|DEST-1|D30'], 'J weekly facts share the same demandKey');
+eq(j.builderInput.weeklyPlanningFacts.map(function (f) { return f.marketplace; }), ['amz', 'amz'], 'J weekly facts carry lane marketplace (load-bearing for the (company,country) batch K3 fan-out)');
 
 // =================================================================================================================
 section('K–O factory identity: exact warehouse_id only; fail closed; no country inference');
