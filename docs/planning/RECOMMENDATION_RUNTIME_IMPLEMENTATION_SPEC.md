@@ -110,6 +110,23 @@ All calculation is delegated to the pure §39/§40 + Engine A/B runtime (no form
 - **Active status set** = `{ draft, site_confirmed }` (non-terminal, editable). **Excluded (non-Active)** = `{ submitted, cancelled }` (+ any future completed/replaced).
 - **Zero Active** → create a new draft (`draft_version = 1`). **One Active** → reuse it (resume/refresh). **>1 Active** → **CONFLICT: the run BLOCKS (fail-closed)** — no silent pick, **no latest-created-wins, no automatic repair**; surfaced for human resolution. Duplicate-active state blocks the run and never proceeds.
 
+### PO-6a. WEEKLY_SHIPPING recommendation_group_no reconciliation (F1-7N-C0, 2026-08-19 — documentation only)
+**Audit outcome: ALREADY RECONCILED to K3 — no key change.** The WEEKLY_SHIPPING Phase-1 Active-lookup key is
+**K3** = `recommendation_type + planning_cycle + company + country + marketplace + source_page` (PO-5/PO-6);
+`recommendation_group_no` is a stored HEADER column (Shipping Allocation Amendment §2.2) but is **NOT** part of the
+Phase-1 Active identity. The amendment's §2.1 **K2** model (`… + recommendation_group_no + draft_version`) and any
+air/sea multiple-Draft-Header split are explicitly **`PHASE_2_DEFERRED`** by the owner-of-record
+`ALLOCATION_DRAFT_PHASE1_CONTRACT_FREEZE.md` (D-C2-1 / D-C2-2 / D-C2-4 / §3) — with which the amendment,
+`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.6, and `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` §807 are annotated to
+agree. The current persistence core + repository (`supply-planning-persistence-repository.js` `TABLES.WEEKLY_SHIPPING.scope`)
+already implement K3. **Therefore F1-7N-C persists a weekly recommendation as a SINGLE K3 Active Draft per site/cycle**
+(coarse `recommended_shipping_method` / `recommended_last_mile_delivery` are single header fields; F1-7N-B emits no
+multi-group split). Two different routes in the same week are Phase-1-handled via **separate Submit cycles / subsequent
+Drafts**, never simultaneous multi-group Active Drafts. **Activating `recommendation_group_no` in the Active key (the
+K2 model, enabling multiple coexisting Active Drafts) is a SEPARATE authorized Phase-2 slice — NOT F1-7N-C.** Guard:
+`weekly-shipping-active-key-reconciliation-f1-7n-c0-r1.test.js` locks K3 and fails any silent drift. Schema: the
+30-col header already carries `recommendation_group_no` → **no DB migration**. MONTHLY_ORDER key unchanged.
+
 ### PO-7. calculation_run_id contract
 Business-meaningful run identity (**never a timestamp alone**). Generated per **new calculation run** (a scheduled run that (re)computes, or a manual Regenerate). **Retry/Resume of the SAME operation reuses the same `calculation_run_id`** (idempotent). **Manual Regenerate mints a NEW `calculation_run_id` and increments `draft_version`.** One `draft_version` ↔ one `calculation_run_id` (the run that produced that version's `recommended_qty`). `formula_version` + `source_data_as_of` are immutable lineage attributes of the run. Completed runs are immutable. (`calculation_run_id` exists on `shipping_allocation_drafts` and on the `15_*` request-draft header; not added anywhere here.)
 
