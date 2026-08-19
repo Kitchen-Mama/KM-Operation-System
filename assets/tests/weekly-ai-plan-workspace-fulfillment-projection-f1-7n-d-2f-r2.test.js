@@ -59,11 +59,13 @@ var B = runLines('SHOPIFY_US', 'self_fulfilled', true);
 ok(B.lines.length > 0, 'B produced lines (blocked or not)');
 ok(B.lines.every(function (l) { return l.fulfillmentModel === 'self_fulfilled'; }), 'B every line carries fulfillmentModel="self_fulfilled"');
 
-section('C hybrid → line.fulfillmentModel emitted even though destination is UNRESOLVED (no guessed destination)');
+section('C hybrid marketplace + BLANK SKU-level fulfillment_model → per-SKU fail-closed (D-2h supersede)');
+// Post-D-2h a hybrid marketplace resolves PER SKU from marketplace_skus.fulfillment_model; the fixture omits it, so
+// the SKU-level value is blank → effective model '' → destination UNRESOLVED (never the marketplace-level 'hybrid').
 var C = runLines('WALMART_US', 'hybrid', true);
 ok(C.lines.length > 0, 'C produced lines');
-ok(C.lines.every(function (l) { return l.fulfillmentModel === 'hybrid'; }), 'C every line carries fulfillmentModel="hybrid"');
-ok(C.lines.every(function (l) { return l.blocked === true && l.blockedReason === 'DESTINATION_AUTHORITY_UNRESOLVED'; }), 'C hybrid stays destination-UNRESOLVED (authority undefined; not fabricated)');
+ok(C.lines.every(function (l) { return l.fulfillmentModel === ''; }), 'C blank SKU-level → fulfillmentModel="" (per-SKU resolution, not marketplace-level hybrid)');
+ok(C.lines.every(function (l) { return l.blocked === true && l.blockedReason === 'DESTINATION_AUTHORITY_UNRESOLVED'; }), 'C blank/both-lane SKU stays UNRESOLVED (never guessed)');
 
 section('D no marketplaces row → fail-closed fulfillmentModel="" (never inferred from marketplace name)');
 var D = runLines('MYSTERY_US', 'self_fulfilled', false);

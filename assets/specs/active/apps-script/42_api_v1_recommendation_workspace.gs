@@ -389,6 +389,17 @@ function recoWsSiteSkuBySku_(mskRows, scope) {
   });
   return m;
 }
+// F1-7N-D-2h: per-SKU canonical fulfillment_model from marketplace_skus (SKU-level override). ONLY consulted when the
+// marketplace-level model is 'hybrid'; the value decides that SKU's destination lane (self_fulfilled→WAREHOUSE,
+// platform_fulfilled→MARKETPLACE, hybrid/blank/unknown→fail-closed). Returns the raw trimmed value (lowercased at use).
+function recoWsFulfillmentModelBySku_(mskRows, scope) {
+  var m = {};
+  (mskRows || []).forEach(function (r) {
+    if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) return;
+    var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsStr_(r.fulfillment_model);
+  });
+  return m;
+}
 // Fulfillment authority: the scope's canonical marketplaces row. platform_fulfilled → MARKETPLACE; self_fulfilled →
 // WAREHOUSE; hybrid/blank/unknown → null (transport returns DESTINATION_AUTHORITY_UNRESOLVED — never guessed).
 function recoWsResolveFulfillment_(mktRows, scope) {
@@ -845,18 +856,32 @@ function handleRecommendationWorkspaceGet_(body, io) {
     // is the ONE owner that already resolved marketplaces.fulfillment_model for this scope; carry that same value
     // verbatim (never re-read, never inferred from marketplace name). '' when no marketplaces row (fail-closed).
     var scopeFulfillmentModel = recoWsStr_(ful && ful.row ? ful.row.fulfillment_model : '');
+    // F1-7N-D-2h: HYBRID marketplace destination is resolved PER SKU (supersedes the D-F1-4B-FM5-R2b hybrid fail-close,
+    // per USER authority). Only a marketplace-level 'hybrid' triggers per-SKU resolution; every non-hybrid marketplace
+    // keeps ful.mode + scopeFulfillmentModel byte-for-byte (no behavior change for self_fulfilled / platform_fulfilled).
+    var isHybridMarketplace = scopeFulfillmentModel.toLowerCase() === 'hybrid';
+    var fulfillmentBySku = isHybridMarketplace ? recoWsFulfillmentModelBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope) : null;
 
     // Server destination expansion → unified runtime per SKU × destination. Dedup by stable line identity.
     var lines = [], seen = {}, issues = [];
     for (var i = 0; i < scopeSkus.length; i++) {
       var sku = scopeSkus[i], siteSku = siteSkuBySku[sku] || null, produced;
-      if (ful.mode === 'MARKETPLACE') produced = [recoWsExpandMarketplace_(read, v.scope, sku, siteSku, calc, vmeta, v.supplyAllocationByReceiver)];
-      else if (ful.mode === 'WAREHOUSE') produced = recoWsExpandWarehouse_(read, ss, v.scope, sku, siteSku, calc, vmeta).lines;
+      // Effective destination mode + fulfillment model for THIS SKU. Non-hybrid: unchanged. Hybrid: per-SKU
+      // marketplace_skus.fulfillment_model (self_fulfilled→WAREHOUSE, platform_fulfilled→MARKETPLACE, else fail-closed;
+      // a genuinely both-lane / blank / unknown SKU is NEVER guessed — DESTINATION_AUTHORITY_UNRESOLVED).
+      var effectiveMode = ful.mode, effectiveModel = scopeFulfillmentModel;
+      if (isHybridMarketplace) {
+        var skuFm = recoWsStr_(fulfillmentBySku[sku]).toLowerCase();
+        effectiveModel = skuFm;
+        effectiveMode = (skuFm === 'platform_fulfilled') ? 'MARKETPLACE' : (skuFm === 'self_fulfilled') ? 'WAREHOUSE' : null;
+      }
+      if (effectiveMode === 'MARKETPLACE') produced = [recoWsExpandMarketplace_(read, v.scope, sku, siteSku, calc, vmeta, v.supplyAllocationByReceiver)];
+      else if (effectiveMode === 'WAREHOUSE') produced = recoWsExpandWarehouse_(read, ss, v.scope, sku, siteSku, calc, vmeta).lines;
       else produced = [KMDR.buildRecommendationLine({ destination: { destinationType: null, company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, destinationKey: 'UNRESOLVED||' + v.scope.company + '||' + v.scope.country + '||' + v.scope.marketplace + '||' + sku }, recommendationMode: 'UNRESOLVED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: 'DESTINATION_AUTHORITY_UNRESOLVED', formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })];
       for (var p = 0; p < produced.length; p++) {
         var ln = produced[p]; if (!ln) continue;
         if (seen[ln.recommendationLineId]) { issues.push(recoWsErr_('RECOMMENDATION_LINE_IDENTITY_CONFLICT', 'duplicate recommendation line identity: ' + ln.recommendationLineId)); continue; }
-        ln.fulfillmentModel = scopeFulfillmentModel;   // F1-7N-D-2f-R2 canonical fulfillment_model projection (additive)
+        ln.fulfillmentModel = effectiveModel;   // F1-7N-D-2f-R2 projection; D-2h per-SKU effective model for hybrid
         seen[ln.recommendationLineId] = 1; lines.push(ln);
       }
     }

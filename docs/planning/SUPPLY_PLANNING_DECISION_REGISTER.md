@@ -664,6 +664,37 @@ invariant, so this is a regression-lock (no code change), preserving the frozen 
   outside the frozen warehouse-isolation model; were it to become live, it would need the same cross-scope conserved
   allocation as the R2b marketplace Overseas/Factory pools (a separate freeze) — analogous to the cross-company
   FACTORY_SHARED boundary. Not present in the current model (warehouse = one destination).
+- **SUPERSEDED (hybrid clause only), F1-7N-D-2h:** the `else DESTINATION_AUTHORITY_UNRESOLVED` branch of the resolver
+  bullet above is superseded FOR `fulfillment_model = 'hybrid'` by decision **D-F1-7N-D-2h** below (per-SKU
+  resolution). The platform_fulfilled → MARKETPLACE and self_fulfilled → WAREHOUSE mappings, and the fail-close for a
+  truly unknown/blank marketplace-level model, remain frozen and unchanged.
+
+### D-F1-7N-D-2h — Hybrid marketplace destination is PER-SKU; self_fulfilled destination grain is warehouse-level (USER-approved)
+
+USER-approved business authority (F1-7N-D-2h). Supersedes ONLY the hybrid fail-close of D-F1-4B-FM5-R2b.
+
+- **Hybrid destination is PER-SKU, not per-marketplace.** A marketplace-level `fulfillment_model = 'hybrid'` does NOT
+  itself determine the destination; the canonical decider is the SKU-level `marketplace_skus.fulfillment_model`:
+  `self_fulfilled → WAREHOUSE`, `platform_fulfilled → MARKETPLACE` (frozen logical marketplace_id destination, no
+  fabricated warehouse), `hybrid | blank | unknown` (a SKU genuinely using both lanes) → `DESTINATION_AUTHORITY_UNRESOLVED`
+  (fail-closed; no split invented — explicit lane-allocation authority is still undefined). A single hybrid marketplace
+  may therefore emit BOTH a WAREHOUSE lane and a MARKETPLACE lane for different SKUs; the whole marketplace is never
+  classified as one destination type.
+- **Owner (narrow, additive):** the per-SKU effective mode is resolved inside `handleRecommendationWorkspaceGet_`'s
+  SKU loop (42), consulting `recoWsFulfillmentModelBySku_` ONLY when the marketplace-level model is 'hybrid'. The shared
+  `recoWsResolveFulfillment_` is UNCHANGED; every non-hybrid marketplace keeps its exact prior mode + fulfillment model
+  (no Site-Inventory / Gap / order-planning / monthly behavior change). No marketplace-name / country / warehouse-name
+  heuristic; no new K3 axis; FBA logical destination authority unchanged.
+- **Self_fulfilled destination grain = warehouse-level.** Each destination warehouse is an INDEPENDENT inventory / gap /
+  replenishment node. `replenishment_demand_allocation_rules` distributes FC/Sales demand BETWEEN warehouses (e.g.
+  WH-A 0.3 / WH-B 0.7 of demand 100 → 30 / 70), and each warehouse computes its own stock/gap; warehouse inventory is
+  never pooled and the split conserves total demand exactly once. `SINGLE_WAREHOUSE_RULE_POLICY = EXPLICIT_1_REQUIRED`:
+  the frozen validator fail-closes (`DEMAND_ALLOCATION_RULE_NOT_CONFIGURED`) on zero rows — there is NO implicit 1.0
+  single-warehouse fallback (D-F1-4B-E0R-3 forbids defaulting). A hybrid marketplace's self_fulfilled SKUs therefore
+  require allocation-rule rows for that scope; its platform_fulfilled SKUs do NOT (they resolve MARKETPLACE directly).
+- **Tests:** `weekly-ai-plan-hybrid-per-sku-destination-f1-7n-d-2h-r1` (25). No allocation formula / §7 / survival /
+  incremental / carton / source-priority / K3 / count-once / monthly change. Handler-only (42; not bundled) → no bundle
+  rebuild; `APPS_SCRIPT_SYNC_REQUIRED` for 42.
 
 ### D-F1-4B-FM5-R3 — Gap Materialization Scheduler + post-import orchestration (schedule-only; rollover HALT)
 
