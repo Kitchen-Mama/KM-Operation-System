@@ -298,6 +298,20 @@ OUTPUT: canonical **WEEKLY_SHIPPING** Draft header/lines only.
 ### WA-8. Non-goals (explicit)
 No second Gap engine; no second recommendation engine; no §39/§40 formula change; no frontend recommendation math; no factory→company inference; no new Request Order semantics; no schema/DB migration; no carrier/rate/lead-time/ETA/cost in the draft; no automatic approval; no automatic shipment creation; no stock reservation. **Implementation status = NOT IMPLEMENTED / NOT STARTED.**
 
+### WA-9. Weekly demand-grain / survival / weight / factory-identity authority (FROZEN — F1-7N-D0-A, 2026-08-19; USER-confirmed; decision only)
+> **Status: AUTHORITY FROZEN — assembler NOT IMPLEMENTED.** Owner of record = `SUPPLY_PLANNING_CALCULATION_RULES.md` **§35A.7** (full contract). This resolves the D0/D0-A HALTs (`WEEKLY_AI_PLAN_BACKEND_FACT_AUTHORITY_MISSING`, `FACTORY_IDENTITY_REFERENCE_VALUES_UNCONFIRMED`, `WEEKLY_SURVIVAL_NEED_GRAIN_NOT_DEFINED`, `WEEKLY_MULTIWINDOW_DEMAND_WEIGHT_DOUBLE_COUNT`) so the D0-B assembler can be built without inventing business logic. Executable guards: `assets/tests/weekly-ai-plan-demand-authority-f1-7n-d0-a-r1.test.js`.
+
+- **Count-once global invariant** across horizons / receivers / demands / Overseas+CN+TW pools / survival / `demandWeight` / allocation / persisted lines (§35A.7).
+- **Demand grain:** Horizon stays *cumulative* (`horizons[].gapQty`); the Weekly adapter projects *incremental* need `incrementalNeed(n) = max(0, cum(n) − runningMax(cum(1..n−1)))`. Only `incrementalNeed>0` becomes demand. Monthly `calculatedGap` is never weekly demand; `calculatedGap := incrementalNeedQty` is a DTO alias at the F1-7N-B boundary only.
+- **Survival once:** `ceil(18 × canonicalDailyDemand)` (existing owner) attached to the **earliest `incrementalNeed>0` window** per `sku+destinationWarehouseId` lane; later windows 0.
+- **`demandWeight` conserved:** `Σ(window demandWeight) == canonical lane demandWeight` (split ∝ incrementalNeed) — fixes the multi-window double-count in `allocateOverseasSharedPool` (no per-site grouping, `supply-planning-allocations.js:99-101`); time priority stays on Required-By / `allocation_priority`.
+- **`demandKey` = `{sku}|{destinationWarehouseId}|{windowCode}`**, identical across facts / receivers / factory demands / allocation joins.
+- **Factory identity (USER-confirmed exact `warehouse_id`; NO schema change):** `CN_YOUXIN → WH-TW-CN-FACTORY-YOUXIN`, `TW_SHENGYI → WH-TW-TW-FACTORY-RES`. Derived from the exact `warehouse_id` **only** (never country/company/name/code/token); each must be an existing `FACTORY` + `is_factory_warehouse=TRUE` + `is_active=TRUE` row, no overlap; unknown/overlap/missing → **FAIL CLOSED**.
+- **`formula_version = WEEKLY_AI_PLAN_V1`** (never `ORDER_PLANNING_GAP`); **`source_data_as_of` = canonical `maxAsOf(...)`** (never `Date.now()`/execution time).
+- **Weekly ≠ Procurement:** writes only `shipping_allocation_drafts`/`_lines`; no Request Order / PO; unresolved factory shortage is informational; monthly procurement separate.
+
+**Readiness update:** `WEEKLY_DEMAND_GRAIN_AUTHORITY_READY = YES` · `WEEKLY_COUNT_ONCE_AUTHORITY_READY = YES` · `FACTORY_IDENTITY_AUTHORITY_READY = YES` · `D0_IMPLEMENTATION_AUTHORITY_READY = YES`. **Next: F1-7N-D0-B** (build the bounded backend assembler `assembleWeeklySourceAllocationInput(...)` → F1-7N-B → F1-7N-C1, honoring §35A.7 + WA-9), then resume F1-7N-D (owner/UI/scheduler).
+
 ---
 
 ## §Persist-Adapter. Production Persistence Adapter / Repository Contract (FROZEN — Decision Only, 2026-08-03, Phase 2C Round 1C)
