@@ -208,6 +208,79 @@ No implementation of: scheduler, no-arg runners, writer, LockService, persistenc
 
 ---
 
+## §Weekly-AIPlan. Weekly Shipping AI Plan — Deterministic Pipeline & Logistics Boundary Contract (FROZEN — Decision Only, 2026-08-19, F1-7N-A2)
+
+> **Status: CONTRACT FROZEN — NOT IMPLEMENTED.** Freezes the deterministic Weekly Shipping AI Plan pipeline so F1-7N-B can build it without inventing business logic. Source-priority authority = `SUPPLY_PLANNING_CALCULATION_RULES.md` **§35A** (weekly source axis) + **§35/§40** (frozen allocators, unchanged) + **§21** (logistics objective) + **§20/§24** (overseas) + **§31/§2C.1** (FLOOR). Layer boundary = `SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md`. Persistence = §Persist-Orch (`generateRecommendationDraft`, `recommendationType="WEEKLY_SHIPPING"`). **NO new Gap/Recommendation engine; NO §39/§40 formula change; NO schema; NO carrier decision in the draft.**
+
+### WA-1. Reused authorities (owners — NOT re-implemented)
+| Concern | Owner | Note |
+|---|---|---|
+| Need / Gap / Required-By | §2C/§2D Engine A + §26/§27A (materialized Inventory Gap) | consumed verbatim; **no second Gap** |
+| Overseas allocation | `allocateOverseasSharedPool` (§20/§24/§40) | 18-day survival §20.3 first |
+| Factory allocation | `allocateFactoryDeterministic` (§35/§40) | ascending-poolKey, function unchanged |
+| Source priority (Overseas→CN→TW→unresolved) | **§35A** (NEW canonical axis) | sequential source passes; CN before TW |
+| Shipping FLOOR / residual | `calculateShippingAndResidual` (§31/§2C.1) | `FLOOR(MIN(gap,allocated)/UPC)×UPC` |
+| Weekly facts resolver (PURE, EXISTS) | `resolveWeeklyRecommendationFacts` (`supply-planning-source-facts.js`, Round 1M, 35 assertions) | consumes real §40 records; TEST_VERIFIED / UNWIRED |
+| Coarse transport method | §21 (default sea; air only for safety) | draft carries coarse method + last-mile only |
+| Persistence / orchestration | `generateRecommendationDraft` (§Persist-Orch PO-1..PO-21) | Active-Draft key PA-4 WEEKLY_SHIPPING |
+| Draft/Plan/Shipment layer boundary | Shipping Allocation Amendment 2026-07-27 | recommends / decides / executes |
+
+### WA-2. Deterministic pipeline (frozen)
+INPUT: materialized Inventory Gap + Required-By · marketplace/site identity · warehouses · overseas inventory · factory inventory · SKU carton metadata (`units_per_carton`) · existing §40 allocation outputs.
+
+1. Consume the EXISTING materialized Gap / Required-By (no recompute).
+2. Enumerate eligible destination needs for the scope.
+3. Order needs by the **§35 demand axis** (Required-By → `allocation_priority` → stable keys).
+4. Allocate **Overseas** source (§20/§24) — 18-day survival protected first.
+5. Allocate **Factory `CN_YOUXIN`** residual.
+6. Allocate **Factory `TW_SHENGYI`** residual.
+7. Apply the shipping **carton FLOOR** (§31) to the allocated qty → `recommended_qty`.
+8. Preserve the **production-required residual separately** (unmet after Overseas+CN+TW) — never fabricated.
+9. Derive the **coarse** `recommended_shipping_method` + `recommended_last_mile_delivery` from the §21 safety window (default sea; escalate only for 18-day safety / Required-By).
+10. Group lines into canonical **Weekly Shipping Recommendation groups** (`recommendation_group_no`; one coarse main mode + one last-mile per group).
+11. Build the **WEEKLY_SHIPPING Draft DTO** (header + lines).
+12. Pass the DTO to the Recommendation Persistence layer (`generateRecommendationDraft`) — the only place calc-output meets persistence.
+
+OUTPUT: canonical **WEEKLY_SHIPPING** Draft header/lines only.
+
+### WA-3. Field → owner map (draft OUTPUT)
+| Output field | Source / formula owner | Persistence owner |
+|---|---|---|
+| `recommended_source_warehouse_id` / `recommended_destination_warehouse_id` (+ code snapshots) | §35A source axis + §20/§40 records | line (`16_*`) |
+| `calculated_gap_qty` / demand & supply snapshots | §2C/§2D + §39 Ledger | line |
+| `allocation_sequence` / `recommendation_reason` / `recommendation_flags` | §40 records (modes/reason tokens preserved verbatim) | line |
+| `recommended_qty` | `calculateShippingAndResidual` FLOOR (§31) | line (immutable snapshot) |
+| `recommended_shipping_method` / `recommended_last_mile_delivery` (coarse) | §21 safety window | **header** (group-level) |
+| `recommendation_group_no` | grouping (WA-2 step 10) | header |
+| `calculation_run_id` / `draft_version` / `formula_version` / `source_data_as_of` | §Persist-Orch PO-8/PO-9 | header |
+
+### WA-4. Deterministic ordering & reason/flag tokens
+- Demand order = §35 (Required-By → priority → company → marketplace → destination → demandKey). Source order = §35A (Overseas → CN_YOUXIN → TW_SHENGYI → unresolved). Line identity = `sku|site_sku|window_code` (PO-13); duplicate → `RangeError`.
+- Reason/flag tokens are **preserved verbatim** from §40 (`NORMAL_ALLOCATION` / `PROTECTED_REALLOCATION` / `SHORTAGE_ALLOCATION` / `FACTORY_DETERMINISTIC`, `THREE_PL_REPLENISHMENT_RESERVE`, etc.). New §35A tokens (frozen): `SOURCE_OVERSEAS`, `SOURCE_FACTORY_CN_YOUXIN`, `SOURCE_FACTORY_TW_SHENGYI`, `UNRESOLVED_PRODUCTION_NEED`.
+
+### WA-5. Blocked / missing behavior (fail-closed)
+- Missing `units_per_carton` / gap / window_code / sku, or a blocked Ledger demand → **blocked line, `recommended_qty = null`** with the reason (§34A / §39 / §40 ownership). **Valid zero stays 0** (0 ≠ missing). Unmet-after-all-sources → unresolved residual preserved (not blocked, not fabricated).
+- MISSING never coerces to 0; no fabricated supply; no default air.
+
+### WA-6. Logistics boundary (Phase 4 — do NOT implement carrier ranking here)
+- **AI Plan (this contract):** emits the **coarse** transit type only (`recommended_shipping_method` main mode + `recommended_last_mile_delivery`). It selects **no** `carrier_id`, `rate_card_id`, `lead_time_id`, no exact ETA, no freight/duty/tax.
+- **Weekly Shipping Plan (owned by `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` + the Amendment §4.1):** resolves candidate Carrier / Rate Card / Lead Time; rejects routes that cannot meet Required-By; among feasible candidates presents the lowest-cost option; re-quotes when quantity/endpoints/mode changes; user may override before approval; **approval freezes the decision snapshot.** `carrier_lead_times` / `carrier_rate_cards` are consumed **only** by the Weekly Plan, never by the draft.
+- **Invariant:** **Allocation Draft recommends · Weekly Plan decides · Shipment executes.**
+
+### WA-7. Runtime readiness map (next slices — NOT authorized here)
+| Slice | Scope |
+|---|---|
+| **F1-7N-B** | Weekly AI Plan **pure source-allocation builder** — realize §35A over `resolveWeeklyRecommendationFacts` (Overseas→CN→TW→unresolved; FLOOR; coarse method); test-first (the §35A.5 13 scenarios). No I/O. |
+| **F1-7N-C** | Weekly Recommendation **Draft persistence/orchestrator wiring** — `generateRecommendationDraft(WEEKLY_SHIPPING)` → `shipping_allocation_drafts`/`_lines` via the frozen §Persist-Orch/§Persist-Adapter (LockService, natural-key upsert, user-edit protection). |
+| **F1-7N-D** | **AI Plan UI → `generateRecommendationDraft(WEEKLY_SHIPPING)`** for the on-screen scope + **scheduled-run parity** (same core as `runWeeklyShippingRecommendation`). |
+| **F1-7N-E** | **Weekly Shipping Plan promotion** + actual logistics/quote decision wiring (WA-6 Weekly Plan owner; Carrier/Rate/Lead-Time). |
+| **F1-7N-F** | Scheduler acceptance / idempotency / retry / user-edit protection / live verification. |
+
+### WA-8. Non-goals (explicit)
+No second Gap engine; no second recommendation engine; no §39/§40 formula change; no frontend recommendation math; no factory→company inference; no new Request Order semantics; no schema/DB migration; no carrier/rate/lead-time/ETA/cost in the draft; no automatic approval; no automatic shipment creation; no stock reservation. **Implementation status = NOT IMPLEMENTED / NOT STARTED.**
+
+---
+
 ## §Persist-Adapter. Production Persistence Adapter / Repository Contract (FROZEN — Decision Only, 2026-08-03, Phase 2C Round 1C)
 
 > **Status: CONTRACT FROZEN (Round 1C) — SLICE 1 (Round 1D) — LOCKSERVICE (Round 1E) — PLAN BUILDER + APPS SCRIPT BUNDLE + LOCKED ORCHESTRATOR (Round 1G) — LOCKED-PATH ENFORCEMENT + LOCKED USER-EDIT + TERMINAL-GUARD UNIFICATION (Round 1H) all IMPLEMENTED / TEST VERIFIED (2026-08-03).** Maps the pure Round 1B core (`assets/js/core/supply-planning-persistence.js`, IMPLEMENTED / 96 tests) to the real Apps Script / Google Sheets tables.

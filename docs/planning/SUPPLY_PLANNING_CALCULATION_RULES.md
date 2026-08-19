@@ -532,7 +532,7 @@ Net Order Need = max(0, 1,500 − 1,200) = 300
 - Factory stock can be used as a **shared source pool** in planning (source-side only — never a destination inventory term, §8/§31).
 - **Company restriction should NOT block shortage calculation** — the goal is to compute **real net shortage** accurately across the group.
 - **Deterministic allocation order is now FROZEN in §35** (grain `warehouse_id + Master SKU`; order = earliest Required-by date → higher `allocation_priority` → stable company/marketplace/destination key; remaining source quantity decremented after each allocation; never duplicated to multiple companies).
-- **`TW_SHENGYI` preferred-use is a Future Extension (§19)** — no hidden default priority. It applies **only** when an explicit SKU/Series/route mapping specifies it; absent such mapping, the deterministic order in §35 governs.
+- **Factory ordering has TWO SEPARATE axes — never conflated (F1-7N-A2 reconciliation):** the **DEMAND axis** (§35 — *which requirement* is served first) is frozen; the **SOURCE axis** (*which physical factory* is drawn first for a requirement) depends on the product flow. For **MONTHLY cross-company shared-pool conservation** (§35/§40 `allocateFactoryDeterministic`) the source tie-break is **ascending `poolKey`** with **no hidden company/factory preference**. For the **WEEKLY_SHIPPING recommendation** the source axis is the explicit **`CN_YOUXIN` → `TW_SHENGYI`** priority frozen in **§35A** (CANONICAL — no longer a Future Extension). A *further* configured per-SKU/Series/route TW preference **beyond §35A** remains a Future Extension (§19). These two axes are independent: source priority never re-orders which demand is served first.
 
 ---
 
@@ -622,7 +622,7 @@ Suggested Order Qty = CEILING(Net Order Need ÷ Units Per Carton) × Units Per C
 | Shipment FLOOR / Order CEILING | §2C.1 / §31 (FLOOR ship) / §14 (CEILING order) |
 | Missing UPC handling | §14 / §34 (block submit; no silent default) |
 
-**Future Extensions / Non-Blocking** (do NOT affect the current two engines; deferred, not blocking the freeze): AI learning & automatic statistical correction · dynamic Safety Stock / dynamic optimization · dynamic carrier / air-vs-sea optimization beyond §24.11 · intercompany accounting automation (SO/PO/AR/AP ownership) · ERP `sales_orders` ownership layer · future configured `TW_SHENGYI` preference (§35) · MOQ automation (§14) · BigQuery intelligence. See the Future Extensions summary in `project-current-state.md`.
+**Future Extensions / Non-Blocking** (do NOT affect the current two engines; deferred, not blocking the freeze): AI learning & automatic statistical correction · dynamic Safety Stock / dynamic optimization · dynamic carrier / air-vs-sea optimization beyond §24.11 · intercompany accounting automation (SO/PO/AR/AP ownership) · ERP `sales_orders` ownership layer · **further** configured `TW_SHENGYI` preference **beyond the canonical §35A weekly source-priority** (§35/§35A — the weekly `CN_YOUXIN → TW_SHENGYI` order is now canonical, NOT future) · MOQ automation (§14) · BigQuery intelligence. See the Future Extensions summary in `project-current-state.md`.
 
 ---
 
@@ -1688,9 +1688,60 @@ Both scenarios are **EXECUTED_EXISTING_CORE (Round 8B)** against the implemented
 - Verify the factory/warehouse is **eligible** to produce/ship that SKU before allocating.
 - **Deterministic order:** (1) earliest **Required-by date**, (2) higher **`allocation_priority`**, (3) stable **company / marketplace / destination key**.
 - After each allocation, **decrement the factory's remaining source quantity**; the same factory quantity is **never duplicated to multiple companies**.
-- **`TW_SHENGYI` has no hidden default preference** — applied only with an explicit SKU/Series/route mapping; otherwise the deterministic order above governs. Configured `TW_SHENGYI` preference = Future Extension (§19).
+- **`TW_SHENGYI` has no hidden default preference in THIS (monthly cross-company shared-pool) conservation order** — the shared pool is consumed in **ascending `poolKey`**; §35 is the DEMAND-ordering + conservation axis, not a factory-source-preference axis. **The WEEKLY_SHIPPING recommendation source-selection uses the explicit `CN_YOUXIN` → `TW_SHENGYI` priority frozen in §35A (canonical — no longer a Future Extension).** A further configured per-mapping TW preference **beyond §35A** remains a Future Extension (§19). §35 (monthly conservation) is **unchanged** by §35A — they are separate consumers of the same physical pool at different cadences, each reading current eligible stock and each conserving ≤ 100% of it.
 
-> **Deterministic public-function contract:** the pure allocator that consumes the §39 `FACTORY` pools and applies this §35 deterministic order is `allocateFactoryDeterministic`, frozen in **§40** (Round 10A, v4.7) and **IMPLEMENTED (Round 10B) in `assets/js/core/supply-planning-allocations.js`**. §35 owns the *ordering rule*; §40 owns the *function boundary*.
+> **Deterministic public-function contract:** the pure allocator that consumes the §39 `FACTORY` pools and applies this §35 deterministic order is `allocateFactoryDeterministic`, frozen in **§40** (Round 10A, v4.7) and **IMPLEMENTED (Round 10B) in `assets/js/core/supply-planning-allocations.js`**. §35 owns the *ordering rule*; §40 owns the *function boundary*. **This §40 function contract and its 112 frozen unit assertions are NOT changed by §35A** — the weekly `CN_YOUXIN → TW_SHENGYI` source priority is realized by a separate weekly source-selection axis (§35A) that consumes §40's overseas + factory allocation outputs, never by re-ordering `allocateFactoryDeterministic`'s internal ascending-`poolKey` sort.
+
+---
+
+## 35A. Weekly Shipping Source-Priority Freeze (CANONICAL — F1-7N-A2, 2026-08-19; documentation only, NO runtime)
+
+**Owner of the WEEKLY_SHIPPING source-selection axis.** This closes the remaining authority gap for the Weekly AI Plan so it can be implemented (F1-7N-B) without inventing business logic. It is a **priority/ordering rule only** — it changes **no** Gap/shortage/projection formula, **no** §39/§40 function contract, and **no** monthly procurement logic. It is realized by consuming the EXISTING §39 Ledger + §40 allocation outputs in a fixed source order; it does **not** create a second Gap engine or a second recommendation engine.
+
+### 35A.1 Two independent axes (never conflated)
+- **DEMAND axis (unchanged, §35):** answers **which requirement is served first** — ordered by earliest **Required-By** → higher **`allocation_priority`** → stable `company / marketplace / destination key`. §35A does **not** re-order this.
+- **SOURCE axis (this section, NEW canonical):** answers **which physical source is attempted first** for a given requirement.
+
+### 35A.2 Source priority (frozen order)
+For each unmet destination requirement (taken in the §35 demand order), draw supply in this strict order, stopping when the requirement is met:
+
+1. **Eligible Overseas warehouse stock** — allocated by the §20 Overseas Shared Inventory Allocation Engine (same Company + Country + eligible Warehouse; 18-day survival protected first §20.3; `allocation_priority` weight §20.4). Overseas is attempted **before** Factory.
+2. **Factory `CN_YOUXIN`** — remaining need after Overseas.
+3. **Factory `TW_SHENGYI`** — remaining need after `CN_YOUXIN`. **`CN_YOUXIN` has strict priority over `TW_SHENGYI`.**
+4. **Unresolved / production-order need** — any remainder after Overseas + CN + TW is preserved **separately** as unresolved shortage (a production/order signal). **Supply is NEVER fabricated** to close it.
+
+### 35A.3 Hard invariants (inherited, restated for this axis)
+- **Never over-allocate a physical pool (USER decision A):** the SUM drawn from any physical pool ≤ **100%** of that pool's actual eligible available quantity (§20.3/§23.5/§39/§40 conservation; "never allocate more than the calculated site Need", §20.15). Each physical unit is allocated **at most once** (§35/§40).
+- **Overseas and Factory are SEPARATE domains** (§6.0 / §13) — their balances are **never merged**; the source axis draws from each independently, in the order above.
+- **Need/urgency is driven by the EXISTING calculated Gap / Required-By (USER decision B)** — §2C/§2D Engine A + §26/§27A Required-By. §35A **must not** invent or recompute a second Gap.
+- **Supply Safety is Priority 1 (USER decision D):** the 18-day Minimum Survival Stock (§20.3/§21.1) is protected before any lower objective.
+- **Logistics objective order + transport method (USER decisions E/F) are owned by §21** (Supply Safety → Lowest Logistics Cost → Minimum Number of Shipments → Container Utilization; default **45-day sea**; escalate to a faster mode **only** when the slower mode cannot meet Required-By / 18-day safety; **air is never the default**). §35A only emits the **coarse** transport recommendation §21 implies; it selects no carrier.
+- **Carton FLOOR (§31/§2C.1):** the weekly recommended shipping quantity is `recommendedShippingQty = FLOOR( MIN(calculatedGap, totalAllocated) / units_per_carton ) × units_per_carton` — the existing named `calculateShippingAndResidual` owner; **never** the monthly carton CEILING; residual production-required is preserved separately.
+
+### 35A.4 Relationship to the frozen §40 allocators
+§35A consumes the outputs of `allocateOverseasSharedPool` (§20/§24) and `allocateFactoryDeterministic` (§35/§40) — it does **not** replace or re-order them. The `CN_YOUXIN → TW_SHENGYI` order is realized by presenting the Factory pools to the source axis **partitioned by factory identity and consumed CN-first then TW** (sequential source passes), **not** by changing `allocateFactoryDeterministic`'s internal ascending-`poolKey` sort. **§39/§40 function contracts and their 112 frozen unit assertions are unchanged.**
+
+### 35A.5 Frozen contract scenarios (documentation; executable tests land with F1-7N-B)
+Expected deterministic outcomes for the source axis (demand order held constant):
+
+| # | Situation | Expected |
+|---|-----------|----------|
+| 1 | Overseas ≥ need | Overseas covers fully; **Factory untouched** (CN & TW = 0) |
+| 2 | Overseas partial | Overseas to exhaustion; **CN** covers the residual |
+| 3 | Overseas = 0 | **CN** covers |
+| 4 | CN insufficient | CN to exhaustion; **TW** covers the remainder |
+| 5 | CN ≥ residual | CN covers; **TW = 0** |
+| 6 | Overseas + CN + TW all insufficient | draw all three to exhaustion; **unresolved residual preserved** (production/order need); nothing fabricated |
+| 7 | any | total drawn from each physical pool **≤ that pool's eligible available** (never > 100%) |
+| 8 | shared factory pool across marketplaces | the **same physical pool is never double-consumed** across receivers (§35/§40 count-once) |
+| 9 | two requirements, different Required-By | **earlier Required-By served first** (demand axis, §35) |
+| 10 | a later requirement could grab stock a §35-earlier requirement still needs | **source priority never lets a later demand consume ahead of the §35 demand order** |
+| 11 | allocated qty not a carton multiple | **shipping FLOOR** applied (§31); residual production-required preserved |
+| 12 | any | line emits **no** `carrier_id` / `rate_card_id` / `lead_time_id` / ETA / cost — only coarse method + last-mile (§35A.6) |
+| 13 | slower mode meets Required-By / 18-day | **sea (slowest/cheapest) chosen; air NOT default** — faster only when safety requires (§21) |
+
+### 35A.6 Output boundary (coarse only — full contract in `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` §Weekly-AIPlan)
+The Weekly AI Plan emits a canonical **WEEKLY_SHIPPING** draft (header + lines) that MAY carry source warehouse, destination warehouse, Required-By window, `recommended_qty`, and a **coarse** `recommended_shipping_method` + `recommended_last_mile_delivery`; it **MUST NOT** persist/select `carrier_id`, `rate_card_id`, `lead_time_id`, exact ETA, or freight/duty/tax — those belong to the Weekly Shipping Plan per `SHIPPING_ALLOCATION_TO_SHIPMENT_CANONICAL_AMENDMENT_2026-07-27.md`. **Allocation Draft recommends; Weekly Plan decides; Shipment executes.**
 
 ---
 
