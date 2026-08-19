@@ -3608,9 +3608,35 @@ function _replenDarBuildPayload(scope, rows) {
     };
 }
 
+// F1-7N-D-2k-UX1 — PURE: the canonical fulfillment_model for the selected marketplace, from the ALREADY-loaded
+// marketplace read-model (getMarketplaces) — NO extra API call, NO broad DB read. '' when the marketplace is absent
+// (→ fail-closed by the classifier below). Never inferred from a marketplace NAME.
+function _replenDarFulfillmentOf(marketplaces, marketplaceId) {
+    var want = String(marketplaceId == null ? '' : marketplaceId).trim();
+    if (!want) return '';
+    var rec = (marketplaces || []).filter(function (m) { return String((m && m.marketplaceId) == null ? '' : m.marketplaceId).trim() === want; })[0];
+    return rec ? String(rec.fulfillmentModel == null ? '' : rec.fulfillmentModel).trim().toLowerCase() : '';
+}
+
+// F1-7N-D-2k-UX1 — PURE: Warehouse Allocation applicability by CANONICAL fulfillment_model (never marketplace name).
+// self_fulfilled / hybrid → editor applies (hybrid = self lane only). platform_fulfilled → not applicable (platform
+// plans to the logical MARKETPLACE; physical FCs are chosen later at shipment execution). blank/unknown → FAIL CLOSED.
+function _replenDarApplicability(model) {
+    var m = String(model == null ? '' : model).trim().toLowerCase();
+    if (m === 'self_fulfilled' || m === 'hybrid') return { applicable: true, kind: m, message: '' };
+    if (m === 'platform_fulfilled') return { applicable: false, kind: 'platform_fulfilled',
+        message: 'Warehouse Allocation is not required for this marketplace.\nPlatform-fulfilled inventory is planned to the marketplace directly.\nPhysical fulfillment centers are selected later during shipment execution.' };
+    return { applicable: false, kind: 'unknown',
+        message: 'Fulfillment configuration unavailable for this marketplace.\nSet the marketplace fulfillment_model (self_fulfilled / platform_fulfilled / hybrid) before configuring Warehouse Allocation.' };
+}
+
 // ---- DOM wiring (thin) -----------------------------------------------------
+var _replenDarSaving = false;              // save-in-flight guard: backdrop/Escape must NOT dismiss mid-write
+var _replenDarBackdropHandler = null;      // overlay click listener (attached only while the modal is open)
+var _replenDarKeyHandler = null;           // document Escape listener (attached only while the modal is open)
 function _replenDarModalEls() { return { modal: document.getElementById('replen-dar-modal'), overlay: document.getElementById('replen-modal-overlay') }; }
 function _replenDarReadWarehouses() { try { return (typeof _irWsGet === 'function') ? (_irWsGet('getWarehouses') || []) : []; } catch (_e) { return []; } }
+function _replenDarReadMarketplaces() { try { return (typeof _irWsGet === 'function') ? (_irWsGet('getMarketplaces') || []) : []; } catch (_e) { return []; } }
 // F1-7N-D-2k-R1: hydrate from the Script-Property config (scope-targeted READ), NOT the whole-DB cache.
 async function _replenDarReadRules(scope) {
     try {
@@ -3626,13 +3652,51 @@ async function _replenDarReadRules(scope) {
 async function openReplenDemandAllocationModal() {
     var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : { company: '', country: '', marketplace: '' };
     if (!scope.company || !scope.country || !scope.marketplace) { alert('Select a Country and Marketplace first, then open Warehouse Allocation.'); return; }
-    var ruleRows = await _replenDarReadRules(scope);
-    var rows = _replenDarCandidates(_replenDarReadWarehouses(), ruleRows, scope);
+    // F1-7N-D-2k-UX1 — PLATFORM/UNKNOWN GUARD (canonical fulfillment_model only): platform-fulfilled scopes do NOT open
+    // the editor and do NOT call warehouseAllocation.get; unknown fulfillment fails closed. Both show a bounded notice.
+    var model = _replenDarFulfillmentOf(_replenDarReadMarketplaces(), scope.marketplaceId);
+    var app = _replenDarApplicability(model);
+    if (!app.applicable) { alert(app.message); return; }
+    // Applicable (self_fulfilled / hybrid): acknowledge the click IMMEDIATELY — show the modal shell with a Loading
+    // state, then hydrate rows once the scoped async config read returns (no broad DB read, no getOperationDb).
     var ctx = document.getElementById('replen-dar-context');
     if (ctx) ctx.textContent = 'Company: ' + scope.company + '   Country: ' + scope.country + '   Marketplace: ' + scope.marketplace;
-    _replenDarRenderRows(rows);
+    _replenDarShowLoading();
     var e = _replenDarModalEls();
     if (e.modal && e.overlay) { e.modal.classList.add('is-open'); e.overlay.classList.add('is-open'); }
+    _replenDarBindDismiss();
+    var ruleRows = await _replenDarReadRules(scope);
+    // Ignore a late hydration if the user already closed the modal.
+    if (e.modal && !e.modal.classList.contains('is-open')) return;
+    var rows = _replenDarCandidates(_replenDarReadWarehouses(), ruleRows, scope);
+    _replenDarRenderRows(rows);
+}
+// Immediate Loading affordance (rows container) — replaced by real rows on hydrate.
+function _replenDarShowLoading() {
+    var tb = document.getElementById('replen-dar-rows');
+    var empty = document.getElementById('replen-dar-empty');
+    if (empty) empty.style.display = 'none';
+    if (tb) tb.innerHTML = '<tr><td colspan="4" style="color:#94A3B8;font-size:13px;padding:10px 0;">Loading…</td></tr>';
+    var msg = document.getElementById('replen-dar-msg'); if (msg) msg.textContent = '';
+    var ft = document.getElementById('replen-dar-forecast-total'), st = document.getElementById('replen-dar-sales-total');
+    if (ft) { ft.textContent = '0%'; ft.style.color = '#DC2626'; }
+    if (st) { st.textContent = '0%'; st.style.color = '#DC2626'; }
+}
+// Backdrop-click + Escape dismiss, attached ONLY while the modal is open (does not affect other modals). Inside-click
+// is inherently protected: the overlay is a SIBLING of the modal, so a click on modal content is never the overlay
+// target. A dismiss is suppressed while a save is in flight (E/H).
+function _replenDarBindDismiss() {
+    var e = _replenDarModalEls();
+    _replenDarUnbindDismiss();
+    if (e.overlay) { _replenDarBackdropHandler = function (ev) { if (_replenDarSaving) return; if (ev.target === e.overlay) closeReplenDemandAllocationModal(); }; e.overlay.addEventListener('click', _replenDarBackdropHandler); }
+    _replenDarKeyHandler = function (ev) { if ((ev.key === 'Escape' || ev.keyCode === 27) && !_replenDarSaving) closeReplenDemandAllocationModal(); };
+    document.addEventListener('keydown', _replenDarKeyHandler);
+}
+function _replenDarUnbindDismiss() {
+    var e = _replenDarModalEls();
+    if (_replenDarBackdropHandler && e.overlay) { e.overlay.removeEventListener('click', _replenDarBackdropHandler); }
+    if (_replenDarKeyHandler) { document.removeEventListener('keydown', _replenDarKeyHandler); }
+    _replenDarBackdropHandler = null; _replenDarKeyHandler = null;
 }
 function _replenDarRenderRows(rows) {
     var tb = document.getElementById('replen-dar-rows'); if (!tb) return;
@@ -3674,11 +3738,22 @@ function _replenDarOnChange() {
     if (st) { st.textContent = (sBp / 100) + '%'; st.style.color = (sBp === 10000) ? '#16A34A' : '#DC2626'; }
 }
 function closeReplenDemandAllocationModal() {
+    if (_replenDarSaving) return;   // never dismiss mid-write (buttons are disabled; backdrop/Escape already guarded)
+    _replenDarUnbindDismiss();
     var e = _replenDarModalEls();
     if (e.modal && e.overlay) { e.modal.classList.remove('is-open'); e.overlay.classList.remove('is-open'); }
     var msg = document.getElementById('replen-dar-msg'); if (msg) msg.textContent = '';
 }
+// Toggle the save-in-flight lock: disable Cancel/Save + suppress backdrop/Escape dismiss so the user is never left
+// uncertain whether the write completed.
+function _replenDarSetSaving(on) {
+    _replenDarSaving = !!on;
+    var save = document.getElementById('replen-dar-save-btn'), cancel = document.getElementById('replen-dar-cancel-btn');
+    if (save) { save.disabled = !!on; save.textContent = on ? 'Saving…' : 'Save'; }
+    if (cancel) { cancel.disabled = !!on; }
+}
 function saveReplenDemandAllocation() {
+    if (_replenDarSaving) return;   // ignore double-submit
     var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : {};
     var rows = _replenDarCollectRows();
     var v = _replenDarValidate(rows);
@@ -3686,11 +3761,13 @@ function saveReplenDemandAllocation() {
     if (!v.ok) { if (msg) msg.textContent = v.error; else alert(v.error); return; }
     if (!(window.KM && window.KM.DB && window.KM.DB.saveReplenishmentDemandAllocationRules)) { alert('Warehouse Allocation API is not available.'); return; }
     var payload = _replenDarBuildPayload(scope, rows);
+    _replenDarSetSaving(true);
     window.KM.DB.saveReplenishmentDemandAllocationRules(payload).then(function (result) {
+        _replenDarSetSaving(false);
         if (result && result.success === false) { if (msg) msg.textContent = result.error || 'Save failed.'; return; }
         closeReplenDemandAllocationModal();
         alert('Allocation updated for ' + scope.company + ' / ' + scope.country + ' / ' + scope.marketplace + '.\nRecalculate this scope to apply the new demand split.');
-    }).catch(function (err) { if (msg) msg.textContent = (err && err.message) ? err.message : String(err); });
+    }).catch(function (err) { _replenDarSetSaving(false); if (msg) msg.textContent = (err && err.message) ? err.message : String(err); });
 }
 window.openReplenDemandAllocationModal = openReplenDemandAllocationModal;
 window.closeReplenDemandAllocationModal = closeReplenDemandAllocationModal;
@@ -3700,6 +3777,8 @@ window._replenDarCandidates = _replenDarCandidates;
 window._replenDarValidate = _replenDarValidate;
 window._replenDarBuildPayload = _replenDarBuildPayload;
 window._replenDarConfigToRuleRows = _replenDarConfigToRuleRows;
+window._replenDarFulfillmentOf = _replenDarFulfillmentOf;
+window._replenDarApplicability = _replenDarApplicability;
 
 // ---- Sync Regional Details (idempotent, resumable backfill trigger) ----
 // Scans marketplace_skus and CREATES the missing sku_regional_details row for each
