@@ -33,6 +33,36 @@
   function nonEmpty(v) { return str(v).length > 0; }
   function num(v) { var n = Number(v); return isFinite(n) ? n : null; }
 
+  // resolveWorkspaceLineDestination(line) → { destinationRef, destinationType, isPhysicalWarehouse }  (F1-7N-D-2c)
+  // Resolve the canonical ALLOCATION destination reference from a recommendation-workspace line, reusing the FROZEN
+  // KMDR destination classification (F1-4B-FM1 / decisions D-F1-4B-FM5-R2b · D-F1-4B-E0R-1):
+  //   WAREHOUSE   → destinationRef = warehouse_id      (physical; self_fulfilled/3PL — UNCHANGED behavior)
+  //   MARKETPLACE → destinationRef = marketplace_id     (LOGICAL platform node for platform_fulfilled/FBA;
+  //                                                      NEVER a fabricated Amazon warehouse — the final Amazon FC /
+  //                                                      carrier / appointment stays downstream Shipping-Plan/Shipment)
+  // The weekly allocation engine (KMAF/KMWIA/KMWSA) treats the destination ONLY as a stable demandKey identity — it is
+  // never a physical-warehouse FK — so a marketplace_id destination flows through unchanged and is NEVER classified as
+  // a physical warehouse (isPhysicalWarehouse=true ONLY for a WAREHOUSE node; a marketplace_id can never match the
+  // exact CN/TW factory identity). Fail-closed: destinationRef='' (caller SKIPS the line) when the workspace line has
+  // no resolved canonical destination (e.g. DESTINATION_AUTHORITY_UNRESOLVED). Mirrors KMDR's legacy rule: a bare
+  // warehouseId ⇒ WAREHOUSE, a bare marketplace ref ⇒ MARKETPLACE.
+  function resolveWorkspaceLineDestination(line) {
+    line = isObj(line) ? line : {};
+    var type = str(line.destinationType).toUpperCase();
+    var whId = str(line.warehouseId);
+    var mktRef = nonEmpty(line.destinationRefId) ? str(line.destinationRefId) : str(line.marketplaceId);
+    if (!type) type = nonEmpty(whId) ? 'WAREHOUSE' : (nonEmpty(mktRef) ? 'MARKETPLACE' : '');
+    if (type === 'WAREHOUSE') {
+      var wref = nonEmpty(whId) ? whId : str(line.destinationRefId);
+      return { destinationRef: wref, destinationType: nonEmpty(wref) ? 'WAREHOUSE' : '', isPhysicalWarehouse: nonEmpty(wref) };
+    }
+    if (type === 'MARKETPLACE') {
+      var mref = nonEmpty(line.destinationRefId) ? str(line.destinationRefId) : str(line.marketplaceId);
+      return { destinationRef: mref, destinationType: nonEmpty(mref) ? 'MARKETPLACE' : '', isPhysicalWarehouse: false };
+    }
+    return { destinationRef: '', destinationType: '', isPhysicalWarehouse: false };
+  }
+
   // mapWeeklyHarvestToBatchRequest(harvest) → { ready, issues, request }
   //   harvest = {
   //     planningCycle, businessScope:{company,country,source_page}, mode?, confirmRegenerateOverUserEdits?, actor?, now?,
@@ -122,7 +152,8 @@
 
   return {
     mapWeeklyHarvestToBatchRequest: mapWeeklyHarvestToBatchRequest,
+    resolveWorkspaceLineDestination: resolveWorkspaceLineDestination,
     SURVIVAL_HORIZON_DAYS: SURVIVAL_HORIZON_DAYS,
-    _version: 'f1-7n-d-2b-r1'
+    _version: 'f1-7n-d-2c-r1'
   };
 });

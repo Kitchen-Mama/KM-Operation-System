@@ -111,7 +111,7 @@ if (kmafRes && kmafRes.ready && Array.isArray(kmafRes.receiverFacts) && kmafRes.
 
 section('G determinism + single-owner surface');
 eq(KMWHA.mapWeeklyHarvestToBatchRequest(harvest()), KMWHA.mapWeeklyHarvestToBatchRequest(harvest()), 'G identical harvest → identical request');
-eq(Object.keys(KMWHA).sort(), ['SURVIVAL_HORIZON_DAYS', '_version', 'mapWeeklyHarvestToBatchRequest'], 'G bounded surface');
+eq(Object.keys(KMWHA).sort(), ['SURVIVAL_HORIZON_DAYS', '_version', 'mapWeeklyHarvestToBatchRequest', 'resolveWorkspaceLineDestination'], 'G bounded surface');
 eq(KMWHA.SURVIVAL_HORIZON_DAYS, 18, 'G frozen survival horizon = 18');
 
 console.log('\n----------------------------------------');

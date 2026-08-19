@@ -210,9 +210,11 @@ function weeklyAiPlanPersistenceDeps_(ss) {
 }
 
 /**
- * Enumerate all (marketplace, sku, destinationWarehouseId) shipping sites for the (company,country) universe, each
- * with per-window horizons, via the recommendation workspace (per marketplace). WAREHOUSE lines only (a physical
- * destination warehouse is required to ship; MARKETPLACE/platform_fulfilled lines have warehouseId=null → skipped).
+ * Enumerate all (marketplace, sku, destination) shipping sites for the (company,country) universe, each with per-window
+ * horizons, via the recommendation workspace (per marketplace). BOTH destination topologies are included via the frozen
+ * canonical destination authority (F1-7N-D-2c): WAREHOUSE lines carry warehouse_id (self_fulfilled/3PL); MARKETPLACE
+ * lines carry the LOGICAL marketplace_id destination (platform_fulfilled/FBA) — resolved by KMWHA.resolveWorkspaceLineDestination
+ * (reuses KMDR). Only lines with NO resolved canonical destination (DESTINATION_AUTHORITY_UNRESOLVED) are skipped.
  * LIVE-VERIFY (Apps-Script-runtime only).
  */
 function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors) {
@@ -250,14 +252,19 @@ function weeklyAiPlanEnumerateSites_(ss, scope, upcBySku, errors) {
       var pg = resp.data.pagination || {}; totalPages = pg.totalPages || 1;
       for (var li = 0; li < lines.length; li++) {
         var line = lines[li];
-        var dest = weeklyAiPlanStr_(line.warehouseId);
-        if (!dest) continue; // MARKETPLACE/platform line — no physical destination warehouse
+        // Canonical ALLOCATION destination reference (F1-7N-D-2c): WAREHOUSE → warehouse_id (self_fulfilled/3PL,
+        // unchanged); MARKETPLACE → marketplace_id (platform_fulfilled/FBA LOGICAL node — never a fabricated Amazon
+        // warehouse; final Amazon FC stays downstream). PURE, Node-verified resolver (KMWHA) reusing the frozen KMDR
+        // classification; fail-closed skip when the line has no resolved canonical destination.
+        var d = KMWHA.resolveWorkspaceLineDestination(line);
+        var dest = weeklyAiPlanStr_(d.destinationRef);
+        if (!dest) continue; // DESTINATION_AUTHORITY_UNRESOLVED — no canonical destination
         if (!Array.isArray(line.horizons) || !line.horizons.length) continue; // no per-window shortage structure
         var cum = {}, reqBy = {};
         line.horizons.forEach(function (h) { var wc = weeklyAiPlanStr_(h.windowCode); if (wc) { cum[wc] = h.gapQty; reqBy[wc] = h.requiredByDate; } });
         sites.push({
           marketplace: marketplace, sku: weeklyAiPlanStr_(line.sku), siteSku: weeklyAiPlanStr_(line.siteSku),
-          destinationWarehouseId: dest, cumulativeGapByWindow: cum, requiredByByWindow: reqBy,
+          destinationWarehouseId: dest, destinationType: d.destinationType, cumulativeGapByWindow: cum, requiredByByWindow: reqBy,
           fulfillmentModel: weeklyAiPlanStr_(line.fulfillmentModel), allocationPriority: prByMkt[marketplace],
           unitsPerCarton: (upcBySku || {})[weeklyAiPlanStr_(line.sku)], sourceDataAsOf: line.sourceDataAsOf || null
         });
