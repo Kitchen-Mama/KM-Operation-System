@@ -3506,6 +3506,168 @@ window.openAddMarketplaceModal = openAddMarketplaceModal;
 window.closeAddMarketplaceModal = closeAddMarketplaceModal;
 window.saveMarketplace = saveMarketplace;
 
+// ============================================================================
+// F1-7N-D-2j — Site Inventory → More Options → Warehouse Allocation config modal.
+// Edits ONLY the SELF_FULFILLED demand-allocation for the selected (company,country,marketplace) in
+// replenishment_demand_allocation_rules (the sole planning-membership authority; D-2i-R1). Platform/FBA lanes are
+// unaffected. The PICKER candidate set = frozen 3PL inclusion (warehouse_type='3PL' + active + company + country) —
+// convenience only — UNIONed with warehouses already referenced by active rules (so current membership is never
+// hidden). FBA/RETURN/FACTORY execution warehouses are excluded from the picker. Phase-2 may add a durable eligibility
+// authority to admit future non-3PL self-operated inventory warehouses. PURE helpers below are Node-verified.
+// ============================================================================
+function _replenDarEqv(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
+function _replenDarRuleActive(r) { var st = String(r && r.status == null ? '' : r.status).trim().toLowerCase(); return st === 'active' || (r && r.status === true) || st === ''; }
+
+// PURE: candidate rows for the modal. warehouses = normalized getWarehouses rows; rules = normalized
+// getReplenishmentDemandAllocationRules rows; scope = {company,country,marketplace}. Returns ordered
+// [{warehouseId, warehouseName, warehouseType, checked, forecastPct, salesPct, fromRule}].
+function _replenDarCandidates(warehouses, rules, scope) {
+    scope = scope || {};
+    var activeRuleByWh = {};
+    (rules || []).forEach(function (r) {
+        if (!_replenDarEqv(r.company, scope.company) || !_replenDarEqv(r.country, scope.country) || !_replenDarEqv(r.marketplace, scope.marketplace)) return;
+        if (!_replenDarRuleActive(r)) return;
+        var wh = String(r.destinationWarehouseId || '').trim();
+        if (wh) activeRuleByWh[wh] = r;
+    });
+    var whById = {}, out = [], seen = {};
+    (warehouses || []).forEach(function (w) { if (w && w.warehouseId) whById[String(w.warehouseId).trim()] = w; });
+    function push(w) {
+        var id = String((w && w.warehouseId) || '').trim(); if (!id || seen[id]) return; seen[id] = 1;
+        var ar = activeRuleByWh[id];
+        out.push({
+            warehouseId: id,
+            warehouseName: (w && (w.warehouseName || w.warehouseCode)) || id,
+            warehouseType: (w && w.warehouseType) || '',
+            checked: !!ar,
+            forecastPct: (ar && ar.forecastAllocationRatio != null) ? Math.round(ar.forecastAllocationRatio * 10000) / 100 : '',
+            salesPct: (ar && ar.salesAllocationRatio != null) ? Math.round(ar.salesAllocationRatio * 10000) / 100 : '',
+            fromRule: !!ar
+        });
+    }
+    // Phase-1 picker filter: frozen 3PL inclusion (mirrors eligible3plWarehouses / §23.6). Excludes FBA/RETURN/FACTORY.
+    (warehouses || []).forEach(function (w) {
+        if (!w || !w.warehouseId) return;
+        if (scope.company && !_replenDarEqv(w.company, scope.company)) return;
+        if (scope.country && !_replenDarEqv(w.country, scope.country)) return;
+        if (String(w.warehouseType || '').trim().toUpperCase() !== '3PL') return;
+        if (w.isActive !== true) return;
+        push(w);
+    });
+    // Always show currently-rule-linked warehouses even if not 3PL/active (membership authority = the rules).
+    Object.keys(activeRuleByWh).forEach(function (id) { if (!seen[id]) push(whById[id] || { warehouseId: id }); });
+    out.sort(function (a, b) { return a.warehouseId < b.warehouseId ? -1 : a.warehouseId > b.warehouseId ? 1 : 0; });
+    return out;
+}
+
+// PURE: validate the UI rows. Each of forecast & sales (over CHECKED rows) must sum to exactly 100%; ≥1 selected.
+function _replenDarValidate(rows) {
+    var selected = (rows || []).filter(function (r) { return r.checked; });
+    if (!selected.length) return { ok: false, error: 'Select at least one warehouse.' };
+    var fBp = 0, sBp = 0, bad = null;
+    selected.forEach(function (r) {
+        var f = Number(r.forecastPct), s = Number(r.salesPct);
+        if (!isFinite(f) || f < 0 || f > 100) bad = bad || ('Enter a valid Forecast % for ' + r.warehouseId);
+        if (!isFinite(s) || s < 0 || s > 100) bad = bad || ('Enter a valid Sales % for ' + r.warehouseId);
+        fBp += Math.round(f * 100); sBp += Math.round(s * 100);
+    });
+    if (bad) return { ok: false, error: bad };
+    if (fBp !== 10000) return { ok: false, error: 'Forecast Total must be 100% (currently ' + (fBp / 100) + '%).' };
+    if (sBp !== 10000) return { ok: false, error: 'Sales Total must be 100% (currently ' + (sBp / 100) + '%).' };
+    return { ok: true };
+}
+
+// PURE: build the save payload from the UI rows.
+function _replenDarBuildPayload(scope, rows) {
+    return {
+        company: (scope || {}).company, country: (scope || {}).country, marketplace: (scope || {}).marketplace,
+        allocations: (rows || []).filter(function (r) { return r.checked; }).map(function (r) {
+            return { destination_warehouse_id: r.warehouseId, forecast_ratio: Math.round(Number(r.forecastPct) * 100) / 10000, sales_ratio: Math.round(Number(r.salesPct) * 100) / 10000 };
+        })
+    };
+}
+
+// ---- DOM wiring (thin) -----------------------------------------------------
+function _replenDarModalEls() { return { modal: document.getElementById('replen-dar-modal'), overlay: document.getElementById('replen-modal-overlay') }; }
+function _replenDarReadWarehouses() { try { return (typeof _irWsGet === 'function') ? (_irWsGet('getWarehouses') || []) : []; } catch (_e) { return []; } }
+function _replenDarReadRules() { try { return (window.KM && window.KM.DB && typeof window.KM.DB.getReplenishmentDemandAllocationRules === 'function') ? (window.KM.DB.getReplenishmentDemandAllocationRules() || []) : []; } catch (_e) { return []; } }
+
+function openReplenDemandAllocationModal() {
+    var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : { company: '', country: '', marketplace: '' };
+    if (!scope.company || !scope.country || !scope.marketplace) { alert('Select a Country and Marketplace first, then open Warehouse Allocation.'); return; }
+    var rows = _replenDarCandidates(_replenDarReadWarehouses(), _replenDarReadRules(), scope);
+    var ctx = document.getElementById('replen-dar-context');
+    if (ctx) ctx.textContent = 'Company: ' + scope.company + '   Country: ' + scope.country + '   Marketplace: ' + scope.marketplace;
+    _replenDarRenderRows(rows);
+    var e = _replenDarModalEls();
+    if (e.modal && e.overlay) { e.modal.classList.add('is-open'); e.overlay.classList.add('is-open'); }
+}
+function _replenDarRenderRows(rows) {
+    var tb = document.getElementById('replen-dar-rows'); if (!tb) return;
+    var empty = document.getElementById('replen-dar-empty');
+    if (empty) empty.style.display = rows.length ? 'none' : 'block';
+    tb.innerHTML = rows.map(function (r) {
+        var pctStyle = 'width:70px;padding:2px 4px;';
+        return '<tr data-wh="' + r.warehouseId + '">'
+            + '<td><input type="checkbox" class="replen-dar-chk"' + (r.checked ? ' checked' : '') + ' onchange="_replenDarOnChange()"></td>'
+            + '<td>' + (r.warehouseName || r.warehouseId) + '<div style="font-size:11px;color:#94A3B8;">' + r.warehouseId + (r.fromRule ? ' · configured' : '') + '</div></td>'
+            + '<td><input type="number" min="0" max="100" step="0.01" class="replen-dar-fpct" value="' + (r.forecastPct === '' ? '' : r.forecastPct) + '" style="' + pctStyle + '" oninput="_replenDarOnChange()"></td>'
+            + '<td><input type="number" min="0" max="100" step="0.01" class="replen-dar-spct" value="' + (r.salesPct === '' ? '' : r.salesPct) + '" style="' + pctStyle + '" oninput="_replenDarOnChange()"></td>'
+            + '</tr>';
+    }).join('');
+    _replenDarOnChange();
+}
+// Read current DOM state into rows[]; single-checked convenience → auto 100/100 when its inputs are blank.
+function _replenDarCollectRows() {
+    var trs = Array.prototype.slice.call(document.querySelectorAll('#replen-dar-rows tr'));
+    var rows = trs.map(function (tr) {
+        var chk = tr.querySelector('.replen-dar-chk'), f = tr.querySelector('.replen-dar-fpct'), s = tr.querySelector('.replen-dar-spct');
+        return { warehouseId: tr.getAttribute('data-wh'), checked: !!(chk && chk.checked), forecastPct: f ? f.value : '', salesPct: s ? s.value : '', _f: f, _s: s };
+    });
+    var checked = rows.filter(function (r) { return r.checked; });
+    if (checked.length === 1) {
+        var only = checked[0];
+        if (only.forecastPct === '' || Number(only.forecastPct) === 0) { only.forecastPct = 100; if (only._f) only._f.value = 100; }
+        if (only.salesPct === '' || Number(only.salesPct) === 0) { only.salesPct = 100; if (only._s) only._s.value = 100; }
+    }
+    return rows;
+}
+function _replenDarOnChange() {
+    var rows = _replenDarCollectRows();
+    var sel = rows.filter(function (r) { return r.checked; });
+    var fBp = 0, sBp = 0;
+    sel.forEach(function (r) { var f = Number(r.forecastPct), s = Number(r.salesPct); if (isFinite(f)) fBp += Math.round(f * 100); if (isFinite(s)) sBp += Math.round(s * 100); });
+    var ft = document.getElementById('replen-dar-forecast-total'), st = document.getElementById('replen-dar-sales-total');
+    if (ft) { ft.textContent = (fBp / 100) + '%'; ft.style.color = (fBp === 10000) ? '#16A34A' : '#DC2626'; }
+    if (st) { st.textContent = (sBp / 100) + '%'; st.style.color = (sBp === 10000) ? '#16A34A' : '#DC2626'; }
+}
+function closeReplenDemandAllocationModal() {
+    var e = _replenDarModalEls();
+    if (e.modal && e.overlay) { e.modal.classList.remove('is-open'); e.overlay.classList.remove('is-open'); }
+    var msg = document.getElementById('replen-dar-msg'); if (msg) msg.textContent = '';
+}
+function saveReplenDemandAllocation() {
+    var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : {};
+    var rows = _replenDarCollectRows();
+    var v = _replenDarValidate(rows);
+    var msg = document.getElementById('replen-dar-msg');
+    if (!v.ok) { if (msg) msg.textContent = v.error; else alert(v.error); return; }
+    if (!(window.KM && window.KM.DB && window.KM.DB.saveReplenishmentDemandAllocationRules)) { alert('Warehouse Allocation API is not available.'); return; }
+    var payload = _replenDarBuildPayload(scope, rows);
+    window.KM.DB.saveReplenishmentDemandAllocationRules(payload).then(function (result) {
+        if (result && result.success === false) { if (msg) msg.textContent = result.error || 'Save failed.'; return; }
+        closeReplenDemandAllocationModal();
+        alert('Allocation updated for ' + scope.company + ' / ' + scope.country + ' / ' + scope.marketplace + '.\nRecalculate this scope to apply the new demand split.');
+    }).catch(function (err) { if (msg) msg.textContent = (err && err.message) ? err.message : String(err); });
+}
+window.openReplenDemandAllocationModal = openReplenDemandAllocationModal;
+window.closeReplenDemandAllocationModal = closeReplenDemandAllocationModal;
+window.saveReplenDemandAllocation = saveReplenDemandAllocation;
+window._replenDarOnChange = _replenDarOnChange;
+window._replenDarCandidates = _replenDarCandidates;
+window._replenDarValidate = _replenDarValidate;
+window._replenDarBuildPayload = _replenDarBuildPayload;
+
 // ---- Sync Regional Details (idempotent, resumable backfill trigger) ----
 // Scans marketplace_skus and CREATES the missing sku_regional_details row for each
 // (match key sku+company+country+marketplace). Idempotent: existing rows are skipped, never rewritten.
@@ -6002,6 +6164,7 @@ function runReplenAction(kind) {
     if (kind === 'edit' && typeof openEditSkuModal === 'function') return openEditSkuModal();
     if (kind === 'delete' && typeof handleDeleteSku === 'function') return handleDeleteSku();
     if (kind === 'marketplace' && typeof openAddMarketplaceModal === 'function') return openAddMarketplaceModal();
+    if (kind === 'demandAllocation' && typeof openReplenDemandAllocationModal === 'function') return openReplenDemandAllocationModal();
 }
 // Bind outside-click + keyboard once (guarded). Only acts while the menu is open.
 function _replenBindActionsMenuGlobal() {

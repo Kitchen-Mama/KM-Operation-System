@@ -99,6 +99,7 @@
                                         <div class="replen-actions-menu__divider" role="separator"></div>
                                         <div class="replen-actions-menu__section" role="presentation">Marketplace</div>
                                         <button type="button" role="menuitem" class="replen-actions-menu__item" onclick="runReplenAction('marketplace')">Add Marketplace</button>
+                                        <button type="button" role="menuitem" class="replen-actions-menu__item" onclick="runReplenAction('demandAllocation')">Warehouse Allocation</button>
                                     </div>
                                 </div>
                                 <!-- "Sync Regional Details" button removed (2026-07-06) — one-time sku_regional_details
@@ -202,6 +203,30 @@
                     <div class="fc-modal-overlay" id="replen-modal-overlay"></div>
                     
                     <!-- Add Marketplace Modal -->
+                    <!-- F1-7N-D-2j — Site Inventory Warehouse Allocation (self_fulfilled demand-allocation config). SSOT = replenishment_demand_allocation_rules. -->
+                    <div class="fc-modal" id="replen-dar-modal">
+                        <div class="fc-modal-content">
+                            <h3>Warehouse Allocation</h3>
+                            <div class="fc-modal-body">
+                                <div id="replen-dar-context" style="font-size:13px;color:#475569;margin-bottom:6px;"></div>
+                                <div style="font-size:12px;color:#64748B;margin-bottom:8px;">Self-Fulfilled Warehouse Allocation — split this marketplace's self-fulfilled demand across your inventory warehouses. Platform (FBA) lanes are unaffected.</div>
+                                <div id="replen-dar-empty" style="display:none;color:#94A3B8;font-size:13px;padding:8px 0;">Not configured — select a warehouse to begin.</div>
+                                <table id="replen-dar-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+                                    <thead><tr style="text-align:left;color:#64748B;"><th style="width:36px;"></th><th>Warehouse</th><th style="width:90px;">Forecast %</th><th style="width:90px;">Sales %</th></tr></thead>
+                                    <tbody id="replen-dar-rows"></tbody>
+                                </table>
+                                <div style="display:flex;justify-content:flex-end;gap:16px;font-size:13px;margin-top:8px;">
+                                    <span>Forecast Total: <strong id="replen-dar-forecast-total">0%</strong></span>
+                                    <span>Sales Total: <strong id="replen-dar-sales-total">0%</strong></span>
+                                </div>
+                                <div id="replen-dar-msg" style="color:#DC2626;font-size:12px;margin-top:6px;min-height:16px;"></div>
+                            </div>
+                            <div class="fc-modal-actions">
+                                <button class="fc-btn fc-btn--cancel" onclick="closeReplenDemandAllocationModal()">Cancel</button>
+                                <button class="fc-btn fc-btn--primary" onclick="saveReplenDemandAllocation()">Save</button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="fc-modal" id="add-marketplace-modal">
                         <div class="fc-modal-content">
                             <h3>Add Marketplace</h3>

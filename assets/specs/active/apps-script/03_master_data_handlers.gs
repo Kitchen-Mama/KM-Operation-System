@@ -616,3 +616,148 @@ function handleUpsertMarketplace_(body) {
   return jsonResponse_({ success: true, data: { marketplace_id: id, status: 'created', company: company, country: country, marketplace: marketplace } });
 }
 
+/**
+ * F1-7N-D-2j — replenishment_demand_allocation_rules SAVE (Site Inventory → Warehouse Allocation modal writer).
+ * -----------------------------------------------------------------------------------------------------------------
+ * Scope-safe reconciliation of the SELF_FULFILLED demand-allocation rows for ONE (company,country,marketplace):
+ * upsert the selected warehouses' ratios as status=active, and deactivate (never delete) any previously-active row in
+ * the same scope that is no longer selected. The allocation-rule table remains the SOLE planning-membership authority
+ * (D-F1-4B-E0R-3 / D-F1-7N-D-2i-R1); this is the first canonical writer for it. Execution warehouses (FBA/RETURN/
+ * FACTORY) are rejected as destinations (they are shipment-execution FCs, never self planning destinations); a future
+ * non-3PL self-operated inventory warehouse is admitted (exclusion, not a 3PL-only inclusion) pending the Phase-2
+ * durable eligibility authority. Ratios follow the frozen contract (each of forecast & sales sums to exactly 100% in
+ * integer basis points). PURE planner `replenDemandAllocationPlan_` is Node-verified; this shell only does sheet I/O.
+ */
+var REPLEN_DAR_EXEC_TYPES_ = { FBA: 1, RETURN: 1, FACTORY: 1 };   // execution/source warehouse types — never a SELF planning destination
+
+function replenDarBool_(v) { if (v === true) return true; var t = String(v === undefined || v === null ? '' : v).trim().toLowerCase(); return t === 'true' || t === '1' || t === 'yes' || t === 'y'; }
+function replenDarStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+function replenDarRatioBp_(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); if (!isFinite(n) || n < 0 || n > 1) return null; return Math.round(n * 10000); }
+
+/**
+ * PURE planner. Returns { ok, error?, upserts:[{destinationWarehouseId, forecastRatio, salesRatio, allocationRuleId}],
+ * deactivates:[destinationWarehouseId...] }. Never mutates inputs; no I/O. `existingActiveInScope` = the currently
+ * active rows for the scope (snake_case). `whById` = { warehouse_id → raw warehouse row }. `desired` = requested rows.
+ */
+function replenDemandAllocationPlan_(scope, desired, existingActiveInScope, whById) {
+  scope = scope || {}; desired = desired || []; existingActiveInScope = existingActiveInScope || []; whById = whById || {};
+  var company = replenDarStr_(scope.company), country = replenDarStr_(scope.country), marketplace = replenDarStr_(scope.marketplace);
+  if (!company || !country || !marketplace) return { ok: false, error: 'MISSING_SCOPE: company + country + marketplace required' };
+  if (!desired.length) return { ok: false, error: 'NO_WAREHOUSE_SELECTED: at least one self warehouse must be selected (allocation rules are the membership authority; to clear a scope, deactivate its rows explicitly)' };
+
+  var seen = {}, upserts = [], fBp = 0, sBp = 0;
+  for (var i = 0; i < desired.length; i++) {
+    var d = desired[i] || {};
+    var whId = replenDarStr_(d.destination_warehouse_id || d.destinationWarehouseId);
+    if (!whId) return { ok: false, error: 'DESTINATION_WAREHOUSE_INVALID: blank destination_warehouse_id' };
+    if (seen[whId]) return { ok: false, error: 'DEMAND_ALLOCATION_DESTINATION_CONFLICT: duplicate destination ' + whId };
+    seen[whId] = 1;
+    var w = whById[whId];
+    if (!w) return { ok: false, error: 'DESTINATION_WAREHOUSE_INVALID: not a canonical warehouse: ' + whId };
+    if (!replenDarBool_(w.is_active)) return { ok: false, error: 'DESTINATION_WAREHOUSE_INVALID: inactive warehouse: ' + whId };
+    if (replenDarStr_(w.company) && replenDarStr_(w.company) !== company) return { ok: false, error: 'DESTINATION_WAREHOUSE_INVALID: cross-company warehouse: ' + whId };
+    if (replenDarBool_(w.is_factory_warehouse) || REPLEN_DAR_EXEC_TYPES_[replenDarStr_(w.warehouse_type).toUpperCase()]) {
+      return { ok: false, error: 'SELF_DESTINATION_INELIGIBLE: ' + whId + ' is an execution/source warehouse (' + replenDarStr_(w.warehouse_type) + ') — not a self-fulfilled planning destination' };
+    }
+    var f = replenDarRatioBp_(d.forecast_ratio !== undefined ? d.forecast_ratio : d.forecastRatio);
+    var s = replenDarRatioBp_(d.sales_ratio !== undefined ? d.sales_ratio : d.salesRatio);
+    if (f === null) return { ok: false, error: 'DEMAND_ALLOCATION_RATIO_INVALID: forecast_allocation_ratio for ' + whId + ' must be a number in [0,1]' };
+    if (s === null) return { ok: false, error: 'DEMAND_ALLOCATION_RATIO_INVALID: sales_allocation_ratio for ' + whId + ' must be a number in [0,1]' };
+    fBp += f; sBp += s;
+    upserts.push({ destinationWarehouseId: whId, forecastRatio: f / 10000, salesRatio: s / 10000,
+      allocationRuleId: 'RDAR-' + company.toUpperCase() + '-' + country.toUpperCase() + '-' + marketplace.toUpperCase().replace(/\s+/g, '_') + '-' + whId });
+  }
+  if (fBp !== 10000) return { ok: false, error: 'DEMAND_ALLOCATION_RATIO_TOTAL_INVALID: forecast ratios sum to ' + (fBp / 100) + '% (must be exactly 100%)' };
+  if (sBp !== 10000) return { ok: false, error: 'DEMAND_ALLOCATION_RATIO_TOTAL_INVALID: sales ratios sum to ' + (sBp / 100) + '% (must be exactly 100%)' };
+
+  var deactivates = [];
+  for (var e = 0; e < existingActiveInScope.length; e++) {
+    var ex = replenDarStr_(existingActiveInScope[e].destination_warehouse_id);
+    if (ex && !seen[ex]) deactivates.push(ex);
+  }
+  return { ok: true, upserts: upserts, deactivates: deactivates };
+}
+
+/** Router action `replenishmentDemandAllocation.save`. body = { company, country, marketplace, allocations:[{destination_warehouse_id, forecast_ratio, sales_ratio}], updated_by?, effective_from? }. */
+function handleReplenishmentDemandAllocationSave_(body) {
+  body = body || {};
+  var scope = { company: replenDarStr_(body.company), country: replenDarStr_(body.country), marketplace: replenDarStr_(body.marketplace) };
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock (another save in progress)' });
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('replenishment_demand_allocation_rules');
+    if (!sheet) return jsonResponse_({ success: false, error: 'replenishment_demand_allocation_rules sheet not found (user-owned master data; create it first)' });
+    var whSheet = ss.getSheetByName('warehouses');
+    if (!whSheet) return jsonResponse_({ success: false, error: 'warehouses sheet not found' });
+
+    // warehouses index (raw rows) by warehouse_id
+    var whData = whSheet.getDataRange().getValues();
+    var whHdr = whData[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    function whCol(n) { return whHdr.indexOf(n); }
+    var whById = {};
+    for (var wr = 1; wr < whData.length; wr++) {
+      var row = {}; for (var wc = 0; wc < whHdr.length; wc++) row[whHdr[wc]] = whData[wr][wc];
+      var id = replenDarStr_(row.warehouse_id); if (id) whById[id] = row;
+    }
+
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 1) return jsonResponse_({ success: false, error: 'replenishment_demand_allocation_rules has no header row' });
+    var hdr = data[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    function col(n) { return hdr.indexOf(n); }
+    var need = ['allocation_rule_id', 'company', 'country', 'marketplace', 'destination_warehouse_id', 'forecast_allocation_ratio', 'sales_allocation_ratio', 'status'];
+    for (var n = 0; n < need.length; n++) if (col(need[n]) === -1) return jsonResponse_({ success: false, error: 'replenishment_demand_allocation_rules missing column: ' + need[n] });
+
+    // existing rows (index + scope-active view)
+    var rowsRaw = [];
+    for (var r = 1; r < data.length; r++) { var o = {}; for (var c = 0; c < hdr.length; c++) o[hdr[c]] = data[r][c]; o.__row = r + 1; rowsRaw.push(o); }
+    function isActive(o) { var st = replenDarStr_(o.status).toLowerCase(); return st === 'active' || o.status === true || st === ''; }
+    var scopeRows = rowsRaw.filter(function (o) { return replenDarStr_(o.company) === scope.company && replenDarStr_(o.country) === scope.country && replenDarStr_(o.marketplace) === scope.marketplace; });
+    var existingActiveInScope = scopeRows.filter(isActive);
+
+    var plan = replenDemandAllocationPlan_(scope, body.allocations || [], existingActiveInScope, whById);
+    if (!plan.ok) return jsonResponse_({ success: false, error: plan.error });
+
+    var actor = replenDarStr_(body.updated_by) || 'operation-system';
+    var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var effFrom = replenDarStr_(body.effective_from) || today;
+    function setCell(rowNum, name, val) { var c = col(name); if (c !== -1) sheet.getRange(rowNum, c + 1).setValue(val); }
+
+    // upserts (by scope + destination natural key)
+    plan.upserts.forEach(function (u) {
+      var existing = scopeRows.filter(function (o) { return replenDarStr_(o.destination_warehouse_id) === u.destinationWarehouseId; })[0];
+      if (existing) {
+        setCell(existing.__row, 'forecast_allocation_ratio', u.forecastRatio);
+        setCell(existing.__row, 'sales_allocation_ratio', u.salesRatio);
+        setCell(existing.__row, 'status', 'active');
+        setCell(existing.__row, 'effective_to', '');
+        var ver = Number(existing.version); setCell(existing.__row, 'version', (isFinite(ver) ? ver : 0) + 1);
+        setCell(existing.__row, 'updated_by', actor); setCell(existing.__row, 'updated_at', today);
+      } else {
+        var newRow = new Array(hdr.length).fill('');
+        function put(name, val) { var c = col(name); if (c !== -1) newRow[c] = val; }
+        put('allocation_rule_id', u.allocationRuleId); put('company', scope.company); put('country', scope.country); put('marketplace', scope.marketplace);
+        put('destination_warehouse_id', u.destinationWarehouseId); put('forecast_allocation_ratio', u.forecastRatio); put('sales_allocation_ratio', u.salesRatio);
+        put('status', 'active'); put('effective_from', effFrom); put('effective_to', ''); put('version', 1);
+        put('updated_by', actor); put('updated_at', today);
+        sheet.appendRow(newRow);
+      }
+    });
+    // deactivate previously-active rows no longer selected (close, never delete)
+    plan.deactivates.forEach(function (whId) {
+      var ex = existingActiveInScope.filter(function (o) { return replenDarStr_(o.destination_warehouse_id) === whId; })[0];
+      if (ex) { setCell(ex.__row, 'status', 'inactive'); setCell(ex.__row, 'effective_to', today); var ver = Number(ex.version); setCell(ex.__row, 'version', (isFinite(ver) ? ver : 0) + 1); setCell(ex.__row, 'updated_by', actor); setCell(ex.__row, 'updated_at', today); }
+    });
+
+    return jsonResponse_({ success: true, data: {
+      company: scope.company, country: scope.country, marketplace: scope.marketplace,
+      active: plan.upserts.map(function (u) { return { destination_warehouse_id: u.destinationWarehouseId, forecast_allocation_ratio: u.forecastRatio, sales_allocation_ratio: u.salesRatio, allocation_rule_id: u.allocationRuleId, status: 'active' }; }),
+      deactivated: plan.deactivates
+    } });
+  } catch (err) {
+    return jsonResponse_({ success: false, error: (err && err.message) ? String(err.message) : String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch (_e) {}
+  }
+}
+

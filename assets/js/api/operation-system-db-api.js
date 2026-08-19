@@ -2818,6 +2818,30 @@ window.KM.DB.upsertMarketplace = async function(payload) {
     return json.data;
 };
 
+// F1-7N-D-2j — Site Inventory Warehouse Allocation writer. Scope-safe SAVE of the SELF_FULFILLED demand-allocation
+// rows for ONE (company,country,marketplace) into replenishment_demand_allocation_rules (the sole planning-membership
+// authority). payload = { company, country, marketplace, allocations:[{destination_warehouse_id, forecast_ratio,
+// sales_ratio}], updated_by? }. The backend rejects FBA/execution destinations and enforces the 100%-sum contract.
+window.KM.DB.saveReplenishmentDemandAllocationRules = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, saveReplenishmentDemandAllocationRules skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(Object.assign({ action: 'replenishmentDemandAllocation.save' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Save failed');
+    // Only writer that mutates replenishment_demand_allocation_rules → invalidate its session reference AFTER success.
+    if (window.KM && window.KM.referenceCache) window.KM.referenceCache.invalidate('replenishment_demand_allocation_rules');
+    await _kmWriterPostWrite_();
+    return json.data;
+};
+
 window.KM.DB.upsertMarketplaceSku = async function(payload) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, upsertMarketplaceSku skipped');

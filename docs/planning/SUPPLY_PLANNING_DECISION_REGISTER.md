@@ -720,6 +720,40 @@ Planning/recommendation destination and shipment-execution destination are SEPAR
 - **Correction:** `REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md` §3a added (membership authority) and §5 example fixed
   (was a stale Amazon warehouse-split example; Amazon is platform_fulfilled → no rule). Docs-only; no code/DB change.
 
+### D-F1-7N-D-2j — Site Inventory Warehouse Allocation config UX + first canonical rule writer (USER-approved)
+
+USER-approved Phase-1 edit surface (F1-7N-D-2j): warehouse demand-allocation ratios are editable from **Site Inventory
+→ More Options → Warehouse Allocation** — no code change, no manual spreadsheet maintenance. SSOT is unchanged:
+`replenishment_demand_allocation_rules` (D-F1-7N-D-2i-R1); this adds the FIRST canonical writer for it.
+
+- **Config grain** = `(company, country, marketplace)`; applies ONLY to SELF_FULFILLED demand. Platform lanes use no
+  rules; a HYBRID marketplace's per-SKU self lanes consume them, its platform lanes stay logical MARKETPLACE (D-2h).
+- **Writer** = router action `replenishmentDemandAllocation.save` → `handleReplenishmentDemandAllocationSave_` (03),
+  LockService-serialized, mirroring `handleUpsertMarketplace_`. Scope-safe reconciliation: upsert selected warehouses
+  (status=active, ratios, effective_from, version+1) and **deactivate (never delete)** previously-active scope rows no
+  longer selected (status=inactive, effective_to=today). PURE planner `replenDemandAllocationPlan_` (Node-verified).
+  Enforces the frozen ratio contract (forecast & sales each sum to exactly 100%) and REJECTS execution/source
+  destinations (`warehouse_type` ∈ {FBA, RETURN, FACTORY} or `is_factory_warehouse`) — admitting 3PL and future
+  non-execution self types (exclusion, not a 3PL-only inclusion). Read served client-side from the loaded cache
+  (`getReplenishmentDemandAllocationRules`); no new read action.
+- **Picker candidate authority (Phase-1, convenience only):** the modal OFFERS the frozen 3PL-inclusion set
+  (`warehouse_type='3PL' + active + company + country`, mirroring `eligible3plWarehouses`/§23.6) UNIONed with
+  warehouses already referenced by active rules (so current membership is never hidden). FBA/RETURN/FACTORY execution
+  FCs are excluded from the picker. This is a UI candidate filter, NOT the membership authority (rules remain the SSOT).
+- **PHASE-2 FOLLOW-UP (not built):** the picker's 3PL-inclusion filter cannot surface a future **self-operated,
+  non-3PL** inventory warehouse as an option; per `SHIPMENT_CENTER_SPEC.md:1216`/`WAREHOUSE_OPERATIONS_SPEC.md:126` a
+  durable warehouse planning-eligibility authority (`is_receiving_enabled` / `is_selectable_for_shipment`, PROPOSED /
+  NOT IMPLEMENTED) should replace the type-name filter in Phase-2. Until then such a warehouse is reachable only by
+  adding its rule row directly (the SAVE writer already admits it; only the picker omits it).
+- **Single-warehouse:** UI convenience auto-fills 100/100 but SAVE persists an EXPLICIT `1.0/1.0` row
+  (`SINGLE_WAREHOUSE_RULE_POLICY = EXPLICIT_1_REQUIRED`; never a runtime fallback).
+- **No** allocation formula / §7 / survival / incremental / carton / source-priority / K3 / count-once / FBA-logical /
+  monthly change; recommendation stays draft-only (no RO/PO/shipment/inventory mutation; no schema change). After Save
+  the UI advises "Recalculate this scope to apply" — never auto-launches a batch. Tests:
+  `warehouse-allocation-config-f1-7n-d-2j-r1` (35). Changed: `03_master_data_handlers.gs`, `01_router.gs`,
+  `operation-system-db-api.js`, `inventory-replenishment.js/.html` → `APPS_SCRIPT_SYNC_REQUIRED` (03/01) +
+  `FRONTEND_DEPLOY_REQUIRED`; no bundled core changed → no 90_ rebuild.
+
 ### D-F1-4B-FM5-R3 — Gap Materialization Scheduler + post-import orchestration (schedule-only; rollover HALT)
 
 Productionizes the proven materialized gap batches as scheduled jobs. ORCHESTRATION ONLY — no formula/stock/
