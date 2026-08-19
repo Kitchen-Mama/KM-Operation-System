@@ -827,7 +827,12 @@ function handleRecommendationWorkspaceGet_(body, io) {
     calc.calculationDate = cdRes.ok ? cdRes.calculationDate : null;
 
     var ss = io.openTarget();                                                // exact-ID validated / fail closed
-    var read = KMPS.readCanonicalSnapshots(ss, null);                        // ONE targeted read per request (never getOperationDb)
+    // F1-7M-E-43 — injectable canonical-snapshot read seam. The Gap batch drives this handler ONCE PER SCOPE and every
+    // call re-ran KMPS.readCanonicalSnapshots(ss,null) — the reader takes NO scope, so every scope re-read the SAME raw
+    // snapshot rows (scope filtering happens later, in memory). When the batch has already read them once for the whole
+    // job it injects io.readCanonicalSnapshots(ss) → the immutable pre-read is reused (byte-identical content). Default
+    // io has no such method → the canonical per-request read is UNCHANGED.
+    var read = io.readCanonicalSnapshots ? io.readCanonicalSnapshots(ss) : KMPS.readCanonicalSnapshots(ss, null);   // ONE targeted read (never getOperationDb)
     var tablesRead = read && read.snapshots ? Object.keys(read.snapshots).length : 0;
     var snaps = read.snapshots || {};
 

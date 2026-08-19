@@ -242,7 +242,19 @@ function gapCalcResolveContext_(jobType, nowMs) { return gapCalcContextForJob_(j
 // absent (a direct/diagnostic workspace.get), the Script Properties remain the debug/override authority (§5).
 function gapMaterializationDefaultIo_(calcContext) {
   var _ss = null;
+  var _preRead = null;                                      // F1-7M-E-43: batch-scoped canonical snapshot pre-read (lifetime = this io)
   var ctx = (calcContext && calcContext.ok) ? calcContext : null;
+  // F1-7M-E-43 — read the scope-INDEPENDENT canonical snapshots ONCE per batch. handleRecommendationWorkspaceGet_ is
+  // otherwise driven once per scope and each call re-ran KMPS.readCanonicalSnapshots(ss,null) — the SAME raw snapshot
+  // rows for every scope (the reader takes no scope; scope filtering happens later, in memory). Reading once and
+  // reusing the immutable snapshots is byte-identical: the gap output tables are NOT canonical inputs (no write between
+  // scopes alters a snapshot), and the within-request preReadSnapshots seam already shares this exact snapshots object
+  // across every per-SKU × per-warehouse consumer (read-only). Cache lifetime = this io ONLY (one manual batch / one
+  // resumable slice / one contention pre-pass) — NO global/session cache, NO persistence.
+  function preReadSnapshots_(ss) {
+    if (!_preRead) _preRead = KMPS.readCanonicalSnapshots(ss, null);
+    return _preRead;
+  }
   return {
     now: function () { return new Date(); },
     tz: function () { try { return Session.getScriptTimeZone(); } catch (e) { return 'UTC'; } },
@@ -255,11 +267,19 @@ function gapMaterializationDefaultIo_(calcContext) {
       prodAssertDbTarget_(ss, id);
       _ss = ss; return ss;
     },
-    // Reuse the EXISTING canonical calculation. A reco-io shares the SAME memoized spreadsheet so the batch
-    // opens the target once; each scope still performs ONE canonical snapshot read (bounded, no per-SKU HTTP).
+    // Reuse the EXISTING canonical calculation. A reco-io shares the SAME memoized spreadsheet so the batch opens the
+    // target once; F1-7M-E-43 additionally injects the batch-scoped snapshot pre-read so each scope REUSES the one
+    // canonical read instead of re-opening every snapshot sheet (bounded, no per-SKU HTTP; still one workspaceGet/scope).
     workspaceGet: function (body, sharedSs) {
       var recoIo = recommendationWorkspaceDefaultIo_();
       recoIo.openTarget = function () { return sharedSs; };
+      // F1-7M-E-43: guarded (no-op when the KMPS bundle is absent → handler falls back to its own per-request read, i.e.
+      // exact prior behavior). A FRESH {snapshots,issues} wrapper per scope preserves today's per-scope-fresh derived
+      // caches (read.__rowCache / read.__slCandidates attach to this wrapper); the immutable raw snapshots are shared.
+      if (typeof KMPS !== 'undefined' && KMPS && typeof KMPS.readCanonicalSnapshots === 'function') {
+        var pre = preReadSnapshots_(sharedSs);
+        recoIo.readCanonicalSnapshots = function () { return { snapshots: pre.snapshots, issues: pre.issues }; };
+      }
       if (ctx) {                                            // inject the canonical deterministic context (no Script Property)
         recoIo.configDate = function () { return ctx.calculationDate; };
         recoIo.configMonth = function () { return ctx.calculationMonth; };
