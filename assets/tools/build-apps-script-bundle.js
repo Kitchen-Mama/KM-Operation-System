@@ -38,6 +38,10 @@ var MODULE_ORDER = [
   'supply-planning-user-edit',                 // requires persistence-repository
   'supply-planning-source-facts',              // requires calculations + ledgers + candidates + incoming + qualified-incoming + allocations
   'supply-planning-plan-bridge',               // standalone (no deps)
+  'supply-planning-weekly-source-allocation',  // F1-7N-B §35A weekly source-allocation builder (requires allocations + source-facts)
+  'supply-planning-weekly-input-assembler',    // F1-7N-D0-B weekly builder-input assembler (pure; no deps)
+  'supply-planning-weekly-recommendation-draft', // F1-7N-C1 weekly persistence adapter (requires weekly-source-allocation + plan-bridge + orchestrator)
+  'supply-planning-weekly-recommendation-runtime', // F1-7N-D-1 weekly generation-pipeline owner (requires input-assembler + weekly-source-allocation + weekly-recommendation-draft)
   'supply-planning-source-reader',             // requires source-facts
   'supply-planning-recommendation-source-integration', // requires source-reader + ledgers + source-facts + plan-bridge
   'supply-planning-source-reader-production',  // requires source-reader + source-integration (Round 1S-P1 production reader)
@@ -82,6 +86,10 @@ var GLOBALS = [
   ['KMUE', 'supply-planning-user-edit'],
   ['KMSF', 'supply-planning-source-facts'],
   ['KMBRIDGE', 'supply-planning-plan-bridge'],
+  ['KMWSA', 'supply-planning-weekly-source-allocation'],
+  ['KMWIA', 'supply-planning-weekly-input-assembler'],
+  ['KMWRD', 'supply-planning-weekly-recommendation-draft'],
+  ['KMWRT', 'supply-planning-weekly-recommendation-runtime'],
   ['KMSR', 'supply-planning-source-reader'],
   ['KMSI', 'supply-planning-recommendation-source-integration'],
   ['KMSRP', 'supply-planning-source-reader-production'],

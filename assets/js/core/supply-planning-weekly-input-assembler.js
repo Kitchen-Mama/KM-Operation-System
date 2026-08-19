@@ -29,6 +29,7 @@
 
   var WINDOW_ORDER = ['D18', 'D30', 'D45', 'D90'];   // frozen horizon order (§35A.7); NOT re-derived here
   var DEFAULT_FORMULA_VERSION = 'WEEKLY_AI_PLAN_V1';
+  var LINEKEY_SEP = '|';                             // internal dedup-key separator (printable; NOT a NUL byte)
 
   function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
   function aType(c, m) { if (!c) throw new TypeError('weeklyInputAssembler: ' + m); }
@@ -181,7 +182,7 @@
         var demandQty = inc[idx];
         var demandKey = weeklyDemandKey(laneSku, dest, windowCode);
         // Weekly resolver line identity = sku|siteSku|windowCode (must be unique) — fail-closed on collision.
-        var lk = laneSku + ' ' + siteSku + ' ' + windowCode;
+        var lk = [laneSku, siteSku, windowCode].join(LINEKEY_SEP);
         if (seenLineKey[lk]) { issues.push({ kind: 'DEMAND', key: demandKey, reason: 'DUPLICATE_WEEKLY_LINE_KEY' }); continue; }
         seenLineKey[lk] = 1;
 

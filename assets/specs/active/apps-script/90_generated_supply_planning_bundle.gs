@@ -3,7 +3,7 @@
 // Produced by assets/tools/build-apps-script-bundle.js from the canonical UMD modules under
 // assets/js/core/. Edit those modules and re-run the build tool; never edit this file directly.
 // One source of truth: no algorithm is duplicated here — each module is wrapped verbatim.
-// bundle_sha256 = aaf5b07f2292f9e876459f38d5c9533f1451357f1781e3e3622684f4c2918782
+// bundle_sha256 = c42c2cf1ebad1fdcdd1e42900896c1ebed25fa7801521309a9d1b8ed3356c4d1
 // modules (in load order):
 //   supply-planning-country-identity  3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4
 //   supply-planning-calculations  997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430
@@ -26,6 +26,10 @@
 //   supply-planning-user-edit  365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693
 //   supply-planning-source-facts  1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88
 //   supply-planning-plan-bridge  c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18
+//   supply-planning-weekly-source-allocation  9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45
+//   supply-planning-weekly-input-assembler  d7ab9dda89af49c32b1c14bf1ef55facb25d0716962eee34b68c393d11813729
+//   supply-planning-weekly-recommendation-draft  ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32
+//   supply-planning-weekly-recommendation-runtime  0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3
 //   supply-planning-source-reader  12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169
 //   supply-planning-recommendation-source-integration  75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570
 //   supply-planning-source-reader-production  0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac
@@ -6273,6 +6277,744 @@ function __kmRequire(p) {
   __kmRegister("supply-planning-plan-bridge", module.exports);
 })();
 
+// ----- module: supply-planning-weekly-source-allocation (verbatim from assets/js/core/supply-planning-weekly-source-allocation.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — WEEKLY AI PLAN pure source-allocation builder (F1-7N-B).
+// -----------------------------------------------------------------------------
+// Realizes the frozen §35A WEEKLY_SHIPPING SOURCE-PRIORITY axis
+//   Overseas  →  Factory CN_YOUXIN  →  Factory TW_SHENGYI  →  unresolved production/order need
+// as a PURE deterministic COMPOSITION over the frozen §40 allocation primitives + the frozen Round-1M weekly facts
+// resolver. It NEVER reimplements or re-orders those primitives:
+//   • Overseas   → supply-planning-allocations.js `allocateOverseasSharedPool` (§20/§24/§40 — 18-day protection etc.)
+//   • Factory    → supply-planning-allocations.js `allocateFactoryDeterministic` (§35/§40 — ascending-poolKey, UNCHANGED)
+//   • FLOOR+lines → supply-planning-source-facts.js `resolveWeeklyRecommendationFacts` (§31/§2C.1 shipping FLOOR)
+//
+// CN_YOUXIN > TW_SHENGYI is realized by SEQUENTIAL SOURCE PASSES (CN-only pools over the overseas residual, then
+// TW-only pools over the CN residual) — never by touching `allocateFactoryDeterministic`'s internal source order.
+// Demand ordering (§35: Required-By → allocation_priority → stable keys) stays owned by the primitives and is NOT
+// re-ordered here — source priority is a strictly separate axis (§35A.1).
+//
+// Invariants: PURE — no I/O, no clock/random/locale, no DB/Sheet, no persistence, no reservation/deduction, no
+// Request/PO creation. Inputs are never mutated (fresh residual demands + shallow line clones). MISSING is never
+// silently 0. A physical pool is never consumed >100% (each primitive conserves; each pool is offered to exactly one
+// pass). This slice produces ONLY the pure WEEKLY_SHIPPING recommendation result for the later F1-7N-C persistence
+// adapter — it persists nothing and emits NO carrier/rate/lead-time/ETA/cost (WA-6 logistics boundary).
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-allocations.js') : (root.KMALLOC || (root.KM && root.KM.allocations)),
+    req ? req('./supply-planning-source-facts.js') : (root.KMSF || (root.KM && root.KM.sourceFacts))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.weeklySourceAllocation = api; }
+})(this, function (ALLOC, SF) {
+  'use strict';
+
+  function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function aType(c, m) { if (!c) throw new TypeError('weeklySourceAllocation: ' + m); }
+  function str(v) { return String(v === undefined || v === null ? '' : v); }
+  function setOf(list) { var s = {}; (Array.isArray(list) ? list : []).forEach(function (x) { if (x != null && str(x) !== '') s[str(x)] = 1; }); return s; }
+  function sumAllocated(recs) { var t = 0; (recs || []).forEach(function (a) { t += (typeof a.allocatedQty === 'number' ? a.allocatedQty : 0); }); return t; }
+  function shallowClone(o) { var n = {}; for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) n[k] = o[k]; return n; }
+  function emptyFactoryResult() { return { allocationType: 'FACTORY_DETERMINISTIC', allocations: [], unallocatedDemand: [], unusedSupply: [], blockedInputs: [] }; }
+
+  // Build the residual demand list for the NEXT source pass. residualMap: demandKey -> qty the upstream source could
+  // NOT cover. A demand absent from the map was fully covered upstream (residual 0 → omitted). A demand with no
+  // upstream source at all is passed with its full demandQty (residualMap simply won't contain its key). demandQty>0
+  // only (a 0/blocked residual never enters a downstream pass) — each fresh demand preserves the §35 ordering inputs.
+  function residualDemands(baseDemands, residualMap, hasUpstream) {
+    var out = [];
+    (baseDemands || []).forEach(function (d) {
+      var key = str(d.demandKey);
+      var q;
+      if (Object.prototype.hasOwnProperty.call(residualMap, key)) q = residualMap[key];
+      else q = hasUpstream[key] ? 0 : d.demandQty;   // upstream saw it + no residual entry ⇒ fully covered ⇒ 0
+      if (typeof q === 'number' && q > 0) {
+        var nd = shallowClone(d);
+        nd.demandQty = q;
+        out.push(nd);
+      }
+    });
+    return out;
+  }
+
+  // buildWeeklySourceAllocation(input) — the ONE bounded public builder for the WEEKLY_SHIPPING source axis.
+  //
+  // input = {
+  //   planningCycle: string, businessScope: object, formulaVersion?, sourceDataAsOf?,
+  //   masterSku: string,                                   // required for the factory passes (§40 primitive input)
+  //   overseasInput?: { company, country, masterSku, supplyPools[], receivers[] } | null,   // allocateOverseasSharedPool input
+  //   factory?: {
+  //     factoryPools: [{ poolKey, poolType:'FACTORY', warehouseId, effectiveSupplyQty }],
+  //     demands:      [{ demandKey, company, marketplace, destinationWarehouseId, requiredByDate,
+  //                      allocationPriority, demandQty, eligibleFactoryWarehouseIds[] }],
+  //     cnYouxinWarehouseIds: [ids...],                     // §35A factory-source identity (caller-supplied; not invented)
+  //     twShengyiWarehouseIds: [ids...]
+  //   } | null,
+  //   weeklyPlanningFacts: [ ...resolveWeeklyRecommendationFacts facts (sku, siteSku, windowCode, demandKey,
+  //                          calculatedGap|gap-inputs, unitsPerCarton, ...) ]
+  // }
+  function buildWeeklySourceAllocation(input) {
+    aType(isObj(input), 'input must be an object');
+    aType(typeof input.planningCycle === 'string' && input.planningCycle.length > 0, 'planningCycle required');
+    aType(isObj(input.businessScope), 'businessScope required');
+    var masterSku = str(input.masterSku);
+    var weeklyPlanningFacts = input.weeklyPlanningFacts == null ? [] : input.weeklyPlanningFacts;
+    aType(Array.isArray(weeklyPlanningFacts), 'weeklyPlanningFacts must be an array');
+
+    var issues = [];
+
+    // ---- PASS 1: OVERSEAS (full destination need) — frozen allocator, UNCHANGED --------------------------------
+    var overseasAllocation = null;
+    var overseasResidualByDemand = {};   // demandKey -> qty overseas could NOT cover
+    var overseasSeen = {};               // demandKey -> 1 (present in the overseas pass)
+    if (input.overseasInput != null) {
+      aType(isObj(input.overseasInput), 'overseasInput must be an object or null');
+      overseasAllocation = ALLOC.allocateOverseasSharedPool(input.overseasInput);   // §20/§24/§40 (never reimplemented)
+      var ovAllocByDemand = {};
+      (overseasAllocation.allocations || []).forEach(function (a) { var k = str(a.demandKey); ovAllocByDemand[k] = (ovAllocByDemand[k] || 0) + a.allocatedQty; });
+      (input.overseasInput.receivers || []).forEach(function (r) {
+        var k = str(r.demandKey); overseasSeen[k] = 1;
+        var residual = (typeof r.demandQty === 'number' ? r.demandQty : 0) - (ovAllocByDemand[k] || 0);
+        overseasResidualByDemand[k] = residual > 0 ? residual : 0;
+      });
+    }
+
+    // ---- PASS 2 + 3: FACTORY CN_YOUXIN then TW_SHENGYI (over the residual) — sequential frozen-allocator passes ---
+    var factoryAllocation = null, cnAlloc = emptyFactoryResult(), twAlloc = emptyFactoryResult();
+    if (input.factory != null) {
+      aType(isObj(input.factory), 'factory must be an object or null');
+      aType(masterSku.length > 0, 'masterSku required when factory passes are present');
+      var f = input.factory;
+      var cnIds = setOf(f.cnYouxinWarehouseIds), twIds = setOf(f.twShengyiWarehouseIds);
+
+      // Partition pools by factory identity. An unclassified factory warehouse is fail-closed (surfaced + EXCLUDED —
+      // never silently consumed and never fabricated); its stock simply never enters a pass. Overlap CN∩TW is invalid.
+      var cnPools = [], twPools = [];
+      (f.factoryPools || []).forEach(function (p) {
+        var wh = str(p.warehouseId);
+        var inCn = cnIds[wh] === 1, inTw = twIds[wh] === 1;
+        if (inCn && inTw) { issues.push({ kind: 'SUPPLY', key: str(p.poolKey), reason: 'FACTORY_WAREHOUSE_CLASSIFIED_BOTH_CN_AND_TW:' + wh }); return; }
+        if (inCn) cnPools.push(p);
+        else if (inTw) twPools.push(p);
+        else issues.push({ kind: 'SUPPLY', key: str(p.poolKey), reason: 'UNCLASSIFIED_FACTORY_WAREHOUSE:' + wh });
+      });
+
+      // CN pass over the overseas residual.
+      var cnDemands = residualDemands(f.demands || [], overseasResidualByDemand, overseasSeen);
+      if (cnPools.length && cnDemands.length) cnAlloc = ALLOC.allocateFactoryDeterministic({ masterSku: masterSku, factoryPools: cnPools, demands: cnDemands });
+
+      // TW pass over the CN residual (demands that entered the CN pass, reduced by what CN covered).
+      var cnResidualMap = {}, cnSeen = {};
+      cnDemands.forEach(function (d) { cnSeen[str(d.demandKey)] = 1; });
+      (cnAlloc.unallocatedDemand || []).forEach(function (u) { cnResidualMap[str(u.demandKey)] = u.unallocatedQty; });
+      var twDemands = residualDemands(cnDemands, cnResidualMap, cnSeen);
+      if (twPools.length && twDemands.length) twAlloc = ALLOC.allocateFactoryDeterministic({ masterSku: masterSku, factoryPools: twPools, demands: twDemands });
+
+      // Merge CN + TW into ONE factoryAllocation the resolver consumes (allocations concat; final residual = TW's).
+      // allocationKeys stay unique across passes (poolKey differs CN vs TW). unusedSupply/blockedInputs concatenated.
+      factoryAllocation = {
+        allocationType: 'FACTORY_DETERMINISTIC',
+        allocations: (cnAlloc.allocations || []).concat(twAlloc.allocations || []),
+        unallocatedDemand: (twAlloc.unallocatedDemand || []).slice(),
+        unusedSupply: (cnAlloc.unusedSupply || []).concat(twAlloc.unusedSupply || []),
+        blockedInputs: (cnAlloc.blockedInputs || []).concat(twAlloc.blockedInputs || [])
+      };
+    }
+
+    // ---- ASSEMBLE PROJECTION + RESOLVE WEEKLY LINES (frozen resolver: FLOOR, source identity, blocked) -----------
+    var allocationProjection = {
+      overseasAllocation: overseasAllocation,
+      factoryAllocation: factoryAllocation,
+      blockedInputs: ((overseasAllocation && overseasAllocation.blockedInputs) || []).concat((factoryAllocation && factoryAllocation.blockedInputs) || []),
+      sourceDataAsOf: input.sourceDataAsOf === undefined ? null : input.sourceDataAsOf
+    };
+    var weekly = SF.resolveWeeklyRecommendationFacts({
+      planningCycle: input.planningCycle,
+      businessScope: input.businessScope,
+      allocationProjection: allocationProjection,
+      weeklyPlanningFacts: weeklyPlanningFacts,
+      formulaVersion: input.formulaVersion,
+      sourceDataAsOf: input.sourceDataAsOf
+    });
+
+    // ---- ANNOTATE: unresolved production/order need (§35A step 4) + frozen §35A.WA-4 source-stage tokens ----------
+    // unresolvedProductionNeedQty = calculatedGap − recommendedQty (the FLOORed shipping qty). A partial-carton source
+    // remainder does NOT satisfy the gap (task §6/§7): Gap 100, source 95, UPC 24 → recommended 72 → residual 28 (NOT 5).
+    var cnWh = setOf(input.factory ? input.factory.cnYouxinWarehouseIds : []);
+    var twWh = setOf(input.factory ? input.factory.twShengyiWarehouseIds : []);
+    var lines = (weekly.lines || []).map(function (l) {
+      var out = shallowClone(l);
+      var residual = null;
+      if (!l.blockedReason && typeof l.calculatedGap === 'number' && typeof l.recommendedQty === 'number') {
+        residual = l.calculatedGap - l.recommendedQty;
+        if (residual < 0) residual = 0;
+      }
+      out.unresolvedProductionNeedQty = residual;   // null when blocked / gap or recommended missing
+      var stages = {};
+      (l.allocationBreakdown || []).forEach(function (b) {
+        if (b.sourcePoolType && b.sourcePoolType !== 'FACTORY') stages.SOURCE_OVERSEAS = 1;
+        else if (cnWh[str(b.sourceWarehouseId)] === 1) stages.SOURCE_FACTORY_CN_YOUXIN = 1;
+        else if (twWh[str(b.sourceWarehouseId)] === 1) stages.SOURCE_FACTORY_TW_SHENGYI = 1;
+      });
+      if (residual !== null && residual > 0) stages.UNRESOLVED_PRODUCTION_NEED = 1;
+      out.sourceStages = Object.keys(stages).sort();
+      return out;
+    });
+
+    var unresolvedTotal = 0;
+    lines.forEach(function (l) { if (typeof l.unresolvedProductionNeedQty === 'number') unresolvedTotal += l.unresolvedProductionNeedQty; });
+    issues.sort(function (a, b) { return (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0); });
+
+    return {
+      recommendationType: 'WEEKLY_SHIPPING',
+      planningCycle: str(input.planningCycle),
+      businessScope: input.businessScope,
+      allocationProjection: allocationProjection,
+      lines: lines,
+      weeklyFacts: weekly,                              // full frozen-resolver result (issues, allocationSummary, lineage)
+      sourcePriority: {
+        overseasAllocatedQty: sumAllocated(overseasAllocation ? overseasAllocation.allocations : []),
+        cnAllocatedQty: sumAllocated(cnAlloc.allocations),
+        twAllocatedQty: sumAllocated(twAlloc.allocations),
+        unresolvedProductionNeedQty: unresolvedTotal
+      },
+      issues: issues,                                  // builder-level issues (pool classification); resolver issues stay in weeklyFacts
+      ready: (weekly.ready !== false) && issues.length === 0
+    };
+  }
+
+  return { buildWeeklySourceAllocation: buildWeeklySourceAllocation, _version: 'f1-7n-b-r1' };
+});
+  __kmRegister("supply-planning-weekly-source-allocation", module.exports);
+})();
+
+// ----- module: supply-planning-weekly-input-assembler (verbatim from assets/js/core/supply-planning-weekly-input-assembler.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — WEEKLY AI PLAN backend fact assembler (F1-7N-D0-B).
+// -----------------------------------------------------------------------------
+// The SMALLEST bounded, PURE adapter that turns already-resolved canonical planning facts into the EXACT input DTO
+// consumed by the frozen F1-7N-B builder `buildWeeklySourceAllocation(...)`. It realizes the USER-frozen §35A.7 /
+// WA-9 authority (F1-7N-D0-A) as runtime code:
+//   • cumulative horizon shortage → INCREMENTAL need   incremental(n)=max(0, cum(n) − runningMax(cum(1..n−1)))
+//   • 18-day SURVIVAL applied ONCE per (sku+destination) lane — full on the earliest incremental>0 window, else 0
+//   • §7 site demandWeight CONSERVED across windows       Σ(window weight) == canonical site weight (∝ incremental)
+//   • canonical demandKey = {sku}|{destinationWarehouseId}|{windowCode}  — identical on facts/receivers/demands
+//   • factory identity resolved by EXACT warehouse_id only (CN_YOUXIN / TW_SHENGYI) — fail-closed, never inferred
+//
+// It RE-DERIVES NO business formula: the Gap/horizon shortage, the canonical survivalNeedQty (ceil(18×dailyDemand)),
+// the §7 demandWeight, fulfillmentModel, eligiblePoolTypes, supply pools, UPC and source_data_as_of are all INPUTS
+// resolved upstream by the existing canonical owners (42_ recommendation-workspace horizons · gapOpReadSupplyPoolFacts_ ·
+// KMAF.projectAllocationFacts / KMSF.projectAllocationInputs · sku_details/recGenUpcBySku_ · maxAsOf). This module only
+// PROJECTS/CONSERVES/KEYS/VALIDATES them into the B DTO. It is PURE: no I/O, no clock/random, no DB/Sheet, no
+// PropertiesService/CacheService, no persistence, no reservation, no Request/PO — inputs are never mutated. It emits
+// NO carrier/rate/lead-time/ETA/cost. The Apps Script I/O shell that harvests the canonical facts and pipes
+// assembleWeeklySourceAllocationInput → buildWeeklySourceAllocation → (later) persistWeeklyRecommendationDraft is the
+// NEXT runtime slice (F1-7N-D) — NOT this round.
+
+(function (root, factory) {
+  'use strict';
+  var api = factory();
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.weeklyInputAssembler = api; }
+})(this, function () {
+  'use strict';
+
+  var WINDOW_ORDER = ['D18', 'D30', 'D45', 'D90'];   // frozen horizon order (§35A.7); NOT re-derived here
+  var DEFAULT_FORMULA_VERSION = 'WEEKLY_AI_PLAN_V1';
+  var LINEKEY_SEP = '|';                             // internal dedup-key separator (printable; NOT a NUL byte)
+
+  function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function aType(c, m) { if (!c) throw new TypeError('weeklyInputAssembler: ' + m); }
+  function str(v) { return String(v === undefined || v === null ? '' : v); }
+  function nonEmpty(v) { return str(v).length > 0; }
+  function isTrue(v) { return v === true || v === 'TRUE' || v === 'true'; }
+  function num0(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+  function shallowClone(o) { var n = {}; for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) n[k] = o[k]; return n; }
+
+  // §35A.7 canonical demandKey — the ONE weekly demand identity used everywhere.
+  function weeklyDemandKey(sku, destinationWarehouseId, windowCode) {
+    return [str(sku), str(destinationWarehouseId), str(windowCode)].join('|');
+  }
+
+  // §35A.7 cumulative → incremental projection. incremental(n) = max(0, cum(n) − runningMax(cum(1..n−1))).
+  function incrementalNeeds(cumulative) {
+    var out = [], runMax = 0;
+    for (var i = 0; i < cumulative.length; i++) {
+      var g = Math.max(0, num0(cumulative[i]));
+      out.push(Math.max(0, g - runMax));
+      if (g > runMax) runMax = g;
+    }
+    return out;
+  }
+
+  // §35A.7 factory identity — EXACT full warehouse_id match ONLY (never country/company/name/code/token).
+  function resolveWeeklyFactoryIdentity(warehouseId, config) {
+    var wh = str(warehouseId);
+    if (config && str(config.CN_YOUXIN) === wh && wh !== '') return 'CN_YOUXIN';
+    if (config && str(config.TW_SHENGYI) === wh && wh !== '') return 'TW_SHENGYI';
+    return 'UNKNOWN';
+  }
+
+  // Fail-closed validation of the configured factory identity rows against the warehouses master.
+  function validateFactoryConfig(config, warehousesById) {
+    aType(isObj(config), 'factoryIdentityConfig required');
+    var whById = warehousesById || {};
+    var idents = ['CN_YOUXIN', 'TW_SHENGYI'], wids = {};
+    for (var i = 0; i < idents.length; i++) {
+      var ident = idents[i], wid = str(config[ident]);
+      if (!nonEmpty(wid)) return { ok: false, reason: 'FACTORY_IDENTITY_UNCONFIGURED:' + ident };
+      if (wids[wid]) return { ok: false, reason: 'FACTORY_IDENTITY_OVERLAP:' + wid };
+      wids[wid] = ident;
+      var row = whById[wid];
+      if (!row) return { ok: false, reason: 'FACTORY_WAREHOUSE_MISSING:' + wid };
+      if (str(row.warehouse_type) !== 'FACTORY') return { ok: false, reason: 'FACTORY_WAREHOUSE_NOT_FACTORY_TYPE:' + wid };
+      if (!isTrue(row.is_factory_warehouse)) return { ok: false, reason: 'FACTORY_WAREHOUSE_FLAG_FALSE:' + wid };
+      if (!isTrue(row.is_active)) return { ok: false, reason: 'FACTORY_WAREHOUSE_INACTIVE:' + wid };
+    }
+    return { ok: true };
+  }
+
+  // assembleWeeklySourceAllocationInput(input) — build the F1-7N-B DTO for ONE masterSku scope.
+  //
+  // input = {
+  //   planningCycle, businessScope, masterSku,
+  //   formulaVersion?,                        // default WEEKLY_AI_PLAN_V1
+  //   sourceDataAsOf?,                        // canonical maxAsOf(...) — carried verbatim, never a clock
+  //   factoryIdentityConfig: { CN_YOUXIN: warehouse_id, TW_SHENGYI: warehouse_id },
+  //   warehousesById: { [warehouse_id]: { warehouse_type, is_factory_warehouse, is_active, ... } },
+  //   overseasSupplyPools: [ { poolKey, poolType, warehouseId, effectiveSupplyQty } ],   // gapOpReadSupplyPoolFacts_
+  //   factoryPools:        [ { poolKey, poolType:'FACTORY', warehouseId, effectiveSupplyQty } ],
+  //   lanes: [ {                                 // one per sku(+siteSku)+destinationWarehouseId; canonical facts resolved
+  //     sku?, siteSku, destinationWarehouseId, marketplace, company, country,
+  //     cumulativeGapByWindow: { D18, D30, D45, D90 },   // horizons[].gapQty (canonical; unchanged)
+  //     requiredByByWindow?:   { D18, D30, D45, D90 },
+  //     unitsPerCarton,                                  // sku_details (invalid → B blocks the line)
+  //     survivalNeedQty,        // ceil(18×canonicalDailyDemand)  — KMSF/KMCALC authority (site lane)
+  //     demandWeight,           // §7 canonical site share        — KMAF authority
+  //     fulfillmentModel,       // marketplace_skus                — KMSF resolveSource
+  //     eligiblePoolTypes,      // §24 / KMAF._eligiblePoolTypesFor
+  //     allocationPriority
+  //   } ]
+  // }
+  //
+  // Returns { ready, issues, builderInput, cumulativeByLane }. ready=false (builderInput=null) only on a HARD
+  // fail-closed condition (invalid factory identity config). Lanes with no active incremental demand, or with a
+  // missing destination, are excluded with an issue token (non-fatal for the other lanes).
+  function assembleWeeklySourceAllocationInput(input) {
+    aType(isObj(input), 'input must be an object');
+    aType(typeof input.planningCycle === 'string' && input.planningCycle.length > 0, 'planningCycle required');
+    aType(isObj(input.businessScope), 'businessScope required');
+    var masterSku = str(input.masterSku);
+    aType(nonEmpty(masterSku), 'masterSku required');
+    aType(Array.isArray(input.lanes), 'lanes must be an array');
+
+    var issues = [];
+    var formulaVersion = nonEmpty(input.formulaVersion) ? str(input.formulaVersion) : DEFAULT_FORMULA_VERSION;
+    var sourceDataAsOf = input.sourceDataAsOf === undefined ? null : input.sourceDataAsOf;
+
+    // ---- Factory identity: fail-closed validation (HARD block) --------------------------------------------------
+    var cfg = input.factoryIdentityConfig;
+    var fv = validateFactoryConfig(cfg, input.warehousesById);
+    if (!fv.ok) {
+      return { ready: false, issues: [{ kind: 'FACTORY_IDENTITY', reason: fv.reason }], builderInput: null, cumulativeByLane: [] };
+    }
+    var cnId = str(cfg.CN_YOUXIN), twId = str(cfg.TW_SHENGYI);
+    var eligibleFactoryWarehouseIds = [cnId, twId].sort();
+
+    // Only the two CONFIGURED factory pools may be sourced. Any pool on an unclassified factory warehouse is EXCLUDED
+    // (never silently classified) — recorded as an informational issue, not fabricated and not consumed.
+    var cnPools = [], twPools = [];
+    (input.factoryPools || []).forEach(function (p) {
+      var id = resolveWeeklyFactoryIdentity(p.warehouseId, cfg);
+      if (id === 'CN_YOUXIN') cnPools.push(shallowClone(p));
+      else if (id === 'TW_SHENGYI') twPools.push(shallowClone(p));
+      else issues.push({ kind: 'SUPPLY', key: str(p.poolKey), reason: 'UNCONFIGURED_FACTORY_POOL_EXCLUDED:' + str(p.warehouseId) });
+    });
+    // Represent BOTH configured factory identities as a pool ROW so F1-7N-B's sequential CN→TW residual chain is
+    // well-formed even when a factory has no eligible stock. A zero-quantity placeholder contributes NO supply (never
+    // fabricated) and mirrors the canonical "CN pool qty 0 → TW fills the residual" representation; without a CN pool
+    // row the frozen builder cannot forward the residual to the TW pass.
+    if (cnPools.length === 0) cnPools.push({ poolKey: 'FC:' + cnId, poolType: 'FACTORY', warehouseId: cnId, effectiveSupplyQty: 0 });
+    if (twPools.length === 0) twPools.push({ poolKey: 'FC:' + twId, poolType: 'FACTORY', warehouseId: twId, effectiveSupplyQty: 0 });
+    var factoryPools = cnPools.concat(twPools);
+    var overseasSupplyPools = (input.overseasSupplyPools || []).map(shallowClone);
+
+    // ---- Per-lane projection: cumulative → incremental; survival-once; weight conservation; demandKey ------------
+    var receivers = [], demands = [], weeklyPlanningFacts = [], cumulativeByLane = [], seenLineKey = {};
+    for (var li = 0; li < input.lanes.length; li++) {
+      var lane = input.lanes[li];
+      aType(isObj(lane), 'lanes[' + li + '] must be an object');
+      var laneSku = nonEmpty(lane.sku) ? str(lane.sku) : masterSku;
+      var siteSku = str(lane.siteSku);
+      var dest = str(lane.destinationWarehouseId);
+      var cumByWin = lane.cumulativeGapByWindow || {};
+      var reqBy = lane.requiredByByWindow || {};
+
+      var cum = WINDOW_ORDER.map(function (w) { return Math.max(0, num0(cumByWin[w])); });
+      var inc = incrementalNeeds(cum);
+      cumulativeByLane.push({ siteSku: siteSku, destinationWarehouseId: dest, cumulative: cum, incremental: inc });
+
+      var activeIdx = [];
+      for (var wi = 0; wi < WINDOW_ORDER.length; wi++) { if (inc[wi] > 0) activeIdx.push(wi); }
+      if (activeIdx.length === 0) { continue; } // no incremental demand this lane — nothing to ship
+
+      // Missing destination → cannot physically ship: fail-closed (exclude, issue). Never allocate to an unknown dest.
+      if (!nonEmpty(dest)) { issues.push({ kind: 'DEMAND', key: laneSku + '|' + siteSku, reason: 'MISSING_DESTINATION_WAREHOUSE' }); continue; }
+
+      var earliest = activeIdx[0];
+      var totalInc = 0; activeIdx.forEach(function (i) { totalInc += inc[i]; });
+      var canonicalWeight = num0(lane.demandWeight);
+      var laneSurvival = num0(lane.survivalNeedQty);
+      var priority = num0(lane.allocationPriority);
+      var eligiblePoolTypes = Array.isArray(lane.eligiblePoolTypes) ? lane.eligiblePoolTypes.slice() : [];
+
+      for (var a = 0; a < activeIdx.length; a++) {
+        var idx = activeIdx[a];
+        var windowCode = WINDOW_ORDER[idx];
+        var demandQty = inc[idx];
+        var demandKey = weeklyDemandKey(laneSku, dest, windowCode);
+        // Weekly resolver line identity = sku|siteSku|windowCode (must be unique) — fail-closed on collision.
+        var lk = [laneSku, siteSku, windowCode].join(LINEKEY_SEP);
+        if (seenLineKey[lk]) { issues.push({ kind: 'DEMAND', key: demandKey, reason: 'DUPLICATE_WEEKLY_LINE_KEY' }); continue; }
+        seenLineKey[lk] = 1;
+
+        var survivalNeedQty = (idx === earliest) ? laneSurvival : 0;   // §35A.7 survival-once
+        var demandWeight = totalInc > 0 ? (canonicalWeight * demandQty / totalInc) : 0; // §35A.7 weight conservation
+
+        receivers.push({
+          receiverKey: 'WR|' + demandKey, demandKey: demandKey, marketplace: str(lane.marketplace),
+          destinationWarehouseId: dest, fulfillmentModel: str(lane.fulfillmentModel),
+          demandQty: demandQty, survivalNeedQty: survivalNeedQty, allocationPriority: priority,
+          demandWeight: demandWeight, eligiblePoolTypes: eligiblePoolTypes.slice()
+        });
+        demands.push({
+          demandKey: demandKey, company: str(lane.company), marketplace: str(lane.marketplace),
+          destinationWarehouseId: dest, requiredByDate: str(reqBy[windowCode]), allocationPriority: priority,
+          demandQty: demandQty, eligibleFactoryWarehouseIds: eligibleFactoryWarehouseIds.slice()
+        });
+        weeklyPlanningFacts.push({
+          recommendationType: 'WEEKLY_SHIPPING', sku: laneSku, siteSku: siteSku, windowCode: windowCode,
+          demandKey: demandKey, destinationWarehouseId: dest, requiredByDate: str(reqBy[windowCode]),
+          calculatedGap: demandQty,            // §35A.7 DTO alias at the B boundary: calculatedGap := incrementalNeedQty
+          cumulativeGapQty: cum[idx],          // canonical cumulative preserved (resolver ignores it)
+          unitsPerCarton: lane.unitsPerCarton, // invalid/missing → B resolver blocks the line (never defaulted)
+          allocationPriority: priority
+        });
+      }
+    }
+
+    var overseasInput = {
+      company: str(input.businessScope.company), country: str(input.businessScope.country),
+      masterSku: masterSku, supplyPools: overseasSupplyPools, receivers: receivers
+    };
+    var factory = {
+      factoryPools: factoryPools, demands: demands,
+      cnYouxinWarehouseIds: [cnId], twShengyiWarehouseIds: [twId]
+    };
+
+    var builderInput = {
+      planningCycle: str(input.planningCycle), businessScope: input.businessScope, masterSku: masterSku,
+      formulaVersion: formulaVersion, sourceDataAsOf: sourceDataAsOf,
+      overseasInput: overseasInput, factory: factory, weeklyPlanningFacts: weeklyPlanningFacts
+    };
+
+    issues.sort(function (x, y) {
+      return (x.kind < y.kind ? -1 : x.kind > y.kind ? 1 : 0) || (x.key < y.key ? -1 : x.key > y.key ? 1 : 0) || (x.reason < y.reason ? -1 : x.reason > y.reason ? 1 : 0);
+    });
+    return { ready: true, issues: issues, builderInput: builderInput, cumulativeByLane: cumulativeByLane };
+  }
+
+  return {
+    assembleWeeklySourceAllocationInput: assembleWeeklySourceAllocationInput,
+    resolveWeeklyFactoryIdentity: resolveWeeklyFactoryIdentity,
+    validateFactoryConfig: validateFactoryConfig,
+    incrementalNeeds: incrementalNeeds,
+    weeklyDemandKey: weeklyDemandKey,
+    WINDOW_ORDER: WINDOW_ORDER.slice(),
+    _version: 'f1-7n-d0-b-r1'
+  };
+});
+  __kmRegister("supply-planning-weekly-input-assembler", module.exports);
+})();
+
+// ----- module: supply-planning-weekly-recommendation-draft (verbatim from assets/js/core/supply-planning-weekly-recommendation-draft.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — WEEKLY AI Plan recommendation-draft persistence adapter (F1-7N-C1).
+// -----------------------------------------------------------------------------
+// The SMALLEST canonical bridge from the frozen F1-7N-B pure source-allocation builder into the EXISTING
+// Recommendation Persistence runtime — introducing NO second persistence engine, NO new formula, NO schema.
+//
+//   buildWeeklySourceAllocation (F1-7N-B, §35A)            [PURE allocation + FLOOR + residual — authoritative]
+//        → resolveWeeklyRecommendationFacts result (b.weeklyFacts)
+//        → bridgeRecommendationFactsToPlan (KMBRIDGE)      [camelCase→snake_case natural key; threads
+//                                                           allocationBreakdown + unitsPerCarton into lineage]
+//        → deps.computeFacts payload  { lines:[plan-builder facts], ready, formulaVersion, sourceDataAsOf }
+//        → runRecommendationGeneration (KMORCH)            [K3 Active lookup · Plan Builder per-source fan-out ·
+//                                                           Persistence Core · Persistence Plan Builder · LOCKED apply]
+//        → shipping_allocation_drafts / shipping_allocation_draft_lines
+//
+// This adapter RECALCULATES NOTHING (Gap / Overseas / CN / TW / carton FLOOR / unresolved need all come verbatim
+// from F1-7N-B). It does NOT persist directly — the injected deps (repository loadActiveContext/loadPriorSnapshot +
+// LockService-protected lockedApply) own all I/O, so this module is PURE (Node-testable with fakes; the Apps Script
+// wrapper + F1-7N-D will inject the real KMPR/KMPL deps). It writes ONLY the WEEKLY_SHIPPING draft tables via the
+// existing owner; it emits NO carrier/rate/lead-time/ETA/cost, creates NO Request Order / PO, reserves NO stock.
+// K3 Active identity (no recommendation_group_no) is enforced by the reused orchestrator + repository (F1-7N-C0).
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-weekly-source-allocation.js') : (root.KMWSA || (root.KM && root.KM.weeklySourceAllocation)),
+    req ? req('./supply-planning-plan-bridge.js') : (root.KMBRIDGE || (root.KM && root.KM.planBridge)),
+    req ? req('./supply-planning-recommendation-orchestrator.js') : (root.KMORCH || (root.KM && root.KM.recommendationOrchestrator))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.weeklyRecommendationDraft = api; }
+})(this, function (WSA, BRIDGE, ORCH) {
+  'use strict';
+
+  function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function aType(c, m) { if (!c) throw new TypeError('weeklyRecommendationDraft: ' + m); }
+  function str(v) { return String(v === undefined || v === null ? '' : v); }
+
+  // weeklyComputeFacts(builderInput, opts) — run F1-7N-B (§35A) then bridge its resolver facts into the Plan-Builder
+  // line shape the orchestrator's computeFacts contract expects. Returns { lines, ready, reason, formulaVersion,
+  // sourceDataAsOf, weekly, bridgeMetadata }. opts.mode/opts.calculationRunId only satisfy the bridge's own
+  // validation — the orchestrator re-derives mode + calculationRunId itself (this payload's values are not persisted).
+  function weeklyComputeFacts(builderInput, opts) {
+    aType(isObj(builderInput), 'builderInput must be an object');
+    opts = opts || {};
+    var b = WSA.buildWeeklySourceAllocation(builderInput);                         // §35A: authoritative, never recomputed here
+    var bridged = BRIDGE.bridgeRecommendationFactsToPlan({
+      recommendationFacts: b.weeklyFacts,                                          // EXACT resolveWeeklyRecommendationFacts output
+      mode: opts.mode || 'SCHEDULED_REFRESH',
+      calculationRunId: opts.calculationRunId || 'PENDING'
+    });
+    return {
+      lines: bridged.lines,
+      ready: b.weeklyFacts.ready !== false,
+      reason: b.weeklyFacts.reason == null ? null : b.weeklyFacts.reason,
+      formulaVersion: bridged.formulaVersion,
+      sourceDataAsOf: bridged.sourceDataAsOf,
+      weekly: b,                                                                   // full F1-7N-B result (sourcePriority, unresolved, issues)
+      bridgeMetadata: bridged.metadata
+    };
+  }
+
+  // persistWeeklyRecommendationDraft(input, deps) — the reusable core owner F1-7N-D (manual UI + scheduler parity)
+  // and the Apps Script wrapper will call. It composes the §35A computeFacts and delegates the ENTIRE locked persist
+  // to the existing KMORCH.runRecommendationGeneration (no reimplementation of lookup/lock/upsert/user-edit/terminal).
+  //   input = { builderInput, mode?, planningCycle, businessScope, confirmRegenerateOverUserEdits?, actor?, now? }
+  //           planningCycle + businessScope = the K3 orchestrator identity (businessScope carries source_page).
+  //   deps  = { loadActiveContext(query), loadPriorSnapshot?(draftId), lockedApply(plan, token, opts) }  // repo + lock
+  function persistWeeklyRecommendationDraft(input, deps) {
+    aType(isObj(input), 'input must be an object');
+    aType(isObj(input.builderInput), 'input.builderInput required');
+    aType(typeof input.planningCycle === 'string' && input.planningCycle.length > 0, 'input.planningCycle required');
+    aType(isObj(input.businessScope), 'input.businessScope required (K3 scope incl. source_page)');
+    aType(isObj(deps) && typeof deps.loadActiveContext === 'function' && typeof deps.lockedApply === 'function', 'deps.loadActiveContext/lockedApply required');
+    // Fail closed on a cycle mismatch between the K3 identity and the allocation builder input.
+    if (typeof input.builderInput.planningCycle === 'string' && input.builderInput.planningCycle.length > 0) {
+      aType(str(input.builderInput.planningCycle) === str(input.planningCycle), 'planningCycle mismatch: builderInput ' + input.builderInput.planningCycle + ' vs identity ' + input.planningCycle);
+    }
+    var mode = input.mode || 'SCHEDULED_REFRESH';
+    var computeFacts = function (/* query */) { return weeklyComputeFacts(input.builderInput, { mode: mode }); };
+    return ORCH.runRecommendationGeneration({
+      recommendationType: 'WEEKLY_SHIPPING',
+      mode: mode,
+      planningCycle: input.planningCycle,
+      businessScope: input.businessScope,
+      confirmRegenerateOverUserEdits: input.confirmRegenerateOverUserEdits === true,
+      actor: input.actor,
+      now: input.now
+    }, {
+      loadActiveContext: deps.loadActiveContext,
+      loadPriorSnapshot: deps.loadPriorSnapshot,
+      computeFacts: computeFacts,
+      lockedApply: deps.lockedApply
+    });
+  }
+
+  return {
+    weeklyComputeFacts: weeklyComputeFacts,
+    persistWeeklyRecommendationDraft: persistWeeklyRecommendationDraft,
+    _version: 'f1-7n-c1-r1'
+  };
+});
+  __kmRegister("supply-planning-weekly-recommendation-draft", module.exports);
+})();
+
+// ----- module: supply-planning-weekly-recommendation-runtime (verbatim from assets/js/core/supply-planning-weekly-recommendation-runtime.js) -----
+(function () {
+  var require = __kmRequire;
+  var module = { exports: {} };
+  var exports = module.exports;
+// Kitchen Mama Operation System — WEEKLY AI PLAN generation-pipeline core (F1-7N-D-1).
+// -----------------------------------------------------------------------------
+// The ONE canonical Weekly AI Plan generation owner's PURE brain. Both the manual AI Plan action and the Monday
+// scheduler (wired in later slices D-2/D-3/D-4) call this ONE function so there is never a parallel calculation path:
+//
+//   generateWeeklyShippingRecommendationDraft(request, deps)
+//     → assembleWeeklySourceAllocationInput(...)   (F1-7N-D0-B — §35A.7 lane projection / survival-once / weight
+//                                                    conservation / demandKey / factory-identity fail-closed)
+//     → buildWeeklySourceAllocation(...)           (F1-7N-B — Overseas→CN→TW→unresolved; carton FLOOR) [for summary]
+//     → persistWeeklyRecommendationDraft(...)       (F1-7N-C1 → runRecommendationGeneration; K3 identity, LockService,
+//                                                    natural-key upsert, user-edit protection, terminal conflict)
+//     → bounded result DTO
+//
+// It RE-DERIVES NO business formula and introduces NO second engine: the canonical facts (horizons, survivalNeedQty,
+// §7 demandWeight, fulfillmentModel, eligiblePoolTypes, pools, UPC, sourceDataAsOf) are harvested by the Apps Script
+// I/O shell (F1-7N-D-2) from the existing headless owners (KMHP / KMPA / KMAF / KMSF / gapOpReadSupplyPoolFacts_ /
+// recGenUpcBySku_ / gapCalcResolveContext_) and passed in as `request.lanes` / pools / config. This module is PURE:
+// no I/O, no clock/random, no DB/Sheet, no PropertiesService/CacheService, no persistence of its own — the injected
+// `deps` (KMPR repository + KMPL LockService-protected lockedApply) own all writes. It creates NO Request Order / PO /
+// shipment, reserves NO stock, emits NO carrier/rate/lead-time/ETA/cost. WEEKLY writes ONLY the shipping-allocation
+// draft tables, exclusively through the F1-7N-C1 owner. Fail-closed: a bad scope or bad factory-identity config
+// returns BLOCKED_INPUT and NEVER persists.
+
+(function (root, factory) {
+  'use strict';
+  var req = (typeof require !== 'undefined') ? require : null;
+  var api = factory(
+    req ? req('./supply-planning-weekly-input-assembler.js') : (root.KMWIA || (root.KM && root.KM.weeklyInputAssembler)),
+    req ? req('./supply-planning-weekly-source-allocation.js') : (root.KMWSA || (root.KM && root.KM.weeklySourceAllocation)),
+    req ? req('./supply-planning-weekly-recommendation-draft.js') : (root.KMWRD || (root.KM && root.KM.weeklyRecommendationDraft))
+  );
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof window !== 'undefined') { window.KM = window.KM || {}; window.KM.weeklyRecommendationRuntime = api; }
+})(this, function (WIA, WSA, WRD) {
+  'use strict';
+
+  function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function aType(c, m) { if (!c) throw new TypeError('weeklyRecommendationRuntime: ' + m); }
+  function str(v) { return String(v === undefined || v === null ? '' : v); }
+  function nonEmpty(v) { return str(v).length > 0; }
+  function assign(target, src) { var o = {}, k; for (k in target) if (target.hasOwnProperty(k)) o[k] = target[k]; for (k in src) if (src.hasOwnProperty(k)) o[k] = src[k]; return o; }
+
+  var DEFAULT_FORMULA_VERSION = 'WEEKLY_AI_PLAN_V1';
+
+  // Bounded result envelope — NEVER a raw canonical snapshot. The Apps Script handler wraps this in jsonResponse_.
+  function result(fields) {
+    var base = {
+      success: false, recommendationType: 'WEEKLY_SHIPPING', planningCycle: null, businessScope: null,
+      draftId: null, draftVersion: null, status: null, reason: null,
+      generatedLineCount: 0, blockedLineCount: 0, recommendedQtyTotal: 0, unresolvedProductionNeedQty: 0,
+      sourcePrioritySummary: null, issues: [], ready: false, sourceDataAsOf: null, formulaVersion: DEFAULT_FORMULA_VERSION
+    };
+    if (fields) for (var k in fields) if (fields.hasOwnProperty(k)) base[k] = fields[k];
+    return base;
+  }
+
+  // generateWeeklyShippingRecommendationDraft(request, deps) — the single generation owner (manual + scheduler share it).
+  //   request = {
+  //     planningCycle, businessScope:{company,country,marketplace,source_page}, masterSku,
+  //     mode?, confirmRegenerateOverUserEdits?, actor?, now?,
+  //     sourceDataAsOf?, formulaVersion?,                         // provenance (carried; never a clock)
+  //     factoryIdentityConfig:{CN_YOUXIN, TW_SHENGYI}, warehousesById,
+  //     overseasSupplyPools[], factoryPools[],
+  //     lanes[]                                                   // assembler lane shape (harvested by the .gs shell)
+  //   }
+  //   deps = { loadActiveContext(query), loadPriorSnapshot?(draftId), lockedApply(plan, token, opts) }  // KMPR + KMPL
+  function generateWeeklyShippingRecommendationDraft(request, deps) {
+    aType(isObj(request), 'request must be an object');
+    aType(isObj(deps) && typeof deps.loadActiveContext === 'function' && typeof deps.lockedApply === 'function', 'deps.loadActiveContext/lockedApply required');
+
+    var scope = isObj(request.businessScope) ? request.businessScope : {};
+    var formulaVersion = nonEmpty(request.formulaVersion) ? str(request.formulaVersion) : DEFAULT_FORMULA_VERSION;
+    var sourceDataAsOf = request.sourceDataAsOf === undefined ? null : request.sourceDataAsOf;
+    var provenance = { planningCycle: nonEmpty(request.planningCycle) ? str(request.planningCycle) : null, businessScope: scope, sourceDataAsOf: sourceDataAsOf, formulaVersion: formulaVersion };
+
+    // ---- 1. Scope validation (fail closed; NO persist) ----------------------------------------------------------
+    var missing = [];
+    ['company', 'country', 'marketplace', 'source_page'].forEach(function (k) { if (!nonEmpty(scope[k])) missing.push('businessScope.' + k); });
+    if (!nonEmpty(request.planningCycle)) missing.push('planningCycle');
+    if (!nonEmpty(request.masterSku)) missing.push('masterSku');
+    if (missing.length) {
+      return result(assign(provenance, { status: 'BLOCKED_INPUT', reason: 'MISSING_SCOPE:' + missing.join(','), issues: missing.map(function (m) { return { kind: 'INPUT', reason: 'MISSING:' + m }; }) }));
+    }
+
+    // ---- 2. Assemble the F1-7N-B DTO (fail-closed factory identity / lane validation; NO persist on !ready) ------
+    var asm;
+    try {
+      asm = WIA.assembleWeeklySourceAllocationInput({
+        planningCycle: request.planningCycle, businessScope: scope, masterSku: request.masterSku,
+        formulaVersion: formulaVersion, sourceDataAsOf: sourceDataAsOf,
+        factoryIdentityConfig: request.factoryIdentityConfig, warehousesById: request.warehousesById,
+        overseasSupplyPools: request.overseasSupplyPools || [], factoryPools: request.factoryPools || [],
+        lanes: request.lanes || []
+      });
+    } catch (e) {
+      return result(assign(provenance, { status: 'BLOCKED_INPUT', reason: 'ASSEMBLER_ERROR:' + (e && e.message ? e.message : e), issues: [{ kind: 'INPUT', reason: 'ASSEMBLER_ERROR' }] }));
+    }
+    if (!asm.ready) {
+      return result(assign(provenance, { status: 'BLOCKED_INPUT', reason: (asm.issues && asm.issues[0] && asm.issues[0].reason) || 'ASSEMBLER_NOT_READY', issues: asm.issues || [], ready: false }));
+    }
+
+    // ---- 3. Deterministic summary from the frozen builder (pure; the persist path recomputes it identically) -----
+    var built = WSA.buildWeeklySourceAllocation(asm.builderInput);
+    var lines = built.lines || [];
+    var blocked = 0, recTotal = 0;
+    lines.forEach(function (l) {
+      if (l.blockedReason) blocked++;
+      if (typeof l.recommendedQty === 'number') recTotal += l.recommendedQty;
+    });
+    var sp = built.sourcePriority || {};
+
+    // ---- 4. Persist through the ONLY write path (F1-7N-C1 → orchestrator → LockService) --------------------------
+    var persistRes;
+    try {
+      persistRes = WRD.persistWeeklyRecommendationDraft({
+        builderInput: asm.builderInput, mode: request.mode, planningCycle: request.planningCycle,
+        businessScope: scope, confirmRegenerateOverUserEdits: request.confirmRegenerateOverUserEdits === true,
+        actor: request.actor, now: request.now
+      }, { loadActiveContext: deps.loadActiveContext, loadPriorSnapshot: deps.loadPriorSnapshot, lockedApply: deps.lockedApply });
+    } catch (e) {
+      return result(assign(provenance, {
+        status: 'PERSISTENCE_ERROR', reason: (e && e.message ? e.message : String(e)),
+        generatedLineCount: lines.length, blockedLineCount: blocked, recommendedQtyTotal: recTotal,
+        unresolvedProductionNeedQty: sp.unresolvedProductionNeedQty || 0, sourcePrioritySummary: sp,
+        issues: (asm.issues || []).concat(built.issues || []), ready: true
+      }));
+    }
+
+    // ---- 5. Bounded result DTO --------------------------------------------------------------------------------
+    var okStatus = persistRes && persistRes.status === 'COMPLETED';
+    return result(assign(provenance, {
+      success: !!okStatus,
+      status: (persistRes && persistRes.status) || 'FAILED',
+      reason: okStatus ? null : (persistRes && persistRes.reason) || 'PERSISTENCE_FAILED',
+      draftId: persistRes ? persistRes.draftId : null,
+      draftVersion: persistRes ? persistRes.draftVersion : null,
+      generatedLineCount: lines.length,
+      blockedLineCount: blocked,
+      recommendedQtyTotal: recTotal,
+      unresolvedProductionNeedQty: sp.unresolvedProductionNeedQty || 0,
+      sourcePrioritySummary: sp,
+      issues: (asm.issues || []).concat(built.issues || []),
+      ready: true
+    }));
+  }
+
+  return {
+    generateWeeklyShippingRecommendationDraft: generateWeeklyShippingRecommendationDraft,
+    _version: 'f1-7n-d-1-r1'
+  };
+});
+  __kmRegister("supply-planning-weekly-recommendation-runtime", module.exports);
+})();
+
 // ----- module: supply-planning-source-reader (verbatim from assets/js/core/supply-planning-source-reader.js) -----
 (function () {
   var require = __kmRequire;
@@ -11010,6 +11752,10 @@ var KMORCH = __kmModules["supply-planning-recommendation-orchestrator"];
 var KMUE = __kmModules["supply-planning-user-edit"];
 var KMSF = __kmModules["supply-planning-source-facts"];
 var KMBRIDGE = __kmModules["supply-planning-plan-bridge"];
+var KMWSA = __kmModules["supply-planning-weekly-source-allocation"];
+var KMWIA = __kmModules["supply-planning-weekly-input-assembler"];
+var KMWRD = __kmModules["supply-planning-weekly-recommendation-draft"];
+var KMWRT = __kmModules["supply-planning-weekly-recommendation-runtime"];
 var KMSR = __kmModules["supply-planning-source-reader"];
 var KMSI = __kmModules["supply-planning-recommendation-source-integration"];
 var KMSRP = __kmModules["supply-planning-source-reader-production"];
@@ -11031,4 +11777,4 @@ var KMREC = __kmModules["supply-recommendation"];
 var KMREX = __kmModules["supply-execution-handoff"];
 
 // KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.
-var KM_BUNDLE_INFO = {"bundleHash":"aaf5b07f2292f9e876459f38d5c9533f1451357f1781e3e3622684f4c2918782","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"1037ad4ba8cf0fb24f6f874d49e3a816ed7a805e1874cd1ebceb05327ab2e407"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"aad989d045e2db674ed43b07fc433643522717d730dc19d247c26d90fc93b372"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"ac046cf77ed1aa281ed9a95f1675f560afaa0c653fc68c277670c5dd40157d1f"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"}]};
+var KM_BUNDLE_INFO = {"bundleHash":"c42c2cf1ebad1fdcdd1e42900896c1ebed25fa7801521309a9d1b8ed3356c4d1","modules":[{"module":"supply-planning-country-identity","sha256":"3329df751aad80dc9b6aecd2a01fea4947389404112e43c79e2c97d4c02acdd4"},{"module":"supply-planning-calculations","sha256":"997f6a5224658038a24599a6af9aff2fda98726d04f4f45cee8ba298b2deb430"},{"module":"supply-planning-qualified-incoming","sha256":"dcf812ba1244619bf51342151842cabb063e0960aeb4526646decfbffdf06db5"},{"module":"supply-planning-ledgers","sha256":"3841ab3fe9d5922dad544677e87dd9f2b8507da50c385abb51ae5a071e89a042"},{"module":"supply-planning-allocations","sha256":"79194d50c2dbfb1ea4ebc0f46def5229a85012569956b66f7dffa1e01b8fd911"},{"module":"supply-planning-allocation-runtime","sha256":"7127d4cd3f49ecafbfc180f5c76e9ed09f05a469abf19b25e4bb6ec2a7b6f8a5"},{"module":"supply-planning-factory-cohort","sha256":"2adccb3762d9c0c9350743cd8c5188b92ffa7e5046126b55158f56a85c6ac498"},{"module":"supply-planning-line-runtime","sha256":"0e0b9c3f60d590f7351d541b8c0de9ae6d8d344c882864c7c2fe8dbbca5301c8"},{"module":"supply-planning-incoming-adapters","sha256":"6132c0bc3b30dd4e94e2198e07cbc29571e1c5bf2bd6b8836d5b631c0c1f6dc0"},{"module":"supply-planning-external-incoming-adapters","sha256":"ca1cb707ee5ad5ad4437bbc6a3c4056796c340ec278ba8a55803f56aa25b0d93"},{"module":"supply-planning-supply-candidates","sha256":"6f9892b0b210395ddb77589da12685781932efa43e1d7757d4f16960b6c9a270"},{"module":"supply-planning-shipment-line-source","sha256":"8aa9e6137429e68defdd72baa053c9cddb2e3ec95d83f06d340dd2d82e298333"},{"module":"supply-planning-persistence","sha256":"1037ad4ba8cf0fb24f6f874d49e3a816ed7a805e1874cd1ebceb05327ab2e407"},{"module":"supply-planning-persistence-repository","sha256":"0dd4d80079696e6ce8a8a8b00619907ae1449a03a7a6909cfff53e181badd470"},{"module":"supply-planning-persistence-locking","sha256":"ab2a383e64a5f113c26281cb8b56c82c69dacd969ad25dcc41fbc4c5fb00b12b"},{"module":"supply-planning-plan-builder","sha256":"f243fb00f60a479cc2030da343bfd08b952ebaab79d8b8802ac2d5a0a3d4e203"},{"module":"supply-planning-persistence-plan-builder","sha256":"c4167ea6ba7fb1487674e8f2920b5c28755d274cc8fcfca487991c0d94119304"},{"module":"supply-planning-recommendation-orchestrator","sha256":"23f1cf9ab336f6fb5a7bdb6e81010adb1cb2b97d78b68be31a9692132471b192"},{"module":"supply-planning-user-edit","sha256":"365702d00a5c1ac9544a6086504b2e4961de1129fe3619eace8054ef34172693"},{"module":"supply-planning-source-facts","sha256":"1f128e911f5b9dbedbf3984bef78c754a67b282fdbd0e965f0adaa545b04db88"},{"module":"supply-planning-plan-bridge","sha256":"c100c56dfc0c652ee440073300085b53699e22e1c7cbe7ddea238715c6911a18"},{"module":"supply-planning-weekly-source-allocation","sha256":"9be80e232758993406dd649fb8d737272cfb8a42822477d47089e9b62ab5bb45"},{"module":"supply-planning-weekly-input-assembler","sha256":"d7ab9dda89af49c32b1c14bf1ef55facb25d0716962eee34b68c393d11813729"},{"module":"supply-planning-weekly-recommendation-draft","sha256":"ce491ca4939e2a323d051471c231958a03315a7ee8beb3cd6a91d73f5f1cac32"},{"module":"supply-planning-weekly-recommendation-runtime","sha256":"0f944bc6877b215fbe8ab5ca1e714834c1868a25a1ec5654ba30c40b63ca63b3"},{"module":"supply-planning-source-reader","sha256":"12e8a883bf2023f4374c279fb89d14ad6e7e97de3e43b8b45ba06673f6fc0169"},{"module":"supply-planning-recommendation-source-integration","sha256":"75e1f8a697ba2c01018aad9518edb9c688d086145521044d50de30ef42cbd570"},{"module":"supply-planning-source-reader-production","sha256":"0f0111ef162ac5120730c9f13ea8fe33ae34d2ef4f6419407d75591db69227ac"},{"module":"supply-planning-source-projection","sha256":"8ba63bd64a9731f904009e2088e32a69ab41bc7fc7def924ed7efc2348e0c2e6"},{"module":"supply-planning-allocation-facts","sha256":"5027ba8d395b2633153df64287353de42591aa134d75c5f8825778f74bcbc2fc"},{"module":"supply-planning-planning-context","sha256":"2b7267001c9019b4298f58246859414e55996a77174094400a146457abd113e3"},{"module":"supply-planning-demand-allocation","sha256":"06cbdd2fa79bd21f6dd80fb5d990bca0ded2946c42677d4b3bc69ec4cb4618ed"},{"module":"supply-planning-marketplace-supply-allocation","sha256":"3706a0f72851bfb06bbf5c51c19c2c30d504dc236c926123e35147f4c1faba16"},{"module":"supply-planning-production-assembly","sha256":"d9c2850b670bcf91dde865727c809c141913f973a2cd5440f5c3ba9c45ff8cd7"},{"module":"supply-planning-destination-runtime","sha256":"7f4a3426cb3e1c241154d89d58df085a57854e8198b9f61f4dce971df2267f3c"},{"module":"supply-planning-planning-demand","sha256":"f39a63f12b37d407a199da8c4f57b1d10addbede32b37148e13c52fc938a8240"},{"module":"supply-planning-time-phased-projection","sha256":"327beb70c4f4eb33a1da08425b049c630c0a3fe1e18e0fd3b4900f12a0ac2947"},{"module":"supply-planning-horizon-projection","sha256":"d3bc047aac2f93f9ef50746a3dbb26f3fdba7fd60b8feab5bf642819bca0d4d6"},{"module":"supply-planning-production-source","sha256":"aad989d045e2db674ed43b07fc433643522717d730dc19d247c26d90fc93b372"},{"module":"supply-planning-production-safety","sha256":"7494f90ffe42045f6e75b32fb11d05dd91e8275631a0bd028d002810cf0ef3a6"},{"module":"supply-planning-production-writer","sha256":"ac046cf77ed1aa281ed9a95f1675f560afaa0c653fc68c277670c5dd40157d1f"},{"module":"supply-planning-verification-diagnostics","sha256":"efbbfa0e360a9de20a3025964a6181b7bc00496fbb8283d0528f6d0c89dc5dea"},{"module":"supply-recommendation","sha256":"3961cafdf1a0e3545398858e85df2f9136040593a92c83f36c344928006b17e7"},{"module":"supply-execution-handoff","sha256":"ba372868cf169cd61cb8f9972b6649afff2917c99f510b9de9acb0882f60643b"}]};
