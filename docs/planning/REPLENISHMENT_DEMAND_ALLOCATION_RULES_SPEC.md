@@ -49,6 +49,23 @@ overlapping effective periods; ≥1 active destination. Errors:
 / `DEMAND_ALLOCATION_DESTINATION_CONFLICT` / `DEMAND_ALLOCATION_PERIOD_CONFLICT` / `DESTINATION_WAREHOUSE_INVALID`.
 A missing/invalid ratio **never** becomes 50/50 or 100/0.
 
+### 3a. Planning-destination membership authority (F1-7N-D-2i-R1) — rules ARE the membership authority
+
+These rows are the **sole** authority for which warehouses are self_fulfilled **planning / replenishment** destinations.
+`recoWsExpandWarehouse_` (42) plans ONLY to the warehouses named by active rows for the scope (`ruleset.warehouses`
+from `validateAllocationRules`); it never enumerates the `warehouses` table to invent destinations. A warehouse's mere
+presence in `warehouses` — even `active + same-company + non-factory` — does **NOT** make it a planning destination.
+
+The `warehouses` table intentionally also holds physical marketplace / FBA receiving FCs (e.g. `WH-KM-US-FBA-ONT8`,
+`WH-KM-US-FBA-ABE2`, `WH-KM-US-FBA-AMAZON`) retained **only** for **Shipment Draft / shipment-execution** selection.
+These are NOT self_fulfilled planning destinations and MUST NOT be inferred as candidates from
+`active && same-company && non-factory`. Weekly AI Plan therefore recommends a logical destination (`CN → Amazon`),
+never a physical FC grain (`CN → Amazon ONT8`) — physical FC assignment is deferred to shipment execution.
+
+`platform_fulfilled` marketplaces resolve to the logical **MARKETPLACE** destination and require **NO** rows here.
+Only the `self_fulfilled` lane (incl. the self_fulfilled SKUs of a `hybrid` marketplace, per D-F1-7N-D-2h) uses this
+table. Absence of a rule for a self lane fail-closes (`DEMAND_ALLOCATION_RULE_NOT_CONFIGURED`) — never a default.
+
 ## 4. Deterministic integer allocation (reuses the FROZEN largest-remainder policy)
 
 `allocateByBasisPoints(qty, weights)` splits an integer marketplace demand by the validated basis points using the
@@ -62,8 +79,12 @@ remainder, tie-break ascending `warehouse_id`). Forecast and Sales use the same 
 
 1. In the Operation Database spreadsheet (exact Spreadsheet-ID only), add a sheet named
    `replenishment_demand_allocation_rules` with the header row in §2 (exact column names).
-2. Seed the KM/US/Amazon rows, e.g. `RDAR-KM-US-AMAZON_US-{WH_A}` = `0.30`, `RDAR-KM-US-AMAZON_US-{WH_B}` = `0.70`
-   (resolve `{WH_A}`/`{WH_B}` to the **canonical `warehouse_id`s**, never names). Ratios must sum to `1.00`.
+2. Seed rows ONLY for `self_fulfilled` scopes (and the self_fulfilled SKUs of a `hybrid` marketplace). Example for a
+   self_fulfilled marketplace split across two overseas warehouses: `RDAR-KM-US-SHOPIFY-{WH_A}` = `0.30`,
+   `RDAR-KM-US-SHOPIFY-{WH_B}` = `0.70` (resolve `{WH_A}`/`{WH_B}` to the **canonical `warehouse_id`s**, never names;
+   ratios are user-owned business config and must sum to `1.00`; a single-warehouse scope takes an explicit `1.00` row).
+   Do **NOT** seed rows for `platform_fulfilled` marketplaces (e.g. Amazon, Newegg) — they resolve to the logical
+   MARKETPLACE destination and physical FBA FC assignment is deferred to shipment execution (see §3a).
 3. No auto-repair, no data deletion, no runtime table creation.
 
 **Reader (F1-4B-E — implemented):** `window.KM.DB.getReplenishmentDemandAllocationRules()` is a targeted, read-only

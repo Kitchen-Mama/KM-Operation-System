@@ -696,6 +696,30 @@ USER-approved business authority (F1-7N-D-2h). Supersedes ONLY the hybrid fail-c
   incremental / carton / source-priority / K3 / count-once / monthly change. Handler-only (42; not bundled) → no bundle
   rebuild; `APPS_SCRIPT_SYNC_REQUIRED` for 42.
 
+### D-F1-7N-D-2i-R1 — Planning destination ≠ physical shipment warehouse; allocation rules ARE the self-fulfilled membership authority (USER-approved)
+
+Planning/recommendation destination and shipment-execution destination are SEPARATE concepts (USER-frozen, F1-7N-D-2i).
+
+- **Self_fulfilled planning-destination membership = active `replenishment_demand_allocation_rules` rows only.** The
+  runtime already enforces this: `recoWsExpandWarehouse_` (42) plans ONLY to `ruleset.warehouses` (the warehouses named
+  by active rules for the scope), never by enumerating the `warehouses` table. Mere presence in `warehouses` — even
+  `active + same-company + non-factory` — does NOT create a planning destination. So the allocation-rule table is a
+  sufficient explicit membership authority; **no per-warehouse "planning-eligible" schema field is needed** (CASE B).
+  No runtime/schema change — this decision records the existing correct behavior and corrects misleading wording.
+- **`warehouses` intentionally holds physical marketplace/FBA FCs** (e.g. `WH-KM-US-FBA-ONT8`/`-ABE2`/`-AMAZON`, ~86 for
+  KM/US) retained ONLY for **Shipment Draft / shipment-execution** candidate selection (`SHIPMENT_CENTER_SPEC` FBA
+  filter `warehouse_type='FBA'`). They MUST NOT be inferred as self-fulfilled planning destinations. Weekly recommends
+  a logical destination (`CN → Amazon`), never a physical FC grain (`CN → Amazon ONT8`).
+- **Grains re-proved:** PLATFORM `(company,country,marketplace,sku) → logical MARKETPLACE` (no rule; FC deferred to
+  shipment). SELF `(company,country,marketplace,sku,destination_warehouse_id) →` one INDEPENDENT inventory/gap/
+  replenishment node per rule-configured warehouse (ratios split DEMAND, not inventory; conserve once; never pooled).
+  HYBRID per-SKU into one of the above (D-F1-7N-D-2h).
+- **Consequence for KM/US:** only the self warehouse(s) a user configures in rules participate — NOT all 88 warehouses.
+  Amazon/Newegg (platform) and the Walmart platform lane need NO rows; Shopify/Target and the Walmart self lane (2 SKUs)
+  need rows only for their explicitly-chosen self warehouse(s) (the 2 KM 3PL nodes `WH-KM-US-3PL-AMZLGS` / `-WINIT`).
+- **Correction:** `REPLENISHMENT_DEMAND_ALLOCATION_RULES_SPEC.md` §3a added (membership authority) and §5 example fixed
+  (was a stale Amazon warehouse-split example; Amazon is platform_fulfilled → no rule). Docs-only; no code/DB change.
+
 ### D-F1-4B-FM5-R3 — Gap Materialization Scheduler + post-import orchestration (schedule-only; rollover HALT)
 
 Productionizes the proven materialized gap batches as scheduled jobs. ORCHESTRATION ONLY — no formula/stock/
