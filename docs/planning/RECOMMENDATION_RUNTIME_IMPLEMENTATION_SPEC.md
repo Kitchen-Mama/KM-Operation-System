@@ -267,10 +267,12 @@ OUTPUT: canonical **WEEKLY_SHIPPING** Draft header/lines only.
 - **Weekly Shipping Plan (owned by `WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md` + the Amendment §4.1):** resolves candidate Carrier / Rate Card / Lead Time; rejects routes that cannot meet Required-By; among feasible candidates presents the lowest-cost option; re-quotes when quantity/endpoints/mode changes; user may override before approval; **approval freezes the decision snapshot.** `carrier_lead_times` / `carrier_rate_cards` are consumed **only** by the Weekly Plan, never by the draft.
 - **Invariant:** **Allocation Draft recommends · Weekly Plan decides · Shipment executes.**
 
-### WA-7. Runtime readiness map (next slices — NOT authorized here)
+### WA-7. Runtime readiness map (next slices)
+> **F1-7N-B status (2026-08-19): WEEKLY AI PLAN PURE SOURCE-ALLOCATION BUILDER = IMPLEMENTED / TEST VERIFIED** — `assets/js/core/supply-planning-weekly-source-allocation.js` (`window.KM.weeklySourceAllocation.buildWeeklySourceAllocation`), `weekly-ai-plan-source-allocation-f1-7n-b-r1.test.js` **40 assertions** (all 13 §35A.5 scenarios + monthly-unchanged + purity). PURE composition over the frozen `allocateOverseasSharedPool` / `allocateFactoryDeterministic` (§40 UNCHANGED — 112 assertions preserved; Golden #19 preserved) + `resolveWeeklyRecommendationFacts`; CN_YOUXIN→TW_SHENGYI via sequential source passes. **Persistence = NOT IMPLEMENTED · API = NOT IMPLEMENTED · UI = NOT IMPLEMENTED · Scheduler = NOT IMPLEMENTED · Weekly Plan promotion/logistics = NOT IMPLEMENTED.** No DB/schema/Apps Script/frontend; no reservation; no Request/PO.
+
 | Slice | Scope |
 |---|---|
-| **F1-7N-B** | Weekly AI Plan **pure source-allocation builder** — realize §35A over `resolveWeeklyRecommendationFacts` (Overseas→CN→TW→unresolved; FLOOR; coarse method); test-first (the §35A.5 13 scenarios). No I/O. |
+| **F1-7N-B** | Weekly AI Plan **pure source-allocation builder** — realize §35A over `resolveWeeklyRecommendationFacts` (Overseas→CN→TW→unresolved; FLOOR; coarse method); test-first (the §35A.5 13 scenarios). No I/O. **— IMPLEMENTED (2026-08-19).** |
 | **F1-7N-C** | Weekly Recommendation **Draft persistence/orchestrator wiring** — `generateRecommendationDraft(WEEKLY_SHIPPING)` → `shipping_allocation_drafts`/`_lines` via the frozen §Persist-Orch/§Persist-Adapter (LockService, natural-key upsert, user-edit protection). |
 | **F1-7N-D** | **AI Plan UI → `generateRecommendationDraft(WEEKLY_SHIPPING)`** for the on-screen scope + **scheduled-run parity** (same core as `runWeeklyShippingRecommendation`). |
 | **F1-7N-E** | **Weekly Shipping Plan promotion** + actual logistics/quote decision wiring (WA-6 Weekly Plan owner; Carrier/Rate/Lead-Time). |
