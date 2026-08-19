@@ -841,6 +841,10 @@ function handleRecommendationWorkspaceGet_(body, io) {
     var siteSkuBySku = recoWsSiteSkuBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope);
     var ful = recoWsResolveFulfillment_(recoWsToRowObjects_(snaps.marketplaces), v.scope);
     var vmeta = { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf };
+    // F1-7N-D-2f-R2: additive canonical fulfillment_model projection onto each response line. recoWsResolveFulfillment_
+    // is the ONE owner that already resolved marketplaces.fulfillment_model for this scope; carry that same value
+    // verbatim (never re-read, never inferred from marketplace name). '' when no marketplaces row (fail-closed).
+    var scopeFulfillmentModel = recoWsStr_(ful && ful.row ? ful.row.fulfillment_model : '');
 
     // Server destination expansion → unified runtime per SKU × destination. Dedup by stable line identity.
     var lines = [], seen = {}, issues = [];
@@ -852,6 +856,7 @@ function handleRecommendationWorkspaceGet_(body, io) {
       for (var p = 0; p < produced.length; p++) {
         var ln = produced[p]; if (!ln) continue;
         if (seen[ln.recommendationLineId]) { issues.push(recoWsErr_('RECOMMENDATION_LINE_IDENTITY_CONFLICT', 'duplicate recommendation line identity: ' + ln.recommendationLineId)); continue; }
+        ln.fulfillmentModel = scopeFulfillmentModel;   // F1-7N-D-2f-R2 canonical fulfillment_model projection (additive)
         seen[ln.recommendationLineId] = 1; lines.push(ln);
       }
     }
