@@ -753,6 +753,54 @@ USER-approved Phase-1 edit surface (F1-7N-D-2j): warehouse demand-allocation rat
   `warehouse-allocation-config-f1-7n-d-2j-r1` (35). Changed: `03_master_data_handlers.gs`, `01_router.gs`,
   `operation-system-db-api.js`, `inventory-replenishment.js/.html` → `APPS_SCRIPT_SYNC_REQUIRED` (03/01) +
   `FRONTEND_DEPLOY_REQUIRED`; no bundled core changed → no 90_ rebuild.
+- **SUPERSEDED (storage owner only) by D-F1-7N-D-2k-R1:** the SSOT storage moved from the
+  `replenishment_demand_allocation_rules` Sheet tab to the `KM_WAREHOUSE_ALLOCATION_CONFIG` Script-Property blob. The
+  edit surface, grain, ratio contract, picker authority, single-warehouse policy, and Phase-2 follow-up above are all
+  UNCHANGED — only the persistence medium and the modal's read path changed.
+
+### D-F1-7N-D-2k-R1 — Warehouse Allocation persists in a Script-Property config (no user-managed Sheet tab); rule MODEL preserved (USER-approved, CASE B)
+
+USER DECISION (F1-7N-D-2k): Warehouse Allocation ratios are configured through the Operation System UI (Site Inventory
+→ More Options → Warehouse Allocation) but must **NOT** require a user-managed `replenishment_demand_allocation_rules`
+Google Sheet tab. The setting must still be persistent AND backend/scheduler-readable (Weekly AI Plan + scheduled
+automation consume the same settings) — never browser-only.
+
+- **Audit → chosen owner:** the only existing config storage suitable for shared operational settings that are
+  backend-writable AND readable by time-driven triggers with no browser session is `PropertiesService.getScriptProperties()`
+  (precedent: `45_api_v1_automation_schedule.gs` — one JSON blob under `KM_AUTOMATION_SCHEDULE_CONFIG`, read headlessly
+  by triggers). There is no generic settings sheet/table/API and no key/value config owner. So a NEW dedicated
+  Script-Property key `KM_WAREHOUSE_ALLOCATION_CONFIG` (owner `50_api_v1_warehouse_allocation_config.gs`) mirrors that
+  pattern. Classification **A** (shared operational config).
+- **CASE B (reconciliation):** the frozen KMDA engine (`supply-planning-demand-allocation.js`) is intrinsically
+  ROW/ruleset-oriented (cross-row ratio-sum = 100%, per-warehouse fan-out, largest-remainder) but STORAGE-AGNOSTIC —
+  it consumes an INJECTED array of flat rule rows (`_toRuleRow` accepts snake OR DB-normalized camel). So the RULE
+  MODEL is unchanged; only the STORAGE OWNER moved. The blob is materialized on read into the SAME snake-case rule
+  rows (`warehouseAllocationConfigToRuleRows_`). NO calc-core edit; no 90_ bundle rebuild.
+- **Config shape (blob):** `{ version:1, scopes:{ "<CO>||<COUNTRY>||<MKT>": { company, country, marketplace,
+  warehouses:[{ warehouse_id, forecast_ratio, sales_ratio }], updated_by, updated_at } } }`. One scope = one
+  `(company,country,marketplace)`; SELF_FULFILLED only. Single warehouse still persists EXPLICIT `1.0/1.0`.
+- **Write** = SAME router action `replenishmentDemandAllocation.save` → `handleReplenishmentDemandAllocationSave_` (03),
+  LockService-serialized. It still reads the `warehouses` sheet to VALIDATE destinations via the unchanged PURE planner
+  `replenDemandAllocationPlan_` (canonical/active/same-company/non-execution, ratios 100%), then REPLACES the scope's
+  membership in the blob atomically (`warehouseAllocationUpsertScope_`); unselected warehouses are dropped. No Sheet-tab
+  read/write remains.
+- **Read (modal hydrate)** = NEW router action `warehouseAllocation.get` → `handleWarehouseAllocationConfigGet_` (50);
+  frontend `getWarehouseAllocationConfig(scope)` (scope-targeted backend fetch, NOT the whole-DB cache). The modal open
+  is now async.
+- **Server planning authority (SINGLE):** `handleRecommendationWorkspaceGet_` (42) is the SOLE caller of
+  `recoWsExpandWarehouse_`; at its ONE read boundary it OVERRIDES the `replenishmentDemandAllocationRules` snapshot with
+  the config-materialized snapshot (`warehouseAllocationSnapshot_`) before expansion. Every planning path (workspace GET,
+  Gap batch, headless scheduled Weekly AI Plan) therefore reads the identical config with no browser session. The
+  expander stays storage-agnostic; the retired Sheet snapshot is discarded, never read → **no second authority**.
+- **Migration/compat:** production `replenishment_demand_allocation_rules` sheet never existed → no data to migrate.
+  The bundled `CANONICAL_TABLES` registration for that key is left in place but INERT for planning (its snapshot is
+  overridden). No schema change, no DB migration.
+- **Unchanged:** D-2h hybrid per-SKU, FBA logical-destination authority, count-once, survival, §7, incremental windows,
+  source priority, carton, K3, Monthly Order. No RO/PO/shipment/inventory side effect; no browser/localStorage
+  persistence. Tests: `warehouse-allocation-config-persistence-f1-7n-d-2k-r1` (35) + `warehouse-allocation-config-f1-7n-d-2j-r1`
+  (35, still green). Changed: NEW `50_api_v1_warehouse_allocation_config.gs`, `03_master_data_handlers.gs`, `01_router.gs`,
+  `42_api_v1_recommendation_workspace.gs`, `operation-system-db-api.js`, `inventory-replenishment.js` →
+  `APPS_SCRIPT_SYNC_REQUIRED` (50/03/01/42) + `NEW_EXEC_REQUIRED` + `FRONTEND_DEPLOY_REQUIRED`; no bundled core → no 90_ rebuild.
 
 ### D-F1-4B-FM5-R3 — Gap Materialization Scheduler + post-import orchestration (schedule-only; rollover HALT)
 

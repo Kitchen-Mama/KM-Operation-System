@@ -845,7 +845,15 @@ function handleRecommendationWorkspaceGet_(body, io) {
     // io has no such method → the canonical per-request read is UNCHANGED.
     var read = io.readCanonicalSnapshots ? io.readCanonicalSnapshots(ss) : KMPS.readCanonicalSnapshots(ss, null);   // ONE targeted read (never getOperationDb)
     var tablesRead = read && read.snapshots ? Object.keys(read.snapshots).length : 0;
-    var snaps = read.snapshots || {};
+    var snaps = read.snapshots || (read.snapshots = {});
+    // F1-7N-D-2k-R1 — Warehouse Allocation demand rules are the KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob
+    // (owner 50_api_v1_warehouse_allocation_config.gs), NOT the `replenishment_demand_allocation_rules` Sheet tab.
+    // Override the allocation-rule snapshot with the config-materialized rows at THIS single read boundary — this
+    // handler is the SOLE caller of recoWsExpandWarehouse_, so every planning path (workspace GET, Gap batch, and the
+    // headless scheduled Weekly AI Plan) reads the identical config with no browser session, and there is exactly ONE
+    // planning authority (the retired Sheet snapshot is discarded, never read). The expander stays storage-agnostic.
+    // Guarded so the isolated pure-fn test harness (which does not load 50_) keeps using its injected fixture snapshot.
+    if (typeof warehouseAllocationSnapshot_ === 'function') snaps.replenishmentDemandAllocationRules = warehouseAllocationSnapshot_();
 
     var scopeSkus = recoWsScopeSkus_(snaps.marketplaceSkus, v.scope, v.scope.sku || null);
     if (!scopeSkus.length) return recoWsEnvelope_(false, null, [recoWsErr_('MISSING_SKU_MAPPING', 'no marketplace_skus row for the scope (company/country/marketplace)')], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle });

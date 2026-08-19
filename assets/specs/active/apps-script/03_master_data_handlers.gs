@@ -617,16 +617,22 @@ function handleUpsertMarketplace_(body) {
 }
 
 /**
- * F1-7N-D-2j — replenishment_demand_allocation_rules SAVE (Site Inventory → Warehouse Allocation modal writer).
+ * F1-7N-D-2j / F1-7N-D-2k-R1 — Warehouse Allocation SAVE (Site Inventory → More Options → Warehouse Allocation writer).
  * -----------------------------------------------------------------------------------------------------------------
- * Scope-safe reconciliation of the SELF_FULFILLED demand-allocation rows for ONE (company,country,marketplace):
- * upsert the selected warehouses' ratios as status=active, and deactivate (never delete) any previously-active row in
- * the same scope that is no longer selected. The allocation-rule table remains the SOLE planning-membership authority
- * (D-F1-4B-E0R-3 / D-F1-7N-D-2i-R1); this is the first canonical writer for it. Execution warehouses (FBA/RETURN/
- * FACTORY) are rejected as destinations (they are shipment-execution FCs, never self planning destinations); a future
- * non-3PL self-operated inventory warehouse is admitted (exclusion, not a 3PL-only inclusion) pending the Phase-2
- * durable eligibility authority. Ratios follow the frozen contract (each of forecast & sales sums to exactly 100% in
- * integer basis points). PURE planner `replenDemandAllocationPlan_` is Node-verified; this shell only does sheet I/O.
+ * Scope-safe reconciliation of the SELF_FULFILLED demand-allocation for ONE (company,country,marketplace): the
+ * selected warehouses' ratios become the scope's active membership; unselected previously-active warehouses are
+ * dropped (deactivated). The demand-allocation RULE MODEL remains the SOLE planning-membership authority
+ * (D-F1-4B-E0R-3 / D-F1-7N-D-2i-R1). Execution warehouses (FBA/RETURN/FACTORY) are rejected as destinations (they are
+ * shipment-execution FCs, never self planning destinations); a future non-3PL self-operated inventory warehouse is
+ * admitted (exclusion, not a 3PL-only inclusion) pending the Phase-2 durable eligibility authority. Ratios follow the
+ * frozen contract (each of forecast & sales sums to exactly 100% in integer basis points).
+ *
+ * F1-7N-D-2k-R1 STORAGE OWNER: persistence moved from the `replenishment_demand_allocation_rules` Google Sheet tab to
+ * the `KM_WAREHOUSE_ALLOCATION_CONFIG` Script-Property JSON blob (owner: 50_api_v1_warehouse_allocation_config.gs) so
+ * the setting persists WITHOUT a user-managed Sheet tab yet stays backend/scheduler-readable with no browser session
+ * (Weekly AI Plan + automation read the SAME blob). The RULE MODEL is unchanged (materialized to the same rule rows
+ * KMDA consumes). PURE planner `replenDemandAllocationPlan_` is Node-verified; this shell does warehouse-sheet reads
+ * (canonical destination validation) + Script-Property blob I/O only. No formula, no DB table, no calc.
  */
 var REPLEN_DAR_EXEC_TYPES_ = { FBA: 1, RETURN: 1, FACTORY: 1 };   // execution/source warehouse types — never a SELF planning destination
 
@@ -678,7 +684,14 @@ function replenDemandAllocationPlan_(scope, desired, existingActiveInScope, whBy
   return { ok: true, upserts: upserts, deactivates: deactivates };
 }
 
-/** Router action `replenishmentDemandAllocation.save`. body = { company, country, marketplace, allocations:[{destination_warehouse_id, forecast_ratio, sales_ratio}], updated_by?, effective_from? }. */
+/**
+ * Router action `replenishmentDemandAllocation.save`. body = { company, country, marketplace,
+ * allocations:[{destination_warehouse_id, forecast_ratio, sales_ratio}], updated_by? }.
+ * F1-7N-D-2k-R1: persists to the KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob (via
+ * 50_api_v1_warehouse_allocation_config.gs), NOT the replenishment_demand_allocation_rules Sheet tab. The warehouses
+ * sheet is still read to VALIDATE destinations (canonical / active / same-company / non-execution) via the PURE
+ * planner. The scope's membership is REPLACED atomically (unselected previously-active warehouses are dropped).
+ */
 function handleReplenishmentDemandAllocationSave_(body) {
   body = body || {};
   var scope = { company: replenDarStr_(body.company), country: replenDarStr_(body.country), marketplace: replenDarStr_(body.marketplace) };
@@ -686,68 +699,30 @@ function handleReplenishmentDemandAllocationSave_(body) {
   if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock (another save in progress)' });
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('replenishment_demand_allocation_rules');
-    if (!sheet) return jsonResponse_({ success: false, error: 'replenishment_demand_allocation_rules sheet not found (user-owned master data; create it first)' });
     var whSheet = ss.getSheetByName('warehouses');
     if (!whSheet) return jsonResponse_({ success: false, error: 'warehouses sheet not found' });
 
-    // warehouses index (raw rows) by warehouse_id
+    // warehouses index (raw rows) by warehouse_id — canonical destination-validation authority for the planner.
     var whData = whSheet.getDataRange().getValues();
     var whHdr = whData[0].map(function (h) { return String(h).trim().toLowerCase(); });
-    function whCol(n) { return whHdr.indexOf(n); }
     var whById = {};
     for (var wr = 1; wr < whData.length; wr++) {
       var row = {}; for (var wc = 0; wc < whHdr.length; wc++) row[whHdr[wc]] = whData[wr][wc];
       var id = replenDarStr_(row.warehouse_id); if (id) whById[id] = row;
     }
 
-    var data = sheet.getDataRange().getValues();
-    if (data.length < 1) return jsonResponse_({ success: false, error: 'replenishment_demand_allocation_rules has no header row' });
-    var hdr = data[0].map(function (h) { return String(h).trim().toLowerCase(); });
-    function col(n) { return hdr.indexOf(n); }
-    var need = ['allocation_rule_id', 'company', 'country', 'marketplace', 'destination_warehouse_id', 'forecast_allocation_ratio', 'sales_allocation_ratio', 'status'];
-    for (var n = 0; n < need.length; n++) if (col(need[n]) === -1) return jsonResponse_({ success: false, error: 'replenishment_demand_allocation_rules missing column: ' + need[n] });
-
-    // existing rows (index + scope-active view)
-    var rowsRaw = [];
-    for (var r = 1; r < data.length; r++) { var o = {}; for (var c = 0; c < hdr.length; c++) o[hdr[c]] = data[r][c]; o.__row = r + 1; rowsRaw.push(o); }
-    function isActive(o) { var st = replenDarStr_(o.status).toLowerCase(); return st === 'active' || o.status === true || st === ''; }
-    var scopeRows = rowsRaw.filter(function (o) { return replenDarStr_(o.company) === scope.company && replenDarStr_(o.country) === scope.country && replenDarStr_(o.marketplace) === scope.marketplace; });
-    var existingActiveInScope = scopeRows.filter(isActive);
+    // existing scope membership = materialized from the Script-Property config (the SSOT), not a Sheet tab.
+    var io = warehouseAllocationConfigIo_();
+    var cfg = warehouseAllocationParseConfig_(io.getConfig());
+    var existingActiveInScope = warehouseAllocationConfigToRuleRows_(cfg, scope);   // snake rows for THIS scope
 
     var plan = replenDemandAllocationPlan_(scope, body.allocations || [], existingActiveInScope, whById);
     if (!plan.ok) return jsonResponse_({ success: false, error: plan.error });
 
     var actor = replenDarStr_(body.updated_by) || 'operation-system';
     var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    var effFrom = replenDarStr_(body.effective_from) || today;
-    function setCell(rowNum, name, val) { var c = col(name); if (c !== -1) sheet.getRange(rowNum, c + 1).setValue(val); }
-
-    // upserts (by scope + destination natural key)
-    plan.upserts.forEach(function (u) {
-      var existing = scopeRows.filter(function (o) { return replenDarStr_(o.destination_warehouse_id) === u.destinationWarehouseId; })[0];
-      if (existing) {
-        setCell(existing.__row, 'forecast_allocation_ratio', u.forecastRatio);
-        setCell(existing.__row, 'sales_allocation_ratio', u.salesRatio);
-        setCell(existing.__row, 'status', 'active');
-        setCell(existing.__row, 'effective_to', '');
-        var ver = Number(existing.version); setCell(existing.__row, 'version', (isFinite(ver) ? ver : 0) + 1);
-        setCell(existing.__row, 'updated_by', actor); setCell(existing.__row, 'updated_at', today);
-      } else {
-        var newRow = new Array(hdr.length).fill('');
-        function put(name, val) { var c = col(name); if (c !== -1) newRow[c] = val; }
-        put('allocation_rule_id', u.allocationRuleId); put('company', scope.company); put('country', scope.country); put('marketplace', scope.marketplace);
-        put('destination_warehouse_id', u.destinationWarehouseId); put('forecast_allocation_ratio', u.forecastRatio); put('sales_allocation_ratio', u.salesRatio);
-        put('status', 'active'); put('effective_from', effFrom); put('effective_to', ''); put('version', 1);
-        put('updated_by', actor); put('updated_at', today);
-        sheet.appendRow(newRow);
-      }
-    });
-    // deactivate previously-active rows no longer selected (close, never delete)
-    plan.deactivates.forEach(function (whId) {
-      var ex = existingActiveInScope.filter(function (o) { return replenDarStr_(o.destination_warehouse_id) === whId; })[0];
-      if (ex) { setCell(ex.__row, 'status', 'inactive'); setCell(ex.__row, 'effective_to', today); var ver = Number(ex.version); setCell(ex.__row, 'version', (isFinite(ver) ? ver : 0) + 1); setCell(ex.__row, 'updated_by', actor); setCell(ex.__row, 'updated_at', today); }
-    });
+    var nextCfg = warehouseAllocationUpsertScope_(cfg, scope, plan.upserts, actor, today);
+    io.setConfig(warehouseAllocationSerializeConfig_(nextCfg));
 
     return jsonResponse_({ success: true, data: {
       company: scope.company, country: scope.country, marketplace: scope.marketplace,

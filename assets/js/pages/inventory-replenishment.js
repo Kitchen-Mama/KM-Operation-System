@@ -3507,13 +3507,17 @@ window.closeAddMarketplaceModal = closeAddMarketplaceModal;
 window.saveMarketplace = saveMarketplace;
 
 // ============================================================================
-// F1-7N-D-2j — Site Inventory → More Options → Warehouse Allocation config modal.
-// Edits ONLY the SELF_FULFILLED demand-allocation for the selected (company,country,marketplace) in
-// replenishment_demand_allocation_rules (the sole planning-membership authority; D-2i-R1). Platform/FBA lanes are
-// unaffected. The PICKER candidate set = frozen 3PL inclusion (warehouse_type='3PL' + active + company + country) —
-// convenience only — UNIONed with warehouses already referenced by active rules (so current membership is never
-// hidden). FBA/RETURN/FACTORY execution warehouses are excluded from the picker. Phase-2 may add a durable eligibility
-// authority to admit future non-3PL self-operated inventory warehouses. PURE helpers below are Node-verified.
+// F1-7N-D-2j / F1-7N-D-2k-R1 — Site Inventory → More Options → Warehouse Allocation config modal.
+// Edits ONLY the SELF_FULFILLED demand-allocation for the selected (company,country,marketplace) — the sole
+// planning-membership authority (D-2i-R1). Platform/FBA lanes are unaffected. The PICKER candidate set = frozen 3PL
+// inclusion (warehouse_type='3PL' + active + company + country) — convenience only — UNIONed with warehouses already
+// referenced by active rules (so current membership is never hidden). FBA/RETURN/FACTORY execution warehouses are
+// excluded from the picker. Phase-2 may add a durable eligibility authority to admit future non-3PL self-operated
+// inventory warehouses.
+// F1-7N-D-2k-R1 STORAGE: the config persists in the KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob (backend +
+// scheduler readable, no user-managed Sheet tab). The modal hydrates via getWarehouseAllocationConfig(scope) — a
+// scope-targeted READ, not the whole-DB cache — and saves via saveReplenishmentDemandAllocationRules. PURE helpers
+// below are Node-verified.
 // ============================================================================
 function _replenDarEqv(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
 function _replenDarRuleActive(r) { var st = String(r && r.status == null ? '' : r.status).trim().toLowerCase(); return st === 'active' || (r && r.status === true) || st === ''; }
@@ -3577,6 +3581,23 @@ function _replenDarValidate(rows) {
     return { ok: true };
 }
 
+// PURE: map a warehouseAllocation.get response (snake allocations) → the camelCase rule rows _replenDarCandidates
+// consumes. Keeps the frozen candidate helper storage-agnostic (F1-7N-D-2k-R1: source is the Script-Property config,
+// not the DB cache). data = { company, country, marketplace, allocations:[{destination_warehouse_id, forecast_ratio,
+// sales_ratio, status }] }.
+function _replenDarConfigToRuleRows(data) {
+    data = data || {};
+    return (data.allocations || []).map(function (a) {
+        return {
+            company: data.company, country: data.country, marketplace: data.marketplace,
+            destinationWarehouseId: a.destination_warehouse_id,
+            forecastAllocationRatio: (a.forecast_ratio == null ? null : Number(a.forecast_ratio)),
+            salesAllocationRatio: (a.sales_ratio == null ? null : Number(a.sales_ratio)),
+            status: a.status || 'active'
+        };
+    });
+}
+
 // PURE: build the save payload from the UI rows.
 function _replenDarBuildPayload(scope, rows) {
     return {
@@ -3590,12 +3611,23 @@ function _replenDarBuildPayload(scope, rows) {
 // ---- DOM wiring (thin) -----------------------------------------------------
 function _replenDarModalEls() { return { modal: document.getElementById('replen-dar-modal'), overlay: document.getElementById('replen-modal-overlay') }; }
 function _replenDarReadWarehouses() { try { return (typeof _irWsGet === 'function') ? (_irWsGet('getWarehouses') || []) : []; } catch (_e) { return []; } }
-function _replenDarReadRules() { try { return (window.KM && window.KM.DB && typeof window.KM.DB.getReplenishmentDemandAllocationRules === 'function') ? (window.KM.DB.getReplenishmentDemandAllocationRules() || []) : []; } catch (_e) { return []; } }
+// F1-7N-D-2k-R1: hydrate from the Script-Property config (scope-targeted READ), NOT the whole-DB cache.
+async function _replenDarReadRules(scope) {
+    try {
+        if (window.KM && window.KM.DB && typeof window.KM.DB.getWarehouseAllocationConfig === 'function') {
+            var data = await window.KM.DB.getWarehouseAllocationConfig(scope);
+            if (data && data.success === false) return [];
+            return _replenDarConfigToRuleRows(data);
+        }
+    } catch (_e) {}
+    return [];
+}
 
-function openReplenDemandAllocationModal() {
+async function openReplenDemandAllocationModal() {
     var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : { company: '', country: '', marketplace: '' };
     if (!scope.company || !scope.country || !scope.marketplace) { alert('Select a Country and Marketplace first, then open Warehouse Allocation.'); return; }
-    var rows = _replenDarCandidates(_replenDarReadWarehouses(), _replenDarReadRules(), scope);
+    var ruleRows = await _replenDarReadRules(scope);
+    var rows = _replenDarCandidates(_replenDarReadWarehouses(), ruleRows, scope);
     var ctx = document.getElementById('replen-dar-context');
     if (ctx) ctx.textContent = 'Company: ' + scope.company + '   Country: ' + scope.country + '   Marketplace: ' + scope.marketplace;
     _replenDarRenderRows(rows);
@@ -3667,6 +3699,7 @@ window._replenDarOnChange = _replenDarOnChange;
 window._replenDarCandidates = _replenDarCandidates;
 window._replenDarValidate = _replenDarValidate;
 window._replenDarBuildPayload = _replenDarBuildPayload;
+window._replenDarConfigToRuleRows = _replenDarConfigToRuleRows;
 
 // ---- Sync Regional Details (idempotent, resumable backfill trigger) ----
 // Scans marketplace_skus and CREATES the missing sku_regional_details row for each

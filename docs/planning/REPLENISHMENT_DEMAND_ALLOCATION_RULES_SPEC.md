@@ -19,6 +19,16 @@ warehouses by an explicit configured ratio — this table is that single canonic
 
 ## 2. Canonical table
 
+> **STORAGE OWNER (F1-7N-D-2k-R1):** these rows are **NOT** a user-managed Google Sheet tab. They persist in the
+> `KM_WAREHOUSE_ALLOCATION_CONFIG` Script-Property JSON blob (owner `50_api_v1_warehouse_allocation_config.gs`),
+> edited via **Site Inventory → More Options → Warehouse Allocation**, and are **materialized on read** into the
+> rule-row shape below (`warehouseAllocationConfigToRuleRows_`). The blob holds only current-active membership per
+> scope (`{company,country,marketplace} → warehouses[]`); `status` is always `active`, `effective_*` open, and
+> `version`/`note` are not stored (deactivation = removal from the blob). The RULE MODEL and validation are unchanged —
+> the engine still consumes the columns below. Backend + scheduled automation read the SAME blob (no browser session);
+> the server planning path (42_) overrides the `replenishmentDemandAllocationRules` snapshot with this config at its
+> single read boundary, so there is exactly ONE planning authority.
+
 | Column | Type | Notes |
 |---|---|---|
 | `allocation_rule_id` | string (PK) | Stable id: `RDAR-{COMPANY}-{COUNTRY}-{MARKETPLACE}-{WAREHOUSE_ID}` (+ suffix for a distinct effective period). **Never UUID / row index.** |
@@ -75,27 +85,26 @@ conserves the total EXACTLY (`Forecast 1,001 @ 30/70 → 300 / 701`, sum `1,001`
 remainder, tie-break ascending `warehouse_id`). Forecast and Sales use the same mechanism. A warehouse-level source is
 **passed through unchanged** (never re-split).
 
-## 5. Provisioning (user/editor-owned — runtime never creates/repairs)
+## 5. Provisioning (F1-7N-D-2k-R1 — via the UI; NO Sheet tab)
 
-1. In the Operation Database spreadsheet (exact Spreadsheet-ID only), add a sheet named
-   `replenishment_demand_allocation_rules` with the header row in §2 (exact column names).
-2. Seed rows ONLY for `self_fulfilled` scopes (and the self_fulfilled SKUs of a `hybrid` marketplace). Example for a
-   self_fulfilled marketplace split across two overseas warehouses: `RDAR-KM-US-SHOPIFY-{WH_A}` = `0.30`,
-   `RDAR-KM-US-SHOPIFY-{WH_B}` = `0.70` (resolve `{WH_A}`/`{WH_B}` to the **canonical `warehouse_id`s**, never names;
-   ratios are user-owned business config and must sum to `1.00`; a single-warehouse scope takes an explicit `1.00` row).
-   Do **NOT** seed rows for `platform_fulfilled` marketplaces (e.g. Amazon, Newegg) — they resolve to the logical
-   MARKETPLACE destination and physical FBA FC assignment is deferred to shipment execution (see §3a).
-3. No auto-repair, no data deletion, no runtime table creation.
+Provision from **Site Inventory → More Options → Warehouse Allocation** (no manual spreadsheet maintenance). Select a
+`self_fulfilled` scope `(company, country, marketplace)` (or the self lane of a `hybrid` marketplace), check its self
+warehouses, and enter Forecast/Sales % (each must sum to 100%; a single warehouse auto-fills and persists an explicit
+`1.0/1.0`). Save writes the `KM_WAREHOUSE_ALLOCATION_CONFIG` Script-Property blob (router action
+`replenishmentDemandAllocation.save` → `handleReplenishmentDemandAllocationSave_`). Do **NOT** configure
+`platform_fulfilled` marketplaces (e.g. Amazon, Newegg) — they resolve to the logical MARKETPLACE destination and
+physical FBA FC assignment is deferred to shipment execution (see §3a). Execution/source FCs (FBA/RETURN/FACTORY) are
+rejected by the writer and excluded from the picker. No auto-repair, no runtime table creation.
 
-**Reader (F1-4B-E — implemented):** `window.KM.DB.getReplenishmentDemandAllocationRules()` is a targeted, read-only
-getter over the already-loaded cache (`operation-system-db-api.js`) — never a whole-DB load, never a fetch, never a
-sheet mutation. It returns normalized rows, or `[]` when the cache is unloaded or the tab is absent (→ downstream
-`DEMAND_ALLOCATION_RULE_NOT_CONFIGURED`, never a default). The pure integration adapter
-`KM.demandAllocation.resolveScopeWarehouseDemandFacts(...)` consumes those rows to produce per-warehouse demand facts
-(Warehouse Forecast) that the EXISTING recommendation runtime (KMPCX/KMAF/KMPS) consumes unchanged.
+> **HISTORICAL (superseded):** F1-4B-E originally required a manually-created `replenishment_demand_allocation_rules`
+> Sheet tab and a cache getter `window.KM.DB.getReplenishmentDemandAllocationRules()`. Since D-2k the SSOT is the
+> Script-Property blob; the modal hydrates via `getWarehouseAllocationConfig(scope)` (router `warehouseAllocation.get`
+> → `handleWarehouseAllocationConfigGet_`), and the pure integration adapter
+> `KM.demandAllocation.resolveScopeWarehouseDemandFacts(...)` / `validateAllocationRules(...)` consume the
+> config-materialized rows unchanged (rule MODEL preserved). The cache getter and the never-created Sheet tab are inert.
 
-**Sync/deployment:** F1-4B-E adds NO Apps Script handler / router / bundle change — the table remains a **manual DB
-setup prerequisite** (user-owned). `APPS_SCRIPT_SYNC_REQUIRED = false`; `BUNDLE_REBUILD_REQUIRED = false`.
+**Sync/deployment (D-2k):** `APPS_SCRIPT_SYNC_REQUIRED = true` (new `50_`, plus `03_`/`01_`/`42_`); `NEW_EXEC_REQUIRED
+= true`; `FRONTEND_DEPLOY_REQUIRED = true`; `BUNDLE_REBUILD_REQUIRED = false` (no bundled core changed).
 
 ## 6. Not this round
 

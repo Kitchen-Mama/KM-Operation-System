@@ -2836,9 +2836,30 @@ window.KM.DB.saveReplenishmentDemandAllocationRules = async function(payload) {
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
     if (!json.success) throw new Error(json.error || 'Save failed');
-    // Only writer that mutates replenishment_demand_allocation_rules → invalidate its session reference AFTER success.
+    // F1-7N-D-2k-R1: persistence is the KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob (not a DB sheet), so no
+    // whole-DB reference cache needs invalidation. Kept harmless for any legacy consumer of that reference name.
     if (window.KM && window.KM.referenceCache) window.KM.referenceCache.invalidate('replenishment_demand_allocation_rules');
-    await _kmWriterPostWrite_();
+    return json.data;
+};
+
+// F1-7N-D-2k-R1 — Warehouse Allocation config READ (Site Inventory → More Options → Warehouse Allocation modal
+// hydrate). Reads the KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob for ONE scope (NOT the whole-DB cache — the
+// config is not a DB sheet). READ-ONLY. Returns { company, country, marketplace, allocations:[{destination_warehouse_id,
+// forecast_ratio, sales_ratio, status, allocation_rule_id}] } — [] allocations when nothing saved for the scope.
+window.KM.DB.getWarehouseAllocationConfig = async function(scope) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, getWarehouseAllocationConfig skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'warehouseAllocation.get', payload: { scope: scope || {} } })
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) throw new Error(json.error || 'Read failed');
     return json.data;
 };
 

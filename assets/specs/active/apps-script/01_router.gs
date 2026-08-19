@@ -566,15 +566,20 @@ function doPost(e) {
       return jsonResponse_(handleAutomationScheduleUpdate_(body));
     }
 
-    // F1-7N-D-2j — Site Inventory Warehouse Allocation config writer. Scope-safe reconciliation of the SELF_FULFILLED
-    // demand-allocation rows for ONE (company,country,marketplace) in replenishment_demand_allocation_rules (the sole
-    // planning-membership authority). Rejects FBA/execution warehouses; ratios each sum to 100%. Read is served
-    // client-side from the loaded cache (no new read action).
+    // F1-7N-D-2j / F1-7N-D-2k-R1 — Site Inventory Warehouse Allocation config (owner = 50_api_v1_warehouse_allocation_
+    // config.gs). Scope-safe reconciliation of the SELF_FULFILLED demand-allocation for ONE (company,country,
+    // marketplace); the RULE MODEL is the sole planning-membership authority. Persistence = the
+    // KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob (NOT a Sheet tab), so it survives without user-managed
+    // sheet rows yet stays backend/scheduler-readable. Rejects FBA/execution warehouses; ratios each sum to 100%.
+    // GET is read-only (opening the modal mutates nothing).
+    if (action === 'warehouseAllocation.get') {
+      return handleWarehouseAllocationConfigGet_(body);
+    }
     if (action === 'replenishmentDemandAllocation.save') {
       return handleReplenishmentDemandAllocationSave_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, replenishmentDemandAllocation.save' });
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save' });
 
   } catch (err) {
     Logger.log(err.stack);
