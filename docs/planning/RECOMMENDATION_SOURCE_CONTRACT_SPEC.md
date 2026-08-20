@@ -110,7 +110,7 @@ Projection / calc engine**, spec-frozen (line ~219) but **not yet wired into a p
 | `sku` | `sku_details` | `sku_details.sku` | DB-CONFIRMED | Monthly scope carries sku |
 | `request_month` | Monthly grain owner | `request_order_allocation_draft_lines.request_month` (`15_…:39`) | DB-CONFIRMED (draft-line) | — |
 | `request_bucket` | Monthly grain owner | `request_order_allocation_draft_lines.request_bucket` (`15_…`) | DB-CONFIRMED (draft-line) | — |
-| **`net_order_need_snapshot`** | **CALC Engine A→B→reallocation / `sumRemainingShortages` (§12/§32)** — NOT Reader/wrapper | `request_order_allocation_draft_lines.net_order_need_snapshot` (`15_…:43`) is the persisted SNAPSHOT of this OUTPUT | **DERIVED-UPSTREAM** | resolver may also take explicit `netOrderNeed` / `remainingShortages` / 4 gap inputs |
+| **`net_order_need_snapshot`** | **LIVE monthly owner = `KMTPP.projectTimePhasedSupply` residual** (`42_:recoWsBuildMonthlyProjection_`, `MAX(0, gap − overseasCovered − factoryCovered)`; SUPPLY_PLANNING §44) — NOT Reader/wrapper. (`sumRemainingShortages` = pure primitive / standalone §41 model only.) | `request_order_allocation_draft_lines.net_order_need_snapshot` (`15_…:43`) is the persisted SNAPSHOT of this OUTPUT | **DERIVED-UPSTREAM** | standalone resolver may also take explicit `netOrderNeed` / `remainingShortages` / 4 gap inputs |
 | `units_per_carton` | `sku_details.units_per_carton` | `sku_details` / draft-line | DB-CONFIRMED | — |
 | `company`/`country`/`marketplace`/`fulfillment_model` | scope / `marketplace_skus` | as Weekly | DB-CONFIRMED | — |
 | `planning_cycle`/`formula_version`/`source_data_as_of` | run-lineage | run header | DB-CONFIRMED (run-level) | see SC-4 |
@@ -122,13 +122,12 @@ They are **explicitly NOT** the Reader's or the Apps Script wrapper's to derive.
   (`supply-planning-calculations.js:160-167` = `max(demand − stock − incoming − committed, 0)`); persisted as
   `shipping_allocation_draft_lines.calculated_gap_qty` (`16_shipping_allocation_handlers.gs:47`) /
   `request_order_allocation_draft_lines.calculated_gap_qty_snapshot` (`15_…:41`).
-- Monthly Net Order Need owner = **§12/§32**, `sumRemainingShortages` (Engine A→B→reallocation); persisted as
-  `request_order_allocation_draft_lines.net_order_need_snapshot` (`15_…:43`).
-- **DERIVED-UPSTREAM producer (F1-7N-FA-3A.0):** the missing stage that produces the *post-reallocation* `remainingShortages` array fed to `sumRemainingShortages` is the **Factory Surplus Reallocation orchestrator** — CALC_RULES **§41**, reserved `assets/js/core/supply-planning-surplus-reallocation.js` (`KMFSR.projectSurplusReallocation`, NOT IMPLEMENTED until FA-3A). Once connected, `net_order_need_snapshot` is genuinely POST-reallocation (planning-only; no physical reservation). The Reader still only CONSUMES it — it does not derive it.
+- **Monthly Net Order Need owner (CORRECTED — F1-7N-FA-3B-R0; SUPPLY_PLANNING §44):** LIVE = `KMTPP.projectTimePhasedSupply` residual (`residualOrderNeedQty = MAX(0, gap − overseasCovered − factoryCovered)`, `42_`), persisted as `request_order_allocation_draft_lines.net_order_need_snapshot` (`15_…:43`). `sumRemainingShortages` (§12/§32) is a pure primitive / the standalone §41 KMFSR-model terminal — NOT the live monthly owner.
+- **§41 / KMFSR role (CORRECTED):** `KMFSR.projectSurplusReallocation` is a pure **§41 surplus-reallocation library** (`IMPLEMENTED_NOT_PRODUCTION_CONNECTED`), NOT the monthly net-order-need producer and NOT the initial factory allocator (that is KMMSA/KMAR). When integrated (FA-3B1/B3) it adjusts per-receiver *factory coverage* fed into KMTPP — it never becomes a second live net-order-need formula. The Reader only CONSUMES `net_order_need_snapshot`.
 - `reallocation_in_qty_snapshot` = planning qty covered by eligible donor surplus; `reallocation_out_qty_snapshot` = planning-attributed factory supply released from a donor and consumed by eligible receiver(s). Both are recommendation/audit snapshots (§41.8), **NOT inventory-ledger transactions**.
 - These snapshot columns are **blank until the calculation writer runtime is implemented — NEVER faked 0**
-  (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md:656`). The recommendation calculation engine
-  (`calculateGap`/`sumRemainingShortages`/`calculateSuggestedOrderQty`) is their sole owner.
+  (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md:656`). The live monthly recommendation engine
+  (`calculateGap` → `KMTPP.projectTimePhasedSupply` residual → `calculateSuggestedOrderQty`; §44) is their sole owner (`sumRemainingShortages` is a pure primitive, not the live monthly terminal).
 
 **Convergent DECISION-REQUIRED gap (single biggest freeze finding):** `survival_need_qty`, `daily_demand`,
 `demand_weight`, `eligible_pool_types`, `eligible_factory_warehouse_ids`, and the whole **demand-entry assembly**
@@ -399,7 +398,7 @@ source-facts projectors (`projectDemandLedger` / `projectCurrentStockSupplyLedge
 - **CALC-ENGINE OUTPUT (no stored column — MUST run calc):** `survivalNeedQty` (§20.3/§24.4 `CEILING(18×daily_demand)`),
   `dailyDemand` (§22/§2D), `demandWeight` (§7/§24.5), `eligiblePoolTypes` (§23.6/§24.9),
   `eligibleFactoryWarehouseIds` (§40/§35), `calculated_gap_qty` (Engine A `calculateGap`),
-  `net_order_need_snapshot` (Engine A→B `sumRemainingShortages`), the demand-entry assembly
+  `net_order_need_snapshot` (LIVE monthly = `KMTPP.projectTimePhasedSupply` residual, §44; `sumRemainingShortages` is a pure primitive only), the demand-entry assembly
   (`fc_regular_forecast.jan..dec` / `fc_special_events.fc_qty` / `amazon_daily_sales` run-rate → demand rows with
   `demand_type` + `required_by_date`), `pool_type` / `lifecycle_bucket` bucket assignment, and the §39.5 lifecycle
   facts (Qualified Incoming / committed-production — **NOT tables**).

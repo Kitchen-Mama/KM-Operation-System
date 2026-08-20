@@ -26,7 +26,7 @@ Config 4 live BigQuery / Google Sheet verification: PENDING
 Browser Verification: PENDING
 ```
 
-**Order-state contract (owner §36/§37):** Live T1–T4 Demand/Shortage = continuously recalculated planning signal (never overwrites persisted drafts). Monthly Suggested = persisted planning snapshot in `request_order_allocation_drafts` / `request_order_allocation_draft_lines`. Emergency Draft = on-demand snapshot using the **same** Engine A → Engine B → reallocation → Net Order Need rules. User edits update `order_qty` / `carton_qty` and **preserve** `recommended_qty`. Explicit partial-carton override passes through Send → Approval → PO with note preservation, never re-rounded. **T4 remains visibility-only** (never an order commitment / never `request_bucket = T4`).
+**Order-state contract (owner §36/§37):** Live T1–T4 Demand/Shortage = continuously recalculated planning signal (never overwrites persisted drafts). Monthly Suggested = persisted planning snapshot in `request_order_allocation_drafts` / `request_order_allocation_draft_lines`. Emergency Draft = on-demand snapshot using the **same** live monthly rules (Architecture A: gap → KMMSA/KMAR factory coverage → `KMTPP.projectTimePhasedSupply` residual Net Order Need → `calculateSuggestedOrderQty`; see `docs/planning/SUPPLY_PLANNING_CALCULATION_RULES.md` §44 — `sumRemainingShortages` is a pure primitive, not the live monthly owner). User edits update `order_qty` / `carton_qty` and **preserve** `recommended_qty`. Explicit partial-carton override passes through Send → Approval → PO with note preservation, never re-rounded. **T4 remains visibility-only** (never an order commitment / never `request_bucket = T4`).
 
 | Track | Status |
 |-------|--------|
