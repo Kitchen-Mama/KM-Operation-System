@@ -582,6 +582,20 @@
     min-width: 360px;
 }
 
+/* F1-7N-UX-SITE-INVENTORY-FULFILLMENT-AWARE-COLUMNS-R1 — SELF_FULFILLED omits the platform "Current Stock" column.
+   ONE container class (#replen-detail-table.ir-hide-current-stock, toggled from the resolved fulfillment model)
+   removes the SAME 120px column from the level-2 header leaf AND the body cell (display:none = no occupying flex box,
+   the codebase's own column-omission idiom — cf. company/marketplace cells), and shrinks the Inventory group 360→240
+   so every downstream group (Sales, Replenishment, Factory, AI Action) stays aligned with ZERO offset. */
+#ops-section #replen-detail-table.ir-hide-current-stock .km-table__header-cell--inventory {
+    width: 240px;
+    min-width: 240px;
+}
+#ops-section #replen-detail-table.ir-hide-current-stock .km-table__header-cell--current-stock,
+#ops-section #replen-detail-table.ir-hide-current-stock .replen-cell--current-stock {
+    display: none;
+}
+
 #ops-section .km-table__header-cell--sales {
     background: #9BC2E6;
     width: 360px;

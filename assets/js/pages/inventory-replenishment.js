@@ -1647,6 +1647,35 @@ function _replenChevronClick(event, sku) {
 window._replenRowClick = _replenRowClick;
 window._replenChevronClick = _replenChevronClick;
 
+// F1-7N-UX-SITE-INVENTORY-FULFILLMENT-AWARE-COLUMNS-R1 — ONE presentation-layer Inventory-column model derived from the
+// canonical marketplace fulfillment_model. SELF_FULFILLED omits the platform "Current Stock" column (its physical
+// authority is the 3rd Party / warehouse-grain stock); PLATFORM / HYBRID / UNKNOWN keep the full 3-column Inventory
+// group. PURE — no DOM, no data/formula/authority change. Drives header colspan + body cell visibility via ONE class.
+function _irInventoryColumnModel(fulfillmentModel) {
+    var hide = String(fulfillmentModel == null ? '' : fulfillmentModel).trim().toLowerCase() === 'self_fulfilled';
+    return { hideCurrentStock: hide, inventoryLeafSpan: hide ? 2 : 3,
+        columns: hide ? ['onTheWay', 'thirdPartyStock'] : ['currentStock', 'onTheWay', 'thirdPartyStock'] };
+}
+// Canonical fulfillment_model of the CURRENTLY selected marketplace scope (reuses the existing read-model helper; never
+// inferred from a name). '' when no single marketplace is selected → fail-safe to the full column structure.
+function _irScopeFulfillmentModel() {
+    try {
+        var scope = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : {};
+        if (!scope || !scope.marketplaceId) return '';
+        return (typeof _replenDarFulfillmentOf === 'function') ? _replenDarFulfillmentOf(_replenDarReadMarketplaces(), scope.marketplaceId) : '';
+    } catch (_e) { return ''; }
+}
+// Apply the ONE model to the live table: a single container class drives BOTH the header (Current Stock leaf + Inventory
+// group width, via CSS) and the body cell, so header/body can never drift. data-leaf-span is kept in sync for the contract.
+function _irApplyInventoryColumnModel(fulfillmentModel) {
+    var m = _irInventoryColumnModel(fulfillmentModel);
+    var tbl = document.getElementById('replen-detail-table');
+    if (tbl) tbl.classList.toggle('ir-hide-current-stock', m.hideCurrentStock);
+    var invGroup = document.querySelector('#ops-section .km-table__header-cell--inventory');
+    if (invGroup) invGroup.setAttribute('data-leaf-span', String(m.inventoryLeafSpan));
+    return m;
+}
+
 function renderReplenishment() {
     const allData = getReplenishmentData();
 
@@ -1694,7 +1723,7 @@ function renderReplenishment() {
             <div class="scroll-cell">${_replenPlanningModelLabel(item.replenishmentModel)}</div>
             <div class="scroll-cell">${item.company}</div>
             <div class="scroll-cell">${_replenMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
-            <div class="scroll-cell">${item.currentInventory}</div>
+            <div class="scroll-cell replen-cell--current-stock">${item.currentInventory}</div>
             <div class="scroll-cell">${item.onTheWay}</div>
             <div class="scroll-cell" title="${(item.thirdPartyTitle || '').replace(/"/g, '&quot;')}">${item.thirdPartyStock}</div>
             <div class="scroll-cell">${item.avgDailySales}</div>
@@ -1714,6 +1743,8 @@ function renderReplenishment() {
     
     // Initialize header scroll sync
     initReplenHeaderSync();
+    // F1-7N: adapt the Inventory columns to the selected marketplace's fulfillment model (SELF_FULFILLED hides Current Stock).
+    _irApplyInventoryColumnModel(_irScopeFulfillmentModel());
 }
 
 function initReplenHeaderSync() {
@@ -3779,6 +3810,8 @@ window._replenDarBuildPayload = _replenDarBuildPayload;
 window._replenDarConfigToRuleRows = _replenDarConfigToRuleRows;
 window._replenDarFulfillmentOf = _replenDarFulfillmentOf;
 window._replenDarApplicability = _replenDarApplicability;
+window._irInventoryColumnModel = _irInventoryColumnModel;
+window._irApplyInventoryColumnModel = _irApplyInventoryColumnModel;
 
 // ---- Sync Regional Details (idempotent, resumable backfill trigger) ----
 // Scans marketplace_skus and CREATES the missing sku_regional_details row for each

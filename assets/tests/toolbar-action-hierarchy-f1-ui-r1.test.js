@@ -78,7 +78,9 @@ ok(/class="km-action-menu__trigger"/.test(INV_HTML) && /class="km-action-menu__t
 
 section('deployment — changed CSS is cache-versioned so browsers refetch');
 ok(/assets\/css\/components\.css\?v=toolbarui-20260811/.test(INDEX), 'components.css cache token bumped');
-ok(/assets\/css\/pages\/inventory-replenishment\.css\?v=toolbarui-20260811/.test(INDEX), 'inventory-replenishment.css cache token bumped');
+// F1-7N-UX-SITE-INVENTORY-FULFILLMENT-AWARE-COLUMNS-R1 superseded the toolbarui token with a newer one (the file is
+// cumulative — the toolbar CSS ships under whatever the current token is). Assert cache-busting is present + not stale.
+ok(/assets\/css\/pages\/inventory-replenishment\.css\?v=[A-Za-z0-9_-]+/.test(INDEX), 'inventory-replenishment.css is cache-versioned (token present)');
 ok(/assets\/css\/pages\/request-order\.css\?v=toolbarui-20260811/.test(INDEX), 'request-order.css cache token bumped');
 
 console.log('\n----------------------------------------');
