@@ -187,16 +187,26 @@ function recGenMapGapRowToFacts_(gapRow, upc) {
     var suggested = r4e2Num_(gapRow[lc + '_suggested_qty']);
     if (suggested === null || suggested < 0) return { ready: false, reason: 'ORDER_PLANNING_GAP_NOT_READY' };  // 0 is valid (no order needed); blank/negative is not
     var gap = r4e2Num_(gapRow[lc + '_gap_qty']);
+    var snap = {                                              // extra persisted columns (all pass the live-analysis boundary; none are forbidden keys)
+      calculated_gap_qty_snapshot: (gap === null ? '' : gap),
+      units_per_carton: u,
+      carton_qty: suggested / u,                              // existing canonical representation (recommended_qty / UPC); whole cartons for a carton-multiple
+      allocation_method: 'ORDER_PLANNING_GAP'                 // lineage marker — this draft's quantity authority is the materialized gap
+    };
+    // F1-7N-FA-3B4-R1: transport the receiver-level §41 diagnostic snapshots VERBATIM (no recompute). They are a per-
+    // receiver (gap-row) fact, so they attach to the PRIMARY actionable tier (T1) line ONLY — never replicated across
+    // tiers (which would inflate a naive Σ). Numeric incl 0 preserved; blank/missing stays blank (missing ≠ 0).
+    if (i === 0) {
+      var fav = r4e2Num_(gapRow.factory_available_qty_snapshot), rin = r4e2Num_(gapRow.reallocation_in_qty_snapshot), rout = r4e2Num_(gapRow.reallocation_out_qty_snapshot);
+      snap.factory_available_qty_snapshot = (fav === null ? '' : fav);
+      snap.reallocation_in_qty_snapshot = (rin === null ? '' : rin);
+      snap.reallocation_out_qty_snapshot = (rout === null ? '' : rout);
+    }
     lines.push({
       request_month: month, request_bucket: t,                 // snake_case natural key (projectLine reads f[lineKey])
       recommendedQty: suggested,                               // VERBATIM tN_suggested_qty — no re-cartonization
       demandKey: sku + '|' + month + '|' + t,
-      snapshotRow: {                                           // extra persisted columns (all pass the live-analysis boundary; none are forbidden keys)
-        calculated_gap_qty_snapshot: (gap === null ? '' : gap),
-        units_per_carton: u,
-        carton_qty: suggested / u,                             // existing canonical representation (recommended_qty / UPC); whole cartons for a carton-multiple
-        allocation_method: 'ORDER_PLANNING_GAP'               // lineage marker — this draft's quantity authority is the materialized gap
-      }
+      snapshotRow: snap
     });
   }
   return { ready: true, lines: lines, sku: sku };

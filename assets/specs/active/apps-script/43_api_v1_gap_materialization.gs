@@ -33,10 +33,16 @@ var INV_GAP_HEADERS_ = ['company', 'country', 'marketplace', 'sku', 'calculation
   'd90_gap_qty', 'd90_suggested_qty', 'note', 'calculated_at', 'updated_at'];
 
 var OP_GAP_TABLE_ = 'order_planning_gap';
+// F1-7N-FA-3B4-R1 (D-B4-GAP-TRANSPORT-SCHEMA Option A, USER-approved): 3 ADDITIVE columns transport the FA-3B3b §41
+// diagnostic facts (produced by gapOpApplyFactorySurplusReallocation_) through the gap-backed path into the ALREADY-
+// EXISTING request_order_allocation_draft_lines snapshot columns. Additive at END (name-based readers; order-agnostic).
+// order_planning_gap does NOT own their calculation — pure transport. Live-sheet migration = prodMigrateAppendColumns_.
+var OP_GAP_FACTORY_SNAPSHOT_COLS_ = ['factory_available_qty_snapshot', 'reallocation_in_qty_snapshot', 'reallocation_out_qty_snapshot'];
 var OP_GAP_HEADERS_ = ['company', 'country', 'marketplace', 'sku', 'calculation_status', 'calculation_month',
   't1_month', 't1_gap_qty', 't1_suggested_qty', 't2_month', 't2_gap_qty', 't2_suggested_qty',
   't3_month', 't3_gap_qty', 't3_suggested_qty', 't4_month', 't4_gap_qty', 't4_suggested_qty',
-  'note', 'calculated_at', 'updated_at'];
+  'note', 'calculated_at', 'updated_at',
+  'factory_available_qty_snapshot', 'reallocation_in_qty_snapshot', 'reallocation_out_qty_snapshot'];
 
 // F1-4B-FM5-R4UI-R5C — READ-ONLY deployment/version PROBE (diagnostics only; NO DB write, NO schema, NO formula).
 // Stamped into every batch response envelope's `meta` so ONE browser Network response from "Recalculate All Sites"
@@ -139,9 +145,14 @@ function gapOpMapFromLines_(lines, scope, sku, calcMonth) {
     company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku,
     calculation_status: 'READY', calculation_month: calcMonth || '',
     t1_month: '', t1_gap_qty: null, t1_suggested_qty: null, t2_month: '', t2_gap_qty: null, t2_suggested_qty: null,
-    t3_month: '', t3_gap_qty: null, t3_suggested_qty: null, t4_month: '', t4_gap_qty: null, t4_suggested_qty: null, note: ''
+    t3_month: '', t3_gap_qty: null, t3_suggested_qty: null, t4_month: '', t4_gap_qty: null, t4_suggested_qty: null, note: '',
+    // FA-3B4-R1: §41 diagnostic transport (default null = MISSING → blank cell; numeric 0 is preserved as 0). Never computed here.
+    factory_available_qty_snapshot: null, reallocation_in_qty_snapshot: null, reallocation_out_qty_snapshot: null
   };
   if (!lines || !lines.length) { base.calculation_status = 'BLOCKED'; base.note = 'RECOMMENDATION_LINE_NOT_FOUND'; return base; }
+  // FA-3B4-R1: capture the receiver-level §41 facts VERBATIM from the canonical runtime producer (42_ mLine.
+  // factorySurplusReallocation ← 43_ gapOpApplyFactorySurplusReallocation_). Transport only — no recompute, no fallback.
+  var fsr = null; for (var fx = 0; fx < lines.length; fx++) { if (lines[fx] && lines[fx].factorySurplusReallocation) { fsr = lines[fx].factorySurplusReallocation; break; } }
   var tiers = { T1: { m: '', g: 0, s: 0, seen: false }, T2: { m: '', g: 0, s: 0, seen: false }, T3: { m: '', g: 0, s: 0, seen: false }, T4: { m: '', g: 0, s: 0, seen: false } };
   var blockedReason = null;
   for (var i = 0; i < lines.length && !blockedReason; i++) {
@@ -164,6 +175,13 @@ function gapOpMapFromLines_(lines, scope, sku, calcMonth) {
   base.t4_month = tiers.T4.m; base.t4_gap_qty = tiers.T4.g; base.t4_suggested_qty = tiers.T4.s;
   var anyGap = tiers.T1.g > 0 || tiers.T2.g > 0 || tiers.T3.g > 0 || tiers.T4.g > 0;
   base.note = anyGap ? 'Order need' : 'No order need';
+  // FA-3B4-R1: stamp the §41 snapshots verbatim (numeric incl 0 preserved; null/absent stays MISSING → blank).
+  if (fsr) {
+    var fsrNum = function (v) { return (typeof v === 'number' && isFinite(v)) ? v : null; };
+    base.factory_available_qty_snapshot = fsrNum(fsr.factoryAvailableQtySnapshot);
+    base.reallocation_in_qty_snapshot = fsrNum(fsr.reallocationInQtySnapshot);
+    base.reallocation_out_qty_snapshot = fsrNum(fsr.reallocationOutQtySnapshot);
+  }
   return base;
 }
 
@@ -841,3 +859,10 @@ function handleGetInventoryReplenishmentGap_(body, io) {
 function handleGetOrderPlanningGap_(body, io) {
   return gapReadScopeRows_(body, io, { product: 'ORDER_PLANNING', table: OP_GAP_TABLE_, headers: OP_GAP_HEADERS_ });
 }
+
+// F1-7N-FA-3B4-R1 — LIVE-SHEET MIGRATION for the 3 §41 transport columns (OP_GAP_FACTORY_SNAPSHOT_COLS_) is USER-run
+// through the EXISTING sanctioned migration owner `prodMigrateAppendColumns_` (29_production_safety_adapter.gs) — the
+// canonical, auth-gated, idempotent, additive append. It is NOT wrapped/invoked from this handler file (governance:
+// migration-only twins are reachable only from the authorized migration tool, never a router/handler). See the release
+// ordering in docs/planning/SUPPLY_PLANNING_CALCULATION_RULES.md §44.15 for the exact one-time USER migration call
+// (which MUST run BEFORE this FA-3B4-R1 runtime is exercised, because prodRequireSheet_ validates OP_GAP_HEADERS_ fail-closed).
