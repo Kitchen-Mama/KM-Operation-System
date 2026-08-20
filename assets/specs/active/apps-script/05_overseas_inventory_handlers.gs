@@ -21,16 +21,22 @@ function overseasImportTruthy_(v) {
   var s = String(v == null ? '' : v).trim().toLowerCase();
   return s === 'true' || s === 'yes' || s === '1' || s === 'y' || s === 'active';
 }
-// whRec = { isActive:bool, isFactory:bool } | null (null ⇒ not in warehouses). Returns an issue code or null.
+// F1-7N-UX-INVENTORY-IMPORT-WAREHOUSE-SCOPE-GUARDS-R1 — execution/platform warehouse types that are NEVER an eligible
+// Overseas/self planning-inventory target (canonical `warehouse_type`, never a name heuristic). FBA = platform
+// fulfillment centre (shipment-execution destination); RETURN = returns FC; FACTORY = factory pool (own owner).
+var OVS_EXEC_WH_TYPES_ = { FBA: 1, RETURN: 1, FACTORY: 1 };
+// whRec = { isActive:bool, isFactory:bool, type:string } | null (null ⇒ not in warehouses). Returns an issue code or null.
 function overseasImportWarehouseIssue_(whRec) {
   if (!whRec) return 'WAREHOUSE_NOT_FOUND';
   if (whRec.isActive === false) return 'WAREHOUSE_INACTIVE';
   if (whRec.isFactory === true) return 'WAREHOUSE_NOT_OVERSEAS';   // a Factory warehouse is not an eligible Overseas/3PL target
+  var t = String(whRec.type == null ? '' : whRec.type).trim().toUpperCase();
+  if (OVS_EXEC_WH_TYPES_[t]) return 'WAREHOUSE_NOT_OVERSEAS';      // FBA / RETURN / FACTORY execution FC — not an Overseas/3PL target
   return null;
 }
 function overseasImportWarehouseMessage_(code) {
   return code === 'WAREHOUSE_INACTIVE' ? 'warehouse is inactive (not an eligible target)'
-    : code === 'WAREHOUSE_NOT_OVERSEAS' ? 'warehouse is a Factory warehouse — not an eligible Overseas/3PL target'
+    : code === 'WAREHOUSE_NOT_OVERSEAS' ? 'warehouse is an FBA / Factory / Return execution FC — not an eligible Overseas/3PL inventory target'
     : 'warehouse_id not found in warehouses';
 }
 
@@ -147,6 +153,7 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
   var wh_id = whHeaders.indexOf('warehouse_id');
   var wh_active = whHeaders.indexOf('is_active');
   var wh_factory = whHeaders.indexOf('is_factory_warehouse');
+  var wh_type = whHeaders.indexOf('warehouse_type');   // FBA/RETURN/FACTORY execution FCs are rejected as Overseas targets
   var wh_status = whHeaders.indexOf('status');
   var wh_company = whHeaders.indexOf('company');   // scoped-import context: canonical company/country facts per warehouse
   var wh_country = whHeaders.indexOf('country');
@@ -157,6 +164,7 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     warehouseById[wid] = {
       isActive: wh_active >= 0 ? overseasImportTruthy_(whData[w][wh_active]) : (wh_status >= 0 ? (String(whData[w][wh_status] || '').trim().toLowerCase() === 'active') : true),
       isFactory: wh_factory >= 0 ? overseasImportTruthy_(whData[w][wh_factory]) : false,
+      type: wh_type >= 0 ? String(whData[w][wh_type] || '').trim() : '',
       company: wh_company >= 0 ? String(whData[w][wh_company] || '').trim() : '',
       country: wh_country >= 0 ? String(whData[w][wh_country] || '').trim() : ''
     };

@@ -74,7 +74,10 @@ var ovsTplFn = OVS_JS.slice(OVS_JS.indexOf('function downloadOverseasImportTempl
 // selected warehouse_id only), replacing the former all-eligible-ids dropdown. Eligibility (active, non-factory) is now
 // enforced by the relational scope selectors (_ovsEligibleWarehouses) + the server scope gate.
 ok(/templateExport\.buildAndDownload/.test(ovsTplFn) && /dropdown:\s*\[sc\.warehouseId\]/.test(ovsTplFn), 'K Overseas template uses the KM.templateExport builder with the selected warehouse_id (scoped dropdown)');
-ok(/isFactoryWarehouse !== true && \w*\.?isActive !== false/.test(OVS_JS) || /isFactoryWarehouse !== true[\s\S]{0,40}isActive !== false/.test(OVS_JS), 'Overseas dropdown filtered to active NON-factory (Overseas/3PL) warehouses');
+// F1-7N-UX-INVENTORY-IMPORT-WAREHOUSE-SCOPE-GUARDS-R1: _ovsEligibleWarehouses now excludes inactive + factory AND the
+// execution types FBA/RETURN/FACTORY (canonical warehouse_type). Assert the stricter predicate replaced the old form.
+var ovsEligFn = OVS_JS.slice(OVS_JS.indexOf('function _ovsEligibleWarehouses'), OVS_JS.indexOf('function _ovsWhById'));
+ok(/isFactoryWarehouse === true\) return false/.test(ovsEligFn) && /isActive === false\) return false/.test(ovsEligFn) && /excludedTypes\[t\]\) return false/.test(ovsEligFn) && /FBA: 1, RETURN: 1, FACTORY: 1/.test(ovsEligFn), 'Overseas picker excludes inactive + factory + FBA/RETURN/FACTORY execution types (active Overseas/3PL only)');
 ok(!/a\.download = 'overseas_inventory_snapshot_import_template\.csv'[\s\S]{0,80}csv \+/.test(OVS_JS), 'the free-text CSV template is no longer the primary generated format (xlsx dropdown is)');
 // Factory template (regression): dropdown of ACTIVE FACTORY warehouse ids.
 ok(/downloadFactoryImportTemplate[\s\S]{0,600}isFactoryWarehouse === true && \w+\.isActive !== false[\s\S]{0,600}dropdown:\s*whIds/.test(FAC_JS), 'Factory template dropdown filtered to active FACTORY warehouses (regression)');

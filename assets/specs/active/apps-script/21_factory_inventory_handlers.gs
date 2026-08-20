@@ -300,6 +300,37 @@ function factoryImportTruthy_(v) {
   return s === 'true' || s === 'yes' || s === '1' || s === 'y' || s === 'active';
 }
 
+// F1-7N-UX-INVENTORY-IMPORT-WAREHOUSE-SCOPE-GUARDS-R1 — PURE factory import SCOPE gate (fail-closed, whole-batch).
+// A scoped import declares the selected factory { warehouse_id, warehouse_code? } (the UI selection is contract, NOT
+// trusted from the file). BEFORE any mutation this proves: (1) the selected warehouse exists, is ACTIVE, is a FACTORY
+// (is_factory_warehouse=TRUE AND, when known, warehouse_type=FACTORY); (2) a declared warehouse_code matches the
+// canonical code; (3) EVERY row's warehouse_id equals the selected factory, and any supplied row warehouse_code matches
+// the canonical code. Any mismatch fails the WHOLE batch (no partial import, no silent rewrite). scope.warehouse_id
+// absent → no-op (the per-row evaluator's factory eligibility still applies). warehouseById rec = { warehouseId,
+// warehouseCode, isActive, isFactory, type }.
+function factoryImportScopeEq_(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
+function factoryImportScopeCheck_(rows, scope, warehouseById) {
+  scope = scope || {};
+  var selWh = String(scope.warehouse_id || '').trim();
+  if (!selWh) return { ok: true };   // no declared factory scope → legacy per-row eligibility path (backward compatible)
+  var rec = (warehouseById || {})[selWh] || null;
+  if (!rec) return { ok: false, code: 'FACTORY_SCOPE_INVALID', message: 'Selected factory not found in warehouses: ' + selWh };
+  if (rec.isActive === false) return { ok: false, code: 'FACTORY_SCOPE_INVALID', message: 'Selected factory is inactive: ' + selWh };
+  if (rec.isFactory !== true) return { ok: false, code: 'FACTORY_SCOPE_INVALID', message: 'Selected warehouse is not a factory (is_factory_warehouse != true): ' + selWh };
+  if (rec.type != null && String(rec.type).trim() !== '' && !factoryImportScopeEq_(rec.type, 'FACTORY')) return { ok: false, code: 'FACTORY_SCOPE_INVALID', message: 'Selected warehouse warehouse_type is not FACTORY (got "' + rec.type + '"): ' + selWh };
+  var selCode = String(scope.warehouse_code || '').trim();
+  if (selCode && rec.warehouseCode && !factoryImportScopeEq_(selCode, rec.warehouseCode)) return { ok: false, code: 'FACTORY_SCOPE_INVALID', message: 'Selected warehouse_code "' + selCode + '" does not match canonical code "' + rec.warehouseCode + '" for ' + selWh };
+  for (var i = 0; i < (rows || []).length; i++) {
+    var row = rows[i] || {};
+    var rwh = String(row.warehouse_id || '').trim();
+    var rn = (typeof row.__row === 'number') ? row.__row : (i + 1);
+    if (rwh && rwh !== selWh) return { ok: false, code: 'FACTORY_SCOPE_ROW_MISMATCH', message: 'Row ' + rn + ' warehouse_id "' + rwh + '" does not match the selected factory "' + selWh + '". One import file = one factory.', details: { row_number: rn, expected_warehouse_id: selWh, actual_warehouse_id: rwh } };
+    var rcode = String(row.warehouse_code || '').trim();
+    if (rcode && rec.warehouseCode && !factoryImportScopeEq_(rcode, rec.warehouseCode)) return { ok: false, code: 'FACTORY_SCOPE_ROW_CODE_MISMATCH', message: 'Row ' + rn + ' warehouse_code "' + rcode + '" does not match the selected factory canonical code "' + rec.warehouseCode + '" (' + selWh + ').', details: { row_number: rn, expected_warehouse_code: rec.warehouseCode, actual_warehouse_code: rcode } };
+  }
+  return { ok: true };
+}
+
 // Build the canonical warehouse + sku context (existing factory_stock is merged from the stock resolver).
 function factoryImportBuildContext_(ss) {
   var whById = {}, skuSet = {};
@@ -307,14 +338,15 @@ function factoryImportBuildContext_(ss) {
   if (whSheet) {
     var wd = whSheet.getDataRange().getValues();
     var wh = wd[0].map(function (h) { return String(h).trim().toLowerCase(); });
-    var iId = wh.indexOf('warehouse_id'), iCode = wh.indexOf('warehouse_code'), iAct = wh.indexOf('is_active'), iFac = wh.indexOf('is_factory_warehouse'), iStatus = wh.indexOf('status');
+    var iId = wh.indexOf('warehouse_id'), iCode = wh.indexOf('warehouse_code'), iAct = wh.indexOf('is_active'), iFac = wh.indexOf('is_factory_warehouse'), iType = wh.indexOf('warehouse_type'), iStatus = wh.indexOf('status');
     for (var r = 1; r < wd.length; r++) {
       var id = String(wd[r][iId] || '').trim(); if (!id) continue;
       whById[id] = {
         warehouseId: id,
         warehouseCode: iCode >= 0 ? String(wd[r][iCode] || '').trim() : '',
         isActive: iAct >= 0 ? factoryImportTruthy_(wd[r][iAct]) : (iStatus >= 0 ? (String(wd[r][iStatus] || '').trim().toLowerCase() === 'active') : true),
-        isFactory: iFac >= 0 ? factoryImportTruthy_(wd[r][iFac]) : false
+        isFactory: iFac >= 0 ? factoryImportTruthy_(wd[r][iFac]) : false,
+        type: iType >= 0 ? String(wd[r][iType] || '').trim() : ''   // F1-7N scope guard: selected factory must be warehouse_type=FACTORY
       };
     }
   }
@@ -372,6 +404,10 @@ function factoryImportPrepare_(body) {
 
   var ctx = factoryImportBuildContext_(ss);
   for (var k in stock.byKey) ctx.existingByKey[k] = { current: stock.byKey[k].current, reserved: stock.byKey[k].reserved };
+
+  // F1-7N scope guard — validate the selected factory + one-factory-per-file BEFORE evaluate/mutate (fail-closed).
+  var scopeGate = factoryImportScopeCheck_(rows, body.scope || null, ctx.warehouseById);
+  if (!scopeGate.ok) return { error: scopeGate.message };
 
   return { ss: ss, stock: stock, ctx: ctx, evalResult: factoryImportEvaluateBatch_(rows, ctx), importBatchId: factoryImportBatchId_(body.importBatchId) };
 }

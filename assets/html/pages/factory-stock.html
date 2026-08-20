@@ -369,8 +369,17 @@
                             </p>
                             <div class="ovs-form-row">
                                 <div class="ovs-form-group">
+                                    <label for="factory-import-factory">Factory *</label>
+                                    <select id="factory-import-factory" onchange="_fiiOnFactoryChosen()">
+                                        <option value="">Select factory…</option>
+                                    </select>
+                                    <div id="factory-import-scope-readout" style="font-size:12px;color:#475569;margin-top:4px;display:none;"></div>
+                                </div>
+                            </div>
+                            <div class="ovs-form-row">
+                                <div class="ovs-form-group">
                                     <label for="factory-import-file">Import File (.xlsx or .csv) *</label>
-                                    <input type="file" id="factory-import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="_fiiOnFileChosen()">
+                                    <input type="file" id="factory-import-file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="_fiiOnFileChosen()" disabled>
                                 </div>
                             </div>
                             <div class="fii-parsestat" id="factory-import-parsestat" aria-live="polite"></div>

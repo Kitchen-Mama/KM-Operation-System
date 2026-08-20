@@ -1198,8 +1198,64 @@ var _fiiValidated = null;    // last server validate response.data
 var _fiiBatchId = null;      // stable import batch id (generated at validate; REUSED on commit + retry — idempotency)
 var _fiiSubmitting = false;  // commit double-submit guard (one commit per click)
 var _fiiKeyBound = false;
+// F1-7N-UX-INVENTORY-IMPORT-WAREHOUSE-SCOPE-GUARDS-R1 — the user MUST explicitly select a factory before import.
+var _fiiFactory = { warehouseId: '', warehouseCode: '' };
 
 function _fiiEl(id) { return document.getElementById(id); }
+// PURE: eligible factory picker set — active canonical factories only (is_factory_warehouse + warehouse_type=FACTORY);
+// never inferred from country/name. Mirrors the server factoryImportScopeCheck_ authority.
+function _fiiEligibleFactories() {
+  return (_fsGet('warehouses') || []).filter(function (w) {
+    if (!w || !w.warehouseId) return false;
+    if (w.isActive === false) return false;
+    if (w.isFactoryWarehouse !== true) return false;
+    var t = String(w.warehouseType || '').trim().toUpperCase();
+    if (t && t !== 'FACTORY') return false;   // canonical FACTORY type when present
+    return true;
+  });
+}
+// PURE advisory row scope check (server is authority): factory selected + every row matches selected warehouse_id
+// (and warehouse_code when both supplied). Returns { ok } or { ok:false, error }.
+function _fiiFactoryScopeCheck(rows, scope) {
+  scope = scope || {};
+  var selWh = String(scope.warehouse_id || '').trim();
+  if (!selWh) return { ok: false, error: 'Select a factory before importing.' };
+  var selCode = String(scope.warehouse_code || '').trim();
+  for (var i = 0; i < (rows || []).length; i++) {
+    var row = rows[i] || {};
+    var rn = (typeof row.__row === 'number') ? row.__row : (i + 1);
+    var rwh = String(row.warehouse_id || '').trim();
+    if (rwh && rwh !== selWh) return { ok: false, error: 'Row ' + rn + ' warehouse_id "' + rwh + '" does not match the selected factory "' + selWh + '". One import file = one factory.' };
+    var rcode = String(row.warehouse_code || '').trim();
+    if (rcode && selCode && rcode.toLowerCase() !== selCode.toLowerCase()) return { ok: false, error: 'Row ' + rn + ' warehouse_code "' + rcode + '" does not match the selected factory code "' + selCode + '".' };
+  }
+  return { ok: true };
+}
+function _fiiPopulateFactories() {
+  var sel = _fiiEl('factory-import-factory'); if (!sel) return;
+  var facs = _fiiEligibleFactories();
+  sel.innerHTML = '<option value="">' + (facs.length ? 'Select factory…' : 'No active factories') + '</option>' +
+    facs.map(function (w) {
+      var name = w.warehouseName || w.warehouseCode || w.warehouseId;
+      return '<option value="' + _fiiEsc(w.warehouseId) + '" data-code="' + _fiiEsc(w.warehouseCode || '') + '">' + _fiiEsc(name) + (w.warehouseCode ? ' (' + _fiiEsc(w.warehouseCode) + ')' : '') + ' — ' + _fiiEsc(w.warehouseId) + '</option>';
+    }).join('');
+  sel.value = _fiiFactory.warehouseId || '';
+}
+function _fiiOnFactoryChosen() {
+  var sel = _fiiEl('factory-import-factory');
+  var opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+  _fiiFactory = { warehouseId: sel ? String(sel.value || '').trim() : '', warehouseCode: opt ? String(opt.getAttribute('data-code') || '').trim() : '' };
+  var fileEl = _fiiEl('factory-import-file'); if (fileEl) { fileEl.value = ''; fileEl.disabled = !_fiiFactory.warehouseId; }
+  _fiiRows = null; _fiiValidated = null;
+  _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap'); _fiiHide('factory-import-result');
+  var cb = _fiiEl('factory-import-confirm-btn'); if (cb) cb.disabled = true;
+  var ro = _fiiEl('factory-import-scope-readout');
+  if (ro) {
+    if (_fiiFactory.warehouseId) { ro.style.display = 'block'; ro.innerHTML = 'Import scope — Factory: <strong>' + _fiiEsc(_fiiFactory.warehouseId) + (_fiiFactory.warehouseCode ? ' / ' + _fiiEsc(_fiiFactory.warehouseCode) : '') + '</strong>. One file = one factory.'; }
+    else { ro.style.display = 'none'; ro.innerHTML = ''; }
+  }
+  _fiiSetText('factory-import-parsestat', '');
+}
 function _fiiSetText(id, t) { var e = _fiiEl(id); if (e) e.textContent = t; }
 function _fiiShow(id) { var e = _fiiEl(id); if (e) e.hidden = false; }
 function _fiiHide(id) { var e = _fiiEl(id); if (e) e.hidden = true; }
@@ -1216,7 +1272,10 @@ function openFactoryImportModal() {
   var overlay = _fiiEl('factory-import-overlay'), modal = _fiiEl('factory-import-modal');
   if (!modal || !overlay) return;
   _fiiRows = null; _fiiValidated = null; _fiiBatchId = null; _fiiSubmitting = false;
-  var fileEl = _fiiEl('factory-import-file'); if (fileEl) fileEl.value = '';
+  _fiiFactory = { warehouseId: '', warehouseCode: '' };
+  _fiiPopulateFactories();
+  var roEl = _fiiEl('factory-import-scope-readout'); if (roEl) { roEl.style.display = 'none'; roEl.innerHTML = ''; }
+  var fileEl = _fiiEl('factory-import-file'); if (fileEl) { fileEl.value = ''; fileEl.disabled = true; }   // enabled only after a factory is chosen
   _fiiSetText('factory-import-parsestat', '');
   _fiiHide('factory-import-summary'); _fiiHide('factory-import-preview-wrap'); _fiiHide('factory-import-result');
   var cb = _fiiEl('factory-import-confirm-btn'); if (cb) { cb.disabled = true; cb.textContent = 'Import'; }
@@ -1399,10 +1458,14 @@ function _fiiMakeBatchId() {
 function _fiiValidate() {
   var rows = _fiiRows || [];
   if (!rows.length) { _fiiParseError('No data rows found in the file.'); return Promise.resolve(); }
+  // F1-7N advisory scope pre-check (server re-validates authoritatively): factory selected + one-factory-per-file.
+  var _scope = { warehouse_id: _fiiFactory.warehouseId, warehouse_code: _fiiFactory.warehouseCode };
+  var _sc = _fiiFactoryScopeCheck(rows, _scope);
+  if (!_sc.ok) { _fiiParseError(_sc.error); return Promise.resolve(); }
   _fiiSetText('factory-import-parsestat', 'Validating ' + rows.length + ' row(s)…');
   _fiiBatchId = _fiiMakeBatchId();
   if (!(window.KM && window.KM.DB && window.KM.DB.factoryInventoryImportValidate)) { _fiiParseError('Import API not available.'); return Promise.resolve(); }
-  return Promise.resolve(window.KM.DB.factoryInventoryImportValidate({ rows: rows, importBatchId: _fiiBatchId, created_by: 'operation-system' }))
+  return Promise.resolve(window.KM.DB.factoryInventoryImportValidate({ rows: rows, importBatchId: _fiiBatchId, created_by: 'operation-system', scope: _scope }))
     .then(function (resp) {
       if (!resp || resp.success === false) { _fiiParseError((resp && resp.error) || 'Validation failed.'); return; }
       _fiiValidated = resp.data || null;
@@ -1459,7 +1522,7 @@ function confirmFactoryImport() {
   if ((_fiiValidated.summary && _fiiValidated.summary.invalidRows) > 0) return;   // never commit a blocking batch
   _fiiSubmitting = true;
   var btn = _fiiEl('factory-import-confirm-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
-  Promise.resolve(window.KM.DB.factoryInventoryImportCommit({ rows: _fiiRows, importBatchId: _fiiBatchId, created_by: 'operation-system' }))
+  Promise.resolve(window.KM.DB.factoryInventoryImportCommit({ rows: _fiiRows, importBatchId: _fiiBatchId, created_by: 'operation-system', scope: { warehouse_id: _fiiFactory.warehouseId, warehouse_code: _fiiFactory.warehouseCode } }))
     .then(function (resp) {
       if (!resp || resp.success === false) {
         _fiiSubmitting = false; if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
@@ -1514,6 +1577,7 @@ window.openFactoryImportModal = openFactoryImportModal;
 window.closeFactoryImportModal = closeFactoryImportModal;
 window.downloadFactoryImportTemplate = downloadFactoryImportTemplate;
 window._fiiOnFileChosen = _fiiOnFileChosen;
+window._fiiOnFactoryChosen = _fiiOnFactoryChosen;
 window.confirmFactoryImport = confirmFactoryImport;
 
 // ========================================

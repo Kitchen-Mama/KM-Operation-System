@@ -692,9 +692,19 @@ var OVERSEAS_QTY_FIELDS = ['available_stock', 'reserved_stock', 'damaged_stock',
 // The server re-validates the scope + every row — this frontend filtering is UX only.
 var _ovsImportScope = { company: '', country: '', warehouseId: '' };
 
+// F1-7N-UX-INVENTORY-IMPORT-WAREHOUSE-SCOPE-GUARDS-R1 — execution/platform warehouse types NEVER offered as an Overseas
+// import target (canonical warehouse_type, never a name heuristic). Mirrors the server predicate overseasImportWarehouseIssue_.
 function _ovsEligibleWarehouses() {
+    var excludedTypes = { FBA: 1, RETURN: 1, FACTORY: 1 };   // execution/platform/factory FCs — never Overseas/self planning inventory
     return (_osGet('warehouses') || [])
-        .filter(function (w) { return w && w.warehouseId && w.isFactoryWarehouse !== true && w.isActive !== false; });
+        .filter(function (w) {
+            if (!w || !w.warehouseId) return false;
+            if (w.isFactoryWarehouse === true) return false;
+            if (w.isActive === false) return false;
+            var t = String(w.warehouseType || '').trim().toUpperCase();
+            if (excludedTypes[t]) return false;   // exclude FBA / RETURN / FACTORY (canonical type)
+            return true;
+        });
 }
 function _ovsWhById(id) { var t = String(id || '').trim(); return _ovsEligibleWarehouses().filter(function (w) { return String(w.warehouseId).trim() === t; })[0] || null; }
 function _ovsWhCompany(w) { return String((w && w.company) || '').trim(); }
