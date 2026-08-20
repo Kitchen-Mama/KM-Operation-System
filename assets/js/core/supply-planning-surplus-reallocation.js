@@ -1,30 +1,26 @@
-// Kitchen Mama Operation System — Factory Surplus Reallocation Orchestrator (F1-7N-FA-3A).
+// Kitchen Mama Operation System — Factory Surplus Reallocation Orchestrator (F1-7N-FA-3A / FA-3B1).
 // -----------------------------------------------------------------------------
-// PURE / DETERMINISTIC orchestration of the ALREADY-FROZEN §41 Factory Surplus Reallocation contract
-// (docs/planning/SUPPLY_PLANNING_CALCULATION_RULES.md §41 + §41.5A + §43). This module is NOT a second
-// allocator and NOT a second Net-Order-Need formula — it ASSEMBLES the canonical owners:
-//   • KMALLOC.allocateFactoryDeterministic   (§35/§40 — the only factory allocator; integer FIFO, pool conserved)
-//   • KMCALC.classifyRequiredByWindow         (§27A — the only T1–T4 tier classifier; no second classifier here)
-//   • KMCALC.evaluateReallocationEligibility  (§32A — donorRank ≤ receiverRank tier/timing gate, T1–T3 only)
-//   • KMCALC.feasibleReallocationQty / applyFeasibleReallocation (§12/§32 — feasible qty + single-consume apply)
-//   • KMCALC.sumRemainingShortages            (§12/§14 — the SOLE post-reallocation Net Order Need owner)
+// PURE / DETERMINISTIC §41 Factory Surplus Reallocation. Two public entry points share ONE §41 core:
+//   • projectSurplusReallocation(input)            — STANDALONE model: runs its own §35/§40 initial allocation
+//                                                    (KMALLOC.allocateFactoryDeterministic) then §41.
+//   • reallocatePreallocatedFactorySupply(input)   — ARCHITECTURE-A adapter (FA-3B1): accepts factory coverage
+//                                                    ALREADY allocated upstream (KMMSA/KMAR) via
+//                                                    `initialAllocationBySource`, and runs §41 ONLY — it NEVER
+//                                                    calls allocateFactoryDeterministic (no second §40 allocation).
+// Both terminate in the SAME frozen §41 logic (_runReallocation) — no formula duplication, no forked math.
 //
-// SCOPE (frozen): CURRENT FACTORY STOCK only, Phase-1 ANALYSIS-ONLY / PLANNING-ONLY netting (§41.1). It does
-// NOT read a DB/API/clock/locale/random, NOT persist, NOT reserve, NOT deduct, NOT move/borrow physical stock,
-// NOT transfer ownership, NOT bind a PO/Shipment, and NOT consume Ongoing-PO / COMMITTED_PRODUCTION / In-Transit
-// / Overseas facts (those retain their own lifecycle owners — §42 / REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC §3.5).
+// Assembles the canonical owners:
+//   • KMALLOC.allocateFactoryDeterministic  (§35/§40 — STANDALONE path only; the adapter path never touches it)
+//   • KMCALC.classifyRequiredByWindow        (§27A — the only T1–T4 tier classifier)
+//   • KMCALC.evaluateReallocationEligibility (§32A — donorRank ≤ receiverRank tier/timing gate, T1–T3 only)
+//   • KMCALC.feasibleReallocationQty / applyFeasibleReallocation (§12/§32)
+//   • KMCALC.sumRemainingShortages           (§12 — pure primitive; NOT the LIVE monthly Net Order Need owner,
+//                                             which is KMTPP.projectTimePhasedSupply, §44)
 //
-// Actionable tiers = T1/T2/T3 only (§41.5). T4 / out-of-range receivers are VISIBILITY-ONLY: excluded from both
-// the initial allocation and reallocation, and excluded from Net Order Need (T4 is never in the Request/PO payload).
-//
-// Timely-transfer authority (§41.5A, USER-resolved 2026-08-20 Resolution A): for CURRENT FACTORY STOCK the
-// §32A tier gate IS the complete timing feasibility; ONLY AFTER evaluateReallocationEligibility → eligible=true,
-// timelyTransferableQty = donor remaining releasable surplus AT THE ELIGIBLE SOURCE (explicit pass-through — NOT
-// Infinity, NOT lead-time, NOT shipment/carrier/reservation). No route/carrier/lead-time math here.
-//
-// Integer safety (§43): the initial allocation is §40 integer FIFO and reallocation transfers whole units bounded
-// by feasibleReallocationQty — FA-3A introduces NO ratio→unit conversion and never over-allocates a physical pool.
-// Same input ⇒ identical output; a fresh result object every call; inputs are never mutated.
+// SCOPE (§41/§44): CURRENT FACTORY STOCK, ANALYSIS-ONLY / PLANNING-ONLY. No DB/API/clock/random/persistence/
+// reservation/physical mutation/ownership transfer. Same input ⇒ identical output; input never mutated.
+// Timely-transfer authority = §41.5A (tier gate; timelyTransferableQty = donor remaining releasable surplus).
+// Integer safety = §43 (no ratio→unit conversion; whole-unit transfers). Actionable tiers = T1/T2/T3 only.
 
 (function (root, factory) {
   'use strict';
@@ -75,32 +71,19 @@
     if (v < 0) throw new RangeError('KMFSR: ' + name + ' must be non-negative (got ' + v + ')');
     return v;
   }
+  function requireIntQty(v, name) {
+    requireQty(v, name);
+    if (Math.floor(v) !== v) throw new RangeError('KMFSR: ' + name + ' must be a whole number (got ' + v + ')');
+    return v;
+  }
   function tierRank(tier) { return tier === 'T1' ? 1 : (tier === 'T2' ? 2 : (tier === 'T3' ? 3 : 0)); }
 
-  // ---- public: projectSurplusReallocation -----------------------------------
-  // input = {
-  //   masterSku: string,
-  //   calculationDate: 'YYYY-MM-DD',                       // REQUIRED, explicit; §41.5A never from clock
-  //   factoryPools: [ { poolKey, poolType:'FACTORY', warehouseId, effectiveSupplyQty, state? } ],  // §40 DTO
-  //   receivers: [ {
-  //     demandKey, receiverKey?, company, marketplace, destinationWarehouseId,
-  //     requiredByDate: 'YYYY-MM-DD', allocationPriority, demandQty,           // demandQty = §40 initial claim
-  //     projectedRequirementQty,                                              // actionable T1–T3 protected need
-  //     eligibleFactoryWarehouseIds: [ string ], state?
-  //   } ]
-  // }
-  function projectSurplusReallocation(input) {
-    var root = requireObject(input, 'input');
-    var masterSku = requireNonEmptyString(root.masterSku, 'input.masterSku');
-    var calculationDate = requireNonEmptyString(root.calculationDate, 'input.calculationDate');
-    var factoryPools = requireArray(root.factoryPools, 'input.factoryPools');
-    var receiversIn = requireArray(root.receivers, 'input.receivers');
-
-    // Validate + normalize FA-3A-specific fields; classify each receiver's tier via the EXISTING §27A classifier
-    // (which also strict-validates calculationDate + requiredByDate). The §40 fields are (re)validated by the
-    // frozen allocator when the actionable demand reaches it.
+  // ---- shared receiver normalization (identical for both entry points) ------
+  // Validates the FA-3A-common fields + classifies the tier via the frozen §27A classifier (which also
+  // strict-validates calculationDate + requiredByDate). Carries the raw receiver for mode-specific reads.
+  function normalizeReceivers(receiversIn, calculationDate) {
     var recSeen = {};
-    var receivers = receiversIn.map(function (r, i) {
+    return requireArray(receiversIn, 'input.receivers').map(function (r, i) {
       var ctx = 'input.receivers[' + i + ']';
       requireObject(r, ctx);
       var demandKey = requireNonEmptyString(r.demandKey, ctx + '.demandKey');
@@ -114,48 +97,30 @@
       var cls = KMCALC.classifyRequiredByWindow({ calculationDate: calculationDate, requiredByDate: r.requiredByDate });
       var tier = cls.engineB.tier;
       return {
-        demandKey: demandKey, receiverKey: receiverKey,
+        demandKey: demandKey, receiverKey: receiverKey, ctx: ctx, raw: r,
         requiredByDate: r.requiredByDate, allocationPriority: r.allocationPriority,
         projectedRequirementQty: projectedRequirementQty,
         eligibleFactoryWarehouseIds: eligibleWh,
-        tier: tier, actionable: tierRank(tier) > 0,
-        demand: {
-          demandKey: demandKey, company: r.company, marketplace: r.marketplace,
-          destinationWarehouseId: r.destinationWarehouseId, requiredByDate: r.requiredByDate,
-          allocationPriority: r.allocationPriority, demandQty: r.demandQty,
-          eligibleFactoryWarehouseIds: eligibleWh.slice(), state: r.state
-        }
+        tier: tier, actionable: tierRank(tier) > 0
       };
     });
+  }
 
-    var actionable = receivers.filter(function (r) { return r.actionable; });
-
-    // ---- PHASE 3 — canonical initial allocation (§35/§40; pool conserved; ACTIONABLE demands only) ----
-    var poolsForAlloc = factoryPools.map(function (p) {
-      if (!isObject(p)) return p; // let the allocator raise the precise TypeError
-      var o = {}; for (var k in p) { if (Object.prototype.hasOwnProperty.call(p, k)) o[k] = p[k]; } return o;
-    });
-    var initial = KMALLOC.allocateFactoryDeterministic({
-      masterSku: masterSku, factoryPools: poolsForAlloc, demands: actionable.map(function (r) { return r.demand; })
-    });
-    // §41.9(1): Σ initial factory allocation ≤ physical factory supply (defensive; §40 already conserves).
-    if (initial.totalAllocatedQty > initial.totalSupplyQty) {
-      throw new RangeError('KMFSR: initial allocation exceeded physical supply (' + initial.totalAllocatedQty + ' > ' + initial.totalSupplyQty + ')');
+  // ===========================================================================
+  // SHARED §41 CORE — Phases 4–10. Given normalized receivers + the ALREADY-ATTRIBUTED per-receiver factory
+  // coverage (bySource + initialQtyBy) + physical-pool totals, runs protect → releasable-surplus → legal
+  // source-aware reallocation → output. This is the SINGLE §41 implementation both entry points use — the only
+  // thing that differs upstream is HOW bySource/initialQtyBy/totals were produced (§40 allocation vs preallocated).
+  // ===========================================================================
+  function runReallocation(masterSku, calculationDate, receivers, actionable, bySource, initialQtyBy, totalsIn) {
+    // §41.9(1): Σ initial factory allocation ≤ physical factory supply.
+    if (totalsIn.totalInitialAllocatedQty > totalsIn.totalFactorySupplyQty) {
+      throw new RangeError('KMFSR: initial allocation exceeded physical supply (' + totalsIn.totalInitialAllocatedQty + ' > ' + totalsIn.totalFactorySupplyQty + ')');
     }
-
-    // Per-receiver initial attribution at source-warehouse grain (Phase 5).
-    var bySource = {};      // demandKey -> { warehouseId -> qty }
-    var initialQtyBy = {};  // demandKey -> total
-    actionable.forEach(function (r) { bySource[r.demandKey] = {}; initialQtyBy[r.demandKey] = 0; });
-    initial.allocations.forEach(function (a) {
-      if (!Object.prototype.hasOwnProperty.call(bySource, a.demandKey)) return;
-      bySource[a.demandKey][a.sourceWarehouseId] = (bySource[a.demandKey][a.sourceWarehouseId] || 0) + a.allocatedQty;
-      initialQtyBy[a.demandKey] += a.allocatedQty;
-    });
 
     // ---- PHASE 4 + 5 — protected / releasable-surplus (source-aware, integer, no ratio §43.8) ----
     var facts = {};
-    var sourceSurplusRemaining = {}; // donorDemandKey -> { warehouseId -> releasable remaining }
+    var sourceSurplusRemaining = {};
     actionable.forEach(function (r) {
       var initialQty = initialQtyBy[r.demandKey];
       var projReq = r.projectedRequirementQty;
@@ -297,17 +262,17 @@
           actionable: f.actionable,
           initialFactoryAllocationQty: f.initialFactoryAllocationQty,
           protectedFactoryQty: f.protectedFactoryQty,
-          releasableSurplusQty: f.releasableSurplusQty, // remaining releasable AFTER outbound transfers
+          releasableSurplusQty: f.releasableSurplusQty,
           reallocatedInQty: f.reallocatedInQty,
           reallocatedOutQty: f.reallocatedOutQty,
           remainingShortageQty: f.remainingShortageQty,
-          netOrderNeed: f.actionable ? f.remainingShortageQty : 0, // T4/out-of-range never in Request/PO payload
+          netOrderNeed: f.actionable ? f.remainingShortageQty : 0,
           coverageReason: coverageReason,
           sourceBreakdown: sourceBreakdown
         };
       });
 
-    // §41.7 — the SOLE Net Order Need owner; actionable T1–T3 shortages only.
+    // §12 pure primitive over actionable shortages (NOT the live monthly Net Order Need owner — that is KMTPP, §44).
     var totalNetOrderNeed = KMCALC.sumRemainingShortages(
       outReceivers.filter(function (f) { return f.actionable; }).map(function (f) { return f.remainingShortageQty; })
     );
@@ -322,14 +287,113 @@
       transferLedger: transferLedger,
       totalNetOrderNeed: totalNetOrderNeed,
       totals: {
-        totalFactorySupplyQty: initial.totalSupplyQty,
-        totalInitialAllocatedQty: initial.totalAllocatedQty,
-        totalReleasableSurplusQty: totalReleasableSurplusQty,       // pre-transfer releasable surplus (analysis)
+        totalFactorySupplyQty: totalsIn.totalFactorySupplyQty,
+        totalInitialAllocatedQty: totalsIn.totalInitialAllocatedQty,
+        totalReleasableSurplusQty: totalReleasableSurplusQty,
         totalReallocatedQty: totalReallocatedQty,
-        totalUnusedFactorySupplyQty: initial.totalUnusedSupplyQty   // UNALLOCATED PHYSICAL RESIDUAL (§43.6) — never donor surplus
+        totalUnusedFactorySupplyQty: totalsIn.totalUnusedFactorySupplyQty
       }
     };
   }
 
-  return { projectSurplusReallocation: projectSurplusReallocation };
+  // ---- public: projectSurplusReallocation (STANDALONE — runs its own §40 initial allocation) ----------------
+  // input = { masterSku, calculationDate, factoryPools:[§40 pool DTO], receivers:[{ demandKey, receiverKey?,
+  //   company, marketplace, destinationWarehouseId, requiredByDate, allocationPriority, demandQty,
+  //   projectedRequirementQty, eligibleFactoryWarehouseIds, state? }] }
+  function projectSurplusReallocation(input) {
+    var root = requireObject(input, 'input');
+    var masterSku = requireNonEmptyString(root.masterSku, 'input.masterSku');
+    var calculationDate = requireNonEmptyString(root.calculationDate, 'input.calculationDate');
+    var factoryPools = requireArray(root.factoryPools, 'input.factoryPools');
+    var receivers = normalizeReceivers(root.receivers, calculationDate);
+    var actionable = receivers.filter(function (r) { return r.actionable; });
+
+    // PHASE 3 — canonical initial allocation (§35/§40; pool conserved; ACTIONABLE demands only).
+    var poolsForAlloc = factoryPools.map(function (p) {
+      if (!isObject(p)) return p; // let the allocator raise the precise TypeError
+      var o = {}; for (var k in p) { if (Object.prototype.hasOwnProperty.call(p, k)) o[k] = p[k]; } return o;
+    });
+    var initial = KMALLOC.allocateFactoryDeterministic({
+      masterSku: masterSku, factoryPools: poolsForAlloc,
+      demands: actionable.map(function (r) {
+        var d = r.raw;
+        return {
+          demandKey: r.demandKey, company: d.company, marketplace: d.marketplace,
+          destinationWarehouseId: d.destinationWarehouseId, requiredByDate: r.requiredByDate,
+          allocationPriority: r.allocationPriority, demandQty: d.demandQty,
+          eligibleFactoryWarehouseIds: r.eligibleFactoryWarehouseIds.slice(), state: d.state
+        };
+      })
+    });
+
+    var bySource = {}, initialQtyBy = {};
+    actionable.forEach(function (r) { bySource[r.demandKey] = {}; initialQtyBy[r.demandKey] = 0; });
+    initial.allocations.forEach(function (a) {
+      if (!Object.prototype.hasOwnProperty.call(bySource, a.demandKey)) return;
+      bySource[a.demandKey][a.sourceWarehouseId] = (bySource[a.demandKey][a.sourceWarehouseId] || 0) + a.allocatedQty;
+      initialQtyBy[a.demandKey] += a.allocatedQty;
+    });
+
+    return runReallocation(masterSku, calculationDate, receivers, actionable, bySource, initialQtyBy, {
+      totalFactorySupplyQty: initial.totalSupplyQty,
+      totalInitialAllocatedQty: initial.totalAllocatedQty,
+      totalUnusedFactorySupplyQty: initial.totalUnusedSupplyQty
+    });
+  }
+
+  // ---- public: reallocatePreallocatedFactorySupply (ARCHITECTURE-A adapter — FA-3B1; NO §40 allocation) -----
+  // The initial monthly factory allocation is ALREADY performed upstream by the canonical owners (KMMSA/KMAR).
+  // This entry point runs ONLY §41 surplus reallocation over that preallocated, source-attributed coverage —
+  // it NEVER calls allocateFactoryDeterministic.
+  // input = { masterSku, calculationDate, unusedFactorySupplyQty?, receivers:[{ demandKey, receiverKey?,
+  //   requiredByDate, allocationPriority, projectedRequirementQty, eligibleFactoryWarehouseIds,
+  //   initialAllocationBySource: { <warehouseId>: <non-negative integer qty> } }] }
+  //   initialAllocationBySource = the per-receiver factory coverage attributed by the upstream Architecture-A
+  //   allocation, at source-warehouse grain. Empty/absent for a receiver that received no factory coverage.
+  function reallocatePreallocatedFactorySupply(input) {
+    var root = requireObject(input, 'input');
+    var masterSku = requireNonEmptyString(root.masterSku, 'input.masterSku');
+    var calculationDate = requireNonEmptyString(root.calculationDate, 'input.calculationDate');
+    var unusedFactorySupplyQty = (root.unusedFactorySupplyQty === undefined || root.unusedFactorySupplyQty === null)
+      ? 0 : requireIntQty(root.unusedFactorySupplyQty, 'input.unusedFactorySupplyQty');
+    var receivers = normalizeReceivers(root.receivers, calculationDate);
+    var actionable = receivers.filter(function (r) { return r.actionable; });
+
+    // Build the per-receiver source-attributed factory coverage DIRECTLY from the preallocated input.
+    // NO allocateFactoryDeterministic call on this path (§44.2 — no second §40 allocation).
+    var bySource = {}, initialQtyBy = {}, totalInitialAllocatedQty = 0;
+    receivers.forEach(function (r) {
+      var raw = r.raw;
+      var srcRaw = raw.initialAllocationBySource;
+      var normalized = {}, sum = 0;
+      if (srcRaw !== undefined && srcRaw !== null) {
+        requireObject(srcRaw, r.ctx + '.initialAllocationBySource');
+        Object.keys(srcRaw).forEach(function (wh) {
+          requireNonEmptyString(wh, r.ctx + '.initialAllocationBySource key');
+          var q = requireIntQty(srcRaw[wh], r.ctx + '.initialAllocationBySource["' + wh + '"]');
+          if (q > 0) { normalized[wh] = q; sum += q; }
+        });
+      }
+      if (!r.actionable) {
+        // T4 / out-of-range: excluded from §41 (visibility-only). Preallocated factory coverage here signals an
+        // upstream inconsistency (Architecture A should not allocate factory to a non-actionable tier) → fail closed.
+        if (sum > 0) throw new RangeError('KMFSR: initialAllocationBySource present for non-actionable receiver "' + r.demandKey + '" (tier ' + r.tier + ')');
+        return;
+      }
+      bySource[r.demandKey] = normalized;
+      initialQtyBy[r.demandKey] = sum;
+      totalInitialAllocatedQty += sum;
+    });
+
+    return runReallocation(masterSku, calculationDate, receivers, actionable, bySource, initialQtyBy, {
+      totalFactorySupplyQty: totalInitialAllocatedQty + unusedFactorySupplyQty,
+      totalInitialAllocatedQty: totalInitialAllocatedQty,
+      totalUnusedFactorySupplyQty: unusedFactorySupplyQty   // caller-declared physical residual (§43.6) — never donor surplus
+    });
+  }
+
+  return {
+    projectSurplusReallocation: projectSurplusReallocation,
+    reallocatePreallocatedFactorySupply: reallocatePreallocatedFactorySupply
+  };
 });
