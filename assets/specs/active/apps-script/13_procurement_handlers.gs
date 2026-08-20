@@ -2200,21 +2200,81 @@ function handleUpdatePurchaseOrderLine_(body) {
  * Writes ONLY purchase_orders / purchase_order_lines. NEVER touches request orders / shipments /
  * inventory / factory stock / carrier. No schema change (columns are additive-ensured).
  */
+// __PORCV_PURE_START__ (test extraction marker — pure PO-receive line evaluator; NO SpreadsheetApp/clock/mutation)
+// F1-7N-FA-3B0-PRE — §42 count-once lifecycle decision for ONE PO line. Given current PO-line quantities, the
+// resolved supplier factory-warehouse facts, the requested receive qty, and whether this (line,key) receipt was
+// already applied (idempotency), returns the decision + count-once arithmetic. Factory destination is resolved
+// ONLY from supplier_warehouse_id → warehouses (is_active AND is_factory_warehouse); never inferred from name/
+// company/sku. Fail-closed on an unresolved factory warehouse: completed_qty must NOT rise without the physical
+// Factory Stock handoff. Preserves the existing receive ceiling (recv ≤ ordered − completed).
+function poReceiptEvaluateLine_(inp) {
+  inp = inp || {};
+  var ordered = Math.round(Number(inp.ordered) || 0);
+  var completed = Math.round(Number(inp.completed) || 0);
+  var shipped = Math.round(Number(inp.shipped) || 0);
+  var sku = String(inp.sku || '').trim();
+  var wh = String(inp.supplierWarehouseId || '').trim();
+  var recv = Number(inp.recvQtyRaw);
+  if (!wh) return { status: 'error', issue: 'PO_RECEIVE_FACTORY_WAREHOUSE_UNRESOLVED', detail: 'blank supplier_warehouse_id' };
+  if (!inp.warehouse) return { status: 'error', issue: 'PO_RECEIVE_FACTORY_WAREHOUSE_UNRESOLVED', detail: 'warehouse not found: ' + wh };
+  if (inp.warehouse.isActive !== true) return { status: 'error', issue: 'PO_RECEIVE_FACTORY_WAREHOUSE_UNRESOLVED', detail: 'warehouse inactive: ' + wh };
+  if (inp.warehouse.isFactory !== true) return { status: 'error', issue: 'PO_RECEIVE_FACTORY_WAREHOUSE_UNRESOLVED', detail: 'not a factory warehouse: ' + wh };
+  if (!sku) return { status: 'error', issue: 'PO_RECEIVE_SKU_MISSING', detail: 'blank sku on PO line' };
+  if (isNaN(recv) || recv <= 0) return { status: 'skip', reason: 'INVALID_OR_ZERO_RECEIVE_QTY' };
+  var maxRecv = ordered - completed;
+  if (maxRecv <= 0) return { status: 'skip', reason: 'FULLY_RECEIVED' };
+  if (recv > maxRecv) recv = maxRecv;                     // clamp: never exceed unreceived (over-receipt guard)
+  if (inp.alreadyApplied === true) return { status: 'skip_idempotent', recvQty: recv };
+  var newCompleted = completed + recv;
+  return {
+    status: 'apply', recvQty: recv, newCompleted: newCompleted,
+    newRemaining: Math.max(0, newCompleted - shipped),                        // available-to-ship
+    notYetReceivedCommittedQty: Math.max(0, ordered - newCompleted),          // Ongoing-Order (§42, post-handoff)
+    completedNotShippedQty: Math.max(0, newCompleted - shipped),              // Factory Stock physical portion
+    shippedQty: Math.min(newCompleted, shipped)                              // Shipment / In-Transit portion
+  };
+}
+function poRcvTruthy_(v) {
+  if (v === true) return true;
+  var t = String(v == null ? '' : v).trim().toLowerCase();
+  return t === 'true' || t === 'yes' || t === 'y' || t === '1' || t === 'x';
+}
+// __PORCV_PURE_END__
+
+/**
+ * F1-7N-FA-3B0-PRE — Receive PO lines WITH the physical Factory Stock count-once handoff (atomic).
+ * Per accepted line, ONE lock-guarded transaction performs: completed_qty += recv; remaining_qty =
+ * MAX(0, completed − shipped); factory_stock.fac_current_stock += recv for supplier_warehouse_id + sku;
+ * and appends one factory_stock_movements row (movement_type='po_receipt', related_entity_type=
+ * 'purchase_order_receipt', related_entity_id=purchase_order_line_id). All writes are journaled and rolled
+ * back on any failure (no state where completed rose but factory stock did not). Factory destination is
+ * validated (is_active + is_factory_warehouse) → fail closed. Optional idempotency_key dedupes retries via
+ * the existing movement lineage/note fields (no schema change). Reuses the shared factoryStockApplyDeltaTx_
+ * core (21_) — no second stock-mutation implementation here.
+ */
 function handleReceivePurchaseOrderLines_(body) {
   var poId = String((body && body.purchase_order_id) || '').trim();
   var reqLines = (body && body.lines) || [];
   var actor = String((body && body.actor) || 'operation-system').trim();
+  var idemKey = String((body && body.idempotency_key) || '').trim() || ('PORCV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 12));
   if (!poId) return jsonResponse_({ success: false, error: 'Missing purchase_order_id' });
   if (!reqLines.length) return jsonResponse_({ success: false, error: 'No lines provided' });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var lineSheet = ss.getSheetByName('purchase_order_lines');
   var poSheet = ss.getSheetByName('purchase_orders');
+  var stockSheet = ss.getSheetByName('factory_stock');
+  var whSheet = ss.getSheetByName('warehouses');
   if (!lineSheet) return jsonResponse_({ success: false, error: 'purchase_order_lines sheet not found' });
   if (!poSheet) return jsonResponse_({ success: false, error: 'purchase_orders sheet not found' });
+  if (!stockSheet) return jsonResponse_({ success: false, error: 'factory_stock sheet not found' });
+  if (!whSheet) return jsonResponse_({ success: false, error: 'warehouses sheet not found' });
 
   sheetEnsureColumns_(lineSheet, ['completed_qty', 'remaining_qty', 'updated_at']);
   sheetEnsureColumns_(poSheet, ['order_status', 'completed_by', 'completed_at', 'updated_by', 'updated_at']);
+  var MOV_HEADERS = ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id', 'movement_type', 'qty', 'related_entity_type', 'related_entity_id', 'before_current_stock', 'after_current_stock', 'before_reserved_stock', 'after_reserved_stock', 'note', 'created_by', 'created_at'];
+  var movSheet = fcWriteEnsureSheet_(ss, 'factory_stock_movements', MOV_HEADERS);
+  fcWriteEnsureColumns_(movSheet, MOV_HEADERS);
 
   var poRef = procurementFindRow_(poSheet, 'purchase_order_id', poId);
   if (!poRef) return jsonResponse_({ success: false, error: 'Purchase order not found: ' + poId });
@@ -2222,79 +2282,129 @@ function handleReceivePurchaseOrderLines_(body) {
   if (!curStatus && poRef.col('status') !== -1) curStatus = String(poRef.vals[poRef.col('status')]).trim();
   if (curStatus === 'cancelled') return jsonResponse_({ success: false, error: 'A cancelled PO cannot receive.' });
 
-  var data = lineSheet.getDataRange().getValues();
-  if (data.length < 2) return jsonResponse_({ success: false, error: 'purchase_order_lines is empty' });
-  var headers = data[0].map(function (h) { return String(h).trim(); });
-  var col = function (n) { return headers.indexOf(n); };
-  var idCol = col('purchase_order_line_id');
-  var poLineIdCol = col('purchase_order_id');
-  var orderedCol = col('ordered_qty');
-  var completedCol = col('completed_qty');
-  var shippedCol = col('shipped_qty');
-  var remainingCol = col('remaining_qty');
-  var updatedCol = col('updated_at');
-  if (idCol === -1 || completedCol === -1 || orderedCol === -1) {
-    return jsonResponse_({ success: false, error: 'required line columns not found' });
+  // Factory destination authority index — is_active + is_factory_warehouse. Never infer factory from name/company/sku.
+  var whData = whSheet.getDataRange().getValues();
+  var whH = whData[0].map(function (h) { return String(h).trim(); });
+  var whIdC = whH.indexOf('warehouse_id'), whActC = whH.indexOf('is_active'), whFacC = whH.indexOf('is_factory_warehouse');
+  if (whIdC === -1 || whActC === -1 || whFacC === -1) return jsonResponse_({ success: false, error: 'warehouses missing required columns (warehouse_id, is_active, is_factory_warehouse)' });
+  var warehouseById = {};
+  for (var w = 1; w < whData.length; w++) {
+    var wid = String(whData[w][whIdC] || '').trim();
+    if (wid) warehouseById[wid] = { isActive: poRcvTruthy_(whData[w][whActC]), isFactory: poRcvTruthy_(whData[w][whFacC]) };
   }
 
-  var rowById = {};
-  for (var i = 1; i < data.length; i++) rowById[String(data[i][idCol]).trim()] = { row: i + 1, vals: data[i] };
-
-  var now = procurementTimestamp_();
-  var received = 0, skipped = 0;
-  var newCompletedById = {};   // applied completed per line (to evaluate status without re-read)
-
-  for (var r = 0; r < reqLines.length; r++) {
-    var rq = reqLines[r] || {};
-    var lineId = String(rq.purchase_order_line_id || '').trim();
-    if (!lineId || !rowById[lineId]) { skipped++; continue; }
-    var ent = rowById[lineId];
-    if (poLineIdCol !== -1 && String(ent.vals[poLineIdCol]).trim() !== poId) { skipped++; continue; }
-    var ordered = parseFloat(ent.vals[orderedCol]) || 0;
-    var completed = parseFloat(ent.vals[completedCol]) || 0;
-    var shipped = shippedCol !== -1 ? (parseFloat(ent.vals[shippedCol]) || 0) : 0;
-    var recv = parseFloat(rq.receive_qty);
-    var maxRecv = ordered - completed;   // unreceived qty = ordered − completed
-    if (isNaN(recv) || recv <= 0 || maxRecv <= 0) { skipped++; continue; }
-    if (recv > maxRecv) recv = maxRecv;   // clamp: never exceed unreceived qty
-    var newCompleted = completed + recv;
-    lineSheet.getRange(ent.row, completedCol + 1).setValue(newCompleted);
-    // remaining_qty = available-to-ship = completed_qty − shipped_qty (clamp ≥ 0). shipped_qty untouched.
-    if (remainingCol !== -1) lineSheet.getRange(ent.row, remainingCol + 1).setValue(Math.max(0, newCompleted - shipped));
-    if (updatedCol !== -1) lineSheet.getRange(ent.row, updatedCol + 1).setValue(now);
-    newCompletedById[lineId] = newCompleted;
-    received++;
+  // Idempotency pre-scan: an existing movement with this PO-line lineage AND this idempotency key = already applied.
+  var movData = movSheet.getDataRange().getValues();
+  var mH = (movData[0] || []).map(function (h) { return String(h).trim(); });
+  var mRelType = mH.indexOf('related_entity_type'), mRelId = mH.indexOf('related_entity_id'), mNote = mH.indexOf('note');
+  function receiptAlreadyApplied_(poLineId) {
+    if (mRelType === -1 || mRelId === -1) return false;
+    for (var k = 1; k < movData.length; k++) {
+      if (String(movData[k][mRelType] || '').trim() !== 'purchase_order_receipt') continue;
+      if (String(movData[k][mRelId] || '').trim() !== poLineId) continue;
+      if (mNote !== -1 && String(movData[k][mNote] || '').indexOf('|key=' + idemKey) !== -1) return true;
+    }
+    return false;
   }
 
-  if (!received) return jsonResponse_({ success: false, error: 'No receivable quantity applied (receive_qty must be > 0 and <= remaining).' });
+  // ---- ONE lock so completed_qty + factory_stock + movement move together (atomic handoff). ----
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.' }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e) }); }
 
-  // Recompute PO status from ALL its lines (fresh values + applied overrides).
-  var allComplete = true, anyCompleted = false, hasLine = false;
-  for (var j = 1; j < data.length; j++) {
-    if (poLineIdCol !== -1 && String(data[j][poLineIdCol]).trim() !== poId) continue;
-    hasLine = true;
-    var lid = String(data[j][idCol]).trim();
-    var ord = parseFloat(data[j][orderedCol]) || 0;
-    var comp = newCompletedById.hasOwnProperty(lid) ? newCompletedById[lid] : (parseFloat(data[j][completedCol]) || 0);
-    if (comp < ord) allComplete = false;
-    if (comp > 0) anyCompleted = true;
+  var journal = [];
+  try {
+    var data = lineSheet.getDataRange().getValues();   // fresh read inside the lock (drift-safe)
+    if (data.length < 2) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'purchase_order_lines is empty' }); }
+    var headers = data[0].map(function (h) { return String(h).trim(); });
+    var col = function (n) { return headers.indexOf(n); };
+    var idCol = col('purchase_order_line_id'), poLineIdCol = col('purchase_order_id'), orderedCol = col('ordered_qty'),
+        completedCol = col('completed_qty'), shippedCol = col('shipped_qty'), remainingCol = col('remaining_qty'),
+        updatedCol = col('updated_at'), skuCol = col('sku'), supWhCol = col('supplier_warehouse_id');
+    if (idCol === -1 || completedCol === -1 || orderedCol === -1 || skuCol === -1 || supWhCol === -1) {
+      lock.releaseLock(); return jsonResponse_({ success: false, error: 'required line columns not found (need purchase_order_line_id, ordered_qty, completed_qty, sku, supplier_warehouse_id)' });
+    }
+    var rowById = {};
+    for (var i = 1; i < data.length; i++) rowById[String(data[i][idCol]).trim()] = { row: i + 1, vals: data[i] };
+
+    var now = procurementTimestamp_();
+
+    // PRE-VALIDATE every requested line (NO writes). Any hard error (unresolved factory warehouse / missing sku)
+    // fails the WHOLE request closed — never raise completed_qty when the Factory Stock handoff cannot complete.
+    var plans = [], skipped = 0;
+    for (var r = 0; r < reqLines.length; r++) {
+      var rq = reqLines[r] || {};
+      var lineId = String(rq.purchase_order_line_id || '').trim();
+      if (!lineId || !rowById[lineId]) { skipped++; continue; }
+      var ent = rowById[lineId];
+      if (poLineIdCol !== -1 && String(ent.vals[poLineIdCol]).trim() !== poId) { skipped++; continue; }
+      var whId = String(ent.vals[supWhCol] || '').trim();
+      var ev = poReceiptEvaluateLine_({
+        ordered: ent.vals[orderedCol], completed: ent.vals[completedCol],
+        shipped: shippedCol !== -1 ? ent.vals[shippedCol] : 0,
+        sku: ent.vals[skuCol], supplierWarehouseId: whId,
+        warehouse: warehouseById[whId] || null,
+        recvQtyRaw: rq.receive_qty,
+        alreadyApplied: receiptAlreadyApplied_(lineId)
+      });
+      if (ev.status === 'error') { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Receive blocked: ' + ev.issue + (ev.detail ? ' (' + ev.detail + ')' : ''), issue: ev.issue, purchase_order_line_id: lineId }); }
+      ev.lineId = lineId; ev.row = ent.row; ev.sku = String(ent.vals[skuCol] || '').trim(); ev.warehouseId = whId;
+      plans.push(ev);
+    }
+
+    var received = 0, skippedIdem = 0, factoryPosted = 0;
+    var newCompletedById = {};
+    var postings = [];
+    plans.forEach(function (ev) {
+      if (ev.status === 'skip_idempotent') { skippedIdem++; return; }
+      if (ev.status !== 'apply') { skipped++; return; }
+      // A/B) PO line: completed_qty += recv; remaining_qty = MAX(0, newCompleted − shipped) (journaled).
+      var prevCompleted = data[ev.row - 1][completedCol];
+      lineSheet.getRange(ev.row, completedCol + 1).setValue(ev.newCompleted);
+      journal.push({ kind: 'cell', sheet: lineSheet, row: ev.row, col: completedCol, prev: prevCompleted });
+      if (remainingCol !== -1) { var prevRem = data[ev.row - 1][remainingCol]; lineSheet.getRange(ev.row, remainingCol + 1).setValue(ev.newRemaining); journal.push({ kind: 'cell', sheet: lineSheet, row: ev.row, col: remainingCol, prev: prevRem }); }
+      if (updatedCol !== -1) { var prevUpd = data[ev.row - 1][updatedCol]; lineSheet.getRange(ev.row, updatedCol + 1).setValue(now); journal.push({ kind: 'cell', sheet: lineSheet, row: ev.row, col: updatedCol, prev: prevUpd }); }
+      SpreadsheetApp.flush();
+      // C/D) Factory Stock physical posting + one movement via the SHARED core (same journal → atomic rollback).
+      var res = factoryStockApplyDeltaTx_({
+        stockSheet: stockSheet, movSheet: movSheet, warehouseId: ev.warehouseId, sku: ev.sku, deltaQty: ev.recvQty,
+        movementType: 'po_receipt', relatedEntityType: 'purchase_order_receipt', relatedEntityId: ev.lineId,
+        note: 'po_receipt|po=' + poId + '|key=' + idemKey, createdBy: actor, now: now, journal: journal
+      });
+      newCompletedById[ev.lineId] = ev.newCompleted;
+      received++; factoryPosted += ev.recvQty;
+      postings.push({ purchase_order_line_id: ev.lineId, warehouse_id: ev.warehouseId, sku: ev.sku, qty: ev.recvQty, movement_id: res.movementId, before_current_stock: res.beforeCurrent, after_current_stock: res.afterCurrent });
+    });
+
+    if (!received && !skippedIdem) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'No receivable quantity applied (receive_qty must be > 0 and <= remaining).' }); }
+
+    // Recompute PO status from ALL its lines (fresh values + applied overrides). Idempotent replay (received=0)
+    // does not re-change status.
+    if (received) {
+      var allComplete = true, anyCompleted = false, hasLine = false;
+      for (var j = 1; j < data.length; j++) {
+        if (poLineIdCol !== -1 && String(data[j][poLineIdCol]).trim() !== poId) continue;
+        hasLine = true;
+        var lid = String(data[j][idCol]).trim();
+        var ord = parseFloat(data[j][orderedCol]) || 0;
+        var comp = newCompletedById.hasOwnProperty(lid) ? newCompletedById[lid] : (parseFloat(data[j][completedCol]) || 0);
+        if (comp < ord) allComplete = false;
+        if (comp > 0) anyCompleted = true;
+      }
+      function setPoCell(name, value) { var c = poRef.col(name); if (c !== -1) poSheet.getRange(poRef.row, c + 1).setValue(value); }
+      if (hasLine && allComplete) { setPoCell('order_status', 'completed'); setPoCell('completed_by', actor); setPoCell('completed_at', now); curStatus = 'completed'; }
+      else if (anyCompleted) { setPoCell('order_status', 'partial_completed'); curStatus = 'partial_completed'; }
+      setPoCell('updated_by', actor); setPoCell('updated_at', now);
+      SpreadsheetApp.flush();
+    }
+
+    lock.releaseLock();
+    return jsonResponse_({ success: true, data: { purchase_order_id: poId, received: received, skipped: skipped, skipped_idempotent: skippedIdem, order_status: curStatus, idempotency_key: idemKey, factory_stock_posted: factoryPosted, factory_postings: postings } });
+  } catch (err) {
+    factoryStockRollbackJournal_(journal);
+    try { lock.releaseLock(); } catch (e2) {}
+    return jsonResponse_({ success: false, error: 'Receive failed and was rolled back (no partial handoff): ' + (err && err.message ? err.message : err), stage: 'write_rolled_back', purchase_order_id: poId });
   }
-
-  function setPoCell(name, value) { var c = poRef.col(name); if (c !== -1) poSheet.getRange(poRef.row, c + 1).setValue(value); }
-  var newStatus = curStatus;
-  if (hasLine && allComplete) {
-    newStatus = 'completed';
-    setPoCell('order_status', 'completed');
-    setPoCell('completed_by', actor);
-    setPoCell('completed_at', now);
-  } else if (anyCompleted) {
-    newStatus = 'partial_completed';
-    setPoCell('order_status', 'partial_completed');
-  }
-  setPoCell('updated_by', actor);
-  setPoCell('updated_at', now);
-
-  return jsonResponse_({ success: true, data: { purchase_order_id: poId, received: received, skipped: skipped, order_status: newStatus } });
 }
 
 /** Recompute purchase_orders totals (total_sku / total_qty / total_cartons / total_amount) from its lines. */

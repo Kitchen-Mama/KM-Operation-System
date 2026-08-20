@@ -184,6 +184,101 @@ function handleAdjustFactoryInventory_(body) {
   });
 }
 
+// __FACTORY_APPLY_DELTA_START__ (test extraction marker — shared factory_stock mutation core)
+// ============================================================
+// F1-7N-FA-3B0-PRE — SHARED factory_stock mutation core (single source; runs UNDER the caller's lock).
+// The ONE canonical "adjust fac_current_stock by an integer delta + append exactly one movement + journal
+// every write for rollback" primitive, reused by BOTH Factory Inventory Adjustment (SET → signed delta) and
+// Purchase Order Receive (+delta handoff). No second stock-mutation implementation lives in any other file.
+//   • Locates the (warehouse_id + sku) factory_stock row; if ABSENT, creates ONE canonical baseline row
+//     mirroring ensureFactoryStockBaseline_ (fac_reserved_stock=0, factory_stock_id='FS-'+wh+'-'+sku).
+//   • fac_current_stock += deltaQty (reserved NEVER modified); never lets fac_current_stock go negative.
+//   • Appends one factory_stock_movements row with the caller's movement_type + structured lineage.
+//   • Pushes every write ({kind:'cell'|'row'}) onto the caller-supplied `journal` for LIFO rollback.
+// It performs NO business policy (warehouse/factory identity, receive ceilings, no-op guards) — the CALLER
+// validates BEFORE calling (fail-closed). Returns { beforeCurrent, afterCurrent, beforeReserved, movementId, created }.
+function factoryStockApplyDeltaTx_(p) {
+  var stockSheet = p.stockSheet, movSheet = p.movSheet;
+  var warehouseId = String(p.warehouseId || '').trim();
+  var sku = String(p.sku || '').trim();
+  var delta = Math.round(Number(p.deltaQty));
+  var journal = p.journal || [];
+  var now = p.now;
+  if (!warehouseId || !sku) throw new Error('factoryStockApplyDeltaTx_: warehouseId + sku required');
+  if (!isFinite(delta)) throw new Error('factoryStockApplyDeltaTx_: deltaQty must be finite');
+
+  var data = stockSheet.getDataRange().getValues();
+  var H = data[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  var whCol = H.indexOf('warehouse_id'), skuCol = H.indexOf('sku');
+  var curCol = H.indexOf('fac_current_stock'); if (curCol === -1) curCol = H.indexOf('current_stock');
+  var resCol = H.indexOf('fac_reserved_stock'); if (resCol === -1) resCol = H.indexOf('reserved_stock');
+  if (whCol === -1 || skuCol === -1 || curCol === -1 || resCol === -1) {
+    throw new Error('factoryStockApplyDeltaTx_: factory_stock missing required columns');
+  }
+  var idCol = H.indexOf('factory_stock_id'), crCol = H.indexOf('created_at'), upCol = H.indexOf('updated_at'), ltCol = H.indexOf('last_transaction_at');
+
+  var targetRow = -1;
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][whCol] || '').trim() === warehouseId && String(data[r][skuCol] || '').trim() === sku) { targetRow = r + 1; break; }
+  }
+  var beforeCurrent, beforeReserved, created = false, prevLt = '', prevUp = '';
+  if (targetRow === -1) {
+    var row = new Array(data[0].length).fill('');
+    row[whCol] = warehouseId; row[skuCol] = sku; row[curCol] = 0; row[resCol] = 0;
+    if (idCol !== -1) row[idCol] = 'FS-' + warehouseId + '-' + sku;
+    if (crCol !== -1) row[crCol] = now;
+    if (upCol !== -1) row[upCol] = now;
+    stockSheet.appendRow(row);
+    targetRow = stockSheet.getLastRow();
+    journal.push({ kind: 'row', sheet: stockSheet, row: targetRow });
+    beforeCurrent = 0; beforeReserved = 0; created = true;
+  } else {
+    beforeCurrent = Math.round(parseFloat(data[targetRow - 1][curCol]) || 0);
+    beforeReserved = Math.round(parseFloat(data[targetRow - 1][resCol]) || 0);
+    prevLt = ltCol !== -1 ? data[targetRow - 1][ltCol] : '';
+    prevUp = upCol !== -1 ? data[targetRow - 1][upCol] : '';
+  }
+  var afterCurrent = beforeCurrent + delta;
+  if (afterCurrent < 0) throw new Error('factoryStockApplyDeltaTx_: resulting fac_current_stock would be negative (' + beforeCurrent + ' + ' + delta + ')');
+
+  var prevCur = created ? 0 : beforeCurrent;
+  stockSheet.getRange(targetRow, curCol + 1).setValue(afterCurrent);
+  if (!created) journal.push({ kind: 'cell', sheet: stockSheet, row: targetRow, col: curCol, prev: prevCur });
+  if (ltCol !== -1) { stockSheet.getRange(targetRow, ltCol + 1).setValue(now); if (!created) journal.push({ kind: 'cell', sheet: stockSheet, row: targetRow, col: ltCol, prev: prevLt }); }
+  if (upCol !== -1) { stockSheet.getRange(targetRow, upCol + 1).setValue(now); if (!created) journal.push({ kind: 'cell', sheet: stockSheet, row: targetRow, col: upCol, prev: prevUp }); }
+  SpreadsheetApp.flush();
+
+  var movementId = 'FSMV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+  fcWriteAppendByHeader_(movSheet, {
+    factory_stock_movement_id: movementId, movement_date: (p.movementDate || now), sku: sku, warehouse_id: warehouseId,
+    movement_type: p.movementType, qty: delta, related_entity_type: p.relatedEntityType, related_entity_id: p.relatedEntityId,
+    before_current_stock: beforeCurrent, after_current_stock: afterCurrent, before_reserved_stock: beforeReserved, after_reserved_stock: beforeReserved,
+    note: p.note || '', created_by: p.createdBy || 'operation-system', created_at: now
+  });
+  journal.push({ kind: 'row', sheet: movSheet, row: movSheet.getLastRow() });
+  SpreadsheetApp.flush();
+
+  return { beforeCurrent: beforeCurrent, afterCurrent: afterCurrent, beforeReserved: beforeReserved, movementId: movementId, created: created };
+}
+
+// LIFO rollback of a journal produced by factoryStockApplyDeltaTx_ (and caller-pushed PO-line cells). Cells
+// restore their prev value; appended rows are deleted highest-row-first. Runs under the caller's lock. Best-effort.
+function factoryStockRollbackJournal_(journal) {
+  var rows = [];
+  for (var i = (journal || []).length - 1; i >= 0; i--) {
+    var j = journal[i];
+    try {
+      if (j.kind === 'cell') j.sheet.getRange(j.row, j.col + 1).setValue(j.prev);
+      else if (j.kind === 'row') rows.push(j);
+    } catch (e) {}
+  }
+  // delete appended rows highest-first so earlier deletions don't shift later row numbers
+  rows.sort(function (a, b) { return b.row - a.row; });
+  rows.forEach(function (j) { try { j.sheet.deleteRow(j.row); } catch (e) {} });
+  try { SpreadsheetApp.flush(); } catch (e) {}
+}
+// __FACTORY_APPLY_DELTA_END__
+
 // ============================================================
 // F0-HOTFIX-FI1 — Factory Inventory Initial Stock Import (SET_CURRENT_STOCK).
 // Two thin actions: factoryInventory.import.validate (ZERO writes; server-computed preview) and

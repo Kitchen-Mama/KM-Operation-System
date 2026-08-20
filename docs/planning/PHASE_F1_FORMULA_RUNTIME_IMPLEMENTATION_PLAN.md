@@ -93,6 +93,8 @@
 
 ## F1-5 — Factory Stock Allocation Runtime (schema decision required)
 
+- **Status note (F1-7N-FA-3B0-PRE, 2026-08-20):** the physical PO Receive → Factory Stock **count-once lifecycle handoff** landed (backend) — `handleReceivePurchaseOrderLines_` (13_) now posts received qty into `factory_stock.fac_current_stock` atomically via the shared `21_:factoryStockApplyDeltaTx_` core (movement `po_receipt`, PO-line lineage), fail-closed on non-factory `supplier_warehouse_id`, idempotency-key-ready. This is the PHYSICAL stock posting only — it is DISTINCT from this section's planning **allocation** persistence (`factory_stock_allocation_plans`), performs NO site/marketplace allocation, and does not invoke §40/§41/KMFSR. `APPS_SCRIPT_SYNC_REQUIRED`.
+
 - **Scope:** persist the FIFO allocator's factory result. Requires **D-2**: create `factory_stock_allocation_plans` (+ `forecast_share`, `allocated_factory_stock_qty`, `calculation_method`, `allocation_version`, `status`) — this table exists in **no** `.gs` today. Then wire `allocateFactoryDeterministic` output → a new writer → the table, and a read-only planning display.
 - **Allowed files:** new `21_`-adjacent factory-allocation handler + `01_router.gs` action; `operation-system-db-api.js`; a factory-allocation page/panel; bundle regenerate; tests. `allocations.js` reused, never edited.
 - **DB tables (Verification Copy):** new `factory_stock_allocation_plans`.
