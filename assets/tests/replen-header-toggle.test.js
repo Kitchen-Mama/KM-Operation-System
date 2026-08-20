@@ -59,7 +59,9 @@ eq(/width:\s*240px/.test(factoryRule) && /min-width:\s*240px/.test(factoryRule),
 // Body-cell order in renderReplenishment must line up 1:1 with the 10 leaves (after Planning Model /
 // Company / Marketplace), i.e. the leaf fields appear in this exact sequence.
 var scrollTpl = (js.match(/scrollBody\.innerHTML = data\.map\(item =>[\s\S]*?\.join\(''\);/) || [''])[0];
-var bodyLeafTokens = ['item.currentInventory', 'item.onTheWay', 'item.thirdPartyStock', 'item.avgDailySales',
+// F1-7N-UX-SITE-INVENTORY-INVENTORY-COLUMN-ORDER-R1 — Inventory reading order is now Current Stock → 3rd Party Stock
+// → On the Way (stock-flow: exists now → external/self warehouses → still inbound); body order tracks the header 1:1.
+var bodyLeafTokens = ['item.currentInventory', 'item.thirdPartyStock', 'item.onTheWay', 'item.avgDailySales',
     'item.forecast60d', 'item.upcomingEventQty', 'item.daysOfSupply', 'replen-suggested-cell', 'item.cnStock', 'item.twStock'];
 var lastIdx = -1, ordered = true;
 bodyLeafTokens.forEach(function (t) { var i = scrollTpl.indexOf(t); if (i === -1 || i < lastIdx) ordered = false; lastIdx = i; });

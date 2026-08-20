@@ -26,9 +26,9 @@ var INDEX = read('../index.html');
 eval(extractFn(IR_JS, '_irInventoryColumnModel'));
 
 section('1-10 PURE column model per fulfillment_model');
-eq(_irInventoryColumnModel('platform_fulfilled').columns, ['currentStock', 'onTheWay', 'thirdPartyStock'], '1/8 PLATFORM = Current Stock + On the Way + 3rd Party');
+eq(_irInventoryColumnModel('platform_fulfilled').columns, ['currentStock', 'thirdPartyStock', 'onTheWay'], '1/8 PLATFORM = Current Stock + 3rd Party + On the Way (column-order-R1)');
 ok(_irInventoryColumnModel('platform_fulfilled').inventoryLeafSpan === 3 && _irInventoryColumnModel('platform_fulfilled').hideCurrentStock === false, '3 PLATFORM colspan=3, Current Stock kept');
-eq(_irInventoryColumnModel('self_fulfilled').columns, ['onTheWay', 'thirdPartyStock'], '4/7/8 SELF = On the Way + 3rd Party (Current Stock omitted)');
+eq(_irInventoryColumnModel('self_fulfilled').columns, ['thirdPartyStock', 'onTheWay'], '4/7/8 SELF = 3rd Party + On the Way (Current Stock omitted; column-order-R1)');
 ok(_irInventoryColumnModel('self_fulfilled').hideCurrentStock === true && _irInventoryColumnModel('self_fulfilled').inventoryLeafSpan === 2, '6 SELF colspan=2, Current Stock hidden');
 ok(_irInventoryColumnModel('SELF_FULFILLED').hideCurrentStock === true, 'SELF is canonical-value driven (case-insensitive), not a name');
 ok(_irInventoryColumnModel('hybrid').inventoryLeafSpan === 3 && _irInventoryColumnModel('hybrid').hideCurrentStock === false, '9/10 HYBRID keeps the full 3-column Inventory group');

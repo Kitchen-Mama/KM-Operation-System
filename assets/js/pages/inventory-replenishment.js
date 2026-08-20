@@ -1653,8 +1653,11 @@ window._replenChevronClick = _replenChevronClick;
 // group. PURE — no DOM, no data/formula/authority change. Drives header colspan + body cell visibility via ONE class.
 function _irInventoryColumnModel(fulfillmentModel) {
     var hide = String(fulfillmentModel == null ? '' : fulfillmentModel).trim().toLowerCase() === 'self_fulfilled';
+    // F1-7N-UX-SITE-INVENTORY-INVENTORY-COLUMN-ORDER-R1 — stock-flow reading order: Current Stock → 3rd Party Stock →
+    // On the Way (what exists now → what sits in external/self warehouses → what is still inbound). SELF keeps Current
+    // Stock structurally omitted, leaving 3rd Party Stock → On the Way. Presentation order only.
     return { hideCurrentStock: hide, inventoryLeafSpan: hide ? 2 : 3,
-        columns: hide ? ['onTheWay', 'thirdPartyStock'] : ['currentStock', 'onTheWay', 'thirdPartyStock'] };
+        columns: hide ? ['thirdPartyStock', 'onTheWay'] : ['currentStock', 'thirdPartyStock', 'onTheWay'] };
 }
 // Canonical fulfillment_model of the CURRENTLY selected marketplace scope (reuses the existing read-model helper; never
 // inferred from a name). '' when no single marketplace is selected → fail-safe to the full column structure.
@@ -1724,8 +1727,8 @@ function renderReplenishment() {
             <div class="scroll-cell">${item.company}</div>
             <div class="scroll-cell">${_replenMarketplaceLabel(item.marketplace, item.company, item.country)}</div>
             <div class="scroll-cell replen-cell--current-stock">${item.currentInventory}</div>
-            <div class="scroll-cell">${item.onTheWay}</div>
             <div class="scroll-cell" title="${(item.thirdPartyTitle || '').replace(/"/g, '&quot;')}">${item.thirdPartyStock}</div>
+            <div class="scroll-cell">${item.onTheWay}</div>
             <div class="scroll-cell">${item.avgDailySales}</div>
             <div class="scroll-cell">${item.forecast60d}</div>
             <div class="scroll-cell">${item.upcomingEventQty !== null ? item.upcomingEventQty : '-'}</div>
