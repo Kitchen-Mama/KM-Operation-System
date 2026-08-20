@@ -163,7 +163,9 @@ function initFactoryStockPage() {
     document.addEventListener('click', handleOutsideClick);
     
     // 初始化所有篩選器的顯示文字
-    ['factory', 'company', 'country', 'category', 'series', 'stockStatus'].forEach(type => {
+    // F1-7N-UX-FACTORY-INVENTORY-REMOVE-COMPANY-FILTER-R1 — 'company' removed from the Factory Inventory filter bar
+    // (factory-warehouse identity already carries company context). Data authority (item.company) is untouched.
+    ['factory', 'country', 'category', 'series', 'stockStatus'].forEach(type => {
         updateFilterText(type, root);
     });
     
@@ -269,7 +271,6 @@ function renderFactoryStockTable(root) {
     
     const filters = {
         factory: getFilters('factory'),
-        company: getFilters('company'),
         country: getFilters('country'),
         category: getFilters('category'),
         series: getFilters('series'),
@@ -279,7 +280,6 @@ function renderFactoryStockTable(root) {
 
     let data = _factoryData.filter(item => {
         if (filters.factory.length > 0 && !filters.factory.includes(item.factory)) return false;
-        if (filters.company.length > 0 && !filters.company.includes(item.company)) return false;
         if (filters.country.length > 0 && !filters.country.includes(item.country)) return false;
         if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
         if (filters.series.length > 0 && !filters.series.includes(item.series)) return false;
@@ -461,7 +461,7 @@ function _populateFactoryFiltersFromDb(root) {
         panel.innerHTML = html;
     };
     rebuild('factory', distinct('factory'));
-    rebuild('company', distinct('company'));
+    // 'company' filter removed (F1-7N-UX-FACTORY-INVENTORY-REMOVE-COMPANY-FILTER-R1) — no company panel to rebuild.
     rebuild('country', distinct('country'));
     rebuild('category', distinct('category'));
     rebuild('series', distinct('series'));

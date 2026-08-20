@@ -38,19 +38,10 @@
                             <label class="fc-checkbox-item"><input type="checkbox" value="TW" checked> TW</label>
                         </div>
                     </div>
-                    <div class="filter-group filter-group--dropdown">
-                        <label>Company</label>
-                        <button type="button" class="fc-dropdown-trigger" data-filter="company">
-                            <span class="fc-dropdown-text">All</span>
-                            <span class="fc-dropdown-icon">▼</span>
-                        </button>
-                        <div class="fc-dropdown-panel" data-filter="company">
-                            <label class="fc-checkbox-item"><input type="checkbox" value="" checked> <strong>All</strong></label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Kitchen Mama" checked> Kitchen Mama</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Res US" checked> Res US</label>
-                            <label class="fc-checkbox-item"><input type="checkbox" value="Res TW" checked> Res TW</label>
-                        </div>
-                    </div>
+                    <!-- F1-7N-UX-FACTORY-INVENTORY-REMOVE-COMPANY-FILTER-R1 — the Company filter was removed from the
+                         Factory Inventory bar: factory-warehouse identity already carries the factory/company context,
+                         so the extra filter added UX complexity. Only the USER-FACING filter is gone — factory_stock
+                         company data, warehouse identity, backend scopes, and planning logic are unchanged. -->
                     <div class="filter-group filter-group--dropdown">
                         <label>Country</label>
                         <button type="button" class="fc-dropdown-trigger" data-filter="country">
