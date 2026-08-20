@@ -1651,3 +1651,81 @@ if (window.KM && window.KM.lifecycle) {
         }
     });
 }
+
+// ============================================================================
+// F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — "More Options" dropdown (UI-only consolidation of Import Inventory +
+// Inventory Adjustment). Mirrors the Site Inventory / SKU Details More Options idiom: page-scoped trigger + list,
+// outside-click + Escape close, keyboard nav, guarded single global-listener binding. Each item calls the EXISTING
+// handler verbatim — no second flow, no inventory/API/formula change, no write on open.
+// ============================================================================
+var _factoryActionsBound = false;
+function _factoryActionsEls() {
+    return {
+        menu: document.getElementById('factoryActionsMenu'),
+        trigger: document.getElementById('factoryActionsTrigger'),
+        list: document.getElementById('factoryActionsList')
+    };
+}
+function _factoryActionsItems() {
+    var e = _factoryActionsEls();
+    if (!e.list) return [];
+    return Array.prototype.slice.call(e.list.querySelectorAll('.fs-actions-menu__item'))
+        .filter(function (b) { return !b.disabled; });
+}
+function _factoryActionsOpen() {
+    var e = _factoryActionsEls();
+    if (!e.list || !e.trigger || !e.list.hidden) return;
+    e.list.hidden = false;
+    e.trigger.setAttribute('aria-expanded', 'true');
+    if (e.menu) e.menu.classList.add('is-open');
+    _factoryBindActionsMenuGlobal();
+    var first = _factoryActionsItems()[0];
+    if (first) first.focus();
+}
+function _factoryActionsClose(returnFocus) {
+    var e = _factoryActionsEls();
+    if (!e.list || e.list.hidden) return;
+    e.list.hidden = true;
+    if (e.trigger) e.trigger.setAttribute('aria-expanded', 'false');
+    if (e.menu) e.menu.classList.remove('is-open');
+    if (returnFocus && e.trigger) e.trigger.focus();
+}
+// Click trigger → toggle. stopPropagation so the just-fired click doesn't hit the outside-click closer.
+function toggleFactoryActionsMenu(ev) {
+    if (ev) { try { ev.stopPropagation(); } catch (_e) {} }
+    var e = _factoryActionsEls();
+    if (!e.list) return;
+    if (e.list.hidden) _factoryActionsOpen(); else _factoryActionsClose(false);
+}
+// Run one action = reuse the EXISTING handler verbatim, then close the menu (one item → one handler call).
+function runFactoryAction(kind) {
+    _factoryActionsClose(false);
+    if (kind === 'import' && typeof openFactoryImportModal === 'function') return openFactoryImportModal();
+    if (kind === 'adjust' && typeof openFactoryInventoryAdjustModal === 'function') return openFactoryInventoryAdjustModal();
+}
+// Bind outside-click + keyboard ONCE (guarded — repeated open/close never stacks listeners). Acts only while open.
+function _factoryBindActionsMenuGlobal() {
+    if (_factoryActionsBound) return;
+    document.addEventListener('click', function (ev) {
+        var e = _factoryActionsEls();
+        if (!e.list || e.list.hidden) return;
+        if (ev.target && ev.target.closest && ev.target.closest('#factoryActionsMenu')) return; // inside
+        _factoryActionsClose(false);
+    });
+    document.addEventListener('keydown', function (ev) {
+        var e = _factoryActionsEls();
+        if (!e.list || e.list.hidden) return;
+        var items = _factoryActionsItems();
+        if (!items.length) return;
+        var idx = items.indexOf(document.activeElement);
+        if (ev.key === 'Escape') { ev.preventDefault(); _factoryActionsClose(true); }
+        else if (ev.key === 'ArrowDown') { ev.preventDefault(); (items[(idx + 1) % items.length] || items[0]).focus(); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); (items[(idx - 1 + items.length) % items.length] || items[items.length - 1]).focus(); }
+        else if (ev.key === 'Home') { ev.preventDefault(); items[0].focus(); }
+        else if (ev.key === 'End') { ev.preventDefault(); items[items.length - 1].focus(); }
+        else if (ev.key === 'Tab') { _factoryActionsClose(false); }
+    });
+    _factoryActionsBound = true;
+}
+window.toggleFactoryActionsMenu = toggleFactoryActionsMenu;
+window.runFactoryAction = runFactoryAction;

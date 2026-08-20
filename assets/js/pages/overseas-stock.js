@@ -1541,3 +1541,81 @@ if (window.KM && window.KM.lifecycle) {
         }
     });
 }
+
+// ============================================================================
+// F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — "More Options" dropdown (UI-only consolidation of Import Inventory +
+// Inventory Adjustment). Mirrors the Site Inventory / SKU Details More Options idiom: page-scoped trigger + list,
+// outside-click + Escape close, keyboard nav, guarded single global-listener binding. Each item calls the EXISTING
+// handler verbatim — no FBA-import behavior change, no inventory/API/formula change, no write on open.
+// ============================================================================
+var _overseasActionsBound = false;
+function _overseasActionsEls() {
+    return {
+        menu: document.getElementById('overseasActionsMenu'),
+        trigger: document.getElementById('overseasActionsTrigger'),
+        list: document.getElementById('overseasActionsList')
+    };
+}
+function _overseasActionsItems() {
+    var e = _overseasActionsEls();
+    if (!e.list) return [];
+    return Array.prototype.slice.call(e.list.querySelectorAll('.ovs-actions-menu__item'))
+        .filter(function (b) { return !b.disabled; });
+}
+function _overseasActionsOpen() {
+    var e = _overseasActionsEls();
+    if (!e.list || !e.trigger || !e.list.hidden) return;
+    e.list.hidden = false;
+    e.trigger.setAttribute('aria-expanded', 'true');
+    if (e.menu) e.menu.classList.add('is-open');
+    _overseasBindActionsMenuGlobal();
+    var first = _overseasActionsItems()[0];
+    if (first) first.focus();
+}
+function _overseasActionsClose(returnFocus) {
+    var e = _overseasActionsEls();
+    if (!e.list || e.list.hidden) return;
+    e.list.hidden = true;
+    if (e.trigger) e.trigger.setAttribute('aria-expanded', 'false');
+    if (e.menu) e.menu.classList.remove('is-open');
+    if (returnFocus && e.trigger) e.trigger.focus();
+}
+// Click trigger → toggle. stopPropagation so the just-fired click doesn't hit the outside-click closer.
+function toggleOverseasActionsMenu(ev) {
+    if (ev) { try { ev.stopPropagation(); } catch (_e) {} }
+    var e = _overseasActionsEls();
+    if (!e.list) return;
+    if (e.list.hidden) _overseasActionsOpen(); else _overseasActionsClose(false);
+}
+// Run one action = reuse the EXISTING handler verbatim, then close the menu (one item → one handler call).
+function runOverseasAction(kind) {
+    _overseasActionsClose(false);
+    if (kind === 'import' && typeof openOverseasImportModal === 'function') return openOverseasImportModal();
+    if (kind === 'adjust' && typeof openOverseasAdjustModal === 'function') return openOverseasAdjustModal();
+}
+// Bind outside-click + keyboard ONCE (guarded — repeated open/close never stacks listeners). Acts only while open.
+function _overseasBindActionsMenuGlobal() {
+    if (_overseasActionsBound) return;
+    document.addEventListener('click', function (ev) {
+        var e = _overseasActionsEls();
+        if (!e.list || e.list.hidden) return;
+        if (ev.target && ev.target.closest && ev.target.closest('#overseasActionsMenu')) return; // inside
+        _overseasActionsClose(false);
+    });
+    document.addEventListener('keydown', function (ev) {
+        var e = _overseasActionsEls();
+        if (!e.list || e.list.hidden) return;
+        var items = _overseasActionsItems();
+        if (!items.length) return;
+        var idx = items.indexOf(document.activeElement);
+        if (ev.key === 'Escape') { ev.preventDefault(); _overseasActionsClose(true); }
+        else if (ev.key === 'ArrowDown') { ev.preventDefault(); (items[(idx + 1) % items.length] || items[0]).focus(); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); (items[(idx - 1 + items.length) % items.length] || items[items.length - 1]).focus(); }
+        else if (ev.key === 'Home') { ev.preventDefault(); items[0].focus(); }
+        else if (ev.key === 'End') { ev.preventDefault(); items[items.length - 1].focus(); }
+        else if (ev.key === 'Tab') { _overseasActionsClose(false); }
+    });
+    _overseasActionsBound = true;
+}
+window.toggleOverseasActionsMenu = toggleOverseasActionsMenu;
+window.runOverseasAction = runOverseasAction;

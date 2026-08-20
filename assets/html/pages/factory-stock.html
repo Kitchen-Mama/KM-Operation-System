@@ -107,14 +107,24 @@
                     </div>
                     </div>
 
-                    <!-- Top action buttons. Import Inventory (F0-HOTFIX-FI1) sits to the LEFT of Inventory
-                         Adjustment; both are grouped so they stay together on the right of the space-between bar.
-                         Inventory Adjustment (2026-07-23) adjusts one record's Available; Import Inventory bulk-SETs
-                         Factory Current Stock from a validated template. Both write factory_stock +
-                         factory_stock_movements atomically on the backend (no inline edit). -->
+                    <!-- F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — the two secondary data-management actions
+                         (Import Inventory, Inventory Adjustment) are consolidated into ONE "More Options" dropdown,
+                         reusing the Site Inventory / SKU Details More Options pattern (neutral grey trigger, white
+                         panel, outside-click + Escape close, keyboard nav). Each item calls the EXISTING handler
+                         verbatim — Import bulk-SETs Factory Current Stock; Adjustment adjusts one record's Available;
+                         both still write factory_stock + factory_stock_movements atomically on the backend. No
+                         inventory/API/formula change. (A "TW Factory Settings" item is reserved for a later slice.) -->
                     <div class="fc-action-buttons" style="display: flex; gap: 8px; align-items: flex-end;">
-                        <button class="btn btn-primary" id="factory-stock-import-btn" onclick="openFactoryImportModal()">Import Inventory</button>
-                        <button class="btn btn-secondary" id="factory-stock-edit-btn" onclick="openFactoryInventoryAdjustModal()">Inventory Adjustment</button>
+                        <div class="fs-actions-menu" id="factoryActionsMenu">
+                            <button type="button" class="btn fs-actions-menu__trigger" id="factoryActionsTrigger"
+                                    aria-haspopup="menu" aria-expanded="false" aria-controls="factoryActionsList"
+                                    onclick="toggleFactoryActionsMenu(event)">⋯ More Options</button>
+                            <div class="fs-actions-menu__list" id="factoryActionsList" role="menu"
+                                 aria-label="Factory inventory actions" hidden>
+                                <button type="button" role="menuitem" class="fs-actions-menu__item" onclick="runFactoryAction('import')">Import Inventory</button>
+                                <button type="button" role="menuitem" class="fs-actions-menu__item" onclick="runFactoryAction('adjust')">Inventory Adjustment</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 

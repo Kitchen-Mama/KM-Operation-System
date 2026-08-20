@@ -142,8 +142,10 @@ function byStatus(res, st) { return res.previewRows.filter(function (p) { return
   ok(/refreshFactoryStockTables/.test(PC) && !/loadOperationDb/.test(PC), 'G2 page refresh is targeted (no whole-DB reload)');
   ok(!/executeCommand|createRequestOrder|createShippingPlan|createPurchaseOrder|createShipment|importFcRegularForecast|adjustFactoryInventory|sendRequestOrder/i.test(PC), 'G3 no cross-module writes / Send Request / forecast / recommendation / order / shipment');
   ok(/will SET Factory Current Stock/.test(PAGE) && /will NOT add/.test(PAGE), 'G4 confirmation copy states SET, not ADD');
-  ok(HTML.indexOf('factory-stock-import-btn') < HTML.indexOf('factory-stock-edit-btn'), 'G5 Import Inventory button is to the LEFT of Inventory Adjustment');
-  ok(/openFactoryImportModal\(\)/.test(HTML) && /Import Inventory/.test(HTML), 'G6 button opens the import modal');
+  // F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — actions now live in the "More Options" dropdown (menu items),
+  // not standalone toolbar buttons. Import stays above Adjustment; the item still opens the SAME import modal.
+  ok(HTML.indexOf("runFactoryAction('import')") < HTML.indexOf("runFactoryAction('adjust')"), 'G5 Import Inventory item is above Inventory Adjustment in More Options');
+  ok(/runFactoryAction\('import'\)/.test(HTML) && /Import Inventory/.test(HTML), 'G6 More Options Import item opens the import modal (runFactoryAction → openFactoryImportModal)');
   ok(/Set Current Stock/.test(HTML) && /does not add/.test(HTML), 'G7 modal states Set Current Stock mode (not add)');
   ok(/accept="\.xlsx,\.csv/.test(HTML), 'G8 upload accepts .xlsx and .csv');
   var modalHtml = HTML.slice(HTML.indexOf('factory-import-modal'), HTML.indexOf('factory-import-modal') + 2500);

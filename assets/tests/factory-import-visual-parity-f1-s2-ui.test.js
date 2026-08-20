@@ -25,13 +25,15 @@ function modalSlice(html, startId) { var a = html.indexOf(startId); return a < 0
 var fModal = F_HTML.slice(F_HTML.indexOf('factory-import-overlay') - 200, F_HTML.indexOf('</section>', F_HTML.indexOf('factory-import-overlay')));
 ok(fModal.length > 0, 'X0 factory import modal located');
 
-section('A. button parity (Overseas Import button is the reference)');
-ok(F_HTML.indexOf('factory-stock-import-btn') < F_HTML.indexOf('factory-stock-edit-btn'), 'A1 Import Inventory stays LEFT of Inventory Adjustment');
-var fBtn = F_HTML.slice(F_HTML.indexOf('id="factory-stock-import-btn"') - 60, F_HTML.indexOf('id="factory-stock-import-btn"') + 130);
-var oBtn = O_HTML.slice(O_HTML.indexOf('id="overseas-import-btn"') - 60, O_HTML.indexOf('id="overseas-import-btn"') + 130);
-ok(/class="btn btn-primary"/.test(fBtn), 'A2 Factory Import button uses the canonical btn btn-primary (same as Overseas)');
-ok(/class="btn btn-primary"/.test(oBtn), 'A3 (reference) Overseas Import button is btn btn-primary');
-ok(/Import Inventory<\/button>/.test(fBtn), 'A4 Factory button label remains "Import Inventory"');
+// F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — Import Inventory + Inventory Adjustment moved out of the toolbar into a
+// neutral "More Options" dropdown (Site Inventory / SKU Details idiom); Factory + Overseas keep parity as menu items.
+section('A. action parity — Import Inventory + Inventory Adjustment are More Options menu items (Overseas is the reference)');
+ok(F_HTML.indexOf("runFactoryAction('import')") < F_HTML.indexOf("runFactoryAction('adjust')"), 'A1 Import Inventory item stays above Inventory Adjustment in the Factory menu');
+var fBtn = F_HTML.slice(F_HTML.indexOf("runFactoryAction('import')") - 90, F_HTML.indexOf("runFactoryAction('import')") + 90);
+var oBtn = O_HTML.slice(O_HTML.indexOf("runOverseasAction('import')") - 90, O_HTML.indexOf("runOverseasAction('import')") + 90);
+ok(/class="fs-actions-menu__item"/.test(fBtn), 'A2 Factory Import is a More Options menu item (same pattern as Overseas)');
+ok(/class="ovs-actions-menu__item"/.test(oBtn), 'A3 (reference) Overseas Import is a More Options menu item');
+ok(/Import Inventory<\/button>/.test(fBtn), 'A4 Factory item label remains "Import Inventory"');
 
 section('B. modal shell parity (ovs-* canonical shell)');
 ok(/class="ovs-modal-overlay"/.test(fModal), 'B1 backdrop uses ovs-modal-overlay');

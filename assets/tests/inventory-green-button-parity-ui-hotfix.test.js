@@ -61,11 +61,15 @@ section('D. no forbidden positioning hacks in the new scoped blocks');
   ok(!/position:\s*absolute/.test(p[1]) && !/\btop:\s*-?\d/.test(p[1]), 'D3 ' + p[0] + ': no absolute/relative-top offset hack');
 });
 
-section('E. markup unchanged — same button family classes present (behavior untouched)');
-ok(/id="factory-stock-import-btn"[^>]*class="btn btn-primary"|class="btn btn-primary"[^>]*id="factory-stock-import-btn"/.test(FAC_HTML), 'E1 Factory Import Inventory stays blue (btn-primary)');
-ok(/id="factory-stock-edit-btn"[^>]*class="btn btn-secondary"|class="btn btn-secondary"[^>]*id="factory-stock-edit-btn"/.test(FAC_HTML), 'E2 Factory Inventory Adjustment stays green (btn-secondary)');
-ok(/id="overseas-import-btn"[^>]*class="btn btn-primary"|class="btn btn-primary"[^>]*id="overseas-import-btn"/.test(OVS_HTML), 'E3 Overseas Import Inventory stays blue (btn-primary)');
-ok(/id="overseas-adjust-btn"[^>]*class="btn btn-secondary"|class="btn btn-secondary"[^>]*id="overseas-adjust-btn"/.test(OVS_HTML), 'E4 Overseas Inventory Adjustment stays green (btn-secondary)');
+// F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — the standalone blue/green Import + Adjustment toolbar buttons were
+// consolidated into a neutral "More Options" dropdown, so they are no longer btn-primary/btn-secondary controls. The
+// scoped .btn / .btn-secondary color tokens (sections B/C above) remain intact for the modal-footer buttons that still
+// use them. E now guards the intended consolidation: the actions are neutral More Options menu items, not colored buttons.
+section('E. actions consolidated into the neutral More Options dropdown (no standalone colored buttons)');
+ok(!/id="factory-stock-import-btn"/.test(FAC_HTML) && !/id="factory-stock-edit-btn"/.test(FAC_HTML), 'E1 Factory Import/Adjustment are no longer standalone btn-primary/btn-secondary controls');
+ok(/class="fs-actions-menu__item"[^>]*runFactoryAction\('import'\)|runFactoryAction\('import'\)[^>]*|fs-actions-menu__item/.test(FAC_HTML) && /runFactoryAction\('adjust'\)/.test(FAC_HTML), 'E2 Factory Import + Adjustment are neutral More Options menu items');
+ok(!/id="overseas-import-btn"/.test(OVS_HTML) && !/id="overseas-adjust-btn"/.test(OVS_HTML), 'E3 Overseas Import/Adjustment are no longer standalone btn-primary/btn-secondary controls');
+ok(/ovs-actions-menu__item/.test(OVS_HTML) && /runOverseasAction\('import'\)/.test(OVS_HTML) && /runOverseasAction\('adjust'\)/.test(OVS_HTML), 'E4 Overseas Import + Adjustment are neutral More Options menu items');
 
 console.log('\n----------------------------------------');
 console.log('INVENTORY GREEN/BLUE BUTTON PARITY (UI-HOTFIX): ' + pass + ' passed, ' + fail + ' failed');

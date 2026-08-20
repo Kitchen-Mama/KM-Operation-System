@@ -723,3 +723,76 @@
     font-weight: var(--btn-font-weight);
     box-shadow: none;
 }
+
+/* F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — "More Options" dropdown consolidating Import Inventory +
+   Inventory Adjustment. Visual parity with Site Inventory / SKU Details More Options: neutral light-grey
+   trigger (#f1f5f9 / #334155), white panel with a thin border + soft shadow, flat left-aligned items. */
+#overseas-stock-section .ovs-actions-menu { position: relative; }
+#overseas-stock-section .ovs-actions-menu__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    box-sizing: border-box;
+    height: var(--btn-height);
+    min-height: var(--btn-height);
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid var(--border-light, #e2e8f0);
+    padding: 0 var(--btn-padding-inline);
+    border-radius: var(--btn-radius);
+    font-weight: var(--btn-font-weight, 500);
+    font-size: var(--btn-font-size, 13px);
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: none;
+}
+#overseas-stock-section .ovs-actions-menu__trigger:hover { background: #e2e8f0; opacity: 1; }
+#overseas-stock-section .ovs-actions-menu__trigger[aria-expanded="true"] { background: #e2e8f0; }
+#overseas-stock-section .ovs-actions-menu__list {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 220px;
+    width: max-content;
+    max-width: min(340px, calc(100vw - 24px));
+    background: white;
+    border: 1px solid var(--border-light, #e2e8f0);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: var(--shadow-soft, 0 8px 24px rgba(15,23,42,0.14));
+    padding: 4px;
+    z-index: 140;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+#overseas-stock-section .ovs-actions-menu__list[hidden] { display: none; }
+#overseas-stock-section .ovs-actions-menu__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-size: var(--font-size-body, 14px);
+    color: var(--text-primary, #1e293b);
+    cursor: pointer;
+    white-space: nowrap;
+}
+#overseas-stock-section .ovs-actions-menu__item:hover,
+#overseas-stock-section .ovs-actions-menu__item:focus {
+    background: var(--bg-surface, #f1f5f9);
+    outline: none;
+}
+#overseas-stock-section .ovs-actions-menu__item:focus-visible {
+    outline: 2px solid var(--km-brand-blue, #0080bb);
+    outline-offset: -2px;
+    background: var(--bg-surface, #f1f5f9);
+}
+@media (max-width: 640px) {
+    #overseas-stock-section .ovs-actions-menu__list { right: auto; left: 0; }
+}

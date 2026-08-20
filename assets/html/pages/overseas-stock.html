@@ -60,9 +60,21 @@
                                 <input id="overseas-sku-input" type="text" placeholder="Search SKU..." />
                             </div>
                         </div>
+                        <!-- F1-7N-UX-WAREHOUSE-ACTIONS-MORE-OPTIONS-R1 — Import Inventory + Inventory Adjustment
+                             consolidated into ONE "More Options" dropdown, reusing the Site Inventory / SKU Details
+                             pattern. Each item calls the EXISTING handler verbatim (no FBA-import behavior change,
+                             no inventory/API/formula change). -->
                         <div style="display: flex; gap: 8px; align-items: flex-end;">
-                            <button class="btn btn-primary" id="overseas-import-btn" onclick="openOverseasImportModal()">Import Inventory</button>
-                            <button class="btn btn-secondary" id="overseas-adjust-btn" onclick="openOverseasAdjustModal()">Inventory Adjustment</button>
+                            <div class="ovs-actions-menu" id="overseasActionsMenu">
+                                <button type="button" class="btn ovs-actions-menu__trigger" id="overseasActionsTrigger"
+                                        aria-haspopup="menu" aria-expanded="false" aria-controls="overseasActionsList"
+                                        onclick="toggleOverseasActionsMenu(event)">⋯ More Options</button>
+                                <div class="ovs-actions-menu__list" id="overseasActionsList" role="menu"
+                                     aria-label="Overseas inventory actions" hidden>
+                                    <button type="button" role="menuitem" class="ovs-actions-menu__item" onclick="runOverseasAction('import')">Import Inventory</button>
+                                    <button type="button" role="menuitem" class="ovs-actions-menu__item" onclick="runOverseasAction('adjust')">Inventory Adjustment</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
