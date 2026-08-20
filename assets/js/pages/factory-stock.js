@@ -306,7 +306,8 @@ function renderFactoryStockTable(root) {
     scrollBody.innerHTML = data.map(item => `
         <div class="scroll-row">
             <div class="scroll-cell">${_fmvEscapeHtml(item.factory)}</div>
-            <div class="scroll-cell">${_fmvEscapeHtml(item.categorySeries)}</div>
+            <div class="scroll-cell scroll-cell--category">${_fmvEscapeHtml(item.category) || na}</div>
+            <div class="scroll-cell scroll-cell--series">${_fmvEscapeHtml(item.series) || na}</div>
             <div class="scroll-cell scroll-cell--num">${item.currentStock.toLocaleString()}</div>
             <div class="scroll-cell scroll-cell--num">${item.reservedStock.toLocaleString()}</div>
             <div class="scroll-cell scroll-cell--num">${item.availableStock.toLocaleString()}</div>

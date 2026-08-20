@@ -259,11 +259,26 @@
 }
 
 /* Numeric columns: explicit opt-in via --num (Current / Reserved / Available / In Production / Pending Shipout).
-   Text columns (Warehouse / Category-Series / Last Movement) stay left-aligned. */
+   Text columns (Warehouse / Category / Series / Last Movement) stay left-aligned. */
 #factory-stock-section .scroll-cell--num,
 #factory-stock-section .header-cell--num {
     justify-content: flex-end;
     text-align: right;
+}
+
+/* F1-7N-UX-FACTORY-INVENTORY-SPLIT-CATEGORY-SERIES-R1 — Category / Series are now two independent columns (matching
+   the two top filters). Category gets extra width for names like "Electric Can Opener"; Series is narrower (values
+   like CO1100). Compound selector outranks the base 120px .scroll-cell/.header-cell rule; header + body share the
+   SAME widths so the two layers stay aligned. Scoped by class (not nth-child) so the Movement Log table is untouched. */
+#factory-stock-section .header-cell.header-cell--category,
+#factory-stock-section .scroll-cell.scroll-cell--category {
+    width: 160px;
+    min-width: 160px;
+}
+#factory-stock-section .header-cell.header-cell--series,
+#factory-stock-section .scroll-cell.scroll-cell--series {
+    width: 100px;
+    min-width: 100px;
 }
 
 /* ========================================
