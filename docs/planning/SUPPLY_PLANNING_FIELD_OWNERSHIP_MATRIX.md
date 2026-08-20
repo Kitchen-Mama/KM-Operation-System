@@ -164,4 +164,15 @@ Status tokens per round §4. `∅` = none / absent.
 | **CONTRACT_FROZEN_RUNTIME_PENDING** | company-pooling orchestration — Factory Surplus Reallocation (PLANNING-ONLY, §41 / F1-6, reserved `KMFSR`, runtime → FA-3A) |
 | **PHASE_2_DEFERRED** | event pull-forward; cross-company **physical** borrowing/reservation (`PHYSICAL_CROSS_COMPANY_RESERVATION_DEFERRED`; analysis-only netting is Phase-1 §41); amendment K2/line-grain/MULTI |
 
+## G. Ongoing-Order supply + Supply-Lifecycle count-once (F1-7N-FA-3A.1 freeze)
+
+*Contract owner: `REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md` §3.5 + `SUPPLY_PLANNING_CALCULATION_RULES.md` §42.*
+
+| Field / concept | Runtime owner | Status | Note |
+|---|---|---|---|
+| supply lifecycle count-once (buckets + `supplyLineageRef`) | `supply-planning-ledgers.js:buildSupplyLedger`; status→bucket map `supply-planning-source-facts.js` (`OMIT_TRANSFERRED`) | FROZEN_AND_IMPLEMENTED | one unit → one active bucket per run; shipped PO → `OMIT_TRANSFERRED` (Shipment is incoming owner); load-bearing cross-feed guard is the status map, not the ledger lineage dedupe |
+| Ongoing-Order (unshipped PO) qty | derived `MAX(0, ordered_qty − shipped_qty)` (NOT `remaining_qty`) | CONTRACT_FROZEN_RUNTIME_PENDING → FA-3B0 | distinct supply type from §40/§41 factory, in-transit, received inventory |
+| Ongoing-Order site allocation | A1 = `request_order_line_sources.requested_qty` (immutable, per site); A2 = within-company FC share (assembly of existing per-site FC; NOT weekly `demandWeight`, NOT KMDA `50_` warehouse ratios) | CONTRACT_FROZEN_RUNTIME_PENDING → FA-3B0 | single-company PO line; no cross-company denominator / equal-split / name heuristic; company snapshot ("No ratio allocation") unchanged at company grain |
+| `related_shipment_id` (purchase_order_lines) | ∅ (declared, never populated) | DECLARED_UNUSED | real PO↔Shipment link = `shipment_line_allocations.purchase_order_line_id`; not a supply owner |
+
 *End of matrix.*
