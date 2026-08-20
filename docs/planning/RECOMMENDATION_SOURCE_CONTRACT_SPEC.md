@@ -124,6 +124,8 @@ They are **explicitly NOT** the Reader's or the Apps Script wrapper's to derive.
   `request_order_allocation_draft_lines.calculated_gap_qty_snapshot` (`15_…:41`).
 - Monthly Net Order Need owner = **§12/§32**, `sumRemainingShortages` (Engine A→B→reallocation); persisted as
   `request_order_allocation_draft_lines.net_order_need_snapshot` (`15_…:43`).
+- **DERIVED-UPSTREAM producer (F1-7N-FA-3A.0):** the missing stage that produces the *post-reallocation* `remainingShortages` array fed to `sumRemainingShortages` is the **Factory Surplus Reallocation orchestrator** — CALC_RULES **§41**, reserved `assets/js/core/supply-planning-surplus-reallocation.js` (`KMFSR.projectSurplusReallocation`, NOT IMPLEMENTED until FA-3A). Once connected, `net_order_need_snapshot` is genuinely POST-reallocation (planning-only; no physical reservation). The Reader still only CONSUMES it — it does not derive it.
+- `reallocation_in_qty_snapshot` = planning qty covered by eligible donor surplus; `reallocation_out_qty_snapshot` = planning-attributed factory supply released from a donor and consumed by eligible receiver(s). Both are recommendation/audit snapshots (§41.8), **NOT inventory-ledger transactions**.
 - These snapshot columns are **blank until the calculation writer runtime is implemented — NEVER faked 0**
   (`REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md:656`). The recommendation calculation engine
   (`calculateGap`/`sumRemainingShortages`/`calculateSuggestedOrderQty`) is their sole owner.

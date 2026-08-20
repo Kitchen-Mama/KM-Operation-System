@@ -89,13 +89,16 @@ Status tokens per round §4. `∅` = none / absent.
 
 ## F. Cross-Company Pooling / Borrowing
 
-*Formula owner: CALC_RULES §11 / §12 / §32 / §32A.*
+*Formula owner: CALC_RULES §11 / §12 / §32 / §32A; orchestration owner: CALC_RULES §41.*
+
+> **F1-6 FROZEN (F1-7N-FA-3A.0, 2026-08-20) — Factory Surplus Reallocation Orchestration (PLANNING-ONLY).** F1-6's Phase-1 responsibility = planning-only donor/receiver enumeration, releasable-surplus orchestration, legal transfer *simulation* (analysis, §32/§32A), reallocation snapshots, post-reallocation remaining shortage, and the post-reallocation Net Order Need *producer* stage. It is explicitly **NOT** physical reservation, inventory movement, shipment allocation, or ownership transfer.
+> **Phase distinction (resolves the prior ambiguity):** *analysis-layer surplus netting for recommendation math = Phase-1 (this section, AUTHORIZED)*; *physical reservation / borrowing / movement / ownership transfer = Phase-2 / [[D-4]]* (`PHYSICAL_CROSS_COMPANY_RESERVATION_DEFERRED`). Physical factory conservation stays per-company (FM5-R2A). Reserved runtime module (NOT IMPLEMENTED until FA-3A): `assets/js/core/supply-planning-surplus-reallocation.js` (namespace **KMFSR**, `KMFSR.projectSurplusReallocation`).
 
 | Field | Runtime module:fn | DB column | Writer | Reader | UI | Test | Status | Gap → Next owner |
 |---|---|---|---|---|---|---|---|---|
 | total shortage | `calculations.js:sumRemainingShortages` | ∅ (live-only §36.1) | ∅ | ∅ | ∅ | `monthly-recommendation M5` | FROZEN_AND_IMPLEMENTED (Phase-1) | surface via resolver → F1-6 |
 | total surplus / feasible reallocation | `calculations.js:feasibleReallocationQty`/`evaluateReallocationEligibility` | ∅ | ∅ | ∅ | ∅ | Golden #21/#22 | FROZEN_AND_IMPLEMENTED (Phase-1) | analysis-only (§32) |
-| company-level pooling orchestration | ∅ (donor/receiver enumeration not started, §32A.1) | ∅ | ∅ | source-facts (netOrderNeed) | ∅ | — | FROZEN_IMPLEMENTATION_PARTIAL | iteration engine → F1-6 |
+| company-level pooling orchestration (PLANNING-ONLY, §41) | `supply-planning-surplus-reallocation.js:KMFSR.projectSurplusReallocation` (RESERVED, NOT IMPLEMENTED → FA-3A) | ∅ | ∅ | source-facts (netOrderNeed) | ∅ | — | CONTRACT_FROZEN_RUNTIME_PENDING | analysis-only iteration engine (Phase-1); physical borrowing = Phase-2 → F1-6/FA-3A |
 | reallocation in/out qty | ∅ (no producer) | `request_order_allocation_draft_lines.reallocation_in/out_qty_snapshot` | ∅ live (col ensured `15_…:43/63`) | `operation-system-db-api.js:1783-1784` | ∅ | ∅ | PERSISTED_NOT_READBACK_VERIFIED | Engine-B placeholder blank (never faked) → F1-6 |
 | net order need | `source-facts.js:resolveMonthlyRecommendationFacts` | `…_lines.net_order_need_snapshot` | `production-writer.js`/`24_` (test) | api/sf | ∅ | `monthly-recommendation M5/M7` | IMPLEMENTED_NOT_CONNECTED | deployed writer → F1-6 |
 
@@ -157,7 +160,8 @@ Status tokens per round §4. `∅` = none / absent.
 | **MOCK_OR_DEMO_ONLY / DEAD_OR_LEGACY / UI_ONLY** | forecast.js Review + FC-SKU-Decision (mock); request-order demo engine (mock); target%→effective-FC resolver (dead); Days-of-Supply, targetDays split (UI-only) |
 | **CONNECTED_NOT_PERSISTED / PERSISTED_NOT_READBACK_VERIFIED** | production source reads (current/3P/approved/shipped/as-of); request-order source snapshots + order_qty |
 | **CONFLICTING_AUTHORITY** | `arrived` bucket; 3 shipment-status vocabularies; two request-order specs (resolved by hierarchy) |
-| **FROZEN_IMPLEMENTATION_PARTIAL** | Allocation Draft Submit (HALTED), Shipment Draft, Confirm deduction, company-pooling orchestration, full-carton validation |
-| **PHASE_2_DEFERRED** | event pull-forward; cross-company borrowing; amendment K2/line-grain/MULTI |
+| **FROZEN_IMPLEMENTATION_PARTIAL** | Allocation Draft Submit (HALTED), Shipment Draft, Confirm deduction, full-carton validation |
+| **CONTRACT_FROZEN_RUNTIME_PENDING** | company-pooling orchestration — Factory Surplus Reallocation (PLANNING-ONLY, §41 / F1-6, reserved `KMFSR`, runtime → FA-3A) |
+| **PHASE_2_DEFERRED** | event pull-forward; cross-company **physical** borrowing/reservation (`PHYSICAL_CROSS_COMPANY_RESERVATION_DEFERRED`; analysis-only netting is Phase-1 §41); amendment K2/line-grain/MULTI |
 
 *End of matrix.*
